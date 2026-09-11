@@ -20,7 +20,7 @@ An internal tool suite for BOLD Lab's paper-submission process, built as an **im
 | `docs/FIREBASE.md` | The concrete Firebase backend design + build log (data model, Security Rules, Cloud Storage, phasing) — live as of 2026-09-11. `docs/TODO.md` stays the aspirational/BOLD-OS-blocked list; this is the actual build record. |
 | `docs/changelog.md` | Build history of these files. Not a BOLDiquette comparison — that's `docs/DIFF.md`. |
 | `docs/proposed-boldiquette-addition.md` | Drop-in prose for the new BOLDiquette subsection this tooling implies. |
-| `dist/bold-paper-submission-guide.zip` | The four HTML pages (`index.html`, `how-to-submit-a-paper.html`, `audit-board.html`, `diff.html`) + `docs/*.md`, flattened, kept in sync after every change. |
+| `dist/bold-paper-submission-guide.zip` | The four HTML pages (`index.html`, `how-to-submit-a-paper.html`, `audit-board.html`, `diff.html`) + `docs/*.md`, flattened. Rebuilt and committed automatically by `.github/workflows/zip.yml` on every push — never edit this file directly. |
 
 **BOLDiquette source:** <https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp> — § ML Conference Cycle. Last read 2026-09-10 (see `docs/DIFF.md`).
 
@@ -75,6 +75,7 @@ Every push to `main` deploys automatically — GitHub Pages' own "Deploy from a 
 
 ## After any change
 
-1. Rebuild the bundle (run from the repo root; `-j` flattens paths so `docs/*.md` land at the zip's top level, matching the original flat bundle shape): `zip -qj dist/bold-paper-submission-guide.zip index.html how-to-submit-a-paper.html audit-board.html diff.html docs/AGENTS.md docs/DIFF.md docs/TODO.md docs/FIREBASE.md docs/changelog.md docs/proposed-boldiquette-addition.md`
-2. Add a dated entry to `docs/changelog.md`.
-3. If the process moved relative to BOLDiquette, update `docs/DIFF.md` (and `docs/proposed-boldiquette-addition.md` if the drop-in prose is affected).
+1. Add a dated entry to `docs/changelog.md`.
+2. If the process moved relative to BOLDiquette, update `docs/DIFF.md` (and `docs/proposed-boldiquette-addition.md` if the drop-in prose is affected).
+
+Nothing to rebuild by hand — `.github/workflows/zip.yml` rebuilds `dist/bold-paper-submission-guide.zip` and commits it automatically on every push to `main` (same pattern as `epignatelli/epignatelli.github.io`'s `cv.yml`: build on push, commit back if changed). If you're working with the zip locally before pushing, the command it runs is: `zip -qj dist/bold-paper-submission-guide.zip index.html how-to-submit-a-paper.html audit-board.html diff.html docs/AGENTS.md docs/DIFF.md docs/TODO.md docs/FIREBASE.md docs/changelog.md docs/proposed-boldiquette-addition.md` (`-j` flattens paths so `docs/*.md` land at the zip's top level, matching the original flat bundle shape).

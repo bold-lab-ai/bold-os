@@ -1,0 +1,36 @@
+name: Build zip bundle
+
+# Same pattern as epignatelli/epignatelli.github.io's cv.yml: build an
+# artifact on push, commit it back if it changed. Difference from that one:
+# the artifact lands in *this* repo, not a separate site repo, so a plain
+# push trigger would re-run on the bot's own commit. paths-ignore on the
+# zip's own path breaks that loop.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - dist/bold-paper-submission-guide.zip
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the zip bundle
+        run: |
+          zip -qj dist/bold-paper-submission-guide.zip \
+            index.html how-to-submit-a-paper.html audit-board.html diff.html \
+            docs/AGENTS.md docs/DIFF.md docs/TODO.md docs/FIREBASE.md \
+            docs/changelog.md docs/proposed-boldiquette-addition.md
+
+      - name: Commit if changed
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add dist/bold-paper-submission-guide.zip
+          git diff --quiet && git diff --staged --quiet || git commit -m "bot: rebuild zip bundle"
+          git push

@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Zip bundle now builds and commits itself
+
+Added `.github/workflows/zip.yml` — rebuilds `dist/bold-paper-submission-guide.zip` and commits it on every push to `main`, same pattern as `epignatelli/epignatelli.github.io`'s `cv.yml` (build on push, commit back if changed, bot identity). `paths-ignore` on the zip's own path stops the bot's commit from re-triggering itself, which that reference workflow didn't need (it commits into a *different* repo than the one it runs in; this one commits into itself). No more manual `zip -qj ...` + commit step after every doc/page change — removed from `docs/AGENTS.md`'s "After any change" list.
+
 ### Permission-denied errors now say so, instead of a misleading "try again"
 
 A non-PI/admin lab member tried to create a venue and got "Could not save the venue list — try again." — correct behavior (venue create/delete requires `hasFullWrite()`), but a misleading message: Security Rules rejections aren't transient, retrying does nothing. `saveBoard()`/`saveBoardsIndex()` now record the Firestore error's `code` (`lastWriteErrorCode`) on failure; a new `saveErrorMessage(fallback)` helper returns "You don't have permission to do that — check with a PI or lab admin." specifically when the code was `permission-denied`, and the original fallback text otherwise. Applied at all 9 places a save failure shows a toast.
