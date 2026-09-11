@@ -4,6 +4,14 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `intern
 
 ## 2026-09-11
 
+### Board reads now require sign-in too; repo transferred to bold-lab-ai; notification system planned, not built
+
+`firestore.rules`: `boards`/`cards` read now requires `isLabMember()` (was `allow read: if true`) — a real behavior change, not a no-op, since Sign-in-with-Slack is live. `audit-board.html`'s init flow now waits for the first auth-state resolution before loading anything (`loadInitialData()`), showing "Sign in with Slack to view the Internal Review Board" instead of a doomed fetch when signed out; signing out mid-session clears in-memory board/card data and backs out to the venues list. "+ New venue" disables when signed out, same pattern as "+ Register paper." Footer copy fixed (was still claiming "no sign-in yet").
+
+Filed [`ml-conference-cycle#1`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/1) for Slack DM notifications instead of building it blind — it needs the project's first Cloud Function (a Bot token can't live in client-side source, so something server-side has to hold it and make the `chat.postMessage` call), and the actual trigger events (reviewer-assigned? status-change? PI-approval? comments?) still need deciding.
+
+Repo transferred from `epignatelli/ml-conference-cycle` to the `bold-lab-ai` GitHub org (Eduardo is an org admin). Pages URL changed as a result — was `http://epignatelli.com/ml-conference-cycle/` (Eduardo's personal verified domain), now `https://bold-lab-ai.github.io/ml-conference-cycle/` (the org has no custom domain verified, falls back to the default `github.io` Pages URL — also now genuinely HTTPS). Local `origin` remote updated to match; push confirmed working post-transfer.
+
 ### Subscribable calendar feed — Cloud Storage, not a Cloud Function
 
 Closed the long-standing "Subscribable deadline feed" TODO item, unblocked now that there's a real backend. Chose Cloud Storage over a Cloud Function (client already builds the `.ics` bytes for the download button — Storage just needs those same bytes published at a stable URL, no server compute needed; would have been the project's first Cloud Function otherwise). `syncVenueIcs()` uploads to `venues/{boardId}/feed.ics` whenever a venue is created/edited, deletes it if the venue's deadline is cleared. New `storage.rules`: public read on that path (the point — calendar apps fetch it unauthenticated), write restricted to PI/admin via a `firestore.get()` cross-reference to `roles/pis`/`roles/admins` (Storage rules can't call Firestore rules' functions directly). Public URL is built deterministically from the bucket + path, not via `getDownloadURL()`'s token mechanism, since the object is genuinely public.

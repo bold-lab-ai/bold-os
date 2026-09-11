@@ -75,6 +75,8 @@ Both comment thread types (per-checklist-item feedback, card-level Discussion) s
 
 **Admins, added 2026-09-11:** a second full-write role alongside PIs, not folded into `pis()` — "admin" and "PI" aren't the same lab role, but both get the same permissions (venue create/delete, override any card) via a shared `hasFullWrite()`.
 
+**Read gated too, 2026-09-11.** `boards`/`cards` read was `allow read: if true` (public) up to this point, deliberately, while write-gating and identity were still being wired up. Now `isLabMember()`, same as everything else — a real behavior change, not a no-op, since Sign-in-with-Slack is live and tested. `audit-board.html`'s init flow was updated to match: it waits for the first auth-state resolution before attempting to load anything, rather than firing a fetch that can only fail for a signed-out visitor.
+
 ```
 function isSignedIn() { return request.auth != null; }
 function email()      { return request.auth.token.email; }
@@ -91,11 +93,11 @@ function isLabMember()  { return isSignedIn(); }
 match /roles/{roleId} { allow read, write: if false; }
 
 match /boards/{boardId} {
-  allow read: if true;
+  allow read: if isLabMember();
   allow create, delete, update: if hasFullWrite();
 
   match /cards/{cardId} {
-    allow read: if true;
+    allow read: if isLabMember();
     allow create: if isLabMember();
     // A card can be changed only by whoever created it, a reviewer
     // assigned to it, or a PI/admin — decided 2026-09-11.
