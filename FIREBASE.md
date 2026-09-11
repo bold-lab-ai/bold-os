@@ -10,10 +10,13 @@ Everything below the data model and Security Rules is buildable **without any cr
 
 ## Phasing
 
-1. **Storage** — Firestore replaces `localStorage`, no auth yet (matches today: no permission layer exists either).
-2. **Slack sign-in** — Identity Platform custom OIDC provider.
-3. **Permissions** — custom claims (Cloud Function reading Google Workspace group membership) + Security Rules enforcing the two-layer model from `project` memory: group membership = eligibility, per-card `reviewers.*` field = actual authorization.
-4. **(Stretch, separate decision)** — Slack channel auto-invite via a bot token, gated on confirming BOLD's Slack plan tier for the workspace-invite half; the channel-invite half works on any plan (bot needs `conversations:write.invites` and must already be a member of any private channel it manages).
+**Revised 2026-09-11 — simplified for a quick MVP.** Google Workspace Groups + Admin SDK + Cloud Function role lookup (the original Phase 3 below) is **deferred**, not built now — Eduardo: "We will skip this. We just need to know 'who I am' for the moment. And we'll have hardcoded rules for some accounts to manually promot[e] them to PIs etc." Slack establishes identity only; role is a hardcoded email allowlist in `firestore.rules`, manually edited to promote/demote. Google Workspace (and eventually a Wikipedia/MediaWiki-style OAuth from BOLD OS, developed in parallel) are later phases, picked up once each identity provider is actually ready.
+
+1. **Storage** — Firestore replaces `localStorage`, no auth yet (matches today: no permission layer exists either). **Done.**
+2. **Slack sign-in** — Identity Platform custom OIDC provider. Establishes identity ("who am I") only — no role/claims. Blaze plan **done** (2026-09-11). UI scaffolding (`#authRegion`, `firebase.auth()`, sign-in/out) added to `audit-board.html`; the `oidc.slack` provider itself and the Slack app are still pending (see "Inputs needed" below).
+3. **Permissions (MVP)** — hardcoded email allowlists (`pis()`/`seniors()`/`juniors()`) in `firestore.rules`, checked directly against `request.auth.token.email` — no custom claims, no Cloud Function. See "Security Rules" below for why this isn't deployed yet even though it's fully written.
+4. **Permissions (later)** — Google Workspace Groups via the Admin SDK Directory API + a `beforeSignIn` Cloud Function stamping custom claims, once BOLD's Workspace domain/groups are settled. Keeps the same `pis()`/`seniors()`/`juniors()` call sites in Security Rules — only the source of truth changes, from a hardcoded list to a claim.
+5. **(Stretch, separate decision)** — Slack channel auto-invite via a bot token, gated on confirming BOLD's Slack plan tier for the workspace-invite half; the channel-invite half works on any plan (bot needs `conversations:write.invites` and must already be a member of any private channel it manages).
 
 ## Data model (Firestore, Native mode)
 
@@ -58,50 +61,49 @@ boards/{boardId}
 
 Both comment thread types (per-checklist-item feedback, card-level Discussion) share one shape and one flat `parentId` field instead of a nested `replies` array — appends never conflict, and it's one rendering/posting code path instead of two.
 
-## Security Rules (draft — logic is final, exact Rules-language syntax to be verified against the emulator before deploy)
+## Security Rules
 
-Two-layer model per the settled design: group membership (custom claims, `request.auth.token.groups`) decides *eligibility* for lab-wide actions; a direct comparison against the card's own `reviewers.junior`/`reviewers.senior` decides *authorization* for that specific card. Stubbed as `true` in the client today (`can(action, card)` in `audit-board.html`) — this is that same predicate, enforced server-side so it can't be bypassed by calling the API directly.
+**Revised 2026-09-11 for the simplified MVP.** Two-layer model unchanged in shape: role-list membership decides *eligibility* for lab-wide actions; a direct comparison against the card's own `reviewers.junior`/`reviewers.senior` decides *authorization* for that specific card. What changed is the source of eligibility — hardcoded email arrays in the rules file itself, not a custom claim from a Google Groups lookup:
 
 ```
+function pis()     { return ['name@example.com']; }     // edit + redeploy to promote/demote
+function seniors() { return ['name@example.com']; }
+function juniors() { return ['name@example.com']; }
+
 function isSignedIn() { return request.auth != null; }
-function hasGroup(g)  { return isSignedIn() && g in request.auth.token.groups; }
-function isPiOrCoordinator() { return hasGroup('pis') || hasGroup('coordinators'); }
+function email()      { return request.auth.token.email; }
+function isPi()        { return isSignedIn() && email() in pis(); }
+function isSenior()    { return isSignedIn() && (email() in seniors() || isPi()); }
+function isJunior()    { return isSignedIn() && (email() in juniors() || isSenior()); }
+function isLabMember() { return isSignedIn(); }
 
 match /boards/{boardId} {
   allow read: if true;
-  allow create, delete: if isPiOrCoordinator();
+  allow create, delete, update: if isPi();
 
   match /cards/{cardId} {
     allow read: if true;
-    allow create: if isSignedIn();
-    allow update: if isSignedIn() && (
-      request.auth.token.email == resource.data.submittedBy.email ||
-      request.auth.token.email in resource.data.reviewers.values() ||
-      isPiOrCoordinator()
+    allow create: if isLabMember();
+    allow update, delete: if isLabMember() && (
+      email() == resource.data.submittedBy.email ||
+      email() == resource.data.reviewers.junior ||
+      email() == resource.data.reviewers.senior ||
+      isPi()
     );
-
-    match /checklist/{itemId} {
-      allow read: if true;
-      allow update: if isSignedIn() && (
-        (request.resource.data.junior != resource.data.junior &&
-         request.auth.token.email == get(/databases/$(database)/documents/boards/$(boardId)/cards/$(cardId)).data.reviewers.junior) ||
-        (request.resource.data.senior != resource.data.senior &&
-         request.auth.token.email == get(/databases/$(database)/documents/boards/$(boardId)/cards/$(cardId)).data.reviewers.senior)
-      );
-
-      match /comments/{commentId} { allow read: if true; allow create: if isSignedIn(); }
-    }
-
-    match /discussion/{messageId} { allow read: if true; allow create: if isSignedIn(); }
-    match /history/{eventId}      { allow read: if true; allow create: if isSignedIn(); }
   }
 }
+// (checklist/comments/discussion/history subcollections not yet split out —
+// see "Client-side change" below; their rules follow the same shape once they are)
 ```
+
+**Written, not deployed — and here's the concrete blocker.** `firestore.rules` on disk still stays literal deny-all (see "Project status"). The rules above assume `submittedBy.email` and `reviewers.junior`/`reviewers.senior` hold real signed-in emails, but as of Phase 1a **they don't**: `submittedBy` is `{name, slackId}` (a free-text name typed into a "Stand-in for Slack login" field) and `reviewers.junior`/`reviewers.senior` are free-text names from the shared people-autocomplete — nothing in the current data model is a real email yet. Deploying (or even emulator-testing) the rules above today would either silently fail to authorize anyone, or lock out the anonymous read/write the app still relies on for Phase 1a. **Prerequisite before switching over:** once `#authRegion`'s Slack sign-in is wired end-to-end, `submittedBy` needs a real `email` field populated from `auth.currentUser.email`, and the reviewer picker needs to resolve to emails (or at least store one alongside the display name) instead of free text only. Until then, the rules above are the target, verified-in-design but not verified-against-real-data.
 
 ## Cloud Functions
 
+**Deferred (Phase 4, not MVP) — 2026-09-11.** The MVP permission model needs no Cloud Function at all: hardcoded email lists in Security Rules are evaluated entirely server-side, no claim-stamping step required. This section is the plan for when Google Workspace Groups replaces the hardcoded lists (see "Phasing").
+
 1. **Custom claims on sign-in** — a `beforeSignIn` blocking Auth function: takes the signed-in email, calls the Google Workspace Admin SDK Directory API (`groups.list?userKey=<email>`, read-only `admin.directory.group.readonly` scope, domain-wide-delegated service account), sets `{groups: [...]}` as a custom claim. No separate membership-change listener needed — Firebase ID tokens refresh roughly hourly, so a claim is never more than about an hour stale, which is fine at this scale; avoids needing Admin SDK push notifications.
-2. **(Stretch, Phase 4)** `syncSlackChannels` — same trigger, diffs old vs. new group membership, calls Slack's `conversations.invite` for any channel tied to a newly-added group. Needs a bot token with `conversations:write.invites`, and the bot must already be a member of any private channel it's meant to manage.
+2. **(Stretch, Phase 5)** `syncSlackChannels` — same trigger, diffs old vs. new group membership, calls Slack's `conversations.invite` for any channel tied to a newly-added group. Needs a bot token with `conversations:write.invites`, and the bot must already be a member of any private channel it's meant to manage.
 
 ## Client-side change — done (Phase 1a)
 
@@ -116,6 +118,18 @@ Loads the Firebase **compat build** (not modular/ES-import) from `gstatic.com`, 
 **Verified working end-to-end against the Firestore emulator** (2026-09-11): venue create → persists → survives a full page reload (twice, clean). Card register → persists → visible after reload. Checklist tick → confirmed via the emulator's own data browser (ground truth, not just the app's own re-render) that `checklist[0].junior` actually flips to `true` in the stored document. All three exercise the real `saveBoard()` write path — the first end-to-end proof this data model round-trips correctly through real Firestore, not just in-memory.
 
 **A note for whoever runs headless-browser tests against this page next:** don't trust a single quick headless-Chrome run that shows a write "didn't land" — early attempts here gave false negatives because `--screenshot` mode's `--virtual-time-budget` can exit the process before a real (non-virtual) network round trip to the emulator finishes; a `db.settings({experimentalAutoDetectLongPolling: true})` speculative fix was tried and made things *worse* (hung outright) and was reverted. What actually worked: no special Firestore settings, generous real delays between DOM steps (~1.5s), and checking the emulator's own data browser directly rather than reloading the app and re-rendering.
+
+## Client-side change — in progress (Phase 2, UI scaffolding only)
+
+Added to `audit-board.html` 2026-09-11, not yet functional end-to-end (blocked on the Slack app + Firebase Console provider setup — see "Inputs needed"):
+
+- Firebase **auth-compat** SDK script tag (`firebase-auth-compat.js`, same pinned `10.14.1`, same `gstatic.com` exception).
+- Masthead restructured: `.masthead-right` wraps the existing "Internal" sub-label and a new `<div id="authRegion">`, styled to sit together.
+- `firebase.auth()` initialized alongside `firebase.firestore()`, targeting the Auth emulator (`localhost:9099`) when `FIRESTORE_USE_EMULATOR` is true.
+- `state.currentUser` tracks `{email, name, photoURL} | null` via `onAuthStateChanged`; `renderAuthRegion()` shows a "Sign in with Slack" button (signed out) or the user's name + a "Sign out" control (signed in), re-rendered on every auth-state change.
+- Sign-in calls `auth.signInWithPopup(new firebase.auth.OAuthProvider('oidc.slack'))` with `openid profile email` scopes. Until the `oidc.slack` provider is configured in Firebase Console, this fails gracefully — a toast, not a crash — since the provider doesn't exist yet.
+
+**Deliberately not yet done, and why:** nothing in the app *requires* being signed in to read or write a board/card, and `submittedBy`/`reviewers` still store free-text names rather than the signed-in email — see the Security Rules section's "written, not deployed" note for why that's a real blocker, not just an inconsistency to clean up later. Wiring `state.currentUser.email` into `submittedBy`/reviewer-assignment, and deciding whether writes become sign-in-gated in the UI (not just in Security Rules), is follow-up work once Slack sign-in is actually live and testable.
 
 ## Project status (2026-09-11)
 
@@ -142,18 +156,21 @@ Loads the Firebase **compat build** (not modular/ES-import) from `gstatic.com`, 
 
 ## Inputs needed from Eduardo
 
-**To finish Phase 1 (storage) today:**
-- [ ] Confirm the `AGENTS.md` CDN exception below (Firebase SDK from `gstatic.com`) — recommended over hand-rolled REST calls.
+**Phase 1 (storage) — done.** CDN exception confirmed 2026-09-11, applied to `AGENTS.md`.
 
-**Gather in parallel, not urgent — Phase 2:**
-- [ ] Blaze plan upgrade (billing card on file; expected bill ≈ $0/month at this scale — see prior cost estimate).
-- [ ] A Slack app with Sign-in-with-Slack / OIDC scopes (`openid profile email`) — Client ID + Secret.
+**Phase 2 (Slack sign-in) — in progress:**
+- [x] Blaze plan upgrade — done 2026-09-11.
+- [ ] **A Slack app** — I can't create this myself, it needs Eduardo's own Slack login. Steps: api.slack.com/apps → Create New App → From scratch → pick the BOLD workspace → **OAuth & Permissions**: add `openid`, `profile`, `email` as *User Token Scopes* under "Sign in with Slack" (or enable the pre-built "Sign in with Slack" option if the Slack UI offers it directly) → **Basic Information** for the Client ID + Client Secret. The redirect URL Slack needs goes in `Sign-in with Slack` (or OAuth) → *Redirect URLs*, and that value comes from Firebase Console (below), so do the Firebase half first.
+- [ ] **Firebase Console, manual step (not available via my MCP tooling — confirmed by reading the `firebase://guides/init/auth` resource, which only supports `anonymous`/`emailPassword`/`googleSignIn`)**: Authentication → Sign-in method → Add new provider → OpenID Connect. Provider ID: `oidc.slack`. Issuer URL: `https://slack.com`. Client ID + Client Secret: from the Slack app above (the secret goes in Console only — never embedded client-side, unlike the rest of `FIREBASE_CONFIG`). Saving this step gives the redirect URL Slack's Redirect URLs field needs. Say when ready and I'll walk this half live, step by step.
 
-**Gather in parallel, not urgent — Phase 3:**
+**Phase 3 (MVP permissions) — needs from Eduardo before it can be deployed:**
+- [ ] The initial `pis()`/`seniors()`/`juniors()` email lists for `firestore.rules` (who's promoted to what, to start).
+
+**Gather in parallel, not urgent — Phase 4 (Google Workspace Groups, later):**
 - [ ] The actual Google Workspace domain name (confirmed not `bold-lab.ai` itself — no MX/TXT on that domain).
 - [ ] Domain-wide delegation for a service account (I'll generate its Client ID), scope `admin.directory.group.readonly`, authorized in that Workspace's Admin Console.
 - [ ] Group addresses: `seniors@`, `juniors@`, `pis@`, and whether venue create/delete gets its own `coordinators@` or folds into `pis@`.
 - [ ] Which admin/service email the delegated calls impersonate.
 
-**Only if we pick up the Phase 4 stretch (Slack channel auto-invite) later:**
+**Only if we pick up the Phase 5 stretch (Slack channel auto-invite) later:**
 - [ ] BOLD's Slack plan tier (gates whether workspace auto-invite, not just channel auto-invite, is possible at all).

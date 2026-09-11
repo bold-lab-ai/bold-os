@@ -1,5 +1,10 @@
 rules_version = '2';
 
+// Deny-all until Sign-in-with-Slack is actually live and the data model
+// carries real emails (see FIREBASE.md's Security Rules section for the
+// target hardcoded-role-list model and why it isn't deployed yet — the
+// short version: submittedBy/reviewers are still free-text names, not
+// signed-in emails, so an auth-gated rule can't match anything real today).
 service cloud.firestore {
   match /databases/{database}/documents {
     match /{document=**} {

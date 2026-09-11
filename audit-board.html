@@ -14,6 +14,7 @@
      pinned version deliberately, not silently. -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <style>
   /* Design system shared with bold-lab.ai */
   :root{
@@ -86,6 +87,21 @@
   .wordmark{font-weight:800; font-size:19px; letter-spacing:0; color:var(--ink); text-decoration:none;}
   .wordmark span{color:var(--blue);}
   .masthead-sub{font-size:13px; color:var(--muted);}
+  .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+  .auth-user{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--body);}
+  .auth-user-name{font-weight:600; color:var(--ink);}
+  .auth-role{
+    font-size:11px; font-weight:600; color:var(--blue);
+    background:var(--accent-dim); border-radius:999px; padding:2px 9px;
+  }
+  .auth-signin{
+    display:inline-flex; align-items:center; gap:7px;
+    font-family:inherit; font-weight:600; font-size:13px;
+    color:var(--ink); background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); padding:7px 13px; cursor:pointer;
+  }
+  .auth-signin:hover{border-color:var(--blue); color:var(--blue);}
+  .auth-signin svg{flex:none;}
 
   .backlink{max-width:var(--page-max); margin:24px auto 0; padding:0 var(--gutter);}
   .backlink a{font-size:13.5px; color:var(--muted); text-decoration:none;}
@@ -497,7 +513,10 @@
 
 <div class="masthead">
   <a class="wordmark" href="how-to-submit-a-paper.html">BOLD<span>.</span> Lab</a>
-  <div class="masthead-sub">Internal</div>
+  <div class="masthead-right">
+    <div class="masthead-sub">Internal</div>
+    <div id="authRegion"></div>
+  </div>
 </div>
 
 <div class="backlink">
@@ -665,7 +684,8 @@
     detailTab: 'format',
     discussionReplyOpenId: null,
     checklistCommentOpenId: null, // checklist item whose feedback thread is expanded
-    checklistReplyOpenId: null    // comment within it whose reply box is open
+    checklistReplyOpenId: null,   // comment within it whose reply box is open
+    currentUser: null             // { email, name, photoURL } | null — set by onAuthStateChanged
   };
 
   var ANONYMITY_OPTIONS = [
@@ -682,7 +702,8 @@
     toastRegion: document.getElementById('toastRegion'),
     venuesRegion: document.getElementById('venuesRegion'),
     boardRegion: document.getElementById('boardRegion'),
-    modalRegion: document.getElementById('modalRegion')
+    modalRegion: document.getElementById('modalRegion'),
+    authRegion: document.getElementById('authRegion')
   };
 
   // Last line of defense: if anything throws or a promise rejects
@@ -727,6 +748,59 @@
       '<p class="board-empty">Could not connect to storage. Reload, or check back shortly.</p>';
     els.newBoardToggle.disabled = true;
     return;
+  }
+
+  // Sign-in-with-Slack (Firebase Auth, custom OIDC provider). Identity only,
+  // for the moment — "who am I", not "what am I allowed to do". Role
+  // (junior/senior/PI) is a hardcoded email allowlist enforced in
+  // firestore.rules, not derived from this sign-in — see FIREBASE.md.
+  // The 'oidc.slack' provider itself is configured manually in the Firebase
+  // Console once the Slack app exists; until then, signing in will fail with
+  // a clear toast rather than a crash.
+  var auth = null;
+  try {
+    auth = firebase.auth();
+    if (FIRESTORE_USE_EMULATOR) auth.useEmulator('http://localhost:9099');
+  } catch (e){ auth = null; }
+
+  function renderAuthRegion(){
+    if (!els.authRegion) return;
+    if (!auth){
+      els.authRegion.innerHTML = '';
+      return;
+    }
+    if (state.currentUser){
+      els.authRegion.innerHTML =
+        '<div class="auth-user">' +
+          '<span class="auth-user-name">' + escapeHtml(state.currentUser.name || state.currentUser.email) + '</span>' +
+          '<button class="btn-text" type="button" id="signOutBtn">Sign out</button>' +
+        '</div>';
+      var so = document.getElementById('signOutBtn');
+      if (so) so.addEventListener('click', function(){ auth.signOut(); });
+    } else {
+      els.authRegion.innerHTML =
+        '<button class="auth-signin" type="button" id="signInBtn">Sign in with Slack</button>';
+      var si = document.getElementById('signInBtn');
+      if (si) si.addEventListener('click', function(){
+        var provider = new firebase.auth.OAuthProvider('oidc.slack');
+        provider.addScope('openid');
+        provider.addScope('profile');
+        provider.addScope('email');
+        auth.signInWithPopup(provider).catch(function(err){
+          console.error('[Internal Review Board] sign-in failed', err);
+          showToast('Sign-in with Slack isn\u2019t set up yet \u2014 check back soon.', 'error');
+        });
+      });
+    }
+  }
+
+  if (auth){
+    auth.onAuthStateChanged(function(user){
+      state.currentUser = user ? { email: user.email, name: user.displayName, photoURL: user.photoURL } : null;
+      renderAuthRegion();
+    });
+  } else {
+    renderAuthRegion();
   }
 
   function slugify(s){
