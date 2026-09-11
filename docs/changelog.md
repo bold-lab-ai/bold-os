@@ -4,6 +4,16 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Checklist ticking restricted to the assigned reviewer; ticking now drives their own Approved status automatically
+
+Per Eduardo: "only the assigned respective reviewer should be able to tick boxes in the project page. The status should turn to 'Approved' automatically if all checks have been ticked, and back to 'In Review' if any is unticked but the card is in 'Approved' status." Two changes to the checklist, both in `onToggleChecklist()`/`checklistTabHtml()`:
+
+1. **Access restricted.** A role's checkboxes are only enabled for the reviewer actually assigned to it (`card.reviewers.junior`/`.senior` matching the signed-in email) — everyone else sees them disabled, with a tooltip. Same client-side-only shape as the tri-state Approved/Changes requested/In review buttons added earlier today; the Security Rules' card-update condition stays whole-document, not field-level.
+
+2. **Auto-sync.** Every tick recomputes that role's checklist completeness and syncs `jrReviewState`/`srReviewState` to match: all boxes ticked → `'approved'`; any unticked while currently `'approved'` → back to `'in_review'`. Deliberately **never touches an explicit `'changes_requested'`** either way — that's a stronger, separate signal a reviewer set on purpose, not something checklist state should silently clear or overwrite. This can cascade into the existing both-approved auto-advance-to-Reviewed behavior (added earlier today) when the box that completes the checklist is also the one that completes both reviewers' sign-off.
+
+Because a tick can now change more than the checklist itself, `onToggleChecklist()`'s existing partial refresh (gate banner + move buttons only, to preserve scroll position) is now conditional — it falls back to a full `renderCardDetail()` on the specific tick that crosses a completion boundary (changes a reviewer's state, or auto-advances the card), and keeps the light partial refresh for every ordinary tick that doesn't. Verified the access map and the full decision matrix (complete → approved, uncomplete while approved → in_review, changes_requested preserved both directions, cascading into auto-advance vs. not) with an 18-case standalone unit test.
+
 ### Advance from Drafted to Reviewed is now also gated on both reviewers approving
 
 Per Eduardo, immediately after the redesign below: manually advancing a card from Drafted to Reviewed (the Advance button, the status dropdown, or reverting back in and moving forward again) should be blocked — greyed out with a reason, same as the existing checklist gate — until both reviewers have actually approved, not just auto-advance covering the happy path. `advanceBlockReason()` and `onChangeStatus()` both now also check `reviewFilterState(card) === 'approved'` at the same `crossesGate()` boundary the checklist-completion check already uses, independent of it — a card needs both the checklist finished *and* both reviewers' explicit approval, checked separately, to leave Drafted. `onSetReviewState`'s auto-advance already only fired once this same condition held, so it needed no change. Verified with a 6-case unit test covering each gate firing alone and together.

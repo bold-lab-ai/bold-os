@@ -482,6 +482,7 @@
   .cl-row input[type="checkbox"]{width:16px; height:16px; margin:2px auto 0; display:block; cursor:pointer;}
   .cl-row input[type="checkbox"]:nth-of-type(1){accent-color:var(--teal);}
   .cl-row input[type="checkbox"]:nth-of-type(2){accent-color:var(--plum);}
+  .cl-row input[type="checkbox"]:disabled{cursor:default; opacity:0.45;}
   .cl-row-foot{padding:0 6px 8px;}
   .cl-row-foot .btn-text{font-size:12px;}
   .cl-row-foot .btn-text.has-feedback{color:var(--blue); font-weight:600;}
@@ -2242,9 +2243,23 @@
     return html;
   }
 
+  // Only the reviewer actually assigned to a role (card.reviewers[role] ===
+  // their signed-in email) can tick that role's boxes — same client-side
+  // shape as reviewStateButtonsHtml/onSetReviewState. Computed once per
+  // role here rather than per item, since it doesn't vary by item.
+  function checklistTickAccess(card){
+    var access = {};
+    REVIEW_ROLES.forEach(function(role){
+      var reviewerEmail = (card.reviewers && card.reviewers[role]) || '';
+      access[role] = !!(state.currentUser && reviewerEmail && state.currentUser.email === reviewerEmail);
+    });
+    return access;
+  }
+
   function checklistTabHtml(card, part){
     var items = (card.checklist || []).filter(function(it){ return it.part === part; });
     var openId = state.checklistCommentOpenId;
+    var access = checklistTickAccess(card);
     var html = '<div class="cl-wrap">';
     html += '<div class="cl-head"><span></span>' + REVIEW_ROLES.map(function(role){ return '<span>' + REVIEW_ROLE_LABELS[role] + '</span>'; }).join('') + '</div>';
     var lastCat = null;
@@ -2257,7 +2272,9 @@
       html += '<div class="cl-row">';
       html += '<label class="cl-label" for="cl-' + escapeHtml(it.id) + '-' + REVIEW_ROLES[0] + '">' + escapeHtml(it.label) + '</label>';
       REVIEW_ROLES.forEach(function(role){
-        html += '<input type="checkbox" id="cl-' + escapeHtml(it.id) + '-' + role + '" data-cl="' + escapeHtml(card.id) + '" data-cl-item="' + escapeHtml(it.id) + '" data-cl-role="' + role + '"' + (it[role] ? ' checked' : '') + ' aria-label="' + REVIEW_ROLE_LABELS[role] + ': ' + escapeHtml(it.label) + '">';
+        html += '<input type="checkbox" id="cl-' + escapeHtml(it.id) + '-' + role + '" data-cl="' + escapeHtml(card.id) + '" data-cl-item="' + escapeHtml(it.id) + '" data-cl-role="' + role + '"' + (it[role] ? ' checked' : '') +
+          (access[role] ? '' : ' disabled title="Only the assigned ' + REVIEW_ROLE_LABELS[role].toLowerCase() + ' reviewer can tick this"') +
+          ' aria-label="' + REVIEW_ROLE_LABELS[role] + ': ' + escapeHtml(it.label) + '">';
       });
       html += '</div>';
       var n = threadCount(it.comments);
@@ -2613,42 +2630,97 @@
     });
   }
 
+  // role is 'junior' or 'senior'. Client-side-restricted to the matching
+  // assigned reviewer (checklistTickAccess/checklistTabHtml already
+  // disables the checkbox for anyone else) — same belt-and-braces shape as
+  // onSetReviewState, not the real access control (Security Rules).
+  //
+  // Auto-syncs that reviewer's own sign-off to their own checklist
+  // completion (2026-09-11): all of a role's boxes ticked sets that role's
+  // jrReviewState/srReviewState to 'approved'; any of them unticked while
+  // currently 'approved' takes it back to 'in_review'. Never touches an
+  // explicit 'changes_requested' either way — that's a stronger, separate
+  // signal from the reviewer, not something checklist state should quietly
+  // overwrite or clear. Reuses onSetReviewState's exact auto-advance
+  // condition (both roles 'approved', still in Drafted, checklist gate met)
+  // so completing the last box behaves the same as clicking Approved by
+  // hand — including staying put if the checklist (now complete by
+  // definition) still fails some other future gate.
   function onToggleChecklist(cardId, itemId, role, checked){
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    var reviewerEmail = (card.reviewers && card.reviewers[role]) || '';
+    if (!state.currentUser || !reviewerEmail || state.currentUser.email !== reviewerEmail) return;
+
     var boardId = state.currentBoardId;
+    var wasDraftReview = card.status === 'draft_review';
+    var reviewStateChanged = false;
+    var autoAdvanced = false;
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
-      return Object.assign({}, c, {
-        checklist: c.checklist.map(function(it){
-          if (it.id !== itemId) return it;
-          var patch = {}; patch[role] = checked;
-          return Object.assign({}, it, patch);
-        }),
-        updatedAt: Date.now()
+      var newChecklist = c.checklist.map(function(it){
+        if (it.id !== itemId) return it;
+        var patch = {}; patch[role] = checked;
+        return Object.assign({}, it, patch);
       });
+      var merged = Object.assign({}, c, { checklist: newChecklist });
+
+      var counts = checklistCounts(merged);
+      REVIEW_ROLES.forEach(function(r){
+        var field = r === 'senior' ? 'srReviewState' : 'jrReviewState';
+        if (merged[field] === 'changes_requested') return;
+        var roleComplete = counts.total > 0 && counts[r] === counts.total;
+        if (roleComplete && merged[field] !== 'approved'){
+          var p = {}; p[field] = 'approved';
+          merged = Object.assign({}, merged, p);
+          reviewStateChanged = true;
+        } else if (!roleComplete && merged[field] === 'approved'){
+          var p2 = {}; p2[field] = 'in_review';
+          merged = Object.assign({}, merged, p2);
+          reviewStateChanged = true;
+        }
+      });
+
+      if (merged.status === 'draft_review' && merged.jrReviewState === 'approved' && merged.srReviewState === 'approved' &&
+          crossesGate(merged.status, 'final_draft') && checklistComplete(merged)){
+        merged.status = 'final_draft';
+        autoAdvanced = true;
+      }
+      merged.updatedAt = Date.now();
+      return merged;
     });
     var prev = state.cards;
     state.cards = next;
 
-    // Refresh just the gate banner and the move controls; leave the
-    // checklist checkboxes and scroll position alone.
-    var card = getCurrentCard();
-    var banner = document.getElementById('gateBanner');
-    if (banner && card) banner.outerHTML = gateBannerHtml(card);
-    var moveWrap = els.boardRegion.querySelector('.detail-controls .card-move');
-    if (moveWrap && card){
-      var moveBoard = getCurrentBoard();
-      var lft = statusAt(displayStatus(card, moveBoard), -1, effectiveStatusOrder(moveBoard));
-      var rgt = statusAt(displayStatus(card, moveBoard), 1, effectiveStatusOrder(moveBoard));
-      var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
-      moveWrap.innerHTML =
-        '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>' +
-        '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : '')) + '>Advance &rarr;</button>';
-      Array.prototype.forEach.call(moveWrap.querySelectorAll('[data-move]'), function(btn){
-        btn.addEventListener('click', function(){
-          var to = btn.getAttribute('data-move-to');
-          if (to) onChangeStatus(btn.getAttribute('data-move'), to);
+    if (reviewStateChanged || autoAdvanced){
+      // More than the gate banner/move buttons changed (the tri-state
+      // buttons, badges, possibly the whole controls row once past
+      // Drafted) — a full re-render is worth the reset scroll position
+      // here, since this only fires on the box that actually crosses a
+      // completion boundary, not on every tick.
+      renderCardDetail();
+    } else {
+      // Common case: refresh just the gate banner and the move controls,
+      // leaving the checklist checkboxes and scroll position alone.
+      var card2 = getCurrentCard();
+      var banner = document.getElementById('gateBanner');
+      if (banner && card2) banner.outerHTML = gateBannerHtml(card2);
+      var moveWrap = els.boardRegion.querySelector('.detail-controls .card-move');
+      if (moveWrap && card2){
+        var moveBoard = getCurrentBoard();
+        var lft = statusAt(displayStatus(card2, moveBoard), -1, effectiveStatusOrder(moveBoard));
+        var rgt = statusAt(displayStatus(card2, moveBoard), 1, effectiveStatusOrder(moveBoard));
+        var rgtBlockReason = rgt && advanceBlockReason(card2, rgt);
+        moveWrap.innerHTML =
+          '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card2.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>' +
+          '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card2.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : '')) + '>Advance &rarr;</button>';
+        Array.prototype.forEach.call(moveWrap.querySelectorAll('[data-move]'), function(btn){
+          btn.addEventListener('click', function(){
+            var to = btn.getAttribute('data-move-to');
+            if (to) onChangeStatus(btn.getAttribute('data-move'), to);
+          });
         });
-      });
+      }
     }
 
     saveBoard(boardId, { cards: next }).then(function(ok){
@@ -2656,6 +2728,8 @@
         state.cards = prev;
         renderCardDetail();
         showToast(saveErrorMessage('Could not save the checklist — try again.'), 'error');
+      } else if (autoAdvanced && wasDraftReview){
+        showToast('Checklist complete and both reviewers approved — moved to ' + STATUS_LABELS.final_draft + '.', 'ok');
       }
     });
   }
