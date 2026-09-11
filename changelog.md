@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `intern
 
 ## 2026-09-11
 
+### PI removed from the board card face
+
+Dropped the "PI Name" line (`.card-pi`) from the compact card shown on the board — per Eduardo's request. Still shown on the detail page (full author list, last tagged PI), and `cardPi()` still backs the PI search filter; only the board-card display line and its now-unused CSS are gone.
+
 ### Registration form now uses real identity; reviewer picker uses the real Slack roster; track + per-card deadline override removed
 
 Pulled the full Slack workspace roster (274 real, non-bot members with emails) via `users.list` (new `users:read`/`users:read.email` Bot Token scopes on the Slack app, reinstalled) and synced it into a new `people` Firestore collection (one-off Admin SDK script, same pattern as `roles` — not automated). `firestore.rules` updated: `people/{personId}` readable by any signed-in lab member, write-denied to clients. Sizing question flagged and confirmed with Eduardo before syncing (274 is the whole Slack workspace, not just BOLD-lab-internal — confirmed that's the intended roster).
