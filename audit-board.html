@@ -10,7 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap" rel="stylesheet">
 <!-- Firebase compat build (not the modular/ES-import build — this one loads as an
      ordinary blocking script, matching the plain classic-script style below).
-     AGENTS.md-approved CDN exception, 2026-09-11 — see FIREBASE.md. Bump the
+     docs/AGENTS.md-approved CDN exception, 2026-09-11 — see docs/FIREBASE.md. Bump the
      pinned version deliberately, not silently. -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
@@ -574,7 +574,7 @@
   // card.outcome, shown as a badge, set from the Edit-fields modal.
   var STATUS_ORDER = ['register','pitch_day','draft_review','final_draft','pi_polish','submit','arxiv_publicity','rebuttal','pre_conference'];
   // Past tense on purpose: a column name is the checkpoint already met to
-  // be sitting in it (see guideline 6/8 in AGENTS.md), not an in-progress
+  // be sitting in it (see guideline 6/8 in docs/AGENTS.md), not an in-progress
   // label — "Drafted" not "Drafting". Same 9 phases, same order as the
   // guide's `.timeline`; the guide's headings stay instructional ("Pitch
   // Day", "Submit") since they're telling you what to go do, not stating
@@ -736,10 +736,10 @@
   });
 
   // Persistence: Firestore (bold-d7ff2), replacing the old per-browser
-  // localStorage — see FIREBASE.md for the project/data-model/phasing.
+  // localStorage — see docs/FIREBASE.md for the project/data-model/phasing.
   // FIRESTORE_USE_EMULATOR must be flipped to false deliberately, only once
   // real Security Rules replace the deny-all default currently deployed —
-  // see FIREBASE.md's "Project status" note on why emulator-first.
+  // see docs/FIREBASE.md's "Project status" note on why emulator-first.
   //
   // Separate flag for Auth: the 'oidc.slack' custom provider only exists on
   // the real Firebase Auth backend (Console-configured), not the local Auth
@@ -779,7 +779,7 @@
   // Sign-in-with-Slack (Firebase Auth, custom OIDC provider). Identity only,
   // for the moment — "who am I", not "what am I allowed to do". Role
   // (junior/senior/PI) is a hardcoded email allowlist enforced in
-  // firestore.rules, not derived from this sign-in — see FIREBASE.md.
+  // firestore.rules, not derived from this sign-in — see docs/FIREBASE.md.
   // The 'oidc.slack' provider itself is configured manually in the Firebase
   // Console once the Slack app exists; until then, signing in will fail with
   // a clear toast rather than a crash.
@@ -944,7 +944,7 @@
   // metadata only; each card is its own document in `boards/{id}/cards/{cardId}`,
   // so two people editing different cards on the same board never contend.
   //
-  // Not yet done (deliberately deferred — see FIREBASE.md "Phase 1b"):
+  // Not yet done (deliberately deferred — see docs/FIREBASE.md "Phase 1b"):
   // checklist items, comments, discussion, and history still live embedded
   // on the card document, same shape as the old localStorage blob, so
   // `saveBoard(id, {cards})` still upserts every card in the array on every
@@ -953,7 +953,7 @@
 
   function cardsCol(boardId){ return db.collection('boards').doc(boardId).collection('cards'); }
 
-  // The Slack workspace roster (see FIREBASE.md) — backs the reviewer
+  // The Slack workspace roster (see docs/FIREBASE.md) — backs the reviewer
   // picker (a real person, stored as their email — required for the
   // per-card Security Rules to ever match) and the authors datalist
   // (suggestions only; authors stay free text since a paper can have
@@ -1461,7 +1461,7 @@
 
   // Deadlines are venue-level only — no per-card override. A paper on a
   // different track or deadline is a different venue by convention (see
-  // FIREBASE.md/changelog); a card just inherits whatever venue it's on.
+  // docs/FIREBASE.md/changelog); a card just inherits whatever venue it's on.
   function effectiveDeadline(card, board){
     if (card.status === 'rebuttal') return card.rebuttalDeadline || null;
     if (['register','pitch_day','draft_review','final_draft','pi_polish'].indexOf(card.status) !== -1){
@@ -1580,7 +1580,7 @@
 
   // Resolve a reviewer's stored email back to a display name — falls back
   // to the raw value for legacy data (pre-roster cards stored a free-text
-  // name in this field, not an email; see FIREBASE.md).
+  // name in this field, not an email; see docs/FIREBASE.md).
   function personName(email){
     var p = personByEmail(email);
     return p ? p.name : (email || '');
@@ -2062,7 +2062,7 @@
   }
 
   // OpenReview-style thread: top-level messages, each with at most one level
-  // of replies (no reply-to-a-reply — see AGENTS.md). Only one reply form is
+  // of replies (no reply-to-a-reply — see docs/AGENTS.md). Only one reply form is
   // ever open at a time (state.discussionReplyOpenId), so the reply inputs
   // can use fixed ids regardless of which thread they belong to.
   function discussionTabHtml(card){
@@ -2440,7 +2440,7 @@
   // ---------- dynamic author rows (registration + Edit fields) ----------
   // Plain arrays of in-progress author names, reset each time the relevant
   // modal opens. Free text with a shared-people datalist — same stand-in as
-  // PI/reviewers until a real roster exists (TODO.md); typing a name that
+  // PI/reviewers until a real roster exists (docs/TODO.md); typing a name that
   // isn't a suggestion is just... typing a name.
   var pAuthorsState = [''];
   var eAuthorsState = [''];
@@ -2481,7 +2481,7 @@
 
   // Registering a paper requires being signed in \u2014 submittedBy and the
   // corresponding author email are both derived from state.currentUser, not
-  // typed in (see FIREBASE.md's write-gating decision). Call this before
+  // typed in (see docs/FIREBASE.md's write-gating decision). Call this before
   // showing the register button/modal; it also guards openModal() itself
   // as a defense-in-depth check, not just the trigger button.
   function requireSignedIn(){

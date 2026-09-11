@@ -4,6 +4,12 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `intern
 
 ## 2026-09-11
 
+### Folder structure tidied up; real homepage; README added
+
+Repo root was flat — served pages, contributor docs, Firebase config, and the shippable zip all mixed together. Reorganized: served pages + Firebase config stay at root (GitHub Pages serves from root; `firebase` CLI expects its config there by default); the six contributor-facing docs (`AGENTS.md`, `DIFF.md`, `TODO.md`, `FIREBASE.md`, `changelog.md`, `proposed-boldiquette-addition.md`) moved into `docs/`; the shippable bundle moved into `dist/`. One real cross-file link needed fixing (`diff.html`'s `href="DIFF.md"` → `href="docs/DIFF.md"`) — everything else referencing these docs was prose, not links, so nothing else broke. The zip-build command now uses `zip -qj` (flatten) so the shipped bundle's internal layout stays flat regardless of the source reorg — recipients don't need to know about `docs/`.
+
+`index.html` rewritten from a bare redirect into an actual homepage — links to the guide, Internal Review, the board, and the diff page, in the same design system as the rest of the suite. Added to the zip bundle (wasn't before). Added a root `README.md` (didn't exist) pointing at `docs/AGENTS.md` for the real contributor guide. Along the way, fixed several places in `docs/AGENTS.md` that had gone stale across earlier changes this session — it still described the Internal Review Board as `localStorage`-backed (it's been Firestore since Phase 1a), the reviewer picker as free text (it's a real roster `<select>` now), and card-level `track`/deadline-override/submitted-by as editable fields (all removed). Deleted a stray, already-gitignored `firestore-debug.log` from the working directory.
+
 ### Board reads now require sign-in too; repo transferred to bold-lab-ai; notification system planned, not built
 
 `firestore.rules`: `boards`/`cards` read now requires `isLabMember()` (was `allow read: if true`) — a real behavior change, not a no-op, since Sign-in-with-Slack is live. `audit-board.html`'s init flow now waits for the first auth-state resolution before loading anything (`loadInitialData()`), showing "Sign in with Slack to view the Internal Review Board" instead of a doomed fetch when signed out; signing out mid-session clears in-memory board/card data and backs out to the venues list. "+ New venue" disables when signed out, same pattern as "+ Register paper." Footer copy fixed (was still claiming "no sign-in yet").
