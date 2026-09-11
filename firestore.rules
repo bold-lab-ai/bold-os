@@ -1,14 +1,15 @@
 rules_version = '2';
 
 // MVP permission model (2026-09-11) — Sign-in-with-Slack gives identity
-// only; role (junior/senior/PI) comes from a hardcoded list, but NOT as
-// literals in this file. The three role lists live in Firestore documents
-// (roles/pis, roles/seniors, roles/juniors — each {emails: [...]}), written
-// only via the Firebase Console (never by a client — see the deny-all rule
-// on roles/{roleId} below), and read here via get(), which bypasses that
-// document's own rules for lookups made *from inside* a rule. This is
-// deliberate: it means this file — and this repo, if ever made public —
-// never contains real people's email addresses. See FIREBASE.md.
+// only; role (junior/senior/PI/admin) comes from a hardcoded list, but NOT
+// as literals in this file. The role lists live in Firestore documents
+// (roles/pis, roles/admins, roles/seniors, roles/juniors — each
+// {emails: [...]}), written only via the Firebase Console (never by a
+// client — see the deny-all rule on roles/{roleId} below), and read here
+// via get(), which bypasses that document's own rules for lookups made
+// *from inside* a rule. This is deliberate: it means this file — and this
+// repo, if ever made public — never contains real people's email
+// addresses. See FIREBASE.md.
 //
 // In practice, this is still equivalent to deny-all today: isSignedIn() is
 // always false until the 'oidc.slack' provider exists and someone can
@@ -28,10 +29,15 @@ service cloud.firestore {
     function roleList(name) {
       return get(/databases/$(database)/documents/roles/$(name)).data.emails;
     }
-    function isPi()        { return isSignedIn() && email() in roleList('pis'); }
-    function isSenior()    { return isSignedIn() && (email() in roleList('seniors') || isPi()); }
-    function isJunior()    { return isSignedIn() && (email() in roleList('juniors') || isSenior()); }
-    function isLabMember() { return isSignedIn(); }
+    function isPi()         { return isSignedIn() && email() in roleList('pis'); }
+    // Admins get the same full write access as PIs (venue create/delete,
+    // overriding any card) but are a separate list — not folded into
+    // pis() — since "admin" and "PI" aren't the same lab role.
+    function isAdmin()      { return isSignedIn() && email() in roleList('admins'); }
+    function hasFullWrite() { return isPi() || isAdmin(); }
+    function isSenior()     { return isSignedIn() && (email() in roleList('seniors') || isPi()); }
+    function isJunior()     { return isSignedIn() && (email() in roleList('juniors') || isSenior()); }
+    function isLabMember()  { return isSignedIn(); }
 
     // Admin-only data, never read or written by a client — only via the
     // get() calls above, and via the Firebase Console (or an Admin SDK
@@ -42,18 +48,18 @@ service cloud.firestore {
 
     match /boards/{boardId} {
       allow read: if true;
-      allow create, delete, update: if isPi();
+      allow create, delete, update: if hasFullWrite();
 
       match /cards/{cardId} {
         allow read: if true;
         allow create: if isLabMember();
         // A card can be changed only by whoever created it, a reviewer
-        // assigned to it, or a PI.
+        // assigned to it, or a PI/admin.
         allow update, delete: if isLabMember() && (
           email() == resource.data.submittedBy.email ||
           email() == resource.data.reviewers.junior ||
           email() == resource.data.reviewers.senior ||
-          isPi()
+          hasFullWrite()
         );
       }
     }

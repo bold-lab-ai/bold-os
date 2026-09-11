@@ -4,6 +4,12 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `intern
 
 ## 2026-09-11
 
+### Admins role added; roles/pis + roles/admins seeded with real emails
+
+Added a second full-write role, `admins` (`roles/admins` in Firestore, same shape as `roles/pis`), alongside PIs — not folded into `pis()`, since the lab treats them as distinct roles even though both get identical permissions via a shared `hasFullWrite()`. `firestore.rules` updated and redeployed to `bold-d7ff2` (verified live).
+
+Seeded `roles/pis` (6 emails) and `roles/admins` (3 emails) with Eduardo's actual lists. No Firestore-data-write tool was available (see prior entry), so this needed an Admin SDK credential: Eduardo generated a service-account key via Firebase Console, wrote a one-off Node script (`firebase-admin`) to set both documents and read them back as verification. The downloaded key landed inside this git repo's own folder — caught before any `git add` (confirmed via `git status`, still untracked), moved out to a scratchpad directory, used from there, then deleted immediately after. Eduardo was asked to also revoke the key itself in Firebase Console, since the file being gone doesn't revoke the underlying credential. `roles/seniors` and `roles/juniors` remain unseeded.
+
 ### Repo pushed to GitHub, Pages deployed; role lists moved out of firestore.rules and deployed
 
 Created a private GitHub repo (`epignatelli/ml-conference-cycle`), pushed this folder's git history, added `index.html` (redirects to `how-to-submit-a-paper.html`) so the site root resolves, and enabled GitHub Pages — live at `http://epignatelli.com/ml-conference-cycle/`. Found the account's plan doesn't support private Pages, so the rendered site is public regardless of the repo's own visibility; Firestore itself stays effectively deny-all so no live data is exposed either way (see below).
