@@ -260,6 +260,10 @@
     max-width:var(--read-max); margin:56px auto; padding:0 var(--gutter);
     color:var(--muted); text-align:center;
   }
+  .board-empty .inline-link{
+    font: inherit; color:var(--blue); background:none; border:none;
+    padding:0; cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+  }
 
   /* ---------- venues list ---------- */
   .venues{max-width:var(--read-max); margin:22px auto 0; padding:0 var(--gutter) 80px;}
@@ -798,6 +802,21 @@
   var storage = null;
   try { storage = firebase.storage(); } catch (e){ storage = null; }
 
+  // Shared by the masthead's sign-in button and any other "sign in" trigger
+  // on the page (e.g. the signed-out empty-state message) \u2014 one place that
+  // actually starts the popup flow.
+  function triggerSlackSignIn(){
+    if (!auth) return;
+    var provider = new firebase.auth.OAuthProvider('oidc.slack');
+    provider.addScope('openid');
+    provider.addScope('profile');
+    provider.addScope('email');
+    auth.signInWithPopup(provider).catch(function(err){
+      console.error('[Internal Review Board] sign-in failed', err);
+      showToast('Sign-in with Slack isn\u2019t set up yet \u2014 check back soon.', 'error');
+    });
+  }
+
   function renderAuthRegion(){
     if (!els.authRegion) return;
     if (!auth){
@@ -821,16 +840,7 @@
       els.authRegion.innerHTML =
         '<button class="auth-signin" type="button" id="signInBtn">Sign in with Slack</button>';
       var si = document.getElementById('signInBtn');
-      if (si) si.addEventListener('click', function(){
-        var provider = new firebase.auth.OAuthProvider('oidc.slack');
-        provider.addScope('openid');
-        provider.addScope('profile');
-        provider.addScope('email');
-        auth.signInWithPopup(provider).catch(function(err){
-          console.error('[Internal Review Board] sign-in failed', err);
-          showToast('Sign-in with Slack isn\u2019t set up yet \u2014 check back soon.', 'error');
-        });
-      });
+      if (si) si.addEventListener('click', triggerSlackSignIn);
     }
   }
 
@@ -1088,7 +1098,9 @@
       return;
     }
     if (state.authResolved && !state.currentUser){
-      els.venuesRegion.innerHTML = '<p class="board-empty">Sign in with Slack (top right) to view the Internal Review Board.</p>';
+      els.venuesRegion.innerHTML = '<p class="board-empty"><button class="inline-link" type="button" id="signInInline">Sign in</button> with Slack to view the Internal Review Board.</p>';
+      var siInline = document.getElementById('signInInline');
+      if (siInline) siInline.addEventListener('click', triggerSlackSignIn);
       return;
     }
     if (state.boards.length === 0){

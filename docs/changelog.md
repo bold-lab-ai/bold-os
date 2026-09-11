@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Sign-in prompt is now a real link; homepage hero CTA folded into the text
+
+`audit-board.html`'s signed-out message ("Sign in with Slack (top right) to view...") now has "Sign in" as an actual clickable trigger for the sign-in popup, not just a pointer to go find the masthead button — extracted the popup-flow logic (`triggerSlackSignIn()`) so both the masthead button and this inline one call the same thing. Homepage: removed the separate "Open the Internal Review Board" CTA button, made "Internal Review Board" bold within the existing hero sentence instead (still a link) — one CTA, not two saying almost the same thing. Dropped the now-unused `.hero-cta` CSS.
+
 ### `internal-qa-review.html` removed; `how-to-submit-a-paper.html` is the homepage
 
 Removed `internal-qa-review.html` (Internal Review — the standalone simulated-peer-review page) at Eduardo's request: redundant with the checklist already embedded on every board card, which is the one that actually gates a card reaching Approved. Updated every cross-reference: `how-to-submit-a-paper.html`'s Phase 4 link, `audit-board.html`'s own lede, `diff.html` and `docs/DIFF.md` (tool list, the checklist-location line — both hand-kept in sync per `docs/AGENTS.md`'s own rule), `docs/AGENTS.md` (file table, guideline 7 rewritten — there's only one checklist copy now, nothing to "keep in sync"), `docs/TODO.md`, `README.md`. Left `docs/changelog.md`'s own historical entries untouched — they correctly describe a page that existed at the time.
