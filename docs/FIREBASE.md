@@ -180,7 +180,7 @@ The old "Subscribable deadline feed" TODO item was blocked for as long as this w
 
 - **Firebase project:** `bold-d7ff2` (display name "BOLD"), created 2026-09-11. Signed in as `edu.pignatelli@gmail.com` via the Firebase MCP server — subsequent Firebase work in this repo uses those tools directly (project/app CRUD, SDK config, Security Rules read, deploy) rather than manual console steps.
 - **Web app registered:** `internal-review-board` (`appId: 1:555050367135:web:d90f8d7bb93a755e9fcaaa`). SDK config pulled and recorded below — not secret, safe to commit/embed client-side.
-- **Firestore:** enabled. Rules deployed 2026-09-11 (see "Security Rules") — no longer literal deny-all, but equivalent to it in practice until Slack sign-in is live, since every path requires `isSignedIn()` and nothing can sign in yet.
+- **Firestore:** enabled, real Security Rules deployed and actually in effect (see "Security Rules") — Sign-in-with-Slack is live, and `audit-board.html` points at this project for real (not the emulator) as of 2026-09-11.
 - **Local project scaffolding:** `firebase.json`, `firestore.rules` (mirrors the deployed deny-all), `firestore.indexes.json` (empty — no composite indexes needed yet), `.firebaserc` (default project `bold-d7ff2`) all created in this directory via `firebase_init`.
 - **Region confirmed:** `europe-west2` (London) — `firebase.json`'s `location` field corrected to match (was `nam5`, the init tool's own default, never actually verified against reality until now).
 
@@ -197,7 +197,7 @@ The old "Subscribable deadline feed" TODO item was blocked for as long as this w
 }
 ```
 
-**Deliberate choice: building against the Firestore emulator, not the live deny-all database, until Phase 1's client code is ready.** Phase 1 has no auth yet, and this is a real cloud project now — flipping Security Rules open to public read/write so the app can actually function pre-auth would mean anyone with the (necessarily public, embedded-in-the-page) config could read and write the board. The emulator gives a full local Firestore with zero production exposure to build and test against; the real cloud rules stay at deny-all until a deliberate decision on when to open them (either once Slack auth is close, or with a narrower interim policy if the shared board needs to go live sooner).
+**Superseded — the app is live against real production Firestore now (2026-09-11).** Originally built against the emulator only, deny-all in production, until auth existed (see the git history of this section for that reasoning while it applied). Real Security Rules deployed once Sign-in-with-Slack worked; `roles`/`people` seeded with real data; `FIRESTORE_USE_EMULATOR` in `audit-board.html` flipped to `false` the same day, after a real second user hit a silent failure caused by the client still pointing at a local test emulator that only ever existed on one laptop — see `docs/changelog.md`. Local dev still flips both `FIRESTORE_USE_EMULATOR`/`AUTH_USE_EMULATOR` to `true` (see `docs/AGENTS.md`), just never commits them that way.
 
 ## Inputs needed from Eduardo
 

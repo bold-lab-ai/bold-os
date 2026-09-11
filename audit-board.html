@@ -741,17 +741,16 @@
 
   // Persistence: Firestore (bold-d7ff2), replacing the old per-browser
   // localStorage — see docs/FIREBASE.md for the project/data-model/phasing.
-  // FIRESTORE_USE_EMULATOR must be flipped to false deliberately, only once
-  // real Security Rules replace the deny-all default currently deployed —
-  // see docs/FIREBASE.md's "Project status" note on why emulator-first.
-  //
-  // Separate flag for Auth: the 'oidc.slack' custom provider only exists on
-  // the real Firebase Auth backend (Console-configured), not the local Auth
-  // emulator — so testing real Slack sign-in needs AUTH_USE_EMULATOR = false
-  // even while FIRESTORE_USE_EMULATOR stays true (keeps test writes off
-  // production data; the Firestore emulator accepts real Firebase Auth ID
-  // tokens fine, this combination is a supported pattern).
-  var FIRESTORE_USE_EMULATOR = true;
+  // Real Security Rules replaced the deny-all default on 2026-09-11 (see
+  // docs/FIREBASE.md), so the deployed site now points at real production
+  // Firestore — FIRESTORE_USE_EMULATOR = false. Flip both flags to true for
+  // local dev against the emulator (see docs/AGENTS.md); never commit them
+  // that way, or the live site silently can't read/write for anyone but
+  // whoever happens to have a local emulator running (this shipped once,
+  // caught 2026-09-11 when a second real user saw "No venues yet" despite
+  // Sign-in-with-Slack genuinely working — Auth was flipped to real ages
+  // before Firestore was).
+  var FIRESTORE_USE_EMULATOR = false;
   var AUTH_USE_EMULATOR = false;
   var FIREBASE_CONFIG = {
     apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
