@@ -4,6 +4,18 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `intern
 
 ## 2026-09-11
 
+### Registration form now uses real identity; reviewer picker uses the real Slack roster; track + per-card deadline override removed
+
+Pulled the full Slack workspace roster (274 real, non-bot members with emails) via `users.list` (new `users:read`/`users:read.email` Bot Token scopes on the Slack app, reinstalled) and synced it into a new `people` Firestore collection (one-off Admin SDK script, same pattern as `roles` — not automated). `firestore.rules` updated: `people/{personId}` readable by any signed-in lab member, write-denied to clients. Sizing question flagged and confirmed with Eduardo before syncing (274 is the whole Slack workspace, not just BOLD-lab-internal — confirmed that's the intended roster).
+
+`audit-board.html`: the paper-registration form no longer asks for "Corresponding author email" or "Submitted by" — both are set automatically from the signed-in Slack user (`state.currentUser`). Registering now requires being signed in (**+ Register paper** disabled with a tooltip when signed out; `onAddCard()` itself guards too). `submittedBy` is no longer editable after registration — it's what Security Rules authorize card edits against, not free-form metadata. This closes the gap flagged in the previous entry: `submittedBy.email` is now a real address, so the per-card `update` rule ("creator, assigned reviewer, or PI/admin") actually works for non-admins, not just `hasFullWrite()`.
+
+Reviewer assignment (Junior/Senior) is now a `<select>` over the real roster (`people`), storing the person's actual email — not a free-text input matched against whatever names happened to appear on other cards. Authors (and PI, its last entry) stay free text with roster-backed suggestions, since a paper can have co-authors outside this Slack workspace.
+
+Removed per Eduardo's request: **card-level `track`** (a badge + free-text field) and the **per-card deadline override** — a card now always inherits its venue's deadline. Rationale: a paper on a different track, or a workshop, gets registered as a *different venue* going forward, so a per-card override or track label no longer has a purpose. `effectiveDeadline()` simplified accordingly; the "venue default" vs "own override" distinction on the detail page is gone too, since there's only one source now.
+
+`FIREBASE.md` and `TODO.md` updated to match throughout (data model, Security Rules section, the now-closed "real people picker" TODO item).
+
 ### Sign-in-with-Slack tested end-to-end — works; found and fixed a real save bug it exposed
 
 Eduardo created the Slack app (Sign in with Slack, `openid profile email` scopes) and configured the `oidc.slack` OpenID Connect provider in Firebase Console (issuer `https://slack.com`, redirect `https://bold-d7ff2.firebaseapp.com/__/auth/handler` — deterministic from the project's `authDomain`, didn't need to be read off the Console UI). Split `audit-board.html`'s single emulator flag into two (`FIRESTORE_USE_EMULATOR`, `AUTH_USE_EMULATOR`) so real Slack sign-in (needs the live Auth backend — the emulator has no `oidc.slack` provider) could be tested while keeping Firestore writes local. Served locally via `python3 -m http.server`, tested by hand (this needs a real interactive Slack login, not headless automation): sign-in popup completed, `#authRegion` showed a real name — but no email, which turned out to be a UI bug, not a missing claim (the markup only ever showed name *or* email, never both). Fixed to show both.

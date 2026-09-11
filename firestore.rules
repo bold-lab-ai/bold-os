@@ -46,6 +46,16 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Slack workspace roster, {name, email, slackId} per person — backs the
+    // reviewer/submitter picker so it resolves to real emails instead of
+    // free text (see FIREBASE.md). Read-only for clients; synced via a
+    // one-off script against Slack's users.list, same admin-only-write
+    // pattern as roles/{roleId}.
+    match /people/{personId} {
+      allow read: if isLabMember();
+      allow write: if false;
+    }
+
     match /boards/{boardId} {
       allow read: if true;
       allow create, delete, update: if hasFullWrite();

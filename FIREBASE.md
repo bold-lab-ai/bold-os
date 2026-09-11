@@ -32,12 +32,18 @@ boards/{boardId}
 
   boards/{boardId}/cards/{cardId}
     title, authors[] (last = PI), overleafLink, correspondingAuthorEmail,
-    track, computeEstimate, deadline, status, submittedBy{name,uid},
+    computeEstimate, status, submittedBy{name,email,slackId},
     reviewers{junior,senior}, changesRequested, outcome, submissionLink,
     rebuttalDeadline, rebuttalDocLink, reviewNotes, createdAt, updatedAt,
     version (int)
     # card-level fields only — checklist/discussion/history pulled out below
     # so they never contend with a card-level edit or each other
+    # No card-level track/deadline: a card inherits its venue's deadline —
+    # a different deadline (a different track, a workshop) is a different
+    # venue by convention, not a per-card override. Decided 2026-09-11.
+    # submittedBy.email and reviewers.junior/senior are now real emails
+    # (populated from Sign-in-with-Slack / the people roster), not free
+    # text — see "Security Rules" below for why that matters.
 
     boards/{boardId}/cards/{cardId}/checklist/{itemId}
       part, category, label, junior (bool), senior (bool)
@@ -144,7 +150,18 @@ Added to `audit-board.html` 2026-09-11:
 
 **Bug found and fixed during that same test: `saveBoard`/`saveBoardsIndex` blindly re-`.set()` every document in their array on every call** (see "Client-side change (Phase 1a)" above — this was flagged there as "not yet write-optimized," a performance note; it turned out to also be a **correctness** bug once per-document Security Rules went live). Re-`.set()`-ing an unchanged document is an `update` for rules purposes, so it re-triggers that document's own authorization check — meaning registering a new paper on a board that already had someone *else's* card failed outright, purely because the batch also (harmlessly, but still requiring authorization) re-wrote that unrelated card. Fixed: both functions now diff against the freshly-fetched Firestore snapshot (via a canonical `stableStringify`, key-order-independent) and only write documents that actually changed. Verified via the emulator's raw data after the fix: an old test card was left untouched while a new one was added in the same call. This would have broken real multi-user usage in production the moment any board had more than one person's cards on it — good thing it surfaced now, in testing, not after rollout.
 
-**Decided 2026-09-11, now working end-to-end:** board/card writes are sign-in-gated. A card can be changed only by whoever created it, a reviewer assigned to it, or a PI/admin — matches the Security Rules exactly. Still open: `submittedBy`/`reviewers` need to move from free-text names to real emails (see Security Rules section) before the per-card `update` rule can authorize anyone other than a PI/admin — right now, only `hasFullWrite()` actually matches for existing cards; a non-privileged user editing/reassigning their own card wouldn't yet be recognized as its submitter. Card *creation* itself works for anyone signed in, tested and confirmed above.
+**Decided 2026-09-11, now working end-to-end:** board/card writes are sign-in-gated. A card can be changed only by whoever created it, a reviewer assigned to it, or a PI/admin — matches the Security Rules exactly.
+
+## Client-side change — real identity in the registration form + reviewer picker
+
+Done 2026-09-11, closing the gap the previous section flagged as open (`submittedBy`/`reviewers` were free text, not real emails):
+
+- **Corresponding author email and Submitted by are no longer form fields.** Both are set automatically from `state.currentUser` (email, and display name) when a paper is registered — `correspondingAuthorEmail: state.currentUser.email`, `submittedBy: {name, email, slackId: null}`. The register modal shows a one-line "Registering as X (email)" instead. Registering a paper now requires being signed in (`requireSignedIn()` — guards both the **+ Register paper** button, disabled with a tooltip when signed out, and `onAddCard()` itself as defense in depth).
+- **`submittedBy` is no longer editable after registration** — dropped from the edit-card modal entirely (it's what Security Rules authorize edits against, not free-form metadata to reassign). `correspondingAuthorEmail` stays editable there, since it's just paper metadata, not a rules-relevant field.
+- **This is what actually makes the per-card `update` rule work for non-admins now**: `submittedBy.email` is a real address, so "whoever created it... can change it" is no longer only true for PIs/admins.
+- **Reviewer picker (Junior/Senior) is now a `<select>` over the real Slack roster**, not a free-text input — see "Security Rules" for the `roles`/`people` split and why `people` exists. Storing the person's actual email (not a display name) is what lets the per-card rule recognize an assigned reviewer at all. The Authors field (and PI, its last entry) stays free text with roster-backed suggestions — a paper can have co-authors outside this Slack workspace, so a closed picker would be wrong there.
+- **`people` collection**: synced from Slack's `users.list` Web API (274 real, non-bot members, all with emails) via a one-off Admin SDK script — same pattern as `roles`, not automated/scheduled. `firestore.rules` updated: `people/{personId}` readable by any signed-in lab member, write-denied to clients.
+- **Per-card deadline override removed.** A card now always inherits its venue's deadline (`effectiveDeadline` no longer checks `card.deadline`) — a paper on a different track or with a different deadline is a different venue by convention, so there's no case where a card needs its own. Card-level `track` was removed for the same reason, in the same pass.
 
 ## Project status (2026-09-11)
 

@@ -366,12 +366,12 @@
   }
   .card-reviewers .rv-role.junior, .rv-role.junior{color:var(--teal);}
   .card-reviewers .rv-role.senior, .rv-role.senior{color:var(--plum);}
-  input.rv-input{
+  .rv-input{
     flex:1 1 auto; min-width:0; font-size:12px; padding:5px 7px;
     border:1px solid var(--line); border-radius:6px;
-    background:var(--surface); color:var(--ink);
+    background:var(--surface); color:var(--ink); font-family:inherit;
   }
-  input.rv-input:placeholder-shown{border-color:#e6c98f; background:#fdf8ef;}
+  select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
   .card-footer{display:flex; align-items:center; gap:2px; margin-top:8px;}
   .card-move{display:flex; gap:6px; margin-top:8px;}
   .card-move-btn{
@@ -686,7 +686,8 @@
     discussionReplyOpenId: null,
     checklistCommentOpenId: null, // checklist item whose feedback thread is expanded
     checklistReplyOpenId: null,   // comment within it whose reply box is open
-    currentUser: null             // { email, name, photoURL } | null — set by onAuthStateChanged
+    currentUser: null,            // { email, name, photoURL } | null — set by onAuthStateChanged
+    people: []                    // [{ slackId, name, email }] — the Slack roster, from Firestore
   };
 
   var ANONYMITY_OPTIONS = [
@@ -812,6 +813,7 @@
     auth.onAuthStateChanged(function(user){
       state.currentUser = user ? { email: user.email, name: user.displayName, photoURL: user.photoURL } : null;
       renderAuthRegion();
+      renderBoard(); // updates the Register-paper button's signed-in gate
     });
   } else {
     renderAuthRegion();
@@ -865,6 +867,31 @@
   // not yet write-optimized — that split is the next increment, not this one.
 
   function cardsCol(boardId){ return db.collection('boards').doc(boardId).collection('cards'); }
+
+  // The Slack workspace roster (see FIREBASE.md) — backs the reviewer
+  // picker (a real person, stored as their email — required for the
+  // per-card Security Rules to ever match) and the authors datalist
+  // (suggestions only; authors stay free text since a paper can have
+  // co-authors outside this Slack workspace). Read-only for clients;
+  // synced via a one-off script, never written from here.
+  function loadPeople(){
+    return db.collection('people').get()
+      .then(function(snap){
+        var out = [];
+        snap.forEach(function(doc){ out.push(doc.data()); });
+        out.sort(function(a, b){ return (a.name || '').localeCompare(b.name || ''); });
+        return out;
+      })
+      .catch(function(err){ logError('loadPeople', err); return []; });
+  }
+
+  function personByEmail(email){
+    if (!email) return null;
+    for (var i = 0; i < state.people.length; i++){
+      if (state.people[i].email === email) return state.people[i];
+    }
+    return null;
+  }
 
   function loadBoardsIndex(){
     return db.collection('boards').get()
@@ -1288,10 +1315,13 @@
     return state.boards.filter(function(b){ return b.id === state.currentBoardId; })[0];
   }
 
+  // Deadlines are venue-level only — no per-card override. A paper on a
+  // different track or deadline is a different venue by convention (see
+  // FIREBASE.md/changelog); a card just inherits whatever venue it's on.
   function effectiveDeadline(card, board){
     if (card.status === 'rebuttal') return card.rebuttalDeadline || null;
     if (['register','pitch_day','draft_review','final_draft','pi_polish'].indexOf(card.status) !== -1){
-      return card.deadline || (board && board.deadline) || null;
+      return (board && board.deadline) || null;
     }
     return null;
   }
@@ -1372,13 +1402,6 @@
     return REVIEW_ROLES.every(function(role){ return c[role] === c.total; });
   }
 
-  // Stand-in reviewer pool for the assignment inputs' autocomplete: names
-  // already seen on this board (submitters, PIs, authors, assigned
-  // reviewers) — shared by every free-text person field (PI, authors,
-  // reviewers) as one <datalist>. TODO.md tracks replacing this with the
-  // real roster (BOLD members + this paper's authors + volunteers) once
-  // that exists; the real picker must keep accepting a name that isn't on
-  // it, same as this stand-in does.
   // The PI isn't a separate field — by convention it's just the last name
   // in card.authors (same as an author list on the paper itself usually
   // reads). One list, one source of truth.
@@ -1387,30 +1410,36 @@
     return authors.length ? authors[authors.length - 1] : '';
   }
 
-  function peoplePoolNames(){
-    var seen = {};
-    state.cards.forEach(function(c){
-      if (c.submittedBy && c.submittedBy.name) seen[c.submittedBy.name] = true;
-      (c.authors || []).forEach(function(a){ if (a) seen[a] = true; });
-      var rv = c.reviewers || {};
-      if (rv.junior) seen[rv.junior] = true;
-      if (rv.senior) seen[rv.senior] = true;
-    });
-    return Object.keys(seen).sort();
-  }
-
+  // Authors datalist: suggestions from the real Slack roster (state.people)
+  // — but authors stays free text, since a paper can have co-authors
+  // outside this workspace. Reviewers are a separate, stricter picker (see
+  // reviewerInputHtml) — those have to resolve to a real person's email,
+  // since that's what the Security Rules match against.
   function peopleDatalistHtml(){
     return '<datalist id="peopleNames">' +
-      peoplePoolNames().map(function(n){ return '<option value="' + escapeHtml(n) + '">'; }).join('') +
+      state.people.map(function(p){ return '<option value="' + escapeHtml(p.name) + '">'; }).join('') +
     '</datalist>';
   }
 
   function reviewerInputHtml(card, role){
     var rv = card.reviewers || {};
-    return '<input class="rv-input" type="text" list="peopleNames" ' +
+    var current = rv[role] || '';
+    var options = '<option value="">Assign…</option>' + state.people.map(function(p){
+      return '<option value="' + escapeHtml(p.email) + '"' + (p.email === current ? ' selected' : '') + '>' +
+        escapeHtml(p.name) + '</option>';
+    }).join('');
+    return '<select class="rv-input" required ' +
       'data-reviewer="' + escapeHtml(card.id) + '" data-reviewer-role="' + role + '" ' +
-      'value="' + escapeHtml(rv[role] || '') + '" placeholder="Assign…" ' +
-      'aria-label="' + REVIEW_ROLE_LABELS[role] + ' reviewer for ' + escapeHtml(card.title) + '">';
+      'aria-label="' + REVIEW_ROLE_LABELS[role] + ' reviewer for ' + escapeHtml(card.title) + '">' +
+      options + '</select>';
+  }
+
+  // Resolve a reviewer's stored email back to a display name — falls back
+  // to the raw value for legacy data (pre-roster cards stored a free-text
+  // name in this field, not an email; see FIREBASE.md).
+  function personName(email){
+    var p = personByEmail(email);
+    return p ? p.name : (email || '');
   }
 
   // True when a move goes from before the gate to the gate (or past it).
@@ -1535,8 +1564,8 @@
     var cardClass = 'card' + (rv ? ' rv-' + rv : '');
     var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
     html += '<button class="card-title-btn" type="button" data-open-card="' + escapeHtml(card.id) + '">' + escapeHtml(card.title) + '</button>';
-    // Badges only; track / Overleaf link / edit + remove live on the detail
-    // page now, to keep the board card short and easy to scan.
+    // Badges only; Overleaf link / edit + remove live on the detail page
+    // now, to keep the board card short and easy to scan.
     var badges = '';
     if (rv) badges += '<span class="badge badge-rv-' + rv + '">' + REVIEW_STATE_LABELS[rv] + '</span>';
     if (card.status === 'rebuttal') badges += card.rebuttalDocLink
@@ -1590,8 +1619,8 @@
     else hay = [
       card.title, authorsStr,
       card.submittedBy && card.submittedBy.name,
-      card.reviewers && card.reviewers.junior,
-      card.reviewers && card.reviewers.senior
+      card.reviewers && personName(card.reviewers.junior),
+      card.reviewers && personName(card.reviewers.senior)
     ].filter(Boolean).join(' ');
     return hay.toLowerCase().indexOf(q) !== -1;
   }
@@ -1696,7 +1725,9 @@
       '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;">' +
         '<h2>' + (current ? escapeHtml(current.label) : '') + '</h2>' +
         '<div style="display:flex;align-items:center;gap:16px;">' +
-          '<button class="btn btn-primary" id="submitPaperBtn" type="button">+ Register paper</button>' +
+          '<button class="btn btn-primary" id="submitPaperBtn" type="button"' +
+            (state.currentUser ? '' : ' disabled title="Sign in with Slack to register a paper"') +
+            '>+ Register paper</button>' +
           '<button class="btn-text edit" id="editBoardBtn" type="button">Edit venue</button>' +
           '<button class="btn-text" id="deleteBoardBtn" type="button">Delete this venue</button>' +
         '</div>' +
@@ -2071,7 +2102,6 @@
 
     var overdue = isOverdue(card, board);
     var dl = effectiveDeadline(card, board);
-    var dlIsInherited = card.status !== 'rebuttal' && !card.deadline && !!(board && board.deadline);
     var lft = statusAt(card.status, -1);
     var rgt = statusAt(card.status, 1);
     var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
@@ -2083,7 +2113,6 @@
     html += '<div class="detail-head">';
     html += '<h2>' + escapeHtml(card.title) + '</h2>';
     if (STATUS_LABELS[card.status]) html += '<span class="badge" style="background:var(--accent-dim);color:var(--accent);">' + escapeHtml(STATUS_LABELS[card.status]) + '</span>';
-    if (card.track) html += '<span class="badge" style="background:var(--neutral-bg);color:var(--neutral-text);">' + escapeHtml(card.track) + '</span>';
     if (detailRv) html += '<span class="badge badge-rv-' + detailRv + '">' + REVIEW_STATE_LABELS[detailRv] + '</span>';
     if (card.status === 'rebuttal') html += card.rebuttalDocLink
       ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
@@ -2106,7 +2135,7 @@
     html += '</div>';
 
     html += '<dl class="detail-grid">';
-    if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (dlIsInherited ? ' <span style="color:var(--muted);">(venue default)</span>' : '') + '</dd>';
+    if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (card.status !== 'rebuttal' ? ' <span style="color:var(--muted);">(venue deadline)</span>' : '') + '</dd>';
     if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + escapeHtml(card.authors.join(', ')) + ' <span style="color:var(--muted);">(last is PI)</span></dd>';
     if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
     if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
@@ -2114,7 +2143,9 @@
     if (card.rebuttalDocLink) html += '<dt>Rebuttal doc</dt><dd><a href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Open</a></dd>';
     if (card.correspondingAuthorEmail) html += '<dt>Corresponding author</dt><dd><a href="mailto:' + escapeHtml(card.correspondingAuthorEmail) + '">' + escapeHtml(card.correspondingAuthorEmail) + '</a></dd>';
     if (card.computeEstimate) html += '<dt>Compute estimate</dt><dd>' + escapeHtml(card.computeEstimate) + '</dd>';
-    html += '<dt>Submitted by</dt><dd>' + escapeHtml(card.submittedBy && card.submittedBy.name ? card.submittedBy.name : '—') + '</dd>';
+    html += '<dt>Submitted by</dt><dd>' + (card.submittedBy && card.submittedBy.name
+      ? escapeHtml(card.submittedBy.name) + (card.submittedBy.email ? ' <span style="color:var(--muted);">(' + escapeHtml(card.submittedBy.email) + ')</span>' : '')
+      : '—') + '</dd>';
     if (card.createdAt) html += '<dt>Registered</dt><dd>' + formatTimestamp(card.createdAt) + '</dd>';
     html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') + '</dd>';
     html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'senior') + '</dd>';
@@ -2294,30 +2325,33 @@
     });
   }
 
+  // Registering a paper requires being signed in \u2014 submittedBy and the
+  // corresponding author email are both derived from state.currentUser, not
+  // typed in (see FIREBASE.md's write-gating decision). Call this before
+  // showing the register button/modal; it also guards openModal() itself
+  // as a defense-in-depth check, not just the trigger button.
+  function requireSignedIn(){
+    if (state.currentUser) return true;
+    showToast('Sign in with Slack to register a paper.', 'error');
+    return false;
+  }
+
   function openModal(){
-    var board = getCurrentBoard();
-    var deadlineHint = board && board.deadline
-      ? 'Leave blank to use the venue deadline (' + formatDate(board.deadline) + ')'
-      : 'Leave blank if there\u2019s no override';
+    if (!requireSignedIn()) return;
     els.modalRegion.innerHTML =
       '<div class="modal-overlay" id="modalOverlay">' +
         '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">' +
           '<h2 id="modalTitle">Register paper for review</h2>' +
           '<div id="paperForm">' +
+            '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Registering as ' +
+              escapeHtml(state.currentUser.name || state.currentUser.email) + ' (' + escapeHtml(state.currentUser.email) + ') \u2014 used as the submitter and corresponding author.</div>' +
             '<div class="field"><label for="pTitle">Paper title</label><input type="text" id="pTitle"></div>' +
             '<div class="field"><label for="pAuthorsWrap">Authors</label><div id="pAuthorsWrap"></div>' +
               '<button class="btn-text" type="button" id="pAddAuthor">+ Add author</button>' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI. Free text; type a name not in the suggestions if needed. TODO.md tracks a real BOLD-members picker.</div></div>' +
+              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI. Free text; type a name not in the suggestions if needed.</div></div>' +
             '<div class="field"><label for="pOverleaf">Overleaf link</label><input type="url" id="pOverleaf" placeholder="https://www.overleaf.com/project/..."></div>' +
-            '<div class="field"><label for="pEmail">Corresponding author email</label><input type="email" id="pEmail"></div>' +
-            '<div class="field"><label for="pTrack">Track</label><input type="text" id="pTrack" list="trackOptions" placeholder="Main">' +
-              '<datalist id="trackOptions"><option value="Main"><option value="Workshop"></datalist></div>' +
             '<div class="field"><label for="pCompute">Compute estimate</label><input type="text" id="pCompute" placeholder="e.g. ~2000 A100-hours">' +
               '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Required at registration (8 weeks out)</div></div>' +
-            '<div class="field"><label for="pDeadline">Deadline override (optional)</label><input type="date" id="pDeadline">' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">' + deadlineHint + '</div></div>' +
-            '<div class="field"><label for="pSubmittedBy">Submitted by</label><input type="text" id="pSubmittedBy" placeholder="Your name">' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Stand-in for Slack login until that\u2019s connected</div></div>' +
             '<div class="field"><label for="pNote">Note for the reviewers (optional)</label><textarea id="pNote" placeholder="Anything they should know"></textarea></div>' +
             '<div class="field-error" id="paperFormError" hidden>Please fill in the required fields above.</div>' +
             '<div class="modal-actions">' +
@@ -2332,7 +2366,7 @@
       if (e.target.id === 'modalOverlay') closeModal();
     });
     document.getElementById('submitCardBtn').addEventListener('click', onAddCard);
-    ['pTitle', 'pOverleaf', 'pEmail', 'pTrack', 'pCompute', 'pSubmittedBy'].forEach(function(id){
+    ['pTitle', 'pOverleaf', 'pCompute'].forEach(function(id){
       document.getElementById(id).addEventListener('keydown', function(ev){
         if (ev.key === 'Enter'){ ev.preventDefault(); onAddCard(ev); }
       });
@@ -2353,10 +2387,6 @@
   function openEditModal(cardId){
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card) return;
-    var editBoard = getCurrentBoard();
-    var deadlineHint = editBoard && editBoard.deadline
-      ? 'Leave blank to use the venue deadline (' + formatDate(editBoard.deadline) + ')'
-      : 'Leave blank if there’s no override';
     els.modalRegion.innerHTML =
       '<div class="modal-overlay" id="modalOverlay">' +
         '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">' +
@@ -2368,12 +2398,7 @@
               '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI.</div></div>' +
             '<div class="field"><label for="eOverleaf">Overleaf link</label><input type="url" id="eOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/..."></div>' +
             '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
-            '<div class="field"><label for="eTrack">Track</label><input type="text" id="eTrack" list="trackOptions" value="' + escapeHtml(card.track || '') + '">' +
-              '<datalist id="trackOptions"><option value="Main"><option value="Workshop"></datalist></div>' +
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
-            '<div class="field"><label for="eDeadline">Deadline override (optional)</label><input type="date" id="eDeadline" value="' + escapeHtml(card.deadline || '') + '">' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">' + deadlineHint + '</div></div>' +
-            '<div class="field"><label for="eSubmittedBy">Submitted by</label><input type="text" id="eSubmittedBy" value="' + escapeHtml((card.submittedBy && card.submittedBy.name) || '') + '"></div>' +
             '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."></div>' +
             '<div class="field"><label for="eRebuttalDeadline">Rebuttal deadline</label><input type="date" id="eRebuttalDeadline" value="' + escapeHtml(card.rebuttalDeadline || '') + '"></div>' +
             '<div class="field"><label for="eRebuttalDoc">Rebuttal document</label><input type="url" id="eRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/..."></div>' +
@@ -2398,7 +2423,7 @@
     });
     document.getElementById('saveEditBtn').addEventListener('click', function(){ onSaveEdit(cardId); });
     var submitOnEnter = function(ev){ onSaveEdit(cardId); };
-    ['eTitle', 'eOverleaf', 'eEmail', 'eTrack', 'eCompute', 'eSubmittedBy'].forEach(function(id){
+    ['eTitle', 'eOverleaf', 'eEmail', 'eCompute'].forEach(function(id){
       document.getElementById(id).addEventListener('keydown', function(ev){
         if (ev.key === 'Enter'){ ev.preventDefault(); onSaveEdit(cardId); }
       });
@@ -2425,10 +2450,8 @@
     var authors = rawAuthors.filter(Boolean);
     var overleafLink = document.getElementById('eOverleaf').value.trim();
     var email = document.getElementById('eEmail').value.trim();
-    var track = document.getElementById('eTrack').value.trim();
-    var submittedByName = document.getElementById('eSubmittedBy').value.trim();
 
-    if (!title || !piFilled || !overleafLink || !email || !track || !submittedByName){
+    if (!title || !piFilled || !overleafLink || !email){
       errorEl.textContent = !piFilled ? 'The last author (the PI) is required.' : 'Please fill in the required fields above.';
       errorEl.hidden = false;
       return;
@@ -2440,15 +2463,16 @@
       return;
     }
     errorEl.hidden = true;
+    // submittedBy is deliberately not editable here — it's who registered
+    // the paper (used by Security Rules for card authorization), not a
+    // free-text field to reassign after the fact. Not included in updates,
+    // so it stays whatever it already was on the card.
     var updates = {
       title: title,
       authors: authors,
       overleafLink: overleafLink,
       correspondingAuthorEmail: email,
-      track: track,
       computeEstimate: document.getElementById('eCompute').value.trim(),
-      deadline: document.getElementById('eDeadline').value || null,
-      submittedBy: { name: submittedByName, slackId: (card.submittedBy && card.submittedBy.slackId) || null },
       submissionLink: document.getElementById('eSubmissionLink').value.trim(),
       rebuttalDeadline: document.getElementById('eRebuttalDeadline').value || null,
       rebuttalDocLink: document.getElementById('eRebuttalDoc').value.trim(),
@@ -2541,6 +2565,7 @@
 
   function onAddCard(e){
     if (e && e.preventDefault) e.preventDefault();
+    if (!requireSignedIn()) return;
     var title = document.getElementById('pTitle').value.trim();
     // The last row is the PI slot (see authorRowsHtml) — it must be filled
     // in even if blank rows elsewhere just get dropped.
@@ -2548,12 +2573,9 @@
     var piFilled = rawAuthors.length > 0 && !!rawAuthors[rawAuthors.length - 1];
     var authors = rawAuthors.filter(Boolean);
     var overleafLink = document.getElementById('pOverleaf').value.trim();
-    var email = document.getElementById('pEmail').value.trim();
-    var track = document.getElementById('pTrack').value.trim();
-    var submittedByName = document.getElementById('pSubmittedBy').value.trim();
     var errorEl = document.getElementById('paperFormError');
 
-    if (!title || !piFilled || !overleafLink || !email || !track || !submittedByName){
+    if (!title || !piFilled || !overleafLink){
       errorEl.textContent = !piFilled ? 'The last author (the PI) is required.' : 'Please fill in the required fields above.';
       errorEl.hidden = false;
       return;
@@ -2568,18 +2590,17 @@
 
     var now = Date.now();
     var noteText = document.getElementById('pNote').value.trim();
+    var submittedByName = state.currentUser.name || state.currentUser.email;
 
     var card = {
       id: 'card-' + now + '-' + Math.random().toString(36).slice(2, 8),
       title: title,
       authors: authors,
       overleafLink: overleafLink,
-      correspondingAuthorEmail: email,
-      track: track,
+      correspondingAuthorEmail: state.currentUser.email,
       computeEstimate: document.getElementById('pCompute').value.trim(),
-      deadline: document.getElementById('pDeadline').value || null,
       status: 'register',
-      submittedBy: { name: submittedByName, slackId: null },
+      submittedBy: { name: submittedByName, email: state.currentUser.email, slackId: null },
       reviewers: { junior: '', senior: '' },
       changesRequested: false,
       outcome: '',
@@ -2733,8 +2754,9 @@
 
   // ---------- init ----------
 
-  loadBoardsIndex().then(function(list){
-    state.boards = list;
+  Promise.all([loadBoardsIndex(), loadPeople()]).then(function(results){
+    state.boards = results[0];
+    state.people = results[1];
     state.loadingBoards = false;
     renderAll();
   });
