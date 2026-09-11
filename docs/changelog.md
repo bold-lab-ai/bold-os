@@ -4,9 +4,9 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
-### Pages now deploys via GitHub Actions, not the legacy builder
+### Pages deploy: tried GitHub Actions, reverted to "Deploy from a branch"
 
-Added `.github/workflows/pages.yml` (checkout → `configure-pages` → `upload-pages-artifact` → `deploy-pages`, no build step — uploads the whole repo as-is, same content the legacy branch-based builder was already serving) and switched the repo's Pages source from `legacy` to `workflow`. Every push to `main` now deploys automatically through the Actions tab, where any deploy failure is now actually visible (the legacy builder's failures were opaque — this is part of why the post-transfer outage earlier today took a few checks to diagnose).
+Briefly switched Pages from the default branch-based source to a GitHub Actions workflow (`.github/workflows/pages.yml`: checkout → `configure-pages` → `upload-pages-artifact` → `deploy-pages`, no build step). Reverted the same day, back to the plain branch deploy (`main`, `/`) — removed the workflow file, switched `build_type` back to `legacy` via the API. Same live result either way; going with the simpler default.
 
 ### Sign-in prompt is now a real link; homepage hero CTA folded into the text
 

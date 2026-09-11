@@ -34,7 +34,7 @@ Then open `index.html` (redirects to `how-to-submit-a-paper.html`), or any of `h
 
 ## Deployment
 
-Every push to `main` deploys automatically via `.github/workflows/pages.yml` (GitHub Actions → Pages, switched from the legacy branch-based builder on 2026-09-11). No build step — the workflow just uploads the whole repo as-is and publishes it. Nothing to run by hand; check the **Actions** tab if a deploy doesn't show up. Live at <https://bold-lab-ai.github.io/ml-conference-cycle/how-to-submit-a-paper.html>.
+Every push to `main` deploys automatically — GitHub Pages' own "Deploy from a branch" source (`main`, `/`), no workflow file, nothing to run by hand. (Briefly switched to a GitHub Actions-based deploy on 2026-09-11, reverted the same day back to the plain branch deploy.) Live at <https://bold-lab-ai.github.io/ml-conference-cycle/how-to-submit-a-paper.html>.
 
 ## Constraints
 
