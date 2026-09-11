@@ -299,14 +299,12 @@
   .venue-row:hover .venue-name{color:var(--blue);}
   .venue-name{font-weight:700; font-size:16px; color:var(--ink);}
   .venue-sub{font-size:13px; color:var(--muted);}
-  /* Venue proposals (2026-09-11): a pending row is a plain div, not a
-     button — there's nothing to open yet (no cards, can't register a
-     paper — see requireApprovedVenue), so it isn't a click target. */
+  /* Venue proposals (2026-09-11): a pending row opens the normal venue
+     page too (same .venue-row button as an approved one) — there's just
+     nothing to register a paper against yet until it's approved (see
+     "+ Register paper"'s own disabled check in renderBoard()). */
   .venues-section-title{font-size:12.5px; font-weight:700; color:var(--muted); margin:22px 0 8px;}
   .venues-section-title:first-child{margin-top:0;}
-  .venue-row--pending{align-items:center; cursor:default;}
-  .venue-row--pending .venue-name{font-size:15px;}
-  .venue-pending-right{display:flex; align-items:center; gap:10px; flex:0 0 auto;}
   .badge-pending{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
 
   /* ---------- board search ---------- */
@@ -1298,23 +1296,27 @@
     } else if (pending.length){
       html += '<p class="board-empty">No approved venues yet.</p>';
     }
+    // Pending rows open the normal venue page too (2026-09-11) — same
+    // data-open-venue as an approved row, just with an extra badge/sub-line
+    // and (for "Pending your approval") no Approve button here any more;
+    // that lives in the venue header itself now (renderBoard()), next to
+    // Edit venue/Delete venue, so reviewing the full venue detail and
+    // approving it are the same click-in, not a blind approve from the
+    // list. See docs/FIREBASE.md's "Venue proposals" section.
     if (othersPending.length){
       html += '<div class="venues-section-title">Pending your approval</div>' + sortByCreated(othersPending).map(function(b){
-        return '<div class="venue-row venue-row--pending">' +
+        return '<button class="venue-row" type="button" data-open-venue="' + escapeHtml(b.id) + '">' +
           '<span class="venue-name">' + escapeHtml(b.label) + '</span>' +
-          '<span class="venue-pending-right">' +
-            '<span class="venue-sub">Proposed by ' + escapeHtml((b.proposedBy && b.proposedBy.name) || '') + '</span>' +
-            '<button class="btn btn-primary" type="button" data-approve-venue="' + escapeHtml(b.id) + '">Approve</button>' +
-          '</span>' +
-        '</div>';
+          '<span class="venue-sub">Proposed by ' + proposerLabel(b.proposedBy) + '</span>' +
+        '</button>';
       }).join('');
     }
     if (minePending.length){
       html += '<div class="venues-section-title">Your proposals awaiting approval</div>' + sortByCreated(minePending).map(function(b){
-        return '<div class="venue-row venue-row--pending">' +
+        return '<button class="venue-row" type="button" data-open-venue="' + escapeHtml(b.id) + '">' +
           '<span class="venue-name">' + escapeHtml(b.label) + '</span>' +
-          '<span class="venue-pending-right"><span class="badge badge-pending">Pending approval</span></span>' +
-        '</div>';
+          '<span class="venue-sub"><span class="badge badge-pending">Pending approval</span></span>' +
+        '</button>';
       }).join('');
     }
     html += '</div>';
@@ -1323,11 +1325,6 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-open-venue]'), function(btn){
       btn.addEventListener('click', function(){
         openVenue(btn.getAttribute('data-open-venue'));
-      });
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-approve-venue]'), function(btn){
-      btn.addEventListener('click', function(){
-        onApproveVenue(btn.getAttribute('data-approve-venue'));
       });
     });
   }
@@ -1848,6 +1845,21 @@
     return p ? p.name : (email || '');
   }
 
+  // "Proposed by <name> (<email>)" — always both, everywhere a venue
+  // proposal's author is shown (the "Pending your approval" list row and
+  // the venue detail page alike). A name alone ("A Colleague") isn't
+  // enough to actually identify who it was when there's more than one
+  // pending proposal to review — email is the one field guaranteed to be
+  // unique and unambiguous (it's also what the Security Rules themselves
+  // match on for approve/reject).
+  function proposerLabel(proposedBy){
+    if (!proposedBy) return '';
+    var name = proposedBy.name || proposedBy.email || '';
+    return proposedBy.email
+      ? escapeHtml(name) + ' <span style="color:var(--muted);">(' + escapeHtml(proposedBy.email) + ')</span>'
+      : escapeHtml(name);
+  }
+
   // True when a move goes from before the gate to the gate (or past it).
   function crossesGate(fromStatus, toStatus){
     var gi = STATUS_ORDER.indexOf(GATE_STATUS);
@@ -2249,21 +2261,34 @@
     html += '<div class="board-meta" style="display:block;">' +
       '<a href="#" id="backToList" style="font-size:13.5px;color:var(--muted);text-decoration:none;">&larr; All venues</a>' +
       '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;">' +
-        '<h2>' + (current ? escapeHtml(current.label) : '') + '</h2>' +
+        '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
+          '<h2>' + (current ? escapeHtml(current.label) : '') + '</h2>' +
+          (current && current.status === 'pending' ? '<span class="badge badge-pending">Pending approval</span>' : '') +
+        '</div>' +
         '<div style="display:flex;align-items:center;gap:16px;">' +
           '<button class="btn btn-primary" id="submitPaperBtn" type="button"' +
             (!state.currentUser ? ' disabled title="Sign in with Slack to register a paper"' :
              (current && current.status === 'pending') ? ' disabled title="This venue hasn’t been approved yet"' : '') +
             '>+ Register paper</button>' +
+          (current && current.status === 'pending' && state.canApproveVenues
+            ? '<button class="btn btn-primary" id="approveVenueBtn" type="button">Approve venue</button>' +
+              '<button class="btn-text danger" id="rejectVenueBtn" type="button">Reject</button>'
+            : '') +
           '<button class="btn-text' + (current && current.rushMode ? ' rush-on' : '') + '" id="rushModeBtn" type="button" title="' +
             (current && current.rushMode
               ? 'Rush mode is on — board is Registered / Drafted / Reviewed / Submitted only. Click to turn off.'
               : 'Turn on Rush mode — collapses this venue to Registered / Drafted / Reviewed / Submitted only, for a fast-moving deadline.') +
             '">' + (current && current.rushMode ? '⚡ Rush mode: On' : 'Rush mode: Off') + '</button>' +
           '<button class="btn-text edit" id="editBoardBtn" type="button">Edit venue</button>' +
-          '<button class="btn-text" id="deleteBoardBtn" type="button">Delete this venue</button>' +
+          (!current || current.status !== 'pending'
+            ? '<button class="btn-text" id="deleteBoardBtn" type="button">Delete this venue</button>'
+            : '') +
         '</div>' +
       '</div>' +
+      (current && current.status === 'pending' && current.proposedBy
+        ? '<div class="venue-meta">Proposed by ' + proposerLabel(current.proposedBy) +
+            ' — awaiting a PI or admin’s approval before it’s visible to everyone and open for paper registration.</div>'
+        : '') +
       venueMetaHtml(current) +
       (current && current.notes ? '<div class="venue-meta" style="white-space:pre-wrap;">' + escapeHtml(current.notes) + '</div>' : '') +
       venueScheduleHtml(current) +
@@ -2286,6 +2311,10 @@
     if (ev) ev.addEventListener('click', openEditVenueModal);
     var rm = document.getElementById('rushModeBtn');
     if (rm) rm.addEventListener('click', onToggleRushMode);
+    var av = document.getElementById('approveVenueBtn');
+    if (av) av.addEventListener('click', function(){ onApproveVenue(current.id); });
+    var rv = document.getElementById('rejectVenueBtn');
+    if (rv) rv.addEventListener('click', function(){ onRejectVenue(current.id); });
     var ics = document.getElementById('downloadIcs');
     if (ics) ics.addEventListener('click', function(){ downloadIcs(getCurrentBoard()); });
     var subscribeIcs = document.getElementById('subscribeIcs');
@@ -3243,6 +3272,29 @@
         showToast('Approved.', 'ok');
         syncVenueIcs(next.filter(function(b){ return b.id === id; })[0]);
       }
+    });
+  }
+
+  // Reject a pending proposal \u2014 same underlying write as onDeleteBoard()
+  // (there's nothing to keep once rejected: no cards can exist yet on an
+  // unapproved venue, and there's no rejection-reason/audit field in the
+  // schema), but its own confirm/toast wording and its own button, kept
+  // separate from "Delete this venue" \u2014 that one only shows for an
+  // already-approved venue, since deleting a live venue with real
+  // registered papers is a materially different, scarier action than
+  // declining someone's proposal before it's gone anywhere.
+  function onRejectVenue(id){
+    var current = state.boards.filter(function(b){ return b.id === id; })[0];
+    if (!current || current.status !== 'pending') return;
+    if (!window.confirm('Reject the proposal for "' + current.label + '"? This can\u2019t be undone.')) return;
+    var next = state.boards.filter(function(b){ return b.id !== id; });
+    saveBoardsIndex(next).then(function(ok){
+      if (!ok){ showToast(saveErrorMessage('Could not reject that proposal \u2014 try again.'), 'error'); return; }
+      deleteBoardData(id).then(function(){
+        state.boards = next;
+        showToast('Rejected ' + current.label + '.', 'ok');
+        backToVenuesList();
+      });
     });
   }
 

@@ -4,6 +4,15 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Venue proposals, revised while testing: full detail view, real proposer identity, a Reject button — still on a branch
+
+Testing the venue-proposals feature (below) surfaced two real gaps, both fixed on the same branch, still unshipped:
+
+1. **Pending venues weren't clickable at all.** Fixed: every row — approved or pending — now opens the normal venue page. A pending one shows a "Pending approval" badge, an empty board, "+ Register paper" disabled, and (new) an Approve/Reject pair in the header next to Edit venue, shown only to a confirmed PI/admin. Reviewing a proposal is now a click-in, not a blind list action — the Approve button that used to sit directly in the list row is gone.
+2. **"Proposed by [name]" alone wasn't enough to actually identify who proposed something** — a name can be generic or ambiguous with more than one pending proposal to review. `proposerLabel()` now always renders name **and** email together, used consistently in both the list row and the venue detail page.
+
+Also added: a **Reject** button, alongside Approve, for a pending venue a PI/admin doesn't want. `onRejectVenue()` is the same underlying delete `onDeleteBoard()` already does (nothing worth keeping on an unapproved venue), but with its own confirm dialog and toast wording, and kept as a visually distinct button from "Delete this venue" — which now only appears once a venue is actually approved, since deleting a live venue with real papers on it is a much bigger action than declining a proposal.
+
 ### Big red warning banner when FIRESTORE_USE_EMULATOR is true — built on a branch
 
 Per Eduardo, a safety net for the exact mistake that shipped once already today (`FIRESTORE_USE_EMULATOR = true` committed and deployed, silently breaking the live site for anyone without a local emulator running). Added `#emulatorWarning`/`.emulator-warning` — a loud, sticky red bar across the top of the page, shown whenever that flag is `true`. Toggled once, right next to the flag's own declaration, not tied to any render function since the flag never changes after page load. Built alongside venue proposals (below) on `feature/venue-proposals`, per the new branch-first workflow — not merged/deployed yet.
