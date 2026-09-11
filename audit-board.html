@@ -1655,15 +1655,27 @@
     '</datalist>';
   }
 
+  // Only the submitter or a PI/admin can actually save a reviewer
+  // reassignment (see firestore.rules) — but PI/admin status isn't
+  // readable client-side (roles/{roleId} is deny-all for clients, same
+  // constraint as Rush mode's own permission check), so this can't be
+  // greyed out the way the tri-state review buttons and checklist boxes
+  // are: doing that would also wrongly block a real PI/admin, who has no
+  // other way to prove it to the client. Left enabled for everyone; a
+  // non-owner who isn't actually a PI/admin gets the usual
+  // permission-denied toast on save (saveErrorMessage), same as any other
+  // rejected write — just with a title hint here so it's not a surprise.
   function reviewerInputHtml(card, role){
     var rv = card.reviewers || {};
     var current = rv[role] || '';
+    var isOwner = !!(state.currentUser && card.submittedBy && state.currentUser.email === card.submittedBy.email);
     var options = '<option value="">Assign…</option>' + state.people.map(function(p){
       return '<option value="' + escapeHtml(p.email) + '"' + (p.email === current ? ' selected' : '') + '>' +
         escapeHtml(p.name) + '</option>';
     }).join('');
     return '<select class="rv-input" required ' +
       'data-reviewer="' + escapeHtml(card.id) + '" data-reviewer-role="' + role + '" ' +
+      (isOwner ? '' : 'title="Only the project owner or a PI/admin can change this" ') +
       'aria-label="' + REVIEW_ROLE_LABELS[role] + ' reviewer for ' + escapeHtml(card.title) + '">' +
       options + '</select>';
   }

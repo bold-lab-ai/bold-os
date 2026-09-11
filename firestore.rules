@@ -65,8 +65,29 @@ service cloud.firestore {
         allow read: if isLabMember();
         allow create: if isLabMember();
         // A card can be changed only by whoever created it, a reviewer
-        // assigned to it, or a PI/admin.
-        allow update, delete: if isLabMember() && (
+        // assigned to it, or a PI/admin — same base condition as before.
+        //
+        // Reassigning reviewers is narrower (2026-09-11): the `reviewers`
+        // field specifically may only change if the writer is the
+        // submitter or a PI/admin — an assigned reviewer can still edit
+        // everything else on their own card (checklist, review state,
+        // discussion, status) via the base condition above, but can't
+        // reassign reviewers, including moving themselves off a card or
+        // someone else onto one. Compares the whole `reviewers` map for
+        // equality rather than diffing individual keys — simpler, and
+        // sufficient since the client only ever rewrites that map as a
+        // whole (onSetReviewer).
+        allow update: if isLabMember() && (
+          email() == resource.data.submittedBy.email ||
+          email() == resource.data.reviewers.junior ||
+          email() == resource.data.reviewers.senior ||
+          hasFullWrite()
+        ) && (
+          request.resource.data.reviewers == resource.data.reviewers ||
+          email() == resource.data.submittedBy.email ||
+          hasFullWrite()
+        );
+        allow delete: if isLabMember() && (
           email() == resource.data.submittedBy.email ||
           email() == resource.data.reviewers.junior ||
           email() == resource.data.reviewers.senior ||

@@ -4,6 +4,12 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Reviewer reassignment restricted to the submitter and PI/admin
+
+Eduardo asked to confirm who can assign reviewers; checking the actual Security Rules turned up a real gap — the per-card `update` rule was whole-document, so an already-assigned reviewer could also reassign reviewers (including moving themselves off a card, or someone else onto one), not just the submitter/PI/admin the question assumed. Fixed in `firestore.rules`: the `reviewers` field specifically may now only change if the writer is the submitter or a PI/admin, compared by map equality against the stored value; the existing base condition (submitter/junior/senior/PI-admin) still governs every other field, so an assigned reviewer keeps full access to their own card's checklist, review state, discussion, and status. Deployed and verified live via `firebase_get_security_rules` matching the file exactly. Sanity-checked the new access matrix (owner/PI-admin/assigned-reviewer × reassigning-reviewers/editing-other-fields) with a 7-case standalone truth-table test before deploying, since there's no local Firestore-rules unit-test harness in this repo.
+
+**Deliberately not mirrored client-side beyond a hint.** `reviewerInputHtml()`'s picker stays enabled for every signed-in lab member — PI/admin status isn't readable by the client (`roles/{roleId}` stays deny-all by design), so greying the picker out for "not the owner" would also incorrectly block a real PI/admin, who has no other way to prove it to the client. Added a `title` tooltip for a non-owner instead of `disabled`; an unauthorized save still fails cleanly with the existing permission-denied toast. Same trade-off already accepted for Rush mode's own permission check.
+
 ### Checklist ticking restricted to the assigned reviewer; ticking now drives their own Approved status automatically
 
 Per Eduardo: "only the assigned respective reviewer should be able to tick boxes in the project page. The status should turn to 'Approved' automatically if all checks have been ticked, and back to 'In Review' if any is unticked but the card is in 'Approved' status." Two changes to the checklist, both in `onToggleChecklist()`/`checklistTabHtml()`:

@@ -113,7 +113,22 @@ match /boards/{boardId} {
     allow create: if isLabMember();
     // A card can be changed only by whoever created it, a reviewer
     // assigned to it, or a PI/admin — decided 2026-09-11.
-    allow update, delete: if isLabMember() && (
+    //
+    // Reassigning reviewers is narrower still (also 2026-09-11): the
+    // `reviewers` field specifically may only change if the writer is
+    // the submitter or a PI/admin — an assigned reviewer can edit
+    // everything else on their own card but can't reassign reviewers.
+    allow update: if isLabMember() && (
+      email() == resource.data.submittedBy.email ||
+      email() == resource.data.reviewers.junior ||
+      email() == resource.data.reviewers.senior ||
+      hasFullWrite()
+    ) && (
+      request.resource.data.reviewers == resource.data.reviewers ||
+      email() == resource.data.submittedBy.email ||
+      hasFullWrite()
+    );
+    allow delete: if isLabMember() && (
       email() == resource.data.submittedBy.email ||
       email() == resource.data.reviewers.junior ||
       email() == resource.data.reviewers.senior ||
@@ -124,6 +139,8 @@ match /boards/{boardId} {
 // (checklist/comments/discussion/history subcollections not yet split out —
 // see "Client-side change" below; their rules follow the same shape once they are)
 ```
+
+**Reviewer reassignment narrowed to submitter/PI/admin only, 2026-09-11.** Eduardo asked to confirm who could assign reviewers; turned out the base `update` condition alone let *any* already-assigned reviewer also reassign reviewers (whole-document rule, no field distinction) — not just the submitter/PI/admin the question assumed. Added a second `&&` clause to `update` specifically: the `reviewers` map may only actually change if the writer is the submitter or a PI/admin (compared by map equality — the client only ever rewrites `reviewers` as a whole, via `onSetReviewer`, so no per-key diffing needed). The base condition (submitter/junior/senior/PI-admin) still gates every other field, so an assigned reviewer keeps full access to their own card's checklist, review state, discussion, and status — just not to who the reviewers are. `delete` was split into its own `allow` statement, unchanged in condition, since the new clause is update-specific (a `request.resource.data` diff doesn't apply to a delete). **Not mirrored client-side**: `reviewerInputHtml()`'s picker stays enabled for every signed-in lab member (only a `title` hint added for a non-owner) — PI/admin status isn't client-readable (`roles/{roleId}` stays deny-all), so disabling it for "not the owner" would also block a real PI/admin from ever using it, the same constraint already accepted for Rush mode's toggle. A disallowed save still fails cleanly with the existing permission-denied toast.
 
 **`roles/pis` and `roles/admins` are seeded and live** (2026-09-11) — 6 PIs, 3 admins, written via a one-off Admin SDK script (Node, `firebase-admin`) run from a service-account key Eduardo generated in Firebase Console, verified by reading both documents back afterward. The key file was deleted immediately after (never committed — it landed in this repo's own folder from the browser download, caught before `git add`, moved out and shredded) and Eduardo was asked to revoke the key itself in Console (Project Settings → Service Accounts → Keys) since a live Admin SDK key grants full database access regardless of Security Rules, and there was no reason to leave a standing one behind for a one-time job. `roles/seniors` and `roles/juniors` are still unseeded — no junior/senior reviewer assignments possible until those exist too.
 
