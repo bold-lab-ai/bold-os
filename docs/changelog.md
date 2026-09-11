@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Big red warning banner when FIRESTORE_USE_EMULATOR is true — built on a branch
+
+Per Eduardo, a safety net for the exact mistake that shipped once already today (`FIRESTORE_USE_EMULATOR = true` committed and deployed, silently breaking the live site for anyone without a local emulator running). Added `#emulatorWarning`/`.emulator-warning` — a loud, sticky red bar across the top of the page, shown whenever that flag is `true`. Toggled once, right next to the flag's own declaration, not tied to any render function since the flag never changes after page load. Built alongside venue proposals (below) on `feature/venue-proposals`, per the new branch-first workflow — not merged/deployed yet.
+
 ### Venue proposals — built on a branch, not yet shipped
 
 The site's live and in real use now, so from here on new work happens on a feature branch (`feature/venue-proposals` for this one) before merging to `main` and deploying — this entry, and everything in it, is **not live yet**.

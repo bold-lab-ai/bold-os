@@ -74,6 +74,25 @@
   h1,h2,h3{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
   button{font-family:inherit; font-size:14px;}
 
+  /* ---------- emulator warning ---------- */
+  /* Shown only when FIRESTORE_USE_EMULATOR is true (see the flag's own
+     comment) — loud on purpose. This exact flag shipped wrong once
+     already (committed true, silently broke the live site for anyone
+     without a local emulator running, caught 2026-09-11): this banner is
+     the safety net so that can't happen silently again — anyone looking
+     at the deployed page, not just someone re-reading the source, would
+     immediately see it. `position:sticky` (not `fixed`) so it stays
+     visible while scrolling without needing to reserve space elsewhere
+     for a fixed bar, and can't get clipped by z-index it doesn't know it
+     needs to beat. */
+  .emulator-warning{
+    position:sticky; top:0; z-index:1000;
+    background:#c81e1e; color:#fff;
+    font-weight:800; font-size:14px; text-align:center;
+    padding:10px var(--gutter);
+    letter-spacing:0.2px;
+  }
+
   /* ---------- masthead ---------- */
   .masthead{
     background:var(--surface);
@@ -560,6 +579,8 @@
 </head>
 <body>
 
+<div id="emulatorWarning" class="emulator-warning" hidden>&#9888; FIRESTORE EMULATOR MODE &mdash; this is NOT real data. Never commit FIRESTORE_USE_EMULATOR as true.</div>
+
 <div class="masthead">
   <a class="wordmark" href="how-to-submit-a-paper.html">BOLD<span>.</span> Lab</a>
   <div class="masthead-right">
@@ -795,6 +816,17 @@
   // before Firestore was).
   var FIRESTORE_USE_EMULATOR = false;
   var AUTH_USE_EMULATOR = false;
+
+  // Loud, unmissable banner the moment this file is ever served with the
+  // flag above true — see its own comment and .emulator-warning's CSS.
+  // Deliberately not folded into any render function: the flag is a
+  // constant for the life of the page load, so this only ever needs to
+  // run once, here, right next to the flag it's guarding.
+  (function(){
+    var w = document.getElementById('emulatorWarning');
+    if (w) w.hidden = !FIRESTORE_USE_EMULATOR;
+  })();
+
   var FIREBASE_CONFIG = {
     apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
     authDomain: 'bold-d7ff2.firebaseapp.com',
