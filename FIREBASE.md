@@ -63,19 +63,22 @@ Both comment thread types (per-checklist-item feedback, card-level Discussion) s
 
 ## Security Rules
 
-**Revised 2026-09-11 for the simplified MVP.** Two-layer model unchanged in shape: role-list membership decides *eligibility* for lab-wide actions; a direct comparison against the card's own `reviewers.junior`/`reviewers.senior` decides *authorization* for that specific card. What changed is the source of eligibility — hardcoded email arrays in the rules file itself, not a custom claim from a Google Groups lookup:
+**Deployed 2026-09-11** (verified live via `firebase_get_security_rules` and the `firebase` CLI, both matching `firestore.rules` on disk exactly). Two-layer model unchanged in shape: role-list membership decides *eligibility* for lab-wide actions; a direct comparison against the card's own `reviewers.junior`/`reviewers.senior` decides *authorization* for that specific card.
+
+**Role lists moved out of the rules file, into Firestore data — not literals here.** Originally drafted as hardcoded arrays (`pis()`/`seniors()`/`juniors()` functions returning literal email lists) directly in `firestore.rules`. Revised before deploy: Eduardo wants the option to make the `ml-conference-cycle` repo public, and a public repo would publish real BOLD members' email addresses in plaintext, forever, in git history. So the lists live in three Firestore documents instead — `roles/pis`, `roles/seniors`, `roles/juniors`, each shaped `{emails: [...]}` — referenced via `get()`. `get()`/`exists()` calls made *from inside* a rule bypass that target document's own rules (this is standard Firestore Security Rules behavior, not a hole) — so `roles/{roleId}` itself stays permanently `allow read, write: if false` for clients, and can only be written via the Firebase Console (project-owner access, which bypasses Security Rules entirely) or an Admin SDK credential — never by `audit-board.html` or anyone using it.
 
 ```
-function pis()     { return ['name@example.com']; }     // edit + redeploy to promote/demote
-function seniors() { return ['name@example.com']; }
-function juniors() { return ['name@example.com']; }
-
 function isSignedIn() { return request.auth != null; }
 function email()      { return request.auth.token.email; }
-function isPi()        { return isSignedIn() && email() in pis(); }
-function isSenior()    { return isSignedIn() && (email() in seniors() || isPi()); }
-function isJunior()    { return isSignedIn() && (email() in juniors() || isSenior()); }
+function roleList(name) {
+  return get(/databases/$(database)/documents/roles/$(name)).data.emails;
+}
+function isPi()        { return isSignedIn() && email() in roleList('pis'); }
+function isSenior()    { return isSignedIn() && (email() in roleList('seniors') || isPi()); }
+function isJunior()    { return isSignedIn() && (email() in roleList('juniors') || isSenior()); }
 function isLabMember() { return isSignedIn(); }
+
+match /roles/{roleId} { allow read, write: if false; }
 
 match /boards/{boardId} {
   allow read: if true;
@@ -84,6 +87,8 @@ match /boards/{boardId} {
   match /cards/{cardId} {
     allow read: if true;
     allow create: if isLabMember();
+    // A card can be changed only by whoever created it, a reviewer
+    // assigned to it, or a PI — decided 2026-09-11.
     allow update, delete: if isLabMember() && (
       email() == resource.data.submittedBy.email ||
       email() == resource.data.reviewers.junior ||
@@ -96,7 +101,7 @@ match /boards/{boardId} {
 // see "Client-side change" below; their rules follow the same shape once they are)
 ```
 
-**Written, not deployed — and here's the concrete blocker.** `firestore.rules` on disk still stays literal deny-all (see "Project status"). The rules above assume `submittedBy.email` and `reviewers.junior`/`reviewers.senior` hold real signed-in emails, but as of Phase 1a **they don't**: `submittedBy` is `{name, slackId}` (a free-text name typed into a "Stand-in for Slack login" field) and `reviewers.junior`/`reviewers.senior` are free-text names from the shared people-autocomplete — nothing in the current data model is a real email yet. Deploying (or even emulator-testing) the rules above today would either silently fail to authorize anyone, or lock out the anonymous read/write the app still relies on for Phase 1a. **Prerequisite before switching over:** once `#authRegion`'s Slack sign-in is wired end-to-end, `submittedBy` needs a real `email` field populated from `auth.currentUser.email`, and the reviewer picker needs to resolve to emails (or at least store one alongside the display name) instead of free text only. Until then, the rules above are the target, verified-in-design but not verified-against-real-data.
+**Deployed, but a no-op in practice today, and here's why that's fine.** `isSignedIn()` is always false until the `oidc.slack` provider exists and someone can actually sign in — so nothing changes in production behavior yet, this is safe to have live. The `roles/*` documents also don't exist yet (see "Inputs needed" — waiting on the actual email lists). Real, separate blocker for when Slack sign-in *does* go live: `submittedBy.email` and `reviewers.junior`/`reviewers.senior` assume real signed-in emails, but as of Phase 1a **they don't hold that** — `submittedBy` is `{name, slackId}` (a free-text name typed into a "Stand-in for Slack login" field) and `reviewers.junior`/`reviewers.senior` are free-text names from the shared people-autocomplete. That still needs fixing (wiring `state.currentUser.email` into both) before the per-card `update` rule can match anyone real — tracked in the "Client-side change (Phase 2)" section above.
 
 ## Cloud Functions
 
@@ -137,7 +142,7 @@ Added to `audit-board.html` 2026-09-11, not yet functional end-to-end (blocked o
 
 - **Firebase project:** `bold-d7ff2` (display name "BOLD"), created 2026-09-11. Signed in as `edu.pignatelli@gmail.com` via the Firebase MCP server — subsequent Firebase work in this repo uses those tools directly (project/app CRUD, SDK config, Security Rules read, deploy) rather than manual console steps.
 - **Web app registered:** `internal-review-board` (`appId: 1:555050367135:web:d90f8d7bb93a755e9fcaaa`). SDK config pulled and recorded below — not secret, safe to commit/embed client-side.
-- **Firestore:** enabled, currently `allow read, write: if false` (deny-all) — the safe starting state, left in place deliberately (see below).
+- **Firestore:** enabled. Rules deployed 2026-09-11 (see "Security Rules") — no longer literal deny-all, but equivalent to it in practice until Slack sign-in is live, since every path requires `isSignedIn()` and nothing can sign in yet.
 - **Local project scaffolding:** `firebase.json`, `firestore.rules` (mirrors the deployed deny-all), `firestore.indexes.json` (empty — no composite indexes needed yet), `.firebaserc` (default project `bold-d7ff2`) all created in this directory via `firebase_init`.
 - **Region confirmed:** `europe-west2` (London) — `firebase.json`'s `location` field corrected to match (was `nam5`, the init tool's own default, never actually verified against reality until now).
 
@@ -165,8 +170,8 @@ Added to `audit-board.html` 2026-09-11, not yet functional end-to-end (blocked o
 - [ ] **A Slack app** — I can't create this myself, it needs Eduardo's own Slack login. Steps: api.slack.com/apps → Create New App → From scratch → pick the BOLD workspace → **OAuth & Permissions**: add `openid`, `profile`, `email` as *User Token Scopes* under "Sign in with Slack" (or enable the pre-built "Sign in with Slack" option if the Slack UI offers it directly) → **Basic Information** for the Client ID + Client Secret. The redirect URL Slack needs goes in `Sign-in with Slack` (or OAuth) → *Redirect URLs*, and that value comes from Firebase Console (below), so do the Firebase half first.
 - [ ] **Firebase Console, manual step (not available via my MCP tooling — confirmed by reading the `firebase://guides/init/auth` resource, which only supports `anonymous`/`emailPassword`/`googleSignIn`)**: Authentication → Sign-in method → Add new provider → OpenID Connect. Provider ID: `oidc.slack`. Issuer URL: `https://slack.com`. Client ID + Client Secret: from the Slack app above (the secret goes in Console only — never embedded client-side, unlike the rest of `FIREBASE_CONFIG`). Saving this step gives the redirect URL Slack's Redirect URLs field needs. Say when ready and I'll walk this half live, step by step.
 
-**Phase 3 (MVP permissions) — needs from Eduardo before it can be deployed:**
-- [ ] The initial `pis()`/`seniors()`/`juniors()` email lists for `firestore.rules` (who's promoted to what, to start).
+**Phase 3 (MVP permissions) — rules deployed, one step left:**
+- [ ] **The actual `pis`/`seniors`/`juniors` email lists.** Rules are live and already look for them (see "Security Rules"), but the three Firestore documents don't exist yet — no promotions take effect until they're created. I don't have a credentialed path to write Firestore data myself (no service account key, no `gcloud` set up on this machine, and I won't open production write rules to route around that) — this has to go in via the Firebase Console: **console.firebase.google.com → bold-d7ff2 → Firestore Database → Start collection → id `roles`**, then add three documents, IDs `pis`, `seniors`, `juniors`, each with one field named `emails`, type **array**, containing the email strings for that role. Give me the lists and I'll hand back the exact values to paste in, field by field.
 
 **Gather in parallel, not urgent — Phase 4 (Google Workspace Groups, later):**
 - [ ] The actual Google Workspace domain name (confirmed not `bold-lab.ai` itself — no MX/TXT on that domain).

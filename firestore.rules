@@ -1,12 +1,63 @@
 rules_version = '2';
 
-// Deny-all until Sign-in-with-Slack is actually live and the data model
-// carries real emails (see FIREBASE.md's Security Rules section for the
-// target hardcoded-role-list model and why it isn't deployed yet — the
-// short version: submittedBy/reviewers are still free-text names, not
-// signed-in emails, so an auth-gated rule can't match anything real today).
+// MVP permission model (2026-09-11) — Sign-in-with-Slack gives identity
+// only; role (junior/senior/PI) comes from a hardcoded list, but NOT as
+// literals in this file. The three role lists live in Firestore documents
+// (roles/pis, roles/seniors, roles/juniors — each {emails: [...]}), written
+// only via the Firebase Console (never by a client — see the deny-all rule
+// on roles/{roleId} below), and read here via get(), which bypasses that
+// document's own rules for lookups made *from inside* a rule. This is
+// deliberate: it means this file — and this repo, if ever made public —
+// never contains real people's email addresses. See FIREBASE.md.
+//
+// In practice, this is still equivalent to deny-all today: isSignedIn() is
+// always false until the 'oidc.slack' provider exists and someone can
+// actually sign in, so deploying this changes nothing in production yet.
+//
+// Two-layer model unchanged in shape: role-list membership = eligibility
+// for lab-wide actions; a card's own reviewers.junior/senior field =
+// authorization for that specific card. NOTE: submittedBy/reviewers still
+// store free-text names, not emails, as of Phase 1a — the update rule below
+// won't actually match anyone until that's wired up (see FIREBASE.md).
+
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function isSignedIn() { return request.auth != null; }
+    function email()      { return request.auth.token.email; }
+    function roleList(name) {
+      return get(/databases/$(database)/documents/roles/$(name)).data.emails;
+    }
+    function isPi()        { return isSignedIn() && email() in roleList('pis'); }
+    function isSenior()    { return isSignedIn() && (email() in roleList('seniors') || isPi()); }
+    function isJunior()    { return isSignedIn() && (email() in roleList('juniors') || isSenior()); }
+    function isLabMember() { return isSignedIn(); }
+
+    // Admin-only data, never read or written by a client — only via the
+    // get() calls above, and via the Firebase Console (or an Admin SDK
+    // credential), both of which bypass rules entirely.
+    match /roles/{roleId} {
+      allow read, write: if false;
+    }
+
+    match /boards/{boardId} {
+      allow read: if true;
+      allow create, delete, update: if isPi();
+
+      match /cards/{cardId} {
+        allow read: if true;
+        allow create: if isLabMember();
+        // A card can be changed only by whoever created it, a reviewer
+        // assigned to it, or a PI.
+        allow update, delete: if isLabMember() && (
+          email() == resource.data.submittedBy.email ||
+          email() == resource.data.reviewers.junior ||
+          email() == resource.data.reviewers.senior ||
+          isPi()
+        );
+      }
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
