@@ -131,6 +131,8 @@ Added to `audit-board.html` 2026-09-11, not yet functional end-to-end (blocked o
 
 **Deliberately not yet done, and why:** nothing in the app *requires* being signed in to read or write a board/card, and `submittedBy`/`reviewers` still store free-text names rather than the signed-in email — see the Security Rules section's "written, not deployed" note for why that's a real blocker, not just an inconsistency to clean up later. Wiring `state.currentUser.email` into `submittedBy`/reviewer-assignment, and deciding whether writes become sign-in-gated in the UI (not just in Security Rules), is follow-up work once Slack sign-in is actually live and testable.
 
+**Decided 2026-09-11:** yes, board/card writes become sign-in-gated. A card can be changed only by whoever created it, a reviewer assigned to it, or a PI — matches the Security Rules draft above exactly (`submittedBy` / `reviewers.junior` / `reviewers.senior` / `isPi()`). Not implemented yet — still blocked on the same prerequisite (real emails in `submittedBy`/`reviewers`, which needs Slack sign-in live first) — but no longer an open question, just sequencing.
+
 ## Project status (2026-09-11)
 
 - **Firebase project:** `bold-d7ff2` (display name "BOLD"), created 2026-09-11. Signed in as `edu.pignatelli@gmail.com` via the Firebase MCP server — subsequent Firebase work in this repo uses those tools directly (project/app CRUD, SDK config, Security Rules read, deploy) rather than manual console steps.
