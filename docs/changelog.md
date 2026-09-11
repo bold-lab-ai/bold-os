@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Removed the "Advance" confirmation popup
+
+`window.confirm()` before a card advances (a per-status attestation checklist — "Before moving to Draft & Review, confirm: ...") was causing real problems at Eduardo's end: native browser confirm dialogs sometimes don't appear reliably, and cards were getting stuck waiting on one. Removed the whole mechanism (`STATUS_ADVANCE_CHECKLIST`, `advanceConfirmMessage()`, the `window.confirm()` call) — advancing a card now just happens, no popup. The two *hard* gates (checklist completion before the gate status, reviewers assigned before Draft & Review) are unrelated and untouched — those are enforced checks with a toast message, not confirmation dialogs, and stay. Also untouched: the delete-venue and remove-card confirms, which guard actually-irreversible actions, not a routine status move.
+
 ### Zip bundle now builds and commits itself
 
 Added `.github/workflows/zip.yml` — rebuilds `dist/bold-paper-submission-guide.zip` and commits it on every push to `main`, same pattern as `epignatelli/epignatelli.github.io`'s `cv.yml` (build on push, commit back if changed, bot identity). `paths-ignore` on the zip's own path stops the bot's commit from re-triggering itself, which that reference workflow didn't need (it commits into a *different* repo than the one it runs in; this one commits into itself). No more manual `zip -qj ...` + commit step after every doc/page change — removed from `docs/AGENTS.md`'s "After any change" list.

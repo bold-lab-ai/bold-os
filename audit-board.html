@@ -669,29 +669,6 @@
     return !!card.outcome && !(card.outcome === 'accepted' && card.status === 'pre_conference');
   }
 
-  // A card belongs in a column once that column's milestone is actually
-  // met — moving it there (Advance) is an attestation, not just a status
-  // change. These are the brief checklists shown as a confirm() before an
-  // Advance is allowed to go through; Cancel leaves the card where it was.
-  // Not shown on Revert (moving backward needs no attestation).
-  var STATUS_ADVANCE_CHECKLIST = {
-    pitch_day: ['The paper was pitched to the group at Pitch Day.'],
-    draft_review: ['The first full draft is ready.', 'A junior and a senior reviewer are assigned.'],
-    final_draft: ['Every review comment has been incorporated into the draft.'],
-    pi_polish: ['The PI has read the final draft.', 'The PI has approved submitting it.'],
-    submit: ['The paper has been submitted to the venue.'],
-    arxiv_publicity: ['The paper is posted on arXiv.', 'Publicity is underway.'],
-    rebuttal: ["The venue's reviews are out."],
-    pre_conference: ['The venue accepted the paper.']
-  };
-
-  function advanceConfirmMessage(status){
-    var items = STATUS_ADVANCE_CHECKLIST[status];
-    if (!items || !items.length) return null;
-    return 'Before moving to ' + STATUS_LABELS[status] + ', confirm:\n' +
-      items.map(function(it){ return '• ' + it; }).join('\n');
-  }
-
   var state = {
     view: 'list', // 'list' | 'venue' | 'card'
     boards: [],
@@ -2838,14 +2815,6 @@
       showToast('Assign a junior and a senior reviewer before moving to ' + STATUS_LABELS.draft_review + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
-    }
-
-    if (isAdvance){
-      var msg = advanceConfirmMessage(newStatus);
-      if (msg && !window.confirm(msg)){
-        renderBoard(); // undo any dropdown selection
-        return;
-      }
     }
 
     var next = state.cards.map(function(c){
