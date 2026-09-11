@@ -180,6 +180,14 @@
   .btn:hover{border-color:var(--blue); color:var(--blue);}
   .btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
   .btn-primary:hover{background:#1f4fb0; border-color:#1f4fb0; color:#fff;}
+  /* Approve/Reject (venue proposals, 2026-09-11): same size/weight as any
+     other .btn, just green vs. red — same visual weight for a symmetric
+     either-way decision, unlike a primary/plain pairing that would make
+     one option look like the "right" default. */
+  .btn-approve{background:var(--success-text); color:#fff; border-color:var(--success-text);}
+  .btn-approve:hover{background:#1c5049; border-color:#1c5049; color:#fff;}
+  .btn-reject{background:var(--danger-text); color:#fff; border-color:var(--danger-text);}
+  .btn-reject:hover{background:#8f1c13; border-color:#8f1c13; color:#fff;}
   .btn-text{
     background:none; border:none; color:var(--muted);
     font-size:13px; cursor:pointer; padding:4px 0;
@@ -302,7 +310,19 @@
   /* Venue proposals (2026-09-11): a pending row opens the normal venue
      page too (same .venue-row button as an approved one) — there's just
      nothing to register a paper against yet until it's approved (see
-     "+ Register paper"'s own disabled check in renderBoard()). */
+     "+ Register paper"'s own disabled check in renderBoard()). "Pending
+     your approval" rows also carry inline Approve/Reject, so that row
+     can't be a <button> itself (it contains other buttons) — it's a div,
+     cursor:default overriding .venue-row's pointer, with its own nested
+     clickable name (.venue-name-btn) alongside the action buttons. */
+  .venue-row--pending{cursor:default; align-items:center;}
+  .venue-row-info{display:flex; flex-direction:column; gap:3px; min-width:0;}
+  .venue-row-actions{display:flex; gap:8px; flex:0 0 auto;}
+  .venue-name-btn{
+    font:inherit; font-weight:700; font-size:16px; color:var(--ink);
+    background:none; border:none; padding:0; margin:0; cursor:pointer; text-align:left;
+  }
+  .venue-name-btn:hover{color:var(--blue);}
   .venues-section-title{font-size:12.5px; font-weight:700; color:var(--muted); margin:22px 0 8px;}
   .venues-section-title:first-child{margin-top:0;}
   .badge-pending{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
@@ -1297,18 +1317,28 @@
       html += '<p class="board-empty">No approved venues yet.</p>';
     }
     // Pending rows open the normal venue page too (2026-09-11) — same
-    // data-open-venue as an approved row, just with an extra badge/sub-line
-    // and (for "Pending your approval") no Approve button here any more;
-    // that lives in the venue header itself now (renderBoard()), next to
-    // Edit venue/Delete venue, so reviewing the full venue detail and
-    // approving it are the same click-in, not a blind approve from the
-    // list. See docs/FIREBASE.md's "Venue proposals" section.
+    // data-open-venue as an approved row. "Pending your approval" also
+    // carries its own inline Approve/Reject (revised same day, per
+    // Eduardo: reviewing shouldn't require a click-in first) — the row
+    // itself can't be a <button> any more once it contains other buttons
+    // (invalid HTML, and a hover/click state that would fight itself), so
+    // it's a plain div with the venue name/sub as its own nested clickable
+    // button (.venue-name-btn) and Approve/Reject as siblings, not
+    // children of that button — same Approve/Reject also live on the
+    // venue detail page itself (renderBoard()), next to Edit venue/Delete
+    // venue, for reviewing the full venue before deciding either way.
     if (othersPending.length){
       html += '<div class="venues-section-title">Pending your approval</div>' + sortByCreated(othersPending).map(function(b){
-        return '<button class="venue-row" type="button" data-open-venue="' + escapeHtml(b.id) + '">' +
-          '<span class="venue-name">' + escapeHtml(b.label) + '</span>' +
-          '<span class="venue-sub">Proposed by ' + proposerLabel(b.proposedBy) + '</span>' +
-        '</button>';
+        return '<div class="venue-row venue-row--pending">' +
+          '<div class="venue-row-info">' +
+            '<button class="venue-name-btn" type="button" data-open-venue="' + escapeHtml(b.id) + '">' + escapeHtml(b.label) + '</button>' +
+            '<span class="venue-sub">Proposed by ' + proposerLabel(b.proposedBy) + '</span>' +
+          '</div>' +
+          '<div class="venue-row-actions">' +
+            '<button class="btn btn-approve" type="button" data-approve-venue="' + escapeHtml(b.id) + '">Approve</button>' +
+            '<button class="btn btn-reject" type="button" data-reject-venue="' + escapeHtml(b.id) + '">Reject</button>' +
+          '</div>' +
+        '</div>';
       }).join('');
     }
     if (minePending.length){
@@ -1325,6 +1355,16 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-open-venue]'), function(btn){
       btn.addEventListener('click', function(){
         openVenue(btn.getAttribute('data-open-venue'));
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-approve-venue]'), function(btn){
+      btn.addEventListener('click', function(){
+        onApproveVenue(btn.getAttribute('data-approve-venue'));
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-reject-venue]'), function(btn){
+      btn.addEventListener('click', function(){
+        onRejectVenue(btn.getAttribute('data-reject-venue'));
       });
     });
   }
@@ -1463,9 +1503,19 @@
     document.getElementById('nbVenue').focus();
   }
 
+  // Title/submit label match the button's own "New venue"/"Propose venue"
+  // wording (see updateNewVenueButtonState) — same form either way
+  // (venueFieldsHtml/readVenueFields, onCreateBoard unchanged), just
+  // honest about which one it'll actually be for whoever's looking at it.
   function openNewVenueModal(){
     if (!requireSignedIn()) return;
-    renderVenueModal({ title: 'New venue', submitLabel: 'Create', venue: null, onSubmit: onCreateBoard });
+    var proposing = !state.canApproveVenues;
+    renderVenueModal({
+      title: proposing ? 'Propose new venue' : 'New venue',
+      submitLabel: proposing ? 'Propose' : 'Create',
+      venue: null,
+      onSubmit: onCreateBoard
+    });
   }
 
   // This button only gates the "signed in at all" precondition, same as
@@ -1475,10 +1525,21 @@
   // the one exception (2026-09-11): a signed-in-but-not-PI/admin submit
   // lands as a pending proposal instead of failing outright — same form,
   // same button, see onCreateBoard's own comment.
+  //
+  // Label itself reflects that (2026-09-11): "+ New venue" for a
+  // confirmed PI/admin, "+ Propose venue" for everyone else, using
+  // state.canApproveVenues — the same signal that gates the "Pending your
+  // approval" section, since it's the only reliable "am I PI/admin" read
+  // available client-side (roles/{roleId} stays unreadable). Called from
+  // renderAll() too, not just auth-state-change, since canApproveVenues
+  // only becomes known once the boards load resolves — before that this
+  // still shows the PI/admin wording as a harmless default until it
+  // settles (a beat after sign-in, not a lasting wrong state).
   function updateNewVenueButtonState(){
     if (!els.newBoardToggle) return;
     els.newBoardToggle.disabled = !state.currentUser;
     els.newBoardToggle.title = state.currentUser ? '' : 'Sign in with Slack to create a venue';
+    els.newBoardToggle.textContent = state.canApproveVenues ? '+ New venue' : '+ Propose venue';
   }
 
   function openEditVenueModal(){
@@ -2271,8 +2332,8 @@
              (current && current.status === 'pending') ? ' disabled title="This venue hasn’t been approved yet"' : '') +
             '>+ Register paper</button>' +
           (current && current.status === 'pending' && state.canApproveVenues
-            ? '<button class="btn btn-primary" id="approveVenueBtn" type="button">Approve venue</button>' +
-              '<button class="btn-text danger" id="rejectVenueBtn" type="button">Reject</button>'
+            ? '<button class="btn btn-approve" id="approveVenueBtn" type="button">Approve venue</button>' +
+              '<button class="btn btn-reject" id="rejectVenueBtn" type="button">Reject</button>'
             : '') +
           '<button class="btn-text' + (current && current.rushMode ? ' rush-on' : '') + '" id="rushModeBtn" type="button" title="' +
             (current && current.rushMode
@@ -2939,6 +3000,7 @@
   function renderAll(){
     els.toolbar = els.toolbar || document.getElementById('toolbar');
     if (els.toolbar) els.toolbar.style.display = (state.view === 'list') ? '' : 'none';
+    updateNewVenueButtonState();
     renderVenuesList();
     renderBoard();
   }

@@ -4,6 +4,16 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Approve/Reject also inline in the list, green/red styling, "+ Propose venue" wording, notification triggers noted on the tracking issue
+
+Three more revisions to venue proposals (still `feature/venue-proposals`, unshipped) plus a notifications note, all per Eduardo:
+
+1. **Approve/Reject moved back to being available in the list too, not only after clicking in.** Both now live in the "Pending your approval" list row *and* the venue detail page — same `onApproveVenue`/`onRejectVenue` either way. Since a row with action buttons in it can't be the whole-row `<button>` the rest of the list uses, that row is now a `<div>` with its own small nested clickable name (`.venue-name-btn`) plus the two actions as siblings.
+2. **Approve/Reject now match — same size and weight, just green vs. red** (`.btn-approve`/`.btn-reject`). Previously Approve was a primary blue button and Reject a plain text link, which visually implied one was the "default" answer; a symmetric either-way pairing reads better for a genuine yes/no decision.
+3. **"+ New venue" now reads "+ Propose venue"** for anyone who isn't a confirmed PI/admin (`updateNewVenueButtonState()`, driven by `state.canApproveVenues`) — the modal's own title and submit label follow suit ("Propose new venue"/"Propose" vs. "New venue"/"Create"), same form and `onCreateBoard()` either way.
+
+Also: added two notification triggers to the open Cloud-Functions-notifications plan (`ml-conference-cycle#1`, not this venue-proposals work) — [commented on the issue](https://github.com/bold-lab-ai/ml-conference-cycle/issues/1#issuecomment-5638260904) rather than building anything, since that whole feature is still unbuilt. PIs/admins should be notified when a venue proposal needs approval/rejection; more generally, per Eduardo, the app should be scouted for any case where someone else's own action is something *you* need to know about or act on but nothing currently tells you (the other concrete instance flagged: a reviewer setting their sign-off on your card, or both reviewers approving and auto-advancing it) — framed as an ongoing thing to watch for as the app grows, not a fixed list.
+
 ### Filed: transferring a paper to a different venue
 
 Filed [`ml-conference-cycle#2`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/2) rather than building it blind — moving a card between venues is a cross-subcollection move (`boards/{boardId}/cards/{cardId}` to a different `boardId`), not a field update, and needs to be atomic or safely recoverable if it fails partway. Per Eduardo, restricted to the paper's owner or a PI — deliberately *not* admins, the first place in the app that excludes admins from something PIs can do; flagged in the issue to confirm that's intentional before building. Open questions the issue tracks: whether status/checklist/reviewers reset on transfer or carry over, and whether a `history` entry records the move.
