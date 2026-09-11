@@ -4,6 +4,14 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `intern
 
 ## 2026-09-11
 
+### Subscribable calendar feed — Cloud Storage, not a Cloud Function
+
+Closed the long-standing "Subscribable deadline feed" TODO item, unblocked now that there's a real backend. Chose Cloud Storage over a Cloud Function (client already builds the `.ics` bytes for the download button — Storage just needs those same bytes published at a stable URL, no server compute needed; would have been the project's first Cloud Function otherwise). `syncVenueIcs()` uploads to `venues/{boardId}/feed.ics` whenever a venue is created/edited, deletes it if the venue's deadline is cleared. New `storage.rules`: public read on that path (the point — calendar apps fetch it unauthenticated), write restricted to PI/admin via a `firestore.get()` cross-reference to `roles/pis`/`roles/admins` (Storage rules can't call Firestore rules' functions directly). Public URL is built deterministically from the bucket + path, not via `getDownloadURL()`'s token mechanism, since the object is genuinely public.
+
+Setup hit two real snags, both now documented in `FIREBASE.md` in case they recur: (1) enabling Storage via Console created a bucket named `bold-d7ff2`, not the `bold-d7ff2.firebasestorage.app` the project's own config expected — `firebase deploy --only storage` gave a misleading "not set up" error for what was actually a bucket-name mismatch, confirmed via direct GCS API calls (404 vs 401 telling apart "doesn't exist" from "exists, not public") and fixed by selecting the correctly-named bucket in Console directly; (2) `match /venues/{boardId}.ics` doesn't compile as Storage Rules syntax — a wildcard can't share a path segment with literal characters — fixed by using a subfolder (`venues/{boardId}/feed.ics`) instead.
+
+UI: a **Subscribe to calendar** button sits next to the existing **Add to calendar (.ics)** download button. Clicking it copies the URL and shows a small tooltip anchored to the button with instructions, rather than the page's normal toast — the toast region sits in normal document flow and shifts everything below it when it appears/disappears; a tooltip anchored to the button doesn't move anything else on the page.
+
 ### PI removed from the board card face
 
 Dropped the "PI Name" line (`.card-pi`) from the compact card shown on the board — per Eduardo's request. Still shown on the detail page (full author list, last tagged PI), and `cardPi()` still backs the PI search filter; only the board-card display line and its now-unused CSS are gone.

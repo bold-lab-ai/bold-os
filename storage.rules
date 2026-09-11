@@ -1,0 +1,26 @@
+rules_version = '2';
+
+// Publishes each venue's .ics deadline feed at a stable, public URL — the
+// same file the "Add to calendar" download button generates, regenerated
+// and re-uploaded by the client whenever a venue is created/edited (see
+// syncVenueIcs() in audit-board.html). Public read is the whole point (a
+// subscribe URL calendar clients fetch on their own, unauthenticated); the
+// write side mirrors Firestore's hasFullWrite() — only a PI/admin can edit
+// a venue, so only they should be able to publish its feed. Storage rules
+// can't call the Firestore functions defined in firestore.rules directly,
+// so this re-reads roles/pis and roles/admins via firestore.get() — same
+// underlying data, same "PI or admin" check, just spelled out again here.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /venues/{boardId}/feed.ics {
+      allow read: if true;
+      allow write: if request.auth != null && (
+        request.auth.token.email in firestore.get(/databases/(default)/documents/roles/pis).data.emails ||
+        request.auth.token.email in firestore.get(/databases/(default)/documents/roles/admins).data.emails
+      );
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

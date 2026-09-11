@@ -15,6 +15,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 <style>
   /* Design system shared with bold-lab.ai */
   :root{
@@ -209,12 +210,27 @@
   }
   .vs-pt.is-venue .vs-name{color:var(--ink-soft); font-weight:500;}
   .vs-when{font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .ics-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;}
   .ics-btn{
-    margin-top:14px; font-family:inherit; font-weight:600; font-size:12.5px;
+    font-family:inherit; font-weight:600; font-size:12.5px;
     color:var(--blue); background:var(--surface); border:1px solid var(--line);
     border-radius:var(--radius); padding:7px 13px; cursor:pointer;
   }
   .ics-btn:hover{background:var(--wash); border-color:var(--blue);}
+  .ics-tip-wrap{position:relative; display:inline-flex;}
+  .ics-tip{
+    position:absolute; bottom:calc(100% + 9px); left:50%; transform:translateX(-50%) translateY(4px);
+    width:240px; font-size:12px; font-weight:400; line-height:1.4; text-align:left;
+    color:#fff; background:var(--ink); border-radius:7px; padding:9px 11px;
+    box-shadow:var(--shadow); pointer-events:none;
+    opacity:0; visibility:hidden; transition:opacity .15s ease, transform .15s ease;
+    z-index:5;
+  }
+  .ics-tip::after{
+    content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+    border:6px solid transparent; border-top-color:var(--ink);
+  }
+  .ics-tip.is-shown{opacity:1; visibility:visible; transform:translateX(-50%) translateY(0);}
 
   /* ---------- venue modal form ---------- */
   .modal-scroll{max-height:64vh; overflow-y:auto; margin:0 -6px; padding:2px 6px;}
@@ -772,6 +788,15 @@
     if (AUTH_USE_EMULATOR) auth.useEmulator('http://localhost:9099');
   } catch (e){ auth = null; }
 
+  // Cloud Storage — publishes each venue's .ics feed at a stable public
+  // URL for calendar subscription (see syncVenueIcs()/icsSubscribeUrl()
+  // below and storage.rules). Always the real bucket, no emulator: the
+  // write-side Storage rule cross-references real roles/pis + roles/admins
+  // data in production Firestore, which a local emulator wouldn't have —
+  // same reasoning as testing Sign-in-with-Slack against the real backend.
+  var storage = null;
+  try { storage = firebase.storage(); } catch (e){ storage = null; }
+
   function renderAuthRegion(){
     if (!els.authRegion) return;
     if (!auth){
@@ -842,14 +867,38 @@
     });
   }
 
-  function showToast(message, kind){
+  function showToast(message, kind, durationMs){
     els.toastRegion.innerHTML =
       '<div class="toast-inner ' + (kind === 'error' ? 'error' : 'ok') + '">' + escapeHtml(message) + '</div>';
     setTimeout(function(){
       if (els.toastRegion.innerHTML.indexOf(escapeHtml(message)) !== -1) {
         els.toastRegion.innerHTML = '';
       }
-    }, 4000);
+    }, durationMs || 4000);
+  }
+
+  // onOk()/onFail() default to a toast if not given — pass your own to show
+  // feedback anchored to whatever triggered the copy instead (e.g. a
+  // tooltip on the button itself, so nothing else on the page shifts).
+  function copyText(text, onOk, onFail){
+    if (!text) return;
+    function ok(){ (onOk || function(){ showToast('Copied.', 'ok'); })(); }
+    function fail(){ (onFail || function(){ showToast('Could not copy — select and copy it manually.', 'error'); })(); }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(ok, fail);
+      return;
+    }
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      var copied = document.execCommand('copy');
+      document.body.removeChild(ta);
+      copied ? ok() : fail();
+    } catch (e){ fail(); }
   }
 
   // ---------- storage (Firestore) ----------
@@ -1244,11 +1293,20 @@
         '<span class="vs-when">' + formatDateShort(r.iso) + '</span>' +
       '</li>';
     }).join('');
+    var subUrl = icsSubscribeUrl(v.id);
     return '<div class="venue-schedule">' +
       '<div class="vs-head">Deadlines <span>&mdash; counted back from the ' + formatDate(v.deadline) + ' paper deadline' +
         (hasVenueDates ? ', plus the venue&rsquo;s own dates' : '') + '</span></div>' +
       '<div class="vs-rail-wrap"><ol class="vs-rail" style="--n:' + rows.length + '">' + pts + '</ol></div>' +
-      '<button class="ics-btn" type="button" id="downloadIcs">Add to calendar (.ics)</button>' +
+      '<div class="ics-actions">' +
+        '<button class="ics-btn" type="button" id="downloadIcs">Add to calendar (.ics)</button>' +
+        (subUrl ?
+          '<span class="ics-tip-wrap">' +
+            '<button class="ics-btn" type="button" id="subscribeIcs" data-url="' + escapeHtml(subUrl) + '">Subscribe to calendar</button>' +
+            '<span class="ics-tip" id="subscribeIcsTip" role="status">Link copied — paste it into your calendar app’s &ldquo;Subscribe by URL&rdquo; option (Google Calendar: Settings &rarr; Add calendar &rarr; From URL).</span>' +
+          '</span>'
+          : '') +
+      '</div>' +
     '</div>';
   }
 
@@ -1308,6 +1366,39 @@
       logError('downloadIcs', e);
       showToast('Could not build the .ics file.', 'error');
     }
+  }
+
+  // Subscribe-by-URL calendar feed — same bytes as the download button,
+  // published to Cloud Storage at a stable public path so calendar apps
+  // (Google/Apple/Outlook) can poll it themselves. See storage.rules for
+  // why only a PI/admin can publish it (mirrors who can edit a venue).
+  function icsStoragePath(boardId){ return 'venues/' + boardId + '/feed.ics'; }
+
+  // Deterministic public URL — no need to call getDownloadURL() (which
+  // embeds a share token): the object is genuinely public via Storage
+  // Rules, so the plain alt=media URL always works once it exists.
+  function icsSubscribeUrl(boardId){
+    if (!storage) return null;
+    return 'https://firebasestorage.googleapis.com/v0/b/' + FIREBASE_CONFIG.storageBucket +
+      '/o/' + encodeURIComponent(icsStoragePath(boardId)) + '?alt=media';
+  }
+
+  // Called after a venue is created/edited — best-effort, non-blocking:
+  // the venue's own Firestore save is already the source of truth, this
+  // just keeps the published feed in sync with it. Failures (e.g. the
+  // signed-in user isn't a PI/admin, or Storage isn't reachable) are
+  // logged, not surfaced as a save failure — the venue itself still saved.
+  function syncVenueIcs(v){
+    if (!storage || !v) return;
+    var text = buildIcs(v);
+    var ref = storage.ref().child(icsStoragePath(v.id));
+    if (!text){
+      // No deadline (any more) — remove a stale published feed, if any.
+      ref.delete().catch(function(){ /* fine if it never existed */ });
+      return;
+    }
+    ref.putString(text, undefined, { contentType: 'text/calendar; charset=utf-8' })
+      .catch(function(err){ logError('syncVenueIcs', err); });
   }
 
   function getCurrentBoard(){
@@ -1747,6 +1838,18 @@
     if (ev) ev.addEventListener('click', openEditVenueModal);
     var ics = document.getElementById('downloadIcs');
     if (ics) ics.addEventListener('click', function(){ downloadIcs(getCurrentBoard()); });
+    var subscribeIcs = document.getElementById('subscribeIcs');
+    var subscribeIcsTip = document.getElementById('subscribeIcsTip');
+    if (subscribeIcs) subscribeIcs.addEventListener('click', function(){
+      copyText(subscribeIcs.getAttribute('data-url'), function(){
+        if (!subscribeIcsTip) return;
+        subscribeIcsTip.classList.add('is-shown');
+        clearTimeout(subscribeIcsTip._hideTimer);
+        subscribeIcsTip._hideTimer = setTimeout(function(){
+          subscribeIcsTip.classList.remove('is-shown');
+        }, 4500);
+      });
+    });
 
     var searchInput = document.getElementById('boardSearchInput');
     if (searchInput) searchInput.addEventListener('input', function(){ onSearchInput(searchInput.value); });
@@ -2522,6 +2625,7 @@
         showToast('Created ' + entry.label + '.', 'ok');
         closeModal();
         openVenue(id);
+        syncVenueIcs(entry);
       });
     });
   }
@@ -2540,7 +2644,10 @@
     renderAll();
     saveBoardsIndex(next).then(function(ok){
       if (!ok){ state.boards = prev; renderAll(); showToast('Could not save the venue \u2014 try again.', 'error'); }
-      else showToast('Saved.', 'ok');
+      else {
+        showToast('Saved.', 'ok');
+        syncVenueIcs(next.filter(function(b){ return b.id === id; })[0]);
+      }
     });
   }
 
@@ -2556,6 +2663,7 @@
         state.boards = next;
         showToast('Deleted ' + current.label + '.', 'ok');
         backToVenuesList();
+        if (storage) storage.ref().child(icsStoragePath(id)).delete().catch(function(){});
       });
     });
   }
