@@ -20,7 +20,7 @@ Everything below the data model and Security Rules is buildable **without any cr
 
 ## Data model (Firestore, Native mode)
 
-Normalized further than the original "one JSON blob per board" plan, specifically so the two highest-contention writes — ticking a checklist box, and posting a comment — never need a transaction or can conflict with each other. Optimistic concurrency (a `version` field, checked and incremented inside a `runTransaction`) is only needed on the card document itself, for its own mutable fields (status, reviewers, edit-fields, changesRequested, outcome).
+Normalized further than the original "one JSON blob per board" plan, specifically so the two highest-contention writes — ticking a checklist box, and posting a comment — never need a transaction or can conflict with each other. Optimistic concurrency (a `version` field, checked and incremented inside a `runTransaction`) is only needed on the card document itself, for its own mutable fields (status, reviewers, edit-fields, jrReviewState/srReviewState, outcome).
 
 ```
 boards/{boardId}
@@ -37,11 +37,19 @@ boards/{boardId}
   boards/{boardId}/cards/{cardId}
     title, authors[] (last = PI), overleafLink, correspondingAuthorEmail,
     computeEstimate, status, submittedBy{name,email,slackId},
-    reviewers{junior,senior}, changesRequested, outcome, submissionLink,
-    rebuttalDeadline, rebuttalDocLink, reviewNotes, createdAt, updatedAt,
-    version (int)
+    reviewers{junior,senior}, jrReviewState, srReviewState, outcome,
+    submissionLink, rebuttalDeadline, rebuttalDocLink, reviewNotes,
+    createdAt, updatedAt, version (int)
     # card-level fields only — checklist/discussion/history pulled out below
     # so they never contend with a card-level edit or each other
+    # jrReviewState/srReviewState: each reviewer's own sign-off, one of
+    # 'in_review' | 'changes_requested' | 'approved' (2026-09-11, see
+    # docs/AGENTS.md guideline 6) — replaces an earlier, brief shape
+    # (changesRequested + jrApproved/srApproved); normalizeCard() migrates
+    # any card still holding that shape. Client-side gated so only the
+    # matching card.reviewers[role] email can set it — Security Rules stay
+    # whole-document (no field-level check that it's specifically that
+    # reviewer writing it).
     # No card-level track/deadline: a card inherits its venue's deadline —
     # a different deadline (a different track, a workshop) is a different
     # venue by convention, not a per-card override. Decided 2026-09-11.

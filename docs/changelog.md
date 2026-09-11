@@ -4,6 +4,16 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Review sign-off is now per-reviewer, three buttons each; approving both auto-advances the card
+
+Redesigned the review-status controls added earlier today (below), per Eduardo's follow-up: "we should really have three buttons (same line) under each reviewer, where only that reviewer can click to say 'In review' 'Changes requested' 'Approved'." Replaced the shared `changesRequested` flag + independent `jrApproved`/`srApproved` booleans with two per-reviewer tri-state fields, `jrReviewState`/`srReviewState`, each one of `in_review` / `changes_requested` / `approved`. Rendered as a row of three buttons directly under each reviewer's picker in `.card-reviewers` (`reviewStateButtonsHtml()`), on both the card face and the detail page — one row for Jr, one for Sr, both always visible while the card's in Drafted.
+
+Click access is restricted to the actual assigned reviewer: a row is only enabled when the signed-in user's email matches `card.reviewers.junior`/`.senior` for that row; everyone else sees it, disabled, with a tooltip explaining why. This is client-side only — the Security Rules' card-update condition already requires the writer's email to match the submitter, a reviewer, or a PI/admin, but at the whole-document level, not per-field; a determined bypass of the UI could still write the other reviewer's field. Making that a real field-level rule is a bigger, separate piece of work, not attempted here.
+
+New: once both reviewers independently reach "Approved" on a card still in Drafted, it now auto-advances straight to Reviewed (`final_draft`) — no separate manual step. Still held to the same checklist-completion gate as any other move that crosses `GATE_STATUS`; if the checklist isn't finished yet, the status is left alone (it advances next time a state flips once the checklist catches up, or someone Advances by hand).
+
+`reviewFilterState`/`reviewBadges` and the board search bar's review-status filter (unchanged from the version below) keep working — `changes_requested` still wins the overall bucket if either reviewer is in that state; `approved` only once both are. `normalizeCard()` migrates any card still holding the earlier shape so no reviewer's prior sign-off is lost. Verified the tri-state logic, the migration, and the auto-advance gate (including "checklist incomplete → doesn't advance") with a standalone unit test, same approach as everything else today — still no connected browser this session.
+
 ### Review status is no longer automatic; added a filter for it
 
 "Approved" used to be derived automatically from `checklistComplete()` — every box ticked by both reviewers. Per Eduardo: ticking every box isn't the same as a reviewer actually signing off, and it shouldn't happen without a manual action. Split into two new independent, manually-toggled flags — `jrApproved` and `srApproved` (one-click buttons on the card face and detail page, same shape as the existing `changesRequested` toggle) — neither derived from the checklist at all. `changesRequested` was already manual; unchanged.

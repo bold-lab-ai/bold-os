@@ -376,7 +376,6 @@
     font-size:10.5px; font-weight:700; letter-spacing:0; color:var(--plum);
   }
   .author-pi-tag--hidden{visibility:hidden;}
-  .changes-toggle{display:block; font-size:11.5px; margin:2px 0 8px; padding:0;}
   .card-progress{font-size:11px; color:var(--muted); margin:6px 0 2px; font-variant-numeric:tabular-nums;}
 
   /* ---------- inline reviewer assignment (card + detail) ---------- */
@@ -388,6 +387,23 @@
   }
   .card-reviewers .rv-role.junior, .rv-role.junior{color:var(--teal);}
   .card-reviewers .rv-role.senior, .rv-role.senior{color:var(--plum);}
+  /* Per-reviewer tri-state row: "In review" / "Changes requested" /
+     "Approved", one row directly under each reviewer's picker. Only the
+     matching assigned reviewer can click their own row (see
+     reviewStateButtonsHtml / onSetReviewState) — everyone else sees it
+     disabled, same shape as the read-only Security Rules constraint this
+     mirrors client-side. */
+  .rv-state-row{display:flex; gap:4px; margin:0 0 6px 22px;}
+  .rv-state-btn{
+    flex:1 1 0; font-size:10.5px; padding:3px 4px; border-radius:5px;
+    border:1px solid var(--line); background:var(--surface); color:var(--muted);
+    cursor:pointer; text-align:center; line-height:1.25;
+  }
+  .rv-state-btn:disabled{cursor:default; opacity:0.55;}
+  .rv-state-btn.is-active{border-color:transparent; font-weight:700;}
+  .rv-state-btn.rv-state-in_review.is-active{background:var(--warn-bg); color:var(--warn-text);}
+  .rv-state-btn.rv-state-changes_requested.is-active{background:var(--danger-bg); color:var(--danger-text);}
+  .rv-state-btn.rv-state-approved.is-active{background:var(--success-bg); color:var(--success-text);}
   .rv-input{
     flex:1 1 auto; min-width:0; font-size:12px; padding:5px 7px;
     border:1px solid var(--line); border-radius:6px;
@@ -1737,16 +1753,25 @@
     if (!out.reviewers || typeof out.reviewers !== 'object'){
       out = Object.assign({}, out, { reviewers: { junior: (out.assignedTo || ''), senior: '' } });
     }
-    if (typeof out.changesRequested !== 'boolean'){
-      out = Object.assign({}, out, { changesRequested: oldStatus === 'changes_requested' });
-    }
-    // jrApproved/srApproved (2026-09-11): explicit, manual per-reviewer
-    // sign-off — deliberately separate from checklistComplete(), which
+    // jrReviewState/srReviewState (2026-09-11): each reviewer's own
+    // explicit, manual tri-state sign-off — 'in_review' | 'changes_requested'
+    // | 'approved' — deliberately separate from checklistComplete(), which
     // only means every box is ticked, not that a reviewer has actually
-    // signed off on the draft. Existing cards default to not-yet-approved
-    // rather than inferring anything from their current checklist state.
-    if (typeof out.jrApproved !== 'boolean' || typeof out.srApproved !== 'boolean'){
-      out = Object.assign({}, out, { jrApproved: !!out.jrApproved, srApproved: !!out.srApproved });
+    // signed off on the draft. Replaces the brief earlier shape (a shared
+    // changesRequested flag plus independent jrApproved/srApproved
+    // booleans); migrate any card still carrying that shape so a reviewer's
+    // prior sign-off isn't lost. New cards never write changesRequested/
+    // jrApproved/srApproved (see onAddCard) — the fields are only read here.
+    if (typeof out.jrReviewState !== 'string' || typeof out.srReviewState !== 'string'){
+      var hadChangesRequested = !!out.changesRequested || oldStatus === 'changes_requested';
+      var deriveState = function(approved){
+        if (hadChangesRequested) return 'changes_requested';
+        return approved ? 'approved' : 'in_review';
+      };
+      out = Object.assign({}, out, {
+        jrReviewState: deriveState(out.jrApproved),
+        srReviewState: deriveState(out.srApproved)
+      });
     }
     if (typeof out.outcome !== 'string'){
       out = Object.assign({}, out, { outcome: (oldStatus && STATUS_OUTCOME_MIGRATIONS[oldStatus]) || '' });
@@ -1775,19 +1800,22 @@
   // colour + badge in that column are driven by. Deliberately not derived
   // from checklistComplete() (2026-09-11) — ticking every box just means
   // every box is ticked, not that a reviewer has actually signed off, so
-  // "Approved" only follows an explicit, manual jrApproved/srApproved flag
-  // from each reviewer, same as changesRequested already was. The
-  // checklist-completion gate on advancing past Reviewed (crossesGate,
-  // GATE_STATUS) is unrelated and unchanged — this is a separate signal on
-  // top of it, not a replacement.
+  // "Approved" only follows each reviewer's own explicit, manual
+  // jrReviewState/srReviewState. The checklist-completion gate on advancing
+  // past Reviewed (crossesGate, GATE_STATUS) is unrelated and unchanged —
+  // this is a separate signal on top of it, not a replacement. Once both
+  // reviewers independently reach 'approved' on a card still in Draft &
+  // Review, onSetReviewState auto-advances it to Reviewed itself (still
+  // held to that same checklist gate) — see its comment.
   //
   // Three buckets for the card's overall colour + the board filter — a
   // partially-approved card (only one reviewer signed off) still counts as
   // in_review here, since it isn't done yet; reviewBadges() below shows
-  // that partial state on the card itself.
+  // that partial state on the card itself. Either reviewer requesting
+  // changes always wins the overall bucket, even if the other has approved.
   function reviewFilterState(card){
-    if (card.changesRequested) return 'changes_requested';
-    if (card.jrApproved && card.srApproved) return 'approved';
+    if (card.jrReviewState === 'changes_requested' || card.srReviewState === 'changes_requested') return 'changes_requested';
+    if (card.jrReviewState === 'approved' && card.srReviewState === 'approved') return 'approved';
     return 'in_review';
   }
 
@@ -1798,8 +1826,8 @@
     var bucket = reviewFilterState(card);
     if (bucket !== 'in_review') return [bucket];
     var badges = [];
-    if (card.jrApproved) badges.push('jr_approved');
-    if (card.srApproved) badges.push('sr_approved');
+    if (card.jrReviewState === 'approved') badges.push('jr_approved');
+    if (card.srReviewState === 'approved') badges.push('sr_approved');
     return badges.length ? badges : ['in_review'];
   }
 
@@ -1808,6 +1836,33 @@
     jr_approved: 'JR approved', sr_approved: 'SR approved'
   };
   var REVIEW_FILTER_LABELS = { all: 'Any review status', in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
+  var REVIEW_STATE_OPTIONS = ['in_review', 'changes_requested', 'approved'];
+  var REVIEW_STATE_BTN_LABELS = { in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
+
+  // Three buttons, same line, under one reviewer's picker — only the
+  // person actually assigned as that reviewer (card.reviewers[role] ===
+  // their signed-in email) can click theirs; everyone else sees the same
+  // row, disabled. This is a client-side-only restriction: the Security
+  // Rules already require email() to match one of the card's reviewer
+  // fields (or submitter/PI/admin) to write the card at all, at the
+  // whole-document level — there's no field-level rule stopping the junior
+  // reviewer from writing srReviewState if they somehow bypassed the UI.
+  // That's a bigger, separate piece of work, not attempted here.
+  function reviewStateButtonsHtml(card, role){
+    var field = role === 'senior' ? 'srReviewState' : 'jrReviewState';
+    var current = card[field] || 'in_review';
+    var reviewerEmail = (card.reviewers && card.reviewers[role]) || '';
+    var canAct = !!(state.currentUser && reviewerEmail && state.currentUser.email === reviewerEmail);
+    var html = '<div class="rv-state-row" role="group" aria-label="' + REVIEW_ROLE_LABELS[role] + ' review status">';
+    REVIEW_STATE_OPTIONS.forEach(function(v){
+      html += '<button type="button" class="rv-state-btn rv-state-' + v + (current === v ? ' is-active' : '') + '" ' +
+        'data-set-review-state="' + escapeHtml(card.id) + '" data-review-role="' + role + '" data-review-value="' + v + '"' +
+        (canAct ? '' : ' disabled title="Only the assigned ' + REVIEW_ROLE_LABELS[role].toLowerCase() + ' reviewer can set this"') +
+        '>' + REVIEW_STATE_BTN_LABELS[v] + '</button>';
+    });
+    html += '</div>';
+    return html;
+  }
 
   function renderCard(card, board){
     var overdue = isOverdue(card, board);
@@ -1832,15 +1887,10 @@
     if (card.rebuttalDocLink) html += '<a class="card-link" href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Rebuttal doc</a><br>';
     html += '<div class="card-reviewers">' +
       '<div class="rv-row"><span class="rv-role junior">Jr</span>' + reviewerInputHtml(card, 'junior') + '</div>' +
+      (inDraftReview ? reviewStateButtonsHtml(card, 'junior') : '') +
       '<div class="rv-row"><span class="rv-role senior">Sr</span>' + reviewerInputHtml(card, 'senior') + '</div>' +
+      (inDraftReview ? reviewStateButtonsHtml(card, 'senior') : '') +
     '</div>';
-    if (inDraftReview) html += '<button class="btn-text changes-toggle" type="button" data-toggle-changes="' + escapeHtml(card.id) + '">' +
-      (card.changesRequested ? '&#10003; Clear changes-requested flag' : '&#9873; Flag changes requested') + '</button>';
-    if (inDraftReview) html +=
-      '<button class="btn-text changes-toggle" type="button" data-toggle-approval="' + escapeHtml(card.id) + '" data-approval-role="jr">' +
-        (card.jrApproved ? '&#10003; Clear JR approval' : '&#9873; Mark JR reviewer approved') + '</button>' +
-      '<button class="btn-text changes-toggle" type="button" data-toggle-approval="' + escapeHtml(card.id) + '" data-approval-role="sr">' +
-        (card.srApproved ? '&#10003; Clear SR approval' : '&#9873; Mark SR reviewer approved') + '</button>';
     if (card.reviewNotes) html += '<div class="card-notes">' + escapeHtml(card.reviewNotes) + '</div>';
     var counts = checklistCounts(card);
     html += '<div class="card-progress">Checklist &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
@@ -2098,14 +2148,9 @@
         openCard(btn.getAttribute('data-open-card'));
       });
     });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-toggle-changes]'), function(btn){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-set-review-state]'), function(btn){
       btn.addEventListener('click', function(){
-        onToggleChangesRequested(btn.getAttribute('data-toggle-changes'));
-      });
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-toggle-approval]'), function(btn){
-      btn.addEventListener('click', function(){
-        onToggleApproval(btn.getAttribute('data-toggle-approval'), btn.getAttribute('data-approval-role'));
+        onSetReviewState(btn.getAttribute('data-set-review-state'), btn.getAttribute('data-review-role'), btn.getAttribute('data-review-value'));
       });
     });
   }
@@ -2458,13 +2503,6 @@
     html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : '')) + '>Advance &rarr;</button>';
     html += '</div>';
     html += '<select aria-label="Status" data-status-for="' + escapeHtml(card.id) + '">' + statusOptionsHtml(card.status, effectiveStatusOrder(board)) + '</select>';
-    if (card.status === 'draft_review') html += '<button class="btn" type="button" data-toggle-changes="' + escapeHtml(card.id) + '">' +
-      (card.changesRequested ? '&#10003; Clear changes-requested flag' : '&#9873; Flag changes requested') + '</button>';
-    if (card.status === 'draft_review') html +=
-      '<button class="btn" type="button" data-toggle-approval="' + escapeHtml(card.id) + '" data-approval-role="jr">' +
-        (card.jrApproved ? '&#10003; Clear JR approval' : '&#9873; Mark JR reviewer approved') + '</button>' +
-      '<button class="btn" type="button" data-toggle-approval="' + escapeHtml(card.id) + '" data-approval-role="sr">' +
-        (card.srApproved ? '&#10003; Clear SR approval' : '&#9873; Mark SR reviewer approved') + '</button>';
     html += '<button class="btn" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button>';
     html += '<button class="btn-text danger" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
     html += '</div>';
@@ -2482,8 +2520,10 @@
       ? escapeHtml(card.submittedBy.name) + (card.submittedBy.email ? ' <span style="color:var(--muted);">(' + escapeHtml(card.submittedBy.email) + ')</span>' : '')
       : '—') + '</dd>';
     if (card.createdAt) html += '<dt>Registered</dt><dd>' + formatTimestamp(card.createdAt) + '</dd>';
-    html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') + '</dd>';
-    html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'senior') + '</dd>';
+    html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') +
+      (card.status === 'draft_review' ? reviewStateButtonsHtml(card, 'junior') : '') + '</dd>';
+    html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'senior') +
+      (card.status === 'draft_review' ? reviewStateButtonsHtml(card, 'senior') : '') + '</dd>';
     var regNote = card.history && card.history[0] && card.history[0].note;
     if (regNote) html += '<dt>Note at registration</dt><dd style="white-space:pre-wrap;">' + escapeHtml(regNote) + '</dd>';
     if (card.reviewNotes) html += '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>';
@@ -2554,11 +2594,9 @@
     if (ed) ed.addEventListener('click', function(){ openEditModal(ed.getAttribute('data-edit')); });
     var rm = els.boardRegion.querySelector('[data-remove]');
     if (rm) rm.addEventListener('click', function(){ onRemoveCard(rm.getAttribute('data-remove')); });
-    var tc = els.boardRegion.querySelector('[data-toggle-changes]');
-    if (tc) tc.addEventListener('click', function(){ onToggleChangesRequested(tc.getAttribute('data-toggle-changes')); });
-    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-toggle-approval]'), function(btn){
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-set-review-state]'), function(btn){
       btn.addEventListener('click', function(){
-        onToggleApproval(btn.getAttribute('data-toggle-approval'), btn.getAttribute('data-approval-role'));
+        onSetReviewState(btn.getAttribute('data-set-review-state'), btn.getAttribute('data-review-role'), btn.getAttribute('data-review-value'));
       });
     });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cl]'), function(box){
@@ -2975,9 +3013,8 @@
       status: 'register',
       submittedBy: { name: submittedByName, email: state.currentUser.email, slackId: null },
       reviewers: { junior: '', senior: '' },
-      changesRequested: false,
-      jrApproved: false,
-      srApproved: false,
+      jrReviewState: 'in_review',
+      srReviewState: 'in_review',
       outcome: '',
       submissionLink: null,
       rebuttalDeadline: null,
@@ -3065,34 +3102,44 @@
     });
   }
 
-  function onToggleChangesRequested(cardId){
+  // role is 'junior' or 'senior'; value is one of REVIEW_STATE_OPTIONS. Sets
+  // that reviewer's own jrReviewState/srReviewState — an explicit, manual
+  // sign-off, deliberately not derived from the checklist (see
+  // reviewFilterState/reviewBadges). Client-side-gated to the matching
+  // assigned reviewer (see reviewStateButtonsHtml's `disabled`) — this
+  // check is belt-and-braces against a stray click event, not the real
+  // access control, which is the Security Rules' card-update condition.
+  //
+  // Once both reviewers reach 'approved' on a card still in Draft & Review,
+  // this auto-advances the card straight to Reviewed (final_draft) in the
+  // same save, same as picking "Advance" by hand — nobody has to remember a
+  // separate step once both sign-offs are in. Still held to the same
+  // checklist gate as any other move that crosses GATE_STATUS
+  // (crossesGate/checklistComplete, see onChangeStatus): if the checklist
+  // isn't finished yet, the status is left alone rather than force-advancing
+  // past that gate; it'll advance next time a state flips once the
+  // checklist catches up, or someone can Advance manually.
+  function onSetReviewState(cardId, role, value){
+    if (REVIEW_STATE_OPTIONS.indexOf(value) === -1) return;
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    var field = role === 'senior' ? 'srReviewState' : 'jrReviewState';
+    var reviewerEmail = (card.reviewers && card.reviewers[role]) || '';
+    if (!state.currentUser || !reviewerEmail || state.currentUser.email !== reviewerEmail) return;
     var boardId = state.currentBoardId;
+    var wasDraftReview = card.status === 'draft_review';
+    var autoAdvanced = false;
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
-      return Object.assign({}, c, { changesRequested: !c.changesRequested, updatedAt: Date.now() });
-    });
-    var prev = state.cards;
-    state.cards = next; // optimistic
-    renderBoard();
-    saveBoard(boardId, { cards: next }).then(function(ok){
-      if (!ok){
-        state.cards = prev;
-        renderBoard();
-        showToast(saveErrorMessage('Could not save that — try again.'), 'error');
+      var patch = {}; patch[field] = value;
+      var merged = Object.assign({}, c, patch);
+      if (merged.status === 'draft_review' && merged.jrReviewState === 'approved' && merged.srReviewState === 'approved' &&
+          crossesGate(merged.status, 'final_draft') && checklistComplete(merged)){
+        merged.status = 'final_draft';
+        autoAdvanced = true;
       }
-    });
-  }
-
-  // role is 'jr' or 'sr' — sets jrApproved/srApproved. An explicit,
-  // manual sign-off, same shape as onToggleChangesRequested; deliberately
-  // not derived from the checklist (see reviewFilterState/reviewBadges).
-  function onToggleApproval(cardId, role){
-    var field = role === 'sr' ? 'srApproved' : 'jrApproved';
-    var boardId = state.currentBoardId;
-    var next = state.cards.map(function(c){
-      if (c.id !== cardId) return c;
-      var patch = {}; patch[field] = !c[field];
-      return Object.assign({}, c, patch, { updatedAt: Date.now() });
+      merged.updatedAt = Date.now();
+      return merged;
     });
     var prev = state.cards;
     state.cards = next; // optimistic
@@ -3102,6 +3149,8 @@
         state.cards = prev;
         renderBoard();
         showToast(saveErrorMessage('Could not save that — try again.'), 'error');
+      } else if (autoAdvanced && wasDraftReview){
+        showToast('Both reviewers approved — moved to ' + STATUS_LABELS.final_draft + '.', 'ok');
       }
     });
   }
