@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Permission-denied errors now say so, instead of a misleading "try again"
+
+A non-PI/admin lab member tried to create a venue and got "Could not save the venue list — try again." — correct behavior (venue create/delete requires `hasFullWrite()`), but a misleading message: Security Rules rejections aren't transient, retrying does nothing. `saveBoard()`/`saveBoardsIndex()` now record the Firestore error's `code` (`lastWriteErrorCode`) on failure; a new `saveErrorMessage(fallback)` helper returns "You don't have permission to do that — check with a PI or lab admin." specifically when the code was `permission-denied`, and the original fallback text otherwise. Applied at all 9 places a save failure shows a toast.
+
 ### Fixed: "also as plain DIFF.md" showed raw markdown instead of rendering
 
 `diff.html`'s own "also as plain DIFF.md" link pointed at `docs/DIFF.md` directly — GitHub Pages serves `.md` files as raw unstyled text (no Jekyll/build step in this project), so clicking it showed the raw markdown source instead of anything readable. Pointed it at the GitHub repo's own file viewer instead (`.../blob/main/docs/DIFF.md`), which actually renders markdown. Checked every other page for the same mistake — this was the only raw `.md` link anywhere in the served pages.

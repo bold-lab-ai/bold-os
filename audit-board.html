@@ -1025,7 +1025,7 @@
         if (!touched) return true;
         return batch.commit().then(function(){ return true; });
       })
-      .catch(function(err){ logError('saveBoardsIndex', err); return false; });
+      .catch(function(err){ logError('saveBoardsIndex', err); lastWriteErrorCode = err && err.code; return false; });
   }
 
   function loadBoard(id){
@@ -1067,7 +1067,7 @@
         if (!touched) return true;
         return batch.commit().then(function(){ return true; });
       })
-      .catch(function(err){ logError('saveBoard', err); return false; });
+      .catch(function(err){ logError('saveBoard', err); lastWriteErrorCode = err && err.code; return false; });
   }
 
   function deleteBoardData(id){
@@ -1083,6 +1083,22 @@
 
   function logError(where, err){
     if (window.console && console.error) console.error('[Internal Review Board]', where, err);
+  }
+
+  // Set by saveBoard()/saveBoardsIndex()'s catch handlers so the call site
+  // can tell "you're not allowed to do that" (Security Rules rejected the
+  // write — retrying won't help) apart from an actual transient failure,
+  // instead of showing the same generic "try again" for both. Firestore
+  // rejections carry a stable err.code ('permission-denied') for exactly
+  // this. A plain shared var, not per-call state, is fine here: the app
+  // never has two saves racing each other where this would matter.
+  var lastWriteErrorCode = null;
+  function saveErrorMessage(fallback){
+    var wasPermissionDenied = lastWriteErrorCode === 'permission-denied';
+    lastWriteErrorCode = null;
+    return wasPermissionDenied
+      ? 'You don’t have permission to do that — check with a PI or lab admin.'
+      : fallback;
   }
 
   // ---------- rendering ----------
@@ -2434,7 +2450,7 @@
       if (!ok){
         state.cards = prev;
         renderCardDetail();
-        showToast('Could not save the checklist — try again.', 'error');
+        showToast(saveErrorMessage('Could not save the checklist — try again.'), 'error');
       }
     });
   }
@@ -2657,7 +2673,7 @@
       if (!ok){
         state.cards = prev;
         renderBoard();
-        showToast('Could not save changes \u2014 try again.', 'error');
+        showToast(saveErrorMessage('Could not save changes \u2014 try again.'), 'error');
       } else {
         showToast('Saved.', 'ok');
       }
@@ -2683,9 +2699,9 @@
     var entry = Object.assign({ id: id, label: f.venue + ' ' + f.year, createdAt: Date.now() }, f);
     var next = state.boards.concat([entry]);
     saveBoard(id, { cards: [] }).then(function(ok){
-      if (!ok){ showToast('Could not create the venue \u2014 try again.', 'error'); return; }
+      if (!ok){ showToast(saveErrorMessage('Could not create the venue \u2014 try again.'), 'error'); return; }
       return saveBoardsIndex(next).then(function(ok2){
-        if (!ok2){ showToast('Could not save the venue list \u2014 try again.', 'error'); return; }
+        if (!ok2){ showToast(saveErrorMessage('Could not save the venue list \u2014 try again.'), 'error'); return; }
         state.boards = next;
         showToast('Created ' + entry.label + '.', 'ok');
         closeModal();
@@ -2708,7 +2724,7 @@
     closeModal();
     renderAll();
     saveBoardsIndex(next).then(function(ok){
-      if (!ok){ state.boards = prev; renderAll(); showToast('Could not save the venue \u2014 try again.', 'error'); }
+      if (!ok){ state.boards = prev; renderAll(); showToast(saveErrorMessage('Could not save the venue \u2014 try again.'), 'error'); }
       else {
         showToast('Saved.', 'ok');
         syncVenueIcs(next.filter(function(b){ return b.id === id; })[0]);
@@ -2723,7 +2739,7 @@
     var id = current.id;
     var next = state.boards.filter(function(b){ return b.id !== id; });
     saveBoardsIndex(next).then(function(ok){
-      if (!ok){ showToast('Could not delete the venue \u2014 try again.', 'error'); return; }
+      if (!ok){ showToast(saveErrorMessage('Could not delete the venue \u2014 try again.'), 'error'); return; }
       deleteBoardData(id).then(function(){
         state.boards = next;
         showToast('Deleted ' + current.label + '.', 'ok');
@@ -2787,7 +2803,7 @@
     var next = state.cards.concat([card]);
     var boardId = state.currentBoardId;
     saveBoard(boardId, { cards: next }).then(function(ok){
-      if (!ok){ showToast('Could not save the paper \u2014 try again.', 'error'); return; }
+      if (!ok){ showToast(saveErrorMessage('Could not save the paper \u2014 try again.'), 'error'); return; }
       if (state.currentBoardId !== boardId) return;
       state.cards = next;
       closeModal();
@@ -2863,7 +2879,7 @@
       if (!ok){
         state.cards = prev;
         renderBoard();
-        showToast('Could not save the reviewer — try again.', 'error');
+        showToast(saveErrorMessage('Could not save the reviewer — try again.'), 'error');
       }
     });
   }
@@ -2881,7 +2897,7 @@
       if (!ok){
         state.cards = prev;
         renderBoard();
-        showToast('Could not save that — try again.', 'error');
+        showToast(saveErrorMessage('Could not save that — try again.'), 'error');
       }
     });
   }
