@@ -27,12 +27,23 @@ boards/{boardId}
   venue, year, label, website, deadline, pitchDay, abstractDeadline,
   reviewsPublicDate, rebuttalDeadline, notificationDate, cameraReadyDeadline,
   conferenceDates, location, maxPapersPerAuthor, pageLimit, anonymity,
-  submissionSystem, notes, createdAt, rushMode (bool, optional)
+  submissionSystem, notes, createdAt, rushMode (bool, optional),
+  status ('approved' | 'pending'), proposedBy ({name,email}, pending only)
   # replaces today's boards-index array entry — one doc per venue+year
   # rushMode: client-only display toggle (2026-09-11, see docs/AGENTS.md
   # guideline 6) — collapses the board to 4 columns. No Security Rules
   # implication: it's just another field on a document create/update
   # already covered by hasFullWrite().
+  # status/proposedBy: venue proposals (2026-09-11, branch
+  # feature/venue-proposals, NOT YET MERGED/DEPLOYED — see "Venue
+  # proposals" below). A board with no `status` field at all is an
+  # approved venue predating this feature; get()'s in-rule default
+  # covers single-document reads, but see the migration note before
+  # this ships — existing boards need a real `status: 'approved'`
+  # backfill before the new query-based loadBoardsIndex()/
+  # fetchVisibleBoards() go live, since a missing field can't satisfy a
+  # `where('status','==','approved')` filter the way it can a rule's
+  # `.get(field, default)`.
 
   boards/{boardId}/cards/{cardId}
     title, authors[] (last = PI), overleafLink, correspondingAuthorEmail,
@@ -145,6 +156,27 @@ match /boards/{boardId} {
 **`roles/pis` and `roles/admins` are seeded and live** (2026-09-11) — 6 PIs, 3 admins, written via a one-off Admin SDK script (Node, `firebase-admin`) run from a service-account key Eduardo generated in Firebase Console, verified by reading both documents back afterward. The key file was deleted immediately after (never committed — it landed in this repo's own folder from the browser download, caught before `git add`, moved out and shredded) and Eduardo was asked to revoke the key itself in Console (Project Settings → Service Accounts → Keys) since a live Admin SDK key grants full database access regardless of Security Rules, and there was no reason to leave a standing one behind for a one-time job. `roles/seniors` and `roles/juniors` are still unseeded — no junior/senior reviewer assignments possible until those exist too.
 
 **Deployed, but a no-op in practice today, and here's why that's fine.** `isSignedIn()` is always false until the `oidc.slack` provider exists and someone can actually sign in — so nothing changes in production behavior yet, this is safe to have live even with real role data seeded. Real, separate blocker for when Slack sign-in *does* go live: `submittedBy.email` and `reviewers.junior`/`reviewers.senior` assume real signed-in emails, but as of Phase 1a **they don't hold that** — `submittedBy` is `{name, slackId}` (a free-text name typed into a "Stand-in for Slack login" field) and `reviewers.junior`/`reviewers.senior` are free-text names from the shared people-autocomplete. That still needs fixing (wiring `state.currentUser.email` into both) before the per-card `update` rule can match anyone real — tracked in the "Client-side change (Phase 2)" section above.
+
+## Venue proposals (2026-09-11) — built on `feature/venue-proposals`, NOT YET SHIPPED
+
+Eduardo: any lab member should be able to propose a new venue, through the exact same form admins/PIs use, but a proposal is only visible to its proposer and to PI/admin — with an Approve button — until approved. Also the trigger for moving development onto a branch first: the site's live and in real use now, so this and future features get built and reviewed on a branch before merging to `main`/deploying, rather than going straight to production like every earlier feature this session did.
+
+**Data model:** `boards/{boardId}` gets two new fields — `status` (`'approved'` or `'pending'`; missing means `'approved'`, for backward compatibility with every board created before this existed) and `proposedBy` (`{name, email}`, pending proposals only, mirrors a card's `submittedBy`).
+
+**Security Rules** (already written, in `firestore.rules` on the branch): `read` now requires `status != 'pending'` OR `hasFullWrite()` OR being the proposer (`.get('status','approved')` covers the missing-field case for a *single-document* read). `create` still allows a direct `status:'approved'` create for `hasFullWrite()` only, same as before, but now also allows anyone signed in to create a doc with `status:'pending'` **and** `proposedBy.email` matching their own email — self-attributed only, can't propose in someone else's name. `update`/`delete` are unchanged (`hasFullWrite()` only) — approving is just an update (flips `status`), and there's no separate "reject": a PI/admin who doesn't want a proposal deletes it the normal way.
+
+**The hard part was list queries, not single-doc reads.** Firestore rejects a *whole* `collection.get()`/`.where()` query outright if any candidate document in it could fail the read rule for this requester — it doesn't silently filter out the ones that fail. A plain `boards.get()` (what `loadBoardsIndex()`/`saveBoardsIndex()` always did) would therefore start failing for non-admins the moment any pending proposal exists that isn't theirs. Fixed by replacing it everywhere with `fetchVisibleBoards()`, which runs three separate, purpose-built queries in parallel instead of one unconstrained one:
+1. `where('status','==','approved')` — always succeeds, the whole lab.
+2. `where('status','==','pending').where('proposedBy.email','==', me)` — always succeeds, my own proposals.
+3. `where('status','==','pending')`, unfiltered — succeeds **only** for someone with `hasFullWrite()`, since that's the only way the rule can hold across every possible result without an ownership filter.
+
+Query 3's success/failure is also how the client learns whether to show the "Pending your approval" section and Approve buttons at all — there's no other way to ask, since `roles/{roleId}` stays permanently unreadable by clients (same constraint as Rush mode's own permission check, `docs/AGENTS.md` guideline 6). This can vacuously succeed for a genuine non-admin in the edge case where zero *other* people's proposals currently exist (nothing to violate the rule against) — harmless: it can only ever hand back their own proposal, and an Approve click against it still fails server-side (`update` stays `hasFullWrite()`-only), same graceful failure as any other disallowed write in this app.
+
+**`onCreateBoard()` doesn't pre-decide whether to propose or create directly.** There's no reliable client-side "am I PI/admin" check to branch on (see above), so it always attempts the real thing first — a direct `status:'approved'` create, exactly like before — and only falls back to a self-attributed pending create on the *specific* failure that means "you're not PI/admin" (a `permission-denied` write), never on any other error. A PI/admin's own attempt just succeeds on the first try, indistinguishable from today.
+
+**Required before this can actually deploy: a one-time data migration.** Every board created before this feature has no `status` field at all. A rule's `resource.data.get('status','approved')` safely defaults that for a *single-document* read, but a **query** filter (`where('status','==','approved')`) can't match a field that structurally isn't present — so the moment the new rules + query-based `loadBoardsIndex()` go live together, every pre-existing venue would vanish from the "approved" list for everyone until backfilled. The fix is straightforward (write `status: 'approved'` onto every existing board document) but needs to happen **before** flipping over, using the *old*, still-unconstrained rules — not attempted yet, since this is still branch-only. When it's time to ship: backfill first (a PI/admin session running old client code against old rules can do this via the existing `saveBoardsIndex()`), confirm every board has `status` set, *then* deploy the new rules and the new client code together.
+
+**Not built, deliberately out of scope for this pass:** no separate "reject" action (delete already covers it); a PI/admin's pending-approval row shows only the venue name and proposer, not a full preview of every submitted field (Eduardo can ask for that as a follow-up if the one-line summary isn't enough); a proposer can't edit or withdraw their own pending proposal once submitted (same `update`/`delete` = `hasFullWrite()`-only as everything else). Also: the compound query in step 2 above (`status` + `proposedBy.email`, both equality filters) *should* work against Cloud Firestore's automatic indexing without a composite index — pure-equality compound queries generally do — but this hasn't been verified against a live project yet; if it turns out to need one, Firestore's own error on first real use names the exact index to add to `firestore.indexes.json`.
 
 ## Cloud Functions
 
