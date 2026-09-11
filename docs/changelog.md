@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Fixed: "also as plain DIFF.md" showed raw markdown instead of rendering
+
+`diff.html`'s own "also as plain DIFF.md" link pointed at `docs/DIFF.md` directly — GitHub Pages serves `.md` files as raw unstyled text (no Jekyll/build step in this project), so clicking it showed the raw markdown source instead of anything readable. Pointed it at the GitHub repo's own file viewer instead (`.../blob/main/docs/DIFF.md`), which actually renders markdown. Checked every other page for the same mistake — this was the only raw `.md` link anywhere in the served pages.
+
 ### Found and fixed: the live site was still pointing Firestore at a local test emulator
 
 A second real person signed in via Slack on the live site and saw "No venues yet" — sign-in worked, but board/card reads were silently failing. Root cause: `FIRESTORE_USE_EMULATOR` was still `true` in the committed file, so the deployed page was trying to reach `localhost:8080` — which doesn't exist on anyone's machine but a local dev session with the emulator running. `AUTH_USE_EMULATOR` was flipped to `false` (real Auth) back when Sign-in-with-Slack was first wired up and tested; `FIRESTORE_USE_EMULATOR` never was, since all local testing this whole session went through the emulator on purpose (see the many earlier entries about seeding it, testing against it, etc.) and nobody had actually driven the deployed page as a second real user until now — my own testing was all via `localhost:8137`, which never exercises what the *deployed* config actually does.
