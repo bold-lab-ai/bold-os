@@ -1,8 +1,14 @@
 # Changelog — How to Submit a Paper
 
-Build history of the files in this folder (`how-to-submit-a-paper.html`, `internal-qa-review.html`, `audit-board.html`, and the supporting docs). This is a record of what was built and when — not a comparison against BOLDiquette. For how the process itself differs from BOLDiquette, and what we want changed there, see **`DIFF.md`**.
+Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-board.html`, and the supporting docs — `internal-qa-review.html` was part of this suite until it was removed 2026-09-11, folded into `audit-board.html`; entries below that predate the removal still refer to it, left as-is since this is a historical record). This is a record of what was built and when — not a comparison against BOLDiquette. For how the process itself differs from BOLDiquette, and what we want changed there, see **`DIFF.md`**.
 
 ## 2026-09-11
+
+### `internal-qa-review.html` removed; `how-to-submit-a-paper.html` is the homepage
+
+Removed `internal-qa-review.html` (Internal Review — the standalone simulated-peer-review page) at Eduardo's request: redundant with the checklist already embedded on every board card, which is the one that actually gates a card reaching Approved. Updated every cross-reference: `how-to-submit-a-paper.html`'s Phase 4 link, `audit-board.html`'s own lede, `diff.html` and `docs/DIFF.md` (tool list, the checklist-location line — both hand-kept in sync per `docs/AGENTS.md`'s own rule), `docs/AGENTS.md` (file table, guideline 7 rewritten — there's only one checklist copy now, nothing to "keep in sync"), `docs/TODO.md`, `README.md`. Left `docs/changelog.md`'s own historical entries untouched — they correctly describe a page that existed at the time.
+
+`index.html` reverted to a bare redirect to `how-to-submit-a-paper.html` — that page is the actual homepage now, not a separate landing page listing tools (undoes the multi-link homepage built earlier today, now that there are only two real destinations left instead of four). Rebuilt `dist/bold-paper-submission-guide.zip` without `internal-qa-review.html`.
 
 ### Folder structure tidied up; real homepage; README added
 

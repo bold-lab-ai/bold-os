@@ -88,11 +88,11 @@ The senior reviewer checks claims against evidence — BOLD OS already holds muc
 - [ ] The BOLD OS project page shows each attached publication's current review status (Registered … Accepted, or its outcome once decided) with a link to the board card.
 - [ ] On **Accepted**, push status back to the BOLD OS publication record and auto-publish the accepted publication to the public website. This is why the guide dropped BOLDiquette's manual "On Acceptance" form step (see `DIFF.md`).
 
-## Guide & audit-page copy (`how-to-submit-a-paper.html`, `internal-qa-review.html`)
+## Guide copy (`how-to-submit-a-paper.html`)
 
 - [ ] Phase 1 "Log the project" — becomes: create or verify the **project in BOLD OS** and attach the paper as a publication; it then appears in *Registered* on its own. No "add to the Internal Review Board" step.
 - [ ] Phase 3 — the card already exists; wording is just "move it from Registered to Drafted."
-- [ ] `internal-qa-review.html` worknote, and the board footer line about shared data — revisit once there is a real backend and per-user identity.
+- [x] The board footer line about shared data / real backend / per-user identity — done, see `docs/FIREBASE.md` (Firestore + Sign-in-with-Slack, 2026-09-11). `internal-qa-review.html`'s own worknote is moot — that page was removed the same day, folded into the board.
 
 ## Explore: run Internal Review on OpenReview
 

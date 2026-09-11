@@ -1,6 +1,6 @@
 # DIFF — implementation vs. BOLDiquette
 
-Every point where the paper-submission tooling in this folder (`how-to-submit-a-paper.html`, `internal-qa-review.html`, `audit-board.html`) differs from **BOLDiquette § ML Conference Cycle**. This is the list to work through when requesting changes to BOLDiquette.
+Every point where the paper-submission tooling in this folder (`how-to-submit-a-paper.html`, `audit-board.html`) differs from **BOLDiquette § ML Conference Cycle**. This is the list to work through when requesting changes to BOLDiquette.
 
 **BOLDiquette source:** <https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp> — § ML Conference Cycle (Pre-submission / Post-submission / Arxiv / Publicity / Rebuttal / On Acceptance / Pre-Conference). Text read 2026-09-10.
 
@@ -24,7 +24,7 @@ Every point where the paper-submission tooling in this folder (`how-to-submit-a-
 - **2 wk** — final draft, every review comment incorporated.
 - **1 wk** — the PI reads the final draft and approves it for submission. That is the PI's only involvement.
 - The **reviewer pool** = every paper's authors plus volunteers, with at least one senior.
-- 12-item checklist (6 Format, 6 Science; each item folds together several related points to keep the tick count manageable), on `internal-qa-review.html` and snapshotted onto every board card. A **junior** and a **senior** reviewer are assigned per submission on the board; each fills in the checklist. A paper can't be marked **Approved** until both passes are complete.
+- 12-item checklist (6 Format, 6 Science; each item folds together several related points to keep the tick count manageable), on every board card's detail page. A **junior** and a **senior** reviewer are assigned per submission on the board; each fills in the checklist. A paper can't be marked **Approved** until both passes are complete.
 
 **Proposed BOLDiquette change:** add a new subsection between Pre-submission and Post-submission (drop-in prose in `proposed-boldiquette-addition.md`). Supersedes the old "first draft to the PI 10 days ahead" line.
 
