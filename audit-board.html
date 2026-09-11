@@ -90,6 +90,7 @@
   .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
   .auth-user{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--body);}
   .auth-user-name{font-weight:600; color:var(--ink);}
+  .auth-user-email{font-weight:400; color:var(--muted);}
   .auth-role{
     font-size:11px; font-weight:600; color:var(--blue);
     background:var(--accent-dim); border-radius:999px; padding:2px 9px;
@@ -722,7 +723,15 @@
   // FIRESTORE_USE_EMULATOR must be flipped to false deliberately, only once
   // real Security Rules replace the deny-all default currently deployed —
   // see FIREBASE.md's "Project status" note on why emulator-first.
+  //
+  // Separate flag for Auth: the 'oidc.slack' custom provider only exists on
+  // the real Firebase Auth backend (Console-configured), not the local Auth
+  // emulator — so testing real Slack sign-in needs AUTH_USE_EMULATOR = false
+  // even while FIRESTORE_USE_EMULATOR stays true (keeps test writes off
+  // production data; the Firestore emulator accepts real Firebase Auth ID
+  // tokens fine, this combination is a supported pattern).
   var FIRESTORE_USE_EMULATOR = true;
+  var AUTH_USE_EMULATOR = false;
   var FIREBASE_CONFIG = {
     apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
     authDomain: 'bold-d7ff2.firebaseapp.com',
@@ -760,7 +769,7 @@
   var auth = null;
   try {
     auth = firebase.auth();
-    if (FIRESTORE_USE_EMULATOR) auth.useEmulator('http://localhost:9099');
+    if (AUTH_USE_EMULATOR) auth.useEmulator('http://localhost:9099');
   } catch (e){ auth = null; }
 
   function renderAuthRegion(){
@@ -770,9 +779,14 @@
       return;
     }
     if (state.currentUser){
+      var whoHtml = state.currentUser.name
+        ? escapeHtml(state.currentUser.name) + (state.currentUser.email
+            ? ' <span class="auth-user-email">(' + escapeHtml(state.currentUser.email) + ')</span>'
+            : '')
+        : escapeHtml(state.currentUser.email || 'Signed in');
       els.authRegion.innerHTML =
         '<div class="auth-user">' +
-          '<span class="auth-user-name">' + escapeHtml(state.currentUser.name || state.currentUser.email) + '</span>' +
+          '<span class="auth-user-name">' + whoHtml + '</span>' +
           '<button class="btn-text" type="button" id="signOutBtn">Sign out</button>' +
         '</div>';
       var so = document.getElementById('signOutBtn');
@@ -801,6 +815,20 @@
     });
   } else {
     renderAuthRegion();
+  }
+
+  // Canonical (key-order-independent) stringify, used to detect which
+  // documents in a saveBoardsIndex/saveBoard array actually changed — see
+  // the note above each of those functions for why this matters now that
+  // Security Rules authorize writes per-document, not per-batch.
+  function stableStringify(x){
+    if (Array.isArray(x)) return '[' + x.map(stableStringify).join(',') + ']';
+    if (x && typeof x === 'object'){
+      return '{' + Object.keys(x).sort().map(function(k){
+        return JSON.stringify(k) + ':' + stableStringify(x[k]);
+      }).join(',') + '}';
+    }
+    return JSON.stringify(x);
   }
 
   function slugify(s){
@@ -851,20 +879,29 @@
   // Called with the full desired boards-index array every time (create/edit
   // a venue appends or updates one entry, delete filters one out, but always
   // passes the whole list) — same contract as the old blob write. Upsert
-  // every entry, then delete any board doc no longer present in the list.
+  // only entries that actually changed, then delete any board doc no longer
+  // present in the list. Skipping unchanged entries isn't just an
+  // optimization: Security Rules authorize each document write on its own
+  // terms, so blindly re-.set()-ing an untouched document can fail its own
+  // authorization check (e.g. one only its own PI can touch) and take down
+  // the whole batch — even though nothing about it was meant to change.
   function saveBoardsIndex(list){
     return db.collection('boards').get()
       .then(function(snap){
-        var existingIds = []; snap.forEach(function(doc){ existingIds.push(doc.id); });
+        var existing = {}; snap.forEach(function(doc){ existing[doc.id] = doc.data(); });
         var keepIds = list.map(function(b){ return b.id; });
         var batch = db.batch();
+        var touched = false;
         list.forEach(function(b){
           var data = Object.assign({}, b); delete data.id;
+          if (existing.hasOwnProperty(b.id) && stableStringify(existing[b.id]) === stableStringify(data)) return;
           batch.set(db.collection('boards').doc(b.id), data);
+          touched = true;
         });
-        existingIds.forEach(function(id){
-          if (keepIds.indexOf(id) === -1) batch.delete(db.collection('boards').doc(id));
+        Object.keys(existing).forEach(function(id){
+          if (keepIds.indexOf(id) === -1) { batch.delete(db.collection('boards').doc(id)); touched = true; }
         });
+        if (!touched) return true;
         return batch.commit().then(function(){ return true; });
       })
       .catch(function(err){ logError('saveBoardsIndex', err); return false; });
@@ -881,21 +918,32 @@
   }
 
   // Called with the full cards array every time (see note above) — upsert
-  // every card, then delete any card doc no longer present in the array.
+  // only cards that actually changed, then delete any card doc no longer
+  // present in the array. Same reasoning as saveBoardsIndex: re-.set()-ing
+  // an untouched card re-triggers its own per-card authorization check
+  // (only its submitter/reviewers/a PI can touch it), which can fail and
+  // take the whole batch down even though that card was never meant to
+  // change — e.g. registering a new paper on a board that already has
+  // someone else's card would otherwise fail purely because of the
+  // unrelated card, not the new one.
   function saveBoard(id, data){
     var cards = (data && Array.isArray(data.cards)) ? data.cards : [];
     return cardsCol(id).get()
       .then(function(snap){
-        var existingIds = []; snap.forEach(function(doc){ existingIds.push(doc.id); });
+        var existing = {}; snap.forEach(function(doc){ existing[doc.id] = doc.data(); });
         var keepIds = cards.map(function(c){ return c.id; });
         var batch = db.batch();
+        var touched = false;
         cards.forEach(function(c){
           var cardData = Object.assign({}, c); delete cardData.id;
+          if (existing.hasOwnProperty(c.id) && stableStringify(existing[c.id]) === stableStringify(cardData)) return;
           batch.set(cardsCol(id).doc(c.id), cardData);
+          touched = true;
         });
-        existingIds.forEach(function(cid){
-          if (keepIds.indexOf(cid) === -1) batch.delete(cardsCol(id).doc(cid));
+        Object.keys(existing).forEach(function(cid){
+          if (keepIds.indexOf(cid) === -1) { batch.delete(cardsCol(id).doc(cid)); touched = true; }
         });
+        if (!touched) return true;
         return batch.commit().then(function(){ return true; });
       })
       .catch(function(err){ logError('saveBoard', err); return false; });

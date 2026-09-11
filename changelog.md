@@ -4,6 +4,14 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `intern
 
 ## 2026-09-11
 
+### Sign-in-with-Slack tested end-to-end — works; found and fixed a real save bug it exposed
+
+Eduardo created the Slack app (Sign in with Slack, `openid profile email` scopes) and configured the `oidc.slack` OpenID Connect provider in Firebase Console (issuer `https://slack.com`, redirect `https://bold-d7ff2.firebaseapp.com/__/auth/handler` — deterministic from the project's `authDomain`, didn't need to be read off the Console UI). Split `audit-board.html`'s single emulator flag into two (`FIRESTORE_USE_EMULATOR`, `AUTH_USE_EMULATOR`) so real Slack sign-in (needs the live Auth backend — the emulator has no `oidc.slack` provider) could be tested while keeping Firestore writes local. Served locally via `python3 -m http.server`, tested by hand (this needs a real interactive Slack login, not headless automation): sign-in popup completed, `#authRegion` showed a real name — but no email, which turned out to be a UI bug, not a missing claim (the markup only ever showed name *or* email, never both). Fixed to show both.
+
+With that fixed, tried registering a paper and got "Could not save the paper." Root-caused via the emulator's raw Firestore data (ground truth, not the app's own re-render): `saveBoard`/`saveBoardsIndex` re-`.set()` **every** document in their array on every call, which Security Rules treat as an `update` on pre-existing documents — so adding one new card also re-touched an unrelated pre-existing test card, whose own per-document authorization check failed and took the whole batch down. This isn't just a local-testing artifact: it would have broken real usage in production the first time any board had more than one person's cards on it. Fixed both functions to diff against the freshly-fetched Firestore snapshot (canonical, key-order-independent `stableStringify`) and only write what actually changed. Re-tested: old card left untouched, new card added successfully, confirmed via the emulator's raw data.
+
+`FIREBASE.md` updated to match throughout.
+
 ### Admins role added; roles/pis + roles/admins seeded with real emails
 
 Added a second full-write role, `admins` (`roles/admins` in Firestore, same shape as `roles/pis`), alongside PIs — not folded into `pis()`, since the lab treats them as distinct roles even though both get identical permissions via a shared `hasFullWrite()`. `firestore.rules` updated and redeployed to `bold-d7ff2` (verified live).
