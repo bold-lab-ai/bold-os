@@ -1,0 +1,2628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Internal Review Board | BOLD Lab</title>
+<meta name="description" content="Tracker for papers going through Internal Review, one board per venue and year.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap" rel="stylesheet">
+<!-- Firebase compat build (not the modular/ES-import build — this one loads as an
+     ordinary blocking script, matching the plain classic-script style below).
+     AGENTS.md-approved CDN exception, 2026-09-11 — see FIREBASE.md. Bump the
+     pinned version deliberately, not silently. -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<style>
+  /* Design system shared with bold-lab.ai */
+  :root{
+    --ink:#09111f;
+    --ink-soft:#202b3c;
+    --body:#202b3c;
+    --muted:#667085;
+    --paper:#fbfaf6;
+    --surface:#ffffff;
+    --wash:#eef2f4;
+    --line:#d8dee6;
+    --blue:#2b64d8;
+    --teal:#2f8f83;
+    --plum:#6f4bb3;
+    --amber:#b7791f;
+    --focus:#c87912;
+    --radius:8px;
+    --shadow:0 14px 44px #09111f1f;
+    --gutter:clamp(18px, 4vw, 44px);
+    --page-max:1200px;
+    --board-max:1360px;
+    --read-max:760px;
+
+    /* names the inline JS styles depend on */
+    --accent:#2b64d8;
+    --accent-dim:#e6edfb;
+    --neutral-bg:#eef2f4;
+    --neutral-text:#4b5563;
+    --warn-bg:#f6ecda;
+    --warn-text:#8a5a12;
+    --success-bg:#ddefe9;
+    --success-text:#256b60;
+    --danger-bg:#fbe6e4;
+    --danger-text:#b42318;
+  }
+
+  *{box-sizing:border-box;}
+
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink-soft);
+    font-family:'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size:16px;
+    line-height:1.55;
+    font-synthesis:none;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+
+  a{color:var(--blue);}
+  a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible{
+    outline:2px solid var(--focus); outline-offset:2px; border-radius:2px;
+  }
+
+  h1,h2,h3{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
+  button{font-family:inherit; font-size:14px;}
+
+  /* ---------- masthead ---------- */
+  .masthead{
+    background:var(--surface);
+    border-bottom:1px solid var(--line);
+    padding:20px var(--gutter);
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .wordmark{font-weight:800; font-size:19px; letter-spacing:0; color:var(--ink); text-decoration:none;}
+  .wordmark span{color:var(--blue);}
+  .masthead-sub{font-size:13px; color:var(--muted);}
+
+  .backlink{max-width:var(--page-max); margin:24px auto 0; padding:0 var(--gutter);}
+  .backlink a{font-size:13.5px; color:var(--muted); text-decoration:none;}
+  .backlink a:hover{color:var(--blue);}
+
+  /* ---------- hero ---------- */
+  .hero{max-width:var(--page-max); margin:0 auto; padding:20px var(--gutter) 8px;}
+  .hero h1{font-size:clamp(30px, 4.5vw, 44px); line-height:1.02;}
+  .hero .lede{margin-top:14px; font-size:16px; color:var(--ink-soft); max-width:66ch;}
+  .hero .lede a{color:var(--blue);}
+  .page-source{font-size:12.5px; color:var(--muted); margin-top:14px;}
+  .page-source a{color:var(--muted); text-decoration:underline; text-underline-offset:2px;}
+  .page-source a:hover{color:var(--blue);}
+
+  /* ---------- toolbar ---------- */
+  .toolbar{
+    max-width:var(--page-max);
+    margin:24px auto 0;
+    padding:18px var(--gutter);
+    border-top:1px solid var(--line);
+    border-bottom:1px solid var(--line);
+    display:flex;
+    align-items:center;
+    gap:14px;
+    flex-wrap:wrap;
+  }
+  .toolbar label{font-size:12.5px; color:var(--muted); display:block; margin-bottom:4px;}
+  .toolbar-label{font-size:13px; color:var(--muted);}
+  .toolbar-spacer{flex:1 1 auto;}
+
+  select, input[type="text"], input[type="date"], input[type="email"],
+  input[type="number"], input[type="url"], input[type="search"], textarea, .field select{
+    font-family:inherit;
+    font-size:14px;
+    color:var(--ink);
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:8px 10px;
+  }
+  select{min-width:180px;}
+
+  .btn{
+    font-family:inherit;
+    font-weight:600;
+    font-size:14px;
+    color:var(--ink);
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    padding:9px 16px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .btn:hover{border-color:var(--blue); color:var(--blue);}
+  .btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
+  .btn-primary:hover{background:#1f4fb0; border-color:#1f4fb0; color:#fff;}
+  .btn-text{
+    background:none; border:none; color:var(--muted);
+    font-size:13px; cursor:pointer; padding:4px 0;
+    text-decoration:underline; text-underline-offset:2px;
+  }
+  .btn-text:hover{color:var(--blue);}
+  .btn-text.danger:hover, #deleteBoardBtn:hover{color:var(--danger-text);}
+
+  /* ---------- venue meta + schedule ---------- */
+  .venue-meta{font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;}
+  .venue-meta a{color:var(--muted); text-decoration:underline; text-underline-offset:2px;}
+  .venue-meta a:hover{color:var(--blue);}
+
+  .venue-schedule{margin-top:18px; max-width:860px;}
+  .vs-head{
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0;
+    color:var(--teal); margin-bottom:6px;
+  }
+  .vs-head span{font-weight:400; text-transform:none; color:var(--muted);}
+
+  /* horizontal timeline: one dot per milestone, even-spaced */
+  .vs-rail-wrap{overflow-x:auto; padding:4px 0 2px;}
+  .vs-rail{
+    list-style:none; margin:12px 0 0; padding:0;
+    display:flex; align-items:flex-start;
+    position:relative; min-width:min-content;
+  }
+  .vs-rail::before{
+    content:''; position:absolute; top:5px; height:2px; background:var(--line);
+    left:calc(50% / var(--n)); right:calc(50% / var(--n));
+  }
+  .vs-pt{
+    flex:1 0 62px;
+    display:flex; flex-direction:column; align-items:center;
+    text-align:center;
+  }
+  .vs-dot{
+    width:10px; height:10px; border-radius:999px;
+    background:var(--surface); border:2px solid var(--blue);
+    position:relative; z-index:1;
+  }
+  .vs-pt.is-venue .vs-dot{border-color:var(--muted);}
+  .vs-pt.is-paper .vs-dot{width:12px; height:12px; margin-top:-1px; background:var(--ink); border-color:var(--ink);}
+  .vs-name{
+    margin-top:8px; font-size:11px; font-weight:600; line-height:1.25;
+    color:var(--ink); padding:0 3px;
+  }
+  .vs-pt.is-venue .vs-name{color:var(--ink-soft); font-weight:500;}
+  .vs-when{font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .ics-btn{
+    margin-top:14px; font-family:inherit; font-weight:600; font-size:12.5px;
+    color:var(--blue); background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); padding:7px 13px; cursor:pointer;
+  }
+  .ics-btn:hover{background:var(--wash); border-color:var(--blue);}
+
+  /* ---------- venue modal form ---------- */
+  .modal-scroll{max-height:64vh; overflow-y:auto; margin:0 -6px; padding:2px 6px;}
+  .field-section{
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0;
+    color:var(--teal); margin:22px 0 8px;
+  }
+  #venueForm .field-section:first-child{margin-top:2px;}
+  .field-2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+
+  /* ---------- toast ---------- */
+  .toast{max-width:var(--page-max); margin:16px auto 0; padding:0 var(--gutter);}
+  .toast-inner{
+    font-size:13.5px; padding:10px 14px; border:1px solid var(--line);
+    border-radius:var(--radius); background:var(--surface);
+  }
+  .toast-inner.error{color:var(--danger-text); background:var(--danger-bg); border-color:#f0c9c4;}
+  .toast-inner.ok{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
+
+  /* ---------- board meta ---------- */
+  .board-meta{
+    max-width:var(--board-max); margin:20px auto 0; padding:0 var(--gutter);
+    display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  }
+  .board-meta h2{font-size:22px; font-weight:760;}
+  .board-empty{
+    max-width:var(--read-max); margin:56px auto; padding:0 var(--gutter);
+    color:var(--muted); text-align:center;
+  }
+
+  /* ---------- venues list ---------- */
+  .venues{max-width:var(--read-max); margin:22px auto 0; padding:0 var(--gutter) 80px;}
+  .venue-row{
+    display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+    padding:16px 12px;
+    border:1px solid var(--line); border-radius:var(--radius);
+    background:var(--surface); margin-bottom:8px;
+    width:100%; text-align:left; cursor:pointer; font-family:inherit;
+  }
+  .venue-row:hover{border-color:var(--blue);}
+  .venue-row:hover .venue-name{color:var(--blue);}
+  .venue-name{font-weight:700; font-size:16px; color:var(--ink);}
+  .venue-sub{font-size:13px; color:var(--muted);}
+
+  /* ---------- board search ---------- */
+  .board-search{
+    max-width:var(--board-max); margin:16px auto 0; padding:0 var(--gutter);
+    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  }
+  .board-search input[type="search"]{flex:1 1 260px; min-width:180px;}
+  .board-search select{min-width:140px;}
+  .board-search-count{font-size:12.5px; color:var(--muted); white-space:nowrap;}
+
+  /* ---------- board columns ---------- */
+  .board-scroll{
+    max-width:var(--board-max); margin:12px auto 0; padding:0 var(--gutter) 80px;
+    overflow-x:auto;
+    scroll-snap-type:x proximity;
+  }
+  .columns{
+    display:flex;
+    gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    overflow:hidden;
+    min-width:2170px;
+  }
+  .column{
+    background:var(--surface);
+    flex:1 1 0;
+    min-width:240px;
+    display:flex;
+    flex-direction:column;
+    scroll-snap-align:start;
+  }
+  .column-head{
+    padding:11px 12px 10px;
+    min-height:76px;
+    border-bottom:1px solid var(--line);
+    background:var(--wash);
+    color:var(--ink);
+  }
+  .column-head .ch-top{
+    display:flex; align-items:center; justify-content:space-between;
+    font-weight:700; font-size:12.5px; letter-spacing:0;
+  }
+  .column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
+  .column-head .ch-hint{
+    margin-top:4px; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+  }
+  .column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
+  .column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
+
+  /* ---------- card ---------- */
+  .card{
+    border:1px solid var(--line);
+    border-left-width:1px;
+    border-radius:var(--radius);
+    padding:12px;
+    background:var(--surface);
+  }
+  /* Draft & Review's collapsed sub-state, colour-coded on the card itself. */
+  .card.rv-in_review{border-left:4px solid var(--warn-text); background:var(--warn-bg);}
+  .card.rv-changes_requested{border-left:4px solid var(--danger-text); background:var(--danger-bg);}
+  .card.rv-approved{border-left:4px solid var(--success-text); background:var(--success-bg);}
+  .badge-rv-in_review{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
+  .badge-rv-changes_requested{background:var(--danger-bg); color:var(--danger-text); border:1px solid #f0c9c4;}
+  .badge-rv-approved{background:var(--success-bg); color:var(--success-text); border:1px solid #bfe0d6;}
+  .badge-outcome-accepted{background:var(--success-bg); color:var(--success-text);}
+  .badge-outcome-rejected{background:var(--danger-bg); color:var(--danger-text);}
+  .badge-outcome-withdrawn{background:var(--neutral-bg); color:var(--neutral-text);}
+  .badge-rebuttal-sent{background:var(--success-bg); color:var(--success-text);}
+  .badge-rebuttal-writing{background:var(--warn-bg); color:var(--warn-text);}
+  .card-title-btn{
+    display:block; width:100%; text-align:left;
+    font-family:inherit; font-weight:700; font-size:14px; color:var(--ink);
+    background:none; border:none; padding:0; margin-bottom:6px; cursor:pointer;
+    text-decoration:underline; text-decoration-color:var(--line); text-underline-offset:2px;
+  }
+  .card-title-btn:hover{color:var(--blue); text-decoration-color:var(--blue);}
+  .card-meta-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px;}
+  .badge{
+    display:inline-block; font-size:11px; font-weight:600; letter-spacing:0;
+    padding:2px 9px; border-radius:999px;
+  }
+  .badge-overdue{background:var(--danger-bg); color:var(--danger-text);}
+  .card-link{font-size:12.5px; display:inline-block; margin-bottom:6px;}
+  .card-notes{font-size:12.5px; color:var(--ink-soft); margin-bottom:8px; white-space:pre-wrap;}
+  .card-pi{font-size:12px; color:var(--muted); margin:-2px 0 8px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .author-row{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
+  .author-row .author-input{flex:1 1 auto; min-width:0;}
+  .author-row .author-remove{flex:0 0 auto; white-space:nowrap;}
+  .author-pi-tag{
+    flex:0 0 auto; width:24px; text-align:center;
+    font-size:10.5px; font-weight:700; letter-spacing:0; color:var(--plum);
+  }
+  .author-pi-tag--hidden{visibility:hidden;}
+  .changes-toggle{display:block; font-size:11.5px; margin:2px 0 8px; padding:0;}
+  .card-progress{font-size:11px; color:var(--muted); margin:6px 0 2px; font-variant-numeric:tabular-nums;}
+
+  /* ---------- inline reviewer assignment (card + detail) ---------- */
+  .card-reviewers{display:flex; flex-direction:column; gap:4px; margin:8px 0;}
+  .card-reviewers .rv-row{display:flex; align-items:center; gap:6px;}
+  .card-reviewers .rv-role{
+    flex:0 0 auto; width:16px; font-size:10.5px; font-weight:700;
+    text-transform:uppercase; letter-spacing:0;
+  }
+  .card-reviewers .rv-role.junior, .rv-role.junior{color:var(--teal);}
+  .card-reviewers .rv-role.senior, .rv-role.senior{color:var(--plum);}
+  input.rv-input{
+    flex:1 1 auto; min-width:0; font-size:12px; padding:5px 7px;
+    border:1px solid var(--line); border-radius:6px;
+    background:var(--surface); color:var(--ink);
+  }
+  input.rv-input:placeholder-shown{border-color:#e6c98f; background:#fdf8ef;}
+  .card-footer{display:flex; align-items:center; gap:2px; margin-top:8px;}
+  .card-move{display:flex; gap:6px; margin-top:8px;}
+  .card-move-btn{
+    flex:1 1 0; min-width:0;
+    font-family:inherit; font-weight:600; font-size:11.5px;
+    color:var(--ink-soft); background:var(--surface);
+    border:1px solid var(--line); border-radius:6px;
+    padding:6px 4px; cursor:pointer; text-align:center; white-space:nowrap;
+  }
+  .card-move-btn:hover:not(:disabled){background:var(--wash); border-color:var(--blue); color:var(--blue);}
+  .card-move-btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
+
+  /* ---------- card detail ---------- */
+  .detail{max-width:var(--read-max); margin:20px auto 0; padding:0 var(--gutter) 88px;}
+  .detail-back{font-size:13.5px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:16px;}
+  .detail-back:hover{color:var(--blue);}
+  .detail-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
+  .detail-head h2{font-size:clamp(22px, 3vw, 28px); font-weight:760;}
+  .detail-controls{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:16px 0 24px;}
+  .detail-controls .card-move{margin:0; width:auto;}
+  .detail-controls .card-move-btn{flex:0 0 auto; padding:7px 13px;}
+  .detail-controls select{font-size:13px; padding:7px 9px;}
+  .detail-controls .btn-text.danger{margin-left:auto;}
+  .detail-grid{display:grid; grid-template-columns:150px 1fr; gap:8px 16px; font-size:13.5px; margin-bottom:24px; max-width:640px;}
+  .detail-grid dt{color:var(--muted);}
+  .detail-grid dd{margin:0; word-break:break-word;}
+  .detail-grid dd input.rv-input{width:100%;}
+
+  .gate-banner{
+    font-size:13px; padding:11px 14px; margin-bottom:24px; max-width:640px;
+    border:1px solid #e6c98f; background:var(--warn-bg); color:var(--warn-text);
+    border-radius:var(--radius);
+  }
+  .gate-banner.done{border-color:#bfe0d6; background:var(--success-bg); color:var(--success-text);}
+  .gate-banner strong{font-weight:700;}
+
+  /* ---------- review tabs: Format / Science / Discussion ---------- */
+  .tabbar{display:flex; gap:0; border-bottom:1px solid var(--line); margin:28px 0 0;}
+  .tab{
+    font-weight:700; font-size:14px; color:var(--muted);
+    background:none; border:none; border-bottom:2px solid transparent;
+    padding:10px 2px; margin:0 26px -1px 0; cursor:pointer;
+  }
+  .tab:hover{color:var(--ink);}
+  .tab .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; color:var(--muted);}
+  .tab.active{color:var(--ink);}
+  #tab-btn-format.active{border-bottom-color:var(--teal);}
+  #tab-btn-science.active{border-bottom-color:var(--plum);}
+  #tab-btn-discussion.active{border-bottom-color:var(--blue);}
+  .tabpanel{display:none; padding-top:20px;}
+  .tabpanel.active{display:block;}
+
+  .cl-wrap{max-width:640px;}
+  .cl-cat{font-weight:700; font-size:13px; color:var(--ink); margin:16px 0 4px;}
+  .cl-cat:first-child{margin-top:0;}
+  .cl-head, .cl-row{display:grid; grid-template-columns:1fr 68px 68px; gap:10px;}
+  .cl-head{
+    font-size:10.5px; font-weight:700; color:var(--muted);
+    text-transform:uppercase; letter-spacing:0;
+    padding:0 6px 6px; border-bottom:1px solid var(--line);
+    position:sticky; top:0; background:var(--paper);
+  }
+  .cl-head span{text-align:center;}
+  .cl-head span:nth-child(2){color:var(--teal);}
+  .cl-head span:nth-child(3){color:var(--plum);}
+  .cl-item{border-bottom:1px solid var(--line); padding:2px 0;}
+  .cl-row{padding:9px 6px; font-size:13.5px; align-items:start; border-radius:4px;}
+  .cl-row:hover{background:var(--wash);}
+  .cl-row .cl-label{line-height:1.45;}
+  .cl-row input[type="checkbox"]{width:16px; height:16px; margin:2px auto 0; display:block; cursor:pointer;}
+  .cl-row input[type="checkbox"]:nth-of-type(1){accent-color:var(--teal);}
+  .cl-row input[type="checkbox"]:nth-of-type(2){accent-color:var(--plum);}
+  .cl-row-foot{padding:0 6px 8px;}
+  .cl-row-foot .btn-text{font-size:12px;}
+  .cl-row-foot .btn-text.has-feedback{color:var(--blue); font-weight:600;}
+  .cl-thread{margin:0 0 12px; padding:12px 12px 4px; background:var(--wash); border-radius:6px;}
+  .cl-thread .disc-thread{border-top-color:var(--line);}
+  .cl-thread .disc-form{max-width:100%;}
+  .cl-thread-new{margin-top:14px; padding-top:14px; border-top:1px solid var(--line);}
+
+  /* ---------- discussion (OpenReview-style, one level of replies) ---------- */
+  .discussion{max-width:640px;}
+  .disc-empty{color:var(--muted); font-size:13.5px; margin:4px 0 20px;}
+  .disc-thread{border-top:1px solid var(--line); padding:16px 0;}
+  .disc-thread:first-child{border-top:none; padding-top:0;}
+  .disc-msg{font-size:13.5px;}
+  .disc-meta{display:flex; align-items:baseline; gap:8px; margin-bottom:4px;}
+  .disc-author{font-weight:700; color:var(--ink); font-size:13.5px;}
+  .disc-time{color:var(--muted); font-size:11.5px;}
+  .disc-body{white-space:pre-wrap; color:var(--ink-soft); line-height:1.5;}
+  .disc-replies{margin:12px 0 0 24px; padding-left:16px; border-left:2px solid var(--line); display:flex; flex-direction:column; gap:14px;}
+  .disc-actions{margin-top:6px;}
+  .disc-form{margin-top:12px; display:flex; flex-direction:column; gap:8px; max-width:480px;}
+  .disc-form input, .disc-form textarea{width:100%;}
+  .disc-form textarea{min-height:64px; resize:vertical; font-family:inherit;}
+  .disc-form-actions{display:flex; gap:8px;}
+  .disc-new{margin-top:24px; padding-top:20px; border-top:1px solid var(--line);}
+  .disc-new h3{font-size:13px; font-weight:700; color:var(--ink); margin:0 0 10px;}
+
+  /* ---------- modal ---------- */
+  .modal-overlay{
+    position:fixed; inset:0; background:rgba(9,17,31,0.5);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding:40px 20px; overflow-y:auto; z-index:50;
+  }
+  .modal{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    max-width:480px;
+    width:100%;
+    padding:26px;
+  }
+  .modal h2{font-size:20px; margin-bottom:18px;}
+  .field{margin-bottom:16px;}
+  .field label{display:block; font-size:13px; color:var(--muted); margin-bottom:5px;}
+  .field input, .field textarea{width:100%;}
+  .field textarea{min-height:64px; resize:vertical; font-family:inherit;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:22px;}
+  .field-error{
+    font-size:12.5px; color:var(--danger-text);
+    background:var(--danger-bg); border:1px solid var(--danger-text);
+    border-radius:6px; padding:8px 12px; margin-top:12px;
+  }
+
+  footer{
+    max-width:var(--page-max); margin:0 auto;
+    padding:32px var(--gutter) 56px;
+    border-top:1px solid var(--line); font-size:13px; color:var(--muted);
+  }
+
+  @media (max-width:760px){
+    .masthead{padding:18px var(--gutter);}
+    .field-2{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <a class="wordmark" href="how-to-submit-a-paper.html">BOLD<span>.</span> Lab</a>
+  <div class="masthead-sub">Internal</div>
+</div>
+
+<div class="backlink">
+  <a href="how-to-submit-a-paper.html">&larr; ML Conference Paper Cycle</a>
+</div>
+
+<div class="hero">
+  <h1>Internal Review Board</h1>
+  <p class="lede">One board per venue and year. Open a venue to register a paper for <a href="internal-qa-review.html">Internal Review</a> and track it from draft to submitted.</p>
+  <p class="page-source">Extends <a href="https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp" target="_blank" rel="noopener">BOLDiquette &sect; ML Conference Cycle</a> &middot; current differences in <a href="diff.html">DIFF.md</a></p>
+</div>
+
+<div class="toolbar" id="toolbar">
+  <span class="toolbar-label">Venues</span>
+  <div class="toolbar-spacer"></div>
+  <button class="btn btn-primary" id="newBoardToggle" type="button">+ New venue</button>
+</div>
+
+<div class="toast" id="toastRegion"></div>
+
+<div id="venuesRegion"></div>
+<div id="boardRegion"></div>
+<div id="modalRegion"></div>
+
+<footer>
+  An internal BOLD Lab tool. Shared across everyone who opens this page — no sign-in yet, so anyone with the link can edit.
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  // Columns mirror the guide's 9 phases (how-to-submit-a-paper.html) one for
+  // one, same names, same order. Sub-states that used to be their own column
+  // (review in progress / changes requested / approved; rebuttal in
+  // progress / submitted) are now a badge + colour on the card instead —
+  // see reviewState() and the rebuttal badge in renderCard(). Outcomes
+  // (Accepted / Rejected / Withdrawn) aren't phases either; they're
+  // card.outcome, shown as a badge, set from the Edit-fields modal.
+  var STATUS_ORDER = ['register','pitch_day','draft_review','final_draft','pi_polish','submit','arxiv_publicity','rebuttal','pre_conference'];
+  // Past tense on purpose: a column name is the checkpoint already met to
+  // be sitting in it (see guideline 6/8 in AGENTS.md), not an in-progress
+  // label — "Drafted" not "Drafting". Same 9 phases, same order as the
+  // guide's `.timeline`; the guide's headings stay instructional ("Pitch
+  // Day", "Submit") since they're telling you what to go do, not stating
+  // that it's done.
+  var STATUS_LABELS = {
+    register: 'Registered',
+    pitch_day: 'Pitched',
+    draft_review: 'Drafted',
+    final_draft: 'Reviewed',
+    pi_polish: 'PI Approved',
+    submit: 'Submitted',
+    arxiv_publicity: 'Posted',
+    rebuttal: 'Reviews Out',
+    pre_conference: 'Accepted'
+  };
+  // Super-brief "move a card here when…" note under each column title.
+  var STATUS_HINTS = {
+    register: 'Waiting for pitch',
+    pitch_day: 'First draft in writing',
+    draft_review: 'Waiting for internal review',
+    final_draft: 'Waiting for PI approval',
+    pi_polish: 'Waiting for official submission',
+    submit: 'Waiting for arxiv and publicity',
+    arxiv_publicity: 'Waiting for official review',
+    rebuttal: 'Rebuttal in process',
+    pre_conference: 'Planning for conference'
+  };
+  // Old status keys mapped forward, so a card saved under a since-retired
+  // status still lands in a real column instead of the "Other" fallback.
+  // Where an old status carried information a plain status-rename would
+  // lose (the review sub-state, an outcome), normalizeCard() below sets the
+  // matching field too — this map only decides where the card lands.
+  var STATUS_MIGRATIONS = {
+    todo: 'register',
+    in_audit: 'draft_review',
+    changes_requested: 'draft_review',
+    approved: 'draft_review',
+    submitted: 'submit',
+    rebuttal_in_progress: 'rebuttal',
+    rebuttal_submitted: 'rebuttal',
+    accepted: 'pre_conference',
+    rejected: 'rebuttal',
+    withdrawn: 'submit'
+  };
+
+  // Each item folds together what used to be several sibling checks in the
+  // same category (see changelog) \u2014 same substance, fewer ticks. Every
+  // item is still worked through twice (junior + senior). 12 items: the
+  // Submission-system category was dropped (it's what the OpenReview form
+  // covers anyway, not something the draft needs an internal check for).
+  var CHECKLIST_TEMPLATE = [
+    { part: 'format', category: 'Mandatory sections & parts', label: 'All required sections and disclosure forms are present and filled in, not left as templates (e.g. limitations, ethics statement, paper checklist) \u2014 and everything the main text references in the appendix actually exists there' },
+    { part: 'format', category: 'Length & page limits', label: "Main paper and every section-specific limit (abstract word count, appendix pages, etc.) are within bounds \u2014 without manually shrinking margins, font, or spacing to fit more in" },
+    { part: 'format', category: 'Double-blind anonymity', label: "No identity anywhere in the PDF \u2014 no author names or affiliations (including acknowledgments), and nothing identifying in the file's title/author metadata" },
+    { part: 'format', category: 'Double-blind anonymity', label: 'No identity outside the PDF either \u2014 linked code/data repos are anonymized (README, commit history, filenames) and self-citations are phrased in the third person' },
+    { part: 'format', category: 'Template & formatting', label: 'Latest official venue template (not a copy from a previous year), compiles cleanly with no missing figures / broken references / warnings, and fonts / page size are correct' },
+    { part: 'format', category: 'Policy compliance', label: "Not in violation of the venue's dual-submission / prior-publication policy, and any arXiv or preprint posting follows its timing policy" },
+    { part: 'science', category: 'Claimed contributions', label: 'Contributions are stated clearly (ideally a short, explicit list) and checked against the paper\u2019s actual evidence \u2014 nothing in the abstract or intro claims more than the results show' },
+    { part: 'science', category: 'Correctness', label: 'Theoretical claims: proofs are correct, with reasonable and clearly-stated assumptions' },
+    { part: 'science', category: 'Correctness', label: 'Empirical claims: experiments are well-designed with fair, non-strawman baselines, and the results shown actually support the conclusions drawn from them' },
+    { part: 'science', category: 'Impact', label: 'The problem is relevant to the target community, others could plausibly build on it, and the scope of impact is honestly represented \u2014 not oversold, not undersold' },
+    { part: 'science', category: 'Limitations', label: 'Limitations and known failure modes or negative results are disclosed honestly \u2014 not buried or omitted' },
+    { part: 'science', category: 'Related work & positioning', label: 'Prior work is represented accurately, the contribution is clearly differentiated from the closest prior work, and nothing obviously relevant is missing' }
+  ];
+
+  // Each checklist item is worked through twice: a junior reviewer and a
+  // senior reviewer.
+  var REVIEW_ROLES = ['junior', 'senior'];
+  var REVIEW_ROLE_LABELS = { junior: 'Junior', senior: 'Senior' };
+
+  function makeChecklistSnapshot(){
+    return CHECKLIST_TEMPLATE.map(function(item, i){
+      return { id: 'chk-' + (i + 1), part: item.part, category: item.category, label: item.label, junior: false, senior: false, comments: [] };
+    });
+  }
+
+  // A paper can't reach this status (or any to its right) until both
+  // checklist passes (junior, senior) are complete.
+  var GATE_STATUS = 'final_draft';
+
+  var OUTCOME_LABELS = { accepted: 'Accepted', rejected: 'Rejected', withdrawn: 'Withdrawn' };
+
+  // Skip the outcome badge when it would just repeat the column name — the
+  // last column is itself called "Accepted" (see STATUS_LABELS), so an
+  // Accepted-outcome card sitting there doesn't need to say so twice.
+  // Rejected/Withdrawn never collide with a column name, so they always show.
+  function shouldShowOutcomeBadge(card){
+    return !!card.outcome && !(card.outcome === 'accepted' && card.status === 'pre_conference');
+  }
+
+  // A card belongs in a column once that column's milestone is actually
+  // met — moving it there (Advance) is an attestation, not just a status
+  // change. These are the brief checklists shown as a confirm() before an
+  // Advance is allowed to go through; Cancel leaves the card where it was.
+  // Not shown on Revert (moving backward needs no attestation).
+  var STATUS_ADVANCE_CHECKLIST = {
+    pitch_day: ['The paper was pitched to the group at Pitch Day.'],
+    draft_review: ['The first full draft is ready.', 'A junior and a senior reviewer are assigned.'],
+    final_draft: ['Every review comment has been incorporated into the draft.'],
+    pi_polish: ['The PI has read the final draft.', 'The PI has approved submitting it.'],
+    submit: ['The paper has been submitted to the venue.'],
+    arxiv_publicity: ['The paper is posted on arXiv.', 'Publicity is underway.'],
+    rebuttal: ["The venue's reviews are out."],
+    pre_conference: ['The venue accepted the paper.']
+  };
+
+  function advanceConfirmMessage(status){
+    var items = STATUS_ADVANCE_CHECKLIST[status];
+    if (!items || !items.length) return null;
+    return 'Before moving to ' + STATUS_LABELS[status] + ', confirm:\n' +
+      items.map(function(it){ return '• ' + it; }).join('\n');
+  }
+
+  var state = {
+    view: 'list', // 'list' | 'venue' | 'card'
+    boards: [],
+    currentBoardId: null,
+    currentCardId: null,
+    cards: [],
+    loadingBoards: true,
+    loadingCards: false,
+    search: { query: '', field: 'all' },
+    detailTab: 'format',
+    discussionReplyOpenId: null,
+    checklistCommentOpenId: null, // checklist item whose feedback thread is expanded
+    checklistReplyOpenId: null    // comment within it whose reply box is open
+  };
+
+  var ANONYMITY_OPTIONS = [
+    ['', '—'],
+    ['double-blind', 'Double-blind'],
+    ['single-blind', 'Single-blind'],
+    ['open', 'Open review']
+  ];
+  var ANONYMITY_LABELS = {};
+  ANONYMITY_OPTIONS.forEach(function(o){ if (o[0]) ANONYMITY_LABELS[o[0]] = o[1]; });
+
+  var els = {
+    newBoardToggle: document.getElementById('newBoardToggle'),
+    toastRegion: document.getElementById('toastRegion'),
+    venuesRegion: document.getElementById('venuesRegion'),
+    boardRegion: document.getElementById('boardRegion'),
+    modalRegion: document.getElementById('modalRegion')
+  };
+
+  // Last line of defense: if anything throws or a promise rejects
+  // unexpectedly, surface it instead of failing silently.
+  window.addEventListener('error', function(ev){
+    if (window.console && console.error) console.error('[Internal Review Board] uncaught error', ev.error || ev.message);
+    if (els.toastRegion) showToast('Something went wrong \u2014 open the console for details.', 'error');
+  });
+  window.addEventListener('unhandledrejection', function(ev){
+    if (window.console && console.error) console.error('[Internal Review Board] unhandled rejection', ev.reason);
+    if (els.toastRegion) showToast('Something went wrong \u2014 open the console for details.', 'error');
+  });
+
+  // Persistence: Firestore (bold-d7ff2), replacing the old per-browser
+  // localStorage — see FIREBASE.md for the project/data-model/phasing.
+  // FIRESTORE_USE_EMULATOR must be flipped to false deliberately, only once
+  // real Security Rules replace the deny-all default currently deployed —
+  // see FIREBASE.md's "Project status" note on why emulator-first.
+  var FIRESTORE_USE_EMULATOR = true;
+  var FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
+    authDomain: 'bold-d7ff2.firebaseapp.com',
+    projectId: 'bold-d7ff2',
+    storageBucket: 'bold-d7ff2.firebasestorage.app',
+    messagingSenderId: '555050367135',
+    appId: '1:555050367135:web:d90f8d7bb93a755e9fcaaa',
+    measurementId: 'G-527H8R28KB'
+  };
+
+  var db = null;
+  var storageOK = (function(){
+    try {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      db = firebase.firestore();
+      // WebChannel streaming is known to hang in headless/automated browsers
+      // and some proxies — auto-fall-back to long-polling rather than have
+      // writes silently never flush.
+      db.settings({ experimentalAutoDetectLongPolling: true });
+      if (FIRESTORE_USE_EMULATOR) db.useEmulator('localhost', 8080);
+      return true;
+    } catch (e){ return false; }
+  })();
+
+  if (!storageOK){
+    els.venuesRegion.innerHTML =
+      '<p class="board-empty">Could not connect to storage. Reload, or check back shortly.</p>';
+    els.newBoardToggle.disabled = true;
+    return;
+  }
+
+  function slugify(s){
+    return String(s).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-+|-+$)/g, '');
+  }
+
+  function escapeHtml(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+
+  function showToast(message, kind){
+    els.toastRegion.innerHTML =
+      '<div class="toast-inner ' + (kind === 'error' ? 'error' : 'ok') + '">' + escapeHtml(message) + '</div>';
+    setTimeout(function(){
+      if (els.toastRegion.innerHTML.indexOf(escapeHtml(message)) !== -1) {
+        els.toastRegion.innerHTML = '';
+      }
+    }, 4000);
+  }
+
+  // ---------- storage (Firestore) ----------
+  // Same five-function seam the page has always called through — every
+  // caller elsewhere in this file is unchanged. `boards/{id}` holds venue
+  // metadata only; each card is its own document in `boards/{id}/cards/{cardId}`,
+  // so two people editing different cards on the same board never contend.
+  //
+  // Not yet done (deliberately deferred — see FIREBASE.md "Phase 1b"):
+  // checklist items, comments, discussion, and history still live embedded
+  // on the card document, same shape as the old localStorage blob, so
+  // `saveBoard(id, {cards})` still upserts every card in the array on every
+  // call rather than writing just the one field that changed. Correct, safe,
+  // not yet write-optimized — that split is the next increment, not this one.
+
+  function cardsCol(boardId){ return db.collection('boards').doc(boardId).collection('cards'); }
+
+  function loadBoardsIndex(){
+    return db.collection('boards').get()
+      .then(function(snap){
+        var out = [];
+        snap.forEach(function(doc){ out.push(Object.assign({ id: doc.id }, doc.data())); });
+        return out;
+      })
+      .catch(function(err){ logError('loadBoardsIndex', err); return []; });
+  }
+
+  // Called with the full desired boards-index array every time (create/edit
+  // a venue appends or updates one entry, delete filters one out, but always
+  // passes the whole list) — same contract as the old blob write. Upsert
+  // every entry, then delete any board doc no longer present in the list.
+  function saveBoardsIndex(list){
+    return db.collection('boards').get()
+      .then(function(snap){
+        var existingIds = []; snap.forEach(function(doc){ existingIds.push(doc.id); });
+        var keepIds = list.map(function(b){ return b.id; });
+        var batch = db.batch();
+        list.forEach(function(b){
+          var data = Object.assign({}, b); delete data.id;
+          batch.set(db.collection('boards').doc(b.id), data);
+        });
+        existingIds.forEach(function(id){
+          if (keepIds.indexOf(id) === -1) batch.delete(db.collection('boards').doc(id));
+        });
+        return batch.commit().then(function(){ return true; });
+      })
+      .catch(function(err){ logError('saveBoardsIndex', err); return false; });
+  }
+
+  function loadBoard(id){
+    return cardsCol(id).get()
+      .then(function(snap){
+        var cards = [];
+        snap.forEach(function(doc){ cards.push(Object.assign({ id: doc.id }, doc.data())); });
+        return { cards: cards };
+      })
+      .catch(function(err){ logError('loadBoard', err); return { cards: [] }; });
+  }
+
+  // Called with the full cards array every time (see note above) — upsert
+  // every card, then delete any card doc no longer present in the array.
+  function saveBoard(id, data){
+    var cards = (data && Array.isArray(data.cards)) ? data.cards : [];
+    return cardsCol(id).get()
+      .then(function(snap){
+        var existingIds = []; snap.forEach(function(doc){ existingIds.push(doc.id); });
+        var keepIds = cards.map(function(c){ return c.id; });
+        var batch = db.batch();
+        cards.forEach(function(c){
+          var cardData = Object.assign({}, c); delete cardData.id;
+          batch.set(cardsCol(id).doc(c.id), cardData);
+        });
+        existingIds.forEach(function(cid){
+          if (keepIds.indexOf(cid) === -1) batch.delete(cardsCol(id).doc(cid));
+        });
+        return batch.commit().then(function(){ return true; });
+      })
+      .catch(function(err){ logError('saveBoard', err); return false; });
+  }
+
+  function deleteBoardData(id){
+    return cardsCol(id).get()
+      .then(function(snap){
+        var batch = db.batch();
+        snap.forEach(function(doc){ batch.delete(doc.ref); });
+        batch.delete(db.collection('boards').doc(id));
+        return batch.commit();
+      })
+      .catch(function(err){ logError('deleteBoardData', err); return null; });
+  }
+
+  function logError(where, err){
+    if (window.console && console.error) console.error('[Internal Review Board]', where, err);
+  }
+
+  // ---------- rendering ----------
+
+  function renderVenuesList(){
+    if (state.view !== 'list'){
+      els.venuesRegion.innerHTML = '';
+      return;
+    }
+    if (state.loadingBoards){
+      els.venuesRegion.innerHTML = '<p class="board-empty">Loading venues&hellip;</p>';
+      return;
+    }
+    if (state.boards.length === 0){
+      els.venuesRegion.innerHTML = '<p class="board-empty">No venues yet. Create one for a conference and year to get started &mdash; e.g. &ldquo;ICLR 2026&rdquo;.</p>';
+      return;
+    }
+    var sorted = state.boards.slice().sort(function(a, b){ return (b.createdAt || 0) - (a.createdAt || 0); });
+    var html = '<div class="venues">' + sorted.map(function(b){
+      var sub = b.deadline ? 'Paper deadline ' + formatDate(b.deadline) : 'No paper deadline set';
+      if (b.location) sub += ' · ' + escapeHtml(b.location);
+      return '<button class="venue-row" type="button" data-open-venue="' + escapeHtml(b.id) + '">' +
+        '<span class="venue-name">' + escapeHtml(b.label) + '</span>' +
+        '<span class="venue-sub">' + sub + '</span>' +
+      '</button>';
+    }).join('') + '</div>';
+    els.venuesRegion.innerHTML = html;
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-open-venue]'), function(btn){
+      btn.addEventListener('click', function(){
+        openVenue(btn.getAttribute('data-open-venue'));
+      });
+    });
+  }
+
+  function openVenue(id){
+    state.view = 'venue';
+    state.currentBoardId = id;
+    state.currentCardId = null;
+    state.search = { query: '', field: 'all' };
+    renderAll();
+    loadCurrentBoardCards();
+  }
+
+  function backToVenuesList(){
+    state.view = 'list';
+    state.currentBoardId = null;
+    state.currentCardId = null;
+    state.cards = [];
+    renderAll();
+  }
+
+  // ---------- venue modal (create / edit) ----------
+
+  function anonymityOptionsHtml(current){
+    return ANONYMITY_OPTIONS.map(function(o){
+      return '<option value="' + o[0] + '"' + (o[0] === (current || '') ? ' selected' : '') + '>' + o[1] + '</option>';
+    }).join('');
+  }
+
+  function venueFieldsHtml(v){
+    v = v || {};
+    function val(k){ return escapeHtml(v[k] == null ? '' : v[k]); }
+    return '' +
+      '<div class="field-section">Venue</div>' +
+      '<div class="field-2">' +
+        '<div class="field"><label for="nbVenue">Venue *</label><input type="text" id="nbVenue" placeholder="ICLR" value="' + val('venue') + '"></div>' +
+        '<div class="field"><label for="nbYear">Year *</label><input type="text" id="nbYear" inputmode="numeric" placeholder="2026" value="' + val('year') + '"></div>' +
+      '</div>' +
+      '<div class="field"><label for="nbWebsite">Website / call for papers</label><input type="url" id="nbWebsite" placeholder="https://…" value="' + val('website') + '"></div>' +
+      '<div class="field-section">Key dates</div>' +
+      '<div style="font-size:12px;color:var(--muted);margin:0 0 10px;">The paper deadline drives the internal schedule. Add the venue&rsquo;s other dates as they&rsquo;re announced &mdash; each appears on the board and in the .ics once set. Only the ones marked optional can be skipped entirely.</div>' +
+      '<div class="field-2">' +
+        '<div class="field"><label for="nbAbstract">Abstract deadline (optional)</label><input type="date" id="nbAbstract" value="' + val('abstractDeadline') + '"></div>' +
+        '<div class="field"><label for="nbDeadline">Paper deadline</label><input type="date" id="nbDeadline" value="' + val('deadline') + '"></div>' +
+      '</div>' +
+      '<div class="field"><label for="nbPitch">Pitch Day</label><input type="date" id="nbPitch" value="' + val('pitchDay') + '">' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Leave blank to default to 6 weeks before the paper deadline</div></div>' +
+      '<div class="field-2">' +
+        '<div class="field"><label for="nbReviewsPublic">Reviews released</label><input type="date" id="nbReviewsPublic" value="' + val('reviewsPublicDate') + '"></div>' +
+        '<div class="field"><label for="nbRebuttal">Rebuttal deadline</label><input type="date" id="nbRebuttal" value="' + val('rebuttalDeadline') + '"></div>' +
+      '</div>' +
+      '<div class="field-2">' +
+        '<div class="field"><label for="nbNotify">Notification (optional)</label><input type="date" id="nbNotify" value="' + val('notificationDate') + '"></div>' +
+        '<div class="field"><label for="nbCameraReady">Camera-ready (optional)</label><input type="date" id="nbCameraReady" value="' + val('cameraReadyDeadline') + '"></div>' +
+      '</div>' +
+      '<div class="field"><label for="nbConfDates">Conference dates</label><input type="text" id="nbConfDates" placeholder="11–17 May 2026" value="' + val('conferenceDates') + '"></div>' +
+      '<div class="field"><label for="nbLocation">Location</label><input type="text" id="nbLocation" placeholder="Vienna, Austria" value="' + val('location') + '"></div>' +
+      '<div class="field-section">Rules</div>' +
+      '<div class="field-2">' +
+        '<div class="field"><label for="nbMaxPapers">Max papers per author</label><input type="number" id="nbMaxPapers" min="1" value="' + val('maxPapersPerAuthor') + '"></div>' +
+        '<div class="field"><label for="nbPageLimit">Page limit</label><input type="text" id="nbPageLimit" placeholder="9 pages excl. refs" value="' + val('pageLimit') + '"></div>' +
+      '</div>' +
+      '<div class="field-2">' +
+        '<div class="field"><label for="nbAnonymity">Anonymity</label><select id="nbAnonymity">' + anonymityOptionsHtml(v.anonymity) + '</select></div>' +
+        '<div class="field"><label for="nbSubSystem">Submission page (link)</label><input type="url" id="nbSubSystem" placeholder="https://openreview.net/group?id=…" value="' + val('submissionSystem') + '"></div>' +
+      '</div>' +
+      '<div class="field"><label for="nbNotes">Notes</label><textarea id="nbNotes" placeholder="Anything else worth recording">' + val('notes') + '</textarea></div>';
+  }
+
+  function readVenueFields(){
+    function s(id){ var el = document.getElementById(id); return el ? el.value.trim() : ''; }
+    function d(id){ var el = document.getElementById(id); return (el && el.value) ? el.value : null; }
+    var mp = parseInt(s('nbMaxPapers'), 10);
+    return {
+      venue: s('nbVenue'), year: s('nbYear'), website: s('nbWebsite'),
+      abstractDeadline: d('nbAbstract'), deadline: d('nbDeadline'), pitchDay: d('nbPitch'),
+      reviewsPublicDate: d('nbReviewsPublic'), rebuttalDeadline: d('nbRebuttal'),
+      notificationDate: d('nbNotify'), cameraReadyDeadline: d('nbCameraReady'),
+      conferenceDates: s('nbConfDates'), location: s('nbLocation'),
+      maxPapersPerAuthor: (!isNaN(mp) && mp > 0) ? mp : null,
+      pageLimit: s('nbPageLimit'),
+      anonymity: (document.getElementById('nbAnonymity') || {}).value || '',
+      submissionSystem: s('nbSubSystem'),
+      notes: s('nbNotes')
+    };
+  }
+
+  function renderVenueModal(opts){
+    els.modalRegion.innerHTML =
+      '<div class="modal-overlay" id="modalOverlay">' +
+        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="venueModalTitle">' +
+          '<h2 id="venueModalTitle">' + escapeHtml(opts.title) + '</h2>' +
+          '<div class="modal-scroll" id="venueForm">' + venueFieldsHtml(opts.venue) + '</div>' +
+          '<div class="field-error" id="venueFormError" hidden>Venue and year are both required.</div>' +
+          '<div class="modal-actions">' +
+            '<button class="btn" type="button" id="cancelVenueModal">Cancel</button>' +
+            '<button class="btn btn-primary" type="button" id="saveVenueBtn">' + escapeHtml(opts.submitLabel) + '</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('cancelVenueModal').addEventListener('click', closeModal);
+    document.getElementById('modalOverlay').addEventListener('click', function(e){ if (e.target.id === 'modalOverlay') closeModal(); });
+    document.getElementById('saveVenueBtn').addEventListener('click', opts.onSubmit);
+    ['nbVenue', 'nbYear'].forEach(function(id){
+      document.getElementById(id).addEventListener('keydown', function(ev){
+        if (ev.key === 'Enter'){ ev.preventDefault(); opts.onSubmit(); }
+      });
+    });
+    document.getElementById('nbVenue').focus();
+  }
+
+  function openNewVenueModal(){
+    renderVenueModal({ title: 'New venue', submitLabel: 'Create', venue: null, onSubmit: onCreateBoard });
+  }
+
+  function openEditVenueModal(){
+    var v = getCurrentBoard();
+    if (!v) return;
+    renderVenueModal({ title: 'Edit ' + v.label, submitLabel: 'Save', venue: v, onSubmit: function(){ onSaveVenue(v.id); } });
+  }
+
+  function venueMetaHtml(v){
+    if (!v) return '';
+    var bits = [];
+    var links = [];
+    if (v.website) links.push('<a href="' + escapeHtml(v.website) + '" target="_blank" rel="noopener">Call for papers</a>');
+    if (v.submissionSystem) links.push('<a href="' + escapeHtml(v.submissionSystem) + '" target="_blank" rel="noopener">Submission page</a>');
+    if (links.length) bits.push(links.join(' &middot; '));
+    var place = [];
+    if (v.conferenceDates) place.push(escapeHtml(v.conferenceDates));
+    if (v.location) place.push(escapeHtml(v.location));
+    if (place.length) bits.push(place.join(' &middot; '));
+    var rules = [];
+    if (v.maxPapersPerAuthor) rules.push('&le; ' + v.maxPapersPerAuthor + ' papers/author');
+    if (v.pageLimit) rules.push(escapeHtml(v.pageLimit));
+    if (v.anonymity) rules.push(ANONYMITY_LABELS[v.anonymity] || escapeHtml(v.anonymity));
+    if (rules.length) bits.push(rules.join(' &middot; '));
+    if (!bits.length) return '';
+    return '<div class="venue-meta">' + bits.join('<br>') + '</div>';
+  }
+
+  // ---------- internal deadline schedule + .ics ----------
+
+  function pad2(n){ return n < 10 ? '0' + n : '' + n; }
+
+  function shiftWeeks(iso, weeks){
+    var d = new Date(iso + 'T00:00:00');
+    d.setDate(d.getDate() - weeks * 7);
+    return d;
+  }
+  function toIsoDate(d){
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+
+  // Every dated milestone for a venue, chronological. Needs v.deadline.
+  function internalSchedule(v){
+    if (!v || !v.deadline) return [];
+    function wk(n){ return wrap(shiftWeeks(v.deadline, n), n + (n === 1 ? ' week before' : ' weeks before')); }
+    function wrap(dateObj, derivation){ return { dateObj: dateObj, derivation: derivation }; }
+    function on(iso, derivation){ return { dateObj: new Date(iso + 'T00:00:00'), derivation: derivation }; }
+
+    var rows = [
+      Object.assign({ key: 'register', label: 'Register', short: 'Register',
+        summary: 'Register paper — abstract, outline, compute estimate',
+        description: 'Abstract, paper outline and a compute estimate on the Internal Review Board. No full text yet.' }, wk(8)),
+      Object.assign({ key: 'pitch', label: 'Pitch Day', short: 'Pitch Day',
+        summary: 'Pitch Day — present the paper to the group',
+        description: 'Every paper is pitched to the group.' },
+        v.pitchDay ? on(v.pitchDay, 'set for this venue') : wk(6)),
+      Object.assign({ key: 'first_draft', label: 'First draft', short: 'First draft',
+        summary: 'First full draft → Internal Review',
+        description: 'A first full draft exists and enters Internal Review (junior + senior reviewer).' }, wk(4)),
+      Object.assign({ key: 'final_draft', label: 'Final draft', short: 'Final draft',
+        summary: 'Final draft — every review comment incorporated',
+        description: '' }, wk(2)),
+      Object.assign({ key: 'pi_polish', label: 'PI approval', short: 'PI approval',
+        summary: 'PI approval',
+        description: "The PI reads the final draft and approves it for submission. This is the PI's only involvement." }, wk(1)),
+      Object.assign({ key: 'paper', label: 'Paper deadline', short: 'Paper',
+        summary: 'Paper deadline', description: '' }, on(v.deadline, ''))
+    ];
+    if (v.abstractDeadline){
+      rows.push(Object.assign({ key: 'abstract', label: 'Abstract deadline', short: 'Abstract',
+        summary: 'Abstract deadline (venue)', description: '' }, on(v.abstractDeadline, 'venue')));
+    }
+    // Venue's own dates, each only if the venue actually has it.
+    if (v.reviewsPublicDate){
+      rows.push(Object.assign({ key: 'reviews_public', label: 'Reviews released', short: 'Reviews',
+        summary: 'Reviews released', description: '' }, on(v.reviewsPublicDate, 'venue')));
+    }
+    if (v.rebuttalDeadline){
+      rows.push(Object.assign({ key: 'rebuttal_deadline', label: 'Rebuttal deadline', short: 'Rebuttal',
+        summary: 'Rebuttal deadline', description: '' }, on(v.rebuttalDeadline, 'venue')));
+    }
+    if (v.notificationDate){
+      rows.push(Object.assign({ key: 'notification', label: 'Notification', short: 'Decision',
+        summary: 'Notification', description: '' }, on(v.notificationDate, 'venue')));
+    }
+    if (v.cameraReadyDeadline){
+      rows.push(Object.assign({ key: 'camera_ready', label: 'Camera-ready', short: 'Camera-ready',
+        summary: 'Camera-ready deadline', description: '' }, on(v.cameraReadyDeadline, 'venue')));
+    }
+    rows.forEach(function(r){ r.iso = toIsoDate(r.dateObj); });
+    rows.sort(function(a, b){ return a.dateObj - b.dateObj; });
+    return rows;
+  }
+
+  function formatDateShort(iso){
+    if (!iso) return '';
+    return new Date(iso + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
+
+  function venueScheduleHtml(v){
+    var rows = internalSchedule(v);
+    if (!rows.length) return '';
+    var hasVenueDates = rows.some(function(r){ return r.derivation === 'venue'; });
+    var pts = rows.map(function(r){
+      var cls = 'vs-pt' + (r.key === 'paper' ? ' is-paper' : (r.derivation === 'venue' ? ' is-venue' : ''));
+      var tip = r.label + ' — ' + formatDate(r.iso) + (r.derivation ? ' (' + r.derivation + ')' : '');
+      return '<li class="' + cls + '" title="' + escapeHtml(tip) + '">' +
+        '<span class="vs-dot"></span>' +
+        '<span class="vs-name">' + escapeHtml(r.short || r.label) + '</span>' +
+        '<span class="vs-when">' + formatDateShort(r.iso) + '</span>' +
+      '</li>';
+    }).join('');
+    return '<div class="venue-schedule">' +
+      '<div class="vs-head">Deadlines <span>&mdash; counted back from the ' + formatDate(v.deadline) + ' paper deadline' +
+        (hasVenueDates ? ', plus the venue&rsquo;s own dates' : '') + '</span></div>' +
+      '<div class="vs-rail-wrap"><ol class="vs-rail" style="--n:' + rows.length + '">' + pts + '</ol></div>' +
+      '<button class="ics-btn" type="button" id="downloadIcs">Add to calendar (.ics)</button>' +
+    '</div>';
+  }
+
+  function icsEscape(s){
+    return String(s == null ? '' : s)
+      .replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
+  }
+  function icsDateStamp(d){
+    return d.getUTCFullYear() + pad2(d.getUTCMonth() + 1) + pad2(d.getUTCDate()) + 'T' +
+      pad2(d.getUTCHours()) + pad2(d.getUTCMinutes()) + pad2(d.getUTCSeconds()) + 'Z';
+  }
+  function icsDateValue(d){
+    return d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate());
+  }
+
+  function buildIcs(v){
+    var rows = internalSchedule(v);
+    if (!rows.length) return '';
+    var stamp = icsDateStamp(new Date());
+    var lines = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0',
+      'PRODID:-//BOLD Lab//Internal Review Board//EN',
+      'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+      'X-WR-CALNAME:' + icsEscape(v.label + ' \u2014 internal deadlines')
+    ];
+    rows.forEach(function(r){
+      var end = new Date(r.dateObj); end.setDate(end.getDate() + 1);
+      lines.push(
+        'BEGIN:VEVENT',
+        'UID:' + v.id + '-' + r.key + '@bold-internal-review-board',
+        'DTSTAMP:' + stamp,
+        'DTSTART;VALUE=DATE:' + icsDateValue(r.dateObj),
+        'DTEND;VALUE=DATE:' + icsDateValue(end),
+        'SUMMARY:' + icsEscape(v.label + ' \u2014 ' + r.summary),
+        'DESCRIPTION:' + icsEscape(r.description || r.derivation || ''),
+        'END:VEVENT'
+      );
+    });
+    lines.push('END:VCALENDAR');
+    return lines.join('\r\n') + '\r\n';
+  }
+
+  function downloadIcs(v){
+    var text = buildIcs(v);
+    if (!text){ showToast('Set a paper deadline first.', 'error'); return; }
+    try {
+      var blob = new Blob([text], { type: 'text/calendar;charset=utf-8' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = slugify(v.label) + '-internal-deadlines.ics';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    } catch (e){
+      logError('downloadIcs', e);
+      showToast('Could not build the .ics file.', 'error');
+    }
+  }
+
+  function getCurrentBoard(){
+    return state.boards.filter(function(b){ return b.id === state.currentBoardId; })[0];
+  }
+
+  function effectiveDeadline(card, board){
+    if (card.status === 'rebuttal') return card.rebuttalDeadline || null;
+    if (['register','pitch_day','draft_review','final_draft','pi_polish'].indexOf(card.status) !== -1){
+      return card.deadline || (board && board.deadline) || null;
+    }
+    return null;
+  }
+
+  function isOverdue(card, board){
+    var dl = effectiveDeadline(card, board);
+    if (!dl) return false;
+    var today = new Date(); today.setHours(0,0,0,0);
+    var d = new Date(dl + 'T00:00:00');
+    return d < today;
+  }
+
+  function formatDate(iso){
+    if (!iso) return '';
+    var d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  // Like formatDate, but from a JS ms timestamp (createdAt/updatedAt) rather
+  // than an ISO date string.
+  function formatTimestamp(ms){
+    if (!ms) return '';
+    return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  function statusOptionsHtml(current){
+    return STATUS_ORDER.map(function(s){
+      var sel = s === current ? ' selected' : '';
+      return '<option value="' + s + '"' + sel + '>' + STATUS_LABELS[s] + '</option>';
+    }).join('');
+  }
+
+  // The status delta columns to the left (-1) or right (+1) of `status`,
+  // or null at the ends / for a status that's no longer a column.
+  function statusAt(status, delta){
+    var i = STATUS_ORDER.indexOf(status);
+    if (i === -1) return null;
+    var j = i + delta;
+    return (j < 0 || j >= STATUS_ORDER.length) ? null : STATUS_ORDER[j];
+  }
+
+  function submissionLinkLabel(url){
+    return url.indexOf('openreview.net') !== -1 ? 'View on OpenReview' : 'View submission';
+  }
+
+  // Reviewers need edit access to the draft, not a read-only share link.
+  // Returns an error string to show the user, or null if the link is fine
+  // (or isn't an overleaf.com link at all, e.g. a self-hosted mirror).
+  function overleafLinkIssue(url){
+    if (!url) return null;
+    var u;
+    try { u = new URL(url); } catch (e){ return null; }
+    var host = u.hostname.toLowerCase();
+    if (host !== 'overleaf.com' && host !== 'www.overleaf.com') return null;
+    if (/^\/read\//i.test(u.pathname)){
+      return 'That’s a read-only Overleaf share link — reviewers need edit access. Use the URL from the address bar while editing the project (overleaf.com/project/…), or in Overleaf’s Share dialog invite them as editors.';
+    }
+    if (!/^\/project\//i.test(u.pathname)){
+      return 'That doesn’t look like an Overleaf project link. Use the URL from the address bar while editing the project (overleaf.com/project/…).';
+    }
+    return null;
+  }
+
+  // ---------- checklist + gate ----------
+
+  function checklistCounts(card){
+    var items = (card && card.checklist) || [];
+    var out = { total: items.length };
+    REVIEW_ROLES.forEach(function(role){
+      out[role] = items.filter(function(it){ return it[role]; }).length;
+    });
+    return out;
+  }
+
+  function checklistComplete(card){
+    var c = checklistCounts(card);
+    if (!c.total) return false;
+    return REVIEW_ROLES.every(function(role){ return c[role] === c.total; });
+  }
+
+  // Stand-in reviewer pool for the assignment inputs' autocomplete: names
+  // already seen on this board (submitters, PIs, authors, assigned
+  // reviewers) — shared by every free-text person field (PI, authors,
+  // reviewers) as one <datalist>. TODO.md tracks replacing this with the
+  // real roster (BOLD members + this paper's authors + volunteers) once
+  // that exists; the real picker must keep accepting a name that isn't on
+  // it, same as this stand-in does.
+  // The PI isn't a separate field — by convention it's just the last name
+  // in card.authors (same as an author list on the paper itself usually
+  // reads). One list, one source of truth.
+  function cardPi(card){
+    var authors = (card && card.authors) || [];
+    return authors.length ? authors[authors.length - 1] : '';
+  }
+
+  function peoplePoolNames(){
+    var seen = {};
+    state.cards.forEach(function(c){
+      if (c.submittedBy && c.submittedBy.name) seen[c.submittedBy.name] = true;
+      (c.authors || []).forEach(function(a){ if (a) seen[a] = true; });
+      var rv = c.reviewers || {};
+      if (rv.junior) seen[rv.junior] = true;
+      if (rv.senior) seen[rv.senior] = true;
+    });
+    return Object.keys(seen).sort();
+  }
+
+  function peopleDatalistHtml(){
+    return '<datalist id="peopleNames">' +
+      peoplePoolNames().map(function(n){ return '<option value="' + escapeHtml(n) + '">'; }).join('') +
+    '</datalist>';
+  }
+
+  function reviewerInputHtml(card, role){
+    var rv = card.reviewers || {};
+    return '<input class="rv-input" type="text" list="peopleNames" ' +
+      'data-reviewer="' + escapeHtml(card.id) + '" data-reviewer-role="' + role + '" ' +
+      'value="' + escapeHtml(rv[role] || '') + '" placeholder="Assign…" ' +
+      'aria-label="' + REVIEW_ROLE_LABELS[role] + ' reviewer for ' + escapeHtml(card.title) + '">';
+  }
+
+  // True when a move goes from before the gate to the gate (or past it).
+  function crossesGate(fromStatus, toStatus){
+    var gi = STATUS_ORDER.indexOf(GATE_STATUS);
+    var fi = STATUS_ORDER.indexOf(fromStatus);
+    var ti = STATUS_ORDER.indexOf(toStatus);
+    return fi !== -1 && ti !== -1 && fi < gi && ti >= gi;
+  }
+
+  function reviewersAssigned(card){
+    var rv = (card && card.reviewers) || {};
+    return !!(rv.junior && rv.senior);
+  }
+
+  // Every hard gate on an Advance, checked in order — the checklist gate
+  // (GATE_STATUS) plus any other status-specific requirement. Returns the
+  // reason to show (title tooltip / toast) or null if the move is allowed.
+  function advanceBlockReason(card, toStatus){
+    if (crossesGate(card.status, toStatus) && !checklistComplete(card)){
+      return 'Finish the Junior and Senior checklists first';
+    }
+    if (toStatus === 'draft_review' && !reviewersAssigned(card)){
+      return 'Assign a junior and a senior reviewer first';
+    }
+    return null;
+  }
+
+  // Forward-migrate a stored card: since-split status keys; older checklist
+  // shapes (single `checked`, `author`/`auditor` pair, or the dropped
+  // author/junior/senior triple) into the junior/senior pair — old `auditor`
+  // maps to `senior`, the old `author` pass is discarded. Also ensure the
+  // `reviewers` field exists (migrating a legacy single `assignedTo`).
+  // Old statuses that named a review sub-state or an outcome directly —
+  // both are now separate fields (changesRequested, outcome) rather than a
+  // column, so a card saved under one of these needs that field set, not
+  // just its status remapped. Board columns used to run all the way to
+  // 'accepted'/'rejected'/'withdrawn'; those are now outcomes on whatever
+  // column the migration above lands the card in.
+  var STATUS_OUTCOME_MIGRATIONS = { accepted: 'accepted', rejected: 'rejected', withdrawn: 'withdrawn' };
+
+  function normalizeCard(c){
+    if (!c) return c;
+    var out = c;
+    var oldStatus = c.status;
+    var movedStatus = oldStatus && STATUS_MIGRATIONS[oldStatus];
+    if (movedStatus) out = Object.assign({}, out, { status: movedStatus });
+    var cl = out.checklist;
+    var template = makeChecklistSnapshot();
+    if (!Array.isArray(cl) || cl.length === 0){
+      out = Object.assign({}, out, { checklist: template });
+    } else if (cl.length !== template.length || cl.some(function(it, i){ return !template[i] || it.label !== template[i].label; })){
+      // The checklist was consolidated (34 items -> 14, labels rewritten).
+      // No id-stable mapping back, so rebuild from the current template;
+      // carry a tick forward only when the whole part was already done
+      // (a reasonable "this pass was finished" signal — anything partial
+      // starts fresh against the new, shorter list).
+      var doneByPartRole = {};
+      REVIEW_ROLES.forEach(function(role){
+        ['format', 'science'].forEach(function(part){
+          var partItems = cl.filter(function(it){ return it.part === part; });
+          doneByPartRole[part + ':' + role] = partItems.length > 0 && partItems.every(function(it){ return !!it[role]; });
+        });
+      });
+      out = Object.assign({}, out, { checklist: template.map(function(it){
+        var next = { id: it.id, part: it.part, category: it.category, label: it.label, comments: [] };
+        REVIEW_ROLES.forEach(function(role){ next[role] = !!doneByPartRole[it.part + ':' + role]; });
+        return next;
+      }) });
+    } else if (cl.some(function(it){ return typeof it.junior === 'undefined' || typeof it.senior === 'undefined' || typeof it.author !== 'undefined' || !Array.isArray(it.comments); })){
+      out = Object.assign({}, out, { checklist: cl.map(function(it){
+        return { id: it.id, part: it.part, category: it.category, label: it.label,
+                 junior: !!it.junior,
+                 senior: !!it.senior || !!it.auditor,
+                 comments: Array.isArray(it.comments) ? it.comments : [] };
+      }) });
+    }
+    if (!out.reviewers || typeof out.reviewers !== 'object'){
+      out = Object.assign({}, out, { reviewers: { junior: (out.assignedTo || ''), senior: '' } });
+    }
+    if (typeof out.changesRequested !== 'boolean'){
+      out = Object.assign({}, out, { changesRequested: oldStatus === 'changes_requested' });
+    }
+    if (typeof out.outcome !== 'string'){
+      out = Object.assign({}, out, { outcome: (oldStatus && STATUS_OUTCOME_MIGRATIONS[oldStatus]) || '' });
+    }
+    // Authors are required on every new card (see onAddCard), but older
+    // cards predate the field — default in empty rather than break. A
+    // still-older shape had a separate `pi` field before the PI-is-the-
+    // last-author convention; fold it into authors (as the last entry) so
+    // there's one source of truth going forward.
+    if (typeof out.pi === 'string'){
+      var authorsWithoutOldPi = (Array.isArray(out.authors) ? out.authors : []).slice();
+      if (out.pi) authorsWithoutOldPi = authorsWithoutOldPi.filter(function(a){ return a !== out.pi; }).concat([out.pi]);
+      out = Object.assign({}, out, { authors: authorsWithoutOldPi });
+      delete out.pi;
+    }
+    if (!Array.isArray(out.authors)){
+      out = Object.assign({}, out, { authors: [] });
+    }
+    if (!Array.isArray(out.discussion)){
+      out = Object.assign({}, out, { discussion: [] });
+    }
+    return out;
+  }
+
+  // Draft & Review has no sub-columns any more — this is what the card's
+  // colour + badge in that column are driven by. A reviewer's explicit flag
+  // always wins over the checklist; otherwise it's derived from the
+  // checklist alone, same rule the old Approved-column gate used.
+  function reviewState(card){
+    if (card.changesRequested) return 'changes_requested';
+    if (checklistComplete(card)) return 'approved';
+    return 'in_review';
+  }
+  var REVIEW_STATE_LABELS = { in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
+
+  function renderCard(card, board){
+    var overdue = isOverdue(card, board);
+    var inDraftReview = card.status === 'draft_review';
+    var rv = inDraftReview ? reviewState(card) : null;
+    var cardClass = 'card' + (rv ? ' rv-' + rv : '');
+    var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
+    html += '<button class="card-title-btn" type="button" data-open-card="' + escapeHtml(card.id) + '">' + escapeHtml(card.title) + '</button>';
+    // Badges only; track / Overleaf link / edit + remove live on the detail
+    // page now, to keep the board card short and easy to scan.
+    var badges = '';
+    if (rv) badges += '<span class="badge badge-rv-' + rv + '">' + REVIEW_STATE_LABELS[rv] + '</span>';
+    if (card.status === 'rebuttal') badges += card.rebuttalDocLink
+      ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
+      : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
+    if (shouldShowOutcomeBadge(card)) badges += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
+    if (overdue) badges += '<span class="badge badge-overdue">Overdue</span>';
+    if (badges) html += '<div class="card-meta-row">' + badges + '</div>';
+    var cardPiName = cardPi(card);
+    if (cardPiName) html += '<div class="card-pi">PI ' + escapeHtml(cardPiName) + '</div>';
+    if (card.submissionLink) html += '<a class="card-link" href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a><br>';
+    if (card.rebuttalDocLink) html += '<a class="card-link" href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Rebuttal doc</a><br>';
+    html += '<div class="card-reviewers">' +
+      '<div class="rv-row"><span class="rv-role junior">Jr</span>' + reviewerInputHtml(card, 'junior') + '</div>' +
+      '<div class="rv-row"><span class="rv-role senior">Sr</span>' + reviewerInputHtml(card, 'senior') + '</div>' +
+    '</div>';
+    if (inDraftReview) html += '<button class="btn-text changes-toggle" type="button" data-toggle-changes="' + escapeHtml(card.id) + '">' +
+      (card.changesRequested ? '&#10003; Clear changes-requested flag' : '&#9873; Flag changes requested') + '</button>';
+    if (card.reviewNotes) html += '<div class="card-notes">' + escapeHtml(card.reviewNotes) + '</div>';
+    var counts = checklistCounts(card);
+    html += '<div class="card-progress">Checklist &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
+    if (!STATUS_LABELS[card.status]) html += '<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:4px 7px;margin-bottom:8px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn\u2019t a column anymore &mdash; pick a new one below</div>';
+    if (STATUS_LABELS[card.status]) {
+      var lft = statusAt(card.status, -1);
+      var rgt = statusAt(card.status, 1);
+      var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
+      html += '<div class="card-move">';
+      html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>';
+      html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : '') + '>Advance &rarr;</button>';
+      html += '</div>';
+    }
+    // Only the orphaned-status rescue select needs a footer now; edit / remove
+    // moved to the detail page.
+    if (!STATUS_LABELS[card.status]) html += '<div class="card-footer"><select aria-label="Status for ' + escapeHtml(card.title) + '" data-status-for="' + escapeHtml(card.id) + '" style="flex:1 1 auto;min-width:0;font-size:12px;padding:5px 6px;">' + statusOptionsHtml(card.status) + '</select></div>';
+    html += '</div>';
+    return html;
+  }
+
+  // Free-text board search, scoped by state.search.field. 'all' also
+  // checks submitted-by and both reviewers, so typing your own name finds
+  // your papers even if you're not listed as PI or an author.
+  function matchesSearch(card){
+    var q = (state.search && state.search.query || '').trim().toLowerCase();
+    if (!q) return true;
+    var authorsStr = (card.authors || []).join(' ');
+    var field = (state.search && state.search.field) || 'all';
+    var hay;
+    if (field === 'title') hay = card.title || '';
+    else if (field === 'pi') hay = cardPi(card);
+    else if (field === 'authors') hay = authorsStr;
+    else hay = [
+      card.title, authorsStr,
+      card.submittedBy && card.submittedBy.name,
+      card.reviewers && card.reviewers.junior,
+      card.reviewers && card.reviewers.senior
+    ].filter(Boolean).join(' ');
+    return hay.toLowerCase().indexOf(q) !== -1;
+  }
+
+  var SEARCH_FIELD_LABELS = { all: 'Everything', title: 'Title', pi: 'PI', authors: 'Authors' };
+
+  function boardSearchHtml(){
+    var q = (state.search && state.search.query) || '';
+    var field = (state.search && state.search.field) || 'all';
+    var total = state.cards.length;
+    var matched = q.trim() ? state.cards.filter(matchesSearch).length : total;
+    var countText = q.trim() ? (matched + ' of ' + total + ' paper' + (total === 1 ? '' : 's')) : (total + ' paper' + (total === 1 ? '' : 's'));
+    return '<div class="board-search">' +
+      '<input type="search" id="boardSearchInput" placeholder="Search by title, PI, author…" value="' + escapeHtml(q) + '" aria-label="Search papers">' +
+      '<select id="boardSearchField" aria-label="Search in">' +
+        Object.keys(SEARCH_FIELD_LABELS).map(function(k){
+          return '<option value="' + k + '"' + (k === field ? ' selected' : '') + '>' + SEARCH_FIELD_LABELS[k] + '</option>';
+        }).join('') +
+      '</select>' +
+      '<span class="board-search-count">' + countText + '</span>' +
+    '</div>';
+  }
+
+  function onSearchInput(value){
+    state.search.query = value;
+    var active = document.activeElement;
+    var hadFocus = active && active.id === 'boardSearchInput';
+    var selStart = hadFocus ? active.selectionStart : null;
+    var selEnd = hadFocus ? active.selectionEnd : null;
+    renderBoard();
+    if (hadFocus){
+      var input = document.getElementById('boardSearchInput');
+      if (input){
+        input.focus();
+        if (selStart != null) input.setSelectionRange(selStart, selEnd);
+      }
+    }
+  }
+
+  function renderColumns(board){
+    var html = '<div class="columns">';
+    var searching = !!(state.search && state.search.query && state.search.query.trim());
+    STATUS_ORDER.forEach(function(status){
+      var allForStatus = state.cards.filter(function(c){ return c.status === status; });
+      var cardsForStatus = allForStatus.filter(matchesSearch);
+      html += '<div class="column">';
+      html += '<div class="column-head">' +
+        '<div class="ch-top"><span>' + STATUS_LABELS[status] + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
+        (STATUS_HINTS[status] ? '<div class="ch-hint">' + escapeHtml(STATUS_HINTS[status]) + '</div>' : '') +
+      '</div>';
+      html += '<div class="column-body">';
+      if (cardsForStatus.length === 0){
+        html += '<div class="column-empty">' + (searching && allForStatus.length > 0 ? 'No matches' : 'Nothing here') + '</div>';
+      } else {
+        cardsForStatus.forEach(function(c){ html += renderCard(c, board); });
+      }
+      html += '</div></div>';
+    });
+
+    var orphanedAll = state.cards.filter(function(c){ return !STATUS_LABELS[c.status]; });
+    var orphaned = orphanedAll.filter(matchesSearch);
+    if (orphanedAll.length > 0){
+      html += '<div class="column">';
+      html += '<div class="column-head">' +
+        '<div class="ch-top"><span>Other</span><span class="count">' + orphaned.length + '</span></div>' +
+        '<div class="ch-hint">Status no longer maps to a column</div>' +
+      '</div>';
+      html += '<div class="column-body">';
+      if (orphaned.length === 0){
+        html += '<div class="column-empty">' + (searching ? 'No matches' : 'Nothing here') + '</div>';
+      } else {
+        orphaned.forEach(function(c){ html += renderCard(c, board); });
+      }
+      html += '</div></div>';
+    }
+
+    html += '</div>';
+    return html;
+  }
+
+  function renderBoard(){
+    if (state.view === 'card'){
+      renderCardDetail();
+      return;
+    }
+    if (state.view !== 'venue'){
+      els.boardRegion.innerHTML = '';
+      return;
+    }
+    if (state.loadingCards){
+      els.boardRegion.innerHTML =
+        '<div class="board-meta"><a href="#" id="backToList" style="font-size:13.5px;color:var(--muted);text-decoration:none;">&larr; All venues</a></div>' +
+        '<p class="board-empty">Loading&hellip;</p>';
+      var b = document.getElementById('backToList');
+      if (b) b.addEventListener('click', function(e){ e.preventDefault(); backToVenuesList(); });
+      return;
+    }
+    var current = getCurrentBoard();
+    var html = '';
+    html += '<div class="board-meta" style="display:block;">' +
+      '<a href="#" id="backToList" style="font-size:13.5px;color:var(--muted);text-decoration:none;">&larr; All venues</a>' +
+      '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;">' +
+        '<h2>' + (current ? escapeHtml(current.label) : '') + '</h2>' +
+        '<div style="display:flex;align-items:center;gap:16px;">' +
+          '<button class="btn btn-primary" id="submitPaperBtn" type="button">+ Register paper</button>' +
+          '<button class="btn-text edit" id="editBoardBtn" type="button">Edit venue</button>' +
+          '<button class="btn-text" id="deleteBoardBtn" type="button">Delete this venue</button>' +
+        '</div>' +
+      '</div>' +
+      venueMetaHtml(current) +
+      (current && current.notes ? '<div class="venue-meta" style="white-space:pre-wrap;">' + escapeHtml(current.notes) + '</div>' : '') +
+      venueScheduleHtml(current) +
+    '</div>';
+    html += peopleDatalistHtml();
+    html += boardSearchHtml();
+    html += '<div class="board-scroll">' + renderColumns(current) + '</div>';
+    els.boardRegion.innerHTML = html;
+
+    document.getElementById('backToList').addEventListener('click', function(e){ e.preventDefault(); backToVenuesList(); });
+    document.getElementById('submitPaperBtn').addEventListener('click', openModal);
+
+    var del = document.getElementById('deleteBoardBtn');
+    if (del) del.addEventListener('click', onDeleteBoard);
+    var ev = document.getElementById('editBoardBtn');
+    if (ev) ev.addEventListener('click', openEditVenueModal);
+    var ics = document.getElementById('downloadIcs');
+    if (ics) ics.addEventListener('click', function(){ downloadIcs(getCurrentBoard()); });
+
+    var searchInput = document.getElementById('boardSearchInput');
+    if (searchInput) searchInput.addEventListener('input', function(){ onSearchInput(searchInput.value); });
+    var searchField = document.getElementById('boardSearchField');
+    if (searchField) searchField.addEventListener('change', function(){ state.search.field = searchField.value; renderBoard(); });
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-status-for]'), function(sel){
+      sel.addEventListener('change', function(){
+        onChangeStatus(sel.getAttribute('data-status-for'), sel.value);
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-reviewer-role]'), function(inp){
+      inp.addEventListener('change', function(){
+        onSetReviewer(inp.getAttribute('data-reviewer'), inp.getAttribute('data-reviewer-role'), inp.value.trim());
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-move]'), function(btn){
+      btn.addEventListener('click', function(){
+        var to = btn.getAttribute('data-move-to');
+        if (to) onChangeStatus(btn.getAttribute('data-move'), to);
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-open-card]'), function(btn){
+      btn.addEventListener('click', function(){
+        openCard(btn.getAttribute('data-open-card'));
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-toggle-changes]'), function(btn){
+      btn.addEventListener('click', function(){
+        onToggleChangesRequested(btn.getAttribute('data-toggle-changes'));
+      });
+    });
+  }
+
+  // ---------- card detail ----------
+
+  function openCard(cardId){
+    state.view = 'card';
+    state.currentCardId = cardId;
+    state.detailTab = 'format';
+    state.discussionReplyOpenId = null;
+    state.checklistCommentOpenId = null;
+    state.checklistReplyOpenId = null;
+    renderAll();
+    window.scrollTo(0, 0);
+  }
+
+  function backToBoard(){
+    state.view = 'venue';
+    state.currentCardId = null;
+    renderAll();
+  }
+
+  function getCurrentCard(){
+    return state.cards.filter(function(c){ return c.id === state.currentCardId; })[0];
+  }
+
+  function gateBannerHtml(card){
+    var c = checklistCounts(card);
+    var done = checklistComplete(card);
+    var rv = card.reviewers || {};
+    var counts = REVIEW_ROLES.map(function(role){
+      return REVIEW_ROLE_LABELS[role].toLowerCase() + ' <strong>' + c[role] + '/' + c.total + '</strong>';
+    }).join(', ');
+    var noRev = !rv.junior || !rv.senior;
+    return '<div class="gate-banner' + (done ? ' done' : '') + '" id="gateBanner">' +
+      'Checklist &mdash; ' + counts + '. ' +
+      (done
+        ? 'Both passes complete &mdash; this paper can be moved to ' + STATUS_LABELS[GATE_STATUS] + '.'
+        : 'Both must be complete before this paper can reach ' + STATUS_LABELS[GATE_STATUS] + '.') +
+      (noRev ? ' <strong>Assign a junior and a senior reviewer</strong> below.' : '') +
+    '</div>';
+  }
+
+  // ---------- review tabs: Format / Science checklist, Discussion ----------
+
+  function threadCount(messages){
+    return (messages || []).reduce(function(n, m){ return n + 1 + (m.replies ? m.replies.length : 0); }, 0);
+  }
+
+  // The per-item feedback thread, shown under a checklist row when its
+  // "feedback" toggle is open. Same OpenReview-style shape as the
+  // Discussion tab (one level of replies), just scoped to one checklist
+  // point. Fixed input ids ('clcNew*', 'clcReply*') are safe because only
+  // one item's thread — and one reply box within it — is ever open.
+  function checklistItemThreadHtml(it){
+    var comments = it.comments || [];
+    var replyOpenId = state.checklistReplyOpenId;
+    var html = '<div class="cl-thread">';
+    if (comments.length === 0){
+      html += '<p class="disc-empty">No feedback on this point yet.</p>';
+    } else {
+      comments.forEach(function(msg){
+        html += '<div class="disc-thread">';
+        html += discussionMessageHtml(msg, false);
+        html += '<div class="disc-actions"><button class="btn-text" type="button" data-clc-reply-toggle="' + escapeHtml(msg.id) + '">' + (replyOpenId === msg.id ? 'Cancel' : 'Reply') + '</button></div>';
+        if ((msg.replies || []).length){
+          html += '<div class="disc-replies">';
+          msg.replies.forEach(function(r){ html += discussionMessageHtml(r, true); });
+          html += '</div>';
+        }
+        if (replyOpenId === msg.id){
+          html += discussionFormHtml('clcReply', 'Reply&hellip;', 'Post reply');
+        }
+        html += '</div>';
+      });
+    }
+    html += '<div class="cl-thread-new">' + discussionFormHtml('clcNew', 'Leave feedback on this point (e.g. &ldquo;author name visible, p.4 line 312&rdquo;)&hellip;', 'Post feedback') + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  function checklistTabHtml(card, part){
+    var items = (card.checklist || []).filter(function(it){ return it.part === part; });
+    var openId = state.checklistCommentOpenId;
+    var html = '<div class="cl-wrap">';
+    html += '<div class="cl-head"><span></span>' + REVIEW_ROLES.map(function(role){ return '<span>' + REVIEW_ROLE_LABELS[role] + '</span>'; }).join('') + '</div>';
+    var lastCat = null;
+    items.forEach(function(it){
+      if (it.category !== lastCat){
+        html += '<div class="cl-cat">' + escapeHtml(it.category) + '</div>';
+        lastCat = it.category;
+      }
+      html += '<div class="cl-item">';
+      html += '<div class="cl-row">';
+      html += '<label class="cl-label" for="cl-' + escapeHtml(it.id) + '-' + REVIEW_ROLES[0] + '">' + escapeHtml(it.label) + '</label>';
+      REVIEW_ROLES.forEach(function(role){
+        html += '<input type="checkbox" id="cl-' + escapeHtml(it.id) + '-' + role + '" data-cl="' + escapeHtml(card.id) + '" data-cl-item="' + escapeHtml(it.id) + '" data-cl-role="' + role + '"' + (it[role] ? ' checked' : '') + ' aria-label="' + REVIEW_ROLE_LABELS[role] + ': ' + escapeHtml(it.label) + '">';
+      });
+      html += '</div>';
+      var n = threadCount(it.comments);
+      var isOpen = openId === it.id;
+      html += '<div class="cl-row-foot"><button class="btn-text' + (n ? ' has-feedback' : '') + '" type="button" data-clc-toggle="' + escapeHtml(it.id) + '">' +
+        (isOpen ? 'Hide feedback' : (n ? '&#128172; ' + n + ' comment' + (n === 1 ? '' : 's') : '&#128172; Add feedback')) +
+      '</button></div>';
+      if (isOpen) html += checklistItemThreadHtml(it);
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function discussionMessageHtml(msg, isReply){
+    return '<div class="disc-msg' + (isReply ? ' disc-reply' : '') + '">' +
+      '<div class="disc-meta"><span class="disc-author">' + escapeHtml(msg.author) + '</span><span class="disc-time">' + formatTimestamp(msg.timestamp) + '</span></div>' +
+      '<div class="disc-body">' + escapeHtml(msg.body) + '</div>' +
+    '</div>';
+  }
+
+  function discussionFormHtml(idPrefix, placeholderHtml, submitLabel){
+    return '<div class="disc-form">' +
+      '<input type="text" id="' + idPrefix + 'Author" list="peopleNames" placeholder="Your name">' +
+      '<textarea id="' + idPrefix + 'Body" placeholder="' + placeholderHtml + '"></textarea>' +
+      '<div class="disc-form-actions"><button class="btn btn-primary" type="button" id="' + idPrefix + 'Submit">' + submitLabel + '</button></div>' +
+    '</div>';
+  }
+
+  // OpenReview-style thread: top-level messages, each with at most one level
+  // of replies (no reply-to-a-reply — see AGENTS.md). Only one reply form is
+  // ever open at a time (state.discussionReplyOpenId), so the reply inputs
+  // can use fixed ids regardless of which thread they belong to.
+  function discussionTabHtml(card){
+    var thread = card.discussion || [];
+    var replyOpenId = state.discussionReplyOpenId;
+    var html = '<div class="discussion">';
+    if (thread.length === 0){
+      html += '<p class="disc-empty">No discussion yet. Start one below.</p>';
+    } else {
+      thread.forEach(function(msg){
+        html += '<div class="disc-thread">';
+        html += discussionMessageHtml(msg, false);
+        html += '<div class="disc-actions"><button class="btn-text" type="button" data-disc-reply-toggle="' + escapeHtml(msg.id) + '">' + (replyOpenId === msg.id ? 'Cancel' : 'Reply') + '</button></div>';
+        if ((msg.replies || []).length){
+          html += '<div class="disc-replies">';
+          msg.replies.forEach(function(r){ html += discussionMessageHtml(r, true); });
+          html += '</div>';
+        }
+        if (replyOpenId === msg.id){
+          html += discussionFormHtml('discReply', 'Reply&hellip;', 'Post reply');
+        }
+        html += '</div>';
+      });
+    }
+    html += '<div class="disc-new"><h3>Start a new topic</h3>' + discussionFormHtml('discNew', 'Share a comment, question, or concern&hellip;', 'Post') + '</div>';
+    html += '</div>';
+    return html;
+  }
+
+  function reviewTabsHtml(card){
+    var tab = state.detailTab || 'format';
+    var discCount = threadCount(card.discussion);
+    var html = '<div class="tabbar" role="tablist" aria-label="Review">' +
+      '<button class="tab' + (tab === 'format' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-format" data-detail-tab="format" aria-selected="' + (tab === 'format') + '">Format</button>' +
+      '<button class="tab' + (tab === 'science' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-science" data-detail-tab="science" aria-selected="' + (tab === 'science') + '">Science</button>' +
+      '<button class="tab' + (tab === 'discussion' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-discussion" data-detail-tab="discussion" aria-selected="' + (tab === 'discussion') + '">Discussion' + (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</button>' +
+    '</div>';
+    html += '<div class="tabpanel active">';
+    if (tab === 'science') html += checklistTabHtml(card, 'science');
+    else if (tab === 'discussion') html += discussionTabHtml(card);
+    else html += checklistTabHtml(card, 'format');
+    html += '</div>';
+    return html;
+  }
+
+  function onPostDiscussion(cardId){
+    var authorEl = document.getElementById('discNewAuthor');
+    var bodyEl = document.getElementById('discNewBody');
+    var author = authorEl.value.trim();
+    var body = bodyEl.value.trim();
+    if (!author || !body){
+      showToast('Enter your name and a message to post.', 'error');
+      return;
+    }
+    var boardId = state.currentBoardId;
+    var msg = { id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), author: author, timestamp: Date.now(), body: body, replies: [] };
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      return Object.assign({}, c, { discussion: (c.discussion || []).concat([msg]), updatedAt: Date.now() });
+    });
+    var prev = state.cards;
+    state.cards = next;
+    renderBoard();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderBoard();
+        showToast('Could not post — try again.', 'error');
+      }
+    });
+  }
+
+  function onPostReply(cardId, parentId){
+    if (!parentId) return;
+    var authorEl = document.getElementById('discReplyAuthor');
+    var bodyEl = document.getElementById('discReplyBody');
+    var author = authorEl.value.trim();
+    var body = bodyEl.value.trim();
+    if (!author || !body){
+      showToast('Enter your name and a reply to post.', 'error');
+      return;
+    }
+    var boardId = state.currentBoardId;
+    var reply = { id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), author: author, timestamp: Date.now(), body: body };
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      return Object.assign({}, c, {
+        discussion: (c.discussion || []).map(function(m){
+          if (m.id !== parentId) return m;
+          return Object.assign({}, m, { replies: (m.replies || []).concat([reply]) });
+        }),
+        updatedAt: Date.now()
+      });
+    });
+    var prev = state.cards;
+    state.cards = next;
+    state.discussionReplyOpenId = null;
+    renderBoard();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderBoard();
+        showToast('Could not post — try again.', 'error');
+      }
+    });
+  }
+
+  // Mirrors onPostDiscussion / onPostReply but writes into one checklist
+  // item's `comments` array instead of the card-level `discussion`. Keeps
+  // the item's thread open after posting so the reviewer sees it land.
+  function onPostChecklistComment(cardId, itemId){
+    if (!itemId) return;
+    var author = document.getElementById('clcNewAuthor').value.trim();
+    var body = document.getElementById('clcNewBody').value.trim();
+    if (!author || !body){
+      showToast('Enter your name and some feedback to post.', 'error');
+      return;
+    }
+    var boardId = state.currentBoardId;
+    var msg = { id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), author: author, timestamp: Date.now(), body: body, replies: [] };
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      return Object.assign({}, c, {
+        checklist: (c.checklist || []).map(function(it){
+          if (it.id !== itemId) return it;
+          return Object.assign({}, it, { comments: (it.comments || []).concat([msg]) });
+        }),
+        updatedAt: Date.now()
+      });
+    });
+    var prev = state.cards;
+    state.cards = next;
+    state.checklistReplyOpenId = null;
+    renderCardDetail();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast('Could not post — try again.', 'error');
+      }
+    });
+  }
+
+  function onPostChecklistReply(cardId, itemId, parentId){
+    if (!itemId || !parentId) return;
+    var author = document.getElementById('clcReplyAuthor').value.trim();
+    var body = document.getElementById('clcReplyBody').value.trim();
+    if (!author || !body){
+      showToast('Enter your name and a reply to post.', 'error');
+      return;
+    }
+    var boardId = state.currentBoardId;
+    var reply = { id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), author: author, timestamp: Date.now(), body: body };
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      return Object.assign({}, c, {
+        checklist: (c.checklist || []).map(function(it){
+          if (it.id !== itemId) return it;
+          return Object.assign({}, it, {
+            comments: (it.comments || []).map(function(m){
+              if (m.id !== parentId) return m;
+              return Object.assign({}, m, { replies: (m.replies || []).concat([reply]) });
+            })
+          });
+        }),
+        updatedAt: Date.now()
+      });
+    });
+    var prev = state.cards;
+    state.cards = next;
+    state.checklistReplyOpenId = null;
+    renderCardDetail();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast('Could not post — try again.', 'error');
+      }
+    });
+  }
+
+  function renderCardDetail(){
+    var card = getCurrentCard();
+    var board = getCurrentBoard();
+    if (!card){
+      els.boardRegion.innerHTML = '<div class="detail"><a href="#" class="detail-back" id="detailBack">&larr; Back to board</a><p class="board-empty">This paper is no longer on the board.</p></div>';
+      var lb = document.getElementById('detailBack');
+      if (lb) lb.addEventListener('click', function(e){ e.preventDefault(); backToBoard(); });
+      return;
+    }
+
+    var overdue = isOverdue(card, board);
+    var dl = effectiveDeadline(card, board);
+    var dlIsInherited = card.status !== 'rebuttal' && !card.deadline && !!(board && board.deadline);
+    var lft = statusAt(card.status, -1);
+    var rgt = statusAt(card.status, 1);
+    var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
+
+    var html = '<div class="detail">';
+    html += '<a href="#" class="detail-back" id="detailBack">&larr; Back to ' + (board ? escapeHtml(board.label) : 'board') + '</a>';
+
+    var detailRv = card.status === 'draft_review' ? reviewState(card) : null;
+    html += '<div class="detail-head">';
+    html += '<h2>' + escapeHtml(card.title) + '</h2>';
+    if (STATUS_LABELS[card.status]) html += '<span class="badge" style="background:var(--accent-dim);color:var(--accent);">' + escapeHtml(STATUS_LABELS[card.status]) + '</span>';
+    if (card.track) html += '<span class="badge" style="background:var(--neutral-bg);color:var(--neutral-text);">' + escapeHtml(card.track) + '</span>';
+    if (detailRv) html += '<span class="badge badge-rv-' + detailRv + '">' + REVIEW_STATE_LABELS[detailRv] + '</span>';
+    if (card.status === 'rebuttal') html += card.rebuttalDocLink
+      ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
+      : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
+    if (shouldShowOutcomeBadge(card)) html += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
+    if (overdue) html += '<span class="badge badge-overdue">Overdue</span>';
+    html += '</div>';
+    if (!STATUS_LABELS[card.status]) html += '<div style="font-size:12px;color:var(--warn-text);background:var(--warn-bg);padding:6px 10px;margin-top:10px;border-radius:6px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn’t a column anymore &mdash; pick a new one below.</div>';
+
+    html += '<div class="detail-controls">';
+    html += '<div class="card-move">';
+    html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>';
+    html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : '')) + '>Advance &rarr;</button>';
+    html += '</div>';
+    html += '<select aria-label="Status" data-status-for="' + escapeHtml(card.id) + '">' + statusOptionsHtml(card.status) + '</select>';
+    if (card.status === 'draft_review') html += '<button class="btn" type="button" data-toggle-changes="' + escapeHtml(card.id) + '">' +
+      (card.changesRequested ? '&#10003; Clear changes-requested flag' : '&#9873; Flag changes requested') + '</button>';
+    html += '<button class="btn" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button>';
+    html += '<button class="btn-text danger" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
+    html += '</div>';
+
+    html += '<dl class="detail-grid">';
+    if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (dlIsInherited ? ' <span style="color:var(--muted);">(venue default)</span>' : '') + '</dd>';
+    if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + escapeHtml(card.authors.join(', ')) + ' <span style="color:var(--muted);">(last is PI)</span></dd>';
+    if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
+    if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
+    if (card.rebuttalDeadline) html += '<dt>Rebuttal deadline</dt><dd>' + formatDate(card.rebuttalDeadline) + '</dd>';
+    if (card.rebuttalDocLink) html += '<dt>Rebuttal doc</dt><dd><a href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Open</a></dd>';
+    if (card.correspondingAuthorEmail) html += '<dt>Corresponding author</dt><dd><a href="mailto:' + escapeHtml(card.correspondingAuthorEmail) + '">' + escapeHtml(card.correspondingAuthorEmail) + '</a></dd>';
+    if (card.computeEstimate) html += '<dt>Compute estimate</dt><dd>' + escapeHtml(card.computeEstimate) + '</dd>';
+    html += '<dt>Submitted by</dt><dd>' + escapeHtml(card.submittedBy && card.submittedBy.name ? card.submittedBy.name : '—') + '</dd>';
+    if (card.createdAt) html += '<dt>Registered</dt><dd>' + formatTimestamp(card.createdAt) + '</dd>';
+    html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') + '</dd>';
+    html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'senior') + '</dd>';
+    var regNote = card.history && card.history[0] && card.history[0].note;
+    if (regNote) html += '<dt>Note at registration</dt><dd style="white-space:pre-wrap;">' + escapeHtml(regNote) + '</dd>';
+    if (card.reviewNotes) html += '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>';
+    html += '</dl>';
+
+    html += peopleDatalistHtml();
+    html += gateBannerHtml(card);
+
+    html += reviewTabsHtml(card);
+
+    html += '</div>';
+    els.boardRegion.innerHTML = html;
+
+    document.getElementById('detailBack').addEventListener('click', function(e){ e.preventDefault(); backToBoard(); });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-detail-tab]'), function(btn){
+      btn.addEventListener('click', function(){
+        state.detailTab = btn.getAttribute('data-detail-tab');
+        state.discussionReplyOpenId = null;
+        state.checklistCommentOpenId = null;
+        state.checklistReplyOpenId = null;
+        renderCardDetail();
+      });
+    });
+    var discNewBtn = document.getElementById('discNewSubmit');
+    if (discNewBtn) discNewBtn.addEventListener('click', function(){ onPostDiscussion(card.id); });
+    var discReplyBtn = document.getElementById('discReplySubmit');
+    if (discReplyBtn) discReplyBtn.addEventListener('click', function(){ onPostReply(card.id, state.discussionReplyOpenId); });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-disc-reply-toggle]'), function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-disc-reply-toggle');
+        state.discussionReplyOpenId = state.discussionReplyOpenId === id ? null : id;
+        renderCardDetail();
+      });
+    });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-clc-toggle]'), function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-clc-toggle');
+        state.checklistCommentOpenId = state.checklistCommentOpenId === id ? null : id;
+        state.checklistReplyOpenId = null;
+        renderCardDetail();
+      });
+    });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-clc-reply-toggle]'), function(btn){
+      btn.addEventListener('click', function(){
+        var id = btn.getAttribute('data-clc-reply-toggle');
+        state.checklistReplyOpenId = state.checklistReplyOpenId === id ? null : id;
+        renderCardDetail();
+      });
+    });
+    var clcNewBtn = document.getElementById('clcNewSubmit');
+    if (clcNewBtn) clcNewBtn.addEventListener('click', function(){ onPostChecklistComment(card.id, state.checklistCommentOpenId); });
+    var clcReplyBtn = document.getElementById('clcReplySubmit');
+    if (clcReplyBtn) clcReplyBtn.addEventListener('click', function(){ onPostChecklistReply(card.id, state.checklistCommentOpenId, state.checklistReplyOpenId); });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-move]'), function(btn){
+      btn.addEventListener('click', function(){
+        var to = btn.getAttribute('data-move-to');
+        if (to) onChangeStatus(btn.getAttribute('data-move'), to);
+      });
+    });
+    var sel = els.boardRegion.querySelector('[data-status-for]');
+    if (sel) sel.addEventListener('change', function(){ onChangeStatus(sel.getAttribute('data-status-for'), sel.value); });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-reviewer-role]'), function(inp){
+      inp.addEventListener('change', function(){
+        onSetReviewer(inp.getAttribute('data-reviewer'), inp.getAttribute('data-reviewer-role'), inp.value.trim());
+      });
+    });
+    var ed = els.boardRegion.querySelector('[data-edit]');
+    if (ed) ed.addEventListener('click', function(){ openEditModal(ed.getAttribute('data-edit')); });
+    var rm = els.boardRegion.querySelector('[data-remove]');
+    if (rm) rm.addEventListener('click', function(){ onRemoveCard(rm.getAttribute('data-remove')); });
+    var tc = els.boardRegion.querySelector('[data-toggle-changes]');
+    if (tc) tc.addEventListener('click', function(){ onToggleChangesRequested(tc.getAttribute('data-toggle-changes')); });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cl]'), function(box){
+      box.addEventListener('change', function(){
+        onToggleChecklist(box.getAttribute('data-cl'), box.getAttribute('data-cl-item'), box.getAttribute('data-cl-role'), box.checked);
+      });
+    });
+  }
+
+  function onToggleChecklist(cardId, itemId, role, checked){
+    var boardId = state.currentBoardId;
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      return Object.assign({}, c, {
+        checklist: c.checklist.map(function(it){
+          if (it.id !== itemId) return it;
+          var patch = {}; patch[role] = checked;
+          return Object.assign({}, it, patch);
+        }),
+        updatedAt: Date.now()
+      });
+    });
+    var prev = state.cards;
+    state.cards = next;
+
+    // Refresh just the gate banner and the move controls; leave the
+    // checklist checkboxes and scroll position alone.
+    var card = getCurrentCard();
+    var banner = document.getElementById('gateBanner');
+    if (banner && card) banner.outerHTML = gateBannerHtml(card);
+    var moveWrap = els.boardRegion.querySelector('.detail-controls .card-move');
+    if (moveWrap && card){
+      var lft = statusAt(card.status, -1);
+      var rgt = statusAt(card.status, 1);
+      var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
+      moveWrap.innerHTML =
+        '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>' +
+        '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : '')) + '>Advance &rarr;</button>';
+      Array.prototype.forEach.call(moveWrap.querySelectorAll('[data-move]'), function(btn){
+        btn.addEventListener('click', function(){
+          var to = btn.getAttribute('data-move-to');
+          if (to) onChangeStatus(btn.getAttribute('data-move'), to);
+        });
+      });
+    }
+
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast('Could not save the checklist — try again.', 'error');
+      }
+    });
+  }
+
+  function renderAll(){
+    els.toolbar = els.toolbar || document.getElementById('toolbar');
+    if (els.toolbar) els.toolbar.style.display = (state.view === 'list') ? '' : 'none';
+    renderVenuesList();
+    renderBoard();
+  }
+
+  // ---------- modal ----------
+
+  // ---------- dynamic author rows (registration + Edit fields) ----------
+  // Plain arrays of in-progress author names, reset each time the relevant
+  // modal opens. Free text with a shared-people datalist — same stand-in as
+  // PI/reviewers until a real roster exists (TODO.md); typing a name that
+  // isn't a suggestion is just... typing a name.
+  var pAuthorsState = [''];
+  var eAuthorsState = [''];
+
+  function authorRowsHtml(names){
+    return names.map(function(name, i){
+      var isPi = i === names.length - 1;
+      return '<div class="author-row">' +
+        '<span class="author-pi-tag' + (isPi ? '' : ' author-pi-tag--hidden') + '">PI</span>' +
+        '<input type="text" list="peopleNames" class="author-input" data-author-idx="' + i + '" value="' + escapeHtml(name) + '" placeholder="' + (isPi ? 'PI name' : 'Author name') + '" aria-label="' + (isPi ? 'PI (last author)' : ('Author ' + (i + 1))) + '">' +
+        (names.length > 1 ? '<button type="button" class="btn-text danger author-remove" data-remove-author-idx="' + i + '">Remove</button>' : '') +
+      '</div>';
+    }).join('');
+  }
+
+  // Shared by both the registration modal (pAuthorsState / #pAuthorsWrap)
+  // and the Edit-fields modal (eAuthorsState / #eAuthorsWrap) — same rows,
+  // same PI-is-last-row convention, different backing array + submit key.
+  function renderAuthorRows(wrapId, authorsArr, onEnter){
+    var wrap = document.getElementById(wrapId);
+    if (!wrap) return;
+    wrap.innerHTML = authorRowsHtml(authorsArr);
+    Array.prototype.forEach.call(wrap.querySelectorAll('.author-input'), function(inp){
+      inp.addEventListener('input', function(){
+        authorsArr[Number(inp.getAttribute('data-author-idx'))] = inp.value;
+      });
+      if (onEnter) inp.addEventListener('keydown', function(ev){
+        if (ev.key === 'Enter'){ ev.preventDefault(); onEnter(ev); }
+      });
+    });
+    Array.prototype.forEach.call(wrap.querySelectorAll('.author-remove'), function(btn){
+      btn.addEventListener('click', function(){
+        authorsArr.splice(Number(btn.getAttribute('data-remove-author-idx')), 1);
+        renderAuthorRows(wrapId, authorsArr, onEnter);
+      });
+    });
+  }
+
+  function openModal(){
+    var board = getCurrentBoard();
+    var deadlineHint = board && board.deadline
+      ? 'Leave blank to use the venue deadline (' + formatDate(board.deadline) + ')'
+      : 'Leave blank if there\u2019s no override';
+    els.modalRegion.innerHTML =
+      '<div class="modal-overlay" id="modalOverlay">' +
+        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">' +
+          '<h2 id="modalTitle">Register paper for review</h2>' +
+          '<div id="paperForm">' +
+            '<div class="field"><label for="pTitle">Paper title</label><input type="text" id="pTitle"></div>' +
+            '<div class="field"><label for="pAuthorsWrap">Authors</label><div id="pAuthorsWrap"></div>' +
+              '<button class="btn-text" type="button" id="pAddAuthor">+ Add author</button>' +
+              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI. Free text; type a name not in the suggestions if needed. TODO.md tracks a real BOLD-members picker.</div></div>' +
+            '<div class="field"><label for="pOverleaf">Overleaf link</label><input type="url" id="pOverleaf" placeholder="https://www.overleaf.com/project/..."></div>' +
+            '<div class="field"><label for="pEmail">Corresponding author email</label><input type="email" id="pEmail"></div>' +
+            '<div class="field"><label for="pTrack">Track</label><input type="text" id="pTrack" list="trackOptions" placeholder="Main">' +
+              '<datalist id="trackOptions"><option value="Main"><option value="Workshop"></datalist></div>' +
+            '<div class="field"><label for="pCompute">Compute estimate</label><input type="text" id="pCompute" placeholder="e.g. ~2000 A100-hours">' +
+              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Required at registration (8 weeks out)</div></div>' +
+            '<div class="field"><label for="pDeadline">Deadline override (optional)</label><input type="date" id="pDeadline">' +
+              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">' + deadlineHint + '</div></div>' +
+            '<div class="field"><label for="pSubmittedBy">Submitted by</label><input type="text" id="pSubmittedBy" placeholder="Your name">' +
+              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Stand-in for Slack login until that\u2019s connected</div></div>' +
+            '<div class="field"><label for="pNote">Note for the reviewers (optional)</label><textarea id="pNote" placeholder="Anything they should know"></textarea></div>' +
+            '<div class="field-error" id="paperFormError" hidden>Please fill in the required fields above.</div>' +
+            '<div class="modal-actions">' +
+              '<button class="btn" type="button" id="cancelModal">Cancel</button>' +
+              '<button class="btn btn-primary" type="button" id="submitCardBtn">Submit</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('cancelModal').addEventListener('click', closeModal);
+    document.getElementById('modalOverlay').addEventListener('click', function(e){
+      if (e.target.id === 'modalOverlay') closeModal();
+    });
+    document.getElementById('submitCardBtn').addEventListener('click', onAddCard);
+    ['pTitle', 'pOverleaf', 'pEmail', 'pTrack', 'pCompute', 'pSubmittedBy'].forEach(function(id){
+      document.getElementById(id).addEventListener('keydown', function(ev){
+        if (ev.key === 'Enter'){ ev.preventDefault(); onAddCard(ev); }
+      });
+    });
+    pAuthorsState = [''];
+    renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard);
+    document.getElementById('pAddAuthor').addEventListener('click', function(){
+      // Insert before the last row, not after — the last row is the PI
+      // slot, and it should stay last as more co-authors are added.
+      pAuthorsState.splice(Math.max(pAuthorsState.length - 1, 0), 0, '');
+      renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard);
+    });
+    document.getElementById('pTitle').focus();
+  }
+
+  function closeModal(){ els.modalRegion.innerHTML = ''; }
+
+  function openEditModal(cardId){
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    var editBoard = getCurrentBoard();
+    var deadlineHint = editBoard && editBoard.deadline
+      ? 'Leave blank to use the venue deadline (' + formatDate(editBoard.deadline) + ')'
+      : 'Leave blank if there’s no override';
+    els.modalRegion.innerHTML =
+      '<div class="modal-overlay" id="modalOverlay">' +
+        '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">' +
+          '<h2 id="editModalTitle">Edit &ldquo;' + escapeHtml(card.title) + '&rdquo;</h2>' +
+          '<div id="editForm">' +
+            '<div class="field"><label for="eTitle">Paper title</label><input type="text" id="eTitle" value="' + escapeHtml(card.title || '') + '"></div>' +
+            '<div class="field"><label for="eAuthorsWrap">Authors</label><div id="eAuthorsWrap"></div>' +
+              '<button class="btn-text" type="button" id="eAddAuthor">+ Add author</button>' +
+              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI.</div></div>' +
+            '<div class="field"><label for="eOverleaf">Overleaf link</label><input type="url" id="eOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/..."></div>' +
+            '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
+            '<div class="field"><label for="eTrack">Track</label><input type="text" id="eTrack" list="trackOptions" value="' + escapeHtml(card.track || '') + '">' +
+              '<datalist id="trackOptions"><option value="Main"><option value="Workshop"></datalist></div>' +
+            '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
+            '<div class="field"><label for="eDeadline">Deadline override (optional)</label><input type="date" id="eDeadline" value="' + escapeHtml(card.deadline || '') + '">' +
+              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">' + deadlineHint + '</div></div>' +
+            '<div class="field"><label for="eSubmittedBy">Submitted by</label><input type="text" id="eSubmittedBy" value="' + escapeHtml((card.submittedBy && card.submittedBy.name) || '') + '"></div>' +
+            '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."></div>' +
+            '<div class="field"><label for="eRebuttalDeadline">Rebuttal deadline</label><input type="date" id="eRebuttalDeadline" value="' + escapeHtml(card.rebuttalDeadline || '') + '"></div>' +
+            '<div class="field"><label for="eRebuttalDoc">Rebuttal document</label><input type="url" id="eRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/..."></div>' +
+            '<div class="field"><label for="eReviewNotes">Review notes</label><textarea id="eReviewNotes" placeholder="Scores, summary, anything worth remembering">' + escapeHtml(card.reviewNotes || '') + '</textarea></div>' +
+            '<div class="field"><label for="eOutcome">Outcome</label><select id="eOutcome">' +
+              '<option value=""' + (!card.outcome ? ' selected' : '') + '>No outcome yet</option>' +
+              '<option value="accepted"' + (card.outcome === 'accepted' ? ' selected' : '') + '>Accepted</option>' +
+              '<option value="rejected"' + (card.outcome === 'rejected' ? ' selected' : '') + '>Rejected</option>' +
+              '<option value="withdrawn"' + (card.outcome === 'withdrawn' ? ' selected' : '') + '>Withdrawn</option>' +
+            '</select></div>' +
+            '<div class="field-error" id="editFormError" hidden></div>' +
+            '<div class="modal-actions">' +
+              '<button class="btn" type="button" id="cancelEditModal">Cancel</button>' +
+              '<button class="btn btn-primary" type="button" id="saveEditBtn">Save</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    document.getElementById('cancelEditModal').addEventListener('click', closeModal);
+    document.getElementById('modalOverlay').addEventListener('click', function(e){
+      if (e.target.id === 'modalOverlay') closeModal();
+    });
+    document.getElementById('saveEditBtn').addEventListener('click', function(){ onSaveEdit(cardId); });
+    var submitOnEnter = function(ev){ onSaveEdit(cardId); };
+    ['eTitle', 'eOverleaf', 'eEmail', 'eTrack', 'eCompute', 'eSubmittedBy'].forEach(function(id){
+      document.getElementById(id).addEventListener('keydown', function(ev){
+        if (ev.key === 'Enter'){ ev.preventDefault(); onSaveEdit(cardId); }
+      });
+    });
+    eAuthorsState = card.authors && card.authors.length ? card.authors.slice() : [''];
+    renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter);
+    document.getElementById('eAddAuthor').addEventListener('click', function(){
+      eAuthorsState.splice(Math.max(eAuthorsState.length - 1, 0), 0, '');
+      renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter);
+    });
+    document.getElementById('eTitle').focus();
+  }
+
+  function onSaveEdit(cardId){
+    var boardId = state.currentBoardId;
+    var now = Date.now();
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    var errorEl = document.getElementById('editFormError');
+
+    var title = document.getElementById('eTitle').value.trim();
+    var rawAuthors = eAuthorsState.map(function(a){ return a.trim(); });
+    var piFilled = rawAuthors.length > 0 && !!rawAuthors[rawAuthors.length - 1];
+    var authors = rawAuthors.filter(Boolean);
+    var overleafLink = document.getElementById('eOverleaf').value.trim();
+    var email = document.getElementById('eEmail').value.trim();
+    var track = document.getElementById('eTrack').value.trim();
+    var submittedByName = document.getElementById('eSubmittedBy').value.trim();
+
+    if (!title || !piFilled || !overleafLink || !email || !track || !submittedByName){
+      errorEl.textContent = !piFilled ? 'The last author (the PI) is required.' : 'Please fill in the required fields above.';
+      errorEl.hidden = false;
+      return;
+    }
+    var overleafIssue = overleafLinkIssue(overleafLink);
+    if (overleafIssue){
+      errorEl.textContent = overleafIssue;
+      errorEl.hidden = false;
+      return;
+    }
+    errorEl.hidden = true;
+    var updates = {
+      title: title,
+      authors: authors,
+      overleafLink: overleafLink,
+      correspondingAuthorEmail: email,
+      track: track,
+      computeEstimate: document.getElementById('eCompute').value.trim(),
+      deadline: document.getElementById('eDeadline').value || null,
+      submittedBy: { name: submittedByName, slackId: (card.submittedBy && card.submittedBy.slackId) || null },
+      submissionLink: document.getElementById('eSubmissionLink').value.trim(),
+      rebuttalDeadline: document.getElementById('eRebuttalDeadline').value || null,
+      rebuttalDocLink: document.getElementById('eRebuttalDoc').value.trim(),
+      reviewNotes: document.getElementById('eReviewNotes').value.trim(),
+      outcome: document.getElementById('eOutcome').value,
+      updatedAt: now
+    };
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      return Object.assign({}, c, updates);
+    });
+    var prev = state.cards;
+    state.cards = next;
+    closeModal();
+    renderBoard();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderBoard();
+        showToast('Could not save changes \u2014 try again.', 'error');
+      } else {
+        showToast('Saved.', 'ok');
+      }
+    });
+  }
+
+  // ---------- handlers ----------
+
+  function onCreateBoard(e){
+    if (e && e.preventDefault) e.preventDefault();
+    var f = readVenueFields();
+    var errEl = document.getElementById('venueFormError');
+    if (!f.venue || !f.year){ if (errEl) errEl.hidden = false; return; }
+    if (errEl) errEl.hidden = true;
+    var id = slugify(f.venue + '-' + f.year);
+    var existing = state.boards.filter(function(b){ return b.id === id; })[0];
+    if (existing){
+      showToast('That venue already exists \u2014 opening it.', 'ok');
+      closeModal();
+      openVenue(id);
+      return;
+    }
+    var entry = Object.assign({ id: id, label: f.venue + ' ' + f.year, createdAt: Date.now() }, f);
+    var next = state.boards.concat([entry]);
+    saveBoard(id, { cards: [] }).then(function(ok){
+      if (!ok){ showToast('Could not create the venue \u2014 try again.', 'error'); return; }
+      return saveBoardsIndex(next).then(function(ok2){
+        if (!ok2){ showToast('Could not save the venue list \u2014 try again.', 'error'); return; }
+        state.boards = next;
+        showToast('Created ' + entry.label + '.', 'ok');
+        closeModal();
+        openVenue(id);
+      });
+    });
+  }
+
+  function onSaveVenue(id){
+    var f = readVenueFields();
+    var errEl = document.getElementById('venueFormError');
+    if (!f.venue || !f.year){ if (errEl) errEl.hidden = false; return; }
+    if (errEl) errEl.hidden = true;
+    var prev = state.boards;
+    var next = state.boards.map(function(b){
+      return b.id === id ? Object.assign({}, b, f, { label: f.venue + ' ' + f.year }) : b;
+    });
+    state.boards = next;
+    closeModal();
+    renderAll();
+    saveBoardsIndex(next).then(function(ok){
+      if (!ok){ state.boards = prev; renderAll(); showToast('Could not save the venue \u2014 try again.', 'error'); }
+      else showToast('Saved.', 'ok');
+    });
+  }
+
+  function onDeleteBoard(){
+    var current = state.boards.filter(function(b){ return b.id === state.currentBoardId; })[0];
+    if (!current) return;
+    if (!window.confirm('Delete "' + current.label + '" and every paper on it? This can\u2019t be undone.')) return;
+    var id = current.id;
+    var next = state.boards.filter(function(b){ return b.id !== id; });
+    saveBoardsIndex(next).then(function(ok){
+      if (!ok){ showToast('Could not delete the venue \u2014 try again.', 'error'); return; }
+      deleteBoardData(id).then(function(){
+        state.boards = next;
+        showToast('Deleted ' + current.label + '.', 'ok');
+        backToVenuesList();
+      });
+    });
+  }
+
+  function onAddCard(e){
+    if (e && e.preventDefault) e.preventDefault();
+    var title = document.getElementById('pTitle').value.trim();
+    // The last row is the PI slot (see authorRowsHtml) — it must be filled
+    // in even if blank rows elsewhere just get dropped.
+    var rawAuthors = pAuthorsState.map(function(a){ return a.trim(); });
+    var piFilled = rawAuthors.length > 0 && !!rawAuthors[rawAuthors.length - 1];
+    var authors = rawAuthors.filter(Boolean);
+    var overleafLink = document.getElementById('pOverleaf').value.trim();
+    var email = document.getElementById('pEmail').value.trim();
+    var track = document.getElementById('pTrack').value.trim();
+    var submittedByName = document.getElementById('pSubmittedBy').value.trim();
+    var errorEl = document.getElementById('paperFormError');
+
+    if (!title || !piFilled || !overleafLink || !email || !track || !submittedByName){
+      errorEl.textContent = !piFilled ? 'The last author (the PI) is required.' : 'Please fill in the required fields above.';
+      errorEl.hidden = false;
+      return;
+    }
+    var overleafIssue = overleafLinkIssue(overleafLink);
+    if (overleafIssue){
+      errorEl.textContent = overleafIssue;
+      errorEl.hidden = false;
+      return;
+    }
+    errorEl.hidden = true;
+
+    var now = Date.now();
+    var noteText = document.getElementById('pNote').value.trim();
+
+    var card = {
+      id: 'card-' + now + '-' + Math.random().toString(36).slice(2, 8),
+      title: title,
+      authors: authors,
+      overleafLink: overleafLink,
+      correspondingAuthorEmail: email,
+      track: track,
+      computeEstimate: document.getElementById('pCompute').value.trim(),
+      deadline: document.getElementById('pDeadline').value || null,
+      status: 'register',
+      submittedBy: { name: submittedByName, slackId: null },
+      reviewers: { junior: '', senior: '' },
+      changesRequested: false,
+      outcome: '',
+      submissionLink: null,
+      rebuttalDeadline: null,
+      rebuttalDocLink: null,
+      reviewNotes: '',
+      checklist: makeChecklistSnapshot(),
+      discussion: [],
+      history: [{ timestamp: now, actor: submittedByName, action: 'registered', note: noteText }],
+      createdAt: now,
+      updatedAt: now
+    };
+    var next = state.cards.concat([card]);
+    var boardId = state.currentBoardId;
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){ showToast('Could not save the paper \u2014 try again.', 'error'); return; }
+      if (state.currentBoardId !== boardId) return;
+      state.cards = next;
+      closeModal();
+      renderBoard();
+      showToast('Registered for review.', 'ok');
+    });
+  }
+
+  function onChangeStatus(cardId, newStatus){
+    var boardId = state.currentBoardId;
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card || card.status === newStatus) return;
+
+    if (crossesGate(card.status, newStatus) && !checklistComplete(card)){
+      var cc = checklistCounts(card);
+      var summary = REVIEW_ROLES.map(function(role){
+        return REVIEW_ROLE_LABELS[role].toLowerCase() + ' ' + cc[role] + '/' + cc.total;
+      }).join(', ');
+      showToast('Both checklist passes must be complete before ' + STATUS_LABELS[GATE_STATUS] + ' — ' + summary + '.', 'error');
+      renderBoard(); // undo any dropdown selection
+      return;
+    }
+
+    var fromIdx = STATUS_ORDER.indexOf(card.status);
+    var toIdx = STATUS_ORDER.indexOf(newStatus);
+    var isAdvance = toIdx !== -1 && (fromIdx === -1 || toIdx > fromIdx);
+
+    // Only blocks moving forward into Draft & Review — reverting back into
+    // it (e.g. from Final Draft) isn't held to this, same as the checklist
+    // gate above only fires crossing forward.
+    if (isAdvance && newStatus === 'draft_review' && !reviewersAssigned(card)){
+      showToast('Assign a junior and a senior reviewer before moving to ' + STATUS_LABELS.draft_review + '.', 'error');
+      renderBoard(); // undo any dropdown selection
+      return;
+    }
+
+    if (isAdvance){
+      var msg = advanceConfirmMessage(newStatus);
+      if (msg && !window.confirm(msg)){
+        renderBoard(); // undo any dropdown selection
+        return;
+      }
+    }
+
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      return Object.assign({}, c, { status: newStatus, updatedAt: Date.now() });
+    });
+    var prev = state.cards;
+    state.cards = next; // optimistic
+    renderBoard();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderBoard();
+        showToast('Could not update status \u2014 try again.', 'error');
+      }
+    });
+  }
+
+  function onSetReviewer(cardId, role, value){
+    var boardId = state.currentBoardId;
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      var rv = Object.assign({}, c.reviewers || {});
+      rv[role] = value;
+      return Object.assign({}, c, { reviewers: rv, updatedAt: Date.now() });
+    });
+    var prev = state.cards;
+    state.cards = next; // optimistic
+    renderBoard();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderBoard();
+        showToast('Could not save the reviewer — try again.', 'error');
+      }
+    });
+  }
+
+  function onToggleChangesRequested(cardId){
+    var boardId = state.currentBoardId;
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      return Object.assign({}, c, { changesRequested: !c.changesRequested, updatedAt: Date.now() });
+    });
+    var prev = state.cards;
+    state.cards = next; // optimistic
+    renderBoard();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderBoard();
+        showToast('Could not save that — try again.', 'error');
+      }
+    });
+  }
+
+  function onRemoveCard(cardId){
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    if (!window.confirm('Remove "' + card.title + '" from this venue?')) return;
+    var boardId = state.currentBoardId;
+    var next = state.cards.filter(function(c){ return c.id !== cardId; });
+    var prev = state.cards;
+    var wasOnDetail = state.view === 'card' && state.currentCardId === cardId;
+    state.cards = next;
+    if (wasOnDetail){ state.view = 'venue'; state.currentCardId = null; }
+    if (wasOnDetail) renderAll(); else renderBoard();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        if (wasOnDetail){ state.view = 'card'; state.currentCardId = cardId; renderAll(); }
+        else renderBoard();
+        showToast('Could not remove the paper \u2014 try again.', 'error');
+      }
+    });
+  }
+
+  function loadCurrentBoardCards(){
+    if (!state.currentBoardId) return Promise.resolve();
+    state.loadingCards = true;
+    renderBoard();
+    return loadBoard(state.currentBoardId).then(function(data){
+      state.cards = (data.cards || []).map(normalizeCard);
+      state.loadingCards = false;
+      renderBoard();
+    });
+  }
+
+  // ---------- wiring ----------
+
+  els.newBoardToggle.addEventListener('click', openNewVenueModal);
+
+  // ---------- init ----------
+
+  loadBoardsIndex().then(function(list){
+    state.boards = list;
+    state.loadingBoards = false;
+    renderAll();
+  });
+
+})();
+</script>
+
+</body>
+</html>

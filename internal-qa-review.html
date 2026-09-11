@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Internal Review | BOLD Lab</title>
+<meta name="description" content="A simulated full peer review of the first full draft before submission — Format and Science, by a junior and a senior reviewer from the pool.">
+<meta property="og:title" content="Internal Review | BOLD Lab">
+<meta property="og:description" content="A simulated full peer review of the first full draft before submission — Format and Science, by a junior and a senior reviewer from the pool.">
+<meta property="og:type" content="website">
+<script>document.documentElement.classList.remove('no-js');</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap" rel="stylesheet">
+<style>
+  /* Design system shared with bold-lab.ai */
+  :root{
+    --ink:#09111f;
+    --ink-soft:#202b3c;
+    --muted:#667085;
+    --paper:#fbfaf6;
+    --surface:#ffffff;
+    --wash:#eef2f4;
+    --line:#d8dee6;
+    --blue:#2b64d8;
+    --teal:#2f8f83;
+    --plum:#6f4bb3;
+    --amber:#b7791f;
+    --focus:#c87912;
+    --radius:8px;
+    --content-max:720px;
+    --gutter:clamp(20px, 4vw, 40px);
+  }
+
+  *{box-sizing:border-box;}
+
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink-soft);
+    font-family:'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size:16px;
+    line-height:1.6;
+    font-synthesis:none;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+
+  a{color:var(--blue); text-decoration-thickness:1px; text-underline-offset:2px;}
+  a:hover{text-decoration-thickness:2px;}
+  a:focus-visible, input:focus-visible, button:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:2px;}
+
+  h1,h2,h3{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
+
+  /* ---------- masthead ---------- */
+  .masthead{
+    background:var(--surface);
+    border-bottom:1px solid var(--line);
+    padding:20px var(--gutter);
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .wordmark{font-weight:800; font-size:19px; letter-spacing:0; color:var(--ink); text-decoration:none;}
+  .wordmark span{color:var(--blue);}
+  .masthead-sub{font-size:13px; color:var(--muted);}
+
+  .backlink{max-width:var(--content-max); margin:24px auto 0; padding:0 var(--gutter);}
+  .backlink a{font-size:13.5px; color:var(--muted); text-decoration:none;}
+  .backlink a:hover{color:var(--blue);}
+
+  /* ---------- hero ---------- */
+  .hero{max-width:var(--content-max); margin:0 auto; padding:20px var(--gutter) 36px;}
+  .hero h1{font-size:clamp(30px, 4.5vw, 44px); line-height:1.02;}
+  .hero .dek{display:none;}
+  .hero .lede{
+    margin-top:20px;
+    font-size:16px;
+    color:var(--ink-soft);
+    border-top:1px solid var(--line);
+    padding-top:20px;
+    max-width:64ch;
+  }
+  .hero .lede strong{color:var(--ink); font-weight:700;}
+  .draft-note{
+    display:inline-block;
+    margin-top:18px;
+    font-size:12px;
+    font-weight:700;
+    color:var(--amber);
+    background:#f6ecda;
+    padding:4px 10px;
+    border-radius:999px;
+  }
+  .page-source{font-size:12.5px; color:var(--muted); margin-top:12px;}
+  .page-source a{color:var(--muted); text-decoration:underline; text-underline-offset:2px;}
+  .page-source a:hover{color:var(--blue);}
+
+  /* ---------- content ---------- */
+  main{max-width:var(--content-max); margin:0 auto; padding:0 var(--gutter) 88px;}
+
+  /* Format = teal, Science = plum. Colour carries the two-part structure. */
+  .part-head{
+    display:flex;
+    align-items:baseline;
+    gap:14px;
+    padding-top:48px;
+    margin-top:48px;
+    border-top:2px solid var(--teal);
+  }
+  #tab-science .part-head, .part-head#science{border-top-color:var(--plum);}
+  .part-head:first-of-type{margin-top:40px; padding-top:40px;}
+  .part-num{
+    font-weight:800;
+    font-size:14px;
+    color:var(--teal);
+    font-variant-numeric:tabular-nums;
+    letter-spacing:0;
+  }
+  #tab-science .part-num, #science .part-num{color:var(--plum);}
+  .part-title{font-size:24px; font-weight:760; margin-bottom:2px;}
+  .part-sub{color:var(--muted); font-size:14.5px;}
+
+  .category{
+    padding-top:36px;
+    margin-top:36px;
+    border-top:1px solid var(--line);
+  }
+  .category:first-child{margin-top:0; padding-top:0; border-top:none;}
+  .part-head + .category{margin-top:22px; padding-top:0; border-top:none;}
+  .category h2{font-size:19px; font-weight:760; margin-bottom:4px;}
+  .category .category-note{color:var(--muted); font-size:14px; margin-bottom:14px;}
+
+  /* ---------- tabs (Format / Science) ---------- */
+  .tabbar{display:flex; gap:0; border-bottom:1px solid var(--line); margin:36px 0 0;}
+  .tab{
+    font-weight:700;
+    font-size:14px;
+    color:var(--muted);
+    background:none;
+    border:none;
+    border-bottom:2px solid transparent;
+    padding:10px 2px;
+    margin:0 26px -1px 0;
+    cursor:pointer;
+  }
+  .tab:hover{color:var(--ink);}
+  .tab .n{
+    font-weight:800;
+    font-size:12px;
+    margin-right:8px;
+    font-variant-numeric:tabular-nums;
+  }
+  #tab-btn-format.active{color:var(--ink); border-bottom-color:var(--teal);}
+  #tab-btn-format .n{color:var(--teal);}
+  #tab-btn-science.active{color:var(--ink); border-bottom-color:var(--plum);}
+  #tab-btn-science .n{color:var(--plum);}
+
+  .worknote{font-size:12.5px; color:var(--muted); margin:14px 0 0;}
+  .linkbtn{
+    background:none; border:none; color:var(--muted);
+    font:inherit; font-size:12.5px; padding:0;
+    text-decoration:underline; text-underline-offset:2px; cursor:pointer;
+  }
+  .linkbtn:hover{color:var(--blue);}
+
+  .tabpanel{display:none;}
+  .tabpanel.active{display:block;}
+  .tabpanel .part-head:first-of-type{margin-top:28px; padding-top:28px;}
+
+  /* No-JS: no tabs, both parts stacked */
+  .no-js .tabbar, .no-js .worknote{display:none;}
+  .no-js .tabpanel{display:block;}
+  .no-js .tabpanel .part-head:first-of-type{margin-top:44px; padding-top:44px;}
+
+  /* ---------- checklist ---------- */
+  ul.checklist{margin:0; padding:0; list-style:none;}
+  ul.checklist li{
+    display:flex;
+    align-items:flex-start;
+    gap:11px;
+    padding:9px 0;
+    border-bottom:1px solid var(--line);
+  }
+  ul.checklist li:last-child{border-bottom:none;}
+  ul.checklist input[type="checkbox"]{
+    accent-color:var(--teal);
+    width:16px;
+    height:16px;
+    margin-top:3px;
+    flex-shrink:0;
+    cursor:pointer;
+  }
+  #tab-science ul.checklist input[type="checkbox"]{accent-color:var(--plum);}
+  ul.checklist label{cursor:pointer;}
+  ul.checklist input[type="checkbox"]:checked + label{
+    color:var(--muted);
+    text-decoration:line-through;
+    text-decoration-color:var(--line);
+  }
+
+  footer{
+    max-width:var(--content-max);
+    margin:0 auto;
+    padding:32px var(--gutter) 56px;
+    border-top:1px solid var(--line);
+    font-size:13px;
+    color:var(--muted);
+  }
+
+  @media (max-width:760px){
+    .hero{padding:16px var(--gutter) 24px;}
+    .part-title{font-size:20px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <a class="wordmark" href="how-to-submit-a-paper.html">BOLD<span>.</span> Lab</a>
+  <div class="masthead-sub">Internal</div>
+</div>
+
+<div class="backlink">
+  <a href="how-to-submit-a-paper.html">&larr; ML Conference Paper Cycle</a>
+</div>
+
+<div class="hero">
+  <h1>Internal Review</h1>
+  <p class="dek">A simulated full peer review of the draft, before the venue sees it.</p>
+  <p class="lede">A <strong>junior</strong> and a <strong>senior</strong> reviewer from the pool each work through both parts &mdash; Format (against the venue's guidelines) and Science (contributions vs. evidence). The pool is every paper's authors plus volunteers, with at least one senior. Both reviewers are assigned per submission on the <a href="audit-board.html">Internal Review Board</a>; the paper can't be approved until both have finished the checklist.</p>
+  <span class="draft-note">First draft &mdash; checklist will be expanded</span>
+  <p class="page-source">Extends <a href="https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp" target="_blank" rel="noopener">BOLDiquette &sect; ML Conference Cycle</a> &middot; current differences in <a href="diff.html">DIFF.md</a></p>
+</div>
+
+<main>
+
+  <div class="tabbar" role="tablist" aria-label="Review parts">
+    <button class="tab active" type="button" role="tab" id="tab-btn-format" aria-controls="tab-format" aria-selected="true">Format</button>
+    <button class="tab" type="button" role="tab" id="tab-btn-science" aria-controls="tab-science" aria-selected="false">Science</button>
+  </div>
+  <p class="worknote">Ticks are saved in this browser only &mdash; a personal working copy for one review pass. The tracked per-paper record lives on the <a href="audit-board.html">Internal Review Board</a>. <button type="button" id="clearChecks" class="linkbtn">Clear all ticks</button></p>
+
+  <div class="tabpanel active" id="tab-format" role="tabpanel" aria-labelledby="tab-btn-format">
+
+  <div class="part-head">
+    <div>
+      <h2 class="part-title">Format</h2>
+      <p class="part-sub">Compliance against the venue's submission guidelines.</p>
+    </div>
+  </div>
+
+  <section class="category">
+    <h2>Mandatory sections &amp; parts</h2>
+    <p class="category-note">Whatever the venue's call for papers requires is actually present, and actually filled in.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="c1"><label for="c1">All required sections and disclosure forms are present and filled in, not left as templates (e.g. limitations, ethics statement, paper checklist) — and everything the main text references in the appendix actually exists there</label></li>
+    </ul>
+  </section>
+
+  <section class="category">
+    <h2>Length &amp; page limits</h2>
+    <p class="category-note">Overall and per-section, including anything with its own separate limit.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="c2"><label for="c2">Main paper and every section-specific limit (abstract word count, appendix pages, etc.) are within bounds &mdash; without manually shrinking margins, font, or spacing to fit more in</label></li>
+    </ul>
+  </section>
+
+  <section class="category">
+    <h2>Double-blind anonymity</h2>
+    <p class="category-note">Not broken anywhere &mdash; including places that are easy to forget.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="c3"><label for="c3">No identity anywhere in the PDF &mdash; no author names or affiliations (including acknowledgments), and nothing identifying in the file's title/author metadata</label></li>
+      <li><input type="checkbox" id="c4"><label for="c4">No identity outside the PDF either &mdash; linked code/data repos are anonymized (README, commit history, filenames) and self-citations are phrased in the third person</label></li>
+    </ul>
+  </section>
+
+  <section class="category">
+    <h2>Template &amp; formatting</h2>
+    <p class="category-note">Small things, but they're a common cause of an instant desk rejection.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="c5"><label for="c5">Latest official venue template (not a copy from a previous year), compiles cleanly with no missing figures / broken references / warnings, and fonts / page size are correct</label></li>
+    </ul>
+  </section>
+
+  <section class="category">
+    <h2>Policy compliance</h2>
+    <p class="category-note">Rules that live outside the paper itself.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="c6"><label for="c6">Not in violation of the venue's dual-submission / prior-publication policy, and any arXiv or preprint posting follows its timing policy</label></li>
+    </ul>
+  </section>
+
+  </div><!-- /tab-format -->
+
+  <div class="tabpanel" id="tab-science" role="tabpanel" aria-labelledby="tab-btn-science">
+
+  <div class="part-head" id="science">
+    <div>
+      <h2 class="part-title">Science</h2>
+      <p class="part-sub">Correctness and impact. The senior reviewer takes papers where the science needs deep judgement.</p>
+    </div>
+  </div>
+
+  <section class="category">
+    <h2>Claimed contributions</h2>
+    <p class="category-note">Everything else below is checked against these claims &mdash; start here.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="s1"><label for="s1">Contributions are stated clearly (ideally a short, explicit list) and checked against the paper's actual evidence &mdash; nothing in the abstract or intro claims more than the results show</label></li>
+    </ul>
+  </section>
+
+  <section class="category">
+    <h2>Correctness</h2>
+    <p class="category-note">The most time-consuming part, and the most important.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="s2"><label for="s2">Theoretical claims: proofs are correct, with reasonable and clearly-stated assumptions</label></li>
+      <li><input type="checkbox" id="s3"><label for="s3">Empirical claims: experiments are well-designed with fair, non-strawman baselines, and the results shown actually support the conclusions drawn from them</label></li>
+    </ul>
+  </section>
+
+  <section class="category">
+    <h2>Impact</h2>
+    <p class="category-note">Doesn't require state-of-the-art results &mdash; just an honest case for why this matters.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="s4"><label for="s4">The problem is relevant to the target community, others could plausibly build on it, and the scope of impact is honestly represented &mdash; not oversold, not undersold</label></li>
+    </ul>
+  </section>
+
+  <section class="category">
+    <h2>Limitations</h2>
+    <p class="category-note">Disclosing these is a point in the paper's favor, not against it.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="s5"><label for="s5">Limitations and known failure modes or negative results are disclosed honestly &mdash; not buried or omitted</label></li>
+    </ul>
+  </section>
+
+  <section class="category">
+    <h2>Related work &amp; positioning</h2>
+    <p class="category-note">A reasonable sweep, not an exhaustive one.</p>
+    <ul class="checklist">
+      <li><input type="checkbox" id="s6"><label for="s6">Prior work is represented accurately, the contribution is clearly differentiated from the closest prior work, and nothing obviously relevant is missing</label></li>
+    </ul>
+  </section>
+
+  </div><!-- /tab-science -->
+
+</main>
+
+<footer>
+  An internal BOLD Lab guide. The source of record is BOLDiquette.
+</footer>
+
+<script>
+(function(){
+  var TABS = ['format', 'science'];
+  var btns = {
+    format: document.getElementById('tab-btn-format'),
+    science: document.getElementById('tab-btn-science')
+  };
+  var panels = {
+    format: document.getElementById('tab-format'),
+    science: document.getElementById('tab-science')
+  };
+  if (!btns.format || !btns.science || !panels.format || !panels.science) return;
+
+  function mapHash(h){
+    if (h === 'science' || h === 'tab-science') return 'science';
+    return 'format';
+  }
+
+  function showTab(name, push){
+    if (TABS.indexOf(name) === -1) name = 'format';
+    TABS.forEach(function(t){
+      var on = t === name;
+      panels[t].classList.toggle('active', on);
+      btns[t].classList.toggle('active', on);
+      btns[t].setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    if (push && location.hash.slice(1) !== name){
+      history.pushState({ tab: name }, '', '#' + name);
+    }
+  }
+
+  TABS.forEach(function(t){
+    btns[t].addEventListener('click', function(){ showTab(t, true); });
+  });
+  window.addEventListener('popstate', function(){
+    showTab(mapHash(location.hash.slice(1)), false);
+  });
+  showTab(mapHash(location.hash.slice(1)), false);
+
+  // ---- personal working copy of the ticks (this browser only) ----
+  // Bumped whenever checklist items are added / removed / renumbered, so
+  // stale ticks don't land on the wrong items: v2 = 34→14 consolidation,
+  // v3 = dropped the Submission-system category (14→12, c6+ shifted down).
+  var KEY = 'boldiquette-audit-checklist-v3';
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('ul.checklist input[type="checkbox"]'));
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { saved = {}; }
+  boxes.forEach(function(b){ if (saved[b.id]) b.checked = true; });
+
+  function persist(){
+    var map = {};
+    boxes.forEach(function(b){ if (b.checked) map[b.id] = true; });
+    try { localStorage.setItem(KEY, JSON.stringify(map)); } catch (e) {}
+  }
+  boxes.forEach(function(b){ b.addEventListener('change', persist); });
+
+  var clearBtn = document.getElementById('clearChecks');
+  if (clearBtn){
+    clearBtn.addEventListener('click', function(){
+      boxes.forEach(function(b){ b.checked = false; });
+      try { localStorage.removeItem(KEY); } catch (e) {}
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

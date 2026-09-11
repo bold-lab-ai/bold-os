@@ -1,0 +1,13 @@
+# Firebase emulator debug logs
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+pglite-debug.log
+.firebase/
+
+# Scratch/throwaway test fixtures (see AGENTS.md — never committed)
+_test_*.html
+_test_*.js
+
+# OS cruft
+.DS_Store

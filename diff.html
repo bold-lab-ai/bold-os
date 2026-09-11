@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Differences from BOLDiquette | BOLD Lab</title>
+<meta name="description" content="Every point where the paper-submission tooling differs from BOLDiquette &sect; ML Conference Cycle, with the proposed change back.">
+<meta property="og:title" content="Differences from BOLDiquette | BOLD Lab">
+<meta property="og:description" content="Every point where the paper-submission tooling differs from BOLDiquette &sect; ML Conference Cycle, with the proposed change back.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#09111f;
+    --ink-soft:#202b3c;
+    --muted:#667085;
+    --paper:#fbfaf6;
+    --surface:#ffffff;
+    --wash:#eef2f4;
+    --line:#d8dee6;
+    --blue:#2b64d8;
+    --teal:#2f8f83;
+    --plum:#6f4bb3;
+    --amber:#b7791f;
+    --focus:#c87912;
+    --radius:8px;
+    --content-max:1060px;
+    --article-max:680px;
+    --gutter:clamp(20px, 4vw, 48px);
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink-soft);
+    font-family:'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size:16px;
+    line-height:1.6;
+    font-synthesis:none;
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+
+  a{color:var(--blue); text-decoration-thickness:1px; text-underline-offset:2px;}
+  a:hover{text-decoration-thickness:2px;}
+  a:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:2px;}
+
+  h1,h2{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
+
+  /* ---------- masthead ---------- */
+  .masthead{
+    background:var(--surface);
+    border-bottom:1px solid var(--line);
+    padding:20px var(--gutter);
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .wordmark{font-weight:800; font-size:19px; letter-spacing:0; color:var(--ink); text-decoration:none;}
+  .wordmark span{color:var(--blue);}
+  .masthead-sub{font-size:13px; color:var(--muted);}
+
+  /* ---------- hero ---------- */
+  .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
+  .hero h1{font-size:clamp(27px, 5.4vw, 44px); line-height:1.08; overflow-wrap:break-word; max-width:var(--article-max);}
+  .hero-note{margin:18px 0 0; font-size:15px; color:var(--ink-soft); max-width:var(--article-max);}
+  .page-source{font-size:12.5px; color:var(--muted); margin-top:16px;}
+  .page-source a{color:var(--muted); text-decoration:underline; text-underline-offset:2px;}
+  .page-source a:hover{color:var(--blue);}
+
+  /* ---------- article ---------- */
+  main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
+
+  .legend{
+    list-style:none; margin:24px 0 0; padding:16px 18px;
+    max-width:var(--article-max);
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    display:flex; flex-direction:column; gap:8px;
+    font-size:13.5px; color:var(--ink-soft);
+  }
+  .legend li{display:flex; align-items:baseline; gap:10px;}
+
+  .diff-jump{
+    max-width:var(--article-max);
+    margin:20px 0 0;
+    display:flex; flex-wrap:wrap; gap:6px;
+  }
+  .diff-jump a{
+    display:inline-block; min-width:24px; text-align:center;
+    padding:4px 8px; border-radius:999px;
+    background:var(--surface); border:1px solid var(--line);
+    color:var(--ink-soft); font-size:12.5px; font-weight:600;
+    text-decoration:none;
+  }
+  .diff-jump a:hover{border-color:var(--blue); color:var(--blue);}
+
+  .diff-badge{
+    display:inline-block; flex:0 0 auto;
+    font-size:11px; font-weight:600; letter-spacing:0;
+    padding:2px 9px; border-radius:999px;
+  }
+  .diff-badge--new{background:#e3ebfc; color:var(--blue);}
+  .diff-badge--divergence{background:#f6e9d4; color:var(--amber);}
+  .diff-badge--proposed{background:#ece3f7; color:var(--plum);}
+
+  .diff-item{
+    max-width:var(--article-max);
+    margin:44px 0 0; padding-top:36px;
+    border-top:1px solid var(--line);
+  }
+  .diff-item:first-of-type{margin-top:36px;}
+  .diff-head{display:flex; align-items:center; gap:10px; margin-bottom:4px; flex-wrap:wrap;}
+  .diff-item h2{font-size:clamp(19px, 2.4vw, 23px); line-height:1.2;}
+  .diff-item-note{font-size:13px; color:var(--muted); margin:4px 0 0;}
+
+  .diff-label{
+    font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:0;
+    color:var(--teal); margin:22px 0 8px;
+  }
+  .diff-item p{margin:0 0 10px;}
+
+  blockquote{
+    margin:0; padding:2px 0 2px 20px; border-left:2px solid var(--amber);
+    color:var(--ink-soft); font-size:16px; line-height:1.6;
+  }
+
+  ul.list{margin:0 0 6px; padding:0; list-style:none;}
+  ul.list li{position:relative; padding:6px 0 6px 22px;}
+  ul.list li::before{
+    content:''; position:absolute; left:2px; top:14px;
+    width:5px; height:5px; background:var(--blue); border-radius:1px;
+  }
+
+  strong{color:var(--ink); font-weight:700;}
+
+  .diff-callout{
+    background:var(--wash); border-left:2px solid var(--amber);
+    padding:10px 14px; margin-top:14px;
+    font-size:13.5px; color:var(--ink-soft);
+    border-radius:0 6px 6px 0;
+  }
+
+  #reconciled{padding-top:36px;}
+  #reconciled h2{font-size:clamp(19px, 2.4vw, 23px);}
+  #reconciled ul.list{margin-top:16px;}
+
+  footer{
+    max-width:var(--content-max); margin:0 auto; padding:32px var(--gutter) 56px;
+    border-top:1px solid var(--line); font-size:13px; color:var(--muted);
+  }
+
+  @media (max-width:820px){
+    .hero{padding:40px var(--gutter) 8px;}
+  }
+</style>
+</head>
+<body>
+
+<div class="masthead">
+  <div class="wordmark">BOLD<span>.</span> Lab</div>
+  <div class="masthead-sub">Internal</div>
+</div>
+
+<div class="hero">
+  <h1>Differences from BOLDiquette</h1>
+  <p class="hero-note">Every point where this tooling (<a href="how-to-submit-a-paper.html">the guide</a>, <a href="internal-qa-review.html">Internal Review</a>, <a href="audit-board.html">the Internal Review Board</a>) differs from BOLDiquette &sect; ML Conference Cycle. This is the list to work through when requesting changes to BOLDiquette.</p>
+  <p class="page-source">Provenance: <a href="https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp" target="_blank" rel="noopener">BOLDiquette &sect; ML Conference Cycle</a> (Pre-submission / Post-submission / Arxiv / Publicity / Rebuttal / On Acceptance / Pre-Conference) &middot; text read 2026-09-10 &middot; also as plain <a href="DIFF.md">DIFF.md</a></p>
+</div>
+
+<main>
+  <ul class="legend">
+    <li><span class="diff-badge diff-badge--new">New</span> Process or tooling BOLDiquette doesn&rsquo;t cover at all.</li>
+    <li><span class="diff-badge diff-badge--divergence">Divergence</span> Our pages currently say something different from BOLDiquette.</li>
+    <li><span class="diff-badge diff-badge--proposed">Proposed</span> A change we want made to BOLDiquette; until it lands, the implementation follows BOLDiquette.</li>
+  </ul>
+
+  <nav class="diff-jump" aria-label="Jump to a difference">
+    <a href="#diff-1">1</a><a href="#diff-2">2</a><a href="#diff-3">3</a><a href="#diff-4">4</a><a href="#diff-5">5</a><a href="#diff-6">6</a><a href="#diff-7">7</a><a href="#diff-8">8</a><a href="#diff-9">9</a><a href="#diff-10">10</a><a href="#reconciled">Reconciled</a>
+  </nav>
+
+  <article class="diff-item" id="diff-1">
+    <div class="diff-head"><span class="diff-badge diff-badge--new">New</span><h2>1. Internal Review</h2></div>
+    <p class="diff-label">BOLDiquette</p>
+    <blockquote>Pre-submission says only <em>&ldquo;Submit a first full draft to the compulsory BOLD PI on your paper 10 days ahead of the final deadline.&rdquo;</em> No structured runway, no review, no roles, no checklist.</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>The pre-submission run is a fixed timeline, and the first full draft goes through a <strong>simulated full peer review</strong> (venues are all similar).</p>
+    <ul class="list">
+      <li><strong>8 wk before the deadline</strong> &mdash; register the paper (abstract, outline, author list, target venue, compute estimate) on the Internal Review Board.</li>
+      <li><strong>6 wk</strong> &mdash; Pitch Day: every paper is pitched to the group.</li>
+      <li><strong>4 wk</strong> &mdash; first full draft &rarr; Internal Review, worked through by a <strong>junior</strong> and a <strong>senior</strong> reviewer from the pool.</li>
+      <li><strong>2 wk</strong> &mdash; final draft, every review comment incorporated.</li>
+      <li><strong>1 wk</strong> &mdash; the PI reads the final draft and approves it for submission. That is the PI&rsquo;s only involvement.</li>
+      <li>The <strong>reviewer pool</strong> = every paper&rsquo;s authors plus volunteers, with at least one senior.</li>
+      <li>12-item checklist (6 Format, 6 Science; each item folds together several related points to keep the tick count manageable), on <a href="internal-qa-review.html">Internal Review</a> and snapshotted onto every board card. A <strong>junior</strong> and a <strong>senior</strong> reviewer are assigned per submission on the board; each fills in the checklist. A paper can&rsquo;t be marked <strong>Approved</strong> until both passes are complete.</li>
+    </ul>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Add a new subsection between Pre-submission and Post-submission (drop-in prose in <em>proposed-boldiquette-addition.md</em>). Supersedes the old &ldquo;first draft to the PI 10 days ahead&rdquo; line.</p>
+  </article>
+
+  <article class="diff-item" id="diff-2">
+    <div class="diff-head"><span class="diff-badge diff-badge--new">New</span><h2>2. Internal Review Board</h2></div>
+    <p class="diff-label">BOLDiquette</p>
+    <blockquote>Nothing.</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p><a href="audit-board.html">The Internal Review Board</a>, one board per venue + year. Columns mirror the guide&rsquo;s 9 phases, named past tense for the checkpoint already met to be sitting there: Registered &rarr; Pitched &rarr; Drafted &rarr; Reviewed &rarr; PI Approved &rarr; Submitted &rarr; Posted &rarr; Reviews Out &rarr; Accepted &mdash; each column is an attestation of a real-world checkpoint being met, not a work-in-progress bucket, so Advancing a card asks for a quick confirmation of what that checkpoint means. Within Drafted a card is colour- and badge-coded In review / Changes requested / Approved (derived from the checklist, plus a reviewer-settable flag); the outcomes Accepted / Rejected / Withdrawn are a separate badge, not to be confused with the Accepted column (the final draft actually reaching the venue&rsquo;s own decision). Per-card fields: compute estimate; post-submission &mdash; submission link (OpenReview or other), rebuttal deadline, rebuttal doc link, review notes. The venue carries the call for papers and submission-page links, the paper deadline, an optional explicit Pitch Day, and its own dates &mdash; reviews released and rebuttal deadline as standard fields, abstract / notification / camera-ready as optional &mdash; plus page limit and anonymity. From the paper deadline the board derives and clearly displays one chronological deadline list &mdash; register (&minus;8 wk), Pitch Day (explicit, or &minus;6 wk), first draft (&minus;4 wk), final draft (&minus;2 wk), PI approval (&minus;1 wk), then the venue&rsquo;s own dates &mdash; and exports the whole list as a downloadable .ics.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Covered by the same draft addition plus its &ldquo;Addition to Post-submission&rdquo; block.</p>
+    <div class="diff-callout"><strong>Known limitation</strong> (not a BOLDiquette question): status changes are a free-form dropdown, except the Approved gate (both checklist passes must be complete). Who may move a card / tick which pass is unenforced &mdash; see <em>TODO.md</em> Permissions.</div>
+  </article>
+
+  <article class="diff-item" id="diff-3">
+    <div class="diff-head"><span class="diff-badge diff-badge--divergence">Divergence</span><h2>3. Where the project is logged</h2></div>
+    <p class="diff-label">BOLDiquette (Pre-submission)</p>
+    <blockquote>&ldquo;Add your project 4 weeks ahead of the deadline to the [project tracker] spreadsheet.&rdquo;</blockquote>
+    <p class="diff-label">Implementation (Phase 1)</p>
+    <p>Register the paper on the <a href="audit-board.html">Internal Review Board</a> 8 weeks ahead (title, abstract, authors, venue, compute estimate); the card starts in <em>Registered</em>.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Replace the project-tracker instruction with the Internal Review Board, and move the timing from 4 to 8 weeks.</p>
+  </article>
+
+  <article class="diff-item" id="diff-4">
+    <div class="diff-head"><span class="diff-badge diff-badge--proposed">Proposed</span><h2>4. Pre-submission timeline</h2></div>
+    <p class="diff-item-note">Implementation is ahead of BOLDiquette.</p>
+    <p class="diff-label">BOLDiquette</p>
+    <blockquote>Register 4 weeks ahead; first full draft to the PI 10 days ahead; clear your calendar for the 4 weeks before the deadline.</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>The real timeline (per Mattie, who ran this before) &mdash; <strong>8 wk</strong> abstract + outline + compute &rarr; registered &middot; <strong>6 wk</strong> Pitch Day &middot; <strong>4 wk</strong> first full draft &rarr; Internal Review &middot; <strong>2 wk</strong> final draft with all comments in &middot; <strong>1 wk</strong> PI approval &middot; <strong>0</strong> submit.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Replace the Pre-submission timing lines with this runway.</p>
+  </article>
+
+  <article class="diff-item" id="diff-5">
+    <div class="diff-head"><span class="diff-badge diff-badge--divergence">Divergence</span><h2>5. Who reviews the draft</h2></div>
+    <p class="diff-label">BOLDiquette</p>
+    <blockquote>&ldquo;The compulsory BOLD PI on your paper&rdquo; reviews the first full draft.</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>The first full draft is reviewed by a <strong>junior</strong> and a <strong>senior</strong> reviewer from the pool (peers). The <strong>PI</strong> is involved only in the week-1 polish.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Fold into the new Internal Review subsection (<a href="#diff-1">&sect;1</a>).</p>
+  </article>
+
+  <article class="diff-item" id="diff-6">
+    <div class="diff-head"><span class="diff-badge diff-badge--new">New</span><h2>6. Compute estimate at registration</h2></div>
+    <p class="diff-label">BOLDiquette</p>
+    <blockquote>No mention of compute at the pre-submission stage.</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>An estimate of the compute the paper will need is required at registration (8 weeks out) and stored on the board card.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Add &ldquo;a compute estimate&rdquo; to what&rsquo;s required at registration.</p>
+  </article>
+
+  <article class="diff-item" id="diff-7">
+    <div class="diff-head"><span class="diff-badge diff-badge--new">New</span><h2>7. Pitch Day</h2></div>
+    <p class="diff-label">BOLDiquette</p>
+    <blockquote>No pitch requirement.</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>Every paper is pitched to the group at a fixed <strong>Pitch Day</strong>, at least 6 weeks before the deadline; a paper that hasn&rsquo;t been pitched doesn&rsquo;t go forward.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Add Pitch Day to Pre-submission.</p>
+  </article>
+
+  <article class="diff-item" id="diff-8">
+    <div class="diff-head"><span class="diff-badge diff-badge--divergence">Divergence</span><h2>8. &ldquo;On Acceptance&rdquo; step dropped</h2></div>
+    <p class="diff-label">BOLDiquette (On Acceptance)</p>
+    <blockquote>&ldquo;Submit the form to add the paper to our website.&rdquo;</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>The guide has no &ldquo;On Acceptance&rdquo; phase. Once BOLD OS is live the project (and its publications) already exist there, and an accepted publication is published to the website automatically &mdash; see <em>TODO.md</em>.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Replace the manual form step with &ldquo;BOLD OS publishes the accepted publication automatically&rdquo; once that exists; until then the manual step still applies and the guide is ahead of reality here.</p>
+  </article>
+
+  <article class="diff-item" id="diff-9">
+    <div class="diff-head"><span class="diff-badge diff-badge--divergence">Divergence</span><h2>9. Presentation format</h2></div>
+    <p class="diff-label">BOLDiquette (Pre-Conference)</p>
+    <blockquote>&ldquo;Please use Google Slides for your presentation to facilitate collaboration.&rdquo;</blockquote>
+    <p class="diff-label">Implementation (Phase 9)</p>
+    <p>Slides can be Google Slides <strong>or</strong> an HTML deck &mdash; whatever is easiest to build (often with an agent) and share.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Loosen to &ldquo;a format co-authors can collaborate on and exchange easily (Google Slides, an HTML deck, &hellip;)&rdquo;.</p>
+  </article>
+
+  <article class="diff-item" id="diff-10">
+    <div class="diff-head"><span class="diff-badge diff-badge--new">New</span><h2>10. Pre-Conference networking</h2></div>
+    <p class="diff-label">BOLDiquette (Pre-Conference)</p>
+    <blockquote>Poster, practice talk, slides format, example posters, &ldquo;posters are not papers&rdquo;. No networking guidance.</blockquote>
+    <p class="diff-label">Implementation (Phase 9)</p>
+    <p>Adds two items &mdash; email people you want to meet at the conference at least <strong>3 weeks</strong> beforehand to set up a meeting; and attend as many of the conference&rsquo;s social events as you can (<strong>mandatory</strong>), since they&rsquo;re usually the best networking.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Add both to Pre-Conference, including the mandatory framing on social events.</p>
+  </article>
+
+  <section class="diff-item" id="reconciled">
+    <h2>Reconciled &mdash; no longer a difference</h2>
+    <ul class="list">
+      <li><strong>arXiv affiliation.</strong> Guide now uses &ldquo;BOLD, {University of Oxford / Imperial College / UCL}&rdquo;, matching BOLDiquette exactly (was Oxford-only). Fixed 2026-09-10.</li>
+      <li><strong>Roger Grosse attribution.</strong> The guide credits &ldquo;Roger Grosse&rdquo; for the loose-ends practice; BOLDiquette has a typo, &ldquo;Rober Grosse&rdquo;. Editorial only &mdash; worth fixing in BOLDiquette when the section is next edited.</li>
+    </ul>
+  </section>
+</main>
+
+<footer>
+  An internal BOLD Lab reference, kept in sync by hand with <em>DIFF.md</em>. Back to the <a href="how-to-submit-a-paper.html">guide</a>.
+</footer>
+
+</body>
+</html>
