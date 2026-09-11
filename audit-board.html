@@ -717,10 +717,6 @@
     try {
       firebase.initializeApp(FIREBASE_CONFIG);
       db = firebase.firestore();
-      // WebChannel streaming is known to hang in headless/automated browsers
-      // and some proxies — auto-fall-back to long-polling rather than have
-      // writes silently never flush.
-      db.settings({ experimentalAutoDetectLongPolling: true });
       if (FIRESTORE_USE_EMULATOR) db.useEmulator('localhost', 8080);
       return true;
     } catch (e){ return false; }
