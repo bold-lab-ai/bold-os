@@ -1695,6 +1695,13 @@
     if (crossesGate(card.status, toStatus) && !checklistComplete(card)){
       return 'Finish the Junior and Senior checklists first';
     }
+    // Both reviewers must have independently marked Approved (see
+    // reviewFilterState/reviewStateButtonsHtml) before a card can leave
+    // Drafted for Reviewed — same gate onSetReviewState's auto-advance is
+    // already held to, just also enforced here for a manual Advance/select.
+    if (crossesGate(card.status, toStatus) && reviewFilterState(card) !== 'approved'){
+      return 'Both reviewers must approve first';
+    }
     if (toStatus === 'draft_review' && !reviewersAssigned(card)){
       return 'Assign a junior and a senior reviewer first';
     }
@@ -3049,6 +3056,15 @@
         return REVIEW_ROLE_LABELS[role].toLowerCase() + ' ' + cc[role] + '/' + cc.total;
       }).join(', ');
       showToast('Both checklist passes must be complete before ' + STATUS_LABELS[GATE_STATUS] + ' — ' + summary + '.', 'error');
+      renderBoard(); // undo any dropdown selection
+      return;
+    }
+
+    // Same gate as advanceBlockReason() and the one onSetReviewState's
+    // auto-advance already holds itself to — enforced here too so a manual
+    // Advance/select can't bypass it.
+    if (crossesGate(card.status, newStatus) && reviewFilterState(card) !== 'approved'){
+      showToast('Both reviewers must approve before ' + STATUS_LABELS[GATE_STATUS] + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
     }

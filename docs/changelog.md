@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Advance from Drafted to Reviewed is now also gated on both reviewers approving
+
+Per Eduardo, immediately after the redesign below: manually advancing a card from Drafted to Reviewed (the Advance button, the status dropdown, or reverting back in and moving forward again) should be blocked — greyed out with a reason, same as the existing checklist gate — until both reviewers have actually approved, not just auto-advance covering the happy path. `advanceBlockReason()` and `onChangeStatus()` both now also check `reviewFilterState(card) === 'approved'` at the same `crossesGate()` boundary the checklist-completion check already uses, independent of it — a card needs both the checklist finished *and* both reviewers' explicit approval, checked separately, to leave Drafted. `onSetReviewState`'s auto-advance already only fired once this same condition held, so it needed no change. Verified with a 6-case unit test covering each gate firing alone and together.
+
 ### Review sign-off is now per-reviewer, three buttons each; approving both auto-advances the card
 
 Redesigned the review-status controls added earlier today (below), per Eduardo's follow-up: "we should really have three buttons (same line) under each reviewer, where only that reviewer can click to say 'In review' 'Changes requested' 'Approved'." Replaced the shared `changesRequested` flag + independent `jrApproved`/`srApproved` booleans with two per-reviewer tri-state fields, `jrReviewState`/`srReviewState`, each one of `in_review` / `changes_requested` / `approved`. Rendered as a row of three buttons directly under each reviewer's picker in `.card-reviewers` (`reviewStateButtonsHtml()`), on both the card face and the detail page — one row for Jr, one for Sr, both always visible while the card's in Drafted.
