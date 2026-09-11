@@ -4,6 +4,16 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Rush mode — a per-venue 4-column board for an imminent deadline
+
+New per-venue toggle, `board.rushMode` — a one-click "Rush mode: Off/On" button in the venue header (not a field in the Edit-venue form; this is "move fast right now," not a considered edit). When on, a venue's board collapses to 4 columns — Registered, Drafted, Reviewed, Submitted — skipping Pitch Day, PI Approval, and the three post-submission columns.
+
+Not a new status vocabulary: `RUSH_STATUS_ORDER` is a coherent subsequence of the existing `STATUS_ORDER` keys (`register`/`draft_review`/`final_draft`/`submit`), so the checklist gate and `onChangeStatus` needed zero changes — full-order indices already answer "did this cross `GATE_STATUS`" correctly regardless of which order a move happened in. `effectiveStatusOrder(board)` picks the active order; `displayStatus(card, board)` projects a card whose true status isn't in the active order onto the last one it's actually passed (e.g. Pitched → shows under Registered) — **without ever rewriting `card.status`**, so toggling is purely a display change, fully reversible, no data loss. A card's status only changes when someone actually moves it, and only to a value from whichever order was active for that move. `.columns`' `min-width` (previously a hardcoded 9-column value) is now computed from the actual rendered column count.
+
+No Firestore Security Rules changes — `rushMode` is just another field on a document create/update already covered by `hasFullWrite()`.
+
+Verified with a standalone unit test against the extracted logic (21 cases: order selection, floor-projection for all 5 omitted statuses, Advance/Revert at both ends of the rush order, dropdown filtering, first-move-after-toggle behavior) — no connected browser available this session for a full click-through, so this is the evidence in place of one.
+
 ### Browser Back now navigates within the board, not straight out of it
 
 `audit-board.html` is one page load — list → venue → card was always just an in-memory `state.view` flag, never touching browser history, so pressing Back from a card page skipped over all of that and left the app entirely (whatever was open before `audit-board.html`). Added the standard fix: `history.pushState()` on every navigation (`openVenue`, `openCard`, and the in-app "back" links `backToVenuesList`/`backToBoard` too — treating a step back as new navigation, not `history.back()`, so it works the same whether reached fresh or via Back, and so the browser's Forward button correctly returns to the card/venue you left via an in-app link), and a `popstate` listener that restores the right view (reusing the same render path `openVenue` already uses) when Back/Forward fires. Not wired into `onRemoveCard`'s auto-return-to-board-on-delete — that's a side effect of an action, not navigation. Not verified in a live browser this session (no connected browser tool available); worth a real click-through check once deployed.

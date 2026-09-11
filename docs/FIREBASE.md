@@ -27,8 +27,12 @@ boards/{boardId}
   venue, year, label, website, deadline, pitchDay, abstractDeadline,
   reviewsPublicDate, rebuttalDeadline, notificationDate, cameraReadyDeadline,
   conferenceDates, location, maxPapersPerAuthor, pageLimit, anonymity,
-  submissionSystem, notes, createdAt
+  submissionSystem, notes, createdAt, rushMode (bool, optional)
   # replaces today's boards-index array entry — one doc per venue+year
+  # rushMode: client-only display toggle (2026-09-11, see docs/AGENTS.md
+  # guideline 6) — collapses the board to 4 columns. No Security Rules
+  # implication: it's just another field on a document create/update
+  # already covered by hasFullWrite().
 
   boards/{boardId}/cards/{cardId}
     title, authors[] (last = PI), overleafLink, correspondingAuthorEmail,

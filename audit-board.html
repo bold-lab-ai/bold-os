@@ -168,6 +168,8 @@
   }
   .btn-text:hover{color:var(--blue);}
   .btn-text.danger:hover, #deleteBoardBtn:hover{color:var(--danger-text);}
+  .btn-text.rush-on{color:var(--amber); font-weight:700; text-decoration:none;}
+  .btn-text.rush-on:hover{color:var(--focus);}
 
   /* ---------- venue meta + schedule ---------- */
   .venue-meta{font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;}
@@ -577,6 +579,42 @@
   // (Accepted / Rejected / Withdrawn) aren't phases either; they're
   // card.outcome, shown as a badge, set from the Edit-fields modal.
   var STATUS_ORDER = ['register','pitch_day','draft_review','final_draft','pi_polish','submit','arxiv_publicity','rebuttal','pre_conference'];
+
+  // Rush mode (2026-09-11): a per-venue toggle (board.rushMode) for an
+  // imminent-deadline venue that needs to move faster than the full 9-step
+  // pipeline — Pitch Day and PI Approval genuinely don't happen, and
+  // post-submission tracking isn't needed yet. Not a separate status
+  // vocabulary: a coherent subsequence of the same STATUS_ORDER keys, so
+  // the checklist gate (crossesGate/GATE_STATUS) and onChangeStatus need
+  // no changes at all — full-order indices already answer "did we cross
+  // the gate" correctly for a rush move too, since skipping the omitted
+  // statuses doesn't change their relative order. What actually needs the
+  // active order: which columns render (renderColumns), and which status
+  // Left/Right/the dropdown treat as adjacent (statusAt/statusOptionsHtml).
+  var RUSH_STATUS_ORDER = ['register', 'draft_review', 'final_draft', 'submit'];
+
+  function effectiveStatusOrder(board){
+    return (board && board.rushMode) ? RUSH_STATUS_ORDER : STATUS_ORDER;
+  }
+
+  // Where a card displays when its true status isn't one of the active
+  // order's columns (e.g. a card already at Pitched when rush mode gets
+  // turned on) — the last active column it's actually passed, never
+  // rewriting card.status itself. Toggling rush mode is purely a display
+  // change; a card's status only ever changes when someone actually moves
+  // it, at which point it's set directly to a value from whichever order
+  // was active for that move (see onChangeStatus — needs no changes since
+  // newStatus already comes from the right order by construction).
+  function displayStatus(card, board){
+    var order = effectiveStatusOrder(board);
+    if (order.indexOf(card.status) !== -1) return card.status;
+    var cardIdx = STATUS_ORDER.indexOf(card.status);
+    var best = order[0];
+    order.forEach(function(s){
+      if (STATUS_ORDER.indexOf(s) <= cardIdx) best = s;
+    });
+    return best;
+  }
   // Past tense on purpose: a column name is the checkpoint already met to
   // be sitting in it (see guideline 6/8 in docs/AGENTS.md), not an in-progress
   // label — "Drafted" not "Drafting". Same 9 phases, same order as the
@@ -1522,20 +1560,23 @@
     return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
-  function statusOptionsHtml(current){
-    return STATUS_ORDER.map(function(s){
+  function statusOptionsHtml(current, order){
+    return order.map(function(s){
       var sel = s === current ? ' selected' : '';
       return '<option value="' + s + '"' + sel + '>' + STATUS_LABELS[s] + '</option>';
     }).join('');
   }
 
-  // The status delta columns to the left (-1) or right (+1) of `status`,
-  // or null at the ends / for a status that's no longer a column.
-  function statusAt(status, delta){
-    var i = STATUS_ORDER.indexOf(status);
+  // The status delta columns to the left (-1) or right (+1) of `status`
+  // within `order`, or null at the ends / for a status that's no longer a
+  // column. `status` should be a value from `order` already — pass
+  // displayStatus(card, board), not the card's raw status, so this stays
+  // correct when `order` is RUSH_STATUS_ORDER.
+  function statusAt(status, delta, order){
+    var i = order.indexOf(status);
     if (i === -1) return null;
     var j = i + delta;
-    return (j < 0 || j >= STATUS_ORDER.length) ? null : STATUS_ORDER[j];
+    return (j < 0 || j >= order.length) ? null : order[j];
   }
 
   function submissionLinkLabel(url){
@@ -1762,8 +1803,8 @@
     html += '<div class="card-progress">Checklist &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:4px 7px;margin-bottom:8px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn\u2019t a column anymore &mdash; pick a new one below</div>';
     if (STATUS_LABELS[card.status]) {
-      var lft = statusAt(card.status, -1);
-      var rgt = statusAt(card.status, 1);
+      var lft = statusAt(displayStatus(card, board), -1, effectiveStatusOrder(board));
+      var rgt = statusAt(displayStatus(card, board), 1, effectiveStatusOrder(board));
       var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
       html += '<div class="card-move">';
       html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>';
@@ -1772,7 +1813,7 @@
     }
     // Only the orphaned-status rescue select needs a footer now; edit / remove
     // moved to the detail page.
-    if (!STATUS_LABELS[card.status]) html += '<div class="card-footer"><select aria-label="Status for ' + escapeHtml(card.title) + '" data-status-for="' + escapeHtml(card.id) + '" style="flex:1 1 auto;min-width:0;font-size:12px;padding:5px 6px;">' + statusOptionsHtml(card.status) + '</select></div>';
+    if (!STATUS_LABELS[card.status]) html += '<div class="card-footer"><select aria-label="Status for ' + escapeHtml(card.title) + '" data-status-for="' + escapeHtml(card.id) + '" style="flex:1 1 auto;min-width:0;font-size:12px;padding:5px 6px;">' + statusOptionsHtml(card.status, effectiveStatusOrder(board)) + '</select></div>';
     html += '</div>';
     return html;
   }
@@ -1834,10 +1875,18 @@
   }
 
   function renderColumns(board){
-    var html = '<div class="columns">';
     var searching = !!(state.search && state.search.query && state.search.query.trim());
-    STATUS_ORDER.forEach(function(status){
-      var allForStatus = state.cards.filter(function(c){ return c.status === status; });
+    var order = effectiveStatusOrder(board);
+    var hasOrphaned = state.cards.some(function(c){ return !STATUS_LABELS[c.status]; });
+    // .columns' CSS min-width is calibrated for the full 9-column board
+    // (240px × columns + 1px × gaps + 2px border — see docs/AGENTS.md
+    // guideline 6); rush mode's 4 columns need the same formula applied to
+    // the actual column count, or they'd render stretched across 9
+    // columns' worth of empty space.
+    var columnCount = order.length + (hasOrphaned ? 1 : 0);
+    var html = '<div class="columns" style="min-width:' + (240 * columnCount + (columnCount - 1) + 2) + 'px">';
+    order.forEach(function(status){
+      var allForStatus = state.cards.filter(function(c){ return displayStatus(c, board) === status; });
       var cardsForStatus = allForStatus.filter(matchesSearch);
       html += '<div class="column">';
       html += '<div class="column-head">' +
@@ -1909,6 +1958,11 @@
           '<button class="btn btn-primary" id="submitPaperBtn" type="button"' +
             (state.currentUser ? '' : ' disabled title="Sign in with Slack to register a paper"') +
             '>+ Register paper</button>' +
+          '<button class="btn-text' + (current && current.rushMode ? ' rush-on' : '') + '" id="rushModeBtn" type="button" title="' +
+            (current && current.rushMode
+              ? 'Rush mode is on — board is Registered / Drafted / Reviewed / Submitted only. Click to turn off.'
+              : 'Turn on Rush mode — collapses this venue to Registered / Drafted / Reviewed / Submitted only, for a fast-moving deadline.') +
+            '">' + (current && current.rushMode ? '⚡ Rush mode: On' : 'Rush mode: Off') + '</button>' +
           '<button class="btn-text edit" id="editBoardBtn" type="button">Edit venue</button>' +
           '<button class="btn-text" id="deleteBoardBtn" type="button">Delete this venue</button>' +
         '</div>' +
@@ -1933,6 +1987,8 @@
     if (del) del.addEventListener('click', onDeleteBoard);
     var ev = document.getElementById('editBoardBtn');
     if (ev) ev.addEventListener('click', openEditVenueModal);
+    var rm = document.getElementById('rushModeBtn');
+    if (rm) rm.addEventListener('click', onToggleRushMode);
     var ics = document.getElementById('downloadIcs');
     if (ics) ics.addEventListener('click', function(){ downloadIcs(getCurrentBoard()); });
     var subscribeIcs = document.getElementById('subscribeIcs');
@@ -2301,8 +2357,8 @@
 
     var overdue = isOverdue(card, board);
     var dl = effectiveDeadline(card, board);
-    var lft = statusAt(card.status, -1);
-    var rgt = statusAt(card.status, 1);
+    var lft = statusAt(displayStatus(card, board), -1, effectiveStatusOrder(board));
+    var rgt = statusAt(displayStatus(card, board), 1, effectiveStatusOrder(board));
     var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
 
     var html = '<div class="detail">';
@@ -2326,7 +2382,7 @@
     html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>';
     html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : '')) + '>Advance &rarr;</button>';
     html += '</div>';
-    html += '<select aria-label="Status" data-status-for="' + escapeHtml(card.id) + '">' + statusOptionsHtml(card.status) + '</select>';
+    html += '<select aria-label="Status" data-status-for="' + escapeHtml(card.id) + '">' + statusOptionsHtml(card.status, effectiveStatusOrder(board)) + '</select>';
     if (card.status === 'draft_review') html += '<button class="btn" type="button" data-toggle-changes="' + escapeHtml(card.id) + '">' +
       (card.changesRequested ? '&#10003; Clear changes-requested flag' : '&#9873; Flag changes requested') + '</button>';
     html += '<button class="btn" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button>';
@@ -2450,8 +2506,9 @@
     if (banner && card) banner.outerHTML = gateBannerHtml(card);
     var moveWrap = els.boardRegion.querySelector('.detail-controls .card-move');
     if (moveWrap && card){
-      var lft = statusAt(card.status, -1);
-      var rgt = statusAt(card.status, 1);
+      var moveBoard = getCurrentBoard();
+      var lft = statusAt(displayStatus(card, moveBoard), -1, effectiveStatusOrder(moveBoard));
+      var rgt = statusAt(displayStatus(card, moveBoard), 1, effectiveStatusOrder(moveBoard));
       var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
       moveWrap.innerHTML =
         '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>' +
@@ -2746,6 +2803,33 @@
       else {
         showToast('Saved.', 'ok');
         syncVenueIcs(next.filter(function(b){ return b.id === id; })[0]);
+      }
+    });
+  }
+
+  // A one-click toggle rather than a field in the Edit-venue form \u2014 this is
+  // meant for "we need to move fast right now", not a considered edit.
+  // Never rewrites any card's status; only which columns render and which
+  // status Left/Right/the dropdown treat as adjacent change \u2014 see
+  // effectiveStatusOrder()/displayStatus() near STATUS_ORDER.
+  function onToggleRushMode(){
+    var current = getCurrentBoard();
+    if (!current) return;
+    var id = current.id;
+    var turningOn = !current.rushMode;
+    var next = state.boards.map(function(b){
+      return b.id === id ? Object.assign({}, b, { rushMode: turningOn }) : b;
+    });
+    var prev = state.boards;
+    state.boards = next;
+    renderBoard();
+    saveBoardsIndex(next).then(function(ok){
+      if (!ok){
+        state.boards = prev;
+        renderBoard();
+        showToast(saveErrorMessage('Could not update Rush mode \u2014 try again.'), 'error');
+      } else {
+        showToast('Rush mode ' + (turningOn ? 'on' : 'off') + '.', 'ok');
       }
     });
   }
