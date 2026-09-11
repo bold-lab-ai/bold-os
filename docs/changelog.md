@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Pages now deploys via GitHub Actions, not the legacy builder
+
+Added `.github/workflows/pages.yml` (checkout → `configure-pages` → `upload-pages-artifact` → `deploy-pages`, no build step — uploads the whole repo as-is, same content the legacy branch-based builder was already serving) and switched the repo's Pages source from `legacy` to `workflow`. Every push to `main` now deploys automatically through the Actions tab, where any deploy failure is now actually visible (the legacy builder's failures were opaque — this is part of why the post-transfer outage earlier today took a few checks to diagnose).
+
 ### Sign-in prompt is now a real link; homepage hero CTA folded into the text
 
 `audit-board.html`'s signed-out message ("Sign in with Slack (top right) to view...") now has "Sign in" as an actual clickable trigger for the sign-in popup, not just a pointer to go find the masthead button — extracted the popup-flow logic (`triggerSlackSignIn()`) so both the masthead button and this inline one call the same thing. Homepage: removed the separate "Open the Internal Review Board" CTA button, made "Internal Review Board" bold within the existing hero sentence instead (still a link) — one CTA, not two saying almost the same thing. Dropped the now-unused `.hero-cta` CSS.

@@ -32,6 +32,10 @@ python3 -m http.server 8137
 
 Then open `index.html` (redirects to `how-to-submit-a-paper.html`), or any of `how-to-submit-a-paper.html`, `audit-board.html`, `diff.html` directly. `how-to-submit-a-paper.html`/`diff.html`/`index.html` also work opened as plain `file://` pages. `audit-board.html` needs to be served (not opened as a bare file): it talks to Firebase (Firestore/Auth/Storage), and Sign-in-with-Slack's popup flow needs a real `http(s)` origin.
 
+## Deployment
+
+Every push to `main` deploys automatically via `.github/workflows/pages.yml` (GitHub Actions → Pages, switched from the legacy branch-based builder on 2026-09-11). No build step — the workflow just uploads the whole repo as-is and publishes it. Nothing to run by hand; check the **Actions** tab if a deploy doesn't show up. Live at <https://bold-lab-ai.github.io/ml-conference-cycle/how-to-submit-a-paper.html>.
+
 ## Constraints
 
 - **No Claude / Claude-Artifacts dependency.** Never depended on Claude's artifact-storage API; the Internal Review Board persisted to per-browser `localStorage` at first, then moved to a real shared Firebase backend (Firestore/Auth/Storage, `bold-d7ff2`) on 2026-09-11 — see `docs/FIREBASE.md`. `loadBoardsIndex` / `saveBoardsIndex` / `loadBoard` / `saveBoard` / `deleteBoardData` is still the seam every caller in the file goes through; only what's behind those five functions changed.
