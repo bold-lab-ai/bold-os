@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Filed: transferring a paper to a different venue
+
+Filed [`ml-conference-cycle#2`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/2) rather than building it blind — moving a card between venues is a cross-subcollection move (`boards/{boardId}/cards/{cardId}` to a different `boardId`), not a field update, and needs to be atomic or safely recoverable if it fails partway. Per Eduardo, restricted to the paper's owner or a PI — deliberately *not* admins, the first place in the app that excludes admins from something PIs can do; flagged in the issue to confirm that's intentional before building. Open questions the issue tracks: whether status/checklist/reviewers reset on transfer or carry over, and whether a `history` entry records the move.
+
 ### Venue proposals, revised while testing: full detail view, real proposer identity, a Reject button — still on a branch
 
 Testing the venue-proposals feature (below) surfaced two real gaps, both fixed on the same branch, still unshipped:
