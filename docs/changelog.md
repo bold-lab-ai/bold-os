@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Fixed: moving a card reset the board's horizontal scroll to the start
+
+`.board-scroll` (the kanban columns, wider than most viewports) got rebuilt from scratch on every `renderBoard()` — a fresh `innerHTML`, not a patch — which meant a full scroll-position reset on every single card move, checklist tick, or anything else that re-renders the board. Fixed: `renderBoard()` now reads the old `.board-scroll`'s `scrollLeft` before replacing the HTML, and restores it onto the new one afterward. No more scrolling back to where you were after every action.
+
 ### Removed the "Advance" confirmation popup
 
 `window.confirm()` before a card advances (a per-status attestation checklist — "Before moving to Draft & Review, confirm: ...") was causing real problems at Eduardo's end: native browser confirm dialogs sometimes don't appear reliably, and cards were getting stuck waiting on one. Removed the whole mechanism (`STATUS_ADVANCE_CHECKLIST`, `advanceConfirmMessage()`, the `window.confirm()` call) — advancing a card now just happens, no popup. The two *hard* gates (checklist completion before the gate status, reviewers assigned before Draft & Review) are unrelated and untouched — those are enforced checks with a toast message, not confirmation dialogs, and stay. Also untouched: the delete-venue and remove-card confirms, which guard actually-irreversible actions, not a routine status move.

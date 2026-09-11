@@ -1865,6 +1865,14 @@
       return;
     }
     var current = getCurrentBoard();
+    // Every card move (and most other board actions) does a full re-render,
+    // which — since it's a fresh innerHTML, not a patch — would otherwise
+    // reset this scroll position to 0 every time, even though nothing
+    // about which columns are visible actually changed. Columns run wider
+    // than the viewport, so that meant re-scrolling back to wherever you
+    // were after every single move.
+    var prevScroll = els.boardRegion.querySelector('.board-scroll');
+    var scrollLeft = prevScroll ? prevScroll.scrollLeft : 0;
     var html = '';
     html += '<div class="board-meta" style="display:block;">' +
       '<a href="#" id="backToList" style="font-size:13.5px;color:var(--muted);text-decoration:none;">&larr; All venues</a>' +
@@ -1886,6 +1894,10 @@
     html += boardSearchHtml();
     html += '<div class="board-scroll">' + renderColumns(current) + '</div>';
     els.boardRegion.innerHTML = html;
+    if (scrollLeft){
+      var newScroll = els.boardRegion.querySelector('.board-scroll');
+      if (newScroll) newScroll.scrollLeft = scrollLeft;
+    }
 
     document.getElementById('backToList').addEventListener('click', function(e){ e.preventDefault(); backToVenuesList(); });
     document.getElementById('submitPaperBtn').addEventListener('click', openModal);
