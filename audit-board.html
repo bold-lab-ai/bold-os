@@ -1117,6 +1117,31 @@
     });
   }
 
+  // List → venue → card is real navigation as far as the browser's Back
+  // button should be concerned, not just an internal view flag — without
+  // this, Back skips over all of it and leaves the app entirely (auth-
+  // board.html is one page load; nothing here ever touched browser
+  // history before). Every transition pushes a new entry, including the
+  // in-app "back" links (backToVenuesList/backToBoard) — treating a step
+  // back as "new navigation to the list/venue view" rather than calling
+  // history.back() is deliberate: it works the same regardless of how
+  // this view was reached (a fresh deep link has no history to go back
+  // to), and it means the browser's own Forward button correctly returns
+  // to the card/venue you just left via an in-app link, not just via Back.
+  function pushNavState(){
+    history.pushState({ view: state.view, boardId: state.currentBoardId, cardId: state.currentCardId }, '');
+  }
+
+  window.addEventListener('popstate', function(ev){
+    var s = ev.state;
+    state.view = s ? s.view : 'list';
+    state.currentBoardId = s ? s.boardId : null;
+    state.currentCardId = s ? s.cardId : null;
+    if (state.view !== 'venue' && state.view !== 'card') state.cards = [];
+    renderAll(); // toolbar visibility + venuesRegion/boardRegion both need this, not renderBoard() alone
+    if (state.view === 'venue' || state.view === 'card') loadCurrentBoardCards();
+  });
+
   function openVenue(id){
     state.view = 'venue';
     state.currentBoardId = id;
@@ -1124,6 +1149,7 @@
     state.search = { query: '', field: 'all' };
     renderAll();
     loadCurrentBoardCards();
+    pushNavState();
   }
 
   function backToVenuesList(){
@@ -1132,6 +1158,7 @@
     state.currentCardId = null;
     state.cards = [];
     renderAll();
+    pushNavState();
   }
 
   // ---------- venue modal (create / edit) ----------
@@ -1965,12 +1992,14 @@
     state.checklistReplyOpenId = null;
     renderAll();
     window.scrollTo(0, 0);
+    pushNavState();
   }
 
   function backToBoard(){
     state.view = 'venue';
     state.currentCardId = null;
     renderAll();
+    pushNavState();
   }
 
   function getCurrentCard(){

@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Browser Back now navigates within the board, not straight out of it
+
+`audit-board.html` is one page load — list → venue → card was always just an in-memory `state.view` flag, never touching browser history, so pressing Back from a card page skipped over all of that and left the app entirely (whatever was open before `audit-board.html`). Added the standard fix: `history.pushState()` on every navigation (`openVenue`, `openCard`, and the in-app "back" links `backToVenuesList`/`backToBoard` too — treating a step back as new navigation, not `history.back()`, so it works the same whether reached fresh or via Back, and so the browser's Forward button correctly returns to the card/venue you left via an in-app link), and a `popstate` listener that restores the right view (reusing the same render path `openVenue` already uses) when Back/Forward fires. Not wired into `onRemoveCard`'s auto-return-to-board-on-delete — that's a side effect of an action, not navigation. Not verified in a live browser this session (no connected browser tool available); worth a real click-through check once deployed.
+
 ### Fixed: moving a card reset the board's horizontal scroll to the start
 
 `.board-scroll` (the kanban columns, wider than most viewports) got rebuilt from scratch on every `renderBoard()` — a fresh `innerHTML`, not a patch — which meant a full scroll-position reset on every single card move, checklist tick, or anything else that re-renders the board. Fixed: `renderBoard()` now reads the old `.board-scroll`'s `scrollLeft` before replacing the HTML, and restores it onto the new one afterward. No more scrolling back to where you were after every action.
