@@ -4,6 +4,16 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### Review status is no longer automatic; added a filter for it
+
+"Approved" used to be derived automatically from `checklistComplete()` — every box ticked by both reviewers. Per Eduardo: ticking every box isn't the same as a reviewer actually signing off, and it shouldn't happen without a manual action. Split into two new independent, manually-toggled flags — `jrApproved` and `srApproved` (one-click buttons on the card face and detail page, same shape as the existing `changesRequested` toggle) — neither derived from the checklist at all. `changesRequested` was already manual; unchanged.
+
+`reviewFilterState(card)` gives the three buckets for a card's colour and the new filter: `changes_requested` (wins if set) → `approved` (only once **both** jr and sr have signed off) → `in_review` (the default, including a partial sign-off from just one reviewer). `reviewBadges(card)` shows the fuller picture on the card itself — a single "Approved" badge once both are true, or "JR approved"/"SR approved" individually if only one is, so partial progress is visible without counting as done.
+
+The checklist-completion gate on actually advancing a card past Reviewed (`crossesGate`/`GATE_STATUS`) is unrelated and unchanged — this sits on top of it, not a replacement, per Eduardo's call when scoping this.
+
+Also added: a second dropdown next to the board's search bar — "Any review status" / "In review" / "Changes requested" / "Approved" — filters the board to one bucket, combined (AND) with the existing text search. Verified the whole review-state model (buckets, badges, the "checklist alone doesn't mean approved" behavior specifically) with a 9-case standalone unit test, same approach as Rush mode below — no connected browser this session.
+
 ### Rush mode — a per-venue 4-column board for an imminent deadline
 
 New per-venue toggle, `board.rushMode` — a one-click "Rush mode: Off/On" button in the venue header (not a field in the Edit-venue form; this is "move fast right now," not a considered edit). When on, a venue's board collapses to 4 columns — Registered, Drafted, Reviewed, Submitted — skipping Pitch Day, PI Approval, and the three post-submission columns.

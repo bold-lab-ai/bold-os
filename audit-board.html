@@ -347,6 +347,7 @@
   .badge-rv-in_review{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
   .badge-rv-changes_requested{background:var(--danger-bg); color:var(--danger-text); border:1px solid #f0c9c4;}
   .badge-rv-approved{background:var(--success-bg); color:var(--success-text); border:1px solid #bfe0d6;}
+  .badge-rv-jr_approved, .badge-rv-sr_approved{background:var(--success-bg); color:var(--success-text); border:1px solid #bfe0d6; opacity:0.75;}
   .badge-outcome-accepted{background:var(--success-bg); color:var(--success-text);}
   .badge-outcome-rejected{background:var(--danger-bg); color:var(--danger-text);}
   .badge-outcome-withdrawn{background:var(--neutral-bg); color:var(--neutral-text);}
@@ -575,7 +576,7 @@
   // one, same names, same order. Sub-states that used to be their own column
   // (review in progress / changes requested / approved; rebuttal in
   // progress / submitted) are now a badge + colour on the card instead —
-  // see reviewState() and the rebuttal badge in renderCard(). Outcomes
+  // see reviewFilterState()/reviewBadges() and the rebuttal badge in renderCard(). Outcomes
   // (Accepted / Rejected / Withdrawn) aren't phases either; they're
   // card.outcome, shown as a badge, set from the Edit-fields modal.
   var STATUS_ORDER = ['register','pitch_day','draft_review','final_draft','pi_polish','submit','arxiv_publicity','rebuttal','pre_conference'];
@@ -715,7 +716,7 @@
     cards: [],
     loadingBoards: true,
     loadingCards: false,
-    search: { query: '', field: 'all' },
+    search: { query: '', field: 'all', reviewState: 'all' },
     detailTab: 'format',
     discussionReplyOpenId: null,
     checklistCommentOpenId: null, // checklist item whose feedback thread is expanded
@@ -1184,7 +1185,7 @@
     state.view = 'venue';
     state.currentBoardId = id;
     state.currentCardId = null;
-    state.search = { query: '', field: 'all' };
+    state.search = { query: '', field: 'all', reviewState: 'all' };
     renderAll();
     loadCurrentBoardCards();
     pushNavState();
@@ -1739,6 +1740,14 @@
     if (typeof out.changesRequested !== 'boolean'){
       out = Object.assign({}, out, { changesRequested: oldStatus === 'changes_requested' });
     }
+    // jrApproved/srApproved (2026-09-11): explicit, manual per-reviewer
+    // sign-off — deliberately separate from checklistComplete(), which
+    // only means every box is ticked, not that a reviewer has actually
+    // signed off on the draft. Existing cards default to not-yet-approved
+    // rather than inferring anything from their current checklist state.
+    if (typeof out.jrApproved !== 'boolean' || typeof out.srApproved !== 'boolean'){
+      out = Object.assign({}, out, { jrApproved: !!out.jrApproved, srApproved: !!out.srApproved });
+    }
     if (typeof out.outcome !== 'string'){
       out = Object.assign({}, out, { outcome: (oldStatus && STATUS_OUTCOME_MIGRATIONS[oldStatus]) || '' });
     }
@@ -1763,27 +1772,56 @@
   }
 
   // Draft & Review has no sub-columns any more — this is what the card's
-  // colour + badge in that column are driven by. A reviewer's explicit flag
-  // always wins over the checklist; otherwise it's derived from the
-  // checklist alone, same rule the old Approved-column gate used.
-  function reviewState(card){
+  // colour + badge in that column are driven by. Deliberately not derived
+  // from checklistComplete() (2026-09-11) — ticking every box just means
+  // every box is ticked, not that a reviewer has actually signed off, so
+  // "Approved" only follows an explicit, manual jrApproved/srApproved flag
+  // from each reviewer, same as changesRequested already was. The
+  // checklist-completion gate on advancing past Reviewed (crossesGate,
+  // GATE_STATUS) is unrelated and unchanged — this is a separate signal on
+  // top of it, not a replacement.
+  //
+  // Three buckets for the card's overall colour + the board filter — a
+  // partially-approved card (only one reviewer signed off) still counts as
+  // in_review here, since it isn't done yet; reviewBadges() below shows
+  // that partial state on the card itself.
+  function reviewFilterState(card){
     if (card.changesRequested) return 'changes_requested';
-    if (checklistComplete(card)) return 'approved';
+    if (card.jrApproved && card.srApproved) return 'approved';
     return 'in_review';
   }
-  var REVIEW_STATE_LABELS = { in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
+
+  // Every badge that applies right now — usually one, but a card can show
+  // just "JR approved" (not yet "Approved" overall) while waiting on the
+  // other reviewer.
+  function reviewBadges(card){
+    var bucket = reviewFilterState(card);
+    if (bucket !== 'in_review') return [bucket];
+    var badges = [];
+    if (card.jrApproved) badges.push('jr_approved');
+    if (card.srApproved) badges.push('sr_approved');
+    return badges.length ? badges : ['in_review'];
+  }
+
+  var REVIEW_STATE_LABELS = {
+    in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved',
+    jr_approved: 'JR approved', sr_approved: 'SR approved'
+  };
+  var REVIEW_FILTER_LABELS = { all: 'Any review status', in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
 
   function renderCard(card, board){
     var overdue = isOverdue(card, board);
     var inDraftReview = card.status === 'draft_review';
-    var rv = inDraftReview ? reviewState(card) : null;
+    var rv = inDraftReview ? reviewFilterState(card) : null;
     var cardClass = 'card' + (rv ? ' rv-' + rv : '');
     var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
     html += '<button class="card-title-btn" type="button" data-open-card="' + escapeHtml(card.id) + '">' + escapeHtml(card.title) + '</button>';
     // Badges only; Overleaf link / edit + remove live on the detail page
     // now, to keep the board card short and easy to scan.
     var badges = '';
-    if (rv) badges += '<span class="badge badge-rv-' + rv + '">' + REVIEW_STATE_LABELS[rv] + '</span>';
+    if (inDraftReview) reviewBadges(card).forEach(function(b){
+      badges += '<span class="badge badge-rv-' + b + '">' + REVIEW_STATE_LABELS[b] + '</span>';
+    });
     if (card.status === 'rebuttal') badges += card.rebuttalDocLink
       ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
       : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
@@ -1798,6 +1836,11 @@
     '</div>';
     if (inDraftReview) html += '<button class="btn-text changes-toggle" type="button" data-toggle-changes="' + escapeHtml(card.id) + '">' +
       (card.changesRequested ? '&#10003; Clear changes-requested flag' : '&#9873; Flag changes requested') + '</button>';
+    if (inDraftReview) html +=
+      '<button class="btn-text changes-toggle" type="button" data-toggle-approval="' + escapeHtml(card.id) + '" data-approval-role="jr">' +
+        (card.jrApproved ? '&#10003; Clear JR approval' : '&#9873; Mark JR reviewer approved') + '</button>' +
+      '<button class="btn-text changes-toggle" type="button" data-toggle-approval="' + escapeHtml(card.id) + '" data-approval-role="sr">' +
+        (card.srApproved ? '&#10003; Clear SR approval' : '&#9873; Mark SR reviewer approved') + '</button>';
     if (card.reviewNotes) html += '<div class="card-notes">' + escapeHtml(card.reviewNotes) + '</div>';
     var counts = checklistCounts(card);
     html += '<div class="card-progress">Checklist &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
@@ -1820,8 +1863,10 @@
 
   // Free-text board search, scoped by state.search.field. 'all' also
   // checks submitted-by and both reviewers, so typing your own name finds
-  // your papers even if you're not listed as PI or an author.
-  function matchesSearch(card){
+  // your papers even if you're not listed as PI or an author. Combined
+  // (AND) with the review-status filter below — a card has to match both
+  // to show.
+  function matchesTextQuery(card){
     var q = (state.search && state.search.query || '').trim().toLowerCase();
     if (!q) return true;
     var authorsStr = (card.authors || []).join(' ');
@@ -1839,19 +1884,40 @@
     return hay.toLowerCase().indexOf(q) !== -1;
   }
 
+  // Only meaningful for a card actually in Draft & Review (the only status
+  // with a review state at all) — a card elsewhere always matches, same as
+  // an empty text query always matching, so the filter only narrows down
+  // the column it actually applies to.
+  function matchesReviewFilter(card){
+    var f = (state.search && state.search.reviewState) || 'all';
+    if (f === 'all') return true;
+    return card.status === 'draft_review' && reviewFilterState(card) === f;
+  }
+
+  function matchesSearch(card){
+    return matchesTextQuery(card) && matchesReviewFilter(card);
+  }
+
   var SEARCH_FIELD_LABELS = { all: 'Everything', title: 'Title', pi: 'PI', authors: 'Authors' };
 
   function boardSearchHtml(){
     var q = (state.search && state.search.query) || '';
     var field = (state.search && state.search.field) || 'all';
+    var reviewFilter = (state.search && state.search.reviewState) || 'all';
     var total = state.cards.length;
-    var matched = q.trim() ? state.cards.filter(matchesSearch).length : total;
-    var countText = q.trim() ? (matched + ' of ' + total + ' paper' + (total === 1 ? '' : 's')) : (total + ' paper' + (total === 1 ? '' : 's'));
+    var filterActive = !!q.trim() || reviewFilter !== 'all';
+    var matched = filterActive ? state.cards.filter(matchesSearch).length : total;
+    var countText = filterActive ? (matched + ' of ' + total + ' paper' + (total === 1 ? '' : 's')) : (total + ' paper' + (total === 1 ? '' : 's'));
     return '<div class="board-search">' +
       '<input type="search" id="boardSearchInput" placeholder="Search by title, PI, author…" value="' + escapeHtml(q) + '" aria-label="Search papers">' +
       '<select id="boardSearchField" aria-label="Search in">' +
         Object.keys(SEARCH_FIELD_LABELS).map(function(k){
           return '<option value="' + k + '"' + (k === field ? ' selected' : '') + '>' + SEARCH_FIELD_LABELS[k] + '</option>';
+        }).join('') +
+      '</select>' +
+      '<select id="boardReviewFilter" aria-label="Filter by review status">' +
+        Object.keys(REVIEW_FILTER_LABELS).map(function(k){
+          return '<option value="' + k + '"' + (k === reviewFilter ? ' selected' : '') + '>' + REVIEW_FILTER_LABELS[k] + '</option>';
         }).join('') +
       '</select>' +
       '<span class="board-search-count">' + countText + '</span>' +
@@ -1875,7 +1941,7 @@
   }
 
   function renderColumns(board){
-    var searching = !!(state.search && state.search.query && state.search.query.trim());
+    var searching = !!(state.search && ((state.search.query && state.search.query.trim()) || (state.search.reviewState && state.search.reviewState !== 'all')));
     var order = effectiveStatusOrder(board);
     var hasOrphaned = state.cards.some(function(c){ return !STATUS_LABELS[c.status]; });
     // .columns' CSS min-width is calibrated for the full 9-column board
@@ -2008,6 +2074,8 @@
     if (searchInput) searchInput.addEventListener('input', function(){ onSearchInput(searchInput.value); });
     var searchField = document.getElementById('boardSearchField');
     if (searchField) searchField.addEventListener('change', function(){ state.search.field = searchField.value; renderBoard(); });
+    var reviewFilterSel = document.getElementById('boardReviewFilter');
+    if (reviewFilterSel) reviewFilterSel.addEventListener('change', function(){ state.search.reviewState = reviewFilterSel.value; renderBoard(); });
 
     Array.prototype.forEach.call(document.querySelectorAll('[data-status-for]'), function(sel){
       sel.addEventListener('change', function(){
@@ -2033,6 +2101,11 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-toggle-changes]'), function(btn){
       btn.addEventListener('click', function(){
         onToggleChangesRequested(btn.getAttribute('data-toggle-changes'));
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-toggle-approval]'), function(btn){
+      btn.addEventListener('click', function(){
+        onToggleApproval(btn.getAttribute('data-toggle-approval'), btn.getAttribute('data-approval-role'));
       });
     });
   }
@@ -2364,11 +2437,13 @@
     var html = '<div class="detail">';
     html += '<a href="#" class="detail-back" id="detailBack">&larr; Back to ' + (board ? escapeHtml(board.label) : 'board') + '</a>';
 
-    var detailRv = card.status === 'draft_review' ? reviewState(card) : null;
+    var detailInDraftReview = card.status === 'draft_review';
     html += '<div class="detail-head">';
     html += '<h2>' + escapeHtml(card.title) + '</h2>';
     if (STATUS_LABELS[card.status]) html += '<span class="badge" style="background:var(--accent-dim);color:var(--accent);">' + escapeHtml(STATUS_LABELS[card.status]) + '</span>';
-    if (detailRv) html += '<span class="badge badge-rv-' + detailRv + '">' + REVIEW_STATE_LABELS[detailRv] + '</span>';
+    if (detailInDraftReview) reviewBadges(card).forEach(function(b){
+      html += '<span class="badge badge-rv-' + b + '">' + REVIEW_STATE_LABELS[b] + '</span>';
+    });
     if (card.status === 'rebuttal') html += card.rebuttalDocLink
       ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
       : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
@@ -2385,6 +2460,11 @@
     html += '<select aria-label="Status" data-status-for="' + escapeHtml(card.id) + '">' + statusOptionsHtml(card.status, effectiveStatusOrder(board)) + '</select>';
     if (card.status === 'draft_review') html += '<button class="btn" type="button" data-toggle-changes="' + escapeHtml(card.id) + '">' +
       (card.changesRequested ? '&#10003; Clear changes-requested flag' : '&#9873; Flag changes requested') + '</button>';
+    if (card.status === 'draft_review') html +=
+      '<button class="btn" type="button" data-toggle-approval="' + escapeHtml(card.id) + '" data-approval-role="jr">' +
+        (card.jrApproved ? '&#10003; Clear JR approval' : '&#9873; Mark JR reviewer approved') + '</button>' +
+      '<button class="btn" type="button" data-toggle-approval="' + escapeHtml(card.id) + '" data-approval-role="sr">' +
+        (card.srApproved ? '&#10003; Clear SR approval' : '&#9873; Mark SR reviewer approved') + '</button>';
     html += '<button class="btn" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button>';
     html += '<button class="btn-text danger" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
     html += '</div>';
@@ -2476,6 +2556,11 @@
     if (rm) rm.addEventListener('click', function(){ onRemoveCard(rm.getAttribute('data-remove')); });
     var tc = els.boardRegion.querySelector('[data-toggle-changes]');
     if (tc) tc.addEventListener('click', function(){ onToggleChangesRequested(tc.getAttribute('data-toggle-changes')); });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-toggle-approval]'), function(btn){
+      btn.addEventListener('click', function(){
+        onToggleApproval(btn.getAttribute('data-toggle-approval'), btn.getAttribute('data-approval-role'));
+      });
+    });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cl]'), function(box){
       box.addEventListener('change', function(){
         onToggleChecklist(box.getAttribute('data-cl'), box.getAttribute('data-cl-item'), box.getAttribute('data-cl-role'), box.checked);
@@ -2891,6 +2976,8 @@
       submittedBy: { name: submittedByName, email: state.currentUser.email, slackId: null },
       reviewers: { junior: '', senior: '' },
       changesRequested: false,
+      jrApproved: false,
+      srApproved: false,
       outcome: '',
       submissionLink: null,
       rebuttalDeadline: null,
@@ -2983,6 +3070,29 @@
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       return Object.assign({}, c, { changesRequested: !c.changesRequested, updatedAt: Date.now() });
+    });
+    var prev = state.cards;
+    state.cards = next; // optimistic
+    renderBoard();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderBoard();
+        showToast(saveErrorMessage('Could not save that — try again.'), 'error');
+      }
+    });
+  }
+
+  // role is 'jr' or 'sr' — sets jrApproved/srApproved. An explicit,
+  // manual sign-off, same shape as onToggleChangesRequested; deliberately
+  // not derived from the checklist (see reviewFilterState/reviewBadges).
+  function onToggleApproval(cardId, role){
+    var field = role === 'sr' ? 'srApproved' : 'jrApproved';
+    var boardId = state.currentBoardId;
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      var patch = {}; patch[field] = !c[field];
+      return Object.assign({}, c, patch, { updatedAt: Date.now() });
     });
     var prev = state.cards;
     state.cards = next; // optimistic
