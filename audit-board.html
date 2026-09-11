@@ -2327,10 +2327,11 @@
           (current && current.status === 'pending' ? '<span class="badge badge-pending">Pending approval</span>' : '') +
         '</div>' +
         '<div style="display:flex;align-items:center;gap:16px;">' +
-          '<button class="btn btn-primary" id="submitPaperBtn" type="button"' +
-            (!state.currentUser ? ' disabled title="Sign in with Slack to register a paper"' :
-             (current && current.status === 'pending') ? ' disabled title="This venue hasn’t been approved yet"' : '') +
-            '>+ Register paper</button>' +
+          (!current || current.status !== 'pending'
+            ? '<button class="btn btn-primary" id="submitPaperBtn" type="button"' +
+                (!state.currentUser ? ' disabled title="Sign in with Slack to register a paper"' : '') +
+                '>+ Register paper</button>'
+            : '') +
           (current && current.status === 'pending' && state.canApproveVenues
             ? '<button class="btn btn-approve" id="approveVenueBtn" type="button">Approve venue</button>' +
               '<button class="btn btn-reject" id="rejectVenueBtn" type="button">Reject</button>'
@@ -2364,7 +2365,8 @@
     }
 
     document.getElementById('backToList').addEventListener('click', function(e){ e.preventDefault(); backToVenuesList(); });
-    document.getElementById('submitPaperBtn').addEventListener('click', openModal);
+    var sp = document.getElementById('submitPaperBtn');
+    if (sp) sp.addEventListener('click', openModal);
 
     var del = document.getElementById('deleteBoardBtn');
     if (del) del.addEventListener('click', onDeleteBoard);

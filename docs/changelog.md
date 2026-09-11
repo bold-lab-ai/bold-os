@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-11
 
+### "+ Register paper" no longer shows at all on a pending venue
+
+Per Eduardo, it shouldn't just be unusable, it shouldn't be there — a pending venue's page (`feature/venue-proposals`, still unshipped) previously showed a disabled "+ Register paper" with a tooltip; now `renderBoard()` omits the button entirely when the venue's `status` is `'pending'`. `openModal()`'s existing "this venue isn't approved yet" check stays in place as a defense-in-depth backstop even though there's no button left to trigger it through normally.
+
 ### Approve/Reject also inline in the list, green/red styling, "+ Propose venue" wording, notification triggers noted on the tracking issue
 
 Three more revisions to venue proposals (still `feature/venue-proposals`, unshipped) plus a notifications note, all per Eduardo:
