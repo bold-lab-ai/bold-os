@@ -74,6 +74,25 @@
   h1,h2,h3{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
   button{font-family:inherit; font-size:14px;}
 
+  /* ---------- emulator warning ---------- */
+  /* Shown only when FIRESTORE_USE_EMULATOR is true (see the flag's own
+     comment) — loud on purpose. This exact flag shipped wrong once
+     already (committed true, silently broke the live site for anyone
+     without a local emulator running, caught 2026-09-11): this banner is
+     the safety net so that can't happen silently again — anyone looking
+     at the deployed page, not just someone re-reading the source, would
+     immediately see it. `position:sticky` (not `fixed`) so it stays
+     visible while scrolling without needing to reserve space elsewhere
+     for a fixed bar, and can't get clipped by z-index it doesn't know it
+     needs to beat. */
+  .emulator-warning{
+    position:sticky; top:0; z-index:1000;
+    background:#c81e1e; color:#fff;
+    font-weight:800; font-size:14px; text-align:center;
+    padding:10px var(--gutter);
+    letter-spacing:0.2px;
+  }
+
   /* ---------- masthead ---------- */
   .masthead{
     background:var(--surface);
@@ -161,6 +180,14 @@
   .btn:hover{border-color:var(--blue); color:var(--blue);}
   .btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
   .btn-primary:hover{background:#1f4fb0; border-color:#1f4fb0; color:#fff;}
+  /* Approve/Reject (venue proposals, 2026-09-11): same size/weight as any
+     other .btn, just green vs. red — same visual weight for a symmetric
+     either-way decision, unlike a primary/plain pairing that would make
+     one option look like the "right" default. */
+  .btn-approve{background:var(--success-text); color:#fff; border-color:var(--success-text);}
+  .btn-approve:hover{background:#1c5049; border-color:#1c5049; color:#fff;}
+  .btn-reject{background:var(--danger-text); color:#fff; border-color:var(--danger-text);}
+  .btn-reject:hover{background:#8f1c13; border-color:#8f1c13; color:#fff;}
   .btn-text{
     background:none; border:none; color:var(--muted);
     font-size:13px; cursor:pointer; padding:4px 0;
@@ -280,6 +307,25 @@
   .venue-row:hover .venue-name{color:var(--blue);}
   .venue-name{font-weight:700; font-size:16px; color:var(--ink);}
   .venue-sub{font-size:13px; color:var(--muted);}
+  /* Venue proposals (2026-09-11): a pending row opens the normal venue
+     page too (same .venue-row button as an approved one) — there's just
+     nothing to register a paper against yet until it's approved (see
+     "+ Register paper"'s own disabled check in renderBoard()). "Pending
+     your approval" rows also carry inline Approve/Reject, so that row
+     can't be a <button> itself (it contains other buttons) — it's a div,
+     cursor:default overriding .venue-row's pointer, with its own nested
+     clickable name (.venue-name-btn) alongside the action buttons. */
+  .venue-row--pending{cursor:default; align-items:center;}
+  .venue-row-info{display:flex; flex-direction:column; gap:3px; min-width:0;}
+  .venue-row-actions{display:flex; gap:8px; flex:0 0 auto;}
+  .venue-name-btn{
+    font:inherit; font-weight:700; font-size:16px; color:var(--ink);
+    background:none; border:none; padding:0; margin:0; cursor:pointer; text-align:left;
+  }
+  .venue-name-btn:hover{color:var(--blue);}
+  .venues-section-title{font-size:12.5px; font-weight:700; color:var(--muted); margin:22px 0 8px;}
+  .venues-section-title:first-child{margin-top:0;}
+  .badge-pending{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
 
   /* ---------- board search ---------- */
   .board-search{
@@ -551,6 +597,8 @@
 </head>
 <body>
 
+<div id="emulatorWarning" class="emulator-warning" hidden>&#9888; FIRESTORE EMULATOR MODE &mdash; this is NOT real data. Never commit FIRESTORE_USE_EMULATOR as true.</div>
+
 <div class="masthead">
   <a class="wordmark" href="how-to-submit-a-paper.html">BOLD<span>.</span> Lab</a>
   <div class="masthead-right">
@@ -740,7 +788,8 @@
     checklistReplyOpenId: null,   // comment within it whose reply box is open
     currentUser: null,            // { email, name, photoURL } | null — set by onAuthStateChanged
     authResolved: false,          // true once the first onAuthStateChanged callback has fired
-    people: []                    // [{ slackId, name, email }] — the Slack roster, from Firestore
+    people: [],                   // [{ slackId, name, email }] — the Slack roster, from Firestore
+    canApproveVenues: false       // learned from whether the admin-only pending-venues query succeeds — see fetchVisibleBoards()
   };
 
   var ANONYMITY_OPTIONS = [
@@ -785,6 +834,17 @@
   // before Firestore was).
   var FIRESTORE_USE_EMULATOR = false;
   var AUTH_USE_EMULATOR = false;
+
+  // Loud, unmissable banner the moment this file is ever served with the
+  // flag above true — see its own comment and .emulator-warning's CSS.
+  // Deliberately not folded into any render function: the flag is a
+  // constant for the life of the page load, so this only ever needs to
+  // run once, here, right next to the flag it's guarding.
+  (function(){
+    var w = document.getElementById('emulatorWarning');
+    if (w) w.hidden = !FIRESTORE_USE_EMULATOR;
+  })();
+
   var FIREBASE_CONFIG = {
     apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
     authDomain: 'bold-d7ff2.firebaseapp.com',
@@ -1020,14 +1080,79 @@
     return null;
   }
 
+  function snapToArr(snap){
+    var out = [];
+    snap.forEach(function(doc){ out.push(Object.assign({ id: doc.id }, doc.data())); });
+    return out;
+  }
+
+  // Venue proposals (2026-09-11, see docs/FIREBASE.md): a plain, unfiltered
+  // `boards.get()` can no longer read everything for a non-admin — Security
+  // Rules deny the *whole* query if any candidate document (someone else's
+  // pending proposal) would fail the per-document read check, so an
+  // unconstrained list query is only safe for someone with hasFullWrite().
+  // Everyone else needs queries whose `where` filters already guarantee the
+  // rule holds for every possible result. This one helper is the single
+  // place that fetches "every board this session can currently see" —
+  // loadBoardsIndex() and saveBoardsIndex()'s own diff-baseline fetch both
+  // go through it, so there's exactly one query shape to keep in sync with
+  // firestore.rules.
+  //
+  // Three queries, run in parallel:
+  //   1. status == 'approved' — always safe, visible to the whole lab.
+  //   2. status == 'pending' AND proposedBy.email == me — always safe, a
+  //      signed-in user's own proposals.
+  //   3. status == 'pending', unfiltered — only succeeds for a PI/admin
+  //      (hasFullWrite() is the only way the rule can hold across every
+  //      possible result without an ownership filter); a genuine non-admin
+  //      gets permission-denied here whenever at least one other person's
+  //      proposal exists. Whether this one succeeds is how the client
+  //      learns "can I approve venues" — there's no other way to ask, since
+  //      roles/{roleId} itself is unreadable by clients (see guideline 6's
+  //      Rush mode note in docs/AGENTS.md for the same constraint
+  //      elsewhere). In the rare case zero other people's proposals exist
+  //      yet, this can vacuously succeed for a non-admin too — harmless: it
+  //      can only ever surface their own proposal back to them, and an
+  //      Approve click against it still fails server-side (update stays
+  //      hasFullWrite()-only), same as any other disallowed write.
+  //
+  // Legacy boards created before this field existed have no `status` at
+  // all, which query 1's `where('status','==','approved')` can't match —
+  // get()'s in-rule default (see firestore.rules) covers single-document
+  // reads, but a missing field structurally can't satisfy a query filter.
+  // Those boards need a one-time backfill (`status: 'approved'` written
+  // onto every existing board) before this ships — see docs/FIREBASE.md.
+  function fetchVisibleBoards(){
+    var approvedP = db.collection('boards').where('status', '==', 'approved').get()
+      .then(snapToArr)
+      .catch(function(err){ logError('fetchVisibleBoards:approved', err); return []; });
+    var mineP = state.currentUser
+      ? db.collection('boards').where('status', '==', 'pending').where('proposedBy.email', '==', state.currentUser.email).get()
+          .then(snapToArr)
+          .catch(function(err){ logError('fetchVisibleBoards:mine', err); return []; })
+      : Promise.resolve([]);
+    var allPendingP = db.collection('boards').where('status', '==', 'pending').get()
+      .then(function(snap){ return { ok: true, list: snapToArr(snap) }; })
+      .catch(function(){ return { ok: false, list: [] }; }); // permission-denied here just means "not an admin" — not worth logError'ing as a failure
+    return Promise.all([approvedP, mineP, allPendingP]).then(function(results){
+      var approved = results[0], mine = results[1], allPending = results[2];
+      var pending = allPending.ok ? allPending.list : mine;
+      var seen = {};
+      var mergedPending = [];
+      pending.concat(mine).forEach(function(b){
+        if (seen[b.id]) return;
+        seen[b.id] = true;
+        mergedPending.push(b);
+      });
+      return { list: approved.concat(mergedPending), canApproveVenues: allPending.ok };
+    });
+  }
+
   function loadBoardsIndex(){
-    return db.collection('boards').get()
-      .then(function(snap){
-        var out = [];
-        snap.forEach(function(doc){ out.push(Object.assign({ id: doc.id }, doc.data())); });
-        return out;
-      })
-      .catch(function(err){ logError('loadBoardsIndex', err); return []; });
+    return fetchVisibleBoards().then(function(res){
+      state.canApproveVenues = res.canApproveVenues;
+      return res.list;
+    });
   }
 
   // Called with the full desired boards-index array every time (create/edit
@@ -1039,10 +1164,16 @@
   // terms, so blindly re-.set()-ing an untouched document can fail its own
   // authorization check (e.g. one only its own PI can touch) and take down
   // the whole batch — even though nothing about it was meant to change.
+  //
+  // The "existing" baseline for the diff now comes from fetchVisibleBoards()
+  // rather than a plain get() (see its comment) — for a non-admin proposing
+  // a new venue, `list` only ever contains boards they could already see
+  // plus the one new entry, so this stays correct without needing to see
+  // boards outside their visibility in the first place.
   function saveBoardsIndex(list){
-    return db.collection('boards').get()
-      .then(function(snap){
-        var existing = {}; snap.forEach(function(doc){ existing[doc.id] = doc.data(); });
+    return fetchVisibleBoards().then(function(res){
+        state.canApproveVenues = res.canApproveVenues;
+        var existing = {}; res.list.forEach(function(b){ var d = Object.assign({}, b); delete d.id; existing[b.id] = d; });
         var keepIds = list.map(function(b){ return b.id; });
         var batch = db.batch();
         var touched = false;
@@ -1151,24 +1282,89 @@
       if (siInline) siInline.addEventListener('click', triggerSlackSignIn);
       return;
     }
-    if (state.boards.length === 0){
+    // Venue proposals (2026-09-11): fetchVisibleBoards() already only ever
+    // returns approved venues, this session's own pending proposals, and —
+    // if it succeeded — every pending proposal from anyone (proof of
+    // hasFullWrite(), see its comment). Split those apart for three
+    // sections rather than mixing pending rows into the normal openable
+    // list.
+    var approved = state.boards.filter(function(b){ return b.status !== 'pending'; });
+    var pending = state.boards.filter(function(b){ return b.status === 'pending'; });
+    var myEmail = state.currentUser && state.currentUser.email;
+    var minePending = pending.filter(function(b){ return b.proposedBy && b.proposedBy.email === myEmail; });
+    var othersPending = state.canApproveVenues
+      ? pending.filter(function(b){ return !(b.proposedBy && b.proposedBy.email === myEmail); })
+      : [];
+
+    if (approved.length === 0 && pending.length === 0){
       els.venuesRegion.innerHTML = '<p class="board-empty">No venues yet. Create one for a conference and year to get started &mdash; e.g. &ldquo;ICLR 2026&rdquo;.</p>';
       return;
     }
-    var sorted = state.boards.slice().sort(function(a, b){ return (b.createdAt || 0) - (a.createdAt || 0); });
-    var html = '<div class="venues">' + sorted.map(function(b){
-      var sub = b.deadline ? 'Paper deadline ' + formatDate(b.deadline) : 'No paper deadline set';
-      if (b.location) sub += ' · ' + escapeHtml(b.location);
-      return '<button class="venue-row" type="button" data-open-venue="' + escapeHtml(b.id) + '">' +
-        '<span class="venue-name">' + escapeHtml(b.label) + '</span>' +
-        '<span class="venue-sub">' + sub + '</span>' +
-      '</button>';
-    }).join('') + '</div>';
+
+    function sortByCreated(list){ return list.slice().sort(function(a, b){ return (b.createdAt || 0) - (a.createdAt || 0); }); }
+
+    var html = '<div class="venues">';
+    if (approved.length){
+      html += sortByCreated(approved).map(function(b){
+        var sub = b.deadline ? 'Paper deadline ' + formatDate(b.deadline) : 'No paper deadline set';
+        if (b.location) sub += ' · ' + escapeHtml(b.location);
+        return '<button class="venue-row" type="button" data-open-venue="' + escapeHtml(b.id) + '">' +
+          '<span class="venue-name">' + escapeHtml(b.label) + '</span>' +
+          '<span class="venue-sub">' + sub + '</span>' +
+        '</button>';
+      }).join('');
+    } else if (pending.length){
+      html += '<p class="board-empty">No approved venues yet.</p>';
+    }
+    // Pending rows open the normal venue page too (2026-09-11) — same
+    // data-open-venue as an approved row. "Pending your approval" also
+    // carries its own inline Approve/Reject (revised same day, per
+    // Eduardo: reviewing shouldn't require a click-in first) — the row
+    // itself can't be a <button> any more once it contains other buttons
+    // (invalid HTML, and a hover/click state that would fight itself), so
+    // it's a plain div with the venue name/sub as its own nested clickable
+    // button (.venue-name-btn) and Approve/Reject as siblings, not
+    // children of that button — same Approve/Reject also live on the
+    // venue detail page itself (renderBoard()), next to Edit venue/Delete
+    // venue, for reviewing the full venue before deciding either way.
+    if (othersPending.length){
+      html += '<div class="venues-section-title">Pending your approval</div>' + sortByCreated(othersPending).map(function(b){
+        return '<div class="venue-row venue-row--pending">' +
+          '<div class="venue-row-info">' +
+            '<button class="venue-name-btn" type="button" data-open-venue="' + escapeHtml(b.id) + '">' + escapeHtml(b.label) + '</button>' +
+            '<span class="venue-sub">Proposed by ' + proposerLabel(b.proposedBy) + '</span>' +
+          '</div>' +
+          '<div class="venue-row-actions">' +
+            '<button class="btn btn-approve" type="button" data-approve-venue="' + escapeHtml(b.id) + '">Approve</button>' +
+            '<button class="btn btn-reject" type="button" data-reject-venue="' + escapeHtml(b.id) + '">Reject</button>' +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+    if (minePending.length){
+      html += '<div class="venues-section-title">Your proposals awaiting approval</div>' + sortByCreated(minePending).map(function(b){
+        return '<button class="venue-row" type="button" data-open-venue="' + escapeHtml(b.id) + '">' +
+          '<span class="venue-name">' + escapeHtml(b.label) + '</span>' +
+          '<span class="venue-sub"><span class="badge badge-pending">Pending approval</span></span>' +
+        '</button>';
+      }).join('');
+    }
+    html += '</div>';
     els.venuesRegion.innerHTML = html;
 
     Array.prototype.forEach.call(document.querySelectorAll('[data-open-venue]'), function(btn){
       btn.addEventListener('click', function(){
         openVenue(btn.getAttribute('data-open-venue'));
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-approve-venue]'), function(btn){
+      btn.addEventListener('click', function(){
+        onApproveVenue(btn.getAttribute('data-approve-venue'));
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-reject-venue]'), function(btn){
+      btn.addEventListener('click', function(){
+        onRejectVenue(btn.getAttribute('data-reject-venue'));
       });
     });
   }
@@ -1307,21 +1503,43 @@
     document.getElementById('nbVenue').focus();
   }
 
+  // Title/submit label match the button's own "New venue"/"Propose venue"
+  // wording (see updateNewVenueButtonState) — same form either way
+  // (venueFieldsHtml/readVenueFields, onCreateBoard unchanged), just
+  // honest about which one it'll actually be for whoever's looking at it.
   function openNewVenueModal(){
     if (!requireSignedIn()) return;
-    renderVenueModal({ title: 'New venue', submitLabel: 'Create', venue: null, onSubmit: onCreateBoard });
+    var proposing = !state.canApproveVenues;
+    renderVenueModal({
+      title: proposing ? 'Propose new venue' : 'New venue',
+      submitLabel: proposing ? 'Propose' : 'Create',
+      venue: null,
+      onSubmit: onCreateBoard
+    });
   }
 
-  // Venue create/delete/update also needs isPi()/isAdmin() server-side —
-  // this button only gates the "signed in at all" precondition, same as
-  // the Register-paper button. A signed-in-but-not-PI/admin click still
-  // fails at save time with the existing generic error toast; not worth a
-  // bespoke message for a case that shouldn't come up for who this button
-  // is actually shown to in practice.
+  // This button only gates the "signed in at all" precondition, same as
+  // the Register-paper button — venue delete/update still needs
+  // isPi()/isAdmin() server-side and a signed-in-but-not-PI/admin click on
+  // those still fails with the generic error toast. Creating a venue is
+  // the one exception (2026-09-11): a signed-in-but-not-PI/admin submit
+  // lands as a pending proposal instead of failing outright — same form,
+  // same button, see onCreateBoard's own comment.
+  //
+  // Label itself reflects that (2026-09-11): "+ New venue" for a
+  // confirmed PI/admin, "+ Propose venue" for everyone else, using
+  // state.canApproveVenues — the same signal that gates the "Pending your
+  // approval" section, since it's the only reliable "am I PI/admin" read
+  // available client-side (roles/{roleId} stays unreadable). Called from
+  // renderAll() too, not just auth-state-change, since canApproveVenues
+  // only becomes known once the boards load resolves — before that this
+  // still shows the PI/admin wording as a harmless default until it
+  // settles (a beat after sign-in, not a lasting wrong state).
   function updateNewVenueButtonState(){
     if (!els.newBoardToggle) return;
     els.newBoardToggle.disabled = !state.currentUser;
     els.newBoardToggle.title = state.currentUser ? '' : 'Sign in with Slack to create a venue';
+    els.newBoardToggle.textContent = state.canApproveVenues ? '+ New venue' : '+ Propose venue';
   }
 
   function openEditVenueModal(){
@@ -1686,6 +1904,21 @@
   function personName(email){
     var p = personByEmail(email);
     return p ? p.name : (email || '');
+  }
+
+  // "Proposed by <name> (<email>)" — always both, everywhere a venue
+  // proposal's author is shown (the "Pending your approval" list row and
+  // the venue detail page alike). A name alone ("A Colleague") isn't
+  // enough to actually identify who it was when there's more than one
+  // pending proposal to review — email is the one field guaranteed to be
+  // unique and unambiguous (it's also what the Security Rules themselves
+  // match on for approve/reject).
+  function proposerLabel(proposedBy){
+    if (!proposedBy) return '';
+    var name = proposedBy.name || proposedBy.email || '';
+    return proposedBy.email
+      ? escapeHtml(name) + ' <span style="color:var(--muted);">(' + escapeHtml(proposedBy.email) + ')</span>'
+      : escapeHtml(name);
   }
 
   // True when a move goes from before the gate to the gate (or past it).
@@ -2089,20 +2322,35 @@
     html += '<div class="board-meta" style="display:block;">' +
       '<a href="#" id="backToList" style="font-size:13.5px;color:var(--muted);text-decoration:none;">&larr; All venues</a>' +
       '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;">' +
-        '<h2>' + (current ? escapeHtml(current.label) : '') + '</h2>' +
+        '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">' +
+          '<h2>' + (current ? escapeHtml(current.label) : '') + '</h2>' +
+          (current && current.status === 'pending' ? '<span class="badge badge-pending">Pending approval</span>' : '') +
+        '</div>' +
         '<div style="display:flex;align-items:center;gap:16px;">' +
-          '<button class="btn btn-primary" id="submitPaperBtn" type="button"' +
-            (state.currentUser ? '' : ' disabled title="Sign in with Slack to register a paper"') +
-            '>+ Register paper</button>' +
+          (!current || current.status !== 'pending'
+            ? '<button class="btn btn-primary" id="submitPaperBtn" type="button"' +
+                (!state.currentUser ? ' disabled title="Sign in with Slack to register a paper"' : '') +
+                '>+ Register paper</button>'
+            : '') +
+          (current && current.status === 'pending' && state.canApproveVenues
+            ? '<button class="btn btn-approve" id="approveVenueBtn" type="button">Approve venue</button>' +
+              '<button class="btn btn-reject" id="rejectVenueBtn" type="button">Reject</button>'
+            : '') +
           '<button class="btn-text' + (current && current.rushMode ? ' rush-on' : '') + '" id="rushModeBtn" type="button" title="' +
             (current && current.rushMode
               ? 'Rush mode is on — board is Registered / Drafted / Reviewed / Submitted only. Click to turn off.'
               : 'Turn on Rush mode — collapses this venue to Registered / Drafted / Reviewed / Submitted only, for a fast-moving deadline.') +
             '">' + (current && current.rushMode ? '⚡ Rush mode: On' : 'Rush mode: Off') + '</button>' +
           '<button class="btn-text edit" id="editBoardBtn" type="button">Edit venue</button>' +
-          '<button class="btn-text" id="deleteBoardBtn" type="button">Delete this venue</button>' +
+          (!current || current.status !== 'pending'
+            ? '<button class="btn-text" id="deleteBoardBtn" type="button">Delete this venue</button>'
+            : '') +
         '</div>' +
       '</div>' +
+      (current && current.status === 'pending' && current.proposedBy
+        ? '<div class="venue-meta">Proposed by ' + proposerLabel(current.proposedBy) +
+            ' — awaiting a PI or admin’s approval before it’s visible to everyone and open for paper registration.</div>'
+        : '') +
       venueMetaHtml(current) +
       (current && current.notes ? '<div class="venue-meta" style="white-space:pre-wrap;">' + escapeHtml(current.notes) + '</div>' : '') +
       venueScheduleHtml(current) +
@@ -2117,7 +2365,8 @@
     }
 
     document.getElementById('backToList').addEventListener('click', function(e){ e.preventDefault(); backToVenuesList(); });
-    document.getElementById('submitPaperBtn').addEventListener('click', openModal);
+    var sp = document.getElementById('submitPaperBtn');
+    if (sp) sp.addEventListener('click', openModal);
 
     var del = document.getElementById('deleteBoardBtn');
     if (del) del.addEventListener('click', onDeleteBoard);
@@ -2125,6 +2374,10 @@
     if (ev) ev.addEventListener('click', openEditVenueModal);
     var rm = document.getElementById('rushModeBtn');
     if (rm) rm.addEventListener('click', onToggleRushMode);
+    var av = document.getElementById('approveVenueBtn');
+    if (av) av.addEventListener('click', function(){ onApproveVenue(current.id); });
+    var rv = document.getElementById('rejectVenueBtn');
+    if (rv) rv.addEventListener('click', function(){ onRejectVenue(current.id); });
     var ics = document.getElementById('downloadIcs');
     if (ics) ics.addEventListener('click', function(){ downloadIcs(getCurrentBoard()); });
     var subscribeIcs = document.getElementById('subscribeIcs');
@@ -2749,6 +3002,7 @@
   function renderAll(){
     els.toolbar = els.toolbar || document.getElementById('toolbar');
     if (els.toolbar) els.toolbar.style.display = (state.view === 'list') ? '' : 'none';
+    updateNewVenueButtonState();
     renderVenuesList();
     renderBoard();
   }
@@ -2810,6 +3064,11 @@
 
   function openModal(){
     if (!requireSignedIn()) return;
+    var current = getCurrentBoard();
+    if (current && current.status === 'pending'){
+      showToast('This venue hasn’t been approved yet.', 'error');
+      return;
+    }
     els.modalRegion.innerHTML =
       '<div class="modal-overlay" id="modalOverlay">' +
         '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">' +
@@ -2973,6 +3232,18 @@
 
   // ---------- handlers ----------
 
+  // Venue proposals (2026-09-11): the form and validation are identical
+  // whether or not the signed-in user is a PI/admin \u2014 always attempt the
+  // direct create first (status 'approved', same as always), and only fall
+  // back to a pending proposal on the specific failure that means "you're
+  // not PI/admin" (a permission-denied write), never on any other error.
+  // This is deliberately not decided up front from a client-side "am I
+  // admin" guess \u2014 there isn't a reliable one (see fetchVisibleBoards) \u2014 it
+  // just reacts to whichever way the real, authoritative write actually
+  // goes. A pending proposal is self-attributed (`proposedBy`) and only
+  // visible to its proposer and a PI/admin (firestore.rules) until approved
+  // (onApproveVenue) flips it to 'approved', at which point it's a normal
+  // venue, indistinguishable from one an admin created directly.
   function onCreateBoard(e){
     if (e && e.preventDefault) e.preventDefault();
     var f = readVenueFields();
@@ -2987,17 +3258,38 @@
       openVenue(id);
       return;
     }
-    var entry = Object.assign({ id: id, label: f.venue + ' ' + f.year, createdAt: Date.now() }, f);
-    var next = state.boards.concat([entry]);
+    var base = Object.assign({ id: id, label: f.venue + ' ' + f.year, createdAt: Date.now() }, f);
+    var approvedEntry = Object.assign({}, base, { status: 'approved' });
+    var approvedNext = state.boards.concat([approvedEntry]);
     saveBoard(id, { cards: [] }).then(function(ok){
       if (!ok){ showToast(saveErrorMessage('Could not create the venue \u2014 try again.'), 'error'); return; }
-      return saveBoardsIndex(next).then(function(ok2){
-        if (!ok2){ showToast(saveErrorMessage('Could not save the venue list \u2014 try again.'), 'error'); return; }
-        state.boards = next;
-        showToast('Created ' + entry.label + '.', 'ok');
-        closeModal();
-        openVenue(id);
-        syncVenueIcs(entry);
+      return saveBoardsIndex(approvedNext).then(function(ok2){
+        if (ok2){
+          state.boards = approvedNext;
+          showToast('Created ' + approvedEntry.label + '.', 'ok');
+          closeModal();
+          openVenue(id);
+          syncVenueIcs(approvedEntry);
+          return;
+        }
+        var wasPermissionDenied = lastWriteErrorCode === 'permission-denied';
+        lastWriteErrorCode = null;
+        if (!wasPermissionDenied){
+          showToast(saveErrorMessage('Could not save the venue list \u2014 try again.'), 'error');
+          return;
+        }
+        var pendingEntry = Object.assign({}, base, {
+          status: 'pending',
+          proposedBy: { name: state.currentUser.name || state.currentUser.email, email: state.currentUser.email }
+        });
+        var pendingNext = state.boards.concat([pendingEntry]);
+        saveBoardsIndex(pendingNext).then(function(ok3){
+          if (!ok3){ showToast(saveErrorMessage('Could not submit the venue proposal \u2014 try again.'), 'error'); return; }
+          state.boards = pendingNext;
+          showToast('Proposed ' + pendingEntry.label + ' \u2014 a PI or admin will review it.', 'ok');
+          closeModal();
+          renderAll();
+        });
       });
     });
   }
@@ -3020,6 +3312,53 @@
         showToast('Saved.', 'ok');
         syncVenueIcs(next.filter(function(b){ return b.id === id; })[0]);
       }
+    });
+  }
+
+  // Approving a proposal is just flipping status to 'approved' \u2014 same
+  // saveBoardsIndex write path as any other venue edit, gated the same way
+  // (hasFullWrite() only; see firestore.rules). No separate "reject": a
+  // PI/admin who doesn't want a proposal just deletes it the normal way
+  // (the existing delete-venue button/confirm, unchanged).
+  function onApproveVenue(id){
+    var prev = state.boards;
+    var next = state.boards.map(function(b){
+      return b.id === id ? Object.assign({}, b, { status: 'approved' }) : b;
+    });
+    state.boards = next;
+    renderAll();
+    saveBoardsIndex(next).then(function(ok){
+      if (!ok){
+        state.boards = prev;
+        renderAll();
+        showToast(saveErrorMessage('Could not approve that venue \u2014 try again.'), 'error');
+      } else {
+        showToast('Approved.', 'ok');
+        syncVenueIcs(next.filter(function(b){ return b.id === id; })[0]);
+      }
+    });
+  }
+
+  // Reject a pending proposal \u2014 same underlying write as onDeleteBoard()
+  // (there's nothing to keep once rejected: no cards can exist yet on an
+  // unapproved venue, and there's no rejection-reason/audit field in the
+  // schema), but its own confirm/toast wording and its own button, kept
+  // separate from "Delete this venue" \u2014 that one only shows for an
+  // already-approved venue, since deleting a live venue with real
+  // registered papers is a materially different, scarier action than
+  // declining someone's proposal before it's gone anywhere.
+  function onRejectVenue(id){
+    var current = state.boards.filter(function(b){ return b.id === id; })[0];
+    if (!current || current.status !== 'pending') return;
+    if (!window.confirm('Reject the proposal for "' + current.label + '"? This can\u2019t be undone.')) return;
+    var next = state.boards.filter(function(b){ return b.id !== id; });
+    saveBoardsIndex(next).then(function(ok){
+      if (!ok){ showToast(saveErrorMessage('Could not reject that proposal \u2014 try again.'), 'error'); return; }
+      deleteBoardData(id).then(function(){
+        state.boards = next;
+        showToast('Rejected ' + current.label + '.', 'ok');
+        backToVenuesList();
+      });
     });
   }
 

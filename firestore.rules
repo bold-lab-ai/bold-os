@@ -58,8 +58,39 @@ service cloud.firestore {
     }
 
     match /boards/{boardId} {
-      allow read: if isLabMember();
-      allow create, delete, update: if hasFullWrite();
+      // A venue is either 'approved' (visible to the whole lab, same as
+      // always) or 'pending' (a non-admin's proposal — visible only to
+      // whoever proposed it and to a PI/admin, until approved). Missing
+      // `status` entirely means an approved venue — every board created
+      // before this field existed defaults to 'approved' via get()'s
+      // fallback, so old data needs no migration for single-document
+      // reads. List queries are a separate story (get()'s default can't
+      // help a `where('status','==',...)` filter match a field that
+      // literally isn't there) — see the client-side note in
+      // docs/FIREBASE.md before deploying this against boards created
+      // pre-2026-09-11.
+      allow read: if isLabMember() && (
+        resource.data.get('status', 'approved') != 'pending' ||
+        hasFullWrite() ||
+        (('proposedBy' in resource.data) && email() == resource.data.proposedBy.email)
+      );
+      // Direct creation (status 'approved', or omitted) stays PI/admin
+      // only, same as before. A signed-in lab member who isn't PI/admin
+      // can still create a board doc, but only as a self-attributed
+      // pending proposal — the client always tries the direct-approved
+      // create first (see onCreateBoard) and only falls back to this on
+      // a permission-denied, so this branch is never the first attempt
+      // for someone who could've just created it outright.
+      allow create: if isLabMember() && (
+        hasFullWrite() ||
+        (request.resource.data.status == 'pending' && request.resource.data.proposedBy.email == email())
+      );
+      // Approving a proposal (flipping status to 'approved') is just
+      // another update, so it needs no separate rule — same as editing
+      // or deleting any venue, still PI/admin only. A proposer can't
+      // edit or withdraw their own pending proposal once submitted;
+      // ask a PI/admin to approve or delete it.
+      allow update, delete: if hasFullWrite();
 
       match /cards/{cardId} {
         allow read: if isLabMember();
