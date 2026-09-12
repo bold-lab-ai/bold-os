@@ -414,9 +414,9 @@
   .badge-overdue{background:var(--danger-bg); color:var(--danger-text);}
   .card-link{font-size:12.5px; display:inline-block; margin-bottom:6px;}
   .card-notes{font-size:12.5px; color:var(--ink-soft); margin-bottom:8px; white-space:pre-wrap;}
-  .author-row{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
-  .author-row .author-input{flex:1 1 auto; min-width:0;}
-  .author-row .author-remove{flex:0 0 auto; white-space:nowrap;}
+  .author-row{display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;}
+  .author-row .author-input{flex:1 1 160px; min-width:0;}
+  .author-row .author-remove, .author-row .author-use-roster{flex:0 0 auto; white-space:nowrap;}
   .author-pi-tag{
     flex:0 0 auto; width:24px; text-align:center;
     font-size:10.5px; font-weight:700; letter-spacing:0; color:var(--plum);
@@ -936,6 +936,52 @@
     }
   }
 
+  // Deep link support (2026-09-12) — a fresh page load can land straight
+  // on a venue or a specific card (#board=<id> or #board=<id>&card=<id>),
+  // so a link out of the app (a Slack notification, see functions/
+  // index.js) goes to the actual paper, not just the front door. Captured
+  // once at script load, before auth/boards are ready — applied (see
+  // applyPendingDeepLink below) the first time loadInitialData() actually
+  // has boards to check it against. Never re-applied after that, even if
+  // loadInitialData() runs again later (e.g. a sign-out/sign-in in the
+  // same page load) — at that point it's just a normal reload, not a
+  // fresh deep link.
+  var pendingDeepLink = parseDeepLinkHash(location.hash);
+
+  // Applies pendingDeepLink if one's waiting, consuming it either way (so
+  // it's never retried on a later call). Returns true if it took over
+  // rendering itself (via openVenue/openCard, both of which already
+  // render+pushNavState), false if the caller still needs to renderAll()
+  // itself. A venue/card that doesn't exist — or that fetchVisibleBoards()
+  // (see docs/FIREBASE.md) simply didn't return because this viewer isn't
+  // allowed to see it — look identical here on purpose: same toast either
+  // way, not leaking which case it was.
+  function applyPendingDeepLink(){
+    var dl = pendingDeepLink;
+    pendingDeepLink = null;
+    if (!dl) return false;
+    var board = state.boards.filter(function(b){ return b.id === dl.boardId; })[0];
+    if (!board){
+      showToast('That venue couldn’t be found, or isn’t visible to you yet.', 'error');
+      return false;
+    }
+    openVenue(dl.boardId);
+    if (dl.cardId){
+      // openVenue() already kicked off its own loadCurrentBoardCards()
+      // fire-and-forget; awaiting a second call here to know when the
+      // specific card is available costs one small duplicate read, once,
+      // on this one initial load — accepted for keeping openVenue()
+      // itself unchanged rather than growing a special no-fetch variant.
+      var cardId = dl.cardId;
+      loadCurrentBoardCards().then(function(){
+        var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+        if (card) openCard(cardId);
+        else showToast('That paper couldn’t be found — it may have been removed.', 'error');
+      });
+    }
+    return true;
+  }
+
   // Board/card reads now require being signed in (Security Rules,
   // 2026-09-11 — see firestore.rules). So the initial load — and any
   // reload after a sign-in/out — waits for auth to resolve first, rather
@@ -962,7 +1008,7 @@
       state.boards = results[0];
       state.people = results[1];
       state.loadingBoards = false;
-      renderAll();
+      if (!applyPendingDeepLink()) renderAll();
     });
   }
 
@@ -1380,8 +1426,43 @@
   // this view was reached (a fresh deep link has no history to go back
   // to), and it means the browser's own Forward button correctly returns
   // to the card/venue you just left via an in-app link, not just via Back.
+  // The venue/card a URL points at, as a hash: '#board=<id>' or
+  // '#board=<id>&card=<id>' — plain function of its inputs (no reading
+  // location.* internally) so it's unit-testable without a DOM. Pure
+  // string building, no framework: this static site has no server-side
+  // routing, so a hash (not a real path) is the only piece of the URL
+  // that can vary without a page reload hitting GitHub Pages' 404 page.
+  function stateUrl(view, boardId, cardId, baseUrl){
+    if (view === 'venue' && boardId) return baseUrl + '#board=' + encodeURIComponent(boardId);
+    if (view === 'card' && boardId && cardId) return baseUrl + '#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(cardId);
+    return baseUrl;
+  }
+
+  // The reverse of stateUrl() — given a hash (e.g. from location.hash on
+  // page load), what venue/card it points at, or null if it's not a
+  // recognized deep link. Also pure/testable for the same reason.
+  function parseDeepLinkHash(hash){
+    var h = (hash || '').replace(/^#/, '');
+    if (!h) return null;
+    var params = {};
+    h.split('&').forEach(function(pair){
+      var idx = pair.indexOf('=');
+      if (idx === -1) return;
+      params[decodeURIComponent(pair.slice(0, idx))] = decodeURIComponent(pair.slice(idx + 1));
+    });
+    return params.board ? { boardId: params.board, cardId: params.card || null } : null;
+  }
+
+  // Real, bookmarkable/shareable URL as of 2026-09-12 — history.pushState's
+  // third argument used to be omitted, so Back/Forward worked (see the
+  // popstate listener below) but the address bar never actually changed;
+  // a link out of the app (a Slack notification, say — see
+  // functions/index.js) could only ever land on the front door. Now every
+  // venue/card view gets a real URL a fresh page load can restore — see
+  // parseDeepLinkHash/applyPendingDeepLink below.
   function pushNavState(){
-    history.pushState({ view: state.view, boardId: state.currentBoardId, cardId: state.currentCardId }, '');
+    var url = stateUrl(state.view, state.currentBoardId, state.currentCardId, location.pathname + location.search);
+    history.pushState({ view: state.view, boardId: state.currentBoardId, cardId: state.currentCardId }, '', url);
   }
 
   window.addEventListener('popstate', function(ev){
@@ -1854,23 +1935,14 @@
     return REVIEW_ROLES.every(function(role){ return c[role] === c.total; });
   }
 
-  // The PI isn't a separate field — by convention it's just the last name
-  // in card.authors (same as an author list on the paper itself usually
-  // reads). One list, one source of truth.
+  // The PI isn't a separate field — by convention it's just the last
+  // entry in card.authors (same as an author list on the paper itself
+  // usually reads). One list, one source of truth. Returns the name only
+  // (for display/search — see matchesTextQuery's 'pi' scope); use
+  // card.authors[card.authors.length-1] directly if the email is needed too.
   function cardPi(card){
     var authors = (card && card.authors) || [];
-    return authors.length ? authors[authors.length - 1] : '';
-  }
-
-  // Authors datalist: suggestions from the real Slack roster (state.people)
-  // — but authors stays free text, since a paper can have co-authors
-  // outside this workspace. Reviewers are a separate, stricter picker (see
-  // reviewerInputHtml) — those have to resolve to a real person's email,
-  // since that's what the Security Rules match against.
-  function peopleDatalistHtml(){
-    return '<datalist id="peopleNames">' +
-      state.people.map(function(p){ return '<option value="' + escapeHtml(p.name) + '">'; }).join('') +
-    '</datalist>';
+    return authors.length ? (authors[authors.length - 1].name || '') : '';
   }
 
   // Only the submitter or a PI/admin can actually save a reviewer
@@ -2043,6 +2115,19 @@
     if (!Array.isArray(out.authors)){
       out = Object.assign({}, out, { authors: [] });
     }
+    // authors: {name, email}[] (2026-09-12) — replaces free-text names so
+    // a paper's authors (and the PI, its last entry) resolve to a real
+    // person the same way reviewers/submittedBy/proposedBy already do;
+    // needed so e.g. a PI-approval notification has somewhere to send.
+    // Existing cards (including ones just pi-folded above) stored plain
+    // name strings — migrate each to {name, email: ''} rather than break;
+    // email stays blank for old data (there's no way to retroactively know
+    // it) until someone re-saves the author list through the roster picker.
+    if (out.authors.some(function(a){ return typeof a === 'string'; })){
+      out = Object.assign({}, out, { authors: out.authors.map(function(a){
+        return (typeof a === 'string') ? { name: a, email: '' } : a;
+      }) });
+    }
     if (!Array.isArray(out.discussion)){
       out = Object.assign({}, out, { discussion: [] });
     }
@@ -2172,7 +2257,7 @@
   function matchesTextQuery(card){
     var q = (state.search && state.search.query || '').trim().toLowerCase();
     if (!q) return true;
-    var authorsStr = (card.authors || []).join(' ');
+    var authorsStr = (card.authors || []).map(function(a){ return [a.name, a.email].filter(Boolean).join(' '); }).join(' ');
     var field = (state.search && state.search.field) || 'all';
     var hay;
     if (field === 'title') hay = card.title || '';
@@ -2355,7 +2440,6 @@
       (current && current.notes ? '<div class="venue-meta" style="white-space:pre-wrap;">' + escapeHtml(current.notes) + '</div>' : '') +
       venueScheduleHtml(current) +
     '</div>';
-    html += peopleDatalistHtml();
     html += boardSearchHtml();
     html += '<div class="board-scroll">' + renderColumns(current) + '</div>';
     els.boardRegion.innerHTML = html;
@@ -2561,9 +2645,11 @@
     '</div>';
   }
 
+  // No author field any more (2026-09-12) — a message's author is always
+  // the signed-in poster (state.currentUser), same as submittedBy/
+  // reviewers/proposedBy elsewhere. See onPostDiscussion et al.
   function discussionFormHtml(idPrefix, placeholderHtml, submitLabel){
     return '<div class="disc-form">' +
-      '<input type="text" id="' + idPrefix + 'Author" list="peopleNames" placeholder="Your name">' +
       '<textarea id="' + idPrefix + 'Body" placeholder="' + placeholderHtml + '"></textarea>' +
       '<div class="disc-form-actions"><button class="btn btn-primary" type="button" id="' + idPrefix + 'Submit">' + submitLabel + '</button></div>' +
     '</div>';
@@ -2617,16 +2703,20 @@
   }
 
   function onPostDiscussion(cardId){
-    var authorEl = document.getElementById('discNewAuthor');
+    if (!requireSignedIn()) return;
     var bodyEl = document.getElementById('discNewBody');
-    var author = authorEl.value.trim();
     var body = bodyEl.value.trim();
-    if (!author || !body){
-      showToast('Enter your name and a message to post.', 'error');
+    if (!body){
+      showToast('Enter a message to post.', 'error');
       return;
     }
     var boardId = state.currentBoardId;
-    var msg = { id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), author: author, timestamp: Date.now(), body: body, replies: [] };
+    var msg = {
+      id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      author: state.currentUser.name || state.currentUser.email,
+      authorEmail: state.currentUser.email,
+      timestamp: Date.now(), body: body, replies: []
+    };
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       return Object.assign({}, c, { discussion: (c.discussion || []).concat([msg]), updatedAt: Date.now() });
@@ -2645,16 +2735,20 @@
 
   function onPostReply(cardId, parentId){
     if (!parentId) return;
-    var authorEl = document.getElementById('discReplyAuthor');
+    if (!requireSignedIn()) return;
     var bodyEl = document.getElementById('discReplyBody');
-    var author = authorEl.value.trim();
     var body = bodyEl.value.trim();
-    if (!author || !body){
-      showToast('Enter your name and a reply to post.', 'error');
+    if (!body){
+      showToast('Enter a reply to post.', 'error');
       return;
     }
     var boardId = state.currentBoardId;
-    var reply = { id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), author: author, timestamp: Date.now(), body: body };
+    var reply = {
+      id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      author: state.currentUser.name || state.currentUser.email,
+      authorEmail: state.currentUser.email,
+      timestamp: Date.now(), body: body
+    };
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       return Object.assign({}, c, {
@@ -2683,14 +2777,19 @@
   // the item's thread open after posting so the reviewer sees it land.
   function onPostChecklistComment(cardId, itemId){
     if (!itemId) return;
-    var author = document.getElementById('clcNewAuthor').value.trim();
+    if (!requireSignedIn()) return;
     var body = document.getElementById('clcNewBody').value.trim();
-    if (!author || !body){
-      showToast('Enter your name and some feedback to post.', 'error');
+    if (!body){
+      showToast('Enter some feedback to post.', 'error');
       return;
     }
     var boardId = state.currentBoardId;
-    var msg = { id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), author: author, timestamp: Date.now(), body: body, replies: [] };
+    var msg = {
+      id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      author: state.currentUser.name || state.currentUser.email,
+      authorEmail: state.currentUser.email,
+      timestamp: Date.now(), body: body, replies: []
+    };
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       return Object.assign({}, c, {
@@ -2716,14 +2815,19 @@
 
   function onPostChecklistReply(cardId, itemId, parentId){
     if (!itemId || !parentId) return;
-    var author = document.getElementById('clcReplyAuthor').value.trim();
+    if (!requireSignedIn()) return;
     var body = document.getElementById('clcReplyBody').value.trim();
-    if (!author || !body){
-      showToast('Enter your name and a reply to post.', 'error');
+    if (!body){
+      showToast('Enter a reply to post.', 'error');
       return;
     }
     var boardId = state.currentBoardId;
-    var reply = { id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), author: author, timestamp: Date.now(), body: body };
+    var reply = {
+      id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+      author: state.currentUser.name || state.currentUser.email,
+      authorEmail: state.currentUser.email,
+      timestamp: Date.now(), body: body
+    };
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       return Object.assign({}, c, {
@@ -2798,7 +2902,7 @@
 
     html += '<dl class="detail-grid">';
     if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (card.status !== 'rebuttal' ? ' <span style="color:var(--muted);">(venue deadline)</span>' : '') + '</dd>';
-    if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + escapeHtml(card.authors.join(', ')) + ' <span style="color:var(--muted);">(last is PI)</span></dd>';
+    if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + ' <span style="color:var(--muted);">(last is PI)</span></dd>';
     if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
     if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
     if (card.rebuttalDeadline) html += '<dt>Rebuttal deadline</dt><dd>' + formatDate(card.rebuttalDeadline) + '</dd>';
@@ -2818,7 +2922,6 @@
     if (card.reviewNotes) html += '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>';
     html += '</dl>';
 
-    html += peopleDatalistHtml();
     html += gateBannerHtml(card);
 
     html += reviewTabsHtml(card);
@@ -3010,45 +3113,111 @@
   // ---------- modal ----------
 
   // ---------- dynamic author rows (registration + Edit fields) ----------
-  // Plain arrays of in-progress author names, reset each time the relevant
-  // modal opens. Free text with a shared-people datalist — same stand-in as
-  // PI/reviewers until a real roster exists (docs/TODO.md); typing a name that
-  // isn't a suggestion is just... typing a name.
-  var pAuthorsState = [''];
-  var eAuthorsState = [''];
+  // Arrays of in-progress { name, email, isNew } rows, reset each time the
+  // relevant modal opens. Authors resolve to a real person's email via the
+  // roster picker (2026-09-12) — same as reviewers (reviewerInputHtml) —
+  // with a "+ New author" escape hatch (typed Name + Email) for someone
+  // genuinely outside the Slack workspace. Used to be free text; every
+  // feature that needs a real identity to act on (notifications chief
+  // among them) needs a real email to reach someone, which a free-text
+  // name can never reliably give. `isNew` is UI-only (which control this
+  // row shows) — stripped before the row is ever saved, see
+  // onAddCard/onSaveEdit.
+  var pAuthorsState = [{ name: '', email: '', isNew: false }];
+  var eAuthorsState = [{ name: '', email: '', isNew: false }];
 
-  function authorRowsHtml(names){
-    return names.map(function(name, i){
-      var isPi = i === names.length - 1;
-      return '<div class="author-row">' +
-        '<span class="author-pi-tag' + (isPi ? '' : ' author-pi-tag--hidden') + '">PI</span>' +
-        '<input type="text" list="peopleNames" class="author-input" data-author-idx="' + i + '" value="' + escapeHtml(name) + '" placeholder="' + (isPi ? 'PI name' : 'Author name') + '" aria-label="' + (isPi ? 'PI (last author)' : ('Author ' + (i + 1))) + '">' +
-        (names.length > 1 ? '<button type="button" class="btn-text danger author-remove" data-remove-author-idx="' + i + '">Remove</button>' : '') +
+  function authorRowsHtml(rows){
+    return rows.map(function(row, i){
+      var isPi = i === rows.length - 1;
+      var label = isPi ? 'PI' : ('Author ' + (i + 1));
+      var html = '<div class="author-row">' +
+        '<span class="author-pi-tag' + (isPi ? '' : ' author-pi-tag--hidden') + '">PI</span>';
+      if (row.isNew){
+        html +=
+          '<input type="text" class="author-input author-new-name" data-author-idx="' + i + '" value="' + escapeHtml(row.name) + '" placeholder="Name" aria-label="' + label + ' name">' +
+          '<input type="email" class="author-input author-new-email" data-author-idx="' + i + '" value="' + escapeHtml(row.email) + '" placeholder="Email" aria-label="' + label + ' email">' +
+          '<button type="button" class="btn-text author-use-roster" data-author-idx="' + i + '">Pick from list instead</button>';
+      } else {
+        var options = '<option value="">Choose a person…</option>' + state.people.map(function(p){
+          return '<option value="' + escapeHtml(p.email) + '"' + (p.email === row.email ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>';
+        }).join('') + '<option value="__new__">+ New author (not in the workspace)…</option>';
+        html += '<select class="author-input author-select" data-author-idx="' + i + '" aria-label="' + label + '">' + options + '</select>';
+      }
+      html += (rows.length > 1 ? '<button type="button" class="btn-text danger author-remove" data-remove-author-idx="' + i + '">Remove</button>' : '') +
       '</div>';
+      return html;
     }).join('');
   }
 
   // Shared by both the registration modal (pAuthorsState / #pAuthorsWrap)
   // and the Edit-fields modal (eAuthorsState / #eAuthorsWrap) — same rows,
   // same PI-is-last-row convention, different backing array + submit key.
-  function renderAuthorRows(wrapId, authorsArr, onEnter){
+  function renderAuthorRows(wrapId, rows, onEnter){
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
-    wrap.innerHTML = authorRowsHtml(authorsArr);
-    Array.prototype.forEach.call(wrap.querySelectorAll('.author-input'), function(inp){
-      inp.addEventListener('input', function(){
-        authorsArr[Number(inp.getAttribute('data-author-idx'))] = inp.value;
+    wrap.innerHTML = authorRowsHtml(rows);
+    Array.prototype.forEach.call(wrap.querySelectorAll('.author-select'), function(sel){
+      sel.addEventListener('change', function(){
+        var idx = Number(sel.getAttribute('data-author-idx'));
+        if (sel.value === '__new__'){
+          rows[idx] = { name: '', email: '', isNew: true };
+        } else {
+          var p = personByEmail(sel.value);
+          rows[idx] = { name: p ? p.name : '', email: sel.value, isNew: false };
+        }
+        renderAuthorRows(wrapId, rows, onEnter);
       });
-      if (onEnter) inp.addEventListener('keydown', function(ev){
-        if (ev.key === 'Enter'){ ev.preventDefault(); onEnter(ev); }
+    });
+    Array.prototype.forEach.call(wrap.querySelectorAll('.author-new-name'), function(inp){
+      inp.addEventListener('input', function(){
+        rows[Number(inp.getAttribute('data-author-idx'))].name = inp.value;
+      });
+      if (onEnter) inp.addEventListener('keydown', function(ev){ if (ev.key === 'Enter'){ ev.preventDefault(); onEnter(ev); } });
+    });
+    Array.prototype.forEach.call(wrap.querySelectorAll('.author-new-email'), function(inp){
+      inp.addEventListener('input', function(){
+        rows[Number(inp.getAttribute('data-author-idx'))].email = inp.value;
+      });
+      if (onEnter) inp.addEventListener('keydown', function(ev){ if (ev.key === 'Enter'){ ev.preventDefault(); onEnter(ev); } });
+    });
+    Array.prototype.forEach.call(wrap.querySelectorAll('.author-use-roster'), function(btn){
+      btn.addEventListener('click', function(){
+        rows[Number(btn.getAttribute('data-author-idx'))] = { name: '', email: '', isNew: false };
+        renderAuthorRows(wrapId, rows, onEnter);
       });
     });
     Array.prototype.forEach.call(wrap.querySelectorAll('.author-remove'), function(btn){
       btn.addEventListener('click', function(){
-        authorsArr.splice(Number(btn.getAttribute('data-remove-author-idx')), 1);
-        renderAuthorRows(wrapId, authorsArr, onEnter);
+        rows.splice(Number(btn.getAttribute('data-remove-author-idx')), 1);
+        renderAuthorRows(wrapId, rows, onEnter);
       });
     });
+  }
+
+  // Strip the row's UI-only isNew flag and drop wholly-empty rows before
+  // saving — mirrors the old rawAuthors.filter(Boolean) behavior for the
+  // new object shape. The last row (the PI) still has to be filled in;
+  // callers check that separately before this runs.
+  function authorsForSave(rows){
+    return rows
+      .map(function(r){ return { name: (r.name || '').trim(), email: (r.email || '').trim() }; })
+      .filter(function(r){ return r.name || r.email; });
+  }
+
+  // Shared validation for both the registration and Edit-fields author
+  // rows — same two checks either way: the last row (the PI slot) has to
+  // be a real, complete entry, not just non-blank, and no OTHER row can be
+  // half-filled (a name typed with no email, or vice versa — only
+  // possible in "+ New author" mode, since picking from the roster always
+  // sets both fields together). Returns a reason string to show, or null
+  // if the rows are good to save.
+  function authorRowsIssue(rows){
+    function complete(r){ return !!(r && r.name && r.name.trim()) && !!(r && r.email && r.email.trim()); }
+    function blank(r){ return !(r && r.name && r.name.trim()) && !(r && r.email && r.email.trim()); }
+    var piRow = rows[rows.length - 1];
+    if (!complete(piRow)) return 'The last author (the PI) needs both a name and an email.';
+    if (rows.some(function(r){ return !blank(r) && !complete(r); })) return 'Each author needs both a name and an email — finish or remove any half-filled row.';
+    return null;
   }
 
   // Registering a paper requires being signed in \u2014 submittedBy and the
@@ -3079,7 +3248,7 @@
             '<div class="field"><label for="pTitle">Paper title</label><input type="text" id="pTitle"></div>' +
             '<div class="field"><label for="pAuthorsWrap">Authors</label><div id="pAuthorsWrap"></div>' +
               '<button class="btn-text" type="button" id="pAddAuthor">+ Add author</button>' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI. Free text; type a name not in the suggestions if needed.</div></div>' +
+              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI. Pick from the workspace, or add someone outside it with their name and email.</div></div>' +
             '<div class="field"><label for="pOverleaf">Overleaf link</label><input type="url" id="pOverleaf" placeholder="https://www.overleaf.com/project/..."></div>' +
             '<div class="field"><label for="pCompute">Compute estimate</label><input type="text" id="pCompute" placeholder="e.g. ~2000 A100-hours">' +
               '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Required at registration (8 weeks out)</div></div>' +
@@ -3102,12 +3271,12 @@
         if (ev.key === 'Enter'){ ev.preventDefault(); onAddCard(ev); }
       });
     });
-    pAuthorsState = [''];
+    pAuthorsState = [{ name: '', email: '', isNew: false }];
     renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard);
     document.getElementById('pAddAuthor').addEventListener('click', function(){
       // Insert before the last row, not after — the last row is the PI
       // slot, and it should stay last as more co-authors are added.
-      pAuthorsState.splice(Math.max(pAuthorsState.length - 1, 0), 0, '');
+      pAuthorsState.splice(Math.max(pAuthorsState.length - 1, 0), 0, { name: '', email: '', isNew: false });
       renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard);
     });
     document.getElementById('pTitle').focus();
@@ -3159,10 +3328,12 @@
         if (ev.key === 'Enter'){ ev.preventDefault(); onSaveEdit(cardId); }
       });
     });
-    eAuthorsState = card.authors && card.authors.length ? card.authors.slice() : [''];
+    eAuthorsState = card.authors && card.authors.length
+      ? card.authors.map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '', isNew: false }; })
+      : [{ name: '', email: '', isNew: false }];
     renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter);
     document.getElementById('eAddAuthor').addEventListener('click', function(){
-      eAuthorsState.splice(Math.max(eAuthorsState.length - 1, 0), 0, '');
+      eAuthorsState.splice(Math.max(eAuthorsState.length - 1, 0), 0, { name: '', email: '', isNew: false });
       renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter);
     });
     document.getElementById('eTitle').focus();
@@ -3176,14 +3347,13 @@
     var errorEl = document.getElementById('editFormError');
 
     var title = document.getElementById('eTitle').value.trim();
-    var rawAuthors = eAuthorsState.map(function(a){ return a.trim(); });
-    var piFilled = rawAuthors.length > 0 && !!rawAuthors[rawAuthors.length - 1];
-    var authors = rawAuthors.filter(Boolean);
+    var authors = authorsForSave(eAuthorsState);
     var overleafLink = document.getElementById('eOverleaf').value.trim();
     var email = document.getElementById('eEmail').value.trim();
 
-    if (!title || !piFilled || !overleafLink || !email){
-      errorEl.textContent = !piFilled ? 'The last author (the PI) is required.' : 'Please fill in the required fields above.';
+    var authorsIssue = authorRowsIssue(eAuthorsState);
+    if (!title || authorsIssue || !overleafLink || !email){
+      errorEl.textContent = authorsIssue || 'Please fill in the required fields above.';
       errorEl.hidden = false;
       return;
     }
@@ -3410,16 +3580,15 @@
     if (e && e.preventDefault) e.preventDefault();
     if (!requireSignedIn()) return;
     var title = document.getElementById('pTitle').value.trim();
-    // The last row is the PI slot (see authorRowsHtml) — it must be filled
-    // in even if blank rows elsewhere just get dropped.
-    var rawAuthors = pAuthorsState.map(function(a){ return a.trim(); });
-    var piFilled = rawAuthors.length > 0 && !!rawAuthors[rawAuthors.length - 1];
-    var authors = rawAuthors.filter(Boolean);
+    // The last row is the PI slot (see authorRowsHtml) — it must be a
+    // complete, real entry even if blank rows elsewhere just get dropped.
+    var authors = authorsForSave(pAuthorsState);
     var overleafLink = document.getElementById('pOverleaf').value.trim();
     var errorEl = document.getElementById('paperFormError');
 
-    if (!title || !piFilled || !overleafLink){
-      errorEl.textContent = !piFilled ? 'The last author (the PI) is required.' : 'Please fill in the required fields above.';
+    var authorsIssue = authorRowsIssue(pAuthorsState);
+    if (!title || authorsIssue || !overleafLink){
+      errorEl.textContent = authorsIssue || 'Please fill in the required fields above.';
       errorEl.hidden = false;
       return;
     }

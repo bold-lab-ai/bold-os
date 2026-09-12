@@ -11,3 +11,9 @@ _test_*.js
 
 # OS cruft
 .DS_Store
+
+# Cloud Functions (functions/) — installed deps, never committed
+functions/node_modules/
+functions/.env
+functions/.env.*
+functions/lib/

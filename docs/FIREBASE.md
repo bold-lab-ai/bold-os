@@ -46,7 +46,10 @@ boards/{boardId}
   # `.get(field, default)`.
 
   boards/{boardId}/cards/{cardId}
-    title, authors[] (last = PI), overleafLink, correspondingAuthorEmail,
+    title, authors[] (last = PI; each {name, email} — changed from a plain
+    name string, 2026-09-12, so the PI in particular has a real email to
+    notify; normalizeCard() migrates old string entries to {name, email: ''}),
+    overleafLink, correspondingAuthorEmail,
     computeEstimate, status, submittedBy{name,email,slackId},
     reviewers{junior,senior}, jrReviewState, srReviewState, outcome,
     submissionLink, rebuttalDeadline, rebuttalDocLink, reviewNotes,
@@ -89,6 +92,8 @@ boards/{boardId}
 ```
 
 Both comment thread types (per-checklist-item feedback, card-level Discussion) share one shape and one flat `parentId` field instead of a nested `replies` array — appends never conflict, and it's one rendering/posting code path instead of two.
+
+**Note: comments/discussion are still embedded arrays on the card document today, not subcollections** — the split shown above (with a flat `parentId`) was the plan, deliberately deferred (see "Client-side change (Phase 1a)" below); the shipped shape is `{ id, author, authorEmail, timestamp, body, replies: [] }`, one level of nested `replies`, not a `parentId`. As of 2026-09-12, `author`/`authorEmail` come from `state.currentUser` (real identity, required sign-in to post) rather than a free-text name typed into the form — same motivating problem as the `authors[]` change above. Older messages predating this only have `author` (free text) and no `authorEmail`.
 
 ## Security Rules
 
@@ -184,7 +189,42 @@ Query 3's success/failure is also how the client learns whether to show the "Pen
 
 ## Cloud Functions
 
-**Deferred (Phase 4, not MVP) — 2026-09-11.** The MVP permission model needs no Cloud Function at all: hardcoded email lists in Security Rules are evaluated entirely server-side, no claim-stamping step required. This section is the plan for when Google Workspace Groups replaces the hardcoded lists (see "Phasing").
+### Slack notifications (`ml-conference-cycle#1`) — built and deployed 2026-09-12, LIVE
+
+**Deployed and verified working end-to-end against real Slack** — both functions created successfully on the second attempt (first hit the well-known first-time-Gen2-functions `Permission denied while using the Eventarc Service Agent` propagation delay; retrying a few minutes later succeeded, per Google's own error message). A 1-day Artifact Registry cleanup policy was set (`firebase functions:artifacts:setpolicy`) so old container images don't accumulate. Eduardo created a real test venue/paper against production and confirmed real DMs landing on multiple test actions. `feature/slack-notifications` (the branch) isn't merged to `main` yet, but the Cloud Functions themselves are live regardless — a `firebase deploy --only functions` isn't gated on which branch is checked out in git the way GitHub Pages' auto-deploy-from-`main` is.
+
+The project's first Cloud Function, and the first server-side code of any kind — everything before this ran entirely client-side (`audit-board.html` talking straight to Firestore/Storage, authorized by Security Rules). A Slack DM needs a **Bot token** (`chat:write` + `im:write` scopes), a real credential that can never live in the client's source, so something server-side has to hold it and make the call. `functions/index.js` is that something.
+
+**Two Firestore-triggered functions**, both region-pinned to `europe-west2` (same as Firestore itself):
+- `onVenueProposed` (`onDocumentCreated` on `boards/{boardId}`) — fires when a venue is created with `status: 'pending'`; DMs every PI and admin (from `roles/pis`/`roles/admins`, read via the Admin SDK, which bypasses Security Rules entirely — this is server-side privileged code, not a client) that a proposal needs their approval.
+- `onCardWritten` (`onDocumentWritten` on `boards/{boardId}/cards/{cardId}`) — one trigger, several independent checks against the same before/after diff, since a single write can imply more than one notification at once (e.g. a reviewer's last tick both sets their review state *and* auto-advances the card in the same write — see `onSetReviewState`/`onToggleChecklist` in `audit-board.html`):
+  - A reviewer sets their sign-off (Approved/Changes requested), or both approve and the card auto-advances → DMs the submitter.
+  - Someone's newly assigned as junior/senior reviewer → DMs that person (not whoever they replaced).
+  - The card's status changes at all → DMs the submitter.
+  - The card reaches the PI-approval step (`status` becomes `pi_polish`) → DMs the PI specifically (the last entry in `authors` — see below for why that's now reliable) in addition to the general status-change DM above.
+  - A new Discussion message or checklist-item comment appears — routing depends on which and, for Discussion, whether it's a top-level post or a reply (see "Comment routing" below).
+
+**Design: a pure decision function, then a thin I/O wrapper.** `cardEventsToNotify(before, after, title, boardId, cardId)` computes *what* to notify — a list of `{ emails, headline, excludeEmail? }` — with zero I/O (no Firestore, no Slack, no `await` at all); the actual trigger just resolves each event's emails to Slack ids (`slackIdForEmail`, one `people` collection lookup per email — the roster is already synced from Slack's `users.list`, no live `users.lookupByEmail` call needed) and sends it (`chat.postMessage` after `conversations.open`, plain `fetch` against the Slack Web API, no SDK dependency — same minimal-deps preference as the rest of this project). Keeping the decision logic pure is what makes it unit-testable without a live Firestore emulator or a real Slack workspace: 36 standalone cases (every trigger, several multi-event-in-one-write cases, the "no email on file" no-op case, the deep-link URL, every comment-routing branch) verified before/after each round of this was wired to real Slack.
+
+**This depends on the author/comment identity fixes from the same day** (see docs/AGENTS.md guideline 8 and the "still embedded arrays" note above) — before those, the PI had no reliable email (`authors` was free text) and neither did a comment's poster. `dmByEmail`/`sendEvent` silently no-op (log only, never throw) for anyone with no email or no matching `people` roster entry, so an old, not-yet-migrated card just produces fewer notifications rather than an error.
+
+**Message design — went through several rounds of live feedback the same day, this is the current state:**
+
+- **Deep links.** `audit-board.html` gained real, bookmarkable URLs — `history.pushState()`'s third argument (the actual browser URL) was never set before this, so a link *into* the app could only ever land on the front door. `stateUrl(view, boardId, cardId, baseUrl)` builds a hash (`#board=<id>` or `#board=<id>&card=<id>` — a hash, not a real path, since this is a static GitHub Pages site with no server-side routing) and `pushNavState()` passes it as `pushState`'s third argument; `parseDeepLinkHash(hash)`/`applyPendingDeepLink()` restore straight to that venue/card on a fresh page load (once boards are loaded — a missing venue and one that exists but isn't visible to this viewer get the identical toast, deliberately not distinguished). `functions/index.js` mirrors the same hash scheme by hand (`venueUrl(boardId)`/`cardUrl(boardId, cardId)`, same discipline as `STATUS_LABEL`).
+- **The linked title is the message's one clickable element — no separate button.** `linkedTitle(text, url)` produces `<url|*text*>`, Slack mrkdwn's bold-link syntax; every headline's paper/venue name goes through it. An earlier version sent real Slack Block Kit (`blocks`, a button below the headline) — removed the same day once the title itself became clickable, since a separate button was a redundant second link to the same place. Back to plain `text` (Slack's default `mrkdwn: true` already renders the bold link correctly, no `blocks` needed).
+- **Emoji, regrouped by meaning, not one-per-event-type.** 🔔 = "this needs a decision from you" (a venue proposal awaiting approval, a card reaching PI-approval). 🔍 = "you've been handed a reviewing task" (assigned as junior/senior reviewer). ✅/❌/↩️ = a reviewer's own sign-off outcome (approved / changes requested / reverted to in-review) — one per role that changed, leading the message (so a mixed outcome — one role approves, the other requests changes in the same write — shows both glyphs up front, e.g. `✅❌`), not folded into a single ambiguous icon. ➡️ = a plain status change, 💬 = a comment — both unchanged throughout.
+- **Comment routing** (revised from "always DM submitter + both reviewers except the poster" once real testing showed that over-notified): Discussion and checklist comments now route differently. A **new top-level Discussion message** still goes to every stakeholder (submitter + both reviewers) except the poster. A **reply** goes only to the people already in *that* thread — the top-level message's author plus anyone who'd replied before this one — so replying inside one side conversation doesn't loop in someone who was never part of it. A **checklist-item comment** is treated as a submitter↔reviewer conversation, not a stakeholder broadcast: the submitter posting notifies *both* reviewers (one shared thread per item has no way to tell which reviewer it's meant for), but either reviewer posting notifies *only* the submitter, not the other reviewer (the two review passes are independent) — anyone else posting falls back to notifying the submitter.
+
+**To actually deploy this:**
+1. Add `chat:write` + `im:write` Bot Token Scopes to the Slack app (https://api.slack.com/apps → the app → OAuth & Permissions) and **Reinstall to Workspace** — this regenerates the Bot token. (`canvases:read`/`canvases:write` are worth adding in the same reinstall for a possible later notification-history-log feature, discussed but not built — see `ml-conference-cycle#1`'s comments.)
+2. Set the token as a Cloud Functions secret, never in the repo or passed through the client: `firebase functions:secrets:set SLACK_BOT_TOKEN --project bold-d7ff2`.
+3. `firebase deploy --only functions --project bold-d7ff2`.
+
+**Not built, deliberately out of scope for this pass:** no rate-limiting/throttling on a chatty card (every single event sends immediately); no digest/batching (a burst of activity sends a burst of DMs); no per-person notification preferences or opt-out; no canvas-based notification history (Eduardo's idea, flagged as a genuine follow-up once the DM-sending itself is confirmed working).
+
+### Deferred Google Workspace Groups custom claims (Phase 4, not MVP) — 2026-09-11
+
+The MVP permission model needs no Cloud Function at all for this part: hardcoded email lists in Security Rules are evaluated entirely server-side, no claim-stamping step required. This section is the plan for when Google Workspace Groups replaces the hardcoded lists (see "Phasing").
 
 1. **Custom claims on sign-in** — a `beforeSignIn` blocking Auth function: takes the signed-in email, calls the Google Workspace Admin SDK Directory API (`groups.list?userKey=<email>`, read-only `admin.directory.group.readonly` scope, domain-wide-delegated service account), sets `{groups: [...]}` as a custom claim. No separate membership-change listener needed — Firebase ID tokens refresh roughly hourly, so a claim is never more than about an hour stale, which is fine at this scale; avoids needing Admin SDK push notifications.
 2. **(Stretch, Phase 5)** `syncSlackChannels` — same trigger, diffs old vs. new group membership, calls Slack's `conversations.invite` for any channel tied to a newly-added group. Needs a bot token with `conversations:write.invites`, and the bot must already be a member of any private channel it's meant to manage.

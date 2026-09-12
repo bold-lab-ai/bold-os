@@ -2,7 +2,89 @@
 
 Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-board.html`, and the supporting docs — `internal-qa-review.html` was part of this suite until it was removed 2026-09-11, folded into `audit-board.html`; entries below that predate the removal still refer to it, left as-is since this is a historical record). This is a record of what was built and when — not a comparison against BOLDiquette. For how the process itself differs from BOLDiquette, and what we want changed there, see **`DIFF.md`**.
 
-## 2026-09-11
+## 2026-09-12
+
+### Dropped the notification button; reviewer outcomes get their own ✅/❌
+
+Two more rounds of feedback on the message content, in between the previous entry and the comment-routing one below:
+
+- **The separate button is gone.** Once the title itself became a real clickable link (previous entry), a button pointing at the same place was a redundant second link in every message — dropped it and reverted from Slack Block Kit back to plain `text` (Slack's default mrkdwn rendering already shows the bold link correctly with no `blocks` needed).
+- **Reviewer sign-off outcomes now get their own emoji** — ✅ for Approved, ❌ for Changes requested, ↩️ for reverting back to In review (e.g. unticking a checklist box after being approved) — instead of a single 🔍 covering the whole message regardless of outcome. A mixed outcome (one role approves, the other requests changes, in the same write) now shows both glyphs distinctly. 🔍 was freed up and reassigned to "you've been handed a reviewing task" (previously 📋).
+- **Emoji now lead every message, including these** — the outcome emoji originally landed after the linked title (a leftover from when they were inline per role); moved to the front so every message type has the same emoji-then-title shape.
+
+Extended the test suite to 22 cases, redeployed.
+
+### Notification comment routing: only who actually needs to answer
+
+More feedback after seeing real messages: comments were over-notifying — everyone with a stake in the card got pinged for every comment, regardless of whether it was actually relevant to them. Redesigned per Eduardo:
+
+- **Discussion, a new top-level message** — unchanged: every stakeholder (submitter + both reviewers) except the poster.
+- **Discussion, a reply** — now only the people already in *that* thread (the original poster + anyone who'd already replied), not the full stakeholder set. Replying to one side conversation no longer loops in someone who was never part of it.
+- **Checklist-item comment, submitter posts** — both reviewers (a checklist item has one shared thread, not separate junior/senior ones, so there's no way to tell which reviewer it's meant for).
+- **Checklist-item comment, either reviewer posts** — just the submitter, not the other reviewer (the two review passes are independent of each other).
+
+Also fixed: the reviewer-sign-off emoji (✅/❌ from the previous entry) now lead the message, same position as every other event's icon — they'd landed after the linked title, inconsistent with the rest.
+
+Extended the test suite to 36 cases (14 new, covering every comment-routing branch), redeployed.
+
+### Clearer emoji, and the title is now a clickable link too
+
+More feedback on the actual message content, redeployed: the emoji weren't clear, and the link should be on the title, not just the button.
+
+- **`linkedTitle(text, url)`** produces Slack's bold-link mrkdwn (`<url|*text*>`) — every headline's paper/venue name now uses this instead of a bare `*title*`, so the title itself is clickable, in addition to the existing button (not instead of it).
+- **Emoji regrouped into two deliberate families.** 🔔 now marks anything that's actually asking the recipient to decide something — a venue proposal awaiting approval, a card reaching the PI-approval step — both of which used to have unrelated icons (📄, 🖊️) with no shared meaning. Everything else is a plain FYI icon: 🔍 (a reviewer's sign-off changed on your card), 📋 (a new reviewing assignment — was 👀, replaced since it read more like "watch this" than "here's a task"), ➡️ and 💬 unchanged (already clear).
+
+Extended the test suite to 20 cases, redeployed.
+
+### Filed: a lab-wide Projects Board
+
+Filed [`ml-conference-cycle#6`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/6) — a page where anyone can see every active BOLD research project (abstract, research questions, findings, publications, leader, collaborators, experiments, a dedicated Slack channel), with a "Collaborate" button that adds the clicker as a collaborator and auto-invites them to that project's Slack channel. Notably scoped **against this repo** rather than a new one — per Eduardo, `ml-conference-cycle` is expected to grow into the lab's broader Operating System over time, and no dedicated repo exists yet for that still-unplanned, separate lab discussion. The auto-invite half needs a Cloud Function (same "Bot token can't live client-side" constraint as `#1`) and the `conversations:write.invites` scope — a channel invite for an existing workspace member, the simpler case already distinguished from the plan-tier-gated *workspace* auto-invite idea noted once before in this doc's old Phasing section.
+
+### Real deep links + Slack Block Kit for notification messages
+
+Feedback after the first round of live-Slack testing: the messages were plain text, and the link in every one of them just went to the app's front door, not the specific paper or venue. Fixed both, redeployed:
+
+- **`audit-board.html` now has real, bookmarkable URLs.** `history.pushState()` never set the actual browser URL before this — Back/Forward worked, but a link *into* the app could only ever land on the venues list. `stateUrl()` builds a hash (`#board=<id>` or `#board=<id>&card=<id>` — a hash, not a path, since this is a static GitHub Pages site with no server-side routing) and `pushNavState()` now sets it as the real URL. `parseDeepLinkHash()`/`applyPendingDeepLink()` restore straight to that venue/card on a fresh page load — a missing venue and a venue that exists but isn't visible to this viewer get the identical toast, on purpose.
+- **`functions/index.js` sends real Slack Block Kit messages** (`buildMessage()` — a headline section plus a button linking to the actual venue/card, via `venueUrl()`/`cardUrl()` mirroring the client's own hash scheme) instead of a flat text blob with a pasted generic URL.
+
+Extended the standalone test suite to 18 cases (deep-link URL building, round-tripping, and the Block Kit message shape) before redeploying. Redeployed cleanly (an update this time, not a first create, so no Eventarc propagation delay to wait out).
+
+### Slack notifications deployed and verified live against real Slack
+
+`onVenueProposed`/`onCardWritten` deployed to `bold-d7ff2` (`europe-west2`, Node 20, 2nd gen). First deploy attempt failed with a well-known, expected first-time-Gen2 hiccup (`Permission denied while using the Eventarc Service Agent` — the service agent's IAM permissions hadn't propagated yet); retried a few minutes later and both functions created successfully. Also ran `firebase functions:artifacts:setpolicy` (a 1-day container-image cleanup policy) — the deploy otherwise leaves old container images accumulating indefinitely in Artifact Registry.
+
+Verified live: Eduardo created a real test venue and paper against production (the local branch checkout already points at real Firestore), assigned himself as reviewer, and confirmed real Slack DMs landed — "many tests, all working well." `feature/slack-notifications` still isn't merged to `main` (nothing in the client changed as part of deploying the functions — this was purely `functions/` + `firebase.json`), so this is a case of server-side infra being live before the branch merges; the branch itself only needs merging for the `docs/`/`.gitignore`/`firebase.json` changes to land on `main`'s history, since the actual Cloud Functions are already deployed regardless of which branch HEAD points to (Cloud Functions deploys aren't tied to a git branch the way GitHub Pages' branch-deploy is).
+
+### Filed two follow-ups discussed while scoping Slack notifications
+
+While confirming which Slack Bot Token Scopes to add for `ml-conference-cycle#1`'s reinstall, two more ideas came up that are real but out of scope for this pass — filed rather than built, same as `#2` (venue transfer) earlier:
+- [`ml-conference-cycle#3`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/3) — assigning reviewers from Slack itself (a slash command and/or a button on the notification DMs). Confirmed with Eduardo: a **structured** action (`commands` scope, a new HTTP-triggered Cloud Function, Slack's Interactivity config), explicitly not a conversational AI-assistant experience (which would need Slack's separate Agents & Assistants platform, `assistant:write` — considered and ruled out for now).
+- [`ml-conference-cycle#4`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/4) — a persistent in-Slack notification history via Canvas (`canvases:read`/`canvases:write`), Eduardo's idea from the same conversation.
+
+Both scopes (`commands`, `canvases:read`/`write`) are being added in the same Slack app reinstall as `chat:write`/`im:write` so a third reinstall isn't needed later — granted ahead of either feature actually being built.
+
+Also filed [`ml-conference-cycle#5`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/5) — a conversational Slack assistant (Slack's Agents & Assistants platform, `assistant:write`) where each person talks to *their own* Claude/ChatGPT account rather than one shared backend LLM call. Explicitly not decided to build (Eduardo: "for now we see what happens later") — filed purely to keep the idea findable, and to record that `assistant:write` alone doesn't provide this: it's just the assistant UI framework, with no built-in way to hand a conversation off to a user's own personal AI login. Making that real would need a from-scratch bring-your-own-key system (per-user API key storage, same discipline as the Slack Bot token). No scope requested for this one — nothing granted, nothing built.
+
+### Slack DM notifications — built, on a branch, not yet deployed
+
+Picked up `ml-conference-cycle#1`, on `feature/slack-notifications` (after the identity fixes below, which this depends on). `functions/index.js` is the project's first Cloud Function — the first server-side code of any kind — since sending a Slack DM needs a Bot token, a real credential that can never live in `audit-board.html`'s client-side source.
+
+Two Firestore-triggered functions cover all four notification triggers Eduardo picked: a venue proposal needing approval (DMs every PI/admin), a reviewer's sign-off changing on your card or both reviewers approving and auto-advancing it (DMs the submitter), being newly assigned as a reviewer (DMs that person), any status change (DMs the submitter), reaching the PI-approval step specifically (also DMs the PI), and a new Discussion message or checklist comment (DMs submitter + both reviewers, excluding the poster).
+
+Structure follows the same pattern established throughout this session's client-side work: `cardEventsToNotify(before, after, title)` is pure decision logic — no Firestore, no Slack, no `await` — that computes what to notify from a before/after diff; the actual Firestore trigger is a thin wrapper that resolves each event's emails to Slack ids (via the already-synced `people` roster) and sends. Verified the whole decision surface with 17 standalone unit-test cases (every trigger, several "one write implies two notifications" cases, the "no email on file" no-op case) before ever touching a real Slack workspace.
+
+Not deployed yet — needs `chat:write`/`im:write` Slack Bot Token Scopes added and the app reinstalled, then `firebase functions:secrets:set SLACK_BOT_TOKEN` and `firebase deploy --only functions`. Also discussed, not built: `canvases:read`/`canvases:write` scopes for a persistent notification-history log (Eduardo's idea) — worth adding in the same Slack reinstall since it avoids a third round-trip, but the canvas-logging feature itself is a separate follow-up once DM-sending is confirmed working.
+
+### Real identity for comments and authors — prerequisite for Slack notifications, on a branch
+
+Started work on the open Slack-notifications issue (`ml-conference-cycle#1`, branch `feature/slack-notifications`). Before writing any Cloud Function code, hit a real data-model gap: two of the requested notification triggers ("reaches PI-approval," "someone comments") had no reliable email to send to — the PI is just a free-text name (the last entry in `authors`), and comment/discussion authorship was a free-text field with only a suggestion list, no roster binding at all.
+
+Per Eduardo, fixed both at the source rather than working around them:
+
+1. **Comments and Discussion messages now use the signed-in poster's real identity** — `author`/`authorEmail` come from `state.currentUser`, same as `submittedBy`/`reviewers`/`proposedBy` already do, instead of a free-text name typed into the form. Posting requires being signed in (`requireSignedIn()`). The four "Your name" input fields are gone from the Discussion/checklist-feedback forms. Older messages posted before this change keep their old free-text `author` and simply have no `authorEmail`.
+2. **Authors are no longer free text either.** Each row is now a roster `<select>` (same shape as the reviewer picker), plus a "+ New author (not in the workspace)…" option that swaps the row to two typed inputs (Name, Email) for a genuine external co-author — that typed entry is deliberately *not* added to the shared `people` roster, only stored on that card. `card.authors` is now `[{name, email}]`, not `[name]`; the PI (still just the last entry) now has a real email. `authorRowsIssue()` validates both modals: the PI row must be complete, and no other non-blank row can be half-filled.
+
+`normalizeCard()` migrates any card still holding plain-string authors to `{name, email: ''}` — email is unrecoverable for old data, so a PI-approval notification on an old, not-yet-re-saved card will do nothing until someone re-saves its author list through the new picker. No Security Rules changes needed — nothing in `firestore.rules` reads `authors`. Verified the validation/migration/search logic (`authorsForSave`, `authorRowsIssue`, `cardPi`, the `normalizeCard` authors migration, and `matchesTextQuery`'s author search) with standalone unit tests (9 + 5 + 3 cases) before moving on to the actual Cloud Function.
 
 ### "+ Register paper" no longer shows at all on a pending venue
 
