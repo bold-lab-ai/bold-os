@@ -4,6 +4,14 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-12
 
+### Filed two follow-ups discussed while scoping Slack notifications
+
+While confirming which Slack Bot Token Scopes to add for `ml-conference-cycle#1`'s reinstall, two more ideas came up that are real but out of scope for this pass — filed rather than built, same as `#2` (venue transfer) earlier:
+- [`ml-conference-cycle#3`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/3) — assigning reviewers from Slack itself (a slash command and/or a button on the notification DMs). Confirmed with Eduardo: a **structured** action (`commands` scope, a new HTTP-triggered Cloud Function, Slack's Interactivity config), explicitly not a conversational AI-assistant experience (which would need Slack's separate Agents & Assistants platform, `assistant:write` — considered and ruled out for now).
+- [`ml-conference-cycle#4`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/4) — a persistent in-Slack notification history via Canvas (`canvases:read`/`canvases:write`), Eduardo's idea from the same conversation.
+
+Both scopes (`commands`, `canvases:read`/`write`) are being added in the same Slack app reinstall as `chat:write`/`im:write` so a third reinstall isn't needed later — granted ahead of either feature actually being built.
+
 ### Slack DM notifications — built, on a branch, not yet deployed
 
 Picked up `ml-conference-cycle#1`, on `feature/slack-notifications` (after the identity fixes below, which this depends on). `functions/index.js` is the project's first Cloud Function — the first server-side code of any kind — since sending a Slack DM needs a Bot token, a real credential that can never live in `audit-board.html`'s client-side source.
