@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-12
 
+### Expanded `#3`: a personal papers dashboard in Slack's App Home, reviewer assignment folded in
+
+Eduardo asked about a Slack App Home tab showing, per person, the papers they've registered, are reviewing, or are an author on — with reviewer assignment (already scoped in `ml-conference-cycle#3`) available inline for whoever owns the paper. Combined into `#3` rather than filing separately, since the reviewer-picker is genuinely one interactive element inside this dashboard, not a second feature. Renamed the issue and added the dashboard's own requirements: App Home + `app_home_opened` Event Subscriptions (same Request URL infra `#3` already needed), a new Firestore collection-group query across every venue's cards (nothing today queries across boards — likely needs a denormalized `authorEmails: string[]` alongside `authors`, since Firestore's `array-contains` can't partially match the `{name,email}` objects), and rendering the dashboard itself as Block Kit. Not built.
+
 ### Dropped the notification button; reviewer outcomes get their own ✅/❌
 
 Two more rounds of feedback on the message content, in between the previous entry and the comment-routing one below:
