@@ -189,7 +189,9 @@ Query 3's success/failure is also how the client learns whether to show the "Pen
 
 ## Cloud Functions
 
-### Slack notifications (`ml-conference-cycle#1`) — built 2026-09-12 on `feature/slack-notifications`, NOT YET DEPLOYED
+### Slack notifications (`ml-conference-cycle#1`) — built and deployed 2026-09-12, LIVE
+
+**Deployed and verified working end-to-end against real Slack** — both functions created successfully on the second attempt (first hit the well-known first-time-Gen2-functions `Permission denied while using the Eventarc Service Agent` propagation delay; retrying a few minutes later succeeded, per Google's own error message). A 1-day Artifact Registry cleanup policy was set (`firebase functions:artifacts:setpolicy`) so old container images don't accumulate. Eduardo created a real test venue/paper against production and confirmed real DMs landing on multiple test actions. `feature/slack-notifications` (the branch) isn't merged to `main` yet, but the Cloud Functions themselves are live regardless — a `firebase deploy --only functions` isn't gated on which branch is checked out in git the way GitHub Pages' auto-deploy-from-`main` is.
 
 The project's first Cloud Function, and the first server-side code of any kind — everything before this ran entirely client-side (`audit-board.html` talking straight to Firestore/Storage, authorized by Security Rules). A Slack DM needs a **Bot token** (`chat:write` + `im:write` scopes), a real credential that can never live in the client's source, so something server-side has to hold it and make the call. `functions/index.js` is that something.
 

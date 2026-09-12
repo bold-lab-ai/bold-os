@@ -4,6 +4,12 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-12
 
+### Slack notifications deployed and verified live against real Slack
+
+`onVenueProposed`/`onCardWritten` deployed to `bold-d7ff2` (`europe-west2`, Node 20, 2nd gen). First deploy attempt failed with a well-known, expected first-time-Gen2 hiccup (`Permission denied while using the Eventarc Service Agent` — the service agent's IAM permissions hadn't propagated yet); retried a few minutes later and both functions created successfully. Also ran `firebase functions:artifacts:setpolicy` (a 1-day container-image cleanup policy) — the deploy otherwise leaves old container images accumulating indefinitely in Artifact Registry.
+
+Verified live: Eduardo created a real test venue and paper against production (the local branch checkout already points at real Firestore), assigned himself as reviewer, and confirmed real Slack DMs landed — "many tests, all working well." `feature/slack-notifications` still isn't merged to `main` (nothing in the client changed as part of deploying the functions — this was purely `functions/` + `firebase.json`), so this is a case of server-side infra being live before the branch merges; the branch itself only needs merging for the `docs/`/`.gitignore`/`firebase.json` changes to land on `main`'s history, since the actual Cloud Functions are already deployed regardless of which branch HEAD points to (Cloud Functions deploys aren't tied to a git branch the way GitHub Pages' branch-deploy is).
+
 ### Filed two follow-ups discussed while scoping Slack notifications
 
 While confirming which Slack Bot Token Scopes to add for `ml-conference-cycle#1`'s reinstall, two more ideas came up that are real but out of scope for this pass — filed rather than built, same as `#2` (venue transfer) earlier:
