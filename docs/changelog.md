@@ -4,6 +4,15 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-12
 
+### Real deep links + Slack Block Kit for notification messages
+
+Feedback after the first round of live-Slack testing: the messages were plain text, and the link in every one of them just went to the app's front door, not the specific paper or venue. Fixed both, redeployed:
+
+- **`audit-board.html` now has real, bookmarkable URLs.** `history.pushState()` never set the actual browser URL before this — Back/Forward worked, but a link *into* the app could only ever land on the venues list. `stateUrl()` builds a hash (`#board=<id>` or `#board=<id>&card=<id>` — a hash, not a path, since this is a static GitHub Pages site with no server-side routing) and `pushNavState()` now sets it as the real URL. `parseDeepLinkHash()`/`applyPendingDeepLink()` restore straight to that venue/card on a fresh page load — a missing venue and a venue that exists but isn't visible to this viewer get the identical toast, on purpose.
+- **`functions/index.js` sends real Slack Block Kit messages** (`buildMessage()` — a headline section plus a button linking to the actual venue/card, via `venueUrl()`/`cardUrl()` mirroring the client's own hash scheme) instead of a flat text blob with a pasted generic URL.
+
+Extended the standalone test suite to 18 cases (deep-link URL building, round-tripping, and the Block Kit message shape) before redeploying. Redeployed cleanly (an update this time, not a first create, so no Eventarc propagation delay to wait out).
+
 ### Slack notifications deployed and verified live against real Slack
 
 `onVenueProposed`/`onCardWritten` deployed to `bold-d7ff2` (`europe-west2`, Node 20, 2nd gen). First deploy attempt failed with a well-known, expected first-time-Gen2 hiccup (`Permission denied while using the Eventarc Service Agent` — the service agent's IAM permissions hadn't propagated yet); retried a few minutes later and both functions created successfully. Also ran `firebase functions:artifacts:setpolicy` (a 1-day container-image cleanup policy) — the deploy otherwise leaves old container images accumulating indefinitely in Artifact Registry.

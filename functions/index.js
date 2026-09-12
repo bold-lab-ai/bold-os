@@ -14,7 +14,9 @@
 // STATUS_LABEL/REVIEW_STATE_LABEL below are deliberately duplicated from
 // audit-board.html's STATUS_LABELS/REVIEW_STATE_LABELS, not imported —
 // there's no shared module between the plain-HTML client and this Node
-// project. Keep both in sync by hand if either changes.
+// project. Keep both in sync by hand if either changes. Same for
+// venueUrl/cardUrl mirroring audit-board.html's stateUrl() hash scheme —
+// see that function's own comment for why it's a hash, not a real path.
 //
 // Structure follows the same split used throughout audit-board.html this
 // same week: a pure decision function (cardEventsToNotify — no I/O, no
@@ -41,7 +43,18 @@ const SLACK_BOT_TOKEN = defineSecret('SLACK_BOT_TOKEN');
 // a cost/safety cap, not a real expected load at this scale.
 setGlobalOptions({ region: 'europe-west2', maxInstances: 10 });
 
-const APP_URL = 'https://bold-lab-ai.github.io/ml-conference-cycle/audit-board.html';
+const APP_BASE_URL = 'https://bold-lab-ai.github.io/ml-conference-cycle/audit-board.html';
+
+// Deep links (2026-09-12) — mirrors audit-board.html's stateUrl(): a hash,
+// not a real path, since this is a static site with no server routing.
+// The client's parseDeepLinkHash() on page load restores straight to the
+// venue/card these point at.
+function venueUrl(boardId){
+  return APP_BASE_URL + '#board=' + encodeURIComponent(boardId);
+}
+function cardUrl(boardId, cardId){
+  return APP_BASE_URL + '#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(cardId);
+}
 
 // Mirrors audit-board.html's STATUS_LABELS.
 const STATUS_LABEL = {
@@ -86,16 +99,20 @@ function newMessages(beforeList, afterList){
 }
 
 // Given a card's before/after (Firestore document data, or null for
-// before on a brand-new card) and its title, returns the list of
-// notifications this diff implies — { emails, text, excludeEmail? } —
-// with no I/O of any kind. A single write can imply more than one event
-// at once (e.g. a reviewer's last tick both sets their review state AND
-// auto-advances the card in the same write, see onSetReviewState/
-// onToggleChecklist in audit-board.html) — each becomes its own entry,
-// since they can go to different recipients.
-function cardEventsToNotify(before, after, title){
+// before on a brand-new card), its title, and its boardId/cardId (for
+// building a real deep link — see cardUrl above), returns the list of
+// notifications this diff implies — { emails, headline, url, excludeEmail? }
+// — with no I/O of any kind. `headline` is Slack mrkdwn, no trailing URL
+// (the link is a button now, built from `url` — see buildBlocks). A
+// single write can imply more than one event at once (e.g. a reviewer's
+// last tick both sets their review state AND auto-advances the card in
+// the same write, see onSetReviewState/onToggleChecklist in
+// audit-board.html) — each becomes its own entry, since they can go to
+// different recipients.
+function cardEventsToNotify(before, after, title, boardId, cardId){
   var events = [];
   if (!before) return events; // brand-new card — nothing to notify about yet
+  var url = cardUrl(boardId, cardId);
   var submitterEmail = after.submittedBy && after.submittedBy.email;
   var rvBefore = before.reviewers || {};
   var rvAfter = after.reviewers || {};
@@ -108,27 +125,26 @@ function cardEventsToNotify(before, after, title){
   if (after.jrReviewState !== before.jrReviewState) roleChanges.push('Junior reviewer: ' + (REVIEW_STATE_LABEL[after.jrReviewState] || after.jrReviewState));
   if (after.srReviewState !== before.srReviewState) roleChanges.push('Senior reviewer: ' + (REVIEW_STATE_LABEL[after.srReviewState] || after.srReviewState));
   if (roleChanges.length && submitterEmail){
-    var reviewText = '📝 *' + title + '* — ' + roleChanges.join(', ') + '.';
+    var reviewHeadline = '📝 *' + title + '* — ' + roleChanges.join(', ') + '.';
     if (before.status !== after.status && after.status === 'final_draft'){
-      reviewText += ' Both reviewers approved — moved to Reviewed.';
+      reviewHeadline += ' Both reviewers approved — moved to Reviewed.';
     }
-    reviewText += '\n' + APP_URL;
-    events.push({ emails: [submitterEmail], text: reviewText });
+    events.push({ emails: [submitterEmail], url: url, headline: reviewHeadline });
   }
 
   // You're assigned as reviewer — only whoever's newly in that role, not
   // whoever's being replaced or removed.
   if (rvAfter.junior && rvAfter.junior !== rvBefore.junior){
-    events.push({ emails: [rvAfter.junior], text: '👀 You’ve been assigned as *Junior reviewer* for *' + title + '*.\n' + APP_URL });
+    events.push({ emails: [rvAfter.junior], url: url, headline: '👀 You’ve been assigned as *Junior reviewer* for *' + title + '*.' });
   }
   if (rvAfter.senior && rvAfter.senior !== rvBefore.senior){
-    events.push({ emails: [rvAfter.senior], text: '👀 You’ve been assigned as *Senior reviewer* for *' + title + '*.\n' + APP_URL });
+    events.push({ emails: [rvAfter.senior], url: url, headline: '👀 You’ve been assigned as *Senior reviewer* for *' + title + '*.' });
   }
 
   // General status change, to the submitter.
   if (before.status !== after.status && submitterEmail){
     var label = STATUS_LABEL[after.status] || after.status;
-    events.push({ emails: [submitterEmail], text: '➡️ *' + title + '* moved to *' + label + '*.\n' + APP_URL });
+    events.push({ emails: [submitterEmail], url: url, headline: '➡️ *' + title + '* moved to *' + label + '*.' });
   }
 
   // Reaches the PI-approval step — notify the PI specifically (the last
@@ -141,7 +157,7 @@ function cardEventsToNotify(before, after, title){
     var authors = after.authors || [];
     var pi = authors.length ? authors[authors.length - 1] : null;
     if (pi && pi.email){
-      events.push({ emails: [pi.email], text: '🖊️ *' + title + '* is ready for your approval.\n' + APP_URL });
+      events.push({ emails: [pi.email], url: url, headline: '🖊️ *' + title + '* is ready for your approval.' });
     }
   }
 
@@ -164,7 +180,8 @@ function cardEventsToNotify(before, after, title){
     events.push({
       emails: stakeholders,
       excludeEmail: msg.authorEmail,
-      text: '💬 ' + posterName + ' commented on *' + title + '*: “' + body + '”\n' + APP_URL
+      url: url,
+      headline: '💬 ' + posterName + ' commented on *' + title + '*: “' + body + '”'
     });
   });
 
@@ -190,6 +207,23 @@ async function slackFetch(token, method, body){
   return json;
 }
 
+// Block Kit message for one event — a section with the headline (mrkdwn)
+// plus a button linking to the venue/card it's about. `text` is still
+// set alongside `blocks`, per Slack's own guidance: it's the fallback
+// used for notification previews/accessibility wherever blocks aren't
+// rendered, so it needs to stand alone without the button.
+function buildMessage(headline, url, buttonLabel){
+  return {
+    text: headline,
+    blocks: [
+      { type: 'section', text: { type: 'mrkdwn', text: headline } },
+      { type: 'actions', elements: [
+        { type: 'button', text: { type: 'plain_text', text: buttonLabel || 'Open in Internal Review Board' }, url: url }
+      ] }
+    ]
+  };
+}
+
 // Resolves a real email to a Slack user id via the `people` collection —
 // already synced from Slack's users.list (see docs/FIREBASE.md) — rather
 // than a live users.lookupByEmail call. Faster (one Firestore read, no
@@ -209,11 +243,11 @@ async function slackIdForEmail(email){
 // logs and resolves false on any failure, so one bad recipient (no Slack
 // id, a transient API error) can't take the rest of a batch down with it,
 // and a retry of the whole trigger isn't forced by one skipped DM.
-async function dmBySlackId(token, slackId, text){
+async function dmBySlackId(token, slackId, message){
   try {
     const opened = await slackFetch(token, 'conversations.open', { users: slackId });
     if (!opened.ok) return false;
-    const posted = await slackFetch(token, 'chat.postMessage', { channel: opened.channel.id, text });
+    const posted = await slackFetch(token, 'chat.postMessage', Object.assign({ channel: opened.channel.id }, message));
     return !!posted.ok;
   } catch (err){
     logger.error('dmBySlackId threw', { slackId, error: String(err) });
@@ -221,13 +255,13 @@ async function dmBySlackId(token, slackId, text){
   }
 }
 
-async function dmByEmail(token, email, text){
+async function dmByEmail(token, email, message){
   const slackId = await slackIdForEmail(email);
   if (!slackId){
     logger.info('No Slack id for email — skipping DM', { email });
     return false;
   }
-  return dmBySlackId(token, slackId, text);
+  return dmBySlackId(token, slackId, message);
 }
 
 async function rolesEmails(name){
@@ -236,12 +270,14 @@ async function rolesEmails(name){
   return (data && Array.isArray(data.emails)) ? data.emails : [];
 }
 
-// Resolves and sends one event ({ emails, text, excludeEmail? }) — the
-// one place cardEventsToNotify's pure output turns into real Slack calls.
+// Resolves and sends one event ({ emails, headline, url, excludeEmail? })
+// — the one place cardEventsToNotify's pure output turns into real Slack
+// calls.
 async function sendEvent(token, event){
+  const message = buildMessage(event.headline, event.url, event.buttonLabel);
   const unique = Array.from(new Set(event.emails.filter(Boolean)))
     .filter(function(e){ return e !== event.excludeEmail; });
-  await Promise.all(unique.map(function(email){ return dmByEmail(token, email, event.text); }));
+  await Promise.all(unique.map(function(email){ return dmByEmail(token, email, message); }));
 }
 
 // ---------- 1. Venue proposal needs approval ----------
@@ -259,9 +295,15 @@ exports.onVenueProposed = onDocumentCreated(
     const pis = await rolesEmails('pis');
     const admins = await rolesEmails('admins');
     const proposer = (data.proposedBy && (data.proposedBy.name || data.proposedBy.email)) || 'Someone';
-    const text = '📄 New venue proposal: *' + data.label + '* — proposed by ' + proposer +
-      '. It needs your approval before it’s visible to the lab.\n' + APP_URL;
-    await sendEvent(token, { emails: pis.concat(admins), text: text, excludeEmail: data.proposedBy && data.proposedBy.email });
+    const headline = '📄 New venue proposal: *' + data.label + '* — proposed by ' + proposer +
+      '. It needs your approval before it’s visible to the lab.';
+    await sendEvent(token, {
+      emails: pis.concat(admins),
+      excludeEmail: data.proposedBy && data.proposedBy.email,
+      url: venueUrl(event.params.boardId),
+      headline: headline,
+      buttonLabel: 'Review proposal'
+    });
   }
 );
 
@@ -275,7 +317,7 @@ exports.onCardWritten = onDocumentWritten(
     if (!after) return; // card deleted — nothing to notify about
     const token = SLACK_BOT_TOKEN.value();
     const title = after.title || 'a paper';
-    const events = cardEventsToNotify(before, after, title);
+    const events = cardEventsToNotify(before, after, title, event.params.boardId, event.params.cardId);
     for (let i = 0; i < events.length; i++){
       await sendEvent(token, events[i]);
     }
@@ -284,4 +326,4 @@ exports.onCardWritten = onDocumentWritten(
 
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
-exports._internal = { flattenMessages, newMessages, cardEventsToNotify };
+exports._internal = { flattenMessages, newMessages, cardEventsToNotify, venueUrl, cardUrl, buildMessage };

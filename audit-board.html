@@ -936,6 +936,52 @@
     }
   }
 
+  // Deep link support (2026-09-12) — a fresh page load can land straight
+  // on a venue or a specific card (#board=<id> or #board=<id>&card=<id>),
+  // so a link out of the app (a Slack notification, see functions/
+  // index.js) goes to the actual paper, not just the front door. Captured
+  // once at script load, before auth/boards are ready — applied (see
+  // applyPendingDeepLink below) the first time loadInitialData() actually
+  // has boards to check it against. Never re-applied after that, even if
+  // loadInitialData() runs again later (e.g. a sign-out/sign-in in the
+  // same page load) — at that point it's just a normal reload, not a
+  // fresh deep link.
+  var pendingDeepLink = parseDeepLinkHash(location.hash);
+
+  // Applies pendingDeepLink if one's waiting, consuming it either way (so
+  // it's never retried on a later call). Returns true if it took over
+  // rendering itself (via openVenue/openCard, both of which already
+  // render+pushNavState), false if the caller still needs to renderAll()
+  // itself. A venue/card that doesn't exist — or that fetchVisibleBoards()
+  // (see docs/FIREBASE.md) simply didn't return because this viewer isn't
+  // allowed to see it — look identical here on purpose: same toast either
+  // way, not leaking which case it was.
+  function applyPendingDeepLink(){
+    var dl = pendingDeepLink;
+    pendingDeepLink = null;
+    if (!dl) return false;
+    var board = state.boards.filter(function(b){ return b.id === dl.boardId; })[0];
+    if (!board){
+      showToast('That venue couldn’t be found, or isn’t visible to you yet.', 'error');
+      return false;
+    }
+    openVenue(dl.boardId);
+    if (dl.cardId){
+      // openVenue() already kicked off its own loadCurrentBoardCards()
+      // fire-and-forget; awaiting a second call here to know when the
+      // specific card is available costs one small duplicate read, once,
+      // on this one initial load — accepted for keeping openVenue()
+      // itself unchanged rather than growing a special no-fetch variant.
+      var cardId = dl.cardId;
+      loadCurrentBoardCards().then(function(){
+        var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+        if (card) openCard(cardId);
+        else showToast('That paper couldn’t be found — it may have been removed.', 'error');
+      });
+    }
+    return true;
+  }
+
   // Board/card reads now require being signed in (Security Rules,
   // 2026-09-11 — see firestore.rules). So the initial load — and any
   // reload after a sign-in/out — waits for auth to resolve first, rather
@@ -962,7 +1008,7 @@
       state.boards = results[0];
       state.people = results[1];
       state.loadingBoards = false;
-      renderAll();
+      if (!applyPendingDeepLink()) renderAll();
     });
   }
 
@@ -1380,8 +1426,43 @@
   // this view was reached (a fresh deep link has no history to go back
   // to), and it means the browser's own Forward button correctly returns
   // to the card/venue you just left via an in-app link, not just via Back.
+  // The venue/card a URL points at, as a hash: '#board=<id>' or
+  // '#board=<id>&card=<id>' — plain function of its inputs (no reading
+  // location.* internally) so it's unit-testable without a DOM. Pure
+  // string building, no framework: this static site has no server-side
+  // routing, so a hash (not a real path) is the only piece of the URL
+  // that can vary without a page reload hitting GitHub Pages' 404 page.
+  function stateUrl(view, boardId, cardId, baseUrl){
+    if (view === 'venue' && boardId) return baseUrl + '#board=' + encodeURIComponent(boardId);
+    if (view === 'card' && boardId && cardId) return baseUrl + '#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(cardId);
+    return baseUrl;
+  }
+
+  // The reverse of stateUrl() — given a hash (e.g. from location.hash on
+  // page load), what venue/card it points at, or null if it's not a
+  // recognized deep link. Also pure/testable for the same reason.
+  function parseDeepLinkHash(hash){
+    var h = (hash || '').replace(/^#/, '');
+    if (!h) return null;
+    var params = {};
+    h.split('&').forEach(function(pair){
+      var idx = pair.indexOf('=');
+      if (idx === -1) return;
+      params[decodeURIComponent(pair.slice(0, idx))] = decodeURIComponent(pair.slice(idx + 1));
+    });
+    return params.board ? { boardId: params.board, cardId: params.card || null } : null;
+  }
+
+  // Real, bookmarkable/shareable URL as of 2026-09-12 — history.pushState's
+  // third argument used to be omitted, so Back/Forward worked (see the
+  // popstate listener below) but the address bar never actually changed;
+  // a link out of the app (a Slack notification, say — see
+  // functions/index.js) could only ever land on the front door. Now every
+  // venue/card view gets a real URL a fresh page load can restore — see
+  // parseDeepLinkHash/applyPendingDeepLink below.
   function pushNavState(){
-    history.pushState({ view: state.view, boardId: state.currentBoardId, cardId: state.currentCardId }, '');
+    var url = stateUrl(state.view, state.currentBoardId, state.currentCardId, location.pathname + location.search);
+    history.pushState({ view: state.view, boardId: state.currentBoardId, cardId: state.currentCardId }, '', url);
   }
 
   window.addEventListener('popstate', function(ev){
