@@ -2128,6 +2128,20 @@
         return (typeof a === 'string') ? { name: a, email: '' } : a;
       }) });
     }
+    // authorEmails: string[] (2026-09-12, see ml-conference-cycle#3) — a
+    // denormalized copy of authors[].email, purely so a Cloud Function can
+    // query "papers this person is an author on" across every venue (an
+    // array-contains match on authorEmails, since Firestore can't
+    // array-contains-match a partial {name,email} object inside authors
+    // itself). Derived here so it's always present and correct on read
+    // regardless of when a card was last saved — but this alone doesn't
+    // help a *query* run against already-stored data: any card saved
+    // before this existed only gets a real authorEmails field in Firestore
+    // once it's next saved through onAddCard/onSaveEdit (both of which now
+    // write it directly). A one-time backfill (same shape as the venue
+    // status:'approved' backfill from 2026-09-11) is needed before the
+    // App Home dashboard's "Authoring" section can find older papers.
+    out = Object.assign({}, out, { authorEmails: authorEmailsOf(out.authors) });
     if (!Array.isArray(out.discussion)){
       out = Object.assign({}, out, { discussion: [] });
     }
@@ -3204,6 +3218,16 @@
       .filter(function(r){ return r.name || r.email; });
   }
 
+  // Denormalized alongside `authors` (2026-09-12, see ml-conference-cycle#3)
+  // purely so a Cloud Function can query "papers this person is an author
+  // on" across every venue — Firestore's array-contains can only match a
+  // primitive value, not a partial match inside {name,email} objects, so
+  // authors itself can't be queried directly. Client-side rendering never
+  // reads this field; it exists only for that one server-side query.
+  function authorEmailsOf(authors){
+    return authors.map(function(a){ return a.email; }).filter(Boolean);
+  }
+
   // Shared validation for both the registration and Edit-fields author
   // rows — same two checks either way: the last row (the PI slot) has to
   // be a real, complete entry, not just non-blank, and no OTHER row can be
@@ -3371,6 +3395,7 @@
     var updates = {
       title: title,
       authors: authors,
+      authorEmails: authorEmailsOf(authors),
       overleafLink: overleafLink,
       correspondingAuthorEmail: email,
       computeEstimate: document.getElementById('eCompute').value.trim(),
@@ -3608,6 +3633,7 @@
       id: 'card-' + now + '-' + Math.random().toString(36).slice(2, 8),
       title: title,
       authors: authors,
+      authorEmails: authorEmailsOf(authors),
       overleafLink: overleafLink,
       correspondingAuthorEmail: state.currentUser.email,
       computeEstimate: document.getElementById('pCompute').value.trim(),
