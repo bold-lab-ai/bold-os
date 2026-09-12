@@ -189,7 +189,33 @@ Query 3's success/failure is also how the client learns whether to show the "Pen
 
 ## Cloud Functions
 
-**Deferred (Phase 4, not MVP) — 2026-09-11.** The MVP permission model needs no Cloud Function at all: hardcoded email lists in Security Rules are evaluated entirely server-side, no claim-stamping step required. This section is the plan for when Google Workspace Groups replaces the hardcoded lists (see "Phasing").
+### Slack notifications (`ml-conference-cycle#1`) — built 2026-09-12 on `feature/slack-notifications`, NOT YET DEPLOYED
+
+The project's first Cloud Function, and the first server-side code of any kind — everything before this ran entirely client-side (`audit-board.html` talking straight to Firestore/Storage, authorized by Security Rules). A Slack DM needs a **Bot token** (`chat:write` + `im:write` scopes), a real credential that can never live in the client's source, so something server-side has to hold it and make the call. `functions/index.js` is that something.
+
+**Two Firestore-triggered functions**, both region-pinned to `europe-west2` (same as Firestore itself):
+- `onVenueProposed` (`onDocumentCreated` on `boards/{boardId}`) — fires when a venue is created with `status: 'pending'`; DMs every PI and admin (from `roles/pis`/`roles/admins`, read via the Admin SDK, which bypasses Security Rules entirely — this is server-side privileged code, not a client) that a proposal needs their approval.
+- `onCardWritten` (`onDocumentWritten` on `boards/{boardId}/cards/{cardId}`) — one trigger, several independent checks against the same before/after diff, since a single write can imply more than one notification at once (e.g. a reviewer's last tick both sets their review state *and* auto-advances the card in the same write — see `onSetReviewState`/`onToggleChecklist` in `audit-board.html`):
+  - A reviewer sets their sign-off (Approved/Changes requested), or both approve and the card auto-advances → DMs the submitter.
+  - Someone's newly assigned as junior/senior reviewer → DMs that person (not whoever they replaced).
+  - The card's status changes at all → DMs the submitter.
+  - The card reaches the PI-approval step (`status` becomes `pi_polish`) → DMs the PI specifically (the last entry in `authors` — see below for why that's now reliable) in addition to the general status-change DM above.
+  - A new Discussion message or checklist-item comment appears → DMs the submitter + both reviewers, excluding whoever just posted it.
+
+**Design: a pure decision function, then a thin I/O wrapper.** `cardEventsToNotify(before, after, title)` computes *what* to notify — a list of `{ emails, text, excludeEmail? }` — with zero I/O (no Firestore, no Slack, no `await` at all); the actual trigger just resolves each event's emails to Slack ids (`slackIdForEmail`, one `people` collection lookup per email — the roster is already synced from Slack's `users.list`, no live `users.lookupByEmail` call needed) and sends it (`chat.postMessage` after `conversations.open`, plain `fetch` against the Slack Web API, no SDK dependency — same minimal-deps preference as the rest of this project). Keeping the decision logic pure is what makes it unit-testable without a live Firestore emulator or a real Slack workspace: 17 standalone cases (every trigger, several multi-event-in-one-write cases, the "no email on file" no-op case) verified before this was ever wired to real Slack.
+
+**This depends on the author/comment identity fixes from the same day** (see docs/AGENTS.md guideline 8 and the "still embedded arrays" note above) — before those, the PI had no reliable email (`authors` was free text) and neither did a comment's poster. `dmByEmail`/`sendEvent` silently no-op (log only, never throw) for anyone with no email or no matching `people` roster entry, so an old, not-yet-migrated card just produces fewer notifications rather than an error.
+
+**To actually deploy this:**
+1. Add `chat:write` + `im:write` Bot Token Scopes to the Slack app (https://api.slack.com/apps → the app → OAuth & Permissions) and **Reinstall to Workspace** — this regenerates the Bot token. (`canvases:read`/`canvases:write` are worth adding in the same reinstall for a possible later notification-history-log feature, discussed but not built — see `ml-conference-cycle#1`'s comments.)
+2. Set the token as a Cloud Functions secret, never in the repo or passed through the client: `firebase functions:secrets:set SLACK_BOT_TOKEN --project bold-d7ff2`.
+3. `firebase deploy --only functions --project bold-d7ff2`.
+
+**Not built, deliberately out of scope for this pass:** no rate-limiting/throttling on a chatty card (every single event sends immediately); no digest/batching (a burst of activity sends a burst of DMs); no per-person notification preferences or opt-out; no canvas-based notification history (Eduardo's idea, flagged as a genuine follow-up once the DM-sending itself is confirmed working).
+
+### Deferred Google Workspace Groups custom claims (Phase 4, not MVP) — 2026-09-11
+
+The MVP permission model needs no Cloud Function at all for this part: hardcoded email lists in Security Rules are evaluated entirely server-side, no claim-stamping step required. This section is the plan for when Google Workspace Groups replaces the hardcoded lists (see "Phasing").
 
 1. **Custom claims on sign-in** — a `beforeSignIn` blocking Auth function: takes the signed-in email, calls the Google Workspace Admin SDK Directory API (`groups.list?userKey=<email>`, read-only `admin.directory.group.readonly` scope, domain-wide-delegated service account), sets `{groups: [...]}` as a custom claim. No separate membership-change listener needed — Firebase ID tokens refresh roughly hourly, so a claim is never more than about an hour stale, which is fine at this scale; avoids needing Admin SDK push notifications.
 2. **(Stretch, Phase 5)** `syncSlackChannels` — same trigger, diffs old vs. new group membership, calls Slack's `conversations.invite` for any channel tied to a newly-added group. Needs a bot token with `conversations:write.invites`, and the bot must already be a member of any private channel it's meant to manage.

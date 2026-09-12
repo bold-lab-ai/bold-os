@@ -4,6 +4,16 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-12
 
+### Slack DM notifications — built, on a branch, not yet deployed
+
+Picked up `ml-conference-cycle#1`, on `feature/slack-notifications` (after the identity fixes below, which this depends on). `functions/index.js` is the project's first Cloud Function — the first server-side code of any kind — since sending a Slack DM needs a Bot token, a real credential that can never live in `audit-board.html`'s client-side source.
+
+Two Firestore-triggered functions cover all four notification triggers Eduardo picked: a venue proposal needing approval (DMs every PI/admin), a reviewer's sign-off changing on your card or both reviewers approving and auto-advancing it (DMs the submitter), being newly assigned as a reviewer (DMs that person), any status change (DMs the submitter), reaching the PI-approval step specifically (also DMs the PI), and a new Discussion message or checklist comment (DMs submitter + both reviewers, excluding the poster).
+
+Structure follows the same pattern established throughout this session's client-side work: `cardEventsToNotify(before, after, title)` is pure decision logic — no Firestore, no Slack, no `await` — that computes what to notify from a before/after diff; the actual Firestore trigger is a thin wrapper that resolves each event's emails to Slack ids (via the already-synced `people` roster) and sends. Verified the whole decision surface with 17 standalone unit-test cases (every trigger, several "one write implies two notifications" cases, the "no email on file" no-op case) before ever touching a real Slack workspace.
+
+Not deployed yet — needs `chat:write`/`im:write` Slack Bot Token Scopes added and the app reinstalled, then `firebase functions:secrets:set SLACK_BOT_TOKEN` and `firebase deploy --only functions`. Also discussed, not built: `canvases:read`/`canvases:write` scopes for a persistent notification-history log (Eduardo's idea) — worth adding in the same Slack reinstall since it avoids a third round-trip, but the canvas-logging feature itself is a separate follow-up once DM-sending is confirmed working.
+
 ### Real identity for comments and authors — prerequisite for Slack notifications, on a branch
 
 Started work on the open Slack-notifications issue (`ml-conference-cycle#1`, branch `feature/slack-notifications`). Before writing any Cloud Function code, hit a real data-model gap: two of the requested notification triggers ("reaches PI-approval," "someone comments") had no reliable email to send to — the PI is just a free-text name (the last entry in `authors`), and comment/discussion authorship was a free-text field with only a suggestion list, no roster binding at all.
