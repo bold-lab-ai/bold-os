@@ -46,7 +46,10 @@ boards/{boardId}
   # `.get(field, default)`.
 
   boards/{boardId}/cards/{cardId}
-    title, authors[] (last = PI), overleafLink, correspondingAuthorEmail,
+    title, authors[] (last = PI; each {name, email} — changed from a plain
+    name string, 2026-09-12, so the PI in particular has a real email to
+    notify; normalizeCard() migrates old string entries to {name, email: ''}),
+    overleafLink, correspondingAuthorEmail,
     computeEstimate, status, submittedBy{name,email,slackId},
     reviewers{junior,senior}, jrReviewState, srReviewState, outcome,
     submissionLink, rebuttalDeadline, rebuttalDocLink, reviewNotes,
@@ -89,6 +92,8 @@ boards/{boardId}
 ```
 
 Both comment thread types (per-checklist-item feedback, card-level Discussion) share one shape and one flat `parentId` field instead of a nested `replies` array — appends never conflict, and it's one rendering/posting code path instead of two.
+
+**Note: comments/discussion are still embedded arrays on the card document today, not subcollections** — the split shown above (with a flat `parentId`) was the plan, deliberately deferred (see "Client-side change (Phase 1a)" below); the shipped shape is `{ id, author, authorEmail, timestamp, body, replies: [] }`, one level of nested `replies`, not a `parentId`. As of 2026-09-12, `author`/`authorEmail` come from `state.currentUser` (real identity, required sign-in to post) rather than a free-text name typed into the form — same motivating problem as the `authors[]` change above. Older messages predating this only have `author` (free text) and no `authorEmail`.
 
 ## Security Rules
 

@@ -2,7 +2,18 @@
 
 Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-board.html`, and the supporting docs — `internal-qa-review.html` was part of this suite until it was removed 2026-09-11, folded into `audit-board.html`; entries below that predate the removal still refer to it, left as-is since this is a historical record). This is a record of what was built and when — not a comparison against BOLDiquette. For how the process itself differs from BOLDiquette, and what we want changed there, see **`DIFF.md`**.
 
-## 2026-09-11
+## 2026-09-12
+
+### Real identity for comments and authors — prerequisite for Slack notifications, on a branch
+
+Started work on the open Slack-notifications issue (`ml-conference-cycle#1`, branch `feature/slack-notifications`). Before writing any Cloud Function code, hit a real data-model gap: two of the requested notification triggers ("reaches PI-approval," "someone comments") had no reliable email to send to — the PI is just a free-text name (the last entry in `authors`), and comment/discussion authorship was a free-text field with only a suggestion list, no roster binding at all.
+
+Per Eduardo, fixed both at the source rather than working around them:
+
+1. **Comments and Discussion messages now use the signed-in poster's real identity** — `author`/`authorEmail` come from `state.currentUser`, same as `submittedBy`/`reviewers`/`proposedBy` already do, instead of a free-text name typed into the form. Posting requires being signed in (`requireSignedIn()`). The four "Your name" input fields are gone from the Discussion/checklist-feedback forms. Older messages posted before this change keep their old free-text `author` and simply have no `authorEmail`.
+2. **Authors are no longer free text either.** Each row is now a roster `<select>` (same shape as the reviewer picker), plus a "+ New author (not in the workspace)…" option that swaps the row to two typed inputs (Name, Email) for a genuine external co-author — that typed entry is deliberately *not* added to the shared `people` roster, only stored on that card. `card.authors` is now `[{name, email}]`, not `[name]`; the PI (still just the last entry) now has a real email. `authorRowsIssue()` validates both modals: the PI row must be complete, and no other non-blank row can be half-filled.
+
+`normalizeCard()` migrates any card still holding plain-string authors to `{name, email: ''}` — email is unrecoverable for old data, so a PI-approval notification on an old, not-yet-re-saved card will do nothing until someone re-saves its author list through the new picker. No Security Rules changes needed — nothing in `firestore.rules` reads `authors`. Verified the validation/migration/search logic (`authorsForSave`, `authorRowsIssue`, `cardPi`, the `normalizeCard` authors migration, and `matchesTextQuery`'s author search) with standalone unit tests (9 + 5 + 3 cases) before moving on to the actual Cloud Function.
 
 ### "+ Register paper" no longer shows at all on a pending venue
 
