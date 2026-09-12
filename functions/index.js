@@ -58,9 +58,10 @@ function cardUrl(boardId, cardId){
 
 // Bold *and* clickable — Slack mrkdwn's <url|label> syntax, with the bold
 // asterisks inside the label so they apply to the link text (2026-09-12,
-// per Eduardo: the title itself should be a link too, not just the button
-// below it). Every headline's bolded paper/venue name goes through this
-// instead of a bare '*title*' now.
+// per Eduardo: the title itself should be the link). This is now the
+// *only* link in a message — no separate button any more (see
+// sendEvent's own comment) — so it's the one thing to click in every
+// notification.
 function linkedTitle(text, url){
   return '<' + url + '|*' + text + '*>';
 }
@@ -87,6 +88,19 @@ const REVIEW_STATE_LABEL = {
   approved: 'Approved'
 };
 
+// One glance at the emoji should say which way a reviewer's sign-off
+// went (2026-09-12, per Eduardo) — a single 🔍 covering the whole
+// message couldn't distinguish "approved" from "changes requested" when
+// both roles changed in the same write with different outcomes. Reverting
+// to 'in_review' (e.g. unticking a checklist box after being 'approved' —
+// see onToggleChecklist's auto-sync in audit-board.html) is a real but
+// less common case; ↩️ reads as "reopened", not a decision either way.
+function reviewStateEmoji(state){
+  if (state === 'approved') return '✅';
+  if (state === 'changes_requested') return '❌';
+  return '↩️';
+}
+
 // ---------- pure decision logic ----------
 
 // Discussion/checklist-comment threads are embedded arrays with one level
@@ -110,9 +124,10 @@ function newMessages(beforeList, afterList){
 // Given a card's before/after (Firestore document data, or null for
 // before on a brand-new card), its title, and its boardId/cardId (for
 // building a real deep link — see cardUrl above), returns the list of
-// notifications this diff implies — { emails, headline, url, excludeEmail? }
-// — with no I/O of any kind. `headline` is Slack mrkdwn, no trailing URL
-// (the link is a button now, built from `url` — see buildBlocks). A
+// notifications this diff implies — { emails, headline, excludeEmail? } —
+// with no I/O of any kind. `headline` is Slack mrkdwn; the paper/venue
+// name is always linkedTitle(), the message's one and only clickable
+// element (see sendEvent — there's no separate button any more). A
 // single write can imply more than one event at once (e.g. a reviewer's
 // last tick both sets their review state AND auto-advances the card in
 // the same write, see onSetReviewState/onToggleChecklist in
@@ -130,34 +145,45 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
   // Reviewer sign-off on your card (Approved / Changes requested), or
   // both reviewers approving and the card auto-advancing in the same
   // write — notify the submitter either way, since they aren't the one
-  // who clicked it. 🔍 groups this with "someone reviewed your work",
-  // distinct from the plain FYI/assignment icons below.
+  // who clicked it. Outcome emoji lead the message (roleEmojis), same
+  // position as every other event type's icon — collected separately from
+  // the plain-text role labels (roleChanges) so a mixed outcome (one role
+  // approves, the other requests changes) still shows both glyphs up
+  // front, distinctly, rather than picking just one to lead with.
+  var roleEmojis = [];
   var roleChanges = [];
-  if (after.jrReviewState !== before.jrReviewState) roleChanges.push('Junior reviewer: ' + (REVIEW_STATE_LABEL[after.jrReviewState] || after.jrReviewState));
-  if (after.srReviewState !== before.srReviewState) roleChanges.push('Senior reviewer: ' + (REVIEW_STATE_LABEL[after.srReviewState] || after.srReviewState));
+  if (after.jrReviewState !== before.jrReviewState){
+    roleEmojis.push(reviewStateEmoji(after.jrReviewState));
+    roleChanges.push('Junior reviewer: ' + (REVIEW_STATE_LABEL[after.jrReviewState] || after.jrReviewState));
+  }
+  if (after.srReviewState !== before.srReviewState){
+    roleEmojis.push(reviewStateEmoji(after.srReviewState));
+    roleChanges.push('Senior reviewer: ' + (REVIEW_STATE_LABEL[after.srReviewState] || after.srReviewState));
+  }
   if (roleChanges.length && submitterEmail){
-    var reviewHeadline = '🔍 ' + linked + ' — ' + roleChanges.join(', ') + '.';
+    var reviewHeadline = roleEmojis.join('') + ' ' + linked + ' — ' + roleChanges.join(', ') + '.';
     if (before.status !== after.status && after.status === 'final_draft'){
       reviewHeadline += ' Both reviewers approved — moved to Reviewed.';
     }
-    events.push({ emails: [submitterEmail], url: url, headline: reviewHeadline });
+    events.push({ emails: [submitterEmail], headline: reviewHeadline });
   }
 
   // You're assigned as reviewer — only whoever's newly in that role, not
-  // whoever's being replaced or removed. 📋 = "here's a task", distinct
-  // from 🔍's "here's an outcome on your own paper".
+  // whoever's being replaced or removed. 🔍 = "go take a look", distinct
+  // from the outcome checkmarks/X above (this is a task handed to you,
+  // not a verdict on your own work).
   if (rvAfter.junior && rvAfter.junior !== rvBefore.junior){
-    events.push({ emails: [rvAfter.junior], url: url, headline: '📋 You’ve been assigned as *Junior reviewer* for ' + linked + '.' });
+    events.push({ emails: [rvAfter.junior], headline: '🔍 You’ve been assigned as *Junior reviewer* for ' + linked + '.' });
   }
   if (rvAfter.senior && rvAfter.senior !== rvBefore.senior){
-    events.push({ emails: [rvAfter.senior], url: url, headline: '📋 You’ve been assigned as *Senior reviewer* for ' + linked + '.' });
+    events.push({ emails: [rvAfter.senior], headline: '🔍 You’ve been assigned as *Senior reviewer* for ' + linked + '.' });
   }
 
   // General status change, to the submitter. ➡️ = plain forward motion,
   // no decision implied.
   if (before.status !== after.status && submitterEmail){
     var label = STATUS_LABEL[after.status] || after.status;
-    events.push({ emails: [submitterEmail], url: url, headline: '➡️ ' + linked + ' moved to *' + label + '*.' });
+    events.push({ emails: [submitterEmail], headline: '➡️ ' + linked + ' moved to *' + label + '*.' });
   }
 
   // Reaches the PI-approval step — notify the PI specifically (the last
@@ -172,31 +198,69 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
     var authors = after.authors || [];
     var pi = authors.length ? authors[authors.length - 1] : null;
     if (pi && pi.email){
-      events.push({ emails: [pi.email], url: url, headline: '🔔 ' + linked + ' is ready for your approval.' });
+      events.push({ emails: [pi.email], headline: '🔔 ' + linked + ' is ready for your approval.' });
     }
   }
 
-  // New Discussion message or checklist-item comment — notify everyone
-  // with a stake in the card (submitter + both reviewers), excluding
-  // whoever just posted it.
-  var newDiscussion = newMessages(before.discussion, after.discussion);
+  // New Discussion message (2026-09-12, revised per Eduardo) — a
+  // brand-new top-level message still goes to everyone with a stake in
+  // the card (submitter + both reviewers), excluding the poster. A REPLY
+  // goes only to the people already in *that* thread — the top-level
+  // message's own author plus anyone who'd already replied before this
+  // one — not the full stakeholder set, so replying inside one side
+  // conversation doesn't loop in someone who was never part of it.
+  var stakeholders = [submitterEmail, rvAfter.junior, rvAfter.senior].filter(Boolean);
+  var beforeDiscussionById = {};
+  (before.discussion || []).forEach(function(m){ beforeDiscussionById[m.id] = m; });
+  (after.discussion || []).forEach(function(afterMsg){
+    var beforeMsg = beforeDiscussionById[afterMsg.id];
+    if (!beforeMsg){
+      var newBody = (afterMsg.body || '').slice(0, 140);
+      events.push({
+        emails: stakeholders,
+        excludeEmail: afterMsg.authorEmail,
+        headline: '💬 ' + (afterMsg.author || 'Someone') + ' commented on ' + linked + ': “' + newBody + '”'
+      });
+      return;
+    }
+    var beforeReplyIds = {};
+    (beforeMsg.replies || []).forEach(function(r){ beforeReplyIds[r.id] = true; });
+    (afterMsg.replies || []).filter(function(r){ return !beforeReplyIds[r.id]; }).forEach(function(reply){
+      var participants = [beforeMsg.authorEmail].concat((beforeMsg.replies || []).map(function(r){ return r.authorEmail; }));
+      var replyBody = (reply.body || '').slice(0, 140);
+      events.push({
+        emails: participants,
+        excludeEmail: reply.authorEmail,
+        headline: '💬 ' + (reply.author || 'Someone') + ' replied on ' + linked + ': “' + replyBody + '”'
+      });
+    });
+  });
+
+  // Checklist-item comments (2026-09-12, revised per Eduardo) — not a
+  // stakeholder broadcast like Discussion. Each item has one shared
+  // thread, not separate junior/senior threads, so there's no way to
+  // tell which reviewer a submitter's comment is addressed to: if the
+  // SUBMITTER posts, notify BOTH reviewers. If a REVIEWER posts (junior
+  // or senior — the two passes are independent of each other), notify
+  // only the submitter, not the other reviewer. Anyone else posting (a
+  // PI/admin editing directly, say) falls back to "notify the submitter"
+  // — the safest default, since they're the one most likely to want to
+  // know about any comment on their own paper.
   var beforeChecklist = before.checklist || [];
   var afterChecklist = after.checklist || [];
-  var newChecklistComments = [];
   afterChecklist.forEach(function(item){
     var beforeItem = beforeChecklist.filter(function(it){ return it.id === item.id; })[0];
-    newChecklistComments = newChecklistComments.concat(newMessages(beforeItem && beforeItem.comments, item.comments));
-  });
-  var newMsgs = newDiscussion.concat(newChecklistComments);
-  var stakeholders = [submitterEmail, rvAfter.junior, rvAfter.senior].filter(Boolean);
-  newMsgs.forEach(function(msg){
-    var posterName = msg.author || 'Someone';
-    var body = (msg.body || '').slice(0, 140);
-    events.push({
-      emails: stakeholders,
-      excludeEmail: msg.authorEmail,
-      url: url,
-      headline: '💬 ' + posterName + ' commented on ' + linked + ': “' + body + '”'
+    newMessages(beforeItem && beforeItem.comments, item.comments).forEach(function(msg){
+      var recipients = (msg.authorEmail && msg.authorEmail === submitterEmail)
+        ? [rvAfter.junior, rvAfter.senior]
+        : [submitterEmail];
+      var posterName = msg.author || 'Someone';
+      var body = (msg.body || '').slice(0, 140);
+      events.push({
+        emails: recipients,
+        excludeEmail: msg.authorEmail,
+        headline: '💬 ' + posterName + ' commented on ' + linked + ': “' + body + '”'
+      });
     });
   });
 
@@ -222,23 +286,6 @@ async function slackFetch(token, method, body){
   return json;
 }
 
-// Block Kit message for one event — a section with the headline (mrkdwn)
-// plus a button linking to the venue/card it's about. `text` is still
-// set alongside `blocks`, per Slack's own guidance: it's the fallback
-// used for notification previews/accessibility wherever blocks aren't
-// rendered, so it needs to stand alone without the button.
-function buildMessage(headline, url, buttonLabel){
-  return {
-    text: headline,
-    blocks: [
-      { type: 'section', text: { type: 'mrkdwn', text: headline } },
-      { type: 'actions', elements: [
-        { type: 'button', text: { type: 'plain_text', text: buttonLabel || 'Open in Internal Review Board' }, url: url }
-      ] }
-    ]
-  };
-}
-
 // Resolves a real email to a Slack user id via the `people` collection —
 // already synced from Slack's users.list (see docs/FIREBASE.md) — rather
 // than a live users.lookupByEmail call. Faster (one Firestore read, no
@@ -258,11 +305,11 @@ async function slackIdForEmail(email){
 // logs and resolves false on any failure, so one bad recipient (no Slack
 // id, a transient API error) can't take the rest of a batch down with it,
 // and a retry of the whole trigger isn't forced by one skipped DM.
-async function dmBySlackId(token, slackId, message){
+async function dmBySlackId(token, slackId, text){
   try {
     const opened = await slackFetch(token, 'conversations.open', { users: slackId });
     if (!opened.ok) return false;
-    const posted = await slackFetch(token, 'chat.postMessage', Object.assign({ channel: opened.channel.id }, message));
+    const posted = await slackFetch(token, 'chat.postMessage', { channel: opened.channel.id, text: text });
     return !!posted.ok;
   } catch (err){
     logger.error('dmBySlackId threw', { slackId, error: String(err) });
@@ -270,13 +317,13 @@ async function dmBySlackId(token, slackId, message){
   }
 }
 
-async function dmByEmail(token, email, message){
+async function dmByEmail(token, email, text){
   const slackId = await slackIdForEmail(email);
   if (!slackId){
     logger.info('No Slack id for email — skipping DM', { email });
     return false;
   }
-  return dmBySlackId(token, slackId, message);
+  return dmBySlackId(token, slackId, text);
 }
 
 async function rolesEmails(name){
@@ -285,14 +332,18 @@ async function rolesEmails(name){
   return (data && Array.isArray(data.emails)) ? data.emails : [];
 }
 
-// Resolves and sends one event ({ emails, headline, url, excludeEmail? })
-// — the one place cardEventsToNotify's pure output turns into real Slack
-// calls.
+// Resolves and sends one event ({ emails, headline, excludeEmail? }) — the
+// one place cardEventsToNotify's pure output turns into real Slack calls.
+// Plain text, not Block Kit (2026-09-12, reverted from the same-day Block
+// Kit version) — per Eduardo, the linked title is the message's one
+// clickable element now; a separate button was a redundant second link to
+// the same place once the title itself became clickable. Slack's mrkdwn
+// (the default for chat.postMessage's `text`) already renders the bold
+// link correctly with no Block Kit needed.
 async function sendEvent(token, event){
-  const message = buildMessage(event.headline, event.url, event.buttonLabel);
   const unique = Array.from(new Set(event.emails.filter(Boolean)))
     .filter(function(e){ return e !== event.excludeEmail; });
-  await Promise.all(unique.map(function(email){ return dmByEmail(token, email, message); }));
+  await Promise.all(unique.map(function(email){ return dmByEmail(token, email, event.headline); }));
 }
 
 // ---------- 1. Venue proposal needs approval ----------
@@ -318,9 +369,7 @@ exports.onVenueProposed = onDocumentCreated(
     await sendEvent(token, {
       emails: pis.concat(admins),
       excludeEmail: data.proposedBy && data.proposedBy.email,
-      url: url,
-      headline: headline,
-      buttonLabel: 'Review proposal'
+      headline: headline
     });
   }
 );
@@ -344,4 +393,4 @@ exports.onCardWritten = onDocumentWritten(
 
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
-exports._internal = { flattenMessages, newMessages, cardEventsToNotify, venueUrl, cardUrl, buildMessage, linkedTitle };
+exports._internal = { flattenMessages, newMessages, cardEventsToNotify, venueUrl, cardUrl, linkedTitle, reviewStateEmoji };

@@ -4,6 +4,29 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-12
 
+### Dropped the notification button; reviewer outcomes get their own ✅/❌
+
+Two more rounds of feedback on the message content, in between the previous entry and the comment-routing one below:
+
+- **The separate button is gone.** Once the title itself became a real clickable link (previous entry), a button pointing at the same place was a redundant second link in every message — dropped it and reverted from Slack Block Kit back to plain `text` (Slack's default mrkdwn rendering already shows the bold link correctly with no `blocks` needed).
+- **Reviewer sign-off outcomes now get their own emoji** — ✅ for Approved, ❌ for Changes requested, ↩️ for reverting back to In review (e.g. unticking a checklist box after being approved) — instead of a single 🔍 covering the whole message regardless of outcome. A mixed outcome (one role approves, the other requests changes, in the same write) now shows both glyphs distinctly. 🔍 was freed up and reassigned to "you've been handed a reviewing task" (previously 📋).
+- **Emoji now lead every message, including these** — the outcome emoji originally landed after the linked title (a leftover from when they were inline per role); moved to the front so every message type has the same emoji-then-title shape.
+
+Extended the test suite to 22 cases, redeployed.
+
+### Notification comment routing: only who actually needs to answer
+
+More feedback after seeing real messages: comments were over-notifying — everyone with a stake in the card got pinged for every comment, regardless of whether it was actually relevant to them. Redesigned per Eduardo:
+
+- **Discussion, a new top-level message** — unchanged: every stakeholder (submitter + both reviewers) except the poster.
+- **Discussion, a reply** — now only the people already in *that* thread (the original poster + anyone who'd already replied), not the full stakeholder set. Replying to one side conversation no longer loops in someone who was never part of it.
+- **Checklist-item comment, submitter posts** — both reviewers (a checklist item has one shared thread, not separate junior/senior ones, so there's no way to tell which reviewer it's meant for).
+- **Checklist-item comment, either reviewer posts** — just the submitter, not the other reviewer (the two review passes are independent of each other).
+
+Also fixed: the reviewer-sign-off emoji (✅/❌ from the previous entry) now lead the message, same position as every other event's icon — they'd landed after the linked title, inconsistent with the rest.
+
+Extended the test suite to 36 cases (14 new, covering every comment-routing branch), redeployed.
+
 ### Clearer emoji, and the title is now a clickable link too
 
 More feedback on the actual message content, redeployed: the emoji weren't clear, and the link should be on the title, not just the button.
