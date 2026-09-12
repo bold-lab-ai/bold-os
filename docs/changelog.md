@@ -12,6 +12,8 @@ While confirming which Slack Bot Token Scopes to add for `ml-conference-cycle#1`
 
 Both scopes (`commands`, `canvases:read`/`write`) are being added in the same Slack app reinstall as `chat:write`/`im:write` so a third reinstall isn't needed later — granted ahead of either feature actually being built.
 
+Also filed [`ml-conference-cycle#5`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/5) — a conversational Slack assistant (Slack's Agents & Assistants platform, `assistant:write`) where each person talks to *their own* Claude/ChatGPT account rather than one shared backend LLM call. Explicitly not decided to build (Eduardo: "for now we see what happens later") — filed purely to keep the idea findable, and to record that `assistant:write` alone doesn't provide this: it's just the assistant UI framework, with no built-in way to hand a conversation off to a user's own personal AI login. Making that real would need a from-scratch bring-your-own-key system (per-user API key storage, same discipline as the Slack Bot token). No scope requested for this one — nothing granted, nothing built.
+
 ### Slack DM notifications — built, on a branch, not yet deployed
 
 Picked up `ml-conference-cycle#1`, on `feature/slack-notifications` (after the identity fixes below, which this depends on). `functions/index.js` is the project's first Cloud Function — the first server-side code of any kind — since sending a Slack DM needs a Bot token, a real credential that can never live in `audit-board.html`'s client-side source.
