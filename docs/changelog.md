@@ -4,6 +4,15 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-12
 
+### Clearer emoji, and the title is now a clickable link too
+
+More feedback on the actual message content, redeployed: the emoji weren't clear, and the link should be on the title, not just the button.
+
+- **`linkedTitle(text, url)`** produces Slack's bold-link mrkdwn (`<url|*text*>`) — every headline's paper/venue name now uses this instead of a bare `*title*`, so the title itself is clickable, in addition to the existing button (not instead of it).
+- **Emoji regrouped into two deliberate families.** 🔔 now marks anything that's actually asking the recipient to decide something — a venue proposal awaiting approval, a card reaching the PI-approval step — both of which used to have unrelated icons (📄, 🖊️) with no shared meaning. Everything else is a plain FYI icon: 🔍 (a reviewer's sign-off changed on your card), 📋 (a new reviewing assignment — was 👀, replaced since it read more like "watch this" than "here's a task"), ➡️ and 💬 unchanged (already clear).
+
+Extended the test suite to 20 cases, redeployed.
+
 ### Filed: a lab-wide Projects Board
 
 Filed [`ml-conference-cycle#6`](https://github.com/bold-lab-ai/ml-conference-cycle/issues/6) — a page where anyone can see every active BOLD research project (abstract, research questions, findings, publications, leader, collaborators, experiments, a dedicated Slack channel), with a "Collaborate" button that adds the clicker as a collaborator and auto-invites them to that project's Slack channel. Notably scoped **against this repo** rather than a new one — per Eduardo, `ml-conference-cycle` is expected to grow into the lab's broader Operating System over time, and no dedicated repo exists yet for that still-unplanned, separate lab discussion. The auto-invite half needs a Cloud Function (same "Bot token can't live client-side" constraint as `#1`) and the `conversations:write.invites` scope — a channel invite for an existing workspace member, the simpler case already distinguished from the plan-tier-gated *workspace* auto-invite idea noted once before in this doc's old Phasing section.

@@ -56,6 +56,15 @@ function cardUrl(boardId, cardId){
   return APP_BASE_URL + '#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(cardId);
 }
 
+// Bold *and* clickable — Slack mrkdwn's <url|label> syntax, with the bold
+// asterisks inside the label so they apply to the link text (2026-09-12,
+// per Eduardo: the title itself should be a link too, not just the button
+// below it). Every headline's bolded paper/venue name goes through this
+// instead of a bare '*title*' now.
+function linkedTitle(text, url){
+  return '<' + url + '|*' + text + '*>';
+}
+
 // Mirrors audit-board.html's STATUS_LABELS.
 const STATUS_LABEL = {
   register: 'Registered',
@@ -113,6 +122,7 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
   var events = [];
   if (!before) return events; // brand-new card — nothing to notify about yet
   var url = cardUrl(boardId, cardId);
+  var linked = linkedTitle(title, url);
   var submitterEmail = after.submittedBy && after.submittedBy.email;
   var rvBefore = before.reviewers || {};
   var rvAfter = after.reviewers || {};
@@ -120,12 +130,13 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
   // Reviewer sign-off on your card (Approved / Changes requested), or
   // both reviewers approving and the card auto-advancing in the same
   // write — notify the submitter either way, since they aren't the one
-  // who clicked it.
+  // who clicked it. 🔍 groups this with "someone reviewed your work",
+  // distinct from the plain FYI/assignment icons below.
   var roleChanges = [];
   if (after.jrReviewState !== before.jrReviewState) roleChanges.push('Junior reviewer: ' + (REVIEW_STATE_LABEL[after.jrReviewState] || after.jrReviewState));
   if (after.srReviewState !== before.srReviewState) roleChanges.push('Senior reviewer: ' + (REVIEW_STATE_LABEL[after.srReviewState] || after.srReviewState));
   if (roleChanges.length && submitterEmail){
-    var reviewHeadline = '📝 *' + title + '* — ' + roleChanges.join(', ') + '.';
+    var reviewHeadline = '🔍 ' + linked + ' — ' + roleChanges.join(', ') + '.';
     if (before.status !== after.status && after.status === 'final_draft'){
       reviewHeadline += ' Both reviewers approved — moved to Reviewed.';
     }
@@ -133,18 +144,20 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
   }
 
   // You're assigned as reviewer — only whoever's newly in that role, not
-  // whoever's being replaced or removed.
+  // whoever's being replaced or removed. 📋 = "here's a task", distinct
+  // from 🔍's "here's an outcome on your own paper".
   if (rvAfter.junior && rvAfter.junior !== rvBefore.junior){
-    events.push({ emails: [rvAfter.junior], url: url, headline: '👀 You’ve been assigned as *Junior reviewer* for *' + title + '*.' });
+    events.push({ emails: [rvAfter.junior], url: url, headline: '📋 You’ve been assigned as *Junior reviewer* for ' + linked + '.' });
   }
   if (rvAfter.senior && rvAfter.senior !== rvBefore.senior){
-    events.push({ emails: [rvAfter.senior], url: url, headline: '👀 You’ve been assigned as *Senior reviewer* for *' + title + '*.' });
+    events.push({ emails: [rvAfter.senior], url: url, headline: '📋 You’ve been assigned as *Senior reviewer* for ' + linked + '.' });
   }
 
-  // General status change, to the submitter.
+  // General status change, to the submitter. ➡️ = plain forward motion,
+  // no decision implied.
   if (before.status !== after.status && submitterEmail){
     var label = STATUS_LABEL[after.status] || after.status;
-    events.push({ emails: [submitterEmail], url: url, headline: '➡️ *' + title + '* moved to *' + label + '*.' });
+    events.push({ emails: [submitterEmail], url: url, headline: '➡️ ' + linked + ' moved to *' + label + '*.' });
   }
 
   // Reaches the PI-approval step — notify the PI specifically (the last
@@ -152,12 +165,14 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
   // submitter (already covered above). Silently produces no event if the
   // PI has no email on file — old, not-yet-migrated author data (see
   // normalizeCard's authors migration) or a card whose last author was
-  // never actually set.
+  // never actually set. 🔔 = "this needs a decision from you" — same
+  // family as the venue-proposal notification below, both are asking the
+  // recipient to actually go approve something, not just informing them.
   if (before.status !== 'pi_polish' && after.status === 'pi_polish'){
     var authors = after.authors || [];
     var pi = authors.length ? authors[authors.length - 1] : null;
     if (pi && pi.email){
-      events.push({ emails: [pi.email], url: url, headline: '🖊️ *' + title + '* is ready for your approval.' });
+      events.push({ emails: [pi.email], url: url, headline: '🔔 ' + linked + ' is ready for your approval.' });
     }
   }
 
@@ -181,7 +196,7 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       emails: stakeholders,
       excludeEmail: msg.authorEmail,
       url: url,
-      headline: '💬 ' + posterName + ' commented on *' + title + '*: “' + body + '”'
+      headline: '💬 ' + posterName + ' commented on ' + linked + ': “' + body + '”'
     });
   });
 
@@ -295,12 +310,15 @@ exports.onVenueProposed = onDocumentCreated(
     const pis = await rolesEmails('pis');
     const admins = await rolesEmails('admins');
     const proposer = (data.proposedBy && (data.proposedBy.name || data.proposedBy.email)) || 'Someone';
-    const headline = '📄 New venue proposal: *' + data.label + '* — proposed by ' + proposer +
+    const url = venueUrl(event.params.boardId);
+    // 🔔 — same "needs a decision from you" family as onCardWritten's
+    // PI-approval notification, not a plain FYI icon.
+    const headline = '🔔 New venue proposal: ' + linkedTitle(data.label, url) + ' — proposed by ' + proposer +
       '. It needs your approval before it’s visible to the lab.';
     await sendEvent(token, {
       emails: pis.concat(admins),
       excludeEmail: data.proposedBy && data.proposedBy.email,
-      url: venueUrl(event.params.boardId),
+      url: url,
       headline: headline,
       buttonLabel: 'Review proposal'
     });
@@ -326,4 +344,4 @@ exports.onCardWritten = onDocumentWritten(
 
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
-exports._internal = { flattenMessages, newMessages, cardEventsToNotify, venueUrl, cardUrl, buildMessage };
+exports._internal = { flattenMessages, newMessages, cardEventsToNotify, venueUrl, cardUrl, buildMessage, linkedTitle };
