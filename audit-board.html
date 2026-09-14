@@ -412,10 +412,6 @@
      clearly whether or not an rv-* review-state background above also
      applies to the same card. */
   .card.rush-deadline-passed{outline:2px solid var(--danger-text); outline-offset:-1px;}
-  .badge-rv-in_review{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
-  .badge-rv-changes_requested{background:var(--danger-bg); color:var(--danger-text); border:1px solid #f0c9c4;}
-  .badge-rv-approved{background:var(--success-bg); color:var(--success-text); border:1px solid #bfe0d6;}
-  .badge-rv-jr_approved, .badge-rv-sr_approved{background:var(--success-bg); color:var(--success-text); border:1px solid #bfe0d6; opacity:0.75;}
   .badge-outcome-accepted{background:var(--success-bg); color:var(--success-text);}
   .badge-outcome-rejected{background:var(--danger-bg); color:var(--danger-text);}
   .badge-outcome-withdrawn{background:var(--neutral-bg); color:var(--neutral-text);}
@@ -682,8 +678,10 @@
   // Columns mirror the guide's 9 phases (how-to-submit-a-paper.html) one for
   // one, same names, same order. Sub-states that used to be their own column
   // (review in progress / changes requested / approved; rebuttal in
-  // progress / submitted) are now a badge + colour on the card instead —
-  // see reviewFilterState()/reviewBadges() and the rebuttal badge in renderCard(). Outcomes
+  // progress / submitted) are now a colour on the card (or, for a
+  // reviewer's own pass, a per-reviewer pill) instead — see
+  // reviewFilterState()/reviewStatePillHtml() and the rebuttal badge in
+  // renderCard(). Outcomes
   // (Accepted / Rejected / Withdrawn) aren't phases either; they're
   // card.outcome, shown as a badge, set from the Edit-fields modal.
   // abstract_review (2026-09-14, per Eduardo): the venue's own real
@@ -2641,37 +2639,27 @@
   // auto-advances the card to Reviewed itself (still held to the same
   // checklist gate) — see its comment.
   //
-  // Three buckets for the card's overall colour + the board filter — a
+  // Three buckets for the card's overall colour (rv-* on the card itself,
+  // see renderCard/renderCardDetail) + the board filter — a
   // partially-approved card (only one reviewer signed off) still counts as
-  // in_review here, since it isn't done yet; reviewBadges() below shows
-  // that partial state on the card itself. Either reviewer requesting
-  // changes always wins the overall bucket, even if the other has approved.
+  // in_review here, since it isn't done yet; each reviewer's own pill (see
+  // reviewStatePillHtml) shows that partial state, per reviewer, not the
+  // card as a whole (2026-09-14+1, per Eduardo — removed the card-level
+  // "JR approved"/"SR approved" badges that used to duplicate the pills;
+  // reviewBadges/badge-rv-jr_approved/badge-rv-sr_approved no longer
+  // exist). Either reviewer requesting changes always wins the overall
+  // bucket, even if the other has approved.
   function reviewFilterState(card){
     if (card.jrReviewState === 'changes_requested' || card.srReviewState === 'changes_requested') return 'changes_requested';
     if (card.jrReviewState === 'approved' && card.srReviewState === 'approved') return 'approved';
     return 'in_review';
   }
 
-  // Every badge that applies right now — usually one, but a card can show
-  // just "JR approved" (not yet "Approved" overall) while waiting on the
-  // other reviewer.
-  function reviewBadges(card){
-    var bucket = reviewFilterState(card);
-    if (bucket !== 'in_review') return [bucket];
-    var badges = [];
-    if (card.jrReviewState === 'approved') badges.push('jr_approved');
-    if (card.srReviewState === 'approved') badges.push('sr_approved');
-    return badges.length ? badges : ['in_review'];
-  }
-
-  // changes_requested stays in both label maps — display-only, for a
-  // legacy pre-2026-09-14 card's stale value (see reviewFilterState) —
-  // nothing writes it any more, so there's no options/button-label
-  // constant for it any more either (removed with reviewStateButtonsHtml).
-  var REVIEW_STATE_LABELS = {
-    in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved',
-    jr_approved: 'JR approved', sr_approved: 'SR approved'
-  };
+  // Only what reviewStatePillHtml needs now (2026-09-14+1) — 'approved'/
+  // 'in_review' are the only two states a reviewer's own pill ever shows.
+  // REVIEW_FILTER_LABELS below is the separate map for the board's search
+  // filter dropdown, which still has its own 'changes_requested' option.
+  var REVIEW_STATE_LABELS = { in_review: 'In review', approved: 'Approved' };
   var REVIEW_FILTER_LABELS = { all: 'Any review status', in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
 
   // A read-only label, not a button (2026-09-14, simplified per Eduardo —
@@ -2694,9 +2682,6 @@
     // Badges only; Overleaf link / edit + remove live on the detail page
     // now, to keep the board card short and easy to scan.
     var badges = '';
-    if (inDraftReview) reviewBadges(card).forEach(function(b){
-      badges += '<span class="badge badge-rv-' + b + '">' + REVIEW_STATE_LABELS[b] + '</span>';
-    });
     if (card.status === 'rebuttal') badges += card.rebuttalDocLink
       ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
       : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
@@ -3405,13 +3390,9 @@
     var html = '<div class="detail">';
     html += '<a href="#" class="detail-back" id="detailBack">&larr; Back to ' + (board ? escapeHtml(board.label) : 'board') + '</a>';
 
-    var detailInDraftReview = card.status === 'draft_review';
     html += '<div class="detail-head">';
     html += '<h2>' + escapeHtml(card.title) + '</h2>';
     if (STATUS_LABELS[card.status]) html += '<span class="badge" style="background:var(--accent-dim);color:var(--accent);">' + escapeHtml(statusLabelFor(card.status, board)) + '</span>';
-    if (detailInDraftReview) reviewBadges(card).forEach(function(b){
-      html += '<span class="badge badge-rv-' + b + '">' + REVIEW_STATE_LABELS[b] + '</span>';
-    });
     if (card.status === 'rebuttal') html += card.rebuttalDocLink
       ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
       : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
@@ -3545,9 +3526,9 @@
   // to say the same thing the checklist already said. Ticking is the only
   // remaining signal; unticking any box un-approves just as automatically.
   // A stray legacy 'changes_requested' value from before this change
-  // (reviewFilterState/reviewBadges still render it, for cards nobody has
-  // touched since) self-heals the moment anyone ticks or unticks a box —
-  // deliberately no explicit migration beyond that.
+  // (reviewFilterState still renders it as the card's colour, for cards
+  // nobody has touched since) self-heals the moment anyone ticks or
+  // unticks a box — deliberately no explicit migration beyond that.
   function onToggleChecklist(cardId, itemId, role, checked){
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card) return;
