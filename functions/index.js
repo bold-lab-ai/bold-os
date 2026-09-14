@@ -524,6 +524,34 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
   return events;
 }
 
+// Real gap found live-testing (2026-09-14): the App Home dashboard only
+// ever re-publishes when someone opens their Home tab, or right after
+// *our own* Slack-driven reviewer-assignment write (see handleInteractivity's
+// own handleAppHomeOpened call). A reviewer assigned or cleared directly on
+// the web board never told Slack anything — the Home tab silently went
+// stale until the next manual reopen. This is the pure half of the fix:
+// given a card's before/after, who needs their Home tab refreshed because
+// `reviewers` changed. Deliberately narrow (reviewers only, not every
+// field the dashboard could show — status/title changes reordering the
+// Registered list, say) to avoid re-publishing on every unrelated card
+// write; can widen later if that's felt as a gap too.
+//
+// - The submitter, always, when reviewers changed at all — their own
+//   Registered row shows the picker's initial_option, which is now stale.
+// - Whoever was newly assigned to either role — a card just appeared in
+//   their Reviewing section.
+// - Whoever was un-assigned (cleared, or replaced by someone else) — a
+//   card just disappeared from their Reviewing section.
+function homeRefreshTargetsForReviewers(before, after){
+  var rvBefore = (before && before.reviewers) || {};
+  var rvAfter = (after && after.reviewers) || {};
+  if (rvBefore.junior === rvAfter.junior && rvBefore.senior === rvAfter.senior) return [];
+  var targets = [rvBefore.junior, rvAfter.junior, rvBefore.senior, rvAfter.senior];
+  var submitterEmail = after && after.submittedBy && after.submittedBy.email;
+  if (submitterEmail) targets.push(submitterEmail);
+  return Array.from(new Set(targets.filter(Boolean)));
+}
+
 // ---------- Slack API ----------
 // Plain fetch against the Web API, no SDK dependency — same minimal-deps
 // preference as the rest of this project, just applied to the one place
@@ -808,6 +836,23 @@ exports.onCardWritten = onDocumentWritten(
     for (let i = 0; i < events.length; i++){
       await sendEvent(token, events[i]);
     }
+
+    // Refresh anyone whose Home tab dashboard is now stale because
+    // `reviewers` changed here — see homeRefreshTargetsForReviewers'
+    // own comment for why this is scoped to reviewers specifically.
+    // Best-effort: one person's refresh failing (no Slack id on file,
+    // say) shouldn't block another's, so these run independently rather
+    // than aborting the whole loop on the first error.
+    const refreshEmails = homeRefreshTargetsForReviewers(before, after);
+    for (let i = 0; i < refreshEmails.length; i++){
+      const slackId = await slackIdForEmail(refreshEmails[i]);
+      if (!slackId) continue;
+      try {
+        await handleAppHomeOpened(token, slackId);
+      } catch (err){
+        logger.error('Home tab refresh after card write threw', { email: refreshEmails[i], error: String(err) });
+      }
+    }
   }
 );
 
@@ -933,8 +978,8 @@ exports.slackEvents = onRequest(
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
-  flattenMessages, newMessages, cardEventsToNotify, venueUrl, cardUrl, linkedTitle, reviewStateEmoji,
-  verifySlackSignatureRaw, canAssignReviewer, parseAssignAction, reviewerEmailFromAction, cardLine,
-  personOptionsFor, filterPeopleOptions, initialOptionForEmail, reviewerPickerBlock, sectionBlocks,
-  buildHomeView, buildUnrecognizedView
+  flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers, venueUrl, cardUrl,
+  linkedTitle, reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,
+  reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
+  reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView
 };

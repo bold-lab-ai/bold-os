@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-14
 
+### Slack Home tab now refreshes when reviewers change on the web board
+
+The other direction of live-sync: the Home dashboard only ever re-published on opening the tab or right after our own Slack-driven write, so a reviewer assigned or cleared on the web board never told Slack anything. `onCardWritten` now also refreshes anyone whose dashboard is stale after a `reviewers` change (submitter, plus whoever was newly assigned or un-assigned), via the same `handleAppHomeOpened` used everywhere else.
+
 ### Reviewer picker: Clear button + two-row layout
 
 More live feedback on the App Home reviewer picker after the dashboard itself was confirmed working: clearing a Slack `external_select` doesn't send an empty selection the way assumed — turned out Block Kit has no built-in way to unassign a picked reviewer at all, so added an explicit red "✕ Junior"/"✕ Senior" button per role, only shown when that role has someone assigned. Iterated on layout twice more per Eduardo's feedback: first both Clear buttons trailing off to the side of both selects (didn't read as paired), then each role's select + its own Clear button moved onto its own row — the closest real visual pairing Block Kit's flat layout allows.
