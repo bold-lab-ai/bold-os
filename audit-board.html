@@ -378,6 +378,13 @@
   /* Rush mode's column deadline hint, once its cutoff has passed — see
      columnHintFor. */
   .column-head .ch-hint.ch-hint-overdue{color:var(--danger-text); font-weight:600;}
+  /* What it takes to leave this column for the next one — see
+     columnRequirementsFor. Own line from ch-hint above (deadline/plain
+     hint text), since a rush review column can show both at once. */
+  .column-head .ch-requires{
+    margin-top:2px; font-size:11px; line-height:1.35; color:var(--muted);
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+  }
   .column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
   .column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
 
@@ -2081,7 +2088,7 @@
       var real = rushColumnRealDeadline(status, board);
       if (!real) return 'No deadline set for this venue yet';
       var cutoff = rushColumnCutoff(status, board);
-      return 'Due ' + formatDate(real) + ' — cutoff ' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)';
+      return 'Internal due ' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)';
     }
     return escapeHtml(STATUS_HINTS[status] || '');
   }
@@ -2295,6 +2302,44 @@
     var fi = ord.indexOf(fromStatus);
     var ti = ord.indexOf(toStatus);
     return gi !== -1 && fi !== -1 && ti !== -1 && fi <= gi && ti > gi;
+  }
+
+  // What it structurally takes to move a card OUT of this column into the
+  // next one in the active order (2026-09-14, per Eduardo) — for the
+  // column-header caption, not for gating an actual move (see
+  // advanceBlockReason/abstractAcceptBlockReason for that). Deliberately
+  // NOT evaluated against any particular card: this describes the shape of
+  // the column→column transition itself, the same for every card sitting
+  // in it, so it has to mirror whichever real gates those two functions
+  // actually enforce or it'll drift out of sync with what really blocks a
+  // move — each condition below matches one of theirs by name.
+  // Returns an ordered array of short requirement strings, or an empty
+  // array if nothing gates this particular move at all (most columns).
+  function columnRequirementsFor(status, board){
+    var order = effectiveStatusOrder(board);
+    var next = statusAt(status, 1, order);
+    if (!next) return [];
+    var reqs = [];
+    // Mirrors abstractAcceptBlockReason's own two checks.
+    if (board && board.rushMode && status === 'abstract_review'){
+      reqs.push('authors added');
+      reqs.push('under the per-author cap');
+    }
+    // Mirrors advanceBlockReason's checklist-gate check.
+    if (crossesGate(status, next, order)) reqs.push('checklists complete');
+    // Mirrors advanceBlockReason's unconditional reviewer-assignment check.
+    if (next === 'draft_review') reqs.push('reviewers assigned');
+    return reqs;
+  }
+
+  // "Requires: a) authors added b) under the per-author cap" — trusted
+  // HTML (see columnHintFor's own note on why that's fine here: nothing in
+  // columnRequirementsFor's output is ever user-typed text).
+  function columnRequirementsHtml(status, board){
+    var reqs = columnRequirementsFor(status, board);
+    if (!reqs.length) return '';
+    var letters = 'abcdefghij';
+    return 'Requires: ' + reqs.map(function(r, i){ return letters[i] + ') ' + r; }).join(' ');
   }
 
   // Authors are fixed once a paper has PASSED abstract review (2026-09-14,
@@ -2761,9 +2806,11 @@
       html += '<div class="column">';
       var hint = columnHintFor(status, board);
       var hintOverdue = isRushColumnPastCutoff(status, board);
+      var reqs = columnRequirementsHtml(status, board);
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
         (hint ? '<div class="ch-hint' + (hintOverdue ? ' ch-hint-overdue' : '') + '">' + hint + '</div>' : '') +
+        (reqs ? '<div class="ch-requires">' + reqs + '</div>' : '') +
       '</div>';
       html += '<div class="column-body">';
       if (cardsForStatus.length === 0){
