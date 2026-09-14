@@ -657,7 +657,17 @@
   // see reviewFilterState()/reviewBadges() and the rebuttal badge in renderCard(). Outcomes
   // (Accepted / Rejected / Withdrawn) aren't phases either; they're
   // card.outcome, shown as a badge, set from the Edit-fields modal.
-  var STATUS_ORDER = ['register','pitch_day','draft_review','final_draft','pi_polish','submit','arxiv_publicity','rebuttal','pre_conference'];
+  // abstract_review (2026-09-14, per Eduardo): the venue's own real
+  // abstract-registration submission — sits right after the internal
+  // Reviewed pass, before PI Approval, so it can't be skipped even in
+  // Rush mode (see RUSH_STATUS_ORDER below). Authors are locked from that
+  // point on (authorsLocked) — the real venue fixes the author list the
+  // moment the abstract goes in, so the app matches that. Deliberately no
+  // new "abstract text" field of its own: the abstract lives in the
+  // paper's Overleaf project (overleafLink), already on the card, and
+  // there's no way to verify a pasted-in copy actually matches it — see
+  // authorsLocked's own comment.
+  var STATUS_ORDER = ['register','pitch_day','draft_review','final_draft','abstract_review','pi_polish','submit','arxiv_publicity','rebuttal','pre_conference'];
 
   // Rush mode (2026-09-11): a per-venue toggle (board.rushMode) for an
   // imminent-deadline venue that needs to move faster than the full 9-step
@@ -670,7 +680,10 @@
   // statuses doesn't change their relative order. What actually needs the
   // active order: which columns render (renderColumns), and which status
   // Left/Right/the dropdown treat as adjacent (statusAt/statusOptionsHtml).
-  var RUSH_STATUS_ORDER = ['register', 'draft_review', 'final_draft', 'submit'];
+  // abstract_review stays in Rush mode's active order too, unlike Pitch
+  // Day/PI Approval — it's a real venue submission deadline, not an
+  // internal step Rush mode can skip.
+  var RUSH_STATUS_ORDER = ['register', 'draft_review', 'final_draft', 'abstract_review', 'submit'];
 
   function effectiveStatusOrder(board){
     return (board && board.rushMode) ? RUSH_STATUS_ORDER : STATUS_ORDER;
@@ -705,6 +718,7 @@
     pitch_day: 'Pitched',
     draft_review: 'Drafted',
     final_draft: 'Reviewed',
+    abstract_review: 'Abstract Reviewed',
     pi_polish: 'PI Approved',
     submit: 'Submitted',
     arxiv_publicity: 'Posted',
@@ -716,7 +730,8 @@
     register: 'Waiting for pitch',
     pitch_day: 'First draft in writing',
     draft_review: 'Waiting for internal review',
-    final_draft: 'Waiting for PI approval',
+    final_draft: 'Waiting for abstract submission',
+    abstract_review: 'Waiting for PI approval',
     pi_polish: 'Waiting for official submission',
     submit: 'Waiting for arxiv and publicity',
     arxiv_publicity: 'Waiting for official review',
@@ -2090,6 +2105,23 @@
     return fi !== -1 && ti !== -1 && fi < gi && ti >= gi;
   }
 
+  // Authors are fixed once a paper reaches Abstract Reviewed (2026-09-14,
+  // per Eduardo) — the real venue locks the author list the moment the
+  // abstract's actually submitted, so the app matches that from this
+  // point on rather than letting the two drift apart. Uses card.status
+  // directly against the full STATUS_ORDER (not the rush-projected
+  // displayStatus) — a card's real status is always a genuine
+  // STATUS_ORDER key regardless of whether Rush mode is currently hiding
+  // some columns, so this reads correctly either way with no extra
+  // rush-mode branching needed. Reverting a card back below Abstract
+  // Reviewed un-locks it again automatically — this is a pure function of
+  // current status, nothing separately tracked or sticky.
+  function authorsLocked(card){
+    var lockIdx = STATUS_ORDER.indexOf('abstract_review');
+    var cardIdx = STATUS_ORDER.indexOf(card && card.status);
+    return lockIdx !== -1 && cardIdx !== -1 && cardIdx >= lockIdx;
+  }
+
   function reviewersAssigned(card){
     var rv = (card && card.reviewers) || {};
     return !!(rv.junior && rv.senior);
@@ -3338,24 +3370,31 @@
   var pAuthorsState = [{ name: '', email: '', isNew: false }];
   var eAuthorsState = [{ name: '', email: '', isNew: false }];
 
-  function authorRowsHtml(rows){
+  // `locked` (2026-09-14, see authorsLocked) disables every control and
+  // drops Remove/"Pick from list instead" entirely rather than just
+  // greying them out — nothing about this row is actionable once
+  // authors are fixed, so there's no half-interactive state to represent.
+  // Always falsy for the registration modal (a brand-new card is never
+  // locked) — only the Edit-fields modal ever passes it.
+  function authorRowsHtml(rows, locked){
     return rows.map(function(row, i){
       var isPi = i === rows.length - 1;
       var label = isPi ? 'PI' : ('Author ' + (i + 1));
       var html = '<div class="author-row">' +
         '<span class="author-pi-tag' + (isPi ? '' : ' author-pi-tag--hidden') + '">PI</span>';
+      var lockAttr = locked ? ' disabled title="Authors are locked once Abstract Reviewed is reached"' : '';
       if (row.isNew){
         html +=
-          '<input type="text" class="author-input author-new-name" data-author-idx="' + i + '" value="' + escapeHtml(row.name) + '" placeholder="Name" aria-label="' + label + ' name">' +
-          '<input type="email" class="author-input author-new-email" data-author-idx="' + i + '" value="' + escapeHtml(row.email) + '" placeholder="Email" aria-label="' + label + ' email">' +
-          '<button type="button" class="btn-text author-use-roster" data-author-idx="' + i + '">Pick from list instead</button>';
+          '<input type="text" class="author-input author-new-name" data-author-idx="' + i + '" value="' + escapeHtml(row.name) + '" placeholder="Name" aria-label="' + label + ' name"' + lockAttr + '>' +
+          '<input type="email" class="author-input author-new-email" data-author-idx="' + i + '" value="' + escapeHtml(row.email) + '" placeholder="Email" aria-label="' + label + ' email"' + lockAttr + '>' +
+          (locked ? '' : '<button type="button" class="btn-text author-use-roster" data-author-idx="' + i + '">Pick from list instead</button>');
       } else {
         var options = '<option value="">Choose a person…</option>' + state.people.map(function(p){
           return '<option value="' + escapeHtml(p.email) + '"' + (p.email === row.email ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>';
         }).join('') + '<option value="__new__">+ New author (not in the workspace)…</option>';
-        html += '<select class="author-input author-select" data-author-idx="' + i + '" aria-label="' + label + '">' + options + '</select>';
+        html += '<select class="author-input author-select" data-author-idx="' + i + '" aria-label="' + label + '"' + lockAttr + '>' + options + '</select>';
       }
-      html += (rows.length > 1 ? '<button type="button" class="btn-text danger author-remove" data-remove-author-idx="' + i + '">Remove</button>' : '') +
+      html += (!locked && rows.length > 1 ? '<button type="button" class="btn-text danger author-remove" data-remove-author-idx="' + i + '">Remove</button>' : '') +
       '</div>';
       return html;
     }).join('');
@@ -3364,10 +3403,14 @@
   // Shared by both the registration modal (pAuthorsState / #pAuthorsWrap)
   // and the Edit-fields modal (eAuthorsState / #eAuthorsWrap) — same rows,
   // same PI-is-last-row convention, different backing array + submit key.
-  function renderAuthorRows(wrapId, rows, onEnter){
+  // `locked`: see authorRowsHtml — when true, the rows render read-only
+  // and nothing below is worth wiring up at all (every listener target
+  // is disabled or simply absent from the markup).
+  function renderAuthorRows(wrapId, rows, onEnter, locked){
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
-    wrap.innerHTML = authorRowsHtml(rows);
+    wrap.innerHTML = authorRowsHtml(rows, locked);
+    if (locked) return;
     Array.prototype.forEach.call(wrap.querySelectorAll('.author-select'), function(sel){
       sel.addEventListener('change', function(){
         var idx = Number(sel.getAttribute('data-author-idx'));
@@ -3542,6 +3585,7 @@
   function openEditModal(cardId){
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card) return;
+    var authorsLock = authorsLocked(card);
     els.modalRegion.innerHTML =
       '<div class="modal-overlay" id="modalOverlay">' +
         '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">' +
@@ -3549,8 +3593,11 @@
           '<div id="editForm">' +
             '<div class="field"><label for="eTitle">Paper title</label><input type="text" id="eTitle" value="' + escapeHtml(card.title || '') + '"></div>' +
             '<div class="field"><label for="eAuthorsWrap">Authors</label><div id="eAuthorsWrap"></div>' +
-              '<button class="btn-text" type="button" id="eAddAuthor">+ Add author</button>' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI.</div></div>' +
+              (authorsLock
+                ? '<div style="font-size:12px;color:var(--danger-text);margin-top:4px;">Locked — authors are fixed once ' + STATUS_LABELS.abstract_review + ' is reached, matching the venue’s own submission.</div>'
+                : '<button class="btn-text" type="button" id="eAddAuthor">+ Add author</button>' +
+                  '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI.</div>') +
+            '</div>' +
             '<div class="field"><label for="eOverleaf">Overleaf link</label><input type="url" id="eOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/..."></div>' +
             '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
@@ -3586,10 +3633,13 @@
     eAuthorsState = card.authors && card.authors.length
       ? card.authors.map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '', isNew: false }; })
       : [{ name: '', email: '', isNew: false }];
-    renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter);
-    document.getElementById('eAddAuthor').addEventListener('click', function(){
+    renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter, authorsLock);
+    // #eAddAuthor doesn't exist in the markup at all when locked (see
+    // above) — nothing to wire up.
+    var addAuthorBtn = document.getElementById('eAddAuthor');
+    if (addAuthorBtn) addAuthorBtn.addEventListener('click', function(){
       eAuthorsState.splice(Math.max(eAuthorsState.length - 1, 0), 0, { name: '', email: '', isNew: false });
-      renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter);
+      renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter, authorsLock);
     });
     document.getElementById('eTitle').focus();
   }
@@ -3622,11 +3672,17 @@
     // submittedBy is deliberately not editable here — it's who registered
     // the paper (used by Security Rules for card authorization), not a
     // free-text field to reassign after the fact. Not included in updates,
-    // so it stays whatever it already was on the card.
+    // so it stays whatever it already was on the card. authors/
+    // authorEmails follow the same pattern once authorsLocked(card) is
+    // true (2026-09-14) — the UI already disables every author control at
+    // that point (openEditModal), this is the belt-and-braces backstop:
+    // even if `authors` somehow computed to something else, omitting the
+    // keys entirely means the write literally can't touch them, same
+    // shape as every other "field simply isn't in updates" lock in this
+    // file.
+    var locked = authorsLocked(card);
     var updates = {
       title: title,
-      authors: authors,
-      authorEmails: authorEmailsOf(authors),
       overleafLink: overleafLink,
       correspondingAuthorEmail: email,
       computeEstimate: document.getElementById('eCompute').value.trim(),
@@ -3637,6 +3693,10 @@
       outcome: document.getElementById('eOutcome').value,
       updatedAt: now
     };
+    if (!locked){
+      updates.authors = authors;
+      updates.authorEmails = authorEmailsOf(authors);
+    }
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       return Object.assign({}, c, updates);
