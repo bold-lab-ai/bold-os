@@ -6,7 +6,7 @@ Context for anyone — agent or human — editing this project.
 
 An internal tool suite for BOLD Lab's paper-submission process, built as an **implementation of BOLDiquette § ML Conference Cycle** — and, ahead of BOLDiquette, of the real pre-submission runway the lab runs (register 8 wk out · Pitch Day 6 wk · first draft + Internal Review 4 wk · final draft 2 wk · PI approval 1 wk · submit). Three self-contained HTML pages (plus an `index.html` redirect stub) and tracking docs. No build step, no framework — a Firebase backend (Firestore/Auth/Storage) as of 2026-09-11, everything else still plain HTML/CSS/JS.
 
-**Layout, reorganized 2026-09-11:** the served pages and Firebase config stay at repo root (GitHub Pages serves from root; `firebase` CLI expects its config there by default). Contributor-facing docs live in `docs/`; the shippable guide bundle lives in `dist/`.
+**Layout, reorganized 2026-09-11:** the served pages and Firebase config stay at repo root (GitHub Pages serves from root; `firebase` CLI expects its config there by default). Contributor-facing docs live in `docs/`.
 
 | File | What it is |
 |---|---|
@@ -14,7 +14,7 @@ An internal tool suite for BOLD Lab's paper-submission process, built as an **im
 | `how-to-submit-a-paper.html` | The guide, and the homepage. An "at a glance" runway table + 9 phases, single-phase view with a Prev/Next pager and a sticky TOC. Each phase cites the BOLDiquette section it comes from. |
 | `audit-board.html` | **Internal Review Board** — Trello-style tracker. Venues list → venue view with kanban columns → card detail page. Includes the Internal Review checklist directly on each card (`internal-qa-review.html` was a separate simulated-peer-review page; removed 2026-09-11, folded into the board — see guideline 7). Persists to Firestore (see `docs/FIREBASE.md`) — was `localStorage` before 2026-09-11. Filename kept for URL stability. |
 | `diff.html` | Rendered, styled version of `docs/DIFF.md` — what the pages' `.page-source` "DIFF.md" link actually opens. Hand-kept in sync with `docs/DIFF.md`; not generated. Its own "also as plain DIFF.md" link points at the GitHub repo blob view (`.../blob/main/docs/DIFF.md`), not the local file — GitHub Pages serves `.md` as raw unstyled text, it doesn't render markdown (no Jekyll/build step here); GitHub's own file viewer does. |
-| `firebase.json` / `firestore.rules` / `firestore.indexes.json` / `storage.rules` / `.firebaserc` | Firebase project config for `bold-d7ff2` (managed via the Firebase MCP tools, not manual console steps). Infra, not documentation — **not** part of `dist/bold-paper-submission-guide.zip`. |
+| `firebase.json` / `firestore.rules` / `firestore.indexes.json` / `storage.rules` / `.firebaserc` | Firebase project config for `bold-d7ff2` (managed via the Firebase MCP tools, not manual console steps). Infra, not documentation. |
 | `functions/` | Cloud Functions (Node, real `npm` project — `node_modules`/`.env`/`lib` gitignored) — Slack DM notifications (guideline 14) and the App Home dashboard + reviewer assignment (guideline 15), see `docs/FIREBASE.md`'s "Cloud Functions" section. The project's only server-side code; everything else here is the plain client. |
 | `checklists/format/AGENTS.md` | For a paper **author's** own coding agent (2026-09-14) — a pre-check for the audit board's 6-item Format checklist, before a human co-author ticks the real boxes. Linked directly from the "Checklist of authors" tab in `audit-board.html`. Not contributor documentation for this repo — a different audience from this file. |
 | `checklists/reviewers/AGENTS.md` | Same idea, for an assigned **Junior/Senior reviewer's** coding agent — a skeptical pre-review of the 6-item Science checklist, not a replacement for the human reviewer's own pass. Linked from the "Checklist for reviewers" tab. |
@@ -23,7 +23,6 @@ An internal tool suite for BOLD Lab's paper-submission process, built as an **im
 | `docs/FIREBASE.md` | The concrete Firebase backend design + build log (data model, Security Rules, Cloud Storage, phasing) — live as of 2026-09-11. `docs/TODO.md` stays the aspirational/BOLD-OS-blocked list; this is the actual build record. |
 | `docs/changelog.md` | Build history of these files. Not a BOLDiquette comparison — that's `docs/DIFF.md`. |
 | `docs/proposed-boldiquette-addition.md` | Drop-in prose for the new BOLDiquette subsection this tooling implies. |
-| `dist/bold-paper-submission-guide.zip` | The four HTML pages (`index.html`, `how-to-submit-a-paper.html`, `audit-board.html`, `diff.html`) + `docs/*.md`, flattened. Rebuilt and committed automatically by `.github/workflows/zip.yml` on every push — never edit this file directly. |
 
 **BOLDiquette source:** <https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp> — § ML Conference Cycle. Last read 2026-09-10 (see `docs/DIFF.md`).
 
@@ -95,5 +94,3 @@ Every push to `main` deploys automatically — GitHub Pages' own "Deploy from a 
 
 1. Add a dated entry to `docs/changelog.md`.
 2. If the process moved relative to BOLDiquette, update `docs/DIFF.md` (and `docs/proposed-boldiquette-addition.md` if the drop-in prose is affected).
-
-Nothing to rebuild by hand — `.github/workflows/zip.yml` rebuilds `dist/bold-paper-submission-guide.zip` and commits it automatically on every push to `main` (same pattern as `epignatelli/epignatelli.github.io`'s `cv.yml`: build on push, commit back if changed). If you're working with the zip locally before pushing, the command it runs is: `zip -qj dist/bold-paper-submission-guide.zip index.html how-to-submit-a-paper.html audit-board.html diff.html docs/AGENTS.md docs/DIFF.md docs/TODO.md docs/FIREBASE.md docs/changelog.md docs/proposed-boldiquette-addition.md` (`-j` flattens paths so `docs/*.md` land at the zip's top level, matching the original flat bundle shape).

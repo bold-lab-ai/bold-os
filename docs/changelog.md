@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-14
 
+### Removed the shippable zip bundle — nothing downloaded it
+
+Deleted `.github/workflows/zip.yml` and `dist/bold-paper-submission-guide.zip` (and the now-empty `dist/`) from the repo entirely. The workflow rebuilt and committed the zip on every push to `main` since 2026-09-11 (see that date's entry) — but no page anywhere ever actually linked to it, so it was pure binary-diff churn on every single commit with no one downloading it. Per Eduardo: not worth keeping, in any form (a GitHub Actions artifact/Release asset was the alternative considered) — removed outright rather than relocated. `docs/AGENTS.md`'s file table and "After any change" section updated to match.
+
 ### Max papers per author is now a real hard gate, not just a label
 
 `board.maxPapersPerAuthor` has existed as a venue field since the venue modal did, shown as a summary line on the venue page ("≤ N papers/author") — but nothing ever actually stopped an author going over it. Registering or editing a paper now blocks with a clear per-author message ("A (3/2)") if it would put any listed author over that venue's cap, excluding withdrawn papers and the paper being edited from its own count.
