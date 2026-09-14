@@ -2,6 +2,8 @@
 
 Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-board.html`, and the supporting docs — `internal-qa-review.html` was part of this suite until it was removed 2026-09-11, folded into `audit-board.html`; entries below that predate the removal still refer to it, left as-is since this is a historical record). This is a record of what was built and when — not a comparison against BOLDiquette. For how the process itself differs from BOLDiquette, and what we want changed there, see **`DIFF.md`**.
 
+**Frozen as of 2026-09-14 — per Eduardo, no longer kept up.** Entries below predate that; nothing built after is recorded here.
+
 ## 2026-09-14
 
 ### Removed the shippable zip bundle — nothing downloaded it

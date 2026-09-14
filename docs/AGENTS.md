@@ -21,7 +21,7 @@ An internal tool suite for BOLD Lab's paper-submission process, built as an **im
 | `docs/DIFF.md` | Every place the process diverges from BOLDiquette, each with a proposed BOLDiquette change. |
 | `docs/TODO.md` | Work blocked on a shared backend or on **BOLD OS** (chiefly: publications must come from a BOLD OS project). |
 | `docs/FIREBASE.md` | The concrete Firebase backend design + build log (data model, Security Rules, Cloud Storage, phasing) — live as of 2026-09-11. `docs/TODO.md` stays the aspirational/BOLD-OS-blocked list; this is the actual build record. |
-| `docs/changelog.md` | Build history of these files. Not a BOLDiquette comparison — that's `docs/DIFF.md`. |
+| `docs/changelog.md` | Build history of these files up to 2026-09-14 — frozen there, no longer updated (see "After any change" below). Not a BOLDiquette comparison — that's `docs/DIFF.md`. |
 | `docs/proposed-boldiquette-addition.md` | Drop-in prose for the new BOLDiquette subsection this tooling implies. |
 
 **BOLDiquette source:** <https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp> — § ML Conference Cycle. Last read 2026-09-10 (see `docs/DIFF.md`).
@@ -92,5 +92,6 @@ Every push to `main` deploys automatically — GitHub Pages' own "Deploy from a 
 
 ## After any change
 
-1. Add a dated entry to `docs/changelog.md`.
-2. If the process moved relative to BOLDiquette, update `docs/DIFF.md` (and `docs/proposed-boldiquette-addition.md` if the drop-in prose is affected).
+If the process moved relative to BOLDiquette, update `docs/DIFF.md` (and `docs/proposed-boldiquette-addition.md` if the drop-in prose is affected).
+
+`docs/changelog.md` stays as a historical record up to 2026-09-14, but is no longer kept up — per Eduardo, stop adding entries to it.
