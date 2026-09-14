@@ -433,23 +433,16 @@
   }
   .card-reviewers .rv-role.junior, .rv-role.junior{color:var(--teal);}
   .card-reviewers .rv-role.senior, .rv-role.senior{color:var(--plum);}
-  /* Per-reviewer tri-state row: "In review" / "Changes requested" /
-     "Approved", one row directly under each reviewer's picker. Only the
-     matching assigned reviewer can click their own row (see
-     reviewStateButtonsHtml / onSetReviewState) — everyone else sees it
-     disabled, same shape as the read-only Security Rules constraint this
-     mirrors client-side. */
-  .rv-state-row{display:flex; gap:4px; margin:0 0 6px 22px;}
-  .rv-state-btn{
-    flex:1 1 0; font-size:10.5px; padding:3px 4px; border-radius:5px;
-    border:1px solid var(--line); background:var(--surface); color:var(--muted);
-    cursor:pointer; text-align:center; line-height:1.25;
+  /* One reviewer's derived state, directly under their picker — a label,
+     not a control (2026-09-14, replaces a clickable tri-state row: see
+     reviewStatePillHtml/onToggleChecklist). Nothing to disable, since
+     nothing here is ever clicked. */
+  .rv-state-pill{
+    display:inline-block; margin:0 0 6px 22px; font-size:10.5px; font-weight:700;
+    padding:3px 7px; border-radius:5px; line-height:1.25;
   }
-  .rv-state-btn:disabled{cursor:default; opacity:0.55;}
-  .rv-state-btn.is-active{border-color:transparent; font-weight:700;}
-  .rv-state-btn.rv-state-in_review.is-active{background:var(--warn-bg); color:var(--warn-text);}
-  .rv-state-btn.rv-state-changes_requested.is-active{background:var(--danger-bg); color:var(--danger-text);}
-  .rv-state-btn.rv-state-approved.is-active{background:var(--success-bg); color:var(--success-text);}
+  .rv-state-pill.rv-state-in_review{background:var(--warn-bg); color:var(--warn-text);}
+  .rv-state-pill.rv-state-approved{background:var(--success-bg); color:var(--success-text);}
   .rv-input{
     flex:1 1 auto; min-width:0; font-size:12px; padding:5px 7px;
     border:1px solid var(--line); border-radius:6px;
@@ -512,6 +505,9 @@
   .cl-cat{font-weight:700; font-size:13px; color:var(--ink); margin:16px 0 4px;}
   .cl-cat:first-child{margin-top:0;}
   .cl-head, .cl-row{display:grid; grid-template-columns:1fr 68px 68px; gap:10px;}
+  /* Authors' checklist (2026-09-14): one checkbox column, not two — same
+     base grid/row styling, just a narrower track list. */
+  .cl-head.single, .cl-row.single{grid-template-columns:1fr 68px;}
   .cl-head{
     font-size:10.5px; font-weight:700; color:var(--muted);
     text-transform:uppercase; letter-spacing:0;
@@ -521,6 +517,7 @@
   .cl-head span{text-align:center;}
   .cl-head span:nth-child(2){color:var(--teal);}
   .cl-head span:nth-child(3){color:var(--plum);}
+  .cl-head.single span:nth-child(2){color:var(--accent);}
   .cl-item{border-bottom:1px solid var(--line); padding:2px 0;}
   .cl-row{padding:9px 6px; font-size:13.5px; align-items:start; border-radius:4px;}
   .cl-row:hover{background:var(--wash);}
@@ -528,6 +525,7 @@
   .cl-row input[type="checkbox"]{width:16px; height:16px; margin:2px auto 0; display:block; cursor:pointer;}
   .cl-row input[type="checkbox"]:nth-of-type(1){accent-color:var(--teal);}
   .cl-row input[type="checkbox"]:nth-of-type(2){accent-color:var(--plum);}
+  .cl-row.single input[type="checkbox"]:nth-of-type(1){accent-color:var(--accent);}
   .cl-row input[type="checkbox"]:disabled{cursor:default; opacity:0.45;}
   .cl-row-foot{padding:0 6px 8px;}
   .cl-row-foot .btn-text{font-size:12px;}
@@ -753,9 +751,19 @@
   var REVIEW_ROLES = ['junior', 'senior'];
   var REVIEW_ROLE_LABELS = { junior: 'Junior', senior: 'Senior' };
 
+  // Two different shapes depending on part (2026-09-14, see
+  // authorChecklistComplete/roleChecklistComplete): a format item is
+  // ticked once, by any author — authorChecked, no junior/senior at all.
+  // A science item keeps the original per-reviewer shape — junior/senior,
+  // no authorChecked. Never both on the same item; which fields an item
+  // carries is itself how the rest of the file tells the two checklists
+  // apart, alongside `part`.
   function makeChecklistSnapshot(){
     return CHECKLIST_TEMPLATE.map(function(item, i){
-      return { id: 'chk-' + (i + 1), part: item.part, category: item.category, label: item.label, junior: false, senior: false, comments: [] };
+      var base = { id: 'chk-' + (i + 1), part: item.part, category: item.category, label: item.label, comments: [] };
+      return item.part === 'format'
+        ? Object.assign(base, { authorChecked: false })
+        : Object.assign(base, { junior: false, senior: false });
     });
   }
 
@@ -1924,9 +1932,40 @@
   }
 
   // ---------- checklist + gate ----------
+  // Two checklists, two different people (2026-09-14, per Eduardo: "We
+  // don't want reviewers to check for 'Format'. We want authors to check
+  // for it"). `part` on a checklist item ('format'|'science') already
+  // grouped the 12 items by content; it now ALSO decides who's allowed to
+  // tick it and what shape the tick itself takes — see makeChecklistSnapshot.
+  // Format = the authors' checklist: any listed co-author, one
+  // `authorChecked` boolean per item, no junior/senior split. Science =
+  // the reviewers' checklist: unchanged from before this split — the
+  // assigned Junior and Senior each still tick their own independent
+  // pass. Both checklists have to be complete for a card to leave Drafted
+  // for Reviewed (checklistComplete, below) — "analogous for reviewers",
+  // matching how the gate already worked, just now genuinely gated on two
+  // different checklists instead of one shared one.
 
+  function checklistItemsFor(card, part){
+    return ((card && card.checklist) || []).filter(function(it){ return it.part === part; });
+  }
+
+  // { done, total } over the format items only — the authors' checklist.
+  function authorChecklistCounts(card){
+    var items = checklistItemsFor(card, 'format');
+    return { done: items.filter(function(it){ return it.authorChecked; }).length, total: items.length };
+  }
+
+  function authorChecklistComplete(card){
+    var c = authorChecklistCounts(card);
+    return c.total > 0 && c.done === c.total;
+  }
+
+  // Science items only now — the reviewers' checklist. Same shape as
+  // before the format/science split (junior/senior counts against a
+  // total), just scoped to fewer items.
   function checklistCounts(card){
-    var items = (card && card.checklist) || [];
+    var items = checklistItemsFor(card, 'science');
     var out = { total: items.length };
     REVIEW_ROLES.forEach(function(role){
       out[role] = items.filter(function(it){ return it[role]; }).length;
@@ -1934,10 +1973,40 @@
     return out;
   }
 
-  function checklistComplete(card){
+  // One reviewer's own pass on the Science checklist, not both —
+  // reviewerChecklistComplete (below) needs both roles done. This is the
+  // single source of truth for that one reviewer's own state (2026-09-14):
+  // originally added to gate a manually-clickable "Approved" button (a
+  // real bug — that button had no such gate at all, so a reviewer could
+  // click Approved with zero boxes ticked, showing a green card that then
+  // couldn't actually advance since the advance gate correctly still
+  // checked the full checklist); the button itself was then removed
+  // entirely as redundant, and this became what jrReviewState/
+  // srReviewState are derived from on every write, and what
+  // reviewStatePillHtml reads directly for display.
+  function roleChecklistComplete(card, role){
     var c = checklistCounts(card);
-    if (!c.total) return false;
-    return REVIEW_ROLES.every(function(role){ return c[role] === c.total; });
+    return c.total > 0 && c[role] === c.total;
+  }
+
+  function reviewerChecklistComplete(card){
+    return REVIEW_ROLES.every(function(role){ return roleChecklistComplete(card, role); });
+  }
+
+  // The real advance gate: BOTH checklists done, not just one — the
+  // authors' Format pass AND the reviewers' Science pass.
+  function checklistComplete(card){
+    return authorChecklistComplete(card) && reviewerChecklistComplete(card);
+  }
+
+  // Any co-author (not just whoever registered the paper) can tick the
+  // authors' checklist — per Eduardo, deliberately broader than the
+  // single-submitter pattern used elsewhere in this file (onSetReviewer,
+  // etc.), since a paper's Format pass is naturally something any of its
+  // authors might be the one to actually do.
+  function isCardAuthorEmail(card, email){
+    if (!email) return false;
+    return ((card && card.authors) || []).some(function(a){ return a && a.email === email; });
   }
 
   // The PI isn't a separate field — by convention it's just the last
@@ -2016,12 +2085,20 @@
   // reason to show (title tooltip / toast) or null if the move is allowed.
   function advanceBlockReason(card, toStatus){
     if (crossesGate(card.status, toStatus) && !checklistComplete(card)){
+      var authorsDone = authorChecklistComplete(card);
+      var reviewersDone = reviewerChecklistComplete(card);
+      if (!authorsDone && !reviewersDone) return 'Finish both checklists first — authors’ and reviewers’';
+      if (!authorsDone) return 'Finish the authors’ checklist first';
       return 'Finish the Junior and Senior checklists first';
     }
-    // Both reviewers must have independently marked Approved (see
-    // reviewFilterState/reviewStateButtonsHtml) before a card can leave
-    // Drafted for Reviewed — same gate onSetReviewState's auto-advance is
-    // already held to, just also enforced here for a manual Advance/select.
+    // Both reviewers' derived states must read Approved (reviewFilterState)
+    // before a card can leave Drafted for Reviewed — normally implied by
+    // the checklistComplete() check just above, since jrReviewState/
+    // srReviewState are now purely derived from the checklist (see
+    // onToggleChecklist), but kept as its own check too: it's the one
+    // thing that still catches a legacy pre-2026-09-14 card sitting on a
+    // stale 'changes_requested' value nobody's touched since, which a raw
+    // tick-count alone wouldn't see.
     if (crossesGate(card.status, toStatus) && reviewFilterState(card) !== 'approved'){
       return 'Both reviewers must approve first';
     }
@@ -2059,7 +2136,12 @@
       // No id-stable mapping back, so rebuild from the current template;
       // carry a tick forward only when the whole part was already done
       // (a reasonable "this pass was finished" signal — anything partial
-      // starts fresh against the new, shorter list).
+      // starts fresh against the new, shorter list). Format's carry-
+      // forward (2026-09-14, see authorChecklistComplete) has no role to
+      // key off any more — "was format already done" is read off whatever
+      // per-role data the old shape happened to have (both roles ticking
+      // every format item, back when format was still part of the
+      // reviewers' pass), a one-time best-effort signal only.
       var doneByPartRole = {};
       REVIEW_ROLES.forEach(function(role){
         ['format', 'science'].forEach(function(part){
@@ -2068,36 +2150,48 @@
         });
       });
       out = Object.assign({}, out, { checklist: template.map(function(it){
-        var next = { id: it.id, part: it.part, category: it.category, label: it.label, comments: [] };
-        REVIEW_ROLES.forEach(function(role){ next[role] = !!doneByPartRole[it.part + ':' + role]; });
-        return next;
+        var base = { id: it.id, part: it.part, category: it.category, label: it.label, comments: [] };
+        return it.part === 'format'
+          ? Object.assign(base, { authorChecked: !!(doneByPartRole['format:junior'] && doneByPartRole['format:senior']) })
+          : Object.assign(base, { junior: !!doneByPartRole['science:junior'], senior: !!doneByPartRole['science:senior'] });
       }) });
-    } else if (cl.some(function(it){ return typeof it.junior === 'undefined' || typeof it.senior === 'undefined' || typeof it.author !== 'undefined' || !Array.isArray(it.comments); })){
+    } else if (cl.some(function(it){
+      return it.part === 'format'
+        ? (typeof it.authorChecked === 'undefined' || !Array.isArray(it.comments))
+        : (typeof it.junior === 'undefined' || typeof it.senior === 'undefined' || typeof it.author !== 'undefined' || !Array.isArray(it.comments));
+    })){
+      // Covers both a stray pre-2026-09-14 shape (format items still
+      // carrying junior/senior from when format was part of the
+      // reviewers' pass — carried forward as authorChecked exactly like
+      // the branch above, "both reviewers already had it ticked") and any
+      // other stray legacy field (author/auditor from an even older
+      // design).
       out = Object.assign({}, out, { checklist: cl.map(function(it){
-        return { id: it.id, part: it.part, category: it.category, label: it.label,
-                 junior: !!it.junior,
-                 senior: !!it.senior || !!it.auditor,
-                 comments: Array.isArray(it.comments) ? it.comments : [] };
+        var base = { id: it.id, part: it.part, category: it.category, label: it.label, comments: Array.isArray(it.comments) ? it.comments : [] };
+        return it.part === 'format'
+          ? Object.assign(base, { authorChecked: !!it.authorChecked || !!(it.junior && it.senior) })
+          : Object.assign(base, { junior: !!it.junior, senior: !!it.senior || !!it.auditor });
       }) });
     }
     if (!out.reviewers || typeof out.reviewers !== 'object'){
       out = Object.assign({}, out, { reviewers: { junior: (out.assignedTo || ''), senior: '' } });
     }
-    // jrReviewState/srReviewState (2026-09-11): each reviewer's own
-    // explicit, manual tri-state sign-off — 'in_review' | 'changes_requested'
-    // | 'approved' — deliberately separate from checklistComplete(), which
-    // only means every box is ticked, not that a reviewer has actually
-    // signed off on the draft. Replaces the brief earlier shape (a shared
-    // changesRequested flag plus independent jrApproved/srApproved
-    // booleans); migrate any card still carrying that shape so a reviewer's
-    // prior sign-off isn't lost. New cards never write changesRequested/
-    // jrApproved/srApproved (see onAddCard) — the fields are only read here.
+    // jrReviewState/srReviewState (2026-09-11, redesigned 2026-09-14):
+    // each reviewer's own state, purely derived from their checklist pass
+    // — 'in_review' | 'approved' (see onToggleChecklist/
+    // roleChecklistComplete; there was briefly also a manually-clickable
+    // 'changes_requested', removed as redundant with the checklist and a
+    // source of a real bug — see roleChecklistComplete's comment). This
+    // migration only ever fires once, for a card that predates even the
+    // original 2026-09-11 shape (a shared changesRequested flag plus
+    // independent jrApproved/srApproved booleans) — any historical
+    // "changes requested" signal just resolves to 'in_review' now (i.e.
+    // "not yet approved"), same as it would today; the very next tick on
+    // that card brings it fully in line with its real checklist state
+    // regardless. New cards never write changesRequested/jrApproved/
+    // srApproved (see onAddCard) — the fields are only read here.
     if (typeof out.jrReviewState !== 'string' || typeof out.srReviewState !== 'string'){
-      var hadChangesRequested = !!out.changesRequested || oldStatus === 'changes_requested';
-      var deriveState = function(approved){
-        if (hadChangesRequested) return 'changes_requested';
-        return approved ? 'approved' : 'in_review';
-      };
+      var deriveState = function(approved){ return approved ? 'approved' : 'in_review'; };
       out = Object.assign({}, out, {
         jrReviewState: deriveState(out.jrApproved),
         srReviewState: deriveState(out.srApproved)
@@ -2154,16 +2248,18 @@
   }
 
   // Draft & Review has no sub-columns any more — this is what the card's
-  // colour + badge in that column are driven by. Deliberately not derived
-  // from checklistComplete() (2026-09-11) — ticking every box just means
-  // every box is ticked, not that a reviewer has actually signed off, so
-  // "Approved" only follows each reviewer's own explicit, manual
-  // jrReviewState/srReviewState. The checklist-completion gate on advancing
-  // past Reviewed (crossesGate, GATE_STATUS) is unrelated and unchanged —
-  // this is a separate signal on top of it, not a replacement. Once both
-  // reviewers independently reach 'approved' on a card still in Draft &
-  // Review, onSetReviewState auto-advances it to Reviewed itself (still
-  // held to that same checklist gate) — see its comment.
+  // colour + badge in that column are driven by. Reads jrReviewState/
+  // srReviewState, not raw ticks directly — those two fields are now
+  // purely derived from each reviewer's own checklist pass (see
+  // onToggleChecklist/roleChecklistComplete, 2026-09-14; originally these
+  // were an independent manual sign-off, changed after a reviewer could
+  // click "Approved" with nothing ticked). Kept as a separate read here,
+  // rather than calling roleChecklistComplete twice more, mainly so a
+  // legacy pre-2026-09-14 card's stale 'changes_requested' value still
+  // renders correctly until it's next touched — see its own handling
+  // below. Once both reviewers reach 'approved', onToggleChecklist
+  // auto-advances the card to Reviewed itself (still held to the same
+  // checklist gate) — see its comment.
   //
   // Three buckets for the card's overall colour + the board filter — a
   // partially-approved card (only one reviewer signed off) still counts as
@@ -2188,37 +2284,23 @@
     return badges.length ? badges : ['in_review'];
   }
 
+  // changes_requested stays in both label maps — display-only, for a
+  // legacy pre-2026-09-14 card's stale value (see reviewFilterState) —
+  // nothing writes it any more, so there's no options/button-label
+  // constant for it any more either (removed with reviewStateButtonsHtml).
   var REVIEW_STATE_LABELS = {
     in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved',
     jr_approved: 'JR approved', sr_approved: 'SR approved'
   };
   var REVIEW_FILTER_LABELS = { all: 'Any review status', in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
-  var REVIEW_STATE_OPTIONS = ['in_review', 'changes_requested', 'approved'];
-  var REVIEW_STATE_BTN_LABELS = { in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
 
-  // Three buttons, same line, under one reviewer's picker — only the
-  // person actually assigned as that reviewer (card.reviewers[role] ===
-  // their signed-in email) can click theirs; everyone else sees the same
-  // row, disabled. This is a client-side-only restriction: the Security
-  // Rules already require email() to match one of the card's reviewer
-  // fields (or submitter/PI/admin) to write the card at all, at the
-  // whole-document level — there's no field-level rule stopping the junior
-  // reviewer from writing srReviewState if they somehow bypassed the UI.
-  // That's a bigger, separate piece of work, not attempted here.
-  function reviewStateButtonsHtml(card, role){
-    var field = role === 'senior' ? 'srReviewState' : 'jrReviewState';
-    var current = card[field] || 'in_review';
-    var reviewerEmail = (card.reviewers && card.reviewers[role]) || '';
-    var canAct = !!(state.currentUser && reviewerEmail && state.currentUser.email === reviewerEmail);
-    var html = '<div class="rv-state-row" role="group" aria-label="' + REVIEW_ROLE_LABELS[role] + ' review status">';
-    REVIEW_STATE_OPTIONS.forEach(function(v){
-      html += '<button type="button" class="rv-state-btn rv-state-' + v + (current === v ? ' is-active' : '') + '" ' +
-        'data-set-review-state="' + escapeHtml(card.id) + '" data-review-role="' + role + '" data-review-value="' + v + '"' +
-        (canAct ? '' : ' disabled title="Only the assigned ' + REVIEW_ROLE_LABELS[role].toLowerCase() + ' reviewer can set this"') +
-        '>' + REVIEW_STATE_BTN_LABELS[v] + '</button>';
-    });
-    html += '</div>';
-    return html;
+  // A read-only label, not a button (2026-09-14, simplified per Eduardo —
+  // see onToggleChecklist's comment for why). One reviewer's own state,
+  // derived purely from their own checklist pass: nothing to click, so no
+  // access check needed here either — it just reports what's true.
+  function reviewStatePillHtml(card, role){
+    var v = roleChecklistComplete(card, role) ? 'approved' : 'in_review';
+    return '<span class="rv-state-pill rv-state-' + v + '">' + REVIEW_STATE_LABELS[v] + '</span>';
   }
 
   function renderCard(card, board){
@@ -2244,13 +2326,15 @@
     if (card.rebuttalDocLink) html += '<a class="card-link" href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Rebuttal doc</a><br>';
     html += '<div class="card-reviewers">' +
       '<div class="rv-row"><span class="rv-role junior">Jr</span>' + reviewerInputHtml(card, 'junior') + '</div>' +
-      (inDraftReview ? reviewStateButtonsHtml(card, 'junior') : '') +
+      (inDraftReview ? reviewStatePillHtml(card, 'junior') : '') +
       '<div class="rv-row"><span class="rv-role senior">Sr</span>' + reviewerInputHtml(card, 'senior') + '</div>' +
-      (inDraftReview ? reviewStateButtonsHtml(card, 'senior') : '') +
+      (inDraftReview ? reviewStatePillHtml(card, 'senior') : '') +
     '</div>';
     if (card.reviewNotes) html += '<div class="card-notes">' + escapeHtml(card.reviewNotes) + '</div>';
-    var counts = checklistCounts(card);
-    html += '<div class="card-progress">Checklist &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
+    var counts = checklistCounts(card); // science checklist — reviewers
+    var authorCounts = authorChecklistCounts(card); // format checklist — authors
+    html += '<div class="card-progress">Checklist &middot; authors ' + authorCounts.done + '/' + authorCounts.total +
+      ' &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:4px 7px;margin-bottom:8px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn\u2019t a column anymore &mdash; pick a new one below</div>';
     if (STATUS_LABELS[card.status]) {
       var lft = statusAt(displayStatus(card, board), -1, effectiveStatusOrder(board));
@@ -2524,11 +2608,6 @@
         openCard(btn.getAttribute('data-open-card'));
       });
     });
-    Array.prototype.forEach.call(document.querySelectorAll('[data-set-review-state]'), function(btn){
-      btn.addEventListener('click', function(){
-        onSetReviewState(btn.getAttribute('data-set-review-state'), btn.getAttribute('data-review-role'), btn.getAttribute('data-review-value'));
-      });
-    });
   }
 
   // ---------- card detail ----------
@@ -2557,18 +2636,19 @@
   }
 
   function gateBannerHtml(card){
+    var ac = authorChecklistCounts(card);
     var c = checklistCounts(card);
     var done = checklistComplete(card);
     var rv = card.reviewers || {};
-    var counts = REVIEW_ROLES.map(function(role){
+    var counts = 'authors <strong>' + ac.done + '/' + ac.total + '</strong>, ' + REVIEW_ROLES.map(function(role){
       return REVIEW_ROLE_LABELS[role].toLowerCase() + ' <strong>' + c[role] + '/' + c.total + '</strong>';
     }).join(', ');
     var noRev = !rv.junior || !rv.senior;
     return '<div class="gate-banner' + (done ? ' done' : '') + '" id="gateBanner">' +
-      'Checklist &mdash; ' + counts + '. ' +
+      'Checklists &mdash; ' + counts + '. ' +
       (done
-        ? 'Both passes complete &mdash; this paper can be moved to ' + STATUS_LABELS[GATE_STATUS] + '.'
-        : 'Both must be complete before this paper can reach ' + STATUS_LABELS[GATE_STATUS] + '.') +
+        ? 'Both checklists complete &mdash; this paper can be moved to ' + STATUS_LABELS[GATE_STATUS] + '.'
+        : 'Both the authors’ and the reviewers’ checklists must be complete before this paper can reach ' + STATUS_LABELS[GATE_STATUS] + '.') +
       (noRev ? ' <strong>Assign a junior and a senior reviewer</strong> below.' : '') +
     '</div>';
   }
@@ -2613,8 +2693,10 @@
 
   // Only the reviewer actually assigned to a role (card.reviewers[role] ===
   // their signed-in email) can tick that role's boxes — same client-side
-  // shape as reviewStateButtonsHtml/onSetReviewState. Computed once per
-  // role here rather than per item, since it doesn't vary by item.
+  // shape used throughout this file, not the real access control.
+  // Computed once per role here rather than per item, since it doesn't
+  // vary by item. Science checklist only — the authors' checklist has its
+  // own, broader access check (isCardAuthorEmail).
   function checklistTickAccess(card){
     var access = {};
     REVIEW_ROLES.forEach(function(role){
@@ -2624,8 +2706,50 @@
     return access;
   }
 
+  // Two genuinely different layouts, not just a filtered list (2026-09-14):
+  // format is the authors' checklist — one checkbox per item, ticked by any
+  // co-author (isCardAuthorEmail), wired through onToggleAuthorChecklist.
+  // science is the reviewers' checklist — unchanged from before the split,
+  // junior + senior each still get their own column, wired through the
+  // original onToggleChecklist.
   function checklistTabHtml(card, part){
-    var items = (card.checklist || []).filter(function(it){ return it.part === part; });
+    if (part === 'format') return authorChecklistTabHtml(card);
+    return reviewerChecklistTabHtml(card);
+  }
+
+  function authorChecklistTabHtml(card){
+    var items = checklistItemsFor(card, 'format');
+    var openId = state.checklistCommentOpenId;
+    var canAct = !!(state.currentUser && isCardAuthorEmail(card, state.currentUser.email));
+    var html = '<div class="cl-wrap">';
+    html += '<div class="cl-head single"><span></span><span>Author</span></div>';
+    var lastCat = null;
+    items.forEach(function(it){
+      if (it.category !== lastCat){
+        html += '<div class="cl-cat">' + escapeHtml(it.category) + '</div>';
+        lastCat = it.category;
+      }
+      html += '<div class="cl-item">';
+      html += '<div class="cl-row single">';
+      html += '<label class="cl-label" for="cla-' + escapeHtml(it.id) + '">' + escapeHtml(it.label) + '</label>';
+      html += '<input type="checkbox" id="cla-' + escapeHtml(it.id) + '" data-cla="' + escapeHtml(card.id) + '" data-cla-item="' + escapeHtml(it.id) + '"' + (it.authorChecked ? ' checked' : '') +
+        (canAct ? '' : ' disabled title="Only a listed author can tick this"') +
+        ' aria-label="Author: ' + escapeHtml(it.label) + '">';
+      html += '</div>';
+      var n = threadCount(it.comments);
+      var isOpen = openId === it.id;
+      html += '<div class="cl-row-foot"><button class="btn-text' + (n ? ' has-feedback' : '') + '" type="button" data-clc-toggle="' + escapeHtml(it.id) + '">' +
+        (isOpen ? 'Hide feedback' : (n ? '&#128172; ' + n + ' comment' + (n === 1 ? '' : 's') : '&#128172; Add feedback')) +
+      '</button></div>';
+      if (isOpen) html += checklistItemThreadHtml(it);
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function reviewerChecklistTabHtml(card){
+    var items = checklistItemsFor(card, 'science');
     var openId = state.checklistCommentOpenId;
     var access = checklistTickAccess(card);
     var html = '<div class="cl-wrap">';
@@ -2709,8 +2833,8 @@
     var tab = state.detailTab || 'format';
     var discCount = threadCount(card.discussion);
     var html = '<div class="tabbar" role="tablist" aria-label="Review">' +
-      '<button class="tab' + (tab === 'format' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-format" data-detail-tab="format" aria-selected="' + (tab === 'format') + '">Format</button>' +
-      '<button class="tab' + (tab === 'science' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-science" data-detail-tab="science" aria-selected="' + (tab === 'science') + '">Science</button>' +
+      '<button class="tab' + (tab === 'format' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-format" data-detail-tab="format" aria-selected="' + (tab === 'format') + '">Checklist of authors</button>' +
+      '<button class="tab' + (tab === 'science' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-science" data-detail-tab="science" aria-selected="' + (tab === 'science') + '">Checklist for reviewers</button>' +
       '<button class="tab' + (tab === 'discussion' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-discussion" data-detail-tab="discussion" aria-selected="' + (tab === 'discussion') + '">Discussion' + (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</button>' +
     '</div>';
     html += '<div class="tabpanel active">';
@@ -2933,9 +3057,9 @@
       : '—') + '</dd>';
     if (card.createdAt) html += '<dt>Registered</dt><dd>' + formatTimestamp(card.createdAt) + '</dd>';
     html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') +
-      (card.status === 'draft_review' ? reviewStateButtonsHtml(card, 'junior') : '') + '</dd>';
+      (card.status === 'draft_review' ? reviewStatePillHtml(card, 'junior') : '') + '</dd>';
     html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'senior') +
-      (card.status === 'draft_review' ? reviewStateButtonsHtml(card, 'senior') : '') + '</dd>';
+      (card.status === 'draft_review' ? reviewStatePillHtml(card, 'senior') : '') + '</dd>';
     var regNote = card.history && card.history[0] && card.history[0].note;
     if (regNote) html += '<dt>Note at registration</dt><dd style="white-space:pre-wrap;">' + escapeHtml(regNote) + '</dd>';
     if (card.reviewNotes) html += '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>';
@@ -3005,34 +3129,39 @@
     if (ed) ed.addEventListener('click', function(){ openEditModal(ed.getAttribute('data-edit')); });
     var rm = els.boardRegion.querySelector('[data-remove]');
     if (rm) rm.addEventListener('click', function(){ onRemoveCard(rm.getAttribute('data-remove')); });
-    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-set-review-state]'), function(btn){
-      btn.addEventListener('click', function(){
-        onSetReviewState(btn.getAttribute('data-set-review-state'), btn.getAttribute('data-review-role'), btn.getAttribute('data-review-value'));
-      });
-    });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cl]'), function(box){
       box.addEventListener('change', function(){
         onToggleChecklist(box.getAttribute('data-cl'), box.getAttribute('data-cl-item'), box.getAttribute('data-cl-role'), box.checked);
+      });
+    });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cla]'), function(box){
+      box.addEventListener('change', function(){
+        onToggleAuthorChecklist(box.getAttribute('data-cla'), box.getAttribute('data-cla-item'), box.checked);
       });
     });
   }
 
   // role is 'junior' or 'senior'. Client-side-restricted to the matching
   // assigned reviewer (checklistTickAccess/checklistTabHtml already
-  // disables the checkbox for anyone else) — same belt-and-braces shape as
-  // onSetReviewState, not the real access control (Security Rules).
+  // disables the checkbox for anyone else) — same belt-and-braces shape
+  // used throughout this file, not the real access control (Security
+  // Rules).
   //
-  // Auto-syncs that reviewer's own sign-off to their own checklist
-  // completion (2026-09-11): all of a role's boxes ticked sets that role's
-  // jrReviewState/srReviewState to 'approved'; any of them unticked while
-  // currently 'approved' takes it back to 'in_review'. Never touches an
-  // explicit 'changes_requested' either way — that's a stronger, separate
-  // signal from the reviewer, not something checklist state should quietly
-  // overwrite or clear. Reuses onSetReviewState's exact auto-advance
-  // condition (both roles 'approved', still in Drafted, checklist gate met)
-  // so completing the last box behaves the same as clicking Approved by
-  // hand — including staying put if the checklist (now complete by
-  // definition) still fails some other future gate.
+  // Review state is now purely derived from the checklist (2026-09-14,
+  // simplified per Eduardo — replaces the earlier manual-sign-off design):
+  // a role's jrReviewState/srReviewState is 'approved' exactly when every
+  // one of that role's boxes is ticked, 'in_review' otherwise. No other
+  // input exists any more — there used to also be a manually-clickable
+  // 'changes_requested' state (onSetReviewState, now removed) with its own
+  // button row, but that let a reviewer mark themselves Approved with
+  // nothing ticked (a real bug — see roleChecklistComplete's comment) and,
+  // once fixed to gate on the checklist, was just a redundant second way
+  // to say the same thing the checklist already said. Ticking is the only
+  // remaining signal; unticking any box un-approves just as automatically.
+  // A stray legacy 'changes_requested' value from before this change
+  // (reviewFilterState/reviewBadges still render it, for cards nobody has
+  // touched since) self-heals the moment anyone ticks or unticks a box —
+  // deliberately no explicit migration beyond that.
   function onToggleChecklist(cardId, itemId, role, checked){
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card) return;
@@ -3052,24 +3181,22 @@
       });
       var merged = Object.assign({}, c, { checklist: newChecklist });
 
-      var counts = checklistCounts(merged);
       REVIEW_ROLES.forEach(function(r){
         var field = r === 'senior' ? 'srReviewState' : 'jrReviewState';
-        if (merged[field] === 'changes_requested') return;
-        var roleComplete = counts.total > 0 && counts[r] === counts.total;
-        if (roleComplete && merged[field] !== 'approved'){
-          var p = {}; p[field] = 'approved';
+        var newVal = roleChecklistComplete(merged, r) ? 'approved' : 'in_review';
+        if (merged[field] !== newVal){
+          var p = {}; p[field] = newVal;
           merged = Object.assign({}, merged, p);
-          reviewStateChanged = true;
-        } else if (!roleComplete && merged[field] === 'approved'){
-          var p2 = {}; p2[field] = 'in_review';
-          merged = Object.assign({}, merged, p2);
           reviewStateChanged = true;
         }
       });
 
-      if (merged.status === 'draft_review' && merged.jrReviewState === 'approved' && merged.srReviewState === 'approved' &&
-          crossesGate(merged.status, 'final_draft') && checklistComplete(merged)){
+      // checklistComplete(merged) already means both roles are
+      // 'approved' — they're the same fact now that review state is
+      // fully derived from it, so there's no separate jrReviewState/
+      // srReviewState check to duplicate here any more.
+      if (merged.status === 'draft_review' && checklistComplete(merged) &&
+          crossesGate(merged.status, 'final_draft')){
         merged.status = 'final_draft';
         autoAdvanced = true;
       }
@@ -3110,6 +3237,50 @@
       }
     }
 
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast(saveErrorMessage('Could not save the checklist — try again.'), 'error');
+      } else if (autoAdvanced && wasDraftReview){
+        showToast('Checklist complete and both reviewers approved — moved to ' + STATUS_LABELS.final_draft + '.', 'ok');
+      }
+    });
+  }
+
+  // The authors' checklist's own toggle handler (2026-09-14) — separate
+  // from onToggleChecklist above rather than folded into it, since the
+  // access model is genuinely different (any listed co-author, not a
+  // specific assigned role) and there's no per-role field to set, just
+  // one shared authorChecked boolean per item. Same auto-advance shape as
+  // onToggleChecklist: completing the last box can push a card straight
+  // from Drafted to Reviewed if the reviewers' checklist is also already
+  // done.
+  function onToggleAuthorChecklist(cardId, itemId, checked){
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    if (!state.currentUser || !isCardAuthorEmail(card, state.currentUser.email)) return;
+
+    var boardId = state.currentBoardId;
+    var wasDraftReview = card.status === 'draft_review';
+    var autoAdvanced = false;
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      var newChecklist = c.checklist.map(function(it){
+        if (it.id !== itemId) return it;
+        return Object.assign({}, it, { authorChecked: checked });
+      });
+      var merged = Object.assign({}, c, { checklist: newChecklist });
+      if (merged.status === 'draft_review' && checklistComplete(merged) && crossesGate(merged.status, 'final_draft')){
+        merged.status = 'final_draft';
+        autoAdvanced = true;
+      }
+      merged.updatedAt = Date.now();
+      return merged;
+    });
+    var prev = state.cards;
+    state.cards = next;
+    renderCardDetail();
     saveBoard(boardId, { cards: next }).then(function(ok){
       if (!ok){
         state.cards = prev;
@@ -3676,18 +3847,19 @@
     if (!card || card.status === newStatus) return;
 
     if (crossesGate(card.status, newStatus) && !checklistComplete(card)){
+      var ac = authorChecklistCounts(card);
       var cc = checklistCounts(card);
-      var summary = REVIEW_ROLES.map(function(role){
+      var summary = 'authors ' + ac.done + '/' + ac.total + ', ' + REVIEW_ROLES.map(function(role){
         return REVIEW_ROLE_LABELS[role].toLowerCase() + ' ' + cc[role] + '/' + cc.total;
       }).join(', ');
-      showToast('Both checklist passes must be complete before ' + STATUS_LABELS[GATE_STATUS] + ' — ' + summary + '.', 'error');
+      showToast('Both checklists must be complete before ' + STATUS_LABELS[GATE_STATUS] + ' — ' + summary + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
     }
 
-    // Same gate as advanceBlockReason() and the one onSetReviewState's
-    // auto-advance already holds itself to — enforced here too so a manual
-    // Advance/select can't bypass it.
+    // Same gate as advanceBlockReason() — see its own comment for why
+    // this is (normally redundant with, but kept alongside) the
+    // checklistComplete() check just above.
     if (crossesGate(card.status, newStatus) && reviewFilterState(card) !== 'approved'){
       showToast('Both reviewers must approve before ' + STATUS_LABELS[GATE_STATUS] + '.', 'error');
       renderBoard(); // undo any dropdown selection
@@ -3739,59 +3911,6 @@
         state.cards = prev;
         renderBoard();
         showToast(saveErrorMessage('Could not save the reviewer — try again.'), 'error');
-      }
-    });
-  }
-
-  // role is 'junior' or 'senior'; value is one of REVIEW_STATE_OPTIONS. Sets
-  // that reviewer's own jrReviewState/srReviewState — an explicit, manual
-  // sign-off, deliberately not derived from the checklist (see
-  // reviewFilterState/reviewBadges). Client-side-gated to the matching
-  // assigned reviewer (see reviewStateButtonsHtml's `disabled`) — this
-  // check is belt-and-braces against a stray click event, not the real
-  // access control, which is the Security Rules' card-update condition.
-  //
-  // Once both reviewers reach 'approved' on a card still in Draft & Review,
-  // this auto-advances the card straight to Reviewed (final_draft) in the
-  // same save, same as picking "Advance" by hand — nobody has to remember a
-  // separate step once both sign-offs are in. Still held to the same
-  // checklist gate as any other move that crosses GATE_STATUS
-  // (crossesGate/checklistComplete, see onChangeStatus): if the checklist
-  // isn't finished yet, the status is left alone rather than force-advancing
-  // past that gate; it'll advance next time a state flips once the
-  // checklist catches up, or someone can Advance manually.
-  function onSetReviewState(cardId, role, value){
-    if (REVIEW_STATE_OPTIONS.indexOf(value) === -1) return;
-    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
-    if (!card) return;
-    var field = role === 'senior' ? 'srReviewState' : 'jrReviewState';
-    var reviewerEmail = (card.reviewers && card.reviewers[role]) || '';
-    if (!state.currentUser || !reviewerEmail || state.currentUser.email !== reviewerEmail) return;
-    var boardId = state.currentBoardId;
-    var wasDraftReview = card.status === 'draft_review';
-    var autoAdvanced = false;
-    var next = state.cards.map(function(c){
-      if (c.id !== cardId) return c;
-      var patch = {}; patch[field] = value;
-      var merged = Object.assign({}, c, patch);
-      if (merged.status === 'draft_review' && merged.jrReviewState === 'approved' && merged.srReviewState === 'approved' &&
-          crossesGate(merged.status, 'final_draft') && checklistComplete(merged)){
-        merged.status = 'final_draft';
-        autoAdvanced = true;
-      }
-      merged.updatedAt = Date.now();
-      return merged;
-    });
-    var prev = state.cards;
-    state.cards = next; // optimistic
-    renderBoard();
-    saveBoard(boardId, { cards: next }).then(function(ok){
-      if (!ok){
-        state.cards = prev;
-        renderBoard();
-        showToast(saveErrorMessage('Could not save that — try again.'), 'error');
-      } else if (autoAdvanced && wasDraftReview){
-        showToast('Both reviewers approved — moved to ' + STATUS_LABELS.final_draft + '.', 'ok');
       }
     });
   }
