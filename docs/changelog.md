@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-14
 
+### Max papers per author is now a real hard gate, not just a label
+
+`board.maxPapersPerAuthor` has existed as a venue field since the venue modal did, shown as a summary line on the venue page ("≤ N papers/author") — but nothing ever actually stopped an author going over it. Registering or editing a paper now blocks with a clear per-author message ("A (3/2)") if it would put any listed author over that venue's cap, excluding withdrawn papers and the paper being edited from its own count.
+
 ### AGENTS.md for automating each checklist
 
 Two new files, `checklists/format/AGENTS.md` and `checklists/reviewers/AGENTS.md` — concrete, checklist-item-by-item instructions for an author's or reviewer's own coding agent to pre-check the paper before a human ticks the real boxes (a pre-check for authors, a skeptical pre-review for reviewers — neither replaces the human's own pass, which is still what actually gates the card). Linked with a one-line description at the top of each checklist tab in `audit-board.html`.
