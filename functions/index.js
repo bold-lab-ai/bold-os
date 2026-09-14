@@ -155,14 +155,38 @@ function canAssignReviewer(actingEmail, card, piEmails, adminEmails){
 }
 
 // A reviewer-picker action's identity is split across two payload fields —
-// action_id says which role (see reviewerPickerBlock's static_selects),
-// block_id says which card (see its 'card:{boardId}:{cardId}' block_id) —
-// so parsing it is one pure function taking both.
+// action_id says which role and which verb (see reviewerPickerBlock's
+// external_selects and Clear buttons), block_id says which card (its
+// 'card:{boardId}:{cardId}' block_id) — so parsing it is one pure
+// function taking both. 'assign' comes from picking a name in the
+// external_select; 'clear' comes from the explicit Clear button
+// (reviewerPickerBlock) — Block Kit's external_select, unlike a plain
+// HTML <select>, has no built-in way for the viewer to clear a value
+// once picked (confirmed live-testing 2026-09-14, correcting an earlier,
+// wrong assumption that Slack rendered an "x" for this) — the button is
+// the only way to unassign a reviewer from Slack at all.
 function parseAssignAction(actionId, blockId){
-  var roleMatch = /^assign_(junior|senior)$/.exec(actionId || '');
-  var blockMatch = /^card:([^:]+):([^:]+)$/.exec(blockId || '');
-  if (!roleMatch || !blockMatch) return null;
-  return { role: roleMatch[1], boardId: blockMatch[1], cardId: blockMatch[2] };
+  var match = /^(assign|clear)_(junior|senior)$/.exec(actionId || '');
+  // The trailing :junior/:senior (see reviewerPickerBlock) exists only to
+  // make each row's block_id unique within the view — action_id already
+  // carries the role, so it's accepted here but not itself read back out.
+  var blockMatch = /^card:([^:]+):([^:]+)(?::(?:junior|senior))?$/.exec(blockId || '');
+  if (!match || !blockMatch) return null;
+  return { verb: match[1], role: match[2], boardId: blockMatch[1], cardId: blockMatch[2] };
+}
+
+// Resolves the actual email to write for an 'assign' action from its
+// external_select selection. Defensive, not the primary way to clear a
+// reviewer (see parseAssignAction's comment — that's the Clear button,
+// handled separately in handleInteractivity): returns '' if
+// selected_option is present but null (matches audit-board.html's own
+// unassigned sentinel, `<option value="">Assign…</option>`, see
+// reviewerInputHtml/onSetReviewer) and null only when the action has no
+// selected_option key at all, i.e. isn't a select action's payload shape
+// in the first place — callers should ignore that case outright.
+function reviewerEmailFromAction(action){
+  if (!action || !('selected_option' in action)) return null;
+  return action.selected_option ? (action.selected_option.value || '') : '';
 }
 
 // One line of dashboard text for a card — same linkedTitle() clickable
@@ -236,15 +260,48 @@ function initialOptionForEmail(email, people){
 // silently dropped real people from a 274-person roster. external_select
 // instead calls back to this same function's block_suggestion handler as
 // the viewer types, so there's no upfront list size limit at all.
+// Returns an ARRAY of two `actions` blocks, one per role — junior's own
+// row above senior's own row — not one block. Originally a single row
+// with both selects then both Clear buttons trailing off to the side;
+// Eduardo (2026-09-14, after the danger-style buttons still didn't read
+// as paired with their own select): "put them below them, aligned" — i.e.
+// each select immediately followed by its own Clear button, one role per
+// line. Block Kit has no column/grid layout to align across separate
+// blocks, and no compound select+clear control, so "each pair on its own
+// row" is the closest real visual pairing actually achievable — two
+// elements on the SAME row read as belonging together in a way spacing
+// alone can't fake. Each row needs its own block_id (Slack requires
+// block_id to be unique across the whole view) — the boardId/cardId pair
+// is now suffixed with the role; parseAssignAction already gets the role
+// from action_id, so the suffix here is purely to satisfy that
+// uniqueness requirement, not something anything parses back out.
 function reviewerPickerBlock(item, people){
-  var junior = { type: 'external_select', action_id: 'assign_junior', placeholder: { type: 'plain_text', text: 'Junior reviewer' }, min_query_length: 1 };
-  var senior = { type: 'external_select', action_id: 'assign_senior', placeholder: { type: 'plain_text', text: 'Senior reviewer' }, min_query_length: 1 };
   var rv = (item.card && item.card.reviewers) || {};
+  var blockIdBase = 'card:' + item.boardId + ':' + item.cardId;
+
+  var junior = { type: 'external_select', action_id: 'assign_junior', placeholder: { type: 'plain_text', text: 'Junior reviewer' }, min_query_length: 1 };
   var jrInitial = initialOptionForEmail(rv.junior, people);
-  var srInitial = initialOptionForEmail(rv.senior, people);
   if (jrInitial) junior.initial_option = jrInitial;
+  var juniorElements = [junior];
+  if (rv.junior){
+    // style: 'danger' is Block Kit's red-button treatment — the closest a
+    // plain_text button can get to a small red "×" (there's no icon-only
+    // control in Block Kit for a literal × glyph).
+    juniorElements.push({ type: 'button', action_id: 'clear_junior', style: 'danger', text: { type: 'plain_text', text: '✕ Junior' } });
+  }
+
+  var senior = { type: 'external_select', action_id: 'assign_senior', placeholder: { type: 'plain_text', text: 'Senior reviewer' }, min_query_length: 1 };
+  var srInitial = initialOptionForEmail(rv.senior, people);
   if (srInitial) senior.initial_option = srInitial;
-  return { type: 'actions', block_id: 'card:' + item.boardId + ':' + item.cardId, elements: [junior, senior] };
+  var seniorElements = [senior];
+  if (rv.senior){
+    seniorElements.push({ type: 'button', action_id: 'clear_senior', style: 'danger', text: { type: 'plain_text', text: '✕ Senior' } });
+  }
+
+  return [
+    { type: 'actions', block_id: blockIdBase + ':junior', elements: juniorElements },
+    { type: 'actions', block_id: blockIdBase + ':senior', elements: seniorElements }
+  ];
 }
 
 // One heading + its cards (or an empty-state line) + a trailing divider —
@@ -275,7 +332,9 @@ function buildHomeView(email, sections, people){
   } else {
     sections.registered.forEach(function(item){
       blocks.push({ type: 'section', text: { type: 'mrkdwn', text: cardLine(item) } });
-      blocks.push(reviewerPickerBlock(item, people));
+      // reviewerPickerBlock now returns two rows (junior, then senior),
+      // not one — concat, not push, to flatten both into the view.
+      blocks = blocks.concat(reviewerPickerBlock(item, people));
     });
   }
   blocks.push({ type: 'divider' });
@@ -630,8 +689,9 @@ async function handleAppHomeOpened(token, slackUserId){
 }
 
 // Handles one block_actions Interactivity payload — today only the
-// reviewer-picker's external_select, per parseAssignAction's
-// action_id/block_id scheme (see reviewerPickerBlock). block_suggestion
+// reviewer-picker's external_select (pick) and Clear button (unassign),
+// per parseAssignAction's action_id/block_id scheme (see
+// reviewerPickerBlock). block_suggestion
 // (the live type-ahead) is a different payload type, handled separately
 // by handleBlockSuggestion below — it needs a synchronous JSON response,
 // not the empty-200-ack shape every block_actions handler uses. Anything
@@ -647,8 +707,17 @@ async function handleInteractivity(token, payload){
   if (!action) return;
   const parsed = parseAssignAction(action.action_id, action.block_id);
   if (!parsed) return;
-  const reviewerEmail = action.selected_option && action.selected_option.value;
-  if (!reviewerEmail) return;
+  // 'clear' (the explicit Clear button, see reviewerPickerBlock) always
+  // means "unassign", regardless of whatever's on the action payload — a
+  // button has no selected_option at all, so reviewerEmailFromAction
+  // would wrongly treat it as "not a select action, ignore" otherwise.
+  let reviewerEmail;
+  if (parsed.verb === 'clear'){
+    reviewerEmail = '';
+  } else {
+    reviewerEmail = reviewerEmailFromAction(action);
+    if (reviewerEmail === null) return;
+  }
 
   const actingSlackId = payload.user && payload.user.id;
   const actingEmail = await emailForSlackId(actingSlackId);
@@ -865,7 +934,7 @@ exports.slackEvents = onRequest(
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
   flattenMessages, newMessages, cardEventsToNotify, venueUrl, cardUrl, linkedTitle, reviewStateEmoji,
-  verifySlackSignatureRaw, canAssignReviewer, parseAssignAction, cardLine, personOptionsFor,
-  filterPeopleOptions, initialOptionForEmail, reviewerPickerBlock, sectionBlocks, buildHomeView,
-  buildUnrecognizedView
+  verifySlackSignatureRaw, canAssignReviewer, parseAssignAction, reviewerEmailFromAction, cardLine,
+  personOptionsFor, filterPeopleOptions, initialOptionForEmail, reviewerPickerBlock, sectionBlocks,
+  buildHomeView, buildUnrecognizedView
 };
