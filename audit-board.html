@@ -4473,13 +4473,44 @@
     });
   }
 
+  // Fixed 2026-09-14+1 — reported bug: a card kept showing a "JR approved"
+  // pill even though the junior reviewer plainly hadn't approved anything.
+  // roleChecklistComplete/reviewStatePillHtml only ever look at the
+  // checklist items' own junior/senior ticks — nothing here previously
+  // tied those ticks to WHO was actually assigned to the role, so
+  // reassigning junior/senior to a different person left the checklist
+  // exactly as the PREVIOUS person had left it. A brand-new reviewer in
+  // the role inherited a stranger's completed pass (or their partial one)
+  // as their own starting point. Now: whenever the assigned email in a
+  // role actually changes (to someone else, or to/from blank), that
+  // role's own science-checklist ticks reset to false and its
+  // jrReviewState/srReviewState resets to 'in_review', so a new reviewer
+  // always starts their own pass from zero. Re-picking the SAME person
+  // already in the role is a no-op and doesn't touch anything — this only
+  // fires on a genuine reassignment. Comments left on checklist items are
+  // untouched (a discussion record, not a per-reviewer progress flag), and
+  // the card's own status/column is untouched too — this only corrects
+  // the checklist data a reassignment left stale, not what the board
+  // already did with it.
   function onSetReviewer(cardId, role, value){
     var boardId = state.currentBoardId;
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       var rv = Object.assign({}, c.reviewers || {});
+      var reassigned = (rv[role] || '') !== (value || '');
       rv[role] = value;
-      return Object.assign({}, c, { reviewers: rv, updatedAt: Date.now() });
+      var merged = Object.assign({}, c, { reviewers: rv, updatedAt: Date.now() });
+      if (reassigned){
+        var resetChecklist = (merged.checklist || []).map(function(it){
+          if (it.part !== 'science') return it;
+          var patch = {}; patch[role] = false;
+          return Object.assign({}, it, patch);
+        });
+        var field = role === 'senior' ? 'srReviewState' : 'jrReviewState';
+        var statePatch = {}; statePatch[field] = 'in_review';
+        merged = Object.assign({}, merged, { checklist: resetChecklist }, statePatch);
+      }
+      return merged;
     });
     var prev = state.cards;
     state.cards = next; // optimistic
