@@ -361,7 +361,6 @@
   }
   .column-head{
     padding:11px 12px 10px;
-    min-height:76px;
     border-bottom:1px solid var(--line);
     background:var(--wash);
     color:var(--ink);
@@ -371,8 +370,26 @@
     font-weight:700; font-size:12.5px; letter-spacing:0;
   }
   .column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
+  /* ch-hint and ch-requires are ALWAYS rendered (renderColumns never
+     omits either div, even with nothing to say) and both fixed to exactly
+     two lines' worth of height, whether or not they actually hold that
+     much text — a column with no hint and no requirements still reserves
+     the same space as one with both, so every column-head comes out
+     identically tall and the head/body divider lines up across the whole
+     board, not just within a column that happens to have more or less to
+     say than its neighbours. */
   .column-head .ch-hint{
-    margin-top:4px; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
+    margin-top:4px; height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+  }
+  /* Rush mode's column deadline hint, once its cutoff has passed — see
+     columnHintFor. */
+  .column-head .ch-hint.ch-hint-overdue{color:var(--danger-text); font-weight:600;}
+  /* What it takes to leave this column for the next one — see
+     columnRequirementsFor. Own line from ch-hint above (deadline/plain
+     hint text), since a rush review column can show both at once. */
+  .column-head .ch-requires{
+    margin-top:2px; height:2.7em; font-size:11px; line-height:1.35; color:var(--muted);
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
   }
   .column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
@@ -390,6 +407,11 @@
   .card.rv-in_review{border-left:4px solid var(--warn-text); background:var(--warn-bg);}
   .card.rv-changes_requested{border-left:4px solid var(--danger-text); background:var(--danger-bg);}
   .card.rv-approved{border-left:4px solid var(--success-text); background:var(--success-bg);}
+  /* Rush mode: a card whose column has passed its internal cutoff (see
+     rushColumnCutoff) — an outline layered on top, since it needs to read
+     clearly whether or not an rv-* review-state background above also
+     applies to the same card. */
+  .card.rush-deadline-passed{outline:2px solid var(--danger-text); outline-offset:-1px;}
   .badge-rv-in_review{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
   .badge-rv-changes_requested{background:var(--danger-bg); color:var(--danger-text); border:1px solid #f0c9c4;}
   .badge-rv-approved{background:var(--success-bg); color:var(--success-text); border:1px solid #bfe0d6;}
@@ -460,6 +482,13 @@
   }
   .card-move-btn:hover:not(:disabled){background:var(--wash); border-color:var(--blue); color:var(--blue);}
   .card-move-btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
+  /* Rush mode's "Abstract accepted"/"Paper accepted" buttons — see
+     moveButtonsHtml — read as a sign-off, not a plain forward move, so
+     they get the same green as an approved review state instead of the
+     neutral default. */
+  .card-move-btn.card-move-btn-accept{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
+  .card-move-btn.card-move-btn-accept:hover:not(:disabled){background:#cde8df; border-color:var(--success-text);}
+  .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); background:var(--surface); border-color:var(--line); opacity:.5;}
 
   /* ---------- card detail ---------- */
   .detail{max-width:var(--read-max); margin:20px auto 0; padding:0 var(--gutter) 88px;}
@@ -657,40 +686,103 @@
   // see reviewFilterState()/reviewBadges() and the rebuttal badge in renderCard(). Outcomes
   // (Accepted / Rejected / Withdrawn) aren't phases either; they're
   // card.outcome, shown as a badge, set from the Edit-fields modal.
-  var STATUS_ORDER = ['register','pitch_day','draft_review','final_draft','pi_polish','submit','arxiv_publicity','rebuttal','pre_conference'];
+  // abstract_review (2026-09-14, per Eduardo): the venue's own real
+  // abstract-registration submission — sits right after the internal
+  // Reviewed pass, before PI Approval, in this canonical order. It can't
+  // be skipped in either pipeline, though Rush mode visits it at a
+  // different point in the sequence (BEFORE the full-paper pass rather
+  // than after — see RUSH_STATUS_ORDER below, and its own comment for why
+  // that reordering is more than cosmetic). Authors are locked from that
+  // point on (authorsLocked) — the real venue fixes the author list the
+  // moment the abstract goes in, so the app matches that. Deliberately no
+  // new "abstract text" field of its own: the abstract lives in the
+  // paper's Overleaf project (overleafLink), already on the card, and
+  // there's no way to verify a pasted-in copy actually matches it — see
+  // authorsLocked's own comment.
+  var STATUS_ORDER = ['register','pitch_day','draft_review','final_draft','abstract_review','pi_polish','submit','arxiv_publicity','rebuttal','pre_conference'];
 
   // Rush mode (2026-09-11): a per-venue toggle (board.rushMode) for an
-  // imminent-deadline venue that needs to move faster than the full 9-step
-  // pipeline — Pitch Day and PI Approval genuinely don't happen, and
-  // post-submission tracking isn't needed yet. Not a separate status
-  // vocabulary: a coherent subsequence of the same STATUS_ORDER keys, so
-  // the checklist gate (crossesGate/GATE_STATUS) and onChangeStatus need
-  // no changes at all — full-order indices already answer "did we cross
-  // the gate" correctly for a rush move too, since skipping the omitted
-  // statuses doesn't change their relative order. What actually needs the
-  // active order: which columns render (renderColumns), and which status
-  // Left/Right/the dropdown treat as adjacent (statusAt/statusOptionsHtml).
-  var RUSH_STATUS_ORDER = ['register', 'draft_review', 'final_draft', 'submit'];
+  // imminent-deadline venue that needs to move faster than the full pipeline.
+  // Redesigned 2026-09-14, per Eduardo: exactly four columns — Registered,
+  // Abstract in review, Full paper in review, In submission — with
+  // "Abstract in review" now coming BEFORE the full-paper pass, not after
+  // (the reverse of where abstract_review sits in the canonical, non-rush
+  // STATUS_ORDER above). That reordering is the one thing that makes Rush
+  // mode genuinely NOT "a coherent subsequence preserving canonical
+  // relative order" any more, the way it was before this change and the
+  // way its own name still literally describes canonical STATUS_ORDER's
+  // shape — so crossesGate/displayStatus/authorsLocked all had to stop
+  // assuming an active order's relative order matches STATUS_ORDER's, and
+  // become genuinely order-aware (see each of their own comments). Still
+  // not a separate status *vocabulary* though — every key here is a real
+  // STATUS_ORDER key, just visited in a different sequence for a rush
+  // venue. draft_review alone represents "Full paper in review": a card
+  // that's completed the checklist and auto-advanced to final_draft
+  // internally still shows under this same column (see displayStatus) —
+  // Rush mode never gives final_draft a column of its own.
+  var RUSH_STATUS_ORDER = ['register', 'abstract_review', 'draft_review', 'submit'];
+
+  // Rush-mode-only column labels, standing in for STATUS_LABELS wherever a
+  // column header (or a Move-to tooltip, or a status dropdown option) is
+  // rendered for a rush venue specifically — see statusLabelFor. Only
+  // needs entries for keys that actually appear in RUSH_STATUS_ORDER;
+  // canonical STATUS_LABELS covers everything else (including for a
+  // non-rush venue, where this map is never consulted at all).
+  var RUSH_STATUS_LABELS = {
+    register: 'Registered',
+    abstract_review: 'Abstract in review',
+    draft_review: 'Full paper in review',
+    submit: 'In submission'
+  };
 
   function effectiveStatusOrder(board){
     return (board && board.rushMode) ? RUSH_STATUS_ORDER : STATUS_ORDER;
   }
 
+  // The label to actually show for a status, given which venue it's on —
+  // RUSH_STATUS_LABELS for a rush venue's own active columns, canonical
+  // STATUS_LABELS otherwise (including for a status Rush mode doesn't
+  // have its own wording for, e.g. one only ever reached via
+  // displayStatus's projection). Column headers, Move-to tooltips, and
+  // the status dropdown all go through this now instead of reading
+  // STATUS_LABELS directly, so a rush venue reads consistently rush-
+  // worded everywhere, not just on the column headers themselves.
+  function statusLabelFor(status, board){
+    if (board && board.rushMode && RUSH_STATUS_LABELS[status]) return RUSH_STATUS_LABELS[status];
+    return STATUS_LABELS[status] || status;
+  }
+
   // Where a card displays when its true status isn't one of the active
   // order's columns (e.g. a card already at Pitched when rush mode gets
-  // turned on) — the last active column it's actually passed, never
-  // rewriting card.status itself. Toggling rush mode is purely a display
-  // change; a card's status only ever changes when someone actually moves
-  // it, at which point it's set directly to a value from whichever order
-  // was active for that move (see onChangeStatus — needs no changes since
-  // newStatus already comes from the right order by construction).
+  // turned on) — the active column representing the latest milestone the
+  // card has actually passed, never rewriting card.status itself.
+  // Toggling rush mode is purely a display change; a card's status only
+  // ever changes when someone actually moves it, at which point it's set
+  // directly to a value from whichever order was active for that move
+  // (see onChangeStatus — needs no changes since newStatus already comes
+  // from the right order by construction).
+  //
+  // Rewritten 2026-09-14 for Rush mode's reordered active columns (see
+  // RUSH_STATUS_ORDER) — the old version picked whichever active column
+  // came LAST in `order`'s own iteration among those the card has passed,
+  // which only gave the right answer because the old active order
+  // happened to preserve canonical relative order. With Abstract in
+  // review now positioned before Full paper in review despite
+  // abstract_review's own canonical index being *after* draft_review's,
+  // "last in iteration order" and "temporally latest milestone" are no
+  // longer the same thing. This picks the active column with the
+  // largest canonical index that's still <= the card's own canonical
+  // index — the genuine closest predecessor, regardless of where that
+  // column happens to sit in the active array.
   function displayStatus(card, board){
     var order = effectiveStatusOrder(board);
     if (order.indexOf(card.status) !== -1) return card.status;
     var cardIdx = STATUS_ORDER.indexOf(card.status);
     var best = order[0];
+    var bestIdx = STATUS_ORDER.indexOf(best);
     order.forEach(function(s){
-      if (STATUS_ORDER.indexOf(s) <= cardIdx) best = s;
+      var si = STATUS_ORDER.indexOf(s);
+      if (si <= cardIdx && si > bestIdx){ best = s; bestIdx = si; }
     });
     return best;
   }
@@ -705,6 +797,7 @@
     pitch_day: 'Pitched',
     draft_review: 'Drafted',
     final_draft: 'Reviewed',
+    abstract_review: 'Abstract Reviewed',
     pi_polish: 'PI Approved',
     submit: 'Submitted',
     arxiv_publicity: 'Posted',
@@ -716,7 +809,8 @@
     register: 'Waiting for pitch',
     pitch_day: 'First draft in writing',
     draft_review: 'Waiting for internal review',
-    final_draft: 'Waiting for PI approval',
+    final_draft: 'Waiting for abstract submission',
+    abstract_review: 'Waiting for PI approval',
     pi_polish: 'Waiting for official submission',
     submit: 'Waiting for arxiv and publicity',
     arxiv_publicity: 'Waiting for official review',
@@ -782,9 +876,28 @@
     });
   }
 
-  // A paper can't reach this status (or any to its right) until both
-  // checklist passes (junior, senior) are complete.
+  // A paper can't reach this status (or any to its right, in whichever
+  // order is active) until both checklists are complete. Purely for
+  // *display* — "before Reviewed" in a toast/banner — since it's the
+  // real, human-facing name for what crossesGate's gate actually
+  // protects. The gate calculation itself (crossesGate, below) is
+  // anchored to GATE_AFTER_STATUS instead — see its own comment for why
+  // these are two different constants now, not one.
   var GATE_STATUS = 'final_draft';
+
+  // The actual anchor crossesGate computes from (2026-09-14, split out
+  // from GATE_STATUS) — draft_review is where the checklist itself lives;
+  // "crossing the gate" means leaving draft_review without it done, i.e.
+  // moving from at-or-before draft_review's position (in whichever order
+  // is active) to strictly after it. In the canonical STATUS_ORDER this
+  // is mathematically identical to the old "target position >=
+  // final_draft's position" check (final_draft is draft_review's very
+  // next canonical status, so the two formulations always agreed) — the
+  // difference only shows up for Rush mode's reordered active columns
+  // (RUSH_STATUS_ORDER), where final_draft has no column of its own and
+  // isn't necessarily adjacent to draft_review's position in the active
+  // order the way it always is canonically.
+  var GATE_AFTER_STATUS = 'draft_review';
 
   var OUTCOME_LABELS = { accepted: 'Accepted', rejected: 'Rejected', withdrawn: 'Withdrawn' };
 
@@ -1892,6 +2005,101 @@
     return d < today;
   }
 
+  // Rush mode's own internal deadlines (2026-09-14, per Eduardo) —
+  // separate from effectiveDeadline/isOverdue above, which drive the
+  // general "Overdue" badge off a venue's real deadline directly and are
+  // unchanged by any of this. Rush's two review columns (Abstract in
+  // review, Full paper in review) each count down to a CUTOFF instead:
+  // RUSH_BUFFER_HOURS before the real venue deadline that stage is
+  // actually racing toward, so there's still a buffer to act before the
+  // real deadline hits, not right up to the wire.
+  var RUSH_BUFFER_HOURS = 48;
+
+  // Venue deadlines are stored as bare dates (no time of day), so every
+  // consumer of "how long is left" needs one shared answer for what
+  // instant a date actually means — read as through 18:00 (end of the
+  // working day), the viewer's own local time, not midnight.
+  var DEADLINE_HOUR = 18;
+  function deadlineInstant(iso){
+    if (!iso) return null;
+    var d = new Date(iso + 'T00:00:00');
+    d.setHours(DEADLINE_HOUR, 0, 0, 0);
+    return d;
+  }
+
+  // Which real venue deadline a given rush column is racing toward —
+  // Abstract in review counts down to the venue's own abstract deadline
+  // (board.abstractDeadline), falling back to the paper deadline if the
+  // venue never set a separate one; Full paper in review counts down to
+  // the paper deadline itself. Returns a bare ISO date string, or null if
+  // the venue has no deadline of that kind set at all.
+  function rushColumnRealDeadline(status, board){
+    if (!board) return null;
+    if (status === 'abstract_review') return board.abstractDeadline || board.deadline || null;
+    if (status === 'draft_review') return board.deadline || null;
+    return null;
+  }
+
+  // The actual cutoff a rush column is held to: RUSH_BUFFER_HOURS before
+  // its real deadline's instant. Returns a Date, or null if that column
+  // has no applicable deadline (not a rush review column, rush mode is
+  // off, or the venue hasn't set the relevant deadline yet).
+  function rushColumnCutoff(status, board){
+    if (!board || !board.rushMode) return null;
+    var instant = deadlineInstant(rushColumnRealDeadline(status, board));
+    if (!instant) return null;
+    return new Date(instant.getTime() - RUSH_BUFFER_HOURS * 3600000);
+  }
+
+  function isRushColumnPastCutoff(status, board){
+    var cutoff = rushColumnCutoff(status, board);
+    return !!cutoff && Date.now() > cutoff.getTime();
+  }
+
+  // "2d 4h left" / "3h left" / "5h overdue" — whole hours only; a rush
+  // cutoff is only ever precise to the hour to begin with (DEADLINE_HOUR),
+  // so minutes would be false precision.
+  function formatTimeLeft(cutoff){
+    if (!cutoff) return null;
+    var ms = cutoff.getTime() - Date.now();
+    var pastDue = ms < 0;
+    var totalHours = Math.floor(Math.abs(ms) / 3600000);
+    var days = Math.floor(totalHours / 24);
+    var hours = totalHours % 24;
+    var text = (days > 0 ? days + 'd ' : '') + hours + 'h';
+    return pastDue ? (text + ' overdue') : (text + ' left');
+  }
+
+  // "18 Sep, 6:00 PM" — a date plus a time of day, for the rush cutoff
+  // itself (formatDate below is date-only, for the real venue deadlines it
+  // already handles everywhere else).
+  function formatDateTime(d){
+    if (!d) return '';
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ', ' +
+      d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+
+  // The line under a column's title — STATUS_HINTS' plain "move a card
+  // here when…" note everywhere except Rush mode's two review columns,
+  // which show their real deadline and internal cutoff instead, since
+  // that's the more useful thing to see on that specific column for a rush
+  // venue.
+  // Returns trusted HTML, not plain text — the "time left"/"time overdue"
+  // portion is wrapped in <strong> so it stands out against the rest of
+  // the line. Safe to render unescaped: everything that goes into it is
+  // either the static STATUS_HINTS text or a computed date/number, never
+  // anything a person typed freely (same as formatDate's other call sites
+  // throughout the file).
+  function columnHintFor(status, board){
+    if (board && board.rushMode && (status === 'abstract_review' || status === 'draft_review')){
+      var real = rushColumnRealDeadline(status, board);
+      if (!real) return 'No deadline set for this venue yet';
+      var cutoff = rushColumnCutoff(status, board);
+      return 'Internal due ' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)';
+    }
+    return escapeHtml(STATUS_HINTS[status] || '');
+  }
+
   function formatDate(iso){
     if (!iso) return '';
     var d = new Date(iso + 'T00:00:00');
@@ -1905,10 +2113,10 @@
     return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   }
 
-  function statusOptionsHtml(current, order){
+  function statusOptionsHtml(current, order, board){
     return order.map(function(s){
       var sel = s === current ? ' selected' : '';
-      return '<option value="' + s + '"' + sel + '>' + STATUS_LABELS[s] + '</option>';
+      return '<option value="' + s + '"' + sel + '>' + statusLabelFor(s, board) + '</option>';
     }).join('');
   }
 
@@ -2082,12 +2290,95 @@
       : escapeHtml(name);
   }
 
-  // True when a move goes from before the gate to the gate (or past it).
-  function crossesGate(fromStatus, toStatus){
-    var gi = STATUS_ORDER.indexOf(GATE_STATUS);
-    var fi = STATUS_ORDER.indexOf(fromStatus);
-    var ti = STATUS_ORDER.indexOf(toStatus);
-    return fi !== -1 && ti !== -1 && fi < gi && ti >= gi;
+  // True when a move goes from at-or-before GATE_AFTER_STATUS's position
+  // to strictly after it, in `order` (defaults to the canonical
+  // STATUS_ORDER when no order is given — every existing call site that
+  // never had a rush-aware order to pass keeps working exactly as
+  // before). Pass effectiveStatusOrder(board) explicitly wherever the
+  // move being checked is a real user-facing navigation (Advance/Revert,
+  // the status dropdown) so the gate reflects the sequence actually being
+  // navigated, not always the canonical one — see advanceBlockReason/
+  // onChangeStatus. The two auto-advance call sites (onToggleChecklist/
+  // onToggleAuthorChecklist) deliberately check against literal
+  // 'final_draft' with no order argument — that's a fixed, canonical
+  // question ("does completing the checklist justify writing
+  // final_draft") independent of which columns happen to be visible.
+  function crossesGate(fromStatus, toStatus, order){
+    var ord = order || STATUS_ORDER;
+    var gi = ord.indexOf(GATE_AFTER_STATUS);
+    var fi = ord.indexOf(fromStatus);
+    var ti = ord.indexOf(toStatus);
+    return gi !== -1 && fi !== -1 && ti !== -1 && fi <= gi && ti > gi;
+  }
+
+  // What it structurally takes to move a card OUT of this column into the
+  // next one in the active order (2026-09-14, per Eduardo) — for the
+  // column-header caption, not for gating an actual move (see
+  // advanceBlockReason/abstractAcceptBlockReason for that). Deliberately
+  // NOT evaluated against any particular card: this describes the shape of
+  // the column→column transition itself, the same for every card sitting
+  // in it, so it has to mirror whichever real gates those two functions
+  // actually enforce or it'll drift out of sync with what really blocks a
+  // move — each condition below matches one of theirs by name.
+  // Returns an ordered array of short requirement strings, or an empty
+  // array if nothing gates this particular move at all (most columns).
+  function columnRequirementsFor(status, board){
+    var order = effectiveStatusOrder(board);
+    var next = statusAt(status, 1, order);
+    if (!next) return [];
+    var reqs = [];
+    // Mirrors abstractAcceptBlockReason's own two checks.
+    if (board && board.rushMode && status === 'abstract_review'){
+      reqs.push('authors added');
+      reqs.push('under the per-author cap');
+    }
+    // Mirrors advanceBlockReason's checklist-gate check.
+    if (crossesGate(status, next, order)) reqs.push('checklists complete');
+    // Mirrors advanceBlockReason's unconditional reviewer-assignment check.
+    if (next === 'draft_review') reqs.push('reviewers assigned');
+    return reqs;
+  }
+
+  // "Requires: a) authors added b) under the per-author cap" — trusted
+  // HTML (see columnHintFor's own note on why that's fine here: nothing in
+  // columnRequirementsFor's output is ever user-typed text).
+  function columnRequirementsHtml(status, board){
+    var reqs = columnRequirementsFor(status, board);
+    if (!reqs.length) return '';
+    var letters = 'abcdefghij';
+    return 'Requires: ' + reqs.map(function(r, i){ return letters[i] + ') ' + r; }).join(' ');
+  }
+
+  // Authors are fixed once a paper has PASSED abstract review (2026-09-14,
+  // per Eduardo — corrected same day: locked strictly AFTER the
+  // abstract-review column, not while a card is still sitting in it) — the
+  // real venue locks the author list once the abstract review is actually
+  // done, so the app matches that from this point on rather than letting
+  // the two drift apart. A card still sitting AT abstract_review (its
+  // review genuinely in progress, in either pipeline) is not locked yet;
+  // moving it one column further is what locks it.
+  //
+  // Rewritten 2026-09-14 for Rush mode's reordered active columns — Rush
+  // mode's "Abstract in review" sits *before* "Full paper in review" even
+  // though abstract_review's own canonical STATUS_ORDER index is later
+  // than draft_review's, so a plain canonical-index comparison (the
+  // original version) would wrongly call a rush card sitting at internal
+  // draft_review/final_draft "not locked yet", when — in the sequence a
+  // rush venue actually follows — abstract review already happened
+  // earlier and authors are supposed to stay fixed from there on.
+  // displayStatus already solves exactly this "which active column does
+  // this card really represent" question for rendering; reusing it here
+  // keeps both answers consistent instead of maintaining two versions of
+  // the same projection logic. Reverting a card back to (or below)
+  // Abstract Reviewed un-locks it again automatically — this is a pure
+  // function of current status (via displayStatus), nothing separately
+  // tracked.
+  function authorsLocked(card, board){
+    var order = effectiveStatusOrder(board);
+    var effective = displayStatus(card, board);
+    var lockIdx = order.indexOf('abstract_review');
+    var cardIdx = order.indexOf(effective);
+    return lockIdx !== -1 && cardIdx !== -1 && cardIdx > lockIdx;
   }
 
   function reviewersAssigned(card){
@@ -2096,10 +2387,15 @@
   }
 
   // Every hard gate on an Advance, checked in order — the checklist gate
-  // (GATE_STATUS) plus any other status-specific requirement. Returns the
-  // reason to show (title tooltip / toast) or null if the move is allowed.
-  function advanceBlockReason(card, toStatus){
-    if (crossesGate(card.status, toStatus) && !checklistComplete(card)){
+  // (GATE_AFTER_STATUS) plus any other status-specific requirement.
+  // Returns the reason to show (title tooltip / toast) or null if the
+  // move is allowed. `board` (2026-09-14) is passed through to crossesGate
+  // as the active order — required now that Rush mode's own order can
+  // genuinely reorder things (see crossesGate/RUSH_STATUS_ORDER), so the
+  // gate reflects the sequence actually being navigated.
+  function advanceBlockReason(card, toStatus, board){
+    var order = effectiveStatusOrder(board);
+    if (crossesGate(card.status, toStatus, order) && !checklistComplete(card)){
       var authorsDone = authorChecklistComplete(card);
       var reviewersDone = reviewerChecklistComplete(card);
       if (!authorsDone && !reviewersDone) return 'Finish both checklists first — authors’ and reviewers’';
@@ -2114,13 +2410,72 @@
     // thing that still catches a legacy pre-2026-09-14 card sitting on a
     // stale 'changes_requested' value nobody's touched since, which a raw
     // tick-count alone wouldn't see.
-    if (crossesGate(card.status, toStatus) && reviewFilterState(card) !== 'approved'){
+    if (crossesGate(card.status, toStatus, order) && reviewFilterState(card) !== 'approved'){
       return 'Both reviewers must approve first';
     }
     if (toStatus === 'draft_review' && !reviewersAssigned(card)){
       return 'Assign a junior and a senior reviewer first';
     }
     return null;
+  }
+
+  // Rush mode's per-column accept-button label (2026-09-14, per Eduardo) —
+  // replaces the generic "Advance" verb on the two columns a rush reviewer
+  // explicitly signs off on, so the click reads as what's actually being
+  // confirmed rather than a generic forward move. Every other column —
+  // including the canonical (non-rush) pipeline's own differently
+  // positioned Abstract Reviewed — keeps the plain "Advance" wording; see
+  // moveButtonsHtml.
+  var RUSH_ACCEPT_LABELS = {
+    abstract_review: 'Abstract accepted',
+    draft_review: 'Paper accepted'
+  };
+
+  // The Revert / Advance-or-Accept button pair shown wherever a card can
+  // be moved — the compact kanban card, the detail page, and the
+  // checklist partial re-render each rendered this same pair independently
+  // until now (2026-09-14) — exactly how the onChangeStatus
+  // order-awareness bug slipped into only some of them and not others (see
+  // its own commit). One shared function now, used everywhere.
+  //
+  // The rgt (Advance/Accept) gate always runs advanceBlockReason first,
+  // unchanged — that still carries e.g. the "assign a junior and a senior
+  // reviewer first" check on entering draft_review either way. Abstract
+  // accepted ALSO checks abstractAcceptBlockReason on top of that (authors
+  // present + nobody over the per-author cap, Rush-mode-only) — the two
+  // things Abstract in review exists to check, additional to whatever
+  // advanceBlockReason already required for that same move. Paper accepted
+  // (leaving Full paper in review) and every plain Advance are unaffected,
+  // still just advanceBlockReason.
+  // Just the two <button> elements, no wrapping .card-move div — for the
+  // one call site (onToggleChecklist's partial re-render) that already has
+  // its hands on that div directly and only needs to replace what's inside
+  // it. moveButtonsHtml below is the version everyone else wants.
+  function moveButtonsInnerHtml(card, board){
+    var effective = displayStatus(card, board);
+    var order = effectiveStatusOrder(board);
+    var lft = statusAt(effective, -1, order);
+    var rgt = statusAt(effective, 1, order);
+    var acceptLabel = (board && board.rushMode) ? RUSH_ACCEPT_LABELS[effective] : null;
+    var rgtLabel = acceptLabel || 'Advance';
+    // abstractAcceptBlockReason is ADDED on top of advanceBlockReason, not
+    // swapped in for it — advanceBlockReason still carries the existing
+    // "assign a junior and a senior reviewer first" gate on entering
+    // draft_review (unconditional on crossesGate, see its own comment),
+    // which already applied to this exact abstract_review -> draft_review
+    // move before Abstract accepted existed. Dropping that in favour of
+    // only the new authors/cap check would have silently let a card into
+    // Full paper in review with no reviewers assigned.
+    var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
+      (effective === 'abstract_review' && acceptLabel ? abstractAcceptBlockReason(card, board, state.cards) : null));
+    var acceptClass = acceptLabel ? ' card-move-btn-accept' : '';
+    var html = '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(statusLabelFor(lft, board)) + '"' : ' disabled') + '>&larr; Revert</button>';
+    html += '<button class="card-move-btn' + acceptClass + '" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : '')) + '>' + escapeHtml(rgtLabel) + ' &rarr;</button>';
+    return html;
+  }
+
+  function moveButtonsHtml(card, board){
+    return '<div class="card-move">' + moveButtonsInnerHtml(card, board) + '</div>';
   }
 
   // Forward-migrate a stored card: since-split status keys; older checklist
@@ -2322,7 +2677,8 @@
     var overdue = isOverdue(card, board);
     var inDraftReview = card.status === 'draft_review';
     var rv = inDraftReview ? reviewFilterState(card) : null;
-    var cardClass = 'card' + (rv ? ' rv-' + rv : '');
+    var rushOverdue = isRushColumnPastCutoff(displayStatus(card, board), board);
+    var cardClass = 'card' + (rv ? ' rv-' + rv : '') + (rushOverdue ? ' rush-deadline-passed' : '');
     var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
     html += '<button class="card-title-btn" type="button" data-open-card="' + escapeHtml(card.id) + '">' + escapeHtml(card.title) + '</button>';
     // Badges only; Overleaf link / edit + remove live on the detail page
@@ -2352,17 +2708,11 @@
       ' &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:4px 7px;margin-bottom:8px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn\u2019t a column anymore &mdash; pick a new one below</div>';
     if (STATUS_LABELS[card.status]) {
-      var lft = statusAt(displayStatus(card, board), -1, effectiveStatusOrder(board));
-      var rgt = statusAt(displayStatus(card, board), 1, effectiveStatusOrder(board));
-      var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
-      html += '<div class="card-move">';
-      html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>';
-      html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : '') + '>Advance &rarr;</button>';
-      html += '</div>';
+      html += moveButtonsHtml(card, board);
     }
     // Only the orphaned-status rescue select needs a footer now; edit / remove
     // moved to the detail page.
-    if (!STATUS_LABELS[card.status]) html += '<div class="card-footer"><select aria-label="Status for ' + escapeHtml(card.title) + '" data-status-for="' + escapeHtml(card.id) + '" style="flex:1 1 auto;min-width:0;font-size:12px;padding:5px 6px;">' + statusOptionsHtml(card.status, effectiveStatusOrder(board)) + '</select></div>';
+    if (!STATUS_LABELS[card.status]) html += '<div class="card-footer"><select aria-label="Status for ' + escapeHtml(card.title) + '" data-status-for="' + escapeHtml(card.id) + '" style="flex:1 1 auto;min-width:0;font-size:12px;padding:5px 6px;">' + statusOptionsHtml(card.status, effectiveStatusOrder(board), board) + '</select></div>';
     html += '</div>';
     return html;
   }
@@ -2461,9 +2811,13 @@
       var allForStatus = state.cards.filter(function(c){ return displayStatus(c, board) === status; });
       var cardsForStatus = allForStatus.filter(matchesSearch);
       html += '<div class="column">';
+      var hint = columnHintFor(status, board);
+      var hintOverdue = isRushColumnPastCutoff(status, board);
+      var reqs = columnRequirementsHtml(status, board);
       html += '<div class="column-head">' +
-        '<div class="ch-top"><span>' + STATUS_LABELS[status] + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
-        (STATUS_HINTS[status] ? '<div class="ch-hint">' + escapeHtml(STATUS_HINTS[status]) + '</div>' : '') +
+        '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
+        '<div class="ch-hint' + (hintOverdue ? ' ch-hint-overdue' : '') + '">' + hint + '</div>' +
+        '<div class="ch-requires">' + reqs + '</div>' +
       '</div>';
       html += '<div class="column-body">';
       if (cardsForStatus.length === 0){
@@ -2481,6 +2835,7 @@
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>Other</span><span class="count">' + orphaned.length + '</span></div>' +
         '<div class="ch-hint">Status no longer maps to a column</div>' +
+        '<div class="ch-requires"></div>' +
       '</div>';
       html += '<div class="column-body">';
       if (orphaned.length === 0){
@@ -3033,9 +3388,9 @@
 
     var overdue = isOverdue(card, board);
     var dl = effectiveDeadline(card, board);
-    var lft = statusAt(displayStatus(card, board), -1, effectiveStatusOrder(board));
-    var rgt = statusAt(displayStatus(card, board), 1, effectiveStatusOrder(board));
-    var rgtBlockReason = rgt && advanceBlockReason(card, rgt);
+    var effective = displayStatus(card, board);
+    var rushCutoff = rushColumnCutoff(effective, board);
+    var rushOverdue = isRushColumnPastCutoff(effective, board);
 
     var html = '<div class="detail">';
     html += '<a href="#" class="detail-back" id="detailBack">&larr; Back to ' + (board ? escapeHtml(board.label) : 'board') + '</a>';
@@ -3043,7 +3398,7 @@
     var detailInDraftReview = card.status === 'draft_review';
     html += '<div class="detail-head">';
     html += '<h2>' + escapeHtml(card.title) + '</h2>';
-    if (STATUS_LABELS[card.status]) html += '<span class="badge" style="background:var(--accent-dim);color:var(--accent);">' + escapeHtml(STATUS_LABELS[card.status]) + '</span>';
+    if (STATUS_LABELS[card.status]) html += '<span class="badge" style="background:var(--accent-dim);color:var(--accent);">' + escapeHtml(statusLabelFor(card.status, board)) + '</span>';
     if (detailInDraftReview) reviewBadges(card).forEach(function(b){
       html += '<span class="badge badge-rv-' + b + '">' + REVIEW_STATE_LABELS[b] + '</span>';
     });
@@ -3052,21 +3407,20 @@
       : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
     if (shouldShowOutcomeBadge(card)) html += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     if (overdue) html += '<span class="badge badge-overdue">Overdue</span>';
+    if (rushOverdue) html += '<span class="badge badge-overdue">Rush cutoff passed</span>';
     html += '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:12px;color:var(--warn-text);background:var(--warn-bg);padding:6px 10px;margin-top:10px;border-radius:6px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn’t a column anymore &mdash; pick a new one below.</div>';
 
     html += '<div class="detail-controls">';
-    html += '<div class="card-move">';
-    html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>';
-    html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : '')) + '>Advance &rarr;</button>';
-    html += '</div>';
-    html += '<select aria-label="Status" data-status-for="' + escapeHtml(card.id) + '">' + statusOptionsHtml(card.status, effectiveStatusOrder(board)) + '</select>';
+    html += moveButtonsHtml(card, board);
+    html += '<select aria-label="Status" data-status-for="' + escapeHtml(card.id) + '">' + statusOptionsHtml(card.status, effectiveStatusOrder(board), board) + '</select>';
     html += '<button class="btn" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button>';
     html += '<button class="btn-text danger" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
     html += '</div>';
 
     html += '<dl class="detail-grid">';
     if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (card.status !== 'rebuttal' ? ' <span style="color:var(--muted);">(venue deadline)</span>' : '') + '</dd>';
+    if (rushCutoff) html += '<dt>Rush cutoff</dt><dd' + (rushOverdue ? ' style="color:var(--danger-text);"' : '') + '>' + formatDateTime(rushCutoff) + ' <strong>(' + formatTimeLeft(rushCutoff) + ')</strong></dd>';
     if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + ' <span style="color:var(--muted);">(last is PI)</span></dd>';
     if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
     if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
@@ -3244,12 +3598,7 @@
       var moveWrap = els.boardRegion.querySelector('.detail-controls .card-move');
       if (moveWrap && card2){
         var moveBoard = getCurrentBoard();
-        var lft = statusAt(displayStatus(card2, moveBoard), -1, effectiveStatusOrder(moveBoard));
-        var rgt = statusAt(displayStatus(card2, moveBoard), 1, effectiveStatusOrder(moveBoard));
-        var rgtBlockReason = rgt && advanceBlockReason(card2, rgt);
-        moveWrap.innerHTML =
-          '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card2.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(STATUS_LABELS[lft]) + '"' : ' disabled') + '>&larr; Revert</button>' +
-          '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card2.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(STATUS_LABELS[rgt]) + '"' : '')) + '>Advance &rarr;</button>';
+        moveWrap.innerHTML = moveButtonsInnerHtml(card2, moveBoard);
         Array.prototype.forEach.call(moveWrap.querySelectorAll('[data-move]'), function(btn){
           btn.addEventListener('click', function(){
             var to = btn.getAttribute('data-move-to');
@@ -3338,24 +3687,31 @@
   var pAuthorsState = [{ name: '', email: '', isNew: false }];
   var eAuthorsState = [{ name: '', email: '', isNew: false }];
 
-  function authorRowsHtml(rows){
+  // `locked` (2026-09-14, see authorsLocked) disables every control and
+  // drops Remove/"Pick from list instead" entirely rather than just
+  // greying them out — nothing about this row is actionable once
+  // authors are fixed, so there's no half-interactive state to represent.
+  // Always falsy for the registration modal (a brand-new card is never
+  // locked) — only the Edit-fields modal ever passes it.
+  function authorRowsHtml(rows, locked){
     return rows.map(function(row, i){
       var isPi = i === rows.length - 1;
       var label = isPi ? 'PI' : ('Author ' + (i + 1));
       var html = '<div class="author-row">' +
         '<span class="author-pi-tag' + (isPi ? '' : ' author-pi-tag--hidden') + '">PI</span>';
+      var lockAttr = locked ? ' disabled title="Authors are locked once Abstract Reviewed is reached"' : '';
       if (row.isNew){
         html +=
-          '<input type="text" class="author-input author-new-name" data-author-idx="' + i + '" value="' + escapeHtml(row.name) + '" placeholder="Name" aria-label="' + label + ' name">' +
-          '<input type="email" class="author-input author-new-email" data-author-idx="' + i + '" value="' + escapeHtml(row.email) + '" placeholder="Email" aria-label="' + label + ' email">' +
-          '<button type="button" class="btn-text author-use-roster" data-author-idx="' + i + '">Pick from list instead</button>';
+          '<input type="text" class="author-input author-new-name" data-author-idx="' + i + '" value="' + escapeHtml(row.name) + '" placeholder="Name" aria-label="' + label + ' name"' + lockAttr + '>' +
+          '<input type="email" class="author-input author-new-email" data-author-idx="' + i + '" value="' + escapeHtml(row.email) + '" placeholder="Email" aria-label="' + label + ' email"' + lockAttr + '>' +
+          (locked ? '' : '<button type="button" class="btn-text author-use-roster" data-author-idx="' + i + '">Pick from list instead</button>');
       } else {
         var options = '<option value="">Choose a person…</option>' + state.people.map(function(p){
           return '<option value="' + escapeHtml(p.email) + '"' + (p.email === row.email ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>';
         }).join('') + '<option value="__new__">+ New author (not in the workspace)…</option>';
-        html += '<select class="author-input author-select" data-author-idx="' + i + '" aria-label="' + label + '">' + options + '</select>';
+        html += '<select class="author-input author-select" data-author-idx="' + i + '" aria-label="' + label + '"' + lockAttr + '>' + options + '</select>';
       }
-      html += (rows.length > 1 ? '<button type="button" class="btn-text danger author-remove" data-remove-author-idx="' + i + '">Remove</button>' : '') +
+      html += (!locked && rows.length > 1 ? '<button type="button" class="btn-text danger author-remove" data-remove-author-idx="' + i + '">Remove</button>' : '') +
       '</div>';
       return html;
     }).join('');
@@ -3364,10 +3720,14 @@
   // Shared by both the registration modal (pAuthorsState / #pAuthorsWrap)
   // and the Edit-fields modal (eAuthorsState / #eAuthorsWrap) — same rows,
   // same PI-is-last-row convention, different backing array + submit key.
-  function renderAuthorRows(wrapId, rows, onEnter){
+  // `locked`: see authorRowsHtml — when true, the rows render read-only
+  // and nothing below is worth wiring up at all (every listener target
+  // is disabled or simply absent from the markup).
+  function renderAuthorRows(wrapId, rows, onEnter, locked){
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
-    wrap.innerHTML = authorRowsHtml(rows);
+    wrap.innerHTML = authorRowsHtml(rows, locked);
+    if (locked) return;
     Array.prototype.forEach.call(wrap.querySelectorAll('.author-select'), function(sel){
       sel.addEventListener('change', function(){
         var idx = Number(sel.getAttribute('data-author-idx'));
@@ -3456,23 +3816,55 @@
   // scroll past; this is visible every time they open the board itself,
   // for as long as it's still true.
 
+  // Non-withdrawn papers on this venue that an author (by email) is on —
+  // the one counting rule shared by currentUserPaperCapWarning and
+  // abstractAcceptBlockReason below (both client-side, both off the same
+  // already-loaded state.cards, so sharing this one is worth it — unlike
+  // notifyAuthorsOverCap's own copy of the same idea server-side, in
+  // functions/index.js, which stays independent since it runs off a
+  // Firestore query in a different runtime entirely).
+  function paperCountForAuthor(email, cards){
+    return (cards || []).filter(function(c){
+      return c.outcome !== 'withdrawn' && (c.authorEmails || []).indexOf(email) !== -1;
+    }).length;
+  }
+
   // The board-banner half — read-only, no save involved at all, just
   // "is the person looking at this board, right now, over the venue's
-  // cap." Same non-withdrawn-papers-only counting as notifyAuthorsOverCap
-  // server-side, kept independent rather than shared since one runs
-  // client-side off already-loaded state.cards and the other runs in a
-  // Cloud Function off a Firestore query — same logic, different data
-  // access, not worth forcing through one shared function across two
-  // runtimes. Returns null (render nothing) if there's no cap set, nobody
+  // cap." Returns null (render nothing) if there's no cap set, nobody
   // signed in, or they're at-or-under it.
   function currentUserPaperCapWarning(board, cards, userEmail){
     var max = board && board.maxPapersPerAuthor;
     if (!max || !userEmail) return null;
-    var count = (cards || []).filter(function(c){
-      return c.outcome !== 'withdrawn' && (c.authorEmails || []).indexOf(userEmail) !== -1;
-    }).length;
+    var count = paperCountForAuthor(userEmail, cards);
     if (count <= max) return null;
     return { count: count, max: max };
+  }
+
+  // Rush mode's "Abstract accepted" gate (2026-09-14, per Eduardo) — moving
+  // a card out of Abstract in review is where the two things that stage
+  // exists to check get enforced: the authors list is actually filled in,
+  // and nobody on the paper is over the venue's max-papers-per-author cap.
+  // A real hard block on THIS specific transition — unlike
+  // currentUserPaperCapWarning/notifyAuthorsOverCap above, which stay
+  // deliberately non-blocking (a save-time hard block was tried and
+  // reverted the same day — see the comment above
+  // currentUserPaperCapWarning). That earlier reversal was specifically
+  // about not blocking *registering* a paper in the first place; this is a
+  // separate, later checkpoint that the review process itself is meant to
+  // catch it at, once there's actually been a chance to notice and fix it.
+  // Deliberately not reused for the canonical (non-rush) pipeline's own
+  // Abstract Reviewed column — this check is scoped to Rush mode's own
+  // accept button, see moveButtonsHtml.
+  function abstractAcceptBlockReason(card, board, cards){
+    if (!card.authors || !card.authors.length) return 'Add the authors before accepting the abstract';
+    var max = board && board.maxPapersPerAuthor;
+    if (!max) return null;
+    var overCount = authorEmailsOf(card.authors).filter(function(email){
+      return paperCountForAuthor(email, cards) > max;
+    }).length;
+    if (!overCount) return null;
+    return (overCount === 1 ? 'An author is' : overCount + ' authors are') + ' over the ' + max + '-per-author limit for this venue';
   }
 
   // Registering a paper requires being signed in \u2014 submittedBy and the
@@ -3542,6 +3934,8 @@
   function openEditModal(cardId){
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card) return;
+    var editBoard = getCurrentBoard();
+    var authorsLock = authorsLocked(card, editBoard);
     els.modalRegion.innerHTML =
       '<div class="modal-overlay" id="modalOverlay">' +
         '<div class="modal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">' +
@@ -3549,8 +3943,11 @@
           '<div id="editForm">' +
             '<div class="field"><label for="eTitle">Paper title</label><input type="text" id="eTitle" value="' + escapeHtml(card.title || '') + '"></div>' +
             '<div class="field"><label for="eAuthorsWrap">Authors</label><div id="eAuthorsWrap"></div>' +
-              '<button class="btn-text" type="button" id="eAddAuthor">+ Add author</button>' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI.</div></div>' +
+              (authorsLock
+                ? '<div style="font-size:12px;color:var(--danger-text);margin-top:4px;">Locked — authors are fixed once ' + statusLabelFor('abstract_review', editBoard) + ' is complete, matching the venue’s own submission.</div>'
+                : '<button class="btn-text" type="button" id="eAddAuthor">+ Add author</button>' +
+                  '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI.</div>') +
+            '</div>' +
             '<div class="field"><label for="eOverleaf">Overleaf link</label><input type="url" id="eOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/..."></div>' +
             '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
@@ -3586,10 +3983,13 @@
     eAuthorsState = card.authors && card.authors.length
       ? card.authors.map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '', isNew: false }; })
       : [{ name: '', email: '', isNew: false }];
-    renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter);
-    document.getElementById('eAddAuthor').addEventListener('click', function(){
+    renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter, authorsLock);
+    // #eAddAuthor doesn't exist in the markup at all when locked (see
+    // above) — nothing to wire up.
+    var addAuthorBtn = document.getElementById('eAddAuthor');
+    if (addAuthorBtn) addAuthorBtn.addEventListener('click', function(){
       eAuthorsState.splice(Math.max(eAuthorsState.length - 1, 0), 0, { name: '', email: '', isNew: false });
-      renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter);
+      renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter, authorsLock);
     });
     document.getElementById('eTitle').focus();
   }
@@ -3622,11 +4022,17 @@
     // submittedBy is deliberately not editable here — it's who registered
     // the paper (used by Security Rules for card authorization), not a
     // free-text field to reassign after the fact. Not included in updates,
-    // so it stays whatever it already was on the card.
+    // so it stays whatever it already was on the card. authors/
+    // authorEmails follow the same pattern once authorsLocked(card) is
+    // true (2026-09-14) — the UI already disables every author control at
+    // that point (openEditModal), this is the belt-and-braces backstop:
+    // even if `authors` somehow computed to something else, omitting the
+    // keys entirely means the write literally can't touch them, same
+    // shape as every other "field simply isn't in updates" lock in this
+    // file.
+    var locked = authorsLocked(card, getCurrentBoard());
     var updates = {
       title: title,
-      authors: authors,
-      authorEmails: authorEmailsOf(authors),
       overleafLink: overleafLink,
       correspondingAuthorEmail: email,
       computeEstimate: document.getElementById('eCompute').value.trim(),
@@ -3637,6 +4043,10 @@
       outcome: document.getElementById('eOutcome').value,
       updatedAt: now
     };
+    if (!locked){
+      updates.authors = authors;
+      updates.authorEmails = authorEmailsOf(authors);
+    }
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       return Object.assign({}, c, updates);
@@ -3898,10 +4308,20 @@
 
   function onChangeStatus(cardId, newStatus){
     var boardId = state.currentBoardId;
+    var board = getCurrentBoard();
+    var order = effectiveStatusOrder(board);
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card || card.status === newStatus) return;
 
-    if (crossesGate(card.status, newStatus) && !checklistComplete(card)){
+    // This is real user-facing navigation (the Advance/Revert buttons, the
+    // status dropdown) — order must be effectiveStatusOrder(board), not the
+    // canonical-default omitted order, or a Rush-mode Revert from Full
+    // paper in review (draft_review) back to Abstract in review
+    // (abstract_review) wrongly reads as "crossing the gate forward" under
+    // canonical STATUS_ORDER (where abstract_review's index sits AFTER
+    // draft_review's) and gets silently blocked with a toast instead of
+    // actually moving the card. See crossesGate's own comment.
+    if (crossesGate(card.status, newStatus, order) && !checklistComplete(card)){
       var ac = authorChecklistCounts(card);
       var cc = checklistCounts(card);
       var summary = 'authors ' + ac.done + '/' + ac.total + ', ' + REVIEW_ROLES.map(function(role){
@@ -3915,14 +4335,19 @@
     // Same gate as advanceBlockReason() — see its own comment for why
     // this is (normally redundant with, but kept alongside) the
     // checklistComplete() check just above.
-    if (crossesGate(card.status, newStatus) && reviewFilterState(card) !== 'approved'){
+    if (crossesGate(card.status, newStatus, order) && reviewFilterState(card) !== 'approved'){
       showToast('Both reviewers must approve before ' + STATUS_LABELS[GATE_STATUS] + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
     }
 
-    var fromIdx = STATUS_ORDER.indexOf(card.status);
-    var toIdx = STATUS_ORDER.indexOf(newStatus);
+    // order-based, not canonical STATUS_ORDER — in Rush mode, advancing
+    // into draft_review comes FROM abstract_review, whose canonical index
+    // (4) is actually greater than draft_review's own (2), so a canonical
+    // comparison here would wrongly read a genuine rush advance as a
+    // revert and silently skip the reviewer-assignment gate just below.
+    var fromIdx = order.indexOf(card.status);
+    var toIdx = order.indexOf(newStatus);
     var isAdvance = toIdx !== -1 && (fromIdx === -1 || toIdx > fromIdx);
 
     // Only blocks moving forward into Draft & Review — reverting back into
