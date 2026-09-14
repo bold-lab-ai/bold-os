@@ -1934,10 +1934,19 @@
     return out;
   }
 
-  function checklistComplete(card){
+  // One reviewer's own pass, not both — checklistComplete (below) needs
+  // both roles done to clear the advance gate; this is what a single
+  // reviewer's own "Approved" button should be gated on (2026-09-14, real
+  // bug: onSetReviewState let a reviewer click Approved with zero boxes
+  // ticked, showing a green card that then couldn't actually advance,
+  // since the advance gate correctly still checked the full checklist).
+  function roleChecklistComplete(card, role){
     var c = checklistCounts(card);
-    if (!c.total) return false;
-    return REVIEW_ROLES.every(function(role){ return c[role] === c.total; });
+    return c.total > 0 && c[role] === c.total;
+  }
+
+  function checklistComplete(card){
+    return REVIEW_ROLES.every(function(role){ return roleChecklistComplete(card, role); });
   }
 
   // The PI isn't a separate field — by convention it's just the last
@@ -2210,11 +2219,22 @@
     var current = card[field] || 'in_review';
     var reviewerEmail = (card.reviewers && card.reviewers[role]) || '';
     var canAct = !!(state.currentUser && reviewerEmail && state.currentUser.email === reviewerEmail);
+    // Approved is also gated on this reviewer's own checklist pass being
+    // done (2026-09-14, real bug: this button had no such gate at all — a
+    // reviewer could click Approved with nothing ticked, turning the card
+    // green while the separate advance gate correctly still blocked it,
+    // since it checks the checklist directly). In review/Changes requested
+    // stay freely settable regardless — only the button that claims the
+    // checklist is done needs the checklist to actually be done.
+    var roleDone = roleChecklistComplete(card, role);
     var html = '<div class="rv-state-row" role="group" aria-label="' + REVIEW_ROLE_LABELS[role] + ' review status">';
     REVIEW_STATE_OPTIONS.forEach(function(v){
+      var disabledReason = !canAct
+        ? 'Only the assigned ' + REVIEW_ROLE_LABELS[role].toLowerCase() + ' reviewer can set this'
+        : (v === 'approved' && !roleDone ? 'Finish this reviewer’s checklist first' : '');
       html += '<button type="button" class="rv-state-btn rv-state-' + v + (current === v ? ' is-active' : '') + '" ' +
         'data-set-review-state="' + escapeHtml(card.id) + '" data-review-role="' + role + '" data-review-value="' + v + '"' +
-        (canAct ? '' : ' disabled title="Only the assigned ' + REVIEW_ROLE_LABELS[role].toLowerCase() + ' reviewer can set this"') +
+        (disabledReason ? ' disabled title="' + escapeHtml(disabledReason) + '"' : '') +
         '>' + REVIEW_STATE_BTN_LABELS[v] + '</button>';
     });
     html += '</div>';
@@ -3767,6 +3787,12 @@
     var field = role === 'senior' ? 'srReviewState' : 'jrReviewState';
     var reviewerEmail = (card.reviewers && card.reviewers[role]) || '';
     if (!state.currentUser || !reviewerEmail || state.currentUser.email !== reviewerEmail) return;
+    // Belt-and-braces, matching reviewStateButtonsHtml's own disabled
+    // state (2026-09-14) — a reviewer can't manually approve without
+    // having actually finished their own checklist pass, same as the
+    // button being disabled in the UI is backed up here against a stray
+    // click event.
+    if (value === 'approved' && !roleChecklistComplete(card, role)) return;
     var boardId = state.currentBoardId;
     var wasDraftReview = card.status === 'draft_review';
     var autoAdvanced = false;
