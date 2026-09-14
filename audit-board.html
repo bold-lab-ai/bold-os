@@ -505,6 +505,9 @@
   .cl-cat{font-weight:700; font-size:13px; color:var(--ink); margin:16px 0 4px;}
   .cl-cat:first-child{margin-top:0;}
   .cl-head, .cl-row{display:grid; grid-template-columns:1fr 68px 68px; gap:10px;}
+  /* Authors' checklist (2026-09-14): one checkbox column, not two — same
+     base grid/row styling, just a narrower track list. */
+  .cl-head.single, .cl-row.single{grid-template-columns:1fr 68px;}
   .cl-head{
     font-size:10.5px; font-weight:700; color:var(--muted);
     text-transform:uppercase; letter-spacing:0;
@@ -514,6 +517,7 @@
   .cl-head span{text-align:center;}
   .cl-head span:nth-child(2){color:var(--teal);}
   .cl-head span:nth-child(3){color:var(--plum);}
+  .cl-head.single span:nth-child(2){color:var(--accent);}
   .cl-item{border-bottom:1px solid var(--line); padding:2px 0;}
   .cl-row{padding:9px 6px; font-size:13.5px; align-items:start; border-radius:4px;}
   .cl-row:hover{background:var(--wash);}
@@ -521,6 +525,7 @@
   .cl-row input[type="checkbox"]{width:16px; height:16px; margin:2px auto 0; display:block; cursor:pointer;}
   .cl-row input[type="checkbox"]:nth-of-type(1){accent-color:var(--teal);}
   .cl-row input[type="checkbox"]:nth-of-type(2){accent-color:var(--plum);}
+  .cl-row.single input[type="checkbox"]:nth-of-type(1){accent-color:var(--accent);}
   .cl-row input[type="checkbox"]:disabled{cursor:default; opacity:0.45;}
   .cl-row-foot{padding:0 6px 8px;}
   .cl-row-foot .btn-text{font-size:12px;}
@@ -746,9 +751,19 @@
   var REVIEW_ROLES = ['junior', 'senior'];
   var REVIEW_ROLE_LABELS = { junior: 'Junior', senior: 'Senior' };
 
+  // Two different shapes depending on part (2026-09-14, see
+  // authorChecklistComplete/roleChecklistComplete): a format item is
+  // ticked once, by any author — authorChecked, no junior/senior at all.
+  // A science item keeps the original per-reviewer shape — junior/senior,
+  // no authorChecked. Never both on the same item; which fields an item
+  // carries is itself how the rest of the file tells the two checklists
+  // apart, alongside `part`.
   function makeChecklistSnapshot(){
     return CHECKLIST_TEMPLATE.map(function(item, i){
-      return { id: 'chk-' + (i + 1), part: item.part, category: item.category, label: item.label, junior: false, senior: false, comments: [] };
+      var base = { id: 'chk-' + (i + 1), part: item.part, category: item.category, label: item.label, comments: [] };
+      return item.part === 'format'
+        ? Object.assign(base, { authorChecked: false })
+        : Object.assign(base, { junior: false, senior: false });
     });
   }
 
@@ -1917,9 +1932,40 @@
   }
 
   // ---------- checklist + gate ----------
+  // Two checklists, two different people (2026-09-14, per Eduardo: "We
+  // don't want reviewers to check for 'Format'. We want authors to check
+  // for it"). `part` on a checklist item ('format'|'science') already
+  // grouped the 12 items by content; it now ALSO decides who's allowed to
+  // tick it and what shape the tick itself takes — see makeChecklistSnapshot.
+  // Format = the authors' checklist: any listed co-author, one
+  // `authorChecked` boolean per item, no junior/senior split. Science =
+  // the reviewers' checklist: unchanged from before this split — the
+  // assigned Junior and Senior each still tick their own independent
+  // pass. Both checklists have to be complete for a card to leave Drafted
+  // for Reviewed (checklistComplete, below) — "analogous for reviewers",
+  // matching how the gate already worked, just now genuinely gated on two
+  // different checklists instead of one shared one.
 
+  function checklistItemsFor(card, part){
+    return ((card && card.checklist) || []).filter(function(it){ return it.part === part; });
+  }
+
+  // { done, total } over the format items only — the authors' checklist.
+  function authorChecklistCounts(card){
+    var items = checklistItemsFor(card, 'format');
+    return { done: items.filter(function(it){ return it.authorChecked; }).length, total: items.length };
+  }
+
+  function authorChecklistComplete(card){
+    var c = authorChecklistCounts(card);
+    return c.total > 0 && c.done === c.total;
+  }
+
+  // Science items only now — the reviewers' checklist. Same shape as
+  // before the format/science split (junior/senior counts against a
+  // total), just scoped to fewer items.
   function checklistCounts(card){
-    var items = (card && card.checklist) || [];
+    var items = checklistItemsFor(card, 'science');
     var out = { total: items.length };
     REVIEW_ROLES.forEach(function(role){
       out[role] = items.filter(function(it){ return it[role]; }).length;
@@ -1927,12 +1973,12 @@
     return out;
   }
 
-  // One reviewer's own pass, not both — checklistComplete (below) needs
-  // both roles done to clear the advance gate. This is the single source
-  // of truth for that one reviewer's own state (2026-09-14): originally
-  // added to gate a manually-clickable "Approved" button (a real bug —
-  // that button had no such gate at all, so a reviewer could click
-  // Approved with zero boxes ticked, showing a green card that then
+  // One reviewer's own pass on the Science checklist, not both —
+  // reviewerChecklistComplete (below) needs both roles done. This is the
+  // single source of truth for that one reviewer's own state (2026-09-14):
+  // originally added to gate a manually-clickable "Approved" button (a
+  // real bug — that button had no such gate at all, so a reviewer could
+  // click Approved with zero boxes ticked, showing a green card that then
   // couldn't actually advance since the advance gate correctly still
   // checked the full checklist); the button itself was then removed
   // entirely as redundant, and this became what jrReviewState/
@@ -1943,8 +1989,24 @@
     return c.total > 0 && c[role] === c.total;
   }
 
-  function checklistComplete(card){
+  function reviewerChecklistComplete(card){
     return REVIEW_ROLES.every(function(role){ return roleChecklistComplete(card, role); });
+  }
+
+  // The real advance gate: BOTH checklists done, not just one — the
+  // authors' Format pass AND the reviewers' Science pass.
+  function checklistComplete(card){
+    return authorChecklistComplete(card) && reviewerChecklistComplete(card);
+  }
+
+  // Any co-author (not just whoever registered the paper) can tick the
+  // authors' checklist — per Eduardo, deliberately broader than the
+  // single-submitter pattern used elsewhere in this file (onSetReviewer,
+  // etc.), since a paper's Format pass is naturally something any of its
+  // authors might be the one to actually do.
+  function isCardAuthorEmail(card, email){
+    if (!email) return false;
+    return ((card && card.authors) || []).some(function(a){ return a && a.email === email; });
   }
 
   // The PI isn't a separate field — by convention it's just the last
@@ -2023,6 +2085,10 @@
   // reason to show (title tooltip / toast) or null if the move is allowed.
   function advanceBlockReason(card, toStatus){
     if (crossesGate(card.status, toStatus) && !checklistComplete(card)){
+      var authorsDone = authorChecklistComplete(card);
+      var reviewersDone = reviewerChecklistComplete(card);
+      if (!authorsDone && !reviewersDone) return 'Finish both checklists first — authors’ and reviewers’';
+      if (!authorsDone) return 'Finish the authors’ checklist first';
       return 'Finish the Junior and Senior checklists first';
     }
     // Both reviewers' derived states must read Approved (reviewFilterState)
@@ -2070,7 +2136,12 @@
       // No id-stable mapping back, so rebuild from the current template;
       // carry a tick forward only when the whole part was already done
       // (a reasonable "this pass was finished" signal — anything partial
-      // starts fresh against the new, shorter list).
+      // starts fresh against the new, shorter list). Format's carry-
+      // forward (2026-09-14, see authorChecklistComplete) has no role to
+      // key off any more — "was format already done" is read off whatever
+      // per-role data the old shape happened to have (both roles ticking
+      // every format item, back when format was still part of the
+      // reviewers' pass), a one-time best-effort signal only.
       var doneByPartRole = {};
       REVIEW_ROLES.forEach(function(role){
         ['format', 'science'].forEach(function(part){
@@ -2079,16 +2150,27 @@
         });
       });
       out = Object.assign({}, out, { checklist: template.map(function(it){
-        var next = { id: it.id, part: it.part, category: it.category, label: it.label, comments: [] };
-        REVIEW_ROLES.forEach(function(role){ next[role] = !!doneByPartRole[it.part + ':' + role]; });
-        return next;
+        var base = { id: it.id, part: it.part, category: it.category, label: it.label, comments: [] };
+        return it.part === 'format'
+          ? Object.assign(base, { authorChecked: !!(doneByPartRole['format:junior'] && doneByPartRole['format:senior']) })
+          : Object.assign(base, { junior: !!doneByPartRole['science:junior'], senior: !!doneByPartRole['science:senior'] });
       }) });
-    } else if (cl.some(function(it){ return typeof it.junior === 'undefined' || typeof it.senior === 'undefined' || typeof it.author !== 'undefined' || !Array.isArray(it.comments); })){
+    } else if (cl.some(function(it){
+      return it.part === 'format'
+        ? (typeof it.authorChecked === 'undefined' || !Array.isArray(it.comments))
+        : (typeof it.junior === 'undefined' || typeof it.senior === 'undefined' || typeof it.author !== 'undefined' || !Array.isArray(it.comments));
+    })){
+      // Covers both a stray pre-2026-09-14 shape (format items still
+      // carrying junior/senior from when format was part of the
+      // reviewers' pass — carried forward as authorChecked exactly like
+      // the branch above, "both reviewers already had it ticked") and any
+      // other stray legacy field (author/auditor from an even older
+      // design).
       out = Object.assign({}, out, { checklist: cl.map(function(it){
-        return { id: it.id, part: it.part, category: it.category, label: it.label,
-                 junior: !!it.junior,
-                 senior: !!it.senior || !!it.auditor,
-                 comments: Array.isArray(it.comments) ? it.comments : [] };
+        var base = { id: it.id, part: it.part, category: it.category, label: it.label, comments: Array.isArray(it.comments) ? it.comments : [] };
+        return it.part === 'format'
+          ? Object.assign(base, { authorChecked: !!it.authorChecked || !!(it.junior && it.senior) })
+          : Object.assign(base, { junior: !!it.junior, senior: !!it.senior || !!it.auditor });
       }) });
     }
     if (!out.reviewers || typeof out.reviewers !== 'object'){
@@ -2249,8 +2331,10 @@
       (inDraftReview ? reviewStatePillHtml(card, 'senior') : '') +
     '</div>';
     if (card.reviewNotes) html += '<div class="card-notes">' + escapeHtml(card.reviewNotes) + '</div>';
-    var counts = checklistCounts(card);
-    html += '<div class="card-progress">Checklist &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
+    var counts = checklistCounts(card); // science checklist — reviewers
+    var authorCounts = authorChecklistCounts(card); // format checklist — authors
+    html += '<div class="card-progress">Checklist &middot; authors ' + authorCounts.done + '/' + authorCounts.total +
+      ' &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:4px 7px;margin-bottom:8px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn\u2019t a column anymore &mdash; pick a new one below</div>';
     if (STATUS_LABELS[card.status]) {
       var lft = statusAt(displayStatus(card, board), -1, effectiveStatusOrder(board));
@@ -2552,18 +2636,19 @@
   }
 
   function gateBannerHtml(card){
+    var ac = authorChecklistCounts(card);
     var c = checklistCounts(card);
     var done = checklistComplete(card);
     var rv = card.reviewers || {};
-    var counts = REVIEW_ROLES.map(function(role){
+    var counts = 'authors <strong>' + ac.done + '/' + ac.total + '</strong>, ' + REVIEW_ROLES.map(function(role){
       return REVIEW_ROLE_LABELS[role].toLowerCase() + ' <strong>' + c[role] + '/' + c.total + '</strong>';
     }).join(', ');
     var noRev = !rv.junior || !rv.senior;
     return '<div class="gate-banner' + (done ? ' done' : '') + '" id="gateBanner">' +
-      'Checklist &mdash; ' + counts + '. ' +
+      'Checklists &mdash; ' + counts + '. ' +
       (done
-        ? 'Both passes complete &mdash; this paper can be moved to ' + STATUS_LABELS[GATE_STATUS] + '.'
-        : 'Both must be complete before this paper can reach ' + STATUS_LABELS[GATE_STATUS] + '.') +
+        ? 'Both checklists complete &mdash; this paper can be moved to ' + STATUS_LABELS[GATE_STATUS] + '.'
+        : 'Both the authors’ and the reviewers’ checklists must be complete before this paper can reach ' + STATUS_LABELS[GATE_STATUS] + '.') +
       (noRev ? ' <strong>Assign a junior and a senior reviewer</strong> below.' : '') +
     '</div>';
   }
@@ -2610,7 +2695,8 @@
   // their signed-in email) can tick that role's boxes — same client-side
   // shape used throughout this file, not the real access control.
   // Computed once per role here rather than per item, since it doesn't
-  // vary by item.
+  // vary by item. Science checklist only — the authors' checklist has its
+  // own, broader access check (isCardAuthorEmail).
   function checklistTickAccess(card){
     var access = {};
     REVIEW_ROLES.forEach(function(role){
@@ -2620,8 +2706,50 @@
     return access;
   }
 
+  // Two genuinely different layouts, not just a filtered list (2026-09-14):
+  // format is the authors' checklist — one checkbox per item, ticked by any
+  // co-author (isCardAuthorEmail), wired through onToggleAuthorChecklist.
+  // science is the reviewers' checklist — unchanged from before the split,
+  // junior + senior each still get their own column, wired through the
+  // original onToggleChecklist.
   function checklistTabHtml(card, part){
-    var items = (card.checklist || []).filter(function(it){ return it.part === part; });
+    if (part === 'format') return authorChecklistTabHtml(card);
+    return reviewerChecklistTabHtml(card);
+  }
+
+  function authorChecklistTabHtml(card){
+    var items = checklistItemsFor(card, 'format');
+    var openId = state.checklistCommentOpenId;
+    var canAct = !!(state.currentUser && isCardAuthorEmail(card, state.currentUser.email));
+    var html = '<div class="cl-wrap">';
+    html += '<div class="cl-head single"><span></span><span>Author</span></div>';
+    var lastCat = null;
+    items.forEach(function(it){
+      if (it.category !== lastCat){
+        html += '<div class="cl-cat">' + escapeHtml(it.category) + '</div>';
+        lastCat = it.category;
+      }
+      html += '<div class="cl-item">';
+      html += '<div class="cl-row single">';
+      html += '<label class="cl-label" for="cla-' + escapeHtml(it.id) + '">' + escapeHtml(it.label) + '</label>';
+      html += '<input type="checkbox" id="cla-' + escapeHtml(it.id) + '" data-cla="' + escapeHtml(card.id) + '" data-cla-item="' + escapeHtml(it.id) + '"' + (it.authorChecked ? ' checked' : '') +
+        (canAct ? '' : ' disabled title="Only a listed author can tick this"') +
+        ' aria-label="Author: ' + escapeHtml(it.label) + '">';
+      html += '</div>';
+      var n = threadCount(it.comments);
+      var isOpen = openId === it.id;
+      html += '<div class="cl-row-foot"><button class="btn-text' + (n ? ' has-feedback' : '') + '" type="button" data-clc-toggle="' + escapeHtml(it.id) + '">' +
+        (isOpen ? 'Hide feedback' : (n ? '&#128172; ' + n + ' comment' + (n === 1 ? '' : 's') : '&#128172; Add feedback')) +
+      '</button></div>';
+      if (isOpen) html += checklistItemThreadHtml(it);
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
+  function reviewerChecklistTabHtml(card){
+    var items = checklistItemsFor(card, 'science');
     var openId = state.checklistCommentOpenId;
     var access = checklistTickAccess(card);
     var html = '<div class="cl-wrap">';
@@ -2705,8 +2833,8 @@
     var tab = state.detailTab || 'format';
     var discCount = threadCount(card.discussion);
     var html = '<div class="tabbar" role="tablist" aria-label="Review">' +
-      '<button class="tab' + (tab === 'format' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-format" data-detail-tab="format" aria-selected="' + (tab === 'format') + '">Format</button>' +
-      '<button class="tab' + (tab === 'science' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-science" data-detail-tab="science" aria-selected="' + (tab === 'science') + '">Science</button>' +
+      '<button class="tab' + (tab === 'format' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-format" data-detail-tab="format" aria-selected="' + (tab === 'format') + '">Checklist of authors</button>' +
+      '<button class="tab' + (tab === 'science' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-science" data-detail-tab="science" aria-selected="' + (tab === 'science') + '">Checklist for reviewers</button>' +
       '<button class="tab' + (tab === 'discussion' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-discussion" data-detail-tab="discussion" aria-selected="' + (tab === 'discussion') + '">Discussion' + (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</button>' +
     '</div>';
     html += '<div class="tabpanel active">';
@@ -3006,6 +3134,11 @@
         onToggleChecklist(box.getAttribute('data-cl'), box.getAttribute('data-cl-item'), box.getAttribute('data-cl-role'), box.checked);
       });
     });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cla]'), function(box){
+      box.addEventListener('change', function(){
+        onToggleAuthorChecklist(box.getAttribute('data-cla'), box.getAttribute('data-cla-item'), box.checked);
+      });
+    });
   }
 
   // role is 'junior' or 'senior'. Client-side-restricted to the matching
@@ -3104,6 +3237,50 @@
       }
     }
 
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast(saveErrorMessage('Could not save the checklist — try again.'), 'error');
+      } else if (autoAdvanced && wasDraftReview){
+        showToast('Checklist complete and both reviewers approved — moved to ' + STATUS_LABELS.final_draft + '.', 'ok');
+      }
+    });
+  }
+
+  // The authors' checklist's own toggle handler (2026-09-14) — separate
+  // from onToggleChecklist above rather than folded into it, since the
+  // access model is genuinely different (any listed co-author, not a
+  // specific assigned role) and there's no per-role field to set, just
+  // one shared authorChecked boolean per item. Same auto-advance shape as
+  // onToggleChecklist: completing the last box can push a card straight
+  // from Drafted to Reviewed if the reviewers' checklist is also already
+  // done.
+  function onToggleAuthorChecklist(cardId, itemId, checked){
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    if (!state.currentUser || !isCardAuthorEmail(card, state.currentUser.email)) return;
+
+    var boardId = state.currentBoardId;
+    var wasDraftReview = card.status === 'draft_review';
+    var autoAdvanced = false;
+    var next = state.cards.map(function(c){
+      if (c.id !== cardId) return c;
+      var newChecklist = c.checklist.map(function(it){
+        if (it.id !== itemId) return it;
+        return Object.assign({}, it, { authorChecked: checked });
+      });
+      var merged = Object.assign({}, c, { checklist: newChecklist });
+      if (merged.status === 'draft_review' && checklistComplete(merged) && crossesGate(merged.status, 'final_draft')){
+        merged.status = 'final_draft';
+        autoAdvanced = true;
+      }
+      merged.updatedAt = Date.now();
+      return merged;
+    });
+    var prev = state.cards;
+    state.cards = next;
+    renderCardDetail();
     saveBoard(boardId, { cards: next }).then(function(ok){
       if (!ok){
         state.cards = prev;
@@ -3670,11 +3847,12 @@
     if (!card || card.status === newStatus) return;
 
     if (crossesGate(card.status, newStatus) && !checklistComplete(card)){
+      var ac = authorChecklistCounts(card);
       var cc = checklistCounts(card);
-      var summary = REVIEW_ROLES.map(function(role){
+      var summary = 'authors ' + ac.done + '/' + ac.total + ', ' + REVIEW_ROLES.map(function(role){
         return REVIEW_ROLE_LABELS[role].toLowerCase() + ' ' + cc[role] + '/' + cc.total;
       }).join(', ');
-      showToast('Both checklist passes must be complete before ' + STATUS_LABELS[GATE_STATUS] + ' — ' + summary + '.', 'error');
+      showToast('Both checklists must be complete before ' + STATUS_LABELS[GATE_STATUS] + ' — ' + summary + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
     }
