@@ -585,6 +585,16 @@
     background:var(--danger-bg); border:1px solid var(--danger-text);
     border-radius:6px; padding:8px 12px; margin-top:12px;
   }
+  /* Standing "you're over the cap" banner at the top of a venue board
+     (2026-09-14, see currentUserPaperCapWarning) — same danger-color
+     language as .field-error, styled as a page-level banner rather than
+     an inline field note since it's the first thing on the whole board,
+     not attached to any one field. */
+  .author-cap-alert{
+    font-size:14px; font-weight:600; color:var(--danger-text);
+    background:var(--danger-bg); border:1px solid var(--danger-text);
+    border-radius:var(--radius); padding:12px 16px; margin-bottom:16px;
+  }
 
   footer{
     max-width:var(--page-max); margin:0 auto;
@@ -2512,6 +2522,11 @@
     var prevScroll = els.boardRegion.querySelector('.board-scroll');
     var scrollLeft = prevScroll ? prevScroll.scrollLeft : 0;
     var html = '';
+    var capWarning = currentUserPaperCapWarning(current, state.cards, state.currentUser && state.currentUser.email);
+    if (capWarning){
+      html += '<div class="author-cap-alert">You’re an author on ' + capWarning.count +
+        ' papers for this venue — over its ' + capWarning.max + '-per-author limit.</div>';
+    }
     html += '<div class="board-meta" style="display:block;">' +
       '<a href="#" id="backToList" style="font-size:13.5px;color:var(--muted);text-decoration:none;">&larr; All venues</a>' +
       '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;">' +
@@ -3430,13 +3445,35 @@
   // Max papers per author (board.maxPapersPerAuthor) is deliberately NOT
   // a client-side save-blocking gate (reverted 2026-09-14, was briefly a
   // hard block the same day) — per Eduardo: still let the paper be
-  // registered/saved either way, and instead notify the specific author
-  // who's now over the limit, not whoever happened to be doing the
-  // saving. That notification is a Cloud Function's job (it needs to DM
-  // someone, which only a server-side credential can do) — see
-  // notifyAuthorsOverCap in functions/index.js, triggered off the same
-  // onCardWritten write this save already produces via authorEmails.
-  // Nothing to check client-side at all.
+  // registered/saved either way. Two separate, complementary surfaces for
+  // it instead: a one-time Slack DM the moment someone's newly added over
+  // the limit (a Cloud Function's job — it needs to DM someone, which
+  // only a server-side credential can do — see notifyAuthorsOverCap in
+  // functions/index.js, triggered off the same onCardWritten write this
+  // save already produces via authorEmails), and a standing banner at the
+  // top of the venue board (currentUserPaperCapWarning, right below) for
+  // whoever's signed in and currently over it — a DM is easy to miss or
+  // scroll past; this is visible every time they open the board itself,
+  // for as long as it's still true.
+
+  // The board-banner half — read-only, no save involved at all, just
+  // "is the person looking at this board, right now, over the venue's
+  // cap." Same non-withdrawn-papers-only counting as notifyAuthorsOverCap
+  // server-side, kept independent rather than shared since one runs
+  // client-side off already-loaded state.cards and the other runs in a
+  // Cloud Function off a Firestore query — same logic, different data
+  // access, not worth forcing through one shared function across two
+  // runtimes. Returns null (render nothing) if there's no cap set, nobody
+  // signed in, or they're at-or-under it.
+  function currentUserPaperCapWarning(board, cards, userEmail){
+    var max = board && board.maxPapersPerAuthor;
+    if (!max || !userEmail) return null;
+    var count = (cards || []).filter(function(c){
+      return c.outcome !== 'withdrawn' && (c.authorEmails || []).indexOf(userEmail) !== -1;
+    }).length;
+    if (count <= max) return null;
+    return { count: count, max: max };
+  }
 
   // Registering a paper requires being signed in \u2014 submittedBy and the
   // corresponding author email are both derived from state.currentUser, not
