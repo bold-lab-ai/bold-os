@@ -4,6 +4,10 @@ Build history of the files in this folder (`how-to-submit-a-paper.html`, `audit-
 
 ## 2026-09-14
 
+### AGENTS.md for automating each checklist
+
+Two new files, `checklists/format/AGENTS.md` and `checklists/reviewers/AGENTS.md` — concrete, checklist-item-by-item instructions for an author's or reviewer's own coding agent to pre-check the paper before a human ticks the real boxes (a pre-check for authors, a skeptical pre-review for reviewers — neither replaces the human's own pass, which is still what actually gates the card). Linked with a one-line description at the top of each checklist tab in `audit-board.html`.
+
 ### Slack Home tab now refreshes when reviewers change on the web board
 
 The other direction of live-sync: the Home dashboard only ever re-published on opening the tab or right after our own Slack-driven write, so a reviewer assigned or cleared on the web board never told Slack anything. `onCardWritten` now also refreshes anyone whose dashboard is stale after a `reviewers` change (submitter, plus whoever was newly assigned or un-assigned), via the same `handleAppHomeOpened` used everywhere else.
