@@ -2070,14 +2070,20 @@
   // which show their real deadline and internal cutoff instead, since
   // that's the more useful thing to see on that specific column for a rush
   // venue.
+  // Returns trusted HTML, not plain text — the "time left"/"time overdue"
+  // portion is wrapped in <strong> so it stands out against the rest of
+  // the line. Safe to render unescaped: everything that goes into it is
+  // either the static STATUS_HINTS text or a computed date/number, never
+  // anything a person typed freely (same as formatDate's other call sites
+  // throughout the file).
   function columnHintFor(status, board){
     if (board && board.rushMode && (status === 'abstract_review' || status === 'draft_review')){
       var real = rushColumnRealDeadline(status, board);
       if (!real) return 'No deadline set for this venue yet';
       var cutoff = rushColumnCutoff(status, board);
-      return 'Due ' + formatDate(real) + ' — cutoff ' + formatDateTime(cutoff) + ' (' + formatTimeLeft(cutoff) + ')';
+      return 'Due ' + formatDate(real) + ' — cutoff ' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)';
     }
-    return STATUS_HINTS[status] || '';
+    return escapeHtml(STATUS_HINTS[status] || '');
   }
 
   function formatDate(iso){
@@ -2757,7 +2763,7 @@
       var hintOverdue = isRushColumnPastCutoff(status, board);
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
-        (hint ? '<div class="ch-hint' + (hintOverdue ? ' ch-hint-overdue' : '') + '">' + escapeHtml(hint) + '</div>' : '') +
+        (hint ? '<div class="ch-hint' + (hintOverdue ? ' ch-hint-overdue' : '') + '">' + hint + '</div>' : '') +
       '</div>';
       html += '<div class="column-body">';
       if (cardsForStatus.length === 0){
@@ -3359,7 +3365,7 @@
 
     html += '<dl class="detail-grid">';
     if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (card.status !== 'rebuttal' ? ' <span style="color:var(--muted);">(venue deadline)</span>' : '') + '</dd>';
-    if (rushCutoff) html += '<dt>Rush cutoff</dt><dd' + (rushOverdue ? ' style="color:var(--danger-text);font-weight:600;"' : '') + '>' + formatDateTime(rushCutoff) + ' <span style="color:var(--muted);font-weight:400;">(' + formatTimeLeft(rushCutoff) + ')</span></dd>';
+    if (rushCutoff) html += '<dt>Rush cutoff</dt><dd' + (rushOverdue ? ' style="color:var(--danger-text);"' : '') + '>' + formatDateTime(rushCutoff) + ' <strong>(' + formatTimeLeft(rushCutoff) + ')</strong></dd>';
     if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + ' <span style="color:var(--muted);">(last is PI)</span></dd>';
     if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
     if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
