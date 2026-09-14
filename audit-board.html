@@ -2139,6 +2139,17 @@
   // Reviewers need edit access to the draft, not a read-only share link.
   // Returns an error string to show the user, or null if the link is fine
   // (or isn't an overleaf.com link at all, e.g. a self-hosted mirror).
+  // Fixed 2026-09-14+1 — reported by a user: their real edit link,
+  // https://www.overleaf.com/1244862613jcskdxnpqfqw#840950, was rejected
+  // as "not a project link". A real Overleaf project link takes one of
+  // TWO shapes, not one: the classic overleaf.com/project/<id> from the
+  // address bar while editing, or a bare overleaf.com/<token> — the edit
+  // link-sharing token from Overleaf's own Share dialog (its read-only
+  // counterpart is overleaf.com/read/<token>, already handled below). The
+  // bare form has no further path segments and is a long alphanumeric
+  // token, unlike Overleaf's own short, word-like page routes (/learn,
+  // /contact, /user/settings, …) — that distinction is what tells the two
+  // apart without having to maintain a list of every real Overleaf route.
   function overleafLinkIssue(url){
     if (!url) return null;
     var u;
@@ -2148,10 +2159,9 @@
     if (/^\/read\//i.test(u.pathname)){
       return 'That’s a read-only Overleaf share link — reviewers need edit access. Use the URL from the address bar while editing the project (overleaf.com/project/…), or in Overleaf’s Share dialog invite them as editors.';
     }
-    if (!/^\/project\//i.test(u.pathname)){
-      return 'That doesn’t look like an Overleaf project link. Use the URL from the address bar while editing the project (overleaf.com/project/…).';
-    }
-    return null;
+    if (/^\/project\//i.test(u.pathname)) return null;
+    if (/^\/[a-zA-Z0-9]{15,}$/.test(u.pathname)) return null;
+    return 'That doesn’t look like an Overleaf project link. Use the URL from the address bar while editing the project (overleaf.com/project/…), or an edit link from Overleaf’s Share dialog.';
   }
 
   // ---------- checklist + gate ----------
@@ -3699,7 +3709,14 @@
       var label = isPi ? 'PI' : ('Author ' + (i + 1));
       var html = '<div class="author-row">' +
         '<span class="author-pi-tag' + (isPi ? '' : ' author-pi-tag--hidden') + '">PI</span>';
-      var lockAttr = locked ? ' disabled title="Authors are locked once Abstract Reviewed is reached"' : '';
+      // Wording corrected 2026-09-14+1 — stale since the "locked strictly
+      // AFTER abstract review, not during" fix: this used to say "once
+      // Abstract Reviewed is reached", which stopped being true the
+      // moment that fix shipped. Kept label-agnostic (not "once past
+      // Abstract Reviewed"/"Abstract in review") rather than threading
+      // `board` all the way through renderAuthorRows just to pick the
+      // right one via statusLabelFor.
+      var lockAttr = locked ? ' disabled title="Authors are locked once past abstract review"' : '';
       if (row.isNew){
         html +=
           '<input type="text" class="author-input author-new-name" data-author-idx="' + i + '" value="' + escapeHtml(row.name) + '" placeholder="Name" aria-label="' + label + ' name"' + lockAttr + '>' +
@@ -3722,11 +3739,17 @@
   // same PI-is-last-row convention, different backing array + submit key.
   // `locked`: see authorRowsHtml — when true, the rows render read-only
   // and nothing below is worth wiring up at all (every listener target
-  // is disabled or simply absent from the markup).
-  function renderAuthorRows(wrapId, rows, onEnter, locked){
+  // is disabled or simply absent from the markup). `onChange` (2026-09-14
+  // +1, optional): called every time this function actually (re)renders —
+  // i.e. after any structural change to `rows` (add/remove/select/"use
+  // roster"), since every one of those funnels through a call back into
+  // this same function. The registration modal uses it to autosave its
+  // draft (saveRegisterDraft) — see openModal.
+  function renderAuthorRows(wrapId, rows, onEnter, locked, onChange){
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
     wrap.innerHTML = authorRowsHtml(rows, locked);
+    if (onChange) onChange();
     if (locked) return;
     Array.prototype.forEach.call(wrap.querySelectorAll('.author-select'), function(sel){
       sel.addEventListener('change', function(){
@@ -3737,7 +3760,7 @@
           var p = personByEmail(sel.value);
           rows[idx] = { name: p ? p.name : '', email: sel.value, isNew: false };
         }
-        renderAuthorRows(wrapId, rows, onEnter);
+        renderAuthorRows(wrapId, rows, onEnter, locked, onChange);
       });
     });
     Array.prototype.forEach.call(wrap.querySelectorAll('.author-new-name'), function(inp){
@@ -3755,13 +3778,13 @@
     Array.prototype.forEach.call(wrap.querySelectorAll('.author-use-roster'), function(btn){
       btn.addEventListener('click', function(){
         rows[Number(btn.getAttribute('data-author-idx'))] = { name: '', email: '', isNew: false };
-        renderAuthorRows(wrapId, rows, onEnter);
+        renderAuthorRows(wrapId, rows, onEnter, locked, onChange);
       });
     });
     Array.prototype.forEach.call(wrap.querySelectorAll('.author-remove'), function(btn){
       btn.addEventListener('click', function(){
         rows.splice(Number(btn.getAttribute('data-remove-author-idx')), 1);
-        renderAuthorRows(wrapId, rows, onEnter);
+        renderAuthorRows(wrapId, rows, onEnter, locked, onChange);
       });
     });
   }
@@ -3878,9 +3901,70 @@
     return false;
   }
 
+  // Registration-form draft autosave (2026-09-14+1) \u2014 reported by a user:
+  // "I lose the fields I've filled out if the page refreshes... I already
+  // had to fill it out a couple of times." Nothing in this app ever
+  // reloads the page itself (loadInitialData/onAuthStateChanged re-render
+  // in place, they never navigate \u2014 see their own comments), so losing an
+  // in-progress form has to be the BROWSER reloading the tab out from
+  // under it (a backgrounded tab is exactly when mobile browsers do that \u2014
+  // "double checking the title, coauthors emails, etc." reads as switching
+  // away and back). Nothing client-side can stop that outright, but the
+  // form's contents don't have to die with it: every change is mirrored to
+  // localStorage (not sessionStorage \u2014 a real reload, or even fully
+  // closing and reopening the tab, should still find it) under a key
+  // scoped to this venue AND this signed-in person, so switching venues or
+  // accounts on the same browser never surfaces someone else's stray
+  // draft. Cleared only on a successful Submit (onAddCard) \u2014 closing the
+  // modal any other way (Cancel, clicking outside, a real reload) leaves
+  // it in place, restored next time "Register a paper" is opened.
+  function registerDraftKey(boardId){
+    var email = state.currentUser && state.currentUser.email;
+    return 'airb-draft-register:' + boardId + ':' + (email || '');
+  }
+  function saveRegisterDraft(boardId){
+    try {
+      var titleEl = document.getElementById('pTitle');
+      if (!titleEl) return; // modal already closed \u2014 nothing to save
+      var title = titleEl.value;
+      var overleafLink = document.getElementById('pOverleaf').value;
+      var computeEstimate = document.getElementById('pCompute').value;
+      var note = document.getElementById('pNote').value;
+      var hasAuthorContent = pAuthorsState.some(function(r){ return (r.name && r.name.trim()) || (r.email && r.email.trim()); });
+      // Nothing typed yet (including the very first render of a brand-new
+      // modal, which fires this once via renderAuthorRows' onChange before
+      // anyone's touched anything) \u2014 don't create a draft out of thin air,
+      // and if a real draft was just emptied back out by hand, clear it
+      // rather than leaving a stale entry no longer reflected on screen.
+      if (!title.trim() && !overleafLink.trim() && !computeEstimate.trim() && !note.trim() && !hasAuthorContent){
+        clearRegisterDraft(boardId);
+        return;
+      }
+      var draft = {
+        title: title,
+        overleafLink: overleafLink,
+        computeEstimate: computeEstimate,
+        note: note,
+        authors: pAuthorsState,
+        savedAt: Date.now()
+      };
+      localStorage.setItem(registerDraftKey(boardId), JSON.stringify(draft));
+    } catch (e){ /* private-mode/quota errors \u2014 losing autosave silently beats crashing the form */ }
+  }
+  function loadRegisterDraft(boardId){
+    try {
+      var raw = localStorage.getItem(registerDraftKey(boardId));
+      return raw ? JSON.parse(raw) : null;
+    } catch (e){ return null; }
+  }
+  function clearRegisterDraft(boardId){
+    try { localStorage.removeItem(registerDraftKey(boardId)); } catch (e){}
+  }
+
   function openModal(){
     if (!requireSignedIn()) return;
     var current = getCurrentBoard();
+    var draft = loadRegisterDraft(current && current.id);
     if (current && current.status === 'pending'){
       showToast('This venue hasn’t been approved yet.', 'error');
       return;
@@ -3892,14 +3976,15 @@
           '<div id="paperForm">' +
             '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Registering as ' +
               escapeHtml(state.currentUser.name || state.currentUser.email) + ' (' + escapeHtml(state.currentUser.email) + ') \u2014 used as the submitter and corresponding author.</div>' +
-            '<div class="field"><label for="pTitle">Paper title</label><input type="text" id="pTitle"></div>' +
+            (draft ? '<div id="draftNotice" style="font-size:12px;color:var(--accent);background:var(--accent-dim);padding:6px 10px;border-radius:6px;margin-bottom:14px;">Restored your unsaved draft from ' + formatTimestamp(draft.savedAt) + ' \u2014 <button type="button" class="btn-text" id="discardDraft" style="font-size:inherit;">Discard</button></div>' : '') +
+            '<div class="field"><label for="pTitle">Paper title</label><input type="text" id="pTitle" value="' + escapeHtml((draft && draft.title) || '') + '"></div>' +
             '<div class="field"><label for="pAuthorsWrap">Authors</label><div id="pAuthorsWrap"></div>' +
               '<button class="btn-text" type="button" id="pAddAuthor">+ Add author</button>' +
               '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI. Pick from the workspace, or add someone outside it with their name and email.</div></div>' +
-            '<div class="field"><label for="pOverleaf">Overleaf link</label><input type="url" id="pOverleaf" placeholder="https://www.overleaf.com/project/..."></div>' +
-            '<div class="field"><label for="pCompute">Compute estimate</label><input type="text" id="pCompute" placeholder="e.g. ~2000 A100-hours">' +
+            '<div class="field"><label for="pOverleaf">Overleaf link</label><input type="url" id="pOverleaf" placeholder="https://www.overleaf.com/project/..." value="' + escapeHtml((draft && draft.overleafLink) || '') + '"></div>' +
+            '<div class="field"><label for="pCompute">Compute estimate</label><input type="text" id="pCompute" placeholder="e.g. ~2000 A100-hours" value="' + escapeHtml((draft && draft.computeEstimate) || '') + '">' +
               '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Required at registration (8 weeks out)</div></div>' +
-            '<div class="field"><label for="pNote">Note for the reviewers (optional)</label><textarea id="pNote" placeholder="Anything they should know"></textarea></div>' +
+            '<div class="field"><label for="pNote">Note for the reviewers (optional)</label><textarea id="pNote" placeholder="Anything they should know">' + escapeHtml((draft && draft.note) || '') + '</textarea></div>' +
             '<div class="field-error" id="paperFormError" hidden>Please fill in the required fields above.</div>' +
             '<div class="modal-actions">' +
               '<button class="btn" type="button" id="cancelModal">Cancel</button>' +
@@ -3918,13 +4003,25 @@
         if (ev.key === 'Enter'){ ev.preventDefault(); onAddCard(ev); }
       });
     });
-    pAuthorsState = [{ name: '', email: '', isNew: false }];
-    renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard);
+    // Draft autosave (2026-09-14+1) — see saveRegisterDraft's own comment.
+    // One delegated listener covers every text field, including the
+    // author rows' own name/email inputs (input bubbles); the author
+    // rows' structural changes (add/remove/select/"use roster") go
+    // through renderAuthorRows' onChange instead, since those never fire
+    // a bubbling input event of their own.
+    document.getElementById('paperForm').addEventListener('input', function(){ saveRegisterDraft(current.id); });
+    var discardBtn = document.getElementById('discardDraft');
+    if (discardBtn) discardBtn.addEventListener('click', function(){
+      clearRegisterDraft(current.id);
+      openModal(); // cheapest way to reset every field back to blank
+    });
+    pAuthorsState = (draft && draft.authors && draft.authors.length) ? draft.authors : [{ name: '', email: '', isNew: false }];
+    renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard, false, function(){ saveRegisterDraft(current.id); });
     document.getElementById('pAddAuthor').addEventListener('click', function(){
       // Insert before the last row, not after — the last row is the PI
       // slot, and it should stay last as more co-authors are added.
       pAuthorsState.splice(Math.max(pAuthorsState.length - 1, 0), 0, { name: '', email: '', isNew: false });
-      renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard);
+      renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard, false, function(){ saveRegisterDraft(current.id); });
     });
     document.getElementById('pTitle').focus();
   }
@@ -4300,6 +4397,7 @@
       if (!ok){ showToast(saveErrorMessage('Could not save the paper \u2014 try again.'), 'error'); return; }
       if (state.currentBoardId !== boardId) return;
       state.cards = next;
+      clearRegisterDraft(boardId);
       closeModal();
       renderBoard();
       showToast('Registered for review.', 'ok');
