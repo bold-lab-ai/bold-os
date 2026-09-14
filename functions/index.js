@@ -552,6 +552,21 @@ function homeRefreshTargetsForReviewers(before, after){
   return Array.from(new Set(targets.filter(Boolean)));
 }
 
+// Max papers per author (2026-09-14, see ml-conference-cycle — same day,
+// briefly a client-side save-blocking gate, reverted per Eduardo: "still
+// let people add papers... and notify the author that they've got a
+// problem"). This is the pure half: which author emails are newly
+// present on this card (in `after` but not `before`) — a brand-new card
+// (before === null) counts every one of its authors as new. Only a
+// newly-added author is worth checking for going over the venue's cap;
+// re-checking every author on every unrelated future edit of a paper
+// they're already on would re-notify them for no reason.
+function newlyAddedAuthorEmails(before, after){
+  var beforeEmails = (before && before.authorEmails) || [];
+  var afterEmails = (after && after.authorEmails) || [];
+  return afterEmails.filter(function(e){ return beforeEmails.indexOf(e) === -1; });
+}
+
 // ---------- Slack API ----------
 // Plain fetch against the Web API, no SDK dependency — same minimal-deps
 // preference as the rest of this project, just applied to the one place
@@ -824,6 +839,37 @@ exports.onVenueProposed = onDocumentCreated(
 
 // ---------- 2, 3, 4: card events ----------
 
+// Max papers per author — the I/O half (2026-09-14, see
+// newlyAddedAuthorEmails' own comment for the design/history). Not a
+// save-blocking gate; a DM to whoever's actually over the limit. Needs
+// the venue's own `maxPapersPerAuthor` (a board field, not on the card)
+// and a real count of that author's non-withdrawn papers on this one
+// venue — both genuinely need I/O, which is why this isn't pure the way
+// most of this file's decision logic is. Scoped to newly-added authors
+// only (see newlyAddedAuthorEmails) so an unrelated later edit to a
+// paper someone's already on doesn't re-notify them every time.
+async function notifyAuthorsOverCap(token, boardId, before, after){
+  const newEmails = newlyAddedAuthorEmails(before, after);
+  if (!newEmails.length) return;
+  const boardSnap = await db.collection('boards').doc(boardId).get();
+  const board = boardSnap.exists ? boardSnap.data() : null;
+  const max = board && board.maxPapersPerAuthor;
+  if (!max) return;
+  const venueLabel = (board && board.label) || boardId;
+  const url = venueUrl(boardId);
+  for (let i = 0; i < newEmails.length; i++){
+    const email = newEmails[i];
+    const snap = await db.collection('boards').doc(boardId).collection('cards')
+      .where('authorEmails', 'array-contains', email).get();
+    const count = snap.docs.filter(function(d){ return d.data().outcome !== 'withdrawn'; }).length;
+    if (count > max){
+      const headline = '⚠️ You’re now an author on ' + count + ' papers for ' + linkedTitle(venueLabel, url) +
+        ' — over its ' + max + '-per-author limit.';
+      await sendEvent(token, { emails: [email], headline: headline });
+    }
+  }
+}
+
 exports.onCardWritten = onDocumentWritten(
   { document: 'boards/{boardId}/cards/{cardId}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
@@ -852,6 +898,12 @@ exports.onCardWritten = onDocumentWritten(
       } catch (err){
         logger.error('Home tab refresh after card write threw', { email: refreshEmails[i], error: String(err) });
       }
+    }
+
+    try {
+      await notifyAuthorsOverCap(token, event.params.boardId, before, after);
+    } catch (err){
+      logger.error('notifyAuthorsOverCap threw', { boardId: event.params.boardId, error: String(err) });
     }
   }
 );
@@ -978,8 +1030,9 @@ exports.slackEvents = onRequest(
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
-  flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers, venueUrl, cardUrl,
-  linkedTitle, reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,
-  reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
-  reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView
+  flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
+  newlyAddedAuthorEmails, venueUrl, cardUrl, linkedTitle, reviewStateEmoji, verifySlackSignatureRaw,
+  canAssignReviewer, parseAssignAction, reviewerEmailFromAction, cardLine, personOptionsFor,
+  filterPeopleOptions, initialOptionForEmail, reviewerPickerBlock, sectionBlocks, buildHomeView,
+  buildUnrecognizedView
 };
