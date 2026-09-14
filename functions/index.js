@@ -173,9 +173,17 @@ function cardLine(item){
   return linkedTitle(item.title, cardUrl(item.boardId, item.cardId)) + '\n' + item.boardLabel + ' · ' + label;
 }
 
-// Slack's static_select caps at 100 options — the lab roster is nowhere
-// near that, but capped here defensively rather than assumed. Sorted by
-// name so the dropdown is actually browsable by eye.
+// Turns a (pre-filtered) roster subset into Slack option objects, sorted
+// by name. Slack caps ANY select menu's option list at 100 — a real bug
+// hit in production (2026-09-12): the lab roster is 274 people, so a
+// static_select built from the WHOLE roster silently truncated after the
+// 100th name alphabetically ("stops at letter H"), with no error, no
+// warning, just missing names. Capping here is the same defensive 100
+// as before; the actual fix is that this is no longer handed to Slack as
+// a select's full option list (see reviewerPickerBlock) — it now only
+// ever backs a live-filtered block_suggestion response (see
+// filterPeopleOptions/handleBlockSuggestion), where 100 matches for a
+// typed query is already far more than anyone would scroll through.
 function personOptionsFor(people){
   return (people || [])
     .filter(function(p){ return p && p.email; })
@@ -185,28 +193,55 @@ function personOptionsFor(people){
     .map(function(p){ return { text: { type: 'plain_text', text: p.name || p.email }, value: p.email }; });
 }
 
-// Slack rejects a static_select initial_option that isn't itself one of
-// the option objects it's given (not just a matching value) — and rejects
-// the key being present at all with a null/undefined value — so this
-// returns undefined (property omitted entirely by JSON.stringify) rather
-// than null when there's no current assignee, or they're not in the
-// options list (e.g. an old reviewer no longer in the `people` roster).
-function initialOptionFor(email, options){
+// Slack's live type-ahead for external_select — Interactivity's
+// block_suggestion payload carries whatever's typed so far (`query`,
+// empty string when the field is first focused) and this narrows the
+// roster to name/email substring matches, case-insensitive. Deliberately
+// searches the WHOLE roster (not a pre-capped subset) before capping the
+// RESULT to 100 — capping first, like the old static_select did, would
+// silently drop a real match again for anyone past the cut alphabetically.
+function filterPeopleOptions(people, query){
+  var q = (query || '').trim().toLowerCase();
+  var matches = (people || []).filter(function(p){
+    if (!p || !p.email) return false;
+    if (!q) return true;
+    var name = (p.name || '').toLowerCase();
+    var email = (p.email || '').toLowerCase();
+    return name.indexOf(q) !== -1 || email.indexOf(q) !== -1;
+  });
+  return personOptionsFor(matches);
+}
+
+// Slack rejects a select's initial_option that isn't itself a full option
+// object (not just a matching value) — and rejects the key being present
+// at all with a null/undefined value — so this returns undefined
+// (property omitted entirely by JSON.stringify) rather than null when
+// there's no current assignee, or they're no longer in the roster.
+// Searches the raw roster directly, NOT a pre-capped/pre-filtered option
+// list — the current assignee could easily be past any alphabetical cut,
+// and this only ever needs to find the one exact match, never a list.
+function initialOptionForEmail(email, people){
   if (!email) return undefined;
-  return (options || []).filter(function(o){ return o.value === email; })[0];
+  var match = (people || []).filter(function(p){ return p && p.email === email; })[0];
+  if (!match) return undefined;
+  return { text: { type: 'plain_text', text: match.name || match.email }, value: match.email };
 }
 
 // One reviewer-picker row per card the viewer owns (submitted) — the
 // "if I am a paper owner, to be able to choose reviewers from there" ask.
 // Both roles shown regardless of current status; reassigning after review
 // has started is exactly what onSetReviewer already allows client-side.
+// external_select, not static_select (2026-09-12, fixed a real bug — see
+// personOptionsFor's comment): Slack's 100-option cap on a static list
+// silently dropped real people from a 274-person roster. external_select
+// instead calls back to this same function's block_suggestion handler as
+// the viewer types, so there's no upfront list size limit at all.
 function reviewerPickerBlock(item, people){
-  var options = personOptionsFor(people);
-  var junior = { type: 'static_select', action_id: 'assign_junior', placeholder: { type: 'plain_text', text: 'Junior reviewer' }, options: options };
-  var senior = { type: 'static_select', action_id: 'assign_senior', placeholder: { type: 'plain_text', text: 'Senior reviewer' }, options: options };
+  var junior = { type: 'external_select', action_id: 'assign_junior', placeholder: { type: 'plain_text', text: 'Junior reviewer' }, min_query_length: 1 };
+  var senior = { type: 'external_select', action_id: 'assign_senior', placeholder: { type: 'plain_text', text: 'Senior reviewer' }, min_query_length: 1 };
   var rv = (item.card && item.card.reviewers) || {};
-  var jrInitial = initialOptionFor(rv.junior, options);
-  var srInitial = initialOptionFor(rv.senior, options);
+  var jrInitial = initialOptionForEmail(rv.junior, people);
+  var srInitial = initialOptionForEmail(rv.senior, people);
   if (jrInitial) junior.initial_option = jrInitial;
   if (srInitial) senior.initial_option = srInitial;
   return { type: 'actions', block_id: 'card:' + item.boardId + ':' + item.cardId, elements: [junior, senior] };
@@ -581,23 +616,31 @@ async function gatherDashboard(email){
 // through (see handleInteractivity) so the picker's initial_option
 // reflects the change immediately rather than waiting for the next open.
 async function handleAppHomeOpened(token, slackUserId){
+  logger.info('handleAppHomeOpened: start', { slackUserId: slackUserId });
   const email = await emailForSlackId(slackUserId);
   if (!email){
-    await slackFetch(token, 'views.publish', { user_id: slackUserId, view: buildUnrecognizedView() });
+    logger.info('handleAppHomeOpened: no matching email, publishing unrecognized view', { slackUserId: slackUserId });
+    const result = await slackFetch(token, 'views.publish', { user_id: slackUserId, view: buildUnrecognizedView() });
+    logger.info('handleAppHomeOpened: unrecognized view published', { ok: result.ok });
     return;
   }
   const [people, sections] = await Promise.all([allPeople(), gatherDashboard(email)]);
-  await slackFetch(token, 'views.publish', { user_id: slackUserId, view: buildHomeView(email, sections, people) });
+  const result = await slackFetch(token, 'views.publish', { user_id: slackUserId, view: buildHomeView(email, sections, people) });
+  logger.info('handleAppHomeOpened: dashboard view published', { ok: result.ok, error: result.error });
 }
 
-// Handles one Interactivity payload — today only the reviewer-picker's
-// static_select, per parseAssignAction's action_id/block_id scheme (see
-// reviewerPickerBlock). Anything else (a payload shape not recognized, a
-// missing card, a blocked permission check) is silently ignored rather
-// than surfaced to the user — Slack's interactivity payloads have no
-// simple "show an error toast" primitive without an extra response_url
-// round trip, and a no-op picker click is self-evident (the dropdown just
-// doesn't visibly change) rather than actively misleading.
+// Handles one block_actions Interactivity payload — today only the
+// reviewer-picker's external_select, per parseAssignAction's
+// action_id/block_id scheme (see reviewerPickerBlock). block_suggestion
+// (the live type-ahead) is a different payload type, handled separately
+// by handleBlockSuggestion below — it needs a synchronous JSON response,
+// not the empty-200-ack shape every block_actions handler uses. Anything
+// unrecognized here (a payload shape not matched, a missing card, a
+// blocked permission check) is silently ignored rather than surfaced to
+// the user — Slack's interactivity payloads have no simple "show an error
+// toast" primitive without an extra response_url round trip, and a no-op
+// picker click is self-evident (the dropdown just doesn't visibly change)
+// rather than actively misleading.
 async function handleInteractivity(token, payload){
   if (payload.type !== 'block_actions') return;
   const action = (payload.actions || [])[0];
@@ -625,6 +668,19 @@ async function handleInteractivity(token, payload){
   await cardRef.update({ reviewers: reviewers, updatedAt: Date.now() });
 
   if (actingSlackId) await handleAppHomeOpened(token, actingSlackId);
+}
+
+// external_select's live search (2026-09-12, replacing the static_select
+// that silently truncated at Slack's 100-option cap — see
+// reviewerPickerBlock/personOptionsFor). Slack requires this specific
+// payload type to get its options back synchronously in the HTTP response
+// body itself (`{ options: [...] }`), not the fire-and-forget/empty-ack
+// shape every other interactivity payload uses — see the onRequest
+// handler's dispatch. Never throws outward; an empty options list on
+// error just shows "no matches" in Slack rather than a broken picker.
+async function handleBlockSuggestion(payload){
+  const people = await allPeople();
+  return { options: filterPeopleOptions(people, payload.value) };
 }
 
 // Resolves and sends one event ({ emails, headline, excludeEmail? }) — the
@@ -712,6 +768,18 @@ exports.slackEvents = onRequest(
   // invocation, otherwise `firebase deploy` stops to ask interactively.
   { secrets: [SLACK_BOT_TOKEN, SLACK_SIGNING_SECRET], invoker: 'public' },
   async function(req, res){
+    // Temporary diagnostic breadcrumb (2026-09-12) — logged unconditionally,
+    // before signature verification, so it's possible to tell "Slack never
+    // called this at all" apart from "called it and it silently succeeded"
+    // (every other branch below only logs on failure/error). Remove once
+    // app_home_opened is confirmed reaching this function in production.
+    logger.info('slackEvents: request received', {
+      method: req.method,
+      contentType: req.get('content-type'),
+      hasSignatureHeader: !!req.get('x-slack-signature'),
+      hasTimestampHeader: !!req.get('x-slack-request-timestamp')
+    });
+
     const timestamp = req.get('x-slack-request-timestamp');
     const signature = req.get('x-slack-signature');
     const raw = req.rawBody ? req.rawBody.toString('utf8') : '';
@@ -730,14 +798,46 @@ exports.slackEvents = onRequest(
     if (req.body && typeof req.body.payload === 'string'){
       let payload;
       try { payload = JSON.parse(req.body.payload); } catch (err){ res.status(200).send(''); return; }
-      res.status(200).send('');
-      handleInteractivity(token, payload).catch(function(err){
+      logger.info('slackEvents: interactivity payload', { type: payload.type });
+
+      // block_suggestion (the reviewer picker's live search, 2026-09-12)
+      // is a different contract from every other interactivity payload:
+      // Slack wants the matching options back as the actual JSON response
+      // body, synchronously — not an empty ack with the real work done
+      // asynchronously. Handled first and separately for exactly that
+      // reason.
+      if (payload.type === 'block_suggestion'){
+        try {
+          const suggestion = await handleBlockSuggestion(payload);
+          res.status(200).json(suggestion);
+        } catch (err){
+          logger.error('handleBlockSuggestion threw', { error: String(err) });
+          res.status(200).json({ options: [] });
+        }
+        return;
+      }
+
+      // Awaited, not fire-and-forget (2026-09-12, fixed a real bug): Cloud
+      // Functions v2 (Cloud Run under the hood) can throttle an instance's
+      // CPU right after the HTTP response is sent, freezing any async work
+      // still in flight — a `res.send()` followed by an un-awaited promise
+      // was silently never completing in production (confirmed via the
+      // request-received/handler-start logs landing, but views.publish
+      // never firing). Slack's own 3-second budget is generous enough for
+      // one Firestore write + a views.publish call; there's no automatic
+      // retry for interactivity payloads on timeout, so completing before
+      // responding is the only way this reliably runs at all.
+      try {
+        await handleInteractivity(token, payload);
+      } catch (err){
         logger.error('handleInteractivity threw', { error: String(err) });
-      });
+      }
+      res.status(200).send('');
       return;
     }
 
     const body = req.body || {};
+    logger.info('slackEvents: events API body', { type: body.type, eventType: body.event && body.event.type });
     if (body.type === 'url_verification'){
       // One-time handshake when the Request URL is first saved in Slack's
       // app config — must echo the challenge back verbatim, synchronously.
@@ -745,10 +845,16 @@ exports.slackEvents = onRequest(
       return;
     }
     if (body.type === 'event_callback' && body.event && body.event.type === 'app_home_opened'){
-      res.status(200).send('');
-      handleAppHomeOpened(token, body.event.user).catch(function(err){
+      // Same awaited-before-responding fix as the interactivity branch
+      // above. Events API does retry on timeout (unlike interactivity),
+      // and re-publishing the same Home view is harmless if Slack ever
+      // does retry here, so awaiting first is strictly safer either way.
+      try {
+        await handleAppHomeOpened(token, body.event.user);
+      } catch (err){
         logger.error('handleAppHomeOpened threw', { error: String(err) });
-      });
+      }
+      res.status(200).send('');
       return;
     }
     res.status(200).send('');
@@ -760,5 +866,6 @@ exports.slackEvents = onRequest(
 exports._internal = {
   flattenMessages, newMessages, cardEventsToNotify, venueUrl, cardUrl, linkedTitle, reviewStateEmoji,
   verifySlackSignatureRaw, canAssignReviewer, parseAssignAction, cardLine, personOptionsFor,
-  initialOptionFor, reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView
+  filterPeopleOptions, initialOptionForEmail, reviewerPickerBlock, sectionBlocks, buildHomeView,
+  buildUnrecognizedView
 };

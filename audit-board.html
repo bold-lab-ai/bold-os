@@ -990,6 +990,7 @@
   // board's contents don't linger on screen after actively signing out.
   function loadInitialData(){
     if (!state.currentUser){
+      stopWatchingCards();
       state.boards = [];
       state.people = [];
       state.cards = [];
@@ -1470,7 +1471,10 @@
     state.view = s ? s.view : 'list';
     state.currentBoardId = s ? s.boardId : null;
     state.currentCardId = s ? s.cardId : null;
-    if (state.view !== 'venue' && state.view !== 'card') state.cards = [];
+    if (state.view !== 'venue' && state.view !== 'card'){
+      stopWatchingCards();
+      state.cards = [];
+    }
     renderAll(); // toolbar visibility + venuesRegion/boardRegion both need this, not renderBoard() alone
     if (state.view === 'venue' || state.view === 'card') loadCurrentBoardCards();
   });
@@ -1486,6 +1490,7 @@
   }
 
   function backToVenuesList(){
+    stopWatchingCards();
     state.view = 'list';
     state.currentBoardId = null;
     state.currentCardId = null;
@@ -3812,14 +3817,50 @@
     });
   }
 
+  // Live, not a one-time fetch (2026-09-14) — Eduardo, after reviewer
+  // assignment from the Slack App Home dashboard started writing straight
+  // to Firestore via the Cloud Function's Admin SDK: "it landed on the
+  // board, but I need to reload the page. Can't we update it without
+  // reloading." Before this, every board/card read anywhere in the app was
+  // a plain `.get()` — fine while the client's own actions were the only
+  // way data changed, but the Slack integration means changes can now
+  // arrive from somewhere the open tab has no other way to hear about.
+  // `onSnapshot` is the general fix: any write to this board's cards —
+  // from Slack, another signed-in person, or this same tab's own
+  // optimistic writes reflecting back — re-renders automatically. Torn
+  // down (unsubscribeCards()) whenever the viewer leaves this board
+  // (backToVenuesList, opening a different venue, or signing out) so a
+  // stale listener doesn't keep re-rendering a board that's no longer on
+  // screen or (post-sign-out) start erroring against Security Rules.
+  var unsubscribeCards = null;
+  function stopWatchingCards(){
+    if (unsubscribeCards){ unsubscribeCards(); unsubscribeCards = null; }
+  }
   function loadCurrentBoardCards(){
     if (!state.currentBoardId) return Promise.resolve();
     state.loadingCards = true;
     renderBoard();
-    return loadBoard(state.currentBoardId).then(function(data){
-      state.cards = (data.cards || []).map(normalizeCard);
-      state.loadingCards = false;
-      renderBoard();
+    stopWatchingCards();
+    var boardId = state.currentBoardId;
+    return new Promise(function(resolve){
+      unsubscribeCards = cardsCol(boardId).onSnapshot(function(snap){
+        // A listener from a board the viewer has since navigated away from
+        // can still fire once more before Firestore finishes tearing it
+        // down after stopWatchingCards() — ignore it rather than clobber
+        // whatever board is actually on screen now.
+        if (state.currentBoardId !== boardId) return;
+        var cards = [];
+        snap.forEach(function(doc){ cards.push(normalizeCard(Object.assign({ id: doc.id }, doc.data()))); });
+        state.cards = cards;
+        state.loadingCards = false;
+        renderBoard();
+        resolve();
+      }, function(err){
+        logError('loadCurrentBoardCards', err);
+        state.loadingCards = false;
+        renderBoard();
+        resolve();
+      });
     });
   }
 
