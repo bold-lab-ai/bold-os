@@ -4055,10 +4055,20 @@
 
   function onChangeStatus(cardId, newStatus){
     var boardId = state.currentBoardId;
+    var board = getCurrentBoard();
+    var order = effectiveStatusOrder(board);
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card || card.status === newStatus) return;
 
-    if (crossesGate(card.status, newStatus) && !checklistComplete(card)){
+    // This is real user-facing navigation (the Advance/Revert buttons, the
+    // status dropdown) — order must be effectiveStatusOrder(board), not the
+    // canonical-default omitted order, or a Rush-mode Revert from Full
+    // paper in review (draft_review) back to Abstract in review
+    // (abstract_review) wrongly reads as "crossing the gate forward" under
+    // canonical STATUS_ORDER (where abstract_review's index sits AFTER
+    // draft_review's) and gets silently blocked with a toast instead of
+    // actually moving the card. See crossesGate's own comment.
+    if (crossesGate(card.status, newStatus, order) && !checklistComplete(card)){
       var ac = authorChecklistCounts(card);
       var cc = checklistCounts(card);
       var summary = 'authors ' + ac.done + '/' + ac.total + ', ' + REVIEW_ROLES.map(function(role){
@@ -4072,14 +4082,19 @@
     // Same gate as advanceBlockReason() — see its own comment for why
     // this is (normally redundant with, but kept alongside) the
     // checklistComplete() check just above.
-    if (crossesGate(card.status, newStatus) && reviewFilterState(card) !== 'approved'){
+    if (crossesGate(card.status, newStatus, order) && reviewFilterState(card) !== 'approved'){
       showToast('Both reviewers must approve before ' + STATUS_LABELS[GATE_STATUS] + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
     }
 
-    var fromIdx = STATUS_ORDER.indexOf(card.status);
-    var toIdx = STATUS_ORDER.indexOf(newStatus);
+    // order-based, not canonical STATUS_ORDER — in Rush mode, advancing
+    // into draft_review comes FROM abstract_review, whose canonical index
+    // (4) is actually greater than draft_review's own (2), so a canonical
+    // comparison here would wrongly read a genuine rush advance as a
+    // revert and silently skip the reviewer-assignment gate just below.
+    var fromIdx = order.indexOf(card.status);
+    var toIdx = order.indexOf(newStatus);
     var isAdvance = toIdx !== -1 && (fromIdx === -1 || toIdx > fromIdx);
 
     // Only blocks moving forward into Draft & Review — reverting back into
