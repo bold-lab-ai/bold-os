@@ -375,6 +375,9 @@
     margin-top:4px; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
   }
+  /* Rush mode's column deadline hint, once its cutoff has passed — see
+     columnHintFor. */
+  .column-head .ch-hint.ch-hint-overdue{color:var(--danger-text); font-weight:600;}
   .column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
   .column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
 
@@ -390,6 +393,11 @@
   .card.rv-in_review{border-left:4px solid var(--warn-text); background:var(--warn-bg);}
   .card.rv-changes_requested{border-left:4px solid var(--danger-text); background:var(--danger-bg);}
   .card.rv-approved{border-left:4px solid var(--success-text); background:var(--success-bg);}
+  /* Rush mode: a card whose column has passed its internal cutoff (see
+     rushColumnCutoff) — an outline layered on top, since it needs to read
+     clearly whether or not an rv-* review-state background above also
+     applies to the same card. */
+  .card.rush-deadline-passed{outline:2px solid var(--danger-text); outline-offset:-1px;}
   .badge-rv-in_review{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
   .badge-rv-changes_requested{background:var(--danger-bg); color:var(--danger-text); border:1px solid #f0c9c4;}
   .badge-rv-approved{background:var(--success-bg); color:var(--success-text); border:1px solid #bfe0d6;}
@@ -460,6 +468,13 @@
   }
   .card-move-btn:hover:not(:disabled){background:var(--wash); border-color:var(--blue); color:var(--blue);}
   .card-move-btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
+  /* Rush mode's "Abstract accepted"/"Paper accepted" buttons — see
+     moveButtonsHtml — read as a sign-off, not a plain forward move, so
+     they get the same green as an approved review state instead of the
+     neutral default. */
+  .card-move-btn.card-move-btn-accept{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
+  .card-move-btn.card-move-btn-accept:hover:not(:disabled){background:#cde8df; border-color:var(--success-text);}
+  .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); background:var(--surface); border-color:var(--line); opacity:.5;}
 
   /* ---------- card detail ---------- */
   .detail{max-width:var(--read-max); margin:20px auto 0; padding:0 var(--gutter) 88px;}
@@ -1976,6 +1991,95 @@
     return d < today;
   }
 
+  // Rush mode's own internal deadlines (2026-09-14, per Eduardo) —
+  // separate from effectiveDeadline/isOverdue above, which drive the
+  // general "Overdue" badge off a venue's real deadline directly and are
+  // unchanged by any of this. Rush's two review columns (Abstract in
+  // review, Full paper in review) each count down to a CUTOFF instead:
+  // RUSH_BUFFER_HOURS before the real venue deadline that stage is
+  // actually racing toward, so there's still a buffer to act before the
+  // real deadline hits, not right up to the wire.
+  var RUSH_BUFFER_HOURS = 48;
+
+  // Venue deadlines are stored as bare dates (no time of day), so every
+  // consumer of "how long is left" needs one shared answer for what
+  // instant a date actually means — read as through 18:00 (end of the
+  // working day), the viewer's own local time, not midnight.
+  var DEADLINE_HOUR = 18;
+  function deadlineInstant(iso){
+    if (!iso) return null;
+    var d = new Date(iso + 'T00:00:00');
+    d.setHours(DEADLINE_HOUR, 0, 0, 0);
+    return d;
+  }
+
+  // Which real venue deadline a given rush column is racing toward —
+  // Abstract in review counts down to the venue's own abstract deadline
+  // (board.abstractDeadline), falling back to the paper deadline if the
+  // venue never set a separate one; Full paper in review counts down to
+  // the paper deadline itself. Returns a bare ISO date string, or null if
+  // the venue has no deadline of that kind set at all.
+  function rushColumnRealDeadline(status, board){
+    if (!board) return null;
+    if (status === 'abstract_review') return board.abstractDeadline || board.deadline || null;
+    if (status === 'draft_review') return board.deadline || null;
+    return null;
+  }
+
+  // The actual cutoff a rush column is held to: RUSH_BUFFER_HOURS before
+  // its real deadline's instant. Returns a Date, or null if that column
+  // has no applicable deadline (not a rush review column, rush mode is
+  // off, or the venue hasn't set the relevant deadline yet).
+  function rushColumnCutoff(status, board){
+    if (!board || !board.rushMode) return null;
+    var instant = deadlineInstant(rushColumnRealDeadline(status, board));
+    if (!instant) return null;
+    return new Date(instant.getTime() - RUSH_BUFFER_HOURS * 3600000);
+  }
+
+  function isRushColumnPastCutoff(status, board){
+    var cutoff = rushColumnCutoff(status, board);
+    return !!cutoff && Date.now() > cutoff.getTime();
+  }
+
+  // "2d 4h left" / "3h left" / "5h overdue" — whole hours only; a rush
+  // cutoff is only ever precise to the hour to begin with (DEADLINE_HOUR),
+  // so minutes would be false precision.
+  function formatTimeLeft(cutoff){
+    if (!cutoff) return null;
+    var ms = cutoff.getTime() - Date.now();
+    var pastDue = ms < 0;
+    var totalHours = Math.floor(Math.abs(ms) / 3600000);
+    var days = Math.floor(totalHours / 24);
+    var hours = totalHours % 24;
+    var text = (days > 0 ? days + 'd ' : '') + hours + 'h';
+    return pastDue ? (text + ' overdue') : (text + ' left');
+  }
+
+  // "18 Sep, 6:00 PM" — a date plus a time of day, for the rush cutoff
+  // itself (formatDate below is date-only, for the real venue deadlines it
+  // already handles everywhere else).
+  function formatDateTime(d){
+    if (!d) return '';
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ', ' +
+      d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  }
+
+  // The line under a column's title — STATUS_HINTS' plain "move a card
+  // here when…" note everywhere except Rush mode's two review columns,
+  // which show their real deadline and internal cutoff instead, since
+  // that's the more useful thing to see on that specific column for a rush
+  // venue.
+  function columnHintFor(status, board){
+    if (board && board.rushMode && (status === 'abstract_review' || status === 'draft_review')){
+      var real = rushColumnRealDeadline(status, board);
+      if (!real) return 'No deadline set for this venue yet';
+      var cutoff = rushColumnCutoff(status, board);
+      return 'Due ' + formatDate(real) + ' — cutoff ' + formatDateTime(cutoff) + ' (' + formatTimeLeft(cutoff) + ')';
+    }
+    return STATUS_HINTS[status] || '';
+  }
+
   function formatDate(iso){
     if (!iso) return '';
     var d = new Date(iso + 'T00:00:00');
@@ -2257,6 +2361,65 @@
     return null;
   }
 
+  // Rush mode's per-column accept-button label (2026-09-14, per Eduardo) —
+  // replaces the generic "Advance" verb on the two columns a rush reviewer
+  // explicitly signs off on, so the click reads as what's actually being
+  // confirmed rather than a generic forward move. Every other column —
+  // including the canonical (non-rush) pipeline's own differently
+  // positioned Abstract Reviewed — keeps the plain "Advance" wording; see
+  // moveButtonsHtml.
+  var RUSH_ACCEPT_LABELS = {
+    abstract_review: 'Abstract accepted',
+    draft_review: 'Paper accepted'
+  };
+
+  // The Revert / Advance-or-Accept button pair shown wherever a card can
+  // be moved — the compact kanban card, the detail page, and the
+  // checklist partial re-render each rendered this same pair independently
+  // until now (2026-09-14) — exactly how the onChangeStatus
+  // order-awareness bug slipped into only some of them and not others (see
+  // its own commit). One shared function now, used everywhere.
+  //
+  // The rgt (Advance/Accept) gate always runs advanceBlockReason first,
+  // unchanged — that still carries e.g. the "assign a junior and a senior
+  // reviewer first" check on entering draft_review either way. Abstract
+  // accepted ALSO checks abstractAcceptBlockReason on top of that (authors
+  // present + nobody over the per-author cap, Rush-mode-only) — the two
+  // things Abstract in review exists to check, additional to whatever
+  // advanceBlockReason already required for that same move. Paper accepted
+  // (leaving Full paper in review) and every plain Advance are unaffected,
+  // still just advanceBlockReason.
+  // Just the two <button> elements, no wrapping .card-move div — for the
+  // one call site (onToggleChecklist's partial re-render) that already has
+  // its hands on that div directly and only needs to replace what's inside
+  // it. moveButtonsHtml below is the version everyone else wants.
+  function moveButtonsInnerHtml(card, board){
+    var effective = displayStatus(card, board);
+    var order = effectiveStatusOrder(board);
+    var lft = statusAt(effective, -1, order);
+    var rgt = statusAt(effective, 1, order);
+    var acceptLabel = (board && board.rushMode) ? RUSH_ACCEPT_LABELS[effective] : null;
+    var rgtLabel = acceptLabel || 'Advance';
+    // abstractAcceptBlockReason is ADDED on top of advanceBlockReason, not
+    // swapped in for it — advanceBlockReason still carries the existing
+    // "assign a junior and a senior reviewer first" gate on entering
+    // draft_review (unconditional on crossesGate, see its own comment),
+    // which already applied to this exact abstract_review -> draft_review
+    // move before Abstract accepted existed. Dropping that in favour of
+    // only the new authors/cap check would have silently let a card into
+    // Full paper in review with no reviewers assigned.
+    var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
+      (effective === 'abstract_review' && acceptLabel ? abstractAcceptBlockReason(card, board, state.cards) : null));
+    var acceptClass = acceptLabel ? ' card-move-btn-accept' : '';
+    var html = '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(statusLabelFor(lft, board)) + '"' : ' disabled') + '>&larr; Revert</button>';
+    html += '<button class="card-move-btn' + acceptClass + '" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : '')) + '>' + escapeHtml(rgtLabel) + ' &rarr;</button>';
+    return html;
+  }
+
+  function moveButtonsHtml(card, board){
+    return '<div class="card-move">' + moveButtonsInnerHtml(card, board) + '</div>';
+  }
+
   // Forward-migrate a stored card: since-split status keys; older checklist
   // shapes (single `checked`, `author`/`auditor` pair, or the dropped
   // author/junior/senior triple) into the junior/senior pair — old `auditor`
@@ -2456,7 +2619,8 @@
     var overdue = isOverdue(card, board);
     var inDraftReview = card.status === 'draft_review';
     var rv = inDraftReview ? reviewFilterState(card) : null;
-    var cardClass = 'card' + (rv ? ' rv-' + rv : '');
+    var rushOverdue = isRushColumnPastCutoff(displayStatus(card, board), board);
+    var cardClass = 'card' + (rv ? ' rv-' + rv : '') + (rushOverdue ? ' rush-deadline-passed' : '');
     var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
     html += '<button class="card-title-btn" type="button" data-open-card="' + escapeHtml(card.id) + '">' + escapeHtml(card.title) + '</button>';
     // Badges only; Overleaf link / edit + remove live on the detail page
@@ -2486,13 +2650,7 @@
       ' &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:4px 7px;margin-bottom:8px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn\u2019t a column anymore &mdash; pick a new one below</div>';
     if (STATUS_LABELS[card.status]) {
-      var lft = statusAt(displayStatus(card, board), -1, effectiveStatusOrder(board));
-      var rgt = statusAt(displayStatus(card, board), 1, effectiveStatusOrder(board));
-      var rgtBlockReason = rgt && advanceBlockReason(card, rgt, board);
-      html += '<div class="card-move">';
-      html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(statusLabelFor(lft, board)) + '"' : ' disabled') + '>&larr; Revert</button>';
-      html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : '') + '>Advance &rarr;</button>';
-      html += '</div>';
+      html += moveButtonsHtml(card, board);
     }
     // Only the orphaned-status rescue select needs a footer now; edit / remove
     // moved to the detail page.
@@ -2595,9 +2753,11 @@
       var allForStatus = state.cards.filter(function(c){ return displayStatus(c, board) === status; });
       var cardsForStatus = allForStatus.filter(matchesSearch);
       html += '<div class="column">';
+      var hint = columnHintFor(status, board);
+      var hintOverdue = isRushColumnPastCutoff(status, board);
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
-        (STATUS_HINTS[status] ? '<div class="ch-hint">' + escapeHtml(STATUS_HINTS[status]) + '</div>' : '') +
+        (hint ? '<div class="ch-hint' + (hintOverdue ? ' ch-hint-overdue' : '') + '">' + escapeHtml(hint) + '</div>' : '') +
       '</div>';
       html += '<div class="column-body">';
       if (cardsForStatus.length === 0){
@@ -3167,9 +3327,9 @@
 
     var overdue = isOverdue(card, board);
     var dl = effectiveDeadline(card, board);
-    var lft = statusAt(displayStatus(card, board), -1, effectiveStatusOrder(board));
-    var rgt = statusAt(displayStatus(card, board), 1, effectiveStatusOrder(board));
-    var rgtBlockReason = rgt && advanceBlockReason(card, rgt, board);
+    var effective = displayStatus(card, board);
+    var rushCutoff = rushColumnCutoff(effective, board);
+    var rushOverdue = isRushColumnPastCutoff(effective, board);
 
     var html = '<div class="detail">';
     html += '<a href="#" class="detail-back" id="detailBack">&larr; Back to ' + (board ? escapeHtml(board.label) : 'board') + '</a>';
@@ -3186,14 +3346,12 @@
       : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
     if (shouldShowOutcomeBadge(card)) html += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     if (overdue) html += '<span class="badge badge-overdue">Overdue</span>';
+    if (rushOverdue) html += '<span class="badge badge-overdue">Rush cutoff passed</span>';
     html += '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:12px;color:var(--warn-text);background:var(--warn-bg);padding:6px 10px;margin-top:10px;border-radius:6px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn’t a column anymore &mdash; pick a new one below.</div>';
 
     html += '<div class="detail-controls">';
-    html += '<div class="card-move">';
-    html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(statusLabelFor(lft, board)) + '"' : ' disabled') + '>&larr; Revert</button>';
-    html += '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : '')) + '>Advance &rarr;</button>';
-    html += '</div>';
+    html += moveButtonsHtml(card, board);
     html += '<select aria-label="Status" data-status-for="' + escapeHtml(card.id) + '">' + statusOptionsHtml(card.status, effectiveStatusOrder(board), board) + '</select>';
     html += '<button class="btn" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button>';
     html += '<button class="btn-text danger" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
@@ -3201,6 +3359,7 @@
 
     html += '<dl class="detail-grid">';
     if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (card.status !== 'rebuttal' ? ' <span style="color:var(--muted);">(venue deadline)</span>' : '') + '</dd>';
+    if (rushCutoff) html += '<dt>Rush cutoff</dt><dd' + (rushOverdue ? ' style="color:var(--danger-text);font-weight:600;"' : '') + '>' + formatDateTime(rushCutoff) + ' <span style="color:var(--muted);font-weight:400;">(' + formatTimeLeft(rushCutoff) + ')</span></dd>';
     if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + ' <span style="color:var(--muted);">(last is PI)</span></dd>';
     if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
     if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
@@ -3378,12 +3537,7 @@
       var moveWrap = els.boardRegion.querySelector('.detail-controls .card-move');
       if (moveWrap && card2){
         var moveBoard = getCurrentBoard();
-        var lft = statusAt(displayStatus(card2, moveBoard), -1, effectiveStatusOrder(moveBoard));
-        var rgt = statusAt(displayStatus(card2, moveBoard), 1, effectiveStatusOrder(moveBoard));
-        var rgtBlockReason = rgt && advanceBlockReason(card2, rgt, moveBoard);
-        moveWrap.innerHTML =
-          '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card2.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(statusLabelFor(lft, moveBoard)) + '"' : ' disabled') + '>&larr; Revert</button>' +
-          '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card2.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, moveBoard)) + '"' : '')) + '>Advance &rarr;</button>';
+        moveWrap.innerHTML = moveButtonsInnerHtml(card2, moveBoard);
         Array.prototype.forEach.call(moveWrap.querySelectorAll('[data-move]'), function(btn){
           btn.addEventListener('click', function(){
             var to = btn.getAttribute('data-move-to');
@@ -3601,23 +3755,55 @@
   // scroll past; this is visible every time they open the board itself,
   // for as long as it's still true.
 
+  // Non-withdrawn papers on this venue that an author (by email) is on —
+  // the one counting rule shared by currentUserPaperCapWarning and
+  // abstractAcceptBlockReason below (both client-side, both off the same
+  // already-loaded state.cards, so sharing this one is worth it — unlike
+  // notifyAuthorsOverCap's own copy of the same idea server-side, in
+  // functions/index.js, which stays independent since it runs off a
+  // Firestore query in a different runtime entirely).
+  function paperCountForAuthor(email, cards){
+    return (cards || []).filter(function(c){
+      return c.outcome !== 'withdrawn' && (c.authorEmails || []).indexOf(email) !== -1;
+    }).length;
+  }
+
   // The board-banner half — read-only, no save involved at all, just
   // "is the person looking at this board, right now, over the venue's
-  // cap." Same non-withdrawn-papers-only counting as notifyAuthorsOverCap
-  // server-side, kept independent rather than shared since one runs
-  // client-side off already-loaded state.cards and the other runs in a
-  // Cloud Function off a Firestore query — same logic, different data
-  // access, not worth forcing through one shared function across two
-  // runtimes. Returns null (render nothing) if there's no cap set, nobody
+  // cap." Returns null (render nothing) if there's no cap set, nobody
   // signed in, or they're at-or-under it.
   function currentUserPaperCapWarning(board, cards, userEmail){
     var max = board && board.maxPapersPerAuthor;
     if (!max || !userEmail) return null;
-    var count = (cards || []).filter(function(c){
-      return c.outcome !== 'withdrawn' && (c.authorEmails || []).indexOf(userEmail) !== -1;
-    }).length;
+    var count = paperCountForAuthor(userEmail, cards);
     if (count <= max) return null;
     return { count: count, max: max };
+  }
+
+  // Rush mode's "Abstract accepted" gate (2026-09-14, per Eduardo) — moving
+  // a card out of Abstract in review is where the two things that stage
+  // exists to check get enforced: the authors list is actually filled in,
+  // and nobody on the paper is over the venue's max-papers-per-author cap.
+  // A real hard block on THIS specific transition — unlike
+  // currentUserPaperCapWarning/notifyAuthorsOverCap above, which stay
+  // deliberately non-blocking (a save-time hard block was tried and
+  // reverted the same day — see the comment above
+  // currentUserPaperCapWarning). That earlier reversal was specifically
+  // about not blocking *registering* a paper in the first place; this is a
+  // separate, later checkpoint that the review process itself is meant to
+  // catch it at, once there's actually been a chance to notice and fix it.
+  // Deliberately not reused for the canonical (non-rush) pipeline's own
+  // Abstract Reviewed column — this check is scoped to Rush mode's own
+  // accept button, see moveButtonsHtml.
+  function abstractAcceptBlockReason(card, board, cards){
+    if (!card.authors || !card.authors.length) return 'Add the authors before accepting the abstract';
+    var max = board && board.maxPapersPerAuthor;
+    if (!max) return null;
+    var overCount = authorEmailsOf(card.authors).filter(function(email){
+      return paperCountForAuthor(email, cards) > max;
+    }).length;
+    if (!overCount) return null;
+    return (overCount === 1 ? 'An author is' : overCount + ' authors are') + ' over the ' + max + '-per-author limit for this venue';
   }
 
   // Registering a paper requires being signed in \u2014 submittedBy and the
