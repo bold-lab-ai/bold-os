@@ -3427,6 +3427,37 @@
     return null;
   }
 
+  // A real gate, not just informational text (2026-09-14) — `Max papers
+  // per author` (board.maxPapersPerAuthor) has been a venue field since
+  // the venue form existed, shown as a summary line on the venue page
+  // ("≤ N papers/author"), but nothing ever actually enforced it; an
+  // author could end up on any number of papers for a venue that capped
+  // it. Scoped to this one venue (the field lives on the board, not
+  // globally) — counts every OTHER card on `cards` that lists this email
+  // in `authorEmails`, excluding `excludeCardId` (the paper being edited,
+  // so it isn't counted against its own author list) and any card whose
+  // `outcome` is 'withdrawn' (a withdrawn paper no longer occupies a
+  // slot). `authors` is the about-to-be-saved list — same shape
+  // authorsForSave() produces. Returns a message naming every author
+  // who'd be over, or null if this author list is fine to save.
+  function authorCapIssue(board, cards, authors, excludeCardId){
+    var max = board && board.maxPapersPerAuthor;
+    if (!max) return null;
+    var overCap = authors
+      .filter(function(a){ return a.email; })
+      .map(function(a){
+        var count = cards.filter(function(c){
+          return c.id !== excludeCardId && c.outcome !== 'withdrawn' &&
+            (c.authorEmails || []).indexOf(a.email) !== -1;
+        }).length;
+        return { name: a.name, email: a.email, count: count };
+      })
+      .filter(function(a){ return a.count + 1 > max; });
+    if (!overCap.length) return null;
+    var names = overCap.map(function(a){ return (a.name || a.email) + ' (' + (a.count + 1) + '/' + max + ')'; }).join(', ');
+    return 'Over the ' + max + ' paper' + (max === 1 ? '' : 's') + '-per-author limit for this venue: ' + names + '.';
+  }
+
   // Registering a paper requires being signed in \u2014 submittedBy and the
   // corresponding author email are both derived from state.currentUser, not
   // typed in (see docs/FIREBASE.md's write-gating decision). Call this before
@@ -3567,6 +3598,12 @@
     var overleafIssue = overleafLinkIssue(overleafLink);
     if (overleafIssue){
       errorEl.textContent = overleafIssue;
+      errorEl.hidden = false;
+      return;
+    }
+    var capIssue = authorCapIssue(getCurrentBoard(), state.cards, authors, cardId);
+    if (capIssue){
+      errorEl.textContent = capIssue;
       errorEl.hidden = false;
       return;
     }
@@ -3803,6 +3840,12 @@
     var overleafIssue = overleafLinkIssue(overleafLink);
     if (overleafIssue){
       errorEl.textContent = overleafIssue;
+      errorEl.hidden = false;
+      return;
+    }
+    var capIssue = authorCapIssue(getCurrentBoard(), state.cards, authors, null);
+    if (capIssue){
+      errorEl.textContent = capIssue;
       errorEl.hidden = false;
       return;
     }
