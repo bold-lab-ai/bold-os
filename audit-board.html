@@ -361,7 +361,6 @@
   }
   .column-head{
     padding:11px 12px 10px;
-    min-height:76px;
     border-bottom:1px solid var(--line);
     background:var(--wash);
     color:var(--ink);
@@ -371,8 +370,16 @@
     font-weight:700; font-size:12.5px; letter-spacing:0;
   }
   .column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
+  /* ch-hint and ch-requires are ALWAYS rendered (renderColumns never
+     omits either div, even with nothing to say) and both fixed to exactly
+     two lines' worth of height, whether or not they actually hold that
+     much text — a column with no hint and no requirements still reserves
+     the same space as one with both, so every column-head comes out
+     identically tall and the head/body divider lines up across the whole
+     board, not just within a column that happens to have more or less to
+     say than its neighbours. */
   .column-head .ch-hint{
-    margin-top:4px; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
+    margin-top:4px; height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
   }
   /* Rush mode's column deadline hint, once its cutoff has passed — see
@@ -382,7 +389,7 @@
      columnRequirementsFor. Own line from ch-hint above (deadline/plain
      hint text), since a rush review column can show both at once. */
   .column-head .ch-requires{
-    margin-top:2px; font-size:11px; line-height:1.35; color:var(--muted);
+    margin-top:2px; height:2.7em; font-size:11px; line-height:1.35; color:var(--muted);
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
   }
   .column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
@@ -2809,8 +2816,8 @@
       var reqs = columnRequirementsHtml(status, board);
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
-        (hint ? '<div class="ch-hint' + (hintOverdue ? ' ch-hint-overdue' : '') + '">' + hint + '</div>' : '') +
-        (reqs ? '<div class="ch-requires">' + reqs + '</div>' : '') +
+        '<div class="ch-hint' + (hintOverdue ? ' ch-hint-overdue' : '') + '">' + hint + '</div>' +
+        '<div class="ch-requires">' + reqs + '</div>' +
       '</div>';
       html += '<div class="column-body">';
       if (cardsForStatus.length === 0){
@@ -2828,6 +2835,7 @@
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>Other</span><span class="count">' + orphaned.length + '</span></div>' +
         '<div class="ch-hint">Status no longer maps to a column</div>' +
+        '<div class="ch-requires"></div>' +
       '</div>';
       html += '<div class="column-body">';
       if (orphaned.length === 0){
