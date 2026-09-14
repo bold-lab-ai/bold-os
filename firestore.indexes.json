@@ -47,5 +47,55 @@
   //   },
   // ]
   "indexes": [],
-  "fieldOverrides": []
+  // Collection-group indexes (2026-09-12, see ml-conference-cycle#3) — the
+  // Slack App Home dashboard needs to find a person's cards across every
+  // venue's boards/{boardId}/cards subcollection, not just one board, via
+  // db.collectionGroup('cards').where(...). Firestore's automatic
+  // single-field indexing is collection-scoped by default; a field used in
+  // a collection-group query needs an explicit override enabling
+  // COLLECTION_GROUP scope too (this REPLACES the default indexing for
+  // that field, so the plain COLLECTION-scope entry is included alongside
+  // it, not just COLLECTION_GROUP, even though nothing today queries these
+  // fields within a single board either).
+  //
+  // NOT YET VERIFIED against a live deploy — Firestore's own error on a
+  // missing index names the exact index needed with a direct create link,
+  // which is the authoritative source of truth; treat this as a
+  // best-effort starting point to check against that, not a guarantee it's
+  // complete or exactly right, before this feature is considered
+  // deploy-ready.
+  "fieldOverrides": [
+    {
+      "collectionGroup": "cards",
+      "fieldPath": "submittedBy.email",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "cards",
+      "fieldPath": "reviewers.junior",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "cards",
+      "fieldPath": "reviewers.senior",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "cards",
+      "fieldPath": "authorEmails",
+      "indexes": [
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION_GROUP" }
+      ]
+    }
+  ]
 }
