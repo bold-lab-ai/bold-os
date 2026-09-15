@@ -128,14 +128,118 @@
   @media (max-width:820px){
     .hero{padding:32px var(--gutter) 8px;}
   }
+  /* ---------- site nav ---------- */
+  .shell{display:flex; align-items:flex-start;}
+  .sidebar{
+    flex:0 0 210px; width:210px; box-sizing:border-box;
+    border-right:1px solid var(--line); background:var(--surface);
+    padding:18px 12px; position:sticky; top:0; align-self:flex-start;
+    max-height:100vh; overflow-y:auto;
+  }
+  .sidebar-head{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:0 6px 14px; margin-bottom:6px; border-bottom:1px solid var(--line);
+  }
+  .sidebar-title{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted);}
+  .sidebar-collapse{
+    font-family:inherit; background:none; border:1px solid var(--line); border-radius:6px;
+    width:24px; height:24px; color:var(--muted); cursor:pointer; font-size:12px; line-height:1; flex:none;
+  }
+  .sidebar-collapse:hover{color:var(--blue); border-color:var(--blue);}
+  .nav-group{margin:16px 0;}
+  .nav-group:first-child{margin-top:0;}
+  .nav-group-label{
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
+    color:var(--muted); padding:0 6px; margin-bottom:5px;
+  }
+  .nav-link{
+    display:block; font-size:13.5px; font-weight:600; color:var(--ink-soft);
+    text-decoration:none; padding:7px 6px; border-radius:6px; white-space:nowrap;
+  }
+  .nav-link:hover{background:var(--wash); color:var(--ink);}
+  .nav-link.active{background:#e3ebfc; color:var(--blue);}
+  .nav-link.nav-sub{font-weight:500; font-size:13px; padding-left:16px;}
+  .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible{
+    outline:2px solid var(--focus); outline-offset:2px; border-radius:6px;
+  }
+
+  .shell-main{flex:1 1 auto; min-width:0;}
+
+  .masthead-left{display:flex; align-items:center; gap:10px;}
+  .nav-toggle{
+    display:none; font-family:inherit; background:none; border:1px solid var(--line); border-radius:6px;
+    width:34px; height:34px; align-items:center; justify-content:center; cursor:pointer; color:var(--ink);
+    position:relative; flex:none;
+  }
+  .nav-toggle span, .nav-toggle span::before, .nav-toggle span::after{
+    position:absolute; left:9px; width:16px; height:2px; background:currentColor; content:'';
+  }
+  .nav-toggle span::before{top:-5px;}
+  .nav-toggle span::after{top:5px;}
+
+  .sidebar-backdrop{display:none;}
+
+  .shell.is-collapsed .sidebar{flex-basis:44px; width:44px; padding:18px 6px;}
+  .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:none;}
+  .shell.is-collapsed .sidebar-head{justify-content:center; border-bottom:none; padding-bottom:0;}
+
+  @media (max-width:820px){
+    .nav-toggle{display:inline-flex;}
+    .sidebar{
+      position:fixed; top:0; left:0; bottom:0; z-index:200;
+      height:100%; max-height:none; width:240px; flex-basis:240px;
+      transform:translateX(-100%); transition:transform 0.2s ease;
+      box-shadow:0 14px 44px #09111f2e;
+    }
+    .shell.is-nav-open .sidebar{transform:translateX(0);}
+    .shell.is-collapsed .sidebar{width:240px; flex-basis:240px; padding:18px 12px;}
+    .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:block;}
+    .shell.is-collapsed .sidebar-head{justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:14px;}
+    .sidebar-collapse{display:none;}
+    .sidebar-backdrop{
+      display:none; position:fixed; inset:0; background:#09111f66; z-index:190;
+      border:none; padding:0; margin:0;
+    }
+    .shell.is-nav-open .sidebar-backdrop{display:block;}
+  }
 </style>
 </head>
 <body>
 
 <div class="masthead">
-  <a class="wordmark" href="how-to-submit-a-paper.html">BOLD<span>.</span> Lab</a>
+  <div class="masthead-left">
+    <button class="nav-toggle" id="navToggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><span></span></button>
+    <a class="wordmark" href="how-to-submit-a-paper.html">BOLD<span>.</span> Lab</a>
+  </div>
   <div class="masthead-sub">Internal</div>
 </div>
+
+<div class="shell" id="shell">
+ <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
+ <nav class="sidebar" id="sidebar" aria-label="Site navigation">
+ <div class="sidebar-head">
+ <span class="sidebar-title">Menu</span>
+ <button class="sidebar-collapse" id="sidebarCollapse" type="button" aria-label="Collapse navigation" title="Collapse">&laquo;</button>
+ </div>
+ <div class="nav-groups">
+ <div class="nav-group">
+ <div class="nav-group-label">Internal Review</div>
+ <a class="nav-link" href="how-to-submit-a-paper.html">Guide</a>
+ <a class="nav-link" href="audit-board.html">Board</a>
+ </div>
+ <div class="nav-group">
+ <div class="nav-group-label">Events</div>
+ <a class="nav-link" href="events.html">All events</a>
+ <a class="nav-link nav-sub active" href="event-collaboration-week.html">Collaboration Week</a>
+ <a class="nav-link nav-sub" href="event-bold-festival.html">Festival</a>
+ </div>
+ <div class="nav-group">
+ <a class="nav-link" href="boldiquette.html">BOLDiquette</a>
+ </div>
+ </div>
+ </nav>
+  <div class="shell-main">
+
 
 <div class="hero">
   <a class="back-link" href="event-collaboration-week.html">&larr; BOLD Collaboration Week</a>
@@ -216,6 +320,8 @@
 <footer>
   An internal BOLD Lab page. Back to <a href="event-collaboration-week.html">BOLD Collaboration Week</a>.
 </footer>
+  </div>
+</div>
 
 <script>
 (function(){
@@ -348,6 +454,52 @@
     currentUser = user ? { email: user.email, name: user.displayName } : null;
     renderAuth();
   });
+})();
+</script>
+
+<script>
+(function(){
+  var shell = document.getElementById('shell');
+  if (!shell) return;
+  var toggle = document.getElementById('navToggle');
+  var collapse = document.getElementById('sidebarCollapse');
+  var backdrop = document.getElementById('sidebarBackdrop');
+  var sidebar = document.getElementById('sidebar');
+
+  function setCollapsed(on){
+    shell.classList.toggle('is-collapsed', on);
+    if (collapse){
+      collapse.innerHTML = on ? '&raquo;' : '&laquo;';
+      collapse.setAttribute('aria-label', on ? 'Expand navigation' : 'Collapse navigation');
+    }
+    try { localStorage.setItem('boldNavCollapsed', on ? '1' : '0'); } catch (e){}
+  }
+  function openNav(){
+    shell.classList.add('is-nav-open');
+    if (toggle) toggle.setAttribute('aria-expanded', 'true');
+  }
+  function closeNav(){
+    shell.classList.remove('is-nav-open');
+    if (toggle) toggle.setAttribute('aria-expanded', 'false');
+  }
+
+  if (collapse) collapse.addEventListener('click', function(){
+    setCollapsed(!shell.classList.contains('is-collapsed'));
+  });
+  if (toggle) toggle.addEventListener('click', function(){
+    if (shell.classList.contains('is-nav-open')) { closeNav(); } else { openNav(); }
+  });
+  if (backdrop) backdrop.addEventListener('click', closeNav);
+  if (sidebar){
+    Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link')).forEach(function(a){
+      a.addEventListener('click', closeNav);
+    });
+  }
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeNav(); });
+
+  try {
+    if (localStorage.getItem('boldNavCollapsed') === '1') setCollapsed(true);
+  } catch (e){}
 })();
 </script>
 
