@@ -193,11 +193,26 @@
   .nav-group{margin:18px 0;}
   .nav-group:first-child{margin-top:0;}
   .nav-group-label{
-    display:block; font-family:var(--sans); font-size:13px; font-weight:600;
+    display:flex; align-items:center; justify-content:space-between; gap:6px;
+    font-family:var(--sans); font-size:13px; font-weight:600;
     color:var(--ink); padding:4px 0; margin-bottom:2px; text-decoration:none;
   }
   .nav-group-label:hover{color:var(--accent);}
   .nav-group-label.active{color:var(--accent);}
+  /* Chevron hints that a group has hidden sub-links: points right while
+     collapsed, rotates to point down on hover/focus, in step with the
+     sub-links expanding below it. */
+  .nav-group-label::after{
+    content:'';
+    width:5px; height:5px; flex:none;
+    border-style:solid; border-width:0 1.5px 1.5px 0; border-color:currentColor;
+    opacity:.4; transform:rotate(-45deg);
+    transition:transform .22s ease, opacity .18s ease;
+  }
+  .nav-group:hover .nav-group-label::after,
+  .nav-group:focus-within .nav-group-label::after{
+    transform:rotate(45deg); opacity:.75;
+  }
   .nav-link{
     display:block; font-family:var(--sans); font-size:13px; font-weight:400; color:var(--ink-soft);
     text-decoration:none; padding:4px 0; white-space:nowrap;
