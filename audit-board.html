@@ -308,16 +308,16 @@
   }
 
   /* ---------- venues list ---------- */
-  .venues{max-width:var(--read-max); margin:22px auto 0; padding:0 var(--gutter) 80px;}
+  .venues{max-width:var(--read-max); margin:22px auto 0; padding:0 var(--gutter) 80px; border-bottom:1px solid var(--line);}
   .venue-row{
     display:flex; align-items:baseline; justify-content:space-between; gap:12px;
-    padding:16px 12px;
-    border:1px solid var(--line); border-radius:var(--radius);
-    background:var(--surface); margin-bottom:8px;
+    padding:18px 0;
+    border:none; border-top:1px solid var(--line); border-radius:0;
+    background:none;
     width:100%; text-align:left; cursor:pointer; font-family:inherit;
+    transition:opacity .12s;
   }
-  .venue-row:hover{border-color:var(--blue);}
-  .venue-row:hover .venue-name{color:var(--blue);}
+  .venue-row:hover{opacity:.68;}
   .venue-name{font-weight:700; font-size:16px; color:var(--ink);}
   .venue-sub{font-size:13px; color:var(--muted);}
   /* Venue proposals (2026-09-11): a pending row opens the normal venue
@@ -329,6 +329,7 @@
      cursor:default overriding .venue-row's pointer, with its own nested
      clickable name (.venue-name-btn) alongside the action buttons. */
   .venue-row--pending{cursor:default; align-items:center;}
+  .venue-row--pending:hover{opacity:1;}
   .venue-row-info{display:flex; flex-direction:column; gap:3px; min-width:0;}
   .venue-row-actions{display:flex; gap:8px; flex:0 0 auto;}
   .venue-name-btn{
@@ -647,38 +648,39 @@
   /* ---------- site nav ---------- */
   .shell{display:flex; align-items:stretch;}
   .sidebar{
-    flex:0 0 210px; width:210px; box-sizing:border-box;
-    border-right:1px solid var(--line); background:var(--surface);
+    flex:0 0 200px; width:200px; box-sizing:border-box;
+    border-right:1px solid var(--line); background:var(--paper);
   }
   .sidebar-inner{
-    position:sticky; top:0; padding:18px 12px;
+    position:sticky; top:0; padding:22px 16px;
     max-height:100vh; overflow-y:auto;
   }
   .sidebar-head{
     display:flex; align-items:center; justify-content:space-between;
-    padding:0 6px 14px; margin-bottom:6px; border-bottom:1px solid var(--line);
+    padding:0 0 16px; margin-bottom:10px; border-bottom:1px solid var(--line);
   }
-  .sidebar-title{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted);}
+  .sidebar-title{font-size:11px; font-weight:400; text-transform:uppercase; letter-spacing:0.16em; color:var(--muted); opacity:.7;}
   .sidebar-collapse{
     font-family:inherit; background:none; border:1px solid var(--line);
-    width:24px; height:24px; color:var(--muted); cursor:pointer; font-size:12px; line-height:1; flex:none;
+    width:22px; height:22px; color:var(--muted); cursor:pointer; font-size:12px; line-height:1; flex:none;
   }
-  .sidebar-collapse:hover{color:var(--blue); border-color:var(--blue);}
-  .nav-group{margin:16px 0;}
+  .sidebar-collapse:hover{border-color:var(--blue); color:var(--blue);}
+  .nav-group{margin:18px 0;}
   .nav-group:first-child{margin-top:0;}
   .nav-group-label{
-    display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
-    color:var(--muted); padding:7px 6px; margin-bottom:2px; text-decoration:none;
+    display:block; font-size:13px; font-weight:600;
+    color:var(--ink); padding:4px 0; margin-bottom:2px; text-decoration:none;
   }
   .nav-group-label:hover{color:var(--blue);}
   .nav-group-label.active{color:var(--blue);}
   .nav-link{
-    display:block; font-size:13.5px; font-weight:600; color:var(--ink-soft);
-    text-decoration:none; padding:7px 6px; white-space:nowrap;
+    display:block; font-size:13px; font-weight:400; color:var(--ink-soft);
+    text-decoration:none; padding:4px 0; white-space:nowrap;
   }
   .nav-link:hover{color:var(--blue);}
-  .nav-link.active{color:var(--blue);}
-  .nav-link.nav-sub{font-weight:500; font-size:13px; padding-left:16px;}
+  .nav-link.active{color:var(--blue); font-weight:600;}
+  .nav-link.nav-sub{font-weight:400; font-size:12.5px; padding-left:12px; color:var(--muted);}
+  .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--blue);}
   .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
     outline:2px solid var(--focus); outline-offset:2px;
   }
@@ -688,19 +690,19 @@
   .masthead-left{display:flex; align-items:center; gap:10px;}
   .nav-toggle{
     display:none; font-family:inherit; background:none; border:1px solid var(--line);
-    width:34px; height:34px; align-items:center; justify-content:center; cursor:pointer; color:var(--ink);
+    width:32px; height:32px; align-items:center; justify-content:center; cursor:pointer; color:var(--ink);
     position:relative; flex:none;
   }
   .nav-toggle span, .nav-toggle span::before, .nav-toggle span::after{
-    position:absolute; left:9px; width:16px; height:2px; background:currentColor; content:'';
+    position:absolute; left:9px; width:16px; height:1.5px; background:currentColor; content:'';
   }
   .nav-toggle span::before{top:-5px;}
   .nav-toggle span::after{top:5px;}
 
   .sidebar-backdrop{display:none;}
 
-  .shell.is-collapsed .sidebar{flex-basis:44px; width:44px;}
-  .shell.is-collapsed .sidebar-inner{padding:18px 6px;}
+  .shell.is-collapsed .sidebar{flex-basis:40px; width:40px;}
+  .shell.is-collapsed .sidebar-inner{padding:22px 8px;}
   .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:none;}
   .shell.is-collapsed .sidebar-head{justify-content:center; border-bottom:none; padding-bottom:0;}
 
@@ -715,12 +717,12 @@
     .sidebar-inner{height:100%; max-height:none; overflow-y:auto;}
     .shell.is-nav-open .sidebar{transform:translateX(0);}
     .shell.is-collapsed .sidebar{width:240px; flex-basis:240px;}
-    .shell.is-collapsed .sidebar-inner{padding:18px 12px;}
+    .shell.is-collapsed .sidebar-inner{padding:22px 16px;}
     .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:block;}
-    .shell.is-collapsed .sidebar-head{justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:14px;}
+    .shell.is-collapsed .sidebar-head{justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:16px;}
     .sidebar-collapse{display:none;}
     .sidebar-backdrop{
-      display:none; position:fixed; inset:0; background:rgba(26,43,74,.4); z-index:190;
+      display:none; position:fixed; inset:0; background:rgba(26,43,74,.35); z-index:190;
       border:none; padding:0; margin:0;
     }
     .shell.is-nav-open .sidebar-backdrop{display:block;}
