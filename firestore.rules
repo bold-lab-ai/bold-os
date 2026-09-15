@@ -127,6 +127,23 @@ service cloud.firestore {
       }
     }
 
+    // BOLD Collaboration Week workshop proposals (2026-09-15) — a separate
+    // top-level collection, not nested under boards/{boardId}: a proposal
+    // isn't a venue or a paper, it's its own flow entirely (see
+    // event-collaboration-week.html). Same isLabMember()/hasFullWrite()
+    // helpers as boards/cards above. Any signed-in lab member can read
+    // every proposal (see the whole list) and create their own
+    // (self-attributed — the email on the document must be their own,
+    // same pattern as a pending board proposal above); only the proposer
+    // themselves or a PI/admin can edit or withdraw it afterward.
+    match /collabWeekProposals/{proposalId} {
+      allow read: if isLabMember();
+      allow create: if isLabMember() && request.resource.data.email == email();
+      allow update, delete: if isLabMember() && (
+        email() == resource.data.email || hasFullWrite()
+      );
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
