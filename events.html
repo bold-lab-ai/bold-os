@@ -167,7 +167,19 @@
   }
   .nav-link:hover{color:var(--accent);}
   .nav-link.active{color:var(--accent); font-weight:600;}
-  .nav-link.nav-sub{font-weight:400; font-size:12.5px; padding-left:12px; color:var(--muted);}
+  /* Sub-links collapse to nothing by default and expand on hover/focus
+     of their group, except the current page's own link, which stays
+     visible so the sidebar always shows where you are without hovering. */
+  .nav-link.nav-sub{
+    font-weight:400; font-size:12.5px; padding-left:12px; color:var(--muted);
+    max-height:0; opacity:0; overflow:hidden; pointer-events:none;
+    transition:max-height .22s ease, opacity .18s ease;
+  }
+  .nav-group:hover .nav-link.nav-sub,
+  .nav-group:focus-within .nav-link.nav-sub,
+  .nav-link.nav-sub.active{
+    max-height:32px; opacity:1; pointer-events:auto;
+  }
   .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--accent);}
   .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
     outline:2px solid var(--accent); outline-offset:2px;
@@ -289,11 +301,11 @@
  </div>
  <div class="nav-groups">
  <div class="nav-group">
- <a class="nav-group-label" href="how-to-submit-a-paper.html">Internal Review</a>
- <a class="nav-link nav-sub" href="audit-board.html">Board</a>
+ <a class="nav-group-label" href="how-to-submit-a-paper.html">ML Conference Cycle</a>
+ <a class="nav-link nav-sub" href="audit-board.html">Internal review board</a>
  </div>
  <div class="nav-group">
- <a class="nav-group-label active" href="events.html">All events</a>
+ <a class="nav-group-label active" href="events.html">Events</a>
  <a class="nav-link nav-sub" href="event-collaboration-week.html">Collaboration Week</a>
  <a class="nav-link nav-sub" href="event-bold-festival.html">Festival</a>
  </div>
