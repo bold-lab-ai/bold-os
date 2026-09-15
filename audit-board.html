@@ -632,11 +632,13 @@
     .field-2{grid-template-columns:1fr;}
   }
   /* ---------- site nav ---------- */
-  .shell{display:flex; align-items:flex-start;}
+  .shell{display:flex; align-items:stretch;}
   .sidebar{
     flex:0 0 210px; width:210px; box-sizing:border-box;
     border-right:1px solid var(--line); background:var(--surface);
-    padding:18px 12px; position:sticky; top:0; align-self:flex-start;
+  }
+  .sidebar-inner{
+    position:sticky; top:0; padding:18px 12px;
     max-height:100vh; overflow-y:auto;
   }
   .sidebar-head{
@@ -684,7 +686,8 @@
 
   .sidebar-backdrop{display:none;}
 
-  .shell.is-collapsed .sidebar{flex-basis:44px; width:44px; padding:18px 6px;}
+  .shell.is-collapsed .sidebar{flex-basis:44px; width:44px;}
+  .shell.is-collapsed .sidebar-inner{padding:18px 6px;}
   .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:none;}
   .shell.is-collapsed .sidebar-head{justify-content:center; border-bottom:none; padding-bottom:0;}
 
@@ -692,12 +695,14 @@
     .nav-toggle{display:inline-flex;}
     .sidebar{
       position:fixed; top:0; left:0; bottom:0; z-index:200;
-      height:100%; max-height:none; width:240px; flex-basis:240px;
+      height:100%; width:240px; flex-basis:240px;
       transform:translateX(-100%); transition:transform 0.2s ease;
       box-shadow:0 14px 44px #09111f2e;
     }
+    .sidebar-inner{height:100%; max-height:none; overflow-y:auto;}
     .shell.is-nav-open .sidebar{transform:translateX(0);}
-    .shell.is-collapsed .sidebar{width:240px; flex-basis:240px; padding:18px 12px;}
+    .shell.is-collapsed .sidebar{width:240px; flex-basis:240px;}
+    .shell.is-collapsed .sidebar-inner{padding:18px 12px;}
     .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:block;}
     .shell.is-collapsed .sidebar-head{justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:14px;}
     .sidebar-collapse{display:none;}
@@ -727,6 +732,7 @@
 <div class="shell" id="shell">
  <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
  <nav class="sidebar" id="sidebar" aria-label="Site navigation">
+ <div class="sidebar-inner">
  <div class="sidebar-head">
  <span class="sidebar-title">Menu</span>
  <button class="sidebar-collapse" id="sidebarCollapse" type="button" aria-label="Collapse navigation" title="Collapse">&laquo;</button>
@@ -749,6 +755,7 @@
  <a class="nav-link nav-sub" href="boldiquette.html#bold-research-processes">Research Processes</a>
  <a class="nav-link nav-sub" href="boldiquette.html#bold-policy">Policy</a>
  <a class="nav-link nav-sub" href="boldiquette.html#bold-operational-processes-draft">Operational Processes</a>
+ </div>
  </div>
  </div>
  </nav>
