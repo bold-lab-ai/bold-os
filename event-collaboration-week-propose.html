@@ -242,7 +242,7 @@
   </div>
 </div>
 
-<div id="pageGate">
+<div id="pageGate" hidden>
   <div class="gate-box">
     <h1>Sign in required</h1>
     <p>This is an internal BOLD Lab page. Sign in with Slack to continue.</p>
@@ -563,6 +563,7 @@
   } catch (e) { auth = null; }
 
   if (!auth) {
+    gate.hidden = false;
     var p = gate.querySelector('p');
     if (p) p.textContent = 'Could not connect \u2014 reload, or check back shortly.';
     return;
