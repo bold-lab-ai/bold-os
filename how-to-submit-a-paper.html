@@ -391,9 +391,11 @@
   .nav-group{margin:16px 0;}
   .nav-group:first-child{margin-top:0;}
   .nav-group-label{
-    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
-    color:var(--muted); padding:0 6px; margin-bottom:5px;
+    display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
+    color:var(--muted); padding:7px 6px; margin-bottom:2px; text-decoration:none; border-radius:6px;
   }
+  .nav-group-label:hover{background:var(--wash); color:var(--ink);}
+  .nav-group-label.active{background:#e3ebfc; color:var(--blue);}
   .nav-link{
     display:block; font-size:13.5px; font-weight:600; color:var(--ink-soft);
     text-decoration:none; padding:7px 6px; border-radius:6px; white-space:nowrap;
@@ -401,7 +403,7 @@
   .nav-link:hover{background:var(--wash); color:var(--ink);}
   .nav-link.active{background:#e3ebfc; color:var(--blue);}
   .nav-link.nav-sub{font-weight:500; font-size:13px; padding-left:16px;}
-  .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible{
+  .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
     outline:2px solid var(--focus); outline-offset:2px; border-radius:6px;
   }
 
@@ -465,19 +467,16 @@
  </div>
  <div class="nav-groups">
  <div class="nav-group">
- <div class="nav-group-label">Internal Review</div>
- <a class="nav-link active" href="how-to-submit-a-paper.html">Guide</a>
- <a class="nav-link" href="audit-board.html">Board</a>
+ <a class="nav-group-label active" href="how-to-submit-a-paper.html">Internal Review</a>
+ <a class="nav-link nav-sub" href="audit-board.html">Board</a>
  </div>
  <div class="nav-group">
- <div class="nav-group-label">Events</div>
- <a class="nav-link" href="events.html">All events</a>
+ <a class="nav-group-label" href="events.html">All events</a>
  <a class="nav-link nav-sub" href="event-collaboration-week.html">Collaboration Week</a>
  <a class="nav-link nav-sub" href="event-bold-festival.html">Festival</a>
  </div>
  <div class="nav-group">
- <div class="nav-group-label">BOLDiquette</div>
- <a class="nav-link" href="boldiquette.html">Overview</a>
+ <a class="nav-group-label" href="boldiquette.html">BOLDiquette</a>
  <a class="nav-link nav-sub" href="boldiquette.html#preamble-tldr">Preamble / TL;DR</a>
  <a class="nav-link nav-sub" href="boldiquette.html#bold-norms-values-and-goals">Norms, Values, and Goals</a>
  <a class="nav-link nav-sub" href="boldiquette.html#useful-information-and-advice">Useful Information and Advice</a>
@@ -802,7 +801,7 @@
   });
   if (backdrop) backdrop.addEventListener('click', closeNav);
   if (sidebar){
-    Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link')).forEach(function(a){
+    Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link, .nav-group-label')).forEach(function(a){
       a.addEventListener('click', closeNav);
     });
   }
