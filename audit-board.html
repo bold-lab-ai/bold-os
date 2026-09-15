@@ -126,7 +126,7 @@
   .auth-user-email{font-weight:400; color:var(--muted);}
   .auth-role{
     font-size:11px; font-weight:600; color:var(--blue);
-    background:var(--accent-dim); border-radius:999px; padding:2px 9px;
+    text-transform:uppercase; letter-spacing:0.03em;
   }
   .auth-signin{
     display:inline-flex; align-items:center; gap:7px;
@@ -173,7 +173,7 @@
     color:var(--ink);
     background:var(--surface);
     border:1px solid var(--line);
-    border-radius:6px;
+    border-radius:var(--radius);
     padding:8px 10px;
   }
   select{min-width:180px;}
@@ -263,7 +263,7 @@
   .ics-tip{
     position:absolute; bottom:calc(100% + 9px); left:50%; transform:translateX(-50%) translateY(4px);
     width:240px; font-size:12px; font-weight:400; line-height:1.4; text-align:left;
-    color:#fff; background:var(--ink); border-radius:7px; padding:9px 11px;
+    color:#fff; background:var(--ink); border-radius:var(--radius); padding:9px 11px;
     box-shadow:var(--shadow); pointer-events:none;
     opacity:0; visibility:hidden; transition:opacity .15s ease, transform .15s ease;
     z-index:5;
@@ -476,7 +476,7 @@
   .rv-state-pill.rv-state-approved{background:var(--success-bg); color:var(--success-text);}
   .rv-input{
     flex:1 1 auto; min-width:0; font-size:12px; padding:5px 7px;
-    border:1px solid var(--line); border-radius:6px;
+    border:1px solid var(--line); border-radius:var(--radius);
     background:var(--surface); color:var(--ink); font-family:inherit;
   }
   select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
@@ -486,7 +486,7 @@
     flex:1 1 0; min-width:0;
     font-family:inherit; font-weight:600; font-size:11.5px;
     color:var(--ink-soft); background:var(--surface);
-    border:1px solid var(--line); border-radius:6px;
+    border:1px solid var(--line); border-radius:var(--radius);
     padding:6px 4px; cursor:pointer; text-align:center; white-space:nowrap;
   }
   .card-move-btn:hover:not(:disabled){background:var(--wash); border-color:var(--blue); color:var(--blue);}
@@ -542,7 +542,7 @@
   .cl-wrap{max-width:640px;}
   .cl-agent-note{
     font-size:12px; color:var(--muted); line-height:1.5;
-    margin:0 0 14px; padding:8px 10px; background:var(--wash); border-radius:6px;
+    margin:0 0 14px; padding:8px 10px; background:var(--wash); border-radius:var(--radius);
   }
   .cl-agent-note a{color:var(--blue);}
   .cl-cat{font-weight:700; font-size:13px; color:var(--ink); margin:16px 0 4px;}
@@ -562,7 +562,7 @@
   .cl-head span:nth-child(3){color:var(--plum);}
   .cl-head.single span:nth-child(2){color:var(--accent);}
   .cl-item{border-bottom:1px solid var(--line); padding:2px 0;}
-  .cl-row{padding:9px 6px; font-size:13.5px; align-items:start; border-radius:4px;}
+  .cl-row{padding:9px 6px; font-size:13.5px; align-items:start; border-radius:var(--radius);}
   .cl-row:hover{background:var(--wash);}
   .cl-row .cl-label{line-height:1.45;}
   .cl-row input[type="checkbox"]{width:16px; height:16px; margin:2px auto 0; display:block; cursor:pointer;}
@@ -573,7 +573,7 @@
   .cl-row-foot{padding:0 6px 8px;}
   .cl-row-foot .btn-text{font-size:12px;}
   .cl-row-foot .btn-text.has-feedback{color:var(--blue); font-weight:600;}
-  .cl-thread{margin:0 0 12px; padding:12px 12px 4px; background:var(--wash); border-radius:6px;}
+  .cl-thread{margin:0 0 12px; padding:12px 12px 4px; background:var(--wash); border-radius:var(--radius);}
   .cl-thread .disc-thread{border-top-color:var(--line);}
   .cl-thread .disc-form{max-width:100%;}
   .cl-thread-new{margin-top:14px; padding-top:14px; border-top:1px solid var(--line);}
@@ -599,7 +599,7 @@
 
   /* ---------- modal ---------- */
   .modal-overlay{
-    position:fixed; inset:0; background:rgba(9,17,31,0.5);
+    position:fixed; inset:0; background:rgba(26,43,74,0.5);
     display:flex; align-items:flex-start; justify-content:center;
     padding:40px 20px; overflow-y:auto; z-index:50;
   }
@@ -621,7 +621,7 @@
   .field-error{
     font-size:12.5px; color:var(--danger-text);
     background:var(--danger-bg); border:1px solid var(--danger-text);
-    border-radius:6px; padding:8px 12px; margin-top:12px;
+    border-radius:var(--radius); padding:8px 12px; margin-top:12px;
   }
   /* Standing "you're over the cap" banner at the top of a venue board
      (2026-09-14, see currentUserPaperCapWarning) — same danger-color
@@ -3557,7 +3557,7 @@
     if (overdue) html += '<span class="badge badge-overdue">Overdue</span>';
     if (rushOverdue) html += '<span class="badge badge-overdue">Rush cutoff passed</span>';
     html += '</div>';
-    if (!STATUS_LABELS[card.status]) html += '<div style="font-size:12px;color:var(--warn-text);background:var(--warn-bg);padding:6px 10px;margin-top:10px;border-radius:6px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn’t a column anymore &mdash; pick a new one below.</div>';
+    if (!STATUS_LABELS[card.status]) html += '<div style="font-size:12px;color:var(--warn-text);background:var(--warn-bg);padding:6px 10px;margin-top:10px;border-radius:var(--radius);">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn’t a column anymore &mdash; pick a new one below.</div>';
 
     html += '<div class="detail-controls">';
     html += moveButtonsHtml(card, board);
@@ -4114,7 +4114,7 @@
           '<div id="paperForm">' +
             '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Registering as ' +
               escapeHtml(state.currentUser.name || state.currentUser.email) + ' (' + escapeHtml(state.currentUser.email) + ') \u2014 used as the submitter and corresponding author.</div>' +
-            (draft ? '<div id="draftNotice" style="font-size:12px;color:var(--accent);background:var(--accent-dim);padding:6px 10px;border-radius:6px;margin-bottom:14px;">Restored your unsaved draft from ' + formatTimestamp(draft.savedAt) + ' \u2014 <button type="button" class="btn-text" id="discardDraft" style="font-size:inherit;">Discard</button></div>' : '') +
+            (draft ? '<div id="draftNotice" style="font-size:12px;color:var(--accent);background:var(--accent-dim);padding:6px 10px;border-radius:var(--radius);margin-bottom:14px;">Restored your unsaved draft from ' + formatTimestamp(draft.savedAt) + ' \u2014 <button type="button" class="btn-text" id="discardDraft" style="font-size:inherit;">Discard</button></div>' : '') +
             '<div class="field"><label for="pTitle">Paper title</label><input type="text" id="pTitle" value="' + escapeHtml((draft && draft.title) || '') + '"></div>' +
             '<div class="field"><label for="pAuthorsWrap">Authors</label><div id="pAuthorsWrap"></div>' +
               '<button class="btn-text" type="button" id="pAddAuthor">+ Add author</button>' +
