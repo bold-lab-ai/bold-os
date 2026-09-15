@@ -247,6 +247,16 @@
     border-radius:var(--radius); padding:9px 15px; cursor:pointer;
   }
   .auth-signin:hover{border-color:var(--blue); color:var(--blue);}
+
+  /* ---------- masthead auth marker ---------- */
+  .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+  .mast-auth{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft);}
+  .mast-auth-name{font-weight:600; color:var(--ink);}
+  .mast-auth-email{font-weight:400; color:var(--muted);}
+  .btn-text{
+    font-family:inherit; font-weight:600; font-size:13px; color:var(--blue);
+    background:none; border:none; padding:0; cursor:pointer;
+  }
 </style>
 </head>
 <body>
@@ -256,7 +266,10 @@
     <button class="nav-toggle" id="navToggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><span></span></button>
     <a class="wordmark" href="how-to-submit-a-paper.html">BOLD<span>.</span> Lab</a>
   </div>
-  <div class="masthead-sub">Internal</div>
+  <div class="masthead-right">
+    <div class="masthead-sub">Internal</div>
+    <div id="authRegion"></div>
+  </div>
 </div>
 
 <div id="pageGate">
@@ -470,6 +483,42 @@
     });
   }
 
+  var authRegion = document.getElementById('authRegion');
+
+  function escapeHtml(s){
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
+    });
+  }
+
+  function renderAuthRegion(user){
+    if (!authRegion) return;
+    if (user) {
+      var whoHtml = user.displayName
+        ? escapeHtml(user.displayName) + (user.email ? ' <span class="mast-auth-email">(' + escapeHtml(user.email) + ')</span>' : '')
+        : escapeHtml(user.email || 'Signed in');
+      authRegion.innerHTML =
+        '<div class="mast-auth">' +
+          '<span class="mast-auth-name">' + whoHtml + '</span>' +
+          '<button class="btn-text" type="button" id="mastSignOutBtn">Sign out</button>' +
+        '</div>';
+      var so = document.getElementById('mastSignOutBtn');
+      if (so) so.addEventListener('click', function(){ auth.signOut(); });
+    } else {
+      authRegion.innerHTML = '<button class="auth-signin" type="button" id="mastSignInBtn">Sign in with Slack</button>';
+      var si = document.getElementById('mastSignInBtn');
+      if (si) si.addEventListener('click', function(){
+        var provider = new firebase.auth.OAuthProvider('oidc.slack');
+        provider.addScope('openid');
+        provider.addScope('profile');
+        provider.addScope('email');
+        auth.signInWithPopup(provider).catch(function(err){
+          console.error('[BOLD Lab] sign-in failed', err);
+        });
+      });
+    }
+  }
+
   auth.onAuthStateChanged(function(user){
     if (user) {
       gate.hidden = true;
@@ -478,6 +527,7 @@
       gate.hidden = false;
       content.hidden = true;
     }
+    renderAuthRegion(user);
   });
 })();
 </script>
