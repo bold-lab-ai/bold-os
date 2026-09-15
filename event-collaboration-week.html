@@ -27,8 +27,6 @@
     --teal:#2f8f83;
     --plum:#6f4bb3;
     --amber:#b7791f;
-    --danger-bg:#fbe6e4;
-    --danger-text:#b42318;
     --focus:#c87912;
     --radius:8px;
     --content-max:1060px;
@@ -53,7 +51,7 @@
 
   a{color:var(--blue); text-decoration-thickness:1px; text-underline-offset:2px;}
   a:hover{text-decoration-thickness:2px;}
-  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:2px;}
+  a:focus-visible, button:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:2px;}
 
   h1,h2,h3{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
 
@@ -97,28 +95,23 @@
   }
   .btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
   .btn-primary:hover{background:#1e4fb0; text-decoration:none;}
-  .btn-primary:disabled{background:var(--muted); border-color:var(--muted); cursor:default;}
-  .btn-secondary{background:var(--surface); color:var(--ink-soft);}
-  .btn-secondary:hover{border-color:var(--blue); color:var(--blue); text-decoration:none;}
+
+  /* ---------- tabs ---------- */
+  .tabs{display:flex; gap:28px; border-bottom:1px solid var(--line); margin-top:32px;}
+  .tab{
+    font-family:inherit; font-size:14px; font-weight:600; color:var(--muted);
+    background:none; border:none; border-bottom:2px solid transparent;
+    padding:10px 2px; margin-bottom:-1px; cursor:pointer;
+  }
+  .tab:hover{color:var(--ink);}
+  .tab.active{color:var(--ink); border-bottom-color:var(--blue);}
+  .tab-panel{margin-top:24px;}
 
   h2.subhead{
     font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:0;
-    color:var(--teal); margin:40px 0 10px;
+    color:var(--teal); margin:0 0 10px;
   }
   .subhead-note{margin:-4px 0 14px; font-size:13.5px; color:var(--muted);}
-
-  .tier{display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-top:1px solid var(--line);}
-  .tier:last-child{padding-bottom:0;}
-  .tier-num{
-    flex:0 0 auto; width:28px; height:28px; border-radius:999px;
-    background:var(--wash); color:var(--ink); font-weight:700; font-size:12.5px;
-    display:flex; align-items:center; justify-content:center;
-  }
-  .tier h3{font-size:14.5px;}
-  .tier p{margin:5px 0 0; font-size:13.5px; color:var(--ink-soft); max-width:56ch;}
-  .tier a{font-weight:600;}
-  .tier.tier--current{border-top-color:var(--blue);}
-  .tier.tier--current .tier-num{background:var(--blue); color:#fff;}
 
   /* ---------- draft schedule ---------- */
   .draft-badge{
@@ -142,7 +135,10 @@
   .day-schedule .e strong{color:var(--ink); font-weight:600;}
   .day-schedule .committee{color:var(--muted); font-size:12.5px;}
 
-  /* ---------- sign-in ---------- */
+  /* ---------- proposals tab ---------- */
+  .proposals-head{display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:6px;}
+  .proposals-head .btn{flex:0 0 auto;}
+
   .auth-signin{
     display:inline-flex; align-items:center; gap:7px;
     font-family:inherit; font-weight:600; font-size:13px;
@@ -150,30 +146,13 @@
     border-radius:var(--radius); padding:9px 15px; cursor:pointer; margin-top:10px;
   }
   .auth-signin:hover{border-color:var(--blue); color:var(--blue);}
-  .auth-user{display:flex; align-items:center; gap:10px; font-size:13px; color:var(--ink-soft); margin-bottom:20px;}
+  .auth-user{display:flex; align-items:center; gap:10px; font-size:13px; color:var(--ink-soft); margin:14px 0;}
   .auth-user-name{font-weight:600; color:var(--ink);}
   .btn-text{
     font-family:inherit; font-weight:600; font-size:13px; color:var(--blue);
     background:none; border:none; padding:0; cursor:pointer;
   }
 
-  /* ---------- proposal form ---------- */
-  .field{margin-bottom:14px;}
-  .field label{display:block; font-size:13px; color:var(--muted); margin-bottom:5px;}
-  .field-note{font-size:12px; color:var(--muted); margin-top:4px;}
-  input[type="text"], select, textarea{
-    font-family:inherit; font-size:14px; color:var(--ink);
-    background:var(--surface); border:1px solid var(--line);
-    border-radius:6px; padding:8px 10px; width:100%;
-  }
-  textarea{resize:vertical; min-height:60px;}
-  .field-error{
-    font-size:12.5px; color:var(--danger-text);
-    background:var(--danger-bg); border:1px solid var(--danger-text);
-    border-radius:6px; padding:8px 12px; margin-bottom:14px;
-  }
-
-  /* ---------- proposal list ---------- */
   .proposal-card{
     background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
     padding:16px 18px; margin-top:12px;
@@ -218,187 +197,123 @@
 
 <main>
   <div class="callout">
-    <p>Have a workshop, project pitch, or talk in mind? Propose it &mdash; and see what's already been proposed by others.</p>
+    <p>Have a workshop, project pitch, or talk in mind? Propose it.</p>
     <div class="callout-actions">
-      <a class="btn btn-primary" href="#propose">Propose a workshop</a>
+      <a class="btn btn-primary" href="event-collaboration-week-propose.html">Propose a workshop</a>
     </div>
   </div>
 
-  <h2 class="subhead">Draft schedule</h2>
-  <p class="subhead-note"><span class="draft-badge">Not finalized</span> &mdash; this is the fuller draft floating around (times, venues, and the talks/workshops open to everyone vs. committee-only panels), but it's still subject to change.</p>
-
-  <div class="day-card">
-    <h3>Monday 5 Oct</h3>
-    <p class="day-meta">BOLD HQ, morning &middot; Natural History Museum (workshop) / BOLD HQ (panels), afternoon</p>
-    <ul class="day-schedule">
-      <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
-      <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 1 &amp; 2 (45 min each, open to all)</span></li>
-      <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
-      <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 3 &amp; 4 (45 min each, open to all)</span></li>
-      <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates (venue TBC, possibly Natural History Museum)</span></li>
-      <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) at the Natural History Museum <span class="committee">&middot; panel interviews for Candidates 1 &amp; 2, committee only, at BOLD HQ</span></span></li>
-      <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
-      <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 3 &amp; 4, committee only</span></span></li>
-      <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
-      <li><span class="t">19:00&ndash;21:00</span><span class="e">Dinner with candidates</span></li>
-    </ul>
+  <div class="tabs" role="tablist" aria-label="BOLD Collaboration Week">
+    <button class="tab" type="button" id="tabBtnSchedule" data-tab="schedule" role="tab" aria-controls="panelSchedule">Schedule</button>
+    <button class="tab" type="button" id="tabBtnProposals" data-tab="proposals" role="tab" aria-controls="panelProposals">Proposals</button>
   </div>
 
-  <div class="day-card">
-    <h3>Tuesday 6 Oct</h3>
-    <p class="day-meta">LaMB &mdash; Lecture Theatre 3 (talks), Seminar Rooms 1/2/5 (workshops), afternoon panels at BOLD HQ</p>
-    <ul class="day-schedule">
-      <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
-      <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 5 &amp; 6 (45 min each, open to all)</span></li>
-      <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
-      <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 7 &amp; 8 (45 min each, open to all)</span></li>
-      <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates</span></li>
-      <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) in the Seminar Rooms <span class="committee">&middot; panel interviews for Candidates 5 &amp; 6, committee only, at BOLD HQ</span></span></li>
-      <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
-      <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 7 &amp; 8, committee only</span></span></li>
-      <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
-      <li><span class="t">19:00&ndash;21:00</span><span class="e">Dinner with candidates</span></li>
-    </ul>
-  </div>
+  <div class="tab-panel" id="panelSchedule" role="tabpanel" aria-labelledby="tabBtnSchedule">
+    <h2 class="subhead">Draft schedule</h2>
+    <p class="subhead-note"><span class="draft-badge">Not finalized</span> &mdash; this is the fuller draft floating around (times, venues, and the talks/workshops open to everyone vs. committee-only panels), but it's still subject to change.</p>
 
-  <div class="day-card">
-    <h3>Wednesday 7 Oct</h3>
-    <p class="day-meta">Thom Building &mdash; Lecture Theatre (talks), LR6/LR7 (workshops), LR4 (panels)</p>
-    <ul class="day-schedule">
-      <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
-      <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 9 &amp; 10 (45 min each, open to all)</span></li>
-      <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
-      <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 11 &amp; 12 (45 min each, open to all)</span></li>
-      <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates (to be done by 13:30)</span></li>
-      <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) in LR6/LR7 <span class="committee">&middot; panel interviews for Candidates 9 &amp; 10, committee only, in LR4</span></span></li>
-      <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
-      <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 11 &amp; 12, committee only</span></span></li>
-      <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
-      <li><span class="t">19:00&ndash;</span><span class="e">Formal dinner, Rhodes House</span></li>
-    </ul>
-  </div>
-
-  <div class="day-card">
-    <h3>Thursday 8 Oct</h3>
-    <p class="day-meta">Thom Building &mdash; Lecture Theatre (talks), meeting rooms LR3/LR6 (workshops), panels at BOLD HQ</p>
-    <ul class="day-schedule">
-      <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
-      <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 13 &amp; 14 (45 min each, open to all)</span></li>
-      <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
-      <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 15 &amp; 16 (45 min each, open to all)</span></li>
-      <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates</span></li>
-      <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) in the meeting rooms <span class="committee">&middot; panel interviews for Candidates 13 &amp; 14, committee only, at BOLD HQ</span></span></li>
-      <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
-      <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 15 &amp; 16, committee only</span></span></li>
-      <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
-      <li><span class="t">19:00&ndash;</span><span class="e">Drinks &amp; dinner, everyone &mdash; Rhodes House</span></li>
-    </ul>
-  </div>
-
-  <div class="day-card">
-    <h3>Friday 9 Oct</h3>
-    <p class="day-meta">Rhodes House, all day</p>
-    <ul class="day-schedule">
-      <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
-      <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 17 &amp; 18 (45 min each, open to all)</span></li>
-      <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
-      <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 19 &amp; 20 (45 min each, open to all)</span></li>
-      <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates</span></li>
-      <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 17 &amp; 18, committee only, at BOLD HQ</span></span></li>
-      <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
-      <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 19 &amp; 20, committee only</span></span></li>
-      <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
-    </ul>
-  </div>
-
-  <h2 class="subhead" id="propose">Propose a workshop</h2>
-
-  <div id="proposeSignedOut">
-    <p>Sign in with Slack to propose a workshop, project pitch, or talk &mdash; and see what's already been proposed.</p>
-    <button class="auth-signin" type="button" id="signInBtn">Sign in with Slack</button>
-  </div>
-
-  <div id="proposeSignedIn" hidden>
-    <div class="auth-user">
-      <span class="auth-user-name" id="whoAmI"></span>
-      <button class="btn-text" type="button" id="signOutBtn">Sign out</button>
+    <div class="day-card">
+      <h3>Monday 5 Oct</h3>
+      <p class="day-meta">BOLD HQ, morning &middot; Natural History Museum (workshop) / BOLD HQ (panels), afternoon</p>
+      <ul class="day-schedule">
+        <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
+        <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 1 &amp; 2 (45 min each, open to all)</span></li>
+        <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
+        <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 3 &amp; 4 (45 min each, open to all)</span></li>
+        <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates (venue TBC, possibly Natural History Museum)</span></li>
+        <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) at the Natural History Museum <span class="committee">&middot; panel interviews for Candidates 1 &amp; 2, committee only, at BOLD HQ</span></span></li>
+        <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
+        <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 3 &amp; 4, committee only</span></span></li>
+        <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
+        <li><span class="t">19:00&ndash;21:00</span><span class="e">Dinner with candidates</span></li>
+      </ul>
     </div>
 
-    <div id="proposalForm">
-      <div class="field">
-        <label for="pfType">Contribution type</label>
-        <select id="pfType">
-          <option>Workshop</option>
-          <option>Project pitch</option>
-          <option>Research presentation</option>
-          <option>Other talk</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pfTitle">Title (if known)</label>
-        <input type="text" id="pfTitle" placeholder="e.g. Can Bayesian Optimization Efficiently Find a Strong Single Expert in Neural Thickets?">
-      </div>
-      <div class="field">
-        <label for="pfDuration">Ideal duration</label>
-        <input type="text" id="pfDuration" placeholder="e.g. 10 min talk, or workshop-length">
-      </div>
-      <div class="field">
-        <label for="pfTiming">Timing constraints</label>
-        <input type="text" id="pfTiming" placeholder="When can you not do this? (optional)">
-      </div>
-      <div class="field">
-        <label for="pfPillar">Closest BOLD pillar</label>
-        <select id="pfPillar">
-          <option value="">Choose one&hellip;</option>
-          <option>Beyond Backprop</option>
-          <option>Human-Centric Learning and Discovery</option>
-          <option>Embodied Learning</option>
-          <option>Other</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pfCoOrg">Looking for co-organisers?</label>
-        <select id="pfCoOrg">
-          <option value="">&mdash;</option>
-          <option value="yes">Yes</option>
-          <option value="no">No</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pfJoin">Interested in joining forces with someone else's idea? Add their name</label>
-        <input type="text" id="pfJoin" placeholder="Optional">
-      </div>
-      <div class="field-error" id="proposalError" hidden></div>
-      <button class="btn btn-primary" type="button" id="submitProposalBtn">Submit proposal</button>
+    <div class="day-card">
+      <h3>Tuesday 6 Oct</h3>
+      <p class="day-meta">LaMB &mdash; Lecture Theatre 3 (talks), Seminar Rooms 1/2/5 (workshops), afternoon panels at BOLD HQ</p>
+      <ul class="day-schedule">
+        <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
+        <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 5 &amp; 6 (45 min each, open to all)</span></li>
+        <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
+        <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 7 &amp; 8 (45 min each, open to all)</span></li>
+        <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates</span></li>
+        <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) in the Seminar Rooms <span class="committee">&middot; panel interviews for Candidates 5 &amp; 6, committee only, at BOLD HQ</span></span></li>
+        <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
+        <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 7 &amp; 8, committee only</span></span></li>
+        <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
+        <li><span class="t">19:00&ndash;21:00</span><span class="e">Dinner with candidates</span></li>
+      </ul>
     </div>
 
-    <h2 class="subhead">Proposals so far</h2>
-    <div id="proposalsList"></div>
+    <div class="day-card">
+      <h3>Wednesday 7 Oct</h3>
+      <p class="day-meta">Thom Building &mdash; Lecture Theatre (talks), LR6/LR7 (workshops), LR4 (panels)</p>
+      <ul class="day-schedule">
+        <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
+        <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 9 &amp; 10 (45 min each, open to all)</span></li>
+        <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
+        <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 11 &amp; 12 (45 min each, open to all)</span></li>
+        <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates (to be done by 13:30)</span></li>
+        <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) in LR6/LR7 <span class="committee">&middot; panel interviews for Candidates 9 &amp; 10, committee only, in LR4</span></span></li>
+        <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
+        <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 11 &amp; 12, committee only</span></span></li>
+        <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
+        <li><span class="t">19:00&ndash;</span><span class="e">Formal dinner, Rhodes House</span></li>
+      </ul>
+    </div>
+
+    <div class="day-card">
+      <h3>Thursday 8 Oct</h3>
+      <p class="day-meta">Thom Building &mdash; Lecture Theatre (talks), meeting rooms LR3/LR6 (workshops), panels at BOLD HQ</p>
+      <ul class="day-schedule">
+        <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
+        <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 13 &amp; 14 (45 min each, open to all)</span></li>
+        <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
+        <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 15 &amp; 16 (45 min each, open to all)</span></li>
+        <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates</span></li>
+        <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) in the meeting rooms <span class="committee">&middot; panel interviews for Candidates 13 &amp; 14, committee only, at BOLD HQ</span></span></li>
+        <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
+        <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 15 &amp; 16, committee only</span></span></li>
+        <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
+        <li><span class="t">19:00&ndash;</span><span class="e">Drinks &amp; dinner, everyone &mdash; Rhodes House</span></li>
+      </ul>
+    </div>
+
+    <div class="day-card">
+      <h3>Friday 9 Oct</h3>
+      <p class="day-meta">Rhodes House, all day</p>
+      <ul class="day-schedule">
+        <li><span class="t">08:00&ndash;09:00</span><span class="e">Arrival &amp; coffee</span></li>
+        <li><span class="t">09:00&ndash;10:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 17 &amp; 18 (45 min each, open to all)</span></li>
+        <li><span class="t">10:30&ndash;11:00</span><span class="e">Break</span></li>
+        <li><span class="t">11:00&ndash;12:30</span><span class="e"><strong>Research talks</strong> &mdash; Candidates 19 &amp; 20 (45 min each, open to all)</span></li>
+        <li><span class="t">12:30&ndash;13:45</span><span class="e">Lunch with candidates</span></li>
+        <li><span class="t">13:45&ndash;15:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 17 &amp; 18, committee only, at BOLD HQ</span></span></li>
+        <li><span class="t">15:15&ndash;15:45</span><span class="e">Break</span></li>
+        <li><span class="t">15:45&ndash;17:15</span><span class="e"><strong>Workshop</strong> (90 min, open to all) <span class="committee">&middot; panel interviews for Candidates 19 &amp; 20, committee only</span></span></li>
+        <li><span class="t">17:15&ndash;17:30</span><span class="e committee">Committee debrief</span></li>
+      </ul>
+    </div>
   </div>
 
-  <h2 class="subhead">Where this sits</h2>
-  <p>Collaboration Week is the deepest of three ways to stay engaged with BOLD:</p>
-  <div>
-    <div class="tier">
-      <div class="tier-num">0</div>
-      <div>
-        <h3>Join the mailing list</h3>
-        <p>Updates on future seminars, talks, festivals, and other opportunities to join forces.</p>
-      </div>
+  <div class="tab-panel" id="panelProposals" role="tabpanel" aria-labelledby="tabBtnProposals">
+    <div class="proposals-head">
+      <h2 class="subhead" style="margin:0;">Proposals</h2>
+      <a class="btn btn-primary" href="event-collaboration-week-propose.html">Propose a workshop</a>
     </div>
-    <div class="tier">
-      <div class="tier-num">1</div>
-      <div>
-        <h3>Become a BOLD Associate</h3>
-        <p>Contribute at whatever level suits &mdash; research ideas, joining a project, compute resources, or internships &mdash; and get added to the BOLD Slack.</p>
-      </div>
+
+    <div id="proposalsSignedOut">
+      <p>Sign in with Slack to see what's been proposed.</p>
+      <button class="auth-signin" type="button" id="signInBtn">Sign in with Slack</button>
     </div>
-    <div class="tier tier--current">
-      <div class="tier-num">2</div>
-      <div>
-        <h3>BOLD Collaboration Week</h3>
-        <p>You are here &mdash; five days in Oxford working alongside the lab in person.</p>
+
+    <div id="proposalsSignedIn" hidden>
+      <div class="auth-user">
+        <span class="auth-user-name" id="whoAmI"></span>
+        <button class="btn-text" type="button" id="signOutBtn">Sign out</button>
       </div>
+      <div id="proposalsList"></div>
     </div>
   </div>
 </main>
@@ -408,6 +323,32 @@
 </footer>
 
 <script>
+// Tabs — independent of Firebase, so switching between Schedule and
+// Proposals works even if Firebase fails to load. Neither panel is
+// hidden in the raw HTML (progressive enhancement: no-JS visitors see
+// both, stacked, rather than losing whichever tab isn't picked), so this
+// runs on load to pick a starting tab and hide the other.
+(function(){
+  var buttons = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  var panels = { schedule: document.getElementById('panelSchedule'), proposals: document.getElementById('panelProposals') };
+  function activate(name, pushHash){
+    buttons.forEach(function(b){
+      var on = b.getAttribute('data-tab') === name;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    Object.keys(panels).forEach(function(k){ panels[k].hidden = k !== name; });
+    if (pushHash !== false) history.replaceState(null, '', '#' + name);
+  }
+  buttons.forEach(function(b){
+    b.addEventListener('click', function(){ activate(b.getAttribute('data-tab')); });
+  });
+  var initial = (location.hash || '').slice(1);
+  activate(panels[initial] ? initial : 'schedule', false);
+})();
+
+// Proposals list — read-only here; submitting lives on its own page
+// (event-collaboration-week-propose.html) now.
 (function(){
   function escapeHtml(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -416,13 +357,11 @@
   }
 
   var els = {
-    signedOut: document.getElementById('proposeSignedOut'),
-    signedIn: document.getElementById('proposeSignedIn'),
+    signedOut: document.getElementById('proposalsSignedOut'),
+    signedIn: document.getElementById('proposalsSignedIn'),
     signInBtn: document.getElementById('signInBtn'),
     signOutBtn: document.getElementById('signOutBtn'),
     whoAmI: document.getElementById('whoAmI'),
-    submitBtn: document.getElementById('submitProposalBtn'),
-    error: document.getElementById('proposalError'),
     list: document.getElementById('proposalsList')
   };
 
@@ -460,8 +399,6 @@
   var currentUser = null;
   var unsubscribeProposals = null;
 
-  function proposalsCol(){ return db.collection('collabWeekProposals'); }
-
   function renderProposals(docs){
     if (!docs.length){
       els.list.innerHTML = '<p class="proposal-empty">Nothing proposed yet &mdash; be the first.</p>';
@@ -487,7 +424,7 @@
 
   function watchProposals(){
     if (unsubscribeProposals) return;
-    unsubscribeProposals = proposalsCol().orderBy('createdAt', 'desc').onSnapshot(function(snap){
+    unsubscribeProposals = db.collection('collabWeekProposals').orderBy('createdAt', 'desc').onSnapshot(function(snap){
       var docs = [];
       snap.forEach(function(doc){ docs.push(doc.data()); });
       renderProposals(docs);
@@ -499,55 +436,6 @@
 
   function stopWatchingProposals(){
     if (unsubscribeProposals){ unsubscribeProposals(); unsubscribeProposals = null; }
-  }
-
-  function submitProposal(){
-    if (!currentUser) return;
-    var type = document.getElementById('pfType').value;
-    var title = document.getElementById('pfTitle').value.trim();
-    var duration = document.getElementById('pfDuration').value.trim();
-    var timing = document.getElementById('pfTiming').value.trim();
-    var pillar = document.getElementById('pfPillar').value;
-    var coOrg = document.getElementById('pfCoOrg').value;
-    var join = document.getElementById('pfJoin').value.trim();
-
-    if (!type){
-      els.error.textContent = 'Pick a contribution type first.';
-      els.error.hidden = false;
-      return;
-    }
-    els.error.hidden = true;
-    els.submitBtn.disabled = true;
-
-    proposalsCol().add({
-      name: currentUser.name || currentUser.email,
-      email: currentUser.email,
-      contributionType: type,
-      title: title,
-      duration: duration,
-      timingConstraints: timing,
-      pillar: pillar,
-      coOrganisers: coOrg,
-      joiningForces: join,
-      createdAt: Date.now()
-    }).then(function(){
-      // Not a real <form> (deliberately — see the div/button choice below),
-      // so no native .reset(); clear the fields submitProposal itself just
-      // read, by their real values rather than a hardcoded list.
-      document.getElementById('pfType').selectedIndex = 0;
-      document.getElementById('pfTitle').value = '';
-      document.getElementById('pfDuration').value = '';
-      document.getElementById('pfTiming').value = '';
-      document.getElementById('pfPillar').selectedIndex = 0;
-      document.getElementById('pfCoOrg').selectedIndex = 0;
-      document.getElementById('pfJoin').value = '';
-    }).catch(function(err){
-      console.error('[BOLD Collaboration Week] submit failed', err);
-      els.error.textContent = 'Could not save your proposal — try again.';
-      els.error.hidden = false;
-    }).finally(function(){
-      els.submitBtn.disabled = false;
-    });
   }
 
   function renderAuth(){
@@ -575,7 +463,6 @@
     });
   });
   els.signOutBtn.addEventListener('click', function(){ auth.signOut(); });
-  els.submitBtn.addEventListener('click', submitProposal);
 
   auth.onAuthStateChanged(function(user){
     currentUser = user ? { email: user.email, name: user.displayName } : null;
