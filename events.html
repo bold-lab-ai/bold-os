@@ -82,62 +82,30 @@
   section.block{max-width:var(--article-max); margin:56px 0 0;}
   section.block:first-of-type{margin-top:28px;}
   .block-head{margin-bottom:18px;}
+  .block h2{font-size:clamp(19px, 2.4vw, 22px); line-height:1.15; text-transform:uppercase; font-size:13px; letter-spacing:0; color:var(--muted); font-weight:700;}
+  .block-meta{margin-top:6px; font-size:14px; color:var(--muted);}
+
+  /* ---------- event list ---------- */
+  .event-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:14px;}
+  .event-card{
+    display:block; text-decoration:none; color:inherit;
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:22px 24px;
+    transition:border-color .12s;
+  }
+  .event-card:hover{border-color:var(--blue);}
+  .event-card:hover .event-cta{text-decoration-thickness:2px;}
+  .event-top{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;}
   .eyebrow{
     display:inline-block; font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:0;
-    padding:3px 10px; border-radius:999px; margin-bottom:10px;
+    padding:3px 10px; border-radius:999px;
   }
   .eyebrow--upcoming{background:#e3ebfc; color:var(--blue);}
   .eyebrow--past{background:var(--wash); color:var(--muted);}
-  .block h2{font-size:clamp(21px, 2.8vw, 27px); line-height:1.15;}
-  .block-meta{margin-top:6px; font-size:14px; color:var(--muted); font-variant-numeric:tabular-nums;}
-  .block-meta strong{color:var(--ink-soft); font-weight:600;}
-  .block p{margin:14px 0 0; max-width:64ch;}
-
-  /* ---------- upcoming callout ---------- */
-  .callout{
-    background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--blue);
-    border-radius:0 var(--radius) var(--radius) 0;
-    padding:26px 28px;
-  }
-  .callout p{max-width:60ch;}
-  .callout-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:20px;}
-  .btn{
-    display:inline-block; font-size:14px; font-weight:600; text-decoration:none;
-    padding:9px 16px; border-radius:var(--radius); border:1px solid var(--line);
-  }
-  .btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
-  .btn-primary:hover{background:#1e4fb0; text-decoration:none;}
-  .btn-secondary{background:var(--surface); color:var(--ink-soft);}
-  .btn-secondary:hover{border-color:var(--blue); color:var(--blue); text-decoration:none;}
-
-  /* ---------- festival days ---------- */
-  .day-card{
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-    padding:20px 22px; margin-top:16px;
-  }
-  .day-card h3{font-size:16px;}
-  .day-meta{font-size:13px; color:var(--muted); margin-top:3px;}
-  .day-schedule{list-style:none; margin:14px 0 0; padding:0; border-top:1px solid var(--line);}
-  .day-schedule li{
-    display:flex; gap:14px; padding:8px 0; border-bottom:1px solid var(--line);
-    font-size:13.5px; line-height:1.45;
-  }
-  .day-schedule li:last-child{border-bottom:none;}
-  .day-schedule .t{flex:0 0 auto; width:108px; color:var(--muted); font-variant-numeric:tabular-nums;}
-  .day-schedule .e{color:var(--ink-soft);}
-  .day-schedule .e strong{color:var(--ink); font-weight:600;}
-
-  /* ---------- workshop grid ---------- */
-  .workshop-grid{
-    display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:16px;
-  }
-  .workshop-card{
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-    padding:16px 18px;
-  }
-  .workshop-card h3{font-size:14.5px; line-height:1.3;}
-  .workshop-card .chair{font-size:12.5px; color:var(--teal); font-weight:600; margin-top:6px;}
-  .workshop-card p{margin:8px 0 0; font-size:13px; color:var(--muted); line-height:1.5; max-width:none;}
+  .event-card h3{font-size:19px; margin-top:10px;}
+  .event-when{margin-top:5px; font-size:13.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .event-card p{margin:10px 0 0; font-size:14.5px; color:var(--ink-soft); max-width:64ch;}
+  .event-cta{display:inline-block; margin-top:14px; font-size:13.5px; font-weight:600; color:var(--blue); text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:2px;}
 
   /* ---------- get-involved tiers ---------- */
   .tier{
@@ -161,9 +129,6 @@
 
   @media (max-width:820px){
     .hero{padding:40px var(--gutter) 8px;}
-    .workshop-grid{grid-template-columns:1fr;}
-    .day-schedule li{flex-direction:column; gap:2px;}
-    .day-schedule .t{width:auto; font-weight:600;}
   }
 </style>
 </head>
@@ -176,94 +141,37 @@
 
 <div class="hero">
   <h1>BOLD Events</h1>
-  <p class="hero-note">Where BOLD gathers — talks, workshops, and the people building the UK's fundamental-AI ecosystem. Next up: <strong>BOLD Collaboration Week</strong>, 5&ndash;10 October 2026 in Oxford.</p>
+  <p class="hero-note">Where BOLD gathers — talks, workshops, and the people building the UK's fundamental-AI ecosystem.</p>
   <p class="page-source">Provenance: <a href="https://docs.google.com/document/d/1zPSphuC_Is01HnhGcdyCtjbAXe89vTGaeVr68CDYxaE/edit" target="_blank" rel="noopener">BOLD Festival invites &amp; agenda</a> &middot; <a href="https://docs.google.com/document/d/16B0g2zFaKTIds6DyjNcnEjMHyVn6TWMQj2mJxgfmKHc/edit" target="_blank" rel="noopener">BOLD Workshops</a> &middot; current differences in <a href="diff.html">DIFF.md</a></p>
 </div>
 
 <main>
 
-  <section class="block" id="collaboration-week">
-    <div class="block-head">
-      <span class="eyebrow eyebrow--upcoming">Upcoming</span>
-      <h2>BOLD Collaboration Week</h2>
-      <p class="block-meta"><strong>5&ndash;10 October 2026</strong> &middot; Oxford</p>
-    </div>
-    <div class="callout">
-      <p>Five days in Oxford for BOLD Associates to engage more deeply with BOLD, in person &mdash; the deepest of the three ways to stay involved (see <a href="#get-involved">Get involved</a> below). Full agenda to follow; block your calendar.</p>
-      <p>The same week also covers BOLD's open-positions interviews &mdash; expect a full program of research talks (open to everyone visiting) running alongside candidate interviews.</p>
-      <div class="callout-actions">
-        <a class="btn btn-primary" href="https://forms.cloud.microsoft/e/bH8wY54KdJ" target="_blank" rel="noopener">Become a BOLD Associate</a>
-        <a class="btn btn-secondary" href="https://app.onlinesurveys.jisc.ac.uk/s/oxford/bold-mailing-list" target="_blank" rel="noopener">Join the mailing list</a>
-      </div>
-    </div>
-  </section>
-
-  <section class="block" id="bold-festival">
-    <div class="block-head">
-      <span class="eyebrow eyebrow--past">Past</span>
-      <h2>BOLD Festival</h2>
-      <p class="block-meta"><strong>3&ndash;5 August 2026</strong> &middot; Oxford</p>
-    </div>
-    <p>The inaugural BOLD Festival marked the official launch of the British Open-ended Learning and Discovery Lab &mdash; merging leading fundamental-AI labs from Oxford, UCL, and Imperial College into one focused, critical-mass research lab. Three days in Oxford: talks from world-class scientists, entrepreneurs, policymakers, and industry; workshops across BOLD's research pillars; and plenty of time to just meet people.</p>
-
-    <div class="day-card">
-      <h3>Day 1 &mdash; Launch Day</h3>
-      <p class="day-meta">The Examination Schools, University of Oxford &middot; evening moved to the University Club</p>
-      <ul class="day-schedule">
-        <li><span class="t">10:00&ndash;10:50</span><span class="e"><strong>Welcome &amp; Announcements</strong> &mdash; introducing BOLD &amp; partners, with opening remarks from Oxford, UCL, and Google DeepMind</span></li>
-        <li><span class="t">10:50&ndash;12:30</span><span class="e"><strong>Session 1 &mdash; Fundamental AI &amp; Entrepreneurship.</strong> Keynote: Nathan Benaich (Air Street Capital). Panel: Mark Burnett (G-Research), Raia Hadsell (Google DeepMind), Yarin Gal (Oxford), and others</span></li>
-        <li><span class="t">13:30&ndash;15:00</span><span class="e"><strong>Session 2 &mdash; Compute &amp; Sovereignty.</strong> Keynote: Michiel Bakker (MIT), &ldquo;Europe 2031: What getting AI wrong means for us&rdquo;. Panel with AMD, NVIDIA, Google Cloud, and Fractile</span></li>
-        <li><span class="t">15:45&ndash;17:30</span><span class="e"><strong>Session 3 &mdash; Opportunities in Fundamental AI.</strong> Keynotes from BOLD's own Bidipta (Oxford) and Antoine Cully (Imperial), plus Katja Hofmann (Microsoft) and Elahe Arani (Wayve)</span></li>
-        <li><span class="t">17:30&ndash;22:30</span><span class="e">Evening reception, launch party &amp; food at the University Club</span></li>
-      </ul>
-    </div>
-
-    <div class="day-card">
-      <h3>Day 2 &mdash; BOLD Workshops (BOLD and Friends)</h3>
-      <p class="day-meta">Rhodes House, Oxford &middot; plenary, six workshops across two tracks, BBQ &amp; social</p>
-      <div class="workshop-grid">
-        <div class="workshop-card">
-          <h3>BenchMAXXing and Breakthroughs</h3>
-          <div class="chair">Dylan Cope</div>
-          <p>What benchmarks reveal and what they obscure &mdash; and whether open-endedness fundamentally resists being benchmarked at all.</p>
-        </div>
-        <div class="workshop-card">
-          <h3>Efficient Adaptation and Embodied Learning</h3>
-          <div class="chair">Theo Wolf &amp; Jarek Liesen</div>
-          <p>How to deploy autonomous systems that adapt to the noisy, chaotic real world &mdash; sim vs. real, robotics vs. autonomous driving.</p>
-        </div>
-        <div class="workshop-card">
-          <h3>From IP to Equity, Innovation and Sovereignty</h3>
-          <div class="chair">Jakob Foerster</div>
-          <p>Accelerating the UK's path to technological sovereignty in fundamental AI, without losing open science along the way.</p>
-        </div>
-        <div class="workshop-card">
-          <h3>Prediction Markets, Collective Intelligence, and the Optimal Co-Scientist</h3>
-          <div class="chair">Yuhe Gao &amp; George Nigmatulin</div>
-          <p>How dispersed private information becomes reliable collective knowledge &mdash; and what the best human&ndash;AI research collaboration looks like.</p>
-        </div>
-        <div class="workshop-card">
-          <h3>Quant 2030 &mdash; Foundation Models and Open Source in Finance</h3>
-          <div class="chair">Alexandre Bismuth</div>
-          <p>Closing the gap between generative order-flow models and trading-grade tools &mdash; and what a pre-competitive, shared layer for the field could look like.</p>
-        </div>
-        <div class="workshop-card">
-          <h3>Engaging with BOLD</h3>
-          <div class="chair">Tim Rockt&auml;schel</div>
-          <p>An audience-driven Ask-Us-Anything on BOLD's collaboration principles, plus pitches for new models of collaboration and specific projects.</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="day-card">
-      <h3>Day 3 &mdash; BOLD Brainstorming</h3>
-      <p class="day-meta">BOLD HQ</p>
-      <ul class="day-schedule">
-        <li><span class="t">09:30&ndash;13:00</span><span class="e">Brainstorming sessions and presentation of BOLD's active projects</span></li>
-        <li><span class="t">14:00&ndash;17:30</span><span class="e">More brainstorming and project presentations</span></li>
-        <li><span class="t">17:30&rarr;</span><span class="e">BOLD Social</span></li>
-      </ul>
-    </div>
+  <section class="block">
+    <ul class="event-list">
+      <li>
+        <a class="event-card" href="event-collaboration-week.html">
+          <div class="event-top">
+            <span class="eyebrow eyebrow--upcoming">Upcoming</span>
+          </div>
+          <h3>BOLD Collaboration Week</h3>
+          <p class="event-when">5&ndash;10 October 2026 &middot; Oxford</p>
+          <p>Five days for BOLD Associates to engage more deeply with BOLD, in person &mdash; the deepest of the three ways to stay involved.</p>
+          <span class="event-cta">See details &rarr;</span>
+        </a>
+      </li>
+      <li>
+        <a class="event-card" href="event-bold-festival.html">
+          <div class="event-top">
+            <span class="eyebrow eyebrow--past">Past</span>
+          </div>
+          <h3>BOLD Festival</h3>
+          <p class="event-when">3&ndash;5 August 2026 &middot; Oxford</p>
+          <p>The inaugural BOLD Festival &mdash; three days marking the official launch of the British Open-ended Learning and Discovery Lab.</p>
+          <span class="event-cta">See details &rarr;</span>
+        </a>
+      </li>
+    </ul>
   </section>
 
   <section class="block" id="get-involved">
@@ -290,7 +198,7 @@
         <div class="tier-num">2</div>
         <div>
           <h3>BOLD Collaboration Week</h3>
-          <p>The deepest level &mdash; five days in Oxford working alongside the lab in person. See <a href="#collaboration-week">above</a>.</p>
+          <p>The deepest level &mdash; five days in Oxford working alongside the lab in person. <a href="event-collaboration-week.html">See details &rarr;</a></p>
         </div>
       </div>
     </div>
