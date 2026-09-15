@@ -7,7 +7,7 @@
 <meta name="description" content="Tracker for papers going through Internal Review, one board per venue and year.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <!-- Firebase compat build (not the modular/ES-import build — this one loads as an
      ordinary blocking script, matching the plain classic-script style below).
      docs/AGENTS.md-approved CDN exception, 2026-09-11 — see docs/FIREBASE.md. Bump the
@@ -17,31 +17,41 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
 <style>
-  /* Design system shared with bold-lab.ai */
+  /* Minimal editorial design system, shared across bold-lab.ai — see
+     events.html for the full rationale. Kept as a values-only swap here
+     (same variable names, same functional warn/success/danger/neutral
+     status colors, same teal/plum junior/senior reviewer coding) since
+     this page is a working tool, not content — real status colors stay
+     meaningful rather than collapsing into one accent hue. Base font is
+     Cabin (sans) rather than the serif used elsewhere, since almost
+     everything here is dense short UI text, not long-form prose; only
+     headings switch to the serif for brand consistency. */
   :root{
-    --ink:#09111f;
-    --ink-soft:#202b3c;
-    --body:#202b3c;
-    --muted:#667085;
-    --paper:#fbfaf6;
+    --ink:#1a2b4a;
+    --ink-soft:#33445f;
+    --body:#33445f;
+    --muted:#7d8698;
+    --paper:#f5f3ee;
     --surface:#ffffff;
-    --wash:#eef2f4;
-    --line:#d8dee6;
-    --blue:#2b64d8;
+    --wash:#ece9e1;
+    --line:rgba(26,43,74,0.16);
+    --blue:#1a2b4a;
     --teal:#2f8f83;
     --plum:#6f4bb3;
     --amber:#b7791f;
-    --focus:#c87912;
-    --radius:8px;
-    --shadow:0 14px 44px #09111f1f;
+    --focus:#1a2b4a;
+    --radius:2px;
+    --shadow:0 14px 44px #1a2b4a1f;
     --gutter:clamp(18px, 4vw, 44px);
     --page-max:1200px;
     --board-max:1360px;
     --read-max:760px;
+    --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
+    --sans:'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
     /* names the inline JS styles depend on */
-    --accent:#2b64d8;
-    --accent-dim:#e6edfb;
+    --accent:#1a2b4a;
+    --accent-dim:#e3e6ec;
     --neutral-bg:#eef2f4;
     --neutral-text:#4b5563;
     --warn-bg:#f6ecda;
@@ -58,17 +68,20 @@
     margin:0;
     background:var(--paper);
     color:var(--ink-soft);
-    font-family:'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size:16px;
+    font-family:var(--sans);
+    font-size:15.5px;
     line-height:1.55;
     font-synthesis:none;
     -webkit-font-smoothing:antialiased;
     -moz-osx-font-smoothing:grayscale;
   }
 
-  a{color:var(--blue);}
+  h1,h2,h3{font-family:var(--serif);}
+
+  a{color:var(--blue); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;}
+  a:hover{text-decoration-color:currentColor;}
   a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible{
-    outline:2px solid var(--focus); outline-offset:2px; border-radius:2px;
+    outline:2px solid var(--focus); outline-offset:2px;
   }
 
   h1,h2,h3{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
@@ -179,7 +192,7 @@
   }
   .btn:hover{border-color:var(--blue); color:var(--blue);}
   .btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
-  .btn-primary:hover{background:#1f4fb0; border-color:#1f4fb0; color:#fff;}
+  .btn-primary:hover{background:#0f1c33; border-color:#0f1c33; color:#fff;}
   /* Approve/Reject (venue proposals, 2026-09-11): same size/weight as any
      other .btn, just green vs. red — same visual weight for a symmetric
      either-way decision, unlike a primary/plain pairing that would make
@@ -647,7 +660,7 @@
   }
   .sidebar-title{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted);}
   .sidebar-collapse{
-    font-family:inherit; background:none; border:1px solid var(--line); border-radius:6px;
+    font-family:inherit; background:none; border:1px solid var(--line);
     width:24px; height:24px; color:var(--muted); cursor:pointer; font-size:12px; line-height:1; flex:none;
   }
   .sidebar-collapse:hover{color:var(--blue); border-color:var(--blue);}
@@ -655,26 +668,26 @@
   .nav-group:first-child{margin-top:0;}
   .nav-group-label{
     display:block; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.03em;
-    color:var(--muted); padding:7px 6px; margin-bottom:2px; text-decoration:none; border-radius:6px;
+    color:var(--muted); padding:7px 6px; margin-bottom:2px; text-decoration:none;
   }
-  .nav-group-label:hover{background:var(--wash); color:var(--ink);}
-  .nav-group-label.active{background:#e3ebfc; color:var(--blue);}
+  .nav-group-label:hover{color:var(--blue);}
+  .nav-group-label.active{color:var(--blue);}
   .nav-link{
     display:block; font-size:13.5px; font-weight:600; color:var(--ink-soft);
-    text-decoration:none; padding:7px 6px; border-radius:6px; white-space:nowrap;
+    text-decoration:none; padding:7px 6px; white-space:nowrap;
   }
-  .nav-link:hover{background:var(--wash); color:var(--ink);}
-  .nav-link.active{background:#e3ebfc; color:var(--blue);}
+  .nav-link:hover{color:var(--blue);}
+  .nav-link.active{color:var(--blue);}
   .nav-link.nav-sub{font-weight:500; font-size:13px; padding-left:16px;}
   .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
-    outline:2px solid var(--focus); outline-offset:2px; border-radius:6px;
+    outline:2px solid var(--focus); outline-offset:2px;
   }
 
   .shell-main{flex:1 1 auto; min-width:0;}
 
   .masthead-left{display:flex; align-items:center; gap:10px;}
   .nav-toggle{
-    display:none; font-family:inherit; background:none; border:1px solid var(--line); border-radius:6px;
+    display:none; font-family:inherit; background:none; border:1px solid var(--line);
     width:34px; height:34px; align-items:center; justify-content:center; cursor:pointer; color:var(--ink);
     position:relative; flex:none;
   }
@@ -697,7 +710,7 @@
       position:fixed; top:0; left:0; bottom:0; z-index:200;
       height:100%; width:240px; flex-basis:240px;
       transform:translateX(-100%); transition:transform 0.2s ease;
-      box-shadow:0 14px 44px #09111f2e;
+      box-shadow:0 14px 44px rgba(26,43,74,.18);
     }
     .sidebar-inner{height:100%; max-height:none; overflow-y:auto;}
     .shell.is-nav-open .sidebar{transform:translateX(0);}
@@ -707,7 +720,7 @@
     .shell.is-collapsed .sidebar-head{justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:14px;}
     .sidebar-collapse{display:none;}
     .sidebar-backdrop{
-      display:none; position:fixed; inset:0; background:#09111f66; z-index:190;
+      display:none; position:fixed; inset:0; background:rgba(26,43,74,.4); z-index:190;
       border:none; padding:0; margin:0;
     }
     .shell.is-nav-open .sidebar-backdrop{display:block;}
