@@ -76,6 +76,23 @@
   /* ---------- article ---------- */
   main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
 
+  .callout{
+    max-width:var(--article-max);
+    background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--blue);
+    border-radius:0 var(--radius) var(--radius) 0;
+    padding:26px 28px; margin-top:28px;
+  }
+  .callout p{margin:0; font-size:15px; max-width:60ch;}
+  .callout-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:20px;}
+  .btn{
+    display:inline-block; font-size:14px; font-weight:600; text-decoration:none;
+    padding:9px 16px; border-radius:var(--radius); border:1px solid var(--line);
+  }
+  .btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
+  .btn-primary:hover{background:#1e4fb0; text-decoration:none;}
+  .btn-secondary{background:var(--surface); color:var(--ink-soft);}
+  .btn-secondary:hover{border-color:var(--blue); color:var(--blue); text-decoration:none;}
+
   section.block{max-width:var(--article-max); margin:56px 0 0;}
   section.block:first-of-type{margin-top:28px;}
   .block-head{margin-bottom:18px;}
@@ -142,6 +159,14 @@
 </div>
 
 <main>
+
+  <div class="callout">
+    <p>BOLD Collaboration Week (5&ndash;10 Oct) also covers BOLD's open-positions interviews: expect a full program of research talks (open to everyone visiting) running alongside candidate interviews.</p>
+    <div class="callout-actions">
+      <a class="btn btn-primary" href="https://forms.cloud.microsoft/e/bH8wY54KdJ" target="_blank" rel="noopener">Become a BOLD Associate</a>
+      <a class="btn btn-secondary" href="https://app.onlinesurveys.jisc.ac.uk/s/oxford/bold-mailing-list" target="_blank" rel="noopener">Join the mailing list</a>
+    </div>
+  </div>
 
   <section class="block">
     <ul class="event-list">
