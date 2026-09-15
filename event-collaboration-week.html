@@ -267,7 +267,16 @@
   }
   .gate-box h1{font-size:20px; margin:0 0 10px;}
   .gate-box p{font-size:14px; color:var(--ink-soft); margin:0 0 20px; line-height:1.55;}
-  .gate-box .gate-alt{font-size:12.5px; color:var(--muted); margin:16px 0 0; line-height:1.5;}
+  .gate-box .gate-alt{
+    font-size:13.5px; font-weight:600; color:var(--ink-soft);
+    margin:20px 0 0; padding-top:16px; border-top:1px solid var(--line);
+  }
+  .gate-signup-btn{
+    display:inline-block; font-family:inherit; font-weight:600; font-size:13px;
+    color:var(--ink); background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); padding:9px 15px; margin-top:10px; text-decoration:none;
+  }
+  .gate-signup-btn:hover{border-color:var(--blue); color:var(--blue);}
 
   /* ---------- masthead auth marker ---------- */
   .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
@@ -294,7 +303,8 @@
     <h1>Sign in required</h1>
     <p>This is an internal BOLD Lab page. Sign in with Slack to continue.</p>
     <button class="auth-signin" id="gateSignInBtn" type="button">Sign in with Slack</button>
-    <p class="gate-alt">Not in the BOLD Slack yet? <a href="https://forms.gle/VzGbWVyERN9v1qJC8" target="_blank" rel="noopener">Sign up here</a>.</p>
+    <p class="gate-alt">Not in the BOLD Slack yet?</p>
+    <a class="gate-signup-btn" href="https://forms.gle/VzGbWVyERN9v1qJC8" target="_blank" rel="noopener">Sign up here</a>
   </div>
 </div>
 
