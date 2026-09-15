@@ -11,6 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <style>
   /* Design system shared with bold-lab.ai (same tokens as the other pages here) */
   :root{
@@ -198,6 +200,24 @@
     }
     .shell.is-nav-open .sidebar-backdrop{display:block;}
   }
+
+  /* ---------- sign-in gate ---------- */
+  #pageGate{
+    min-height:60vh; display:flex; align-items:center; justify-content:center; padding:40px var(--gutter);
+  }
+  .gate-box{
+    max-width:380px; text-align:center; background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); padding:32px 28px;
+  }
+  .gate-box h1{font-size:20px; margin:0 0 10px;}
+  .gate-box p{font-size:14px; color:var(--ink-soft); margin:0 0 20px; line-height:1.55;}
+  .auth-signin{
+    display:inline-flex; align-items:center; gap:7px;
+    font-family:inherit; font-weight:600; font-size:13px;
+    color:var(--ink); background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); padding:9px 15px; cursor:pointer;
+  }
+  .auth-signin:hover{border-color:var(--blue); color:var(--blue);}
 </style>
 </head>
 <body>
@@ -210,6 +230,15 @@
   <div class="masthead-sub">Internal</div>
 </div>
 
+<div id="pageGate">
+  <div class="gate-box">
+    <h1>Sign in required</h1>
+    <p>This is an internal BOLD Lab page. Sign in with Slack to continue.</p>
+    <button class="auth-signin" id="gateSignInBtn" type="button">Sign in with Slack</button>
+  </div>
+</div>
+
+<div id="pageContent" hidden>
 <div class="shell" id="shell">
  <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
  <nav class="sidebar" id="sidebar" aria-label="Site navigation">
@@ -279,6 +308,7 @@
 <footer>
   An internal BOLD Lab page, reproduced from the live BOLDiquette doc &mdash; that doc is ground truth if this page ever drifts. Back to <a href="how-to-submit-a-paper.html">the guide</a>.
 </footer>
+</div>
 
 <script>
 (function(){
@@ -323,6 +353,60 @@
   try {
     if (localStorage.getItem('boldNavCollapsed') === '1') setCollapsed(true);
   } catch (e){}
+})();
+</script>
+
+<script>
+(function(){
+  var FIREBASE_CONFIG = {
+    apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
+    authDomain: 'bold-d7ff2.firebaseapp.com',
+    projectId: 'bold-d7ff2',
+    storageBucket: 'bold-d7ff2.firebasestorage.app',
+    messagingSenderId: '555050367135',
+    appId: '1:555050367135:web:d90f8d7bb93a755e9fcaaa',
+    measurementId: 'G-527H8R28KB'
+  };
+  var AUTH_USE_EMULATOR = false;
+
+  var gate = document.getElementById('pageGate');
+  var content = document.getElementById('pageContent');
+  var signInBtn = document.getElementById('gateSignInBtn');
+
+  var auth = null;
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    auth = firebase.auth();
+    if (AUTH_USE_EMULATOR) auth.useEmulator('http://localhost:9099');
+  } catch (e) { auth = null; }
+
+  if (!auth) {
+    var p = gate.querySelector('p');
+    if (p) p.textContent = 'Could not connect \u2014 reload, or check back shortly.';
+    return;
+  }
+
+  if (signInBtn) {
+    signInBtn.addEventListener('click', function(){
+      var provider = new firebase.auth.OAuthProvider('oidc.slack');
+      provider.addScope('openid');
+      provider.addScope('profile');
+      provider.addScope('email');
+      auth.signInWithPopup(provider).catch(function(err){
+        console.error('[BOLD Lab] sign-in failed', err);
+      });
+    });
+  }
+
+  auth.onAuthStateChanged(function(user){
+    if (user) {
+      gate.hidden = true;
+      content.hidden = false;
+    } else {
+      gate.hidden = false;
+      content.hidden = true;
+    }
+  });
 })();
 </script>
 
