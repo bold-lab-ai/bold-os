@@ -47,7 +47,7 @@
   //   },
   // ]
   "indexes": [],
-  // Collection-group indexes (2026-09-12, see ml-conference-cycle#3) — the
+  // Collection-group indexes (2026-09-12, see bold-os#3) — the
   // Slack App Home dashboard needs to find a person's cards across every
   // venue's boards/{boardId}/cards subcollection, not just one board, via
   // db.collectionGroup('cards').where(...). Firestore's automatic

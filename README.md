@@ -2,7 +2,7 @@
 
 BOLD Lab's tool suite for taking a paper from venue choice to conference presentation — an implementation of BOLDiquette § ML Conference Cycle.
 
-**Live:** https://bold-lab-ai.github.io/ml-conference-cycle/how-to-submit-a-paper.html
+**Live:** https://bold-lab-ai.github.io/bold-os/how-to-submit-a-paper.html
 
 - `how-to-submit-a-paper.html` — the guide, and the homepage
 - `audit-board.html` — Internal Review Board (kanban tracker, Firebase-backed) — includes the Internal Review checklist on each card

@@ -1,6 +1,6 @@
 {
   "name": "bold-audit-board-functions",
-  "description": "Cloud Functions for bold-d7ff2 — Slack DM notifications (see ml-conference-cycle#1). The project's first server-side code; everything else is the plain client in the repo root.",
+  "description": "Cloud Functions for bold-d7ff2 — Slack DM notifications (see bold-os#1). The project's first server-side code; everything else is the plain client in the repo root.",
   "private": true,
   "main": "index.js",
   "engines": {

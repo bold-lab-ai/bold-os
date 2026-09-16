@@ -1,6 +1,6 @@
 # AGENTS.md — Format checklist (authors)
 
-For a coding agent helping a **paper's author** clear BOLD Lab's Format checklist before Draft & Review closes. This is a pre-check, not a substitute for ticking the boxes — the author (any listed co-author) still ticks the real checklist at the paper's card on the [Internal Review Board](https://bold-lab-ai.github.io/ml-conference-cycle/audit-board.html), which is what actually gates the card from Drafted to Reviewed. This file only covers the Format checklist; the Science checklist is a separate pass by the assigned reviewers — see `checklists/reviewers/AGENTS.md`, not this one.
+For a coding agent helping a **paper's author** clear BOLD Lab's Format checklist before Draft & Review closes. This is a pre-check, not a substitute for ticking the boxes — the author (any listed co-author) still ticks the real checklist at the paper's card on the [Internal Review Board](https://bold-lab-ai.github.io/bold-os/audit-board.html), which is what actually gates the card from Drafted to Reviewed. This file only covers the Format checklist; the Science checklist is a separate pass by the assigned reviewers — see `checklists/reviewers/AGENTS.md`, not this one.
 
 ## What you need before starting
 

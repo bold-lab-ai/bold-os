@@ -1,6 +1,6 @@
 # AGENTS.md — Science checklist (reviewers)
 
-For a coding agent helping an assigned **Junior or Senior reviewer** work through BOLD Lab's Science checklist. This is a pre-review to speed up the human reviewer's own pass, not a replacement for it — the assigned reviewer still ticks the real checklist at the paper's card on the [Internal Review Board](https://bold-lab-ai.github.io/ml-conference-cycle/audit-board.html) and still does the sign-off (In review → Approved, now itself derived automatically from those ticks — see `docs/FIREBASE.md`). This file only covers the Science checklist; Format is a separate pass by the paper's authors — see `checklists/format/AGENTS.md`, not this one.
+For a coding agent helping an assigned **Junior or Senior reviewer** work through BOLD Lab's Science checklist. This is a pre-review to speed up the human reviewer's own pass, not a replacement for it — the assigned reviewer still ticks the real checklist at the paper's card on the [Internal Review Board](https://bold-lab-ai.github.io/bold-os/audit-board.html) and still does the sign-off (In review → Approved, now itself derived automatically from those ticks — see `docs/FIREBASE.md`). This file only covers the Science checklist; Format is a separate pass by the paper's authors — see `checklists/format/AGENTS.md`, not this one.
 
 Read in a skeptical, not confirmatory, mode throughout — you're looking for reasons a claim might not hold, the same posture a human reviewer is expected to bring, not summarizing the paper's own framing of itself back at it.
 

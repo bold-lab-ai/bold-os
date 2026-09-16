@@ -1,5 +1,5 @@
 // Cloud Functions for bold-d7ff2 — Slack DM notifications on Internal
-// Review Board events. See ml-conference-cycle#1 and docs/FIREBASE.md's
+// Review Board events. See bold-os#1 and docs/FIREBASE.md's
 // "Slack notifications" section for the design/history; this is the
 // project's first server-side code, everything else in the repo is the
 // plain client in audit-board.html talking straight to Firestore/Storage.
@@ -39,7 +39,7 @@ admin.initializeApp();
 const db = admin.firestore();
 
 const SLACK_BOT_TOKEN = defineSecret('SLACK_BOT_TOKEN');
-// App Home + reviewer-assignment (2026-09-12, see ml-conference-cycle#3) —
+// App Home + reviewer-assignment (2026-09-12, see bold-os#3) —
 // verifies that an incoming HTTP request actually came from Slack (see
 // verifySlackSignatureRaw below). Not yet set — Eduardo still needs to run
 // `firebase functions:secrets:set SLACK_SIGNING_SECRET --project bold-d7ff2`
@@ -52,7 +52,7 @@ const SLACK_SIGNING_SECRET = defineSecret('SLACK_SIGNING_SECRET');
 // a cost/safety cap, not a real expected load at this scale.
 setGlobalOptions({ region: 'europe-west2', maxInstances: 10 });
 
-const APP_BASE_URL = 'https://bold-lab-ai.github.io/ml-conference-cycle/audit-board.html';
+const APP_BASE_URL = 'https://bold-lab-ai.github.io/bold-os/audit-board.html';
 
 // Deep links (2026-09-12) — mirrors audit-board.html's stateUrl(): a hash,
 // not a real path, since this is a static site with no server routing.
@@ -111,7 +111,7 @@ function reviewStateEmoji(state){
 }
 
 // ---------- App Home dashboard — pure decision logic ----------
-// (2026-09-12, see ml-conference-cycle#3, "Personal papers dashboard in
+// (2026-09-12, see bold-os#3, "Personal papers dashboard in
 // Slack App Home, with reviewer assignment" — combines the original
 // reviewer-assignment-from-Slack scope with a per-person dashboard.)
 // Same split as everywhere else in this file: no I/O below this point,
@@ -552,7 +552,7 @@ function homeRefreshTargetsForReviewers(before, after){
   return Array.from(new Set(targets.filter(Boolean)));
 }
 
-// Max papers per author (2026-09-14, see ml-conference-cycle — same day,
+// Max papers per author (2026-09-14, see bold-os — same day,
 // briefly a client-side save-blocking gate, reverted per Eduardo: "still
 // let people add papers... and notify the author that they've got a
 // problem"). This is the pure half: which author emails are newly
