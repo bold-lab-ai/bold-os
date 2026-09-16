@@ -67,6 +67,10 @@
     gap:16px;
     flex-wrap:wrap;
   }
+  /* .masthead sets its own display, which as an author rule beats the
+     browser's default [hidden]{display:none} at equal specificity —
+     same trap as .gate-signup-btn earlier, same fix. */
+  .masthead[hidden]{display:none;}
   .masthead-left{display:flex; align-items:center; gap:10px;}
   .wordmark{
     font-family:var(--sans);
@@ -249,7 +253,7 @@
 </head>
 <body>
 
-<div class="masthead">
+<div class="masthead" id="masthead" hidden>
   <div class="masthead-left">
     <button class="nav-toggle" id="navToggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar" hidden><span></span></button>
     <a class="wordmark" href="index.html">BOLD<span>.</span> Lab</a>
@@ -357,6 +361,7 @@
   };
   var AUTH_USE_EMULATOR = false;
 
+  var masthead = document.getElementById('masthead');
   var authRegion = document.getElementById('authRegion');
   var sidebar = document.getElementById('sidebar');
   var navToggle = document.getElementById('navToggle');
@@ -408,16 +413,18 @@
 
   if (heroSignInBtn) heroSignInBtn.addEventListener('click', doSignIn);
 
-  // The homepage's own content (the hero) stays public either way — only
-  // the sidebar menu is member-only. A signed-out visitor gets the menu
-  // replaced by a sign-in button (for anyone already in the Slack) plus
-  // the same brief "not in the Slack yet" nudge used as the secondary
-  // option on every other page's hard sign-in gate. Toggling `hidden` on
-  // this plain wrapper, rather than on .gate-signup-btn/.auth-signin
-  // themselves, matters: those classes set their own `display`, which as
-  // an author rule beats the browser's default [hidden]{display:none} at
-  // equal specificity, so hidden silently does nothing on them directly.
+  // The homepage's own content (the hero) stays public either way — a
+  // signed-out visitor gets no masthead and no sidebar at all, just the
+  // hero plus its own brief sign-up/log-in line; the masthead (with its
+  // sidebar-only "Internal" branding) only makes sense once someone's
+  // actually signed in. Toggling `hidden` on plain wrappers rather than
+  // on .masthead/.gate-signup-btn/.auth-signin themselves matters: those
+  // classes set their own `display`, which as an author rule beats the
+  // browser's default [hidden]{display:none} at equal specificity, so
+  // hidden silently does nothing on them directly (see .masthead[hidden]
+  // and #pageGate[hidden] on the other pages for the same fix).
   function renderGuestChrome(signedIn){
+    if (masthead) masthead.hidden = !signedIn;
     if (sidebar) sidebar.hidden = !signedIn;
     if (navToggle) navToggle.hidden = !signedIn;
     if (guestNote) guestNote.hidden = signedIn;
