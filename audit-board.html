@@ -2798,7 +2798,7 @@
         return (typeof a === 'string') ? { name: a, email: '' } : a;
       }) });
     }
-    // authorEmails: string[] (2026-09-12, see ml-conference-cycle#3) — a
+    // authorEmails: string[] (2026-09-12, see bold-os#3) — a
     // denormalized copy of authors[].email, purely so a Cloud Function can
     // query "papers this person is an author on" across every venue (an
     // array-contains match on authorEmails, since Firestore can't
@@ -3285,7 +3285,7 @@
     var openId = state.checklistCommentOpenId;
     var canAct = !!(state.currentUser && isCardAuthorEmail(card, state.currentUser.email));
     var html = '<div class="cl-wrap">';
-    html += '<p class="cl-agent-note">Working through this with a coding agent? Point it at <a href="https://raw.githubusercontent.com/bold-lab-ai/ml-conference-cycle/main/checklists/format/AGENTS.md" target="_blank" rel="noopener">checklists/format/AGENTS.md</a> — a pre-check for formatting and policy compliance, before a human ticks these.</p>';
+    html += '<p class="cl-agent-note">Working through this with a coding agent? Point it at <a href="https://raw.githubusercontent.com/bold-lab-ai/bold-os/main/checklists/format/AGENTS.md" target="_blank" rel="noopener">checklists/format/AGENTS.md</a> — a pre-check for formatting and policy compliance, before a human ticks these.</p>';
     html += '<div class="cl-head single"><span></span><span>Author</span></div>';
     var lastCat = null;
     items.forEach(function(it){
@@ -3317,7 +3317,7 @@
     var openId = state.checklistCommentOpenId;
     var access = checklistTickAccess(card);
     var html = '<div class="cl-wrap">';
-    html += '<p class="cl-agent-note">Working through this with a coding agent? Point it at <a href="https://raw.githubusercontent.com/bold-lab-ai/ml-conference-cycle/main/checklists/reviewers/AGENTS.md" target="_blank" rel="noopener">checklists/reviewers/AGENTS.md</a> — a skeptical pre-review to speed up your own pass, not a replacement for it.</p>';
+    html += '<p class="cl-agent-note">Working through this with a coding agent? Point it at <a href="https://raw.githubusercontent.com/bold-lab-ai/bold-os/main/checklists/reviewers/AGENTS.md" target="_blank" rel="noopener">checklists/reviewers/AGENTS.md</a> — a skeptical pre-review to speed up your own pass, not a replacement for it.</p>';
     html += '<div class="cl-head"><span></span>' + REVIEW_ROLES.map(function(role){ return '<span>' + REVIEW_ROLE_LABELS[role] + '</span>'; }).join('') + '</div>';
     var lastCat = null;
     items.forEach(function(it){
@@ -3973,7 +3973,7 @@
       .filter(function(r){ return r.name || r.email; });
   }
 
-  // Denormalized alongside `authors` (2026-09-12, see ml-conference-cycle#3)
+  // Denormalized alongside `authors` (2026-09-12, see bold-os#3)
   // purely so a Cloud Function can query "papers this person is an author
   // on" across every venue — Firestore's array-contains can only match a
   // primitive value, not a partial match inside {name,email} objects, so
