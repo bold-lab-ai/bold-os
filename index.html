@@ -336,6 +336,12 @@
     if (shell.classList.contains('is-nav-open')) { closeNav(); } else { openNav(); }
   });
   if (backdrop) backdrop.addEventListener('click', closeNav);
+  // Clicking the wordmark takes you home; land there with the menu
+  // retracted rather than however it happened to be left on this page.
+  var wordmark = document.querySelector('.wordmark');
+  if (wordmark) wordmark.addEventListener('click', function(){
+    try { localStorage.setItem('boldNavCollapsed', '1'); } catch (e){}
+  });
   if (sidebar){
     Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link, .nav-group-label')).forEach(function(a){
       a.addEventListener('click', closeNav);
