@@ -2707,8 +2707,10 @@
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
       (effective === 'abstract_review' && acceptLabel ? abstractAcceptBlockReason(card, board, state.cards) : null));
     var acceptClass = acceptLabel ? ' card-move-btn-accept' : '';
-    var html = '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(statusLabelFor(lft, board)) + '"' : ' disabled') + '>&larr; Revert</button>';
-    html += '<button class="card-move-btn' + acceptClass + '" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : '')) + '>' + escapeHtml(rgtLabel) + ' &rarr;</button>';
+    // Revert button experimentally removed (2026-09-16, per Eduardo) — lft
+    // is still computed above since advanceBlockReason/statusAt etc. don't
+    // need to change, and reinstating the button is a one-line add-back.
+    var html = '<button class="card-move-btn' + acceptClass + '" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : '')) + '>' + escapeHtml(rgtLabel) + ' &rarr;</button>';
     return html;
   }
 
