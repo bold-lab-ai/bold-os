@@ -235,6 +235,7 @@
     text-wrap:balance;
   }
   .home-hero h1 strong{color:var(--accent);}
+  #homeGuestNote{margin-top:28px;}
 </style>
 </head>
 <body>
@@ -275,8 +276,11 @@
 
 <div class="home-hero">
   <h1>The <strong>BOLD</strong></h1>
-  <p class="gate-alt" id="homeSignupNote" hidden>Not in the BOLD Slack yet?</p>
-  <a class="gate-signup-btn" id="homeSignupLink" href="https://forms.gle/VzGbWVyERN9v1qJC8" target="_blank" rel="noopener" hidden>Sign up here</a>
+  <div id="homeGuestNote" hidden>
+    <button class="auth-signin" id="homeSignInBtn" type="button">Sign in with Slack</button>
+    <p class="gate-alt">Not in the BOLD Slack yet?</p>
+    <a class="gate-signup-btn" href="https://forms.gle/VzGbWVyERN9v1qJC8" target="_blank" rel="noopener">Sign up here</a>
+  </div>
 </div>
 
   </div>
@@ -344,8 +348,8 @@
   var authRegion = document.getElementById('authRegion');
   var sidebar = document.getElementById('sidebar');
   var navToggle = document.getElementById('navToggle');
-  var signupNote = document.getElementById('homeSignupNote');
-  var signupLink = document.getElementById('homeSignupLink');
+  var guestNote = document.getElementById('homeGuestNote');
+  var heroSignInBtn = document.getElementById('homeSignInBtn');
 
   var auth = null;
   try {
@@ -390,15 +394,21 @@
     }
   }
 
+  if (heroSignInBtn) heroSignInBtn.addEventListener('click', doSignIn);
+
   // The homepage's own content (the hero) stays public either way — only
   // the sidebar menu is member-only. A signed-out visitor gets the menu
-  // replaced by the same brief "not in the Slack yet" nudge used as the
-  // secondary option on every other page's hard sign-in gate.
+  // replaced by a sign-in button (for anyone already in the Slack) plus
+  // the same brief "not in the Slack yet" nudge used as the secondary
+  // option on every other page's hard sign-in gate. Toggling `hidden` on
+  // this plain wrapper, rather than on .gate-signup-btn/.auth-signin
+  // themselves, matters: those classes set their own `display`, which as
+  // an author rule beats the browser's default [hidden]{display:none} at
+  // equal specificity, so hidden silently does nothing on them directly.
   function renderGuestChrome(signedIn){
     if (sidebar) sidebar.hidden = !signedIn;
     if (navToggle) navToggle.hidden = !signedIn;
-    if (signupNote) signupNote.hidden = signedIn;
-    if (signupLink) signupLink.hidden = signedIn;
+    if (guestNote) guestNote.hidden = signedIn;
   }
 
   if (!auth) {
