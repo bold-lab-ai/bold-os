@@ -865,7 +865,7 @@
 <div id="modalRegion"></div>
 
 <footer>
-  An internal BOLD Lab tool. Sign in with Slack to view or edit — shared across the whole lab, not per-browser.
+  An internal BOLD Lab tool.
 </footer>
 </div>
   </div>
@@ -3633,7 +3633,7 @@
     html += '<dl class="detail-grid">';
     if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (card.status !== 'rebuttal' ? ' <span style="color:var(--muted);">(venue deadline)</span>' : '') + '</dd>';
     if (rushCutoff) html += '<dt>Rush cutoff</dt><dd' + (rushOverdue ? ' style="color:var(--danger-text);"' : '') + '>' + formatDateTime(rushCutoff) + ' <strong>(' + formatTimeLeft(rushCutoff) + ')</strong></dd>';
-    if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + ' <span style="color:var(--muted);">(last is PI)</span></dd>';
+    if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + '</dd>';
     if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
     if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
     if (card.rebuttalDeadline) html += '<dt>Rebuttal deadline</dt><dd>' + formatDate(card.rebuttalDeadline) + '</dd>';
