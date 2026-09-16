@@ -223,18 +223,25 @@
   .gate-signup-btn{
     display:inline-block; font-family:var(--sans); font-weight:500; font-size:14px;
     color:var(--ink-soft); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
-    padding:0; margin-top:8px; border:none;
+    padding:0; margin-top:8px; border:none; background:none; cursor:pointer;
   }
   .gate-signup-btn:hover{text-decoration-color:currentColor;}
+  .home-guest-links{
+    display:flex; align-items:baseline; justify-content:center; gap:10px;
+    margin-top:0;
+  }
+  .home-guest-links .gate-signup-btn{margin-top:0;}
+  .home-guest-links .home-guest-or{font-family:var(--sans); font-size:13px; color:var(--muted);}
 
   /* ---------- hero ---------- */
   .home-hero{text-align:center; padding:40px var(--gutter);}
   .home-hero h1{
+    font-weight:400;
     font-size:clamp(32px, 7vw, 60px);
     line-height:1.05;
     text-wrap:balance;
   }
-  .home-hero h1 strong{color:var(--accent);}
+  .home-hero h1 strong{font-weight:800; color:var(--accent);}
   #homeGuestNote{margin-top:28px;}
 </style>
 </head>
@@ -277,9 +284,12 @@
 <div class="home-hero">
   <h1>The <strong>BOLD</strong></h1>
   <div id="homeGuestNote" hidden>
-    <button class="auth-signin" id="homeSignInBtn" type="button">Sign in with Slack</button>
     <p class="gate-alt">Not in the BOLD Slack yet?</p>
-    <a class="gate-signup-btn" href="https://forms.gle/VzGbWVyERN9v1qJC8" target="_blank" rel="noopener">Sign up here</a>
+    <p class="home-guest-links">
+      <a class="gate-signup-btn" href="https://forms.gle/VzGbWVyERN9v1qJC8" target="_blank" rel="noopener">Sign up here</a>
+      <span class="home-guest-or">or</span>
+      <button class="gate-signup-btn" type="button" id="homeSignInBtn">log in here</button>
+    </p>
   </div>
 </div>
 
