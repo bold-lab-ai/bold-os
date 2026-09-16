@@ -2916,8 +2916,7 @@
       ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
       : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
     if (shouldShowOutcomeBadge(card)) badges += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
-    if (overdue) badges += '<span class="badge badge-overdue">Overdue</span>';
-    if (rushOverdue) badges += '<span class="badge badge-overdue">Rush cutoff passed</span>';
+    if (overdue || rushOverdue) badges += '<span class="badge badge-overdue">Overdue</span>';
     if (badges) html += '<div class="card-meta-row">' + badges + '</div>';
     if (card.submissionLink) html += '<a class="card-link" href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a><br>';
     if (card.rebuttalDocLink) html += '<a class="card-link" href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Rebuttal doc</a><br>';
@@ -3628,8 +3627,7 @@
       ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
       : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
     if (shouldShowOutcomeBadge(card)) html += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
-    if (overdue) html += '<span class="badge badge-overdue">Overdue</span>';
-    if (rushOverdue) html += '<span class="badge badge-overdue">Rush cutoff passed</span>';
+    if (overdue || rushOverdue) html += '<span class="badge badge-overdue">Overdue</span>';
     html += '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:12px;color:var(--warn-text);background:var(--warn-bg);padding:6px 10px;margin-top:10px;border-radius:var(--radius);">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn’t a column anymore &mdash; pick a new one below.</div>';
 
