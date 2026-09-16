@@ -141,8 +141,6 @@
     padding:10px 22px; cursor:pointer; margin-top:12px;
   }
   .auth-signin:hover{background:var(--ink); color:var(--paper);}
-  .auth-user{display:flex; align-items:center; gap:10px; font-family:var(--sans); font-size:14px; color:var(--ink-soft); margin:16px 0;}
-  .auth-user-name{font-weight:600; color:var(--ink);}
   .btn-text{
     font-family:var(--sans); font-weight:400; font-size:13px;
     color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
@@ -478,10 +476,6 @@
     </div>
 
     <div id="proposalsSignedIn" hidden>
-      <div class="auth-user">
-        <span class="auth-user-name" id="whoAmI"></span>
-        <button class="btn-text" type="button" id="signOutBtn">Sign out</button>
-      </div>
       <div id="proposalsList"></div>
     </div>
   </div>
@@ -532,8 +526,6 @@
     signedOut: document.getElementById('proposalsSignedOut'),
     signedIn: document.getElementById('proposalsSignedIn'),
     signInBtn: document.getElementById('signInBtn'),
-    signOutBtn: document.getElementById('signOutBtn'),
-    whoAmI: document.getElementById('whoAmI'),
     list: document.getElementById('proposalsList')
   };
 
@@ -614,9 +606,6 @@
     if (currentUser){
       els.signedOut.hidden = true;
       els.signedIn.hidden = false;
-      els.whoAmI.textContent = currentUser.name
-        ? currentUser.name + (currentUser.email ? ' (' + currentUser.email + ')' : '')
-        : (currentUser.email || 'Signed in');
       watchProposals();
     } else {
       els.signedOut.hidden = false;
@@ -634,8 +623,6 @@
       console.error('[BOLD Collaboration Week] sign-in failed', err);
     });
   });
-  els.signOutBtn.addEventListener('click', function(){ auth.signOut(); });
-
   auth.onAuthStateChanged(function(user){
     currentUser = user ? { email: user.email, name: user.displayName } : null;
     renderAuth();
