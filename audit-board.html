@@ -2908,6 +2908,7 @@
       : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
     if (shouldShowOutcomeBadge(card)) badges += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     if (overdue) badges += '<span class="badge badge-overdue">Overdue</span>';
+    if (rushOverdue) badges += '<span class="badge badge-overdue">Rush cutoff passed</span>';
     if (badges) html += '<div class="card-meta-row">' + badges + '</div>';
     if (card.submissionLink) html += '<a class="card-link" href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a><br>';
     if (card.rebuttalDocLink) html += '<a class="card-link" href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Rebuttal doc</a><br>';
