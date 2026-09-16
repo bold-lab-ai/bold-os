@@ -2669,6 +2669,24 @@
     register: 'Submit abstract'
   };
 
+  // Confirmation copy for the move buttons that actually submit something
+  // (as opposed to a plain internal-pipeline Advance) — these are the ones
+  // worth a second thought before the click registers. Keyed by the exact
+  // button label from RUSH_ACCEPT_LABELS/ADVANCE_LABELS above; a label with
+  // no entry here skips confirmation.
+  var SUBMIT_CONFIRM_MESSAGES = {
+    'Submit abstract': 'Are you sure you want to submit your abstract for internal review? This action cannot be undone.',
+    'Submit paper': 'Are you sure you want to submit your paper for internal review? This action cannot be undone.'
+  };
+
+  // Shared gate for every [data-move] click handler below — returns false
+  // (and blocks the move) only if the button is a submit move the user
+  // just declined via the confirm() prompt; anything else passes through.
+  function confirmMoveIfSubmit(label){
+    var msg = SUBMIT_CONFIRM_MESSAGES[label];
+    return !msg || window.confirm(msg);
+  }
+
   // The Revert / Advance-or-Accept button pair shown wherever a card can
   // be moved — the compact kanban card, the detail page, and the
   // checklist partial re-render each rendered this same pair independently
@@ -2706,9 +2724,14 @@
     // Full paper in review with no reviewers assigned.
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
       (effective === 'abstract_review' && acceptLabel ? abstractAcceptBlockReason(card, board, state.cards) : null));
-    var acceptClass = acceptLabel ? ' card-move-btn-accept' : '';
-    var html = '<button class="card-move-btn" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (lft || '') + '"' + (lft ? ' title="Move to ' + escapeHtml(statusLabelFor(lft, board)) + '"' : ' disabled') + '>&larr; Revert</button>';
-    html += '<button class="card-move-btn' + acceptClass + '" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : '')) + '>' + escapeHtml(rgtLabel) + ' &rarr;</button>';
+    // Green treatment covers every real Submit (SUBMIT_CONFIRM_MESSAGES'
+    // keys — Submit abstract included, even outside Rush mode where it
+    // isn't an acceptLabel) plus rush mode's own Paper accepted sign-off.
+    var acceptClass = (acceptLabel || SUBMIT_CONFIRM_MESSAGES[rgtLabel]) ? ' card-move-btn-accept' : '';
+    // Revert button experimentally removed (2026-09-16, per Eduardo) — lft
+    // is still computed above since advanceBlockReason/statusAt etc. don't
+    // need to change, and reinstating the button is a one-line add-back.
+    var html = '<button class="card-move-btn' + acceptClass + '" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '" data-move-label="' + escapeHtml(rgtLabel) + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : '')) + '>' + escapeHtml(rgtLabel) + ' &rarr;</button>';
     return html;
   }
 
@@ -3200,7 +3223,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-move]'), function(btn){
       btn.addEventListener('click', function(){
         var to = btn.getAttribute('data-move-to');
-        if (to) onChangeStatus(btn.getAttribute('data-move'), to);
+        if (to && confirmMoveIfSubmit(btn.getAttribute('data-move-label'))) onChangeStatus(btn.getAttribute('data-move'), to);
       });
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-open-card]'), function(btn){
@@ -3711,7 +3734,7 @@
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-move]'), function(btn){
       btn.addEventListener('click', function(){
         var to = btn.getAttribute('data-move-to');
-        if (to) onChangeStatus(btn.getAttribute('data-move'), to);
+        if (to && confirmMoveIfSubmit(btn.getAttribute('data-move-label'))) onChangeStatus(btn.getAttribute('data-move'), to);
       });
     });
     var sel = els.boardRegion.querySelector('[data-status-for]');
@@ -3822,7 +3845,7 @@
         Array.prototype.forEach.call(moveWrap.querySelectorAll('[data-move]'), function(btn){
           btn.addEventListener('click', function(){
             var to = btn.getAttribute('data-move-to');
-            if (to) onChangeStatus(btn.getAttribute('data-move'), to);
+            if (to && confirmMoveIfSubmit(btn.getAttribute('data-move-label'))) onChangeStatus(btn.getAttribute('data-move'), to);
           });
         });
       }
