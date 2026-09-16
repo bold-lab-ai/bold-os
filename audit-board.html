@@ -258,6 +258,12 @@
   }
   .vs-pt.is-venue .vs-name{color:var(--ink-soft); font-weight:500;}
   .vs-when{font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  /* A point with both an internal target and a real venue date stacks
+     them: the target keeps the exact same style every other internal
+     date on the timeline already uses (plain .vs-when) — it's the real,
+     external deadline that's the odd one out here, so that's the one
+     that reads darker/bolder to stand out from it. */
+  .vs-when-real{color:var(--ink-soft); font-weight:600; margin-top:1px;}
   .ics-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;}
   .ics-btn{
     font-family:inherit; font-weight:600; font-size:12.5px;
@@ -1995,6 +2001,14 @@
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   }
 
+  // A couple of days' internal buffer before every venue date that
+  // actually requires us to deliver something (submit an abstract,
+  // submit the paper, respond to a rebuttal, send camera-ready) — not
+  // the purely passive ones (reviews released, notification), where
+  // there's nothing for us to buffer against.
+  var BUFFER_DAYS = 2;
+  var BUFFER_KEYS = { paper: 1, abstract: 1, rebuttal_deadline: 1, camera_ready: 1 };
+
   // Every dated milestone for a venue, chronological. Needs v.deadline.
   function internalSchedule(v){
     if (!v || !v.deadline) return [];
@@ -2044,6 +2058,12 @@
         summary: 'Camera-ready deadline', description: '' }, on(v.cameraReadyDeadline, 'venue')));
     }
     rows.forEach(function(r){ r.iso = toIsoDate(r.dateObj); });
+    rows.forEach(function(r){
+      if (!BUFFER_KEYS[r.key]) return;
+      var b = new Date(r.dateObj);
+      b.setDate(b.getDate() - BUFFER_DAYS);
+      r.bufferIso = toIsoDate(b);
+    });
     rows.sort(function(a, b){ return a.dateObj - b.dateObj; });
     return rows;
   }
@@ -2057,19 +2077,26 @@
     var rows = internalSchedule(v);
     if (!rows.length) return '';
     var hasVenueDates = rows.some(function(r){ return r.derivation === 'venue'; });
+    var hasBuffer = rows.some(function(r){ return r.bufferIso; });
     var pts = rows.map(function(r){
       var cls = 'vs-pt' + (r.key === 'paper' ? ' is-paper' : (r.derivation === 'venue' ? ' is-venue' : ''));
-      var tip = r.label + ' — ' + formatDate(r.iso) + (r.derivation ? ' (' + r.derivation + ')' : '');
+      var tip = r.label + ' — ' + formatDate(r.iso) + (r.derivation ? ' (' + r.derivation + ')' : '') +
+        (r.bufferIso ? '; internal target ' + formatDate(r.bufferIso) : '');
+      var whenHtml = r.bufferIso
+        ? '<span class="vs-when vs-when-buffer">' + formatDateShort(r.bufferIso) + '</span>' +
+          '<span class="vs-when vs-when-real">' + formatDateShort(r.iso) + '</span>'
+        : '<span class="vs-when">' + formatDateShort(r.iso) + '</span>';
       return '<li class="' + cls + '" title="' + escapeHtml(tip) + '">' +
         '<span class="vs-dot"></span>' +
         '<span class="vs-name">' + escapeHtml(r.short || r.label) + '</span>' +
-        '<span class="vs-when">' + formatDateShort(r.iso) + '</span>' +
+        whenHtml +
       '</li>';
     }).join('');
     var subUrl = icsSubscribeUrl(v.id);
     return '<div class="venue-schedule">' +
       '<div class="vs-head">Deadlines <span>&mdash; counted back from the ' + formatDate(v.deadline) + ' paper deadline' +
-        (hasVenueDates ? ', plus the venue&rsquo;s own dates' : '') + '</span></div>' +
+        (hasVenueDates ? ', plus the venue&rsquo;s own dates' : '') +
+        (hasBuffer ? ' (lighter date &#61; our ' + BUFFER_DAYS + '-day internal target)' : '') + '</span></div>' +
       '<div class="vs-rail-wrap"><ol class="vs-rail" style="--n:' + rows.length + '">' + pts + '</ol></div>' +
       '<div class="ics-actions">' +
         '<button class="ics-btn" type="button" id="downloadIcs">Add to calendar (.ics)</button>' +
