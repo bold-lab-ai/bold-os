@@ -107,11 +107,7 @@
   .tab.active{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
   .tab-panel{margin-top:28px;}
 
-  h2.subhead{
-    font-family:var(--sans); font-weight:400; font-size:11px; text-transform:uppercase; letter-spacing:0.18em;
-    color:var(--muted); opacity:.7; margin:0 0 12px;
-  }
-  .subhead-note{margin:-4px 0 18px; font-size:16px; color:var(--muted);}
+  .subhead-note{margin:0 0 18px; font-size:16px; color:var(--muted);}
 
   /* ---------- draft schedule ---------- */
   .draft-badge{
@@ -379,7 +375,6 @@
   </div>
 
   <div class="tab-panel" id="panelSchedule" role="tabpanel" aria-labelledby="tabBtnSchedule">
-    <h2 class="subhead">Draft schedule</h2>
     <p class="subhead-note"><span class="draft-badge">Not finalized</span> &mdash; this is the fuller draft floating around (times, venues, and the talks/workshops open to everyone vs. committee-only panels), but it's still subject to change.</p>
 
     <div class="day-card">
@@ -468,8 +463,6 @@
   </div>
 
   <div class="tab-panel" id="panelProposals" role="tabpanel" aria-labelledby="tabBtnProposals">
-    <h2 class="subhead">Proposals</h2>
-
     <div id="proposalsSignedOut">
       <p>Sign in with Slack to see what's been proposed.</p>
       <button class="auth-signin" type="button" id="signInBtn">Sign in with Slack</button>
