@@ -258,10 +258,11 @@
   }
   .vs-pt.is-venue .vs-name{color:var(--ink-soft); font-weight:500;}
   .vs-when{font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
-  /* A point with both an internal-target and a real venue date stacks
-     them: the target reads small/italic/faint (a soft suggestion), the
-     real deadline reads darker/bolder (the thing that actually matters). */
-  .vs-when-buffer{font-size:9px; font-style:italic; opacity:.65;}
+  /* A point with both an internal target and a real venue date stacks
+     them: the target keeps the exact same style every other internal
+     date on the timeline already uses (plain .vs-when) — it's the real,
+     external deadline that's the odd one out here, so that's the one
+     that reads darker/bolder to stand out from it. */
   .vs-when-real{color:var(--ink-soft); font-weight:600; margin-top:1px;}
   .ics-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;}
   .ics-btn{
