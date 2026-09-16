@@ -2724,7 +2724,10 @@
     // Full paper in review with no reviewers assigned.
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
       (effective === 'abstract_review' && acceptLabel ? abstractAcceptBlockReason(card, board, state.cards) : null));
-    var acceptClass = acceptLabel ? ' card-move-btn-accept' : '';
+    // Green treatment covers every real Submit (SUBMIT_CONFIRM_MESSAGES'
+    // keys — Submit abstract included, even outside Rush mode where it
+    // isn't an acceptLabel) plus rush mode's own Paper accepted sign-off.
+    var acceptClass = (acceptLabel || SUBMIT_CONFIRM_MESSAGES[rgtLabel]) ? ' card-move-btn-accept' : '';
     // Revert button experimentally removed (2026-09-16, per Eduardo) — lft
     // is still computed above since advanceBlockReason/statusAt etc. don't
     // need to change, and reinstating the button is a one-line add-back.
