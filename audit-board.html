@@ -508,7 +508,7 @@
   }
   .card-move-btn:hover:not(:disabled){background:var(--wash); border-color:var(--blue); color:var(--blue);}
   .card-move-btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
-  /* Rush mode's "Finalise authors"/"Paper accepted" buttons — see
+  /* Rush mode's "Submit paper"/"Paper accepted" buttons — see
      moveButtonsHtml — read as a sign-off, not a plain forward move, so
      they get the same green as an approved review state instead of the
      neutral default. */
@@ -2651,13 +2651,22 @@
   // Rush mode's per-column accept-button label (2026-09-14, per Eduardo) —
   // replaces the generic "Advance" verb on the two columns a rush reviewer
   // explicitly signs off on, so the click reads as what's actually being
-  // confirmed rather than a generic forward move. Every other column —
-  // including the canonical (non-rush) pipeline's own differently
-  // positioned Abstract Reviewed — keeps the plain "Advance" wording; see
+  // confirmed rather than a generic forward move. Every other rush column
+  // — and the canonical (non-rush) pipeline's own differently positioned
+  // Abstract Reviewed — keeps the plain "Advance" wording, unless it has
+  // its own mode-independent override below (ADVANCE_LABELS); see
   // moveButtonsHtml.
   var RUSH_ACCEPT_LABELS = {
-    abstract_review: 'Finalise authors',
+    abstract_review: 'Submit paper',
     draft_review: 'Paper accepted'
+  };
+
+  // Mode-independent relabeling of the plain "Advance" verb — unlike
+  // RUSH_ACCEPT_LABELS above, applies in both rush and canonical pipelines,
+  // and doesn't get the green accept styling (this is still a forward
+  // move, not a sign-off on something someone else did).
+  var ADVANCE_LABELS = {
+    register: 'Submit abstract'
   };
 
   // The Revert / Advance-or-Accept button pair shown wherever a card can
@@ -2669,8 +2678,8 @@
   //
   // The rgt (Advance/Accept) gate always runs advanceBlockReason first,
   // unchanged — that still carries e.g. the "assign a junior and a senior
-  // reviewer first" check on entering draft_review either way. Finalise
-  // authors ALSO checks abstractAcceptBlockReason on top of that (authors
+  // reviewer first" check on entering draft_review either way. Submit
+  // paper ALSO checks abstractAcceptBlockReason on top of that (authors
   // present + nobody over the per-author cap, Rush-mode-only) — the two
   // things Abstract in review exists to check, additional to whatever
   // advanceBlockReason already required for that same move. Paper accepted
@@ -2686,13 +2695,13 @@
     var lft = statusAt(effective, -1, order);
     var rgt = statusAt(effective, 1, order);
     var acceptLabel = (board && board.rushMode) ? RUSH_ACCEPT_LABELS[effective] : null;
-    var rgtLabel = acceptLabel || 'Advance';
+    var rgtLabel = acceptLabel || ADVANCE_LABELS[effective] || 'Advance';
     // abstractAcceptBlockReason is ADDED on top of advanceBlockReason, not
     // swapped in for it — advanceBlockReason still carries the existing
     // "assign a junior and a senior reviewer first" gate on entering
     // draft_review (unconditional on crossesGate, see its own comment),
     // which already applied to this exact abstract_review -> draft_review
-    // move before Finalise authors existed. Dropping that in favour of
+    // move before Submit paper existed. Dropping that in favour of
     // only the new authors/cap check would have silently let a card into
     // Full paper in review with no reviewers assigned.
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
@@ -4066,7 +4075,7 @@
     return { count: count, max: max };
   }
 
-  // Rush mode's "Finalise authors" gate (2026-09-14, per Eduardo) — moving
+  // Rush mode's "Submit paper" gate (2026-09-14, per Eduardo) — moving
   // a card out of Abstract in review is where the two things that stage
   // exists to check get enforced: the authors list is actually filled in,
   // and nobody on the paper is over the venue's max-papers-per-author cap.
@@ -4082,7 +4091,7 @@
   // Abstract Reviewed column — this check is scoped to Rush mode's own
   // accept button, see moveButtonsHtml.
   function abstractAcceptBlockReason(card, board, cards){
-    if (!card.authors || !card.authors.length) return 'Add the authors before finalising the author list';
+    if (!card.authors || !card.authors.length) return 'Add the authors before submitting the paper';
     var max = board && board.maxPapersPerAuthor;
     if (!max) return null;
     var overCount = authorEmailsOf(card.authors).filter(function(email){
