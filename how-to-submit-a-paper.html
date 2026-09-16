@@ -78,6 +78,7 @@
     font-size:17px;
     letter-spacing:-0.01em;
     color:var(--ink);
+    text-decoration:none;
   }
   .wordmark span{color:var(--accent); opacity:.55;}
   .masthead-sub{
@@ -398,10 +399,12 @@
   .sidebar{
     flex:0 0 200px; width:200px; box-sizing:border-box;
     border-right:1px solid var(--line); background:var(--paper);
+    transition:flex-basis .22s ease, width .22s ease;
   }
   .sidebar-inner{
     position:sticky; top:0; padding:22px 16px;
     max-height:100vh; overflow-y:auto;
+    transition:padding .22s ease;
   }
   .sidebar-head{
     display:flex; align-items:center; justify-content:space-between;
@@ -547,7 +550,7 @@
 <div class="masthead">
   <div class="masthead-left">
     <button class="nav-toggle" id="navToggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><span></span></button>
-    <div class="wordmark">BOLD<span>.</span> Lab</div>
+    <a class="wordmark" href="index.html">BOLD<span>.</span> Lab</a>
   </div>
   <div class="masthead-right">
     <div class="masthead-sub">Internal</div>
