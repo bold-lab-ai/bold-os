@@ -260,23 +260,6 @@
   }
   .phase-intro.muted{color:var(--muted);}
 
-  /* Why you're here / what advances you — one per phase, right under the
-     heading, before any of the fuller how-to content below it. */
-  .phase-why-what{
-    display:grid; gap:14px;
-    margin:0 0 28px;
-    padding:18px 20px;
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    background:var(--surface);
-    max-width:64ch;
-  }
-  .phase-why-what dt{
-    font-family:var(--sans); font-weight:600; font-size:11px;
-    text-transform:uppercase; letter-spacing:0.12em; color:var(--muted);
-    margin-bottom:4px;
-  }
-  .phase-why-what dd{margin:0; font-size:16px; color:var(--ink-soft); line-height:1.55;}
   .phase-rush-note{
     margin:0 0 24px;
     padding-left:14px;
@@ -680,15 +663,16 @@
 </div>
 
 <nav class="timeline" aria-label="Phases at a glance">
-  <ol style="--n:8" id="timelineList">
+  <ol style="--n:9" id="timelineList">
     <li data-rush><a href="#phase-1"><span class="tl-dot"></span><span class="tl-name">Register</span><span class="tl-wk">8w</span></a></li>
-    <li data-non-rush><a href="#phase-2"><span class="tl-dot"></span><span class="tl-name">Pitch</span><span class="tl-wk">6w</span></a></li>
-    <li data-rush><a href="#phase-3"><span class="tl-dot"></span><span class="tl-name">Abstract</span><span class="tl-wk">4w</span></a></li>
-    <li class="is-pivot" data-rush><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">0</span></a></li>
-    <li class="is-after" data-non-rush><a href="#phase-5"><span class="tl-dot"></span><span class="tl-name">arXiv</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after" data-rush><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after" data-non-rush><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after" data-non-rush><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Conference</span><span class="tl-wk">after</span></a></li>
+    <li data-non-rush><a href="#phase-2"><span class="tl-dot"></span><span class="tl-name">Submit pitch</span><span class="tl-wk">6w</span></a></li>
+    <li data-rush><a href="#phase-3"><span class="tl-dot"></span><span class="tl-name">Submit abstract</span><span class="tl-wk">4w</span></a></li>
+    <li data-rush><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Submit paper</span><span class="tl-wk">1w</span></a></li>
+    <li class="is-pivot" data-non-rush><a href="#phase-5"><span class="tl-dot"></span><span class="tl-name">Post to arXiv</span><span class="tl-wk">0</span></a></li>
+    <li class="is-after" data-rush><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Wait for reviews</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Submit rebuttal</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Submit camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-9"><span class="tl-dot"></span><span class="tl-name">Accepted</span><span class="tl-wk">after</span></a></li>
   </ol>
 </nav>
 
@@ -697,14 +681,15 @@
   <nav class="toc" aria-label="Phases">
     <ol id="tocList">
       <li data-rush><a href="#phase-1"><span class="n">8w</span>Register</a></li>
-      <li data-non-rush><a href="#phase-2"><span class="n">6w</span>Pitch</a></li>
-      <li data-rush><a href="#phase-3"><span class="n">4w</span>Abstract</a></li>
-      <li data-rush><a href="#phase-4"><span class="n">0</span>Paper</a></li>
+      <li data-non-rush><a href="#phase-2"><span class="n">6w</span>Submit pitch</a></li>
+      <li data-rush><a href="#phase-3"><span class="n">4w</span>Submit abstract</a></li>
+      <li data-rush><a href="#phase-4"><span class="n">1w</span>Submit paper</a></li>
+      <li data-non-rush><a href="#phase-5"><span class="n">0</span>Post to arXiv</a></li>
       <li class="toc-split">After submission</li>
-      <li data-non-rush><a href="#phase-5"><span class="n"></span>arXiv</a></li>
-      <li data-rush><a href="#phase-6"><span class="n"></span>Rebuttal</a></li>
-      <li data-non-rush><a href="#phase-7"><span class="n"></span>Camera&#8209;ready</a></li>
-      <li data-non-rush><a href="#phase-8"><span class="n"></span>Conference</a></li>
+      <li data-rush><a href="#phase-6"><span class="n"></span>Wait for reviews</a></li>
+      <li data-non-rush><a href="#phase-7"><span class="n"></span>Submit rebuttal</a></li>
+      <li data-non-rush><a href="#phase-8"><span class="n"></span>Submit camera&#8209;ready</a></li>
+      <li data-non-rush><a href="#phase-9"><span class="n"></span>Accepted</a></li>
     </ol>
   </nav>
 
@@ -713,133 +698,105 @@
     <section class="phase" id="phase-1">
       <div class="phase-head">
         <span class="phase-num">&minus;8&nbsp;wk</span>
-        <h2>Registered</h2>
+        <h2>Register</h2>
       </div>
-      <dl class="phase-why-what">
-        <div><dt>Why you're here</dt><dd>The paper's on the board &mdash; abstract, outline, and a compute estimate exist. It hasn't been pitched to the group yet.</dd></div>
-        <div><dt>What advances it</dt><dd>Pitch materials, added as a link on the card, unblock <strong>Submit pitch</strong> &mdash; a real, confirmed action, not a bare click.</dd></div>
-      </dl>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> same stage, same meaning &mdash; an imminent-deadline venue starts here too. The next stop for a rush board is Abstract directly; there's no Pitch Day to prepare for.</p>
+      <p class="phase-intro">There's no card on the board yet &mdash; this is where one starts. Everything below is what Register actually means to do, and completing it is what lands the card in <em>Registered</em>.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> same first step &mdash; an imminent-deadline venue registers exactly the same way. Where it diverges is what comes right after (see Submit&nbsp;abstract).</p>
 
-      <h3 class="subhead">Pick the venue</h3>
+      <h3 class="subhead">Instructions to submit</h3>
       <ul class="list">
-        <li><strong>By default, we are a core-ML lab.</strong> The bulk of submissions should go to ICML, NeurIPS, and ICLR.</li>
-        <li>These three deadlines are nicely spaced out (Feb / May / September), so you should never be far from a deadline.</li>
-        <li>Specialised conferences (e.g. AAMAS) are fine if justified.</li>
-        <li>AAAI is usually a <strong>last resort</strong>.</li>
-      </ul>
-
-      <h3 class="subhead">Register it</h3>
-      <ul class="list">
-        <li>Add the paper to the <a href="audit-board.html">Internal Review Board</a> &mdash; create the venue's board if it isn't there yet &mdash; with the title, abstract, author list, target venue, and a <strong>compute estimate</strong>. The card starts in <em>Registered</em>.</li>
+        <li><strong>Pick the venue.</strong> By default, we are a core-ML lab &mdash; the bulk of submissions should go to ICML, NeurIPS, and ICLR. Their deadlines are nicely spaced out (Feb / May / September), so you should never be far from one. Specialised conferences (e.g. AAMAS) are fine if justified; AAAI is usually a <strong>last resort</strong>.</li>
+        <li>Add the paper to the <a href="audit-board.html">Internal Review Board</a> &mdash; create the venue's board if it isn't there yet &mdash; with the title, abstract, author list, target venue, and a <strong>compute estimate</strong>.</li>
         <li>When you set the venue's paper deadline, the board derives every internal deadline &mdash; register, pitch, and the run-up to submitting the abstract &mdash; and offers them as a <strong>calendar file (.ics)</strong> to import.</li>
-      </ul>
-
-      <h3 class="subhead">Clear your calendar</h3>
-      <ul class="list">
         <li>If you're the <strong>main author</strong>, clear your schedule of everything else for the run&#8209;up to the deadline.</li>
-      </ul>
-
-      <h3 class="subhead">Prepare your pitch</h3>
-      <p class="phase-intro">Every paper is pitched to the group on a fixed Pitch Day &mdash; everyone presents. A paper that hasn't been pitched by this point doesn't go forward. This is the deliverable that leaves Registered: link the pitch materials on the card, then Submit pitch.</p>
-      <ul class="list">
-        <li>Prepare a short pitch: the problem, the idea, what the results look like so far.</li>
       </ul>
     </section>
 
     <section class="phase" id="phase-2">
       <div class="phase-head">
         <span class="phase-num">&minus;6&nbsp;wk</span>
-        <h2>Pitched</h2>
+        <h2>Submit pitch</h2>
       </div>
-      <dl class="phase-why-what">
-        <div><dt>Why you're here</dt><dd>Presented to the group on Pitch Day. There's a first full draft to write now, on the way to an abstract worth submitting.</dd></div>
-        <div><dt>What advances it</dt><dd>Once the abstract itself is ready, click <strong>Submit abstract</strong> &mdash; a real, external, irreversible action (the board asks you to confirm before it registers). No new link required for this one &mdash; the abstract lives in the Overleaf project already on the card, not a separate field.</dd></div>
-      </dl>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> skipped entirely &mdash; a rush board has no Pitch column at all. There isn't time to schedule a group pitch on an imminent deadline; Registered moves straight to Abstract.</p>
+      <p class="phase-intro"><strong>What it means that the card is in Registered:</strong> abstract, outline, and a compute estimate exist. It hasn't been pitched to the group yet &mdash; that's the one thing standing between here and Pitched.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> skipped entirely &mdash; a rush board has no Pitch column at all. There isn't time to schedule a group pitch on an imminent deadline; Registered moves straight into Submit&nbsp;abstract below.</p>
 
-      <p class="phase-intro">There must be a <strong>first full draft</strong> before the abstract's worth sending anywhere. Read and closely follow the <a href="https://docs.google.com/document/d/16R1E2ExKUCP5SlXWHr-KzbVDx9DBUclra-EbU8IB-iE/edit#heading=h.16t67gkeu9dx" target="_blank" rel="noopener">&ldquo;How to ML Paper&rdquo;</a> guide.</p>
+      <h3 class="subhead">Instructions to submit</h3>
+      <p class="phase-intro">Every paper is pitched to the group on a fixed Pitch Day &mdash; everyone presents. A paper that hasn't been pitched by this point doesn't go forward.</p>
       <ul class="list">
-        <li><strong>Look after yourself.</strong> Exercise, sleep, and food matter through the push. A PhD is a marathon, not a sprint.</li>
+        <li>Prepare a short pitch: the problem, the idea, what the results look like so far.</li>
+        <li>Link the pitch materials on the card, then click <strong>Submit pitch</strong> &mdash; a real, confirmed action, not a bare click. That's what moves the card into Pitched.</li>
       </ul>
     </section>
 
     <section class="phase" id="phase-3">
       <div class="phase-head">
         <span class="phase-num">&minus;4&nbsp;wk</span>
-        <h2>Abstract Submitted</h2>
+        <h2>Submit abstract</h2>
       </div>
-      <dl class="phase-why-what">
-        <div><dt>Why you're here</dt><dd>The abstract's gone out to the venue. Everything that used to be three separate columns &mdash; finishing the full draft, both reviewers' checklists, PI sign-off &mdash; happens right here now, while the card sits in this one stage.</dd></div>
-        <div><dt>What advances it</dt><dd>Both checklists complete (the authors' Format pass, and both reviewers' Science pass &mdash; the senior reviewer defaults to the PI, so their sign-off <em>is</em> PI approval, no separate step), <strong>plus</strong> the real submission link on the card, unblock <strong>Submit paper</strong>. You still click it yourself once the paper's actually gone out &mdash; another real, confirmed, irreversible action.</dd></div>
-      </dl>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> exactly the same stage, same meaning &mdash; this is what "Abstract Submitted" means on a rush board too. The only difference upstream is skipping Pitch to get here faster.</p>
+      <p class="phase-intro"><strong>What it means that the card is in Pitched:</strong> presented to the group on Pitch Day. There's a first full draft to write now, on the way to an abstract worth sending anywhere.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> same action, different starting point &mdash; a rush card does this straight out of Registered, since there's no Pitch stage to have come from.</p>
 
-      <p class="phase-intro">The draft from Phase&nbsp;2 goes through Internal Review now &mdash; a <strong>simulated full peer review</strong> (venues are all similar), before the real one.</p>
+      <h3 class="subhead">Instructions to submit</h3>
+      <p class="phase-intro">There must be a <strong>first full draft</strong> before the abstract's worth sending anywhere. Read and closely follow the <a href="https://docs.google.com/document/d/16R1E2ExKUCP5SlXWHr-KzbVDx9DBUclra-EbU8IB-iE/edit#heading=h.16t67gkeu9dx" target="_blank" rel="noopener">&ldquo;How to ML Paper&rdquo;</a> guide.</p>
       <ul class="list">
-        <li>Assign a <strong>junior</strong> and a <strong>senior</strong> reviewer from the pool on the card's own page. Both the Format and Science parts are mandatory; the paper can't be submitted until both reviewers have completed the checklist.</li>
-        <li>The PI reads the final draft as part of their own Science checklist pass and approves it for submission &mdash; this is the PI's only involvement in the whole process, and it's the same tick every other senior reviewer makes, not a separate approval screen.</li>
-        <li>Once both checklists are done, paste the real submission link (OpenReview, or whatever the venue uses) onto the card &mdash; that's what unblocks Submit paper.</li>
+        <li><strong>Look after yourself.</strong> Exercise, sleep, and food matter through the push. A PhD is a marathon, not a sprint.</li>
+        <li>Once the abstract itself is ready, click <strong>Submit abstract</strong> &mdash; a real, external, irreversible action (the board asks you to confirm before it registers). No new link required for this one &mdash; the abstract lives in the Overleaf project already on the card, not a separate field. That's what moves the card into Abstract Submitted.</li>
       </ul>
     </section>
 
     <section class="phase" id="phase-4">
       <div class="phase-head">
-        <span class="phase-num">deadline</span>
-        <h2>Paper Submitted</h2>
+        <span class="phase-num">&minus;1&nbsp;wk</span>
+        <h2>Submit paper</h2>
       </div>
-      <dl class="phase-why-what">
-        <div><dt>Why you're here</dt><dd>The paper's been submitted to the venue. There's nothing more to do about the submission itself &mdash; you're waiting on the venue's own review process now.</dd></div>
-        <div><dt>What advances it</dt><dd>An arXiv link on the card unblocks <strong>Post to arXiv</strong>. Not gated on the venue's timeline &mdash; post whenever the paper's actually ready to go public.</dd></div>
-      </dl>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> same stage, same meaning. This is as far as a rush board tracks arXiv/Camera-ready/Conference as separate columns &mdash; the next (and last) rush column is Rebuttal.</p>
+      <p class="phase-intro"><strong>What it means that the card is in Abstract Submitted:</strong> the abstract's gone out to the venue. Everything that used to be three separate columns &mdash; finishing the full draft, both reviewers' checklists, PI sign-off &mdash; happens right here now, while the card sits in this one stage.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> exactly the same meaning and the same action &mdash; nothing about internal review or PI approval changes for a rush venue.</p>
 
+      <h3 class="subhead">Instructions to submit</h3>
+      <p class="phase-intro">The draft from the previous stage goes through Internal Review now &mdash; a <strong>simulated full peer review</strong> (venues are all similar), before the real one.</p>
+      <ul class="list">
+        <li>Assign a <strong>junior</strong> and a <strong>senior</strong> reviewer from the pool on the card's own page. Both the Format and Science parts are mandatory; the paper can't be submitted until both reviewers have completed the checklist.</li>
+        <li>The PI reads the final draft as part of their own Science checklist pass and approves it for submission &mdash; this is the PI's only involvement in the whole process, and it's the same tick every other senior reviewer makes, not a separate approval screen.</li>
+        <li>Once both checklists are done, paste the real submission link (OpenReview, or whatever the venue uses) onto the card, then click <strong>Submit paper</strong> &mdash; another real, confirmed, irreversible action. That's what moves the card into Paper Submitted.</li>
+      </ul>
+    </section>
+
+    <section class="phase" id="phase-5">
+      <div class="phase-head">
+        <span class="phase-num">deadline</span>
+        <h2>Post to arXiv</h2>
+      </div>
+      <p class="phase-intro"><strong>What it means that the card is in Paper Submitted:</strong> the paper's gone to the venue. There's nothing more to do about the submission itself &mdash; you're waiting on the venue's own review process now.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; a rush board has no arXiv column. Its columns stop at Paper Submitted, then go straight to Wait&nbsp;for&nbsp;reviews below.</p>
+
+      <h3 class="subhead">Instructions to submit</h3>
       <p class="phase-intro">But submitting isn't the finish line &mdash; it's one small step, not a pause. Reviews take weeks, and that time is some of the most valuable in the whole project: this is when the arXiv version gets prepared, and it's often the only version many readers ever see, so treat it with real care.</p>
-
-      <h3 class="subhead">Post to arXiv</h3>
       <ul class="list">
         <li><strong>Give co-authors a week's heads-up</strong> and share a final draft before posting.</li>
         <li>The final draft must include author names and affiliations, plus acknowledgments covering grants and funding bodies &mdash; the latter is <strong>crucial</strong>. See the <a href="https://docs.google.com/document/d/1Kh_hUSFwGzh4y3Yr8y32mjq81Jp6Nbk1m_B5uuza3DU/edit?usp=sharing" target="_blank" rel="noopener">current default</a> here.</li>
         <li>When listing your affiliation, use &ldquo;<strong>BOLD, {University of Oxford / Imperial College / UCL}</strong>&rdquo; whenever possible.</li>
         <li>Print off the paper to check for final typos, formatting, and other issues.</li>
         <li>Open-source your cleaned-up code and link the repo before you submit to arXiv.</li>
-        <li>Paste the resulting arXiv link onto the card &mdash; that's the deliverable that unblocks Post to arXiv (see #14 for the idea of doing this step directly from the card instead, one day).</li>
+        <li>Paste the resulting arXiv link onto the card, then click <strong>Post to arXiv</strong> (see #14 for the idea of doing the actual posting directly from the card instead, one day). That's what moves the card into Posted.</li>
       </ul>
 
-      <h3 class="subhead">Capture the loose ends</h3>
+      <h3 class="subhead">While you wait: capture the loose ends</h3>
       <p class="phase-intro muted">Credit to Roger Grosse for this practice.</p>
-
       <blockquote>
         &ldquo;Now that the deadline is past, there's one more (hopefully easy) task for all of you. After a deadline push, I find it very useful to make a list of all the loose ends in the project. It's important to do it very soon after the deadline while everything is still fresh in your mind. This will save a lot of time and stress later on.&rdquo;
       </blockquote>
-
-      <p class="phase-intro">Sometime in the next few days, start a Google Doc to track loose ends. Aim to spend about <strong>an hour</strong> on it &mdash; or build it up as you go if you're doing heavy work for the Supplemental Material deadline.</p>
-
-      <h3 class="subhead">Ideas for what to include</h3>
-      <ul class="list">
-        <li>Experiments you still want to run</li>
-        <li>Surprising findings that need to be explained</li>
-        <li>Aspects of the experimental protocol you're not comfortable with</li>
-        <li>References to prior work you need to look at more carefully</li>
-        <li>Things that need to be explained better</li>
-        <li>Mathematical arguments that need to be checked or made more precise</li>
-        <li>Questions about notation / terminology</li>
-      </ul>
+      <p class="phase-intro">Sometime in the next few days, start a Google Doc to track loose ends. Aim to spend about <strong>an hour</strong> on it &mdash; or build it up as you go if you're doing heavy work for the Supplemental Material deadline. Ideas for what to include: experiments you still want to run, surprising findings that need explaining, aspects of the experimental protocol you're not comfortable with, prior work to look at more carefully, things to explain better, mathematical arguments to check or make more precise, questions about notation or terminology.</p>
     </section>
 
-    <section class="phase" id="phase-5">
+    <section class="phase" id="phase-6">
       <div class="phase-head">
-        <h2>Posted</h2>
+        <h2>Wait for reviews</h2>
       </div>
-      <dl class="phase-why-what">
-        <div><dt>Why you're here</dt><dd>Posted to arXiv. Publicity is the remaining task, not a submission &mdash; nothing further to link on the card.</dd></div>
-        <div><dt>What advances it</dt><dd>Advance once reviews are out &mdash; nothing here detects that automatically (it happens on the venue's own site, not this board), so this is on you to notice and move yourself. The one stage in the pipeline with no deliverable of its own to submit, see #13.</dd></div>
-      </dl>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; a rush board has no Posted column. Its own columns stop at Paper Submitted, then Rebuttal.</p>
+      <p class="phase-intro"><strong>What it means that the card is in Posted:</strong> the arXiv version is up. Publicity is the remaining task, not a submission &mdash; nothing further to link on the card at this stage.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> same meaning &mdash; a rush board reaches this same point after Paper Submitted, having skipped Posted. Reviews Out is the last column a rush board tracks at all.</p>
 
-      <p class="phase-intro">Now that the arXiv version is out, the same paper deserves an audience beyond the venue's own reviewers.</p>
-
-      <h3 class="subhead">Publicity</h3>
+      <h3 class="subhead">Instructions to submit</h3>
+      <p class="phase-intro">There's genuinely nothing to submit here &mdash; the one stage in the whole pipeline without a deliverable of its own (see #13). Reviews going live happens on the venue's own site, not something this board can detect, so getting the card to Reviews Out is on whoever notices and clicks <strong>Advance</strong> themselves.</p>
       <ul class="list">
         <li>Draft a tweet thread and share it with all authors ahead of time. <a href="https://typefully.com/" target="_blank" rel="noopener">Typefully</a> can be a useful tool for this.</li>
         <li>Tweets should clearly motivate the problem for a broad audience and make it easy to grasp what's happening.</li>
@@ -855,72 +812,56 @@
       </ul>
     </section>
 
-    <section class="phase" id="phase-6">
-      <div class="phase-head">
-        <h2>Reviews Out</h2>
-      </div>
-      <dl class="phase-why-what">
-        <div><dt>Why you're here</dt><dd>Reviews are public. This is the one genuinely actionable stage after submission &mdash; a real, deadline-bearing task, not just a wait.</dd></div>
-        <div><dt>What advances it</dt><dd>The rebuttal document, linked on the card, unblocks <strong>Submit rebuttal</strong> &mdash; by the venue's own rebuttal deadline (tracked on the card as <code>rebuttalDeadline</code>). Same honest caveat as Posted above: nothing here can detect reviews going live on the venue's own site, so getting the card here at all is still on whoever's watching for it.</dd></div>
-      </dl>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> same stage, same meaning &mdash; and the last column a rush board tracks. Camera-ready and Conference aren't rush columns; by the time a paper's this far along, the urgency that justified rush mode in the first place has usually passed.</p>
-
-      <p class="phase-intro">Follow the <a href="https://docs.google.com/document/d/1cdEypaZXnJ10IckV49iBXEl27gCFnwEhQfLr680Fv18/edit#heading=h.mt80mhtvp84q" target="_blank" rel="noopener">&ldquo;How to ML Rebuttal&rdquo;</a> guide closely. The venue's reviews-released and rebuttal-deadline dates, when known, are on the <a href="audit-board.html">Internal Review Board</a> and in its deadline .ics. Once the rebuttal's written, link it on the card &mdash; that's what unblocks Submit rebuttal.</p>
-    </section>
-
     <section class="phase" id="phase-7">
       <div class="phase-head">
-        <h2>Camera-ready Submitted</h2>
+        <h2>Submit rebuttal</h2>
       </div>
-      <dl class="phase-why-what">
-        <div><dt>Why you're here</dt><dd>The paper's been accepted. A final, publication-ready version is due by the venue's own camera-ready deadline (<code>cameraReadyDeadline</code> on the board).</dd></div>
-        <div><dt>What advances it</dt><dd>The camera-ready link on the card unblocks <strong>Submit camera-ready</strong>.</dd></div>
-      </dl>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; same reasoning as arXiv above.</p>
+      <p class="phase-intro"><strong>What it means that the card is in Reviews Out:</strong> reviews are public. This is the one genuinely actionable stage after submission &mdash; a real, deadline-bearing task, not just a wait.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> same meaning &mdash; and this is as far as a rush board's own controls go. There's no way to move a rush card past Reviews Out through the board's move buttons at all right now (see #11).</p>
 
+      <h3 class="subhead">Instructions to submit</h3>
+      <p class="phase-intro">Follow the <a href="https://docs.google.com/document/d/1cdEypaZXnJ10IckV49iBXEl27gCFnwEhQfLr680Fv18/edit#heading=h.mt80mhtvp84q" target="_blank" rel="noopener">&ldquo;How to ML Rebuttal&rdquo;</a> guide closely. The venue's reviews-released and rebuttal-deadline dates, when known, are on the <a href="audit-board.html">Internal Review Board</a> and in its deadline .ics.</p>
       <ul class="list">
-        <li>Fold in every change reviewers required, and anything promised in the rebuttal.</li>
-        <li>Final formatting pass &mdash; page limit, required sections, camera-ready-specific template if the venue has one.</li>
-        <li>Update acknowledgments and funding to their final form, same care as the arXiv version.</li>
-        <li>Double-check author list and affiliations are exactly right &mdash; this is usually the version that ends up in the proceedings permanently.</li>
-        <li>Link the submitted camera-ready version on the card &mdash; that's what unblocks Submit camera-ready.</li>
+        <li>Link the written rebuttal document on the card, then click <strong>Submit rebuttal</strong>. That's what moves the card into Rebuttal Submitted &mdash; the honest name for it: the rebuttal's in, camera-ready is what's due next (assuming acceptance).</li>
       </ul>
     </section>
 
     <section class="phase" id="phase-8">
       <div class="phase-head">
+        <h2>Submit camera&#8209;ready</h2>
+      </div>
+      <p class="phase-intro"><strong>What it means that the card is in Rebuttal Submitted:</strong> the rebuttal's gone in. Reaching this stage generally means the paper's been accepted &mdash; a final, publication-ready version is due by the venue's own camera-ready deadline (<code>cameraReadyDeadline</code> on the board).</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; a rush board never reaches this stage, see Submit&nbsp;rebuttal above.</p>
+
+      <h3 class="subhead">Instructions to submit</h3>
+      <ul class="list">
+        <li>Fold in every change reviewers required, and anything promised in the rebuttal.</li>
+        <li>Final formatting pass &mdash; page limit, required sections, camera-ready-specific template if the venue has one.</li>
+        <li>Update acknowledgments and funding to their final form, same care as the arXiv version.</li>
+        <li>Double-check author list and affiliations are exactly right &mdash; this is usually the version that ends up in the proceedings permanently.</li>
+        <li>Link the submitted camera-ready version on the card, then click <strong>Submit camera-ready</strong>. That's what moves the card into Accepted.</li>
+      </ul>
+    </section>
+
+    <section class="phase" id="phase-9">
+      <div class="phase-head">
         <h2>Accepted</h2>
       </div>
-      <dl class="phase-why-what">
-        <div><dt>Why you're here</dt><dd>Everything's done. This is the terminal stage &mdash; conference prep from here on.</dd></div>
-        <div><dt>What advances it</dt><dd>Nothing to advance to &mdash; this is the end of the pipeline.</dd></div>
-      </dl>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; same reasoning as arXiv and Camera-ready above.</p>
+      <p class="phase-intro"><strong>What it means that the card is in Accepted:</strong> everything's submitted &mdash; abstract, paper, rebuttal, camera-ready. This is the terminal stage; nothing further advances it. What's left is conference prep.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; same reasoning as every stage past Reviews Out above.</p>
 
-      <h3 class="subhead">Poster</h3>
+      <h3 class="subhead">Instructions</h3>
+      <p class="phase-intro">Nothing here is gated or submitted &mdash; just the practical run-up to actually presenting.</p>
       <ul class="list">
-        <li>Make a poster and share it with co-authors.</li>
-        <li>Example posters to fork: <a href="https://docs.google.com/presentation/d/1PZHckrR2NtA-kISXKwoOez1SL4bh4efQ9KycPrNrpVQ/edit#slide=id.g5aa9bf2eae_0_6" target="_blank" rel="noopener">Jakob's poster</a> and <a href="https://docs.google.com/presentation/d/1-yTM0mXWYkRMX3vWm-WEypqrmfQDq41fhNviXJi_pXk/edit#slide=id.g1260fe2dc6_4_35" target="_blank" rel="noopener">one more</a>.</li>
-        <li>Focus on images and getting the main ideas across.</li>
-        <li><strong>Note of caution:</strong> posters are not papers &mdash; they're not meant to be self-explaining. You'll be standing there explaining them to people.</li>
-      </ul>
-
-      <h3 class="subhead">Talk</h3>
-      <ul class="list">
-        <li>Schedule a practice talk with the group if you're presenting.</li>
-        <li>Slides can be Google Slides or an HTML deck &mdash; whatever's easiest to build and share with co-authors.</li>
-      </ul>
-
-      <h3 class="subhead">Networking</h3>
-      <ul class="list">
-        <li><strong>Email anyone you want to talk to at the conference at least 3 weeks beforehand</strong> to set up a meeting.</li>
-        <li><strong>Join as many of the conference's social events as you can &mdash; this is mandatory.</strong> They're usually the best networking.</li>
+        <li><strong>Poster:</strong> make one and share it with co-authors. Example posters to fork: <a href="https://docs.google.com/presentation/d/1PZHckrR2NtA-kISXKwoOez1SL4bh4efQ9KycPrNrpVQ/edit#slide=id.g5aa9bf2eae_0_6" target="_blank" rel="noopener">Jakob's poster</a> and <a href="https://docs.google.com/presentation/d/1-yTM0mXWYkRMX3vWm-WEypqrmfQDq41fhNviXJi_pXk/edit#slide=id.g1260fe2dc6_4_35" target="_blank" rel="noopener">one more</a>. Focus on images and getting the main ideas across &mdash; posters are not papers, they're not meant to be self-explaining. You'll be standing there explaining them to people.</li>
+        <li><strong>Talk:</strong> schedule a practice talk with the group if you're presenting. Slides can be Google Slides or an HTML deck &mdash; whatever's easiest to build and share with co-authors.</li>
+        <li><strong>Networking:</strong> email anyone you want to talk to at the conference at least 3 weeks beforehand to set up a meeting. Join as many of the conference's social events as you can &mdash; this is mandatory, they're usually the best networking.</li>
       </ul>
     </section>
 
     <nav class="pager" aria-label="Previous and next phase">
       <button class="pager-btn" id="prevBtn" type="button">&larr; Previous</button>
-      <span class="pager-status" id="pagerStatus" aria-live="polite">Phase 1 of 8</span>
+      <span class="pager-status" id="pagerStatus" aria-live="polite">Phase 1 of 9</span>
       <button class="pager-btn" id="nextBtn" type="button">Next &rarr;</button>
     </nav>
 
