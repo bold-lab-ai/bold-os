@@ -2771,10 +2771,18 @@
     draft_review: 'Paper accepted'
   };
 
-  // Mode-independent relabeling of the plain "Advance" verb — unlike
-  // RUSH_ACCEPT_LABELS above, applies in both rush and canonical pipelines,
-  // and doesn't get the green accept styling (this is still a forward
-  // move, not a sign-off on something someone else did).
+  // Rush-mode-only relabeling of the plain "Advance" verb on Registered —
+  // doesn't get RUSH_ACCEPT_LABELS' green accept styling (still a forward
+  // move, not a sign-off on something someone else did), but IS gated on
+  // rushMode the same way that map is, unlike this map's own name/older
+  // comment claimed ("mode-independent... applies in both pipelines").
+  // Bug, found 2026-09-18 while writing the workflow-explainer doc:
+  // canonical mode's own sequence doesn't submit the abstract until much
+  // later (abstract_review/"Abstract Reviewed", stage 5 of 10) — only
+  // rush mode's Registered is genuinely followed by submitting the
+  // abstract next. Applying "Submit abstract" here for canonical too was
+  // just wrong, not a deliberate design choice; canonical's Registered
+  // now falls through to the plain "Advance" the rest of its columns use.
   var ADVANCE_LABELS = {
     register: 'Submit abstract'
   };
@@ -2823,7 +2831,8 @@
     var lft = statusAt(effective, -1, order);
     var rgt = statusAt(effective, 1, order);
     var acceptLabel = (board && board.rushMode) ? RUSH_ACCEPT_LABELS[effective] : null;
-    var rgtLabel = acceptLabel || ADVANCE_LABELS[effective] || 'Advance';
+    var advanceLabel = (board && board.rushMode) ? ADVANCE_LABELS[effective] : null;
+    var rgtLabel = acceptLabel || advanceLabel || 'Advance';
     // abstractAcceptBlockReason is ADDED on top of advanceBlockReason, not
     // swapped in for it — advanceBlockReason still carries the existing
     // "assign a junior and a senior reviewer first" gate on entering
