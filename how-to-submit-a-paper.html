@@ -326,13 +326,13 @@
     margin:32px 0 12px;
   }
 
-  ul.list{
+  ul.list, ol.list{
     margin:0 0 8px;
     padding:0;
     list-style:none;
     max-width:64ch;
   }
-  ul.list li{
+  ul.list li, ol.list li{
     position:relative;
     padding:7px 0 7px 22px;
     font-size:17px;
@@ -347,9 +347,22 @@
     background:var(--accent);
     border-radius:50%;
   }
-  ul.list ul{list-style:none; margin:6px 0 0; padding:0;}
-  ul.list ul li{padding-left:20px;}
-  ul.list ul li::before{background:transparent; border:1px solid var(--muted); border-radius:50%;}
+  ol.list{counter-reset:step;}
+  ol.list li{counter-increment:step; padding-left:30px;}
+  ol.list li::before{
+    content:counter(step) '.';
+    position:absolute;
+    left:0;
+    top:7px;
+    font-family:var(--sans);
+    font-weight:700;
+    font-size:13.5px;
+    color:var(--accent);
+    font-variant-numeric:tabular-nums;
+  }
+  .list ul{list-style:none; margin:6px 0 0; padding:0;}
+  .list ul li{padding-left:20px;}
+  .list ul li::before{background:transparent; border:1px solid var(--muted); border-radius:50%;}
 
   strong{color:var(--ink); font-weight:700;}
   em{font-style:italic; color:var(--ink);}
@@ -704,11 +717,11 @@
       <p class="phase-rush-note"><strong>Rush mode:</strong> same first step &mdash; an imminent-deadline venue registers exactly the same way. Where it diverges is what comes right after (see Submit&nbsp;the&nbsp;abstract).</p>
 
       <h3 class="subhead">Instructions to submit</h3>
-      <ul class="list">
+      <ol class="list">
         <li><strong>Pick the venue.</strong> By default, we are a core-ML lab &mdash; the bulk of submissions should go to ICML, NeurIPS, and ICLR. Their deadlines are nicely spaced out (Feb / May / September), so you should never be far from one. Specialised conferences (e.g. AAMAS) are fine if justified; AAAI is usually a <strong>last resort</strong>.</li>
         <li>Register the paper in the <a href="audit-board.html">Internal Review Board</a> &mdash; create the venue's board if it isn't there yet &mdash; with the title and a <strong>compute estimate</strong>. Authors, the Overleaf link, and the abstract come later, at Submit the abstract &mdash; there's no first draft yet to point to.</li>
         <li>If you're the <strong>main author</strong>, clear your schedule of everything else for the run&#8209;up to the deadline.</li>
-      </ul>
+      </ol>
     </section>
 
     <section class="phase" id="phase-2">
@@ -721,10 +734,10 @@
 
       <h3 class="subhead">Instructions to submit</h3>
       <p class="phase-intro">Every paper is pitched to the group on a fixed Pitch Day &mdash; everyone presents. A paper that hasn't been pitched by this point doesn't go forward.</p>
-      <ul class="list">
+      <ol class="list">
         <li>Prepare a short pitch: the problem, the idea, what the results look like so far.</li>
         <li>Link the pitch materials on the card, then click <strong>Submit pitch</strong> &mdash; a real, confirmed action, not a bare click. That's what moves the card into Pitched.</li>
-      </ul>
+      </ol>
     </section>
 
     <section class="phase" id="phase-3">
@@ -737,14 +750,14 @@
 
       <h3 class="subhead">Instructions to submit</h3>
       <p class="phase-intro">There must be a <strong>first full draft</strong> before the abstract's worth sending anywhere, although we will not check it. Read and closely follow the <a href="https://docs.google.com/document/d/16R1E2ExKUCP5SlXWHr-KzbVDx9DBUclra-EbU8IB-iE/edit#heading=h.16t67gkeu9dx" target="_blank" rel="noopener">&ldquo;How to ML Paper&rdquo;</a> guide.</p>
-      <ul class="list">
+      <ol class="list">
         <li><strong>Add your co-authors</strong> on the card. You won't be able to change them once you submit the abstract.</li>
         <li>Add the <strong>Overleaf link</strong>, pointing at a first draft &mdash; we won't check it, but it needs to exist.</li>
         <li>Open the card and paste the abstract into the <strong>Abstract</strong> field. LaTeX renders live &mdash; inline math between single dollar signs, block equations between double dollar signs.</li>
         <li><strong>Assign a junior and a senior reviewer</strong> &mdash; the senior reviewer defaults to the PI.</li>
         <li>Once all of that's in place, click <strong>Submit the abstract</strong> &mdash; this starts internal review and can't be undone. That's what moves the card into Abstract Submitted.</li>
-        <li><strong>Look after yourself.</strong> Exercise, sleep, and food matter through the push. A PhD is a marathon, not a sprint.</li>
-      </ul>
+      </ol>
+      <p class="phase-intro muted"><strong>Look after yourself.</strong> Exercise, sleep, and food matter through the push. A PhD is a marathon, not a sprint.</p>
     </section>
 
     <section class="phase" id="phase-4">
@@ -757,11 +770,11 @@
 
       <h3 class="subhead">Instructions to submit</h3>
       <p class="phase-intro">The draft from the previous stage goes through Internal Review now &mdash; a <strong>simulated full peer review</strong> (venues are all similar), before the real one.</p>
-      <ul class="list">
+      <ol class="list">
         <li>Both the <strong>junior</strong> and <strong>senior</strong> reviewer assigned back at Submit the abstract work through their checklist on the card's own page &mdash; Format and Science parts are both mandatory, and the paper can't be submitted until both are complete.</li>
         <li>The PI reads the final draft as part of their own Science checklist pass and approves it for submission &mdash; this is the PI's only involvement in the whole process, and it's the same tick every other senior reviewer makes, not a separate approval screen.</li>
         <li>Once both checklists are done, paste the real submission link (OpenReview, or whatever the venue uses) onto the card, then click <strong>Submit the paper</strong> &mdash; another real, confirmed, irreversible action. That's what moves the card into Paper Submitted.</li>
-      </ul>
+      </ol>
     </section>
 
     <section class="phase" id="phase-5">
@@ -774,14 +787,14 @@
 
       <h3 class="subhead">Instructions to submit</h3>
       <p class="phase-intro">But submitting isn't the finish line &mdash; it's one small step, not a pause. Reviews take weeks, and that time is some of the most valuable in the whole project: this is when the arXiv version gets prepared, and it's often the only version many readers ever see, so treat it with real care.</p>
-      <ul class="list">
+      <ol class="list">
         <li><strong>Give co-authors a week's heads-up</strong> and share a final draft before posting.</li>
         <li>The final draft must include author names and affiliations, plus acknowledgments covering grants and funding bodies &mdash; the latter is <strong>crucial</strong>. See the <a href="https://docs.google.com/document/d/1Kh_hUSFwGzh4y3Yr8y32mjq81Jp6Nbk1m_B5uuza3DU/edit?usp=sharing" target="_blank" rel="noopener">current default</a> here.</li>
         <li>When listing your affiliation, use &ldquo;<strong>BOLD, {University of Oxford / Imperial College / UCL}</strong>&rdquo; whenever possible.</li>
         <li>Print off the paper to check for final typos, formatting, and other issues.</li>
         <li>Open-source your cleaned-up code and link the repo before you submit to arXiv.</li>
         <li>Paste the resulting arXiv link onto the card, then click <strong>Post to arXiv</strong> (see #14 for the idea of doing the actual posting directly from the card instead, one day). That's what moves the card into Posted.</li>
-      </ul>
+      </ol>
 
       <h3 class="subhead">While you wait: capture the loose ends</h3>
       <p class="phase-intro muted">Credit to Roger Grosse for this practice.</p>
@@ -800,7 +813,7 @@
 
       <h3 class="subhead">Instructions to submit</h3>
       <p class="phase-intro">There's genuinely nothing to submit here &mdash; the one stage in the whole pipeline without a deliverable of its own (see #13). Reviews going live happens on the venue's own site, not something this board can detect, so getting the card to Reviews Out is on whoever notices and clicks <strong>Advance</strong> themselves.</p>
-      <ul class="list">
+      <ol class="list">
         <li>Draft a tweet thread and share it with all authors ahead of time. <a href="https://typefully.com/" target="_blank" rel="noopener">Typefully</a> can be a useful tool for this.</li>
         <li>Tweets should clearly motivate the problem for a broad audience and make it easy to grasp what's happening.</li>
         <li>Example tweet chains from BOLD and collaborators:
@@ -812,7 +825,7 @@
         </li>
         <li>Remember to tag <strong>@BOLD_Ox</strong> and your co-authors.</li>
         <li>Consider a blog post for major breakthroughs &mdash; <a href="https://accelagent.github.io/" target="_blank" rel="noopener">this is the gold standard</a>.</li>
-      </ul>
+      </ol>
     </section>
 
     <section class="phase" id="phase-7">
@@ -824,9 +837,9 @@
 
       <h3 class="subhead">Instructions to submit</h3>
       <p class="phase-intro">Follow the <a href="https://docs.google.com/document/d/1cdEypaZXnJ10IckV49iBXEl27gCFnwEhQfLr680Fv18/edit#heading=h.mt80mhtvp84q" target="_blank" rel="noopener">&ldquo;How to ML Rebuttal&rdquo;</a> guide closely. The venue's reviews-released and rebuttal-deadline dates, when known, are on the <a href="audit-board.html">Internal Review Board</a> and in its deadline .ics.</p>
-      <ul class="list">
+      <ol class="list">
         <li>Link the written rebuttal document on the card, then click <strong>Submit rebuttal</strong>. That's what moves the card into Rebuttal Submitted &mdash; the honest name for it: the rebuttal's in, camera-ready is what's due next (assuming acceptance).</li>
-      </ul>
+      </ol>
     </section>
 
     <section class="phase" id="phase-8">
@@ -837,13 +850,13 @@
       <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; a rush board never reaches this stage, see Submit&nbsp;rebuttal above.</p>
 
       <h3 class="subhead">Instructions to submit</h3>
-      <ul class="list">
+      <ol class="list">
         <li>Fold in every change reviewers required, and anything promised in the rebuttal.</li>
         <li>Final formatting pass &mdash; page limit, required sections, camera-ready-specific template if the venue has one.</li>
         <li>Update acknowledgments and funding to their final form, same care as the arXiv version.</li>
         <li>Double-check author list and affiliations are exactly right &mdash; this is usually the version that ends up in the proceedings permanently.</li>
         <li>Link the submitted camera-ready version on the card, then click <strong>Submit camera-ready</strong>. That's what moves the card into Accepted.</li>
-      </ul>
+      </ol>
     </section>
 
     <section class="phase" id="phase-9">
@@ -855,11 +868,11 @@
 
       <h3 class="subhead">Instructions</h3>
       <p class="phase-intro">Nothing here is gated or submitted &mdash; just the practical run-up to actually presenting.</p>
-      <ul class="list">
+      <ol class="list">
         <li><strong>Poster:</strong> make one and share it with co-authors. Example posters to fork: <a href="https://docs.google.com/presentation/d/1PZHckrR2NtA-kISXKwoOez1SL4bh4efQ9KycPrNrpVQ/edit#slide=id.g5aa9bf2eae_0_6" target="_blank" rel="noopener">Jakob's poster</a> and <a href="https://docs.google.com/presentation/d/1-yTM0mXWYkRMX3vWm-WEypqrmfQDq41fhNviXJi_pXk/edit#slide=id.g1260fe2dc6_4_35" target="_blank" rel="noopener">one more</a>. Focus on images and getting the main ideas across &mdash; posters are not papers, they're not meant to be self-explaining. You'll be standing there explaining them to people.</li>
         <li><strong>Talk:</strong> schedule a practice talk with the group if you're presenting. Slides can be Google Slides or an HTML deck &mdash; whatever's easiest to build and share with co-authors.</li>
         <li><strong>Networking:</strong> email anyone you want to talk to at the conference at least 3 weeks beforehand to set up a meeting. Join as many of the conference's social events as you can &mdash; this is mandatory, they're usually the best networking.</li>
-      </ul>
+      </ol>
     </section>
 
     <nav class="pager" aria-label="Previous and next phase">
