@@ -2682,7 +2682,19 @@
     // Mirrors advanceBlockReason's checklist-gate check.
     if (crossesGate(status, next, order)) reqs.push('checklists complete');
     // Mirrors advanceBlockReason's unconditional reviewer-assignment check.
-    if (next === 'abstract') reqs.push('reviewers assigned');
+    // Bug, found 2026-09-18 re-reading this against the real gate while
+    // adding the deliverable-link mirrors below: said 'abstract' here,
+    // stale from before that gate's own toStatus moved to 'paper' — this
+    // mirror silently drifted out of sync with what actually blocks the
+    // move. Column caption only, never the real gate, so nothing was
+    // unsafe — just told whoever read the header the wrong requirement.
+    if (next === 'paper') reqs.push('reviewers assigned');
+    // Mirrors advanceBlockReason's deliverable-link checks (2026-09-18).
+    if (next === 'pitch') reqs.push('pitch materials added');
+    if (next === 'paper') reqs.push('submission link added');
+    if (next === 'arxiv') reqs.push('arXiv link added');
+    if (next === 'camera_ready') reqs.push('rebuttal doc added');
+    if (next === 'conference') reqs.push('camera-ready link added');
     return reqs;
   }
 
@@ -2750,22 +2762,54 @@
     if (toStatus === 'paper' && !reviewersAssigned(card)){
       return 'Assign a junior and a senior reviewer first';
     }
+    // Deliverable-per-stage redesign (2026-09-18, per Eduardo): every
+    // Submit move requires the real link it's actually submitting, not
+    // just a bare confirmed click — see the card fields' own comment in
+    // onAddCard. submissionLink/rebuttalDocLink existed already as
+    // free-standing informational fields; wired as real gates here for
+    // the first time. arXiv -> Rebuttal (toStatus 'rebuttal') stays
+    // deliberately ungated — nothing to submit there, see #13. Rush
+    // mode's own paper -> rebuttal skip (toStatus 'rebuttal' from
+    // 'paper', no 'arxiv' stage in RUSH_STATUS_ORDER at all) is
+    // unaffected by any of these — none of them ever fire for it.
+    if (toStatus === 'pitch' && !card.pitchLink){
+      return 'Add your pitch materials first';
+    }
+    if (toStatus === 'paper' && !card.submissionLink){
+      return 'Add the venue submission link first';
+    }
+    if (toStatus === 'arxiv' && !card.arxivLink){
+      return 'Add the arXiv link first';
+    }
+    if (toStatus === 'camera_ready' && !card.rebuttalDocLink){
+      return 'Add the rebuttal document link first';
+    }
+    if (toStatus === 'conference' && !card.cameraReadyLink){
+      return 'Add the camera-ready link first';
+    }
     return null;
   }
 
-  // The two real Submit moments in the pipeline — both external,
-  // irreversible self-reports (see SUBMIT_CONFIRM_MESSAGES below), so both
-  // get the confirm-before-click prompt and the green accept-styled
-  // button. One shared map for both pipelines now (2026-09-18): this used
-  // to need a separate Rush-only copy (RUSH_ACCEPT_LABELS) because Rush
-  // mode visited these two moments in a different relative order than
-  // canonical STATUS_ORDER did — moot now that Rush mode is a plain
-  // subsequence of the same order, visiting the same stages in the same
-  // relative sequence (see RUSH_STATUS_ORDER's own comment). Everything
-  // else in the pipeline keeps the plain "Advance" wording.
+  // Every real Submit moment in the pipeline — external, irreversible
+  // self-reports (see SUBMIT_CONFIRM_MESSAGES below), so all get the
+  // confirm-before-click prompt and the green accept-styled button.
+  // Expanded 2026-09-18 from just the two (Submit abstract/paper) to one
+  // per stage that has a real deliverable — see advanceBlockReason's own
+  // comment for the matching link-required gate each of these pairs
+  // with. Keyed by the CURRENT status (the one being left, i.e. the one
+  // whose deliverable this button submits), not the target. One shared
+  // map for both pipelines: Rush mode visits the same stages in the same
+  // relative order now (see RUSH_STATUS_ORDER), so there's nothing
+  // Rush-specific left to override here — except the one case handled
+  // separately in moveButtonsInnerHtml below (Rush's paper -> rebuttal
+  // has no arXiv stage to "Post to arXiv" toward at all).
   var ADVANCE_LABELS = {
+    register: 'Submit pitch',
     pitch: 'Submit abstract',
-    abstract: 'Submit paper'
+    abstract: 'Submit paper',
+    paper: 'Post to arXiv',
+    rebuttal: 'Submit rebuttal',
+    camera_ready: 'Submit camera-ready'
   };
 
   // Confirmation copy for the move buttons that actually submit something
@@ -2774,8 +2818,12 @@
   // button label from ADVANCE_LABELS above; a label with no entry here
   // skips confirmation.
   var SUBMIT_CONFIRM_MESSAGES = {
+    'Submit pitch': 'Are you sure you want to submit your pitch materials? This action cannot be undone.',
     'Submit abstract': 'Are you sure you want to submit your abstract for internal review? This action cannot be undone.',
-    'Submit paper': 'Are you sure you want to submit your paper for internal review? This action cannot be undone.'
+    'Submit paper': 'Are you sure you want to submit your paper for internal review? This action cannot be undone.',
+    'Post to arXiv': 'Are you sure you want to post to arXiv? This action cannot be undone.',
+    'Submit rebuttal': 'Are you sure you want to submit your rebuttal? This action cannot be undone.',
+    'Submit camera-ready': 'Are you sure you want to submit the camera-ready version? This action cannot be undone.'
   };
 
   // Shared gate for every [data-move] click handler below — returns false
@@ -2811,7 +2859,13 @@
     var order = effectiveStatusOrder(board);
     var lft = statusAt(effective, -1, order);
     var rgt = statusAt(effective, 1, order);
-    var rgtLabel = ADVANCE_LABELS[effective] || 'Advance';
+    // Rush mode's own paper -> rebuttal is the one exception to the
+    // shared ADVANCE_LABELS map: RUSH_STATUS_ORDER has no `arxiv` stage
+    // at all, so this transition means "reviews are out", not "post to
+    // arXiv" — plain Advance, matching arXiv -> Rebuttal's own ungated
+    // wording in the canonical pipeline (see advanceBlockReason's
+    // comment — neither has a real deliverable to submit).
+    var rgtLabel = (effective === 'paper' && rgt === 'rebuttal') ? 'Advance' : (ADVANCE_LABELS[effective] || 'Advance');
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
       (effective === 'abstract' ? abstractAcceptBlockReason(card, board, state.cards) : null));
     // Green treatment covers every real Submit (SUBMIT_CONFIRM_MESSAGES' keys).
@@ -3029,8 +3083,11 @@
     if (shouldShowOutcomeBadge(card)) badges += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     if (overdue || rushOverdue) badges += '<span class="badge badge-overdue">Overdue</span>';
     if (badges) html += '<div class="card-meta-row">' + badges + '</div>';
+    if (card.pitchLink) html += '<a class="card-link" href="' + escapeHtml(card.pitchLink) + '" target="_blank" rel="noopener">Pitch materials</a><br>';
     if (card.submissionLink) html += '<a class="card-link" href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a><br>';
+    if (card.arxivLink) html += '<a class="card-link" href="' + escapeHtml(card.arxivLink) + '" target="_blank" rel="noopener">arXiv</a><br>';
     if (card.rebuttalDocLink) html += '<a class="card-link" href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Rebuttal doc</a><br>';
+    if (card.cameraReadyLink) html += '<a class="card-link" href="' + escapeHtml(card.cameraReadyLink) + '" target="_blank" rel="noopener">Camera-ready</a><br>';
     html += '<div class="card-reviewers">' +
       '<div class="rv-row"><span class="rv-role junior">Jr</span>' + reviewerInputHtml(card, 'junior') + '</div>' +
       (inAbstractStage ? reviewStatePillHtml(card, 'junior') : '') +
@@ -3757,9 +3814,12 @@
     if (rushCutoff) html += '<dt>Rush cutoff</dt><dd' + (rushOverdue ? ' style="color:var(--danger-text);"' : '') + '>' + formatDateTime(rushCutoff) + ' <strong>(' + formatTimeLeft(rushCutoff) + ')</strong></dd>';
     if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + '</dd>';
     if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
+    if (card.pitchLink) html += '<dt>Pitch materials</dt><dd><a href="' + escapeHtml(card.pitchLink) + '" target="_blank" rel="noopener">Open</a></dd>';
     if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
+    if (card.arxivLink) html += '<dt>arXiv</dt><dd><a href="' + escapeHtml(card.arxivLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.arxivLink) + '</a></dd>';
     if (card.rebuttalDeadline) html += '<dt>Rebuttal deadline</dt><dd>' + formatDate(card.rebuttalDeadline) + '</dd>';
     if (card.rebuttalDocLink) html += '<dt>Rebuttal doc</dt><dd><a href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Open</a></dd>';
+    if (card.cameraReadyLink) html += '<dt>Camera-ready</dt><dd><a href="' + escapeHtml(card.cameraReadyLink) + '" target="_blank" rel="noopener">Open</a></dd>';
     if (card.correspondingAuthorEmail) html += '<dt>Corresponding author</dt><dd><a href="mailto:' + escapeHtml(card.correspondingAuthorEmail) + '">' + escapeHtml(card.correspondingAuthorEmail) + '</a></dd>';
     if (card.computeEstimate) html += '<dt>Compute estimate</dt><dd>' + escapeHtml(card.computeEstimate) + '</dd>';
     html += '<dt>Submitted by</dt><dd>' + (card.submittedBy && card.submittedBy.name
@@ -4368,9 +4428,12 @@
             '<div class="field"><label for="eOverleaf">Overleaf link</label><input type="url" id="eOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/..."></div>' +
             '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
-            '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."></div>' +
+            '<div class="field"><label for="ePitchLink">Pitch materials</label><input type="url" id="ePitchLink" value="' + escapeHtml(card.pitchLink || '') + '" placeholder="https://docs.google.com/presentation/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Registered.</div></div>' +
+            '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Abstract Submitted.</div></div>' +
+            '<div class="field"><label for="eArxivLink">arXiv link</label><input type="url" id="eArxivLink" value="' + escapeHtml(card.arxivLink || '') + '" placeholder="https://arxiv.org/abs/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Paper Submitted.</div></div>' +
             '<div class="field"><label for="eRebuttalDeadline">Rebuttal deadline</label><input type="date" id="eRebuttalDeadline" value="' + escapeHtml(card.rebuttalDeadline || '') + '"></div>' +
-            '<div class="field"><label for="eRebuttalDoc">Rebuttal document</label><input type="url" id="eRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/..."></div>' +
+            '<div class="field"><label for="eRebuttalDoc">Rebuttal document</label><input type="url" id="eRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Reviews Out.</div></div>' +
+            '<div class="field"><label for="eCameraReadyLink">Camera-ready link</label><input type="url" id="eCameraReadyLink" value="' + escapeHtml(card.cameraReadyLink || '') + '" placeholder="https://..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Camera-ready Submitted.</div></div>' +
             '<div class="field"><label for="eReviewNotes">Review notes</label><textarea id="eReviewNotes" placeholder="Scores, summary, anything worth remembering">' + escapeHtml(card.reviewNotes || '') + '</textarea></div>' +
             '<div class="field"><label for="eOutcome">Outcome</label><select id="eOutcome">' +
               '<option value=""' + (!card.outcome ? ' selected' : '') + '>No outcome yet</option>' +
@@ -4453,9 +4516,12 @@
       overleafLink: overleafLink,
       correspondingAuthorEmail: email,
       computeEstimate: document.getElementById('eCompute').value.trim(),
+      pitchLink: document.getElementById('ePitchLink').value.trim(),
       submissionLink: document.getElementById('eSubmissionLink').value.trim(),
+      arxivLink: document.getElementById('eArxivLink').value.trim(),
       rebuttalDeadline: document.getElementById('eRebuttalDeadline').value || null,
       rebuttalDocLink: document.getElementById('eRebuttalDoc').value.trim(),
+      cameraReadyLink: document.getElementById('eCameraReadyLink').value.trim(),
       reviewNotes: document.getElementById('eReviewNotes').value.trim(),
       outcome: document.getElementById('eOutcome').value,
       updatedAt: now
@@ -4707,9 +4773,24 @@
       jrReviewState: 'in_review',
       srReviewState: 'in_review',
       outcome: '',
+      // Deliverable-per-stage redesign (2026-09-18, per Eduardo): each
+      // link below is what its stage's own advance gate requires before
+      // the Submit-X button unblocks — see advanceBlockReason and
+      // ADVANCE_LABELS. submissionLink/rebuttalDocLink already existed as
+      // free-standing informational fields; both are wired as real gates
+      // now (Abstract -> Paper, Rebuttal -> Camera-ready respectively),
+      // same URL-field-then-Submit pattern extended to the three that
+      // never had a field at all: pitchLink (Register -> Pitch),
+      // arxivLink (Paper -> arXiv), cameraReadyLink (Camera-ready ->
+      // Conference). arXiv -> Rebuttal alone stays a plain, ungated
+      // Advance — nothing for the author to produce there, only an
+      // external event (reviews going live) to notice, see #13.
+      pitchLink: null,
       submissionLink: null,
+      arxivLink: null,
       rebuttalDeadline: null,
       rebuttalDocLink: null,
+      cameraReadyLink: null,
       reviewNotes: '',
       checklist: makeChecklistSnapshot(),
       discussion: [],
