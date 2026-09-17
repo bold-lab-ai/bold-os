@@ -412,9 +412,10 @@
     margin-top:4px; height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
   }
-  /* Rush mode's column deadline hint, once its cutoff has passed — see
-     columnHintFor. */
-  .column-head .ch-hint.ch-hint-overdue{color:var(--danger-text); font-weight:600;}
+  /* Rush mode's column deadline hint — each of its two lines (internal
+     cutoff, venue deadline) turns red independently, once THAT line's own
+     instant has passed, not the other one's — see columnHintFor. */
+  .column-head .ch-hint .hint-overdue{color:var(--danger-text); font-weight:600;}
   /* What it takes to leave this column for the next one — see
      columnRequirementsFor. Own line from ch-hint above (deadline/plain
      hint text), since a rush review column can show both at once. */
@@ -2339,10 +2340,19 @@
       var real = rushColumnRealDeadline(status, board);
       if (!real) return 'No deadline set for this venue yet';
       var cutoff = rushColumnCutoff(status, board);
-      // Own line above the internal cutoff — the venue's actual deadline,
+      var realInstant = deadlineInstant(real);
+      // Own line below the internal cutoff — the venue's actual deadline,
       // same London-time treatment as everything else here, so the two
-      // numbers on this hint are always directly comparable.
-      return 'Venue ' + formatDateTime(deadlineInstant(real)) + '<br>Internal due ' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)';
+      // numbers on this hint are always directly comparable. Each line
+      // turns red on ITS OWN instant passing — the internal cutoff is
+      // deliberately earlier (RUSH_BUFFER_HOURS), so it goes red well
+      // before the venue's real deadline is actually overdue; showing the
+      // venue line red at that point would be wrong, it hasn't happened.
+      var internalLine = 'Internal due ' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)';
+      var venueLine = 'Venue ' + formatDateTime(realInstant);
+      if (isRushColumnPastCutoff(status, board)) internalLine = '<span class="hint-overdue">' + internalLine + '</span>';
+      if (Date.now() > realInstant.getTime()) venueLine = '<span class="hint-overdue">' + venueLine + '</span>';
+      return internalLine + '<br>' + venueLine;
     }
     return escapeHtml(STATUS_HINTS[status] || '');
   }
@@ -3088,11 +3098,10 @@
       var cardsForStatus = allForStatus.filter(matchesSearch);
       html += '<div class="column">';
       var hint = columnHintFor(status, board);
-      var hintOverdue = isRushColumnPastCutoff(status, board);
       var reqs = columnRequirementsHtml(status, board);
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
-        '<div class="ch-hint' + (hintOverdue ? ' ch-hint-overdue' : '') + '">' + hint + '</div>' +
+        '<div class="ch-hint">' + hint + '</div>' +
         '<div class="ch-requires">' + reqs + '</div>' +
       '</div>';
       html += '<div class="column-body">';
