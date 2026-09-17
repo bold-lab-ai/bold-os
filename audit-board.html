@@ -16,6 +16,11 @@
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+<!-- KaTeX, for rendering LaTeX pasted into a card's Abstract field.
+     docs/AGENTS.md-approved CDN exception, 2026-09-18, per Eduardo. Bump the
+     pinned version deliberately, not silently. -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.js"></script>
 <style>
   /* Minimal editorial design system, shared across bold-lab.ai — see
      events.html for the full rationale. Kept as a values-only swap here
@@ -543,6 +548,8 @@
   .detail-grid dt{color:var(--muted);}
   .detail-grid dd{margin:0; word-break:break-word;}
   .detail-grid dd input.rv-input{width:100%;}
+  .detail-grid dd.abstract-render{white-space:pre-wrap; line-height:1.55; max-width:100%; overflow-x:auto;}
+  .abstract-render .katex-display{margin:0.5em 0; overflow-x:auto; overflow-y:hidden;}
 
   .gate-banner{
     font-size:13px; padding:11px 14px; margin-bottom:24px; max-width:640px;
@@ -912,11 +919,12 @@
   // always had a real venue-level deadline (board.cameraReadyDeadline,
   // see internalSchedule) but never had a column of its own before.
   //
-  // Deliberately no new "abstract text" field: the abstract still lives
-  // in the paper's Overleaf project (overleafLink), already on the card —
-  // no way to verify a pasted-in copy actually matches it (see
-  // authorsLocked's own comment, which still locks authors from `abstract`
-  // onward, unchanged by this redesign).
+  // Reversed 2026-09-18+1, per Eduardo: there IS now a real "abstract
+  // text" field (card.abstractText) — see onAddCard, renderAbstractHtml
+  // (KaTeX-rendered on the detail page). Authors and the Overleaf link
+  // moved out to the same point, both now filled in via Edit fields when
+  // the abstract itself is submitted rather than at registration — see
+  // authorsLocked's own comment and advanceBlockReason's `abstract` gates.
   var STATUS_ORDER = ['register', 'pitch', 'abstract', 'paper', 'arxiv', 'rebuttal', 'camera_ready', 'conference'];
 
   // Rush mode (2026-09-11): a per-venue toggle (board.rushMode) for an
@@ -1419,6 +1427,36 @@
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
       return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
     });
+  }
+
+  // Abstract text may contain LaTeX ($inline$ / $$block$$, plain-text-typed
+  // by whoever filled the field in — see the Edit-fields modal) — render
+  // those spans with KaTeX, everything else as plain escaped text. A
+  // single regex pass, block delimiters checked first so "$$" is never
+  // mistaken for two empty inline formulas. KaTeX's own output is safe
+  // HTML (no user string reaches the DOM unescaped outside of it), and a
+  // formula KaTeX can't parse falls back to its literal source rather
+  // than breaking the whole abstract.
+  function renderAbstractHtml(text){
+    if (!text) return '';
+    if (typeof katex === 'undefined') return escapeHtml(text);
+    var out = '';
+    var lastIndex = 0;
+    var re = /\$\$([\s\S]+?)\$\$|\$([^\$\n]+?)\$/g;
+    var m;
+    while ((m = re.exec(text))){
+      out += escapeHtml(text.slice(lastIndex, m.index));
+      var isBlock = m[1] !== undefined;
+      var src = isBlock ? m[1] : m[2];
+      try {
+        out += katex.renderToString(src, { throwOnError: false, displayMode: isBlock });
+      } catch (err){
+        out += escapeHtml(m[0]);
+      }
+      lastIndex = re.lastIndex;
+    }
+    out += escapeHtml(text.slice(lastIndex));
+    return out;
   }
 
   function showToast(message, kind, durationMs){
@@ -2699,6 +2737,8 @@
     if (next === 'paper') reqs.push('reviewers assigned');
     // Mirrors advanceBlockReason's deliverable-link checks (2026-09-18).
     if (next === 'pitch') reqs.push('pitch materials added');
+    if (next === 'abstract') reqs.push('co-authors added');
+    if (next === 'abstract') reqs.push('Overleaf link added');
     if (next === 'paper') reqs.push('submission link added');
     if (next === 'arxiv') reqs.push('arXiv link added');
     if (next === 'camera_ready') reqs.push('rebuttal doc added');
@@ -2716,23 +2756,23 @@
     return 'Requires: ' + reqs.map(function(r, i){ return letters[i] + ') ' + r; }).join(' ');
   }
 
-  // Authors are fixed once a paper has PASSED Abstract Submitted — the
+  // Authors are fixed as soon as a paper REACHES Abstract Submitted — the
   // real venue locks the author list once the abstract's actually gone
-  // in, so the app matches that from this point on. A card still sitting
-  // AT `abstract` (internal review genuinely in progress, in either
-  // pipeline — same stage, same meaning in both now, see STATUS_ORDER's
-  // own comment) is not locked yet; moving it one column further (to
-  // `paper`) is what locks it. displayStatus resolves "which active
-  // column does this card really represent" the same way it does for
-  // rendering, so both answers stay consistent. Reverting a card back to
-  // (or below) `abstract` un-locks it again automatically — a pure
-  // function of current status, nothing separately tracked.
+  // in, so the app matches that from this point on (changed 2026-09-18,
+  // per Eduardo, from locking one column later, only once `paper` was
+  // reached — that left authors editable through the whole internal
+  // review, which doesn't match how venues actually work). displayStatus
+  // resolves "which active column does this card really represent" the
+  // same way it does for rendering, so both answers stay consistent.
+  // Reverting a card back below `abstract` un-locks it again
+  // automatically — a pure function of current status, nothing
+  // separately tracked.
   function authorsLocked(card, board){
     var order = effectiveStatusOrder(board);
     var effective = displayStatus(card, board);
     var lockIdx = order.indexOf('abstract');
     var cardIdx = order.indexOf(effective);
-    return lockIdx !== -1 && cardIdx !== -1 && cardIdx > lockIdx;
+    return lockIdx !== -1 && cardIdx !== -1 && cardIdx >= lockIdx;
   }
 
   function reviewersAssigned(card){
@@ -2782,6 +2822,19 @@
     // unaffected by any of these — none of them ever fire for it.
     if (toStatus === 'pitch' && !card.pitchLink){
       return 'Add your pitch materials first';
+    }
+    // Authors and the Overleaf link (with a first draft) aren't asked for
+    // at registration any more (2026-09-18, per Eduardo) — there's no
+    // draft yet to point to, and no author list worth locking in that
+    // early. Both become real gates here instead, on whatever transition
+    // actually reaches `abstract` (register/pitch -> abstract in the full
+    // pipeline, register -> abstract directly in rush mode) — see
+    // onAddCard's own comment.
+    if (toStatus === 'abstract' && (!card.authors || !card.authors.length)){
+      return 'Add your co-authors first';
+    }
+    if (toStatus === 'abstract' && !card.overleafLink){
+      return 'Add the Overleaf link first';
     }
     if (toStatus === 'paper' && !card.submissionLink){
       return 'Add the venue submission link first';
@@ -3822,6 +3875,7 @@
     if (rushCutoff) html += '<dt>Rush cutoff</dt><dd' + (rushOverdue ? ' style="color:var(--danger-text);"' : '') + '>' + formatDateTime(rushCutoff) + ' <strong>(' + formatTimeLeft(rushCutoff) + ')</strong></dd>';
     if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + '</dd>';
     if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
+    if (card.abstractText) html += '<dt>Abstract</dt><dd class="abstract-render">' + renderAbstractHtml(card.abstractText) + '</dd>';
     if (card.pitchLink) html += '<dt>Pitch materials</dt><dd><a href="' + escapeHtml(card.pitchLink) + '" target="_blank" rel="noopener">Open</a></dd>';
     if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
     if (card.arxivLink) html += '<dt>arXiv</dt><dd><a href="' + escapeHtml(card.arxivLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.arxivLink) + '</a></dd>';
@@ -4071,26 +4125,24 @@
 
   // ---------- modal ----------
 
-  // ---------- dynamic author rows (registration + Edit fields) ----------
-  // Arrays of in-progress { name, email, isNew } rows, reset each time the
-  // relevant modal opens. Authors resolve to a real person's email via the
-  // roster picker (2026-09-12) — same as reviewers (reviewerInputHtml) —
-  // with a "+ New author" escape hatch (typed Name + Email) for someone
+  // ---------- dynamic author rows (Edit fields) ----------
+  // Array of in-progress { name, email, isNew } rows, reset each time the
+  // Edit-fields modal opens (authors aren't collected at registration any
+  // more — see onAddCard's own comment; they're added here instead, at
+  // Submit the abstract). Authors resolve to a real person's email via
+  // the roster picker (2026-09-12) — same as reviewers (reviewerInputHtml)
+  // — with a "+ New author" escape hatch (typed Name + Email) for someone
   // genuinely outside the Slack workspace. Used to be free text; every
   // feature that needs a real identity to act on (notifications chief
   // among them) needs a real email to reach someone, which a free-text
   // name can never reliably give. `isNew` is UI-only (which control this
-  // row shows) — stripped before the row is ever saved, see
-  // onAddCard/onSaveEdit.
-  var pAuthorsState = [{ name: '', email: '', isNew: false }];
+  // row shows) — stripped before the row is ever saved, see onSaveEdit.
   var eAuthorsState = [{ name: '', email: '', isNew: false }];
 
   // `locked` (2026-09-14, see authorsLocked) disables every control and
   // drops Remove/"Pick from list instead" entirely rather than just
   // greying them out — nothing about this row is actionable once
   // authors are fixed, so there's no half-interactive state to represent.
-  // Always falsy for the registration modal (a brand-new card is never
-  // locked) — only the Edit-fields modal ever passes it.
   function authorRowsHtml(rows, locked){
     return rows.map(function(row, i){
       var isPi = i === rows.length - 1;
@@ -4104,7 +4156,7 @@
       // Abstract Reviewed"/"Abstract Submitted") rather than threading
       // `board` all the way through renderAuthorRows just to pick the
       // right one via statusLabelFor.
-      var lockAttr = locked ? ' disabled title="Authors are locked once past abstract review"' : '';
+      var lockAttr = locked ? ' disabled title="Authors are locked once the abstract is submitted"' : '';
       if (row.isNew){
         html +=
           '<input type="text" class="author-input author-new-name" data-author-idx="' + i + '" value="' + escapeHtml(row.name) + '" placeholder="Name" aria-label="' + label + ' name"' + lockAttr + '>' +
@@ -4122,17 +4174,15 @@
     }).join('');
   }
 
-  // Shared by both the registration modal (pAuthorsState / #pAuthorsWrap)
-  // and the Edit-fields modal (eAuthorsState / #eAuthorsWrap) — same rows,
-  // same PI-is-last-row convention, different backing array + submit key.
+  // Used by the Edit-fields modal (eAuthorsState / #eAuthorsWrap) — the
+  // registration modal doesn't collect authors any more (see onAddCard).
   // `locked`: see authorRowsHtml — when true, the rows render read-only
   // and nothing below is worth wiring up at all (every listener target
   // is disabled or simply absent from the markup). `onChange` (2026-09-14
   // +1, optional): called every time this function actually (re)renders —
   // i.e. after any structural change to `rows` (add/remove/select/"use
   // roster"), since every one of those funnels through a call back into
-  // this same function. The registration modal uses it to autosave its
-  // draft (saveRegisterDraft) — see openModal.
+  // this same function.
   function renderAuthorRows(wrapId, rows, onEnter, locked, onChange){
     var wrap = document.getElementById(wrapId);
     if (!wrap) return;
@@ -4315,25 +4365,20 @@
       var titleEl = document.getElementById('pTitle');
       if (!titleEl) return; // modal already closed \u2014 nothing to save
       var title = titleEl.value;
-      var overleafLink = document.getElementById('pOverleaf').value;
       var computeEstimate = document.getElementById('pCompute').value;
       var note = document.getElementById('pNote').value;
-      var hasAuthorContent = pAuthorsState.some(function(r){ return (r.name && r.name.trim()) || (r.email && r.email.trim()); });
       // Nothing typed yet (including the very first render of a brand-new
-      // modal, which fires this once via renderAuthorRows' onChange before
-      // anyone's touched anything) \u2014 don't create a draft out of thin air,
-      // and if a real draft was just emptied back out by hand, clear it
-      // rather than leaving a stale entry no longer reflected on screen.
-      if (!title.trim() && !overleafLink.trim() && !computeEstimate.trim() && !note.trim() && !hasAuthorContent){
+      // modal) \u2014 don't create a draft out of thin air, and if a real
+      // draft was just emptied back out by hand, clear it rather than
+      // leaving a stale entry no longer reflected on screen.
+      if (!title.trim() && !computeEstimate.trim() && !note.trim()){
         clearRegisterDraft(boardId);
         return;
       }
       var draft = {
         title: title,
-        overleafLink: overleafLink,
         computeEstimate: computeEstimate,
         note: note,
-        authors: pAuthorsState,
         savedAt: Date.now()
       };
       localStorage.setItem(registerDraftKey(boardId), JSON.stringify(draft));
@@ -4366,13 +4411,10 @@
               escapeHtml(state.currentUser.name || state.currentUser.email) + ' (' + escapeHtml(state.currentUser.email) + ') \u2014 used as the submitter and corresponding author.</div>' +
             (draft ? '<div id="draftNotice" style="font-size:12px;color:var(--accent);background:var(--accent-dim);padding:6px 10px;border-radius:var(--radius);margin-bottom:14px;">Restored your unsaved draft from ' + formatTimestamp(draft.savedAt) + ' \u2014 <button type="button" class="btn-text" id="discardDraft" style="font-size:inherit;">Discard</button></div>' : '') +
             '<div class="field"><label for="pTitle">Paper title</label><input type="text" id="pTitle" value="' + escapeHtml((draft && draft.title) || '') + '"></div>' +
-            '<div class="field"><label for="pAuthorsWrap">Authors</label><div id="pAuthorsWrap"></div>' +
-              '<button class="btn-text" type="button" id="pAddAuthor">+ Add author</button>' +
-              '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI. Pick from the workspace, or add someone outside it with their name and email.</div></div>' +
-            '<div class="field"><label for="pOverleaf">Overleaf link</label><input type="url" id="pOverleaf" placeholder="https://www.overleaf.com/project/..." value="' + escapeHtml((draft && draft.overleafLink) || '') + '"></div>' +
             '<div class="field"><label for="pCompute">Compute estimate</label><input type="text" id="pCompute" placeholder="e.g. ~2000 A100-hours" value="' + escapeHtml((draft && draft.computeEstimate) || '') + '">' +
               '<div style="font-size:12px;color:var(--muted);margin-top:4px;">Required at registration (8 weeks out)</div></div>' +
             '<div class="field"><label for="pNote">Note for the reviewers (optional)</label><textarea id="pNote" placeholder="Anything they should know">' + escapeHtml((draft && draft.note) || '') + '</textarea></div>' +
+            '<div style="font-size:12px;color:var(--muted);margin-bottom:14px;">Authors and the Overleaf link come later, at Submit the abstract &mdash; there’s no first draft yet to point to.</div>' +
             '<div class="field-error" id="paperFormError" hidden>Please fill in the required fields above.</div>' +
             '<div class="modal-actions">' +
               '<button class="btn" type="button" id="cancelModal">Cancel</button>' +
@@ -4386,30 +4428,18 @@
       if (e.target.id === 'modalOverlay') closeModal();
     });
     document.getElementById('submitCardBtn').addEventListener('click', onAddCard);
-    ['pTitle', 'pOverleaf', 'pCompute'].forEach(function(id){
+    ['pTitle', 'pCompute'].forEach(function(id){
       document.getElementById(id).addEventListener('keydown', function(ev){
         if (ev.key === 'Enter'){ ev.preventDefault(); onAddCard(ev); }
       });
     });
     // Draft autosave (2026-09-14+1) — see saveRegisterDraft's own comment.
-    // One delegated listener covers every text field, including the
-    // author rows' own name/email inputs (input bubbles); the author
-    // rows' structural changes (add/remove/select/"use roster") go
-    // through renderAuthorRows' onChange instead, since those never fire
-    // a bubbling input event of their own.
+    // One delegated listener covers every text field on the form.
     document.getElementById('paperForm').addEventListener('input', function(){ saveRegisterDraft(current.id); });
     var discardBtn = document.getElementById('discardDraft');
     if (discardBtn) discardBtn.addEventListener('click', function(){
       clearRegisterDraft(current.id);
       openModal(); // cheapest way to reset every field back to blank
-    });
-    pAuthorsState = (draft && draft.authors && draft.authors.length) ? draft.authors : [{ name: '', email: '', isNew: false }];
-    renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard, false, function(){ saveRegisterDraft(current.id); });
-    document.getElementById('pAddAuthor').addEventListener('click', function(){
-      // Insert before the last row, not after — the last row is the PI
-      // slot, and it should stay last as more co-authors are added.
-      pAuthorsState.splice(Math.max(pAuthorsState.length - 1, 0), 0, { name: '', email: '', isNew: false });
-      renderAuthorRows('pAuthorsWrap', pAuthorsState, onAddCard, false, function(){ saveRegisterDraft(current.id); });
     });
     document.getElementById('pTitle').focus();
   }
@@ -4429,11 +4459,12 @@
             '<div class="field"><label for="eTitle">Paper title</label><input type="text" id="eTitle" value="' + escapeHtml(card.title || '') + '"></div>' +
             '<div class="field"><label for="eAuthorsWrap">Authors</label><div id="eAuthorsWrap"></div>' +
               (authorsLock
-                ? '<div style="font-size:12px;color:var(--danger-text);margin-top:4px;">Locked — authors are fixed once ' + statusLabelFor('abstract', editBoard) + ' is complete, matching the venue’s own submission.</div>'
+                ? '<div style="font-size:12px;color:var(--danger-text);margin-top:4px;">Locked — authors are fixed once the abstract is submitted, matching the venue’s own submission.</div>'
                 : '<button class="btn-text" type="button" id="eAddAuthor">+ Add author</button>' +
                   '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI.</div>') +
             '</div>' +
             '<div class="field"><label for="eOverleaf">Overleaf link</label><input type="url" id="eOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/..."></div>' +
+            '<div class="field"><label for="eAbstract">Abstract</label><textarea id="eAbstract" placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + escapeHtml(card.abstractText || '') + '</textarea></div>' +
             '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
             '<div class="field"><label for="ePitchLink">Pitch materials</label><input type="url" id="ePitchLink" value="' + escapeHtml(card.pitchLink || '') + '" placeholder="https://docs.google.com/presentation/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Registered.</div></div>' +
@@ -4522,6 +4553,7 @@
     var updates = {
       title: title,
       overleafLink: overleafLink,
+      abstractText: document.getElementById('eAbstract').value.trim(),
       correspondingAuthorEmail: email,
       computeEstimate: document.getElementById('eCompute').value.trim(),
       pitchLink: document.getElementById('ePitchLink').value.trim(),
@@ -4537,6 +4569,17 @@
     if (!locked){
       updates.authors = authors;
       updates.authorEmails = authorEmailsOf(authors);
+      // Senior reviewer defaults to the PI (the last author) the first
+      // time authors are actually saved — deferred here from onAddCard
+      // (2026-09-18, per Eduardo), since authors don't exist yet at
+      // registration any more. Only fires while nothing's been assigned
+      // yet, same as the old onAddCard default: once a senior reviewer
+      // is picked (here or via reviewerInputHtml), saving authors again
+      // never overwrites that choice.
+      if (!card.reviewers || !card.reviewers.senior){
+        var prevReviewers = card.reviewers || { junior: '', senior: '' };
+        updates.reviewers = { junior: prevReviewers.junior || '', senior: (authors.length ? authors[authors.length - 1].email : '') || '' };
+      }
     }
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
@@ -4737,21 +4780,10 @@
     if (e && e.preventDefault) e.preventDefault();
     if (!requireSignedIn()) return;
     var title = document.getElementById('pTitle').value.trim();
-    // The last row is the PI slot (see authorRowsHtml) — it must be a
-    // complete, real entry even if blank rows elsewhere just get dropped.
-    var authors = authorsForSave(pAuthorsState);
-    var overleafLink = document.getElementById('pOverleaf').value.trim();
     var errorEl = document.getElementById('paperFormError');
 
-    var authorsIssue = authorRowsIssue(pAuthorsState);
-    if (!title || authorsIssue || !overleafLink){
-      errorEl.textContent = authorsIssue || 'Please fill in the required fields above.';
-      errorEl.hidden = false;
-      return;
-    }
-    var overleafIssue = overleafLinkIssue(overleafLink);
-    if (overleafIssue){
-      errorEl.textContent = overleafIssue;
+    if (!title){
+      errorEl.textContent = 'Please fill in the required fields above.';
       errorEl.hidden = false;
       return;
     }
@@ -4764,20 +4796,29 @@
     var card = {
       id: 'card-' + now + '-' + Math.random().toString(36).slice(2, 8),
       title: title,
-      authors: authors,
-      authorEmails: authorEmailsOf(authors),
-      overleafLink: overleafLink,
+      // Authors and the Overleaf link aren't known yet at registration —
+      // there's no first draft to point to and no locked-in author list
+      // this early (2026-09-18, per Eduardo). Both get filled in via Edit
+      // fields once the abstract itself is ready, at Submit the abstract;
+      // see onSaveEdit for where the PI-defaults-to-senior-reviewer
+      // assignment actually happens now, deferred from here for the same
+      // reason.
+      authors: [],
+      authorEmails: [],
+      overleafLink: '',
       correspondingAuthorEmail: state.currentUser.email,
       computeEstimate: document.getElementById('pCompute').value.trim(),
+      // Free text, filled in later (Edit fields) once the abstract itself
+      // is written — not required at registration, not a deliverable gate
+      // (unlike pitchLink/submissionLink/etc. below). May contain LaTeX,
+      // typed as plain $inline$/$$block$$ — see renderAbstractHtml.
+      abstractText: '',
       status: 'register',
       submittedBy: { name: submittedByName, email: state.currentUser.email, slackId: null },
-      // Senior reviewer defaults to the PI (2026-09-18, per Eduardo) —
-      // the last author, same convention as cardPi(). This is what makes
-      // "abstract" stage's existing senior-checklist-complete check
-      // double as PI approval, with no separate approval mechanism
-      // needed at all — still just a default, not locked: reviewerInputHtml
-      // lets it be reassigned to someone else like any other pick.
-      reviewers: { junior: '', senior: (authors.length ? authors[authors.length - 1].email : '') || '' },
+      // Senior reviewer defaults to the PI once authors actually exist —
+      // see onSaveEdit, which sets this the first time authors are saved,
+      // since there's no author list yet at registration to default from.
+      reviewers: { junior: '', senior: '' },
       jrReviewState: 'in_review',
       srReviewState: 'in_review',
       outcome: '',
