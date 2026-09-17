@@ -1993,7 +1993,15 @@
     if (place.length) bits.push(place.join(' &middot; '));
     var rules = [];
     if (v.maxPapersPerAuthor) rules.push('&le; ' + v.maxPapersPerAuthor + ' papers/author');
-    if (v.pageLimit) rules.push(escapeHtml(v.pageLimit));
+    // A bare number ("9", no unit) reads as ambiguous next to the other
+    // rules — e.g. "≤ 20 papers/author · 9 · Double-blind" could be
+    // anything. Append "pages" only when it's JUST a number; a value
+    // someone already wrote out descriptively ("9 pages excl. refs")
+    // stays exactly as entered, not doubled up.
+    if (v.pageLimit){
+      var pageLimitText = String(v.pageLimit).trim();
+      rules.push(escapeHtml(/^\d+$/.test(pageLimitText) ? pageLimitText + ' pages' : pageLimitText));
+    }
     if (v.anonymity) rules.push(ANONYMITY_LABELS[v.anonymity] || escapeHtml(v.anonymity));
     if (rules.length) bits.push(rules.join(' &middot; '));
     if (!bits.length) return '';
@@ -2027,6 +2035,17 @@
     function wk(n){ return wrap(shiftWeeks(v.deadline, n), n + (n === 1 ? ' week before' : ' weeks before')); }
     function wrap(dateObj, derivation){ return { dateObj: dateObj, derivation: derivation }; }
     function on(iso, derivation){ return { dateObj: new Date(iso + 'T00:00:00'), derivation: derivation }; }
+    // paper/abstract specifically — the same two fields the column
+    // header's External deadline reads (rushColumnRealDeadline) — use
+    // the AoE-corrected London calendar date, not the bare stored one,
+    // so this rail always agrees with the column header exactly. Every
+    // other row (rebuttal/camera-ready/reviews-released/notification,
+    // and the internal working-backward dates via wk()) is unaffected:
+    // not shown in any column header, so nothing to disagree with.
+    function onDeadline(iso, derivation){
+      var correctedIso = londonDeadlineDateIso(iso);
+      return correctedIso ? on(correctedIso, derivation) : null;
+    }
 
     var rows = [
       Object.assign({ key: 'register', label: 'Register', short: 'Register',
@@ -2046,11 +2065,11 @@
         summary: 'PI approval',
         description: "The PI reads the final draft and approves it for submission. This is the PI's only involvement." }, wk(1)),
       Object.assign({ key: 'paper', label: 'Paper deadline', short: 'Paper',
-        summary: 'Paper deadline', description: '' }, on(v.deadline, ''))
+        summary: 'Paper deadline', description: '' }, onDeadline(v.deadline, ''))
     ];
     if (v.abstractDeadline){
       rows.push(Object.assign({ key: 'abstract', label: 'Abstract deadline', short: 'Abstract',
-        summary: 'Abstract deadline (venue)', description: '' }, on(v.abstractDeadline, 'venue')));
+        summary: 'Abstract deadline (venue)', description: '' }, onDeadline(v.abstractDeadline, 'venue')));
     }
     // Venue's own dates, each only if the venue actually has it.
     if (v.reviewsPublicDate){
@@ -2105,8 +2124,13 @@
       '</li>';
     }).join('');
     var subUrl = icsSubscribeUrl(v.id);
+    // The 'paper' row's own .iso, not v.deadline directly — already the
+    // AoE-corrected London date (see internalSchedule's onDeadline), so
+    // this summary line agrees with both the rail below it and the
+    // column header's External deadline.
+    var paperRow = rows.filter(function(r){ return r.key === 'paper'; })[0];
     return '<div class="venue-schedule">' +
-      '<div class="vs-head">Deadlines <span>&mdash; counted back from the ' + formatDate(v.deadline) + ' paper deadline' +
+      '<div class="vs-head">Deadlines <span>&mdash; counted back from the ' + formatDate(paperRow.iso) + ' paper deadline' +
         (hasVenueDates ? ', plus the venue&rsquo;s own dates' : '') +
         (hasBuffer ? ' (lighter date &#61; our ' + BUFFER_DAYS + '-day internal target)' : '') + '</span></div>' +
       '<div class="vs-rail-wrap"><ol class="vs-rail" style="--n:' + rows.length + '">' + pts + '</ol></div>' +
@@ -2249,6 +2273,19 @@
   function isOverdue(card, board){
     var instant = deadlineInstant(effectiveDeadline(card, board));
     return !!instant && Date.now() > instant.getTime();
+  }
+
+  // The calendar date a deadline's true instant falls on when read in
+  // London time — 'YYYY-MM-DD'. A stored deadline of "18 Sep" is really
+  // 23:59 AoE, whose instant lands on 19 Sep in London (see
+  // deadlineInstant) — the venue timeline (internalSchedule below) needs
+  // this to show the SAME date the column header's External deadline
+  // does (formatDateTime(deadlineInstant(...))), not the bare stored
+  // date, or the two would disagree by a day.
+  function londonDeadlineDateIso(iso){
+    var instant = deadlineInstant(iso);
+    if (!instant) return null;
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(instant);
   }
 
   // Rush mode's own internal deadlines (2026-09-14, per Eduardo) —
