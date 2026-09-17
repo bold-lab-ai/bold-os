@@ -289,6 +289,49 @@
   }
   .phase-rush-note strong{color:var(--ink-soft); font-weight:600;}
 
+  /* ---------- Rush-mode phase toggle ---------- */
+  .pipeline-toggle-wrap{
+    max-width:var(--content-max);
+    margin:0 auto;
+    padding:0 var(--gutter);
+  }
+  .pipeline-toggle{
+    display:inline-flex; align-items:center; gap:10px;
+    background:none; border:none; padding:0; margin:0 0 6px;
+    cursor:pointer; font-family:var(--sans);
+  }
+  .pipeline-toggle-track{
+    position:relative;
+    width:34px; height:19px;
+    border-radius:10px;
+    background:var(--wash);
+    border:1px solid var(--line);
+    transition:background .15s, border-color .15s;
+    flex:none;
+  }
+  .pipeline-toggle-thumb{
+    position:absolute; top:2px; left:2px;
+    width:13px; height:13px; border-radius:50%;
+    background:var(--surface);
+    box-shadow:0 1px 2px rgba(26,43,74,.25);
+    transition:transform .15s;
+  }
+  .pipeline-toggle[aria-checked="true"] .pipeline-toggle-track{background:var(--accent); border-color:var(--accent);}
+  .pipeline-toggle[aria-checked="true"] .pipeline-toggle-thumb{transform:translateX(15px);}
+  .pipeline-toggle-label{font-size:13px; color:var(--ink-soft); text-align:left;}
+  .pipeline-toggle:hover .pipeline-toggle-label{color:var(--ink);}
+  .pipeline-toggle:focus-visible .pipeline-toggle-track{outline:2px solid var(--accent); outline-offset:2px;}
+
+  /* Rush view: hide every phase Rush mode doesn't have a column for, in
+     both nav lists — the .phase sections themselves aren't hidden by CSS
+     at all (only one is ever .active at a time regardless), the pager
+     script skips non-rush ids when stepping instead, see its own comment. */
+  body.rush-view .timeline li[data-non-rush],
+  body.rush-view nav.toc li[data-non-rush]{display:none;}
+  /* Redundant once the toggle itself says "Rush mode" — the aside was
+     for a canonical-track reader wondering how this maps across. */
+  body.rush-view .phase-rush-note{display:none;}
+
   h3.subhead{
     font-family:var(--sans);
     font-weight:400;
@@ -629,32 +672,39 @@
   <p class="page-source">Provenance: <a href="https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.2hb4joowc1yk" target="_blank" rel="noopener">BOLDiquette &sect; Pre-submission</a> &middot; current differences in <a href="diff.html">DIFF.md</a></p>
 </div>
 
+<div class="pipeline-toggle-wrap">
+  <button class="pipeline-toggle" id="rushToggle" type="button" role="switch" aria-checked="false">
+    <span class="pipeline-toggle-track"><span class="pipeline-toggle-thumb"></span></span>
+    <span class="pipeline-toggle-label" id="rushToggleLabel">Full pipeline &mdash; show only Rush mode&rsquo;s 4 phases</span>
+  </button>
+</div>
+
 <nav class="timeline" aria-label="Phases at a glance">
-  <ol style="--n:8">
-    <li><a href="#phase-1"><span class="tl-dot"></span><span class="tl-name">Register</span><span class="tl-wk">8w</span></a></li>
-    <li><a href="#phase-2"><span class="tl-dot"></span><span class="tl-name">Pitch</span><span class="tl-wk">6w</span></a></li>
-    <li><a href="#phase-3"><span class="tl-dot"></span><span class="tl-name">Abstract</span><span class="tl-wk">4w</span></a></li>
-    <li class="is-pivot"><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">0</span></a></li>
-    <li class="is-after"><a href="#phase-5"><span class="tl-dot"></span><span class="tl-name">arXiv</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after"><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after"><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after"><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Conference</span><span class="tl-wk">after</span></a></li>
+  <ol style="--n:8" id="timelineList">
+    <li data-rush><a href="#phase-1"><span class="tl-dot"></span><span class="tl-name">Register</span><span class="tl-wk">8w</span></a></li>
+    <li data-non-rush><a href="#phase-2"><span class="tl-dot"></span><span class="tl-name">Pitch</span><span class="tl-wk">6w</span></a></li>
+    <li data-rush><a href="#phase-3"><span class="tl-dot"></span><span class="tl-name">Abstract</span><span class="tl-wk">4w</span></a></li>
+    <li class="is-pivot" data-rush><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">0</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-5"><span class="tl-dot"></span><span class="tl-name">arXiv</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-rush><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Conference</span><span class="tl-wk">after</span></a></li>
   </ol>
 </nav>
 
 <div class="layout">
 
   <nav class="toc" aria-label="Phases">
-    <ol>
-      <li><a href="#phase-1"><span class="n">8w</span>Register</a></li>
-      <li><a href="#phase-2"><span class="n">6w</span>Pitch</a></li>
-      <li><a href="#phase-3"><span class="n">4w</span>Abstract</a></li>
-      <li><a href="#phase-4"><span class="n">0</span>Paper</a></li>
+    <ol id="tocList">
+      <li data-rush><a href="#phase-1"><span class="n">8w</span>Register</a></li>
+      <li data-non-rush><a href="#phase-2"><span class="n">6w</span>Pitch</a></li>
+      <li data-rush><a href="#phase-3"><span class="n">4w</span>Abstract</a></li>
+      <li data-rush><a href="#phase-4"><span class="n">0</span>Paper</a></li>
       <li class="toc-split">After submission</li>
-      <li><a href="#phase-5"><span class="n"></span>arXiv</a></li>
-      <li><a href="#phase-6"><span class="n"></span>Rebuttal</a></li>
-      <li><a href="#phase-7"><span class="n"></span>Camera&#8209;ready</a></li>
-      <li><a href="#phase-8"><span class="n"></span>Conference</a></li>
+      <li data-non-rush><a href="#phase-5"><span class="n"></span>arXiv</a></li>
+      <li data-rush><a href="#phase-6"><span class="n"></span>Rebuttal</a></li>
+      <li data-non-rush><a href="#phase-7"><span class="n"></span>Camera&#8209;ready</a></li>
+      <li data-non-rush><a href="#phase-8"><span class="n"></span>Conference</a></li>
     </ol>
   </nav>
 
@@ -886,6 +936,35 @@
   const pagerStatus = document.getElementById('pagerStatus');
   const layout = document.querySelector('.layout');
 
+  // Rush mode's own 4 phases, in order — matches RUSH_STATUS_ORDER in
+  // audit-board.html exactly (Register, Abstract, Paper, Rebuttal).
+  const RUSH_IDS = ['phase-1', 'phase-3', 'phase-4', 'phase-6'];
+  const rushToggle = document.getElementById('rushToggle');
+  const rushToggleLabel = document.getElementById('rushToggleLabel');
+  const timelineList = document.getElementById('timelineList');
+
+  function isRushView() { return document.body.classList.contains('rush-view'); }
+  function isVisiblePhase(id) { return !isRushView() || RUSH_IDS.includes(id); }
+  function visibleIds() { return ids.filter(isVisiblePhase); }
+
+  function applyRushView(on) {
+    document.body.classList.toggle('rush-view', on);
+    rushToggle.setAttribute('aria-checked', on ? 'true' : 'false');
+    rushToggleLabel.textContent = on
+      ? 'Rush mode — showing 4 of 8 phases'
+      : 'Full pipeline — show only Rush mode’s 4 phases';
+    // Keeps the timeline's connecting line ending at the first/last
+    // VISIBLE dot (see .timeline ol::before's own calc(50% / var(--n))) —
+    // hiding li's via CSS doesn't shrink this on its own.
+    timelineList.style.setProperty('--n', on ? RUSH_IDS.length : ids.length);
+    try { localStorage.setItem('boldGuideRushView', on ? '1' : '0'); } catch (e) {}
+    // Already sitting on a phase Rush mode doesn't have — land on
+    // Register instead of leaving the pager stuck on a hidden phase.
+    if (!isVisiblePhase(currentId())) showPhase(RUSH_IDS[0]);
+  }
+
+  rushToggle.addEventListener('click', () => applyRushView(!isRushView()));
+
   function showPhase(id, { pushHistory = true, scroll = true } = {}) {
     const idx = ids.indexOf(id);
     if (idx === -1) return;
@@ -899,9 +978,14 @@
     });
     tl.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
 
-    pagerStatus.textContent = `Phase ${idx + 1} of ${ids.length}`;
-    prevBtn.disabled = idx === 0;
-    nextBtn.disabled = idx === ids.length - 1;
+    // Numbered against whichever phases are actually visible right now
+    // (4 in Rush view, 8 otherwise), not the full fixed list — "Phase 2
+    // of 8" would be wrong to show while Pitch and 5 others are hidden.
+    const vis = visibleIds();
+    const visIdx = vis.indexOf(id);
+    pagerStatus.textContent = `Phase ${visIdx + 1} of ${vis.length}`;
+    prevBtn.disabled = visIdx <= 0;
+    nextBtn.disabled = visIdx === -1 || visIdx >= vis.length - 1;
 
     if (pushHistory && location.hash !== '#' + id) {
       history.pushState({ phase: id }, '', '#' + id);
@@ -918,13 +1002,18 @@
     });
   });
 
+  // Step to the next/previous VISIBLE phase, not just the adjacent array
+  // entry — in Rush view, Next from Register goes straight to Abstract,
+  // skipping the hidden Pitch in between.
   prevBtn.addEventListener('click', () => {
-    const idx = ids.indexOf(currentId());
-    if (idx > 0) showPhase(ids[idx - 1]);
+    const vis = visibleIds();
+    const idx = vis.indexOf(currentId());
+    if (idx > 0) showPhase(vis[idx - 1]);
   });
   nextBtn.addEventListener('click', () => {
-    const idx = ids.indexOf(currentId());
-    if (idx < ids.length - 1) showPhase(ids[idx + 1]);
+    const vis = visibleIds();
+    const idx = vis.indexOf(currentId());
+    if (idx !== -1 && idx < vis.length - 1) showPhase(vis[idx + 1]);
   });
 
   function currentId() {
@@ -937,7 +1026,12 @@
     showPhase(ids.includes(id) ? id : ids[0], { pushHistory: false, scroll: false });
   });
 
-  const startId = ids.includes(location.hash.slice(1)) ? location.hash.slice(1) : ids[0];
+  let savedRushView = false;
+  try { savedRushView = localStorage.getItem('boldGuideRushView') === '1'; } catch (e) {}
+  applyRushView(savedRushView);
+
+  let startId = ids.includes(location.hash.slice(1)) ? location.hash.slice(1) : ids[0];
+  if (!isVisiblePhase(startId)) startId = RUSH_IDS[0];
   showPhase(startId, { pushHistory: false, scroll: false });
 </script>
 
