@@ -81,10 +81,12 @@ function linkedTitle(text, url){
 // STATUS_ORDER comment for the full rationale). camera_ready fixed
 // 2026-09-18+1 to "Rebuttal Submitted" — a card enters it by submitting
 // the rebuttal, not by having submitted camera-ready material yet.
+// abstract reverted 2026-09-18+2 to "Abstract in review" — see
+// audit-board.html's STATUS_LABELS comment for why this is deliberate.
 const STATUS_LABEL = {
   register: 'Registered',
   pitch: 'Pitched',
-  abstract: 'Abstract Submitted',
+  abstract: 'Abstract in review',
   paper: 'Paper Submitted',
   arxiv: 'Posted',
   rebuttal: 'Reviews Out',

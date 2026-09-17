@@ -1007,13 +1007,19 @@
   // REBUTTAL (see advanceBlockReason's rebuttalDocLink gate on
   // toStatus==='camera_ready'), not by having submitted camera-ready
   // material yet — that's the NEXT transition, camera_ready -> conference.
-  // Same class of bug as the original "Abstract in review" mislabel this
-  // whole redesign started from: the column name claimed something had
-  // happened that hadn't.
+  // "Abstract Submitted" reverted back to "Abstract in review" (2026-09-18+2,
+  // per Eduardo) — the exact name flagged below as this whole redesign's
+  // original mislabel (the column is entered the instant the abstract goes
+  // out, before either reviewer has actually started anything). Deliberate
+  // this time: a card visibly shows reviewer approval in place once it
+  // happens (see renderCard's rv-approved class, reviewFilterState) without
+  // changing column, so "in review" reads as "this is the review stage" —
+  // still true the whole time a card sits here — rather than "review is
+  // active on it right now," which was the original bug's actual claim.
   var STATUS_LABELS = {
     register: 'Registered',
     pitch: 'Pitched',
-    abstract: 'Abstract Submitted',
+    abstract: 'Abstract in review',
     paper: 'Paper Submitted',
     arxiv: 'Posted',
     rebuttal: 'Reviews Out',
@@ -2373,7 +2379,7 @@
   // separate from effectiveDeadline/isOverdue above, which drive the
   // general "Overdue" badge off a venue's real deadline directly and are
   // unchanged by any of this. Rush's two columns with something still
-  // outstanding — Registered (abstract not sent) and Abstract Submitted
+  // outstanding — Registered (abstract not sent) and Abstract in review
   // (paper not sent) — each count down to a CUTOFF instead: RUSH_BUFFER_HOURS
   // before the real venue deadline that stage is actually racing toward,
   // so there's still a buffer to act before the real deadline hits, not
@@ -2383,7 +2389,7 @@
   var RUSH_BUFFER_HOURS = 48;
 
   // Which real venue deadline a given rush column is racing toward — just
-  // Registered and Abstract Submitted, the two Rush-mode columns with
+  // Registered and Abstract in review, the two Rush-mode columns with
   // something still outstanding (see outstandingDeadlineFor above, which
   // this reuses directly — same answer effectiveDeadline gives any card
   // at that status, just addressed by bare status/board instead of a
@@ -2444,7 +2450,7 @@
 
   // The line under a column's title — STATUS_HINTS' plain "move a card
   // here when…" note everywhere except Rush mode's two columns with an
-  // outstanding submission (Registered, Abstract Submitted — see
+  // outstanding submission (Registered, Abstract in review — see
   // rushColumnRealDeadline), which show their real deadline and internal
   // cutoff instead, since that's the more useful thing to see there.
   // Paper Submitted falls through to the plain STATUS_HINTS text same as
@@ -2752,7 +2758,7 @@
     return 'Requires: ' + reqs.map(function(r, i){ return letters[i] + ') ' + r; }).join(' ');
   }
 
-  // Authors are fixed as soon as a paper REACHES Abstract Submitted — the
+  // Authors are fixed as soon as a paper REACHES Abstract in review — the
   // real venue locks the author list once the abstract's actually gone
   // in, so the app matches that from this point on (changed 2026-09-18,
   // per Eduardo, from locking one column later, only once `paper` was
@@ -4303,7 +4309,7 @@
   }
 
   // Rush mode's "Submit paper" gate (2026-09-14, per Eduardo) — moving
-  // a card out of Abstract Submitted is where the two things that stage
+  // a card out of Abstract in review is where the two things that stage
   // exists to check get enforced: the authors list is actually filled in,
   // and nobody on the paper is over the venue's max-papers-per-author cap.
   // A real hard block on THIS specific transition — unlike
@@ -4468,7 +4474,7 @@
             '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
             '<div class="field"><label for="ePitchLink">Pitch materials</label><input type="url" id="ePitchLink" value="' + escapeHtml(card.pitchLink || '') + '" placeholder="https://docs.google.com/presentation/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Registered.</div></div>' +
-            '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Abstract Submitted.</div></div>' +
+            '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Abstract in review.</div></div>' +
             '<div class="field"><label for="eArxivLink">arXiv link</label><input type="url" id="eArxivLink" value="' + escapeHtml(card.arxivLink || '') + '" placeholder="https://arxiv.org/abs/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Paper Submitted.</div></div>' +
             '<div class="field"><label for="eRebuttalDeadline">Rebuttal deadline</label><input type="date" id="eRebuttalDeadline" value="' + escapeHtml(card.rebuttalDeadline || '') + '"></div>' +
             '<div class="field"><label for="eRebuttalDoc">Rebuttal document</label><input type="url" id="eRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Reviews Out.</div></div>' +
@@ -4901,7 +4907,7 @@
     var toIdx = order.indexOf(newStatus);
     var isAdvance = toIdx !== -1 && (fromIdx === -1 || toIdx > fromIdx);
 
-    // Only blocks moving forward into Abstract Submitted — reverting back
+    // Only blocks moving forward into Abstract in review — reverting back
     // into it isn't held to this, same as the checklist gate above only
     // fires crossing forward. Moved here from Paper Submitted
     // (2026-09-18+1, per Eduardo) to match advanceBlockReason's own gate
