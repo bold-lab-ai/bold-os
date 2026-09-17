@@ -401,16 +401,19 @@
   }
   .column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
   /* ch-hint and ch-requires are ALWAYS rendered (renderColumns never
-     omits either div, even with nothing to say) and both fixed to exactly
-     two lines' worth of height, whether or not they actually hold that
-     much text — a column with no hint and no requirements still reserves
-     the same space as one with both, so every column-head comes out
-     identically tall and the head/body divider lines up across the whole
-     board, not just within a column that happens to have more or less to
-     say than its neighbours. */
+     omits either div, even with nothing to say) and both fixed to a set
+     height, whether or not they actually hold that much text — a column
+     with no hint and no requirements still reserves the same space as one
+     with both, so every column-head comes out identically tall and the
+     head/body divider lines up across the whole board, not just within a
+     column that happens to have more or less to say than its neighbours.
+     ch-hint is 3 lines' worth (not 2, like ch-requires below) so rush
+     mode's 2-line deadline content still leaves a full blank line of
+     breathing room before ch-requires starts, same as a plain 1-line hint
+     always has in the other 2 lines of its own box. */
   .column-head .ch-hint{
-    margin-top:4px; height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
+    margin-top:4px; height:4.05em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden;
   }
   /* Rush mode's column deadline hint — two rows (internal cutoff, venue
      deadline), each a label + a date. Grid instead of ch-hint's own
