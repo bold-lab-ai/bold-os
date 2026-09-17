@@ -994,6 +994,14 @@
   // order as the guide's `.timeline` — the guide's headings stay
   // instructional ("Pitch", "Submit paper") since they're telling you
   // what to go do, not stating that it's done.
+  // camera_ready fixed 2026-09-18+1: was "Camera-ready Submitted", which
+  // was simply wrong — a card enters `camera_ready` by submitting the
+  // REBUTTAL (see advanceBlockReason's rebuttalDocLink gate on
+  // toStatus==='camera_ready'), not by having submitted camera-ready
+  // material yet — that's the NEXT transition, camera_ready -> conference.
+  // Same class of bug as the original "Abstract in review" mislabel this
+  // whole redesign started from: the column name claimed something had
+  // happened that hadn't.
   var STATUS_LABELS = {
     register: 'Registered',
     pitch: 'Pitched',
@@ -1001,7 +1009,7 @@
     paper: 'Paper Submitted',
     arxiv: 'Posted',
     rebuttal: 'Reviews Out',
-    camera_ready: 'Camera-ready Submitted',
+    camera_ready: 'Rebuttal Submitted',
     conference: 'Accepted'
   };
   // Super-brief "move a card here when…" note under each column title.

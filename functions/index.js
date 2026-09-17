@@ -75,11 +75,12 @@ function linkedTitle(text, url){
   return '<' + url + '|*' + text + '*>';
 }
 
-// Mirrors audit-board.html's STATUS_LABELS.
 // Mirrors audit-board.html's STATUS_LABELS (2026-09-18 pipeline redesign
 // — 8 stages, down from 10; draft_review/final_draft/abstract_review/
 // pi_polish collapsed into one `abstract` stage — see that file's own
-// STATUS_ORDER comment for the full rationale).
+// STATUS_ORDER comment for the full rationale). camera_ready fixed
+// 2026-09-18+1 to "Rebuttal Submitted" — a card enters it by submitting
+// the rebuttal, not by having submitted camera-ready material yet.
 const STATUS_LABEL = {
   register: 'Registered',
   pitch: 'Pitched',
@@ -87,7 +88,7 @@ const STATUS_LABEL = {
   paper: 'Paper Submitted',
   arxiv: 'Posted',
   rebuttal: 'Reviews Out',
-  camera_ready: 'Camera-ready Submitted',
+  camera_ready: 'Rebuttal Submitted',
   conference: 'Accepted'
 };
 
