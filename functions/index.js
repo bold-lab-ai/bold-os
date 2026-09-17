@@ -76,16 +76,19 @@ function linkedTitle(text, url){
 }
 
 // Mirrors audit-board.html's STATUS_LABELS.
+// Mirrors audit-board.html's STATUS_LABELS (2026-09-18 pipeline redesign
+// — 8 stages, down from 10; draft_review/final_draft/abstract_review/
+// pi_polish collapsed into one `abstract` stage — see that file's own
+// STATUS_ORDER comment for the full rationale).
 const STATUS_LABEL = {
   register: 'Registered',
-  pitch_day: 'Pitched',
-  draft_review: 'Drafted',
-  final_draft: 'Reviewed',
-  pi_polish: 'PI Approved',
-  submit: 'Submitted',
-  arxiv_publicity: 'Posted',
+  pitch: 'Pitched',
+  abstract: 'Abstract Submitted',
+  paper: 'Paper Submitted',
+  arxiv: 'Posted',
   rebuttal: 'Reviews Out',
-  pre_conference: 'Accepted'
+  camera_ready: 'Camera-ready Submitted',
+  conference: 'Accepted'
 };
 
 // Mirrors the three raw tri-state values from audit-board.html's
@@ -419,8 +422,16 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
   }
   if (roleChanges.length && submitterEmail){
     var reviewHeadline = roleEmojis.join('') + ' ' + linked + ' — ' + roleChanges.join(', ') + '.';
-    if (before.status !== after.status && after.status === 'final_draft'){
-      reviewHeadline += ' Both reviewers approved — moved to Reviewed.';
+    // 2026-09-18: no more auto-advance on checklist completion (the
+    // pipeline redesign collapsed draft_review/final_draft into one
+    // `abstract` stage — see audit-board.html's STATUS_ORDER comment).
+    // Completing both checklists just unblocks Submit paper now, doesn't
+    // move the card — so this says that instead of claiming a move
+    // happened that no longer does.
+    var justApproved = after.jrReviewState === 'approved' && after.srReviewState === 'approved' &&
+      !(before.jrReviewState === 'approved' && before.srReviewState === 'approved');
+    if (after.status === 'abstract' && justApproved){
+      reviewHeadline += ' Both reviewers approved — ready to submit the paper.';
     }
     events.push({ emails: [submitterEmail], headline: reviewHeadline });
   }
@@ -443,21 +454,13 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
     events.push({ emails: [submitterEmail], headline: '➡️ ' + linked + ' moved to *' + label + '*.' });
   }
 
-  // Reaches the PI-approval step — notify the PI specifically (the last
-  // entry in authors, see docs/AGENTS.md guideline 8), not just the
-  // submitter (already covered above). Silently produces no event if the
-  // PI has no email on file — old, not-yet-migrated author data (see
-  // normalizeCard's authors migration) or a card whose last author was
-  // never actually set. 🔔 = "this needs a decision from you" — same
-  // family as the venue-proposal notification below, both are asking the
-  // recipient to actually go approve something, not just informing them.
-  if (before.status !== 'pi_polish' && after.status === 'pi_polish'){
-    var authors = after.authors || [];
-    var pi = authors.length ? authors[authors.length - 1] : null;
-    if (pi && pi.email){
-      events.push({ emails: [pi.email], headline: '🔔 ' + linked + ' is ready for your approval.' });
-    }
-  }
+  // Removed 2026-09-18: the "reaches PI-approval step" notification this
+  // used to be — a separate pi_polish status doesn't exist any more (see
+  // audit-board.html's STATUS_ORDER comment: PI approval is now just the
+  // senior-reviewer checklist, since senior defaults to the PI). The real
+  // event this was trying to catch — "the PI needs to go look at this" —
+  // is already covered above, the moment they're assigned as senior
+  // reviewer (🔍 "You've been assigned as Senior reviewer").
 
   // New Discussion message (2026-09-12, revised per Eduardo) — a
   // brand-new top-level message still goes to everyone with a stake in
