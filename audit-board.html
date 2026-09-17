@@ -2339,7 +2339,10 @@
       var real = rushColumnRealDeadline(status, board);
       if (!real) return 'No deadline set for this venue yet';
       var cutoff = rushColumnCutoff(status, board);
-      return 'Internal due ' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)';
+      // Own line above the internal cutoff — the venue's actual deadline,
+      // same London-time treatment as everything else here, so the two
+      // numbers on this hint are always directly comparable.
+      return 'Venue ' + formatDateTime(deadlineInstant(real)) + '<br>Internal due ' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)';
     }
     return escapeHtml(STATUS_HINTS[status] || '');
   }
