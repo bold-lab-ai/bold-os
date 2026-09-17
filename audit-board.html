@@ -2216,12 +2216,17 @@
     return null;
   }
 
+  // Today's calendar date in London, as 'YYYY-MM-DD' — compares directly
+  // against a bare deadline date string, so "overdue" means the same
+  // thing for every viewer regardless of their own timezone.
+  function londonTodayIso(){
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  }
+
   function isOverdue(card, board){
     var dl = effectiveDeadline(card, board);
     if (!dl) return false;
-    var today = new Date(); today.setHours(0,0,0,0);
-    var d = new Date(dl + 'T00:00:00');
-    return d < today;
+    return londonTodayIso() > dl;
   }
 
   // Rush mode's own internal deadlines (2026-09-14, per Eduardo) —
@@ -2236,14 +2241,30 @@
 
   // Venue deadlines are stored as bare dates (no time of day), so every
   // consumer of "how long is left" needs one shared answer for what
-  // instant a date actually means — read as through 18:00 (end of the
-  // working day), the viewer's own local time, not midnight.
+  // instant a date actually means — read as through 18:00 London time
+  // (end of the working day), not midnight, and not the viewer's own
+  // local time: a deadline is one real moment, the same for everyone
+  // looking at the board regardless of where they are.
   var DEADLINE_HOUR = 18;
+
+  // Europe/London's UTC offset (ms) at a given instant — BST (UTC+1) in
+  // summer, GMT (UTC+0) the rest of the year, resolved via Intl rather
+  // than a hardcoded offset so it's correct on both sides of the DST
+  // transition without needing a timezone library.
+  function londonOffsetMs(utcInstant){
+    var utcWall = new Date(utcInstant.toLocaleString('en-US', { timeZone: 'UTC' }));
+    var lonWall = new Date(utcInstant.toLocaleString('en-US', { timeZone: 'Europe/London' }));
+    return lonWall.getTime() - utcWall.getTime();
+  }
+
   function deadlineInstant(iso){
     if (!iso) return null;
-    var d = new Date(iso + 'T00:00:00');
-    d.setHours(DEADLINE_HOUR, 0, 0, 0);
-    return d;
+    // First guess DEADLINE_HOUR as if it were UTC, then correct by
+    // London's actual offset at that instant — always taken well after
+    // any DST changeover (those happen around 1am UK time), so the
+    // offset is correct for the whole of DEADLINE_HOUR's calendar day.
+    var utcGuess = new Date(iso + 'T' + pad2(DEADLINE_HOUR) + ':00:00Z');
+    return new Date(utcGuess.getTime() - londonOffsetMs(utcGuess));
   }
 
   // Which real venue deadline a given rush column is racing toward —
@@ -2289,13 +2310,17 @@
     return pastDue ? (text + ' overdue') : (text + ' left');
   }
 
-  // "18 Sep, 6:00 PM" — a date plus a time of day, for the rush cutoff
-  // itself (formatDate below is date-only, for the real venue deadlines it
-  // already handles everywhere else).
+  // "18 Sep, 6:00 PM BST" — a date plus a time of day, for the rush
+  // cutoff itself (formatDate below is date-only, for the real venue
+  // deadlines it already handles everywhere else). Always rendered in
+  // London time with its abbreviation shown, not the viewer's own local
+  // time — the underlying instant is the same for everyone, but showing
+  // it in whatever zone the viewer happens to be in would make the same
+  // cutoff look different depending on who's looking.
   function formatDateTime(d){
     if (!d) return '';
-    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) + ', ' +
-      d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'Europe/London' }) + ', ' +
+      d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: 'Europe/London', timeZoneName: 'short' });
   }
 
   // The line under a column's title — STATUS_HINTS' plain "move a card
