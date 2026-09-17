@@ -260,6 +260,35 @@
   }
   .phase-intro.muted{color:var(--muted);}
 
+  /* Why you're here / what advances you — one per phase, right under the
+     heading, before any of the fuller how-to content below it. */
+  .phase-why-what{
+    display:grid; gap:14px;
+    margin:0 0 28px;
+    padding:18px 20px;
+    border:1px solid var(--line);
+    border-radius:var(--radius);
+    background:var(--surface);
+    max-width:64ch;
+  }
+  .phase-why-what dt{
+    font-family:var(--sans); font-weight:600; font-size:11px;
+    text-transform:uppercase; letter-spacing:0.12em; color:var(--muted);
+    margin-bottom:4px;
+  }
+  .phase-why-what dd{margin:0; font-size:16px; color:var(--ink-soft); line-height:1.55;}
+  .phase-rush-note{
+    margin:0 0 24px;
+    padding-left:14px;
+    border-left:2px solid var(--accent);
+    max-width:64ch;
+    font-family:var(--sans);
+    font-size:13.5px;
+    color:var(--muted);
+    line-height:1.6;
+  }
+  .phase-rush-note strong{color:var(--ink-soft); font-weight:600;}
+
   h3.subhead{
     font-family:var(--sans);
     font-weight:400;
@@ -601,16 +630,15 @@
 </div>
 
 <nav class="timeline" aria-label="Phases at a glance">
-  <ol style="--n:9">
+  <ol style="--n:8">
     <li><a href="#phase-1"><span class="tl-dot"></span><span class="tl-name">Register</span><span class="tl-wk">8w</span></a></li>
-    <li><a href="#phase-2"><span class="tl-dot"></span><span class="tl-name">Pitch Day</span><span class="tl-wk">6w</span></a></li>
-    <li><a href="#phase-3"><span class="tl-dot"></span><span class="tl-name">Draft &amp; Review</span><span class="tl-wk">4w</span></a></li>
-    <li><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Final Draft</span><span class="tl-wk">2w</span></a></li>
-    <li><a href="#phase-5"><span class="tl-dot"></span><span class="tl-name">PI Approval</span><span class="tl-wk">1w</span></a></li>
-    <li class="is-pivot"><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Submit</span><span class="tl-wk">0</span></a></li>
-    <li class="is-after"><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">arXiv &amp; Publicity</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after"><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after"><a href="#phase-9"><span class="tl-dot"></span><span class="tl-name">Pre&#8209;Conference</span><span class="tl-wk">after</span></a></li>
+    <li><a href="#phase-2"><span class="tl-dot"></span><span class="tl-name">Pitch</span><span class="tl-wk">6w</span></a></li>
+    <li><a href="#phase-3"><span class="tl-dot"></span><span class="tl-name">Abstract</span><span class="tl-wk">4w</span></a></li>
+    <li class="is-pivot"><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">0</span></a></li>
+    <li class="is-after"><a href="#phase-5"><span class="tl-dot"></span><span class="tl-name">arXiv</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after"><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after"><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after"><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Conference</span><span class="tl-wk">after</span></a></li>
   </ol>
 </nav>
 
@@ -619,15 +647,14 @@
   <nav class="toc" aria-label="Phases">
     <ol>
       <li><a href="#phase-1"><span class="n">8w</span>Register</a></li>
-      <li><a href="#phase-2"><span class="n">6w</span>Pitch Day</a></li>
-      <li><a href="#phase-3"><span class="n">4w</span>Draft &amp; Review</a></li>
-      <li><a href="#phase-4"><span class="n">2w</span>Final Draft</a></li>
-      <li><a href="#phase-5"><span class="n">1w</span>PI Approval</a></li>
-      <li><a href="#phase-6"><span class="n">0</span>Submit</a></li>
+      <li><a href="#phase-2"><span class="n">6w</span>Pitch</a></li>
+      <li><a href="#phase-3"><span class="n">4w</span>Abstract</a></li>
+      <li><a href="#phase-4"><span class="n">0</span>Paper</a></li>
       <li class="toc-split">After submission</li>
-      <li><a href="#phase-7"><span class="n"></span>arXiv &amp; Publicity</a></li>
-      <li><a href="#phase-8"><span class="n"></span>Rebuttal</a></li>
-      <li><a href="#phase-9"><span class="n"></span>Pre&#8209;Conference</a></li>
+      <li><a href="#phase-5"><span class="n"></span>arXiv</a></li>
+      <li><a href="#phase-6"><span class="n"></span>Rebuttal</a></li>
+      <li><a href="#phase-7"><span class="n"></span>Camera&#8209;ready</a></li>
+      <li><a href="#phase-8"><span class="n"></span>Conference</a></li>
     </ol>
   </nav>
 
@@ -636,9 +663,13 @@
     <section class="phase" id="phase-1">
       <div class="phase-head">
         <span class="phase-num">&minus;8&nbsp;wk</span>
-        <h2>Register the Paper</h2>
+        <h2>Registered</h2>
       </div>
-      <p class="phase-intro">You need the abstract, a paper outline, and an estimate of the compute the paper will need &mdash; not the full text yet.</p>
+      <dl class="phase-why-what">
+        <div><dt>Why you're here</dt><dd>The paper's on the board &mdash; abstract, outline, and a compute estimate exist. It hasn't been pitched to the group yet.</dd></div>
+        <div><dt>What advances it</dt><dd>Present at Pitch Day, then click <strong>Advance</strong>. Nothing else is checked before you can &mdash; this one's on your own judgement.</dd></div>
+      </dl>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> same stage, same meaning &mdash; an imminent-deadline venue starts here too. The next stop for a rush board is Abstract directly; there's no scheduled Pitch Day to wait for.</p>
 
       <h3 class="subhead">Pick the venue</h3>
       <ul class="list">
@@ -650,8 +681,8 @@
 
       <h3 class="subhead">Register it</h3>
       <ul class="list">
-        <li>Add the paper to the <a href="audit-board.html">Internal Review Board</a> &mdash; create the venue's board if it isn't there yet &mdash; with the title, abstract, author list, target venue, and a <strong>compute estimate</strong>. The card starts in <em>Register</em>.</li>
-        <li>When you set the venue's paper deadline, the board derives every internal deadline &mdash; register, Pitch Day, first draft, final draft, PI approval &mdash; and offers them as a <strong>calendar file (.ics)</strong> to import.</li>
+        <li>Add the paper to the <a href="audit-board.html">Internal Review Board</a> &mdash; create the venue's board if it isn't there yet &mdash; with the title, abstract, author list, target venue, and a <strong>compute estimate</strong>. The card starts in <em>Registered</em>.</li>
+        <li>When you set the venue's paper deadline, the board derives every internal deadline &mdash; register, pitch, and the run-up to submitting the abstract &mdash; and offers them as a <strong>calendar file (.ics)</strong> to import.</li>
       </ul>
 
       <h3 class="subhead">Clear your calendar</h3>
@@ -663,8 +694,14 @@
     <section class="phase" id="phase-2">
       <div class="phase-head">
         <span class="phase-num">&minus;6&nbsp;wk</span>
-        <h2>Pitch Day</h2>
+        <h2>Pitched</h2>
       </div>
+      <dl class="phase-why-what">
+        <div><dt>Why you're here</dt><dd>Presented to the group on Pitch Day. The first draft is now being written.</dd></div>
+        <div><dt>What advances it</dt><dd>Once the abstract itself is ready, click <strong>Submit abstract</strong> &mdash; a real, external, irreversible action (the board asks you to confirm before it registers).</dd></div>
+      </dl>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> skipped entirely &mdash; a rush board has no Pitch column at all. There isn't time to schedule a group pitch on an imminent deadline; Registered moves straight to Abstract.</p>
+
       <p class="phase-intro">Every paper is pitched to the group on a fixed Pitch Day &mdash; everyone presents. A paper that hasn't been pitched by this point doesn't go forward.</p>
       <ul class="list">
         <li>Prepare a short pitch: the problem, the idea, what the results look like so far.</li>
@@ -674,38 +711,34 @@
     <section class="phase" id="phase-3">
       <div class="phase-head">
         <span class="phase-num">&minus;4&nbsp;wk</span>
-        <h2>First Draft &amp; Internal Review</h2>
+        <h2>Abstract Submitted</h2>
       </div>
+      <dl class="phase-why-what">
+        <div><dt>Why you're here</dt><dd>The abstract's gone out to the venue. Everything that used to be three separate columns &mdash; finishing the full draft, both reviewers' checklists, PI sign-off &mdash; happens right here now, while the card sits in this one stage.</dd></div>
+        <div><dt>What advances it</dt><dd>Both checklists complete (the authors' Format pass, and both reviewers' Science pass &mdash; the senior reviewer defaults to the PI, so their sign-off <em>is</em> PI approval, no separate step) unblocks <strong>Submit paper</strong>. You still click it yourself once the paper's actually gone out &mdash; another real, confirmed, irreversible action.</dd></div>
+      </dl>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> exactly the same stage, same meaning &mdash; this is what "Abstract Submitted" means on a rush board too. The only difference upstream is skipping Pitch to get here faster.</p>
+
       <p class="phase-intro">There must be a <strong>first full draft</strong>. Read and closely follow the <a href="https://docs.google.com/document/d/16R1E2ExKUCP5SlXWHr-KzbVDx9DBUclra-EbU8IB-iE/edit#heading=h.16t67gkeu9dx" target="_blank" rel="noopener">&ldquo;How to ML Paper&rdquo;</a> guide.</p>
       <ul class="list">
-        <li>Move the card to <em>Draft &amp; Review</em> on the <a href="audit-board.html">Internal Review Board</a> (you registered it in Phase&nbsp;1).</li>
-        <li>Assign a <strong>junior</strong> and a <strong>senior</strong> reviewer from the pool to the card, then the draft goes through Internal Review on the card itself &mdash; a <strong>simulated full peer review</strong> (venues are all similar). Both the Format and Science parts are mandatory; the paper can't be approved until both reviewers have completed the checklist.</li>
+        <li>Assign a <strong>junior</strong> and a <strong>senior</strong> reviewer from the pool on the card's own page (you registered it in Phase&nbsp;1) &mdash; the draft then goes through Internal Review, a <strong>simulated full peer review</strong> (venues are all similar). Both the Format and Science parts are mandatory; the paper can't be submitted until both reviewers have completed the checklist.</li>
+        <li>The PI reads the final draft as part of their own Science checklist pass and approves it for submission &mdash; this is the PI's only involvement in the whole process.</li>
         <li><strong>Look after yourself.</strong> Exercise, sleep, and food matter through the push. A PhD is a marathon, not a sprint.</li>
       </ul>
     </section>
 
     <section class="phase" id="phase-4">
       <div class="phase-head">
-        <span class="phase-num">&minus;2&nbsp;wk</span>
-        <h2>Final Draft</h2>
-      </div>
-      <p class="phase-intro">The final draft is done &mdash; every comment from the Internal Review is incorporated.</p>
-    </section>
-
-    <section class="phase" id="phase-5">
-      <div class="phase-head">
-        <span class="phase-num">&minus;1&nbsp;wk</span>
-        <h2>PI Approval</h2>
-      </div>
-      <p class="phase-intro">The PI reads the final draft and approves it for submission. This is the PI's only involvement in the process.</p>
-    </section>
-
-    <section class="phase" id="phase-6">
-      <div class="phase-head">
         <span class="phase-num">deadline</span>
-        <h2>Submit</h2>
+        <h2>Paper Submitted</h2>
       </div>
-      <p class="phase-intro">Submit before the deadline, following whatever the venue's system requires. But submitting isn't the finish line &mdash; it's one small step, not a pause. Reviews take weeks, and that time is some of the most valuable in the whole project. Keep working.</p>
+      <dl class="phase-why-what">
+        <div><dt>Why you're here</dt><dd>The paper's been submitted to the venue. There's nothing more to do &mdash; you're waiting on the venue's own review process now.</dd></div>
+        <div><dt>What advances it</dt><dd>Post to arXiv whenever you're ready &mdash; click <strong>Advance</strong>. Not gated on anything; do it on your own schedule.</dd></div>
+      </dl>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> same stage, same meaning. This is as far as a rush board tracks arXiv/Camera-ready/Conference as separate columns &mdash; the next (and last) rush column is Rebuttal.</p>
+
+      <p class="phase-intro">But submitting isn't the finish line &mdash; it's one small step, not a pause. Reviews take weeks, and that time is some of the most valuable in the whole project. Keep working.</p>
 
       <h3 class="subhead">Capture the loose ends</h3>
       <p class="phase-intro muted">Credit to Roger Grosse for this practice.</p>
@@ -728,11 +761,17 @@
       </ul>
     </section>
 
-    <section class="phase" id="phase-7">
+    <section class="phase" id="phase-5">
       <div class="phase-head">
-        <h2>Release on arXiv &amp; Publicity</h2>
+        <h2>Posted</h2>
       </div>
-      <p class="phase-intro">Once the paper is submitted and you've made your plan of extensions to work on during review (Phase&nbsp;6), the next step is to post it on arXiv. This is often the only version many readers ever see &mdash; treat it with real care.</p>
+      <dl class="phase-why-what">
+        <div><dt>Why you're here</dt><dd>Posted to arXiv, publicity done.</dd></div>
+        <div><dt>What advances it</dt><dd>Advance once reviews are out &mdash; nothing here detects that automatically (it happens on the venue's own site, not this board), so this is on you to notice and move yourself.</dd></div>
+      </dl>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; a rush board has no Posted column. Its own columns stop at Paper Submitted, then Rebuttal.</p>
+
+      <p class="phase-intro">Once the paper is submitted and you've made your plan of extensions to work on during review (Phase&nbsp;4), the next step is to post it on arXiv. This is often the only version many readers ever see &mdash; treat it with real care.</p>
 
       <h3 class="subhead">arXiv</h3>
       <ul class="list">
@@ -759,17 +798,47 @@
       </ul>
     </section>
 
-    <section class="phase" id="phase-8">
+    <section class="phase" id="phase-6">
       <div class="phase-head">
-        <h2>Rebuttal</h2>
+        <h2>Reviews Out</h2>
       </div>
+      <dl class="phase-why-what">
+        <div><dt>Why you're here</dt><dd>Reviews are public. This is the one genuinely actionable stage after submission &mdash; a real, deadline-bearing task, not just a wait.</dd></div>
+        <div><dt>What advances it</dt><dd>Write and submit the rebuttal by the venue's own rebuttal deadline (tracked on the card &mdash; <code>rebuttalDeadline</code>). Same honest caveat as Posted above: nothing here can detect reviews going live on the venue's own site, so getting the card here at all is still on whoever's watching for it.</dd></div>
+      </dl>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> same stage, same meaning &mdash; and the last column a rush board tracks. Camera-ready and Conference aren't rush columns; by the time a paper's this far along, the urgency that justified rush mode in the first place has usually passed.</p>
+
       <p class="phase-intro">Follow the <a href="https://docs.google.com/document/d/1cdEypaZXnJ10IckV49iBXEl27gCFnwEhQfLr680Fv18/edit#heading=h.mt80mhtvp84q" target="_blank" rel="noopener">&ldquo;How to ML Rebuttal&rdquo;</a> guide closely. The venue's reviews-released and rebuttal-deadline dates, when known, are on the <a href="audit-board.html">Internal Review Board</a> and in its deadline .ics.</p>
     </section>
 
-    <section class="phase" id="phase-9">
+    <section class="phase" id="phase-7">
       <div class="phase-head">
-        <h2>Pre&#8209;Conference</h2>
+        <h2>Camera-ready Submitted</h2>
       </div>
+      <dl class="phase-why-what">
+        <div><dt>Why you're here</dt><dd>The paper's been accepted. A final, publication-ready version is due by the venue's own camera-ready deadline (<code>cameraReadyDeadline</code> on the board).</dd></div>
+        <div><dt>What advances it</dt><dd>Submit the camera-ready version, then click <strong>Advance</strong>.</dd></div>
+      </dl>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; same reasoning as arXiv above.</p>
+
+      <ul class="list">
+        <li>Fold in every change reviewers required, and anything promised in the rebuttal.</li>
+        <li>Final formatting pass &mdash; page limit, required sections, camera-ready-specific template if the venue has one.</li>
+        <li>Update acknowledgments and funding to their final form, same care as the arXiv version.</li>
+        <li>Double-check author list and affiliations are exactly right &mdash; this is usually the version that ends up in the proceedings permanently.</li>
+      </ul>
+    </section>
+
+    <section class="phase" id="phase-8">
+      <div class="phase-head">
+        <h2>Accepted</h2>
+      </div>
+      <dl class="phase-why-what">
+        <div><dt>Why you're here</dt><dd>Everything's done. This is the terminal stage &mdash; conference prep from here on.</dd></div>
+        <div><dt>What advances it</dt><dd>Nothing to advance to &mdash; this is the end of the pipeline.</dd></div>
+      </dl>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; same reasoning as arXiv and Camera-ready above.</p>
+
       <h3 class="subhead">Poster</h3>
       <ul class="list">
         <li>Make a poster and share it with co-authors.</li>
@@ -793,7 +862,7 @@
 
     <nav class="pager" aria-label="Previous and next phase">
       <button class="pager-btn" id="prevBtn" type="button">&larr; Previous</button>
-      <span class="pager-status" id="pagerStatus" aria-live="polite">Phase 1 of 9</span>
+      <span class="pager-status" id="pagerStatus" aria-live="polite">Phase 1 of 8</span>
       <button class="pager-btn" id="nextBtn" type="button">Next &rarr;</button>
     </nav>
 
