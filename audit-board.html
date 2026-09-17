@@ -2727,18 +2727,14 @@
     }
     // Mirrors advanceBlockReason's checklist-gate check.
     if (crossesGate(status, next, order)) reqs.push('checklists complete');
-    // Mirrors advanceBlockReason's unconditional reviewer-assignment check.
-    // Bug, found 2026-09-18 re-reading this against the real gate while
-    // adding the deliverable-link mirrors below: said 'abstract' here,
-    // stale from before that gate's own toStatus moved to 'paper' — this
-    // mirror silently drifted out of sync with what actually blocks the
-    // move. Column caption only, never the real gate, so nothing was
-    // unsafe — just told whoever read the header the wrong requirement.
-    if (next === 'paper') reqs.push('reviewers assigned');
-    // Mirrors advanceBlockReason's deliverable-link checks (2026-09-18).
+    // Mirrors advanceBlockReason's deliverable-link checks (2026-09-18),
+    // plus its reviewer-assignment check (moved here from 'paper' to
+    // 'abstract' 2026-09-18+1, per Eduardo — see advanceBlockReason's own
+    // comment).
     if (next === 'pitch') reqs.push('pitch materials added');
     if (next === 'abstract') reqs.push('co-authors added');
     if (next === 'abstract') reqs.push('Overleaf link added');
+    if (next === 'abstract') reqs.push('reviewers assigned');
     if (next === 'paper') reqs.push('submission link added');
     if (next === 'arxiv') reqs.push('arXiv link added');
     if (next === 'camera_ready') reqs.push('rebuttal doc added');
@@ -2807,9 +2803,6 @@
     if (crossesGate(card.status, toStatus, order) && reviewFilterState(card) !== 'approved'){
       return 'Both reviewers must approve first';
     }
-    if (toStatus === 'paper' && !reviewersAssigned(card)){
-      return 'Assign a junior and a senior reviewer first';
-    }
     // Deliverable-per-stage redesign (2026-09-18, per Eduardo): every
     // Submit move requires the real link it's actually submitting, not
     // just a bare confirmed click — see the card fields' own comment in
@@ -2823,18 +2816,25 @@
     if (toStatus === 'pitch' && !card.pitchLink){
       return 'Add your pitch materials first';
     }
-    // Authors and the Overleaf link (with a first draft) aren't asked for
-    // at registration any more (2026-09-18, per Eduardo) — there's no
-    // draft yet to point to, and no author list worth locking in that
-    // early. Both become real gates here instead, on whatever transition
-    // actually reaches `abstract` (register/pitch -> abstract in the full
-    // pipeline, register -> abstract directly in rush mode) — see
-    // onAddCard's own comment.
+    // Authors, the Overleaf link (with a first draft), and reviewer
+    // assignment aren't asked for at registration any more (2026-09-18,
+    // per Eduardo) — there's no draft yet to point to, no author list
+    // worth locking in that early, and nobody to review a paper that
+    // hasn't been written. All three become real gates here instead, on
+    // whatever transition actually reaches `abstract` (register/pitch ->
+    // abstract in the full pipeline, register -> abstract directly in
+    // rush mode) — see onAddCard's own comment. Reviewer assignment used
+    // to gate `paper` instead (one stage later) — moved up to match: the
+    // whole point of sitting at `abstract` is the internal review that
+    // needs a junior and senior reviewer to actually happen.
     if (toStatus === 'abstract' && (!card.authors || !card.authors.length)){
       return 'Add your co-authors first';
     }
     if (toStatus === 'abstract' && !card.overleafLink){
       return 'Add the Overleaf link first';
+    }
+    if (toStatus === 'abstract' && !reviewersAssigned(card)){
+      return 'Assign a junior and a senior reviewer first';
     }
     if (toStatus === 'paper' && !card.submissionLink){
       return 'Add the venue submission link first';
@@ -4901,11 +4901,13 @@
     var toIdx = order.indexOf(newStatus);
     var isAdvance = toIdx !== -1 && (fromIdx === -1 || toIdx > fromIdx);
 
-    // Only blocks moving forward into Paper Submitted — reverting back
+    // Only blocks moving forward into Abstract Submitted — reverting back
     // into it isn't held to this, same as the checklist gate above only
-    // fires crossing forward.
-    if (isAdvance && newStatus === 'paper' && !reviewersAssigned(card)){
-      showToast('Assign a junior and a senior reviewer before moving to ' + STATUS_LABELS.paper + '.', 'error');
+    // fires crossing forward. Moved here from Paper Submitted
+    // (2026-09-18+1, per Eduardo) to match advanceBlockReason's own gate
+    // — see its comment for why.
+    if (isAdvance && newStatus === 'abstract' && !reviewersAssigned(card)){
+      showToast('Assign a junior and a senior reviewer before moving to ' + STATUS_LABELS.abstract + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
     }
