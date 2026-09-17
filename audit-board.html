@@ -1993,7 +1993,15 @@
     if (place.length) bits.push(place.join(' &middot; '));
     var rules = [];
     if (v.maxPapersPerAuthor) rules.push('&le; ' + v.maxPapersPerAuthor + ' papers/author');
-    if (v.pageLimit) rules.push(escapeHtml(v.pageLimit));
+    // A bare number ("9", no unit) reads as ambiguous next to the other
+    // rules — e.g. "≤ 20 papers/author · 9 · Double-blind" could be
+    // anything. Append "pages" only when it's JUST a number; a value
+    // someone already wrote out descriptively ("9 pages excl. refs")
+    // stays exactly as entered, not doubled up.
+    if (v.pageLimit){
+      var pageLimitText = String(v.pageLimit).trim();
+      rules.push(escapeHtml(/^\d+$/.test(pageLimitText) ? pageLimitText + ' pages' : pageLimitText));
+    }
     if (v.anonymity) rules.push(ANONYMITY_LABELS[v.anonymity] || escapeHtml(v.anonymity));
     if (rules.length) bits.push(rules.join(' &middot; '));
     if (!bits.length) return '';
