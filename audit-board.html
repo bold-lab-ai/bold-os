@@ -412,9 +412,17 @@
     margin-top:4px; height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
   }
-  /* Rush mode's column deadline hint — each of its two lines (internal
-     cutoff, venue deadline) turns red independently, once THAT line's own
-     instant has passed, not the other one's — see columnHintFor. */
+  /* Rush mode's column deadline hint — two rows (internal cutoff, venue
+     deadline), each a label + a date. Grid instead of ch-hint's own
+     line-clamp box above, so the two dates share a column and line up
+     vertically regardless of the two labels' different text widths. Each
+     row turns red independently, once THAT row's own instant has passed,
+     not the other one's — see columnHintFor. */
+  .column-head .ch-hint.ch-hint-deadlines{
+    display:grid; grid-template-columns:max-content 1fr; column-gap:5px; row-gap:1px; align-content:start;
+  }
+  .column-head .ch-hint.ch-hint-deadlines .hint-label{white-space:nowrap;}
+  .column-head .ch-hint.ch-hint-deadlines .hint-value{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .column-head .ch-hint .hint-overdue{color:var(--danger-text); font-weight:600;}
   /* What it takes to leave this column for the next one — see
      columnRequirementsFor. Own line from ch-hint above (deadline/plain
@@ -2348,11 +2356,15 @@
       // deliberately earlier (RUSH_BUFFER_HOURS), so it goes red well
       // before the venue's real deadline is actually overdue; showing the
       // venue line red at that point would be wrong, it hasn't happened.
-      var internalLine = 'Internal due ' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)';
-      var venueLine = 'Venue ' + formatDateTime(realInstant);
-      if (isRushColumnPastCutoff(status, board)) internalLine = '<span class="hint-overdue">' + internalLine + '</span>';
-      if (Date.now() > realInstant.getTime()) venueLine = '<span class="hint-overdue">' + venueLine + '</span>';
-      return internalLine + '<br>' + venueLine;
+      var internalCls = isRushColumnPastCutoff(status, board) ? ' hint-overdue' : '';
+      var venueCls = Date.now() > realInstant.getTime() ? ' hint-overdue' : '';
+      // Grid auto-placement fills left-to-right, top-to-bottom — these
+      // four spans land as two rows of (label, value), values sharing a
+      // column so the dates line up regardless of the labels' widths.
+      return '<span class="hint-label' + internalCls + '">Internal deadline:</span>' +
+        '<span class="hint-value' + internalCls + '">' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)</span>' +
+        '<span class="hint-label' + venueCls + '">External deadline:</span>' +
+        '<span class="hint-value' + venueCls + '">' + formatDateTime(realInstant) + '</span>';
     }
     return escapeHtml(STATUS_HINTS[status] || '');
   }
@@ -3098,10 +3110,14 @@
       var cardsForStatus = allForStatus.filter(matchesSearch);
       html += '<div class="column">';
       var hint = columnHintFor(status, board);
+      // Only the two-row grid case (an actual venue deadline to show)
+      // wants ch-hint-deadlines — the "No deadline set" fallback inside
+      // columnHintFor is plain text and should keep ch-hint's own layout.
+      var isDeadlineHint = !!(board && board.rushMode && (status === 'abstract_review' || status === 'draft_review') && rushColumnRealDeadline(status, board));
       var reqs = columnRequirementsHtml(status, board);
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
-        '<div class="ch-hint">' + hint + '</div>' +
+        '<div class="ch-hint' + (isDeadlineHint ? ' ch-hint-deadlines' : '') + '">' + hint + '</div>' +
         '<div class="ch-requires">' + reqs + '</div>' +
       '</div>';
       html += '<div class="column-body">';
