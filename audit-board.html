@@ -914,9 +914,9 @@
   // Rush mode (2026-09-11): a per-venue toggle (board.rushMode) for an
   // imminent-deadline venue that needs to move faster than the full pipeline.
   // Redesigned 2026-09-14, per Eduardo: exactly four columns — Registered,
-  // Abstract in review, Full paper in review, In submission — with
-  // "Abstract in review" now coming BEFORE the full-paper pass, not after
-  // (the reverse of where abstract_review sits in the canonical, non-rush
+  // Abstract Submitted, Paper Submitted, Submitted — with "Abstract
+  // Submitted" now coming BEFORE the full-paper pass, not after (the
+  // reverse of where abstract_review sits in the canonical, non-rush
   // STATUS_ORDER above). That reordering is the one thing that makes Rush
   // mode genuinely NOT "a coherent subsequence preserving canonical
   // relative order" any more, the way it was before this change and the
@@ -926,7 +926,18 @@
   // become genuinely order-aware (see each of their own comments). Still
   // not a separate status *vocabulary* though — every key here is a real
   // STATUS_ORDER key, just visited in a different sequence for a rush
-  // venue. draft_review alone represents "Full paper in review": a card
+  // venue.
+  //
+  // The two middle columns renamed again 2026-09-18, per Eduardo — the
+  // original names here ("Abstract in review"/"Full paper in review")
+  // were present tense, breaking STATUS_LABELS' own past-tense rule (see
+  // RUSH_STATUS_LABELS' comment), and Abstract in review's own deadline
+  // countdown was wired to the abstract deadline despite only being
+  // enterable by having just submitted that abstract — the literal
+  // contradiction behind "why does it say Overdue right after I
+  // submitted?". See rushColumnRealDeadline for the corrected wiring.
+  //
+  // draft_review alone represents "Paper Submitted": a card
   // that's completed the checklist and auto-advanced to final_draft
   // internally still shows under this same column (see displayStatus) —
   // Rush mode never gives final_draft a column of its own.
@@ -937,12 +948,24 @@
   // rendered for a rush venue specifically — see statusLabelFor. Only
   // needs entries for keys that actually appear in RUSH_STATUS_ORDER;
   // canonical STATUS_LABELS covers everything else (including for a
-  // non-rush venue, where this map is never consulted at all).
+  // non-rush venue, where this map is never consulted at all). No entry
+  // for `submit` — canonical's own "Submitted" already reads right for
+  // rush mode too, so it just falls through to STATUS_LABELS below
+  // (see statusLabelFor) rather than duplicating the same word here.
+  //
+  // Past tense, matching STATUS_LABELS' own rule (see that map's comment:
+  // a column name is the checkpoint already met, not what's in progress —
+  // "Drafted" not "Drafting"). The old rush wording ("Abstract in
+  // review", "Full paper in review") broke that rule for exactly these
+  // two — present tense, reads as "still happening to this," which is
+  // very likely the literal source of "have I submitted my abstract if
+  // it's in review?" confusion. See rushColumnRealDeadline just below:
+  // this rename comes with a real logic change, not just new words for
+  // the same thing.
   var RUSH_STATUS_LABELS = {
     register: 'Registered',
-    abstract_review: 'Abstract in review',
-    draft_review: 'Full paper in review',
-    submit: 'In submission'
+    abstract_review: 'Abstract Submitted',
+    draft_review: 'Paper Submitted'
   };
 
   function effectiveStatusOrder(board){
@@ -976,8 +999,8 @@
   // RUSH_STATUS_ORDER) — the old version picked whichever active column
   // came LAST in `order`'s own iteration among those the card has passed,
   // which only gave the right answer because the old active order
-  // happened to preserve canonical relative order. With Abstract in
-  // review now positioned before Full paper in review despite
+  // happened to preserve canonical relative order. With Abstract
+  // Submitted now positioned before Paper Submitted despite
   // abstract_review's own canonical index being *after* draft_review's,
   // "last in iteration order" and "temporally latest milestone" are no
   // longer the same thing. This picks the active column with the
@@ -2291,23 +2314,35 @@
   // Rush mode's own internal deadlines (2026-09-14, per Eduardo) —
   // separate from effectiveDeadline/isOverdue above, which drive the
   // general "Overdue" badge off a venue's real deadline directly and are
-  // unchanged by any of this. Rush's two review columns (Abstract in
-  // review, Full paper in review) each count down to a CUTOFF instead:
-  // RUSH_BUFFER_HOURS before the real venue deadline that stage is
-  // actually racing toward, so there's still a buffer to act before the
-  // real deadline hits, not right up to the wire.
+  // unchanged by any of this. Rush's two columns with something still
+  // outstanding — Registered (abstract not sent) and Abstract Submitted
+  // (paper not sent) — each count down to a CUTOFF instead: RUSH_BUFFER_HOURS
+  // before the real venue deadline that stage is actually racing toward,
+  // so there's still a buffer to act before the real deadline hits, not
+  // right up to the wire. Paper Submitted has nothing outstanding to
+  // submit any more, so it gets no cutoff at all (see
+  // rushColumnRealDeadline).
   var RUSH_BUFFER_HOURS = 48;
 
   // Which real venue deadline a given rush column is racing toward —
-  // Abstract in review counts down to the venue's own abstract deadline
-  // (board.abstractDeadline), falling back to the paper deadline if the
-  // venue never set a separate one; Full paper in review counts down to
-  // the paper deadline itself. Returns a bare ISO date string, or null if
-  // the venue has no deadline of that kind set at all.
+  // moved one column later than the old version (2026-09-18, per
+  // Eduardo): a card only ENTERS Abstract Submitted by clicking "Submit
+  // abstract", so the abstract deadline is already behind it by then —
+  // counting Abstract Submitted down to the abstract deadline was the
+  // literal contradiction underneath the old "in review" naming
+  // confusion, not just a wording problem alongside it. Registered is
+  // racing toward the abstract deadline (still ahead of it); Abstract
+  // Submitted is racing toward the PAPER deadline (the abstract's done,
+  // the paper isn't yet). Paper Submitted gets no entry at all — once
+  // "Submit paper" has been clicked there's nothing left for the
+  // submitter to submit, just a venue decision to wait for, so no
+  // countdown belongs on that column any more (see columnHintFor).
+  // Returns a bare ISO date string, or null if the venue has no deadline
+  // of that kind set at all, or the column has no countdown at all.
   function rushColumnRealDeadline(status, board){
     if (!board) return null;
-    if (status === 'abstract_review') return board.abstractDeadline || board.deadline || null;
-    if (status === 'draft_review') return board.deadline || null;
+    if (status === 'register') return board.abstractDeadline || board.deadline || null;
+    if (status === 'abstract_review') return board.deadline || null;
     return null;
   }
 
@@ -2356,10 +2391,12 @@
   }
 
   // The line under a column's title — STATUS_HINTS' plain "move a card
-  // here when…" note everywhere except Rush mode's two review columns,
-  // which show their real deadline and internal cutoff instead, since
-  // that's the more useful thing to see on that specific column for a rush
-  // venue.
+  // here when…" note everywhere except Rush mode's two columns with an
+  // outstanding submission (Registered, Abstract Submitted — see
+  // rushColumnRealDeadline), which show their real deadline and internal
+  // cutoff instead, since that's the more useful thing to see there.
+  // Paper Submitted falls through to the plain STATUS_HINTS text same as
+  // any other column — nothing left to submit, nothing to count down to.
   // Returns trusted HTML, not plain text — the "time left"/"time overdue"
   // portion is wrapped in <strong> so it stands out against the rest of
   // the line. Safe to render unescaped: everything that goes into it is
@@ -2367,7 +2404,7 @@
   // anything a person typed freely (same as formatDate's other call sites
   // throughout the file).
   function columnHintFor(status, board){
-    if (board && board.rushMode && (status === 'abstract_review' || status === 'draft_review')){
+    if (board && board.rushMode && (status === 'register' || status === 'abstract_review')){
       var real = rushColumnRealDeadline(status, board);
       if (!real) return 'No deadline set for this venue yet';
       var cutoff = rushColumnCutoff(status, board);
@@ -2661,7 +2698,7 @@
   // moving it one column further is what locks it.
   //
   // Rewritten 2026-09-14 for Rush mode's reordered active columns — Rush
-  // mode's "Abstract in review" sits *before* "Full paper in review" even
+  // mode's "Abstract Submitted" sits *before* "Paper Submitted" even
   // though abstract_review's own canonical STATUS_ORDER index is later
   // than draft_review's, so a plain canonical-index comparison (the
   // original version) would wrongly call a rush card sitting at internal
@@ -2772,9 +2809,9 @@
   // reviewer first" check on entering draft_review either way. Submit
   // paper ALSO checks abstractAcceptBlockReason on top of that (authors
   // present + nobody over the per-author cap, Rush-mode-only) — the two
-  // things Abstract in review exists to check, additional to whatever
+  // things Abstract Submitted exists to check, additional to whatever
   // advanceBlockReason already required for that same move. Paper accepted
-  // (leaving Full paper in review) and every plain Advance are unaffected,
+  // (leaving Paper Submitted) and every plain Advance are unaffected,
   // still just advanceBlockReason.
   // Just the two <button> elements, no wrapping .card-move div — for the
   // one call site (onToggleChecklist's partial re-render) that already has
@@ -2794,7 +2831,7 @@
     // which already applied to this exact abstract_review -> draft_review
     // move before Submit paper existed. Dropping that in favour of
     // only the new authors/cap check would have silently let a card into
-    // Full paper in review with no reviewers assigned.
+    // Paper Submitted with no reviewers assigned.
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
       (effective === 'abstract_review' && acceptLabel ? abstractAcceptBlockReason(card, board, state.cards) : null));
     // Green treatment covers every real Submit (SUBMIT_CONFIRM_MESSAGES'
@@ -3136,7 +3173,7 @@
       // Only the two-row grid case (an actual venue deadline to show)
       // wants ch-hint-deadlines — the "No deadline set" fallback inside
       // columnHintFor is plain text and should keep ch-hint's own layout.
-      var isDeadlineHint = !!(board && board.rushMode && (status === 'abstract_review' || status === 'draft_review') && rushColumnRealDeadline(status, board));
+      var isDeadlineHint = !!(board && board.rushMode && (status === 'register' || status === 'abstract_review') && rushColumnRealDeadline(status, board));
       var reqs = columnRequirementsHtml(status, board);
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
@@ -4022,7 +4059,7 @@
       // AFTER abstract review, not during" fix: this used to say "once
       // Abstract Reviewed is reached", which stopped being true the
       // moment that fix shipped. Kept label-agnostic (not "once past
-      // Abstract Reviewed"/"Abstract in review") rather than threading
+      // Abstract Reviewed"/"Abstract Submitted") rather than threading
       // `board` all the way through renderAuthorRows just to pick the
       // right one via statusLabelFor.
       var lockAttr = locked ? ' disabled title="Authors are locked once past abstract review"' : '';
@@ -4174,7 +4211,7 @@
   }
 
   // Rush mode's "Submit paper" gate (2026-09-14, per Eduardo) — moving
-  // a card out of Abstract in review is where the two things that stage
+  // a card out of Abstract Submitted is where the two things that stage
   // exists to check get enforced: the authors list is actually filled in,
   // and nobody on the paper is over the venue's max-papers-per-author cap.
   // A real hard block on THIS specific transition — unlike
@@ -4722,8 +4759,8 @@
 
     // This is real user-facing navigation (the Advance/Revert buttons, the
     // status dropdown) — order must be effectiveStatusOrder(board), not the
-    // canonical-default omitted order, or a Rush-mode Revert from Full
-    // paper in review (draft_review) back to Abstract in review
+    // canonical-default omitted order, or a Rush-mode Revert from Paper
+    // Submitted (draft_review) back to Abstract Submitted
     // (abstract_review) wrongly reads as "crossing the gate forward" under
     // canonical STATUS_ORDER (where abstract_review's index sits AFTER
     // draft_review's) and gets silently blocked with a toast instead of
