@@ -573,6 +573,23 @@
   .gate-banner .stage-req-list li::before{content:'\25CB'; position:absolute; left:0;}
   .gate-banner .stage-req-list li.is-done{color:var(--success-text); text-decoration:line-through; opacity:.7;}
   .gate-banner .stage-req-list li.is-done::before{content:'\2713';}
+  /* An unmet item with its own inline control (2026-09-18+9) — the label
+     stays plain text (not struck through, it isn't done), the field/button
+     wrap onto their own line at narrow widths rather than the label
+     shrinking to fit. text-decoration is reset since li.is-pending never
+     had it, but .gate-banner's own warm text colour still applies to the
+     label — only the control itself needs its own (non-warning) colours. */
+  .gate-banner .stage-req-list li.stage-req-item-input{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:2px; padding-bottom:2px;}
+  .gate-banner .stage-req-list li.stage-req-item-input label{flex:0 0 auto; font-weight:600;}
+  .gate-banner .stage-req-list li.stage-req-item-input input[type="text"],
+  .gate-banner .stage-req-list li.stage-req-item-input textarea{
+    flex:1 1 220px; min-width:160px; font:inherit; font-size:12.5px; padding:5px 8px;
+    border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);
+  }
+  .gate-banner .stage-req-list li.stage-req-item-input textarea{flex-basis:100%; min-height:64px; resize:vertical;}
+  .gate-banner .stage-req-list li.stage-req-item-input .btn-text{flex:0 0 auto;}
+  .gate-banner .stage-req-item-error{flex:0 0 100%; font-size:11px; color:var(--danger-text); font-weight:600;}
+  .gate-banner .stage-req-list li.stage-req-item-modal{display:flex; align-items:center; gap:8px;}
 
   /* ---------- review tabs: Format / Science / Discussion ---------- */
   .tabbar{display:flex; gap:0; border-bottom:1px solid var(--line); margin:28px 0 0;}
@@ -3067,35 +3084,86 @@
   // author/junior/senior checklist counts) — showing them again here would
   // just duplicate that, not add anything. `rebuttal`'s plain submissionLink
   // check isn't covered by either of those, so it's still listed.
+  //
+  // `input` says how stageRequirementItemHtml renders an unmet item:
+  //  - 'text'/'textarea': a real inline field + Save button, right here
+  //    on the project page (2026-09-18+9, per Eduardo — these fields used
+  //    to live ONLY in the Edit-fields modal, so satisfying one of these
+  //    requirements meant leaving this checklist to go find it there).
+  //  - 'modal': `authors` keeps going through the Edit-fields modal
+  //    instead of a bare inline control — its real UI (roster picker,
+  //    "+ New author" toggle, PI tagging, authorRowsHtml/renderAuthorRows)
+  //    is real product surface worth keeping, not something to crudely
+  //    re-implement in a cramped checklist row. The item still gets its
+  //    own "Add" button that jumps straight to that modal.
+  //  - 'none': `reviewers` — already a real inline picker further down
+  //    this same page (reviewerInputHtml, guideline 7), nothing to add.
   var STAGE_REQUIREMENTS = {
     pitch: [
-      { label: 'Pitch materials added', met: function(c){ return !!c.pitchLink; } }
+      { field: 'pitchLink', label: 'Pitch materials link', input: 'text', placeholder: 'Link to your pitch materials',
+        met: function(c){ return !!c.pitchLink; } }
     ],
     abstract: [
-      { label: 'Co-authors added', met: function(c){ return !!(c.authors && c.authors.length); } },
-      { label: 'Overleaf link added', met: function(c){ return !!c.overleafLink; } },
-      { label: 'Abstract text added', met: function(c){ return !!c.abstractText; } },
-      { label: 'Junior and senior reviewer assigned', met: function(c){ return reviewersAssigned(c); } }
+      { field: 'authors', label: 'Co-authors', input: 'modal',
+        met: function(c){ return !!(c.authors && c.authors.length); } },
+      { field: 'overleafLink', label: 'Overleaf link', input: 'text', placeholder: 'https://www.overleaf.com/project/…',
+        met: function(c){ return !!c.overleafLink; } },
+      { field: 'abstractText', label: 'Abstract', input: 'textarea', placeholder: 'Paste the abstract — LaTeX ok as plain $inline$ / $$block$$',
+        met: function(c){ return !!c.abstractText; } },
+      { field: 'reviewers', label: 'Junior and senior reviewer assigned', input: 'none',
+        met: function(c){ return reviewersAssigned(c); } }
     ],
     rebuttal: [
-      { label: 'Submission link added', met: function(c){ return !!c.submissionLink; } }
+      { field: 'submissionLink', label: 'Submission link', input: 'text', placeholder: 'Link to your venue submission (e.g. OpenReview)',
+        met: function(c){ return !!c.submissionLink; } }
     ],
     camera_ready: [
-      { label: 'Rebuttal doc added', met: function(c){ return !!c.rebuttalDocLink; } }
+      { field: 'rebuttalDocLink', label: 'Rebuttal doc link', input: 'text', placeholder: 'Link to the written rebuttal',
+        met: function(c){ return !!c.rebuttalDocLink; } }
     ],
     conference: [
-      { label: 'Camera-ready link added', met: function(c){ return !!c.cameraReadyLink; } }
+      { field: 'cameraReadyLink', label: 'Camera-ready link', input: 'text', placeholder: 'Link to the submitted camera-ready version',
+        met: function(c){ return !!c.cameraReadyLink; } }
     ]
   };
 
-  // The project page's own live checklist (2026-09-18+8, per Eduardo) —
-  // previously the ONLY visibility into what's blocking a greyed-out move
-  // button was its own tooltip, which shows just the first unmet
+  // One requirement line — either a plain "done"/"still needed" item, or
+  // (for an unmet 'text'/'textarea'/'modal' item) the actual control to
+  // satisfy it right here. Input ids are keyed by field name, which is
+  // safe here the same way the checklist's other fixed-id inputs are
+  // (docs/AGENTS.md guideline 7): only one card is ever open at a time.
+  function stageRequirementItemHtml(card, it){
+    var done = it.met(card);
+    if (done || it.input === 'none'){
+      return '<li class="' + (done ? 'is-done' : 'is-pending') + '">' + escapeHtml(it.label) + '</li>';
+    }
+    if (it.input === 'modal'){
+      return '<li class="is-pending stage-req-item-modal">' + escapeHtml(it.label) +
+        ' <button class="btn-text" type="button" data-stage-req-open-modal="' + escapeHtml(card.id) + '">Add</button></li>';
+    }
+    var fieldId = 'stageReq-' + it.field;
+    var current = card[it.field] || '';
+    var controlHtml = it.input === 'textarea'
+      ? '<textarea id="' + fieldId + '" data-stage-req-field="' + it.field + '" placeholder="' + escapeHtml(it.placeholder || '') + '">' + escapeHtml(current) + '</textarea>'
+      : '<input type="text" id="' + fieldId + '" data-stage-req-field="' + it.field + '" placeholder="' + escapeHtml(it.placeholder || '') + '" value="' + escapeHtml(current) + '">';
+    return '<li class="is-pending stage-req-item-input">' +
+      '<label for="' + fieldId + '">' + escapeHtml(it.label) + '</label>' +
+      controlHtml +
+      '<button class="btn-text" type="button" data-stage-req-save="' + escapeHtml(card.id) + '" data-stage-req-save-field="' + it.field + '">Save</button>' +
+      '<span class="stage-req-item-error" id="' + fieldId + '-error" hidden></span>' +
+    '</li>';
+  }
+
+  // The project page's own live checklist (2026-09-18+8/+9, per Eduardo)
+  // — previously the ONLY visibility into what's blocking a greyed-out
+  // move button was its own tooltip, which shows just the first unmet
   // requirement (advanceBlockReason returns on the first failing check),
-  // so fixing one thing only revealed the next one on the next visit.
-  // Shows every item for the card's current next stage at once, ticked
-  // off live as fields get filled in. Hidden once nothing's outstanding —
-  // at that point the move button itself is the only thing that matters.
+  // and even that gave no way to actually DO anything about it short of
+  // the Edit-fields modal. Shows every item for the card's current next
+  // stage at once, each with its own way to fill it in right here (see
+  // stageRequirementItemHtml), ticked off live as fields get saved.
+  // Hidden once nothing's outstanding — at that point the move button
+  // itself is the only thing that matters.
   function stageRequirementsHtml(card, board){
     var effective = displayStatus(card, board);
     var rgt = statusAt(effective, 1, effectiveStatusOrder(board));
@@ -3105,12 +3173,48 @@
     return '<div class="gate-banner" id="stageRequirements">' +
       '<div class="stage-req-head">To move to ' + escapeHtml(statusLabelFor(rgt, board)) + ':</div>' +
       '<ul class="stage-req-list">' +
-        items.map(function(it){
-          var done = it.met(card);
-          return '<li class="' + (done ? 'is-done' : 'is-pending') + '">' + escapeHtml(it.label) + '</li>';
-        }).join('') +
+        items.map(function(it){ return stageRequirementItemHtml(card, it); }).join('') +
       '</ul>' +
     '</div>';
+  }
+
+  // Saves a single field straight from the stage-requirements checklist
+  // (2026-09-18+9) — same optimistic-update/rollback shape as
+  // onSetAbstractReview, just generic over which field. Blank values are
+  // rejected rather than saved (a requirement can't be satisfied by an
+  // empty string); overleafLink gets the same link-shape validation the
+  // Edit-fields modal already runs (overleafLinkIssue) so this shortcut
+  // can't save something that modal would have rejected.
+  function onSaveStageField(cardId, field, rawValue){
+    var boardId = state.currentBoardId;
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    var value = (rawValue || '').trim();
+    var errorEl = document.getElementById('stageReq-' + field + '-error');
+    function showError(msg){
+      if (errorEl){ errorEl.textContent = msg; errorEl.hidden = false; }
+    }
+    if (!value){ showError('Can’t be blank.'); return; }
+    if (field === 'overleafLink'){
+      var issue = overleafLinkIssue(value);
+      if (issue){ showError(issue); return; }
+    }
+    if (errorEl) errorEl.hidden = true;
+    var prev = state.cards;
+    var patch = { updatedAt: Date.now() };
+    patch[field] = value;
+    var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, patch) : c; });
+    state.cards = next;
+    renderCardDetail();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast(saveErrorMessage('Could not save — try again.'), 'error');
+      } else {
+        showToast('Saved.', 'ok');
+      }
+    });
   }
 
   // Forward-migrate a stored card: since-split status keys; older checklist
@@ -4246,6 +4350,15 @@
     if (ed) ed.addEventListener('click', function(){ openEditModal(ed.getAttribute('data-edit')); });
     var rm = els.boardRegion.querySelector('[data-remove]');
     if (rm) rm.addEventListener('click', function(){ onRemoveCard(rm.getAttribute('data-remove')); });
+    var stageReqModalBtn = els.boardRegion.querySelector('[data-stage-req-open-modal]');
+    if (stageReqModalBtn) stageReqModalBtn.addEventListener('click', function(){ openEditModal(stageReqModalBtn.getAttribute('data-stage-req-open-modal')); });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-stage-req-save]'), function(btn){
+      btn.addEventListener('click', function(){
+        var field = btn.getAttribute('data-stage-req-save-field');
+        var input = document.getElementById('stageReq-' + field);
+        onSaveStageField(btn.getAttribute('data-stage-req-save'), field, input ? input.value : '');
+      });
+    });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cl]'), function(box){
       box.addEventListener('change', function(){
         onToggleChecklist(box.getAttribute('data-cl'), box.getAttribute('data-cl-item'), box.getAttribute('data-cl-role'), box.checked);
