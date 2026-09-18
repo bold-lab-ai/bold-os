@@ -211,6 +211,17 @@
     color:var(--muted);
     opacity:.7;
   }
+  /* Post to arXiv — not a numbered pipeline step, reachable but excluded
+     from Previous/Next and the "Phase N of 7" count (see steppableIds()
+     below). Dashed border and italic set it apart from the real sequence. */
+  nav.toc .toc-optional a{
+    font-style:italic;
+    border-left-style:dashed;
+  }
+  nav.toc .toc-optional a .n{
+    font-weight:400;
+    color:var(--muted);
+  }
 
   main{min-width:0;}
 
@@ -676,16 +687,14 @@
 </div>
 
 <nav class="timeline" aria-label="Phases at a glance">
-  <ol style="--n:9" id="timelineList">
+  <ol style="--n:7" id="timelineList">
     <li data-rush><a href="#phase-1"><span class="tl-dot"></span><span class="tl-name">Register</span><span class="tl-wk">8w</span></a></li>
     <li data-non-rush><a href="#phase-2"><span class="tl-dot"></span><span class="tl-name">Pitch</span><span class="tl-wk">6w</span></a></li>
     <li data-rush><a href="#phase-3"><span class="tl-dot"></span><span class="tl-name">Abstract</span><span class="tl-wk">4w</span></a></li>
-    <li data-rush><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">1w</span></a></li>
-    <li class="is-pivot" data-non-rush><a href="#phase-5"><span class="tl-dot"></span><span class="tl-name">arXiv</span><span class="tl-wk">0</span></a></li>
-    <li class="is-after" data-rush><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Reviews</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after" data-non-rush><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after" data-non-rush><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after" data-non-rush><a href="#phase-9"><span class="tl-dot"></span><span class="tl-name">Accepted</span><span class="tl-wk">after</span></a></li>
+    <li class="is-pivot" data-rush><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">1w</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Accepted</span><span class="tl-wk">after</span></a></li>
   </ol>
 </nav>
 
@@ -697,12 +706,11 @@
       <li data-non-rush><a href="#phase-2"><span class="n">6w</span>Pitch</a></li>
       <li data-rush><a href="#phase-3"><span class="n">4w</span>Abstract</a></li>
       <li data-rush><a href="#phase-4"><span class="n">1w</span>Paper</a></li>
-      <li data-non-rush><a href="#phase-5"><span class="n">0</span>arXiv</a></li>
+      <li class="toc-optional"><a href="#phase-5"><span class="n">opt.</span>arXiv</a></li>
       <li class="toc-split">After submission</li>
-      <li data-rush><a href="#phase-6"><span class="n"></span>Reviews</a></li>
-      <li data-non-rush><a href="#phase-7"><span class="n"></span>Rebuttal</a></li>
-      <li data-non-rush><a href="#phase-8"><span class="n"></span>Camera&#8209;ready</a></li>
-      <li data-non-rush><a href="#phase-9"><span class="n"></span>Accepted</a></li>
+      <li data-non-rush><a href="#phase-6"><span class="n"></span>Rebuttal</a></li>
+      <li data-non-rush><a href="#phase-7"><span class="n"></span>Camera&#8209;ready</a></li>
+      <li data-non-rush><a href="#phase-8"><span class="n"></span>Accepted</a></li>
     </ol>
   </nav>
 
@@ -785,48 +793,29 @@
       </ol>
 
       <h3 class="subhead">What happens after submission</h3>
-      <p class="phase-intro">The card moves to <em>Paper Submitted</em> and you get a Slack DM &mdash; the paper's in the venue's hands now. You're now free to post to arXiv.</p>
+      <p class="phase-intro">The card moves straight to <em>Rebuttal</em> &mdash; the paper's in the venue's hands now, and the board shows a &ldquo;Waiting for reviews&rdquo; badge. Nothing left to click after this: once the venue's own reviews-release date passes, the badge flips itself to &ldquo;In Rebuttal&rdquo; and you get a Slack DM &mdash; the board watches that date for you, on a timer, the one automatic step in this whole pipeline. Posting to arXiv (next page) is optional and can happen any time from here on, whenever it's ready.</p>
     </section>
 
     <section class="phase" id="phase-5">
       <div class="phase-head">
-        <span class="phase-num">deadline</span>
         <h2>Post to arXiv</h2>
       </div>
-      <p class="phase-intro"><strong>What it means that the card is in <em>Paper Submitted</em>:</strong> the paper's gone to the venue. There's nothing more to do about the submission itself &mdash; you're waiting on the venue's own review process now.</p>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; a rush board has no arXiv column. Its columns stop at <em>Paper Submitted</em>, then go straight to Wait&nbsp;for&nbsp;reviews below.</p>
+      <p class="phase-intro">Optional, and not tied to any deadline on the board &mdash; do this whenever the paper's ready to go public, any time after Submit the paper. Nothing here blocks or advances the card; there's no button for it any more, just a link you add.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked, same as always &mdash; a rush board never had an arXiv column.</p>
 
-      <h3 class="subhead">Instructions to submit</h3>
-      <p class="phase-intro">But submitting isn't the finish line &mdash; it's one small step, not a pause. Reviews take weeks, and that time is some of the most valuable in the whole project: this is when the arXiv version gets prepared, and it's often the only version many readers ever see, so treat it with real care.</p>
+      <h3 class="subhead">Posting</h3>
+      <p class="phase-intro">Submitting isn't the finish line &mdash; it's one small step, not a pause. This is when the arXiv version gets prepared, and it's often the only version many readers ever see, so treat it with real care.</p>
       <ol class="list">
         <li><strong>Give co-authors a week's heads-up</strong> and share a final draft before posting.</li>
         <li>The final draft must include author names and affiliations, plus acknowledgments covering grants and funding bodies &mdash; the latter is <strong>crucial</strong>. See the <a href="https://docs.google.com/document/d/1Kh_hUSFwGzh4y3Yr8y32mjq81Jp6Nbk1m_B5uuza3DU/edit?usp=sharing" target="_blank" rel="noopener">current default</a> here.</li>
         <li>When listing your affiliation, use &ldquo;<strong>BOLD, {University of Oxford / Imperial College / UCL}</strong>&rdquo; whenever possible.</li>
         <li>Print off the paper to check for final typos, formatting, and other issues.</li>
         <li>Open-source your cleaned-up code and link the repo before you submit to arXiv.</li>
-        <li>Paste the resulting arXiv link onto the card, then click <strong>Post to arXiv</strong> (see #14 for the idea of doing the actual posting directly from the card instead, one day).</li>
+        <li>Paste the resulting arXiv link onto the card's Edit fields whenever it's live (see #14 for the idea of doing the actual posting directly from the card instead, one day).</li>
       </ol>
 
-      <h3 class="subhead">What happens after submission</h3>
-      <p class="phase-intro">The card moves to <em>Posted</em> and you get a Slack DM.</p>
-
-      <h3 class="subhead">While you wait: capture the loose ends</h3>
-      <p class="phase-intro muted">Credit to Roger Grosse for this practice.</p>
-      <blockquote>
-        &ldquo;Now that the deadline is past, there's one more (hopefully easy) task for all of you. After a deadline push, I find it very useful to make a list of all the loose ends in the project. It's important to do it very soon after the deadline while everything is still fresh in your mind. This will save a lot of time and stress later on.&rdquo;
-      </blockquote>
-      <p class="phase-intro">Sometime in the next few days, start a Google Doc to track loose ends. Aim to spend about <strong>an hour</strong> on it &mdash; or build it up as you go if you're doing heavy work for the Supplemental Material deadline. Ideas for what to include: experiments you still want to run, surprising findings that need explaining, aspects of the experimental protocol you're not comfortable with, prior work to look at more carefully, things to explain better, mathematical arguments to check or make more precise, questions about notation or terminology.</p>
-    </section>
-
-    <section class="phase" id="phase-6">
-      <div class="phase-head">
-        <h2>Wait for reviews</h2>
-      </div>
-      <p class="phase-intro"><strong>What it means that the card is in <em>Posted</em>:</strong> the arXiv version is up. Publicity is the remaining task, not a submission &mdash; nothing further to link on the card at this stage.</p>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> same meaning &mdash; a rush board reaches this same point after <em>Paper Submitted</em>, having skipped <em>Posted</em>. <em>Reviews Out</em> is the last column a rush board tracks at all.</p>
-
-      <h3 class="subhead">Instructions to submit</h3>
-      <p class="phase-intro">There's genuinely nothing to submit here &mdash; the one stage in the whole pipeline without a deliverable of its own (see #13). Reviews going live happens on the venue's own site, not something this board can detect, so getting the card to <em>Reviews Out</em> is on whoever notices and clicks <strong>Advance</strong> themselves.</p>
+      <h3 class="subhead">Publicity</h3>
+      <p class="phase-intro">Also whenever, also optional &mdash; the same paper deserves an audience beyond the venue's own reviewers.</p>
       <ol class="list">
         <li>Draft a tweet thread and share it with all authors ahead of time. <a href="https://typefully.com/" target="_blank" rel="noopener">Typefully</a> can be a useful tool for this.</li>
         <li>Tweets should clearly motivate the problem for a broad audience and make it easy to grasp what's happening.</li>
@@ -841,16 +830,20 @@
         <li>Consider a blog post for major breakthroughs &mdash; <a href="https://accelagent.github.io/" target="_blank" rel="noopener">this is the gold standard</a>.</li>
       </ol>
 
-      <h3 class="subhead">What happens after submission</h3>
-      <p class="phase-intro">Clicking Advance moves the card to <em>Reviews Out</em> and sends you a Slack DM &mdash; no confirmation dialog first, since there's nothing here to actually submit.</p>
+      <h3 class="subhead">While you wait: capture the loose ends</h3>
+      <p class="phase-intro muted">Credit to Roger Grosse for this practice.</p>
+      <blockquote>
+        &ldquo;Now that the deadline is past, there's one more (hopefully easy) task for all of you. After a deadline push, I find it very useful to make a list of all the loose ends in the project. It's important to do it very soon after the deadline while everything is still fresh in your mind. This will save a lot of time and stress later on.&rdquo;
+      </blockquote>
+      <p class="phase-intro">Sometime in the next few days, start a Google Doc to track loose ends. Aim to spend about <strong>an hour</strong> on it &mdash; or build it up as you go if you're doing heavy work for the Supplemental Material deadline. Ideas for what to include: experiments you still want to run, surprising findings that need explaining, aspects of the experimental protocol you're not comfortable with, prior work to look at more carefully, things to explain better, mathematical arguments to check or make more precise, questions about notation or terminology.</p>
     </section>
 
-    <section class="phase" id="phase-7">
+    <section class="phase" id="phase-6">
       <div class="phase-head">
         <h2>Submit rebuttal</h2>
       </div>
-      <p class="phase-intro"><strong>What it means that the card is in <em>Reviews Out</em>:</strong> reviews are public. This is the one genuinely actionable stage after submission &mdash; a real, deadline-bearing task, not just a wait.</p>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> same meaning &mdash; and this is as far as a rush board's own controls go. There's no way to move a rush card past <em>Reviews Out</em> through the board's move buttons at all right now (see #11).</p>
+      <p class="phase-intro"><strong>What it means that the card is in <em>Rebuttal</em>:</strong> reviews are public &mdash; the board's own &ldquo;In Rebuttal&rdquo; badge and Slack DM already told you. This is the one genuinely actionable stage after submission &mdash; a real, deadline-bearing task, not just a wait.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> same meaning &mdash; and this is as far as a rush board's own controls go. There's no way to move a rush card past <em>Rebuttal</em> through the board's move buttons at all right now (see #11).</p>
 
       <h3 class="subhead">Instructions to submit</h3>
       <p class="phase-intro">Follow the <a href="https://docs.google.com/document/d/1cdEypaZXnJ10IckV49iBXEl27gCFnwEhQfLr680Fv18/edit#heading=h.mt80mhtvp84q" target="_blank" rel="noopener">&ldquo;How to ML Rebuttal&rdquo;</a> guide closely. The venue's reviews-released and rebuttal-deadline dates, when known, are on the <a href="audit-board.html">Internal Review Board</a> and in its deadline .ics.</p>
@@ -862,7 +855,7 @@
       <p class="phase-intro">The card moves to <em>Rebuttal Submitted</em> and you get a Slack DM &mdash; the honest name for it: the rebuttal's in, camera-ready is what's due next (assuming acceptance).</p>
     </section>
 
-    <section class="phase" id="phase-8">
+    <section class="phase" id="phase-7">
       <div class="phase-head">
         <h2>Submit camera&#8209;ready</h2>
       </div>
@@ -882,12 +875,12 @@
       <p class="phase-intro">The card moves to <em>Accepted</em> and you get a Slack DM &mdash; the last automatic move the pipeline makes.</p>
     </section>
 
-    <section class="phase" id="phase-9">
+    <section class="phase" id="phase-8">
       <div class="phase-head">
         <h2>Accepted</h2>
       </div>
       <p class="phase-intro"><strong>What it means that the card is in <em>Accepted</em>:</strong> everything's submitted &mdash; abstract, paper, rebuttal, camera-ready. This is the terminal stage; nothing further advances it. What's left is conference prep.</p>
-      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; same reasoning as every stage past <em>Reviews Out</em> above.</p>
+      <p class="phase-rush-note"><strong>Rush mode:</strong> not tracked &mdash; same reasoning as every stage past <em>Rebuttal</em> above.</p>
 
       <h3 class="subhead">Instructions</h3>
       <p class="phase-intro">Nothing here is gated or submitted &mdash; just the practical run-up to actually presenting.</p>
@@ -900,7 +893,7 @@
 
     <nav class="pager" aria-label="Previous and next phase">
       <button class="pager-btn" id="prevBtn" type="button">&larr; Previous</button>
-      <span class="pager-status" id="pagerStatus" aria-live="polite">Phase 1 of 9</span>
+      <span class="pager-status" id="pagerStatus" aria-live="polite">Phase 1 of 7</span>
       <button class="pager-btn" id="nextBtn" type="button">Next &rarr;</button>
     </nav>
 
@@ -918,33 +911,48 @@
   const links = Array.from(document.querySelectorAll('nav.toc a'));
   const tl = Array.from(document.querySelectorAll('.timeline a'));
   const ids = links.map(a => a.getAttribute('href').slice(1));
+  const TL_IDS = tl.map(a => a.getAttribute('href').slice(1));
   const sections = ids.map(id => document.getElementById(id));
   const prevBtn = document.getElementById('prevBtn');
   const nextBtn = document.getElementById('nextBtn');
   const pagerStatus = document.getElementById('pagerStatus');
   const layout = document.querySelector('.layout');
 
-  // Rush mode's own 4 phases, in order — matches RUSH_STATUS_ORDER in
-  // audit-board.html exactly (Register, Abstract, Paper, Rebuttal).
-  const RUSH_IDS = ['phase-1', 'phase-3', 'phase-4', 'phase-6'];
+  // Rush mode's own phases, in order — matches RUSH_STATUS_ORDER in
+  // audit-board.html exactly (Register, Abstract, [Submit the paper,
+  // producing Rebuttal automatically]). Only 3 now (2026-09-18+3, down
+  // from 4) — Submit rebuttal was already excluded (rush's own board has
+  // no move button past Rebuttal, see #11), and Wait for reviews doesn't
+  // exist as a phase any more at all, folded into the automatic
+  // scheduled transition — see phase-4's own "what happens after".
+  const RUSH_IDS = ['phase-1', 'phase-3', 'phase-4'];
+  // Post to arXiv — real, reachable, but not a numbered pipeline step
+  // (optional, concurrent to Rebuttal, no gate of its own). Excluded from
+  // Previous/Next stepping and the "Phase N of M" count via
+  // steppableIds() below, but still a normal click from the TOC/a hash
+  // link — showPhase() itself doesn't care which list an id came from.
+  const OPTIONAL_IDS = ['phase-5'];
   const rushToggle = document.getElementById('rushToggle');
   const rushToggleLabel = document.getElementById('rushToggleLabel');
   const timelineList = document.getElementById('timelineList');
 
   function isRushView() { return document.body.classList.contains('rush-view'); }
-  function isVisiblePhase(id) { return !isRushView() || RUSH_IDS.includes(id); }
+  function isVisiblePhase(id) { return !isRushView() || RUSH_IDS.includes(id) || OPTIONAL_IDS.includes(id); }
   function visibleIds() { return ids.filter(isVisiblePhase); }
+  function steppableIds() { return visibleIds().filter(id => !OPTIONAL_IDS.includes(id)); }
 
   function applyRushView(on) {
     document.body.classList.toggle('rush-view', on);
     rushToggle.setAttribute('aria-checked', on ? 'true' : 'false');
     rushToggleLabel.textContent = on
-      ? 'Rush mode — showing 4 of 8 phases'
-      : 'Full pipeline — show only Rush mode’s 4 phases';
+      ? 'Rush mode — showing 3 of 7 phases'
+      : 'Full pipeline — show only Rush mode’s 3 phases';
     // Keeps the timeline's connecting line ending at the first/last
     // VISIBLE dot (see .timeline ol::before's own calc(50% / var(--n))) —
-    // hiding li's via CSS doesn't shrink this on its own.
-    timelineList.style.setProperty('--n', on ? RUSH_IDS.length : ids.length);
+    // hiding li's via CSS doesn't shrink this on its own. TL_IDS, not
+    // ids, since Post to arXiv isn't plotted on the timeline at all (it's
+    // TOC-only — see the TOC's own .toc-optional entry).
+    timelineList.style.setProperty('--n', on ? RUSH_IDS.length : TL_IDS.length);
     try { localStorage.setItem('boldGuideRushView', on ? '1' : '0'); } catch (e) {}
     // Already sitting on a phase Rush mode doesn't have — land on
     // Register instead of leaving the pager stuck on a hidden phase.
@@ -966,14 +974,21 @@
     });
     tl.forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + id));
 
-    // Numbered against whichever phases are actually visible right now
-    // (4 in Rush view, 8 otherwise), not the full fixed list — "Phase 2
-    // of 8" would be wrong to show while Pitch and 5 others are hidden.
-    const vis = visibleIds();
+    // Numbered against whichever phases are actually steppable right now
+    // (3 in Rush view, 7 otherwise) — Post to arXiv is real and visible
+    // but isn't part of this count at all, same reasoning as the "Phase 2
+    // of 8" one this replaced: don't count what isn't actually a step.
+    const vis = steppableIds();
     const visIdx = vis.indexOf(id);
-    pagerStatus.textContent = `Phase ${visIdx + 1} of ${vis.length}`;
-    prevBtn.disabled = visIdx <= 0;
-    nextBtn.disabled = visIdx === -1 || visIdx >= vis.length - 1;
+    if (visIdx === -1) {
+      pagerStatus.textContent = 'Optional — not part of the numbered pipeline';
+      prevBtn.disabled = true;
+      nextBtn.disabled = true;
+    } else {
+      pagerStatus.textContent = `Phase ${visIdx + 1} of ${vis.length}`;
+      prevBtn.disabled = visIdx <= 0;
+      nextBtn.disabled = visIdx >= vis.length - 1;
+    }
 
     if (pushHistory && location.hash !== '#' + id) {
       history.pushState({ phase: id }, '', '#' + id);
@@ -990,16 +1005,18 @@
     });
   });
 
-  // Step to the next/previous VISIBLE phase, not just the adjacent array
-  // entry — in Rush view, Next from Register goes straight to Abstract,
-  // skipping the hidden Pitch in between.
+  // Step to the next/previous STEPPABLE phase, not just the adjacent
+  // array entry — in Rush view, Next from Register goes straight to
+  // Abstract, skipping the hidden Pitch in between; in any view, Next
+  // from Submit the paper skips over the optional Post to arXiv page
+  // straight to Submit rebuttal.
   prevBtn.addEventListener('click', () => {
-    const vis = visibleIds();
+    const vis = steppableIds();
     const idx = vis.indexOf(currentId());
     if (idx > 0) showPhase(vis[idx - 1]);
   });
   nextBtn.addEventListener('click', () => {
-    const vis = visibleIds();
+    const vis = steppableIds();
     const idx = vis.indexOf(currentId());
     if (idx !== -1 && idx < vis.length - 1) showPhase(vis[idx + 1]);
   });
