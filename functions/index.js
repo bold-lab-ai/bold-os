@@ -29,6 +29,7 @@
 
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { onRequest } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
@@ -83,13 +84,15 @@ function linkedTitle(text, url){
 // the rebuttal, not by having submitted camera-ready material yet.
 // abstract reverted 2026-09-18+2 to "Abstract in review" — see
 // audit-board.html's STATUS_LABELS comment for why this is deliberate.
+// paper/arxiv dropped entirely 2026-09-18+3 — collapsed into `rebuttal`
+// (renamed "Reviews Out" -> "Rebuttal"), see this session's notes and
+// audit-board.html's STATUS_ORDER comment. notifyReviewsOut below is the
+// new scheduled function that goes with this change.
 const STATUS_LABEL = {
   register: 'Registered',
   pitch: 'Pitched',
   abstract: 'Abstract in review',
-  paper: 'Paper Submitted',
-  arxiv: 'Posted',
-  rebuttal: 'Reviews Out',
+  rebuttal: 'Rebuttal',
   camera_ready: 'Rebuttal Submitted',
   conference: 'Accepted'
 };
@@ -573,6 +576,36 @@ function newlyAddedAuthorEmails(before, after){
   return afterEmails.filter(function(e){ return beforeEmails.indexOf(e) === -1; });
 }
 
+// The pure half of notifyReviewsOut (2026-09-18+3, per Eduardo) — the
+// first real time-driven transition in this pipeline, everything else
+// here reacts to a write or an HTTP request. `boardsWithCards`: one entry
+// per board that might have something to flag, each `{ id, label,
+// reviewsPublicDate, cards: [...] }` where `cards` is every card under it
+// currently at `rebuttal` (the caller narrows to that status before
+// calling, since Firestore can't join a board-level date filter against a
+// subcollection query in one pass — see the I/O wrapper below). A card is
+// a candidate once the venue's own reviews-release date has passed AND it
+// hasn't been notified yet — `reviewsOutNotifiedAt` is checked falsy, not
+// `== null`, so an older card that predates this field (undefined, not
+// null) still qualifies, matching audit-board.html's own convention for
+// every optional field. Returns `{ boardId, card }` pairs, oldest venue
+// deadline first, so a backlog (the function was down a while) still
+// sends in a sane order.
+function reviewsOutCandidates(boardsWithCards, todayIso){
+  var out = [];
+  (boardsWithCards || []).slice()
+    .filter(function(b){ return b && b.reviewsPublicDate && b.reviewsPublicDate <= todayIso; })
+    .sort(function(a, b){ return a.reviewsPublicDate < b.reviewsPublicDate ? -1 : 1; })
+    .forEach(function(b){
+      (b.cards || []).forEach(function(c){
+        if (c && c.status === 'rebuttal' && !c.reviewsOutNotifiedAt){
+          out.push({ boardId: b.id, card: c });
+        }
+      });
+    });
+  return out;
+}
+
 // ---------- Slack API ----------
 // Plain fetch against the Web API, no SDK dependency — same minimal-deps
 // preference as the rest of this project, just applied to the one place
@@ -914,7 +947,72 @@ exports.onCardWritten = onDocumentWritten(
   }
 );
 
-// ---------- 5. Slack App Home + reviewer assignment ----------
+// ---------- 5. Reviews-out auto-transition (scheduled) ----------
+// The one thing in this whole pipeline that isn't a deliberate human
+// click (2026-09-18+3, per Eduardo) — everything else, this function
+// included, only ever reacts to a write or an HTTP request nobody has to
+// poll for. A card lands in `rebuttal` the moment "Submit paper" is
+// clicked (see audit-board.html's STATUS_ORDER comment) showing a
+// "Waiting for reviews" badge; this runs on a timer, finds any card whose
+// venue's own reviews-release date has passed, and is the one thing that
+// flips the badge to "In Rebuttal" and DMs the submitter — nobody has to
+// notice and click anything for that to happen.
+//
+// `Date.now()`'s London-local date, not UTC's — venue dates are entered
+// as bare YYYY-MM-DD with no time zone of their own (same convention as
+// audit-board.html's deadline handling), so "today" has to mean the same
+// calendar day a person in the lab would call today.
+function todayIsoLondon(){
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+}
+
+exports.notifyReviewsOut = onSchedule(
+  { schedule: 'every 60 minutes', secrets: [SLACK_BOT_TOKEN] },
+  async function(){
+    const token = SLACK_BOT_TOKEN.value();
+    const todayIso = todayIsoLondon();
+
+    // Boards and cards are separate collection levels — Firestore can't
+    // filter one query on both a board's reviewsPublicDate and its cards'
+    // status/reviewsOutNotifiedAt at once, so this is two passes: find
+    // candidate boards first (cheap, few of them), then only fetch cards
+    // for those. Status filtered server-side; reviewsOutNotifiedAt
+    // filtered in reviewsOutCandidates itself (falsy, not `== null` — see
+    // its own comment for why that matters for older cards).
+    const boardsSnap = await db.collection('boards')
+      .where('reviewsPublicDate', '<=', todayIso).get();
+    const boardsWithCards = await Promise.all(boardsSnap.docs.map(async function(boardDoc){
+      const cardsSnap = await db.collection('boards').doc(boardDoc.id).collection('cards')
+        .where('status', '==', 'rebuttal').get();
+      return {
+        id: boardDoc.id,
+        label: boardDoc.data().label,
+        reviewsPublicDate: boardDoc.data().reviewsPublicDate,
+        cards: cardsSnap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
+      };
+    }));
+
+    const candidates = reviewsOutCandidates(boardsWithCards, todayIso);
+    for (let i = 0; i < candidates.length; i++){
+      const boardId = candidates[i].boardId;
+      const card = candidates[i].card;
+      try {
+        await db.collection('boards').doc(boardId).collection('cards').doc(card.id)
+          .update({ reviewsOutNotifiedAt: Date.now(), updatedAt: Date.now() });
+        const submitterEmail = card.submittedBy && card.submittedBy.email;
+        if (submitterEmail){
+          const headline = '📢 ' + linkedTitle(card.title || 'a paper', cardUrl(boardId, card.id)) +
+            ' — reviews are out. Time to start the rebuttal.';
+          await dmByEmail(token, submitterEmail, headline);
+        }
+      } catch (err){
+        logger.error('notifyReviewsOut failed for one card', { boardId: boardId, cardId: card.id, error: String(err) });
+      }
+    }
+  }
+);
+
+// ---------- 6. Slack App Home + reviewer assignment ----------
 // One HTTP endpoint doing double duty as both Slack's Events API Request
 // URL (app_home_opened, plus the one-time url_verification handshake) and
 // its Interactivity Request URL (the reviewer-picker's block_actions) —
@@ -1037,8 +1135,8 @@ exports.slackEvents = onRequest(
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
-  newlyAddedAuthorEmails, venueUrl, cardUrl, linkedTitle, reviewStateEmoji, verifySlackSignatureRaw,
-  canAssignReviewer, parseAssignAction, reviewerEmailFromAction, cardLine, personOptionsFor,
-  filterPeopleOptions, initialOptionForEmail, reviewerPickerBlock, sectionBlocks, buildHomeView,
-  buildUnrecognizedView
+  newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
+  reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,
+  reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
+  reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView
 };
