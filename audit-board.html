@@ -5101,6 +5101,18 @@
       return;
     }
 
+    // Same gate as advanceBlockReason() — see its own comment for why
+    // (2026-09-18+4, per Eduardo). The status <select> dropdown bypasses
+    // advanceBlockReason entirely (it's only consulted by the Advance
+    // button's own disabled/tooltip state), so this is the only thing
+    // actually stopping the dropdown from skipping the senior reviewer's
+    // approval.
+    if (isAdvance && newStatus === 'paper' && card.abstractReviewState !== 'approved'){
+      showToast('Waiting for the senior reviewer’s approval before moving to ' + STATUS_LABELS.paper + '.', 'error');
+      renderBoard(); // undo any dropdown selection
+      return;
+    }
+
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       return Object.assign({}, c, { status: newStatus, updatedAt: Date.now() });
