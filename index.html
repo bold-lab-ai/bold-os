@@ -116,6 +116,21 @@
     border-right:1px solid var(--line); background:var(--paper);
     transition:flex-basis .22s ease, width .22s ease;
   }
+  /* Homepage-only (2026-09-18+5, per Eduardo): the sidebar and masthead
+     load visually collapsed even for a signed-in visitor, and open when
+     they click the "BOLD.OS" hero heading below — see the auth script's
+     revealChrome(). Reuses .sidebar's own flex-basis/width transition
+     above rather than a bespoke one, so it opens with the same timing as
+     the sidebar-collapse button elsewhere in the app. [hidden] can't be
+     transitioned, which is why this is a class instead of the hidden
+     attribute the guest/signed-out state below still uses. */
+  .shell.chrome-collapsed .sidebar{flex-basis:0; width:0; border-right-color:transparent; overflow:hidden;}
+  .masthead.chrome-collapsed{
+    height:0; padding-top:0; padding-bottom:0; opacity:0; overflow:hidden; border-bottom-color:transparent;
+    transition:height .22s ease, padding .22s ease, opacity .18s ease;
+  }
+  .home-hero h1.hero-clickable{cursor:pointer;}
+  .home-hero h1.hero-clickable:focus-visible{outline:2px solid var(--accent); outline-offset:6px;}
   .sidebar-inner{
     position:sticky; top:0; padding:22px 16px;
     max-height:100vh; overflow-y:auto;
@@ -276,6 +291,7 @@
  <div class="nav-groups">
  <div class="nav-group">
  <a class="nav-group-label" href="how-to-submit-a-paper.html">ML Conference Cycle</a>
+ <a class="nav-link nav-sub" href="how-to-submit-a-paper.html">Guide</a>
  <a class="nav-link nav-sub" href="audit-board.html">Internal review board</a>
  </div>
  <div class="nav-group">
@@ -289,7 +305,7 @@
   <div class="shell-main">
 
 <div class="home-hero">
-  <h1><strong>BOLD</strong>.OS</h1>
+  <h1 id="homeHeroTitle"><strong>BOLD</strong>.OS</h1>
   <div id="homeGuestNote" hidden>
     <p class="gate-alt">Not in BOLD?</p>
     <p class="home-guest-links">
@@ -370,10 +386,13 @@
 
   var masthead = document.getElementById('masthead');
   var authRegion = document.getElementById('authRegion');
+  var shell = document.getElementById('shell');
   var sidebar = document.getElementById('sidebar');
   var navToggle = document.getElementById('navToggle');
   var guestNote = document.getElementById('homeGuestNote');
   var heroSignInBtn = document.getElementById('homeSignInBtn');
+  var heroTitle = document.getElementById('homeHeroTitle');
+  var chromeRevealed = false;
 
   var auth = null;
   try {
@@ -420,6 +439,26 @@
 
   if (heroSignInBtn) heroSignInBtn.addEventListener('click', doSignIn);
 
+  // Reveals the masthead + sidebar with .sidebar's own transition (see
+  // its CSS) rather than the instant [hidden] cut a signed-in visitor got
+  // before 2026-09-18+5. Idempotent and only meaningful once signed in —
+  // renderGuestChrome below re-collapses (and un-reveals) on sign-out, so
+  // a later sign-in starts collapsed again rather than staying open from
+  // a previous session.
+  function revealChrome(){
+    if (chromeRevealed) return;
+    chromeRevealed = true;
+    if (shell) shell.classList.remove('chrome-collapsed');
+    if (masthead) masthead.classList.remove('chrome-collapsed');
+  }
+  var chromeIsClickable = false;
+  if (heroTitle){
+    heroTitle.addEventListener('click', function(){ if (chromeIsClickable) revealChrome(); });
+    heroTitle.addEventListener('keydown', function(e){
+      if (chromeIsClickable && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); revealChrome(); }
+    });
+  }
+
   // The homepage's own content (the hero) stays public either way — a
   // signed-out visitor gets no masthead and no sidebar at all, just the
   // hero plus its own brief sign-up/log-in line; the masthead (with its
@@ -430,11 +469,42 @@
   // browser's default [hidden]{display:none} at equal specificity, so
   // hidden silently does nothing on them directly (see .masthead[hidden]
   // and #pageGate[hidden] on the other pages for the same fix).
+  //
+  // For a signed-in visitor, masthead/sidebar are unhidden (mounted) but
+  // start in the CSS-driven .chrome-collapsed state instead of appearing
+  // outright — clicking the "BOLD.OS" hero heading is what actually
+  // reveals them, via revealChrome() above (2026-09-18+5, per Eduardo).
   function renderGuestChrome(signedIn){
     if (masthead) masthead.hidden = !signedIn;
     if (sidebar) sidebar.hidden = !signedIn;
     if (navToggle) navToggle.hidden = !signedIn;
     if (guestNote) guestNote.hidden = signedIn;
+    chromeIsClickable = signedIn;
+    if (heroTitle){
+      heroTitle.classList.toggle('hero-clickable', signedIn);
+      if (signedIn){
+        heroTitle.setAttribute('role', 'button');
+        heroTitle.setAttribute('tabindex', '0');
+        heroTitle.setAttribute('aria-label', 'Show navigation');
+      } else {
+        heroTitle.removeAttribute('role');
+        heroTitle.removeAttribute('tabindex');
+        heroTitle.removeAttribute('aria-label');
+      }
+    }
+    if (signedIn){
+      // Guard on chromeRevealed so a second onAuthStateChanged firing
+      // while still signed in (e.g. a token refresh) can't re-collapse
+      // chrome the visitor already opened this session.
+      if (!chromeRevealed){
+        if (shell) shell.classList.add('chrome-collapsed');
+        if (masthead) masthead.classList.add('chrome-collapsed');
+      }
+    } else {
+      chromeRevealed = false;
+      if (shell) shell.classList.remove('chrome-collapsed');
+      if (masthead) masthead.classList.remove('chrome-collapsed');
+    }
   }
 
   if (!auth) {
