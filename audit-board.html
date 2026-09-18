@@ -560,6 +560,19 @@
   .gate-banner strong{font-weight:700;}
   .gate-banner-actions{display:flex; gap:10px; align-items:center; margin-top:10px;}
   .gate-banner .badge{vertical-align:middle;}
+  /* Stage-requirements checklist (2026-09-18+8, per Eduardo) — reuses the
+     .gate-banner box (same "here's what's blocking you" visual language)
+     but lists every outstanding requirement for the next stage at once,
+     not just whichever one the disabled move button's own tooltip
+     happens to show (advanceBlockReason returns on the FIRST failing
+     check). Done items get a check + strike-through in the success
+     colour, overriding the banner's own amber text just for that line. */
+  .gate-banner .stage-req-head{font-weight:700; margin-bottom:4px;}
+  .gate-banner .stage-req-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px;}
+  .gate-banner .stage-req-list li{padding-left:20px; position:relative;}
+  .gate-banner .stage-req-list li::before{content:'\25CB'; position:absolute; left:0;}
+  .gate-banner .stage-req-list li.is-done{color:var(--success-text); text-decoration:line-through; opacity:.7;}
+  .gate-banner .stage-req-list li.is-done::before{content:'\2713';}
 
   /* ---------- review tabs: Format / Science / Discussion ---------- */
   .tabbar{display:flex; gap:0; border-bottom:1px solid var(--line); margin:28px 0 0;}
@@ -2879,6 +2892,13 @@
     if (toStatus === 'abstract' && !card.overleafLink){
       return 'Add the Overleaf link first';
     }
+    // Added 2026-09-18+8, per Eduardo — the guide's own instructions for
+    // this stage already say to paste the abstract in before submitting
+    // (abstractText, free text, added to the Edit-fields modal
+    // 2026-09-18+1), but nothing actually enforced it until now.
+    if (toStatus === 'abstract' && !card.abstractText){
+      return 'Add the abstract text first';
+    }
     if (toStatus === 'abstract' && !reviewersAssigned(card)){
       return 'Assign a junior and a senior reviewer first';
     }
@@ -3034,6 +3054,63 @@
 
   function moveButtonsHtml(card, board){
     return '<div class="card-move">' + moveButtonsInnerHtml(card, board) + '</div>';
+  }
+
+  // What's needed to reach the NEXT stage, keyed by that stage (same
+  // `rgt` moveButtonsInnerHtml computes) — one entry per simple
+  // field-presence check advanceBlockReason already makes for that
+  // transition, in the guide's own instruction order. Deliberately
+  // leaves out `paper` (leaving `abstract`) and the checklist-crossing
+  // part of `rebuttal` (leaving `paper`): both already have their own
+  // dedicated, richer "what's needed" UI elsewhere on this same page
+  // (abstractApprovalHtml's Approve/Request-changes banner; gateBannerHtml's
+  // author/junior/senior checklist counts) — showing them again here would
+  // just duplicate that, not add anything. `rebuttal`'s plain submissionLink
+  // check isn't covered by either of those, so it's still listed.
+  var STAGE_REQUIREMENTS = {
+    pitch: [
+      { label: 'Pitch materials added', met: function(c){ return !!c.pitchLink; } }
+    ],
+    abstract: [
+      { label: 'Co-authors added', met: function(c){ return !!(c.authors && c.authors.length); } },
+      { label: 'Overleaf link added', met: function(c){ return !!c.overleafLink; } },
+      { label: 'Abstract text added', met: function(c){ return !!c.abstractText; } },
+      { label: 'Junior and senior reviewer assigned', met: function(c){ return reviewersAssigned(c); } }
+    ],
+    rebuttal: [
+      { label: 'Submission link added', met: function(c){ return !!c.submissionLink; } }
+    ],
+    camera_ready: [
+      { label: 'Rebuttal doc added', met: function(c){ return !!c.rebuttalDocLink; } }
+    ],
+    conference: [
+      { label: 'Camera-ready link added', met: function(c){ return !!c.cameraReadyLink; } }
+    ]
+  };
+
+  // The project page's own live checklist (2026-09-18+8, per Eduardo) —
+  // previously the ONLY visibility into what's blocking a greyed-out move
+  // button was its own tooltip, which shows just the first unmet
+  // requirement (advanceBlockReason returns on the first failing check),
+  // so fixing one thing only revealed the next one on the next visit.
+  // Shows every item for the card's current next stage at once, ticked
+  // off live as fields get filled in. Hidden once nothing's outstanding —
+  // at that point the move button itself is the only thing that matters.
+  function stageRequirementsHtml(card, board){
+    var effective = displayStatus(card, board);
+    var rgt = statusAt(effective, 1, effectiveStatusOrder(board));
+    var items = rgt && STAGE_REQUIREMENTS[rgt];
+    if (!items || !items.length) return '';
+    if (items.every(function(it){ return it.met(card); })) return '';
+    return '<div class="gate-banner" id="stageRequirements">' +
+      '<div class="stage-req-head">To move to ' + escapeHtml(statusLabelFor(rgt, board)) + ':</div>' +
+      '<ul class="stage-req-list">' +
+        items.map(function(it){
+          var done = it.met(card);
+          return '<li class="' + (done ? 'is-done' : 'is-pending') + '">' + escapeHtml(it.label) + '</li>';
+        }).join('') +
+      '</ul>' +
+    '</div>';
   }
 
   // Forward-migrate a stored card: since-split status keys; older checklist
@@ -4068,6 +4145,8 @@
     html += '<button class="btn" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button>';
     html += '<button class="btn-text danger" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
     html += '</div>';
+
+    html += stageRequirementsHtml(card, board);
 
     html += '<dl class="detail-grid">';
     if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (card.status !== 'rebuttal' ? ' <span style="color:var(--muted);">(venue deadline)</span>' : '') + '</dd>';
