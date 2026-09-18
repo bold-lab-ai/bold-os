@@ -408,21 +408,18 @@
   }
   .column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
   /* ch-hint is ALWAYS rendered (renderColumns never omits it, even with
-     nothing to say) and fixed to a set height, whether or not it actually
-     holds that much text — a column with no hint still reserves the same
-     space as one with a full deadline block, so every column-head comes
-     out identically tall and the head/body divider lines up across the
-     whole board, not just within a column that happens to have more or
-     less to say than its neighbours. Height (5.4em, bumped 2026-09-18+5
-     from 4.05em to fit the stacked deadline layout below without
-     clipping) is shared by every column, deadline variant or not, so
-     that alignment holds regardless of which variant a given column is
-     showing. The "Requires: a) … b) …" line that used to sit below this
-     (ch-requires) was dropped entirely 2026-09-18+5, per Eduardo — not
-     just its own label, the whole segment. */
+     nothing to say) — min-height keeps a short/empty hint from collapsing
+     the column-head down to nothing, so heads still roughly line up
+     across the board, but the box itself grows past that rather than
+     clipping (2026-09-18+6, per Eduardo — a fixed height + overflow:hidden
+     here was cutting off the bottom of the stacked deadline layout below
+     whenever a date wrapped to more lines than the box was sized for; a
+     wrapping, variable-length date can't be bounded by a fixed height
+     without either clipping it or guessing generously and wasting space
+     everywhere else). The "Requires: a) … b) …" line that used to sit
+     below this (ch-requires) was dropped entirely 2026-09-18+5. */
   .column-head .ch-hint{
-    margin-top:4px; height:5.4em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden;
+    margin-top:4px; min-height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
   }
   /* Rush mode's column deadline hint — two entries (internal cutoff, venue
      deadline), each a label then its date stacked on its own line below
