@@ -560,36 +560,14 @@
   .gate-banner strong{font-weight:700;}
   .gate-banner-actions{display:flex; gap:10px; align-items:center; margin-top:10px;}
   .gate-banner .badge{vertical-align:middle;}
-  /* Stage-requirements checklist (2026-09-18+8, per Eduardo) — reuses the
-     .gate-banner box (same "here's what's blocking you" visual language)
-     but lists every outstanding requirement for the next stage at once,
-     not just whichever one the disabled move button's own tooltip
-     happens to show (advanceBlockReason returns on the FIRST failing
-     check). Done items get a check + strike-through in the success
-     colour, overriding the banner's own amber text just for that line. */
-  .gate-banner .stage-req-head{font-weight:700; margin-bottom:4px;}
-  .gate-banner .stage-req-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:3px;}
-  .gate-banner .stage-req-list li{padding-left:20px; position:relative;}
-  .gate-banner .stage-req-list li::before{content:'\25CB'; position:absolute; left:0;}
-  .gate-banner .stage-req-list li.is-done{color:var(--success-text); text-decoration:line-through; opacity:.7;}
-  .gate-banner .stage-req-list li.is-done::before{content:'\2713';}
-  /* An unmet item with its own inline control (2026-09-18+9) — the label
-     stays plain text (not struck through, it isn't done), the field/button
-     wrap onto their own line at narrow widths rather than the label
-     shrinking to fit. text-decoration is reset since li.is-pending never
-     had it, but .gate-banner's own warm text colour still applies to the
-     label — only the control itself needs its own (non-warning) colours. */
-  .gate-banner .stage-req-list li.stage-req-item-input{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:2px; padding-bottom:2px;}
-  .gate-banner .stage-req-list li.stage-req-item-input label{flex:0 0 auto; font-weight:600;}
-  .gate-banner .stage-req-list li.stage-req-item-input input[type="text"],
-  .gate-banner .stage-req-list li.stage-req-item-input textarea{
-    flex:1 1 220px; min-width:160px; font:inherit; font-size:12.5px; padding:5px 8px;
-    border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);
-  }
-  .gate-banner .stage-req-list li.stage-req-item-input textarea{flex-basis:100%; min-height:64px; resize:vertical;}
-  .gate-banner .stage-req-list li.stage-req-item-input .btn-text{flex:0 0 auto;}
-  .gate-banner .stage-req-item-error{flex:0 0 100%; font-size:11px; color:var(--danger-text); font-weight:600;}
-  .gate-banner .stage-req-list li.stage-req-item-modal{display:flex; align-items:center; gap:8px;}
+  /* Inline "Submit the abstract" form (2026-09-18+10, per Eduardo) — a
+     plain section below the detail-grid, not the warning-coloured
+     .gate-banner treatment (this isn't flagging a problem, just showing
+     a form) and not a checklist. Reuses .field/.field-error, the same
+     classes and global input/textarea styling the Edit-fields modal
+     already uses, so the fields are sized the same way there too. */
+  .stage-fields{margin:24px 0; max-width:560px;}
+  .stage-fields h3{font-size:15px; margin:0 0 12px;}
 
   /* ---------- review tabs: Format / Science / Discussion ---------- */
   .tabbar{display:flex; gap:0; border-bottom:1px solid var(--line); margin:28px 0 0;}
@@ -3073,136 +3051,96 @@
     return '<div class="card-move">' + moveButtonsInnerHtml(card, board) + '</div>';
   }
 
-  // What's needed to reach the NEXT stage, keyed by that stage (same
-  // `rgt` moveButtonsInnerHtml computes) — one entry per simple
-  // field-presence check advanceBlockReason already makes for that
-  // transition, in the guide's own instruction order. Deliberately
-  // leaves out `paper` (leaving `abstract`) and the checklist-crossing
-  // part of `rebuttal` (leaving `paper`): both already have their own
-  // dedicated, richer "what's needed" UI elsewhere on this same page
-  // (abstractApprovalHtml's Approve/Request-changes banner; gateBannerHtml's
-  // author/junior/senior checklist counts) — showing them again here would
-  // just duplicate that, not add anything. `rebuttal`'s plain submissionLink
-  // check isn't covered by either of those, so it's still listed.
+  // Inline "Submit the abstract" state — the project page's own copy of
+  // author rows, separate from the Edit-fields modal's eAuthorsState (so
+  // both could in principle be live at once without clobbering each
+  // other), reset fresh every time abstractSubmissionFieldsHtml's markup
+  // is (re)rendered — see renderCardDetail's own init right after it sets
+  // els.boardRegion.innerHTML, same pattern openEditModal uses for
+  // eAuthorsState/#eAuthorsWrap.
+  var stageAuthorsState = [];
+
+  // The project page's own inline "Submit the abstract" form
+  // (2026-09-18+9/+10, per Eduardo) — shown only while that's genuinely
+  // the next thing to do (rgt === 'abstract': Register in Rush mode, or
+  // Pitch in the full pipeline) and something's still missing, so an
+  // author can fill in every real requirement for it without leaving this
+  // page for the Edit-fields modal. A plain section, not a checklist and
+  // not the warning-coloured .gate-banner treatment — this isn't telling
+  // the author they did something wrong, just showing the form.
   //
-  // `input` says how stageRequirementItemHtml renders an unmet item:
-  //  - 'text'/'textarea': a real inline field + Save button, right here
-  //    on the project page (2026-09-18+9, per Eduardo — these fields used
-  //    to live ONLY in the Edit-fields modal, so satisfying one of these
-  //    requirements meant leaving this checklist to go find it there).
-  //  - 'modal': `authors` keeps going through the Edit-fields modal
-  //    instead of a bare inline control — its real UI (roster picker,
-  //    "+ New author" toggle, PI tagging, authorRowsHtml/renderAuthorRows)
-  //    is real product surface worth keeping, not something to crudely
-  //    re-implement in a cramped checklist row. The item still gets its
-  //    own "Add" button that jumps straight to that modal.
-  //  - 'none': `reviewers` — already a real inline picker further down
-  //    this same page (reviewerInputHtml, guideline 7), nothing to add.
-  var STAGE_REQUIREMENTS = {
-    pitch: [
-      { field: 'pitchLink', label: 'Pitch materials link', input: 'text', placeholder: 'Link to your pitch materials',
-        met: function(c){ return !!c.pitchLink; } }
-    ],
-    abstract: [
-      { field: 'authors', label: 'Co-authors', input: 'modal',
-        met: function(c){ return !!(c.authors && c.authors.length); } },
-      { field: 'overleafLink', label: 'Overleaf link', input: 'text', placeholder: 'https://www.overleaf.com/project/…',
-        met: function(c){ return !!c.overleafLink; } },
-      { field: 'abstractText', label: 'Abstract', input: 'textarea', placeholder: 'Paste the abstract — LaTeX ok as plain $inline$ / $$block$$',
-        met: function(c){ return !!c.abstractText; } },
-      { field: 'reviewers', label: 'Junior and senior reviewer assigned', input: 'none',
-        met: function(c){ return reviewersAssigned(c); } }
-    ],
-    rebuttal: [
-      { field: 'submissionLink', label: 'Submission link', input: 'text', placeholder: 'Link to your venue submission (e.g. OpenReview)',
-        met: function(c){ return !!c.submissionLink; } }
-    ],
-    camera_ready: [
-      { field: 'rebuttalDocLink', label: 'Rebuttal doc link', input: 'text', placeholder: 'Link to the written rebuttal',
-        met: function(c){ return !!c.rebuttalDocLink; } }
-    ],
-    conference: [
-      { field: 'cameraReadyLink', label: 'Camera-ready link', input: 'text', placeholder: 'Link to the submitted camera-ready version',
-        met: function(c){ return !!c.cameraReadyLink; } }
-    ]
-  };
-
-  // One requirement line — either a plain "done"/"still needed" item, or
-  // (for an unmet 'text'/'textarea'/'modal' item) the actual control to
-  // satisfy it right here. Input ids are keyed by field name, which is
-  // safe here the same way the checklist's other fixed-id inputs are
-  // (docs/AGENTS.md guideline 7): only one card is ever open at a time.
-  function stageRequirementItemHtml(card, it){
-    var done = it.met(card);
-    if (done || it.input === 'none'){
-      return '<li class="' + (done ? 'is-done' : 'is-pending') + '">' + escapeHtml(it.label) + '</li>';
-    }
-    if (it.input === 'modal'){
-      return '<li class="is-pending stage-req-item-modal">' + escapeHtml(it.label) +
-        ' <button class="btn-text" type="button" data-stage-req-open-modal="' + escapeHtml(card.id) + '">Add</button></li>';
-    }
-    var fieldId = 'stageReq-' + it.field;
-    var current = card[it.field] || '';
-    var controlHtml = it.input === 'textarea'
-      ? '<textarea id="' + fieldId + '" data-stage-req-field="' + it.field + '" placeholder="' + escapeHtml(it.placeholder || '') + '">' + escapeHtml(current) + '</textarea>'
-      : '<input type="text" id="' + fieldId + '" data-stage-req-field="' + it.field + '" placeholder="' + escapeHtml(it.placeholder || '') + '" value="' + escapeHtml(current) + '">';
-    return '<li class="is-pending stage-req-item-input">' +
-      '<label for="' + fieldId + '">' + escapeHtml(it.label) + '</label>' +
-      controlHtml +
-      '<button class="btn-text" type="button" data-stage-req-save="' + escapeHtml(card.id) + '" data-stage-req-save-field="' + it.field + '">Save</button>' +
-      '<span class="stage-req-item-error" id="' + fieldId + '-error" hidden></span>' +
-    '</li>';
-  }
-
-  // The project page's own live checklist (2026-09-18+8/+9, per Eduardo)
-  // — previously the ONLY visibility into what's blocking a greyed-out
-  // move button was its own tooltip, which shows just the first unmet
-  // requirement (advanceBlockReason returns on the first failing check),
-  // and even that gave no way to actually DO anything about it short of
-  // the Edit-fields modal. Shows every item for the card's current next
-  // stage at once, each with its own way to fill it in right here (see
-  // stageRequirementItemHtml), ticked off live as fields get saved.
-  // Hidden once nothing's outstanding — at that point the move button
-  // itself is the only thing that matters.
-  function stageRequirementsHtml(card, board){
+  // Co-authors reuse the Edit-fields modal's own authorRowsHtml/
+  // renderAuthorRows (roster picker, "+ New author" toggle, PI tagging)
+  // via stageAuthorsState/#stageAuthorsWrap rather than a bare input —
+  // that UI is real product surface worth keeping, not something to
+  // crudely re-implement here. Overleaf link and the abstract text are
+  // plain fields, same `.field` markup and sizing the modal already uses
+  // (global input/textarea styling, not scoped to `.modal`). Reviewers
+  // aren't part of this form — a working inline picker for them already
+  // exists further down this same page (reviewerInputHtml, guideline 7).
+  // Hidden once authors, the Overleaf link and the abstract text are all
+  // present (reviewers being unassigned doesn't keep this open — that's
+  // its own separate picker/gate).
+  function abstractSubmissionFieldsHtml(card, board){
     var effective = displayStatus(card, board);
     var rgt = statusAt(effective, 1, effectiveStatusOrder(board));
-    var items = rgt && STAGE_REQUIREMENTS[rgt];
-    if (!items || !items.length) return '';
-    if (items.every(function(it){ return it.met(card); })) return '';
-    return '<div class="gate-banner" id="stageRequirements">' +
-      '<div class="stage-req-head">To move to ' + escapeHtml(statusLabelFor(rgt, board)) + ':</div>' +
-      '<ul class="stage-req-list">' +
-        items.map(function(it){ return stageRequirementItemHtml(card, it); }).join('') +
-      '</ul>' +
+    if (rgt !== 'abstract') return '';
+    if (card.authors && card.authors.length && card.overleafLink && card.abstractText) return '';
+    return '<div class="stage-fields" id="stageAbstractFields">' +
+      '<h3>Submit the abstract</h3>' +
+      '<div class="field"><label for="stageAuthorsWrap">Co-authors</label><div id="stageAuthorsWrap"></div>' +
+        '<button class="btn-text" type="button" id="stageAddAuthor">+ Add author</button>' +
+        '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order — the last one is the PI.</div>' +
+      '</div>' +
+      '<div class="field"><label for="stageOverleaf">Overleaf link</label><input type="url" id="stageOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/… — must allow edit access, not just view"></div>' +
+      '<div class="field"><label for="stageAbstractText">Abstract</label><textarea id="stageAbstractText" placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + escapeHtml(card.abstractText || '') + '</textarea></div>' +
+      '<div class="field-error" id="stageFieldsError" hidden></div>' +
+      '<button class="btn btn-primary" type="button" data-stage-fields-save="' + escapeHtml(card.id) + '">Save</button>' +
     '</div>';
   }
 
-  // Saves a single field straight from the stage-requirements checklist
-  // (2026-09-18+9) — same optimistic-update/rollback shape as
-  // onSetAbstractReview, just generic over which field. Blank values are
-  // rejected rather than saved (a requirement can't be satisfied by an
-  // empty string); overleafLink gets the same link-shape validation the
-  // Edit-fields modal already runs (overleafLinkIssue) so this shortcut
-  // can't save something that modal would have rejected.
-  function onSaveStageField(cardId, field, rawValue){
+  // Saves the whole inline "Submit the abstract" form in one go
+  // (2026-09-18+9/+10) — same fields, same validation (authorRowsIssue,
+  // overleafLinkIssue, a plain non-empty check on the abstract) and the
+  // same optimistic-update/rollback shape onSaveEdit uses for the
+  // Edit-fields modal, just scoped to these three fields and this page's
+  // own inputs/state instead of the modal's.
+  function onSaveAbstractFields(cardId){
     var boardId = state.currentBoardId;
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card) return;
-    var value = (rawValue || '').trim();
-    var errorEl = document.getElementById('stageReq-' + field + '-error');
-    function showError(msg){
-      if (errorEl){ errorEl.textContent = msg; errorEl.hidden = false; }
+    var errorEl = document.getElementById('stageFieldsError');
+    var authors = authorsForSave(stageAuthorsState);
+    var overleafLink = document.getElementById('stageOverleaf').value.trim();
+    var abstractText = document.getElementById('stageAbstractText').value.trim();
+
+    var authorsIssue = authorRowsIssue(stageAuthorsState);
+    if (authorsIssue || !overleafLink || !abstractText){
+      errorEl.textContent = authorsIssue || 'Please fill in every field above.';
+      errorEl.hidden = false;
+      return;
     }
-    if (!value){ showError('Can’t be blank.'); return; }
-    if (field === 'overleafLink'){
-      var issue = overleafLinkIssue(value);
-      if (issue){ showError(issue); return; }
+    var overleafIssue = overleafLinkIssue(overleafLink);
+    if (overleafIssue){
+      errorEl.textContent = overleafIssue;
+      errorEl.hidden = false;
+      return;
     }
-    if (errorEl) errorEl.hidden = true;
+    errorEl.hidden = true;
     var prev = state.cards;
-    var patch = { updatedAt: Date.now() };
-    patch[field] = value;
+    var patch = {
+      authors: authors,
+      authorEmails: authorEmailsOf(authors),
+      overleafLink: overleafLink,
+      abstractText: abstractText,
+      updatedAt: Date.now()
+    };
+    // Senior reviewer defaults to the PI the first time authors are
+    // actually saved — same behavior/rationale as onSaveEdit.
+    if (!card.reviewers || !card.reviewers.senior){
+      var prevReviewers = card.reviewers || { junior: '', senior: '' };
+      patch.reviewers = { junior: prevReviewers.junior || '', senior: (authors.length ? authors[authors.length - 1].email : '') || '' };
+    }
     var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, patch) : c; });
     state.cards = next;
     renderCardDetail();
@@ -4250,8 +4188,6 @@
     html += '<button class="btn-text danger" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
     html += '</div>';
 
-    html += stageRequirementsHtml(card, board);
-
     html += '<dl class="detail-grid">';
     if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (card.status !== 'rebuttal' ? ' <span style="color:var(--muted);">(venue deadline)</span>' : '') + '</dd>';
     if (rushCutoff) html += '<dt>Rush cutoff</dt><dd' + (rushOverdue ? ' style="color:var(--danger-text);"' : '') + '>' + formatDateTime(rushCutoff) + ' <strong>(' + formatTimeLeft(rushCutoff) + ')</strong></dd>';
@@ -4278,6 +4214,8 @@
     if (regNote) html += '<dt>Note at registration</dt><dd style="white-space:pre-wrap;">' + escapeHtml(regNote) + '</dd>';
     if (card.reviewNotes) html += '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>';
     html += '</dl>';
+
+    html += abstractSubmissionFieldsHtml(card, board);
 
     html += abstractApprovalHtml(card);
     // gateBannerHtml describes the checklist gate (GATE_AFTER_STATUS) —
@@ -4350,15 +4288,23 @@
     if (ed) ed.addEventListener('click', function(){ openEditModal(ed.getAttribute('data-edit')); });
     var rm = els.boardRegion.querySelector('[data-remove]');
     if (rm) rm.addEventListener('click', function(){ onRemoveCard(rm.getAttribute('data-remove')); });
-    var stageReqModalBtn = els.boardRegion.querySelector('[data-stage-req-open-modal]');
-    if (stageReqModalBtn) stageReqModalBtn.addEventListener('click', function(){ openEditModal(stageReqModalBtn.getAttribute('data-stage-req-open-modal')); });
-    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-stage-req-save]'), function(btn){
-      btn.addEventListener('click', function(){
-        var field = btn.getAttribute('data-stage-req-save-field');
-        var input = document.getElementById('stageReq-' + field);
-        onSaveStageField(btn.getAttribute('data-stage-req-save'), field, input ? input.value : '');
+    // Inline "Submit the abstract" form (abstractSubmissionFieldsHtml) —
+    // only actually present in the DOM while that section renders
+    // something, same guard here as the modal's own eAuthorsWrap init.
+    var stageAuthorsWrap = document.getElementById('stageAuthorsWrap');
+    if (stageAuthorsWrap){
+      stageAuthorsState = card.authors && card.authors.length
+        ? card.authors.map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '', isNew: false }; })
+        : [{ name: '', email: '', isNew: false }];
+      renderAuthorRows('stageAuthorsWrap', stageAuthorsState, null, false);
+      var stageAddAuthorBtn = document.getElementById('stageAddAuthor');
+      if (stageAddAuthorBtn) stageAddAuthorBtn.addEventListener('click', function(){
+        stageAuthorsState.splice(Math.max(stageAuthorsState.length - 1, 0), 0, { name: '', email: '', isNew: false });
+        renderAuthorRows('stageAuthorsWrap', stageAuthorsState, null, false);
       });
-    });
+    }
+    var stageFieldsSaveBtn = els.boardRegion.querySelector('[data-stage-fields-save]');
+    if (stageFieldsSaveBtn) stageFieldsSaveBtn.addEventListener('click', function(){ onSaveAbstractFields(stageFieldsSaveBtn.getAttribute('data-stage-fields-save')); });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cl]'), function(box){
       box.addEventListener('change', function(){
         onToggleChecklist(box.getAttribute('data-cl'), box.getAttribute('data-cl-item'), box.getAttribute('data-cl-role'), box.checked);
