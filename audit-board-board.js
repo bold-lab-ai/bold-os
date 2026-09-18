@@ -181,23 +181,56 @@
   // truth the top button's own disabled state already uses, so "all
   // fields have been completed" can't drift out of sync with what
   // actually gates the move.
+  // A people <select> for one review role in the Submit-the-abstract form
+  // (2026-09-18+28, per Eduardo — the authors choose the two reviewers
+  // there, and Submit stays blocked until both are set: advanceBlockReason).
+  function reviewerSelectFieldHtml(card, role, disabledAttr){
+    var current = (card.reviewers || {})[role] || '';
+    if (!current && role === 'senior' && card.authors && card.authors.length){
+      current = card.authors[card.authors.length - 1].email || '';   // defaults to the PI
+    }
+    var options = '<option value="">Choose a person…</option>' + state.people.map(function(p){
+      return '<option value="' + escapeHtml(p.email) + '"' + (p.email === current ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>';
+    }).join('');
+    var label = role === 'senior' ? 'Senior reviewer' : 'Junior reviewer';
+    return '<div class="field"><label for="stageReviewer-' + role + '">' + label + '</label>' +
+      '<select id="stageReviewer-' + role + '"' + disabledAttr + '>' + options + '</select></div>';
+  }
+
+  // The abstract textarea + Preview — shared by the Submit-the-abstract
+  // form and the inline abstract editor on the card details (same editor
+  // in both places, 2026-09-18+32, per Eduardo).
+  function abstractTextFieldHtml(text, disabledAttr){
+    var len = (text || '').length;
+    return '<div class="field"><label for="stageAbstractText">Abstract</label><textarea id="stageAbstractText" maxlength="' + ABSTRACT_MAX_CHARS + '"' + (disabledAttr || '') + ' placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + escapeHtml(text || '') + '</textarea>' +
+      '<div class="abstract-counter' + (len > ABSTRACT_MAX_CHARS ? ' over' : '') + '" id="stageAbstractCounter">' + abstractCounterText(len) + '</div>' +
+      '<button class="btn-text" type="button" id="stageAbstractPreviewBtn" style="margin-top:6px;">Preview</button>' +
+      '<div class="abstract-render abstract-preview" id="stageAbstractPreview" hidden></div>' +
+    '</div>';
+  }
+
   function abstractSubmissionFieldsHtml(card, board){
     var effective = displayStatus(card, board);
     var rgt = statusAt(effective, 1, effectiveStatusOrder(board));
     if (rgt !== 'abstract') return '';
-    if (!canManageAuthorFields(card)) return '';
-    var blockReason = advanceBlockReason(card, 'abstract', board);
+    // Always shown (2026-09-18+27, per Eduardo), disabled for anyone who
+    // isn't an author (or the person who registered the paper).
+    var canEdit = canManageAuthorFields(card);
+    var off = canEdit ? '' : ' disabled';
+    var blockReason = canEdit ? advanceBlockReason(card, 'abstract', board) : 'Only the paper’s authors can edit this.';
     return '<div class="stage-fields" id="stageAbstractFields">' +
       '<h3 class="detail-subhead">Submit the abstract</h3>' +
       '<div class="field"><label for="stageAuthorsWrap">Co-authors</label><div id="stageAuthorsWrap"></div>' +
-        '<button class="btn-text" type="button" id="stageAddAuthor">+ Add author</button>' +
+        '<button class="btn-text" type="button" id="stageAddAuthor"' + off + '>+ Add author</button>' +
         '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order — the last one is the PI.</div>' +
       '</div>' +
-      '<div class="field"><label for="stageOverleaf">Overleaf link</label><input type="url" id="stageOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/… — must allow edit access, not just view"></div>' +
-      '<div class="field"><label for="stageAbstractText">Abstract</label><textarea id="stageAbstractText" placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + escapeHtml(card.abstractText || '') + '</textarea></div>' +
+      reviewerSelectFieldHtml(card, 'junior', off) +
+      reviewerSelectFieldHtml(card, 'senior', off) +
+      '<div class="field"><label for="stageOverleaf">Overleaf link</label><input type="url" id="stageOverleaf"' + off + ' value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/… — must allow edit access, not just view"></div>' +
+      abstractTextFieldHtml(card.abstractText, off) +
       '<div class="field-error" id="stageFieldsError" hidden></div>' +
       '<div class="stage-fields-actions">' +
-        '<button class="btn" type="button" data-stage-fields-save="' + escapeHtml(card.id) + '">Save</button>' +
+        '<button class="btn" type="button" data-stage-fields-save="' + escapeHtml(card.id) + '"' + off + '>Save</button>' +
         '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="abstract" data-move-label="Submit abstract"' +
           (blockReason ? ' disabled title="' + escapeHtml(blockReason) + '"' : ' title="Move to ' + escapeHtml(statusLabelFor('abstract', board)) + '"') + '>Submit</button>' +
         // The button's own `title` above isn't a reliable way to see why
@@ -226,10 +259,22 @@
     var authors = authorsForSave(stageAuthorsState);
     var overleafLink = document.getElementById('stageOverleaf').value.trim();
     var abstractText = document.getElementById('stageAbstractText').value.trim();
+    var junior = document.getElementById('stageReviewer-junior').value;
+    var senior = document.getElementById('stageReviewer-senior').value;
 
     var authorsIssue = authorRowsIssue(stageAuthorsState);
-    if (authorsIssue || !overleafLink || !abstractText){
+    if (authorsIssue || !overleafLink || !abstractText || !junior || !senior){
       errorEl.textContent = authorsIssue || 'Please fill in every field above.';
+      errorEl.hidden = false;
+      return;
+    }
+    if (abstractText.length > ABSTRACT_MAX_CHARS){
+      errorEl.textContent = 'The abstract can be at most ' + ABSTRACT_MAX_CHARS + ' characters.';
+      errorEl.hidden = false;
+      return;
+    }
+    if (junior === senior){
+      errorEl.textContent = 'Choose two different reviewers.';
       errorEl.hidden = false;
       return;
     }
@@ -248,12 +293,13 @@
       abstractText: abstractText,
       updatedAt: Date.now()
     };
-    // Senior reviewer defaults to the PI the first time authors are
-    // actually saved — same behavior/rationale as onSaveEdit.
-    if (!card.reviewers || !card.reviewers.senior){
-      var prevReviewers = card.reviewers || { junior: '', senior: '' };
-      patch.reviewers = { junior: prevReviewers.junior || '', senior: (authors.length ? authors[authors.length - 1].email : '') || '' };
-    }
+    // The two reviewers come from this form now. Same rule as
+    // onSetReviewer: a role whose person actually changed starts from
+    // zero (its review state resets).
+    var prevReviewers = card.reviewers || { junior: '', senior: '' };
+    patch.reviewers = { junior: junior, senior: senior };
+    if (prevReviewers.junior !== junior) patch.jrReviewState = 'in_review';
+    if (prevReviewers.senior !== senior) patch.srReviewState = 'in_review';
     var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, patch) : c; });
     state.cards = next;
     renderCardDetail();
@@ -296,14 +342,19 @@
   // of sync between the two buttons.
   function paperSubmissionFieldsHtml(card, board){
     if (card.status !== 'paper') return '';
-    if (!canManageAuthorFields(card)) return '';
-    var blockReason = advanceBlockReason(card, 'rebuttal', board);
+    // Everyone sees the whole form (2026-09-18+26, per Eduardo — a
+    // signed-in non-author, e.g. a reviewer or the PI, otherwise saw an
+    // empty pane and no sign the rebuttal link existed); only an author
+    // can use it, for anyone else the field and both buttons are disabled.
+    var canEdit = canManageAuthorFields(card);
+    var blockReason = canEdit ? advanceBlockReason(card, 'rebuttal', board) : 'Only the paper’s authors can edit this.';
+    var off = canEdit ? '' : ' disabled';
     return '<div class="stage-fields" id="stagePaperFields">' +
-      '<h3 class="detail-subhead">Submit the rebuttal</h3>' +
-      '<div class="field"><label for="stageRebuttalDoc">Rebuttal document</label><input type="url" id="stageRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="Link to your rebuttal document"></div>' +
+      '<div class="cl-agent-note"><p class="note-lead">Once the reviewers have approved the paper, ' + (canEdit ? 'add' : 'the authors add') + ' the link to ' + (canEdit ? 'your' : 'their') + ' rebuttal document and submit.</p></div>' +
+      '<div class="field"><label for="stageRebuttalDoc">Link to the rebuttal document</label><input type="url" id="stageRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/document/d/…"' + off + '></div>' +
       '<div class="field-error" id="stagePaperFieldsError" hidden></div>' +
       '<div class="stage-fields-actions">' +
-        '<button class="btn" type="button" data-stage-paper-save="' + escapeHtml(card.id) + '">Save</button>' +
+        '<button class="btn" type="button" data-stage-paper-save="' + escapeHtml(card.id) + '"' + off + '>Save</button>' +
         '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="rebuttal" data-move-label="Submit rebuttal"' +
           (blockReason ? ' disabled title="' + escapeHtml(blockReason) + '"' : ' title="Move to ' + escapeHtml(statusLabelFor('rebuttal', board)) + '"') + '>Submit</button>' +
         // Same visible-text fallback as abstractSubmissionFieldsHtml —
@@ -434,9 +485,6 @@
         srReviewState: deriveState(out.srApproved)
       });
     }
-    if (typeof out.paperReviewState !== 'string'){
-      out = Object.assign({}, out, { paperReviewState: 'in_review' });
-    }
     if (typeof out.outcome !== 'string'){
       out = Object.assign({}, out, { outcome: (oldStatus && STATUS_OUTCOME_MIGRATIONS[oldStatus]) || '' });
     }
@@ -521,7 +569,7 @@
   // 'in_review' are the only two states a reviewer's own pill ever shows.
   // REVIEW_FILTER_LABELS below is the separate map for the board's search
   // filter dropdown, which still has its own 'changes_requested' option.
-  var REVIEW_STATE_LABELS = { in_review: 'In review', approved: 'Approved' };
+  var REVIEW_STATE_LABELS = { in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
   var REVIEW_FILTER_LABELS = { all: 'Any review status', in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
 
   // A read-only label, not a button (2026-09-14, simplified per Eduardo —
@@ -529,7 +577,8 @@
   // derived purely from their own checklist pass: nothing to click, so no
   // access check needed here either — it just reports what's true.
   function reviewStatePillHtml(card, role){
-    var v = roleChecklistComplete(card, role) ? 'approved' : 'in_review';
+    var field = role === 'senior' ? 'srReviewState' : 'jrReviewState';
+    var v = card[field] === 'changes_requested' ? 'changes_requested' : (roleChecklistComplete(card, role) ? 'approved' : 'in_review');
     return '<span class="rv-state-pill rv-state-' + v + '">' + REVIEW_STATE_LABELS[v] + '</span>';
   }
 
@@ -565,7 +614,7 @@
     // of the two stages the card is actually in picks its own source.
     var inPaperStage = card.status === 'paper';
     var rv = card.status === 'abstract' ? (card.abstractReviewState || 'in_review')
-      : inPaperStage ? (card.paperReviewState || 'in_review') : null;
+      : inPaperStage ? reviewFilterState(card) : null;
     var rushOverdue = isRushColumnPastCutoff(displayStatus(card, board), board);
     var cardClass = 'card' + (rv ? ' rv-' + rv : '') + (rushOverdue ? ' rush-deadline-passed' : '');
     var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
@@ -574,7 +623,7 @@
     // now, to keep the board card short and easy to scan.
     var badges = '';
     if (card.status === 'abstract') badges += reviewStateBadgeHtml(card.abstractReviewState || 'in_review');
-    if (inPaperStage) badges += reviewStateBadgeHtml(card.paperReviewState || 'in_review');
+    if (inPaperStage) badges += reviewStateBadgeHtml(reviewFilterState(card));
     if (card.status === 'rebuttal') badges += rebuttalBadgeHtml(card);
     if (shouldShowOutcomeBadge(card)) badges += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     badges += overdueBadgesHtml(card, board);
@@ -637,7 +686,7 @@
   function matchesReviewFilter(card){
     var f = (state.search && state.search.reviewState) || 'all';
     if (f === 'all') return true;
-    return card.status === 'paper' && (card.paperReviewState || 'in_review') === f;
+    return card.status === 'paper' && reviewFilterState(card) === f;
   }
 
   function matchesSearch(card){

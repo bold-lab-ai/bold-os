@@ -209,14 +209,16 @@
   // gate reflects the sequence actually being navigated.
   function advanceBlockReason(card, toStatus, board){
     var order = effectiveStatusOrder(board);
-    // Paper's gate (2026-09-18+18, per Eduardo): the reviewers' explicit
-    // approval (card.paperReviewState, set by Approve/Request changes on
-    // the Review tab — same shape as abstractReviewState below), not the
-    // two checklists any more. The authors' Format checklist already
-    // gates Abstract -> Paper; the reviewers' Science checklist stays on
-    // the page as their working aid but no longer blocks anything.
-    if (crossesGate(card.status, toStatus, order) && card.paperReviewState !== 'approved'){
-      return 'Waiting for the reviewers’ approval';
+    // Paper's gate (2026-09-18+24, per Eduardo): approved once both
+    // reviewers' checklists are ticked — no separate Approve button. A
+    // reviewer can also Request changes (from a checklist point's
+    // feedback form), which holds the card at 'changes_requested' until
+    // they tick everything off. The authors' Format checklist already
+    // gates Abstract -> Paper, so it isn't asked for again here.
+    if (crossesGate(card.status, toStatus, order) && reviewFilterState(card) !== 'approved'){
+      return reviewFilterState(card) === 'changes_requested'
+        ? 'A reviewer requested changes'
+        : 'Both reviewers must complete their checklist first';
     }
     // Deliverable-per-stage redesign (2026-09-18, per Eduardo): every
     // Submit move requires the real link it's actually submitting, not

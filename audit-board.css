@@ -495,6 +495,7 @@
   }
   .rv-state-pill.rv-state-in_review{background:var(--warn-bg); color:var(--warn-text);}
   .rv-state-pill.rv-state-approved{background:var(--success-bg); color:var(--success-text);}
+  .rv-state-pill.rv-state-changes_requested{background:var(--danger-bg); color:var(--danger-text);}
   .rv-input{
     flex:1 1 auto; min-width:0; font-size:12px; padding:5px 7px;
     border:1px solid var(--line); border-radius:var(--radius);
@@ -532,6 +533,9 @@
   .detail-grid dd input.rv-input{width:100%;}
   .detail-grid dd.abstract-render{white-space:pre-wrap; line-height:1.55; max-width:100%; overflow-x:auto;}
   .abstract-render .katex-display{margin:0.5em 0; overflow-x:auto; overflow-y:hidden;}
+  /* KaTeX's own stylesheet sets .katex to 1.21em, which renders formulas
+     visibly bigger than the surrounding text — keep them at the text size. */
+  .abstract-render .katex{font-size:1em;}
 
   /* Inline "Submit the abstract" form (2026-09-18+10, per Eduardo) — a
      plain section below the detail-grid, not the warning-coloured
@@ -897,6 +901,7 @@
   .detail .review-actions .btn.btn-primary:hover:not(:disabled){background:#0f1c33; border-color:#0f1c33; color:#fff;}
   .detail .review-actions .btn.btn-primary:disabled{background:var(--blue); color:#fff; border-color:var(--blue); opacity:.5;}
   .detail .review-actions .btn-text:disabled{opacity:.5; cursor:default;}
+  .disc-or{font-family:var(--sans); font-size:13px; color:var(--muted);}
   .detail .cl-cat{
     font-family:var(--sans); font-size:11px; font-weight:400; text-transform:uppercase;
     letter-spacing:0.14em; color:var(--muted); margin:24px 0 4px;
@@ -936,3 +941,33 @@
     display:flex; justify-content:flex-end; margin-top:26px; padding-top:10px; border-top:1px solid var(--line);
   }
   .detail-details-head + .detail-grid{border-top:none; padding-top:6px;}
+
+  /* Disabled text-link buttons (Edit fields, Remove paper, + Add author,
+     Request changes) — greyed out, no underline, no pointer. */
+  .btn-text:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
+
+  /* Live LaTeX preview under the abstract textarea. */
+  .abstract-preview{
+    margin-top:8px; padding:12px 14px; max-width:640px; overflow-x:auto;
+    white-space:pre-wrap; line-height:1.55; font-size:16px; color:var(--ink-soft);
+    background:var(--surface); border:1px solid var(--line);
+  }
+
+  /* Abstract section at the end of the card details: label above, text below. */
+  .detail-abstract{max-width:var(--article-max); margin:0 0 32px;}
+  .detail-abstract-label{font-family:var(--sans); font-size:13px; color:var(--muted); margin-bottom:6px;}
+  .detail-abstract .abstract-render{font-size:16px; line-height:1.55; white-space:pre-wrap; overflow-x:auto;}
+
+  .detail-inline-edit{margin-left:8px;}
+  .detail-abstract-label .detail-inline-edit{margin-left:10px;}
+  .detail-abstract .field{margin-bottom:10px;}
+
+  /* "Characters remaining" under the abstract textarea. */
+  .abstract-counter{font-family:var(--sans); font-size:12.5px; color:var(--muted); margin-top:4px; font-variant-numeric:tabular-nums;}
+  .abstract-counter.over{color:var(--danger-text); font-weight:600;}
+
+  /* Space between the header (title + badges) and the details grid when
+     the grid's own top rule is the first thing under it (Abstract stage,
+     where there's no Edit-fields row above it). */
+  .detail-head ~ .detail-grid{margin-top:26px;}
+  .detail-details-head + .detail-grid{margin-top:0;}

@@ -33,7 +33,9 @@
       // Abstract Reviewed"/"Abstract Submitted") rather than threading
       // `board` all the way through renderAuthorRows just to pick the
       // right one via statusLabelFor.
-      var lockAttr = locked ? ' disabled title="Authors are locked once the abstract is submitted"' : '';
+      // `locked` can also be a string: the reason to show instead (used
+      // when the viewer just isn't allowed to edit — 2026-09-18+27).
+      var lockAttr = locked ? ' disabled title="' + escapeHtml(typeof locked === 'string' ? locked : 'Authors are locked once the abstract is submitted') + '"' : '';
       if (row.isNew){
         html +=
           '<input type="text" class="author-input author-new-name" data-author-idx="' + i + '" value="' + escapeHtml(row.name) + '" placeholder="Name" aria-label="' + label + ' name"' + lockAttr + '>' +
@@ -323,6 +325,11 @@
   function openEditModal(cardId){
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card) return;
+    // Only the paper's authors can edit its fields (2026-09-18+27, per Eduardo).
+    if (!canManageAuthorFields(card)){
+      showToast('Only the paper’s authors can edit its fields.', 'error');
+      return;
+    }
     var editBoard = getCurrentBoard();
     var authorsLock = authorsLocked(card, editBoard);
     els.modalRegion.innerHTML =
@@ -338,7 +345,7 @@
                   '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order &mdash; the last one is the PI.</div>') +
             '</div>' +
             '<div class="field"><label for="eOverleaf">Overleaf link</label><input type="url" id="eOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/..."></div>' +
-            '<div class="field"><label for="eAbstract">Abstract</label><textarea id="eAbstract" placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + escapeHtml(card.abstractText || '') + '</textarea></div>' +
+            '<div class="field"><label for="eAbstract">Abstract</label><textarea id="eAbstract" maxlength="' + ABSTRACT_MAX_CHARS + '" placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + escapeHtml(card.abstractText || '') + '</textarea></div>' +
             '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
             '<div class="field"><label for="ePitchLink">Pitch materials</label><input type="url" id="ePitchLink" value="' + escapeHtml(card.pitchLink || '') + '" placeholder="https://docs.google.com/presentation/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Registered.</div></div>' +
@@ -420,6 +427,11 @@
     var authorsIssue = authorRowsIssue(eAuthorsState);
     if (!title || authorsIssue || !overleafLink || !email){
       errorEl.textContent = authorsIssue || 'Please fill in the required fields above.';
+      errorEl.hidden = false;
+      return;
+    }
+    if (document.getElementById('eAbstract').value.trim().length > ABSTRACT_MAX_CHARS){
+      errorEl.textContent = 'The abstract can be at most ' + ABSTRACT_MAX_CHARS + ' characters.';
       errorEl.hidden = false;
       return;
     }

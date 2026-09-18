@@ -22,6 +22,7 @@
     state.view = 'card';
     state.currentCardId = cardId;
     state.detailTab = 'review';
+    state.detailEditing = null;
     state.discussionReplyOpenId = null;
     state.checklistCommentOpenId = null;
     state.checklistReplyOpenId = null;
@@ -49,7 +50,7 @@
   // card.abstractReviewState straight via onSetAbstractReview below.
   function abstractApprovalHtml(card){
     if (card.status !== 'abstract') return '';
-    return reviewActionsHtml('data-abstract-review', card.abstractReviewState || 'in_review');
+    return reviewActionsHtml('data-abstract-review', card.abstractReviewState || 'in_review', myReviewerRoles(card).length > 0);
   }
 
   // Just the two buttons (2026-09-18+21, per Eduardo — the status banner
@@ -57,20 +58,25 @@
   // needs …", is gone; the state is on the badge in the page header, and
   // what's still missing shows next to the disabled Submit button). The
   // button matching the current state is disabled.
-  function reviewActionsHtml(dataAttr, v){
+  function reviewActionsHtml(dataAttr, v, canAct){
     return '<div class="review-actions">' +
-      '<button class="btn btn-primary" type="button" ' + dataAttr + '="approved"' + (v === 'approved' ? ' disabled' : '') + '>Approve</button>' +
-      '<button class="btn-text danger" type="button" ' + dataAttr + '="changes_requested"' + (v === 'changes_requested' ? ' disabled' : '') + '>Request changes</button>' +
+      '<button class="btn btn-primary" type="button" ' + dataAttr + '="approved"' + (v === 'approved' || !canAct ? ' disabled' : '') + (canAct ? '' : ' title="Only an assigned reviewer can approve"') + '>Approve</button>' +
+      '<button class="btn-text danger" type="button" ' + dataAttr + '="changes_requested"' + (v === 'changes_requested' || !canAct ? ' disabled' : '') + (canAct ? '' : ' title="Only an assigned reviewer can request changes"') + '>Request changes</button>' +
     '</div>';
   }
 
   function onSetAbstractReview(cardId, value){ onSetStageReview(cardId, 'abstractReviewState', value); }
-  function onSetPaperReview(cardId, value){ onSetStageReview(cardId, 'paperReviewState', value); }
 
   function onSetStageReview(cardId, field, value){
     var boardId = state.currentBoardId;
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card || card[field] === value) return;
+    // Only an assigned reviewer can approve or request changes
+    // (2026-09-18+27, per Eduardo).
+    if (!myReviewerRoles(card).length){
+      showToast('Only an assigned reviewer can do this.', 'error');
+      return;
+    }
     var prev = state.cards;
     var next = state.cards.map(function(c){
       var patch = { updatedAt: Date.now() }; patch[field] = value;
@@ -89,33 +95,22 @@
     });
   }
 
-  // Paper's reviewer approval (2026-09-18+18, per Eduardo) — the same
-  // Approve / Request changes pair as the Abstract stage, on
-  // card.paperReviewState. Together with the rebuttal document link (the
-  // authors' half, Author tab) it's what unblocks Submit rebuttal; see
-  // advanceBlockReason. The reviewers' checklist below it is a working
-  // aid now, not a gate.
   // The box at the top of the For-reviewers tab — same look as the
   // authors' one (cl-agent-note): what a reviewer does at this stage, and
   // on Paper the coding-agent tip. Stages with nothing for reviewers yet
   // get no box.
   function reviewerInstructionsHtml(card, stage){
     var lead = {
-      register: 'Nothing to review yet. Assign a junior and a senior reviewer above before the abstract is submitted.',
-      pitch: 'Nothing to review yet. Assign a junior and a senior reviewer above before the abstract is submitted.',
+      register: 'Nothing to review yet. The authors choose the two reviewers when they submit the abstract.',
+      pitch: 'Nothing to review yet. The authors choose the two reviewers when they submit the abstract.',
       abstract: 'To approve, check that the abstract is sound enough to justify a full paper, and that no listed author is over the venue’s papers-per-author limit. We check the limit automatically, but only against papers on this board, so it can miss papers elsewhere.',
-      paper: 'Work through the checklist below, then approve or request changes.'
+      paper: 'Work through the checklist below. Once every box is ticked, the paper is approved. To ask for changes instead, comment on a point and choose Request changes.'
     }[stage];
     if (!lead) return '';
     var tip = stage === 'paper'
       ? '<p class="note-tip">Working through the checklist with a coding agent? Point it at <a href="https://raw.githubusercontent.com/bold-lab-ai/bold-os/main/checklists/reviewers/AGENTS.md" target="_blank" rel="noopener">checklists/reviewers/AGENTS.md</a> — a skeptical pre-review to speed up your own pass, not a replacement for it.</p>'
       : '';
     return '<div class="cl-agent-note"><p class="note-lead">' + lead + '</p>' + tip + '</div>';
-  }
-
-  function paperApprovalHtml(card){
-    if (card.status !== 'paper') return '';
-    return reviewActionsHtml('data-paper-review', card.paperReviewState || 'in_review');
   }
 
   function threadCount(messages){
@@ -127,7 +122,7 @@
   // Discussion tab (one level of replies), just scoped to one checklist
   // point. Fixed input ids ('clcNew*', 'clcReply*') are safe because only
   // one item's thread — and one reply box within it — is ever open.
-  function checklistItemThreadHtml(it){
+  function checklistItemThreadHtml(it, card){
     var comments = it.comments || [];
     var replyOpenId = state.checklistReplyOpenId;
     var html = '<div class="cl-thread">';
@@ -149,7 +144,15 @@
         html += '</div>';
       });
     }
-    html += '<div class="cl-thread-new">' + discussionFormHtml('clcNew', 'Leave feedback on this point (e.g. &ldquo;author name visible, p.4 line 312&rdquo;)&hellip;', 'Post feedback') + '</div>';
+    // "Add comment" or "Request changes" (2026-09-18+24, per Eduardo):
+    // Request changes posts the same comment AND marks the card's review
+    // as Changes requested (for whichever role the signed-in reviewer
+    // holds). Disabled for anyone who isn't an assigned reviewer.
+    var reviewerRoles = myReviewerRoles(card);
+    var requestBtn = '<span class="disc-or">or</span>' +
+      '<button class="btn-text danger" type="button" id="clcNewChanges"' +
+      (reviewerRoles.length ? '' : ' disabled title="Only an assigned reviewer can request changes"') + '>Request changes</button>';
+    html += '<div class="cl-thread-new">' + discussionFormHtml('clcNew', 'Leave feedback on this point (e.g. &ldquo;author name visible, p.4 line 312&rdquo;)&hellip;', 'Add comment', requestBtn) + '</div>';
     html += '</div>';
     return html;
   }
@@ -160,6 +163,15 @@
   // Computed once per role here rather than per item, since it doesn't
   // vary by item. Science checklist only — the authors' checklist has its
   // own, broader access check (isCardAuthorEmail).
+  // Which review roles the signed-in user holds on this card (0, 1 or —
+  // if they're assigned to both — 2). Same client-side-only shape as
+  // checklistTickAccess.
+  function myReviewerRoles(card){
+    var email = state.currentUser && state.currentUser.email;
+    if (!email) return [];
+    return REVIEW_ROLES.filter(function(role){ return ((card.reviewers || {})[role] || '') === email; });
+  }
+
   function checklistTickAccess(card){
     var access = {};
     REVIEW_ROLES.forEach(function(role){
@@ -239,7 +251,7 @@
       html += '<div class="cl-row-foot"><button class="btn-text' + (n ? ' has-feedback' : '') + '" type="button" data-clc-toggle="' + escapeHtml(it.id) + '">' +
         (isOpen ? 'Hide feedback' : (n ? '&#128172; ' + n + ' comment' + (n === 1 ? '' : 's') : '&#128172; Add feedback')) +
       '</button></div>';
-      if (isOpen) html += checklistItemThreadHtml(it);
+      if (isOpen) html += checklistItemThreadHtml(it, card);
       html += '</div>';
     });
     html += '</div>';
@@ -256,10 +268,12 @@
   // No author field any more (2026-09-12) — a message's author is always
   // the signed-in poster (state.currentUser), same as submittedBy/
   // reviewers/proposedBy elsewhere. See onPostDiscussion et al.
-  function discussionFormHtml(idPrefix, placeholderHtml, submitLabel){
+  // extraActionsHtml (optional): more controls after the main button —
+  // the checklist feedback form's "or Request changes".
+  function discussionFormHtml(idPrefix, placeholderHtml, submitLabel, extraActionsHtml){
     return '<div class="disc-form">' +
       '<textarea id="' + idPrefix + 'Body" placeholder="' + placeholderHtml + '"></textarea>' +
-      '<div class="disc-form-actions"><button class="btn btn-primary" type="button" id="' + idPrefix + 'Submit">' + submitLabel + '</button></div>' +
+      '<div class="disc-form-actions"><button class="btn btn-primary" type="button" id="' + idPrefix + 'Submit">' + submitLabel + '</button>' + (extraActionsHtml || '') + '</div>' +
     '</div>';
   }
 
@@ -367,7 +381,10 @@
   // Mirrors onPostDiscussion / onPostReply but writes into one checklist
   // item's `comments` array instead of the card-level `discussion`. Keeps
   // the item's thread open after posting so the reviewer sees it land.
-  function onPostChecklistComment(cardId, itemId){
+  // requestChanges (2026-09-18+24, per Eduardo): also marks the signed-in
+  // reviewer's role(s) as 'changes_requested' — the card then reads
+  // Changes requested (reviewFilterState) until they tick everything off.
+  function onPostChecklistComment(cardId, itemId, requestChanges){
     if (!itemId) return;
     if (!requireSignedIn()) return;
     var body = document.getElementById('clcNewBody').value.trim();
@@ -376,6 +393,14 @@
       return;
     }
     var boardId = state.currentBoardId;
+    var roles = [];
+    if (requestChanges){
+      roles = myReviewerRoles(state.cards.filter(function(c){ return c.id === cardId; })[0] || {});
+      if (!roles.length){
+        showToast('Only an assigned reviewer can request changes.', 'error');
+        return;
+      }
+    }
     var msg = {
       id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
       author: state.currentUser.name || state.currentUser.email,
@@ -384,13 +409,17 @@
     };
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
-      return Object.assign({}, c, {
+      var merged = Object.assign({}, c, {
         checklist: (c.checklist || []).map(function(it){
           if (it.id !== itemId) return it;
           return Object.assign({}, it, { comments: (it.comments || []).concat([msg]) });
         }),
         updatedAt: Date.now()
       });
+      roles.forEach(function(role){
+        merged[role === 'senior' ? 'srReviewState' : 'jrReviewState'] = 'changes_requested';
+      });
+      return merged;
     });
     var prev = state.cards;
     state.cards = next;
@@ -470,18 +499,22 @@
     html += '<div class="detail-badges">';
     if (STATUS_LABELS[card.status]) html += '<span class="badge badge-stage">' + escapeHtml(statusLabelFor(card.status, board)) + '</span>';
     if (card.status === 'abstract') html += reviewStateBadgeHtml(card.abstractReviewState || 'in_review');
-    if (card.status === 'paper') html += reviewStateBadgeHtml(card.paperReviewState || 'in_review');
+    if (card.status === 'paper') html += reviewStateBadgeHtml(reviewFilterState(card));
     if (card.status === 'rebuttal') html += rebuttalBadgeHtml(card);
     if (shouldShowOutcomeBadge(card)) html += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     html += overdueBadgesHtml(card, board);
-    html += '<button class="btn-text danger detail-remove" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
+    var authorOnly = canManageAuthorFields(card) ? '' : ' disabled title="Only the paper’s authors can do this"';
+    html += '<button class="btn-text danger detail-remove" type="button" data-remove="' + escapeHtml(card.id) + '"' + authorOnly + '>Remove paper</button>';
     html += '</div>';
     html += '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:12px;color:var(--warn-text);background:var(--warn-bg);padding:6px 10px;margin-top:10px;border-radius:var(--radius);">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn’t a column anymore.</div>';
 
     // Edit fields lives with the details it edits, right-aligned on the
     // rule above them, not in a toolbar of its own.
-    html += '<div class="detail-details-head"><button class="btn-text" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button></div>';
+    // No Edit fields on the Abstract stage (2026-09-18+32, per Eduardo) —
+    // Overleaf and the abstract are edited in place there.
+    var atAbstract = displayStatus(card, board) === 'abstract';
+    if (!atAbstract) html += '<div class="detail-details-head"><button class="btn-text" type="button" data-edit="' + escapeHtml(card.id) + '"' + authorOnly + '>Edit fields</button></div>';
 
     html += '<dl class="detail-grid">';
     if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + '</dd>';
@@ -495,13 +528,32 @@
       var email = (card.reviewers || {})[role];
       return email ? escapeHtml(personName(email)) : '<span style="color:var(--muted);">Not assigned</span>';
     };
-    html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd>' + reviewerNameHtml('junior') +
+    // Jr / Sr reviewer, Overleaf and Abstract aren't repeated in the grid
+    // while the "Submit the abstract" form (which has all four as fields)
+    // is on the page (2026-09-18+29, per Eduardo).
+    var abstractFormShown = statusAt(displayStatus(card, board), 1, effectiveStatusOrder(board)) === 'abstract';
+    if (!abstractFormShown) html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd>' + reviewerNameHtml('junior') +
       (card.status === 'paper' ? ' ' + reviewStatePillHtml(card, 'junior') : '') + '</dd>';
-    html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd>' + reviewerNameHtml('senior') +
+    if (!abstractFormShown) html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd>' + reviewerNameHtml('senior') +
       (card.status === 'paper' ? ' ' + reviewStatePillHtml(card, 'senior') : '') + '</dd>';
     if (card.reviewNotes) html += '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>';
-    if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
-    if (card.abstractText) html += '<dt>Abstract</dt><dd class="abstract-render">' + renderAbstractHtml(card.abstractText) + '</dd>';
+    // Edit link for an in-place editor (Overleaf on the Abstract stage; the
+    // abstract at every stage), disabled for anyone who isn't an author.
+    var canEditHere = canManageAuthorFields(card);
+    var editBtn = function(what){
+      return ' <button class="btn-text detail-inline-edit" type="button" data-edit-inline="' + what + '"' +
+        (canEditHere ? '' : ' disabled title="Only the paper’s authors can do this"') + '>Edit</button>';
+    };
+    if (atAbstract){
+      // Overleaf, editable in place (own Save / Cancel).
+      html += '<dt>Overleaf</dt><dd>' + (state.detailEditing === 'overleaf'
+        ? '<input type="url" id="detailOverleafInput" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/… — must allow edit access, not just view" style="width:100%;">' +
+          '<div class="field-error" id="detailEditError" hidden></div>' +
+          '<div class="stage-fields-actions"><button class="btn" type="button" data-save-inline="overleaf">Save</button><button class="btn" type="button" data-cancel-inline>Cancel</button></div>'
+        : (card.overleafLink
+            ? '<a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a>'
+            : '<span style="color:var(--muted);">Not set</span>') + editBtn('overleaf')) + '</dd>';
+    } else if (card.overleafLink && !abstractFormShown) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
     if (card.pitchLink) html += '<dt>Pitch materials</dt><dd><a href="' + escapeHtml(card.pitchLink) + '" target="_blank" rel="noopener">Open</a></dd>';
     if (card.submissionLink) html += '<dt>Submission</dt><dd><a href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a></dd>';
     if (card.arxivLink) html += '<dt>arXiv</dt><dd><a href="' + escapeHtml(card.arxivLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.arxivLink) + '</a></dd>';
@@ -516,6 +568,24 @@
     var regNote = card.history && card.history[0] && card.history[0].note;
     if (regNote) html += '<dt>Note at registration</dt><dd style="white-space:pre-wrap;">' + escapeHtml(regNote) + '</dd>';
     html += '</dl>';
+    // The abstract is its own section at the end of the details, label
+    // above and text below (2026-09-18+31, per Eduardo), not a row of the
+    // two-column grid. Hidden while the "Submit the abstract" form (with
+    // its own preview) is on the page, like the rows it replaces.
+    // Editable at every stage (2026-09-18+33, per Eduardo).
+    if (!abstractFormShown){
+      if (state.detailEditing === 'abstract'){
+        // Same editor as the registration form, with Save and Cancel.
+        html += '<div class="detail-abstract">' + abstractTextFieldHtml(card.abstractText, '') +
+          '<div class="field-error" id="detailEditError" hidden></div>' +
+          '<div class="stage-fields-actions"><button class="btn" type="button" data-save-inline="abstract">Save</button><button class="btn" type="button" data-cancel-inline>Cancel</button></div></div>';
+      } else {
+        html += '<div class="detail-abstract"><div class="detail-abstract-label">Abstract' + editBtn('abstract') + '</div>' +
+          (card.abstractText
+            ? '<div class="abstract-render">' + renderAbstractHtml(card.abstractText) + '</div>'
+            : '<div style="color:var(--muted);">Not set</div>') + '</div>';
+      }
+    }
 
     // Author (things an author fills in) vs Review (things a reviewer
     // does) — split into two sections at 2026-09-18+11, back into two
@@ -571,12 +641,15 @@
     var reviewBody = reviewerInstructionsHtml(card, displayStatus(card, board));
     reviewBody += abstractApprovalHtml(card);
     if (card.status === 'paper'){
-      // Only meaningful while the card is actually sitting at Paper.
-      reviewBody += paperApprovalHtml(card);
       reviewBody += '<h3 class="detail-subhead">Checklist for reviewers</h3>' + reviewerChecklistTabHtml(card);
     }
-    var discCount = threadCount(card.discussion);
-    var discussionHtml = '<h3 class="detail-subhead">Discussion' +
+    // No Discussion section on Registered or Paper (2026-09-18+25/+28, per
+    // Eduardo) — on Paper the per-point feedback on the checklist is where
+    // reviewers talk; on Registered there's nothing to discuss yet.
+    var stageNow = displayStatus(card, board);
+    var noDiscussion = stageNow === 'paper' || stageNow === 'register';
+    var discCount = noDiscussion ? 0 : threadCount(card.discussion);
+    var discussionHtml = noDiscussion ? '' : '<h3 class="detail-subhead">Discussion' +
       (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</h3>' + discussionTabHtml(card);
     reviewBody += discussionHtml;
 
@@ -617,9 +690,6 @@
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-abstract-review]'), function(btn){
       btn.addEventListener('click', function(){ onSetAbstractReview(card.id, btn.getAttribute('data-abstract-review')); });
     });
-    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-paper-review]'), function(btn){
-      btn.addEventListener('click', function(){ onSetPaperReview(card.id, btn.getAttribute('data-paper-review')); });
-    });
     var discNewBtn = document.getElementById('discNewSubmit');
     if (discNewBtn) discNewBtn.addEventListener('click', function(){ onPostDiscussion(card.id); });
     var discReplyBtn = document.getElementById('discReplySubmit');
@@ -647,7 +717,9 @@
       });
     });
     var clcNewBtn = document.getElementById('clcNewSubmit');
-    if (clcNewBtn) clcNewBtn.addEventListener('click', function(){ onPostChecklistComment(card.id, state.checklistCommentOpenId); });
+    if (clcNewBtn) clcNewBtn.addEventListener('click', function(){ onPostChecklistComment(card.id, state.checklistCommentOpenId, false); });
+    var clcChangesBtn = document.getElementById('clcNewChanges');
+    if (clcChangesBtn) clcChangesBtn.addEventListener('click', function(){ onPostChecklistComment(card.id, state.checklistCommentOpenId, true); });
     var clcReplyBtn = document.getElementById('clcReplySubmit');
     if (clcReplyBtn) clcReplyBtn.addEventListener('click', function(){ onPostChecklistReply(card.id, state.checklistCommentOpenId, state.checklistReplyOpenId); });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-move]'), function(btn){
@@ -693,13 +765,16 @@
       stageAuthorsState = card.authors && card.authors.length
         ? card.authors.map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '', isNew: !(a && a.email && personByEmail(a.email)) }; })
         : [{ name: '', email: '', isNew: false }];
-      renderAuthorRows('stageAuthorsWrap', stageAuthorsState, null, false);
+      var stageAuthorsLock = canManageAuthorFields(card) ? false : 'Only the paper’s authors can edit this.';
+      renderAuthorRows('stageAuthorsWrap', stageAuthorsState, null, stageAuthorsLock);
       var stageAddAuthorBtn = document.getElementById('stageAddAuthor');
       if (stageAddAuthorBtn) stageAddAuthorBtn.addEventListener('click', function(){
         stageAuthorsState.splice(Math.max(stageAuthorsState.length - 1, 0), 0, { name: '', email: '', isNew: false });
-        renderAuthorRows('stageAuthorsWrap', stageAuthorsState, null, false);
+        renderAuthorRows('stageAuthorsWrap', stageAuthorsState, null, stageAuthorsLock);
       });
     }
+    wireAbstractPreview();
+    wireInlineEditors(card);
     var stageFieldsSaveBtn = els.boardRegion.querySelector('[data-stage-fields-save]');
     if (stageFieldsSaveBtn) stageFieldsSaveBtn.addEventListener('click', function(){ onSaveAbstractFields(stageFieldsSaveBtn.getAttribute('data-stage-fields-save')); });
     var stagePaperSaveBtn = els.boardRegion.querySelector('[data-stage-paper-save]');
@@ -769,7 +844,10 @@
 
       REVIEW_ROLES.forEach(function(r){
         var field = r === 'senior' ? 'srReviewState' : 'jrReviewState';
-        var newVal = roleChecklistComplete(merged, r) ? 'approved' : 'in_review';
+        // A reviewer's Request changes sticks until their checklist is
+        // complete again (2026-09-18+24) — ticking an unrelated box
+        // doesn't quietly clear it.
+        var newVal = roleChecklistComplete(merged, r) ? 'approved' : (merged[field] === 'changes_requested' ? 'changes_requested' : 'in_review');
         if (merged[field] !== newVal){
           var p = {}; p[field] = newVal;
           merged = Object.assign({}, merged, p);
@@ -880,6 +958,92 @@
     var prev = state.cards;
     var next = state.cards.map(function(c){ return c.id === card.id ? Object.assign({}, c, { submissionLink: value, updatedAt: Date.now() }) : c; });
     state.cards = next;
+    renderCardDetail();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast(saveErrorMessage('Could not save — try again.'), 'error');
+      } else {
+        showToast('Saved.', 'ok');
+      }
+    });
+  }
+
+  // Abstract preview (2026-09-18+30, per Eduardo): renders the textarea's
+  // LaTeX ($inline$ / $$block$$) with the same renderAbstractHtml the
+  // details use; stays live while open.
+  function wireAbstractPreview(){
+    var previewBtn = document.getElementById('stageAbstractPreviewBtn');
+    var previewBox = document.getElementById('stageAbstractPreview');
+    var previewText = document.getElementById('stageAbstractText');
+    if (previewBtn && previewBox && previewText){
+      var refreshPreview = function(){
+        previewBox.innerHTML = previewText.value.trim()
+          ? renderAbstractHtml(previewText.value)
+          : '<span style="color:var(--muted);">Nothing to preview yet.</span>';
+      };
+      previewBtn.addEventListener('click', function(){
+        var opening = previewBox.hidden;
+        previewBox.hidden = !opening;
+        previewBtn.textContent = opening ? 'Hide preview' : 'Preview';
+        if (opening) refreshPreview();
+      });
+      previewText.addEventListener('input', function(){ if (!previewBox.hidden) refreshPreview(); });
+    }
+    // "Characters remaining" under the textarea, live.
+    var counter = document.getElementById('stageAbstractCounter');
+    if (counter && previewText){
+      previewText.addEventListener('input', function(){
+        counter.textContent = abstractCounterText(previewText.value.length);
+        counter.className = 'abstract-counter' + (previewText.value.length > ABSTRACT_MAX_CHARS ? ' over' : '');
+      });
+    }
+  }
+
+  // Inline editing of Overleaf / the abstract on the Abstract stage's
+  // card page (2026-09-18+32, per Eduardo): Edit opens the editor in
+  // place, Save or Cancel closes it.
+  function wireInlineEditors(card){
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-edit-inline]'), function(btn){
+      btn.addEventListener('click', function(){
+        if (!canManageAuthorFields(card)){ showToast('Only the paper’s authors can edit its fields.', 'error'); return; }
+        state.detailEditing = btn.getAttribute('data-edit-inline');
+        renderCardDetail();
+      });
+    });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cancel-inline]'), function(btn){
+      btn.addEventListener('click', function(){ state.detailEditing = null; renderCardDetail(); });
+    });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-save-inline]'), function(btn){
+      btn.addEventListener('click', function(){ onSaveInline(card.id, btn.getAttribute('data-save-inline')); });
+    });
+  }
+
+  function onSaveInline(cardId, what){
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    if (!canManageAuthorFields(card)){ showToast('Only the paper’s authors can edit its fields.', 'error'); return; }
+    var errorEl = document.getElementById('detailEditError');
+    var fail = function(msg){ if (errorEl){ errorEl.textContent = msg; errorEl.hidden = false; } };
+    var patch = { updatedAt: Date.now() };
+    if (what === 'overleaf'){
+      var link = document.getElementById('detailOverleafInput').value.trim();
+      if (!link) return fail('Can’t be blank.');
+      var issue = overleafLinkIssue(link);
+      if (issue) return fail(issue);
+      patch.overleafLink = link;
+    } else {
+      var text = document.getElementById('stageAbstractText').value.trim();
+      if (!text) return fail('Can’t be blank.');
+      if (text.length > ABSTRACT_MAX_CHARS) return fail('The abstract can be at most ' + ABSTRACT_MAX_CHARS + ' characters.');
+      patch.abstractText = text;
+    }
+    var boardId = state.currentBoardId;
+    var prev = state.cards;
+    var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, patch) : c; });
+    state.cards = next;
+    state.detailEditing = null;
     renderCardDetail();
     saveBoard(boardId, { cards: next }).then(function(ok){
       if (!ok){

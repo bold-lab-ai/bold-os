@@ -398,7 +398,7 @@
   // the venue's real deadline.
   function reviewApprovedFor(card){
     if (card.status === 'abstract') return card.abstractReviewState === 'approved';
-    if (card.status === 'paper') return card.paperReviewState === 'approved';
+    if (card.status === 'paper') return reviewFilterState(card) === 'approved';
     return true;
   }
 

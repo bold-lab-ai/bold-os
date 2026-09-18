@@ -228,10 +228,6 @@
       // checklist-based reviewFilterState instead). See
       // advanceBlockReason's abstract->paper gate and reviewStateBadgeHtml.
       abstractReviewState: 'in_review',
-      // Paper's own approval (2026-09-18+18, per Eduardo) — same shape as
-      // abstractReviewState, set by the reviewers' Approve/Request changes
-      // buttons on the Review tab; gates Paper -> Rebuttal.
-      paperReviewState: 'in_review',
       outcome: '',
       // Deliverable-per-stage redesign (2026-09-18, per Eduardo): each
       // link below is what its stage's own advance gate requires before
@@ -291,10 +287,9 @@
     // anyway, since passing the wrong order here would still silently
     // misread a move if Rush mode's columns ever diverge again.
     // Same gate as advanceBlockReason() — see its own comment
-    // (2026-09-18+18, per Eduardo): the reviewers' explicit approval of
-    // the paper, not the checklists.
-    if (crossesGate(card.status, newStatus, order) && card.paperReviewState !== 'approved'){
-      showToast('Waiting for the reviewers’ approval before ' + STATUS_LABELS[GATE_STATUS] + '.', 'error');
+    // (2026-09-18+24, per Eduardo): both reviewers' checklists ticked.
+    if (crossesGate(card.status, newStatus, order) && reviewFilterState(card) !== 'approved'){
+      showToast((reviewFilterState(card) === 'changes_requested' ? 'A reviewer requested changes' : 'Both reviewers must complete their checklist') + ' before ' + STATUS_LABELS[GATE_STATUS] + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
     }
@@ -429,6 +424,11 @@
   function onRemoveCard(cardId){
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card) return;
+    // Only the paper's authors can remove it (2026-09-18+27, per Eduardo).
+    if (!canManageAuthorFields(card)){
+      showToast('Only the paper’s authors can remove it.', 'error');
+      return;
+    }
     if (!window.confirm('Remove "' + card.title + '" from this venue?')) return;
     var boardId = state.currentBoardId;
     var next = state.cards.filter(function(c){ return c.id !== cardId; });

@@ -328,6 +328,7 @@
     loadingBoards: true,
     loadingCards: false,
     search: { query: '', field: 'all', reviewState: 'all' },
+    detailEditing: null, // 'overleaf' | 'abstract' — which detail is being edited inline on the card page
     detailTab: 'review', // 'review' | 'author' — card detail page tab (2026-09-18+19), For reviewers first
     discussionReplyOpenId: null,
     checklistCommentOpenId: null, // checklist item whose feedback thread is expanded
@@ -612,6 +613,13 @@
   // HTML (no user string reaches the DOM unescaped outside of it), and a
   // formula KaTeX can't parse falls back to its literal source rather
   // than breaking the whole abstract.
+  // Hard limit on the abstract's length (2026-09-18+34, per Eduardo), in
+  // characters of the raw text (LaTeX source included).
+  var ABSTRACT_MAX_CHARS = 5000;
+  function abstractCounterText(length){
+    return 'Characters remaining: ' + (ABSTRACT_MAX_CHARS - length);
+  }
+
   function renderAbstractHtml(text){
     if (!text) return '';
     if (typeof katex === 'undefined') return escapeHtml(text);
