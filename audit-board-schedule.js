@@ -378,12 +378,18 @@
   // (see advanceBlockReason): leaving `abstract` needs the senior
   // reviewer's go-ahead, leaving `paper` needs both reviewers' approval.
   // Registered has no review gate, so no reviewer deadline either.
+  // Anchored to the deadline of the stage BEFORE the column's own
+  // (2026-09-18+19, per Eduardo): what a reviewer reviews in Abstract is
+  // the abstract, due by the abstract deadline (Registered's real
+  // deadline); in Paper it's the paper, due by the paper deadline
+  // (Abstract's real deadline) — not the column's own outstanding
+  // deadline, which is the authors' next task (paper / rebuttal).
   var RUSH_REVIEW_BUFFER_HOURS = 24;
-  var RUSH_REVIEW_GATED = { abstract: 1, paper: 1 };
+  var RUSH_REVIEW_GATED = { abstract: 'register', paper: 'abstract' };
 
   function rushColumnReviewDeadline(status, board){
     if (!board || !board.rushMode || !RUSH_REVIEW_GATED[status]) return null;
-    var instant = deadlineInstant(rushColumnRealDeadline(status, board));
+    var instant = deadlineInstant(rushColumnRealDeadline(RUSH_REVIEW_GATED[status], board));
     if (!instant) return null;
     return new Date(instant.getTime() - RUSH_REVIEW_BUFFER_HOURS * 3600000);
   }
