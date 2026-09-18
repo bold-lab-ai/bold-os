@@ -695,10 +695,10 @@
     <li data-rush><a href="#phase-1"><span class="tl-dot"></span><span class="tl-name">Register</span><span class="tl-wk">8w</span></a></li>
     <li data-non-rush><a href="#phase-2"><span class="tl-dot"></span><span class="tl-name">Pitch</span><span class="tl-wk">6w</span></a></li>
     <li data-rush><a href="#phase-3"><span class="tl-dot"></span><span class="tl-name">Abstract</span><span class="tl-wk">4w</span></a></li>
-    <li class="is-pivot" data-rush><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">1w</span></a></li>
-    <li class="is-after" data-rush><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after" data-non-rush><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
-    <li class="is-after" data-non-rush><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Accepted</span><span class="tl-wk">after</span></a></li>
+    <li class="is-pivot" data-rush><a href="#phase-5"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">1w</span></a></li>
+    <li class="is-after" data-rush><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-non-rush><a href="#phase-9"><span class="tl-dot"></span><span class="tl-name">Accepted</span><span class="tl-wk">after</span></a></li>
   </ol>
 </nav>
 
@@ -709,12 +709,13 @@
       <li data-rush><a href="#phase-1"><span class="n">8w</span>Register</a></li>
       <li data-non-rush><a href="#phase-2"><span class="n">6w</span>Pitch</a></li>
       <li data-rush><a href="#phase-3"><span class="n">4w</span>Abstract</a></li>
-      <li data-rush><a href="#phase-4"><span class="n">1w</span>Paper</a></li>
-      <li class="toc-optional" data-non-rush><a href="#phase-5"><span class="n">opt.</span>arXiv</a></li>
+      <li data-rush><a href="#phase-4"><span class="n"></span>Approval</a></li>
+      <li data-rush><a href="#phase-5"><span class="n">1w</span>Paper</a></li>
+      <li class="toc-optional" data-non-rush><a href="#phase-6"><span class="n">opt.</span>arXiv</a></li>
       <li class="toc-split">After submission</li>
-      <li data-rush><a href="#phase-6"><span class="n"></span>Rebuttal</a></li>
-      <li data-non-rush><a href="#phase-7"><span class="n"></span>Camera&#8209;ready</a></li>
-      <li data-non-rush><a href="#phase-8"><span class="n"></span>Accepted</a></li>
+      <li data-rush><a href="#phase-7"><span class="n"></span>Rebuttal</a></li>
+      <li data-non-rush><a href="#phase-8"><span class="n"></span>Camera&#8209;ready</a></li>
+      <li data-non-rush><a href="#phase-9"><span class="n"></span>Accepted</a></li>
     </ol>
   </nav>
 
@@ -772,27 +773,41 @@
       </ol>
 
       <h3 class="subhead">What happens after submission</h3>
-      <p class="phase-intro">The card moves to <em>Abstract in review</em> and you get a Slack DM. The author list locks from here on, matching the venue's own submission. Once both reviewers approve their checklist, the card turns green right there in the same column &mdash; you're now free to submit your paper internally.</p>
+      <p class="phase-intro">The card moves to <em>Abstract</em> and you get a Slack DM. The author list locks from here on, matching the venue's own submission. The senior reviewer (defaults to the PI) now makes a quick call &mdash; Approve or Request changes &mdash; before the card can move on to <em>Paper</em>.</p>
     </section>
 
     <section class="phase" id="phase-4">
       <div class="phase-head">
+        <h2>Wait for approval</h2>
+      </div>
+      <p class="phase-intro"><strong>What it means that the card is in <em>Abstract</em>:</strong> the abstract's out and the author list is locked. There's no formal checklist at this stage &mdash; just a quick go/no-go from the senior reviewer before the full checklist review starts.</p>
+      <h3 class="subhead">Instructions to submit</h3>
+      <ol class="list">
+        <li>There's nothing for you to submit here. The senior reviewer clicks <strong>Approve</strong> or <strong>Request changes</strong> directly on the card &mdash; no checklist, just their own judgement.</li>
+      </ol>
+
+      <h3 class="subhead">What happens after submission</h3>
+      <p class="phase-intro">Once approved, the card moves to <em>Paper</em> on its own &mdash; no click, no confirmation, nothing for you to submit. If changes are requested instead, the badge shows it and the reviewer can switch it to Approved once they're satisfied.</p>
+    </section>
+
+    <section class="phase" id="phase-5">
+      <div class="phase-head">
         <span class="phase-num">&minus;1&nbsp;wk</span>
         <h2>Submit the paper</h2>
       </div>
-      <p class="phase-intro">Once the abstract has been approved, you can submit your full paper draft. Check the <a href="https://docs.google.com/document/d/16R1E2ExKUCP5SlXWHr-KzbVDx9DBUclra-EbU8IB-iE/edit#heading=h.16t67gkeu9dx" target="_blank" rel="noopener">&ldquo;How to ML Paper&rdquo;</a> guide for what a submission-ready draft looks like. The draft goes through Internal Review now &mdash; a <strong>simulated full peer review</strong> (venues are all similar), before the real one.</p>
+      <p class="phase-intro">Once the abstract's been approved and the card moves to Paper, it's time for the full checklist review. Check the <a href="https://docs.google.com/document/d/16R1E2ExKUCP5SlXWHr-KzbVDx9DBUclra-EbU8IB-iE/edit#heading=h.16t67gkeu9dx" target="_blank" rel="noopener">&ldquo;How to ML Paper&rdquo;</a> guide for what a submission-ready draft looks like. The draft goes through Internal Review now &mdash; a <strong>simulated full peer review</strong> (venues are all similar), before the real one.</p>
       <h3 class="subhead">Instructions to submit</h3>
       <ol class="list">
         <li>Complete the <strong>authors' checklist</strong> on the card's own page &mdash; any co-author can tick it, not just whoever registered the paper.</li>
         <li>Make sure your <strong>Overleaf link</strong> grants reviewers edit or review access, not just a link to the project &mdash; a link they can't actually open won't let them finish their own checklist.</li>
-        <li>Click <strong>Submit the paper</strong> &mdash; this will start the internal peer review of the manuscript.</li>
+        <li>Once both checklists are done, click <strong>Submit the paper</strong> &mdash; this is what actually sends it to the venue, and can't be undone.</li>
       </ol>
 
       <h3 class="subhead">What happens after submission</h3>
       <p class="phase-intro">The card moves straight to <em>Rebuttal</em> &mdash; the paper's in the venue's hands now, and the board shows a &ldquo;Waiting for reviews&rdquo; badge. Nothing left to click after this: once the venue's own reviews-release date passes, the badge flips itself to &ldquo;In Rebuttal&rdquo; and you get a Slack DM &mdash; the board watches that date for you, on a timer, the one automatic step in this whole pipeline. Posting to arXiv (next page) is optional and can happen any time from here on, whenever it's ready.</p>
     </section>
 
-    <section class="phase" id="phase-5">
+    <section class="phase" id="phase-6">
       <div class="phase-head">
         <h2>Post to arXiv</h2>
       </div>
@@ -832,7 +847,7 @@
       <p class="phase-intro">Sometime in the next few days, start a Google Doc to track loose ends. Aim to spend about <strong>an hour</strong> on it &mdash; or build it up as you go if you're doing heavy work for the Supplemental Material deadline. Ideas for what to include: experiments you still want to run, surprising findings that need explaining, aspects of the experimental protocol you're not comfortable with, prior work to look at more carefully, things to explain better, mathematical arguments to check or make more precise, questions about notation or terminology.</p>
     </section>
 
-    <section class="phase" id="phase-6">
+    <section class="phase" id="phase-7">
       <div class="phase-head">
         <h2>Submit rebuttal</h2>
       </div>
@@ -847,7 +862,7 @@
       <p class="phase-intro">The card moves to <em>Rebuttal Submitted</em> and you get a Slack DM &mdash; the honest name for it: the rebuttal's in, camera-ready is what's due next (assuming acceptance).</p>
     </section>
 
-    <section class="phase" id="phase-7">
+    <section class="phase" id="phase-8">
       <div class="phase-head">
         <h2>Submit camera&#8209;ready</h2>
       </div>
@@ -865,7 +880,7 @@
       <p class="phase-intro">The card moves to <em>Accepted</em> and you get a Slack DM &mdash; the last automatic move the pipeline makes.</p>
     </section>
 
-    <section class="phase" id="phase-8">
+    <section class="phase" id="phase-9">
       <div class="phase-head">
         <h2>Accepted</h2>
       </div>
@@ -881,7 +896,7 @@
 
     <nav class="pager" aria-label="Previous and next phase">
       <button class="pager-btn" id="prevBtn" type="button">&larr; Previous</button>
-      <span class="pager-status" id="pagerStatus" aria-live="polite">Phase 1 of 7</span>
+      <span class="pager-status" id="pagerStatus" aria-live="polite">Phase 1 of 8</span>
       <button class="pager-btn" id="nextBtn" type="button">Next &rarr;</button>
     </nav>
 
@@ -907,22 +922,32 @@
   const layout = document.querySelector('.layout');
 
   // Rush mode's own phases, in order — matches RUSH_STATUS_ORDER in
-  // audit-board.html exactly (Register, Abstract, Rebuttal — Submit the
-  // paper is the action that produces Rebuttal automatically, so it's
-  // the 3rd entry here even though it isn't itself a status). Submit
-  // rebuttal (phase-6) stays included even though rush's own board has
-  // no move button past Rebuttal (see #11) — the "what this stage means"
-  // content is still real for a rush card sitting there, only the button
-  // itself doesn't work yet. Fixed 2026-09-18+4: this had shrunk to 3
-  // (dropping phase-6) when Wait for reviews was removed as its own
-  // phase — wrong fix, left Rebuttal itself unreachable in rush view.
-  const RUSH_IDS = ['phase-1', 'phase-3', 'phase-4', 'phase-6'];
+  // audit-board.html exactly (Register, Abstract, Paper, Rebuttal). Five
+  // entries, not four, since Abstract now has two phases of its own
+  // (Submit the abstract, then Wait for approval — the lightweight
+  // go/no-go added 2026-09-18+4 when `paper` came back as its own real
+  // stage): both describe the same `abstract` status, just before and
+  // after the senior reviewer's call. Submit rebuttal (phase-7) stays
+  // included even though rush's own board has no move button past
+  // Rebuttal yet (see #11) — the "what this stage means" content is
+  // still real for a rush card sitting there, only the button itself
+  // doesn't work yet.
+  const RUSH_IDS = ['phase-1', 'phase-3', 'phase-4', 'phase-5', 'phase-7'];
   // Post to arXiv — real, reachable, but not a numbered pipeline step
-  // (optional, concurrent to Rebuttal, no gate of its own). Excluded from
-  // Previous/Next stepping and the "Phase N of M" count via
-  // steppableIds() below, but still a normal click from the TOC/a hash
-  // link — showPhase() itself doesn't care which list an id came from.
-  const OPTIONAL_IDS = ['phase-5'];
+  // (optional, concurrent to Rebuttal, no gate of its own, and not part
+  // of rush mode at all). Excluded from Previous/Next stepping and the
+  // "Phase N of M" count via steppableIds() below, but still a normal
+  // click from the TOC/a hash link — showPhase() itself doesn't care
+  // which list an id came from.
+  const OPTIONAL_IDS = ['phase-6'];
+  // How many RUSH_IDS actually have a timeline dot — phase-4 (Wait for
+  // approval) doesn't, it's TOC-only (same reasoning as Post to arXiv
+  // being TOC-only, just the opposite direction: this one's real content
+  // for the pager/step count but has nothing of its own to plot on the
+  // timeline, since Abstract's single dot already covers both of its
+  // phases). Used below instead of RUSH_IDS.length so the connecting
+  // line's endpoint math matches what's actually visible.
+  const RUSH_TL_COUNT = RUSH_IDS.filter(id => TL_IDS.includes(id)).length;
   const rushToggle = document.getElementById('rushToggle');
   const rushToggleLabel = document.getElementById('rushToggleLabel');
   const timelineList = document.getElementById('timelineList');
@@ -936,14 +961,15 @@
     document.body.classList.toggle('rush-view', on);
     rushToggle.setAttribute('aria-checked', on ? 'true' : 'false');
     rushToggleLabel.textContent = on
-      ? 'Rush mode — showing 4 of 7 phases'
-      : 'Full pipeline — show only Rush mode’s 4 phases';
+      ? 'Rush mode — showing 5 of 8 phases'
+      : 'Full pipeline — show only Rush mode’s 5 phases';
     // Keeps the timeline's connecting line ending at the first/last
     // VISIBLE dot (see .timeline ol::before's own calc(50% / var(--n))) —
-    // hiding li's via CSS doesn't shrink this on its own. TL_IDS, not
-    // ids, since Post to arXiv isn't plotted on the timeline at all (it's
-    // TOC-only — see the TOC's own .toc-optional entry).
-    timelineList.style.setProperty('--n', on ? RUSH_IDS.length : TL_IDS.length);
+    // hiding li's via CSS doesn't shrink this on its own. TL_IDS (not ids)
+    // for the full-pipeline count, since Post to arXiv is TOC-only; for
+    // rush, RUSH_TL_COUNT (not RUSH_IDS.length) since Wait for approval is
+    // TOC-only too — both exclusions for the same reason, opposite lists.
+    timelineList.style.setProperty('--n', on ? RUSH_TL_COUNT : TL_IDS.length);
     try { localStorage.setItem('boldGuideRushView', on ? '1' : '0'); } catch (e) {}
     // Already sitting on a phase Rush mode doesn't have — land on
     // Register instead of leaving the pager stuck on a hidden phase.
