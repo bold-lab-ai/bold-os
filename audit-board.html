@@ -2490,12 +2490,19 @@
   // either the static STATUS_HINTS text or a computed date/number, never
   // anything a person typed freely (same as formatDate's other call sites
   // throughout the file).
+  // What outstandingDeadlineFor's answer for this status is actually
+  // racing toward — its own comment already says it in prose (register/
+  // pitch race the abstract deadline, abstract races the paper deadline),
+  // this is just that same fact in a short label for columnHintFor below.
+  var RUSH_DEADLINE_STAGE = { register: 'Abstract', abstract: 'Paper' };
+
   function columnHintFor(status, board){
     if (board && board.rushMode && (status === 'register' || status === 'abstract')){
       var real = rushColumnRealDeadline(status, board);
       if (!real) return 'No deadline set for this venue yet';
       var cutoff = rushColumnCutoff(status, board);
       var realInstant = deadlineInstant(real);
+      var stage = RUSH_DEADLINE_STAGE[status];
       // Own line below the internal cutoff — the venue's actual deadline,
       // same London-time treatment as everything else here, so the two
       // numbers on this hint are always directly comparable. Each line
@@ -2508,9 +2515,9 @@
       // Grid auto-placement fills left-to-right, top-to-bottom — these
       // four spans land as two rows of (label, value), values sharing a
       // column so the dates line up regardless of the labels' widths.
-      return '<span class="hint-label' + internalCls + '">Internal deadline:</span>' +
+      return '<span class="hint-label' + internalCls + '">Next internal deadline (' + stage + '):</span>' +
         '<span class="hint-value' + internalCls + '">' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)</span>' +
-        '<span class="hint-label' + venueCls + '">External deadline:</span>' +
+        '<span class="hint-label' + venueCls + '">Next external deadline (' + stage + '):</span>' +
         '<span class="hint-value' + venueCls + '">' + formatDateTime(realInstant) + '</span>';
     }
     return escapeHtml(STATUS_HINTS[status] || '');
