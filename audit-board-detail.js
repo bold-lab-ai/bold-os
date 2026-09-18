@@ -157,9 +157,16 @@
   // unchanged from before the split, junior + senior each still get their
   // own column, wired through the original onToggleChecklist, rendered in
   // the Review section (see renderCardDetail).
+  // No per-item feedback thread here (2026-09-18+18, per Eduardo — "it's
+  // the author themself that is doing it") — unlike the reviewers'
+  // Science checklist below, where feedback is another person (junior/
+  // senior reviewer) commenting on someone else's work, ticking the
+  // authors' own Format checklist is self-assessment: there's no other
+  // party in the loop to leave a note for. threadCount/
+  // checklistItemThreadHtml/state.checklistCommentOpenId etc. are left
+  // alone — reviewerChecklistTabHtml still uses all of them.
   function authorChecklistTabHtml(card){
     var items = checklistItemsFor(card, 'format');
-    var openId = state.checklistCommentOpenId;
     var canAct = !!(state.currentUser && isCardAuthorEmail(card, state.currentUser.email));
     var html = '<div class="cl-wrap">';
     html += '<p class="cl-agent-note">Working through this with a coding agent? Point it at <a href="https://raw.githubusercontent.com/bold-lab-ai/bold-os/main/checklists/format/AGENTS.md" target="_blank" rel="noopener">checklists/format/AGENTS.md</a> — a pre-check for formatting and policy compliance, before a human ticks these.</p>';
@@ -177,12 +184,6 @@
         (canAct ? '' : ' disabled title="Only a listed author can tick this"') +
         ' aria-label="Author: ' + escapeHtml(it.label) + '">';
       html += '</div>';
-      var n = threadCount(it.comments);
-      var isOpen = openId === it.id;
-      html += '<div class="cl-row-foot"><button class="btn-text' + (n ? ' has-feedback' : '') + '" type="button" data-clc-toggle="' + escapeHtml(it.id) + '">' +
-        (isOpen ? 'Hide feedback' : (n ? '&#128172; ' + n + ' comment' + (n === 1 ? '' : 's') : '&#128172; Add feedback')) +
-      '</button></div>';
-      if (isOpen) html += checklistItemThreadHtml(it);
       html += '</div>';
     });
     html += '</div>';
