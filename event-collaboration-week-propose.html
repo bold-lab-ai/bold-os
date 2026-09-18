@@ -52,7 +52,7 @@
 
   a{color:var(--accent); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px; transition:text-decoration-color .15s;}
   a:hover{text-decoration-color:currentColor;}
-  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
 
   h1,h2{font-family:var(--serif); color:var(--ink); font-weight:800; letter-spacing:-0.005em; margin:0;}
 
@@ -100,7 +100,7 @@
     background:none; border:none; border-bottom:1px solid var(--line);
     padding:8px 2px; width:100%;
   }
-  textarea{resize:vertical; min-height:60px;}
+  textarea{resize:vertical; min-height:96px; line-height:1.5;}
   .field-error{
     font-family:var(--sans); font-size:13.5px; color:var(--danger-text);
     margin-bottom:18px;
@@ -114,6 +114,7 @@
   .btn-primary{color:var(--accent); font-weight:600;}
   .btn-primary:disabled{color:var(--muted); cursor:default; text-decoration-color:transparent;}
 
+  html.auth-hint #proposeSignedOut{display:none;}
   /* ---------- success ---------- */
   .success-box{border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:22px 0;}
   .success-box p{margin:0; font-size:18px; color:var(--ink-soft);}
@@ -268,6 +269,11 @@
 </style>
 </head>
 <body>
+<script>
+/* Signed in last visit: keep the "sign in" panel out of the very first paint
+   (CSS below), not just after the scripts at the bottom have run. */
+try { if (localStorage.getItem('boldAuthHint')) document.documentElement.classList.add('auth-hint'); } catch (e){}
+</script>
 
 <div class="masthead">
   <div class="masthead-left">
@@ -327,8 +333,8 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
 
 <div class="hero">
   <a class="back-link" href="event-collaboration-week.html">&larr; BOLD Collaboration Week</a>
-  <h1>Propose a Workshop</h1>
-  <p class="hero-note">A workshop, project pitch, or talk for BOLD Collaboration Week (5&ndash;10 Oct 2026). See what's already been proposed on the <a href="event-collaboration-week.html#proposals">Proposals tab</a>.</p>
+  <h1 id="heroTitle">Propose a Workshop</h1>
+  <p class="hero-note" id="heroNote">A workshop, project pitch, or talk for BOLD Collaboration Week (5&ndash;10 Oct 2026). See what's already been proposed on the <a href="event-collaboration-week.html#proposals">Proposals tab</a>.</p>
 </div>
 
 <main>
@@ -387,15 +393,21 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
         <label for="pfJoin">Interested in joining forces with someone else's idea? Add their name</label>
         <input type="text" id="pfJoin" placeholder="Optional">
       </div>
+      <div class="field">
+        <label for="pfNote">Note</label>
+        <textarea id="pfNote" placeholder="Anything else the group should know (optional)"></textarea>
+      </div>
       <div class="field-error" id="proposalError" hidden></div>
       <button class="btn btn-primary" type="button" id="submitProposalBtn">Submit proposal</button>
     </div>
 
     <div class="success-box" id="proposalSuccess" hidden>
-      <p>Thanks &mdash; your proposal is in.</p>
+      <p id="successMsg">Thanks &mdash; your proposal is in.</p>
       <div class="links">
         <a href="event-collaboration-week.html#proposals">See all proposals &rarr;</a>
+        <a id="editLink" href="#">Edit this proposal</a>
         <button class="btn-text" type="button" id="proposeAnotherBtn">Propose another</button>
+        <button class="btn-text" type="button" id="keepEditingBtn" hidden>Keep editing</button>
       </div>
     </div>
   </div>
@@ -420,7 +432,12 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
     submitBtn: document.getElementById('submitProposalBtn'),
     error: document.getElementById('proposalError'),
     success: document.getElementById('proposalSuccess'),
-    proposeAnotherBtn: document.getElementById('proposeAnotherBtn')
+    proposeAnotherBtn: document.getElementById('proposeAnotherBtn'),
+    keepEditingBtn: document.getElementById('keepEditingBtn'),
+    editLink: document.getElementById('editLink'),
+    successMsg: document.getElementById('successMsg'),
+    heroTitle: document.getElementById('heroTitle'),
+    heroNote: document.getElementById('heroNote')
   };
 
   // Same project/config/version as audit-board.html — see docs/FIREBASE.md.
@@ -456,27 +473,78 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
 
   var currentUser = null;
 
+  // ?edit=<proposalId> turns this page into an editor for that proposal
+  // (only its proposer gets past loadForEdit — Firestore enforces the same).
+  var editId = null;
+  try { editId = new URLSearchParams(location.search).get('edit'); } catch (e){}
+  var editLoaded = false;
+
+  var FIELD_IDS = ['pfType', 'pfTitle', 'pfDuration', 'pfTiming', 'pfPillar', 'pfCoOrg', 'pfJoin', 'pfNote'];
+
+  function setForm(p){
+    p = p || {};
+    var vals = {
+      pfType: p.contributionType, pfTitle: p.title, pfDuration: p.duration, pfTiming: p.timingConstraints,
+      pfPillar: p.pillar, pfCoOrg: p.coOrganisers, pfJoin: p.joiningForces, pfNote: p.note
+    };
+    FIELD_IDS.forEach(function(id){
+      var el = document.getElementById(id);
+      el.value = vals[id] || '';
+      if (el.tagName === 'SELECT' && el.selectedIndex < 0) el.selectedIndex = 0;
+    });
+  }
+
   function resetForm(){
     els.success.hidden = true;
     els.form.hidden = false;
-    document.getElementById('pfType').selectedIndex = 0;
-    document.getElementById('pfTitle').value = '';
-    document.getElementById('pfDuration').value = '';
-    document.getElementById('pfTiming').value = '';
-    document.getElementById('pfPillar').selectedIndex = 0;
-    document.getElementById('pfCoOrg').selectedIndex = 0;
-    document.getElementById('pfJoin').value = '';
+    setForm(null);
+  }
+
+  function enterEditMode(){
+    els.heroTitle.textContent = 'Edit your proposal';
+    els.heroNote.innerHTML = 'Changes show on the <a href="event-collaboration-week.html#proposals">Proposals tab</a> straight away.';
+    els.submitBtn.textContent = 'Save changes';
+    els.proposeAnotherBtn.hidden = true;
+    els.editLink.hidden = true;
+    els.keepEditingBtn.hidden = false;
+  }
+
+  function loadForEdit(){
+    editLoaded = true;
+    enterEditMode();
+    els.form.hidden = true;
+    db.collection('collabWeekProposals').doc(editId).get().then(function(doc){
+      if (!doc.exists || doc.data().email !== currentUser.email){
+        els.error.textContent = 'That proposal isn\u2019t yours to edit, or it no longer exists.';
+        els.error.hidden = false;
+        els.form.hidden = false;
+        els.submitBtn.hidden = true;
+        return;
+      }
+      setForm(doc.data());
+      els.form.hidden = false;
+    }).catch(function(err){
+      console.error('[Propose a Workshop] load for edit failed', err);
+      els.error.textContent = 'Could not load your proposal \u2014 reload, or check back shortly.';
+      els.error.hidden = false;
+      els.form.hidden = false;
+      els.submitBtn.hidden = true;
+    });
   }
 
   function submitProposal(){
     if (!currentUser) return;
     var type = document.getElementById('pfType').value;
-    var title = document.getElementById('pfTitle').value.trim();
-    var duration = document.getElementById('pfDuration').value.trim();
-    var timing = document.getElementById('pfTiming').value.trim();
-    var pillar = document.getElementById('pfPillar').value;
-    var coOrg = document.getElementById('pfCoOrg').value;
-    var join = document.getElementById('pfJoin').value.trim();
+    var fields = {
+      contributionType: type,
+      title: document.getElementById('pfTitle').value.trim(),
+      duration: document.getElementById('pfDuration').value.trim(),
+      timingConstraints: document.getElementById('pfTiming').value.trim(),
+      pillar: document.getElementById('pfPillar').value,
+      coOrganisers: document.getElementById('pfCoOrg').value,
+      joiningForces: document.getElementById('pfJoin').value.trim(),
+      note: document.getElementById('pfNote').value.trim()
+    };
 
     if (!type){
       els.error.textContent = 'Pick a contribution type first.';
@@ -486,23 +554,31 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
     els.error.hidden = true;
     els.submitBtn.disabled = true;
 
-    db.collection('collabWeekProposals').add({
-      name: currentUser.name || currentUser.email,
-      email: currentUser.email,
-      contributionType: type,
-      title: title,
-      duration: duration,
-      timingConstraints: timing,
-      pillar: pillar,
-      coOrganisers: coOrg,
-      joiningForces: join,
-      createdAt: Date.now()
-    }).then(function(){
+    var col = db.collection('collabWeekProposals');
+    var write;
+    if (editId){
+      fields.updatedAt = Date.now();
+      write = col.doc(editId).update(fields);
+    } else {
+      fields.name = currentUser.name || currentUser.email;
+      fields.email = currentUser.email;
+      fields.createdAt = Date.now();
+      write = col.add(fields);
+    }
+    write.then(function(ref){
+      if (editId){
+        els.successMsg.textContent = 'Saved.';
+      } else {
+        els.successMsg.textContent = 'Thanks \u2014 your proposal is in.';
+        els.editLink.href = '?edit=' + encodeURIComponent(ref.id);
+      }
       els.form.hidden = true;
       els.success.hidden = false;
     }).catch(function(err){
       console.error('[Propose a Workshop] submit failed', err);
-      els.error.textContent = 'Could not save your proposal — try again.';
+      els.error.textContent = editId
+        ? 'Could not save your changes \u2014 try again.'
+        : 'Could not save your proposal \u2014 try again.';
       els.error.hidden = false;
     }).finally(function(){
       els.submitBtn.disabled = false;
@@ -518,6 +594,7 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
         : (currentUser.email || 'Signed in');
     } else {
       els.signedOut.hidden = false;
+      document.documentElement.classList.remove('auth-hint');
       els.signedIn.hidden = true;
     }
   }
@@ -534,10 +611,22 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
   els.signOutBtn.addEventListener('click', function(){ auth.signOut(); });
   els.submitBtn.addEventListener('click', submitProposal);
   els.proposeAnotherBtn.addEventListener('click', resetForm);
+  els.keepEditingBtn.addEventListener('click', function(){ els.success.hidden = true; els.form.hidden = false; });
 
+  // Signed in last visit: skip the "sign in" panel while Firebase Auth
+  // resolves. onAuthStateChanged below stays authoritative and swaps it
+  // back if the session has expired.
+  try {
+    if (localStorage.getItem('boldAuthHint')){
+      els.signedOut.hidden = true;
+      els.signedIn.hidden = false;
+      if (editId){ enterEditMode(); els.form.hidden = true; }
+    }
+  } catch (e){}
   auth.onAuthStateChanged(function(user){
     currentUser = user ? { email: user.email, name: user.displayName } : null;
     renderAuth();
+    if (currentUser && editId && !editLoaded) loadForEdit();
   });
 })();
 </script>

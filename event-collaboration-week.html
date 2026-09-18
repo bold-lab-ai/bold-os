@@ -144,6 +144,7 @@
   }
   .btn-text:hover{text-decoration-color:currentColor;}
 
+  html.auth-hint #proposalsSignedOut{display:none;}
   .proposal-card{border-top:1px solid var(--line); padding:18px 0;}
   .proposal-top{display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap;}
   .proposal-title{font-size:18px; font-weight:600; color:var(--ink);}
@@ -153,6 +154,8 @@
   }
   .proposal-meta{margin-top:8px; font-family:var(--sans); font-size:13px; color:var(--muted);}
   .proposal-meta strong{color:var(--ink-soft); font-weight:600;}
+  .proposal-note{margin-top:8px; font-family:var(--sans); font-size:14px; color:var(--ink-soft); white-space:pre-wrap; overflow-wrap:break-word;}
+  .proposal-actions{margin-top:10px; font-family:var(--sans); font-size:13px;}
   .proposal-empty{font-size:16px; color:var(--muted); margin-top:14px;}
 
   footer{
@@ -306,6 +309,11 @@
 </style>
 </head>
 <body>
+<script>
+/* Signed in last visit: keep the "sign in" panel out of the very first paint
+   (CSS below), not just after the scripts at the bottom have run. */
+try { if (localStorage.getItem('boldAuthHint')) document.documentElement.classList.add('auth-hint'); } catch (e){}
+</script>
 
 <div class="masthead">
   <div class="masthead-left">
@@ -586,6 +594,10 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
         '</div>' +
         (p.timingConstraints ? '<div class="proposal-meta">Timing: ' + escapeHtml(p.timingConstraints) + '</div>' : '') +
         (p.joiningForces ? '<div class="proposal-meta">Joining forces with: ' + escapeHtml(p.joiningForces) + '</div>' : '') +
+        (p.note ? '<div class="proposal-note">' + escapeHtml(p.note) + '</div>' : '') +
+        (currentUser && p.email === currentUser.email
+          ? '<div class="proposal-actions"><a href="event-collaboration-week-propose.html?edit=' + encodeURIComponent(p.id) + '">Edit</a></div>'
+          : '') +
       '</div>';
     }).join('');
   }
@@ -594,7 +606,7 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
     if (unsubscribeProposals) return;
     unsubscribeProposals = db.collection('collabWeekProposals').orderBy('createdAt', 'desc').onSnapshot(function(snap){
       var docs = [];
-      snap.forEach(function(doc){ docs.push(doc.data()); });
+      snap.forEach(function(doc){ var d = doc.data(); d.id = doc.id; docs.push(d); });
       renderProposals(docs);
     }, function(err){
       console.error('[BOLD Collaboration Week] proposals listener failed', err);
@@ -613,6 +625,7 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
       watchProposals();
     } else {
       els.signedOut.hidden = false;
+      document.documentElement.classList.remove('auth-hint');
       els.signedIn.hidden = true;
       stopWatchingProposals();
     }
@@ -627,6 +640,16 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
       console.error('[BOLD Collaboration Week] sign-in failed', err);
     });
   });
+  // Signed in last visit: skip the "sign in" panel while Firebase Auth
+  // resolves. onAuthStateChanged below stays authoritative and swaps it
+  // back if the session has expired.
+  try {
+    if (localStorage.getItem('boldAuthHint')){
+      els.signedOut.hidden = true;
+      els.signedIn.hidden = false;
+      els.list.innerHTML = '<p class="proposal-empty">Loading&hellip;</p>';
+    }
+  } catch (e){}
   auth.onAuthStateChanged(function(user){
     currentUser = user ? { email: user.email, name: user.displayName } : null;
     renderAuth();
