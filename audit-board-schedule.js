@@ -472,12 +472,13 @@
   // either the static STATUS_HINTS text or a computed date/number, never
   // anything a person typed freely (same as formatDate's other call sites
   // throughout the file).
-  // What outstandingDeadlineFor's answer for this status is actually
-  // racing toward — its own comment already says it in prose (register/
-  // pitch race the abstract deadline, abstract AND paper both race the
-  // paper deadline), this is just that same fact in a short label for
-  // columnHintFor below.
-  var RUSH_DEADLINE_STAGE = { register: 'Abstract', abstract: 'Paper', paper: 'Rebuttal' };
+  // The External row is the deadline of the stage the column's reviewers
+  // are reviewing (2026-09-18+20, per Eduardo), shown between the
+  // reviewers' row and the authors' internal one: Abstract → External
+  // Abstract deadline, Paper → External Paper deadline. Registered has no
+  // reviewers, so no External row. Same anchor as
+  // rushColumnReviewDeadline (RUSH_REVIEW_GATED).
+  var RUSH_EXTERNAL_LABELS = { abstract: 'Abstract', paper: 'Paper' };
   // What each role on a card in that column actually has to get done, and
   // by when (2026-09-18+18, per Eduardo) — the labels say the task, not
   // just the deadline's name. Registered: authors send the abstract.
@@ -497,12 +498,11 @@
       if (!real) return status === 'paper' ? 'No rebuttal deadline set for this venue yet' : 'No deadline set for this venue yet';
       var cutoff = rushColumnCutoff(status, board);
       var reviewDeadline = rushColumnReviewDeadline(status, board);
-      var realInstant = deadlineInstant(real);
-      var stage = RUSH_DEADLINE_STAGE[status];
-      // In this order (2026-09-18+17, per Eduardo): the reviewers' deadline
+      var externalInstant = RUSH_EXTERNAL_LABELS[status] ? deadlineInstant(rushColumnRealDeadline(RUSH_REVIEW_GATED[status], board)) : null;
+      // In this order (2026-09-18+20, per Eduardo): the reviewers' deadline
       // (only on a review-gated column, see rushColumnReviewDeadline),
-      // then the authors' internal deadline, then the venue's External
-      // <Stage> deadline — same London-time treatment on all three, so the
+      // then the venue's External deadline for what they're reviewing,
+      // then the authors' internal deadline for the next submission — same London-time treatment on all three, so the
       // numbers are always directly comparable. Each line turns red on
       // ITS OWN instant passing — the earlier ones (review, internal)
       // go red well before the venue's real deadline is actually
@@ -511,7 +511,7 @@
       var now = Date.now();
       var reviewCls = reviewDeadline && now > reviewDeadline.getTime() ? ' hint-overdue' : '';
       var internalCls = now > cutoff.getTime() ? ' hint-overdue' : '';
-      var venueCls = now > realInstant.getTime() ? ' hint-overdue' : '';
+      var venueCls = externalInstant && now > externalInstant.getTime() ? ' hint-overdue' : '';
       // One row per deadline, label and date on the same line (a date
       // too long for what's left of the line wraps to the next one, see
       // ch-hint-deadlines' own CSS) — the row carries the overdue class,
@@ -522,8 +522,8 @@
       }
       var tasks = RUSH_TASK_LABELS[status];
       return (reviewDeadline ? row(reviewCls, tasks.review, formatDateTime(reviewDeadline)) : '') +
-        row(internalCls, tasks.author, formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)') +
-        row(venueCls, 'External ' + stage + ' deadline:', formatDateTime(realInstant));
+        (externalInstant ? row(venueCls, 'External ' + RUSH_EXTERNAL_LABELS[status] + ' deadline:', formatDateTime(externalInstant)) : '') +
+        row(internalCls, tasks.author, formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)');
     }
     return escapeHtml(STATUS_HINTS[status] || '');
   }
