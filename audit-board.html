@@ -3858,7 +3858,16 @@
     return html;
   }
 
+  // Outside Paper there's no checklist to show — just the one thing that
+  // stays relevant at every stage. Skip the tab bar entirely rather than
+  // render a 3-tab UI for a single visible pane (2026-09-18+5, per
+  // Eduardo — a card at Abstract was showing the full-paper checklist
+  // tabs underneath its own lightweight-approval UI, which is clutter
+  // and actively misleading about what's actually needed right now).
   function reviewTabsHtml(card){
+    if (card.status !== 'paper'){
+      return '<div class="tabpanel active">' + discussionTabHtml(card) + '</div>';
+    }
     var tab = state.detailTab || 'format';
     var discCount = threadCount(card.discussion);
     var html = '<div class="tabbar" role="tablist" aria-label="Review">' +
@@ -4093,7 +4102,10 @@
     html += '</dl>';
 
     html += abstractApprovalHtml(card);
-    html += gateBannerHtml(card);
+    // gateBannerHtml describes the checklist gate (GATE_AFTER_STATUS) —
+    // only meaningful while the card is actually sitting at Paper, same
+    // stage-conditional as reviewTabsHtml below (2026-09-18+5).
+    if (card.status === 'paper') html += gateBannerHtml(card);
 
     html += reviewTabsHtml(card);
 
