@@ -570,29 +570,39 @@
      rather than a bespoke rule, now that it lives inside the Author
      section as one of that section's items, not a standalone block. */
   .stage-fields{margin:0 0 24px; max-width:560px;}
+  /* Save (plain field update) and Submit (the real move, greyed out until
+     advanceBlockReason clears — see abstractSubmissionFieldsHtml) sit side
+     by side, same gap/alignment as .gate-banner-actions elsewhere on this
+     page. */
+  .stage-fields-actions{display:flex; gap:10px; align-items:center; margin-top:14px;}
 
-  /* ---------- card detail: Author / Review / Discussion sections ----------
-     Replaced the old Format/Science/Discussion tab bar (2026-09-18+11, per
-     Eduardo) — a card detail page is now split into sections BY WHO the
-     content is for, not by which checklist it happens to be: an "Author"
-     section (the inline Submit-the-abstract form, the authors' own
-     checklist) and a "Review" section (reviewer assignment, the abstract
-     approval call, the reviewers' checklist) sit side by side, each always
-     showing everything relevant to that kind of user rather than hiding
-     one behind a click. Discussion stays its own section, not part of
-     either — anyone can post there. `.vs-head`'s own eyebrow-label style
-     (small/bold/uppercase/coloured) is the established pattern this
+  /* ---------- card detail: Author / Review sections ----------
+     Replaced the old Format/Science/Discussion tab bar (2026-09-18+11/+12,
+     per Eduardo) — a card detail page is now split into sections BY WHO
+     the content is for, not by which checklist it happens to be: an
+     "Author" section (the inline Submit-the-abstract form, the authors'
+     own checklist) and a "Review" section (reviewer assignment, the
+     abstract approval call, the reviewers' checklist, and — moved under
+     Review at 2026-09-18+12 — Discussion, even though anyone can actually
+     post there regardless of role) sit side by side, each always showing
+     everything relevant to that kind of user rather than hiding one
+     behind a click. `.vs-head`'s own eyebrow-label style (small/bold/
+     uppercase/coloured) is the established pattern .detail-section-head
      reuses, muted rather than teal/plum since those colours already mean
      something specific elsewhere on this page (Junior/Senior — see
      docs/AGENTS.md guideline 11) and would misleadingly suggest a
-     role-color mapping neither of these sections actually has. */
+     role-color mapping neither of these sections actually has.
+     .detail-subhead is the smaller, plain-ink heading for an item WITHIN
+     one of those sections (a checklist, Discussion) — not its own
+     section. */
   .detail-section{margin-top:32px;}
   .detail-section-head{
     font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
     color:var(--muted); margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line);
   }
-  .detail-section-head .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; text-transform:none; letter-spacing:normal;}
-  .detail-subhead{font-weight:700; font-size:14px; color:var(--ink); margin:0 0 10px;}
+  .detail-subhead{font-weight:700; font-size:14px; color:var(--ink); margin:24px 0 10px;}
+  .detail-subhead:first-child{margin-top:0;}
+  .detail-section-head .n, .detail-subhead .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; color:var(--muted); text-transform:none; letter-spacing:normal;}
 
   .cl-wrap{max-width:640px;}
   .cl-agent-note{
@@ -3105,21 +3115,46 @@
   // (global input/textarea styling, not scoped to `.modal`). Reviewers
   // aren't part of this form — a working inline picker for them already
   // exists further down this same page (reviewerInputHtml, guideline 7).
-  // Hidden once authors, the Overleaf link and the abstract text are all
-  // present (reviewers being unassigned doesn't keep this open — that's
-  // its own separate picker/gate). Also hidden entirely from a viewer who
+  // Stays visible even once authors/Overleaf link/abstract text are all
+  // present (2026-09-18+12, per Eduardo — was previously hidden at that
+  // point, but that meant Submit, below, could never actually be reached
+  // in its enabled state) — only actually disappears once the card
+  // genuinely leaves this transition (rgt !== 'abstract' any more, i.e.
+  // the move has really happened). Also hidden entirely from a viewer who
   // isn't an author on this card (2026-09-18+11, per Eduardo — these are
   // the only users who can actually fill them in) — see
   // canManageAuthorFields for the bootstrap case (nobody's a listed
   // author yet the very first time this form has anything to do).
+  //
+  // Two separate actions (2026-09-18+12, per Eduardo — Save must not
+  // itself submit the abstract): Save (data-stage-fields-save,
+  // onSaveAbstractFields) only writes the three fields to the card, never
+  // touches status. Submit is the REAL "Submit pitch"/"Submit abstract"
+  // move — same data-move/data-move-to/data-move-label attributes the top
+  // .detail-controls move button uses, so it's picked up by that same
+  // existing [data-move] click listener (confirmMoveIfSubmit, then
+  // onChangeStatus) rather than needing its own handler, and gets the
+  // identical confirm-dialog/gating behavior. Always exactly "Submit
+  // abstract" here (never "Submit pitch"): this function only renders
+  // while rgt === 'abstract', and moveButtonsInnerHtml's own branching
+  // shows that whenever THAT'S true — whether the card is actually at
+  // `register` in Rush mode (which skips Pitch) or at `pitch` in the full
+  // pipeline — the real label is always "Submit abstract", never "Submit
+  // pitch" (that label only appears when rgt is 'pitch' instead). Disabled
+  // (with the real reason as its tooltip) until advanceBlockReason clears
+  // every requirement for entering Abstract — not just these three fields,
+  // also reviewer assignment (Review section) — the same single source of
+  // truth the top button's own disabled state already uses, so "all
+  // fields have been completed" can't drift out of sync with what
+  // actually gates the move.
   function abstractSubmissionFieldsHtml(card, board){
     var effective = displayStatus(card, board);
     var rgt = statusAt(effective, 1, effectiveStatusOrder(board));
     if (rgt !== 'abstract') return '';
-    if (card.authors && card.authors.length && card.overleafLink && card.abstractText) return '';
     if (!canManageAuthorFields(card)) return '';
+    var blockReason = advanceBlockReason(card, 'abstract', board);
     return '<div class="stage-fields" id="stageAbstractFields">' +
-      '<h3>Submit the abstract</h3>' +
+      '<h3 class="detail-subhead">Submit the abstract</h3>' +
       '<div class="field"><label for="stageAuthorsWrap">Co-authors</label><div id="stageAuthorsWrap"></div>' +
         '<button class="btn-text" type="button" id="stageAddAuthor">+ Add author</button>' +
         '<div style="font-size:12px;color:var(--muted);margin-top:4px;">In author order — the last one is the PI.</div>' +
@@ -3127,7 +3162,11 @@
       '<div class="field"><label for="stageOverleaf">Overleaf link</label><input type="url" id="stageOverleaf" value="' + escapeHtml(card.overleafLink || '') + '" placeholder="https://www.overleaf.com/project/… — must allow edit access, not just view"></div>' +
       '<div class="field"><label for="stageAbstractText">Abstract</label><textarea id="stageAbstractText" placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + escapeHtml(card.abstractText || '') + '</textarea></div>' +
       '<div class="field-error" id="stageFieldsError" hidden></div>' +
-      '<button class="btn btn-primary" type="button" data-stage-fields-save="' + escapeHtml(card.id) + '">Save</button>' +
+      '<div class="stage-fields-actions">' +
+        '<button class="btn" type="button" data-stage-fields-save="' + escapeHtml(card.id) + '">Save</button>' +
+        '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="abstract" data-move-label="Submit abstract"' +
+          (blockReason ? ' disabled title="' + escapeHtml(blockReason) + '"' : ' title="Move to ' + escapeHtml(statusLabelFor('abstract', board)) + '"') + '>Submit</button>' +
+      '</div>' +
     '</div>';
   }
 
@@ -4221,8 +4260,10 @@
     // user side by side, rather than hiding one behind a tab click.
     // Reviewer assignment and Review notes moved here from the shared
     // grid above — both are review-side actions/content, not general
-    // paper metadata. Discussion stays its own section, part of neither —
-    // anyone can post there regardless of role.
+    // paper metadata. Discussion lives under Review too (2026-09-18+12,
+    // per Eduardo), as its last subsection — not a section of its own
+    // any more — even though anyone can actually post there regardless
+    // of role.
     var authorBody = abstractSubmissionFieldsHtml(card, board);
     if (card.status === 'paper') authorBody += '<h3 class="detail-subhead">Checklist of authors</h3>' + authorChecklistTabHtml(card);
     if (authorBody) html += '<section class="detail-section" id="authorSection"><h3 class="detail-section-head">Author</h3>' + authorBody + '</section>';
@@ -4241,11 +4282,10 @@
       reviewBody += gateBannerHtml(card);
       reviewBody += '<h3 class="detail-subhead">Checklist for reviewers</h3>' + reviewerChecklistTabHtml(card);
     }
-    html += '<section class="detail-section" id="reviewSection"><h3 class="detail-section-head">Review</h3>' + reviewBody + '</section>';
-
     var discCount = threadCount(card.discussion);
-    html += '<section class="detail-section" id="discussionSection"><h3 class="detail-section-head">Discussion' +
-      (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</h3>' + discussionTabHtml(card) + '</section>';
+    reviewBody += '<h3 class="detail-subhead">Discussion' +
+      (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</h3>' + discussionTabHtml(card);
+    html += '<section class="detail-section" id="reviewSection"><h3 class="detail-section-head">Review</h3>' + reviewBody + '</section>';
 
     html += '</div>';
     els.boardRegion.innerHTML = html;
