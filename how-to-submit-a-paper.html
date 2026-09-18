@@ -319,12 +319,28 @@
   /* Rush view: hide every phase Rush mode doesn't have a column for, in
      both nav lists — the .phase sections themselves aren't hidden by CSS
      at all (only one is ever .active at a time regardless), the pager
-     script skips non-rush ids when stepping instead, see its own comment. */
-  body.rush-view .timeline li[data-non-rush],
-  body.rush-view nav.toc li[data-non-rush]{display:none;}
-  /* Redundant once the toggle itself says "Rush mode" — the aside was
-     for a canonical-track reader wondering how this maps across. */
-  body.rush-view .phase-rush-note{display:none;}
+     script skips non-rush ids when stepping instead, see its own comment.
+     Same collapse technique (and the same .22s/.18s timing) as the
+     sidebar's own .nav-link.nav-sub — max-height/opacity instead of a
+     hard display:none, so toggling Rush mode animates like the sidebar
+     does instead of cutting instantly. */
+  .timeline li[data-non-rush]{
+    transition:max-width .22s ease, opacity .18s ease, margin .22s ease;
+  }
+  body.rush-view .timeline li[data-non-rush]{
+    max-width:0; opacity:0; overflow:hidden; pointer-events:none; margin:0;
+  }
+  nav.toc li[data-non-rush]{
+    max-height:32px; opacity:1; overflow:hidden;
+    transition:max-height .22s ease, opacity .18s ease;
+  }
+  body.rush-view nav.toc li[data-non-rush]{
+    max-height:0; opacity:0; pointer-events:none;
+  }
+  /* Only relevant to a rush-mode reader — hidden by default so a
+     full-pipeline reader isn't interrupted by an aside about a mode
+     they're not using. */
+  body:not(.rush-view) .phase-rush-note{display:none;}
 
   h3.subhead{
     font-family:var(--sans);
@@ -467,6 +483,11 @@
     nav.toc .toc-split{display:none;}
     .hero{padding:44px var(--gutter) 8px;}
     .timeline{display:none;}
+    /* TOC becomes a horizontal row here — max-height can't collapse a
+       flex-row item, so switch to the same max-width technique .timeline
+       uses above instead. */
+    nav.toc li[data-non-rush]{max-height:none; transition:max-width .22s ease, opacity .18s ease, margin .22s ease;}
+    body.rush-view nav.toc li[data-non-rush]{max-width:0; margin:0; overflow:hidden;}
   }
 
   @media (prefers-reduced-motion: reduce){
@@ -734,7 +755,7 @@
       <h3 class="subhead">What happens after submission</h3>
       <p class="phase-intro">The card appears on the venue's board in <em>Registered</em>, visible to everyone who has it open &mdash; the board updates live. Registration does not require approval. You can move to the next stage.</p>
 
-      <p class="phase-intro muted"><strong>Look after yourself.</strong> Exercise, sleep, and food matter through the push. A PhD is a marathon, not a sprint.</p>
+      <p class="phase-intro muted"><strong>Look after yourself.</strong> Exercise, sleep, and food matter through the push. A <s>PhD</s> life is a marathon, not a sprint.</p>
     </section>
 
     <section class="phase" id="phase-2">
@@ -789,7 +810,7 @@
       <ol class="list">
         <li>Complete the <strong>authors' checklist</strong> on the card's own page &mdash; any co-author can tick it, not just whoever registered the paper.</li>
         <li>Make sure your <strong>Overleaf link</strong> grants reviewers edit or review access, not just a link to the project &mdash; a link they can't actually open won't let them finish their own checklist.</li>
-        <li>Click <strong>Submit the paper</strong> &mdash; a real, confirmed, irreversible action.</li>
+        <li>Click <strong>Submit the paper</strong> &mdash; this will start the internal peer review of the manuscript.</li>
       </ol>
 
       <h3 class="subhead">What happens after submission</h3>
