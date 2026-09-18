@@ -713,7 +713,7 @@
     <li data-non-rush><a href="#phase-2"><span class="tl-dot"></span><span class="tl-name">Pitch</span><span class="tl-wk">6w</span></a></li>
     <li data-rush><a href="#phase-3"><span class="tl-dot"></span><span class="tl-name">Abstract</span><span class="tl-wk">4w</span></a></li>
     <li class="is-pivot" data-rush><a href="#phase-4"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">1w</span></a></li>
-    <li class="is-after" data-non-rush><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
+    <li class="is-after" data-rush><a href="#phase-6"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
     <li class="is-after" data-non-rush><a href="#phase-7"><span class="tl-dot"></span><span class="tl-name">Camera&#8209;ready</span><span class="tl-wk">after</span></a></li>
     <li class="is-after" data-non-rush><a href="#phase-8"><span class="tl-dot"></span><span class="tl-name">Accepted</span><span class="tl-wk">after</span></a></li>
   </ol>
@@ -727,9 +727,9 @@
       <li data-non-rush><a href="#phase-2"><span class="n">6w</span>Pitch</a></li>
       <li data-rush><a href="#phase-3"><span class="n">4w</span>Abstract</a></li>
       <li data-rush><a href="#phase-4"><span class="n">1w</span>Paper</a></li>
-      <li class="toc-optional"><a href="#phase-5"><span class="n">opt.</span>arXiv</a></li>
+      <li class="toc-optional" data-non-rush><a href="#phase-5"><span class="n">opt.</span>arXiv</a></li>
       <li class="toc-split">After submission</li>
-      <li data-non-rush><a href="#phase-6"><span class="n"></span>Rebuttal</a></li>
+      <li data-rush><a href="#phase-6"><span class="n"></span>Rebuttal</a></li>
       <li data-non-rush><a href="#phase-7"><span class="n"></span>Camera&#8209;ready</a></li>
       <li data-non-rush><a href="#phase-8"><span class="n"></span>Accepted</a></li>
     </ol>
@@ -940,13 +940,16 @@
   const layout = document.querySelector('.layout');
 
   // Rush mode's own phases, in order — matches RUSH_STATUS_ORDER in
-  // audit-board.html exactly (Register, Abstract, [Submit the paper,
-  // producing Rebuttal automatically]). Only 3 now (2026-09-18+3, down
-  // from 4) — Submit rebuttal was already excluded (rush's own board has
-  // no move button past Rebuttal, see #11), and Wait for reviews doesn't
-  // exist as a phase any more at all, folded into the automatic
-  // scheduled transition — see phase-4's own "what happens after".
-  const RUSH_IDS = ['phase-1', 'phase-3', 'phase-4'];
+  // audit-board.html exactly (Register, Abstract, Rebuttal — Submit the
+  // paper is the action that produces Rebuttal automatically, so it's
+  // the 3rd entry here even though it isn't itself a status). Submit
+  // rebuttal (phase-6) stays included even though rush's own board has
+  // no move button past Rebuttal (see #11) — the "what this stage means"
+  // content is still real for a rush card sitting there, only the button
+  // itself doesn't work yet. Fixed 2026-09-18+4: this had shrunk to 3
+  // (dropping phase-6) when Wait for reviews was removed as its own
+  // phase — wrong fix, left Rebuttal itself unreachable in rush view.
+  const RUSH_IDS = ['phase-1', 'phase-3', 'phase-4', 'phase-6'];
   // Post to arXiv — real, reachable, but not a numbered pipeline step
   // (optional, concurrent to Rebuttal, no gate of its own). Excluded from
   // Previous/Next stepping and the "Phase N of M" count via
@@ -966,8 +969,8 @@
     document.body.classList.toggle('rush-view', on);
     rushToggle.setAttribute('aria-checked', on ? 'true' : 'false');
     rushToggleLabel.textContent = on
-      ? 'Rush mode — showing 3 of 7 phases'
-      : 'Full pipeline — show only Rush mode’s 3 phases';
+      ? 'Rush mode — showing 4 of 7 phases'
+      : 'Full pipeline — show only Rush mode’s 4 phases';
     // Keeps the timeline's connecting line ending at the first/last
     // VISIBLE dot (see .timeline ol::before's own calc(50% / var(--n))) —
     // hiding li's via CSS doesn't shrink this on its own. TL_IDS, not
