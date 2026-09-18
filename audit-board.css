@@ -571,28 +571,35 @@
      Two rounds: always-both-visible sections (2026-09-18+11/+12, split
      by WHO the content is for — an "Author" section vs a "Review"
      section, Discussion living under Review as its last item), then back
-     to a tab bar at 2026-09-18+19, per Eduardo. Same visual language the
-     old Format/Science/Discussion tab bar used (this replaces THAT CSS a
-     second time — see git history) — .detail-tab mirrors .tab, .detail-
-     tabbar mirrors .tabbar, .detail-tabpanel mirrors .tabpanel — new
-     names rather than reviving the old ones since those undelying
-     classes no longer exist anywhere in the JS to collide with, but
-     "detail-" keeps this scoped to the card detail page specifically.
+     to a tab bar at 2026-09-18+19, per Eduardo. Styling now matches
+     event-collaboration-week.html's .tabs/.tab/.tab-panel (Schedule /
+     Proposals — 2026-09-18+20, per Eduardo) rather than the old, bolder
+     Format/Science/Discussion tab bar this used to mirror: lighter
+     font-weight at rest, gap-based spacing instead of per-button
+     right-margin, weight bumping up (not just the underline) on the
+     active tab. --accent here is the same value as --blue (both
+     #1a2b4a) — used instead to match that reference file's own token
+     name exactly, not because it means something different on this page.
+     New "detail-" prefixed names rather than the collaboration-week
+     page's bare .tab/.tabs/.tab-panel, since those would collide with
+     nothing here but read confusingly close to this file's own
+     `.card-move-btn`-adjacent naming; still scoped to the card detail
+     page specifically.
      No tab bar at all renders when Author has nothing to show (see
      renderCardDetail) — same "skip it for a single visible pane" shape
      the old tabs used outside Paper.
      .detail-subhead is the smaller, plain-ink heading for an item WITHIN
      a tab's own content (a checklist, Discussion) — not a tab of its
      own. */
-  .detail-tabbar{display:flex; gap:0; border-bottom:1px solid var(--line); margin:28px 0 0;}
+  .detail-tabbar{display:flex; gap:28px; border-bottom:1px solid var(--line); margin-top:36px;}
   .detail-tab{
-    font-weight:700; font-size:14px; color:var(--muted);
+    font-family:var(--sans); font-size:14px; font-weight:500; color:var(--muted);
     background:none; border:none; border-bottom:2px solid transparent;
-    padding:10px 2px; margin:0 26px -1px 0; cursor:pointer;
+    padding:10px 2px; margin-bottom:-1px; cursor:pointer;
   }
   .detail-tab:hover{color:var(--ink);}
-  .detail-tab.active{color:var(--ink); border-bottom-color:var(--blue);}
-  .detail-tabpanel{padding-top:20px;}
+  .detail-tab.active{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
+  .detail-tabpanel{margin-top:28px;}
   .detail-subhead{font-weight:700; font-size:14px; color:var(--ink); margin:24px 0 10px;}
   .detail-subhead:first-child{margin-top:0;}
   .detail-tab .n, .detail-subhead .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; color:var(--muted); text-transform:none; letter-spacing:normal;}
