@@ -967,7 +967,13 @@ function todayIsoLondon(){
 }
 
 exports.notifyReviewsOut = onSchedule(
-  { schedule: 'every 60 minutes', secrets: [SLACK_BOT_TOKEN] },
+  // Once a day at London midnight (2026-09-18+3, down from hourly, per
+  // Eduardo — hourly was overkill for a date-only deadline with no time
+  // of day of its own). Crontab, not the human-readable "every N" form,
+  // specifically so it's pinned to a real wall-clock instant (midnight)
+  // rather than just some interval from whenever it was last deployed —
+  // timeZone matches todayIsoLondon()'s own below.
+  { schedule: '0 0 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
   async function(){
     const token = SLACK_BOT_TOKEN.value();
     const todayIso = todayIsoLondon();
