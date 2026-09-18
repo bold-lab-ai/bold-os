@@ -5,6 +5,7 @@
   function openCard(cardId){
     state.view = 'card';
     state.currentCardId = cardId;
+    state.detailTab = 'author';
     state.discussionReplyOpenId = null;
     state.checklistCommentOpenId = null;
     state.checklistReplyOpenId = null;
@@ -485,17 +486,14 @@
     if (regNote) html += '<dt>Note at registration</dt><dd style="white-space:pre-wrap;">' + escapeHtml(regNote) + '</dd>';
     html += '</dl>';
 
-    // Split below the shared info grid into an Author section (things an
-    // author fills in) and a Review section (things a reviewer does) —
-    // 2026-09-18+11, per Eduardo, replacing the old Format/Science tab
-    // bar: each section always shows everything relevant to that kind of
-    // user side by side, rather than hiding one behind a tab click.
-    // Reviewer assignment and Review notes moved here from the shared
-    // grid above — both are review-side actions/content, not general
-    // paper metadata. Discussion lives under Review too (2026-09-18+12,
-    // per Eduardo), as its last subsection — not a section of its own
-    // any more — even though anyone can actually post there regardless
-    // of role.
+    // Author (things an author fills in) vs Review (things a reviewer
+    // does) — split into two sections at 2026-09-18+11, back into two
+    // TABS at 2026-09-18+19 (per Eduardo). Reviewer assignment and Review
+    // notes stay under Review, not the shared grid above — both are
+    // review-side content, not general paper metadata. Discussion stays
+    // under Review too (2026-09-18+12), as its last subsection — not a
+    // tab of its own — even though anyone can actually post there
+    // regardless of role.
     var authorBody = abstractSubmissionFieldsHtml(card, board);
     // Authors' Format checklist moved here from the Paper stage
     // (2026-09-18+16, per Eduardo) — it's a self-check on the author's
@@ -535,7 +533,6 @@
     if (card.status === 'paper'){
       authorBody += paperSubmissionFieldsHtml(card, board);
     }
-    if (authorBody) html += '<section class="detail-section" id="authorSection"><h3 class="detail-section-head">Author</h3>' + authorBody + '</section>';
 
     var reviewBody = '<dl class="detail-grid">' +
       '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') +
@@ -554,12 +551,37 @@
     var discCount = threadCount(card.discussion);
     reviewBody += '<h3 class="detail-subhead">Discussion' +
       (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</h3>' + discussionTabHtml(card);
-    html += '<section class="detail-section" id="reviewSection"><h3 class="detail-section-head">Review</h3>' + reviewBody + '</section>';
+
+    // Author/Review as tabs (2026-09-18+19, per Eduardo — back from the
+    // always-both-visible sections at 2026-09-18+11). No tab bar at all
+    // when Author has nothing to show (e.g. a non-author viewer, or a
+    // stage — Pitch, Rebuttal, Camera-ready, Accepted — where neither
+    // abstractSubmissionFieldsHtml, the checklist, nor
+    // paperSubmissionFieldsHtml render anything): same "skip the tab bar
+    // for a single visible pane" shape the old Format/Science/Discussion
+    // tabs used outside Paper, rather than showing an empty "Author" tab
+    // next to a real "Review" one.
+    if (!authorBody){
+      html += '<div class="detail-tabpanel active">' + reviewBody + '</div>';
+    } else {
+      var detailTab = state.detailTab === 'review' ? 'review' : 'author';
+      html += '<div class="detail-tabbar" role="tablist" aria-label="Author or Review">' +
+        '<button class="detail-tab' + (detailTab === 'author' ? ' active' : '') + '" type="button" role="tab" id="detail-tab-btn-author" data-detail-tab="author" aria-selected="' + (detailTab === 'author') + '">Author</button>' +
+        '<button class="detail-tab' + (detailTab === 'review' ? ' active' : '') + '" type="button" role="tab" id="detail-tab-btn-review" data-detail-tab="review" aria-selected="' + (detailTab === 'review') + '">Review' + (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</button>' +
+      '</div>';
+      html += '<div class="detail-tabpanel active">' + (detailTab === 'review' ? reviewBody : authorBody) + '</div>';
+    }
 
     html += '</div>';
     els.boardRegion.innerHTML = html;
 
     document.getElementById('detailBack').addEventListener('click', function(e){ e.preventDefault(); backToBoard(); });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-detail-tab]'), function(btn){
+      btn.addEventListener('click', function(){
+        state.detailTab = btn.getAttribute('data-detail-tab');
+        renderCardDetail();
+      });
+    });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-abstract-review]'), function(btn){
       btn.addEventListener('click', function(){ onSetAbstractReview(card.id, btn.getAttribute('data-abstract-review')); });
     });

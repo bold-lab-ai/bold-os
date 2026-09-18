@@ -328,6 +328,7 @@
     loadingBoards: true,
     loadingCards: false,
     search: { query: '', field: 'all', reviewState: 'all' },
+    detailTab: 'author', // 'author' | 'review' — card detail page tab (2026-09-18+19)
     discussionReplyOpenId: null,
     checklistCommentOpenId: null, // checklist item whose feedback thread is expanded
     checklistReplyOpenId: null,   // comment within it whose reply box is open

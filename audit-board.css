@@ -567,33 +567,35 @@
      rendered as plain visible copy next to the button instead. */
   .stage-fields-hint{font-size:12.5px; color:var(--muted); flex:1 1 200px;}
 
-  /* ---------- card detail: Author / Review sections ----------
-     Replaced the old Format/Science/Discussion tab bar (2026-09-18+11/+12,
-     per Eduardo) — a card detail page is now split into sections BY WHO
-     the content is for, not by which checklist it happens to be: an
-     "Author" section (the inline Submit-the-abstract form, the authors'
-     own checklist) and a "Review" section (reviewer assignment, the
-     abstract approval call, the reviewers' checklist, and — moved under
-     Review at 2026-09-18+12 — Discussion, even though anyone can actually
-     post there regardless of role) sit side by side, each always showing
-     everything relevant to that kind of user rather than hiding one
-     behind a click. `.vs-head`'s own eyebrow-label style (small/bold/
-     uppercase/coloured) is the established pattern .detail-section-head
-     reuses, muted rather than teal/plum since those colours already mean
-     something specific elsewhere on this page (Junior/Senior — see
-     docs/AGENTS.md guideline 11) and would misleadingly suggest a
-     role-color mapping neither of these sections actually has.
+  /* ---------- card detail: Author / Review tabs ----------
+     Two rounds: always-both-visible sections (2026-09-18+11/+12, split
+     by WHO the content is for — an "Author" section vs a "Review"
+     section, Discussion living under Review as its last item), then back
+     to a tab bar at 2026-09-18+19, per Eduardo. Same visual language the
+     old Format/Science/Discussion tab bar used (this replaces THAT CSS a
+     second time — see git history) — .detail-tab mirrors .tab, .detail-
+     tabbar mirrors .tabbar, .detail-tabpanel mirrors .tabpanel — new
+     names rather than reviving the old ones since those undelying
+     classes no longer exist anywhere in the JS to collide with, but
+     "detail-" keeps this scoped to the card detail page specifically.
+     No tab bar at all renders when Author has nothing to show (see
+     renderCardDetail) — same "skip it for a single visible pane" shape
+     the old tabs used outside Paper.
      .detail-subhead is the smaller, plain-ink heading for an item WITHIN
-     one of those sections (a checklist, Discussion) — not its own
-     section. */
-  .detail-section{margin-top:32px;}
-  .detail-section-head{
-    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
-    color:var(--muted); margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line);
+     a tab's own content (a checklist, Discussion) — not a tab of its
+     own. */
+  .detail-tabbar{display:flex; gap:0; border-bottom:1px solid var(--line); margin:28px 0 0;}
+  .detail-tab{
+    font-weight:700; font-size:14px; color:var(--muted);
+    background:none; border:none; border-bottom:2px solid transparent;
+    padding:10px 2px; margin:0 26px -1px 0; cursor:pointer;
   }
+  .detail-tab:hover{color:var(--ink);}
+  .detail-tab.active{color:var(--ink); border-bottom-color:var(--blue);}
+  .detail-tabpanel{padding-top:20px;}
   .detail-subhead{font-weight:700; font-size:14px; color:var(--ink); margin:24px 0 10px;}
   .detail-subhead:first-child{margin-top:0;}
-  .detail-section-head .n, .detail-subhead .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; color:var(--muted); text-transform:none; letter-spacing:normal;}
+  .detail-tab .n, .detail-subhead .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; color:var(--muted); text-transform:none; letter-spacing:normal;}
 
   .cl-wrap{max-width:640px;}
   .cl-agent-note{
