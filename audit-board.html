@@ -2921,17 +2921,22 @@
   // per stage that has a real deliverable — see advanceBlockReason's own
   // comment for the matching link-required gate each of these pairs
   // with. Keyed by the CURRENT status (the one being left, i.e. the one
-  // whose deliverable this button submits), not the target. One shared
-  // map for both pipelines — Rush mode visits the same stages in the same
-  // relative order (see RUSH_STATUS_ORDER), nothing Rush-specific to
-  // override here. No `abstract` entry (2026-09-18+4, moved from `paper`):
-  // leaving `abstract` is the senior reviewer's approval, a plain ungated
-  // Advance, not a Submit — see advanceBlockReason's abstractReviewState
-  // gate. `paper` reinstated in its place — same "Submit paper" action as
-  // always, just addressed by its own status key again now that `paper`
-  // is its own stage.
+  // whose deliverable this button submits), not the target. Mostly one
+  // shared map for both pipelines — Rush mode visits the same stages in
+  // the same relative order (see RUSH_STATUS_ORDER), nothing Rush-specific
+  // to override here — EXCEPT `register`, the one stage whose immediate
+  // next column actually differs by pipeline (Pitch in full, Abstract in
+  // Rush, which skips Pitch entirely): that key is intentionally left out
+  // of this map and resolved dynamically in moveButtonsInnerHtml instead
+  // (2026-09-18+6, per Eduardo — fixing a real bug where Rush mode's
+  // Registered column always said "Submit pitch" even though the button
+  // actually submitted straight into Abstract). No `abstract` entry
+  // (2026-09-18+4, moved from `paper`): leaving `abstract` is the senior
+  // reviewer's approval, a plain ungated Advance, not a Submit — see
+  // advanceBlockReason's abstractReviewState gate. `paper` reinstated in
+  // its place — same "Submit paper" action as always, just addressed by
+  // its own status key again now that `paper` is its own stage.
   var ADVANCE_LABELS = {
-    register: 'Submit pitch',
     pitch: 'Submit abstract',
     paper: 'Submit paper',
     rebuttal: 'Submit rebuttal',
@@ -2984,7 +2989,13 @@
     var order = effectiveStatusOrder(board);
     var lft = statusAt(effective, -1, order);
     var rgt = statusAt(effective, 1, order);
-    var rgtLabel = ADVANCE_LABELS[effective] || 'Advance';
+    // register isn't in ADVANCE_LABELS — its label depends on which
+    // pipeline is active (see that map's own comment): "Submit pitch" in
+    // the full pipeline, but "Submit abstract" in Rush mode, since Rush
+    // skips Pitch and goes straight from Register to Abstract.
+    var rgtLabel = effective === 'register'
+      ? (rgt === 'pitch' ? 'Submit pitch' : 'Submit abstract')
+      : (ADVANCE_LABELS[effective] || 'Advance');
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
       (effective === 'paper' ? abstractAcceptBlockReason(card, board, state.cards) : null));
     // Green treatment covers every real Submit (SUBMIT_CONFIRM_MESSAGES' keys).
@@ -3249,11 +3260,11 @@
     html += '<div class="card-progress">Checklist &middot; authors ' + authorCounts.done + '/' + authorCounts.total +
       ' &middot; junior ' + counts.junior + '/' + counts.total + ' &middot; senior ' + counts.senior + '/' + counts.total + '</div>';
     if (!STATUS_LABELS[card.status]) html += '<div style="font-size:11px;color:var(--warn-text);background:var(--warn-bg);padding:4px 7px;margin-bottom:8px;">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn\u2019t a column anymore &mdash; pick a new one below</div>';
-    if (STATUS_LABELS[card.status]) {
-      html += moveButtonsHtml(card, board);
-    }
-    // Only the orphaned-status rescue select needs a footer now; edit / remove
-    // moved to the detail page.
+    // No move/advance button on the tile itself any more (2026-09-18+6,
+    // per Eduardo \u2014 "remove the buttons from the card") \u2014 open the card
+    // to advance it; .detail-controls there still has its own
+    // moveButtonsHtml. Only the orphaned-status rescue select needs a
+    // footer now; edit / remove moved to the detail page.
     if (!STATUS_LABELS[card.status]) html += '<div class="card-footer"><select aria-label="Status for ' + escapeHtml(card.title) + '" data-status-for="' + escapeHtml(card.id) + '" style="flex:1 1 auto;min-width:0;font-size:12px;padding:5px 6px;">' + statusOptionsHtml(card.status, effectiveStatusOrder(board), board) + '</select></div>';
     html += '</div>';
     return html;
