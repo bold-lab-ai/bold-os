@@ -412,25 +412,27 @@
      with both, so every column-head comes out identically tall and the
      head/body divider lines up across the whole board, not just within a
      column that happens to have more or less to say than its neighbours.
-     ch-hint is 3 lines' worth (not 2, like ch-requires below) so rush
-     mode's 2-line deadline content still leaves a full blank line of
-     breathing room before ch-requires starts, same as a plain 1-line hint
-     always has in the other 2 lines of its own box. */
+     ch-hint's height (5.4em, bumped 2026-09-18+5 from 4.05em to fit the
+     stacked deadline layout below without clipping) is shared by every
+     column, deadline variant or not, so that alignment holds regardless
+     of which variant a given column is showing. */
   .column-head .ch-hint{
-    margin-top:4px; height:4.05em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
+    margin-top:4px; height:5.4em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden;
   }
-  /* Rush mode's column deadline hint — two rows (internal cutoff, venue
-     deadline), each a label + a date. Grid instead of ch-hint's own
-     line-clamp box above, so the two dates share a column and line up
-     vertically regardless of the two labels' different text widths. Each
-     row turns red independently, once THAT row's own instant has passed,
-     not the other one's — see columnHintFor. */
+  /* Rush mode's column deadline hint — two entries (internal cutoff, venue
+     deadline), each a label then its date stacked on its own line below
+     it (2026-09-18+5: was a two-column label|value grid, but the labels
+     ("Next internal deadline (Paper):" etc.) are long enough that they
+     squeezed the date into almost no space, truncating it with an
+     ellipsis — stacking gives the date the column's full width to wrap
+     into instead). Each entry turns red independently, once THAT entry's
+     own instant has passed, not the other one's — see columnHintFor. */
   .column-head .ch-hint.ch-hint-deadlines{
-    display:grid; grid-template-columns:max-content 1fr; column-gap:5px; row-gap:0; align-content:start;
+    display:flex; flex-direction:column; gap:2px;
   }
   .column-head .ch-hint.ch-hint-deadlines .hint-label{white-space:nowrap;}
-  .column-head .ch-hint.ch-hint-deadlines .hint-value{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .column-head .ch-hint.ch-hint-deadlines .hint-value{white-space:normal; word-break:break-word; display:block;}
   .column-head .ch-hint .hint-overdue{color:var(--danger-text); font-weight:600;}
   /* What it takes to leave this column for the next one — see
      columnRequirementsFor. Own line from ch-hint above (deadline/plain
@@ -854,6 +856,7 @@
  <div class="nav-groups">
  <div class="nav-group">
  <a class="nav-group-label" href="how-to-submit-a-paper.html">ML Conference Cycle</a>
+ <a class="nav-link nav-sub" href="how-to-submit-a-paper.html">Guide</a>
  <a class="nav-link nav-sub active" href="audit-board.html">Internal review board</a>
  </div>
  <div class="nav-group">
@@ -2553,9 +2556,10 @@
       // venue line red at that point would be wrong, it hasn't happened.
       var internalCls = isRushColumnPastCutoff(status, board) ? ' hint-overdue' : '';
       var venueCls = Date.now() > realInstant.getTime() ? ' hint-overdue' : '';
-      // Grid auto-placement fills left-to-right, top-to-bottom — these
-      // four spans land as two rows of (label, value), values sharing a
-      // column so the dates line up regardless of the labels' widths.
+      // Flex-column stacking (ch-hint-deadlines' own CSS) lays these four
+      // spans out as label-then-value, label-then-value — each span gets
+      // the column's full width, so a long value wraps instead of being
+      // squeezed beside its label and truncated.
       return '<span class="hint-label' + internalCls + '">Next internal deadline (' + stage + '):</span>' +
         '<span class="hint-value' + internalCls + '">' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)</span>' +
         '<span class="hint-label' + venueCls + '">Next external deadline (' + stage + '):</span>' +
@@ -2829,14 +2833,17 @@
     return reqs;
   }
 
-  // "Requires: a) authors added b) under the per-author cap" — trusted
-  // HTML (see columnHintFor's own note on why that's fine here: nothing in
-  // columnRequirementsFor's output is ever user-typed text).
+  // "a) authors added b) under the per-author cap" — trusted HTML (see
+  // columnHintFor's own note on why that's fine here: nothing in
+  // columnRequirementsFor's output is ever user-typed text). No leading
+  // "Requires:" label (dropped 2026-09-18+5, per Eduardo — the lettered
+  // list already reads fine on its own under a column that's clearly
+  // about what's needed to advance).
   function columnRequirementsHtml(status, board){
     var reqs = columnRequirementsFor(status, board);
     if (!reqs.length) return '';
     var letters = 'abcdefghij';
-    return 'Requires: ' + reqs.map(function(r, i){ return letters[i] + ') ' + r; }).join(' ');
+    return reqs.map(function(r, i){ return letters[i] + ') ' + r; }).join(' ');
   }
 
   // Authors are fixed as soon as a paper REACHES Abstract — the
