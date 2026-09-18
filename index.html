@@ -124,7 +124,12 @@
      the sidebar-collapse button elsewhere in the app. [hidden] can't be
      transitioned, which is why this is a class instead of the hidden
      attribute the guest/signed-out state below still uses. */
-  .shell.chrome-collapsed .sidebar{flex-basis:0; width:0; border-right-color:transparent; overflow:hidden;}
+  /* The .is-collapsed variant is listed too: a stored boldNavCollapsed
+     preference adds .is-collapsed (a 40px rail with the » button), which
+     is declared later at equal specificity and would otherwise win, leaving
+     the hero off-centre and shifting it when the sidebar mounts. Also drops
+     the border width — a border-box can't be narrower than its border. */
+  .shell.chrome-collapsed .sidebar, .shell.chrome-collapsed.is-collapsed .sidebar{flex-basis:0; width:0; border-right-width:0; overflow:hidden;}
   .masthead.chrome-collapsed{
     height:0; padding-top:0; padding-bottom:0; opacity:0; overflow:hidden; border-bottom-color:transparent;
     transition:height .22s ease, padding .22s ease, opacity .18s ease;
@@ -451,6 +456,11 @@
     chromeRevealed = true;
     if (shell) shell.classList.remove('chrome-collapsed');
     if (masthead) masthead.classList.remove('chrome-collapsed');
+    // A stored "collapsed" preference would otherwise open only the 40px
+    // rail; clicking the hero means "open it", so expand fully through the
+    // sidebar's own button (which also updates its icon and stored state).
+    var railBtn = document.getElementById('sidebarCollapse');
+    if (shell && railBtn && shell.classList.contains('is-collapsed')) railBtn.click();
   }
   var chromeIsClickable = false;
   if (heroTitle){
@@ -511,6 +521,11 @@
   if (!auth) {
     renderGuestChrome(false);
   } else {
+    // Auth restores asynchronously, so without this the hero's pointer
+    // cursor and click handler only arrive after a beat. The cached hint
+    // from the last signed-in visit sets them up front; onAuthStateChanged
+    // below corrects it if the session has since expired.
+    try { if (localStorage.getItem('boldAuthHint')) renderGuestChrome(true); } catch (e){}
     auth.onAuthStateChanged(function(user){
       renderAuthRegion(user);
       try {
