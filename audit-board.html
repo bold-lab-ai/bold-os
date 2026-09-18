@@ -2930,12 +2930,19 @@
   // of this map and resolved dynamically in moveButtonsInnerHtml instead
   // (2026-09-18+6, per Eduardo — fixing a real bug where Rush mode's
   // Registered column always said "Submit pitch" even though the button
-  // actually submitted straight into Abstract). No `abstract` entry
-  // (2026-09-18+4, moved from `paper`): leaving `abstract` is the senior
-  // reviewer's approval, a plain ungated Advance, not a Submit — see
-  // advanceBlockReason's abstractReviewState gate. `paper` reinstated in
-  // its place — same "Submit paper" action as always, just addressed by
-  // its own status key again now that `paper` is its own stage.
+  // actually submitted straight into Abstract). No `abstract` entry here
+  // either, same reason as `register` — its button reads "Submit paper"
+  // too now (2026-09-18+7), but it's still not a real Submit (no confirm
+  // dialog, no green styling — it's a plain move gated only by the senior
+  // reviewer's approval, advanceBlockReason's abstractReviewState check)
+  // and that label must not collide with THIS map's own `paper` entry
+  // below, a completely different action (the real external venue
+  // submission) that happens to want the same three words — see
+  // moveButtonsInnerHtml's rgtLabel/rgtConfirmKey for how the two stay
+  // independent. `paper` itself was reinstated in its place (2026-09-18+4,
+  // moved from `abstract`) — same "Submit paper" action as always, just
+  // addressed by its own status key again now that `paper` is its own
+  // stage.
   var ADVANCE_LABELS = {
     pitch: 'Submit abstract',
     paper: 'Submit paper',
@@ -2974,12 +2981,12 @@
   // The rgt (Advance/Submit) gate always runs advanceBlockReason first,
   // unchanged — that still carries e.g. the "assign a junior and a senior
   // reviewer first" check on entering `abstract` either way. Submit paper
-  // (leaving `abstract`) ALSO checks abstractAcceptBlockReason on top of
-  // that (authors present + nobody over the per-author cap) — now applies
-  // in both pipelines (2026-09-18: used to be Rush-mode-only, but nothing
-  // in that check was ever actually Rush-specific — a canonical paper
-  // shouldn't blow the venue's per-author cap either). Every plain Advance
-  // is unaffected, still just advanceBlockReason.
+  // (leaving `paper`, for `rebuttal`) ALSO checks abstractAcceptBlockReason
+  // on top of that (authors present + nobody over the per-author cap) —
+  // now applies in both pipelines (2026-09-18: used to be Rush-mode-only,
+  // but nothing in that check was ever actually Rush-specific — a
+  // canonical paper shouldn't blow the venue's per-author cap either).
+  // Every plain Advance is unaffected, still just advanceBlockReason.
   // Just the two <button> elements, no wrapping .card-move div — for the
   // one call site (onToggleChecklist's partial re-render) that already has
   // its hands on that div directly and only needs to replace what's inside
@@ -2995,15 +3002,33 @@
     // skips Pitch and goes straight from Register to Abstract.
     var rgtLabel = effective === 'register'
       ? (rgt === 'pitch' ? 'Submit pitch' : 'Submit abstract')
+      // Leaving `abstract` now reads "Submit paper" too (2026-09-18+7,
+      // per Eduardo — urgent: make it obvious, right on the project page,
+      // that this is the button an author clicks once the senior
+      // reviewer has approved the abstract). Still the same plain move
+      // it always was otherwise, gated only by advanceBlockReason's own
+      // abstractReviewState check just below — see rgtConfirmKey right
+      // after for how it avoids colliding with the OTHER "Submit paper"
+      // button (leaving `paper`, the real external venue submission).
+      : effective === 'abstract' ? 'Submit paper'
       : (ADVANCE_LABELS[effective] || 'Advance');
+    // Normally identical to rgtLabel — what SUBMIT_CONFIRM_MESSAGES (and
+    // so the confirm-before-click prompt and green accept styling) is
+    // keyed by. Leaving `abstract` is the one exception: its button reads
+    // "Submit paper" too now, but must NOT pick up the confirm dialog
+    // that belongs to the OTHER "Submit paper" button (leaving `paper`,
+    // about submitting externally to the venue) just because the two
+    // happen to share display text. A key with no SUBMIT_CONFIRM_MESSAGES
+    // entry keeps this one unconfirmed, same as before.
+    var rgtConfirmKey = effective === 'abstract' ? 'abstract-approved-advance' : rgtLabel;
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
       (effective === 'paper' ? abstractAcceptBlockReason(card, board, state.cards) : null));
     // Green treatment covers every real Submit (SUBMIT_CONFIRM_MESSAGES' keys).
-    var acceptClass = SUBMIT_CONFIRM_MESSAGES[rgtLabel] ? ' card-move-btn-accept' : '';
+    var acceptClass = SUBMIT_CONFIRM_MESSAGES[rgtConfirmKey] ? ' card-move-btn-accept' : '';
     // Revert button experimentally removed (2026-09-16, per Eduardo) — lft
     // is still computed above since advanceBlockReason/statusAt etc. don't
     // need to change, and reinstating the button is a one-line add-back.
-    var html = '<button class="card-move-btn' + acceptClass + '" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '" data-move-label="' + escapeHtml(rgtLabel) + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : '')) + '>' + escapeHtml(rgtLabel) + ' &rarr;</button>';
+    var html = '<button class="card-move-btn' + acceptClass + '" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="' + (rgt || '') + '" data-move-label="' + escapeHtml(rgtConfirmKey) + '"' + (rgt && !rgtBlockReason ? '' : ' disabled') + (rgtBlockReason ? ' title="' + escapeHtml(rgtBlockReason) + '"' : (rgt ? ' title="Move to ' + escapeHtml(statusLabelFor(rgt, board)) + '"' : '')) + '>' + escapeHtml(rgtLabel) + ' &rarr;</button>';
     return html;
   }
 
