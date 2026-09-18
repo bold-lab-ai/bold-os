@@ -273,12 +273,26 @@
     // the senior reviewer's direct go-ahead — no checklist involved, just
     // card.abstractReviewState, set straight from the two Approve/Request
     // changes buttons on the card (see reviewStateBadgeHtml and
-    // abstractApprovalHtml, rendered in the Review section). Entering
-    // `paper` itself is otherwise a plain, ungated Advance — nothing
-    // "submitted" by that click alone, same shape as the old arXiv ->
-    // Rebuttal transition.
+    // abstractApprovalHtml, rendered in the Review section).
     if (toStatus === 'paper' && card.abstractReviewState !== 'approved'){
       return 'Waiting for the senior reviewer’s approval';
+    }
+    // Second gate on the same transition (2026-09-18+16, per Eduardo —
+    // "use the checklist for authors as a gate for submitting [to
+    // Paper], move it from the paper stage"): the authors' Format
+    // checklist (mandatory sections, length/page limits, anonymity,
+    // template, policy compliance — CHECKLIST_TEMPLATE's `part: 'format'`
+    // items) is entirely a self-check on the author's own draft, nothing
+    // that needs the paper to already be under internal review — so it
+    // now renders and is fillable while the card sits at Abstract
+    // (authorChecklistTabHtml, called from renderCardDetail's Author
+    // section only while `status === 'abstract'`, moved off Paper),
+    // finishable in parallel with waiting on the senior reviewer's
+    // abstract call above, not after it. Paper itself is no longer a
+    // "plain, ungated Advance" the way it used to be described here —
+    // both this and the reviewer-approval check above must clear.
+    if (toStatus === 'paper' && !authorChecklistComplete(card)){
+      return 'Finish the authors’ checklist first';
     }
     // Unaffected by `paper` coming back (2026-09-18+4) — this already
     // gated the real transition, `paper -> rebuttal` (the click fires

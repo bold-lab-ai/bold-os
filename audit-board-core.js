@@ -51,14 +51,17 @@
   //
   // `paper` reinstated as its own stage (2026-09-18+4, per Eduardo) —
   // briefly collapsed into `abstract` alongside the same-day redesign
-  // above, but that combined too much into one column: `abstract` is now
-  // a lightweight go/no-go on the abstract itself (senior reviewer
-  // approves or requests changes directly, card.abstractReviewState —
-  // no formal checklist), and only once approved does the card move
-  // (a plain ungated Advance, nothing to submit) into `paper`, where
-  // today's actual 12-item Format+Science checklist lives, same
-  // mechanism as before, just one column later. See advanceBlockReason's
-  // own comment for the exact gates on each transition.
+  // above, but that combined too much into one column: `abstract` is a
+  // lightweight go/no-go on the abstract itself (senior reviewer
+  // approves or requests changes directly, card.abstractReviewState),
+  // but does carry the authors' own 6-item Format checklist
+  // (self-checkable in parallel with waiting on that approval — moved
+  // here from `paper` at 2026-09-18+16, per Eduardo). Both — approval
+  // AND the Format checklist — gate the move into `paper`, where the
+  // reviewers' 6-item Science checklist lives, same mechanism as before,
+  // just the two checklists now split across the two columns rather than
+  // both sitting in `paper`. See advanceBlockReason's own comment for
+  // the exact gates on each transition.
   var STATUS_ORDER = ['register', 'pitch', 'abstract', 'paper', 'rebuttal', 'camera_ready', 'conference'];
 
   // Rush mode (2026-09-11): a per-venue toggle (board.rushMode) for an
@@ -177,8 +180,8 @@
   var STATUS_HINTS = {
     register: 'Waiting for pitch',
     pitch: 'Waiting for abstract submission',
-    abstract: 'Waiting for reviewer approval',
-    paper: 'Internal review — both checklists must be complete',
+    abstract: 'Reviewer approval + authors’ checklist',
+    paper: 'Internal review — reviewers’ checklist must be complete',
     rebuttal: 'Waiting for reviews, then rebuttal',
     camera_ready: 'Waiting for the camera-ready submission',
     conference: 'Planning for conference'

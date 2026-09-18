@@ -33,11 +33,22 @@
   function abstractApprovalHtml(card){
     if (card.status !== 'abstract') return '';
     var v = card.abstractReviewState || 'in_review';
-    return '<div class="gate-banner' + (v === 'approved' ? ' done' : '') + '" id="abstractApproval">' +
+    // Two independent conditions gate the move to Paper now
+    // (2026-09-18+16, per Eduardo, added the authors' checklist —
+    // authorChecklistComplete — alongside the senior reviewer's
+    // Approve): list whichever of the two is still outstanding, rather
+    // than the banner only ever mentioning the reviewer's own call, which
+    // is now only half the picture. See advanceBlockReason's own comment.
+    var checklistDone = authorChecklistComplete(card);
+    var outstanding = [];
+    if (v !== 'approved') outstanding.push('the senior reviewer’s Approve');
+    if (!checklistDone) outstanding.push('the authors’ checklist');
+    var done = v === 'approved' && checklistDone;
+    return '<div class="gate-banner' + (done ? ' done' : '') + '" id="abstractApproval">' +
       'Abstract review &mdash; ' + reviewStateBadgeHtml(v) + ' ' +
-      (v === 'approved'
+      (done
         ? 'This card can move to ' + STATUS_LABELS.paper + '.'
-        : 'Needs the senior reviewer’s Approve before this card can move to ' + STATUS_LABELS.paper + '.') +
+        : 'Still needs ' + outstanding.join(' and ') + ' before this card can move to ' + STATUS_LABELS.paper + '.') +
       '<div class="gate-banner-actions">' +
         '<button class="btn" type="button" data-abstract-review="approved"' + (v === 'approved' ? ' disabled' : '') + '>Approve</button>' +
         '<button class="btn-text danger" type="button" data-abstract-review="changes_requested"' + (v === 'changes_requested' ? ' disabled' : '') + '>Request changes</button>' +
@@ -485,8 +496,19 @@
     // any more — even though anyone can actually post there regardless
     // of role.
     var authorBody = abstractSubmissionFieldsHtml(card, board);
-    if (card.status === 'paper'){
+    // Authors' Format checklist moved here from the Paper stage
+    // (2026-09-18+16, per Eduardo) — it's a self-check on the author's
+    // own draft (mandatory sections, length, anonymity, template, policy
+    // compliance), nothing that needs the paper to already be under
+    // internal review, so it's fillable in parallel with waiting on the
+    // senior reviewer's abstract call, and is now itself a second gate
+    // on Abstract -> Paper (see advanceBlockReason). Paper stage keeps
+    // only the reviewers' Science checklist and the submission-link
+    // control below.
+    if (card.status === 'abstract'){
       authorBody += '<h3 class="detail-subhead">Checklist of authors</h3>' + authorChecklistTabHtml(card);
+    }
+    if (card.status === 'paper'){
       authorBody += paperSubmissionFieldsHtml(card, board);
     }
     if (authorBody) html += '<section class="detail-section" id="authorSection"><h3 class="detail-section-head">Author</h3>' + authorBody + '</section>';

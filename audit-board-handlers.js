@@ -336,6 +336,16 @@
       return;
     }
 
+    // Same gate as advanceBlockReason() — see its own comment
+    // (2026-09-18+16, per Eduardo). The status <select> dropdown bypasses
+    // advanceBlockReason entirely, so this is the only thing actually
+    // stopping the dropdown from skipping the authors' checklist.
+    if (isAdvance && newStatus === 'paper' && !authorChecklistComplete(card)){
+      showToast('Finish the authors’ checklist before moving to ' + STATUS_LABELS.paper + '.', 'error');
+      renderBoard(); // undo any dropdown selection
+      return;
+    }
+
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       return Object.assign({}, c, { status: newStatus, updatedAt: Date.now() });
