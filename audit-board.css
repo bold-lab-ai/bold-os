@@ -178,8 +178,17 @@
     white-space:nowrap;
   }
   .btn:hover{border-color:var(--blue); color:var(--blue);}
+  /* Was missing entirely (2026-09-18+15, found by Eduardo — the inline
+     "Submit" button in the stage-fields forms looked fully clickable even
+     while disabled, so a blocked submit silently did nothing with zero
+     visual cue). Same treatment .card-move-btn:disabled already had
+     elsewhere on this page — muted, half-opacity, no hover response. */
+  .btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
+  .btn:disabled:hover{border-color:var(--line); color:var(--muted);}
   .btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
   .btn-primary:hover{background:#0f1c33; border-color:#0f1c33; color:#fff;}
+  .btn-primary:disabled{background:var(--surface); color:var(--muted); border-color:var(--line); opacity:.5;}
+  .btn-primary:disabled:hover{background:var(--surface); border-color:var(--line); color:var(--muted);}
   /* Approve/Reject (venue proposals, 2026-09-11): same size/weight as any
      other .btn, just green vs. red — same visual weight for a symmetric
      either-way decision, unlike a primary/plain pairing that would make
@@ -550,7 +559,13 @@
      advanceBlockReason clears — see abstractSubmissionFieldsHtml) sit side
      by side, same gap/alignment as .gate-banner-actions elsewhere on this
      page. */
-  .stage-fields-actions{display:flex; gap:10px; align-items:center; margin-top:14px;}
+  .stage-fields-actions{display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap;}
+  /* The Submit button's own `title` (2026-09-18+15) isn't a reliable way
+     to tell someone why it's greyed out — Chrome (and most browsers)
+     don't fire hover/title tooltips on a disabled element at all, so
+     that reason was invisible in practice. This is the same text,
+     rendered as plain visible copy next to the button instead. */
+  .stage-fields-hint{font-size:12.5px; color:var(--muted); flex:1 1 200px;}
 
   /* ---------- card detail: Author / Review sections ----------
      Replaced the old Format/Science/Discussion tab bar (2026-09-18+11/+12,

@@ -201,6 +201,14 @@
         '<button class="btn" type="button" data-stage-fields-save="' + escapeHtml(card.id) + '">Save</button>' +
         '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="abstract" data-move-label="Submit abstract"' +
           (blockReason ? ' disabled title="' + escapeHtml(blockReason) + '"' : ' title="Move to ' + escapeHtml(statusLabelFor('abstract', board)) + '"') + '>Submit</button>' +
+        // The button's own `title` above isn't a reliable way to see why
+        // it's disabled — browsers generally don't fire hover/title
+        // tooltips on disabled elements — so the same reason is repeated
+        // here as plain visible text (2026-09-18+15, found by Eduardo:
+        // clicking a disabled Submit here did nothing with no visible
+        // explanation at all, since .btn/.btn-primary also had no
+        // :disabled styling until this same fix — see audit-board.css).
+        (blockReason ? '<span class="stage-fields-hint">' + escapeHtml(blockReason) + '</span>' : '') +
       '</div>' +
     '</div>';
   }
@@ -300,6 +308,10 @@
         '<button class="btn" type="button" data-stage-paper-save="' + escapeHtml(card.id) + '">Save</button>' +
         '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="rebuttal" data-move-label="Submit paper"' +
           (blockReason ? ' disabled title="' + escapeHtml(blockReason) + '"' : ' title="Move to ' + escapeHtml(statusLabelFor('rebuttal', board)) + '"') + '>Submit</button>' +
+        // Same visible-text fallback as abstractSubmissionFieldsHtml —
+        // see its own comment (2026-09-18+15): a disabled button's title
+        // isn't a reliable tooltip.
+        (blockReason ? '<span class="stage-fields-hint">' + escapeHtml(blockReason) + '</span>' : '') +
       '</div>' +
     '</div>';
   }
