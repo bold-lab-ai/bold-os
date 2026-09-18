@@ -385,9 +385,17 @@
     // Slack-synced) has no such match, so the <select> silently fell
     // back to its own first, unselected option every time the row was
     // reconstructed from saved data, even though name/email were both
-    // there all along.
+    // there all along. Also covers a blank email specifically
+    // (2026-09-18+22, found by Eduardo testing an older card whose
+    // authors came from the plain-string-author migration — see
+    // normalizeCard's own comment, email unrecoverable for that old
+    // data): `a.email && personByEmail(a.email)` is false either way a
+    // row can't resolve to a real picker option, whether that's because
+    // the email plain doesn't match anyone, or because there's no email
+    // at all — both need "+ New author" text-input mode to show the
+    // name, which the picker has no way to display for either case.
     eAuthorsState = card.authors && card.authors.length
-      ? card.authors.map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '', isNew: !!(a && a.email) && !personByEmail(a.email) }; })
+      ? card.authors.map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '', isNew: !(a && a.email && personByEmail(a.email)) }; })
       : [{ name: '', email: '', isNew: false }];
     renderAuthorRows('eAuthorsWrap', eAuthorsState, submitOnEnter, authorsLock);
     // #eAddAuthor doesn't exist in the markup at all when locked (see
