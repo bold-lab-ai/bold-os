@@ -464,6 +464,7 @@
   .badge-outcome-withdrawn{background:var(--neutral-bg); color:var(--neutral-text);}
   .badge-rebuttal-sent{background:var(--success-bg); color:var(--success-text);}
   .badge-rebuttal-writing{background:var(--warn-bg); color:var(--warn-text);}
+  .badge-rebuttal-waiting{background:var(--neutral-bg); color:var(--neutral-text);}
   .card-title-btn{
     display:block; width:100%; text-align:left;
     font-family:inherit; font-weight:700; font-size:14px; color:var(--ink);
@@ -894,8 +895,11 @@
 (function(){
   "use strict";
 
-  // Columns mirror the guide's 9 phases (how-to-submit-a-paper.html) one for
-  // one, same names, same order. Sub-states that used to be their own column
+  // Columns mirror the guide's phases (how-to-submit-a-paper.html), same
+  // names, same order — except Post to arXiv (2026-09-18+3), a guide phase
+  // with no column of its own since arXiv posting no longer gates or
+  // occupies a stage (see STATUS_ORDER's own comment below). Sub-states
+  // that used to be their own column
   // (review in progress / changes requested / approved; rebuttal in
   // progress / submitted) are now a colour on the card (or, for a
   // reviewer's own pass, a per-reviewer pill) instead — see
@@ -925,7 +929,19 @@
   // moved out to the same point, both now filled in via Edit fields when
   // the abstract itself is submitted rather than at registration — see
   // authorsLocked's own comment and advanceBlockReason's `abstract` gates.
-  var STATUS_ORDER = ['register', 'pitch', 'abstract', 'paper', 'arxiv', 'rebuttal', 'camera_ready', 'conference'];
+  //
+  // `paper`/`arxiv` collapsed into `rebuttal` (2026-09-18+3, per Eduardo):
+  // arXiv posting is no longer a gate or a column of its own — it's
+  // something you can do any time once the paper's submitted ("concurrent
+  // to Rebuttal"), just a link on the card, not blocking anything. Once
+  // "Submit paper" is clicked the card lands directly in `rebuttal`,
+  // showing a badge that starts "Waiting for reviews" and flips itself to
+  // "In Rebuttal" (plus a Slack DM) once the venue's own reviews-release
+  // date passes — see the new notifyReviewsOut scheduled function in
+  // functions/index.js, and renderCard's rebuttal badge. First real
+  // time-driven automatic transition in this pipeline; everything else
+  // here is still a deliberate human click by design.
+  var STATUS_ORDER = ['register', 'pitch', 'abstract', 'rebuttal', 'camera_ready', 'conference'];
 
   // Rush mode (2026-09-11): a per-venue toggle (board.rushMode) for an
   // imminent-deadline venue that needs to move faster than the full
@@ -939,11 +955,14 @@
   // — it's a plain subsequence, same relative order, same labels
   // (statusLabelFor's STATUS_LABELS fallback already covers every key
   // here, so there's no separate RUSH_STATUS_LABELS map any more either).
-  // Skips `pitch` (no time for a scheduled Pitch Day), `arxiv` and
+  // Skips `pitch` (no time for a scheduled Pitch Day) and
   // `camera_ready`/`conference` (rush's own urgency is about the
-  // submission deadlines specifically — once past `paper`, the only
-  // rush-specific thing left to track is the rebuttal deadline).
-  var RUSH_STATUS_ORDER = ['register', 'abstract', 'paper', 'rebuttal'];
+  // submission deadlines specifically — once past `abstract`, the only
+  // rush-specific thing left to track is the rebuttal deadline). `paper`/
+  // `arxiv` dropped from here too (2026-09-18+3) now that they're gone
+  // from STATUS_ORDER itself — Rush mode's only remaining divergence from
+  // the full pipeline is skipping Pitch.
+  var RUSH_STATUS_ORDER = ['register', 'abstract', 'rebuttal'];
 
   function effectiveStatusOrder(board){
     return (board && board.rushMode) ? RUSH_STATUS_ORDER : STATUS_ORDER;
@@ -1020,20 +1039,18 @@
     register: 'Registered',
     pitch: 'Pitched',
     abstract: 'Abstract in review',
-    paper: 'Paper Submitted',
-    arxiv: 'Posted',
-    rebuttal: 'Reviews Out',
+    rebuttal: 'Rebuttal',
     camera_ready: 'Rebuttal Submitted',
     conference: 'Accepted'
   };
   // Super-brief "move a card here when…" note under each column title.
+  // `rebuttal`'s own badge (renderCard) carries the finer-grained
+  // waiting/in-rebuttal/sent distinction this hint can't — see its comment.
   var STATUS_HINTS = {
     register: 'Waiting for pitch',
     pitch: 'Waiting for abstract submission',
     abstract: 'Internal review + PI approval, before submitting the paper',
-    paper: 'Waiting for an arXiv post',
-    arxiv: 'Waiting for reviews',
-    rebuttal: 'Rebuttal in process',
+    rebuttal: 'Waiting for reviews, then rebuttal',
     camera_ready: 'Waiting for the camera-ready submission',
     conference: 'Planning for conference'
   };
@@ -1063,21 +1080,28 @@
     in_audit: 'abstract',
     changes_requested: 'abstract',
     approved: 'abstract',
-    submitted: 'paper',
+    submitted: 'rebuttal',
     rebuttal_in_progress: 'rebuttal',
     rebuttal_submitted: 'rebuttal',
     accepted: 'conference',
     rejected: 'rebuttal',
-    withdrawn: 'paper',
+    withdrawn: 'rebuttal',
     // 2026-09-18 pipeline redesign
     pitch_day: 'pitch',
     draft_review: 'abstract',
     final_draft: 'abstract',
     abstract_review: 'abstract',
     pi_polish: 'abstract',
-    submit: 'paper',
-    arxiv_publicity: 'arxiv',
-    pre_conference: 'conference'
+    submit: 'rebuttal',
+    arxiv_publicity: 'rebuttal',
+    pre_conference: 'conference',
+    // 2026-09-18+3: paper/arxiv collapsed into rebuttal (see STATUS_ORDER's
+    // own comment). This lookup is a single hop, not chained — every
+    // entry above that used to target 'paper'/'arxiv' was repointed
+    // straight at 'rebuttal' too, so a card migrated through an older
+    // status still lands on a real, current column in one step.
+    paper: 'rebuttal',
+    arxiv: 'rebuttal'
   };
 
   // Each item folds together what used to be several sibling checks in the
@@ -1123,11 +1147,13 @@
 
   // A paper can't reach this status (or any to its right, in whichever
   // order is active) until both checklists are complete. Purely for
-  // *display* — "before Paper Submitted" in a toast/banner — the real,
+  // *display* — "before Rebuttal" in a toast/banner — the real,
   // human-facing name for what crossesGate's gate actually protects. The
   // gate calculation itself (crossesGate, below) is anchored to
-  // GATE_AFTER_STATUS instead.
-  var GATE_STATUS = 'paper';
+  // GATE_AFTER_STATUS instead. Updated 2026-09-18+3 from 'paper' to
+  // 'rebuttal' — the checklist gate still fires on leaving `abstract`,
+  // unchanged; only the real name of what's on the other side of it moved.
+  var GATE_STATUS = 'rebuttal';
 
   // The actual anchor crossesGate computes from — `abstract` is where the
   // checklist itself lives now (2026-09-18: this used to be draft_review,
@@ -2383,9 +2409,10 @@
   // (paper not sent) — each count down to a CUTOFF instead: RUSH_BUFFER_HOURS
   // before the real venue deadline that stage is actually racing toward,
   // so there's still a buffer to act before the real deadline hits, not
-  // right up to the wire. Paper Submitted has nothing outstanding to
-  // submit any more, so it gets no cutoff at all (see
-  // rushColumnRealDeadline).
+  // right up to the wire. Rebuttal (2026-09-18+3: reached straight from
+  // Abstract in review now, no Paper Submitted/Posted in between any more)
+  // has nothing outstanding to submit at that point, so it gets no cutoff
+  // at all (see rushColumnRealDeadline).
   var RUSH_BUFFER_HOURS = 48;
 
   // Which real venue deadline a given rush column is racing toward — just
@@ -2393,10 +2420,10 @@
   // something still outstanding (see outstandingDeadlineFor above, which
   // this reuses directly — same answer effectiveDeadline gives any card
   // at that status, just addressed by bare status/board instead of a
-  // card, since a column header isn't about any one card). Paper
-  // Submitted gets no entry: once "Submit paper" has been clicked there's
-  // nothing left for the submitter to submit, just a venue decision to
-  // wait for, so no countdown belongs on that column (see columnHintFor).
+  // card, since a column header isn't about any one card). Rebuttal gets
+  // no entry: once "Submit paper" has been clicked there's nothing left
+  // for the submitter to submit, just a venue decision to wait for, so no
+  // countdown belongs on that column (see columnHintFor).
   // Returns a bare ISO date string, or null if the venue has no deadline
   // of that kind set, or the column has no countdown at all.
   function rushColumnRealDeadline(status, board){
@@ -2453,8 +2480,10 @@
   // outstanding submission (Registered, Abstract in review — see
   // rushColumnRealDeadline), which show their real deadline and internal
   // cutoff instead, since that's the more useful thing to see there.
-  // Paper Submitted falls through to the plain STATUS_HINTS text same as
-  // any other column — nothing left to submit, nothing to count down to.
+  // Rebuttal falls through to the plain STATUS_HINTS text same as any
+  // other column here — the Waiting-for-reviews/In-Rebuttal distinction
+  // lives on the card's own badge instead (rebuttalBadgeHtml), not this
+  // column-header line.
   // Returns trusted HTML, not plain text — the "time left"/"time overdue"
   // portion is wrapped in <strong> so it stands out against the rest of
   // the line. Safe to render unescaped: everything that goes into it is
@@ -2741,8 +2770,7 @@
     if (next === 'abstract') reqs.push('co-authors added');
     if (next === 'abstract') reqs.push('Overleaf link added');
     if (next === 'abstract') reqs.push('reviewers assigned');
-    if (next === 'paper') reqs.push('submission link added');
-    if (next === 'arxiv') reqs.push('arXiv link added');
+    if (next === 'rebuttal') reqs.push('submission link added');
     if (next === 'camera_ready') reqs.push('rebuttal doc added');
     if (next === 'conference') reqs.push('camera-ready link added');
     return reqs;
@@ -2814,11 +2842,12 @@
     // just a bare confirmed click — see the card fields' own comment in
     // onAddCard. submissionLink/rebuttalDocLink existed already as
     // free-standing informational fields; wired as real gates here for
-    // the first time. arXiv -> Rebuttal (toStatus 'rebuttal') stays
-    // deliberately ungated — nothing to submit there, see #13. Rush
-    // mode's own paper -> rebuttal skip (toStatus 'rebuttal' from
-    // 'paper', no 'arxiv' stage in RUSH_STATUS_ORDER at all) is
-    // unaffected by any of these — none of them ever fire for it.
+    // the first time. (2026-09-18+3: toStatus 'rebuttal' used to be the
+    // one deliberately-ungated arXiv -> Rebuttal transition, see #13 —
+    // gone now that arxiv isn't a stage at all; 'rebuttal' is reached
+    // straight from 'abstract' instead, gated on submissionLink below,
+    // same in both pipelines since RUSH_STATUS_ORDER never reordered
+    // anything to begin with.)
     if (toStatus === 'pitch' && !card.pitchLink){
       return 'Add your pitch materials first';
     }
@@ -2842,11 +2871,14 @@
     if (toStatus === 'abstract' && !reviewersAssigned(card)){
       return 'Assign a junior and a senior reviewer first';
     }
-    if (toStatus === 'paper' && !card.submissionLink){
+    // Moved from `paper` to `rebuttal` (2026-09-18+3, per Eduardo) — Paper
+    // Submitted/Posted no longer exist as their own stages, so this is the
+    // one real transition left that the submission link gates. arXiv is
+    // deliberately ungated now: posting to arXiv is concurrent to sitting
+    // in Rebuttal, not a prerequisite for reaching it — no more arxivLink
+    // check here at all.
+    if (toStatus === 'rebuttal' && !card.submissionLink){
       return 'Add the venue submission link first';
-    }
-    if (toStatus === 'arxiv' && !card.arxivLink){
-      return 'Add the arXiv link first';
     }
     if (toStatus === 'camera_ready' && !card.rebuttalDocLink){
       return 'Add the rebuttal document link first';
@@ -2865,16 +2897,15 @@
   // comment for the matching link-required gate each of these pairs
   // with. Keyed by the CURRENT status (the one being left, i.e. the one
   // whose deliverable this button submits), not the target. One shared
-  // map for both pipelines: Rush mode visits the same stages in the same
-  // relative order now (see RUSH_STATUS_ORDER), so there's nothing
-  // Rush-specific left to override here — except the one case handled
-  // separately in moveButtonsInnerHtml below (Rush's paper -> rebuttal
-  // has no arXiv stage to "Post to arXiv" toward at all).
+  // map for both pipelines — Rush mode visits the same stages in the same
+  // relative order (see RUSH_STATUS_ORDER), nothing Rush-specific to
+  // override here. No more `paper` entry (2026-09-18+3): "Post to arXiv"
+  // isn't a move any more at all, since arXiv posting no longer gates or
+  // occupies a stage — see STATUS_ORDER's own comment.
   var ADVANCE_LABELS = {
     register: 'Submit pitch',
     pitch: 'Submit abstract',
     abstract: 'Submit paper',
-    paper: 'Post to arXiv',
     rebuttal: 'Submit rebuttal',
     camera_ready: 'Submit camera-ready'
   };
@@ -2888,7 +2919,6 @@
     'Submit pitch': 'Are you sure you want to submit your pitch materials? This action cannot be undone.',
     'Submit abstract': 'Are you sure you want to submit your abstract for internal review? This action cannot be undone.',
     'Submit paper': 'Are you sure you want to submit your paper for internal review? This action cannot be undone.',
-    'Post to arXiv': 'Are you sure you want to post to arXiv? This action cannot be undone.',
     'Submit rebuttal': 'Are you sure you want to submit your rebuttal? This action cannot be undone.',
     'Submit camera-ready': 'Are you sure you want to submit the camera-ready version? This action cannot be undone.'
   };
@@ -2926,13 +2956,7 @@
     var order = effectiveStatusOrder(board);
     var lft = statusAt(effective, -1, order);
     var rgt = statusAt(effective, 1, order);
-    // Rush mode's own paper -> rebuttal is the one exception to the
-    // shared ADVANCE_LABELS map: RUSH_STATUS_ORDER has no `arxiv` stage
-    // at all, so this transition means "reviews are out", not "post to
-    // arXiv" — plain Advance, matching arXiv -> Rebuttal's own ungated
-    // wording in the canonical pipeline (see advanceBlockReason's
-    // comment — neither has a real deliverable to submit).
-    var rgtLabel = (effective === 'paper' && rgt === 'rebuttal') ? 'Advance' : (ADVANCE_LABELS[effective] || 'Advance');
+    var rgtLabel = ADVANCE_LABELS[effective] || 'Advance';
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
       (effective === 'abstract' ? abstractAcceptBlockReason(card, board, state.cards) : null));
     // Green treatment covers every real Submit (SUBMIT_CONFIRM_MESSAGES' keys).
@@ -3133,6 +3157,19 @@
     return '<span class="rv-state-pill rv-state-' + v + '">' + REVIEW_STATE_LABELS[v] + '</span>';
   }
 
+  // The Rebuttal column's own 3-state badge (2026-09-18+3), shared between
+  // renderCard and renderCardDetail. reviewsOutNotifiedAt is set exactly
+  // once, by the scheduled notifyReviewsOut function (functions/index.js),
+  // the moment the venue's reviews-release date passes — that single flag
+  // is what separates "still waiting" from "reviews are out." Once
+  // rebuttalDocLink exists the rebuttal itself has been written, same
+  // meaning as before this redesign.
+  function rebuttalBadgeHtml(card){
+    if (card.rebuttalDocLink) return '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>';
+    if (card.reviewsOutNotifiedAt) return '<span class="badge badge-rebuttal-writing">In Rebuttal</span>';
+    return '<span class="badge badge-rebuttal-waiting">Waiting for reviews</span>';
+  }
+
   function renderCard(card, board){
     var overdue = isOverdue(card, board);
     var inAbstractStage = card.status === 'abstract';
@@ -3144,9 +3181,7 @@
     // Badges only; Overleaf link / edit + remove live on the detail page
     // now, to keep the board card short and easy to scan.
     var badges = '';
-    if (card.status === 'rebuttal') badges += card.rebuttalDocLink
-      ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
-      : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
+    if (card.status === 'rebuttal') badges += rebuttalBadgeHtml(card);
     if (shouldShowOutcomeBadge(card)) badges += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     if (overdue || rushOverdue) badges += '<span class="badge badge-overdue">Overdue</span>';
     if (badges) html += '<div class="card-meta-row">' + badges + '</div>';
@@ -3861,9 +3896,7 @@
     html += '<div class="detail-head">';
     html += '<h2>' + escapeHtml(card.title) + '</h2>';
     if (STATUS_LABELS[card.status]) html += '<span class="badge" style="background:var(--accent-dim);color:var(--accent);">' + escapeHtml(statusLabelFor(card.status, board)) + '</span>';
-    if (card.status === 'rebuttal') html += card.rebuttalDocLink
-      ? '<span class="badge badge-rebuttal-sent">Rebuttal sent</span>'
-      : '<span class="badge badge-rebuttal-writing">Writing rebuttal</span>';
+    if (card.status === 'rebuttal') html += rebuttalBadgeHtml(card);
     if (shouldShowOutcomeBadge(card)) html += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     if (overdue || rushOverdue) html += '<span class="badge badge-overdue">Overdue</span>';
     html += '</div>';
@@ -4475,9 +4508,9 @@
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
             '<div class="field"><label for="ePitchLink">Pitch materials</label><input type="url" id="ePitchLink" value="' + escapeHtml(card.pitchLink || '') + '" placeholder="https://docs.google.com/presentation/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Registered.</div></div>' +
             '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Abstract in review.</div></div>' +
-            '<div class="field"><label for="eArxivLink">arXiv link</label><input type="url" id="eArxivLink" value="' + escapeHtml(card.arxivLink || '') + '" placeholder="https://arxiv.org/abs/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Paper Submitted.</div></div>' +
+            '<div class="field"><label for="eArxivLink">arXiv link</label><input type="url" id="eArxivLink" value="' + escapeHtml(card.arxivLink || '') + '" placeholder="https://arxiv.org/abs/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Optional — post whenever it’s ready, not required to advance.</div></div>' +
             '<div class="field"><label for="eRebuttalDeadline">Rebuttal deadline</label><input type="date" id="eRebuttalDeadline" value="' + escapeHtml(card.rebuttalDeadline || '') + '"></div>' +
-            '<div class="field"><label for="eRebuttalDoc">Rebuttal document</label><input type="url" id="eRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Reviews Out.</div></div>' +
+            '<div class="field"><label for="eRebuttalDoc">Rebuttal document</label><input type="url" id="eRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Rebuttal.</div></div>' +
             '<div class="field"><label for="eCameraReadyLink">Camera-ready link</label><input type="url" id="eCameraReadyLink" value="' + escapeHtml(card.cameraReadyLink || '') + '" placeholder="https://..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Camera-ready Submitted.</div></div>' +
             '<div class="field"><label for="eReviewNotes">Review notes</label><textarea id="eReviewNotes" placeholder="Scores, summary, anything worth remembering">' + escapeHtml(card.reviewNotes || '') + '</textarea></div>' +
             '<div class="field"><label for="eOutcome">Outcome</label><select id="eOutcome">' +
@@ -4831,21 +4864,25 @@
       // Deliverable-per-stage redesign (2026-09-18, per Eduardo): each
       // link below is what its stage's own advance gate requires before
       // the Submit-X button unblocks — see advanceBlockReason and
-      // ADVANCE_LABELS. submissionLink/rebuttalDocLink already existed as
-      // free-standing informational fields; both are wired as real gates
-      // now (Abstract -> Paper, Rebuttal -> Camera-ready respectively),
-      // same URL-field-then-Submit pattern extended to the three that
-      // never had a field at all: pitchLink (Register -> Pitch),
-      // arxivLink (Paper -> arXiv), cameraReadyLink (Camera-ready ->
-      // Conference). arXiv -> Rebuttal alone stays a plain, ungated
-      // Advance — nothing for the author to produce there, only an
-      // external event (reviews going live) to notice, see #13.
+      // ADVANCE_LABELS. pitchLink (Register -> Pitch), submissionLink
+      // (Abstract -> Rebuttal, moved 2026-09-18+3 from Abstract -> Paper
+      // now that Paper Submitted no longer exists as its own stage),
+      // rebuttalDocLink (Rebuttal -> Camera-ready), cameraReadyLink
+      // (Camera-ready -> Conference). arxivLink is deliberately NOT a gate
+      // (2026-09-18+3) — arXiv posting is concurrent to sitting in
+      // Rebuttal, addable any time, not required to leave anywhere.
+      // reviewsOutNotifiedAt: null until the scheduled notifyReviewsOut
+      // function (functions/index.js) sets it, once the venue's own
+      // reviews-release date passes — drives the Rebuttal badge's
+      // Waiting-for-reviews -> In-Rebuttal flip and the one-time Slack DM
+      // that goes with it (see renderCard's rebuttal badge).
       pitchLink: null,
       submissionLink: null,
       arxivLink: null,
       rebuttalDeadline: null,
       rebuttalDocLink: null,
       cameraReadyLink: null,
+      reviewsOutNotifiedAt: null,
       reviewNotes: '',
       checklist: makeChecklistSnapshot(),
       discussion: [],
