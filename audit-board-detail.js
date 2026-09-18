@@ -506,7 +506,30 @@
     // only the reviewers' Science checklist and the submission-link
     // control below.
     if (card.status === 'abstract'){
-      authorBody += '<h3 class="detail-subhead">Checklist of authors</h3>' + authorChecklistTabHtml(card);
+      authorBody += '<h3 class="detail-subhead">Submit full paper</h3>' + authorChecklistTabHtml(card);
+      // Save + Submit at the end of this block (2026-09-18+17, per
+      // Eduardo), same pair the other two Author-section blocks end
+      // with. "Save" has nothing new to persist — each checklist box
+      // already saves itself the moment it's ticked (onToggleAuthorChecklist)
+      // — kept anyway for the same interaction pattern/reassurance as
+      // abstractSubmissionFieldsHtml/paperSubmissionFieldsHtml, wired to
+      // onConfirmChecklistSaved (a toast, no write). Submit reuses the
+      // shared [data-move] handler like those two, but — same trap
+      // moveButtonsInnerHtml's own rgtConfirmKey exists to avoid —
+      // data-move-label can't be the literal "Submit paper" text: that
+      // key is already SUBMIT_CONFIRM_MESSAGES' for the OTHER "Submit
+      // paper" button (leaving `paper` for `rebuttal`, the real external
+      // venue submission, which DOES get a confirm dialog). Using the
+      // exact same 'abstract-approved-advance' key the top button uses
+      // for this same transition keeps this one a plain, unconfirmed
+      // move, not a false "submit to the venue" prompt.
+      var checklistBlockReason = advanceBlockReason(card, 'paper', board);
+      authorBody += '<div class="stage-fields-actions">' +
+        '<button class="btn" type="button" data-stage-checklist-save="' + escapeHtml(card.id) + '">Save</button>' +
+        '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="paper" data-move-label="abstract-approved-advance"' +
+          (checklistBlockReason ? ' disabled title="' + escapeHtml(checklistBlockReason) + '"' : ' title="Move to ' + escapeHtml(statusLabelFor('paper', board)) + '"') + '>Submit</button>' +
+        (checklistBlockReason ? '<span class="stage-fields-hint">' + escapeHtml(checklistBlockReason) + '</span>' : '') +
+      '</div>';
     }
     if (card.status === 'paper'){
       authorBody += paperSubmissionFieldsHtml(card, board);
@@ -605,6 +628,8 @@
     if (stageFieldsSaveBtn) stageFieldsSaveBtn.addEventListener('click', function(){ onSaveAbstractFields(stageFieldsSaveBtn.getAttribute('data-stage-fields-save')); });
     var stagePaperSaveBtn = els.boardRegion.querySelector('[data-stage-paper-save]');
     if (stagePaperSaveBtn) stagePaperSaveBtn.addEventListener('click', function(){ onSavePaperSubmissionLink(stagePaperSaveBtn.getAttribute('data-stage-paper-save')); });
+    var stageChecklistSaveBtn = els.boardRegion.querySelector('[data-stage-checklist-save]');
+    if (stageChecklistSaveBtn) stageChecklistSaveBtn.addEventListener('click', onConfirmChecklistSaved);
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cl]'), function(box){
       box.addEventListener('change', function(){
         onToggleChecklist(box.getAttribute('data-cl'), box.getAttribute('data-cl-item'), box.getAttribute('data-cl-role'), box.checked);
@@ -732,7 +757,13 @@
     if (!state.currentUser || !isCardAuthorEmail(card, state.currentUser.email)) return;
 
     var boardId = state.currentBoardId;
-    var wasComplete = checklistComplete(card);
+    // Was checklistComplete()/'paper' before 2026-09-18+17 — dead ever
+    // since the Format checklist moved to render only at 'abstract'
+    // (this handler only fires from a checkbox that no longer exists in
+    // the DOM at 'paper' at all). authorChecklistComplete (not full
+    // checklistComplete — the Science half isn't even reachable yet at
+    // this stage) is the right thing to watch for here now.
+    var wasAuthorDone = authorChecklistComplete(card);
     var next = state.cards.map(function(c){
       if (c.id !== cardId) return c;
       var newChecklist = c.checklist.map(function(it){
@@ -743,8 +774,8 @@
       merged.updatedAt = Date.now();
       return merged;
     });
-    var justCompleted = !wasComplete && card.status === 'paper' &&
-      checklistComplete(next.filter(function(c){ return c.id === cardId; })[0]);
+    var updatedCard = next.filter(function(c){ return c.id === cardId; })[0];
+    var justCompleted = !wasAuthorDone && card.status === 'abstract' && authorChecklistComplete(updatedCard);
     var prev = state.cards;
     state.cards = next;
     renderCardDetail();
@@ -754,9 +785,21 @@
         renderCardDetail();
         showToast(saveErrorMessage('Could not save the checklist — try again.'), 'error');
       } else if (justCompleted){
-        showToast('Checklist complete — the paper can be submitted now.', 'ok');
+        showToast(updatedCard.abstractReviewState === 'approved'
+          ? 'Checklist complete — this paper can move to Paper now.'
+          : 'Authors’ checklist complete — still waiting on the senior reviewer’s approval.', 'ok');
       }
     });
+  }
+
+  // Nothing new to actually persist here — every checklist box already
+  // saves itself the moment it's ticked (onToggleAuthorChecklist above).
+  // Exists purely so "Submit full paper" ends with the same Save+Submit
+  // pair abstractSubmissionFieldsHtml/paperSubmissionFieldsHtml do, for
+  // the same reassurance/interaction consistency (2026-09-18+17, per
+  // Eduardo).
+  function onConfirmChecklistSaved(){
+    showToast('Saved.', 'ok');
   }
 
   function renderAll(){
