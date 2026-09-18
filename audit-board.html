@@ -565,25 +565,34 @@
      .gate-banner treatment (this isn't flagging a problem, just showing
      a form) and not a checklist. Reuses .field/.field-error, the same
      classes and global input/textarea styling the Edit-fields modal
-     already uses, so the fields are sized the same way there too. */
-  .stage-fields{margin:24px 0; max-width:560px;}
-  .stage-fields h3{font-size:15px; margin:0 0 12px;}
+     already uses, so the fields are sized the same way there too. Its own
+     heading reuses .detail-subhead (see the Author/Review sections below)
+     rather than a bespoke rule, now that it lives inside the Author
+     section as one of that section's items, not a standalone block. */
+  .stage-fields{margin:0 0 24px; max-width:560px;}
 
-  /* ---------- review tabs: Format / Science / Discussion ---------- */
-  .tabbar{display:flex; gap:0; border-bottom:1px solid var(--line); margin:28px 0 0;}
-  .tab{
-    font-weight:700; font-size:14px; color:var(--muted);
-    background:none; border:none; border-bottom:2px solid transparent;
-    padding:10px 2px; margin:0 26px -1px 0; cursor:pointer;
+  /* ---------- card detail: Author / Review / Discussion sections ----------
+     Replaced the old Format/Science/Discussion tab bar (2026-09-18+11, per
+     Eduardo) — a card detail page is now split into sections BY WHO the
+     content is for, not by which checklist it happens to be: an "Author"
+     section (the inline Submit-the-abstract form, the authors' own
+     checklist) and a "Review" section (reviewer assignment, the abstract
+     approval call, the reviewers' checklist) sit side by side, each always
+     showing everything relevant to that kind of user rather than hiding
+     one behind a click. Discussion stays its own section, not part of
+     either — anyone can post there. `.vs-head`'s own eyebrow-label style
+     (small/bold/uppercase/coloured) is the established pattern this
+     reuses, muted rather than teal/plum since those colours already mean
+     something specific elsewhere on this page (Junior/Senior — see
+     docs/AGENTS.md guideline 11) and would misleadingly suggest a
+     role-color mapping neither of these sections actually has. */
+  .detail-section{margin-top:32px;}
+  .detail-section-head{
+    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;
+    color:var(--muted); margin:0 0 12px; padding-bottom:6px; border-bottom:1px solid var(--line);
   }
-  .tab:hover{color:var(--ink);}
-  .tab .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; color:var(--muted);}
-  .tab.active{color:var(--ink);}
-  #tab-btn-format.active{border-bottom-color:var(--teal);}
-  #tab-btn-science.active{border-bottom-color:var(--plum);}
-  #tab-btn-discussion.active{border-bottom-color:var(--blue);}
-  .tabpanel{display:none; padding-top:20px;}
-  .tabpanel.active{display:block;}
+  .detail-section-head .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; text-transform:none; letter-spacing:normal;}
+  .detail-subhead{font-weight:700; font-size:14px; color:var(--ink); margin:0 0 10px;}
 
   .cl-wrap{max-width:640px;}
   .cl-agent-note{
@@ -1229,7 +1238,6 @@
     loadingBoards: true,
     loadingCards: false,
     search: { query: '', field: 'all', reviewState: 'all' },
-    detailTab: 'format',
     discussionReplyOpenId: null,
     checklistCommentOpenId: null, // checklist item whose feedback thread is expanded
     checklistReplyOpenId: null,   // comment within it whose reply box is open
@@ -2725,6 +2733,24 @@
     return ((card && card.authors) || []).some(function(a){ return a && a.email === email; });
   }
 
+  // Whether the signed-in viewer counts as "an author" for the inline
+  // Submit-the-abstract fields (2026-09-18+11, per Eduardo — those fields
+  // should be visible only to authors, the only users who can actually
+  // fill them in). isCardAuthorEmail alone isn't enough here: this form's
+  // whole job is to ADD the first authors, so card.authors is normally
+  // still empty the very first time it has anything to do — whoever
+  // registered the paper (card.submittedBy) is treated as an author too,
+  // as a bootstrap, until real co-authors exist to take over. Soft,
+  // client-side-only gate, same as every other role check in this file
+  // (roles aren't readable client-side) — Security Rules stay
+  // whole-document, not gated on this.
+  function canManageAuthorFields(card){
+    var email = state.currentUser && state.currentUser.email;
+    if (!email) return false;
+    if (isCardAuthorEmail(card, email)) return true;
+    return !!(card.submittedBy && card.submittedBy.email === email);
+  }
+
   // The PI isn't a separate field — by convention it's just the last
   // entry in card.authors (same as an author list on the paper itself
   // usually reads). One list, one source of truth. Returns the name only
@@ -2901,10 +2927,11 @@
     // coming back as its own stage): leaving `abstract` for `paper` needs
     // the senior reviewer's direct go-ahead — no checklist involved, just
     // card.abstractReviewState, set straight from the two Approve/Request
-    // changes buttons on the card (see reviewStateBadgeHtml and the
-    // detail-page controls near reviewTabsHtml). Entering `paper` itself
-    // is otherwise a plain, ungated Advance — nothing "submitted" by that
-    // click alone, same shape as the old arXiv -> Rebuttal transition.
+    // changes buttons on the card (see reviewStateBadgeHtml and
+    // abstractApprovalHtml, rendered in the Review section). Entering
+    // `paper` itself is otherwise a plain, ungated Advance — nothing
+    // "submitted" by that click alone, same shape as the old arXiv ->
+    // Rebuttal transition.
     if (toStatus === 'paper' && card.abstractReviewState !== 'approved'){
       return 'Waiting for the senior reviewer’s approval';
     }
@@ -3080,12 +3107,17 @@
   // exists further down this same page (reviewerInputHtml, guideline 7).
   // Hidden once authors, the Overleaf link and the abstract text are all
   // present (reviewers being unassigned doesn't keep this open — that's
-  // its own separate picker/gate).
+  // its own separate picker/gate). Also hidden entirely from a viewer who
+  // isn't an author on this card (2026-09-18+11, per Eduardo — these are
+  // the only users who can actually fill them in) — see
+  // canManageAuthorFields for the bootstrap case (nobody's a listed
+  // author yet the very first time this form has anything to do).
   function abstractSubmissionFieldsHtml(card, board){
     var effective = displayStatus(card, board);
     var rgt = statusAt(effective, 1, effectiveStatusOrder(board));
     if (rgt !== 'abstract') return '';
     if (card.authors && card.authors.length && card.overleafLink && card.abstractText) return '';
+    if (!canManageAuthorFields(card)) return '';
     return '<div class="stage-fields" id="stageAbstractFields">' +
       '<h3>Submit the abstract</h3>' +
       '<div class="field"><label for="stageAuthorsWrap">Co-authors</label><div id="stageAuthorsWrap"></div>' +
@@ -3714,7 +3746,6 @@
   function openCard(cardId){
     state.view = 'card';
     state.currentCardId = cardId;
-    state.detailTab = 'format';
     state.discussionReplyOpenId = null;
     state.checklistCommentOpenId = null;
     state.checklistReplyOpenId = null;
@@ -3794,7 +3825,9 @@
     '</div>';
   }
 
-  // ---------- review tabs: Format / Science checklist, Discussion ----------
+  // ---------- Format / Science checklists, Discussion (see the Author/
+  // Review/Discussion sections in renderCardDetail for how these are
+  // actually laid out on the page — no tab bar any more) ----------
 
   function threadCount(messages){
     return (messages || []).reduce(function(n, m){ return n + 1 + (m.replies ? m.replies.length : 0); }, 0);
@@ -3849,15 +3882,11 @@
 
   // Two genuinely different layouts, not just a filtered list (2026-09-14):
   // format is the authors' checklist — one checkbox per item, ticked by any
-  // co-author (isCardAuthorEmail), wired through onToggleAuthorChecklist.
-  // science is the reviewers' checklist — unchanged from before the split,
-  // junior + senior each still get their own column, wired through the
-  // original onToggleChecklist.
-  function checklistTabHtml(card, part){
-    if (part === 'format') return authorChecklistTabHtml(card);
-    return reviewerChecklistTabHtml(card);
-  }
-
+  // co-author (isCardAuthorEmail), wired through onToggleAuthorChecklist,
+  // rendered in the Author section. science is the reviewers' checklist —
+  // unchanged from before the split, junior + senior each still get their
+  // own column, wired through the original onToggleChecklist, rendered in
+  // the Review section (see renderCardDetail).
   function authorChecklistTabHtml(card){
     var items = checklistItemsFor(card, 'format');
     var openId = state.checklistCommentOpenId;
@@ -3968,31 +3997,6 @@
       });
     }
     html += '<div class="disc-new"><h3>Start a new topic</h3>' + discussionFormHtml('discNew', 'Share a comment, question, or concern&hellip;', 'Post') + '</div>';
-    html += '</div>';
-    return html;
-  }
-
-  // Outside Paper there's no checklist to show — just the one thing that
-  // stays relevant at every stage. Skip the tab bar entirely rather than
-  // render a 3-tab UI for a single visible pane (2026-09-18+5, per
-  // Eduardo — a card at Abstract was showing the full-paper checklist
-  // tabs underneath its own lightweight-approval UI, which is clutter
-  // and actively misleading about what's actually needed right now).
-  function reviewTabsHtml(card){
-    if (card.status !== 'paper'){
-      return '<div class="tabpanel active">' + discussionTabHtml(card) + '</div>';
-    }
-    var tab = state.detailTab || 'format';
-    var discCount = threadCount(card.discussion);
-    var html = '<div class="tabbar" role="tablist" aria-label="Review">' +
-      '<button class="tab' + (tab === 'format' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-format" data-detail-tab="format" aria-selected="' + (tab === 'format') + '">Checklist of authors</button>' +
-      '<button class="tab' + (tab === 'science' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-science" data-detail-tab="science" aria-selected="' + (tab === 'science') + '">Checklist for reviewers</button>' +
-      '<button class="tab' + (tab === 'discussion' ? ' active' : '') + '" type="button" role="tab" id="tab-btn-discussion" data-detail-tab="discussion" aria-selected="' + (tab === 'discussion') + '">Discussion' + (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</button>' +
-    '</div>';
-    html += '<div class="tabpanel active">';
-    if (tab === 'science') html += checklistTabHtml(card, 'science');
-    else if (tab === 'discussion') html += discussionTabHtml(card);
-    else html += checklistTabHtml(card, 'format');
     html += '</div>';
     return html;
   }
@@ -4206,24 +4210,42 @@
       ? escapeHtml(card.submittedBy.name) + (card.submittedBy.email ? ' <span style="color:var(--muted);">(' + escapeHtml(card.submittedBy.email) + ')</span>' : '')
       : '—') + '</dd>';
     if (card.createdAt) html += '<dt>Registered</dt><dd>' + formatTimestamp(card.createdAt) + '</dd>';
-    html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') +
-      (card.status === 'paper' ? reviewStatePillHtml(card, 'junior') : '') + '</dd>';
-    html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'senior') +
-      (card.status === 'paper' ? reviewStatePillHtml(card, 'senior') : '') + '</dd>';
     var regNote = card.history && card.history[0] && card.history[0].note;
     if (regNote) html += '<dt>Note at registration</dt><dd style="white-space:pre-wrap;">' + escapeHtml(regNote) + '</dd>';
-    if (card.reviewNotes) html += '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>';
     html += '</dl>';
 
-    html += abstractSubmissionFieldsHtml(card, board);
+    // Split below the shared info grid into an Author section (things an
+    // author fills in) and a Review section (things a reviewer does) —
+    // 2026-09-18+11, per Eduardo, replacing the old Format/Science tab
+    // bar: each section always shows everything relevant to that kind of
+    // user side by side, rather than hiding one behind a tab click.
+    // Reviewer assignment and Review notes moved here from the shared
+    // grid above — both are review-side actions/content, not general
+    // paper metadata. Discussion stays its own section, part of neither —
+    // anyone can post there regardless of role.
+    var authorBody = abstractSubmissionFieldsHtml(card, board);
+    if (card.status === 'paper') authorBody += '<h3 class="detail-subhead">Checklist of authors</h3>' + authorChecklistTabHtml(card);
+    if (authorBody) html += '<section class="detail-section" id="authorSection"><h3 class="detail-section-head">Author</h3>' + authorBody + '</section>';
 
-    html += abstractApprovalHtml(card);
-    // gateBannerHtml describes the checklist gate (GATE_AFTER_STATUS) —
-    // only meaningful while the card is actually sitting at Paper, same
-    // stage-conditional as reviewTabsHtml below (2026-09-18+5).
-    if (card.status === 'paper') html += gateBannerHtml(card);
+    var reviewBody = '<dl class="detail-grid">' +
+      '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') +
+        (card.status === 'paper' ? reviewStatePillHtml(card, 'junior') : '') + '</dd>' +
+      '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'senior') +
+        (card.status === 'paper' ? reviewStatePillHtml(card, 'senior') : '') + '</dd>' +
+      (card.reviewNotes ? '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>' : '') +
+    '</dl>';
+    reviewBody += abstractApprovalHtml(card);
+    if (card.status === 'paper'){
+      // gateBannerHtml describes the checklist gate (GATE_AFTER_STATUS) —
+      // only meaningful while the card is actually sitting at Paper.
+      reviewBody += gateBannerHtml(card);
+      reviewBody += '<h3 class="detail-subhead">Checklist for reviewers</h3>' + reviewerChecklistTabHtml(card);
+    }
+    html += '<section class="detail-section" id="reviewSection"><h3 class="detail-section-head">Review</h3>' + reviewBody + '</section>';
 
-    html += reviewTabsHtml(card);
+    var discCount = threadCount(card.discussion);
+    html += '<section class="detail-section" id="discussionSection"><h3 class="detail-section-head">Discussion' +
+      (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</h3>' + discussionTabHtml(card) + '</section>';
 
     html += '</div>';
     els.boardRegion.innerHTML = html;
@@ -4231,15 +4253,6 @@
     document.getElementById('detailBack').addEventListener('click', function(e){ e.preventDefault(); backToBoard(); });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-abstract-review]'), function(btn){
       btn.addEventListener('click', function(){ onSetAbstractReview(card.id, btn.getAttribute('data-abstract-review')); });
-    });
-    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-detail-tab]'), function(btn){
-      btn.addEventListener('click', function(){
-        state.detailTab = btn.getAttribute('data-detail-tab');
-        state.discussionReplyOpenId = null;
-        state.checklistCommentOpenId = null;
-        state.checklistReplyOpenId = null;
-        renderCardDetail();
-      });
     });
     var discNewBtn = document.getElementById('discNewSubmit');
     if (discNewBtn) discNewBtn.addEventListener('click', function(){ onPostDiscussion(card.id); });
@@ -4318,10 +4331,10 @@
   }
 
   // role is 'junior' or 'senior'. Client-side-restricted to the matching
-  // assigned reviewer (checklistTickAccess/checklistTabHtml already
-  // disables the checkbox for anyone else) — same belt-and-braces shape
-  // used throughout this file, not the real access control (Security
-  // Rules).
+  // assigned reviewer (checklistTickAccess/reviewerChecklistTabHtml
+  // already disables the checkbox for anyone else) — same belt-and-braces
+  // shape used throughout this file, not the real access control
+  // (Security Rules).
   //
   // Review state is now purely derived from the checklist (2026-09-14,
   // simplified per Eduardo — replaces the earlier manual-sign-off design):
