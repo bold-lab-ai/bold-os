@@ -407,17 +407,19 @@
     font-weight:700; font-size:12.5px; letter-spacing:0;
   }
   .column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
-  /* ch-hint and ch-requires are ALWAYS rendered (renderColumns never
-     omits either div, even with nothing to say) and both fixed to a set
-     height, whether or not they actually hold that much text — a column
-     with no hint and no requirements still reserves the same space as one
-     with both, so every column-head comes out identically tall and the
-     head/body divider lines up across the whole board, not just within a
-     column that happens to have more or less to say than its neighbours.
-     ch-hint's height (5.4em, bumped 2026-09-18+5 from 4.05em to fit the
-     stacked deadline layout below without clipping) is shared by every
-     column, deadline variant or not, so that alignment holds regardless
-     of which variant a given column is showing. */
+  /* ch-hint is ALWAYS rendered (renderColumns never omits it, even with
+     nothing to say) and fixed to a set height, whether or not it actually
+     holds that much text — a column with no hint still reserves the same
+     space as one with a full deadline block, so every column-head comes
+     out identically tall and the head/body divider lines up across the
+     whole board, not just within a column that happens to have more or
+     less to say than its neighbours. Height (5.4em, bumped 2026-09-18+5
+     from 4.05em to fit the stacked deadline layout below without
+     clipping) is shared by every column, deadline variant or not, so
+     that alignment holds regardless of which variant a given column is
+     showing. The "Requires: a) … b) …" line that used to sit below this
+     (ch-requires) was dropped entirely 2026-09-18+5, per Eduardo — not
+     just its own label, the whole segment. */
   .column-head .ch-hint{
     margin-top:4px; height:5.4em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden;
@@ -436,13 +438,6 @@
   .column-head .ch-hint.ch-hint-deadlines .hint-label{white-space:nowrap;}
   .column-head .ch-hint.ch-hint-deadlines .hint-value{white-space:normal; word-break:break-word; display:block;}
   .column-head .ch-hint .hint-overdue{color:var(--danger-text); font-weight:600;}
-  /* What it takes to leave this column for the next one — see
-     columnRequirementsFor. Own line from ch-hint above (deadline/plain
-     hint text), since a rush review column can show both at once. */
-  .column-head .ch-requires{
-    margin-top:2px; height:2.7em; font-size:11px; line-height:1.35; color:var(--muted);
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden;
-  }
   .column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
   .column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
 
@@ -2805,62 +2800,6 @@
     return gi !== -1 && fi !== -1 && ti !== -1 && fi <= gi && ti > gi;
   }
 
-  // What it structurally takes to move a card OUT of this column into the
-  // next one in the active order (2026-09-14, per Eduardo) — for the
-  // column-header caption, not for gating an actual move (see
-  // advanceBlockReason/abstractAcceptBlockReason for that). Deliberately
-  // NOT evaluated against any particular card: this describes the shape of
-  // the column→column transition itself, the same for every card sitting
-  // in it, so it has to mirror whichever real gates those two functions
-  // actually enforce or it'll drift out of sync with what really blocks a
-  // move — each condition below matches one of theirs by name.
-  // Returns an ordered array of short requirement strings, or an empty
-  // array if nothing gates this particular move at all (most columns).
-  function columnRequirementsFor(status, board){
-    var order = effectiveStatusOrder(board);
-    var next = statusAt(status, 1, order);
-    if (!next) return [];
-    var reqs = [];
-    // Mirrors abstractAcceptBlockReason's own two checks — both pipelines,
-    // see moveButtonsInnerHtml's own comment. Moved here from 'abstract'
-    // to 'paper' (2026-09-18+4, alongside abstractAcceptBlockReason's own
-    // trigger) now that `paper` is its own stage again.
-    if (status === 'paper'){
-      reqs.push('authors added');
-      reqs.push('under the per-author cap');
-    }
-    // Mirrors advanceBlockReason's checklist-gate check.
-    if (crossesGate(status, next, order)) reqs.push('checklists complete');
-    // Mirrors advanceBlockReason's deliverable-link checks (2026-09-18),
-    // plus its reviewer-assignment check (moved here from 'paper' to
-    // 'abstract' 2026-09-18+1, per Eduardo — see advanceBlockReason's own
-    // comment).
-    if (next === 'pitch') reqs.push('pitch materials added');
-    if (next === 'abstract') reqs.push('co-authors added');
-    if (next === 'abstract') reqs.push('Overleaf link added');
-    if (next === 'abstract') reqs.push('reviewers assigned');
-    // New (2026-09-18+4): mirrors advanceBlockReason's abstractReviewState
-    // gate on entering `paper`.
-    if (next === 'paper') reqs.push('senior reviewer approval');
-    if (next === 'rebuttal') reqs.push('submission link added');
-    if (next === 'camera_ready') reqs.push('rebuttal doc added');
-    if (next === 'conference') reqs.push('camera-ready link added');
-    return reqs;
-  }
-
-  // "a) authors added b) under the per-author cap" — trusted HTML (see
-  // columnHintFor's own note on why that's fine here: nothing in
-  // columnRequirementsFor's output is ever user-typed text). No leading
-  // "Requires:" label (dropped 2026-09-18+5, per Eduardo — the lettered
-  // list already reads fine on its own under a column that's clearly
-  // about what's needed to advance).
-  function columnRequirementsHtml(status, board){
-    var reqs = columnRequirementsFor(status, board);
-    if (!reqs.length) return '';
-    var letters = 'abcdefghij';
-    return reqs.map(function(r, i){ return letters[i] + ') ' + r; }).join(' ');
-  }
-
   // Authors are fixed as soon as a paper REACHES Abstract — the
   // real venue locks the author list once the abstract's actually gone
   // in, so the app matches that from this point on (changed 2026-09-18,
@@ -3423,11 +3362,9 @@
       // wants ch-hint-deadlines — the "No deadline set" fallback inside
       // columnHintFor is plain text and should keep ch-hint's own layout.
       var isDeadlineHint = !!(board && board.rushMode && (status === 'register' || status === 'abstract' || status === 'paper') && rushColumnRealDeadline(status, board));
-      var reqs = columnRequirementsHtml(status, board);
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
         '<div class="ch-hint' + (isDeadlineHint ? ' ch-hint-deadlines' : '') + '">' + hint + '</div>' +
-        '<div class="ch-requires">' + reqs + '</div>' +
       '</div>';
       html += '<div class="column-body">';
       if (cardsForStatus.length === 0){
@@ -3445,7 +3382,6 @@
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>Other</span><span class="count">' + orphaned.length + '</span></div>' +
         '<div class="ch-hint">Status no longer maps to a column</div>' +
-        '<div class="ch-requires"></div>' +
       '</div>';
       html += '<div class="column-body">';
       if (orphaned.length === 0){
