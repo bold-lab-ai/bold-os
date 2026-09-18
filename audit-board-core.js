@@ -181,7 +181,7 @@
     register: 'Waiting for pitch',
     pitch: 'Waiting for abstract submission',
     abstract: 'Reviewer approval + authors’ checklist',
-    paper: 'Internal review — reviewers’ checklist must be complete',
+    paper: 'Reviewer approval + rebuttal document',
     rebuttal: 'Waiting for reviews, then rebuttal',
     camera_ready: 'Waiting for the camera-ready submission',
     conference: 'Planning for conference'
@@ -328,7 +328,7 @@
     loadingBoards: true,
     loadingCards: false,
     search: { query: '', field: 'all', reviewState: 'all' },
-    detailTab: 'author', // 'author' | 'review' — card detail page tab (2026-09-18+19)
+    detailTab: 'review', // 'review' | 'author' — card detail page tab (2026-09-18+19), For reviewers first
     discussionReplyOpenId: null,
     checklistCommentOpenId: null, // checklist item whose feedback thread is expanded
     checklistReplyOpenId: null,   // comment within it whose reply box is open

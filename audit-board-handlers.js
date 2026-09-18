@@ -228,6 +228,10 @@
       // checklist-based reviewFilterState instead). See
       // advanceBlockReason's abstract->paper gate and reviewStateBadgeHtml.
       abstractReviewState: 'in_review',
+      // Paper's own approval (2026-09-18+18, per Eduardo) — same shape as
+      // abstractReviewState, set by the reviewers' Approve/Request changes
+      // buttons on the Review tab; gates Paper -> Rebuttal.
+      paperReviewState: 'in_review',
       outcome: '',
       // Deliverable-per-stage redesign (2026-09-18, per Eduardo): each
       // link below is what its stage's own advance gate requires before
@@ -286,22 +290,11 @@
     // is defensive rather than load-bearing the way it used to be — kept
     // anyway, since passing the wrong order here would still silently
     // misread a move if Rush mode's columns ever diverge again.
-    if (crossesGate(card.status, newStatus, order) && !checklistComplete(card)){
-      var ac = authorChecklistCounts(card);
-      var cc = checklistCounts(card);
-      var summary = 'authors ' + ac.done + '/' + ac.total + ', ' + REVIEW_ROLES.map(function(role){
-        return REVIEW_ROLE_LABELS[role].toLowerCase() + ' ' + cc[role] + '/' + cc.total;
-      }).join(', ');
-      showToast('Both checklists must be complete before ' + STATUS_LABELS[GATE_STATUS] + ' — ' + summary + '.', 'error');
-      renderBoard(); // undo any dropdown selection
-      return;
-    }
-
-    // Same gate as advanceBlockReason() — see its own comment for why
-    // this is (normally redundant with, but kept alongside) the
-    // checklistComplete() check just above.
-    if (crossesGate(card.status, newStatus, order) && reviewFilterState(card) !== 'approved'){
-      showToast('Both reviewers must approve before ' + STATUS_LABELS[GATE_STATUS] + '.', 'error');
+    // Same gate as advanceBlockReason() — see its own comment
+    // (2026-09-18+18, per Eduardo): the reviewers' explicit approval of
+    // the paper, not the checklists.
+    if (crossesGate(card.status, newStatus, order) && card.paperReviewState !== 'approved'){
+      showToast('Waiting for the reviewers’ approval before ' + STATUS_LABELS[GATE_STATUS] + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
     }
@@ -318,6 +311,12 @@
     // crossing forward. Moved here from Paper Submitted (2026-09-18+1,
     // per Eduardo) to match advanceBlockReason's own gate — see its
     // comment for why.
+    if (isAdvance && newStatus === 'abstract' && abstractAcceptBlockReason(card, board, state.cards)){
+      showToast(abstractAcceptBlockReason(card, board, state.cards) + '.', 'error');
+      renderBoard(); // undo any dropdown selection
+      return;
+    }
+
     if (isAdvance && newStatus === 'abstract' && !reviewersAssigned(card)){
       showToast('Assign a junior and a senior reviewer before moving to ' + STATUS_LABELS.abstract + '.', 'error');
       renderBoard(); // undo any dropdown selection
@@ -342,6 +341,20 @@
     // stopping the dropdown from skipping the authors' checklist.
     if (isAdvance && newStatus === 'paper' && !authorChecklistComplete(card)){
       showToast('Finish the authors’ checklist before moving to ' + STATUS_LABELS.paper + '.', 'error');
+      renderBoard(); // undo any dropdown selection
+      return;
+    }
+
+    // Same two link gates as advanceBlockReason() (2026-09-18+18, per
+    // Eduardo): the venue submission link now gates leaving Abstract (the
+    // paper's real submission), the rebuttal document gates leaving Paper.
+    if (isAdvance && newStatus === 'paper' && !card.submissionLink){
+      showToast('Add the OpenReview submission link before moving to ' + STATUS_LABELS.paper + '.', 'error');
+      renderBoard(); // undo any dropdown selection
+      return;
+    }
+    if (isAdvance && newStatus === 'rebuttal' && !card.rebuttalDocLink){
+      showToast('Add the rebuttal document link before moving to ' + STATUS_LABELS.rebuttal + '.', 'error');
       renderBoard(); // undo any dropdown selection
       return;
     }

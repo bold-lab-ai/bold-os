@@ -2,10 +2,26 @@
 
   // ---------- card detail ----------
 
+  // Which panes of the card page each stage gets (2026-09-18+20, per
+  // Eduardo). review = a reviewer has something to do or assign at that
+  // stage (Registered/Pitch: the reviewer picker, a gate on submitting the
+  // abstract; Abstract/Paper/Rebuttal: the reviews themselves); author = an
+  // author has something to do. Camera-ready has no review left, Accepted
+  // has neither: the pipeline's finished.
+  var STAGE_TABS = {
+    register:     { author: true, review: true },
+    pitch:        { author: true, review: true },
+    abstract:     { author: true, review: true },
+    paper:        { author: true, review: true },
+    rebuttal:     { author: true, review: true },
+    camera_ready: { author: true, review: false },
+    conference:   { author: false, review: false }
+  };
+
   function openCard(cardId){
     state.view = 'card';
     state.currentCardId = cardId;
-    state.detailTab = 'author';
+    state.detailTab = 'review';
     state.discussionReplyOpenId = null;
     state.checklistCommentOpenId = null;
     state.checklistReplyOpenId = null;
@@ -33,37 +49,32 @@
   // card.abstractReviewState straight via onSetAbstractReview below.
   function abstractApprovalHtml(card){
     if (card.status !== 'abstract') return '';
-    var v = card.abstractReviewState || 'in_review';
-    // Two independent conditions gate the move to Paper now
-    // (2026-09-18+16, per Eduardo, added the authors' checklist —
-    // authorChecklistComplete — alongside the senior reviewer's
-    // Approve): list whichever of the two is still outstanding, rather
-    // than the banner only ever mentioning the reviewer's own call, which
-    // is now only half the picture. See advanceBlockReason's own comment.
-    var checklistDone = authorChecklistComplete(card);
-    var outstanding = [];
-    if (v !== 'approved') outstanding.push('the senior reviewer’s Approve');
-    if (!checklistDone) outstanding.push('the authors’ checklist');
-    var done = v === 'approved' && checklistDone;
-    return '<div class="gate-banner' + (done ? ' done' : '') + '" id="abstractApproval">' +
-      'Abstract review &mdash; ' + reviewStateBadgeHtml(v) + ' ' +
-      (done
-        ? 'This card can move to ' + STATUS_LABELS.paper + '.'
-        : 'Still needs ' + outstanding.join(' and ') + ' before this card can move to ' + STATUS_LABELS.paper + '.') +
-      '<div class="gate-banner-actions">' +
-        '<button class="btn" type="button" data-abstract-review="approved"' + (v === 'approved' ? ' disabled' : '') + '>Approve</button>' +
-        '<button class="btn-text danger" type="button" data-abstract-review="changes_requested"' + (v === 'changes_requested' ? ' disabled' : '') + '>Request changes</button>' +
-      '</div>' +
+    return reviewActionsHtml('data-abstract-review', card.abstractReviewState || 'in_review');
+  }
+
+  // Just the two buttons (2026-09-18+21, per Eduardo — the status banner
+  // that used to sit around them, "Abstract review — In review. Still
+  // needs …", is gone; the state is on the badge in the page header, and
+  // what's still missing shows next to the disabled Submit button). The
+  // button matching the current state is disabled.
+  function reviewActionsHtml(dataAttr, v){
+    return '<div class="review-actions">' +
+      '<button class="btn btn-primary" type="button" ' + dataAttr + '="approved"' + (v === 'approved' ? ' disabled' : '') + '>Approve</button>' +
+      '<button class="btn-text danger" type="button" ' + dataAttr + '="changes_requested"' + (v === 'changes_requested' ? ' disabled' : '') + '>Request changes</button>' +
     '</div>';
   }
 
-  function onSetAbstractReview(cardId, value){
+  function onSetAbstractReview(cardId, value){ onSetStageReview(cardId, 'abstractReviewState', value); }
+  function onSetPaperReview(cardId, value){ onSetStageReview(cardId, 'paperReviewState', value); }
+
+  function onSetStageReview(cardId, field, value){
     var boardId = state.currentBoardId;
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
-    if (!card || card.abstractReviewState === value) return;
+    if (!card || card[field] === value) return;
     var prev = state.cards;
     var next = state.cards.map(function(c){
-      return c.id === cardId ? Object.assign({}, c, { abstractReviewState: value, updatedAt: Date.now() }) : c;
+      var patch = { updatedAt: Date.now() }; patch[field] = value;
+      return c.id === cardId ? Object.assign({}, c, patch) : c;
     });
     state.cards = next;
     renderCardDetail();
@@ -78,27 +89,34 @@
     });
   }
 
-  function gateBannerHtml(card){
-    var ac = authorChecklistCounts(card);
-    var c = checklistCounts(card);
-    var done = checklistComplete(card);
-    var rv = card.reviewers || {};
-    var counts = 'authors <strong>' + ac.done + '/' + ac.total + '</strong>, ' + REVIEW_ROLES.map(function(role){
-      return REVIEW_ROLE_LABELS[role].toLowerCase() + ' <strong>' + c[role] + '/' + c.total + '</strong>';
-    }).join(', ');
-    var noRev = !rv.junior || !rv.senior;
-    return '<div class="gate-banner' + (done ? ' done' : '') + '" id="gateBanner">' +
-      'Checklists &mdash; ' + counts + '. ' +
-      (done
-        ? 'Both checklists complete &mdash; this paper can be moved to ' + STATUS_LABELS[GATE_STATUS] + '.'
-        : 'Both the authors’ and the reviewers’ checklists must be complete before this paper can reach ' + STATUS_LABELS[GATE_STATUS] + '.') +
-      (noRev ? ' <strong>Assign a junior and a senior reviewer</strong> below.' : '') +
-    '</div>';
+  // Paper's reviewer approval (2026-09-18+18, per Eduardo) — the same
+  // Approve / Request changes pair as the Abstract stage, on
+  // card.paperReviewState. Together with the rebuttal document link (the
+  // authors' half, Author tab) it's what unblocks Submit rebuttal; see
+  // advanceBlockReason. The reviewers' checklist below it is a working
+  // aid now, not a gate.
+  // The box at the top of the For-reviewers tab — same look as the
+  // authors' one (cl-agent-note): what a reviewer does at this stage, and
+  // on Paper the coding-agent tip. Stages with nothing for reviewers yet
+  // get no box.
+  function reviewerInstructionsHtml(card, stage){
+    var lead = {
+      register: 'Nothing to review yet. Assign a junior and a senior reviewer above before the abstract is submitted.',
+      pitch: 'Nothing to review yet. Assign a junior and a senior reviewer above before the abstract is submitted.',
+      abstract: 'To approve, check that the abstract is sound enough to justify a full paper, and that no listed author is over the venue’s papers-per-author limit. We check the limit automatically, but only against papers on this board, so it can miss papers elsewhere.',
+      paper: 'Work through the checklist below, then approve or request changes.'
+    }[stage];
+    if (!lead) return '';
+    var tip = stage === 'paper'
+      ? '<p class="note-tip">Working through the checklist with a coding agent? Point it at <a href="https://raw.githubusercontent.com/bold-lab-ai/bold-os/main/checklists/reviewers/AGENTS.md" target="_blank" rel="noopener">checklists/reviewers/AGENTS.md</a> — a skeptical pre-review to speed up your own pass, not a replacement for it.</p>'
+      : '';
+    return '<div class="cl-agent-note"><p class="note-lead">' + lead + '</p>' + tip + '</div>';
   }
 
-  // ---------- Format / Science checklists, Discussion (see the Author/
-  // Review/Discussion sections in renderCardDetail for how these are
-  // actually laid out on the page — no tab bar any more) ----------
+  function paperApprovalHtml(card){
+    if (card.status !== 'paper') return '';
+    return reviewActionsHtml('data-paper-review', card.paperReviewState || 'in_review');
+  }
 
   function threadCount(messages){
     return (messages || []).reduce(function(n, m){ return n + 1 + (m.replies ? m.replies.length : 0); }, 0);
@@ -166,12 +184,16 @@
   // party in the loop to leave a note for. threadCount/
   // checklistItemThreadHtml/state.checklistCommentOpenId etc. are left
   // alone — reviewerChecklistTabHtml still uses all of them.
-  function authorChecklistTabHtml(card){
+  // `instructions` (optional): a lead sentence shown in the note box above
+  // the checklist, so the box is the authors' whole set of instructions.
+  function authorChecklistTabHtml(card, instructions, beforeChecklistHtml){
     var items = checklistItemsFor(card, 'format');
     var canAct = !!(state.currentUser && isCardAuthorEmail(card, state.currentUser.email));
     var html = '<div class="cl-wrap">';
-    html += '<p class="cl-agent-note">Working through this with a coding agent? Point it at <a href="https://raw.githubusercontent.com/bold-lab-ai/bold-os/main/checklists/format/AGENTS.md" target="_blank" rel="noopener">checklists/format/AGENTS.md</a> — a pre-check for formatting and policy compliance, before a human ticks these.</p>';
-    html += '<div class="cl-head single"><span></span><span>Author</span></div>';
+    html += '<div class="cl-agent-note">' + (instructions ? '<p class="note-lead">' + instructions + '</p>' : '') + '<p class="note-tip">If you are working with a coding agent, point them at <a href="https://raw.githubusercontent.com/bold-lab-ai/bold-os/main/checklists/format/AGENTS.md" target="_blank" rel="noopener">checklists/format/AGENTS.md</a> — a pre-check for formatting and policy compliance, before a human ticks these.</p></div>';
+    // Anything that has to sit between the note and the checklist rows
+    // (the Abstract stage's venue submission link).
+    if (beforeChecklistHtml) html += beforeChecklistHtml;
     var lastCat = null;
     items.forEach(function(it){
       if (it.category !== lastCat){
@@ -196,7 +218,6 @@
     var openId = state.checklistCommentOpenId;
     var access = checklistTickAccess(card);
     var html = '<div class="cl-wrap">';
-    html += '<p class="cl-agent-note">Working through this with a coding agent? Point it at <a href="https://raw.githubusercontent.com/bold-lab-ai/bold-os/main/checklists/reviewers/AGENTS.md" target="_blank" rel="noopener">checklists/reviewers/AGENTS.md</a> — a skeptical pre-review to speed up your own pass, not a replacement for it.</p>';
     html += '<div class="cl-head"><span></span>' + REVIEW_ROLES.map(function(role){ return '<span>' + REVIEW_ROLE_LABELS[role] + '</span>'; }).join('') + '</div>';
     var lastCat = null;
     items.forEach(function(it){
@@ -437,37 +458,48 @@
       return;
     }
 
-    var overdue = isOverdue(card, board);
-    var dl = effectiveDeadline(card, board);
-    var effective = displayStatus(card, board);
-    var rushCutoff = rushColumnCutoff(effective, board);
-    var rushOverdue = isRushColumnPastCutoff(effective, board);
 
     var html = '<div class="detail">';
     html += '<a href="#" class="detail-back" id="detailBack">&larr; Back to ' + (board ? escapeHtml(board.label) : 'board') + '</a>';
 
+    // Title, then a line under it with the badges (stage first, then the
+    // review / rebuttal / outcome / overdue ones) on the left and Remove
+    // paper pushed to the right (2026-09-18+23, per Eduardo).
     html += '<div class="detail-head">';
     html += '<h2>' + escapeHtml(card.title) + '</h2>';
-    if (STATUS_LABELS[card.status]) html += '<span class="badge" style="background:var(--accent-dim);color:var(--accent);">' + escapeHtml(statusLabelFor(card.status, board)) + '</span>';
+    html += '<div class="detail-badges">';
+    if (STATUS_LABELS[card.status]) html += '<span class="badge badge-stage">' + escapeHtml(statusLabelFor(card.status, board)) + '</span>';
     if (card.status === 'abstract') html += reviewStateBadgeHtml(card.abstractReviewState || 'in_review');
-    if (card.status === 'paper') html += reviewStateBadgeHtml(reviewFilterState(card));
+    if (card.status === 'paper') html += reviewStateBadgeHtml(card.paperReviewState || 'in_review');
     if (card.status === 'rebuttal') html += rebuttalBadgeHtml(card);
     if (shouldShowOutcomeBadge(card)) html += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
-    if (overdue || rushOverdue) html += '<span class="badge badge-overdue">Overdue</span>';
+    html += overdueBadgesHtml(card, board);
+    html += '<button class="btn-text danger detail-remove" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
     html += '</div>';
-    if (!STATUS_LABELS[card.status]) html += '<div style="font-size:12px;color:var(--warn-text);background:var(--warn-bg);padding:6px 10px;margin-top:10px;border-radius:var(--radius);">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn’t a column anymore &mdash; pick a new one below.</div>';
+    html += '</div>';
+    if (!STATUS_LABELS[card.status]) html += '<div style="font-size:12px;color:var(--warn-text);background:var(--warn-bg);padding:6px 10px;margin-top:10px;border-radius:var(--radius);">Status &ldquo;' + escapeHtml(card.status) + '&rdquo; isn’t a column anymore.</div>';
 
-    html += '<div class="detail-controls">';
-    html += moveButtonsHtml(card, board);
-    html += '<select aria-label="Status" data-status-for="' + escapeHtml(card.id) + '">' + statusOptionsHtml(card.status, effectiveStatusOrder(board), board) + '</select>';
-    html += '<button class="btn" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button>';
-    html += '<button class="btn-text danger" type="button" data-remove="' + escapeHtml(card.id) + '">Remove paper</button>';
-    html += '</div>';
+    // Edit fields lives with the details it edits, right-aligned on the
+    // rule above them, not in a toolbar of its own.
+    html += '<div class="detail-details-head"><button class="btn-text" type="button" data-edit="' + escapeHtml(card.id) + '">Edit fields</button></div>';
 
     html += '<dl class="detail-grid">';
-    if (dl) html += '<dt>' + (card.status === 'rebuttal' ? 'Rebuttal due' : 'Deadline') + '</dt><dd>' + formatDate(dl) + (card.status !== 'rebuttal' ? ' <span style="color:var(--muted);">(venue deadline)</span>' : '') + '</dd>';
-    if (rushCutoff) html += '<dt>Rush cutoff</dt><dd' + (rushOverdue ? ' style="color:var(--danger-text);"' : '') + '>' + formatDateTime(rushCutoff) + ' <strong>(' + formatTimeLeft(rushCutoff) + ')</strong></dd>';
     if (card.authors && card.authors.length) html += '<dt>Authors</dt><dd>' + card.authors.map(function(a){ return escapeHtml(a.name || a.email || '?'); }).join(', ') + '</dd>';
+    // Junior / senior reviewer (moved up from the For-reviewers tab,
+    // 2026-09-18+21, per Eduardo) — who's assigned is a fact about the
+    // paper, so it lives with the rest of the details, not in one pane.
+    // Read-only here (2026-09-18+22, per Eduardo) — reviewers are
+    // assigned from the board tile's own picker (renderCard), not from
+    // the card page.
+    var reviewerNameHtml = function(role){
+      var email = (card.reviewers || {})[role];
+      return email ? escapeHtml(personName(email)) : '<span style="color:var(--muted);">Not assigned</span>';
+    };
+    html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd>' + reviewerNameHtml('junior') +
+      (card.status === 'paper' ? ' ' + reviewStatePillHtml(card, 'junior') : '') + '</dd>';
+    html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd>' + reviewerNameHtml('senior') +
+      (card.status === 'paper' ? ' ' + reviewStatePillHtml(card, 'senior') : '') + '</dd>';
+    if (card.reviewNotes) html += '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>';
     if (card.overleafLink) html += '<dt>Overleaf</dt><dd><a href="' + escapeHtml(card.overleafLink) + '" target="_blank" rel="noopener">' + escapeHtml(card.overleafLink) + '</a></dd>';
     if (card.abstractText) html += '<dt>Abstract</dt><dd class="abstract-render">' + renderAbstractHtml(card.abstractText) + '</dd>';
     if (card.pitchLink) html += '<dt>Pitch materials</dt><dd><a href="' + escapeHtml(card.pitchLink) + '" target="_blank" rel="noopener">Open</a></dd>';
@@ -476,7 +508,6 @@
     if (card.rebuttalDeadline) html += '<dt>Rebuttal deadline</dt><dd>' + formatDate(card.rebuttalDeadline) + '</dd>';
     if (card.rebuttalDocLink) html += '<dt>Rebuttal doc</dt><dd><a href="' + escapeHtml(card.rebuttalDocLink) + '" target="_blank" rel="noopener">Open</a></dd>';
     if (card.cameraReadyLink) html += '<dt>Camera-ready</dt><dd><a href="' + escapeHtml(card.cameraReadyLink) + '" target="_blank" rel="noopener">Open</a></dd>';
-    if (card.correspondingAuthorEmail) html += '<dt>Corresponding author</dt><dd><a href="mailto:' + escapeHtml(card.correspondingAuthorEmail) + '">' + escapeHtml(card.correspondingAuthorEmail) + '</a></dd>';
     if (card.computeEstimate) html += '<dt>Compute estimate</dt><dd>' + escapeHtml(card.computeEstimate) + '</dd>';
     html += '<dt>Submitted by</dt><dd>' + (card.submittedBy && card.submittedBy.name
       ? escapeHtml(card.submittedBy.name) + (card.submittedBy.email ? ' <span style="color:var(--muted);">(' + escapeHtml(card.submittedBy.email) + ')</span>' : '')
@@ -505,7 +536,6 @@
     // only the reviewers' Science checklist and the submission-link
     // control below.
     if (card.status === 'abstract'){
-      authorBody += '<h3 class="detail-subhead">Submit full paper</h3>' + authorChecklistTabHtml(card);
       // Save + Submit at the end of this block (2026-09-18+17, per
       // Eduardo), same pair the other two Author-section blocks end
       // with. "Save" has nothing new to persist — each checklist box
@@ -523,9 +553,13 @@
       // for this same transition keeps this one a plain, unconfirmed
       // move, not a false "submit to the venue" prompt.
       var checklistBlockReason = advanceBlockReason(card, 'paper', board);
+      // The venue submission link (2026-09-18+18, per Eduardo — moved
+      // here from Paper: leaving Abstract is the real submission now).
+      var venueLinkField = '<div class="field"><label for="stageSubmissionLink">OpenReview submission link</label><input type="url" id="stageSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=aK7xQp2LrZ"></div>';
+      authorBody += authorChecklistTabHtml(card, 'Once the abstract is approved, complete the checklist, add the OpenReview link and submit.', venueLinkField);
       authorBody += '<div class="stage-fields-actions">' +
         '<button class="btn" type="button" data-stage-checklist-save="' + escapeHtml(card.id) + '">Save</button>' +
-        '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="paper" data-move-label="abstract-approved-advance"' +
+        '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="paper" data-move-label="Submit paper"' +
           (checklistBlockReason ? ' disabled title="' + escapeHtml(checklistBlockReason) + '"' : ' title="Move to ' + escapeHtml(statusLabelFor('paper', board)) + '"') + '>Submit</button>' +
         (checklistBlockReason ? '<span class="stage-fields-hint">' + escapeHtml(checklistBlockReason) + '</span>' : '') +
       '</div>';
@@ -534,42 +568,40 @@
       authorBody += paperSubmissionFieldsHtml(card, board);
     }
 
-    var reviewBody = '<dl class="detail-grid">' +
-      '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') +
-        (card.status === 'paper' ? reviewStatePillHtml(card, 'junior') : '') + '</dd>' +
-      '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'senior') +
-        (card.status === 'paper' ? reviewStatePillHtml(card, 'senior') : '') + '</dd>' +
-      (card.reviewNotes ? '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>' : '') +
-    '</dl>';
+    var reviewBody = reviewerInstructionsHtml(card, displayStatus(card, board));
     reviewBody += abstractApprovalHtml(card);
     if (card.status === 'paper'){
-      // gateBannerHtml describes the checklist gate (GATE_AFTER_STATUS) —
-      // only meaningful while the card is actually sitting at Paper.
-      reviewBody += gateBannerHtml(card);
+      // Only meaningful while the card is actually sitting at Paper.
+      reviewBody += paperApprovalHtml(card);
       reviewBody += '<h3 class="detail-subhead">Checklist for reviewers</h3>' + reviewerChecklistTabHtml(card);
     }
     var discCount = threadCount(card.discussion);
-    reviewBody += '<h3 class="detail-subhead">Discussion' +
+    var discussionHtml = '<h3 class="detail-subhead">Discussion' +
       (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</h3>' + discussionTabHtml(card);
+    reviewBody += discussionHtml;
 
-    // Author/Review as tabs (2026-09-18+19, per Eduardo — back from the
-    // always-both-visible sections at 2026-09-18+11). No tab bar at all
-    // when Author has nothing to show (e.g. a non-author viewer, or a
-    // stage — Pitch, Rebuttal, Camera-ready, Accepted — where neither
-    // abstractSubmissionFieldsHtml, the checklist, nor
-    // paperSubmissionFieldsHtml render anything): same "skip the tab bar
-    // for a single visible pane" shape the old Format/Science/Discussion
-    // tabs used outside Paper, rather than showing an empty "Author" tab
-    // next to a real "Review" one.
-    if (!authorBody){
+    // For reviewers / For authors as tabs — which ones a stage gets is
+    // STAGE_TABS' call, not whether the viewer happens to have something
+    // to fill in (2026-09-18+20, per Eduardo): a stage with both a review
+    // and author actions always shows both, reviewers first; a stage with
+    // only one shows that pane alone, no tab bar; a finished stage shows
+    // neither. Discussion is part of the reviewers' pane, so a stage
+    // without one shows it as a plain section instead of losing it.
+    var tabs = STAGE_TABS[displayStatus(card, board)] || { author: true, review: true };
+    var authorPane = authorBody || '<p style="color:var(--muted);font-size:13.5px;margin:0;">Nothing for authors to fill in here.</p>';
+    if (tabs.author && tabs.review){
+      var detailTab = state.detailTab === 'author' ? 'author' : 'review';
+      html += '<div class="detail-tabbar" role="tablist" aria-label="For reviewers or for authors">' +
+        '<button class="detail-tab' + (detailTab === 'review' ? ' active' : '') + '" type="button" role="tab" id="detail-tab-btn-review" data-detail-tab="review" aria-selected="' + (detailTab === 'review') + '">For reviewers' + (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</button>' +
+        '<button class="detail-tab' + (detailTab === 'author' ? ' active' : '') + '" type="button" role="tab" id="detail-tab-btn-author" data-detail-tab="author" aria-selected="' + (detailTab === 'author') + '">For authors</button>' +
+      '</div>';
+      html += '<div class="detail-tabpanel active">' + (detailTab === 'author' ? authorPane : reviewBody) + '</div>';
+    } else if (tabs.author){
+      html += '<div class="detail-tabpanel active">' + authorPane + discussionHtml + '</div>';
+    } else if (tabs.review){
       html += '<div class="detail-tabpanel active">' + reviewBody + '</div>';
     } else {
-      var detailTab = state.detailTab === 'review' ? 'review' : 'author';
-      html += '<div class="detail-tabbar" role="tablist" aria-label="Author or Review">' +
-        '<button class="detail-tab' + (detailTab === 'author' ? ' active' : '') + '" type="button" role="tab" id="detail-tab-btn-author" data-detail-tab="author" aria-selected="' + (detailTab === 'author') + '">Author</button>' +
-        '<button class="detail-tab' + (detailTab === 'review' ? ' active' : '') + '" type="button" role="tab" id="detail-tab-btn-review" data-detail-tab="review" aria-selected="' + (detailTab === 'review') + '">Review' + (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</button>' +
-      '</div>';
-      html += '<div class="detail-tabpanel active">' + (detailTab === 'review' ? reviewBody : authorBody) + '</div>';
+      html += '<div class="detail-tabpanel active">' + discussionHtml + '</div>';
     }
 
     html += '</div>';
@@ -584,6 +616,9 @@
     });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-abstract-review]'), function(btn){
       btn.addEventListener('click', function(){ onSetAbstractReview(card.id, btn.getAttribute('data-abstract-review')); });
+    });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-paper-review]'), function(btn){
+      btn.addEventListener('click', function(){ onSetPaperReview(card.id, btn.getAttribute('data-paper-review')); });
     });
     var discNewBtn = document.getElementById('discNewSubmit');
     if (discNewBtn) discNewBtn.addEventListener('click', function(){ onPostDiscussion(card.id); });
@@ -668,7 +703,7 @@
     var stageFieldsSaveBtn = els.boardRegion.querySelector('[data-stage-fields-save]');
     if (stageFieldsSaveBtn) stageFieldsSaveBtn.addEventListener('click', function(){ onSaveAbstractFields(stageFieldsSaveBtn.getAttribute('data-stage-fields-save')); });
     var stagePaperSaveBtn = els.boardRegion.querySelector('[data-stage-paper-save]');
-    if (stagePaperSaveBtn) stagePaperSaveBtn.addEventListener('click', function(){ onSavePaperSubmissionLink(stagePaperSaveBtn.getAttribute('data-stage-paper-save')); });
+    if (stagePaperSaveBtn) stagePaperSaveBtn.addEventListener('click', function(){ onSavePaperRebuttalDoc(stagePaperSaveBtn.getAttribute('data-stage-paper-save')); });
     var stageChecklistSaveBtn = els.boardRegion.querySelector('[data-stage-checklist-save]');
     if (stageChecklistSaveBtn) stageChecklistSaveBtn.addEventListener('click', onConfirmChecklistSaved);
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cl]'), function(box){
@@ -715,7 +750,7 @@
     // wholly within `abstract` now — there's no separate "Reviewed"
     // status to jump to any more (see STATUS_ORDER's own comment).
     // Completing it just unblocks the "Submit paper" button
-    // (advanceBlockReason/abstractAcceptBlockReason), same as any other
+    // (advanceBlockReason), same as any other
     // gate — the submitter still clicks it themselves, since submitting
     // the paper is a real external act only they can actually do. This
     // toast is the one thing that replaces the old auto-advance
@@ -759,8 +794,6 @@
       // Common case: refresh just the gate banner and the move controls,
       // leaving the checklist checkboxes and scroll position alone.
       var card2 = getCurrentCard();
-      var banner = document.getElementById('gateBanner');
-      if (banner && card2) banner.outerHTML = gateBannerHtml(card2);
       var moveWrap = els.boardRegion.querySelector('.detail-controls .card-move');
       if (moveWrap && card2){
         var moveBoard = getCurrentBoard();
@@ -833,14 +866,30 @@
     });
   }
 
-  // Nothing new to actually persist here — every checklist box already
-  // saves itself the moment it's ticked (onToggleAuthorChecklist above).
-  // Exists purely so "Submit full paper" ends with the same Save+Submit
-  // pair abstractSubmissionFieldsHtml/paperSubmissionFieldsHtml do, for
-  // the same reassurance/interaction consistency (2026-09-18+17, per
-  // Eduardo).
+  // Save on the Abstract stage's "Submit full paper" block (2026-09-18+18):
+  // every checklist box already saves itself the moment it's ticked
+  // (onToggleAuthorChecklist above), so all that's left to persist is the
+  // venue submission link. A blank field just saves nothing — the gate,
+  // not this button, is what insists on a link.
   function onConfirmChecklistSaved(){
-    showToast('Saved.', 'ok');
+    var input = document.getElementById('stageSubmissionLink');
+    var value = input ? input.value.trim() : '';
+    var boardId = state.currentBoardId;
+    var card = getCurrentCard();
+    if (!card || !value || value === (card.submissionLink || '')){ showToast('Saved.', 'ok'); return; }
+    var prev = state.cards;
+    var next = state.cards.map(function(c){ return c.id === card.id ? Object.assign({}, c, { submissionLink: value, updatedAt: Date.now() }) : c; });
+    state.cards = next;
+    renderCardDetail();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast(saveErrorMessage('Could not save — try again.'), 'error');
+      } else {
+        showToast('Saved.', 'ok');
+      }
+    });
   }
 
   function renderAll(){

@@ -32,7 +32,7 @@
   // stage.
   var ADVANCE_LABELS = {
     pitch: 'Submit abstract',
-    paper: 'Submit paper',
+    paper: 'Submit rebuttal',
     rebuttal: 'Submit rebuttal',
     camera_ready: 'Submit camera-ready'
   };
@@ -67,13 +67,10 @@
   //
   // The rgt (Advance/Submit) gate always runs advanceBlockReason first,
   // unchanged — that still carries e.g. the "assign a junior and a senior
-  // reviewer first" check on entering `abstract` either way. Submit paper
-  // (leaving `paper`, for `rebuttal`) ALSO checks abstractAcceptBlockReason
-  // on top of that (authors present + nobody over the per-author cap) —
-  // now applies in both pipelines (2026-09-18: used to be Rush-mode-only,
-  // but nothing in that check was ever actually Rush-specific — a
-  // canonical paper shouldn't blow the venue's per-author cap either).
-  // Every plain Advance is unaffected, still just advanceBlockReason.
+  // reviewer first" check on entering `abstract` either way — and the
+  // per-author cap (abstractAcceptBlockReason), which advanceBlockReason
+  // now runs on entering `abstract` too (2026-09-18+19: abstract
+  // submission, not paper submission), in both pipelines.
   // Just the two <button> elements, no wrapping .card-move div — for the
   // one call site (onToggleChecklist's partial re-render) that already has
   // its hands on that div directly and only needs to replace what's inside
@@ -107,9 +104,11 @@
     // about submitting externally to the venue) just because the two
     // happen to share display text. A key with no SUBMIT_CONFIRM_MESSAGES
     // entry keeps this one unconfirmed, same as before.
-    var rgtConfirmKey = effective === 'abstract' ? 'abstract-approved-advance' : rgtLabel;
-    var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
-      (effective === 'paper' ? abstractAcceptBlockReason(card, board, state.cards) : null));
+    // (2026-09-18+18, per Eduardo: leaving `abstract` IS the real venue
+    // submission of the paper now, so it gets the same confirm dialog and
+    // green styling as any other Submit — no exception any more.)
+    var rgtConfirmKey = rgtLabel;
+    var rgtBlockReason = rgt && advanceBlockReason(card, rgt, board);
     // Green treatment covers every real Submit (SUBMIT_CONFIRM_MESSAGES' keys).
     var acceptClass = SUBMIT_CONFIRM_MESSAGES[rgtConfirmKey] ? ' card-move-btn-accept' : '';
     // Revert button experimentally removed (2026-09-16, per Eduardo) — lft
@@ -293,20 +292,19 @@
   // uses — identical confirm dialog (SUBMIT_CONFIRM_MESSAGES['Submit
   // paper']) and green accept styling, and the identical gate
   // moveButtonsInnerHtml's own rgtBlockReason already computes for that
-  // top button (advanceBlockReason PLUS abstractAcceptBlockReason, the
-  // per-author-cap check) — so "ready to submit" can't drift out of sync
-  // between the two buttons.
+  // top button (advanceBlockReason) — so "ready to submit" can't drift out
+  // of sync between the two buttons.
   function paperSubmissionFieldsHtml(card, board){
     if (card.status !== 'paper') return '';
     if (!canManageAuthorFields(card)) return '';
-    var blockReason = advanceBlockReason(card, 'rebuttal', board) || abstractAcceptBlockReason(card, board, state.cards);
+    var blockReason = advanceBlockReason(card, 'rebuttal', board);
     return '<div class="stage-fields" id="stagePaperFields">' +
-      '<h3 class="detail-subhead">Submit the paper</h3>' +
-      '<div class="field"><label for="stageSubmissionLink">Submission link</label><input type="url" id="stageSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="Link to your venue submission (e.g. OpenReview)"></div>' +
+      '<h3 class="detail-subhead">Submit the rebuttal</h3>' +
+      '<div class="field"><label for="stageRebuttalDoc">Rebuttal document</label><input type="url" id="stageRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="Link to your rebuttal document"></div>' +
       '<div class="field-error" id="stagePaperFieldsError" hidden></div>' +
       '<div class="stage-fields-actions">' +
         '<button class="btn" type="button" data-stage-paper-save="' + escapeHtml(card.id) + '">Save</button>' +
-        '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="rebuttal" data-move-label="Submit paper"' +
+        '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="rebuttal" data-move-label="Submit rebuttal"' +
           (blockReason ? ' disabled title="' + escapeHtml(blockReason) + '"' : ' title="Move to ' + escapeHtml(statusLabelFor('rebuttal', board)) + '"') + '>Submit</button>' +
         // Same visible-text fallback as abstractSubmissionFieldsHtml —
         // see its own comment (2026-09-18+15): a disabled button's title
@@ -321,19 +319,19 @@
   // onSetAbstractReview, scoped to this one field. Rejects a blank save,
   // same as onSaveAbstractFields — a requirement can't be satisfied by an
   // empty string.
-  function onSavePaperSubmissionLink(cardId){
+  function onSavePaperRebuttalDoc(cardId){
     var boardId = state.currentBoardId;
     var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
     if (!card) return;
     var errorEl = document.getElementById('stagePaperFieldsError');
-    var value = document.getElementById('stageSubmissionLink').value.trim();
+    var value = document.getElementById('stageRebuttalDoc').value.trim();
     if (!value){
       if (errorEl){ errorEl.textContent = 'Can’t be blank.'; errorEl.hidden = false; }
       return;
     }
     if (errorEl) errorEl.hidden = true;
     var prev = state.cards;
-    var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, { submissionLink: value, updatedAt: Date.now() }) : c; });
+    var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, { rebuttalDocLink: value, updatedAt: Date.now() }) : c; });
     state.cards = next;
     renderCardDetail();
     saveBoard(boardId, { cards: next }).then(function(ok){
@@ -435,6 +433,9 @@
         jrReviewState: deriveState(out.jrApproved),
         srReviewState: deriveState(out.srApproved)
       });
+    }
+    if (typeof out.paperReviewState !== 'string'){
+      out = Object.assign({}, out, { paperReviewState: 'in_review' });
     }
     if (typeof out.outcome !== 'string'){
       out = Object.assign({}, out, { outcome: (oldStatus && STATUS_OUTCOME_MIGRATIONS[oldStatus]) || '' });
@@ -559,13 +560,12 @@
   }
 
   function renderCard(card, board){
-    var overdue = isOverdue(card, board);
     // Abstract's lightweight go/no-go and Paper's checklist-derived state
     // share the same rv- left-border treatment (2026-09-18+4) — whichever
     // of the two stages the card is actually in picks its own source.
     var inPaperStage = card.status === 'paper';
     var rv = card.status === 'abstract' ? (card.abstractReviewState || 'in_review')
-      : inPaperStage ? reviewFilterState(card) : null;
+      : inPaperStage ? (card.paperReviewState || 'in_review') : null;
     var rushOverdue = isRushColumnPastCutoff(displayStatus(card, board), board);
     var cardClass = 'card' + (rv ? ' rv-' + rv : '') + (rushOverdue ? ' rush-deadline-passed' : '');
     var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
@@ -574,10 +574,10 @@
     // now, to keep the board card short and easy to scan.
     var badges = '';
     if (card.status === 'abstract') badges += reviewStateBadgeHtml(card.abstractReviewState || 'in_review');
-    if (inPaperStage) badges += reviewStateBadgeHtml(reviewFilterState(card));
+    if (inPaperStage) badges += reviewStateBadgeHtml(card.paperReviewState || 'in_review');
     if (card.status === 'rebuttal') badges += rebuttalBadgeHtml(card);
     if (shouldShowOutcomeBadge(card)) badges += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
-    if (overdue || rushOverdue) badges += '<span class="badge badge-overdue">Overdue</span>';
+    badges += overdueBadgesHtml(card, board);
     if (badges) html += '<div class="card-meta-row">' + badges + '</div>';
     if (card.pitchLink) html += '<a class="card-link" href="' + escapeHtml(card.pitchLink) + '" target="_blank" rel="noopener">Pitch materials</a><br>';
     if (card.submissionLink) html += '<a class="card-link" href="' + escapeHtml(card.submissionLink) + '" target="_blank" rel="noopener">' + submissionLinkLabel(card.submissionLink) + '</a><br>';
@@ -637,7 +637,7 @@
   function matchesReviewFilter(card){
     var f = (state.search && state.search.reviewState) || 'all';
     if (f === 'all') return true;
-    return card.status === 'paper' && reviewFilterState(card) === f;
+    return card.status === 'paper' && (card.paperReviewState || 'in_review') === f;
   }
 
   function matchesSearch(card){

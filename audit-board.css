@@ -30,6 +30,8 @@
     --gutter:clamp(20px, 4vw, 48px);
     --board-max:1360px;
     --read-max:760px;
+    --content-max:900px;
+    --article-max:640px;
     --sidebar-w:200px;
     --sidebar-w-collapsed:40px;
     --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
@@ -406,19 +408,19 @@
   .column-head .ch-hint{
     margin-top:4px; min-height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
   }
-  /* Rush mode's column deadline hint — two entries (internal cutoff, venue
-     deadline), each a label then its date stacked on its own line below
-     it (2026-09-18+5: was a two-column label|value grid, but the labels
-     ("Next internal deadline (Paper):" etc.) are long enough that they
-     squeezed the date into almost no space, truncating it with an
-     ellipsis — stacking gives the date the column's full width to wrap
-     into instead). Each entry turns red independently, once THAT entry's
-     own instant has passed, not the other one's — see columnHintFor. */
+  /* Rush mode's column deadline hint — up to three rows (review deadline
+     where a review is a gate, internal <Stage> deadline, venue External
+     <Stage> deadline), each a label with its date on the same line
+     (2026-09-18+17, per Eduardo; a date that doesn't fit in what's left
+     of the line just wraps under it — the labels used to be long enough
+     ("Next internal deadline (Paper):") that a side-by-side layout
+     truncated the date, which is why 2026-09-18+5 stacked them). Each
+     row turns red independently, once THAT row's own instant has passed,
+     not the other ones' — see columnHintFor. */
   .column-head .ch-hint.ch-hint-deadlines{
     display:flex; flex-direction:column; gap:2px;
   }
-  .column-head .ch-hint.ch-hint-deadlines .hint-label{white-space:nowrap;}
-  .column-head .ch-hint.ch-hint-deadlines .hint-value{white-space:normal; word-break:break-word; display:block;}
+  .column-head .ch-hint.ch-hint-deadlines .hint-row{word-break:break-word;}
   .column-head .ch-hint .hint-overdue{color:var(--danger-text); font-weight:600;}
   .column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
   .column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
@@ -524,11 +526,6 @@
   .detail-back:hover{color:var(--blue);}
   .detail-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
   .detail-head h2{font-size:clamp(22px, 3vw, 28px); font-weight:760;}
-  .detail-controls{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin:16px 0 24px;}
-  .detail-controls .card-move{margin:0; width:auto;}
-  .detail-controls .card-move-btn{flex:0 0 auto; padding:7px 13px;}
-  .detail-controls select{font-size:13px; padding:7px 9px;}
-  .detail-controls .btn-text.danger{margin-left:auto;}
   .detail-grid{display:grid; grid-template-columns:150px 1fr; gap:8px 16px; font-size:13.5px; margin-bottom:24px; max-width:640px;}
   .detail-grid dt{color:var(--muted);}
   .detail-grid dd{margin:0; word-break:break-word;}
@@ -536,15 +533,6 @@
   .detail-grid dd.abstract-render{white-space:pre-wrap; line-height:1.55; max-width:100%; overflow-x:auto;}
   .abstract-render .katex-display{margin:0.5em 0; overflow-x:auto; overflow-y:hidden;}
 
-  .gate-banner{
-    font-size:13px; padding:11px 14px; margin-bottom:24px; max-width:640px;
-    border:1px solid #e6c98f; background:var(--warn-bg); color:var(--warn-text);
-    border-radius:var(--radius);
-  }
-  .gate-banner.done{border-color:#bfe0d6; background:var(--success-bg); color:var(--success-text);}
-  .gate-banner strong{font-weight:700;}
-  .gate-banner-actions{display:flex; gap:10px; align-items:center; margin-top:10px;}
-  .gate-banner .badge{vertical-align:middle;}
   /* Inline "Submit the abstract" form (2026-09-18+10, per Eduardo) — a
      plain section below the detail-grid, not the warning-coloured
      .gate-banner treatment (this isn't flagging a problem, just showing
@@ -615,7 +603,7 @@
   .cl-head, .cl-row{display:grid; grid-template-columns:1fr 68px 68px; gap:10px;}
   /* Authors' checklist (2026-09-14): one checkbox column, not two — same
      base grid/row styling, just a narrower track list. */
-  .cl-head.single, .cl-row.single{grid-template-columns:1fr 68px;}
+  .cl-row.single{grid-template-columns:1fr 68px;}
   .cl-head{
     font-size:10.5px; font-weight:700; color:var(--muted);
     text-transform:uppercase; letter-spacing:0;
@@ -625,7 +613,6 @@
   .cl-head span{text-align:center;}
   .cl-head span:nth-child(2){color:var(--teal);}
   .cl-head span:nth-child(3){color:var(--plum);}
-  .cl-head.single span:nth-child(2){color:var(--accent);}
   .cl-item{border-bottom:1px solid var(--line); padding:2px 0;}
   .cl-row{padding:9px 6px; font-size:13.5px; align-items:start; border-radius:var(--radius);}
   .cl-row:hover{background:var(--wash);}
@@ -838,3 +825,114 @@
     padding:0; margin-top:8px; border:none;
   }
   .gate-signup-btn:hover{text-decoration-color:currentColor;}
+
+
+  /* ---------- card detail: editorial pass ----------
+     The card page takes the same look as the events pages (events.html /
+     event-collaboration-week.html): serif for anything meant to be read,
+     sans only for UI chrome (labels, meta, buttons, inputs), centred
+     900px column, hairline rules instead of boxes, underlined text links
+     for secondary actions, one outlined button for the primary one, and
+     outlined status badges instead of filled pills. Scoped to .detail so
+     the board and venue list keep their denser sans treatment. */
+  .detail{
+    max-width:var(--content-max); margin:0 auto; padding:40px var(--gutter) 88px;
+    font-family:var(--serif); font-size:18px; line-height:1.7; color:var(--ink-soft);
+  }
+  .detail input, .detail textarea, .detail select, .detail button{font-family:var(--sans);}
+  .detail-back{font-family:var(--sans); margin-bottom:18px;}
+  .detail-head h2{
+    font-size:clamp(30px, 5vw, 44px); line-height:1.14; font-weight:800;
+    letter-spacing:-0.005em; max-width:var(--article-max); text-wrap:balance;
+  }
+  .detail .badge{
+    font-family:var(--sans); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em;
+    background:none; border:1px solid currentColor; border-radius:0; padding:2px 7px;
+  }
+  .detail .card-move-btn, .detail .btn-primary{
+    font-family:var(--sans); font-size:14.5px; font-weight:500; white-space:nowrap;
+    color:var(--ink); background:none; border:1px solid var(--ink); border-radius:0; padding:9px 20px;
+  }
+  .detail .card-move-btn:hover:not(:disabled), .detail .btn-primary:hover:not(:disabled){background:var(--ink); color:var(--paper); border-color:var(--ink);}
+  .detail .card-move-btn:disabled, .detail .btn-primary:disabled{color:var(--muted); border-color:var(--line); background:none; opacity:1;}
+  .detail .card-move-btn.card-move-btn-accept{color:var(--ink); background:none; border-color:var(--ink);}
+  .detail .card-move-btn.card-move-btn-accept:hover:not(:disabled){background:var(--ink); color:var(--paper);}
+  .detail .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); border-color:var(--line); background:none;}
+  .detail .btn{
+    font-family:var(--sans); font-size:14.5px; font-weight:500; color:var(--accent);
+    background:none; border:none; border-radius:0; padding:0; cursor:pointer;
+    text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
+  }
+  .detail .btn:hover:not(:disabled){text-decoration-color:currentColor; color:var(--accent);}
+  .detail .btn:disabled{color:var(--muted); opacity:.6; cursor:default;}
+  .detail .btn.btn-primary{text-decoration:none; padding:9px 20px; border:1px solid var(--ink);}
+  .detail .btn.btn-primary:disabled{border-color:var(--line);}
+  .detail .btn-text{font-size:13.5px;}
+  .detail-grid{
+    grid-template-columns:150px 1fr; gap:10px 20px; margin:0 0 32px; padding-top:18px;
+    border-top:1px solid var(--line); font-size:16px; line-height:1.55; max-width:var(--article-max);
+  }
+  .detail-grid dt{font-family:var(--sans); font-size:13px; color:var(--muted);}
+  .detail-subhead{font-family:var(--serif); font-size:19px; font-weight:800; letter-spacing:-0.005em; margin:34px 0 12px;}
+  .detail-subhead:first-child{margin-top:0;}
+  .detail .field label{font-family:var(--sans); font-size:13px;}
+  .stage-fields-hint{font-family:var(--sans);}
+  .detail .cl-agent-note{font-family:var(--sans); margin-bottom:20px;}
+  .cl-agent-note p{margin:0;}
+  .cl-agent-note .note-lead{margin-bottom:6px;}
+  .cl-agent-note .note-lead:last-child{margin-bottom:0;}
+  .detail .cl-agent-note{max-width:var(--article-max);}
+  /* Approve / Request changes — the board's original button look (white
+     bordered button + red text link), not the events-style underlined
+     link every other .btn on the card page takes now. */
+  .detail .review-actions{display:flex; align-items:center; gap:18px; margin:0 0 28px;}
+  .detail .review-actions .btn{
+    font-family:var(--sans); font-size:14px; font-weight:600; color:var(--ink);
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:9px 16px; text-decoration:none;
+  }
+  .detail .review-actions .btn:hover:not(:disabled){border-color:var(--blue); color:var(--blue);}
+  .detail .review-actions .btn:disabled{color:var(--muted); opacity:.5;}
+  .detail .review-actions .btn.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
+  .detail .review-actions .btn.btn-primary:hover:not(:disabled){background:#0f1c33; border-color:#0f1c33; color:#fff;}
+  .detail .review-actions .btn.btn-primary:disabled{background:var(--blue); color:#fff; border-color:var(--blue); opacity:.5;}
+  .detail .review-actions .btn-text:disabled{opacity:.5; cursor:default;}
+  .detail .cl-cat{
+    font-family:var(--sans); font-size:11px; font-weight:400; text-transform:uppercase;
+    letter-spacing:0.14em; color:var(--muted); margin:24px 0 4px;
+  }
+  .detail .cl-cat:first-child{margin-top:0;}
+  .detail .cl-head{font-family:var(--sans);}
+  .detail .cl-row{font-size:16px; border-radius:0;}
+  .detail .cl-row:hover{background:none;}
+  .detail .cl-row-foot .btn-text, .detail .rv-role, .detail .rv-state-pill{font-family:var(--sans);}
+  .detail .disc-msg{font-size:16px;}
+  .detail .disc-author, .detail .disc-time, .detail .disc-new h3{font-family:var(--sans);}
+  .detail .disc-thread{border-top-color:var(--line);}
+
+  /* Save / Submit in the stage forms — the board's original button look
+     (white bordered Save, blue filled Submit), not the events-style
+     underlined link / outlined button the rest of the card page takes. */
+  .detail .stage-fields-actions .btn{
+    font-family:var(--sans); font-size:14px; font-weight:600; white-space:nowrap;
+    color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+    padding:9px 16px; text-decoration:none;
+  }
+  .detail .stage-fields-actions .btn:hover:not(:disabled){background:var(--surface); border-color:var(--blue); color:var(--blue);}
+  .detail .stage-fields-actions .btn:disabled{color:var(--muted); background:var(--surface); border:1px solid var(--line); opacity:.5; cursor:default;}
+  .detail .stage-fields-actions .btn.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
+  .detail .stage-fields-actions .btn.btn-primary:hover:not(:disabled){background:#0f1c33; border-color:#0f1c33; color:#fff;}
+  .detail .stage-fields-actions .btn.btn-primary:disabled{background:var(--blue); color:#fff; border-color:var(--blue); opacity:.5;}
+
+  /* Card page header: title, one group of badges, Remove paper pushed
+     right on the same line; Edit fields right-aligned on the rule above
+     the details grid. */
+  .detail-head{gap:10px 14px;}
+  /* One line under the title: badges left, Remove paper right. */
+  .detail-badges{display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:0 0 100%; order:3; margin-top:2px;}
+  .detail .badge-stage{color:var(--accent);}
+  .detail-remove{margin-left:auto;}
+  .detail-details-head{
+    display:flex; justify-content:flex-end; margin-top:26px; padding-top:10px; border-top:1px solid var(--line);
+  }
+  .detail-details-head + .detail-grid{border-top:none; padding-top:6px;}

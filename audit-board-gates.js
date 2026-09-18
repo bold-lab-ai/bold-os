@@ -209,23 +209,14 @@
   // gate reflects the sequence actually being navigated.
   function advanceBlockReason(card, toStatus, board){
     var order = effectiveStatusOrder(board);
-    if (crossesGate(card.status, toStatus, order) && !checklistComplete(card)){
-      var authorsDone = authorChecklistComplete(card);
-      var reviewersDone = reviewerChecklistComplete(card);
-      if (!authorsDone && !reviewersDone) return 'Finish both checklists first — authors’ and reviewers’';
-      if (!authorsDone) return 'Finish the authors’ checklist first';
-      return 'Finish the Junior and Senior checklists first';
-    }
-    // Both reviewers' derived states must read Approved (reviewFilterState)
-    // before a card can leave Drafted for Reviewed — normally implied by
-    // the checklistComplete() check just above, since jrReviewState/
-    // srReviewState are now purely derived from the checklist (see
-    // onToggleChecklist), but kept as its own check too: it's the one
-    // thing that still catches a legacy pre-2026-09-14 card sitting on a
-    // stale 'changes_requested' value nobody's touched since, which a raw
-    // tick-count alone wouldn't see.
-    if (crossesGate(card.status, toStatus, order) && reviewFilterState(card) !== 'approved'){
-      return 'Both reviewers must approve first';
+    // Paper's gate (2026-09-18+18, per Eduardo): the reviewers' explicit
+    // approval (card.paperReviewState, set by Approve/Request changes on
+    // the Review tab — same shape as abstractReviewState below), not the
+    // two checklists any more. The authors' Format checklist already
+    // gates Abstract -> Paper; the reviewers' Science checklist stays on
+    // the page as their working aid but no longer blocks anything.
+    if (crossesGate(card.status, toStatus, order) && card.paperReviewState !== 'approved'){
+      return 'Waiting for the reviewers’ approval';
     }
     // Deliverable-per-stage redesign (2026-09-18, per Eduardo): every
     // Submit move requires the real link it's actually submitting, not
@@ -268,6 +259,13 @@
     if (toStatus === 'abstract' && !reviewersAssigned(card)){
       return 'Assign a junior and a senior reviewer first';
     }
+    // The per-author cap is checked here, at abstract submission
+    // (2026-09-18+19, per Eduardo) — not later, once the paper is already
+    // written. Same check that used to run when the paper was submitted.
+    if (toStatus === 'abstract'){
+      var capReason = abstractAcceptBlockReason(card, board, state.cards);
+      if (capReason) return capReason;
+    }
     // New lightweight gate (2026-09-18+4, per Eduardo, alongside `paper`
     // coming back as its own stage): leaving `abstract` for `paper` needs
     // the senior reviewer's direct go-ahead — no checklist involved, just
@@ -294,6 +292,11 @@
     if (toStatus === 'paper' && !authorChecklistComplete(card)){
       return 'Finish the authors’ checklist first';
     }
+    // Leaving Abstract is the real venue submission of the paper now
+    // (2026-09-18+18, per Eduardo — moved here from Paper -> Rebuttal).
+    if (toStatus === 'paper' && !card.submissionLink){
+      return 'Add the OpenReview submission link first';
+    }
     // Unaffected by `paper` coming back (2026-09-18+4) — this already
     // gated the real transition, `paper -> rebuttal` (the click fires
     // while AT `paper`, per ADVANCE_LABELS.paper), even while `paper` was
@@ -303,8 +306,12 @@
     // deliberately ungated regardless — posting to arXiv is concurrent to
     // sitting in Rebuttal, not a prerequisite for reaching it, no
     // arxivLink check anywhere in this function.
-    if (toStatus === 'rebuttal' && !card.submissionLink){
-      return 'Add the venue submission link first';
+    // Paper -> Rebuttal is the REBUTTAL submission now (2026-09-18+18,
+    // per Eduardo), gated on the rebuttal document; the venue submission
+    // link moved to the transition that actually submits the paper,
+    // Abstract -> Paper (just above).
+    if (toStatus === 'rebuttal' && !card.rebuttalDocLink){
+      return 'Add the rebuttal document link first';
     }
     if (toStatus === 'camera_ready' && !card.rebuttalDocLink){
       return 'Add the rebuttal document link first';

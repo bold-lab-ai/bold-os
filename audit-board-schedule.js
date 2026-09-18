@@ -261,7 +261,11 @@
     // paper hasn't gone out yet in either stage, `paper` reinstated as
     // its own stage (2026-09-18+4) doesn't change what's actually
     // outstanding, just splits how the card gets there into two columns.
-    if (status === 'abstract' || status === 'paper') return (board && board.deadline) || null;
+    if (status === 'abstract') return (board && board.deadline) || null;
+    // Paper = paper already submitted (leaving Abstract is the real
+    // submission, 2026-09-18+18, per Eduardo), so what's outstanding
+    // there is the REBUTTAL, not the paper deadline any more.
+    if (status === 'paper') return (board && board.rebuttalDeadline) || null;
     if (status === 'register' || status === 'pitch'){
       return (board && (board.abstractDeadline || board.deadline)) || null;
     }
@@ -366,6 +370,58 @@
     return !!cutoff && Date.now() > cutoff.getTime();
   }
 
+  // The reviewer's own deadline, the midpoint between the internal cutoff
+  // (RUSH_BUFFER_HOURS before the real deadline) and the real deadline
+  // itself — the same "middle of the buffer window" convention as the
+  // schedule rail's REVIEWER_BUFFER_DAYS, to the minute here instead of a
+  // calendar day. Only on the columns where a review is actually a gate
+  // (see advanceBlockReason): leaving `abstract` needs the senior
+  // reviewer's go-ahead, leaving `paper` needs both reviewers' approval.
+  // Registered has no review gate, so no reviewer deadline either.
+  var RUSH_REVIEW_BUFFER_HOURS = 24;
+  var RUSH_REVIEW_GATED = { abstract: 1, paper: 1 };
+
+  function rushColumnReviewDeadline(status, board){
+    if (!board || !board.rushMode || !RUSH_REVIEW_GATED[status]) return null;
+    var instant = deadlineInstant(rushColumnRealDeadline(status, board));
+    if (!instant) return null;
+    return new Date(instant.getTime() - RUSH_REVIEW_BUFFER_HOURS * 3600000);
+  }
+
+  // The card's overdue badges (2026-09-18+18, per Eduardo): in Rush mode
+  // two separate ones, not one — "Review overdue" (the reviewers' date has
+  // passed and the review isn't approved yet; only on the review-gated
+  // columns) and "Submission overdue" (the authors' internal cutoff has
+  // passed and the card is still in the column, i.e. not submitted). The
+  // dates are exactly the ones the column header shows. Outside Rush mode
+  // there are no internal dates, so it stays the one plain "Overdue" off
+  // the venue's real deadline.
+  function reviewApprovedFor(card){
+    if (card.status === 'abstract') return card.abstractReviewState === 'approved';
+    if (card.status === 'paper') return card.paperReviewState === 'approved';
+    return true;
+  }
+
+  function overdueFlags(card, board){
+    var status = displayStatus(card, board);
+    if (board && board.rushMode && (status === 'register' || status === 'abstract' || status === 'paper')){
+      var reviewAt = rushColumnReviewDeadline(status, board);
+      return {
+        review: !!reviewAt && Date.now() > reviewAt.getTime() && !reviewApprovedFor(card),
+        submission: isRushColumnPastCutoff(status, board),
+        plain: false
+      };
+    }
+    return { review: false, submission: false, plain: isOverdue(card, board) };
+  }
+
+  function overdueBadgesHtml(card, board){
+    var f = overdueFlags(card, board);
+    return (f.review ? '<span class="badge badge-overdue">Review overdue</span>' : '') +
+      (f.submission ? '<span class="badge badge-overdue">Submission overdue</span>' : '') +
+      (f.plain ? '<span class="badge badge-overdue">Overdue</span>' : '');
+  }
+
   // "2d 4h left" / "3h left" / "5h overdue" — whole hours only; a rush
   // cutoff is only ever precise to the minute to begin with (AoE 23:59,
   // via deadlineInstant), so a couple of stray minutes would be false
@@ -397,8 +453,9 @@
   // The line under a column's title — STATUS_HINTS' plain "move a card
   // here when…" note everywhere except Rush mode's three columns with an
   // outstanding submission (Registered, Abstract, Paper — see
-  // rushColumnRealDeadline), which show their real deadline and internal
-  // cutoff instead, since that's the more useful thing to see there.
+  // rushColumnRealDeadline), which show their review deadline (Abstract/
+  // Paper only), internal cutoff and real deadline instead, since that's
+  // the more useful thing to see there.
   // Rebuttal falls through to the plain STATUS_HINTS text same as any
   // other column here — the Waiting-for-reviews/In-Rebuttal distinction
   // lives on the card's own badge instead (rebuttalBadgeHtml), not this
@@ -414,32 +471,53 @@
   // pitch race the abstract deadline, abstract AND paper both race the
   // paper deadline), this is just that same fact in a short label for
   // columnHintFor below.
-  var RUSH_DEADLINE_STAGE = { register: 'Abstract', abstract: 'Paper', paper: 'Paper' };
+  var RUSH_DEADLINE_STAGE = { register: 'Abstract', abstract: 'Paper', paper: 'Rebuttal' };
+  // What each role on a card in that column actually has to get done, and
+  // by when (2026-09-18+18, per Eduardo) — the labels say the task, not
+  // just the deadline's name. Registered: authors send the abstract.
+  // Abstract: reviewers review the abstract, authors send the paper.
+  // Paper: reviewers review the paper, authors send the rebuttal — the
+  // paper is already in by then, so Paper races the REBUTTAL deadline
+  // (see outstandingDeadlineFor).
+  var RUSH_TASK_LABELS = {
+    register: { author: 'Authors: submit abstract by:' },
+    abstract: { review: 'Reviewers: review abstract by:', author: 'Authors: submit paper by:' },
+    paper:    { review: 'Reviewers: review paper by:',    author: 'Authors: submit rebuttal by:' }
+  };
 
   function columnHintFor(status, board){
     if (board && board.rushMode && (status === 'register' || status === 'abstract' || status === 'paper')){
       var real = rushColumnRealDeadline(status, board);
-      if (!real) return 'No deadline set for this venue yet';
+      if (!real) return status === 'paper' ? 'No rebuttal deadline set for this venue yet' : 'No deadline set for this venue yet';
       var cutoff = rushColumnCutoff(status, board);
+      var reviewDeadline = rushColumnReviewDeadline(status, board);
       var realInstant = deadlineInstant(real);
       var stage = RUSH_DEADLINE_STAGE[status];
-      // Own line below the internal cutoff — the venue's actual deadline,
-      // same London-time treatment as everything else here, so the two
-      // numbers on this hint are always directly comparable. Each line
-      // turns red on ITS OWN instant passing — the internal cutoff is
-      // deliberately earlier (RUSH_BUFFER_HOURS), so it goes red well
-      // before the venue's real deadline is actually overdue; showing the
-      // venue line red at that point would be wrong, it hasn't happened.
-      var internalCls = isRushColumnPastCutoff(status, board) ? ' hint-overdue' : '';
-      var venueCls = Date.now() > realInstant.getTime() ? ' hint-overdue' : '';
-      // Flex-column stacking (ch-hint-deadlines' own CSS) lays these four
-      // spans out as label-then-value, label-then-value — each span gets
-      // the column's full width, so a long value wraps instead of being
-      // squeezed beside its label and truncated.
-      return '<span class="hint-label' + internalCls + '">Next internal deadline (' + stage + '):</span>' +
-        '<span class="hint-value' + internalCls + '">' + formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)</span>' +
-        '<span class="hint-label' + venueCls + '">Next external deadline (' + stage + '):</span>' +
-        '<span class="hint-value' + venueCls + '">' + formatDateTime(realInstant) + '</span>';
+      // In this order (2026-09-18+17, per Eduardo): the reviewers' deadline
+      // (only on a review-gated column, see rushColumnReviewDeadline),
+      // then the authors' internal deadline, then the venue's External
+      // <Stage> deadline — same London-time treatment on all three, so the
+      // numbers are always directly comparable. Each line turns red on
+      // ITS OWN instant passing — the earlier ones (review, internal)
+      // go red well before the venue's real deadline is actually
+      // overdue; showing the venue line red at that point would be
+      // wrong, it hasn't happened.
+      var now = Date.now();
+      var reviewCls = reviewDeadline && now > reviewDeadline.getTime() ? ' hint-overdue' : '';
+      var internalCls = now > cutoff.getTime() ? ' hint-overdue' : '';
+      var venueCls = now > realInstant.getTime() ? ' hint-overdue' : '';
+      // One row per deadline, label and date on the same line (a date
+      // too long for what's left of the line wraps to the next one, see
+      // ch-hint-deadlines' own CSS) — the row carries the overdue class,
+      // so label and date go red together.
+      function row(cls, label, value){
+        return '<div class="hint-row' + cls + '"><span class="hint-label">' + label + '</span> ' +
+          '<span class="hint-value">' + value + '</span></div>';
+      }
+      var tasks = RUSH_TASK_LABELS[status];
+      return (reviewDeadline ? row(reviewCls, tasks.review, formatDateTime(reviewDeadline)) : '') +
+        row(internalCls, tasks.author, formatDateTime(cutoff) + ' (<strong>' + formatTimeLeft(cutoff) + '</strong>)') +
+        row(venueCls, 'External ' + stage + ' deadline:', formatDateTime(realInstant));
     }
     return escapeHtml(STATUS_HINTS[status] || '');
   }

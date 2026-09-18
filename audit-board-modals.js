@@ -179,23 +179,20 @@
     return { count: count, max: max };
   }
 
-  // "Submit paper" gate (2026-09-14, per Eduardo; despite the name below,
-  // applies in both pipelines — nothing in this check was ever actually
-  // Rush-specific, see moveButtonsInnerHtml's own call site) — moving a
-  // card out of Paper (2026-09-18+4: was Abstract in review, before
-  // `paper` was reinstated as its own stage) is where the two things this
-  // checkpoint exists to check get enforced: the authors list is actually
-  // filled in, and nobody on the paper is over the venue's
+  // Abstract-submission gate (2026-09-14, per Eduardo; moved from paper
+  // submission to abstract submission 2026-09-18+19, per Eduardo — the
+  // cap has to bite before the paper is written, not after). Applies in
+  // both pipelines. Moving a card into Abstract is where the two things
+  // this checkpoint exists to check get enforced: the authors list is
+  // actually filled in, and nobody on the paper is over the venue's
   // max-papers-per-author cap. A real hard block on THIS specific
   // transition — unlike currentUserPaperCapWarning/notifyAuthorsOverCap
   // above, which stay deliberately non-blocking (a save-time hard block
-  // was tried and reverted the same day — see the comment above
-  // currentUserPaperCapWarning). That earlier reversal was specifically
-  // about not blocking *registering* a paper in the first place; this is a
-  // separate, later checkpoint that the review process itself is meant to
-  // catch it at, once there's actually been a chance to notice and fix it.
+  // at registration was tried and reverted the same day — see the comment
+  // above currentUserPaperCapWarning). Called from advanceBlockReason and
+  // mirrored in onChangeStatus for the status dropdown.
   function abstractAcceptBlockReason(card, board, cards){
-    if (!card.authors || !card.authors.length) return 'Add the authors before submitting the paper';
+    if (!card.authors || !card.authors.length) return 'Add the authors before submitting the abstract';
     var max = board && board.maxPapersPerAuthor;
     if (!max) return null;
     var overCount = authorEmailsOf(card.authors).filter(function(email){
@@ -345,7 +342,7 @@
             '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
             '<div class="field"><label for="ePitchLink">Pitch materials</label><input type="url" id="ePitchLink" value="' + escapeHtml(card.pitchLink || '') + '" placeholder="https://docs.google.com/presentation/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Registered.</div></div>' +
-            '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Paper.</div></div>' +
+            '<div class="field"><label for="eSubmissionLink">OpenReview submission link</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=aK7xQp2LrZ"><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Paper.</div></div>' +
             '<div class="field"><label for="eArxivLink">arXiv link</label><input type="url" id="eArxivLink" value="' + escapeHtml(card.arxivLink || '') + '" placeholder="https://arxiv.org/abs/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Optional — post whenever it’s ready, not required to advance.</div></div>' +
             '<div class="field"><label for="eRebuttalDeadline">Rebuttal deadline</label><input type="date" id="eRebuttalDeadline" value="' + escapeHtml(card.rebuttalDeadline || '') + '"></div>' +
             '<div class="field"><label for="eRebuttalDoc">Rebuttal document</label><input type="url" id="eRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Rebuttal.</div></div>' +
