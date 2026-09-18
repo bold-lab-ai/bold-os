@@ -234,7 +234,7 @@
     left:calc(50% / var(--n)); right:calc(50% / var(--n));
   }
   .vs-pt{
-    flex:1 0 62px;
+    flex:1 0 70px;
     display:flex; flex-direction:column; align-items:center;
     text-align:center;
   }
@@ -244,21 +244,22 @@
     position:relative; z-index:1;
   }
   .vs-pt.is-venue .vs-dot{border-color:var(--muted);}
+  /* Reviewers' points are solid, ours (authors' internal, runway) hollow
+     blue, the venue's hollow grey; the paper deadline is the big dark one. */
+  .vs-pt.is-reviewers .vs-dot{background:var(--blue);}
   .vs-pt.is-paper .vs-dot{width:12px; height:12px; margin-top:-1px; background:var(--ink); border-color:var(--ink);}
   .vs-name{
     margin-top:8px; font-size:11px; font-weight:600; line-height:1.25;
     color:var(--ink); padding:0 3px;
   }
-  .vs-pt.is-venue .vs-name{color:var(--ink-soft); font-weight:500;}
+  .vs-pt.is-venue .vs-name,
+  .vs-pt.is-authors .vs-name{color:var(--ink-soft); font-weight:500;}
   .vs-when{font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
-  /* A buffered point stacks three dates: our internal target (plain
-     .vs-when, lightest — the author's own submit-by date), the
-     reviewer's own deadline in between (.vs-when-reviewer, in the same
-     blue as the rail's own dots so it reads as "the reviewer's marker"),
-     then the real venue deadline (.vs-when-real, boldest — the one that
-     actually matters externally). Added 2026-09-18+5, per Eduardo. */
-  .vs-when-reviewer{color:var(--blue); font-weight:600; margin-top:1px;}
-  .vs-when-real{color:var(--ink-soft); font-weight:600; margin-top:1px;}
+  .vs-pt.is-past .vs-dot{border-color:var(--danger-text);}
+  .vs-pt.is-past.is-reviewers .vs-dot,
+  .vs-pt.is-past.is-paper .vs-dot{background:var(--danger-text);}
+  .vs-pt.is-past .vs-name,
+  .vs-pt.is-past .vs-when{color:var(--danger-text);}
   .ics-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;}
   .ics-btn{
     font-family:inherit; font-weight:600; font-size:12.5px;

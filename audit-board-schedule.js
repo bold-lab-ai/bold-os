@@ -13,21 +13,25 @@
     return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
   }
 
-  // A couple of days' internal buffer before every venue date that
-  // actually requires us to deliver something (submit an abstract,
-  // submit the paper, respond to a rebuttal, send camera-ready) — not
-  // the purely passive ones (reviews released, notification), where
-  // there's nothing for us to buffer against.
-  var BUFFER_DAYS = 2;
+  // The internal buffer before every venue date that actually requires us
+  // to deliver something (submit an abstract, submit the paper, respond to
+  // a rebuttal, send camera-ready) — not the purely passive ones (reviews
+  // released, notification), where there's nothing for us to buffer
+  // against. One source for both this rail and the Rush column headers
+  // (below): the authors' internal cutoff is RUSH_BUFFER_HOURS before the
+  // venue's deadline, the reviewers' is RUSH_REVIEW_BUFFER_HOURS before
+  // it (author submits internally -> reviewer responds -> author
+  // incorporates changes or it goes out as-is), so the two can't drift.
+  var RUSH_BUFFER_HOURS = 48;
+  var RUSH_REVIEW_BUFFER_HOURS = 24;
+  var BUFFER_DAYS = RUSH_BUFFER_HOURS / 24;
+  var REVIEWER_BUFFER_DAYS = RUSH_REVIEW_BUFFER_HOURS / 24;
   var BUFFER_KEYS = { paper: 1, abstract: 1, rebuttal_deadline: 1, camera_ready: 1 };
-  // The reviewer's own deadline, the middle day of that same buffer
-  // window (2026-09-18+5, per Eduardo): author submits internally
-  // (BUFFER_DAYS before the real deadline) -> reviewer responds
-  // (REVIEWER_BUFFER_DAYS before it) -> author incorporates changes or
-  // it goes out as-is (the real deadline). Applies to all of BUFFER_KEYS,
-  // as a standing calendar convention, even for the two rows (Rebuttal,
-  // Camera-ready) that don't have a formal reviewer checklist yet.
-  var REVIEWER_BUFFER_DAYS = 1;
+  // Only the two stages that have a reviewer gate on the board get a
+  // reviewer date (2026-09-18+21, per Eduardo — aligned with the column
+  // headers): abstract (senior go/no-go) and paper (both checklists).
+  // Rebuttal and camera-ready have no reviewer step, so no reviewer date.
+  var REVIEWER_KEYS = { paper: 1, abstract: 1 };
 
   // Every dated milestone for a venue, chronological. Needs v.deadline.
   function internalSchedule(v){
@@ -35,19 +39,25 @@
     function wk(n){ return wrap(shiftWeeks(v.deadline, n), n + (n === 1 ? ' week before' : ' weeks before')); }
     function wrap(dateObj, derivation){ return { dateObj: dateObj, derivation: derivation }; }
     function on(iso, derivation){ return { dateObj: new Date(iso + 'T00:00:00'), derivation: derivation }; }
-    // paper/abstract specifically — the same two fields the column
-    // header's External deadline reads (rushColumnRealDeadline) — use
-    // the AoE-corrected London calendar date, not the bare stored one,
-    // so this rail always agrees with the column header exactly. Every
-    // other row (rebuttal/camera-ready/reviews-released/notification,
-    // and the internal working-backward dates via wk()) is unaffected:
-    // not shown in any column header, so nothing to disagree with.
+    // Every deadline we have to deliver against (abstract, paper,
+    // rebuttal, camera-ready) uses the AoE-corrected London calendar
+    // date, not the bare stored one — the same instant the column headers
+    // and the Overdue badges count against (deadlineInstant), so this
+    // rail always agrees with them. Reviews-released/notification are
+    // plain venue dates, and the working-backward dates via wk() are
+    // ours, so they stay as stored.
     function onDeadline(iso, derivation){
       var correctedIso = londonDeadlineDateIso(iso);
-      return correctedIso ? on(correctedIso, derivation) : null;
+      if (!correctedIso) return null;
+      // `instant` is the real AoE moment the deadline passes — what the
+      // column headers turn red on, and so what the rail's red keys off.
+      return Object.assign(on(correctedIso, derivation), { instant: deadlineInstant(iso) });
     }
 
-    var rows = [
+    // The 8/6/4/2/1-week runway is the normal-mode pipeline; Rush mode has
+    // no Pitch column and replaces it with the 48h/24h cutoffs, so those
+    // rows would show dates the board doesn't hold anyone to.
+    var runway = [
       Object.assign({ key: 'register', label: 'Register', short: 'Register',
         summary: 'Register paper — abstract, outline, compute estimate',
         description: 'Abstract, paper outline and a compute estimate on the Internal Review Board. No full text yet.' }, wk(8)),
@@ -63,10 +73,12 @@
         description: '' }, wk(2)),
       Object.assign({ key: 'pi_polish', label: 'PI approval', short: 'PI approval',
         summary: 'PI approval',
-        description: "The PI reads the final draft and approves it for submission. This is the PI's only involvement." }, wk(1)),
+        description: "The PI reads the final draft and approves it for submission. This is the PI's only involvement." }, wk(1))
+    ];
+    var rows = (v.rushMode ? [] : runway).concat([
       Object.assign({ key: 'paper', label: 'Paper deadline', short: 'Paper',
         summary: 'Paper deadline', description: '' }, onDeadline(v.deadline, ''))
-    ];
+    ]);
     if (v.abstractDeadline){
       rows.push(Object.assign({ key: 'abstract', label: 'Abstract deadline', short: 'Abstract',
         summary: 'Abstract deadline (venue)', description: '' }, onDeadline(v.abstractDeadline, 'venue')));
@@ -78,7 +90,7 @@
     }
     if (v.rebuttalDeadline){
       rows.push(Object.assign({ key: 'rebuttal_deadline', label: 'Rebuttal deadline', short: 'Rebuttal',
-        summary: 'Rebuttal deadline', description: '' }, on(v.rebuttalDeadline, 'venue')));
+        summary: 'Rebuttal deadline', description: '' }, onDeadline(v.rebuttalDeadline, 'venue')));
     }
     if (v.notificationDate){
       rows.push(Object.assign({ key: 'notification', label: 'Notification', short: 'Decision',
@@ -86,7 +98,7 @@
     }
     if (v.cameraReadyDeadline){
       rows.push(Object.assign({ key: 'camera_ready', label: 'Camera-ready', short: 'Camera-ready',
-        summary: 'Camera-ready deadline', description: '' }, on(v.cameraReadyDeadline, 'venue')));
+        summary: 'Camera-ready deadline', description: '' }, onDeadline(v.cameraReadyDeadline, 'venue')));
     }
     rows.forEach(function(r){ r.iso = toIsoDate(r.dateObj); });
     rows.forEach(function(r){
@@ -94,6 +106,9 @@
       var b = new Date(r.dateObj);
       b.setDate(b.getDate() - BUFFER_DAYS);
       r.bufferIso = toIsoDate(b);
+      if (r.instant) r.bufferInstant = new Date(r.instant.getTime() - RUSH_BUFFER_HOURS * 3600000);
+      if (!REVIEWER_KEYS[r.key]) return;
+      if (r.instant) r.reviewerInstant = new Date(r.instant.getTime() - RUSH_REVIEW_BUFFER_HOURS * 3600000);
       var rb = new Date(r.dateObj);
       rb.setDate(rb.getDate() - REVIEWER_BUFFER_DAYS);
       r.reviewerBufferIso = toIsoDate(rb);
@@ -111,21 +126,36 @@
     var rows = internalSchedule(v);
     if (!rows.length) return '';
     var hasVenueDates = rows.some(function(r){ return r.derivation === 'venue'; });
-    var hasBuffer = rows.some(function(r){ return r.bufferIso; });
-    var pts = rows.map(function(r){
-      var cls = 'vs-pt' + (r.key === 'paper' ? ' is-paper' : (r.derivation === 'venue' ? ' is-venue' : ''));
-      var tip = r.label + ' — ' + formatDate(r.iso) + (r.derivation ? ' (' + r.derivation + ')' : '') +
-        (r.bufferIso ? '; internal target ' + formatDate(r.bufferIso) : '') +
-        (r.reviewerBufferIso ? '; reviewer deadline ' + formatDate(r.reviewerBufferIso) : '');
-      var whenHtml = r.bufferIso
-        ? '<span class="vs-when vs-when-buffer">' + formatDateShort(r.bufferIso) + '</span>' +
-          '<span class="vs-when vs-when-reviewer">' + formatDateShort(r.reviewerBufferIso) + '</span>' +
-          '<span class="vs-when vs-when-real">' + formatDateShort(r.iso) + '</span>'
-        : '<span class="vs-when">' + formatDateShort(r.iso) + '</span>';
-      return '<li class="' + cls + '" title="' + escapeHtml(tip) + '">' +
+    // One point per date (2026-09-18+22, per Eduardo), not a stack of
+    // three under one dot: the authors' internal deadline, the reviewers'
+    // (abstract/paper only) and the venue's own each sit at their own
+    // place on the rail, named Internal / review / External for the stage, as in the column headers.
+    var points = [];
+    rows.forEach(function(r){
+      if (r.bufferIso){
+        points.push({ kind: 'authors', order: 0, iso: r.bufferIso, at: r.bufferInstant, name: 'Internal ' + r.short.toLowerCase(),
+          tip: 'Authors\u2019 internal deadline for the ' + r.short.toLowerCase() + ' \u2014 ' + formatDate(r.bufferIso) });
+      }
+      if (r.reviewerBufferIso){
+        points.push({ kind: 'reviewers', order: 1, iso: r.reviewerBufferIso, at: r.reviewerInstant, name: r.short + ' review',
+          tip: 'Reviewers\u2019 deadline for the ' + r.short.toLowerCase() + ' \u2014 ' + formatDate(r.reviewerBufferIso) });
+      }
+      points.push({ kind: r.key === 'paper' ? 'paper' : (r.derivation === 'venue' ? 'venue' : 'ours'), order: 2, iso: r.iso, at: r.instant,
+        name: r.bufferIso ? 'External ' + r.short.toLowerCase() : (r.short || r.label),
+        tip: r.label + ' \u2014 ' + formatDate(r.iso) + (r.derivation ? ' (' + r.derivation + ')' : '') });
+    });
+    points.sort(function(a, b){ return a.iso < b.iso ? -1 : a.iso > b.iso ? 1 : a.order - b.order; });
+    // Past = red (2026-09-18+23, per Eduardo). Deadlines we deliver against
+    // go red on their exact instant, same as the column headers; plain
+    // venue dates (reviews released, decision) and the runway milestones
+    // have no time of day, so they go red once their day is over.
+    var todayIso = toIsoDate(new Date());
+    var pts = points.map(function(pt){
+      var past = pt.at ? Date.now() > pt.at.getTime() : todayIso > pt.iso;
+      return '<li class="vs-pt is-' + pt.kind + (past ? ' is-past' : '') + '" title="' + escapeHtml(pt.tip) + '">' +
         '<span class="vs-dot"></span>' +
-        '<span class="vs-name">' + escapeHtml(r.short || r.label) + '</span>' +
-        whenHtml +
+        '<span class="vs-name">' + escapeHtml(pt.name) + '</span>' +
+        '<span class="vs-when">' + formatDateShort(pt.iso) + '</span>' +
       '</li>';
     }).join('');
     var subUrl = icsSubscribeUrl(v.id);
@@ -135,10 +165,11 @@
     // column header's External deadline.
     var paperRow = rows.filter(function(r){ return r.key === 'paper'; })[0];
     return '<div class="venue-schedule">' +
-      '<div class="vs-head">Deadlines <span>&mdash; counted back from the ' + formatDate(paperRow.iso) + ' paper deadline' +
-        (hasVenueDates ? ', plus the venue&rsquo;s own dates' : '') +
-        (hasBuffer ? ' (lightest date &#61; our ' + BUFFER_DAYS + '-day internal target, middle date &#61; the reviewer&rsquo;s deadline)' : '') + '</span></div>' +
-      '<div class="vs-rail-wrap"><ol class="vs-rail" style="--n:' + rows.length + '">' + pts + '</ol></div>' +
+      '<div class="vs-head">Deadlines <span>&mdash; ' +
+        (v.rushMode ? 'Rush mode, internal cutoffs before each venue date' : 'counted back from the ' + formatDate(paperRow.iso) + ' paper deadline' +
+          (hasVenueDates ? ', plus the venue&rsquo;s own dates' : '')) +
+        '</span></div>' +
+      '<div class="vs-rail-wrap"><ol class="vs-rail" style="--n:' + points.length + '">' + pts + '</ol></div>' +
       '<div class="ics-actions">' +
         '<button class="ics-btn" type="button" id="downloadIcs">Add to calendar (.ics)</button>' +
         (subUrl ?
@@ -336,8 +367,6 @@
   // real deadline hits, not right up to the wire. Rebuttal has nothing
   // outstanding to submit at that point, so it gets no cutoff at all (see
   // rushColumnRealDeadline).
-  var RUSH_BUFFER_HOURS = 48;
-
   // Which real venue deadline a given rush column is racing toward — just
   // Registered, Abstract, and Paper, the three Rush-mode columns with
   // something still outstanding (see outstandingDeadlineFor above, which
@@ -384,7 +413,6 @@
   // deadline); in Paper it's the paper, due by the paper deadline
   // (Abstract's real deadline) — not the column's own outstanding
   // deadline, which is the authors' next task (paper / rebuttal).
-  var RUSH_REVIEW_BUFFER_HOURS = 24;
   var RUSH_REVIEW_GATED = { abstract: 'register', paper: 'abstract' };
 
   function rushColumnReviewDeadline(status, board){
