@@ -185,6 +185,7 @@
   }
   .nav-group:hover .nav-link.nav-sub,
   .nav-group:focus-within .nav-link.nav-sub,
+  .nav-group:has(.active) .nav-link.nav-sub,
   .nav-link.nav-sub.active{
     max-height:32px; opacity:1; pointer-events:auto;
   }
@@ -512,6 +513,10 @@
   } else {
     auth.onAuthStateChanged(function(user){
       renderAuthRegion(user);
+      try {
+        if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
+        else localStorage.removeItem('boldAuthHint');
+      } catch (e){}
       renderGuestChrome(!!user);
     });
   }

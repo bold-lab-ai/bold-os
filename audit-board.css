@@ -98,6 +98,7 @@
   .masthead{
     background:var(--paper);
     border-bottom:1px solid var(--line);
+    line-height:1.7; /* match the other pages' chrome; body here is 1.55 */
     padding:18px var(--gutter);
     display:flex;
     align-items:baseline;
@@ -703,6 +704,7 @@
   .shell{display:flex; align-items:stretch;}
   .sidebar{
     flex:0 0 var(--sidebar-w); width:var(--sidebar-w); box-sizing:border-box;
+    line-height:1.7; /* match the other pages' sidebar; body here is 1.55 */
     border-right:1px solid var(--line); background:var(--paper);
     transition:flex-basis .22s ease, width .22s ease;
   }
@@ -760,6 +762,7 @@
   }
   .nav-group:hover .nav-link.nav-sub,
   .nav-group:focus-within .nav-link.nav-sub,
+  .nav-group:has(.active) .nav-link.nav-sub,
   .nav-link.nav-sub.active{
     max-height:32px; opacity:1; pointer-events:auto;
   }

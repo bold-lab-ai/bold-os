@@ -49,7 +49,16 @@
 </div>
 
 <div id="pageContent" hidden>
+<script>
+/* Signed in last visit: show the page (sidebar included) at once instead of
+   after Firebase Auth resolves. onAuthStateChanged below stays authoritative. */
+try { if (localStorage.getItem('boldAuthHint')) document.getElementById('pageContent').hidden = false; } catch (e){}
+</script>
 <div class="shell" id="shell">
+<script>
+/* Apply the saved sidebar state before first paint so it doesn't animate in. */
+try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementById('shell').classList.add('is-collapsed'); } catch (e){}
+</script>
  <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
  <nav class="sidebar" id="sidebar" aria-label="Site navigation">
  <div class="sidebar-inner">
@@ -191,6 +200,7 @@
 
   if (!auth) {
     gate.hidden = false;
+    content.hidden = true;
     var p = gate.querySelector('p');
     if (p) p.textContent = 'Could not connect \u2014 reload, or check back shortly.';
     return;
@@ -216,6 +226,10 @@
       gate.hidden = false;
       content.hidden = true;
     }
+    try {
+      if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
+      else localStorage.removeItem('boldAuthHint');
+    } catch (e){}
   });
 })();
 </script>
