@@ -465,6 +465,9 @@
   .badge-rebuttal-sent{background:var(--success-bg); color:var(--success-text);}
   .badge-rebuttal-writing{background:var(--warn-bg); color:var(--warn-text);}
   .badge-rebuttal-waiting{background:var(--neutral-bg); color:var(--neutral-text);}
+  .badge-review-approved{background:var(--success-bg); color:var(--success-text);}
+  .badge-review-changes_requested{background:var(--danger-bg); color:var(--danger-text);}
+  .badge-review-in_review{background:var(--warn-bg); color:var(--warn-text);}
   .card-title-btn{
     display:block; width:100%; text-align:left;
     font-family:inherit; font-weight:700; font-size:14px; color:var(--ink);
@@ -559,6 +562,8 @@
   }
   .gate-banner.done{border-color:#bfe0d6; background:var(--success-bg); color:var(--success-text);}
   .gate-banner strong{font-weight:700;}
+  .gate-banner-actions{display:flex; gap:10px; align-items:center; margin-top:10px;}
+  .gate-banner .badge{vertical-align:middle;}
 
   /* ---------- review tabs: Format / Science / Discussion ---------- */
   .tabbar{display:flex; gap:0; border-bottom:1px solid var(--line); margin:28px 0 0;}
@@ -930,18 +935,30 @@
   // the abstract itself is submitted rather than at registration — see
   // authorsLocked's own comment and advanceBlockReason's `abstract` gates.
   //
-  // `paper`/`arxiv` collapsed into `rebuttal` (2026-09-18+3, per Eduardo):
-  // arXiv posting is no longer a gate or a column of its own — it's
-  // something you can do any time once the paper's submitted ("concurrent
-  // to Rebuttal"), just a link on the card, not blocking anything. Once
-  // "Submit paper" is clicked the card lands directly in `rebuttal`,
-  // showing a badge that starts "Waiting for reviews" and flips itself to
-  // "In Rebuttal" (plus a Slack DM) once the venue's own reviews-release
-  // date passes — see the new notifyReviewsOut scheduled function in
-  // functions/index.js, and renderCard's rebuttal badge. First real
-  // time-driven automatic transition in this pipeline; everything else
-  // here is still a deliberate human click by design.
-  var STATUS_ORDER = ['register', 'pitch', 'abstract', 'rebuttal', 'camera_ready', 'conference'];
+  // `arxiv` collapsed into `rebuttal` (2026-09-18+3, per Eduardo): arXiv
+  // posting is no longer a gate or a column of its own — it's something
+  // you can do any time once the paper's submitted ("concurrent to
+  // Rebuttal"), just a link on the card, not blocking anything. Once
+  // "Submit paper" is clicked (now from `paper`, see below) the card
+  // lands directly in `rebuttal`, showing a badge that starts "Waiting
+  // for reviews" and flips itself to "In Rebuttal" (plus a Slack DM) once
+  // the venue's own reviews-release date passes — see the new
+  // notifyReviewsOut scheduled function in functions/index.js, and
+  // renderCard's rebuttal badge. First real time-driven automatic
+  // transition in this pipeline; everything else here is still a
+  // deliberate human click by design.
+  //
+  // `paper` reinstated as its own stage (2026-09-18+4, per Eduardo) —
+  // briefly collapsed into `abstract` alongside the same-day redesign
+  // above, but that combined too much into one column: `abstract` is now
+  // a lightweight go/no-go on the abstract itself (senior reviewer
+  // approves or requests changes directly, card.abstractReviewState —
+  // no formal checklist), and only once approved does the card move
+  // (a plain ungated Advance, nothing to submit) into `paper`, where
+  // today's actual 12-item Format+Science checklist lives, same
+  // mechanism as before, just one column later. See advanceBlockReason's
+  // own comment for the exact gates on each transition.
+  var STATUS_ORDER = ['register', 'pitch', 'abstract', 'paper', 'rebuttal', 'camera_ready', 'conference'];
 
   // Rush mode (2026-09-11): a per-venue toggle (board.rushMode) for an
   // imminent-deadline venue that needs to move faster than the full
@@ -957,12 +974,13 @@
   // here, so there's no separate RUSH_STATUS_LABELS map any more either).
   // Skips `pitch` (no time for a scheduled Pitch Day) and
   // `camera_ready`/`conference` (rush's own urgency is about the
-  // submission deadlines specifically — once past `abstract`, the only
-  // rush-specific thing left to track is the rebuttal deadline). `paper`/
-  // `arxiv` dropped from here too (2026-09-18+3) now that they're gone
-  // from STATUS_ORDER itself — Rush mode's only remaining divergence from
-  // the full pipeline is skipping Pitch.
-  var RUSH_STATUS_ORDER = ['register', 'abstract', 'rebuttal'];
+  // submission deadlines specifically — once past `paper`, the only
+  // rush-specific thing left to track is the rebuttal deadline). `arxiv`
+  // dropped from here too (2026-09-18+3) now that it's gone from
+  // STATUS_ORDER itself. `paper` reinstated (2026-09-18+4, alongside
+  // STATUS_ORDER's own) — Rush mode's only remaining divergence from the
+  // full pipeline is skipping Pitch.
+  var RUSH_STATUS_ORDER = ['register', 'abstract', 'paper', 'rebuttal'];
 
   function effectiveStatusOrder(board){
     return (board && board.rushMode) ? RUSH_STATUS_ORDER : STATUS_ORDER;
@@ -1035,21 +1053,31 @@
   // changing column, so "in review" reads as "this is the review stage" —
   // still true the whole time a card sits here — rather than "review is
   // active on it right now," which was the original bug's actual claim.
+  // Shortened again to plain "Abstract" (2026-09-18+4) once `abstract`
+  // stopped being where the checklist itself lives — it's a lightweight
+  // go/no-go now (card.abstractReviewState, see advanceBlockReason's own
+  // comment), and reviewStateBadgeHtml already shows the live state, so
+  // "in review" baked into the column name is redundant the same way
+  // Rebuttal's own badge made "Reviews Out" redundant. `paper` is the new
+  // column where the full checklist and its "in review"-style badge live.
   var STATUS_LABELS = {
     register: 'Registered',
     pitch: 'Pitched',
-    abstract: 'Abstract in review',
+    abstract: 'Abstract',
+    paper: 'Paper',
     rebuttal: 'Rebuttal',
     camera_ready: 'Rebuttal Submitted',
     conference: 'Accepted'
   };
   // Super-brief "move a card here when…" note under each column title.
-  // `rebuttal`'s own badge (renderCard) carries the finer-grained
-  // waiting/in-rebuttal/sent distinction this hint can't — see its comment.
+  // `abstract`/`paper`/`rebuttal`'s own badges (renderCard) carry the
+  // finer-grained review/waiting states these hints can't — see their
+  // own comments (reviewStateBadgeHtml, rebuttalBadgeHtml).
   var STATUS_HINTS = {
     register: 'Waiting for pitch',
     pitch: 'Waiting for abstract submission',
-    abstract: 'Internal review + PI approval, before submitting the paper',
+    abstract: 'Waiting for reviewer approval',
+    paper: 'Internal review — both checklists must be complete',
     rebuttal: 'Waiting for reviews, then rebuttal',
     camera_ready: 'Waiting for the camera-ready submission',
     conference: 'Planning for conference'
@@ -1086,21 +1114,26 @@
     accepted: 'conference',
     rejected: 'rebuttal',
     withdrawn: 'rebuttal',
-    // 2026-09-18 pipeline redesign
+    // 2026-09-18 pipeline redesign. draft_review/final_draft/pi_polish
+    // repointed to `paper` (2026-09-18+4, alongside `paper` itself coming
+    // back): those three named actual full-draft-checklist activity, which
+    // is where the checklist genuinely lives again now — abstract_review
+    // stays at `abstract`, since that one's about the abstract itself, a
+    // real match for the new lightweight stage there.
     pitch_day: 'pitch',
-    draft_review: 'abstract',
-    final_draft: 'abstract',
+    draft_review: 'paper',
+    final_draft: 'paper',
     abstract_review: 'abstract',
-    pi_polish: 'abstract',
+    pi_polish: 'paper',
     submit: 'rebuttal',
     arxiv_publicity: 'rebuttal',
     pre_conference: 'conference',
-    // 2026-09-18+3: paper/arxiv collapsed into rebuttal (see STATUS_ORDER's
-    // own comment). This lookup is a single hop, not chained — every
-    // entry above that used to target 'paper'/'arxiv' was repointed
-    // straight at 'rebuttal' too, so a card migrated through an older
-    // status still lands on a real, current column in one step.
-    paper: 'rebuttal',
+    // 2026-09-18+3: arxiv collapsed into rebuttal (see STATUS_ORDER's own
+    // comment) — this lookup is a single hop, not chained, so any entry
+    // that used to target a status later retired gets repointed straight
+    // at its replacement too, not left dangling. `paper` reinstated as
+    // its own real stage again (2026-09-18+4), so it no longer needs an
+    // entry here at all — a card already there just stays.
     arxiv: 'rebuttal'
   };
 
@@ -1150,26 +1183,27 @@
   // *display* — "before Rebuttal" in a toast/banner — the real,
   // human-facing name for what crossesGate's gate actually protects. The
   // gate calculation itself (crossesGate, below) is anchored to
-  // GATE_AFTER_STATUS instead. Updated 2026-09-18+3 from 'paper' to
-  // 'rebuttal' — the checklist gate still fires on leaving `abstract`,
-  // unchanged; only the real name of what's on the other side of it moved.
+  // GATE_AFTER_STATUS instead. Unaffected by `paper` coming back
+  // (2026-09-18+4) — the checklist gate moved from `abstract` to `paper`
+  // (see GATE_AFTER_STATUS below), but 'rebuttal' is still exactly what's
+  // on the other side of it either way.
   var GATE_STATUS = 'rebuttal';
 
-  // The actual anchor crossesGate computes from — `abstract` is where the
-  // checklist itself lives now (2026-09-18: this used to be draft_review,
-  // a separate column from where the checklist's *result*, final_draft,
-  // showed up; the pipeline redesign collapsed both, plus abstract_review
-  // and pi_polish, into the one `abstract` stage — see STATUS_ORDER's own
-  // comment). "Crossing the gate" means leaving `abstract` without the
-  // checklist done, i.e. moving from at-or-before its position (in
-  // whichever order is active) to strictly after it. Rush mode no longer
-  // reorders anything (see RUSH_STATUS_ORDER), so unlike before, this is
-  // now trivially adjacent to GATE_STATUS in both pipelines — kept as two
-  // separate constants anyway (one anchors the calculation, one names the
-  // result for display) since collapsing them back into one would just
-  // reintroduce the coupling that caused real bugs the last time Rush
-  // mode's columns diverged from canonical's own order.
-  var GATE_AFTER_STATUS = 'abstract';
+  // The actual anchor crossesGate computes from. Moved from `abstract` to
+  // `paper` (2026-09-18+4, per Eduardo) when `paper` was reinstated as its
+  // own stage: `abstract` is a lightweight go/no-go now (no checklist at
+  // all, see card.abstractReviewState), `paper` is where the actual
+  // 12-item Format+Science checklist lives — same mechanism this whole
+  // gate has always used, just relocated. "Crossing the gate" means
+  // leaving `paper` without the checklist done, i.e. moving from
+  // at-or-before its position (in whichever order is active) to strictly
+  // after it. Rush mode doesn't reorder anything (see RUSH_STATUS_ORDER),
+  // so this is trivially adjacent to GATE_STATUS in both pipelines — kept
+  // as two separate constants anyway (one anchors the calculation, one
+  // names the result for display) since collapsing them back into one
+  // would just reintroduce the coupling that caused real bugs the last
+  // time Rush mode's columns diverged from canonical's own order.
+  var GATE_AFTER_STATUS = 'paper';
 
   var OUTCOME_LABELS = { accepted: 'Accepted', rejected: 'Rejected', withdrawn: 'Withdrawn' };
 
@@ -2344,7 +2378,11 @@
   // deadline. Everything else has nothing externally outstanding.
   function outstandingDeadlineFor(status, board){
     if (status === 'camera_ready') return (board && board.cameraReadyDeadline) || null;
-    if (status === 'abstract') return (board && board.deadline) || null;
+    // abstract AND paper both race the same real venue deadline — the
+    // paper hasn't gone out yet in either stage, `paper` reinstated as
+    // its own stage (2026-09-18+4) doesn't change what's actually
+    // outstanding, just splits how the card gets there into two columns.
+    if (status === 'abstract' || status === 'paper') return (board && board.deadline) || null;
     if (status === 'register' || status === 'pitch'){
       return (board && (board.abstractDeadline || board.deadline)) || null;
     }
@@ -2404,19 +2442,21 @@
   // Rush mode's own internal deadlines (2026-09-14, per Eduardo) —
   // separate from effectiveDeadline/isOverdue above, which drive the
   // general "Overdue" badge off a venue's real deadline directly and are
-  // unchanged by any of this. Rush's two columns with something still
-  // outstanding — Registered (abstract not sent) and Abstract in review
-  // (paper not sent) — each count down to a CUTOFF instead: RUSH_BUFFER_HOURS
-  // before the real venue deadline that stage is actually racing toward,
-  // so there's still a buffer to act before the real deadline hits, not
-  // right up to the wire. Rebuttal (2026-09-18+3: reached straight from
-  // Abstract in review now, no Paper Submitted/Posted in between any more)
-  // has nothing outstanding to submit at that point, so it gets no cutoff
-  // at all (see rushColumnRealDeadline).
+  // unchanged by any of this. Rush's three columns with something still
+  // outstanding — Registered (abstract not sent), Abstract (paper not
+  // sent, waiting on the lightweight go/no-go), and Paper (paper not sent,
+  // checklist in progress — 2026-09-18+4, `paper` reinstated as its own
+  // stage: same real deadline as Abstract, since the paper genuinely
+  // isn't out yet in either) — each count down to a CUTOFF instead:
+  // RUSH_BUFFER_HOURS before the real venue deadline that stage is
+  // actually racing toward, so there's still a buffer to act before the
+  // real deadline hits, not right up to the wire. Rebuttal has nothing
+  // outstanding to submit at that point, so it gets no cutoff at all (see
+  // rushColumnRealDeadline).
   var RUSH_BUFFER_HOURS = 48;
 
   // Which real venue deadline a given rush column is racing toward — just
-  // Registered and Abstract in review, the two Rush-mode columns with
+  // Registered, Abstract, and Paper, the three Rush-mode columns with
   // something still outstanding (see outstandingDeadlineFor above, which
   // this reuses directly — same answer effectiveDeadline gives any card
   // at that status, just addressed by bare status/board instead of a
@@ -2427,7 +2467,7 @@
   // Returns a bare ISO date string, or null if the venue has no deadline
   // of that kind set, or the column has no countdown at all.
   function rushColumnRealDeadline(status, board){
-    if (!board || (status !== 'register' && status !== 'abstract')) return null;
+    if (!board || (status !== 'register' && status !== 'abstract' && status !== 'paper')) return null;
     return outstandingDeadlineFor(status, board);
   }
 
@@ -2476,8 +2516,8 @@
   }
 
   // The line under a column's title — STATUS_HINTS' plain "move a card
-  // here when…" note everywhere except Rush mode's two columns with an
-  // outstanding submission (Registered, Abstract in review — see
+  // here when…" note everywhere except Rush mode's three columns with an
+  // outstanding submission (Registered, Abstract, Paper — see
   // rushColumnRealDeadline), which show their real deadline and internal
   // cutoff instead, since that's the more useful thing to see there.
   // Rebuttal falls through to the plain STATUS_HINTS text same as any
@@ -2492,12 +2532,13 @@
   // throughout the file).
   // What outstandingDeadlineFor's answer for this status is actually
   // racing toward — its own comment already says it in prose (register/
-  // pitch race the abstract deadline, abstract races the paper deadline),
-  // this is just that same fact in a short label for columnHintFor below.
-  var RUSH_DEADLINE_STAGE = { register: 'Abstract', abstract: 'Paper' };
+  // pitch race the abstract deadline, abstract AND paper both race the
+  // paper deadline), this is just that same fact in a short label for
+  // columnHintFor below.
+  var RUSH_DEADLINE_STAGE = { register: 'Abstract', abstract: 'Paper', paper: 'Paper' };
 
   function columnHintFor(status, board){
-    if (board && board.rushMode && (status === 'register' || status === 'abstract')){
+    if (board && board.rushMode && (status === 'register' || status === 'abstract' || status === 'paper')){
       var real = rushColumnRealDeadline(status, board);
       if (!real) return 'No deadline set for this venue yet';
       var cutoff = rushColumnCutoff(status, board);
@@ -2761,9 +2802,11 @@
     var next = statusAt(status, 1, order);
     if (!next) return [];
     var reqs = [];
-    // Mirrors abstractAcceptBlockReason's own two checks — both pipelines
-    // now (2026-09-18), see moveButtonsInnerHtml's own comment.
-    if (status === 'abstract'){
+    // Mirrors abstractAcceptBlockReason's own two checks — both pipelines,
+    // see moveButtonsInnerHtml's own comment. Moved here from 'abstract'
+    // to 'paper' (2026-09-18+4, alongside abstractAcceptBlockReason's own
+    // trigger) now that `paper` is its own stage again.
+    if (status === 'paper'){
       reqs.push('authors added');
       reqs.push('under the per-author cap');
     }
@@ -2777,6 +2820,9 @@
     if (next === 'abstract') reqs.push('co-authors added');
     if (next === 'abstract') reqs.push('Overleaf link added');
     if (next === 'abstract') reqs.push('reviewers assigned');
+    // New (2026-09-18+4): mirrors advanceBlockReason's abstractReviewState
+    // gate on entering `paper`.
+    if (next === 'paper') reqs.push('senior reviewer approval');
     if (next === 'rebuttal') reqs.push('submission link added');
     if (next === 'camera_ready') reqs.push('rebuttal doc added');
     if (next === 'conference') reqs.push('camera-ready link added');
@@ -2793,7 +2839,7 @@
     return 'Requires: ' + reqs.map(function(r, i){ return letters[i] + ') ' + r; }).join(' ');
   }
 
-  // Authors are fixed as soon as a paper REACHES Abstract in review — the
+  // Authors are fixed as soon as a paper REACHES Abstract — the
   // real venue locks the author list once the abstract's actually gone
   // in, so the app matches that from this point on (changed 2026-09-18,
   // per Eduardo, from locking one column later, only once `paper` was
@@ -2849,12 +2895,12 @@
     // just a bare confirmed click — see the card fields' own comment in
     // onAddCard. submissionLink/rebuttalDocLink existed already as
     // free-standing informational fields; wired as real gates here for
-    // the first time. (2026-09-18+3: toStatus 'rebuttal' used to be the
-    // one deliberately-ungated arXiv -> Rebuttal transition, see #13 —
-    // gone now that arxiv isn't a stage at all; 'rebuttal' is reached
-    // straight from 'abstract' instead, gated on submissionLink below,
-    // same in both pipelines since RUSH_STATUS_ORDER never reordered
-    // anything to begin with.)
+    // the first time. toStatus 'rebuttal' used to be the one
+    // deliberately-ungated arXiv -> Rebuttal transition (2026-09-18+3, see
+    // #13) — gone now that arxiv isn't a stage at all; 'rebuttal' is
+    // reached from 'paper' instead (2026-09-18+4), gated on submissionLink
+    // below, same in both pipelines since RUSH_STATUS_ORDER never
+    // reordered anything to begin with.
     if (toStatus === 'pitch' && !card.pitchLink){
       return 'Add your pitch materials first';
     }
@@ -2878,12 +2924,26 @@
     if (toStatus === 'abstract' && !reviewersAssigned(card)){
       return 'Assign a junior and a senior reviewer first';
     }
-    // Moved from `paper` to `rebuttal` (2026-09-18+3, per Eduardo) — Paper
-    // Submitted/Posted no longer exist as their own stages, so this is the
-    // one real transition left that the submission link gates. arXiv is
-    // deliberately ungated now: posting to arXiv is concurrent to sitting
-    // in Rebuttal, not a prerequisite for reaching it — no more arxivLink
-    // check here at all.
+    // New lightweight gate (2026-09-18+4, per Eduardo, alongside `paper`
+    // coming back as its own stage): leaving `abstract` for `paper` needs
+    // the senior reviewer's direct go-ahead — no checklist involved, just
+    // card.abstractReviewState, set straight from the two Approve/Request
+    // changes buttons on the card (see reviewStateBadgeHtml and the
+    // detail-page controls near reviewTabsHtml). Entering `paper` itself
+    // is otherwise a plain, ungated Advance — nothing "submitted" by that
+    // click alone, same shape as the old arXiv -> Rebuttal transition.
+    if (toStatus === 'paper' && card.abstractReviewState !== 'approved'){
+      return 'Waiting for the senior reviewer’s approval';
+    }
+    // Unaffected by `paper` coming back (2026-09-18+4) — this already
+    // gated the real transition, `paper -> rebuttal` (the click fires
+    // while AT `paper`, per ADVANCE_LABELS.paper), even while `paper` was
+    // briefly folded into `abstract` and this fired on `toStatus ===
+    // 'rebuttal'` directly (2026-09-18+3) — same real submission click,
+    // just addressed by its own status key again now. arXiv stays
+    // deliberately ungated regardless — posting to arXiv is concurrent to
+    // sitting in Rebuttal, not a prerequisite for reaching it, no
+    // arxivLink check anywhere in this function.
     if (toStatus === 'rebuttal' && !card.submissionLink){
       return 'Add the venue submission link first';
     }
@@ -2906,13 +2966,16 @@
   // whose deliverable this button submits), not the target. One shared
   // map for both pipelines — Rush mode visits the same stages in the same
   // relative order (see RUSH_STATUS_ORDER), nothing Rush-specific to
-  // override here. No more `paper` entry (2026-09-18+3): "Post to arXiv"
-  // isn't a move any more at all, since arXiv posting no longer gates or
-  // occupies a stage — see STATUS_ORDER's own comment.
+  // override here. No `abstract` entry (2026-09-18+4, moved from `paper`):
+  // leaving `abstract` is the senior reviewer's approval, a plain ungated
+  // Advance, not a Submit — see advanceBlockReason's abstractReviewState
+  // gate. `paper` reinstated in its place — same "Submit paper" action as
+  // always, just addressed by its own status key again now that `paper`
+  // is its own stage.
   var ADVANCE_LABELS = {
     register: 'Submit pitch',
     pitch: 'Submit abstract',
-    abstract: 'Submit paper',
+    paper: 'Submit paper',
     rebuttal: 'Submit rebuttal',
     camera_ready: 'Submit camera-ready'
   };
@@ -2925,7 +2988,7 @@
   var SUBMIT_CONFIRM_MESSAGES = {
     'Submit pitch': 'Are you sure you want to submit your pitch materials? This action cannot be undone.',
     'Submit abstract': 'Are you sure you want to submit your abstract for internal review? This action cannot be undone.',
-    'Submit paper': 'Are you sure you want to submit your paper for internal review? This action cannot be undone.',
+    'Submit paper': 'Are you sure you want to submit your paper to the venue? This action cannot be undone.',
     'Submit rebuttal': 'Are you sure you want to submit your rebuttal? This action cannot be undone.',
     'Submit camera-ready': 'Are you sure you want to submit the camera-ready version? This action cannot be undone.'
   };
@@ -2965,7 +3028,7 @@
     var rgt = statusAt(effective, 1, order);
     var rgtLabel = ADVANCE_LABELS[effective] || 'Advance';
     var rgtBlockReason = rgt && (advanceBlockReason(card, rgt, board) ||
-      (effective === 'abstract' ? abstractAcceptBlockReason(card, board, state.cards) : null));
+      (effective === 'paper' ? abstractAcceptBlockReason(card, board, state.cards) : null));
     // Green treatment covers every real Submit (SUBMIT_CONFIRM_MESSAGES' keys).
     var acceptClass = SUBMIT_CONFIRM_MESSAGES[rgtLabel] ? ' card-move-btn-accept' : '';
     // Revert button experimentally removed (2026-09-16, per Eduardo) — lft
@@ -3177,10 +3240,27 @@
     return '<span class="badge badge-rebuttal-waiting">Waiting for reviews</span>';
   }
 
+  // A bare tri-state review value ('in_review'/'changes_requested'/
+  // 'approved') as a badge chip (2026-09-18+4) — shared by both Abstract
+  // (card.abstractReviewState, a direct field, no checklist behind it)
+  // and Paper (reviewFilterState(card), still derived from the 12-item
+  // checklist exactly as before). Same vocabulary, same three labels,
+  // just two different sources depending which stage the card is in —
+  // see renderCard's own call sites.
+  var REVIEW_BADGE_LABELS = { in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
+  function reviewStateBadgeHtml(state){
+    var v = REVIEW_BADGE_LABELS[state] ? state : 'in_review';
+    return '<span class="badge badge-review-' + v + '">' + REVIEW_BADGE_LABELS[v] + '</span>';
+  }
+
   function renderCard(card, board){
     var overdue = isOverdue(card, board);
-    var inAbstractStage = card.status === 'abstract';
-    var rv = inAbstractStage ? reviewFilterState(card) : null;
+    // Abstract's lightweight go/no-go and Paper's checklist-derived state
+    // share the same rv- left-border treatment (2026-09-18+4) — whichever
+    // of the two stages the card is actually in picks its own source.
+    var inPaperStage = card.status === 'paper';
+    var rv = card.status === 'abstract' ? (card.abstractReviewState || 'in_review')
+      : inPaperStage ? reviewFilterState(card) : null;
     var rushOverdue = isRushColumnPastCutoff(displayStatus(card, board), board);
     var cardClass = 'card' + (rv ? ' rv-' + rv : '') + (rushOverdue ? ' rush-deadline-passed' : '');
     var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
@@ -3188,6 +3268,8 @@
     // Badges only; Overleaf link / edit + remove live on the detail page
     // now, to keep the board card short and easy to scan.
     var badges = '';
+    if (card.status === 'abstract') badges += reviewStateBadgeHtml(card.abstractReviewState || 'in_review');
+    if (inPaperStage) badges += reviewStateBadgeHtml(reviewFilterState(card));
     if (card.status === 'rebuttal') badges += rebuttalBadgeHtml(card);
     if (shouldShowOutcomeBadge(card)) badges += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     if (overdue || rushOverdue) badges += '<span class="badge badge-overdue">Overdue</span>';
@@ -3199,9 +3281,9 @@
     if (card.cameraReadyLink) html += '<a class="card-link" href="' + escapeHtml(card.cameraReadyLink) + '" target="_blank" rel="noopener">Camera-ready</a><br>';
     html += '<div class="card-reviewers">' +
       '<div class="rv-row"><span class="rv-role junior">Jr</span>' + reviewerInputHtml(card, 'junior') + '</div>' +
-      (inAbstractStage ? reviewStatePillHtml(card, 'junior') : '') +
+      (inPaperStage ? reviewStatePillHtml(card, 'junior') : '') +
       '<div class="rv-row"><span class="rv-role senior">Sr</span>' + reviewerInputHtml(card, 'senior') + '</div>' +
-      (inAbstractStage ? reviewStatePillHtml(card, 'senior') : '') +
+      (inPaperStage ? reviewStatePillHtml(card, 'senior') : '') +
     '</div>';
     if (card.reviewNotes) html += '<div class="card-notes">' + escapeHtml(card.reviewNotes) + '</div>';
     var counts = checklistCounts(card); // science checklist — reviewers
@@ -3242,14 +3324,15 @@
     return hay.toLowerCase().indexOf(q) !== -1;
   }
 
-  // Only meaningful for a card actually in Draft & Review (the only status
-  // with a review state at all) — a card elsewhere always matches, same as
-  // an empty text query always matching, so the filter only narrows down
-  // the column it actually applies to.
+  // Only meaningful for a card actually at Paper (the only status
+  // reviewFilterState applies to, moved here from `abstract` 2026-09-18+4
+  // alongside the checklist itself) — a card elsewhere always matches,
+  // same as an empty text query always matching, so the filter only
+  // narrows down the column it actually applies to.
   function matchesReviewFilter(card){
     var f = (state.search && state.search.reviewState) || 'all';
     if (f === 'all') return true;
-    return card.status === 'abstract' && reviewFilterState(card) === f;
+    return card.status === 'paper' && reviewFilterState(card) === f;
   }
 
   function matchesSearch(card){
@@ -3317,7 +3400,7 @@
       // Only the two-row grid case (an actual venue deadline to show)
       // wants ch-hint-deadlines — the "No deadline set" fallback inside
       // columnHintFor is plain text and should keep ch-hint's own layout.
-      var isDeadlineHint = !!(board && board.rushMode && (status === 'register' || status === 'abstract') && rushColumnRealDeadline(status, board));
+      var isDeadlineHint = !!(board && board.rushMode && (status === 'register' || status === 'abstract' || status === 'paper') && rushColumnRealDeadline(status, board));
       var reqs = columnRequirementsHtml(status, board);
       html += '<div class="column-head">' +
         '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
@@ -3513,6 +3596,48 @@
 
   function getCurrentCard(){
     return state.cards.filter(function(c){ return c.id === state.currentCardId; })[0];
+  }
+
+  // Abstract's own lightweight go/no-go (2026-09-18+4, per Eduardo) — no
+  // checklist, just a direct call from whoever's looking (soft, no real
+  // access control client-side, same as reviewerInputHtml's own picker —
+  // roles aren't readable client-side to lock this down further). Shown
+  // only while the card is actually at `abstract`; the two buttons write
+  // card.abstractReviewState straight via onSetAbstractReview below.
+  function abstractApprovalHtml(card){
+    if (card.status !== 'abstract') return '';
+    var v = card.abstractReviewState || 'in_review';
+    return '<div class="gate-banner' + (v === 'approved' ? ' done' : '') + '" id="abstractApproval">' +
+      'Abstract review &mdash; ' + reviewStateBadgeHtml(v) + ' ' +
+      (v === 'approved'
+        ? 'This card can move to ' + STATUS_LABELS.paper + '.'
+        : 'Needs the senior reviewer’s Approve before this card can move to ' + STATUS_LABELS.paper + '.') +
+      '<div class="gate-banner-actions">' +
+        '<button class="btn" type="button" data-abstract-review="approved"' + (v === 'approved' ? ' disabled' : '') + '>Approve</button>' +
+        '<button class="btn-text danger" type="button" data-abstract-review="changes_requested"' + (v === 'changes_requested' ? ' disabled' : '') + '>Request changes</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function onSetAbstractReview(cardId, value){
+    var boardId = state.currentBoardId;
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card || card.abstractReviewState === value) return;
+    var prev = state.cards;
+    var next = state.cards.map(function(c){
+      return c.id === cardId ? Object.assign({}, c, { abstractReviewState: value, updatedAt: Date.now() }) : c;
+    });
+    state.cards = next;
+    renderCardDetail();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast(saveErrorMessage('Could not save — try again.'), 'error');
+      } else {
+        showToast(value === 'approved' ? 'Approved.' : 'Changes requested.', 'ok');
+      }
+    });
   }
 
   function gateBannerHtml(card){
@@ -3903,6 +4028,8 @@
     html += '<div class="detail-head">';
     html += '<h2>' + escapeHtml(card.title) + '</h2>';
     if (STATUS_LABELS[card.status]) html += '<span class="badge" style="background:var(--accent-dim);color:var(--accent);">' + escapeHtml(statusLabelFor(card.status, board)) + '</span>';
+    if (card.status === 'abstract') html += reviewStateBadgeHtml(card.abstractReviewState || 'in_review');
+    if (card.status === 'paper') html += reviewStateBadgeHtml(reviewFilterState(card));
     if (card.status === 'rebuttal') html += rebuttalBadgeHtml(card);
     if (shouldShowOutcomeBadge(card)) html += '<span class="badge badge-outcome-' + card.outcome + '">' + OUTCOME_LABELS[card.outcome] + '</span>';
     if (overdue || rushOverdue) html += '<span class="badge badge-overdue">Overdue</span>';
@@ -3935,14 +4062,15 @@
       : '—') + '</dd>';
     if (card.createdAt) html += '<dt>Registered</dt><dd>' + formatTimestamp(card.createdAt) + '</dd>';
     html += '<dt><span class="rv-role junior">Jr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'junior') +
-      (card.status === 'abstract' ? reviewStatePillHtml(card, 'junior') : '') + '</dd>';
+      (card.status === 'paper' ? reviewStatePillHtml(card, 'junior') : '') + '</dd>';
     html += '<dt><span class="rv-role senior">Sr</span>&nbsp;reviewer</dt><dd style="max-width:260px;">' + reviewerInputHtml(card, 'senior') +
-      (card.status === 'abstract' ? reviewStatePillHtml(card, 'senior') : '') + '</dd>';
+      (card.status === 'paper' ? reviewStatePillHtml(card, 'senior') : '') + '</dd>';
     var regNote = card.history && card.history[0] && card.history[0].note;
     if (regNote) html += '<dt>Note at registration</dt><dd style="white-space:pre-wrap;">' + escapeHtml(regNote) + '</dd>';
     if (card.reviewNotes) html += '<dt>Review notes</dt><dd style="white-space:pre-wrap;">' + escapeHtml(card.reviewNotes) + '</dd>';
     html += '</dl>';
 
+    html += abstractApprovalHtml(card);
     html += gateBannerHtml(card);
 
     html += reviewTabsHtml(card);
@@ -3951,6 +4079,9 @@
     els.boardRegion.innerHTML = html;
 
     document.getElementById('detailBack').addEventListener('click', function(e){ e.preventDefault(); backToBoard(); });
+    Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-abstract-review]'), function(btn){
+      btn.addEventListener('click', function(){ onSetAbstractReview(card.id, btn.getAttribute('data-abstract-review')); });
+    });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-detail-tab]'), function(btn){
       btn.addEventListener('click', function(){
         state.detailTab = btn.getAttribute('data-detail-tab');
@@ -4080,7 +4211,7 @@
       merged.updatedAt = Date.now();
       return merged;
     });
-    var justCompleted = !wasComplete && card.status === 'abstract' &&
+    var justCompleted = !wasComplete && card.status === 'paper' &&
       checklistComplete(next.filter(function(c){ return c.id === cardId; })[0]);
     var prev = state.cards;
     state.cards = next;
@@ -4145,7 +4276,7 @@
       merged.updatedAt = Date.now();
       return merged;
     });
-    var justCompleted = !wasComplete && card.status === 'abstract' &&
+    var justCompleted = !wasComplete && card.status === 'paper' &&
       checklistComplete(next.filter(function(c){ return c.id === cardId; })[0]);
     var prev = state.cards;
     state.cards = next;
@@ -4348,21 +4479,21 @@
     return { count: count, max: max };
   }
 
-  // Rush mode's "Submit paper" gate (2026-09-14, per Eduardo) — moving
-  // a card out of Abstract in review is where the two things that stage
-  // exists to check get enforced: the authors list is actually filled in,
-  // and nobody on the paper is over the venue's max-papers-per-author cap.
-  // A real hard block on THIS specific transition — unlike
-  // currentUserPaperCapWarning/notifyAuthorsOverCap above, which stay
-  // deliberately non-blocking (a save-time hard block was tried and
-  // reverted the same day — see the comment above
+  // "Submit paper" gate (2026-09-14, per Eduardo; despite the name below,
+  // applies in both pipelines — nothing in this check was ever actually
+  // Rush-specific, see moveButtonsInnerHtml's own call site) — moving a
+  // card out of Paper (2026-09-18+4: was Abstract in review, before
+  // `paper` was reinstated as its own stage) is where the two things this
+  // checkpoint exists to check get enforced: the authors list is actually
+  // filled in, and nobody on the paper is over the venue's
+  // max-papers-per-author cap. A real hard block on THIS specific
+  // transition — unlike currentUserPaperCapWarning/notifyAuthorsOverCap
+  // above, which stay deliberately non-blocking (a save-time hard block
+  // was tried and reverted the same day — see the comment above
   // currentUserPaperCapWarning). That earlier reversal was specifically
   // about not blocking *registering* a paper in the first place; this is a
   // separate, later checkpoint that the review process itself is meant to
   // catch it at, once there's actually been a chance to notice and fix it.
-  // Deliberately not reused for the canonical (non-rush) pipeline's own
-  // Abstract Reviewed column — this check is scoped to Rush mode's own
-  // accept button, see moveButtonsHtml.
   function abstractAcceptBlockReason(card, board, cards){
     if (!card.authors || !card.authors.length) return 'Add the authors before submitting the paper';
     var max = board && board.maxPapersPerAuthor;
@@ -4514,7 +4645,7 @@
             '<div class="field"><label for="eEmail">Corresponding author email</label><input type="email" id="eEmail" value="' + escapeHtml(card.correspondingAuthorEmail || '') + '"></div>' +
             '<div class="field"><label for="eCompute">Compute estimate</label><input type="text" id="eCompute" value="' + escapeHtml(card.computeEstimate || '') + '" placeholder="e.g. ~2000 A100-hours"></div>' +
             '<div class="field"><label for="ePitchLink">Pitch materials</label><input type="url" id="ePitchLink" value="' + escapeHtml(card.pitchLink || '') + '" placeholder="https://docs.google.com/presentation/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Registered.</div></div>' +
-            '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Abstract in review.</div></div>' +
+            '<div class="field"><label for="eSubmissionLink">Submission link (OpenReview, etc.)</label><input type="url" id="eSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="https://openreview.net/forum?id=..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Paper.</div></div>' +
             '<div class="field"><label for="eArxivLink">arXiv link</label><input type="url" id="eArxivLink" value="' + escapeHtml(card.arxivLink || '') + '" placeholder="https://arxiv.org/abs/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Optional — post whenever it’s ready, not required to advance.</div></div>' +
             '<div class="field"><label for="eRebuttalDeadline">Rebuttal deadline</label><input type="date" id="eRebuttalDeadline" value="' + escapeHtml(card.rebuttalDeadline || '') + '"></div>' +
             '<div class="field"><label for="eRebuttalDoc">Rebuttal document</label><input type="url" id="eRebuttalDoc" value="' + escapeHtml(card.rebuttalDocLink || '') + '" placeholder="https://docs.google.com/..."><div style="font-size:12px;color:var(--muted);margin-top:4px;">Required to leave Rebuttal.</div></div>' +
@@ -4867,13 +4998,21 @@
       reviewers: { junior: '', senior: '' },
       jrReviewState: 'in_review',
       srReviewState: 'in_review',
+      // Abstract's own lightweight go/no-go (2026-09-18+4) — a direct
+      // tri-state set by the senior reviewer's Approve/Request changes
+      // buttons, not derived from a checklist at all (unlike
+      // jrReviewState/srReviewState above, which drive the Paper stage's
+      // checklist-based reviewFilterState instead). See
+      // advanceBlockReason's abstract->paper gate and reviewStateBadgeHtml.
+      abstractReviewState: 'in_review',
       outcome: '',
       // Deliverable-per-stage redesign (2026-09-18, per Eduardo): each
       // link below is what its stage's own advance gate requires before
       // the Submit-X button unblocks — see advanceBlockReason and
       // ADVANCE_LABELS. pitchLink (Register -> Pitch), submissionLink
-      // (Abstract -> Rebuttal, moved 2026-09-18+3 from Abstract -> Paper
-      // now that Paper Submitted no longer exists as its own stage),
+      // (Paper -> Rebuttal — moved 2026-09-18+3 to Abstract -> Rebuttal
+      // while `paper` was briefly folded into `abstract`, moved back here
+      // 2026-09-18+4 now that `paper` is its own stage again),
       // rebuttalDocLink (Rebuttal -> Camera-ready), cameraReadyLink
       // (Camera-ready -> Conference). arxivLink is deliberately NOT a gate
       // (2026-09-18+3) — arXiv posting is concurrent to sitting in
@@ -4951,11 +5090,11 @@
     var toIdx = order.indexOf(newStatus);
     var isAdvance = toIdx !== -1 && (fromIdx === -1 || toIdx > fromIdx);
 
-    // Only blocks moving forward into Abstract in review — reverting back
-    // into it isn't held to this, same as the checklist gate above only
-    // fires crossing forward. Moved here from Paper Submitted
-    // (2026-09-18+1, per Eduardo) to match advanceBlockReason's own gate
-    // — see its comment for why.
+    // Only blocks moving forward into Abstract — reverting back into it
+    // isn't held to this, same as the checklist gate above only fires
+    // crossing forward. Moved here from Paper Submitted (2026-09-18+1,
+    // per Eduardo) to match advanceBlockReason's own gate — see its
+    // comment for why.
     if (isAdvance && newStatus === 'abstract' && !reviewersAssigned(card)){
       showToast('Assign a junior and a senior reviewer before moving to ' + STATUS_LABELS.abstract + '.', 'error');
       renderBoard(); // undo any dropdown selection
