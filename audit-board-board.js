@@ -261,6 +261,80 @@
     });
   }
 
+  // The project page's own inline "Submit the paper" control
+  // (2026-09-18+14, per Eduardo — same pattern as Submit the abstract
+  // above, extended to the Paper stage). The Format checklist itself
+  // (ticked by any co-author) already renders right above this in the
+  // Author section (authorChecklistTabHtml, see renderCardDetail) — the
+  // one author-side requirement for leaving Paper that never had an
+  // inline field anywhere on this page is the venue submission link
+  // (card.submissionLink), previously only settable via the Edit-fields
+  // modal. This adds that field plus the real Submit control, right next
+  // to the checklist that has to be finished before it can actually be
+  // used.
+  //
+  // Shown only at the Paper stage, only to an author (canManageAuthorFields
+  // — same helper/reasoning as abstractSubmissionFieldsHtml: this is a
+  // field only an author usefully fills in). Stays visible for as long as
+  // the card sits at Paper — not hidden once submissionLink is filled in
+  // — same reasoning as the abstract form: hiding it the moment the field
+  // is complete would make Submit unreachable in its enabled state; it
+  // only disappears once the card actually leaves Paper. Submit reuses
+  // the same data-move/data-move-to/data-move-label attributes and shared
+  // [data-move] click handler the top .detail-controls button already
+  // uses — identical confirm dialog (SUBMIT_CONFIRM_MESSAGES['Submit
+  // paper']) and green accept styling, and the identical gate
+  // moveButtonsInnerHtml's own rgtBlockReason already computes for that
+  // top button (advanceBlockReason PLUS abstractAcceptBlockReason, the
+  // per-author-cap check) — so "ready to submit" can't drift out of sync
+  // between the two buttons.
+  function paperSubmissionFieldsHtml(card, board){
+    if (card.status !== 'paper') return '';
+    if (!canManageAuthorFields(card)) return '';
+    var blockReason = advanceBlockReason(card, 'rebuttal', board) || abstractAcceptBlockReason(card, board, state.cards);
+    return '<div class="stage-fields" id="stagePaperFields">' +
+      '<h3 class="detail-subhead">Submit the paper</h3>' +
+      '<div class="field"><label for="stageSubmissionLink">Submission link</label><input type="url" id="stageSubmissionLink" value="' + escapeHtml(card.submissionLink || '') + '" placeholder="Link to your venue submission (e.g. OpenReview)"></div>' +
+      '<div class="field-error" id="stagePaperFieldsError" hidden></div>' +
+      '<div class="stage-fields-actions">' +
+        '<button class="btn" type="button" data-stage-paper-save="' + escapeHtml(card.id) + '">Save</button>' +
+        '<button class="btn btn-primary" type="button" data-move="' + escapeHtml(card.id) + '" data-move-to="rebuttal" data-move-label="Submit paper"' +
+          (blockReason ? ' disabled title="' + escapeHtml(blockReason) + '"' : ' title="Move to ' + escapeHtml(statusLabelFor('rebuttal', board)) + '"') + '>Submit</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // Saves just the submission link (2026-09-18+14) — same
+  // optimistic-update/rollback shape as onSaveAbstractFields/
+  // onSetAbstractReview, scoped to this one field. Rejects a blank save,
+  // same as onSaveAbstractFields — a requirement can't be satisfied by an
+  // empty string.
+  function onSavePaperSubmissionLink(cardId){
+    var boardId = state.currentBoardId;
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card) return;
+    var errorEl = document.getElementById('stagePaperFieldsError');
+    var value = document.getElementById('stageSubmissionLink').value.trim();
+    if (!value){
+      if (errorEl){ errorEl.textContent = 'Can’t be blank.'; errorEl.hidden = false; }
+      return;
+    }
+    if (errorEl) errorEl.hidden = true;
+    var prev = state.cards;
+    var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, { submissionLink: value, updatedAt: Date.now() }) : c; });
+    state.cards = next;
+    renderCardDetail();
+    saveBoard(boardId, { cards: next }).then(function(ok){
+      if (!ok){
+        state.cards = prev;
+        renderCardDetail();
+        showToast(saveErrorMessage('Could not save — try again.'), 'error');
+      } else {
+        showToast('Saved.', 'ok');
+      }
+    });
+  }
+
   // Forward-migrate a stored card: since-split status keys; older checklist
   // shapes (single `checked`, `author`/`auditor` pair, or the dropped
   // author/junior/senior triple) into the junior/senior pair — old `auditor`

@@ -485,7 +485,10 @@
     // any more — even though anyone can actually post there regardless
     // of role.
     var authorBody = abstractSubmissionFieldsHtml(card, board);
-    if (card.status === 'paper') authorBody += '<h3 class="detail-subhead">Checklist of authors</h3>' + authorChecklistTabHtml(card);
+    if (card.status === 'paper'){
+      authorBody += '<h3 class="detail-subhead">Checklist of authors</h3>' + authorChecklistTabHtml(card);
+      authorBody += paperSubmissionFieldsHtml(card, board);
+    }
     if (authorBody) html += '<section class="detail-section" id="authorSection"><h3 class="detail-section-head">Author</h3>' + authorBody + '</section>';
 
     var reviewBody = '<dl class="detail-grid">' +
@@ -578,6 +581,8 @@
     }
     var stageFieldsSaveBtn = els.boardRegion.querySelector('[data-stage-fields-save]');
     if (stageFieldsSaveBtn) stageFieldsSaveBtn.addEventListener('click', function(){ onSaveAbstractFields(stageFieldsSaveBtn.getAttribute('data-stage-fields-save')); });
+    var stagePaperSaveBtn = els.boardRegion.querySelector('[data-stage-paper-save]');
+    if (stagePaperSaveBtn) stagePaperSaveBtn.addEventListener('click', function(){ onSavePaperSubmissionLink(stagePaperSaveBtn.getAttribute('data-stage-paper-save')); });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-cl]'), function(box){
       box.addEventListener('change', function(){
         onToggleChecklist(box.getAttribute('data-cl'), box.getAttribute('data-cl-item'), box.getAttribute('data-cl-role'), box.checked);
