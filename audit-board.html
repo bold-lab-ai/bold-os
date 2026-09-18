@@ -263,11 +263,13 @@
   }
   .vs-pt.is-venue .vs-name{color:var(--ink-soft); font-weight:500;}
   .vs-when{font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
-  /* A point with both an internal target and a real venue date stacks
-     them: the target keeps the exact same style every other internal
-     date on the timeline already uses (plain .vs-when) — it's the real,
-     external deadline that's the odd one out here, so that's the one
-     that reads darker/bolder to stand out from it. */
+  /* A buffered point stacks three dates: our internal target (plain
+     .vs-when, lightest — the author's own submit-by date), the
+     reviewer's own deadline in between (.vs-when-reviewer, in the same
+     blue as the rail's own dots so it reads as "the reviewer's marker"),
+     then the real venue deadline (.vs-when-real, boldest — the one that
+     actually matters externally). Added 2026-09-18+5, per Eduardo. */
+  .vs-when-reviewer{color:var(--blue); font-weight:600; margin-top:1px;}
   .vs-when-real{color:var(--ink-soft); font-weight:600; margin-top:1px;}
   .ics-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;}
   .ics-btn{
@@ -2157,6 +2159,14 @@
   // there's nothing for us to buffer against.
   var BUFFER_DAYS = 2;
   var BUFFER_KEYS = { paper: 1, abstract: 1, rebuttal_deadline: 1, camera_ready: 1 };
+  // The reviewer's own deadline, the middle day of that same buffer
+  // window (2026-09-18+5, per Eduardo): author submits internally
+  // (BUFFER_DAYS before the real deadline) -> reviewer responds
+  // (REVIEWER_BUFFER_DAYS before it) -> author incorporates changes or
+  // it goes out as-is (the real deadline). Applies to all of BUFFER_KEYS,
+  // as a standing calendar convention, even for the two rows (Rebuttal,
+  // Camera-ready) that don't have a formal reviewer checklist yet.
+  var REVIEWER_BUFFER_DAYS = 1;
 
   // Every dated milestone for a venue, chronological. Needs v.deadline.
   function internalSchedule(v){
@@ -2223,6 +2233,9 @@
       var b = new Date(r.dateObj);
       b.setDate(b.getDate() - BUFFER_DAYS);
       r.bufferIso = toIsoDate(b);
+      var rb = new Date(r.dateObj);
+      rb.setDate(rb.getDate() - REVIEWER_BUFFER_DAYS);
+      r.reviewerBufferIso = toIsoDate(rb);
     });
     rows.sort(function(a, b){ return a.dateObj - b.dateObj; });
     return rows;
@@ -2241,9 +2254,11 @@
     var pts = rows.map(function(r){
       var cls = 'vs-pt' + (r.key === 'paper' ? ' is-paper' : (r.derivation === 'venue' ? ' is-venue' : ''));
       var tip = r.label + ' — ' + formatDate(r.iso) + (r.derivation ? ' (' + r.derivation + ')' : '') +
-        (r.bufferIso ? '; internal target ' + formatDate(r.bufferIso) : '');
+        (r.bufferIso ? '; internal target ' + formatDate(r.bufferIso) : '') +
+        (r.reviewerBufferIso ? '; reviewer deadline ' + formatDate(r.reviewerBufferIso) : '');
       var whenHtml = r.bufferIso
         ? '<span class="vs-when vs-when-buffer">' + formatDateShort(r.bufferIso) + '</span>' +
+          '<span class="vs-when vs-when-reviewer">' + formatDateShort(r.reviewerBufferIso) + '</span>' +
           '<span class="vs-when vs-when-real">' + formatDateShort(r.iso) + '</span>'
         : '<span class="vs-when">' + formatDateShort(r.iso) + '</span>';
       return '<li class="' + cls + '" title="' + escapeHtml(tip) + '">' +
@@ -2261,7 +2276,7 @@
     return '<div class="venue-schedule">' +
       '<div class="vs-head">Deadlines <span>&mdash; counted back from the ' + formatDate(paperRow.iso) + ' paper deadline' +
         (hasVenueDates ? ', plus the venue&rsquo;s own dates' : '') +
-        (hasBuffer ? ' (lighter date &#61; our ' + BUFFER_DAYS + '-day internal target)' : '') + '</span></div>' +
+        (hasBuffer ? ' (lightest date &#61; our ' + BUFFER_DAYS + '-day internal target, middle date &#61; the reviewer&rsquo;s deadline)' : '') + '</span></div>' +
       '<div class="vs-rail-wrap"><ol class="vs-rail" style="--n:' + rows.length + '">' + pts + '</ol></div>' +
       '<div class="ics-actions">' +
         '<button class="ics-btn" type="button" id="downloadIcs">Add to calendar (.ics)</button>' +
