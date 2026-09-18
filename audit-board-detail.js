@@ -637,8 +637,18 @@
     // something, same guard here as the modal's own eAuthorsWrap init.
     var stageAuthorsWrap = document.getElementById('stageAuthorsWrap');
     if (stageAuthorsWrap){
+      // isNew must reflect whether this person is actually IN the roster
+      // (2026-09-18+21, found by Eduardo — "the dialog for authors
+      // doesn't show their names, only 'Choose a person...'"), not
+      // unconditionally false: authorRowsHtml's roster-picker mode can
+      // only ever show a name if state.people has a matching email — an
+      // author saved as "+ New author (not in the workspace)" (or anyone
+      // simply not yet Slack-synced) has no such match, so the <select>
+      // silently fell back to its own first, unselected option every
+      // time the row was reconstructed from saved data, even though
+      // name/email were both there all along.
       stageAuthorsState = card.authors && card.authors.length
-        ? card.authors.map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '', isNew: false }; })
+        ? card.authors.map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '', isNew: !!(a && a.email) && !personByEmail(a.email) }; })
         : [{ name: '', email: '', isNew: false }];
       renderAuthorRows('stageAuthorsWrap', stageAuthorsState, null, false);
       var stageAddAuthorBtn = document.getElementById('stageAddAuthor');
