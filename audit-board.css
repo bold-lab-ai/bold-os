@@ -1,978 +1,800 @@
-  /* Minimal editorial design system, shared across bold-lab.ai — see
-     events.html for the full rationale. Kept as a values-only swap here
-     (same variable names, same functional warn/success/danger/neutral
-     status colors, same teal/plum junior/senior reviewer coding) since
-     this page is a working tool, not content — real status colors stay
-     meaningful rather than collapsing into one accent hue. Base font is
-     Cabin (sans) rather than the serif used elsewhere, since almost
-     everything here is dense short UI text, not long-form prose; only
-     headings switch to the serif for brand consistency. */
-  :root{
-    --ink:#1a2b4a;
-    --ink-soft:#33445f;
-    --body:#33445f;
-    --muted:#7d8698;
-    --paper:#f5f3ee;
-    --surface:#ffffff;
-    --wash:#ece9e1;
-    --line:rgba(26,43,74,0.16);
-    --blue:#1a2b4a;
-    /* junior/senior reviewer coding — the original teal (#2f8f83) sat too
-       close in hue to --success-text (#256b60), so a junior tag and an
-       "approved" state read as nearly the same color; shifted teal
-       toward blue and muted plum to fit the desaturated palette. */
-    --teal:#4f7f94;
-    --plum:#7d5a99;
-    --amber:#b7791f;
-    --focus:#1a2b4a;
-    --radius:2px;
-    --shadow:0 14px 44px #1a2b4a1f;
-    --gutter:clamp(20px, 4vw, 48px);
-    --board-max:1360px;
-    --read-max:760px;
-    --content-max:900px;
-    --article-max:640px;
-    --sidebar-w:200px;
-    --sidebar-w-collapsed:40px;
-    --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
-    --sans:'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-
-    /* names the inline JS styles depend on */
-    --accent:#1a2b4a;
-    --accent-dim:#e3e6ec;
-    --neutral-bg:#eef2f4;
-    --neutral-text:#4b5563;
-    --warn-bg:#f6ecda;
-    --warn-text:#8a5a12;
-    --success-bg:#ddefe9;
-    --success-text:#256b60;
-    --danger-bg:#fbe6e4;
-    --danger-text:#b42318;
-  }
-
-  *{box-sizing:border-box;}
-
-  body{
-    margin:0;
-    background:var(--paper);
-    color:var(--ink-soft);
-    font-family:var(--sans);
-    font-size:15.5px;
-    line-height:1.55;
-    font-synthesis:none;
-    -webkit-font-smoothing:antialiased;
-    -moz-osx-font-smoothing:grayscale;
-  }
-
-  h1,h2,h3{font-family:var(--serif);}
-
-  a{color:var(--blue); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px; transition:text-decoration-color .15s;}
-  a:hover{text-decoration-color:currentColor;}
-  a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible{
-    outline:2px solid var(--focus); outline-offset:2px;
-  }
-
-  h1,h2,h3{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
-  button{font-family:inherit; font-size:14px;}
-
-  /* ---------- emulator warning ---------- */
-  /* Shown only when FIRESTORE_USE_EMULATOR is true (see the flag's own
-     comment) — loud on purpose. This exact flag shipped wrong once
-     already (committed true, silently broke the live site for anyone
-     without a local emulator running, caught 2026-09-11): this banner is
-     the safety net so that can't happen silently again — anyone looking
-     at the deployed page, not just someone re-reading the source, would
-     immediately see it. `position:sticky` (not `fixed`) so it stays
-     visible while scrolling without needing to reserve space elsewhere
-     for a fixed bar, and can't get clipped by z-index it doesn't know it
-     needs to beat. */
-  .emulator-warning{
-    position:sticky; top:0; z-index:1000;
-    background:#c81e1e; color:#fff;
-    font-weight:800; font-size:14px; text-align:center;
-    padding:10px var(--gutter);
-    letter-spacing:0.2px;
-  }
-
-  /* ---------- masthead ---------- */
-  .masthead{
-    background:var(--paper);
-    border-bottom:1px solid var(--line);
-    line-height:1.7; /* match the other pages' chrome; body here is 1.55 */
-    padding:18px var(--gutter);
-    display:flex;
-    align-items:baseline;
-    justify-content:space-between;
-    gap:16px;
-    flex-wrap:wrap;
-  }
-  .wordmark{font-weight:500; font-size:17px; letter-spacing:-0.01em; color:var(--ink); text-decoration:none;}
-  .wordmark strong{font-weight:700;}
-  .wordmark span{color:var(--blue); opacity:.55;}
-  .masthead-sub{font-size:11px; font-weight:400; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted); opacity:.7;}
-  .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
-  .auth-user{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--body);}
-  .auth-user-name{font-weight:600; color:var(--ink); text-decoration:none;}
-  a.auth-user-name:hover{text-decoration:underline;}
-  .auth-user-email{font-weight:400; color:var(--muted);}
-  .auth-role{
-    font-size:11px; font-weight:600; color:var(--blue);
-    text-transform:uppercase; letter-spacing:0.03em;
-  }
-  .auth-signin{
-    display:inline-flex; align-items:center; gap:7px;
-    font-family:var(--sans); font-weight:500; font-size:15px;
-    color:var(--ink); background:none; border:1px solid var(--ink);
-    padding:10px 22px; cursor:pointer;
-  }
-  .auth-signin:hover{background:var(--ink); color:var(--paper);}
-  .auth-signin svg{flex:none;}
-
-  .backlink{max-width:var(--board-max); margin:24px 0 0; padding:0 var(--gutter);}
-  .backlink a{font-size:13.5px; color:var(--muted); text-decoration:none;}
-  .backlink a:hover{color:var(--blue);}
-
-  /* ---------- hero ---------- */
-  .hero{max-width:var(--board-max); margin:0; padding:20px var(--gutter) 8px;}
-  .hero h1{font-size:clamp(30px, 4.5vw, 44px); line-height:1.02;}
-  .hero .lede{margin-top:14px; font-size:16px; color:var(--ink-soft); max-width:66ch;}
-  .hero .lede a{color:var(--blue);}
-  .page-source{font-size:12.5px; color:var(--muted); margin-top:18px;}
-  .page-source a{color:var(--muted);}
-  .page-source a:hover{color:var(--blue);}
-
-  /* ---------- toolbar ---------- */
-  .toolbar{
-    max-width:var(--board-max);
-    margin:24px 0 0;
-    padding:18px var(--gutter);
-    border-top:1px solid var(--line);
-    border-bottom:1px solid var(--line);
-    display:flex;
-    align-items:center;
-    gap:14px;
-    flex-wrap:wrap;
-  }
-  .toolbar label{font-size:12.5px; color:var(--muted); display:block; margin-bottom:4px;}
-  .toolbar-label{font-size:13px; color:var(--muted);}
-  .toolbar-spacer{flex:1 1 auto;}
-
-  select, input[type="text"], input[type="date"], input[type="email"],
-  input[type="number"], input[type="url"], input[type="search"], textarea, .field select{
-    font-family:inherit;
-    font-size:14px;
-    color:var(--ink);
-    background:var(--surface);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    padding:8px 10px;
-  }
-  select{min-width:180px;}
-
-  .btn{
-    font-family:inherit;
-    font-weight:600;
-    font-size:14px;
-    color:var(--ink);
-    background:var(--surface);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    padding:9px 16px;
-    cursor:pointer;
-    white-space:nowrap;
-  }
-  .btn:hover{border-color:var(--blue); color:var(--blue);}
-  /* Was missing entirely (2026-09-18+15, found by Eduardo — the inline
-     "Submit" button in the stage-fields forms looked fully clickable even
-     while disabled, so a blocked submit silently did nothing with zero
-     visual cue). Same treatment .card-move-btn:disabled already had
-     elsewhere on this page — muted, half-opacity, no hover response. */
-  .btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
-  .btn:disabled:hover{border-color:var(--line); color:var(--muted);}
-  .btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
-  .btn-primary:hover{background:#0f1c33; border-color:#0f1c33; color:#fff;}
-  .btn-primary:disabled{background:var(--surface); color:var(--muted); border-color:var(--line); opacity:.5;}
-  .btn-primary:disabled:hover{background:var(--surface); border-color:var(--line); color:var(--muted);}
-  /* Approve/Reject (venue proposals, 2026-09-11): same size/weight as any
-     other .btn, just green vs. red — same visual weight for a symmetric
-     either-way decision, unlike a primary/plain pairing that would make
-     one option look like the "right" default. */
-  .btn-approve{background:var(--success-text); color:#fff; border-color:var(--success-text);}
-  .btn-approve:hover{background:#1c5049; border-color:#1c5049; color:#fff;}
-  .btn-reject{background:var(--danger-text); color:#fff; border-color:var(--danger-text);}
-  .btn-reject:hover{background:#8f1c13; border-color:#8f1c13; color:#fff;}
-  .btn-text{
-    font-family:var(--sans); font-weight:400; font-size:12.5px;
-    color:var(--blue); background:none; border:none; padding:0; cursor:pointer;
-    text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
-  }
-  .btn-text:hover{text-decoration-color:currentColor;}
-  .btn-text.danger:hover, #deleteBoardBtn:hover{color:var(--danger-text);}
-  .btn-text.rush-on{color:var(--amber); font-weight:700; text-decoration:none;}
-  .btn-text.rush-on:hover{color:var(--focus);}
-
-  /* ---------- venue meta + schedule ---------- */
-  .venue-meta{font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;}
-  .venue-meta a{color:var(--muted); text-decoration:underline; text-underline-offset:2px;}
-  .venue-meta a:hover{color:var(--blue);}
-
-  .venue-schedule{margin-top:18px; max-width:860px;}
-  .vs-head{
-    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0;
-    color:var(--teal); margin-bottom:6px;
-  }
-  .vs-head span{font-weight:400; text-transform:none; color:var(--muted);}
-
-  /* horizontal timeline: one dot per milestone, even-spaced */
-  .vs-rail-wrap{overflow-x:auto; padding:4px 0 2px;}
-  .vs-rail{
-    list-style:none; margin:12px 0 0; padding:0;
-    display:flex; align-items:flex-start;
-    position:relative; min-width:min-content;
-  }
-  .vs-rail::before{
-    content:''; position:absolute; top:5px; height:2px; background:var(--line);
-    left:calc(50% / var(--n)); right:calc(50% / var(--n));
-  }
-  .vs-pt{
-    flex:1 0 70px;
-    display:flex; flex-direction:column; align-items:center;
-    text-align:center;
-  }
-  .vs-dot{
-    width:10px; height:10px; border-radius:999px;
-    background:var(--surface); border:2px solid var(--blue);
-    position:relative; z-index:1;
-  }
-  .vs-pt.is-venue .vs-dot{border-color:var(--muted);}
-  /* Reviewers' points are solid, ours (authors' internal, runway) hollow
-     blue, the venue's hollow grey; the paper deadline is the big dark one. */
-  .vs-pt.is-reviewers .vs-dot{background:var(--blue);}
-  .vs-pt.is-paper .vs-dot{width:12px; height:12px; margin-top:-1px; background:var(--ink); border-color:var(--ink);}
-  .vs-name{
-    margin-top:8px; font-size:11px; font-weight:600; line-height:1.25;
-    color:var(--ink); padding:0 3px;
-  }
-  .vs-pt.is-venue .vs-name,
-  .vs-pt.is-authors .vs-name{color:var(--ink-soft); font-weight:500;}
-  .vs-when{font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
-  .vs-pt.is-past .vs-dot{border-color:var(--danger-text);}
-  .vs-pt.is-past.is-reviewers .vs-dot,
-  .vs-pt.is-past.is-paper .vs-dot{background:var(--danger-text);}
-  .vs-pt.is-past .vs-name,
-  .vs-pt.is-past .vs-when{color:var(--danger-text);}
-  .ics-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;}
-  .ics-btn{
-    font-family:inherit; font-weight:600; font-size:12.5px;
-    color:var(--blue); background:var(--surface); border:1px solid var(--line);
-    border-radius:var(--radius); padding:7px 13px; cursor:pointer;
-  }
-  .ics-btn:hover{background:var(--wash); border-color:var(--blue);}
-  .ics-tip-wrap{position:relative; display:inline-flex;}
-  .ics-tip{
-    position:absolute; bottom:calc(100% + 9px); left:50%; transform:translateX(-50%) translateY(4px);
-    width:240px; font-size:12px; font-weight:400; line-height:1.4; text-align:left;
-    color:#fff; background:var(--ink); border-radius:var(--radius); padding:9px 11px;
-    box-shadow:var(--shadow); pointer-events:none;
-    opacity:0; visibility:hidden; transition:opacity .15s ease, transform .15s ease;
-    z-index:5;
-  }
-  .ics-tip::after{
-    content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
-    border:6px solid transparent; border-top-color:var(--ink);
-  }
-  .ics-tip.is-shown{opacity:1; visibility:visible; transform:translateX(-50%) translateY(0);}
-
-  /* ---------- venue modal form ---------- */
-  .modal-scroll{max-height:64vh; overflow-y:auto; margin:0 -6px; padding:2px 6px;}
-  .field-section{
-    font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0;
-    color:var(--teal); margin:22px 0 8px;
-  }
-  #venueForm .field-section:first-child{margin-top:2px;}
-  .field-2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
-
-  /* ---------- toast ---------- */
-  .toast{max-width:var(--board-max); margin:16px 0 0; padding:0 var(--gutter);}
-  .toast-inner{
-    font-size:13.5px; padding:10px 14px; border:1px solid var(--line);
-    border-radius:var(--radius); background:var(--surface);
-  }
-  .toast-inner.error{color:var(--danger-text); background:var(--danger-bg); border-color:#f0c9c4;}
-  .toast-inner.ok{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
-
-  /* ---------- board meta ---------- */
-  .board-meta{
-    max-width:var(--board-max); margin:20px 0 0; padding:0 var(--gutter);
-    display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;
-  }
-  .board-meta h2{font-size:22px; font-weight:760;}
-  /* Empty state deliberately stays its own centered island, not
-     left-aligned like everything else — it's the only thing on the
-     page when it's showing, so centering (not the shared board column)
-     is the right read here. */
-  .board-empty{
-    max-width:var(--read-max); margin:56px auto; padding:0 var(--gutter);
-    color:var(--muted); text-align:center;
-  }
-  .board-empty .inline-link{
-    font: inherit; color:var(--blue); background:none; border:none;
-    padding:0; cursor:pointer; text-decoration:underline; text-underline-offset:2px;
-  }
-
-  /* ---------- venues list ---------- */
-  .venues{max-width:var(--read-max); margin:22px 0 0; padding:0 var(--gutter) 80px; border-bottom:1px solid var(--line);}
-  .venue-row{
-    display:flex; align-items:baseline; justify-content:space-between; gap:12px;
-    padding:18px 0;
-    border:none; border-top:1px solid var(--line); border-radius:0;
-    background:none;
-    width:100%; text-align:left; cursor:pointer; font-family:inherit;
-    transition:opacity .12s;
-  }
-  .venue-row:hover{opacity:.68;}
-  .venue-name{font-weight:700; font-size:16px; color:var(--ink);}
-  .venue-sub{font-size:13px; color:var(--muted);}
-  /* Venue proposals (2026-09-11): a pending row opens the normal venue
-     page too (same .venue-row button as an approved one) — there's just
-     nothing to register a paper against yet until it's approved (see
-     "+ Register paper"'s own disabled check in renderBoard()). "Pending
-     your approval" rows also carry inline Approve/Reject, so that row
-     can't be a <button> itself (it contains other buttons) — it's a div,
-     cursor:default overriding .venue-row's pointer, with its own nested
-     clickable name (.venue-name-btn) alongside the action buttons. */
-  .venue-row--pending{cursor:default; align-items:center;}
-  .venue-row--pending:hover{opacity:1;}
-  .venue-row-info{display:flex; flex-direction:column; gap:3px; min-width:0;}
-  .venue-row-actions{display:flex; gap:8px; flex:0 0 auto;}
-  .venue-name-btn{
-    font:inherit; font-weight:700; font-size:16px; color:var(--ink);
-    background:none; border:none; padding:0; margin:0; cursor:pointer; text-align:left;
-  }
-  .venue-name-btn:hover{color:var(--blue);}
-  .venues-section-title{font-size:12.5px; font-weight:700; color:var(--muted); margin:22px 0 8px;}
-  .venues-section-title:first-child{margin-top:0;}
-  .badge-pending{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
-
-  /* ---------- board search ---------- */
-  .board-search{
-    max-width:var(--board-max); margin:16px 0 0; padding:0 var(--gutter);
-    display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-  }
-  .board-search input[type="search"]{flex:1 1 260px; min-width:180px;}
-  .board-search select{min-width:140px;}
-  .board-search-count{font-size:12.5px; color:var(--muted); white-space:nowrap;}
-
-  /* ---------- board columns ---------- */
-  .board-scroll{
-    max-width:var(--board-max); margin:12px 0 0; padding:0 var(--gutter) 80px;
-    overflow-x:auto;
-    scroll-snap-type:x proximity;
-  }
-  .columns{
-    display:flex;
-    gap:1px;
-    background:var(--line);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    overflow:hidden;
-    min-width:2170px;
-  }
-  .column{
-    background:var(--surface);
-    flex:1 1 0;
-    min-width:240px;
-    display:flex;
-    flex-direction:column;
-    scroll-snap-align:start;
-  }
-  .column-head{
-    padding:11px 12px 10px;
-    border-bottom:1px solid var(--line);
-    background:var(--wash);
-    color:var(--ink);
-  }
-  .column-head .ch-top{
-    display:flex; align-items:center; justify-content:space-between;
-    font-weight:700; font-size:12.5px; letter-spacing:0;
-  }
-  .column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
-  /* ch-hint is ALWAYS rendered (renderColumns never omits it, even with
-     nothing to say) — min-height keeps a short/empty hint from collapsing
-     the column-head down to nothing, so heads still roughly line up
-     across the board, but the box itself grows past that rather than
-     clipping (2026-09-18+6, per Eduardo — a fixed height + overflow:hidden
-     here was cutting off the bottom of the stacked deadline layout below
-     whenever a date wrapped to more lines than the box was sized for; a
-     wrapping, variable-length date can't be bounded by a fixed height
-     without either clipping it or guessing generously and wasting space
-     everywhere else). The "Requires: a) … b) …" line that used to sit
-     below this (ch-requires) was dropped entirely 2026-09-18+5. */
-  .column-head .ch-hint{
-    margin-top:4px; min-height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
-  }
-  /* Rush mode's column deadline hint — up to three rows (review deadline
-     where a review is a gate, internal <Stage> deadline, venue External
-     <Stage> deadline), each a label with its date on the same line
-     (2026-09-18+17, per Eduardo; a date that doesn't fit in what's left
-     of the line just wraps under it — the labels used to be long enough
-     ("Next internal deadline (Paper):") that a side-by-side layout
-     truncated the date, which is why 2026-09-18+5 stacked them). Each
-     row turns red independently, once THAT row's own instant has passed,
-     not the other ones' — see columnHintFor. */
-  .column-head .ch-hint.ch-hint-deadlines{
-    display:flex; flex-direction:column; gap:2px;
-  }
-  .column-head .ch-hint.ch-hint-deadlines .hint-row{word-break:break-word;}
-  .column-head .ch-hint .hint-overdue{color:var(--danger-text); font-weight:600;}
-  .column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
-  .column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
-
-  /* ---------- card ---------- */
-  .card{
-    border:1px solid var(--line);
-    border-left-width:1px;
-    border-radius:var(--radius);
-    padding:12px;
-    background:var(--surface);
-  }
-  /* Draft & Review's collapsed sub-state, colour-coded on the card itself. */
-  .card.rv-in_review{border-left:4px solid var(--warn-text); background:var(--warn-bg);}
-  .card.rv-changes_requested{border-left:4px solid var(--danger-text); background:var(--danger-bg);}
-  .card.rv-approved{border-left:4px solid var(--success-text); background:var(--success-bg);}
-  /* Rush mode: a card whose column has passed its internal cutoff (see
-     rushColumnCutoff) — an outline layered on top, since it needs to read
-     clearly whether or not an rv-* review-state background above also
-     applies to the same card. */
-  .card.rush-deadline-passed{outline:2px solid var(--danger-text); outline-offset:-1px;}
-  .badge-outcome-accepted{background:var(--success-bg); color:var(--success-text);}
-  .badge-outcome-rejected{background:var(--danger-bg); color:var(--danger-text);}
-  .badge-outcome-withdrawn{background:var(--neutral-bg); color:var(--neutral-text);}
-  .badge-rebuttal-sent{background:var(--success-bg); color:var(--success-text);}
-  .badge-rebuttal-writing{background:var(--warn-bg); color:var(--warn-text);}
-  .badge-rebuttal-waiting{background:var(--neutral-bg); color:var(--neutral-text);}
-  .badge-review-approved{background:var(--success-bg); color:var(--success-text);}
-  .badge-review-changes_requested{background:var(--danger-bg); color:var(--danger-text);}
-  .badge-review-in_review{background:var(--warn-bg); color:var(--warn-text);}
-  .card-title-btn{
-    display:block; width:100%; text-align:left;
-    font-family:inherit; font-weight:700; font-size:14px; color:var(--ink);
-    background:none; border:none; padding:0; margin-bottom:6px; cursor:pointer;
-    text-decoration:underline; text-decoration-color:var(--line); text-underline-offset:2px;
-  }
-  .card-title-btn:hover{color:var(--blue); text-decoration-color:var(--blue);}
-  .card-meta-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px;}
-  .badge{
-    display:inline-block; font-size:11px; font-weight:600; letter-spacing:0;
-    padding:2px 9px; border-radius:999px;
-  }
-  .badge-overdue{background:var(--danger-bg); color:var(--danger-text);}
-  .card-link{font-size:12.5px; display:inline-block; margin-bottom:6px;}
-  .card-notes{font-size:12.5px; color:var(--ink-soft); margin-bottom:8px; white-space:pre-wrap;}
-  .author-row{display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;}
-  .author-row .author-input{flex:1 1 160px; min-width:0;}
-  .author-row .author-remove, .author-row .author-use-roster{flex:0 0 auto; white-space:nowrap;}
-  .author-pi-tag{
-    flex:0 0 auto; width:24px; text-align:center;
-    font-size:10.5px; font-weight:700; letter-spacing:0; color:var(--plum);
-  }
-  .author-pi-tag--hidden{visibility:hidden;}
-  .card-progress{font-size:11px; color:var(--muted); margin:6px 0 2px; font-variant-numeric:tabular-nums;}
-
-  /* ---------- inline reviewer assignment (card + detail) ---------- */
-  .card-reviewers{display:flex; flex-direction:column; gap:4px; margin:8px 0;}
-  .card-reviewers .rv-row{display:flex; align-items:center; gap:6px;}
-  .card-reviewers .rv-role{
-    flex:0 0 auto; width:16px; font-size:10.5px; font-weight:700;
-    text-transform:uppercase; letter-spacing:0;
-  }
-  .card-reviewers .rv-role.junior, .rv-role.junior{color:var(--teal);}
-  .card-reviewers .rv-role.senior, .rv-role.senior{color:var(--plum);}
-  /* One reviewer's derived state, directly under their picker — a label,
-     not a control (2026-09-14, replaces a clickable tri-state row: see
-     reviewStatePillHtml/onToggleChecklist). Nothing to disable, since
-     nothing here is ever clicked. */
-  .rv-state-pill{
-    display:inline-block; margin:0 0 6px 22px; font-size:10.5px; font-weight:700;
-    padding:3px 7px; border-radius:5px; line-height:1.25;
-  }
-  .rv-state-pill.rv-state-in_review{background:var(--warn-bg); color:var(--warn-text);}
-  .rv-state-pill.rv-state-approved{background:var(--success-bg); color:var(--success-text);}
-  .rv-state-pill.rv-state-changes_requested{background:var(--danger-bg); color:var(--danger-text);}
-  .rv-input{
-    flex:1 1 auto; min-width:0; font-size:12px; padding:5px 7px;
-    border:1px solid var(--line); border-radius:var(--radius);
-    background:var(--surface); color:var(--ink); font-family:inherit;
-  }
-  select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
-  .card-footer{display:flex; align-items:center; gap:2px; margin-top:8px;}
-  .card-move{display:flex; gap:6px; margin-top:8px;}
-  .card-move-btn{
-    flex:1 1 0; min-width:0;
-    font-family:inherit; font-weight:600; font-size:11.5px;
-    color:var(--ink-soft); background:var(--surface);
-    border:1px solid var(--line); border-radius:var(--radius);
-    padding:6px 4px; cursor:pointer; text-align:center; white-space:nowrap;
-  }
-  .card-move-btn:hover:not(:disabled){background:var(--wash); border-color:var(--blue); color:var(--blue);}
-  .card-move-btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
-  /* Rush mode's "Submit paper"/"Paper accepted" buttons — see
-     moveButtonsHtml — read as a sign-off, not a plain forward move, so
-     they get the same green as an approved review state instead of the
-     neutral default. */
-  .card-move-btn.card-move-btn-accept{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
-  .card-move-btn.card-move-btn-accept:hover:not(:disabled){background:#cde8df; border-color:var(--success-text);}
-  .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); background:var(--surface); border-color:var(--line); opacity:.5;}
-
-  /* ---------- card detail ---------- */
-  .detail{max-width:var(--board-max); margin:20px 0 0; padding:0 var(--gutter) 88px;}
-  .detail-back{font-size:13.5px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:16px;}
-  .detail-back:hover{color:var(--blue);}
-  .detail-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
-  .detail-head h2{font-size:clamp(22px, 3vw, 28px); font-weight:760;}
-  .detail-grid{display:grid; grid-template-columns:150px 1fr; gap:8px 16px; font-size:13.5px; margin-bottom:24px; max-width:640px;}
-  .detail-grid dt{color:var(--muted);}
-  .detail-grid dd{margin:0; word-break:break-word;}
-  .detail-grid dd input.rv-input{width:100%;}
-  .detail-grid dd.abstract-render{white-space:pre-wrap; line-height:1.55; max-width:100%; overflow-x:auto;}
-  .abstract-render .katex-display{margin:0.5em 0; overflow-x:auto; overflow-y:hidden;}
-  /* KaTeX's own stylesheet sets .katex to 1.21em, which renders formulas
-     visibly bigger than the surrounding text — keep them at the text size. */
-  .abstract-render .katex{font-size:1em;}
-
-  /* Inline "Submit the abstract" form (2026-09-18+10, per Eduardo) — a
-     plain section below the detail-grid, not the warning-coloured
-     .gate-banner treatment (this isn't flagging a problem, just showing
-     a form) and not a checklist. Reuses .field/.field-error, the same
-     classes and global input/textarea styling the Edit-fields modal
-     already uses, so the fields are sized the same way there too. Its own
-     heading reuses .detail-subhead (see the Author/Review sections below)
-     rather than a bespoke rule, now that it lives inside the Author
-     section as one of that section's items, not a standalone block. */
-  .stage-fields{margin:0 0 24px; max-width:560px;}
-  /* Save (plain field update) and Submit (the real move, greyed out until
-     advanceBlockReason clears — see abstractSubmissionFieldsHtml) sit side
-     by side, same gap/alignment as .gate-banner-actions elsewhere on this
-     page. */
-  .stage-fields-actions{display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap;}
-  /* The Submit button's own `title` (2026-09-18+15) isn't a reliable way
-     to tell someone why it's greyed out — Chrome (and most browsers)
-     don't fire hover/title tooltips on a disabled element at all, so
-     that reason was invisible in practice. This is the same text,
-     rendered as plain visible copy next to the button instead. */
-  .stage-fields-hint{font-size:12.5px; color:var(--muted); flex:1 1 200px;}
-
-  /* ---------- card detail: Author / Review tabs ----------
-     Two rounds: always-both-visible sections (2026-09-18+11/+12, split
-     by WHO the content is for — an "Author" section vs a "Review"
-     section, Discussion living under Review as its last item), then back
-     to a tab bar at 2026-09-18+19, per Eduardo. Styling now matches
-     event-collaboration-week.html's .tabs/.tab/.tab-panel (Schedule /
-     Proposals — 2026-09-18+20, per Eduardo) rather than the old, bolder
-     Format/Science/Discussion tab bar this used to mirror: lighter
-     font-weight at rest, gap-based spacing instead of per-button
-     right-margin, weight bumping up (not just the underline) on the
-     active tab. --accent here is the same value as --blue (both
-     #1a2b4a) — used instead to match that reference file's own token
-     name exactly, not because it means something different on this page.
-     New "detail-" prefixed names rather than the collaboration-week
-     page's bare .tab/.tabs/.tab-panel, since those would collide with
-     nothing here but read confusingly close to this file's own
-     `.card-move-btn`-adjacent naming; still scoped to the card detail
-     page specifically.
-     No tab bar at all renders when Author has nothing to show (see
-     renderCardDetail) — same "skip it for a single visible pane" shape
-     the old tabs used outside Paper.
-     .detail-subhead is the smaller, plain-ink heading for an item WITHIN
-     a tab's own content (a checklist, Discussion) — not a tab of its
-     own. */
-  .detail-tabbar{display:flex; gap:28px; border-bottom:1px solid var(--line); margin-top:36px;}
-  .detail-tab{
-    font-family:var(--sans); font-size:14px; font-weight:500; color:var(--muted);
-    background:none; border:none; border-bottom:2px solid transparent;
-    padding:10px 2px; margin-bottom:-1px; cursor:pointer;
-  }
-  .detail-tab:hover{color:var(--ink);}
-  .detail-tab.active{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
-  .detail-tabpanel{margin-top:28px;}
-  .detail-subhead{font-weight:700; font-size:14px; color:var(--ink); margin:24px 0 10px;}
-  .detail-subhead:first-child{margin-top:0;}
-  .detail-tab .n, .detail-subhead .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; color:var(--muted); text-transform:none; letter-spacing:normal;}
-
-  .cl-wrap{max-width:640px;}
-  .cl-agent-note{
-    font-size:12px; color:var(--muted); line-height:1.5;
-    margin:0 0 14px; padding:8px 10px; background:var(--wash); border-radius:var(--radius);
-  }
-  .cl-agent-note a{color:var(--blue);}
-  .cl-cat{font-weight:700; font-size:13px; color:var(--ink); margin:16px 0 4px;}
-  .cl-cat:first-child{margin-top:0;}
-  .cl-head, .cl-row{display:grid; grid-template-columns:1fr 68px 68px; gap:10px;}
-  /* Authors' checklist (2026-09-14): one checkbox column, not two — same
-     base grid/row styling, just a narrower track list. */
-  .cl-row.single{grid-template-columns:1fr 68px;}
-  .cl-head{
-    font-size:10.5px; font-weight:700; color:var(--muted);
-    text-transform:uppercase; letter-spacing:0;
-    padding:0 6px 6px; border-bottom:1px solid var(--line);
-    position:sticky; top:0; background:var(--paper);
-  }
-  .cl-head span{text-align:center;}
-  .cl-head span:nth-child(2){color:var(--teal);}
-  .cl-head span:nth-child(3){color:var(--plum);}
-  .cl-item{border-bottom:1px solid var(--line); padding:2px 0;}
-  .cl-row{padding:9px 6px; font-size:13.5px; align-items:start; border-radius:var(--radius);}
-  .cl-row:hover{background:var(--wash);}
-  .cl-row .cl-label{line-height:1.45;}
-  .cl-row input[type="checkbox"]{width:16px; height:16px; margin:2px auto 0; display:block; cursor:pointer;}
-  .cl-row input[type="checkbox"]:nth-of-type(1){accent-color:var(--teal);}
-  .cl-row input[type="checkbox"]:nth-of-type(2){accent-color:var(--plum);}
-  .cl-row.single input[type="checkbox"]:nth-of-type(1){accent-color:var(--accent);}
-  .cl-row input[type="checkbox"]:disabled{cursor:default; opacity:0.45;}
-  .cl-row-foot{padding:0 6px 8px;}
-  .cl-row-foot .btn-text{font-size:12px;}
-  .cl-row-foot .btn-text.has-feedback{color:var(--blue); font-weight:600;}
-  .cl-thread{margin:0 0 12px; padding:12px 12px 4px; background:var(--wash); border-radius:var(--radius);}
-  .cl-thread .disc-thread{border-top-color:var(--line);}
-  .cl-thread .disc-form{max-width:100%;}
-  .cl-thread-new{margin-top:14px; padding-top:14px; border-top:1px solid var(--line);}
-
-  /* ---------- discussion (OpenReview-style, one level of replies) ---------- */
-  .discussion{max-width:640px;}
-  .disc-empty{color:var(--muted); font-size:13.5px; margin:4px 0 20px;}
-  .disc-thread{border-top:1px solid var(--line); padding:16px 0;}
-  .disc-thread:first-child{border-top:none; padding-top:0;}
-  .disc-msg{font-size:13.5px;}
-  .disc-meta{display:flex; align-items:baseline; gap:8px; margin-bottom:4px;}
-  .disc-author{font-weight:700; color:var(--ink); font-size:13.5px;}
-  .disc-time{color:var(--muted); font-size:11.5px;}
-  .disc-body{white-space:pre-wrap; color:var(--ink-soft); line-height:1.5;}
-  .disc-replies{margin:12px 0 0 24px; padding-left:16px; border-left:2px solid var(--line); display:flex; flex-direction:column; gap:14px;}
-  .disc-actions{margin-top:6px;}
-  .disc-form{margin-top:12px; display:flex; flex-direction:column; gap:8px; max-width:480px;}
-  .disc-form input, .disc-form textarea{width:100%;}
-  .disc-form textarea{min-height:64px; resize:vertical; font-family:inherit;}
-  .disc-form-actions{display:flex; gap:8px;}
-  .disc-new{margin-top:24px; padding-top:20px; border-top:1px solid var(--line);}
-  .disc-new h3{font-size:13px; font-weight:700; color:var(--ink); margin:0 0 10px;}
-
-  /* ---------- modal ---------- */
-  .modal-overlay{
-    position:fixed; inset:0; background:rgba(26,43,74,0.5);
-    display:flex; align-items:flex-start; justify-content:center;
-    padding:40px 20px; overflow-y:auto; z-index:50;
-  }
-  .modal{
-    background:var(--surface);
-    border:1px solid var(--line);
-    border-radius:var(--radius);
-    box-shadow:var(--shadow);
-    max-width:480px;
-    width:100%;
-    padding:26px;
-  }
-  .modal h2{font-size:20px; margin-bottom:18px;}
-  .field{margin-bottom:16px;}
-  .field label{display:block; font-size:13px; color:var(--muted); margin-bottom:5px;}
-  .field input, .field textarea{width:100%;}
-  .field textarea{min-height:64px; resize:vertical; font-family:inherit;}
-  .modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:22px;}
-  .field-error{
-    font-size:12.5px; color:var(--danger-text);
-    background:var(--danger-bg); border:1px solid var(--danger-text);
-    border-radius:var(--radius); padding:8px 12px; margin-top:12px;
-  }
-  /* Standing "you're over the cap" banner at the top of a venue board
-     (2026-09-14, see currentUserPaperCapWarning) — same danger-color
-     language as .field-error, styled as a page-level banner rather than
-     an inline field note since it's the first thing on the whole board,
-     not attached to any one field. */
-  .author-cap-alert{
-    font-size:14px; font-weight:600; color:var(--danger-text);
-    background:var(--danger-bg); border:1px solid var(--danger-text);
-    border-radius:var(--radius); padding:12px 16px; margin-bottom:16px;
-  }
-
-  footer{
-    max-width:var(--board-max); margin:0;
-    padding:32px var(--gutter) 56px;
-    border-top:1px solid var(--line); font-size:13px; color:var(--muted);
-  }
-
-  @media (max-width:760px){
-    .field-2{grid-template-columns:1fr;}
-  }
-  /* ---------- site nav ---------- */
-  .shell{display:flex; align-items:stretch;}
-  .sidebar{
-    flex:0 0 var(--sidebar-w); width:var(--sidebar-w); box-sizing:border-box;
-    line-height:1.7; /* match the other pages' sidebar; body here is 1.55 */
-    border-right:1px solid var(--line); background:var(--paper);
-    transition:flex-basis .22s ease, width .22s ease;
-  }
-  .sidebar-inner{
-    position:sticky; top:0; padding:22px 16px;
-    max-height:100vh; overflow-y:auto;
-    transition:padding .22s ease;
-  }
-  .sidebar-head{
-    display:flex; align-items:center; justify-content:space-between;
-    padding:0 0 16px; margin-bottom:10px; border-bottom:1px solid var(--line);
-  }
-  .sidebar-title{font-size:11px; font-weight:400; text-transform:uppercase; letter-spacing:0.16em; color:var(--muted); opacity:.7;}
-  .sidebar-collapse{
-    font-family:inherit; background:none; border:1px solid var(--line);
-    width:22px; height:22px; color:var(--muted); cursor:pointer; font-size:12px; line-height:1; flex:none;
-  }
-  .sidebar-collapse:hover{border-color:var(--blue); color:var(--blue);}
-  .nav-group{margin:18px 0;}
-  .nav-group:first-child{margin-top:0;}
-  .nav-group-label{
-    display:flex; align-items:center; justify-content:space-between; gap:6px;
-    font-size:13px; font-weight:600;
-    color:var(--ink); padding:4px 0; margin-bottom:2px; text-decoration:none;
-  }
-  .nav-group-label:hover{color:var(--blue);}
-  .nav-group-label.active{color:var(--blue);}
-  /* Chevron hints that a group has hidden sub-links: points right while
-     collapsed, rotates to point down on hover/focus, in step with the
-     sub-links expanding below it. */
-  .nav-group-label::after{
-    content:'';
-    width:8px; height:1.5px; flex:none;
-    background:currentColor;
-    opacity:.4;
-    transition:width .22s ease, opacity .18s ease;
-  }
-  .nav-group:hover .nav-group-label::after,
-  .nav-group:focus-within .nav-group-label::after{
-    width:14px; opacity:.75;
-  }
-  .nav-link{
-    display:block; font-size:13px; font-weight:400; color:var(--ink-soft);
-    text-decoration:none; padding:4px 0; white-space:nowrap;
-  }
-  .nav-link:hover{color:var(--blue);}
-  .nav-link.active{color:var(--blue); font-weight:600;}
-  /* Sub-links collapse to nothing by default and expand on hover/focus
-     of their group, except the current page's own link, which stays
-     visible so the sidebar always shows where you are without hovering. */
-  .nav-link.nav-sub{
-    font-weight:400; font-size:12.5px; padding-left:12px; color:var(--muted);
-    max-height:0; opacity:0; overflow:hidden; pointer-events:none;
-    transition:max-height .22s ease, opacity .18s ease;
-  }
-  .nav-group:hover .nav-link.nav-sub,
-  .nav-group:focus-within .nav-link.nav-sub,
-  .nav-group:has(.active) .nav-link.nav-sub,
-  .nav-link.nav-sub.active{
-    max-height:32px; opacity:1; pointer-events:auto;
-  }
-  .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--blue);}
-  .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
-    outline:2px solid var(--focus); outline-offset:2px;
-  }
-
-  .shell-main{flex:1 1 auto; min-width:0;}
-
-  .masthead-left{display:flex; align-items:center; gap:10px;}
-  .nav-toggle{
-    display:none; font-family:inherit; background:none; border:1px solid var(--line);
-    width:32px; height:32px; align-items:center; justify-content:center; cursor:pointer; color:var(--ink);
-    position:relative; flex:none;
-  }
-  .nav-toggle span, .nav-toggle span::before, .nav-toggle span::after{
-    position:absolute; left:9px; width:16px; height:1.5px; background:currentColor; content:'';
-  }
-  .nav-toggle span::before{top:-5px;}
-  .nav-toggle span::after{top:5px;}
-
-  .sidebar-backdrop{display:none;}
-
-  .shell.is-collapsed .sidebar{flex-basis:var(--sidebar-w-collapsed); width:var(--sidebar-w-collapsed);}
-  .shell.is-collapsed .sidebar-inner{padding:22px 8px;}
-  .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:none;}
-  .shell.is-collapsed .sidebar-head{justify-content:center; border-bottom:none; padding-bottom:0;}
-
-  @media (max-width:820px){
-    .nav-toggle{display:inline-flex;}
-    .sidebar{
-      position:fixed; top:0; left:0; bottom:0; z-index:200;
-      height:100%; width:240px; flex-basis:240px;
-      transform:translateX(-100%); transition:transform 0.2s ease;
-      box-shadow:0 14px 44px rgba(26,43,74,.18);
-    }
-    .sidebar-inner{height:100%; max-height:none; overflow-y:auto;}
-    .shell.is-nav-open .sidebar{transform:translateX(0);}
-    .shell.is-collapsed .sidebar{width:240px; flex-basis:240px;}
-    .shell.is-collapsed .sidebar-inner{padding:22px 16px;}
-    .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:block;}
-    .shell.is-collapsed .sidebar-head{justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:16px;}
-    .sidebar-collapse{display:none;}
-    .sidebar-backdrop{
-      display:none; position:fixed; inset:0; background:rgba(26,43,74,.35); z-index:190;
-      border:none; padding:0; margin:0;
-    }
-    .shell.is-nav-open .sidebar-backdrop{display:block;}
-  }
-
-  /* ---------- sign-in gate ---------- */
-  #pageGate{
-    min-height:60vh; display:flex; align-items:center; justify-content:center; padding:40px var(--gutter);
-  }
-  #pageGate[hidden]{display:none;}
-  .gate-box{max-width:360px; text-align:center;}
-  .gate-box h1{font-size:24px; margin:0 0 12px; font-weight:500;}
-  .gate-box p{font-size:17px; color:var(--ink-soft); margin:0 0 22px; line-height:1.6;}
-  .gate-box .gate-alt{
-    font-family:var(--sans); font-size:13px; font-weight:400; color:var(--muted);
-    margin:26px 0 0; padding-top:20px; border-top:1px solid var(--line);
-  }
-  .gate-signup-btn{
-    display:inline-block; font-family:var(--sans); font-weight:500; font-size:14px;
-    color:var(--ink-soft); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
-    padding:0; margin-top:8px; border:none;
-  }
-  .gate-signup-btn:hover{text-decoration-color:currentColor;}
-
-
-  /* ---------- card detail: editorial pass ----------
-     The card page takes the same look as the events pages (events.html /
-     event-collaboration-week.html): serif for anything meant to be read,
-     sans only for UI chrome (labels, meta, buttons, inputs), centred
-     900px column, hairline rules instead of boxes, underlined text links
-     for secondary actions, one outlined button for the primary one, and
-     outlined status badges instead of filled pills. Scoped to .detail so
-     the board and venue list keep their denser sans treatment. */
-  .detail{
-    max-width:var(--content-max); margin:0 auto; padding:40px var(--gutter) 88px;
-    font-family:var(--serif); font-size:18px; line-height:1.7; color:var(--ink-soft);
-  }
-  .detail input, .detail textarea, .detail select, .detail button{font-family:var(--sans);}
-  .detail-back{font-family:var(--sans); margin-bottom:18px;}
-  .detail-head h2{
-    font-size:clamp(30px, 5vw, 44px); line-height:1.14; font-weight:800;
-    letter-spacing:-0.005em; max-width:var(--article-max); text-wrap:balance;
-  }
-  .detail .badge{
-    font-family:var(--sans); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em;
-    background:none; border:1px solid currentColor; border-radius:0; padding:2px 7px;
-  }
-  .detail .card-move-btn, .detail .btn-primary{
-    font-family:var(--sans); font-size:14.5px; font-weight:500; white-space:nowrap;
-    color:var(--ink); background:none; border:1px solid var(--ink); border-radius:0; padding:9px 20px;
-  }
-  .detail .card-move-btn:hover:not(:disabled), .detail .btn-primary:hover:not(:disabled){background:var(--ink); color:var(--paper); border-color:var(--ink);}
-  .detail .card-move-btn:disabled, .detail .btn-primary:disabled{color:var(--muted); border-color:var(--line); background:none; opacity:1;}
-  .detail .card-move-btn.card-move-btn-accept{color:var(--ink); background:none; border-color:var(--ink);}
-  .detail .card-move-btn.card-move-btn-accept:hover:not(:disabled){background:var(--ink); color:var(--paper);}
-  .detail .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); border-color:var(--line); background:none;}
-  .detail .btn{
-    font-family:var(--sans); font-size:14.5px; font-weight:500; color:var(--accent);
-    background:none; border:none; border-radius:0; padding:0; cursor:pointer;
-    text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
-  }
-  .detail .btn:hover:not(:disabled){text-decoration-color:currentColor; color:var(--accent);}
-  .detail .btn:disabled{color:var(--muted); opacity:.6; cursor:default;}
-  .detail .btn.btn-primary{text-decoration:none; padding:9px 20px; border:1px solid var(--ink);}
-  .detail .btn.btn-primary:disabled{border-color:var(--line);}
-  .detail .btn-text{font-size:13.5px;}
-  .detail-grid{
-    grid-template-columns:150px 1fr; gap:10px 20px; margin:0 0 32px; padding-top:18px;
-    border-top:1px solid var(--line); font-size:16px; line-height:1.55; max-width:var(--article-max);
-  }
-  .detail-grid dt{font-family:var(--sans); font-size:13px; color:var(--muted);}
-  .detail-subhead{font-family:var(--serif); font-size:19px; font-weight:800; letter-spacing:-0.005em; margin:34px 0 12px;}
-  .detail-subhead:first-child{margin-top:0;}
-  .detail .field label{font-family:var(--sans); font-size:13px;}
-  .stage-fields-hint{font-family:var(--sans);}
-  .detail .cl-agent-note{font-family:var(--sans); margin-bottom:20px;}
-  .cl-agent-note p{margin:0;}
-  .cl-agent-note .note-lead{margin-bottom:6px;}
-  .cl-agent-note .note-lead:last-child{margin-bottom:0;}
-  .detail .cl-agent-note{max-width:var(--article-max);}
-  /* Approve / Request changes — the board's original button look (white
-     bordered button + red text link), not the events-style underlined
-     link every other .btn on the card page takes now. */
-  .detail .review-actions{display:flex; align-items:center; gap:18px; margin:0 0 28px;}
-  .detail .review-actions .btn{
-    font-family:var(--sans); font-size:14px; font-weight:600; color:var(--ink);
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-    padding:9px 16px; text-decoration:none;
-  }
-  .detail .review-actions .btn:hover:not(:disabled){border-color:var(--blue); color:var(--blue);}
-  .detail .review-actions .btn:disabled{color:var(--muted); opacity:.5;}
-  .detail .review-actions .btn.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
-  .detail .review-actions .btn.btn-primary:hover:not(:disabled){background:#0f1c33; border-color:#0f1c33; color:#fff;}
-  .detail .review-actions .btn.btn-primary:disabled{background:var(--blue); color:#fff; border-color:var(--blue); opacity:.5;}
-  .detail .review-actions .btn-text:disabled{opacity:.5; cursor:default;}
-  .disc-or{font-family:var(--sans); font-size:13px; color:var(--muted);}
-  .detail .cl-cat{
-    font-family:var(--sans); font-size:11px; font-weight:400; text-transform:uppercase;
-    letter-spacing:0.14em; color:var(--muted); margin:24px 0 4px;
-  }
-  .detail .cl-cat:first-child{margin-top:0;}
-  .detail .cl-head{font-family:var(--sans);}
-  .detail .cl-row{font-size:16px; border-radius:0;}
-  .detail .cl-row:hover{background:none;}
-  .detail .cl-row-foot .btn-text, .detail .rv-role, .detail .rv-state-pill{font-family:var(--sans);}
-  .detail .disc-msg{font-size:16px;}
-  .detail .disc-author, .detail .disc-time, .detail .disc-new h3{font-family:var(--sans);}
-  .detail .disc-thread{border-top-color:var(--line);}
-
-  /* Save / Submit in the stage forms — the board's original button look
-     (white bordered Save, blue filled Submit), not the events-style
-     underlined link / outlined button the rest of the card page takes. */
-  .detail .stage-fields-actions .btn{
-    font-family:var(--sans); font-size:14px; font-weight:600; white-space:nowrap;
-    color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-    padding:9px 16px; text-decoration:none;
-  }
-  .detail .stage-fields-actions .btn:hover:not(:disabled){background:var(--surface); border-color:var(--blue); color:var(--blue);}
-  .detail .stage-fields-actions .btn:disabled{color:var(--muted); background:var(--surface); border:1px solid var(--line); opacity:.5; cursor:default;}
-  .detail .stage-fields-actions .btn.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
-  .detail .stage-fields-actions .btn.btn-primary:hover:not(:disabled){background:#0f1c33; border-color:#0f1c33; color:#fff;}
-  .detail .stage-fields-actions .btn.btn-primary:disabled{background:var(--blue); color:#fff; border-color:var(--blue); opacity:.5;}
-
-  /* Card page header: title, one group of badges, Remove paper pushed
-     right on the same line; Edit fields right-aligned on the rule above
-     the details grid. */
-  .detail-head{gap:10px 14px;}
-  /* One line under the title: badges left, Remove paper right. */
-  .detail-badges{display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:0 0 100%; order:3; margin-top:2px;}
-  .detail .badge-stage{color:var(--accent);}
-  .detail-remove{margin-left:auto;}
-  .detail-details-head{
-    display:flex; justify-content:flex-end; margin-top:26px; padding-top:10px; border-top:1px solid var(--line);
-  }
-  .detail-details-head + .detail-grid{border-top:none; padding-top:6px;}
-
-  /* Disabled text-link buttons (Edit fields, Remove paper, + Add author,
-     Request changes) — greyed out, no underline, no pointer. */
-  .btn-text:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
-
-  /* Live LaTeX preview under the abstract textarea. */
-  .abstract-preview{
-    margin-top:8px; padding:12px 14px; max-width:640px; overflow-x:auto;
-    white-space:pre-wrap; line-height:1.55; font-size:16px; color:var(--ink-soft);
-    background:var(--surface); border:1px solid var(--line);
-  }
-
-  /* Abstract section at the end of the card details: label above, text below. */
-  .detail-abstract{max-width:var(--article-max); margin:0 0 32px;}
-  .detail-abstract-label{font-family:var(--sans); font-size:13px; color:var(--muted); margin-bottom:6px;}
-  .detail-abstract .abstract-render{font-size:16px; line-height:1.55; white-space:pre-wrap; overflow-x:auto;}
-
-  .detail-inline-edit{margin-left:8px;}
-  .detail-abstract-label .detail-inline-edit{margin-left:10px;}
-  .detail-abstract .field{margin-bottom:10px;}
-
-  /* "Characters remaining" under the abstract textarea. */
-  .abstract-counter{font-family:var(--sans); font-size:12.5px; color:var(--muted); margin-top:4px; font-variant-numeric:tabular-nums;}
-  .abstract-counter.over{color:var(--danger-text); font-weight:600;}
-
-  /* Space between the header (title + badges) and the details grid when
-     the grid's own top rule is the first thing under it (Abstract stage,
-     where there's no Edit-fields row above it). */
-  .detail-head ~ .detail-grid{margin-top:26px;}
-  .detail-details-head + .detail-grid{margin-top:0;}
+/* Minimal editorial design system, shared across bold-lab.ai — see
+   events.html for the full rationale. Kept as a values-only swap here
+   (same variable names, same functional warn/success/danger/neutral
+   status colors, same teal/plum junior/senior reviewer coding) since
+   this page is a working tool, not content — real status colors stay
+   meaningful rather than collapsing into one accent hue. Base font is
+   Cabin (sans) rather than the serif used elsewhere, since almost
+   everything here is dense short UI text, not long-form prose; only
+   headings switch to the serif for brand consistency. */
+:root{
+  --body:#33445f;
+  --blue:#1a2b4a;
+  /* junior/senior reviewer coding — the original teal (#2f8f83) sat too close in hue to --success-text (#256b60), so a junior tag and an "approved" state read as nearly the same color;
+     shifted teal toward blue and muted plum to fit the desaturated palette. */
+  --teal:#4f7f94;
+  --plum:#7d5a99;
+  --amber:#b7791f;
+  --focus:#1a2b4a;
+  --shadow:0 14px 44px #1a2b4a1f;
+  --board-max:1360px;
+  --read-max:760px;
+  --sidebar-w:200px;
+  --sidebar-w-collapsed:40px;
+  --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
+  /* names the inline JS styles depend on */
+  --accent:#1a2b4a;
+  --accent-dim:#e3e6ec;
+  --neutral-bg:#eef2f4;
+  --neutral-text:#4b5563;
+  --warn-bg:#f6ecda;
+  --warn-text:#8a5a12;
+  --success-bg:#ddefe9;
+  --success-text:#256b60;
+  --danger-bg:#fbe6e4;
+  --danger-text:#b42318;
+}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink-soft);
+  font-family:var(--sans);
+  font-size:15.5px;
+  line-height:1.55;
+  font-synthesis:none;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+}
+h1,h2,h3{font-family:var(--serif);}
+a{color:var(--blue); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px; transition:text-decoration-color .15s;}
+a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible{
+  outline:2px solid var(--focus); outline-offset:2px;
+}
+h1,h2,h3{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
+button{font-family:inherit; font-size:14px;}
+/* ---------- emulator warning ---------- */
+/* Shown only when FIRESTORE_USE_EMULATOR is true (see the flag's own
+   comment) — loud on purpose. This exact flag shipped wrong once
+   already (committed true, silently broke the live site for anyone
+   without a local emulator running, caught 2026-09-11): this banner is
+   the safety net so that can't happen silently again — anyone looking
+   at the deployed page, not just someone re-reading the source, would
+   immediately see it. `position:sticky` (not `fixed`) so it stays
+   visible while scrolling without needing to reserve space elsewhere
+   for a fixed bar, and can't get clipped by z-index it doesn't know it
+   needs to beat. */
+.emulator-warning{
+  position:sticky; top:0; z-index:1000;
+  background:#c81e1e; color:#fff;
+  font-weight:800; font-size:14px; text-align:center;
+  padding:10px var(--gutter);
+  letter-spacing:0.2px;
+}
+/* ---------- masthead ---------- */
+.masthead{
+  background:var(--paper);
+  border-bottom:1px solid var(--line);
+  line-height:1.7; /* match the other pages' chrome; body here is 1.55 */
+  padding:18px var(--chrome-pad);
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+}
+.wordmark{font-weight:500; font-size:17px; letter-spacing:-0.01em; color:var(--ink); text-decoration:none;}
+.wordmark span{color:var(--blue); opacity:.55;}
+.masthead-sub{font-size:11px; font-weight:400; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted); opacity:.7;}
+.auth-role{
+  font-size:11px; font-weight:600; color:var(--blue);
+  text-transform:uppercase; letter-spacing:0.03em;
+}
+.auth-signin svg{flex:none;}
+.backlink{max-width:var(--board-max); margin:24px 0 0; padding:0 var(--gutter);}
+.backlink a{font-size:13.5px; color:var(--muted); text-decoration:none;}
+.backlink a:hover{color:var(--blue);}
+/* ---------- hero ---------- */
+.hero{max-width:var(--board-max); margin:0; padding:20px var(--gutter) 8px;}
+.hero h1{font-size:clamp(30px, 4.5vw, 44px); line-height:1.02;}
+.hero .lede{margin-top:14px; font-size:16px; color:var(--ink-soft); max-width:66ch;}
+.hero .lede a{color:var(--blue);}
+.page-source{font-size:12.5px; color:var(--muted); margin-top:18px;}
+.page-source a{color:var(--muted);}
+.page-source a:hover{color:var(--blue);}
+/* ---------- toolbar ---------- */
+.toolbar{
+  max-width:var(--board-max);
+  margin:24px 0 0;
+  padding:18px var(--gutter);
+  border-top:1px solid var(--line);
+  border-bottom:1px solid var(--line);
+  display:flex;
+  align-items:center;
+  gap:14px;
+  flex-wrap:wrap;
+}
+.toolbar label{font-size:12.5px; color:var(--muted); display:block; margin-bottom:4px;}
+.toolbar-label{font-size:13px; color:var(--muted);}
+.toolbar-spacer{flex:1 1 auto;}
+select, input[type="text"], input[type="date"], input[type="email"],
+input[type="number"], input[type="url"], input[type="search"], textarea, .field select{
+  font-family:inherit;
+  font-size:14px;
+  color:var(--ink);
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:8px 10px;
+}
+select{min-width:180px;}
+.btn{
+  font-family:inherit;
+  font-weight:600;
+  font-size:14px;
+  color:var(--ink);
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  padding:9px 16px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.btn:hover{border-color:var(--blue); color:var(--blue);}
+/* Was missing entirely (2026-09-18+15, found by Eduardo — the inline
+   "Submit" button in the stage-fields forms looked fully clickable even
+   while disabled, so a blocked submit silently did nothing with zero
+   visual cue). Same treatment .card-move-btn:disabled already had
+   elsewhere on this page — muted, half-opacity, no hover response. */
+.btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
+.btn:disabled:hover{border-color:var(--line); color:var(--muted);}
+.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
+.btn-primary:hover{background:#0f1c33; border-color:#0f1c33; color:#fff;}
+.btn-primary:disabled{background:var(--surface); color:var(--muted); border-color:var(--line); opacity:.5;}
+.btn-primary:disabled:hover{background:var(--surface); border-color:var(--line); color:var(--muted);}
+/* Approve/Reject (venue proposals, 2026-09-11): same size/weight as any
+   other .btn, just green vs. red — same visual weight for a symmetric
+   either-way decision, unlike a primary/plain pairing that would make
+   one option look like the "right" default. */
+.btn-approve{background:var(--success-text); color:#fff; border-color:var(--success-text);}
+.btn-approve:hover{background:#1c5049; border-color:#1c5049; color:#fff;}
+.btn-reject{background:var(--danger-text); color:#fff; border-color:var(--danger-text);}
+.btn-reject:hover{background:#8f1c13; border-color:#8f1c13; color:#fff;}
+.btn-text{
+  font-family:var(--sans); font-weight:400; font-size:12.5px;
+  color:var(--blue); background:none; border:none; padding:0; cursor:pointer;
+  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
+}
+.btn-text.danger:hover, #deleteBoardBtn:hover{color:var(--danger-text);}
+.btn-text.rush-on{color:var(--amber); font-weight:700; text-decoration:none;}
+.btn-text.rush-on:hover{color:var(--focus);}
+/* ---------- venue meta + schedule ---------- */
+.venue-meta{font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;}
+.venue-meta a{color:var(--muted); text-decoration:underline; text-underline-offset:2px;}
+.venue-meta a:hover{color:var(--blue);}
+.venue-schedule{margin-top:18px; max-width:860px;}
+.vs-head{
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0;
+  color:var(--teal); margin-bottom:6px;
+}
+.vs-head span{font-weight:400; text-transform:none; color:var(--muted);}
+/* horizontal timeline: one dot per milestone, even-spaced */
+.vs-rail-wrap{overflow-x:auto; padding:4px 0 2px;}
+.vs-rail{
+  list-style:none; margin:12px 0 0; padding:0;
+  display:flex; align-items:flex-start;
+  position:relative; min-width:min-content;
+}
+.vs-rail::before{
+  content:''; position:absolute; top:5px; height:2px; background:var(--line);
+  left:calc(50% / var(--n)); right:calc(50% / var(--n));
+}
+.vs-pt{
+  flex:1 0 70px;
+  display:flex; flex-direction:column; align-items:center;
+  text-align:center;
+}
+.vs-dot{
+  width:10px; height:10px; border-radius:999px;
+  background:var(--surface); border:2px solid var(--blue);
+  position:relative; z-index:1;
+}
+.vs-pt.is-venue .vs-dot{border-color:var(--muted);}
+/* Reviewers' points are solid, ours (authors' internal, runway) hollow
+   blue, the venue's hollow grey; the paper deadline is the big dark one. */
+.vs-pt.is-reviewers .vs-dot{background:var(--blue);}
+.vs-pt.is-paper .vs-dot{width:12px; height:12px; margin-top:-1px; background:var(--ink); border-color:var(--ink);}
+.vs-name{
+  margin-top:8px; font-size:11px; font-weight:600; line-height:1.25;
+  color:var(--ink); padding:0 3px;
+}
+.vs-pt.is-venue .vs-name,
+.vs-pt.is-authors .vs-name{color:var(--ink-soft); font-weight:500;}
+.vs-when{font-size:10.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
+.vs-pt.is-past .vs-dot{border-color:var(--danger-text);}
+.vs-pt.is-past.is-reviewers .vs-dot,
+.vs-pt.is-past.is-paper .vs-dot{background:var(--danger-text);}
+.vs-pt.is-past .vs-name,
+.vs-pt.is-past .vs-when{color:var(--danger-text);}
+.ics-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;}
+.ics-btn{
+  font-family:inherit; font-weight:600; font-size:12.5px;
+  color:var(--blue); background:var(--surface); border:1px solid var(--line);
+  border-radius:var(--radius); padding:7px 13px; cursor:pointer;
+}
+.ics-btn:hover{background:var(--wash); border-color:var(--blue);}
+.ics-tip-wrap{position:relative; display:inline-flex;}
+.ics-tip{
+  position:absolute; bottom:calc(100% + 9px); left:50%; transform:translateX(-50%) translateY(4px);
+  width:240px; font-size:12px; font-weight:400; line-height:1.4; text-align:left;
+  color:#fff; background:var(--ink); border-radius:var(--radius); padding:9px 11px;
+  box-shadow:var(--shadow); pointer-events:none;
+  opacity:0; visibility:hidden; transition:opacity .15s ease, transform .15s ease;
+  z-index:5;
+}
+.ics-tip::after{
+  content:''; position:absolute; top:100%; left:50%; transform:translateX(-50%);
+  border:6px solid transparent; border-top-color:var(--ink);
+}
+.ics-tip.is-shown{opacity:1; visibility:visible; transform:translateX(-50%) translateY(0);}
+/* ---------- venue modal form ---------- */
+.modal-scroll{max-height:64vh; overflow-y:auto; margin:0 -6px; padding:2px 6px;}
+.field-section{
+  font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0;
+  color:var(--teal); margin:22px 0 8px;
+}
+#venueForm .field-section:first-child{margin-top:2px;}
+.field-2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+/* ---------- toast ---------- */
+.toast{max-width:var(--board-max); margin:16px 0 0; padding:0 var(--gutter);}
+.toast-inner{
+  font-size:13.5px; padding:10px 14px; border:1px solid var(--line);
+  border-radius:var(--radius); background:var(--surface);
+}
+.toast-inner.error{color:var(--danger-text); background:var(--danger-bg); border-color:#f0c9c4;}
+.toast-inner.ok{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
+/* ---------- board meta ---------- */
+.board-meta{
+  max-width:var(--board-max); margin:20px 0 0; padding:0 var(--gutter);
+  display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;
+}
+.board-meta h2{font-size:22px; font-weight:760;}
+/* Empty state deliberately stays its own centered island, not
+   left-aligned like everything else — it's the only thing on the
+   page when it's showing, so centering (not the shared board column)
+   is the right read here. */
+.board-empty{
+  max-width:var(--read-max); margin:56px auto; padding:0 var(--gutter);
+  color:var(--muted); text-align:center;
+}
+.board-empty .inline-link{
+  font: inherit; color:var(--blue); background:none; border:none;
+  padding:0; cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+}
+/* ---------- venues list ---------- */
+.venues{max-width:var(--read-max); margin:22px 0 0; padding:0 var(--gutter) 80px; border-bottom:1px solid var(--line);}
+.venue-row{
+  display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+  padding:18px 0;
+  border:none; border-top:1px solid var(--line); border-radius:0;
+  background:none;
+  width:100%; text-align:left; cursor:pointer; font-family:inherit;
+  transition:opacity .12s;
+}
+.venue-row:hover{opacity:.68;}
+.venue-name{font-weight:700; font-size:16px; color:var(--ink);}
+.venue-sub{font-size:13px; color:var(--muted);}
+/* Venue proposals (2026-09-11): a pending row opens the normal venue
+   page too (same .venue-row button as an approved one) — there's just
+   nothing to register a paper against yet until it's approved (see
+   "+ Register paper"'s own disabled check in renderBoard()). "Pending
+   your approval" rows also carry inline Approve/Reject, so that row
+   can't be a <button> itself (it contains other buttons) — it's a div,
+   cursor:default overriding .venue-row's pointer, with its own nested
+   clickable name (.venue-name-btn) alongside the action buttons. */
+.venue-row--pending{cursor:default; align-items:center;}
+.venue-row--pending:hover{opacity:1;}
+.venue-row-info{display:flex; flex-direction:column; gap:3px; min-width:0;}
+.venue-row-actions{display:flex; gap:8px; flex:0 0 auto;}
+.venue-name-btn{
+  font:inherit; font-weight:700; font-size:16px; color:var(--ink);
+  background:none; border:none; padding:0; margin:0; cursor:pointer; text-align:left;
+}
+.venue-name-btn:hover{color:var(--blue);}
+.venues-section-title{font-size:12.5px; font-weight:700; color:var(--muted); margin:22px 0 8px;}
+.venues-section-title:first-child{margin-top:0;}
+.badge-pending{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
+/* ---------- board search ---------- */
+.board-search{
+  max-width:var(--board-max); margin:16px 0 0; padding:0 var(--gutter);
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+}
+.board-search input[type="search"]{flex:1 1 260px; min-width:180px;}
+.board-search select{min-width:140px;}
+.board-search-count{font-size:12.5px; color:var(--muted); white-space:nowrap;}
+/* ---------- board columns ---------- */
+.board-scroll{
+  max-width:var(--board-max); margin:12px 0 0; padding:0 var(--gutter) 80px;
+  overflow-x:auto;
+  scroll-snap-type:x proximity;
+}
+.columns{
+  display:flex;
+  gap:1px;
+  background:var(--line);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  overflow:hidden;
+  min-width:2170px;
+}
+.column{
+  background:var(--surface);
+  flex:1 1 0;
+  min-width:240px;
+  display:flex;
+  flex-direction:column;
+  scroll-snap-align:start;
+}
+.column-head{
+  padding:11px 12px 10px;
+  border-bottom:1px solid var(--line);
+  background:var(--wash);
+  color:var(--ink);
+}
+.column-head .ch-top{
+  display:flex; align-items:center; justify-content:space-between;
+  font-weight:700; font-size:12.5px; letter-spacing:0;
+}
+.column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
+/* ch-hint is ALWAYS rendered (renderColumns never omits it, even with
+   nothing to say) — min-height keeps a short/empty hint from collapsing
+   the column-head down to nothing, so heads still roughly line up
+   across the board, but the box itself grows past that rather than
+   clipping (2026-09-18+6, per Eduardo — a fixed height + overflow:hidden
+   here was cutting off the bottom of the stacked deadline layout below
+   whenever a date wrapped to more lines than the box was sized for; a
+   wrapping, variable-length date can't be bounded by a fixed height
+   without either clipping it or guessing generously and wasting space
+   everywhere else). The "Requires: a) … b) …" line that used to sit
+   below this (ch-requires) was dropped entirely 2026-09-18+5. */
+.column-head .ch-hint{
+  margin-top:4px; min-height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
+}
+/* Rush mode's column deadline hint — up to three rows (review deadline
+   where a review is a gate, internal <Stage> deadline, venue External
+   <Stage> deadline), each a label with its date on the same line
+   (2026-09-18+17, per Eduardo; a date that doesn't fit in what's left
+   of the line just wraps under it — the labels used to be long enough
+   ("Next internal deadline (Paper):") that a side-by-side layout
+   truncated the date, which is why 2026-09-18+5 stacked them). Each
+   row turns red independently, once THAT row's own instant has passed,
+   not the other ones' — see columnHintFor. */
+.column-head .ch-hint.ch-hint-deadlines{
+  display:flex; flex-direction:column; gap:2px;
+}
+.column-head .ch-hint.ch-hint-deadlines .hint-row{word-break:break-word;}
+.column-head .ch-hint .hint-overdue{color:var(--danger-text); font-weight:600;}
+.column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
+.column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
+/* ---------- card ---------- */
+.card{
+  border:1px solid var(--line);
+  border-left-width:1px;
+  border-radius:var(--radius);
+  padding:12px;
+  background:var(--surface);
+}
+/* Draft & Review's collapsed sub-state, colour-coded on the card itself. */
+.card.rv-in_review{border-left:4px solid var(--warn-text); background:var(--warn-bg);}
+.card.rv-changes_requested{border-left:4px solid var(--danger-text); background:var(--danger-bg);}
+.card.rv-approved{border-left:4px solid var(--success-text); background:var(--success-bg);}
+/* Rush mode: a card whose column has passed its internal cutoff (see
+   rushColumnCutoff) — an outline layered on top, since it needs to read
+   clearly whether or not an rv-* review-state background above also
+   applies to the same card. */
+.card.rush-deadline-passed{outline:2px solid var(--danger-text); outline-offset:-1px;}
+.badge-outcome-accepted{background:var(--success-bg); color:var(--success-text);}
+.badge-outcome-rejected{background:var(--danger-bg); color:var(--danger-text);}
+.badge-outcome-withdrawn{background:var(--neutral-bg); color:var(--neutral-text);}
+.badge-rebuttal-sent{background:var(--success-bg); color:var(--success-text);}
+.badge-rebuttal-writing{background:var(--warn-bg); color:var(--warn-text);}
+.badge-rebuttal-waiting{background:var(--neutral-bg); color:var(--neutral-text);}
+.badge-review-approved{background:var(--success-bg); color:var(--success-text);}
+.badge-review-changes_requested{background:var(--danger-bg); color:var(--danger-text);}
+.badge-review-in_review{background:var(--warn-bg); color:var(--warn-text);}
+.card-title-btn{
+  display:block; width:100%; text-align:left;
+  font-family:inherit; font-weight:700; font-size:14px; color:var(--ink);
+  background:none; border:none; padding:0; margin-bottom:6px; cursor:pointer;
+  text-decoration:underline; text-decoration-color:var(--line); text-underline-offset:2px;
+}
+.card-title-btn:hover{color:var(--blue); text-decoration-color:var(--blue);}
+.card-meta-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px;}
+.badge{
+  display:inline-block; font-size:11px; font-weight:600; letter-spacing:0;
+  padding:2px 9px; border-radius:999px;
+}
+.badge-overdue{background:var(--danger-bg); color:var(--danger-text);}
+.card-link{font-size:12.5px; display:inline-block; margin-bottom:6px;}
+.card-notes{font-size:12.5px; color:var(--ink-soft); margin-bottom:8px; white-space:pre-wrap;}
+.author-row{display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;}
+.author-row .author-input{flex:1 1 160px; min-width:0;}
+.author-row .author-remove, .author-row .author-use-roster{flex:0 0 auto; white-space:nowrap;}
+.author-pi-tag{
+  flex:0 0 auto; width:24px; text-align:center;
+  font-size:10.5px; font-weight:700; letter-spacing:0; color:var(--plum);
+}
+.author-pi-tag--hidden{visibility:hidden;}
+.card-progress{font-size:11px; color:var(--muted); margin:6px 0 2px; font-variant-numeric:tabular-nums;}
+/* ---------- inline reviewer assignment (card + detail) ---------- */
+.card-reviewers{display:flex; flex-direction:column; gap:4px; margin:8px 0;}
+.card-reviewers .rv-row{display:flex; align-items:center; gap:6px;}
+.card-reviewers .rv-role{
+  flex:0 0 auto; width:16px; font-size:10.5px; font-weight:700;
+  text-transform:uppercase; letter-spacing:0;
+}
+.card-reviewers .rv-role.junior, .rv-role.junior{color:var(--teal);}
+.card-reviewers .rv-role.senior, .rv-role.senior{color:var(--plum);}
+/* One reviewer's derived state, directly under their picker — a label,
+   not a control (2026-09-14, replaces a clickable tri-state row: see
+   reviewStatePillHtml/onToggleChecklist). Nothing to disable, since
+   nothing here is ever clicked. */
+.rv-state-pill{
+  display:inline-block; margin:0 0 6px 22px; font-size:10.5px; font-weight:700;
+  padding:3px 7px; border-radius:5px; line-height:1.25;
+}
+.rv-state-pill.rv-state-in_review{background:var(--warn-bg); color:var(--warn-text);}
+.rv-state-pill.rv-state-approved{background:var(--success-bg); color:var(--success-text);}
+.rv-state-pill.rv-state-changes_requested{background:var(--danger-bg); color:var(--danger-text);}
+.rv-input{
+  flex:1 1 auto; min-width:0; font-size:12px; padding:5px 7px;
+  border:1px solid var(--line); border-radius:var(--radius);
+  background:var(--surface); color:var(--ink); font-family:inherit;
+}
+select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
+.card-footer{display:flex; align-items:center; gap:2px; margin-top:8px;}
+.card-move{display:flex; gap:6px; margin-top:8px;}
+.card-move-btn{
+  flex:1 1 0; min-width:0;
+  font-family:inherit; font-weight:600; font-size:11.5px;
+  color:var(--ink-soft); background:var(--surface);
+  border:1px solid var(--line); border-radius:var(--radius);
+  padding:6px 4px; cursor:pointer; text-align:center; white-space:nowrap;
+}
+.card-move-btn:hover:not(:disabled){background:var(--wash); border-color:var(--blue); color:var(--blue);}
+.card-move-btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
+/* Rush mode's "Submit paper"/"Paper accepted" buttons — see
+   moveButtonsHtml — read as a sign-off, not a plain forward move, so
+   they get the same green as an approved review state instead of the
+   neutral default. */
+.card-move-btn.card-move-btn-accept{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
+.card-move-btn.card-move-btn-accept:hover:not(:disabled){background:#cde8df; border-color:var(--success-text);}
+.card-move-btn.card-move-btn-accept:disabled{color:var(--muted); background:var(--surface); border-color:var(--line); opacity:.5;}
+/* ---------- card detail ---------- */
+.detail{max-width:var(--board-max); margin:20px 0 0; padding:0 var(--gutter) 88px;}
+.detail-back{font-size:13.5px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:16px;}
+.detail-back:hover{color:var(--blue);}
+.detail-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
+.detail-head h2{font-size:clamp(22px, 3vw, 28px); font-weight:760;}
+.detail-grid{display:grid; grid-template-columns:150px 1fr; gap:8px 16px; font-size:13.5px; margin-bottom:24px; max-width:640px;}
+.detail-grid dt{color:var(--muted);}
+.detail-grid dd{margin:0; word-break:break-word;}
+.detail-grid dd input.rv-input{width:100%;}
+.detail-grid dd.abstract-render{white-space:pre-wrap; line-height:1.55; max-width:100%; overflow-x:auto;}
+.abstract-render .katex-display{margin:0.5em 0; overflow-x:auto; overflow-y:hidden;}
+/* KaTeX's own stylesheet sets .katex to 1.21em, which renders formulas
+   visibly bigger than the surrounding text — keep them at the text size. */
+.abstract-render .katex{font-size:1em;}
+/* Inline "Submit the abstract" form (2026-09-18+10, per Eduardo) — a
+   plain section below the detail-grid, not the warning-coloured
+   .gate-banner treatment (this isn't flagging a problem, just showing
+   a form) and not a checklist. Reuses .field/.field-error, the same
+   classes and global input/textarea styling the Edit-fields modal
+   already uses, so the fields are sized the same way there too. Its own
+   heading reuses .detail-subhead (see the Author/Review sections below)
+   rather than a bespoke rule, now that it lives inside the Author
+   section as one of that section's items, not a standalone block. */
+.stage-fields{margin:0 0 24px; max-width:560px;}
+/* Save (plain field update) and Submit (the real move, greyed out until
+   advanceBlockReason clears — see abstractSubmissionFieldsHtml) sit side
+   by side, same gap/alignment as .gate-banner-actions elsewhere on this
+   page. */
+.stage-fields-actions{display:flex; gap:10px; align-items:center; margin-top:14px; flex-wrap:wrap;}
+/* The Submit button's own `title` (2026-09-18+15) isn't a reliable way
+   to tell someone why it's greyed out — Chrome (and most browsers)
+   don't fire hover/title tooltips on a disabled element at all, so
+   that reason was invisible in practice. This is the same text,
+   rendered as plain visible copy next to the button instead. */
+.stage-fields-hint{font-size:12.5px; color:var(--muted); flex:1 1 200px;}
+/* ---------- card detail: Author / Review tabs ----------
+   Two rounds: always-both-visible sections (2026-09-18+11/+12, split
+   by WHO the content is for — an "Author" section vs a "Review"
+   section, Discussion living under Review as its last item), then back
+   to a tab bar at 2026-09-18+19, per Eduardo. Styling now matches
+   event-collaboration-week.html's .tabs/.tab/.tab-panel (Schedule /
+   Proposals — 2026-09-18+20, per Eduardo) rather than the old, bolder
+   Format/Science/Discussion tab bar this used to mirror: lighter
+   font-weight at rest, gap-based spacing instead of per-button
+   right-margin, weight bumping up (not just the underline) on the
+   active tab. --accent here is the same value as --blue (both
+   #1a2b4a) — used instead to match that reference file's own token
+   name exactly, not because it means something different on this page.
+   New "detail-" prefixed names rather than the collaboration-week
+   page's bare .tab/.tabs/.tab-panel, since those would collide with
+   nothing here but read confusingly close to this file's own
+   `.card-move-btn`-adjacent naming; still scoped to the card detail
+   page specifically.
+   No tab bar at all renders when Author has nothing to show (see
+   renderCardDetail) — same "skip it for a single visible pane" shape
+   the old tabs used outside Paper.
+   .detail-subhead is the smaller, plain-ink heading for an item WITHIN
+   a tab's own content (a checklist, Discussion) — not a tab of its
+   own. */
+.detail-tabbar{display:flex; gap:28px; border-bottom:1px solid var(--line); margin-top:36px;}
+.detail-tab{
+  font-family:var(--sans); font-size:14px; font-weight:500; color:var(--muted);
+  background:none; border:none; border-bottom:2px solid transparent;
+  padding:10px 2px; margin-bottom:-1px; cursor:pointer;
+}
+.detail-tab:hover{color:var(--ink);}
+.detail-tab.active{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
+.detail-tabpanel{margin-top:28px;}
+.detail-subhead{font-weight:700; font-size:14px; color:var(--ink); margin:24px 0 10px;}
+.detail-subhead:first-child{margin-top:0;}
+.detail-tab .n, .detail-subhead .n{font-weight:800; font-size:12px; margin-left:6px; font-variant-numeric:tabular-nums; color:var(--muted); text-transform:none; letter-spacing:normal;}
+.cl-wrap{max-width:640px;}
+.cl-agent-note{
+  font-size:12px; color:var(--muted); line-height:1.5;
+  margin:0 0 14px; padding:8px 10px; background:var(--wash); border-radius:var(--radius);
+}
+.cl-agent-note a{color:var(--blue);}
+.cl-cat{font-weight:700; font-size:13px; color:var(--ink); margin:16px 0 4px;}
+.cl-cat:first-child{margin-top:0;}
+.cl-head, .cl-row{display:grid; grid-template-columns:1fr 68px 68px; gap:10px;}
+/* Authors' checklist (2026-09-14): one checkbox column, not two — same
+   base grid/row styling, just a narrower track list. */
+.cl-row.single{grid-template-columns:1fr 68px;}
+.cl-head{
+  font-size:10.5px; font-weight:700; color:var(--muted);
+  text-transform:uppercase; letter-spacing:0;
+  padding:0 6px 6px; border-bottom:1px solid var(--line);
+  position:sticky; top:0; background:var(--paper);
+}
+.cl-head span{text-align:center;}
+.cl-head span:nth-child(2){color:var(--teal);}
+.cl-head span:nth-child(3){color:var(--plum);}
+.cl-item{border-bottom:1px solid var(--line); padding:2px 0;}
+.cl-row{padding:9px 6px; font-size:13.5px; align-items:start; border-radius:var(--radius);}
+.cl-row:hover{background:var(--wash);}
+.cl-row .cl-label{line-height:1.45;}
+.cl-row input[type="checkbox"]{width:16px; height:16px; margin:2px auto 0; display:block; cursor:pointer;}
+.cl-row input[type="checkbox"]:nth-of-type(1){accent-color:var(--teal);}
+.cl-row input[type="checkbox"]:nth-of-type(2){accent-color:var(--plum);}
+.cl-row.single input[type="checkbox"]:nth-of-type(1){accent-color:var(--accent);}
+.cl-row input[type="checkbox"]:disabled{cursor:default; opacity:0.45;}
+.cl-row-foot{padding:0 6px 8px;}
+.cl-row-foot .btn-text{font-size:12px;}
+.cl-row-foot .btn-text.has-feedback{color:var(--blue); font-weight:600;}
+.cl-thread{margin:0 0 12px; padding:12px 12px 4px; background:var(--wash); border-radius:var(--radius);}
+.cl-thread .disc-thread{border-top-color:var(--line);}
+.cl-thread .disc-form{max-width:100%;}
+.cl-thread-new{margin-top:14px; padding-top:14px; border-top:1px solid var(--line);}
+/* ---------- discussion (OpenReview-style, one level of replies) ---------- */
+.discussion{max-width:640px;}
+.disc-empty{color:var(--muted); font-size:13.5px; margin:4px 0 20px;}
+.disc-thread{border-top:1px solid var(--line); padding:16px 0;}
+.disc-thread:first-child{border-top:none; padding-top:0;}
+.disc-msg{font-size:13.5px;}
+.disc-meta{display:flex; align-items:baseline; gap:8px; margin-bottom:4px;}
+.disc-author{font-weight:700; color:var(--ink); font-size:13.5px;}
+.disc-time{color:var(--muted); font-size:11.5px;}
+.disc-body{white-space:pre-wrap; color:var(--ink-soft); line-height:1.5;}
+.disc-replies{margin:12px 0 0 24px; padding-left:16px; border-left:2px solid var(--line); display:flex; flex-direction:column; gap:14px;}
+.disc-actions{margin-top:6px;}
+.disc-form{margin-top:12px; display:flex; flex-direction:column; gap:8px; max-width:480px;}
+.disc-form input, .disc-form textarea{width:100%;}
+.disc-form textarea{min-height:64px; resize:vertical; font-family:inherit;}
+.disc-form-actions{display:flex; gap:8px;}
+.disc-new{margin-top:24px; padding-top:20px; border-top:1px solid var(--line);}
+.disc-new h3{font-size:13px; font-weight:700; color:var(--ink); margin:0 0 10px;}
+/* ---------- modal ---------- */
+.modal-overlay{
+  position:fixed; inset:0; background:rgba(26,43,74,0.5);
+  display:flex; align-items:flex-start; justify-content:center;
+  padding:40px 20px; overflow-y:auto; z-index:50;
+}
+.modal{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  max-width:480px;
+  width:100%;
+  padding:26px;
+}
+.modal h2{font-size:20px; margin-bottom:18px;}
+.field{margin-bottom:16px;}
+.field label{display:block; font-size:13px; color:var(--muted); margin-bottom:5px;}
+.field input, .field textarea{width:100%;}
+.field textarea{min-height:64px; resize:vertical; font-family:inherit;}
+.modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:22px;}
+.field-error{
+  font-size:12.5px; color:var(--danger-text);
+  background:var(--danger-bg); border:1px solid var(--danger-text);
+  border-radius:var(--radius); padding:8px 12px; margin-top:12px;
+}
+/* Standing "you're over the cap" banner at the top of a venue board
+   (2026-09-14, see currentUserPaperCapWarning) — same danger-color
+   language as .field-error, styled as a page-level banner rather than
+   an inline field note since it's the first thing on the whole board,
+   not attached to any one field. */
+.author-cap-alert{
+  font-size:14px; font-weight:600; color:var(--danger-text);
+  background:var(--danger-bg); border:1px solid var(--danger-text);
+  border-radius:var(--radius); padding:12px 16px; margin-bottom:16px;
+}
+footer{
+  max-width:var(--board-max); margin:0;
+  padding:32px var(--gutter) 56px;
+  border-top:1px solid var(--line); font-size:13px; color:var(--muted);
+}
+@media (max-width:760px){
+  .field-2{grid-template-columns:1fr;}
+}
+.sidebar{
+  flex:0 0 var(--sidebar-w); width:var(--sidebar-w); box-sizing:border-box;
+  line-height:1.7; /* match the other pages' sidebar; body here is 1.55 */
+  border-right:1px solid var(--line); background:var(--paper);
+  transition:flex-basis .22s ease, width .22s ease;
+}
+.sidebar-title{font-size:11px; font-weight:400; text-transform:uppercase; letter-spacing:0.16em; color:var(--muted); opacity:.7;}
+.sidebar-collapse:hover{border-color:var(--blue); color:var(--blue);}
+.nav-group-label{
+  display:flex; align-items:center; justify-content:space-between; gap:6px;
+  font-size:13px; font-weight:600;
+  color:var(--ink); padding:4px 0; margin-bottom:2px; text-decoration:none;
+}
+.nav-group-label:hover{color:var(--blue);}
+.nav-group-label.active{color:var(--blue);}
+.nav-link{
+  display:block; font-size:13px; font-weight:400; color:var(--ink-soft);
+  text-decoration:none; padding:4px 0; white-space:nowrap;
+}
+.nav-link:hover{color:var(--blue);}
+.nav-link.active{color:var(--blue); font-weight:600;}
+.nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--blue);}
+.nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
+  outline:2px solid var(--focus); outline-offset:2px;
+}
+.shell.is-collapsed .sidebar{flex-basis:var(--sidebar-w-collapsed); width:var(--sidebar-w-collapsed);}
+/* ---------- card detail: editorial pass ----------
+   The card page takes the same look as the events pages (events.html /
+   event-collaboration-week.html): serif for anything meant to be read,
+   sans only for UI chrome (labels, meta, buttons, inputs), centred
+   900px column, hairline rules instead of boxes, underlined text links
+   for secondary actions, one outlined button for the primary one, and
+   outlined status badges instead of filled pills. Scoped to .detail so
+   the board and venue list keep their denser sans treatment. */
+.detail{
+  max-width:var(--content-max); margin:0 auto; padding:40px var(--gutter) 88px;
+  font-family:var(--serif); font-size:18px; line-height:1.7; color:var(--ink-soft);
+}
+.detail input, .detail textarea, .detail select, .detail button{font-family:var(--sans);}
+.detail-back{font-family:var(--sans); margin-bottom:18px;}
+.detail-head h2{
+  font-size:clamp(30px, 5vw, 44px); line-height:1.14; font-weight:800;
+  letter-spacing:-0.005em; max-width:var(--article-max); text-wrap:balance;
+}
+.detail .badge{
+  font-family:var(--sans); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em;
+  background:none; border:1px solid currentColor; border-radius:0; padding:2px 7px;
+}
+.detail .card-move-btn, .detail .btn-primary{
+  font-family:var(--sans); font-size:14.5px; font-weight:500; white-space:nowrap;
+  color:var(--ink); background:none; border:1px solid var(--ink); border-radius:0; padding:9px 20px;
+}
+.detail .card-move-btn:hover:not(:disabled), .detail .btn-primary:hover:not(:disabled){background:var(--ink); color:var(--paper); border-color:var(--ink);}
+.detail .card-move-btn:disabled, .detail .btn-primary:disabled{color:var(--muted); border-color:var(--line); background:none; opacity:1;}
+.detail .card-move-btn.card-move-btn-accept{color:var(--ink); background:none; border-color:var(--ink);}
+.detail .card-move-btn.card-move-btn-accept:hover:not(:disabled){background:var(--ink); color:var(--paper);}
+.detail .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); border-color:var(--line); background:none;}
+.detail .btn{
+  font-family:var(--sans); font-size:14.5px; font-weight:500; color:var(--accent);
+  background:none; border:none; border-radius:0; padding:0; cursor:pointer;
+  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
+}
+.detail .btn:hover:not(:disabled){text-decoration-color:currentColor; color:var(--accent);}
+.detail .btn:disabled{color:var(--muted); opacity:.6; cursor:default;}
+.detail .btn.btn-primary{text-decoration:none; padding:9px 20px; border:1px solid var(--ink);}
+.detail .btn.btn-primary:disabled{border-color:var(--line);}
+.detail .btn-text{font-size:13.5px;}
+.detail-grid{
+  grid-template-columns:150px 1fr; gap:10px 20px; margin:0 0 32px; padding-top:18px;
+  border-top:1px solid var(--line); font-size:16px; line-height:1.55; max-width:var(--article-max);
+}
+.detail-grid dt{font-family:var(--sans); font-size:13px; color:var(--muted);}
+.detail-subhead{font-family:var(--serif); font-size:19px; font-weight:800; letter-spacing:-0.005em; margin:34px 0 12px;}
+.detail-subhead:first-child{margin-top:0;}
+.detail .field label{font-family:var(--sans); font-size:13px;}
+.stage-fields-hint{font-family:var(--sans);}
+.detail .cl-agent-note{font-family:var(--sans); margin-bottom:20px;}
+.cl-agent-note p{margin:0;}
+.cl-agent-note .note-lead{margin-bottom:6px;}
+.cl-agent-note .note-lead:last-child{margin-bottom:0;}
+.detail .cl-agent-note{max-width:var(--article-max);}
+/* Approve / Request changes — the board's original button look (white
+   bordered button + red text link), not the events-style underlined
+   link every other .btn on the card page takes now. */
+.detail .review-actions{display:flex; align-items:center; gap:18px; margin:0 0 28px;}
+.detail .review-actions .btn{
+  font-family:var(--sans); font-size:14px; font-weight:600; color:var(--ink);
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:9px 16px; text-decoration:none;
+}
+.detail .review-actions .btn:hover:not(:disabled){border-color:var(--blue); color:var(--blue);}
+.detail .review-actions .btn:disabled{color:var(--muted); opacity:.5;}
+.detail .review-actions .btn.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
+.detail .review-actions .btn.btn-primary:hover:not(:disabled){background:#0f1c33; border-color:#0f1c33; color:#fff;}
+.detail .review-actions .btn.btn-primary:disabled{background:var(--blue); color:#fff; border-color:var(--blue); opacity:.5;}
+.detail .review-actions .btn-text:disabled{opacity:.5; cursor:default;}
+.disc-or{font-family:var(--sans); font-size:13px; color:var(--muted);}
+.detail .cl-cat{
+  font-family:var(--sans); font-size:11px; font-weight:400; text-transform:uppercase;
+  letter-spacing:0.14em; color:var(--muted); margin:24px 0 4px;
+}
+.detail .cl-cat:first-child{margin-top:0;}
+.detail .cl-head{font-family:var(--sans);}
+.detail .cl-row{font-size:16px; border-radius:0;}
+.detail .cl-row:hover{background:none;}
+.detail .cl-row-foot .btn-text, .detail .rv-role, .detail .rv-state-pill{font-family:var(--sans);}
+.detail .disc-msg{font-size:16px;}
+.detail .disc-author, .detail .disc-time, .detail .disc-new h3{font-family:var(--sans);}
+.detail .disc-thread{border-top-color:var(--line);}
+/* Save / Submit in the stage forms — the board's original button look
+   (white bordered Save, blue filled Submit), not the events-style
+   underlined link / outlined button the rest of the card page takes. */
+.detail .stage-fields-actions .btn{
+  font-family:var(--sans); font-size:14px; font-weight:600; white-space:nowrap;
+  color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:9px 16px; text-decoration:none;
+}
+.detail .stage-fields-actions .btn:hover:not(:disabled){background:var(--surface); border-color:var(--blue); color:var(--blue);}
+.detail .stage-fields-actions .btn:disabled{color:var(--muted); background:var(--surface); border:1px solid var(--line); opacity:.5; cursor:default;}
+.detail .stage-fields-actions .btn.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
+.detail .stage-fields-actions .btn.btn-primary:hover:not(:disabled){background:#0f1c33; border-color:#0f1c33; color:#fff;}
+.detail .stage-fields-actions .btn.btn-primary:disabled{background:var(--blue); color:#fff; border-color:var(--blue); opacity:.5;}
+/* Card page header: title, one group of badges, Remove paper pushed
+   right on the same line; Edit fields right-aligned on the rule above
+   the details grid. */
+.detail-head{gap:10px 14px;}
+/* One line under the title: badges left, Remove paper right. */
+.detail-badges{display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:0 0 100%; order:3; margin-top:2px;}
+.detail .badge-stage{color:var(--accent);}
+.detail-remove{margin-left:auto;}
+.detail-details-head{
+  display:flex; justify-content:flex-end; margin-top:26px; padding-top:10px; border-top:1px solid var(--line);
+}
+.detail-details-head + .detail-grid{border-top:none; padding-top:6px;}
+/* Disabled text-link buttons (Edit fields, Remove paper, + Add author,
+   Request changes) — greyed out, no underline, no pointer. */
+.btn-text:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
+/* Live LaTeX preview under the abstract textarea. */
+.abstract-preview{
+  margin-top:8px; padding:12px 14px; max-width:640px; overflow-x:auto;
+  white-space:pre-wrap; line-height:1.55; font-size:16px; color:var(--ink-soft);
+  background:var(--surface); border:1px solid var(--line);
+}
+/* Abstract section at the end of the card details: label above, text below. */
+.detail-abstract{max-width:var(--article-max); margin:0 0 32px;}
+.detail-abstract-label{font-family:var(--sans); font-size:13px; color:var(--muted); margin-bottom:6px;}
+.detail-abstract .abstract-render{font-size:16px; line-height:1.55; white-space:pre-wrap; overflow-x:auto;}
+.detail-inline-edit{margin-left:8px;}
+.detail-abstract-label .detail-inline-edit{margin-left:10px;}
+.detail-abstract .field{margin-bottom:10px;}
+/* "Characters remaining" under the abstract textarea. */
+.abstract-counter{font-family:var(--sans); font-size:12.5px; color:var(--muted); margin-top:4px; font-variant-numeric:tabular-nums;}
+.abstract-counter.over{color:var(--danger-text); font-weight:600;}
+/* Space between the header (title + badges) and the details grid when
+   the grid's own top rule is the first thing under it (Abstract stage,
+   where there's no Edit-fields row above it). */
+.detail-head ~ .detail-grid{margin-top:26px;}
+.detail-details-head + .detail-grid{margin-top:0;}

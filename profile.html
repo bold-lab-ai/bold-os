@@ -8,87 +8,21 @@
 <meta property="og:title" content="Profile | BOLD Lab">
 <meta property="og:description" content="Your BOLD Lab profile.">
 <meta property="og:type" content="website">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
+<script src="bold.js" data-sdk="functions"></script>
 <style>
-  /* Minimal editorial design system, shared across bold-lab.ai — one accent
-     hue doing all the work (BOLD's own blue, deepened for reading), EB
-     Garamond for anything meant to be read, Cabin for nav/UI chrome, no
-     border-radius, no filled badges or button blocks, hairline rules.
-     Adapted from inherentlabs.ai's visual language (cream ground, single
-     muted accent, serif body, sans chrome, underlined links over buttons). */
   :root{
-    --ink:#1a2b4a;
-    --ink-soft:#33445f;
-    --muted:#7d8698;
-    --paper:#f5f3ee;
-    --surface:#ffffff;
-    --wash:#ece9e1;
-    --line:rgba(26,43,74,0.16);
-    --accent:#1a2b4a;
-    --radius:2px;
     --success-text:#256b60;
     --danger-text:#b42318;
     --warn-text:#8a5a12;
     --neutral-text:#4b5563;
-    --content-max:900px;
-    --article-max:640px;
-    --gutter:clamp(20px, 4vw, 48px);
-    --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
-    --sans:'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
-
-  *{box-sizing:border-box;}
-  html{scroll-behavior:smooth;}
-
-  body{
-    margin:0;
-    background:var(--paper);
-    color:var(--ink-soft);
-    font-family:var(--serif);
-    font-size:18px;
-    line-height:1.7;
-    font-synthesis:none;
-    -webkit-font-smoothing:antialiased;
-    -moz-osx-font-smoothing:grayscale;
-  }
-
-  a{color:var(--accent); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px; transition:text-decoration-color .15s;}
-  a:hover{text-decoration-color:currentColor;}
-  a:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
-
-  h1,h2,h3{font-family:var(--serif); color:var(--ink); font-weight:800; letter-spacing:-0.005em; margin:0;}
-
-  /* ---------- masthead ---------- */
-  .masthead{
-    background:var(--paper);
-    border-bottom:1px solid var(--line);
-    padding:18px var(--gutter);
-    display:flex;
-    align-items:baseline;
-    justify-content:space-between;
-    gap:16px;
-    flex-wrap:wrap;
-  }
-  .wordmark{font-family:var(--sans); font-weight:500; font-size:17px; letter-spacing:-0.01em; color:var(--ink); text-decoration:none;}
-  .wordmark strong{font-weight:700;}
-  .wordmark span{color:var(--accent); opacity:.55;}
-  .masthead-sub{font-family:var(--sans); font-size:11px; font-weight:400; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted); opacity:.7;}
-
   /* ---------- hero ---------- */
   .hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
   .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
   .hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
-
   .hero-actions{display:flex; flex-wrap:wrap; gap:24px; margin-top:10px; font-family:var(--sans); font-size:15px;}
-
   /* ---------- article ---------- */
   main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
-
   .btn{
     display:inline-block; font-family:var(--sans); font-size:15px; font-weight:500;
     text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
@@ -97,14 +31,12 @@
   .btn:hover{text-decoration-color:currentColor;}
   .btn-primary{color:var(--accent); font-weight:600;}
   .btn-secondary{color:var(--ink-soft);}
-
   /* Hierarchy on this page, outermost first: section (larger h2 + hairline,
      wide gap) > group (small caps label + count) > row (faint hairline). */
   section.block{max-width:var(--article-max); margin:80px 0 0;}
   section.block:first-of-type{margin-top:28px;}
   .block-head{padding-bottom:10px; border-bottom:1px solid var(--line);}
   .block h2{font-family:var(--serif); font-size:28px; line-height:1.2; letter-spacing:-0.005em; color:var(--ink); font-weight:700;}
-
   /* ---------- profile ---------- */
   .profile-head{display:flex; align-items:center; gap:20px;}
   .profile-photo{width:72px; height:72px; border-radius:50%; object-fit:cover; flex:none; background:var(--wash);}
@@ -137,225 +69,18 @@
   .badge-rebuttal-waiting, .badge-outcome-withdrawn{color:var(--neutral-text);}
   .proj-empty{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
   .proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
-
-  footer{
-    max-width:var(--content-max); margin:0 auto; padding:40px var(--gutter) 64px;
-    border-top:1px solid var(--line); font-size:14px; color:var(--muted); font-family:var(--sans);
-  }
-
   @media (max-width:820px){
     .hero{padding:44px var(--gutter) 8px;}
   }
-
-  /* ---------- site nav ---------- */
-  .shell{display:flex; align-items:stretch;}
-  .sidebar{
-    flex:0 0 200px; width:200px; box-sizing:border-box;
-    border-right:1px solid var(--line); background:var(--paper);
-    transition:flex-basis .22s ease, width .22s ease;
-  }
-  .sidebar-inner{
-    position:sticky; top:0; padding:22px 16px;
-    max-height:100vh; overflow-y:auto;
-    transition:padding .22s ease;
-  }
-  .sidebar-head{
-    display:flex; align-items:center; justify-content:space-between;
-    padding:0 0 16px; margin-bottom:10px; border-bottom:1px solid var(--line);
-  }
-  .sidebar-title{font-family:var(--sans); font-size:11px; font-weight:400; text-transform:uppercase; letter-spacing:0.16em; color:var(--muted); opacity:.7;}
-  .sidebar-collapse{
-    font-family:inherit; background:none; border:1px solid var(--line);
-    width:22px; height:22px; color:var(--muted); cursor:pointer; font-size:12px; line-height:1; flex:none;
-  }
-  .sidebar-collapse:hover{border-color:var(--accent); color:var(--accent);}
-  .nav-group{margin:18px 0;}
-  .nav-group:first-child{margin-top:0;}
-  .nav-group-label{
-    display:flex; align-items:center; justify-content:space-between; gap:6px;
-    font-family:var(--sans); font-size:13px; font-weight:600;
-    color:var(--ink); padding:4px 0; margin-bottom:2px; text-decoration:none;
-  }
-  .nav-group-label:hover{color:var(--accent);}
-  .nav-group-label.active{color:var(--accent);}
-  /* Chevron hints that a group has hidden sub-links: points right while
-     collapsed, rotates to point down on hover/focus, in step with the
-     sub-links expanding below it. */
-  .nav-group-label::after{
-    content:'';
-    width:8px; height:1.5px; flex:none;
-    background:currentColor;
-    opacity:.4;
-    transition:width .22s ease, opacity .18s ease;
-  }
-  .nav-group:hover .nav-group-label::after,
-  .nav-group:focus-within .nav-group-label::after{
-    width:14px; opacity:.75;
-  }
-  .nav-link{
-    display:block; font-family:var(--sans); font-size:13px; font-weight:400; color:var(--ink-soft);
-    text-decoration:none; padding:4px 0; white-space:nowrap;
-  }
-  .nav-link:hover{color:var(--accent);}
-  .nav-link.active{color:var(--accent); font-weight:600;}
-  /* Sub-links collapse to nothing by default and expand on hover/focus
-     of their group, except the current page's own link, which stays
-     visible so the sidebar always shows where you are without hovering. */
-  .nav-link.nav-sub{
-    font-weight:400; font-size:12.5px; padding-left:12px; color:var(--muted);
-    max-height:0; opacity:0; overflow:hidden; pointer-events:none;
-    transition:max-height .22s ease, opacity .18s ease;
-  }
-  .nav-group:hover .nav-link.nav-sub,
-  .nav-group:focus-within .nav-link.nav-sub,
-  .nav-group:has(.active) .nav-link.nav-sub,
-  .nav-link.nav-sub.active{
-    max-height:32px; opacity:1; pointer-events:auto;
-  }
-  .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--accent);}
-  .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
-    outline:2px solid var(--accent); outline-offset:2px;
-  }
-
-  .shell-main{flex:1 1 auto; min-width:0;}
-
-  .masthead-left{display:flex; align-items:center; gap:10px;}
-  .nav-toggle{
-    display:none; font-family:inherit; background:none; border:1px solid var(--line);
-    width:32px; height:32px; align-items:center; justify-content:center; cursor:pointer; color:var(--ink);
-    position:relative; flex:none;
-  }
-  .nav-toggle span, .nav-toggle span::before, .nav-toggle span::after{
-    position:absolute; left:9px; width:16px; height:1.5px; background:currentColor; content:'';
-  }
-  .nav-toggle span::before{top:-5px;}
-  .nav-toggle span::after{top:5px;}
-
-  .sidebar-backdrop{display:none;}
-
-  .shell.is-collapsed .sidebar{flex-basis:40px; width:40px;}
-  .shell.is-collapsed .sidebar-inner{padding:22px 8px;}
-  .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:none;}
-  .shell.is-collapsed .sidebar-head{justify-content:center; border-bottom:none; padding-bottom:0;}
-
-  @media (max-width:820px){
-    .nav-toggle{display:inline-flex;}
-    .sidebar{
-      position:fixed; top:0; left:0; bottom:0; z-index:200;
-      height:100%; width:240px; flex-basis:240px;
-      transform:translateX(-100%); transition:transform 0.2s ease;
-      box-shadow:0 14px 44px rgba(26,43,74,.18);
-    }
-    .sidebar-inner{height:100%; max-height:none; overflow-y:auto;}
-    .shell.is-nav-open .sidebar{transform:translateX(0);}
-    .shell.is-collapsed .sidebar{width:240px; flex-basis:240px;}
-    .shell.is-collapsed .sidebar-inner{padding:22px 16px;}
-    .shell.is-collapsed .sidebar-title, .shell.is-collapsed .nav-groups{display:block;}
-    .shell.is-collapsed .sidebar-head{justify-content:space-between; border-bottom:1px solid var(--line); padding-bottom:16px;}
-    .sidebar-collapse{display:none;}
-    .sidebar-backdrop{
-      display:none; position:fixed; inset:0; background:rgba(26,43,74,.35); z-index:190;
-      border:none; padding:0; margin:0;
-    }
-    .shell.is-nav-open .sidebar-backdrop{display:block;}
-  }
-
-  /* ---------- sign-in gate ---------- */
-  #pageGate{
-    min-height:60vh; display:flex; align-items:center; justify-content:center; padding:40px var(--gutter);
-  }
-  #pageGate[hidden]{display:none;}
-  .gate-box{max-width:360px; text-align:center;}
-  .gate-box h1{font-size:24px; margin:0 0 12px; font-weight:500;}
-  .gate-box p{font-size:17px; color:var(--ink-soft); margin:0 0 22px; line-height:1.6;}
-  .gate-box .gate-alt{
-    font-family:var(--sans); font-size:13px; font-weight:400; color:var(--muted);
-    margin:26px 0 0; padding-top:20px; border-top:1px solid var(--line);
-  }
-  .gate-signup-btn{
-    display:inline-block; font-family:var(--sans); font-weight:500; font-size:14px;
-    color:var(--ink-soft); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
-    padding:0; margin-top:8px; border:none;
-  }
-  .gate-signup-btn:hover{text-decoration-color:currentColor;}
-  .auth-signin{
-    display:inline-flex; align-items:center; gap:7px;
-    font-family:var(--sans); font-weight:500; font-size:15px;
-    color:var(--ink); background:none; border:1px solid var(--ink);
-    padding:10px 22px; cursor:pointer;
-  }
-  .auth-signin:hover{background:var(--ink); color:var(--paper);}
-
-  /* ---------- masthead auth marker ---------- */
-  .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
-  .mast-auth{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft); font-family:var(--sans);}
-  .mast-auth-name{font-weight:500; color:var(--ink);}
-  a.mast-auth-name{text-decoration:none;}
-  a.mast-auth-name:hover{text-decoration:underline;}
-  .mast-auth-email{font-weight:400; color:var(--muted);}
-  .btn-text{
-    font-family:var(--sans); font-weight:400; font-size:12.5px;
-    color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
-    text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
-  }
-  .btn-text:hover{text-decoration-color:currentColor;}
 </style>
 </head>
 <body>
 
-<div class="masthead">
-  <div class="masthead-left">
-    <button class="nav-toggle" id="navToggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><span></span></button>
-    <a class="wordmark" href="index.html"><strong>BOLD</strong><span>.</span>OS</a>
-  </div>
-  <div class="masthead-right">
-    <div class="masthead-sub">Internal</div>
-    <div id="authRegion"></div>
-  </div>
-</div>
+<bold-masthead></bold-masthead>
 
-<div id="pageGate" hidden>
-  <div class="gate-box">
-    <h1>Sign in required</h1>
-    <p>This is an internal BOLD Lab page. Sign in with Slack to continue.</p>
-    <button class="auth-signin" id="gateSignInBtn" type="button">Sign in with Slack</button>
-    <p class="gate-alt">Not in the BOLD Slack yet?</p>
-    <a class="gate-signup-btn" href="https://forms.gle/VzGbWVyERN9v1qJC8" target="_blank" rel="noopener">Sign up here</a>
-  </div>
-</div>
+<bold-gate></bold-gate>
 
-<div id="pageContent" hidden>
-<script>
-/* Signed in last visit: show the page (sidebar included) at once instead of
-   after Firebase Auth resolves. onAuthStateChanged below stays authoritative. */
-try { if (localStorage.getItem('boldAuthHint')) document.getElementById('pageContent').hidden = false; } catch (e){}
-</script>
-<div class="shell" id="shell">
-<script>
-/* Apply the saved sidebar state before first paint so it doesn't animate in. */
-try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementById('shell').classList.add('is-collapsed'); } catch (e){}
-</script>
- <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
- <nav class="sidebar" id="sidebar" aria-label="Site navigation">
- <div class="sidebar-inner">
- <div class="sidebar-head">
- <span class="sidebar-title">Menu</span>
- <button class="sidebar-collapse" id="sidebarCollapse" type="button" aria-label="Collapse navigation" title="Collapse">&laquo;</button>
- </div>
- <div class="nav-groups">
- <div class="nav-group">
- <a class="nav-group-label" href="how-to-submit-a-paper.html">ML Conference Cycle</a>
- <a class="nav-link nav-sub" href="how-to-submit-a-paper.html">Guide</a>
- <a class="nav-link nav-sub" href="audit-board.html">Internal review board</a>
- </div>
- <div class="nav-group">
- <a class="nav-group-label" href="events.html">Events</a>
- <a class="nav-link nav-sub" href="event-collaboration-week.html">Collaboration Week</a>
- <a class="nav-link nav-sub" href="event-bold-festival.html">BOLD Festival 2026</a>
- </div>
- </div>
- </div>
- </nav>
+<bold-shell>
   <div class="shell-main">
 
 
@@ -393,163 +118,15 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
 
 </main>
 </div>
-  </div>
-</div>
+</bold-shell>
 
 <script>
 (function(){
-  var shell = document.getElementById('shell');
-  if (!shell) return;
-  var toggle = document.getElementById('navToggle');
-  var collapse = document.getElementById('sidebarCollapse');
-  var backdrop = document.getElementById('sidebarBackdrop');
-  var sidebar = document.getElementById('sidebar');
+  var escapeHtml = BOLD.escapeHtml;
 
-  function setCollapsed(on){
-    shell.classList.toggle('is-collapsed', on);
-    if (collapse){
-      collapse.innerHTML = on ? '&raquo;' : '&laquo;';
-      collapse.setAttribute('aria-label', on ? 'Expand navigation' : 'Collapse navigation');
-    }
-    try { localStorage.setItem('boldNavCollapsed', on ? '1' : '0'); } catch (e){}
-  }
-  function openNav(){
-    shell.classList.add('is-nav-open');
-    if (toggle) toggle.setAttribute('aria-expanded', 'true');
-  }
-  function closeNav(){
-    shell.classList.remove('is-nav-open');
-    if (toggle) toggle.setAttribute('aria-expanded', 'false');
-  }
-
-  if (collapse) collapse.addEventListener('click', function(){
-    setCollapsed(!shell.classList.contains('is-collapsed'));
-  });
-  if (toggle) toggle.addEventListener('click', function(){
-    if (shell.classList.contains('is-nav-open')) { closeNav(); } else { openNav(); }
-  });
-  if (backdrop) backdrop.addEventListener('click', closeNav);
-  // Clicking the wordmark takes you home; land there with the menu
-  // retracted rather than however it happened to be left on this page.
-  var wordmark = document.querySelector('.wordmark');
-  if (wordmark) wordmark.addEventListener('click', function(){
-    try { localStorage.setItem('boldNavCollapsed', '1'); } catch (e){}
-  });
-  if (sidebar){
-    Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link, .nav-group-label')).forEach(function(a){
-      a.addEventListener('click', closeNav);
-    });
-  }
-  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeNav(); });
-
-  try {
-    if (localStorage.getItem('boldNavCollapsed') === '1') setCollapsed(true);
-  } catch (e){}
-})();
-</script>
-
-<script>
-(function(){
-  var FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
-    authDomain: 'bold-d7ff2.firebaseapp.com',
-    projectId: 'bold-d7ff2',
-    storageBucket: 'bold-d7ff2.firebasestorage.app',
-    messagingSenderId: '555050367135',
-    appId: '1:555050367135:web:d90f8d7bb93a755e9fcaaa',
-    measurementId: 'G-527H8R28KB'
-  };
-  var AUTH_USE_EMULATOR = false;
-
-  var gate = document.getElementById('pageGate');
-  var content = document.getElementById('pageContent');
-  var signInBtn = document.getElementById('gateSignInBtn');
-
-  var auth = null;
-  try {
-    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-    auth = firebase.auth();
-    if (AUTH_USE_EMULATOR) auth.useEmulator('http://localhost:9099');
-  } catch (e) { auth = null; }
-
-  if (!auth) {
-    gate.hidden = false;
-    content.hidden = true;
-    var p = gate.querySelector('p');
-    if (p) p.textContent = 'Could not connect \u2014 reload, or check back shortly.';
-    return;
-  }
-
-  if (signInBtn) {
-    signInBtn.addEventListener('click', function(){
-      var provider = new firebase.auth.OAuthProvider('oidc.slack');
-      provider.addScope('openid');
-      provider.addScope('profile');
-      provider.addScope('email');
-      auth.signInWithPopup(provider).catch(function(err){
-        console.error('[BOLD Lab] sign-in failed', err);
-      });
-    });
-  }
-
-  var authRegion = document.getElementById('authRegion');
-
-  function escapeHtml(s){
-    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
-      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
-    });
-  }
-
-  function renderAuthRegion(user){
-    if (!authRegion) return;
-    if (user) {
-      var whoHtml = user.displayName
-        ? escapeHtml(user.displayName) + (user.email ? ' <span class="mast-auth-email">(' + escapeHtml(user.email) + ')</span>' : '')
-        : escapeHtml(user.email || 'Signed in');
-      authRegion.innerHTML =
-        '<div class="mast-auth">' +
-          '<a class="mast-auth-name" href="profile.html">' + whoHtml + '</a>' +
-          '<button class="btn-text" type="button" id="mastSignOutBtn">Sign out</button>' +
-        '</div>';
-      var so = document.getElementById('mastSignOutBtn');
-      if (so) so.addEventListener('click', function(){ auth.signOut(); });
-    } else {
-      authRegion.innerHTML = '<button class="auth-signin" type="button" id="mastSignInBtn">Sign in with Slack</button>';
-      var si = document.getElementById('mastSignInBtn');
-      if (si) si.addEventListener('click', function(){
-        var provider = new firebase.auth.OAuthProvider('oidc.slack');
-        provider.addScope('openid');
-        provider.addScope('profile');
-        provider.addScope('email');
-        auth.signInWithPopup(provider).catch(function(err){
-          console.error('[BOLD Lab] sign-in failed', err);
-        });
-      });
-    }
-  }
-
-  // Cached from the last visit (see boldAuthHint below): paint the masthead
-  // name straight away instead of after Firebase resolves. Auth still decides.
-  try {
-    var authHint = JSON.parse(localStorage.getItem('boldAuthHint') || 'null');
-    if (authHint) renderAuthRegion({ displayName: authHint.n, email: authHint.e });
-  } catch (e){}
-
-  auth.onAuthStateChanged(function(user){
-    if (user) {
-      gate.hidden = true;
-      content.hidden = false;
-    } else {
-      gate.hidden = false;
-      content.hidden = true;
-    }
-    try {
-      if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
-      else localStorage.removeItem('boldAuthHint');
-    } catch (e){}
-    renderAuthRegion(user);
-    renderProfile(user);
-  });
+  // The masthead, gate and sidebar are bold.js's; this page only fills in the profile.
+  if (!BOLD.getAuth()) return;
+  BOLD.onUser(renderProfile);
 
   /* ---------- profile ---------- */
   var el = function(id){ return document.getElementById(id); };
@@ -683,7 +260,7 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
   // in. Cache only, no network; renderProfile() above takes over once auth
   // resolves.
   try {
-    var hint = JSON.parse(localStorage.getItem('boldAuthHint') || 'null');
+    var hint = BOLD.authHint();
     if (hint && hint.e) {
       renderIdentity(hint.n || '', hint.e);
       var ph = cacheGet('photo');

@@ -8,7 +8,7 @@ BOLD Lab's tool suite for taking a paper from venue choice to conference present
 - `audit-board.html` — Internal Review Board (kanban tracker, Firebase-backed) — includes the Internal Review checklist on each card
 - `diff.html` — where this tooling diverges from BOLDiquette, and why
 
-Static HTML/CSS/JS, no build step, no framework. `audit-board.html` talks to a Firebase backend (Firestore, Auth, Storage) for shared state and Sign-in-with-Slack; everything else is self-contained.
+Static HTML/CSS/JS, no build step, no framework. The masthead, sidebar nav, sign-in gate and auth live once, in `bold.js` + `bold.css`; each page is just its own content. `audit-board.html` talks to a Firebase backend (Firestore, Auth, Storage) for shared state and Sign-in-with-Slack; everything else is self-contained.
 
 ## Contributing
 

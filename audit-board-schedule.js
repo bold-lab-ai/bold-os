@@ -251,7 +251,7 @@
   // Rules, so the plain alt=media URL always works once it exists.
   function icsSubscribeUrl(boardId){
     if (!storage) return null;
-    return 'https://firebasestorage.googleapis.com/v0/b/' + FIREBASE_CONFIG.storageBucket +
+    return 'https://firebasestorage.googleapis.com/v0/b/' + BOLD.firebaseConfig.storageBucket +
       '/o/' + encodeURIComponent(icsStoragePath(boardId)) + '?alt=media';
   }
 

@@ -354,7 +354,6 @@
     venuesRegion: document.getElementById('venuesRegion'),
     boardRegion: document.getElementById('boardRegion'),
     modalRegion: document.getElementById('modalRegion'),
-    authRegion: document.getElementById('authRegion')
   };
 
   // Last line of defense: if anything throws or a promise rejects
@@ -380,7 +379,6 @@
   // Sign-in-with-Slack genuinely working — Auth was flipped to real ages
   // before Firestore was).
   var FIRESTORE_USE_EMULATOR = false;
-  var AUTH_USE_EMULATOR = false;
 
   // Loud, unmissable banner the moment this file is ever served with the
   // flag above true — see its own comment and .emulator-warning's CSS.
@@ -392,20 +390,10 @@
     if (w) w.hidden = !FIRESTORE_USE_EMULATOR;
   })();
 
-  var FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
-    authDomain: 'bold-d7ff2.firebaseapp.com',
-    projectId: 'bold-d7ff2',
-    storageBucket: 'bold-d7ff2.firebasestorage.app',
-    messagingSenderId: '555050367135',
-    appId: '1:555050367135:web:d90f8d7bb93a755e9fcaaa',
-    measurementId: 'G-527H8R28KB'
-  };
-
   var db = null;
   var storageOK = (function(){
     try {
-      firebase.initializeApp(FIREBASE_CONFIG);
+      BOLD.getApp();
       db = firebase.firestore();
       if (FIRESTORE_USE_EMULATOR) db.useEmulator('localhost', 8080);
       return true;
@@ -436,11 +424,7 @@
   // The 'oidc.slack' provider itself is configured manually in the Firebase
   // Console once the Slack app exists; until then, signing in will fail with
   // a clear toast rather than a crash.
-  var auth = null;
-  try {
-    auth = firebase.auth();
-    if (AUTH_USE_EMULATOR) auth.useEmulator('http://localhost:9099');
-  } catch (e){ auth = null; }
+  var auth = BOLD.getAuth();
 
   // Cloud Storage — publishes each venue's .ics feed at a stable public
   // URL for calendar subscription (see syncVenueIcs()/icsSubscribeUrl()
@@ -455,42 +439,9 @@
   // on the page (e.g. the signed-out empty-state message) \u2014 one place that
   // actually starts the popup flow.
   function triggerSlackSignIn(){
-    if (!auth) return;
-    var provider = new firebase.auth.OAuthProvider('oidc.slack');
-    provider.addScope('openid');
-    provider.addScope('profile');
-    provider.addScope('email');
-    auth.signInWithPopup(provider).catch(function(err){
-      console.error('[Internal Review Board] sign-in failed', err);
+    BOLD.signIn(function(){
       showToast('Sign-in with Slack isn\u2019t set up yet \u2014 check back soon.', 'error');
     });
-  }
-
-  function renderAuthRegion(){
-    if (!els.authRegion) return;
-    if (!auth){
-      els.authRegion.innerHTML = '';
-      return;
-    }
-    if (state.currentUser){
-      var whoHtml = state.currentUser.name
-        ? escapeHtml(state.currentUser.name) + (state.currentUser.email
-            ? ' <span class="auth-user-email">(' + escapeHtml(state.currentUser.email) + ')</span>'
-            : '')
-        : escapeHtml(state.currentUser.email || 'Signed in');
-      els.authRegion.innerHTML =
-        '<div class="auth-user">' +
-          '<a class="auth-user-name" href="profile.html">' + whoHtml + '</a>' +
-          '<button class="btn-text" type="button" id="signOutBtn">Sign out</button>' +
-        '</div>';
-      var so = document.getElementById('signOutBtn');
-      if (so) so.addEventListener('click', function(){ auth.signOut(); });
-    } else {
-      els.authRegion.innerHTML =
-        '<button class="auth-signin" type="button" id="signInBtn">Sign in with Slack</button>';
-      var si = document.getElementById('signInBtn');
-      if (si) si.addEventListener('click', triggerSlackSignIn);
-    }
   }
 
   // pendingDeepLink itself (var, no declaration here any more —

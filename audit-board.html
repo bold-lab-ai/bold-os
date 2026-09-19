@@ -5,17 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Internal Review Board | BOLD Lab</title>
 <meta name="description" content="Tracker for papers going through Internal Review, one board per venue and year.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
-<!-- Firebase compat build (not the modular/ES-import build — this one loads as an
-     ordinary blocking script, matching the plain classic-script style below).
-     docs/AGENTS.md-approved CDN exception, 2026-09-11 — see docs/FIREBASE.md. Bump the
-     pinned version deliberately, not silently. -->
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-storage-compat.js"></script>
+<!-- bold.js loads the Firebase compat SDKs (pinned there, docs/AGENTS.md-approved
+     CDN exception, 2026-09-11 — see docs/FIREBASE.md) plus the shared chrome. -->
+<script src="bold.js" data-sdk="firestore,storage"></script>
 <!-- KaTeX, for rendering LaTeX pasted into a card's Abstract field.
      docs/AGENTS.md-approved CDN exception, 2026-09-18, per Eduardo. Bump the
      pinned version deliberately, not silently. -->
@@ -27,59 +19,11 @@
 
 <div id="emulatorWarning" class="emulator-warning" hidden>&#9888; FIRESTORE EMULATOR MODE &mdash; this is NOT real data. Never commit FIRESTORE_USE_EMULATOR as true.</div>
 
-<div class="masthead">
-  <div class="masthead-left">
-    <button class="nav-toggle" id="navToggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="sidebar"><span></span></button>
-    <a class="wordmark" href="index.html"><strong>BOLD</strong><span>.</span>OS</a>
-  </div>
-  <div class="masthead-right">
-    <div class="masthead-sub">Internal</div>
-    <div id="authRegion"></div>
-  </div>
-</div>
+<bold-masthead></bold-masthead>
 
-<div id="pageGate" hidden>
-  <div class="gate-box">
-    <h1>Sign in required</h1>
-    <p>This is an internal BOLD Lab page. Sign in with Slack to continue.</p>
-    <button class="auth-signin" id="gateSignInBtn" type="button">Sign in with Slack</button>
-    <p class="gate-alt">Not in the BOLD Slack yet?</p>
-    <a class="gate-signup-btn" href="https://forms.gle/VzGbWVyERN9v1qJC8" target="_blank" rel="noopener">Sign up here</a>
-  </div>
-</div>
+<bold-gate></bold-gate>
 
-<div id="pageContent" hidden>
-<script>
-/* Signed in last visit: show the page (sidebar included) at once instead of
-   after Firebase Auth resolves. onAuthStateChanged below stays authoritative. */
-try { if (localStorage.getItem('boldAuthHint')) document.getElementById('pageContent').hidden = false; } catch (e){}
-</script>
-<div class="shell" id="shell">
-<script>
-/* Apply the saved sidebar state before first paint so it doesn't animate in. */
-try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementById('shell').classList.add('is-collapsed'); } catch (e){}
-</script>
- <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
- <nav class="sidebar" id="sidebar" aria-label="Site navigation">
- <div class="sidebar-inner">
- <div class="sidebar-head">
- <span class="sidebar-title">Menu</span>
- <button class="sidebar-collapse" id="sidebarCollapse" type="button" aria-label="Collapse navigation" title="Collapse">&laquo;</button>
- </div>
- <div class="nav-groups">
- <div class="nav-group">
- <a class="nav-group-label" href="how-to-submit-a-paper.html">ML Conference Cycle</a>
- <a class="nav-link nav-sub" href="how-to-submit-a-paper.html">Guide</a>
- <a class="nav-link nav-sub active" href="audit-board.html">Internal review board</a>
- </div>
- <div class="nav-group">
- <a class="nav-group-label" href="events.html">Events</a>
- <a class="nav-link nav-sub" href="event-collaboration-week.html">Collaboration Week</a>
- <a class="nav-link nav-sub" href="event-bold-festival.html">BOLD Festival 2026</a>
- </div>
- </div>
- </div>
- </nav>
+<bold-shell>
   <div class="shell-main">
 
 
@@ -109,8 +53,7 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
   An internal BOLD Lab tool.
 </footer>
 </div>
-  </div>
-</div>
+</bold-shell>
 
 <script src="audit-board-core.js"></script>
 <script src="audit-board-storage.js"></script>
@@ -121,118 +64,6 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
 <script src="audit-board-detail.js"></script>
 <script src="audit-board-modals.js"></script>
 <script src="audit-board-handlers.js"></script>
-
-<script>
-(function(){
-  var shell = document.getElementById('shell');
-  if (!shell) return;
-  var toggle = document.getElementById('navToggle');
-  var collapse = document.getElementById('sidebarCollapse');
-  var backdrop = document.getElementById('sidebarBackdrop');
-  var sidebar = document.getElementById('sidebar');
-
-  function setCollapsed(on){
-    shell.classList.toggle('is-collapsed', on);
-    if (collapse){
-      collapse.innerHTML = on ? '&raquo;' : '&laquo;';
-      collapse.setAttribute('aria-label', on ? 'Expand navigation' : 'Collapse navigation');
-    }
-    try { localStorage.setItem('boldNavCollapsed', on ? '1' : '0'); } catch (e){}
-  }
-  function openNav(){
-    shell.classList.add('is-nav-open');
-    if (toggle) toggle.setAttribute('aria-expanded', 'true');
-  }
-  function closeNav(){
-    shell.classList.remove('is-nav-open');
-    if (toggle) toggle.setAttribute('aria-expanded', 'false');
-  }
-
-  if (collapse) collapse.addEventListener('click', function(){
-    setCollapsed(!shell.classList.contains('is-collapsed'));
-  });
-  if (toggle) toggle.addEventListener('click', function(){
-    if (shell.classList.contains('is-nav-open')) { closeNav(); } else { openNav(); }
-  });
-  if (backdrop) backdrop.addEventListener('click', closeNav);
-  // Clicking the wordmark takes you home; land there with the menu
-  // retracted rather than however it happened to be left on this page.
-  var wordmark = document.querySelector('.wordmark');
-  if (wordmark) wordmark.addEventListener('click', function(){
-    try { localStorage.setItem('boldNavCollapsed', '1'); } catch (e){}
-  });
-  if (sidebar){
-    Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link, .nav-group-label')).forEach(function(a){
-      a.addEventListener('click', closeNav);
-    });
-  }
-  document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeNav(); });
-
-  try {
-    if (localStorage.getItem('boldNavCollapsed') === '1') setCollapsed(true);
-  } catch (e){}
-})();
-</script>
-
-<script>
-(function(){
-  var FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
-    authDomain: 'bold-d7ff2.firebaseapp.com',
-    projectId: 'bold-d7ff2',
-    storageBucket: 'bold-d7ff2.firebasestorage.app',
-    messagingSenderId: '555050367135',
-    appId: '1:555050367135:web:d90f8d7bb93a755e9fcaaa',
-    measurementId: 'G-527H8R28KB'
-  };
-  var AUTH_USE_EMULATOR = false;
-
-  var gate = document.getElementById('pageGate');
-  var content = document.getElementById('pageContent');
-  var signInBtn = document.getElementById('gateSignInBtn');
-
-  var auth = null;
-  try {
-    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
-    auth = firebase.auth();
-    if (AUTH_USE_EMULATOR) auth.useEmulator('http://localhost:9099');
-  } catch (e) { auth = null; }
-
-  if (!auth) {
-    gate.hidden = false;
-    content.hidden = true;
-    var p = gate.querySelector('p');
-    if (p) p.textContent = 'Could not connect \u2014 reload, or check back shortly.';
-    return;
-  }
-
-  if (signInBtn) {
-    signInBtn.addEventListener('click', function(){
-      var provider = new firebase.auth.OAuthProvider('oidc.slack');
-      provider.addScope('openid');
-      provider.addScope('profile');
-      provider.addScope('email');
-      auth.signInWithPopup(provider).catch(function(err){
-        console.error('[BOLD Lab] sign-in failed', err);
-      });
-    });
-  }
-
-  auth.onAuthStateChanged(function(user){
-    if (user) {
-      gate.hidden = true;
-      content.hidden = false;
-    } else {
-      gate.hidden = false;
-      content.hidden = true;
-    }
-    try {
-      if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
-      else localStorage.removeItem('boldAuthHint');
-    } catch (e){}
-  });
-})();
-</script>
 
 </body>
 </html>

@@ -542,7 +542,7 @@
     // stale and nobody is signed in.
     if (!pendingDeepLink){
       try {
-        var hint = JSON.parse(localStorage.getItem('boldAuthHint') || 'null');
+        var hint = BOLD.authHint();
         var earlyCache = hint && hint.e && boardsCacheGet(hint.e);
         if (earlyCache && Array.isArray(earlyCache.list)){
           state.boards = earlyCache.list;
@@ -555,10 +555,9 @@
     }
 
     if (auth){
-      auth.onAuthStateChanged(function(user){
+      BOLD.onUser(function(user){
         bootMark('auth resolved (' + (user ? 'signed in' : 'signed out') + ')');
         state.currentUser = user ? { email: user.email, name: user.displayName, photoURL: user.photoURL } : null;
-        renderAuthRegion();
         updateNewVenueButtonState();
         loadInitialData();
       });
@@ -566,7 +565,6 @@
       // No Auth SDK at all (init failed) — Security Rules require auth for
       // every read regardless, so there's nothing to gate on: go straight to
       // the signed-out state rather than attempting a fetch that can only fail.
-      renderAuthRegion();
       updateNewVenueButtonState();
       loadInitialData();
     }
