@@ -31,6 +31,10 @@
     --line:rgba(26,43,74,0.16);
     --accent:#1a2b4a;
     --radius:2px;
+    --success-text:#256b60;
+    --danger-text:#b42318;
+    --warn-text:#8a5a12;
+    --neutral-text:#4b5563;
     --content-max:900px;
     --article-max:640px;
     --gutter:clamp(20px, 4vw, 48px);
@@ -119,6 +123,18 @@
   .proj-list li{padding:12px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
   .proj-title{font-size:18px; font-weight:500;}
   .proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+  /* Same badges as the board's card page (audit-board.css .detail .badge):
+     outlined, small caps, colour by meaning. */
+  .proj-badges{display:flex; flex-wrap:wrap; gap:6px 8px; margin-top:8px;}
+  .badge{
+    font-family:var(--sans); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em;
+    border:1px solid currentColor; padding:2px 7px; color:var(--neutral-text);
+  }
+  .badge-stage{color:var(--accent);}
+  .badge-review-approved, .badge-rebuttal-sent, .badge-outcome-accepted{color:var(--success-text);}
+  .badge-review-changes_requested, .badge-outcome-rejected{color:var(--danger-text);}
+  .badge-review-in_review, .badge-rebuttal-writing{color:var(--warn-text);}
+  .badge-rebuttal-waiting, .badge-outcome-withdrawn{color:var(--neutral-text);}
   .proj-empty{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
   .proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
 
@@ -629,8 +645,19 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
     a.textContent = p.title;
     var meta = document.createElement('span');
     meta.className = 'proj-meta';
-    meta.textContent = [p.boardLabel, p.status, p.role && p.role + ' reviewer'].filter(Boolean).join(' · ');
+    meta.textContent = [p.boardLabel, p.role && p.role + ' reviewer'].filter(Boolean).join(' · ');
     li.appendChild(a); li.appendChild(meta);
+    if (p.badges && p.badges.length) {
+      var row = document.createElement('div');
+      row.className = 'proj-badges';
+      p.badges.forEach(function(b){
+        var span = document.createElement('span');
+        span.className = 'badge badge-' + String(b.kind).replace(/[^a-z_-]/g, '');
+        span.textContent = b.label;
+        row.appendChild(span);
+      });
+      li.appendChild(row);
+    }
     return li;
   }
 

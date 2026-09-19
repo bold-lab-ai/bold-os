@@ -1207,11 +1207,49 @@ exports.getMyProfile = onCall(
 // verified sign-in email, never a request parameter.
 const PROFILE_PROJECTS_CAP = 50;
 
+// The board's own card-detail badges (audit-board-detail.js), minus
+// "overdue" — that one depends on the venue's deadlines and Rush-mode
+// cutoffs (audit-board-schedule.js), so it isn't ported. Hand-kept in sync
+// with audit-board-core.js (STATUS_LABELS, OUTCOME_LABELS) and
+// audit-board-board.js (reviewFilterState, reviewStateBadgeHtml,
+// rebuttalBadgeHtml). Each badge is { kind, label }; `kind` is the suffix
+// of the board's own `badge-<kind>` class.
+const BOARD_STAGE_LABEL = {
+  register: 'Registered', pitch: 'Pitched', abstract: 'Abstract', paper: 'Paper',
+  rebuttal: 'Rebuttal', camera_ready: 'Rebuttal Submitted', conference: 'Accepted'
+};
+const BOARD_REVIEW_BADGE = { in_review: 'In review', changes_requested: 'Changes requested', approved: 'Approved' };
+const BOARD_OUTCOME_LABEL = { accepted: 'Accepted', rejected: 'Rejected', withdrawn: 'Withdrawn' };
+
+function badgesForCard(card){
+  const badges = [];
+  if (!card) return badges;
+  if (BOARD_STAGE_LABEL[card.status]) badges.push({ kind: 'stage', label: BOARD_STAGE_LABEL[card.status] });
+  const review = function(v){
+    const k = BOARD_REVIEW_BADGE[v] ? v : 'in_review';
+    badges.push({ kind: 'review-' + k, label: BOARD_REVIEW_BADGE[k] });
+  };
+  if (card.status === 'abstract') review(card.abstractReviewState || 'in_review');
+  if (card.status === 'paper') {
+    const jr = card.jrReviewState, sr = card.srReviewState;
+    review(jr === 'changes_requested' || sr === 'changes_requested' ? 'changes_requested'
+      : jr === 'approved' && sr === 'approved' ? 'approved' : 'in_review');
+  }
+  if (card.status === 'rebuttal') {
+    if (card.rebuttalDocLink) badges.push({ kind: 'rebuttal-sent', label: 'Rebuttal sent' });
+    else if (card.reviewsOutNotifiedAt) badges.push({ kind: 'rebuttal-writing', label: 'In Rebuttal' });
+    else badges.push({ kind: 'rebuttal-waiting', label: 'Waiting for reviews' });
+  }
+  if (BOARD_OUTCOME_LABEL[card.outcome] && !(card.outcome === 'accepted' && card.status === 'conference')) {
+    badges.push({ kind: 'outcome-' + card.outcome, label: BOARD_OUTCOME_LABEL[card.outcome] });
+  }
+  return badges;
+}
+
 // Pure: gatherDashboard()'s sections → the profile page's three lists.
 function projectsFromDashboard(sections){
   const item = function(i, role){
-    const label = i.status === 'paper' ? 'Paper' : (STATUS_LABEL[i.status] || i.status || '');
-    const out = { boardId: i.boardId, boardLabel: i.boardLabel, cardId: i.cardId, title: i.title, status: label };
+    const out = { boardId: i.boardId, boardLabel: i.boardLabel, cardId: i.cardId, title: i.title, badges: badgesForCard(i.card) };
     if (role) out.role = role;
     return out;
   };
@@ -1245,5 +1283,5 @@ exports._internal = {
   reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
-  projectsFromDashboard
+  projectsFromDashboard, badgesForCard
 };
