@@ -1275,9 +1275,164 @@ exports.getMyProjects = onCall(
   }
 );
 
+// Which of the Projects page's three groups a card belongs to. Planned = not
+// yet drafted (Registered/Pitched); Completed = accepted (last column) or
+// closed out with an outcome (accepted/rejected/withdrawn); Ongoing = the rest.
+function projectGroupForCard(card){
+  if (card.status === 'conference' || BOARD_OUTCOME_LABEL[card.outcome]) return 'completed';
+  if (card.status === 'register' || card.status === 'pitch') return 'planned';
+  return 'ongoing';
+}
+
+// Pure: every card → the Projects page's three lists, most recently updated
+// first. `boards` is [{ id, label, status }], `cards` is [{ boardId, id, data }]
+// (a card in a pending venue is skipped) and `unassigned` is [{ id, data }] —
+// projects registered without a venue yet (top-level `projects` collection).
+// Both are cards in the same shape (src/assets/js/card-model.js); the only
+// difference is that an unassigned one has no board, so no boardId/link.
+function allProjectsFromCards(boards, cards, unassigned){
+  const labels = {};
+  boards.forEach(function(b){ if (b.status !== 'pending') labels[b.id] = b.label || b.id; });
+  const entries = [];
+  const base = function(id, d){
+    return {
+      title: d.title || 'Untitled',
+      abstract: d.abstractText || '',
+      slackChannel: d.slackChannel || '',
+      owner: (d.submittedBy && d.submittedBy.name) || '',
+      badges: badgesForCard(d)
+    };
+  };
+  cards.forEach(function(c){
+    if (!(c.boardId in labels)) return;
+    entries.push({ d: c.data, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
+  });
+  (unassigned || []).forEach(function(u){
+    entries.push({ d: u.data, item: Object.assign(base(u.id, u.data), { projectId: u.id, ownerEmail: (u.data.submittedBy && u.data.submittedBy.email) || '' }) });
+  });
+  const out = { ongoing: [], completed: [], planned: [] };
+  entries
+    .sort(function(a, b){ return (b.d.updatedAt || 0) - (a.d.updatedAt || 0); })
+    .forEach(function(e){ out[projectGroupForCard(e.d)].push(e.item); });
+  return out;
+}
+
+// Every paper ever registered on the Internal Review Board (plus projects not yet
+// on a venue), for the Projects page. Any signed-in lab member may read every card (see firestore.rules), so
+// this is no wider than what the board itself shows; it's a function only
+// because the rules have no collection-group rule for `cards`.
+exports.getAllProjects = onCall(
+  async (request) => {
+    const email = request.auth && request.auth.token && request.auth.token.email;
+    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const [boardsSnap, cardsSnap, unassignedSnap] = await Promise.all([
+      db.collection('boards').get(),
+      db.collectionGroup('cards').get(),
+      db.collection('projects').get()
+    ]);
+    return allProjectsFromCards(
+      boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
+      cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
+      unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; })
+    );
+  }
+);
+
+// ---------- Projects page: the project's Slack channel ----------
+// Registering a project names a Slack channel for it. Rules (see the register
+// form, which states them): a name that doesn't start with "proj-" gets the
+// prefix added; a channel that already exists is left alone; one that doesn't
+// is created and the submitter is invited. Needs the bot scopes
+// `channels:read` + `groups:read` (look it up) and `channels:manage` (create,
+// invite) — add them and Reinstall to Workspace. The submitter is the caller's
+// own verified email → Slack id via the `people` roster, never a parameter.
+
+const PROJECT_CHANNEL_PREFIX = 'proj-';
+
+// Pure: whatever was typed → { name, prefixed } (name without '#', lowercase,
+// always starting with "proj-"; `prefixed` = the prefix had to be added) or
+// { error }. Hand-kept in sync with normalizeProjectChannel() in
+// src/assets/js/card-model.js, which the form uses for its live hint.
+function normalizeProjectChannel(input){
+  let name = String(input || '').trim().replace(/^#/, '').toLowerCase().replace(/\s+/g, '-');
+  if (!name) return { error: 'Enter a channel name.' };
+  if (!/^[a-z0-9_-]+$/.test(name)) return { error: 'Use letters, numbers, hyphens and underscores only.' };
+  const prefixed = name.indexOf(PROJECT_CHANNEL_PREFIX) !== 0;
+  if (prefixed) name = PROJECT_CHANNEL_PREFIX + name;
+  if (name === PROJECT_CHANNEL_PREFIX) return { error: 'Add a name after proj-.' };
+  if (name.length > 80) return { error: 'Slack channel names can be at most 80 characters.' };
+  return { name, prefixed };
+}
+
+// Channel names → true, cached briefly (a form check per pause in typing
+// shouldn't page through the whole workspace each time). Public channels plus
+// any private ones the bot can see.
+let channelNamesCache = null;
+async function slackChannelExists(token, name){
+  if (!channelNamesCache || Date.now() - channelNamesCache.t > 30 * 1000){
+    const names = new Set();
+    let cursor = '';
+    do {
+      const params = { types: 'public_channel,private_channel', exclude_archived: 'true', limit: '1000' };
+      if (cursor) params.cursor = cursor;
+      const res = await fetch('https://slack.com/api/conversations.list?' + new URLSearchParams(params),
+        { headers: { 'Authorization': 'Bearer ' + token } });
+      const json = await res.json();
+      if (!json.ok) throw slackChannelError(json.error);
+      (json.channels || []).forEach(function(c){ names.add(c.name); });
+      cursor = (json.response_metadata && json.response_metadata.next_cursor) || '';
+    } while (cursor);
+    channelNamesCache = { t: Date.now(), names };
+  }
+  return channelNamesCache.names.has(name);
+}
+
+function slackChannelError(code){
+  logger.warn('Slack channel call failed', { error: code });
+  return new HttpsError('failed-precondition', code === 'missing_scope'
+    ? 'The Slack app can\u2019t manage channels yet \u2014 ask an admin to add its channel permissions.'
+    : 'Slack said no (' + code + ').');
+}
+
+// mode 'check' (default): { name, prefixed, exists } — nothing is changed.
+// mode 'ensure': also creates the channel if it doesn't exist and invites the
+// caller — { name, prefixed, exists, created, invited }. Registering a project
+// calls 'ensure'; the form calls 'check' as you type.
+exports.projectChannel = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = request.auth && request.auth.token && request.auth.token.email;
+    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const data = request.data || {};
+    const n = normalizeProjectChannel(data.name);
+    if (n.error) throw new HttpsError('invalid-argument', n.error);
+    const token = SLACK_BOT_TOKEN.value();
+    const out = { name: n.name, prefixed: n.prefixed, exists: await slackChannelExists(token, n.name) };
+    if (out.exists || data.mode !== 'ensure') return out;
+
+    const created = await slackFetch(token, 'conversations.create', { name: n.name, is_private: false });
+    channelNamesCache = null;
+    if (!created.ok){
+      if (created.error === 'name_taken') return Object.assign(out, { exists: true });
+      throw slackChannelError(created.error);
+    }
+    out.created = true;
+    out.invited = false;
+    const slackId = await slackIdForEmail(email);
+    if (slackId){
+      const invited = await slackFetch(token, 'conversations.invite', { channel: created.channel.id, users: slackId });
+      out.invited = !!invited.ok;
+    } else {
+      logger.info('No Slack id for the submitter \u2014 channel created, nobody invited', { email });
+    }
+    return out;
+  }
+);
+
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
+  projectGroupForCard, allProjectsFromCards, normalizeProjectChannel,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,

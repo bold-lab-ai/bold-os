@@ -127,6 +127,19 @@ service cloud.firestore {
       }
     }
 
+    // Projects registered without a venue yet (Projects page). Each document is
+    // a card in exactly the shape boards/{boardId}/cards/{cardId} holds (built by
+    // makeRegisteredCard in src/assets/js/card-model.js); "set a venue" moves it
+    // into that board's cards and deletes it here. Readable by the lab, created
+    // only as yourself, changed or moved only by its submitter or a PI/admin.
+    match /projects/{projectId} {
+      allow read: if isLabMember();
+      allow create: if isLabMember() && request.resource.data.submittedBy.email == email();
+      allow update, delete: if isLabMember() && (
+        email() == resource.data.submittedBy.email || hasFullWrite()
+      );
+    }
+
     // BOLD Collaboration Week workshop proposals (2026-09-15) — a separate
     // top-level collection, not nested under boards/{boardId}: a proposal
     // isn't a venue or a paper, it's its own flow entirely (see

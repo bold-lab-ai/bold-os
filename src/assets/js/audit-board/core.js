@@ -241,46 +241,15 @@
     arxiv: 'rebuttal'
   };
 
-  // Each item folds together what used to be several sibling checks in the
-  // same category (see changelog) \u2014 same substance, fewer ticks. Every
-  // item is still worked through twice (junior + senior). 12 items: the
-  // Submission-system category was dropped (it's what the OpenReview form
-  // covers anyway, not something the draft needs an internal check for).
-  var CHECKLIST_TEMPLATE = [
-    { part: 'format', category: 'Mandatory sections & parts', label: 'All required sections and disclosure forms are present and filled in, not left as templates (e.g. limitations, ethics statement, paper checklist) \u2014 and everything the main text references in the appendix actually exists there' },
-    { part: 'format', category: 'Length & page limits', label: "Main paper and every section-specific limit (abstract word count, appendix pages, etc.) are within bounds \u2014 without manually shrinking margins, font, or spacing to fit more in" },
-    { part: 'format', category: 'Double-blind anonymity', label: "No identity anywhere in the PDF \u2014 no author names or affiliations (including acknowledgments), and nothing identifying in the file's title/author metadata" },
-    { part: 'format', category: 'Double-blind anonymity', label: 'No identity outside the PDF either \u2014 linked code/data repos are anonymized (README, commit history, filenames) and self-citations are phrased in the third person' },
-    { part: 'format', category: 'Template & formatting', label: 'Latest official venue template (not a copy from a previous year), compiles cleanly with no missing figures / broken references / warnings, and fonts / page size are correct' },
-    { part: 'format', category: 'Policy compliance', label: "Not in violation of the venue's dual-submission / prior-publication policy, and any arXiv or preprint posting follows its timing policy" },
-    { part: 'science', category: 'Claimed contributions', label: 'Contributions are stated clearly (ideally a short, explicit list) and checked against the paper\u2019s actual evidence \u2014 nothing in the abstract or intro claims more than the results show' },
-    { part: 'science', category: 'Correctness', label: 'Theoretical claims: proofs are correct, with reasonable and clearly-stated assumptions' },
-    { part: 'science', category: 'Correctness', label: 'Empirical claims: experiments are well-designed with fair, non-strawman baselines, and the results shown actually support the conclusions drawn from them' },
-    { part: 'science', category: 'Impact', label: 'The problem is relevant to the target community, others could plausibly build on it, and the scope of impact is honestly represented \u2014 not oversold, not undersold' },
-    { part: 'science', category: 'Limitations', label: 'Limitations and known failure modes or negative results are disclosed honestly \u2014 not buried or omitted' },
-    { part: 'science', category: 'Related work & positioning', label: 'Prior work is represented accurately, the contribution is clearly differentiated from the closest prior work, and nothing obviously relevant is missing' }
-  ];
+
+  // The checklist template and makeChecklistSnapshot() live in ../card-model.js
+  // (shared with the Projects page, so both create identical cards).
 
   // Each checklist item is worked through twice: a junior reviewer and a
   // senior reviewer.
   var REVIEW_ROLES = ['junior', 'senior'];
   var REVIEW_ROLE_LABELS = { junior: 'Junior', senior: 'Senior' };
 
-  // Two different shapes depending on part (2026-09-14, see
-  // authorChecklistComplete/roleChecklistComplete): a format item is
-  // ticked once, by any author — authorChecked, no junior/senior at all.
-  // A science item keeps the original per-reviewer shape — junior/senior,
-  // no authorChecked. Never both on the same item; which fields an item
-  // carries is itself how the rest of the file tells the two checklists
-  // apart, alongside `part`.
-  function makeChecklistSnapshot(){
-    return CHECKLIST_TEMPLATE.map(function(item, i){
-      var base = { id: 'chk-' + (i + 1), part: item.part, category: item.category, label: item.label, comments: [] };
-      return item.part === 'format'
-        ? Object.assign(base, { authorChecked: false })
-        : Object.assign(base, { junior: false, senior: false });
-    });
-  }
 
   // A paper can't reach this status (or any to its right, in whichever
   // order is active) until both checklists are complete. Purely for
@@ -628,42 +597,8 @@
     });
   }
 
-  // Abstract text may contain LaTeX ($inline$ / $$block$$, plain-text-typed
-  // by whoever filled the field in — see the Edit-fields modal) — render
-  // those spans with KaTeX, everything else as plain escaped text. A
-  // single regex pass, block delimiters checked first so "$$" is never
-  // mistaken for two empty inline formulas. KaTeX's own output is safe
-  // HTML (no user string reaches the DOM unescaped outside of it), and a
-  // formula KaTeX can't parse falls back to its literal source rather
-  // than breaking the whole abstract.
-  // Hard limit on the abstract's length (2026-09-18+34, per Eduardo), in
-  // characters of the raw text (LaTeX source included).
-  var ABSTRACT_MAX_CHARS = 5000;
-  function abstractCounterText(length){
-    return 'Characters remaining: ' + (ABSTRACT_MAX_CHARS - length);
-  }
-
-  function renderAbstractHtml(text){
-    if (!text) return '';
-    if (typeof katex === 'undefined') return escapeHtml(text);
-    var out = '';
-    var lastIndex = 0;
-    var re = /\$\$([\s\S]+?)\$\$|\$([^\$\n]+?)\$/g;
-    var m;
-    while ((m = re.exec(text))){
-      out += escapeHtml(text.slice(lastIndex, m.index));
-      var isBlock = m[1] !== undefined;
-      var src = isBlock ? m[1] : m[2];
-      try {
-        out += katex.renderToString(src, { throwOnError: false, displayMode: isBlock });
-      } catch (err){
-        out += escapeHtml(m[0]);
-      }
-      lastIndex = re.lastIndex;
-    }
-    out += escapeHtml(text.slice(lastIndex));
-    return out;
-  }
+  // The abstract limit/counter/LaTeX renderer, and the abstract field with its
+  // Preview, live in ../card-model.js (shared with the register-project page).
 
   function showToast(message, kind, durationMs){
     els.toastRegion.innerHTML =

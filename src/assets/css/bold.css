@@ -116,19 +116,20 @@ footer{
 }
 .nav-link:hover{color:var(--accent);}
 .nav-link.active{color:var(--accent); font-weight:600;}
-/* Sub-links collapse to nothing by default and expand on hover/focus
+/* Sub-links collapse to nothing by default (padding included, so a group's
+   gap to the next doesn't depend on how many hidden links it has) and expand on hover/focus
    of their group, except the current page's own link, which stays
    visible so the sidebar always shows where you are without hovering. */
 .nav-link.nav-sub{
-  font-weight:400; font-size:12.5px; padding-left:12px; color:var(--muted);
+  font-weight:400; font-size:12.5px; padding:0 0 0 12px; color:var(--muted);
   max-height:0; opacity:0; overflow:hidden; pointer-events:none;
-  transition:max-height .22s ease, opacity .18s ease;
+  transition:max-height .22s ease, opacity .18s ease, padding .22s ease;
 }
 .nav-group:hover .nav-link.nav-sub,
 .nav-group:focus-within .nav-link.nav-sub,
 .nav-group:has(.active) .nav-link.nav-sub,
 .nav-link.nav-sub.active{
-  max-height:32px; opacity:1; pointer-events:auto;
+  max-height:32px; opacity:1; pointer-events:auto; padding-top:4px; padding-bottom:4px;
 }
 .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--accent);}
 .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{

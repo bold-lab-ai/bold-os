@@ -970,37 +970,6 @@
     });
   }
 
-  // Abstract preview (2026-09-18+30, per Eduardo): renders the textarea's
-  // LaTeX ($inline$ / $$block$$) with the same renderAbstractHtml the
-  // details use; stays live while open.
-  function wireAbstractPreview(){
-    var previewBtn = document.getElementById('stageAbstractPreviewBtn');
-    var previewBox = document.getElementById('stageAbstractPreview');
-    var previewText = document.getElementById('stageAbstractText');
-    if (previewBtn && previewBox && previewText){
-      var refreshPreview = function(){
-        previewBox.innerHTML = previewText.value.trim()
-          ? renderAbstractHtml(previewText.value)
-          : '<span style="color:var(--muted);">Nothing to preview yet.</span>';
-      };
-      previewBtn.addEventListener('click', function(){
-        var opening = previewBox.hidden;
-        previewBox.hidden = !opening;
-        previewBtn.textContent = opening ? 'Hide preview' : 'Preview';
-        if (opening) refreshPreview();
-      });
-      previewText.addEventListener('input', function(){ if (!previewBox.hidden) refreshPreview(); });
-    }
-    // "Characters remaining" under the textarea, live.
-    var counter = document.getElementById('stageAbstractCounter');
-    if (counter && previewText){
-      previewText.addEventListener('input', function(){
-        counter.textContent = abstractCounterText(previewText.value.length);
-        counter.className = 'abstract-counter' + (previewText.value.length > ABSTRACT_MAX_CHARS ? ' over' : '');
-      });
-    }
-  }
-
   // Inline editing of Overleaf / the abstract on the Abstract stage's
   // card page (2026-09-18+32, per Eduardo): Edit opens the editor in
   // place, Save or Cancel closes it.

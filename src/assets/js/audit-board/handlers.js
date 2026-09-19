@@ -191,74 +191,12 @@
 
     var now = Date.now();
     var noteText = document.getElementById('pNote').value.trim();
-    var submittedByName = state.currentUser.name || state.currentUser.email;
 
-    var card = {
-      id: 'card-' + now + '-' + Math.random().toString(36).slice(2, 8),
+    var card = makeRegisteredCard(state.currentUser, {
       title: title,
-      // Authors and the Overleaf link aren't known yet at registration —
-      // there's no first draft to point to and no locked-in author list
-      // this early (2026-09-18, per Eduardo). Both get filled in via Edit
-      // fields once the abstract itself is ready, at Submit the abstract;
-      // see onSaveEdit for where the PI-defaults-to-senior-reviewer
-      // assignment actually happens now, deferred from here for the same
-      // reason.
-      authors: [],
-      authorEmails: [],
-      overleafLink: '',
-      correspondingAuthorEmail: state.currentUser.email,
       computeEstimate: document.getElementById('pCompute').value.trim(),
-      // Free text, filled in later (Edit fields) once the abstract itself
-      // is written — not required at registration, not a deliverable gate
-      // (unlike pitchLink/submissionLink/etc. below). May contain LaTeX,
-      // typed as plain $inline$/$$block$$ — see renderAbstractHtml.
-      abstractText: '',
-      status: 'register',
-      submittedBy: { name: submittedByName, email: state.currentUser.email, slackId: null },
-      // Senior reviewer defaults to the PI once authors actually exist —
-      // see onSaveEdit, which sets this the first time authors are saved,
-      // since there's no author list yet at registration to default from.
-      reviewers: { junior: '', senior: '' },
-      jrReviewState: 'in_review',
-      srReviewState: 'in_review',
-      // Abstract's own lightweight go/no-go (2026-09-18+4) — a direct
-      // tri-state set by the senior reviewer's Approve/Request changes
-      // buttons, not derived from a checklist at all (unlike
-      // jrReviewState/srReviewState above, which drive the Paper stage's
-      // checklist-based reviewFilterState instead). See
-      // advanceBlockReason's abstract->paper gate and reviewStateBadgeHtml.
-      abstractReviewState: 'in_review',
-      outcome: '',
-      // Deliverable-per-stage redesign (2026-09-18, per Eduardo): each
-      // link below is what its stage's own advance gate requires before
-      // the Submit-X button unblocks — see advanceBlockReason and
-      // ADVANCE_LABELS. pitchLink (Register -> Pitch), submissionLink
-      // (Paper -> Rebuttal — moved 2026-09-18+3 to Abstract -> Rebuttal
-      // while `paper` was briefly folded into `abstract`, moved back here
-      // 2026-09-18+4 now that `paper` is its own stage again),
-      // rebuttalDocLink (Rebuttal -> Camera-ready), cameraReadyLink
-      // (Camera-ready -> Conference). arxivLink is deliberately NOT a gate
-      // (2026-09-18+3) — arXiv posting is concurrent to sitting in
-      // Rebuttal, addable any time, not required to leave anywhere.
-      // reviewsOutNotifiedAt: null until the scheduled notifyReviewsOut
-      // function (functions/index.js) sets it, once the venue's own
-      // reviews-release date passes — drives the Rebuttal badge's
-      // Waiting-for-reviews -> In-Rebuttal flip and the one-time Slack DM
-      // that goes with it (see renderCard's rebuttal badge).
-      pitchLink: null,
-      submissionLink: null,
-      arxivLink: null,
-      rebuttalDeadline: null,
-      rebuttalDocLink: null,
-      cameraReadyLink: null,
-      reviewsOutNotifiedAt: null,
-      reviewNotes: '',
-      checklist: makeChecklistSnapshot(),
-      discussion: [],
-      history: [{ timestamp: now, actor: submittedByName, action: 'registered', note: noteText }],
-      createdAt: now,
-      updatedAt: now
-    };
+      note: noteText
+    }, now);
     var next = state.cards.concat([card]);
     var boardId = state.currentBoardId;
     saveBoard(boardId, { cards: next }).then(function(ok){

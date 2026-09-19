@@ -22,6 +22,7 @@ export default {
 
   // Sidebar. `href` is the page a group's label opens; `links` are its sub-pages.
   nav: [
+    { label: 'Projects', href: 'projects.html', links: [] },
     { label: 'ML Conference Cycle', href: 'how-to-submit-a-paper.html', links: [
       { label: 'Guide', href: 'how-to-submit-a-paper.html' },
       { label: 'Internal review board', href: 'audit-board.html' },

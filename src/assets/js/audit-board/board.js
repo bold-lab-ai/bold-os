@@ -197,18 +197,6 @@
       '<select id="stageReviewer-' + role + '"' + disabledAttr + '>' + options + '</select></div>';
   }
 
-  // The abstract textarea + Preview — shared by the Submit-the-abstract
-  // form and the inline abstract editor on the card details (same editor
-  // in both places, 2026-09-18+32, per Eduardo).
-  function abstractTextFieldHtml(text, disabledAttr){
-    var len = (text || '').length;
-    return '<div class="field"><label for="stageAbstractText">Abstract</label><textarea id="stageAbstractText" maxlength="' + ABSTRACT_MAX_CHARS + '"' + (disabledAttr || '') + ' placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + escapeHtml(text || '') + '</textarea>' +
-      '<div class="abstract-counter' + (len > ABSTRACT_MAX_CHARS ? ' over' : '') + '" id="stageAbstractCounter">' + abstractCounterText(len) + '</div>' +
-      '<button class="btn-text" type="button" id="stageAbstractPreviewBtn" style="margin-top:6px;">Preview</button>' +
-      '<div class="abstract-render abstract-preview" id="stageAbstractPreview" hidden></div>' +
-    '</div>';
-  }
-
   function abstractSubmissionFieldsHtml(card, board){
     var effective = displayStatus(card, board);
     var rgt = statusAt(effective, 1, effectiveStatusOrder(board));

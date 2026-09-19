@@ -1,0 +1,37 @@
+---
+title: "Projects | BOLD Lab"
+description: "Every project registered in BOLD."
+sdk: ["functions", "firestore"]
+css: "projects"
+scripts: ["pages/projects.js"]
+permalink: "projects.html"
+---
+<div class="hero">
+  <h1>Projects</h1>
+</div>
+
+<main>
+
+  <div class="actions">
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
+      <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+    </div>
+    <a class="btn btn-primary" href="projects-register.html">+ Register project</a>
+  </div>
+
+  <div class="tabs" role="tablist" aria-label="Project status">
+    <button class="tab active" type="button" id="tabOngoing" data-tab="ongoing" role="tab" aria-selected="true" aria-controls="projOngoing">Ongoing<span class="proj-count" id="cntOngoing"></span></button>
+    <button class="tab" type="button" id="tabPlanned" data-tab="planned" role="tab" aria-selected="false" tabindex="-1" aria-controls="projPlanned">Planned<span class="proj-count" id="cntPlanned"></span></button>
+    <button class="tab" type="button" id="tabCompleted" data-tab="completed" role="tab" aria-selected="false" tabindex="-1" aria-controls="projCompleted">Completed<span class="proj-count" id="cntCompleted"></span></button>
+  </div>
+
+  <p class="proj-msg" id="projMsg">Loading&hellip;</p>
+
+  <div id="projects" data-view="list" hidden>
+    <ul class="proj-list tab-panel" role="tabpanel" id="projOngoing" aria-labelledby="tabOngoing"></ul>
+    <ul class="proj-list tab-panel" role="tabpanel" id="projPlanned" aria-labelledby="tabPlanned" hidden></ul>
+    <ul class="proj-list tab-panel" role="tabpanel" id="projCompleted" aria-labelledby="tabCompleted" hidden></ul>
+  </div>
+
+</main>
