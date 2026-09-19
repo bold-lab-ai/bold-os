@@ -61,10 +61,11 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 /* ---------- hero ---------- */
 .home-hero{text-align:center; padding:40px var(--gutter);}
 .home-hero h1{
+  font-family:var(--sans);
   font-weight:400;
   font-size:clamp(32px, 7vw, 60px);
   line-height:1.05;
   text-wrap:balance;
 }
-.home-hero h1 strong{font-weight:800; color:var(--accent);}
+.home-hero h1 strong{font-weight:700; color:var(--accent);}
 #homeGuestNote{margin-top:28px;}
