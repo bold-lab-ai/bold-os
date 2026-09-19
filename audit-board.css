@@ -632,11 +632,7 @@ select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
   background:var(--danger-bg); border:1px solid var(--danger-text);
   border-radius:var(--radius); padding:12px 16px; margin-bottom:16px;
 }
-footer{
-  max-width:var(--board-max); margin:0;
-  padding:32px var(--gutter) 56px;
-  border-top:1px solid var(--line); font-size:13px; color:var(--muted);
-}
+footer{max-width:var(--board-max); margin:0; padding:32px var(--gutter) 56px;}
 @media (max-width:760px){
   .field-2{grid-template-columns:1fr;}
 }

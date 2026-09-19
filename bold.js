@@ -2,7 +2,7 @@
    (classic, synchronous — it document.writes what has to exist before the
    body parses) replaces the per-page copies of: the design-system CSS, the
    font links, the Firebase SDK tags + config, the sign-in flow, the
-   masthead, the sidebar nav, the sign-in gate and the nav open/collapse
+   masthead, the sidebar nav, the sign-in gate, the footer and the nav open/collapse
    behaviour.
 
    No build step, and it works from file:// (no fetch, no modules).
@@ -14,7 +14,7 @@
      <bold-masthead></bold-masthead>
      <bold-gate></bold-gate>                         <!-- omit on public pages -->
      <bold-shell [active="page.html"]>               <!-- omit `active` to match the URL -->
-       <div class="shell-main"> ...page... </div>
+       <div class="shell-main"> ...page... <bold-footer></bold-footer> </div>
      </bold-shell>
 
    Navigation lives in BOLD.nav below — the only place to add or rename a
@@ -37,6 +37,7 @@
     measurementId: 'G-527H8R28KB'
   };
   BOLD.useAuthEmulator = false;
+  BOLD.repoUrl = 'https://github.com/bold-lab-ai/bold-os';
 
   // href is the page a group's label opens; links are its sub-pages.
   BOLD.nav = [
@@ -258,9 +259,20 @@
     }
   }
 
+  /* ---------- <bold-footer> ---------- */
+
+  class BoldFooter extends HTMLElement {
+    connectedCallback(){
+      this.innerHTML =
+        '<footer>An operating system and research model for fundamental AI research in 2026 &middot; ' +
+        '<a href="' + esc(BOLD.repoUrl) + '" target="_blank" rel="noopener">View on GitHub</a></footer>';
+    }
+  }
+
   customElements.define('bold-masthead', BoldMasthead);
   customElements.define('bold-gate', BoldGate);
   customElements.define('bold-shell', BoldShell);
+  customElements.define('bold-footer', BoldFooter);
 
   /* ---------- nav behaviour: sidebar collapse + mobile drawer ---------- */
 

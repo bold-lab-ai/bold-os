@@ -220,7 +220,7 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .btn-text:hover{text-decoration-color:currentColor;}
 
 /* ---------- custom-element wrappers (see bold.js) ---------- */
-bold-masthead, bold-gate{display:block;}
+bold-masthead, bold-gate, bold-footer{display:block;}
 bold-shell{display:flex; align-items:stretch;}
 /* .shell-level display beats the UA [hidden] rule, so restate it. */
 bold-shell[hidden]{display:none;}
