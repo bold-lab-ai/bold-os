@@ -27,13 +27,37 @@
     var railBtn = document.getElementById('sidebarCollapse');
     if (shell && railBtn && shell.classList.contains('is-collapsed')) railBtn.click();
   }
+  // The reverse of revealChrome(): "BOLD.OS" cycles the menus open and closed.
+  function hideChrome(){
+    if (!chromeRevealed) return;
+    chromeRevealed = false;
+    if (shell) shell.classList.add('chrome-collapsed');
+    if (masthead) masthead.classList.add('chrome-collapsed');
+    syncHeroLabel();
+  }
+  function toggleChrome(){
+    if (chromeRevealed) hideChrome(); else { revealChrome(); syncHeroLabel(); }
+  }
+  function syncHeroLabel(){
+    if (heroTitle && chromeIsClickable) heroTitle.setAttribute('aria-label', chromeRevealed ? 'Hide navigation' : 'Show navigation');
+  }
   var chromeIsClickable = false;
   if (heroTitle){
-    heroTitle.addEventListener('click', function(){ if (chromeIsClickable) revealChrome(); });
+    heroTitle.addEventListener('click', function(){ if (chromeIsClickable) toggleChrome(); });
     heroTitle.addEventListener('keydown', function(e){
-      if (chromeIsClickable && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); revealChrome(); }
+      if (chromeIsClickable && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleChrome(); }
     });
   }
+  // The masthead's own "BOLD.OS" links home, which is where we already are:
+  // here it closes the menus instead of reloading. Capture phase on document,
+  // so it runs before bold.js's wordmark handler (which would store "collapsed").
+  document.addEventListener('click', function(e){
+    var w = e.target.closest && e.target.closest('.wordmark');
+    if (!w || !chromeIsClickable) return;
+    e.preventDefault();
+    e.stopPropagation();
+    hideChrome();
+  }, true);
 
   // The homepage's own content (the hero) stays public either way — a
   // signed-out visitor gets no masthead and no sidebar at all, just the
@@ -61,7 +85,7 @@
       if (signedIn){
         heroTitle.setAttribute('role', 'button');
         heroTitle.setAttribute('tabindex', '0');
-        heroTitle.setAttribute('aria-label', 'Show navigation');
+        syncHeroLabel();
       } else {
         heroTitle.removeAttribute('role');
         heroTitle.removeAttribute('tabindex');
