@@ -534,9 +534,29 @@
     // (e.g. a sign-out/sign-in in the same page load) — at that point
     // it's just a normal reload, not a fresh deep link.
     var pendingDeepLink = parseDeepLinkHash(location.hash);
+    bootMark('scripts loaded');
+
+    // Repaint the last venue list from the saved sign-in hint before
+    // Firebase Auth has resolved (same hint the masthead uses); the real
+    // load in loadInitialData() replaces it, or clears it if the hint was
+    // stale and nobody is signed in.
+    if (!pendingDeepLink){
+      try {
+        var hint = JSON.parse(localStorage.getItem('boldAuthHint') || 'null');
+        var earlyCache = hint && hint.e && boardsCacheGet(hint.e);
+        if (earlyCache && Array.isArray(earlyCache.list)){
+          state.boards = earlyCache.list;
+          state.canApproveVenues = !!earlyCache.canApprove;
+          state.loadingBoards = false;
+          renderAll();
+          bootMark('venue list painted from cache (pre-auth)');
+        }
+      } catch (e){}
+    }
 
     if (auth){
       auth.onAuthStateChanged(function(user){
+        bootMark('auth resolved (' + (user ? 'signed in' : 'signed out') + ')');
         state.currentUser = user ? { email: user.email, name: user.displayName, photoURL: user.photoURL } : null;
         renderAuthRegion();
         updateNewVenueButtonState();

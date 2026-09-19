@@ -539,6 +539,33 @@
     return true;
   }
 
+  // Startup timing probe: ms since navigation start, one console line per
+  // stage — filter the console on "[BOLD Lab] boot".
+  function bootMark(name){
+    console.info('[BOLD Lab] boot ' + name + ' @' + Math.round(performance.now()) + 'ms');
+  }
+
+  // Venue-list cache (2026-09-19): the last fetched venue list, per person,
+  // painted at once on the next open while the real fetch runs in the
+  // background — the list is always refetched, the cache only hides the
+  // wait. Cleared on sign-out.
+  var BOARDS_CACHE_PREFIX = 'boldBoardsIndex:';
+  function boardsCacheGet(email){
+    try { return JSON.parse(localStorage.getItem(BOARDS_CACHE_PREFIX + String(email).toLowerCase()) || 'null'); } catch (e) { return null; }
+  }
+  function boardsCachePut(email, list){
+    try { localStorage.setItem(BOARDS_CACHE_PREFIX + String(email).toLowerCase(), JSON.stringify({ list: list, canApprove: !!state.canApproveVenues })); } catch (e){}
+  }
+  function boardsCacheClear(){
+    try {
+      Object.keys(localStorage).forEach(function(k){ if (k.indexOf(BOARDS_CACHE_PREFIX) === 0) localStorage.removeItem(k); });
+    } catch (e){}
+  }
+
+  // Bumped on every loadInitialData() so a slow response from an earlier
+  // call (sign-out/sign-in in the same page load) can't overwrite a newer one.
+  var loadGeneration = 0;
+
   // Board/card reads now require being signed in (Security Rules,
   // 2026-09-11 — see firestore.rules). So the initial load — and any
   // reload after a sign-in/out — waits for auth to resolve first, rather
@@ -546,8 +573,10 @@
   // clears whatever was in memory and backs out to the venues list, so a
   // board's contents don't linger on screen after actively signing out.
   function loadInitialData(){
+    var gen = ++loadGeneration;
     if (!state.currentUser){
       stopWatchingCards();
+      boardsCacheClear();
       state.boards = [];
       state.people = [];
       state.cards = [];
@@ -559,14 +588,57 @@
       renderAll();
       return;
     }
-    state.loadingBoards = true;
+    var email = state.currentUser.email;
     state.authResolved = true;
-    renderAll();
-    Promise.all([loadBoardsIndex(), loadPeople()]).then(function(results){
-      state.boards = results[0];
-      state.people = results[1];
+
+    var boardsP = loadBoardsIndex().then(function(r){ bootMark('venues fetched (' + r.length + ')'); return r; });
+    var peopleP = loadPeople().then(function(r){ bootMark('people fetched (' + r.length + ')'); return r; });
+
+    // A deep link (Slack notification etc.) needs the venue AND the roster
+    // (card pickers) before it can open a card, so it keeps the original
+    // wait-for-both flow.
+    if (pendingDeepLink){
+      state.loadingBoards = true;
+      renderAll();
+      Promise.all([boardsP, peopleP]).then(function(results){
+        if (gen !== loadGeneration) return;
+        state.boards = results[0];
+        state.people = results[1];
+        state.loadingBoards = false;
+        boardsCachePut(email, results[0]);
+        if (!applyPendingDeepLink()) renderAll();
+        bootMark('venue list rendered');
+      });
+      return;
+    }
+
+    // Normal open: paint the cached list (if any) now, swap in the fresh
+    // one when it arrives, and let the roster load without holding the list
+    // up — only card pages need it.
+    var cached = boardsCacheGet(email);
+    if (cached && Array.isArray(cached.list)){
+      state.boards = cached.list;
+      state.canApproveVenues = !!cached.canApprove;
       state.loadingBoards = false;
-      if (!applyPendingDeepLink()) renderAll();
+      bootMark('venue list painted from cache');
+    } else {
+      state.loadingBoards = true;
+    }
+    renderAll();
+
+    boardsP.then(function(list){
+      if (gen !== loadGeneration) return;
+      state.boards = list;
+      state.loadingBoards = false;
+      boardsCachePut(email, list);
+      renderAll();
+      bootMark('venue list rendered');
+    });
+    peopleP.then(function(people){
+      if (gen !== loadGeneration) return;
+      state.people = people;
+      // Pickers on an already-open board/card page were rendered without it.
+      if (state.view !== 'list') renderAll();
     });
   }
 
