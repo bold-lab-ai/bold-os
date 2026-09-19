@@ -94,6 +94,8 @@
   }
   .mast-auth{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft); font-family:var(--sans);}
   .mast-auth-name{font-weight:500; color:var(--ink);}
+  a.mast-auth-name{text-decoration:none;}
+  a.mast-auth-name:hover{text-decoration:underline;}
   .mast-auth-email{font-weight:400; color:var(--muted);}
   .auth-signin{
     display:inline-flex; align-items:center; gap:7px;
@@ -431,7 +433,7 @@
         : escapeHtml(user.email || 'Signed in');
       authRegion.innerHTML =
         '<div class="mast-auth">' +
-          '<span class="mast-auth-name">' + whoHtml + '</span>' +
+          '<a class="mast-auth-name" href="profile.html">' + whoHtml + '</a>' +
           '<button class="btn-text" type="button" id="mastSignOutBtn">Sign out</button>' +
         '</div>';
       var so = document.getElementById('mastSignOutBtn');

@@ -276,6 +276,8 @@
   .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
   .mast-auth{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft);}
   .mast-auth-name{font-weight:600; color:var(--ink);}
+  a.mast-auth-name{text-decoration:none;}
+  a.mast-auth-name:hover{text-decoration:underline;}
   .mast-auth-email{font-weight:400; color:var(--muted);}
   .btn-text{
     font-family:inherit; font-weight:600; font-size:13px; color:var(--blue);
@@ -591,7 +593,7 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
         : escapeHtml(user.email || 'Signed in');
       authRegion.innerHTML =
         '<div class="mast-auth">' +
-          '<span class="mast-auth-name">' + whoHtml + '</span>' +
+          '<a class="mast-auth-name" href="profile.html">' + whoHtml + '</a>' +
           '<button class="btn-text" type="button" id="mastSignOutBtn">Sign out</button>' +
         '</div>';
       var so = document.getElementById('mastSignOutBtn');

@@ -28,7 +28,7 @@
 // changelog.
 
 const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
-const { onRequest } = require('firebase-functions/v2/https');
+const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
 const { setGlobalOptions } = require('firebase-functions/v2');
@@ -1137,6 +1137,64 @@ exports.slackEvents = onRequest(
   }
 );
 
+// ---------- Profile page: the caller's own Slack profile fields ----------
+// profile.html (2026-09-19) shows institution / role / supervisor /
+// research interests / start date, which live as custom fields on each
+// person's Slack profile — not in the OIDC claims and not in the `people`
+// roster (name/email/slackId only). Read live from users.profile.get
+// (needs the `users:read` + `users.profile:read` bot scopes; add and
+// Reinstall to Workspace) rather than copied into Firestore, so Slack stays
+// the one place people edit them. Returns only the *caller's* fields — the
+// Slack id comes from their own verified sign-in email, never from the
+// request.
+
+// Display order for the fields we know we want; anything else the workspace
+// defines follows in the order Slack returned it.
+const PROFILE_FIELD_ORDER = [
+  /institution|affiliation|university|organi[sz]ation/i,
+  /role|position/i,
+  /supervisor|advisor|adviser/i,
+  /interest/i,
+  /start/i
+];
+
+// Pure: users.profile.get's `profile` (fetched with include_labels) →
+// [{ label, value }], empty values dropped, Slack's `title` first.
+function profileFieldsFromSlack(profile){
+  const out = [];
+  if (!profile) return out;
+  if (profile.title) out.push({ label: 'Title', value: String(profile.title) });
+  const custom = Object.keys(profile.fields || {})
+    .map((id, i) => ({ i, label: profile.fields[id].label, value: profile.fields[id].value }))
+    .filter(f => f.label && f.value);
+  const rank = f => {
+    const r = PROFILE_FIELD_ORDER.findIndex(re => re.test(f.label));
+    return r === -1 ? PROFILE_FIELD_ORDER.length : r;
+  };
+  custom.sort((a, b) => rank(a) - rank(b) || a.i - b.i);
+  custom.forEach(f => out.push({ label: String(f.label), value: String(f.value) }));
+  return out;
+}
+
+exports.getMyProfile = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = request.auth && request.auth.token && request.auth.token.email;
+    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const slackId = await slackIdForEmail(email);
+    if (!slackId) return { fields: [] };
+    const url = 'https://slack.com/api/users.profile.get?' +
+      new URLSearchParams({ user: slackId, include_labels: 'true' });
+    const res = await fetch(url, { headers: { 'Authorization': 'Bearer ' + SLACK_BOT_TOKEN.value() } });
+    const json = await res.json();
+    if (!json.ok) {
+      logger.warn('users.profile.get failed', { error: json.error });
+      throw new HttpsError('unavailable', 'Could not read Slack profile.');
+    }
+    return { fields: profileFieldsFromSlack(json.profile) };
+  }
+);
+
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
@@ -1144,5 +1202,5 @@ exports._internal = {
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
-  reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView
+  reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack
 };

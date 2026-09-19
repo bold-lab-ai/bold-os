@@ -480,7 +480,7 @@
         : escapeHtml(state.currentUser.email || 'Signed in');
       els.authRegion.innerHTML =
         '<div class="auth-user">' +
-          '<span class="auth-user-name">' + whoHtml + '</span>' +
+          '<a class="auth-user-name" href="profile.html">' + whoHtml + '</a>' +
           '<button class="btn-text" type="button" id="signOutBtn">Sign out</button>' +
         '</div>';
       var so = document.getElementById('signOutBtn');

@@ -144,6 +144,20 @@ service cloud.firestore {
       );
     }
 
+    // Per-person profile extras (2026-09-19), keyed by lower-cased email —
+    // today just the OpenReview id linked from profile.html. Any signed-in
+    // lab member can read (so it can later resolve authors/reviewers to
+    // their OpenReview profiles); only the owner writes their own.
+    match /profiles/{profileId} {
+      allow read: if isLabMember();
+      allow create, update: if isLabMember()
+        && email().lower() == profileId
+        && request.resource.data.keys().hasOnly(['openreview', 'updatedAt'])
+        && request.resource.data.openreview is string
+        && request.resource.data.openreview.matches('^~[^\\s/?#&=]+$');
+      allow delete: if isLabMember() && email().lower() == profileId;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

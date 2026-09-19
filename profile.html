@@ -3,20 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Propose a Workshop | BOLD Lab</title>
-<meta name="description" content="Propose a workshop, project pitch, or talk for BOLD Collaboration Week (5–10 October 2026).">
-<meta property="og:title" content="Propose a Workshop | BOLD Lab">
-<meta property="og:description" content="Propose a workshop, project pitch, or talk for BOLD Collaboration Week (5–10 October 2026).">
+<title>Profile | BOLD Lab</title>
+<meta name="description" content="Your BOLD Lab profile.">
+<meta property="og:title" content="Profile | BOLD Lab">
+<meta property="og:description" content="Your BOLD Lab profile.">
 <meta property="og:type" content="website">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
 <style>
-  /* Minimal editorial design system, shared across bold-lab.ai — see
-     events.html for the full rationale. */
+  /* Minimal editorial design system, shared across bold-lab.ai — one accent
+     hue doing all the work (BOLD's own blue, deepened for reading), EB
+     Garamond for anything meant to be read, Cabin for nav/UI chrome, no
+     border-radius, no filled badges or button blocks, hairline rules.
+     Adapted from inherentlabs.ai's visual language (cream ground, single
+     muted accent, serif body, sans chrome, underlined links over buttons). */
   :root{
     --ink:#1a2b4a;
     --ink-soft:#33445f;
@@ -26,10 +31,9 @@
     --wash:#ece9e1;
     --line:rgba(26,43,74,0.16);
     --accent:#1a2b4a;
-    --danger-text:#b42318;
     --radius:2px;
     --content-max:900px;
-    --article-max:600px;
+    --article-max:640px;
     --gutter:clamp(20px, 4vw, 48px);
     --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
     --sans:'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -52,73 +56,73 @@
 
   a{color:var(--accent); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px; transition:text-decoration-color .15s;}
   a:hover{text-decoration-color:currentColor;}
-  a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+  a:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
 
-  h1,h2{font-family:var(--serif); color:var(--ink); font-weight:800; letter-spacing:-0.005em; margin:0;}
+  h1,h2,h3{font-family:var(--serif); color:var(--ink); font-weight:800; letter-spacing:-0.005em; margin:0;}
 
+  /* ---------- masthead ---------- */
   .masthead{
-    background:var(--paper); border-bottom:1px solid var(--line);
+    background:var(--paper);
+    border-bottom:1px solid var(--line);
     padding:18px var(--gutter);
-    display:flex; align-items:baseline; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
   }
   .wordmark{font-family:var(--sans); font-weight:500; font-size:17px; letter-spacing:-0.01em; color:var(--ink); text-decoration:none;}
   .wordmark strong{font-weight:700;}
   .wordmark span{color:var(--accent); opacity:.55;}
   .masthead-sub{font-family:var(--sans); font-size:11px; font-weight:400; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted); opacity:.7;}
 
-  .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
-  .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
-  .back-link:hover{color:var(--accent);}
-  .hero h1{font-size:clamp(27px, 4.4vw, 38px); line-height:1.15; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
-  .hero-note{margin:16px 0 0; font-size:17px; color:var(--ink-soft); max-width:var(--article-max);}
+  /* ---------- hero ---------- */
+  .hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
+  .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
+  .hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
 
-  main{max-width:var(--content-max); margin:0 auto; padding:24px var(--gutter) 48px;}
-  main > *{max-width:var(--article-max);}
+  .hero-actions{display:flex; flex-wrap:wrap; gap:24px; margin-top:10px; font-family:var(--sans); font-size:15px;}
 
-  /* ---------- sign-in ---------- */
-  .auth-signin{
-    display:inline-flex; align-items:center; gap:7px;
-    font-family:var(--sans); font-weight:500; font-size:15px;
-    color:var(--ink); background:none; border:1px solid var(--ink);
-    padding:10px 22px; cursor:pointer; margin-top:16px;
-  }
-  .auth-signin:hover{background:var(--ink); color:var(--paper);}
-  .auth-user{display:flex; align-items:center; gap:10px; font-family:var(--sans); font-size:14px; color:var(--ink-soft); margin-bottom:28px;}
-  .auth-user-name{font-weight:600; color:var(--ink);}
-  .btn-text{
-    font-family:var(--sans); font-weight:400; font-size:13px;
-    color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
-    text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
-  }
-  .btn-text:hover{text-decoration-color:currentColor;}
+  /* ---------- article ---------- */
+  main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
 
-  /* ---------- form ---------- */
-  .field{margin-bottom:22px;}
-  .field label{display:block; font-family:var(--sans); font-size:13px; color:var(--muted); margin-bottom:7px;}
-  input[type="text"], select, textarea{
-    font-family:var(--sans); font-size:16px; color:var(--ink);
-    background:none; border:none; border-bottom:1px solid var(--line);
-    padding:8px 2px; width:100%;
-  }
-  textarea{resize:vertical; min-height:96px; line-height:1.5;}
-  .field-error{
-    font-family:var(--sans); font-size:13.5px; color:var(--danger-text);
-    margin-bottom:18px;
-  }
   .btn{
     display:inline-block; font-family:var(--sans); font-size:15px; font-weight:500;
     text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
-    padding:0; border:none; cursor:pointer; background:none;
+    padding:0; border:none;
   }
   .btn:hover{text-decoration-color:currentColor;}
   .btn-primary{color:var(--accent); font-weight:600;}
-  .btn-primary:disabled{color:var(--muted); cursor:default; text-decoration-color:transparent;}
+  .btn-secondary{color:var(--ink-soft);}
 
-  html.auth-hint #proposeSignedOut{display:none;}
-  /* ---------- success ---------- */
-  .success-box{border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:22px 0;}
-  .success-box p{margin:0; font-size:18px; color:var(--ink-soft);}
-  .success-box .links{margin-top:14px; display:flex; gap:20px; font-family:var(--sans); font-size:14px;}
+  section.block{max-width:var(--article-max); margin:64px 0 0;}
+  section.block:first-of-type{margin-top:12px;}
+  .block-head{margin-bottom:6px;}
+  .block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+
+  /* ---------- profile ---------- */
+  .profile-head{display:flex; align-items:center; gap:20px;}
+  .profile-photo{width:72px; height:72px; border-radius:50%; object-fit:cover; flex:none; background:var(--wash);}
+  .profile-photo[hidden]{display:none;}
+  .facts{margin:18px 0 0; border-top:1px solid var(--line);}
+  .facts--slack{border-top:none; margin-top:0;}
+  .facts--slack[hidden]{display:none;}
+  .fact{display:flex; gap:24px; padding:14px 0; border-bottom:1px solid var(--line);}
+  .fact dt{flex:0 0 96px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); padding-top:5px;}
+  .fact dd{margin:0; font-size:17px; color:var(--ink); overflow-wrap:anywhere;}
+  .or-actions{margin-top:18px; font-family:var(--sans); font-size:15px; display:flex; flex-wrap:wrap; gap:8px 24px; align-items:center;}
+  .or-linked{margin:18px 0 0; font-size:17px; overflow-wrap:anywhere;}
+  .or-form[hidden], .or-linked[hidden], .or-actions[hidden]{display:none;}
+  .or-form{margin-top:18px; font-family:var(--sans);}
+  .or-form label{display:block; font-size:13px; color:var(--muted); margin-bottom:6px;}
+  .or-form input{
+    width:100%; max-width:420px; font-family:var(--sans); font-size:15px; color:var(--ink);
+    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:9px 12px;
+  }
+  .or-form input:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+  .or-form-row{display:flex; gap:24px; align-items:center; margin-top:12px;}
+  .or-msg{margin:10px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
+  .or-msg.is-error{color:#a3362b;}
 
   footer{
     max-width:var(--content-max); margin:0 auto; padding:40px var(--gutter) 64px;
@@ -260,6 +264,13 @@
     padding:0; margin-top:8px; border:none;
   }
   .gate-signup-btn:hover{text-decoration-color:currentColor;}
+  .auth-signin{
+    display:inline-flex; align-items:center; gap:7px;
+    font-family:var(--sans); font-weight:500; font-size:15px;
+    color:var(--ink); background:none; border:1px solid var(--ink);
+    padding:10px 22px; cursor:pointer;
+  }
+  .auth-signin:hover{background:var(--ink); color:var(--paper);}
 
   /* ---------- masthead auth marker ---------- */
   .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
@@ -268,14 +279,15 @@
   a.mast-auth-name{text-decoration:none;}
   a.mast-auth-name:hover{text-decoration:underline;}
   .mast-auth-email{font-weight:400; color:var(--muted);}
+  .btn-text{
+    font-family:var(--sans); font-weight:400; font-size:12.5px;
+    color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
+    text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
+  }
+  .btn-text:hover{text-decoration-color:currentColor;}
 </style>
 </head>
 <body>
-<script>
-/* Signed in last visit: keep the "sign in" panel out of the very first paint
-   (CSS below), not just after the scripts at the bottom have run. */
-try { if (localStorage.getItem('boldAuthHint')) document.documentElement.classList.add('auth-hint'); } catch (e){}
-</script>
 
 <div class="masthead">
   <div class="masthead-left">
@@ -324,7 +336,7 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
  </div>
  <div class="nav-group">
  <a class="nav-group-label" href="events.html">Events</a>
- <a class="nav-link nav-sub active" href="event-collaboration-week.html">Collaboration Week</a>
+ <a class="nav-link nav-sub" href="event-collaboration-week.html">Collaboration Week</a>
  <a class="nav-link nav-sub" href="event-bold-festival.html">BOLD Festival 2026</a>
  </div>
  </div>
@@ -334,304 +346,49 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
 
 
 <div class="hero">
-  <a class="back-link" href="event-collaboration-week.html">&larr; BOLD Collaboration Week</a>
-  <h1 id="heroTitle">Propose a Workshop</h1>
-  <p class="hero-note" id="heroNote">A workshop, project pitch, or talk for BOLD Collaboration Week (5&ndash;10 Oct 2026). See what's already been proposed on the <a href="event-collaboration-week.html#proposals">Proposals tab</a>.</p>
+  <div class="profile-head">
+    <img class="profile-photo" id="profilePhoto" alt="" hidden>
+    <h1 id="profileName">Profile</h1>
+  </div>
 </div>
 
 <main>
-  <div id="proposeSignedOut">
-    <p>Sign in with Slack to propose a workshop, project pitch, or talk.</p>
-    <button class="auth-signin" type="button" id="signInBtn">Sign in with Slack</button>
-  </div>
 
-  <div id="proposeSignedIn" hidden>
-    <div class="auth-user">
-      <span class="auth-user-name" id="whoAmI"></span>
-      <button class="btn-text" type="button" id="signOutBtn">Sign out</button>
+  <section class="block">
+    <div class="block-head">
+      <h2>Basic info</h2>
     </div>
+    <dl class="facts">
+      <div class="fact"><dt>Name</dt><dd id="factName"></dd></div>
+      <div class="fact"><dt>Email</dt><dd id="factEmail"></dd></div>
+    </dl>
+    <dl class="facts facts--slack" id="slackFacts" hidden></dl>
+  </section>
 
-    <div id="proposalForm">
-      <div class="field">
-        <label for="pfType">Contribution type</label>
-        <select id="pfType">
-          <option>Workshop</option>
-          <option>Project pitch</option>
-          <option>Research presentation</option>
-          <option>Other talk</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pfTitle">Title (if known)</label>
-        <input type="text" id="pfTitle" placeholder="e.g. Can Bayesian Optimization Efficiently Find a Strong Single Expert in Neural Thickets?">
-      </div>
-      <div class="field">
-        <label for="pfDuration">Ideal duration</label>
-        <input type="text" id="pfDuration" placeholder="e.g. 10 min talk, or workshop-length">
-      </div>
-      <div class="field">
-        <label for="pfTiming">Timing constraints</label>
-        <input type="text" id="pfTiming" placeholder="When can you not do this? (optional)">
-      </div>
-      <div class="field">
-        <label for="pfPillar">Closest BOLD pillar</label>
-        <select id="pfPillar">
-          <option value="">Choose one&hellip;</option>
-          <option>Beyond Backprop</option>
-          <option>Human-Centric Learning and Discovery</option>
-          <option>Embodied Learning</option>
-          <option>Other</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pfCoOrg">Looking for co-organisers?</label>
-        <select id="pfCoOrg">
-          <option value="">&mdash;</option>
-          <option value="yes">Yes</option>
-          <option value="no">No</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pfJoin">Interested in joining forces with someone else's idea? Add their name</label>
-        <input type="text" id="pfJoin" placeholder="Optional">
-      </div>
-      <div class="field">
-        <label for="pfNote">Note</label>
-        <textarea id="pfNote" placeholder="Anything else the group should know (optional)"></textarea>
-      </div>
-      <div class="field-error" id="proposalError" hidden></div>
-      <button class="btn btn-primary" type="button" id="submitProposalBtn">Submit proposal</button>
+  <section class="block">
+    <div class="block-head">
+      <h2>OpenReview</h2>
     </div>
+    <p class="or-linked" id="orLinked" hidden></p>
+    <div class="or-actions" id="orActions">
+      <button class="btn btn-primary" type="button" id="orLinkBtn">Link to OpenReview</button>
+      <button class="btn-text" type="button" id="orUnlinkBtn" hidden>Unlink</button>
+    </div>
+    <form class="or-form" id="orForm" hidden>
+      <label for="orInput">OpenReview profile URL or ID</label>
+      <input id="orInput" type="text" autocomplete="off" spellcheck="false" placeholder="https://openreview.net/profile?id=~Your_Name1">
+      <div class="or-form-row">
+        <button class="btn btn-primary" type="submit" id="orSaveBtn">Save</button>
+        <button class="btn-text" type="button" id="orCancelBtn">Cancel</button>
+      </div>
+    </form>
+    <p class="or-msg" id="orMsg" role="status" hidden></p>
+  </section>
 
-    <div class="success-box" id="proposalSuccess" hidden>
-      <p id="successMsg">Thanks &mdash; your proposal is in.</p>
-      <div class="links">
-        <a href="event-collaboration-week.html#proposals">See all proposals &rarr;</a>
-        <a id="editLink" href="#">Edit this proposal</a>
-        <button class="btn-text" type="button" id="proposeAnotherBtn">Propose another</button>
-        <button class="btn-text" type="button" id="keepEditingBtn" hidden>Keep editing</button>
-      </div>
-    </div>
-  </div>
 </main>
-
-<footer>
-  An internal BOLD Lab page. Back to <a href="event-collaboration-week.html">BOLD Collaboration Week</a>.
-</footer>
 </div>
   </div>
 </div>
-
-<script>
-(function(){
-  var els = {
-    signedOut: document.getElementById('proposeSignedOut'),
-    signedIn: document.getElementById('proposeSignedIn'),
-    signInBtn: document.getElementById('signInBtn'),
-    signOutBtn: document.getElementById('signOutBtn'),
-    whoAmI: document.getElementById('whoAmI'),
-    form: document.getElementById('proposalForm'),
-    submitBtn: document.getElementById('submitProposalBtn'),
-    error: document.getElementById('proposalError'),
-    success: document.getElementById('proposalSuccess'),
-    proposeAnotherBtn: document.getElementById('proposeAnotherBtn'),
-    keepEditingBtn: document.getElementById('keepEditingBtn'),
-    editLink: document.getElementById('editLink'),
-    successMsg: document.getElementById('successMsg'),
-    heroTitle: document.getElementById('heroTitle'),
-    heroNote: document.getElementById('heroNote')
-  };
-
-  // Same project/config/version as audit-board.html — see docs/FIREBASE.md.
-  // FIRESTORE_USE_EMULATOR/AUTH_USE_EMULATOR must both be false in
-  // anything committed — see audit-board.html's own comment on this flag
-  // for why (a real production incident the first time it shipped true).
-  var FIRESTORE_USE_EMULATOR = false;
-  var AUTH_USE_EMULATOR = false;
-
-  var FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
-    authDomain: 'bold-d7ff2.firebaseapp.com',
-    projectId: 'bold-d7ff2',
-    storageBucket: 'bold-d7ff2.firebasestorage.app',
-    messagingSenderId: '555050367135',
-    appId: '1:555050367135:web:d90f8d7bb93a755e9fcaaa',
-    measurementId: 'G-527H8R28KB'
-  };
-
-  var db = null, auth = null;
-  try {
-    firebase.initializeApp(FIREBASE_CONFIG);
-    db = firebase.firestore();
-    if (FIRESTORE_USE_EMULATOR) db.useEmulator('localhost', 8080);
-    auth = firebase.auth();
-    if (AUTH_USE_EMULATOR) auth.useEmulator('http://localhost:9099');
-  } catch (e){ db = null; auth = null; }
-
-  if (!db || !auth){
-    els.signedOut.innerHTML = '<p>Could not connect &mdash; reload, or check back shortly.</p>';
-    return;
-  }
-
-  var currentUser = null;
-
-  // ?edit=<proposalId> turns this page into an editor for that proposal
-  // (only its proposer gets past loadForEdit — Firestore enforces the same).
-  var editId = null;
-  try { editId = new URLSearchParams(location.search).get('edit'); } catch (e){}
-  var editLoaded = false;
-
-  var FIELD_IDS = ['pfType', 'pfTitle', 'pfDuration', 'pfTiming', 'pfPillar', 'pfCoOrg', 'pfJoin', 'pfNote'];
-
-  function setForm(p){
-    p = p || {};
-    var vals = {
-      pfType: p.contributionType, pfTitle: p.title, pfDuration: p.duration, pfTiming: p.timingConstraints,
-      pfPillar: p.pillar, pfCoOrg: p.coOrganisers, pfJoin: p.joiningForces, pfNote: p.note
-    };
-    FIELD_IDS.forEach(function(id){
-      var el = document.getElementById(id);
-      el.value = vals[id] || '';
-      if (el.tagName === 'SELECT' && el.selectedIndex < 0) el.selectedIndex = 0;
-    });
-  }
-
-  function resetForm(){
-    els.success.hidden = true;
-    els.form.hidden = false;
-    setForm(null);
-  }
-
-  function enterEditMode(){
-    els.heroTitle.textContent = 'Edit your proposal';
-    els.heroNote.innerHTML = 'Changes show on the <a href="event-collaboration-week.html#proposals">Proposals tab</a> straight away.';
-    els.submitBtn.textContent = 'Save changes';
-    els.proposeAnotherBtn.hidden = true;
-    els.editLink.hidden = true;
-    els.keepEditingBtn.hidden = false;
-  }
-
-  function loadForEdit(){
-    editLoaded = true;
-    enterEditMode();
-    els.form.hidden = true;
-    db.collection('collabWeekProposals').doc(editId).get().then(function(doc){
-      if (!doc.exists || doc.data().email !== currentUser.email){
-        els.error.textContent = 'That proposal isn\u2019t yours to edit, or it no longer exists.';
-        els.error.hidden = false;
-        els.form.hidden = false;
-        els.submitBtn.hidden = true;
-        return;
-      }
-      setForm(doc.data());
-      els.form.hidden = false;
-    }).catch(function(err){
-      console.error('[Propose a Workshop] load for edit failed', err);
-      els.error.textContent = 'Could not load your proposal \u2014 reload, or check back shortly.';
-      els.error.hidden = false;
-      els.form.hidden = false;
-      els.submitBtn.hidden = true;
-    });
-  }
-
-  function submitProposal(){
-    if (!currentUser) return;
-    var type = document.getElementById('pfType').value;
-    var fields = {
-      contributionType: type,
-      title: document.getElementById('pfTitle').value.trim(),
-      duration: document.getElementById('pfDuration').value.trim(),
-      timingConstraints: document.getElementById('pfTiming').value.trim(),
-      pillar: document.getElementById('pfPillar').value,
-      coOrganisers: document.getElementById('pfCoOrg').value,
-      joiningForces: document.getElementById('pfJoin').value.trim(),
-      note: document.getElementById('pfNote').value.trim()
-    };
-
-    if (!type){
-      els.error.textContent = 'Pick a contribution type first.';
-      els.error.hidden = false;
-      return;
-    }
-    els.error.hidden = true;
-    els.submitBtn.disabled = true;
-
-    var col = db.collection('collabWeekProposals');
-    var write;
-    if (editId){
-      fields.updatedAt = Date.now();
-      write = col.doc(editId).update(fields);
-    } else {
-      fields.name = currentUser.name || currentUser.email;
-      fields.email = currentUser.email;
-      fields.createdAt = Date.now();
-      write = col.add(fields);
-    }
-    write.then(function(ref){
-      if (editId){
-        els.successMsg.textContent = 'Saved.';
-      } else {
-        els.successMsg.textContent = 'Thanks \u2014 your proposal is in.';
-        els.editLink.href = '?edit=' + encodeURIComponent(ref.id);
-      }
-      els.form.hidden = true;
-      els.success.hidden = false;
-    }).catch(function(err){
-      console.error('[Propose a Workshop] submit failed', err);
-      els.error.textContent = editId
-        ? 'Could not save your changes \u2014 try again.'
-        : 'Could not save your proposal \u2014 try again.';
-      els.error.hidden = false;
-    }).finally(function(){
-      els.submitBtn.disabled = false;
-    });
-  }
-
-  function renderAuth(){
-    if (currentUser){
-      els.signedOut.hidden = true;
-      els.signedIn.hidden = false;
-      els.whoAmI.textContent = currentUser.name
-        ? currentUser.name + (currentUser.email ? ' (' + currentUser.email + ')' : '')
-        : (currentUser.email || 'Signed in');
-    } else {
-      els.signedOut.hidden = false;
-      document.documentElement.classList.remove('auth-hint');
-      els.signedIn.hidden = true;
-    }
-  }
-
-  els.signInBtn.addEventListener('click', function(){
-    var provider = new firebase.auth.OAuthProvider('oidc.slack');
-    provider.addScope('openid');
-    provider.addScope('profile');
-    provider.addScope('email');
-    auth.signInWithPopup(provider).catch(function(err){
-      console.error('[Propose a Workshop] sign-in failed', err);
-    });
-  });
-  els.signOutBtn.addEventListener('click', function(){ auth.signOut(); });
-  els.submitBtn.addEventListener('click', submitProposal);
-  els.proposeAnotherBtn.addEventListener('click', resetForm);
-  els.keepEditingBtn.addEventListener('click', function(){ els.success.hidden = true; els.form.hidden = false; });
-
-  // Signed in last visit: skip the "sign in" panel while Firebase Auth
-  // resolves. onAuthStateChanged below stays authoritative and swaps it
-  // back if the session has expired.
-  try {
-    if (localStorage.getItem('boldAuthHint')){
-      els.signedOut.hidden = true;
-      els.signedIn.hidden = false;
-      if (editId){ enterEditMode(); els.form.hidden = true; }
-    }
-  } catch (e){}
-  auth.onAuthStateChanged(function(user){
-    currentUser = user ? { email: user.email, name: user.displayName } : null;
-    renderAuth();
-    if (currentUser && editId && !editLoaded) loadForEdit();
-  });
-})();
-</script>
 
 <script>
 (function(){
@@ -697,6 +454,7 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
     measurementId: 'G-527H8R28KB'
   };
   var AUTH_USE_EMULATOR = false;
+  var FIRESTORE_USE_EMULATOR = false;
 
   var gate = document.getElementById('pageGate');
   var content = document.getElementById('pageContent');
@@ -785,6 +543,145 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
       else localStorage.removeItem('boldAuthHint');
     } catch (e){}
     renderAuthRegion(user);
+    renderProfile(user);
+  });
+
+  /* ---------- profile ---------- */
+  var db = null;
+  try {
+    db = firebase.firestore();
+    if (FIRESTORE_USE_EMULATOR) db.useEmulator('localhost', 8080);
+  } catch (e) { db = null; }
+
+  var el = function(id){ return document.getElementById(id); };
+  var orLinked = el('orLinked'), orActions = el('orActions'), orLinkBtn = el('orLinkBtn'),
+      orUnlinkBtn = el('orUnlinkBtn'), orForm = el('orForm'), orInput = el('orInput'),
+      orCancelBtn = el('orCancelBtn'), orSaveBtn = el('orSaveBtn'), orMsg = el('orMsg');
+  var profileRef = null;
+  var linkedId = '';
+
+  function setMsg(text, isError){
+    orMsg.hidden = !text;
+    orMsg.textContent = text || '';
+    orMsg.classList.toggle('is-error', !!isError);
+  }
+
+  // Accepts a bare ~Profile_Id1 or an openreview.net profile URL; returns
+  // the ~id, or '' if the input is neither.
+  function parseOpenReviewId(raw){
+    var v = String(raw || '').trim();
+    if (!v) return '';
+    if (/^https?:\/\//i.test(v)) {
+      try {
+        var u = new URL(v);
+        if (!/(^|\.)openreview\.net$/i.test(u.hostname)) return '';
+        v = u.searchParams.get('id') || '';
+      } catch (e) { return ''; }
+    }
+    return /^~[^\s\/?#&=]+$/.test(v) ? v : '';
+  }
+
+  function renderLinked(){
+    if (linkedId) {
+      var url = 'https://openreview.net/profile?id=' + encodeURIComponent(linkedId);
+      orLinked.innerHTML = '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + escapeHtml(linkedId) + '</a>';
+      orLinked.hidden = false;
+      orLinkBtn.textContent = 'Change';
+      orUnlinkBtn.hidden = false;
+    } else {
+      orLinked.hidden = true;
+      orLinkBtn.textContent = 'Link to OpenReview';
+      orUnlinkBtn.hidden = true;
+    }
+  }
+
+  function showForm(on){
+    orForm.hidden = !on;
+    orActions.hidden = on;
+    setMsg('');
+    if (on) { orInput.value = linkedId; orInput.focus(); }
+  }
+
+  // Institution, role, supervisor, research interests, start date, ... —
+  // the caller's own Slack custom profile fields, via the getMyProfile
+  // Cloud Function. Silent on failure: the page is complete without them.
+  function loadSlackFacts(){
+    var box = el('slackFacts');
+    var call;
+    try { call = firebase.app().functions('europe-west2').httpsCallable('getMyProfile'); }
+    catch (e) { return; }
+    call().then(function(res){
+      var fields = (res.data && res.data.fields) || [];
+      box.innerHTML = '';
+      fields.forEach(function(f){
+        var row = document.createElement('div'); row.className = 'fact';
+        var dt = document.createElement('dt'); dt.textContent = f.label;
+        var dd = document.createElement('dd'); dd.textContent = f.value;
+        row.appendChild(dt); row.appendChild(dd); box.appendChild(row);
+      });
+      box.hidden = !fields.length;
+    }).catch(function(err){
+      console.error('[BOLD Lab] could not load Slack profile fields', err);
+    });
+  }
+
+  function renderProfile(user){
+    if (!user) { profileRef = null; linkedId = ''; el('slackFacts').hidden = true; showForm(false); renderLinked(); return; }
+    var name = user.displayName || '';
+    el('profileName').textContent = name || user.email || 'Profile';
+    el('factName').textContent = name || '\u2014';
+    el('factEmail').textContent = user.email || '\u2014';
+    var photo = el('profilePhoto');
+    if (user.photoURL) { photo.src = user.photoURL; photo.hidden = false; } else { photo.hidden = true; }
+
+    loadSlackFacts();
+
+    if (!db || !user.email) return;
+    // Keyed by lower-cased email, same as the people roster — what
+    // firestore.rules' profiles/{email} rule matches against.
+    profileRef = db.collection('profiles').doc(user.email.toLowerCase());
+    profileRef.get().then(function(snap){
+      linkedId = (snap.exists && snap.data().openreview) || '';
+      renderLinked();
+    }).catch(function(err){
+      console.error('[BOLD Lab] could not load profile', err);
+      setMsg('Could not load your OpenReview link.', true);
+    });
+  }
+
+  orLinkBtn.addEventListener('click', function(){ showForm(true); });
+  orCancelBtn.addEventListener('click', function(){ showForm(false); });
+
+  function saveOpenReview(id){
+    if (!profileRef) return Promise.reject(new Error('not signed in'));
+    return profileRef.set({
+      openreview: id,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).then(function(){ linkedId = id; renderLinked(); });
+  }
+
+  orForm.addEventListener('submit', function(e){
+    e.preventDefault();
+    var id = parseOpenReviewId(orInput.value);
+    if (!id) {
+      setMsg('Paste your OpenReview profile URL or ID (starts with ~).', true);
+      return;
+    }
+    orSaveBtn.disabled = true;
+    saveOpenReview(id).then(function(){
+      showForm(false);
+    }).catch(function(err){
+      console.error('[BOLD Lab] could not save OpenReview link', err);
+      setMsg('Could not save \u2014 try again.', true);
+    }).then(function(){ orSaveBtn.disabled = false; });
+  });
+
+  orUnlinkBtn.addEventListener('click', function(){
+    if (!profileRef) return;
+    profileRef.delete().then(function(){ linkedId = ''; renderLinked(); }).catch(function(err){
+      console.error('[BOLD Lab] could not unlink OpenReview', err);
+      setMsg('Could not unlink \u2014 try again.', true);
+    });
   });
 })();
 </script>
