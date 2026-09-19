@@ -1,7 +1,7 @@
 "use strict";
 
 // The paper/project card — the one data model behind both "+ Register paper"
-// on the Internal Review Board and "+ Register project" on the Projects page.
+// on the Internal Review Board and "+ Add new project" on the Projects page.
 // A project IS a card (boards/{venue}/cards/{id}, status 'register'): anything
 // registered from either place goes through makeRegisteredCard() and then the
 // same Internal Review process. Plain functions/vars, no DOM or Firebase, so
@@ -137,6 +137,34 @@
     if (name === 'proj-') return { error: 'Add a name after proj-.' };
     if (name.length > 80) return { error: 'Slack channel names can be at most 80 characters.' };
     return { name: name, prefixed: prefixed };
+  }
+
+  // Reviewers need edit access to the draft, not a read-only share link.
+  // Returns an error string to show the user, or null if the link is fine
+  // (or isn't an overleaf.com link at all, e.g. a self-hosted mirror).
+  // Fixed 2026-09-14+1 — reported by a user: their real edit link,
+  // https://www.overleaf.com/1244862613jcskdxnpqfqw#840950, was rejected
+  // as "not a project link". A real Overleaf project link takes one of
+  // TWO shapes, not one: the classic overleaf.com/project/<id> from the
+  // address bar while editing, or a bare overleaf.com/<token> — the edit
+  // link-sharing token from Overleaf's own Share dialog (its read-only
+  // counterpart is overleaf.com/read/<token>, already handled below). The
+  // bare form has no further path segments and is a long alphanumeric
+  // token, unlike Overleaf's own short, word-like page routes (/learn,
+  // /contact, /user/settings, …) — that distinction is what tells the two
+  // apart without having to maintain a list of every real Overleaf route.
+  function overleafLinkIssue(url){
+    if (!url) return null;
+    var u;
+    try { u = new URL(url); } catch (e){ return null; }
+    var host = u.hostname.toLowerCase();
+    if (host !== 'overleaf.com' && host !== 'www.overleaf.com') return null;
+    if (/^\/read\//i.test(u.pathname)){
+      return 'That’s a read-only Overleaf share link — reviewers need edit access. Use the URL from the address bar while editing the project (overleaf.com/project/…), or in Overleaf’s Share dialog invite them as editors.';
+    }
+    if (/^\/project\//i.test(u.pathname)) return null;
+    if (/^\/[a-zA-Z0-9]{15,}$/.test(u.pathname)) return null;
+    return 'That doesn’t look like an Overleaf project link. Use the URL from the address bar while editing the project (overleaf.com/project/…), or an edit link from Overleaf’s Share dialog.';
   }
 
   // Keywords: lowercase, single-spaced, at most KEYWORD_MAX_CHARS long; a card

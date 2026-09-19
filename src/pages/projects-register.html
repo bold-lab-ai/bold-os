@@ -1,16 +1,16 @@
 ---
-title: "Register a Project | BOLD Lab"
-description: "Register a new project in BOLD."
+title: "Add a New Project | BOLD Lab"
+description: "Add a new project to BOLD."
 sdk: ["firestore", "functions"]
 headExtra: "<!-- KaTeX, for rendering LaTeX pasted into a card's Abstract field.\n     docs/AGENTS.md-approved CDN exception, 2026-09-18, per Eduardo. Bump the\n     pinned version deliberately, not silently. -->\n<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.css\">\n<script src=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.js\"></script>"
 css: "projects-register"
 nav: "projects.html"
-scripts: ["card-model.js", "pages/projects-register.js"]
+scripts: ["card-model.js", "project-fields.js", "pages/projects-register.js"]
 permalink: "projects-register.html"
 ---
 <div class="hero">
   <a class="back-link" href="projects.html">&larr; Projects</a>
-  <h1>Register a project</h1>
+  <h1>Add a new project</h1>
 </div>
 
 <main>
@@ -22,19 +22,11 @@ permalink: "projects-register.html"
     <div id="abstractField"></div>
     <div class="field">
       <label for="pfKeyword">Keywords</label>
-      <div class="kw-entry">
-        <input type="text" id="pfKeyword" maxlength="40" autocomplete="off" placeholder="Add a keyword" role="combobox" aria-expanded="false" aria-controls="kwSuggest" aria-autocomplete="list">
-        <button class="btn kw-add" type="button" id="kwAdd" aria-label="Add keyword">+</button>
-        <ul class="kw-suggest" id="kwSuggest" role="listbox" hidden></ul>
-      </div>
-      <ul class="kw-list" id="kwList"></ul>
-      <div class="field-hint">Type a keyword and press Enter or +. Existing keywords are suggested as you type.</div>
+      <div id="keywordEntry"></div>
     </div>
     <div class="field">
       <label for="pfChannel">Slack channel</label>
-      <input type="text" id="pfChannel" maxlength="81" placeholder="#proj-name" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="channelRules channelStatus">
-      <div class="field-hint" id="channelRules">Project channels start with <b>proj-</b> (added if missing). If the channel doesn&rsquo;t exist, it&rsquo;s created and you&rsquo;re invited.</div>
-      <ul class="channel-status" id="channelStatus" aria-live="polite"></ul>
+      <div id="channelEntry"></div>
     </div>
     <div class="field-error" id="projectError" hidden></div>
     <div class="form-actions">

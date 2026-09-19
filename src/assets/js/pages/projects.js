@@ -1,11 +1,8 @@
 (function(){
   // The masthead, gate and sidebar are bold.js's; this page only fills in the projects.
   if (!BOLD.getAuth()) return;
-  BOLD.onUser(function(user){ me = user; renderPage(user); });
 
   var el = function(id){ return document.getElementById(id); };
-  var escapeHtml = BOLD.escapeHtml;
-  var me; // the signed-in Firebase user, set by BOLD.onUser
 
   // Same per-person localStorage cache as the profile page (getAllProjects is
   // lab-wide, but keyed by person so sign-out clears it the same way).
@@ -27,16 +24,19 @@
 
   // Renders from cache if any, then calls the function only if there's no
   // fresh cache. onError only fires when there was nothing cached to show.
-  function loadCached(fn, email, render, onError){
+  function loadCached(fn, email, render, onError, usable){
     var key = fn + ':' + email.toLowerCase();
     var hit = cacheGet(key);
+    var age = hit ? Math.round((Date.now() - hit.t) / 1000) : 0;
     if (hit) render(hit.d);
-    if (hit && Date.now() - hit.t < CACHE_TTL_MS) return;
+    if (hit && Date.now() - hit.t < CACHE_TTL_MS && (!usable || usable(hit.d))) { console.info('[BOLD Lab] ' + fn + ': cache hit (' + age + 's old), no call'); return; }
+    var t0 = performance.now();
     var call;
     try { call = firebase.app().functions('europe-west2').httpsCallable(fn); }
     catch (e) { if (!hit) onError(e); return; }
     call().then(function(res){
       var data = res.data || {};
+      console.info('[BOLD Lab] ' + fn + ': fetched in ' + Math.round(performance.now() - t0) + 'ms (' + (hit ? 'stale cache shown ' + age + 's old' : 'no cache') + ')');
       cachePut(key, data);
       render(data);
     }).catch(function(err){
@@ -50,18 +50,36 @@
     var li = document.createElement('li');
     var main = document.createElement('div');
     main.className = 'proj-main';
-    // A project with a venue links to its card; one without has no page yet.
-    var a = document.createElement(p.boardId ? 'a' : 'span');
+    // Every project opens its own page, wherever it lives (with a venue: its card there).
+    var a = document.createElement('a');
     a.className = 'proj-title';
-    if (p.boardId) a.href = 'audit-board.html#board=' + encodeURIComponent(p.boardId) + '&card=' + encodeURIComponent(p.cardId);
+    a.href = 'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '');
     a.textContent = p.title;
     var meta = document.createElement('span');
     meta.className = 'proj-meta';
-    meta.textContent = [p.boardId ? p.boardLabel : 'No venue yet', p.slackChannel, p.owner].filter(Boolean).join(' · ');
-    main.appendChild(a); main.appendChild(meta);
-    if (!p.boardId && db && me && me.email && p.ownerEmail && p.ownerEmail.toLowerCase() === me.email.toLowerCase()) {
-      main.appendChild(venueControl(p));
+    // In: <venue> (linked to its board) · <Slack channel> (linked, when it can be) · <owner>
+    var parts = [];
+    var textNode = function(t){ return document.createTextNode(t); };
+    var linkNode = function(t, href){
+      var l = document.createElement('a'); l.href = href; l.textContent = t;
+      if (href.indexOf('http') === 0) { l.target = '_blank'; l.rel = 'noopener'; }
+      return l;
+    };
+    if (p.boardId) {
+      var inVenue = document.createElement('span');
+      inVenue.appendChild(textNode('In: '));
+      inVenue.appendChild(linkNode(p.boardLabel, 'audit-board.html#board=' + encodeURIComponent(p.boardId)));
+      parts.push(inVenue);
+    } else {
+      parts.push(textNode('No venue yet'));
     }
+    if (p.slackChannel) parts.push(p.slackUrl ? linkNode(p.slackChannel, p.slackUrl) : textNode(p.slackChannel));
+    if (p.owner) parts.push(textNode(p.owner));
+    parts.forEach(function(n, i){
+      if (i) meta.appendChild(textNode(' \u00b7 '));
+      meta.appendChild(n);
+    });
+    main.appendChild(a); main.appendChild(meta);
     if (p.abstract) {
       var abs = document.createElement('p');
       abs.className = 'proj-abstract';
@@ -72,7 +90,12 @@
       var kws = document.createElement('div');
       kws.className = 'proj-keywords';
       p.keywords.forEach(function(k){
-        var t = document.createElement('span'); t.className = 'kw-tag'; t.textContent = k; kws.appendChild(t);
+        // Click to show only the projects with this keyword; click again to clear.
+        var t = document.createElement('button');
+        t.type = 'button'; t.className = 'kw-tag' + (filters.keyword === k ? ' active' : ''); t.textContent = k;
+        t.setAttribute('aria-pressed', String(filters.keyword === k));
+        t.addEventListener('click', function(){ setFilter('keyword', filters.keyword === k ? '' : k); });
+        kws.appendChild(t);
       });
       main.appendChild(kws);
     }
@@ -98,22 +121,127 @@
     return li;
   }
 
+  /* ---------- search and filters ---------- */
+  var current = null;                                  // the last list from the function
+  var filters = { q: '', author: '', keyword: '' };
+  var autoTab = false;                                 // arrived with a filter: open a tab that has matches
+
+  // Older cached lists have no `authors`; refetch those.
+  function hasAuthors(d){
+    return ['ongoing', 'completed', 'planned'].every(function(g){
+      return (d[g] || []).every(function(p){ return Array.isArray(p.authors); });
+    });
+  }
+
+  // The people a project counts under in the author filter: its authors, and whoever registered it.
+  function people(p){
+    var out = [];
+    (p.authors || []).concat(p.ownerEmail || p.owner ? [{ name: p.owner, email: p.ownerEmail }] : []).forEach(function(a){
+      var key = String(a.email || a.name || '').toLowerCase();
+      if (key && !out.some(function(o){ return o.key === key; })) out.push({ key: key, name: a.name || a.email });
+    });
+    return out;
+  }
+
+  function matches(p){
+    if (filters.keyword && (p.keywords || []).indexOf(filters.keyword) === -1) return false;
+    if (filters.author && !people(p).some(function(o){ return o.key === filters.author; })) return false;
+    if (filters.q) {
+      var hay = [p.title, p.abstract, (p.keywords || []).join(' '), p.slackChannel, p.owner, p.boardLabel,
+        people(p).map(function(o){ return o.name; }).join(' ')].join(' ').toLowerCase();
+      return filters.q.toLowerCase().split(/\s+/).filter(Boolean).every(function(t){ return hay.indexOf(t) !== -1; });
+    }
+    return true;
+  }
+
+  function filtering(){ return !!(filters.q || filters.author || filters.keyword); }
+
+  // Options for the two selects, from every project (not only the visible ones).
+  function fillOptions(){
+    var authors = {}, keywords = {};
+    ['ongoing', 'completed', 'planned'].forEach(function(g){
+      ((current && current[g]) || []).forEach(function(p){
+        people(p).forEach(function(o){ authors[o.key] = o.name; });
+        (p.keywords || []).forEach(function(k){ keywords[k] = (keywords[k] || 0) + 1; });
+      });
+    });
+    var authorKeys = Object.keys(authors).sort(function(a, b){ return authors[a].localeCompare(authors[b]); });
+    var keywordNames = Object.keys(keywords).sort(function(a, b){ return keywords[b] - keywords[a] || a.localeCompare(b); });
+    var fill = function(sel, all, opts, value){
+      sel.innerHTML = '';
+      var add = function(v, label){ var o = document.createElement('option'); o.value = v; o.textContent = label; sel.appendChild(o); };
+      add('', all);
+      // A filter that arrived by link stays selectable even if no project has it any more.
+      if (value && !opts.some(function(o){ return o[0] === value; })) add(value, value);
+      opts.forEach(function(o){ add(o[0], o[1]); });
+      sel.value = value;
+    };
+    fill(el('projAuthor'), 'All authors', authorKeys.map(function(k){ return [k, authors[k]]; }), filters.author);
+    fill(el('projKeyword'), 'All keywords', keywordNames.map(function(k){ return [k, k + ' (' + keywords[k] + ')']; }), filters.keyword);
+  }
+
+  // The address keeps the tab and the filters, so a filtered list can be linked.
+  function syncHash(){
+    var tab = tabs.filter(function(t){ return t.classList.contains('active'); })[0];
+    var parts = [];
+    if (tab && tab.getAttribute('data-tab') !== 'ongoing') parts.push(tab.getAttribute('data-tab'));
+    ['q', 'author', 'keyword'].forEach(function(k){ if (filters[k]) parts.push(k + '=' + encodeURIComponent(filters[k])); });
+    try { history.replaceState(null, '', location.pathname + location.search + (parts.length ? '#' + parts.join('&') : '')); } catch (e){}
+  }
+
+  function setFilter(name, value){
+    filters[name] = value;
+    if (name === 'q') el('projSearch').value = value;
+    if (name === 'author') el('projAuthor').value = value;
+    if (name === 'keyword') el('projKeyword').value = value;
+    renderLists();
+    syncHash();
+  }
+
   function renderProjects(data){
-    [['projOngoing', data.ongoing, 'cntOngoing'], ['projCompleted', data.completed, 'cntCompleted'], ['projPlanned', data.planned, 'cntPlanned']].forEach(function(g){
+    current = data;
+    fillOptions();
+    renderLists();
+    el('projMsg').hidden = true;
+    el('projects').hidden = false;
+  }
+
+  function renderLists(){
+    if (!current) return;
+    var groups = [['projOngoing', current.ongoing, 'cntOngoing', 'ongoing'], ['projCompleted', current.completed, 'cntCompleted', 'completed'], ['projPlanned', current.planned, 'cntPlanned', 'planned']];
+    var shown = {};
+    groups.forEach(function(g){
       var ul = el(g[0]); ul.innerHTML = '';
-      var items = g[1] || [];
-      el(g[2]).textContent = items.length || '';
+      var items = (g[1] || []).filter(matches);
+      shown[g[3]] = items.length;
+      el(g[2]).textContent = items.length || (filtering() ? '0' : '');
       if (!items.length) {
         var li = document.createElement('li');
         li.className = 'proj-none';
-        li.innerHTML = '<p class="proj-empty">None</p>';
+        li.innerHTML = '<p class="proj-empty">' + (filtering() ? 'No projects match.' : 'None') + '</p>';
         ul.appendChild(li);
       }
       items.forEach(function(p){ ul.appendChild(renderProject(p)); });
     });
-    el('projMsg').hidden = true;
-    el('projects').hidden = false;
+    el('projClear').hidden = !filtering();
+    if (autoTab) {
+      autoTab = false;
+      var active = tabs.filter(function(t){ return t.classList.contains('active'); })[0];
+      if (!active || !shown[active.getAttribute('data-tab')]) {
+        var first = ['ongoing', 'planned', 'completed'].filter(function(n){ return shown[n]; })[0];
+        if (first) { setTab(first); syncHash(); }
+      }
+    }
   }
+
+  el('projSearch').addEventListener('input', function(){ setFilter('q', el('projSearch').value.trim()); });
+  el('projAuthor').addEventListener('change', function(){ setFilter('author', el('projAuthor').value); });
+  el('projKeyword').addEventListener('change', function(){ setFilter('keyword', el('projKeyword').value); });
+  el('projClear').addEventListener('click', function(){
+    filters = { q: '', author: '', keyword: '' };
+    el('projSearch').value = ''; el('projAuthor').value = ''; el('projKeyword').value = '';
+    renderLists(); syncHash();
+  });
 
   /* ---------- list / grid ---------- */
   function setView(view){
@@ -141,97 +269,37 @@
     });
   }
   tabs.forEach(function(t, i){
-    t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); });
+    t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); syncHash(); });
     t.addEventListener('keydown', function(e){
       var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
       if (!d) return;
       var next = tabs[(i + d + tabs.length) % tabs.length];
-      setTab(next.getAttribute('data-tab')); next.focus(); e.preventDefault();
+      setTab(next.getAttribute('data-tab')); syncHash(); next.focus(); e.preventDefault();
     });
   });
 
-  // #planned etc. opens that tab.
+  // #planned opens that tab; #keyword=rl, #author=<email>, #q=text (joined with &) set the filters.
   try {
-    var fromHash = (location.hash || '').slice(1);
-    if (tabs.some(function(t){ return t.getAttribute('data-tab') === fromHash; })) setTab(fromHash);
+    (location.hash || '').slice(1).split('&').forEach(function(tok){
+      var kv = tok.split('=');
+      if (kv.length === 1 && tabs.some(function(t){ return t.getAttribute('data-tab') === tok; })) return setTab(tok);
+      if (kv[0] === 'q' || kv[0] === 'author' || kv[0] === 'keyword') filters[kv[0]] = decodeURIComponent(kv.slice(1).join('='));
+    });
+    el('projSearch').value = filters.q;
+    autoTab = filtering();
   } catch (e){}
-
-  /* ---------- set a venue ---------- */
-  // A project registered without a venue is a card in `projects`; picking a venue
-  // moves it (same card, same id) into that board's cards, where it goes through
-  // Internal Review like any paper. Only its owner sees the control.
-  var db = null;
-  try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
-  var venues = null;
-
-  function loadVenues(){
-    if (venues) return Promise.resolve(venues);
-    return db.collection('boards').where('status', '==', 'approved').get().then(function(snap){
-      venues = snap.docs.map(function(d){ return { id: d.id, label: d.data().label || d.id }; })
-        .sort(function(a, b){ return a.label.localeCompare(b.label); });
-      return venues;
-    });
-  }
-
-  function moveToVenue(projectId, venueId){
-    var from = db.collection('projects').doc(projectId);
-    return from.get().then(function(doc){
-      if (!doc.exists) throw new Error('project not found');
-      var card = Object.assign({}, doc.data(), { updatedAt: Date.now() });
-      var batch = db.batch();
-      batch.set(db.collection('boards').doc(venueId).collection('cards').doc(projectId), card);
-      batch.delete(from);
-      return batch.commit();
-    });
-  }
-
-  // "No venue yet" plus, for the owner, a "Set venue" link that turns into a picker.
-  function venueControl(p){
-    var box = document.createElement('div');
-    box.className = 'proj-venue';
-    var link = document.createElement('button');
-    link.type = 'button'; link.className = 'btn-text'; link.textContent = 'Set venue';
-    box.appendChild(link);
-    link.addEventListener('click', function(){
-      box.innerHTML = '';
-      var sel = document.createElement('select');
-      sel.innerHTML = '<option value="">Loading&hellip;</option>';
-      var save = document.createElement('button'); save.type = 'button'; save.className = 'btn'; save.textContent = 'Save'; save.disabled = true;
-      var cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'btn-text'; cancel.textContent = 'Cancel';
-      var msg = document.createElement('span'); msg.className = 'proj-venue-msg';
-      [sel, save, cancel, msg].forEach(function(n){ box.appendChild(n); });
-      cancel.addEventListener('click', function(){ box.replaceWith(venueControl(p)); });
-      sel.addEventListener('change', function(){ save.disabled = !sel.value; });
-      loadVenues().then(function(list){
-        sel.innerHTML = list.length
-          ? '<option value="">Choose a venue&hellip;</option>' + list.map(function(v){ return '<option value="' + escapeHtml(v.id) + '">' + escapeHtml(v.label) + '</option>'; }).join('')
-          : '<option value="">No venues yet</option>';
-      }).catch(function(err){
-        console.error('[BOLD Lab] loading venues failed', err);
-        sel.innerHTML = '<option value="">Could not load venues</option>';
-      });
-      save.addEventListener('click', function(){
-        save.disabled = true; msg.textContent = '';
-        moveToVenue(p.projectId, sel.value).then(function(){
-          try { localStorage.removeItem(CACHE_PREFIX + 'getAllProjects:' + me.email.toLowerCase()); } catch (e){}
-          renderPage(me);
-        }).catch(function(err){
-          console.error('[BOLD Lab] set venue failed', err);
-          save.disabled = false;
-          msg.textContent = 'Could not set the venue \u2014 try again.';
-        });
-      });
-    });
-    return box;
-  }
 
   function renderPage(user){
     if (!user) { cacheClear(); return; }
     if (!user.email) return;
     loadCached('getAllProjects', user.email, renderProjects, function(){
       el('projMsg').textContent = 'Could not load projects.';
-    });
+    }, hasAuthors);
   }
+
+  // Last, once everything above is defined: onUser runs its callback at once if
+  // auth has already resolved, and it reads the cache constants and helpers.
+  BOLD.onUser(renderPage);
 
   // First paint from the last visit's cache, before Firebase has loaded.
   try {

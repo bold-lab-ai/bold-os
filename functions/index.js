@@ -1177,6 +1177,18 @@ function profileFieldsFromSlack(profile){
   return out;
 }
 
+// Whether the caller is a PI or admin (firestore.rules' hasFullWrite). Clients can't
+// read `roles`, so a page asks here which controls to enable; the rules still decide
+// what is actually allowed.
+exports.getMyAccess = onCall(
+  async (request) => {
+    const email = request.auth && request.auth.token && request.auth.token.email;
+    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const [pis, admins] = await Promise.all([rolesEmails('pis'), rolesEmails('admins')]);
+    return { fullWrite: pis.indexOf(email) !== -1 || admins.indexOf(email) !== -1 };
+  }
+);
+
 exports.getMyProfile = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -1301,6 +1313,8 @@ function allProjectsFromCards(boards, cards, unassigned){
       slackChannel: d.slackChannel || '',
       keywords: Array.isArray(d.keywords) ? d.keywords : [],
       owner: (d.submittedBy && d.submittedBy.name) || '',
+      ownerEmail: (d.submittedBy && d.submittedBy.email) || '',
+      authors: (Array.isArray(d.authors) ? d.authors : []).map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '' }; }),
       badges: badgesForCard(d)
     };
   };
@@ -1309,7 +1323,7 @@ function allProjectsFromCards(boards, cards, unassigned){
     entries.push({ d: c.data, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
   });
   (unassigned || []).forEach(function(u){
-    entries.push({ d: u.data, item: Object.assign(base(u.id, u.data), { projectId: u.id, ownerEmail: (u.data.submittedBy && u.data.submittedBy.email) || '' }) });
+    entries.push({ d: u.data, item: Object.assign(base(u.id, u.data), { projectId: u.id }) });
   });
   const out = { ongoing: [], completed: [], planned: [] };
   entries
@@ -1322,7 +1336,25 @@ function allProjectsFromCards(boards, cards, unassigned){
 // on a venue), for the Projects page. Any signed-in lab member may read every card (see firestore.rules), so
 // this is no wider than what the board itself shows; it's a function only
 // because the rules have no collection-group rule for `cards`.
+// Slack channel name ("#proj-x") → link that opens it in Slack, for the channels the bot
+// can see (public, or private with the bot in them). Best effort: {} if Slack can't be
+// reached, so the Projects list still loads, just without the links.
+async function slackLinksFor(names){
+  const out = {};
+  try {
+    const token = SLACK_BOT_TOKEN.value();
+    for (const name of names){
+      const id = await slackChannelId(token, name.replace(/^#/, ''));
+      if (id) out[name] = await slackChannelUrl(token, id);
+    }
+  } catch (err) {
+    logger.warn('Slack channel links skipped', { error: err && err.message });
+  }
+  return out;
+}
+
 exports.getAllProjects = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = request.auth && request.auth.token && request.auth.token.email;
     if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
@@ -1331,11 +1363,15 @@ exports.getAllProjects = onCall(
       db.collectionGroup('cards').get(),
       db.collection('projects').get()
     ]);
-    return allProjectsFromCards(
+    const groups = allProjectsFromCards(
       boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
       cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
       unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; })
     );
+    const items = groups.ongoing.concat(groups.completed, groups.planned);
+    const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
+    items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
+    return groups;
   }
 );
 
@@ -1370,9 +1406,9 @@ exports.getProjectKeywords = onCall(
 // Registering a project names a Slack channel for it. Rules (see the register
 // form, which states them): a name that doesn't start with "proj-" gets the
 // prefix added; a channel that already exists is left alone; one that doesn't
-// is created and the submitter is invited. Needs the bot scopes
-// `channels:read` (look it up) and `channels:manage` (create, invite) — add
-// them and Reinstall to Workspace. The submitter is the caller's
+// is created (private) and the submitter is invited. Needs the bot scopes
+// `channels:read` + `groups:read` (look it up), `channels:manage` +
+// `groups:write` (create, invite) — add them and Reinstall to Workspace. The submitter is the caller's
 // own verified email → Slack id via the `people` roster, never a parameter.
 
 const PROJECT_CHANNEL_PREFIX = 'proj-';
@@ -1392,29 +1428,63 @@ function normalizeProjectChannel(input){
   return { name, prefixed };
 }
 
-// Channel names → true, cached briefly (a form check per pause in typing
-// shouldn't page through the whole workspace each time). Public channels only:
-// listing private ones needs `groups:read`, which the app doesn't have; a private
-// channel with the same name shows up as `name_taken` on create instead, which
-// is treated as "exists".
+// Channel name → id, cached briefly (a form check per pause in typing
+// shouldn't page through the whole workspace each time). Private channels are
+// listed too when the app has `groups:read` — but Slack only returns the ones the
+// bot is a member of, so a private channel it hasn't been invited to still isn't
+// found (create then says `name_taken`, which is treated as "exists", with no id
+// to link to). Without `groups:read`, only public channels are listed.
 let channelNamesCache = null;
-async function slackChannelExists(token, name){
+async function listSlackChannels(token, types){
+  const names = new Map();
+  let cursor = '';
+  do {
+    const params = { types, exclude_archived: 'true', limit: '1000' };
+    if (cursor) params.cursor = cursor;
+    const res = await fetch('https://slack.com/api/conversations.list?' + new URLSearchParams(params),
+      { headers: { 'Authorization': 'Bearer ' + token } });
+    const json = await res.json();
+    if (!json.ok) throw Object.assign(new Error(json.error), { slackError: json });
+    (json.channels || []).forEach(function(c){ names.set(c.name, c.id); });
+    cursor = (json.response_metadata && json.response_metadata.next_cursor) || '';
+  } while (cursor);
+  return names;
+}
+
+async function slackChannelId(token, name){
   if (!channelNamesCache || Date.now() - channelNamesCache.t > 30 * 1000){
-    const names = new Set();
-    let cursor = '';
-    do {
-      const params = { types: 'public_channel', exclude_archived: 'true', limit: '1000' };
-      if (cursor) params.cursor = cursor;
-      const res = await fetch('https://slack.com/api/conversations.list?' + new URLSearchParams(params),
-        { headers: { 'Authorization': 'Bearer ' + token } });
-      const json = await res.json();
-      if (!json.ok) throw slackChannelError(json.error, json);
-      (json.channels || []).forEach(function(c){ names.add(c.name); });
-      cursor = (json.response_metadata && json.response_metadata.next_cursor) || '';
-    } while (cursor);
+    let names;
+    try {
+      try {
+        names = await listSlackChannels(token, 'public_channel,private_channel');
+      } catch (err){
+        if (!err.slackError || err.slackError.error !== 'missing_scope') throw err;
+        logger.warn('Slack app lacks groups:read \u2014 private channels are not looked up');
+        names = await listSlackChannels(token, 'public_channel');
+      }
+    } catch (err){
+      if (err.slackError) throw slackChannelError(err.slackError.error, err.slackError);
+      throw err;
+    }
     channelNamesCache = { t: Date.now(), names };
   }
-  return channelNamesCache.names.has(name);
+  return channelNamesCache.names.get(name) || null;
+}
+
+// The workspace's team id (for a link that opens a channel in Slack's web client)
+// and the bot's own name (for telling people whom to invite), from auth.test.
+let slackAuthCache = null;
+async function slackAuthInfo(token){
+  if (!slackAuthCache){
+    const auth = await slackFetch(token, 'auth.test', {});
+    if (!auth.ok) return null;
+    slackAuthCache = { teamId: auth.team_id, bot: auth.user };
+  }
+  return slackAuthCache;
+}
+async function slackChannelUrl(token, channelId){
+  const auth = await slackAuthInfo(token);
+  return auth ? 'https://app.slack.com/client/' + auth.teamId + '/' + channelId : '';
 }
 
 function slackChannelError(code, json){
@@ -1424,10 +1494,16 @@ function slackChannelError(code, json){
     : 'Slack said no (' + code + ').');
 }
 
-// mode 'check' (default): { name, prefixed, exists } — nothing is changed.
-// mode 'ensure': also creates the channel if it doesn't exist and invites the
-// caller — { name, prefixed, exists, created, invited }. Registering a project
-// calls 'ensure'; the form calls 'check' as you type.
+// mode 'check' (default): { name, prefixed, exists, url } — nothing is changed;
+// `url` opens the channel in Slack (only when the bot can see it: public, or
+// private with the bot in it). When it can't see it, `bot` is the bot's name
+// ("@name"): either the channel doesn't exist, or it's a private one the bot
+// needs inviting to (only a member can do that) before the project page can link it.
+// mode 'ensure': also creates the channel if it doesn't exist — private, so the
+// bot (its creator, hence a member) can always link it — and invites the caller:
+// { name, prefixed, exists, created, invited, url }. Registering a project
+// calls 'ensure'; the form calls 'check' as you type, and a project's page
+// calls it to link its channel.
 exports.projectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -1437,10 +1513,16 @@ exports.projectChannel = onCall(
     const n = normalizeProjectChannel(data.name);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
     const token = SLACK_BOT_TOKEN.value();
-    const out = { name: n.name, prefixed: n.prefixed, exists: await slackChannelExists(token, n.name) };
+    const existingId = await slackChannelId(token, n.name);
+    const out = { name: n.name, prefixed: n.prefixed, exists: !!existingId };
+    if (existingId) out.url = await slackChannelUrl(token, existingId);
+    else {
+      const auth = await slackAuthInfo(token);
+      if (auth && auth.bot) out.bot = '@' + auth.bot;
+    }
     if (out.exists || data.mode !== 'ensure') return out;
 
-    const created = await slackFetch(token, 'conversations.create', { name: n.name, is_private: false });
+    const created = await slackFetch(token, 'conversations.create', { name: n.name, is_private: true });
     channelNamesCache = null;
     if (!created.ok){
       if (created.error === 'name_taken') return Object.assign(out, { exists: true });
@@ -1448,6 +1530,7 @@ exports.projectChannel = onCall(
     }
     out.created = true;
     out.invited = false;
+    out.url = await slackChannelUrl(token, created.channel.id);
     const slackId = await slackIdForEmail(email);
     if (slackId){
       const invited = await slackFetch(token, 'conversations.invite', { channel: created.channel.id, users: slackId });

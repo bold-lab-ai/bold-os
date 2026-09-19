@@ -17,7 +17,14 @@ permalink: "projects.html"
       <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
       <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
     </div>
-    <a class="btn btn-primary" href="projects-register.html">+ Register project</a>
+    <a class="btn btn-primary" href="projects-register.html">+ Add new project</a>
+  </div>
+
+  <div class="filters" role="search">
+    <input type="search" id="projSearch" placeholder="Search projects" aria-label="Search projects" autocomplete="off">
+    <select id="projAuthor" aria-label="Filter by author"><option value="">All authors</option></select>
+    <select id="projKeyword" aria-label="Filter by keyword"><option value="">All keywords</option></select>
+    <button type="button" class="btn-text" id="projClear" hidden>Clear filters</button>
   </div>
 
   <div class="tabs" role="tablist" aria-label="Project status">

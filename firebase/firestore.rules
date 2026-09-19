@@ -110,6 +110,7 @@ service cloud.firestore {
         // whole (onSetReviewer).
         allow update: if isLabMember() && (
           email() == resource.data.submittedBy.email ||
+          email() in resource.data.get('authorEmails', []) ||
           email() == resource.data.reviewers.junior ||
           email() == resource.data.reviewers.senior ||
           hasFullWrite()
@@ -131,11 +132,18 @@ service cloud.firestore {
     // a card in exactly the shape boards/{boardId}/cards/{cardId} holds (built by
     // makeRegisteredCard in src/assets/js/card-model.js); "set a venue" moves it
     // into that board's cards and deletes it here. Readable by the lab, created
-    // only as yourself, changed or moved only by its submitter or a PI/admin.
+    // only as yourself, edited by its submitter, one of its authors (authorEmails,
+    // as on a project's page) or a PI/admin, deleted or moved only by its
+    // submitter or a PI/admin.
     match /projects/{projectId} {
       allow read: if isLabMember();
       allow create: if isLabMember() && request.resource.data.submittedBy.email == email();
-      allow update, delete: if isLabMember() && (
+      allow update: if isLabMember() && (
+        email() == resource.data.submittedBy.email ||
+        email() in resource.data.get('authorEmails', []) ||
+        hasFullWrite()
+      );
+      allow delete: if isLabMember() && (
         email() == resource.data.submittedBy.email || hasFullWrite()
       );
     }
