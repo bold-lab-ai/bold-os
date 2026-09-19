@@ -139,6 +139,14 @@
     return { name: name, prefixed: prefixed };
   }
 
+  // Keywords: lowercase, single-spaced, at most KEYWORD_MAX_CHARS long; a card
+  // holds at most KEYWORDS_MAX. normalizeKeyword() returns '' for nothing usable.
+  var KEYWORD_MAX_CHARS = 40;
+  var KEYWORDS_MAX = 10;
+  function normalizeKeyword(input){
+    return String(input || '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, KEYWORD_MAX_CHARS).trim();
+  }
+
   // A newly registered card. `user` is { name, email } (the signed-in person —
   // never typed in); `fields` is { title, computeEstimate?, note?,
   // abstractText?, slackChannel? }. Field-by-field notes are inline.
@@ -165,6 +173,8 @@
       // (unlike pitchLink/submissionLink/etc. below). May contain LaTeX,
       // typed as plain $inline$/$$block$$ — see renderAbstractHtml.
       abstractText: fields.abstractText || '',
+      // Free-form tags, see normalizeKeyword; suggested from the ones already in use.
+      keywords: fields.keywords || [],
       // The project's Slack channel, "#name" (Projects page registration).
       slackChannel: fields.slackChannel || '',
       status: 'register',

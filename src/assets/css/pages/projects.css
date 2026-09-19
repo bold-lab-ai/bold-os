@@ -71,6 +71,8 @@ a.btn{display:inline-block; text-decoration:none;}
 .proj-main{min-width:0;}
 .proj-title{font-size:16px; font-weight:600;}
 .proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.proj-keywords{display:flex; flex-wrap:wrap; gap:4px 6px; margin-top:8px;}
+.kw-tag{font-family:var(--sans); font-size:12px; color:var(--ink-soft); background:var(--wash); border-radius:10px; padding:1px 9px;}
 .proj-badges{display:flex; flex-wrap:wrap; gap:6px 8px; margin-top:8px;}
 .badge{
   font-family:var(--sans); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em;

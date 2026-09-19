@@ -68,6 +68,14 @@
       abs.textContent = p.abstract;
       main.appendChild(abs);
     }
+    if (p.keywords && p.keywords.length) {
+      var kws = document.createElement('div');
+      kws.className = 'proj-keywords';
+      p.keywords.forEach(function(k){
+        var t = document.createElement('span'); t.className = 'kw-tag'; t.textContent = k; kws.appendChild(t);
+      });
+      main.appendChild(kws);
+    }
     if (p.badges && p.badges.length) {
       var row = document.createElement('div');
       row.className = 'proj-badges';

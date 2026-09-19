@@ -1299,6 +1299,7 @@ function allProjectsFromCards(boards, cards, unassigned){
       title: d.title || 'Untitled',
       abstract: d.abstractText || '',
       slackChannel: d.slackChannel || '',
+      keywords: Array.isArray(d.keywords) ? d.keywords : [],
       owner: (d.submittedBy && d.submittedBy.name) || '',
       badges: badgesForCard(d)
     };
@@ -1338,13 +1339,40 @@ exports.getAllProjects = onCall(
   }
 );
 
+// ---------- Projects page: keyword suggestions ----------
+// Pure: every card's `keywords` → [{ name, count }], most used first (then
+// alphabetical) — what the registration form suggests as you type.
+function keywordCounts(cardDatas){
+  const counts = {};
+  cardDatas.forEach(function(d){
+    (Array.isArray(d && d.keywords) ? d.keywords : []).forEach(function(k){
+      if (typeof k === 'string' && k) counts[k] = (counts[k] || 0) + 1;
+    });
+  });
+  return Object.keys(counts)
+    .map(function(name){ return { name: name, count: counts[name] }; })
+    .sort(function(a, b){ return b.count - a.count || a.name.localeCompare(b.name); });
+}
+
+exports.getProjectKeywords = onCall(
+  async (request) => {
+    const email = request.auth && request.auth.token && request.auth.token.email;
+    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const [cardsSnap, projectsSnap] = await Promise.all([
+      db.collectionGroup('cards').get(),
+      db.collection('projects').get()
+    ]);
+    return { keywords: keywordCounts(cardsSnap.docs.concat(projectsSnap.docs).map(function(d){ return d.data(); })) };
+  }
+);
+
 // ---------- Projects page: the project's Slack channel ----------
 // Registering a project names a Slack channel for it. Rules (see the register
 // form, which states them): a name that doesn't start with "proj-" gets the
 // prefix added; a channel that already exists is left alone; one that doesn't
 // is created and the submitter is invited. Needs the bot scopes
-// `channels:read` + `groups:read` (look it up) and `channels:manage` (create,
-// invite) — add them and Reinstall to Workspace. The submitter is the caller's
+// `channels:read` (look it up) and `channels:manage` (create, invite) — add
+// them and Reinstall to Workspace. The submitter is the caller's
 // own verified email → Slack id via the `people` roster, never a parameter.
 
 const PROJECT_CHANNEL_PREFIX = 'proj-';
@@ -1365,20 +1393,22 @@ function normalizeProjectChannel(input){
 }
 
 // Channel names → true, cached briefly (a form check per pause in typing
-// shouldn't page through the whole workspace each time). Public channels plus
-// any private ones the bot can see.
+// shouldn't page through the whole workspace each time). Public channels only:
+// listing private ones needs `groups:read`, which the app doesn't have; a private
+// channel with the same name shows up as `name_taken` on create instead, which
+// is treated as "exists".
 let channelNamesCache = null;
 async function slackChannelExists(token, name){
   if (!channelNamesCache || Date.now() - channelNamesCache.t > 30 * 1000){
     const names = new Set();
     let cursor = '';
     do {
-      const params = { types: 'public_channel,private_channel', exclude_archived: 'true', limit: '1000' };
+      const params = { types: 'public_channel', exclude_archived: 'true', limit: '1000' };
       if (cursor) params.cursor = cursor;
       const res = await fetch('https://slack.com/api/conversations.list?' + new URLSearchParams(params),
         { headers: { 'Authorization': 'Bearer ' + token } });
       const json = await res.json();
-      if (!json.ok) throw slackChannelError(json.error);
+      if (!json.ok) throw slackChannelError(json.error, json);
       (json.channels || []).forEach(function(c){ names.add(c.name); });
       cursor = (json.response_metadata && json.response_metadata.next_cursor) || '';
     } while (cursor);
@@ -1387,8 +1417,8 @@ async function slackChannelExists(token, name){
   return channelNamesCache.names.has(name);
 }
 
-function slackChannelError(code){
-  logger.warn('Slack channel call failed', { error: code });
+function slackChannelError(code, json){
+  logger.warn('Slack channel call failed', { error: code, needed: json && json.needed, provided: json && json.provided });
   return new HttpsError('failed-precondition', code === 'missing_scope'
     ? 'The Slack app can\u2019t manage channels yet \u2014 ask an admin to add its channel permissions.'
     : 'Slack said no (' + code + ').');
@@ -1432,7 +1462,7 @@ exports.projectChannel = onCall(
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
-  projectGroupForCard, allProjectsFromCards, normalizeProjectChannel,
+  projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,
