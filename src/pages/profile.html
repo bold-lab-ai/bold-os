@@ -1,0 +1,42 @@
+---
+title: "Profile | BOLD Lab"
+description: "Your BOLD Lab profile."
+sdk: ["functions"]
+css: "profile"
+scripts: ["pages/profile.js"]
+permalink: "profile.html"
+---
+<div class="hero">
+  <div class="profile-head">
+    <img class="profile-photo" id="profilePhoto" alt="" hidden>
+    <h1 id="profileName">Profile</h1>
+  </div>
+</div>
+
+<main>
+
+  <section class="block">
+    <div class="block-head">
+      <h2>Basic info</h2>
+    </div>
+    <dl class="facts">
+      <div class="fact"><dt>Name</dt><dd id="factName"></dd></div>
+      <div class="fact"><dt>Email</dt><dd id="factEmail"></dd></div>
+    </dl>
+    <dl class="facts facts--slack" id="slackFacts" hidden></dl>
+  </section>
+
+  <section class="block">
+    <div class="block-head">
+      <h2>Projects</h2>
+    </div>
+    <p class="proj-msg" id="projMsg">Loading&hellip;</p>
+    <div id="projects" hidden>
+      <div class="proj-group"><h3>Owner<span class="proj-count" id="cntOwner"></span></h3><ul class="proj-list" id="projOwner"></ul></div>
+      <div class="proj-group"><h3>Author<span class="proj-count" id="cntAuthor"></span></h3><ul class="proj-list" id="projAuthor"></ul></div>
+      <div class="proj-group"><h3>Reviewer<span class="proj-count" id="cntReviewer"></span></h3><ul class="proj-list" id="projReviewer"></ul></div>
+    </div>
+  </section>
+
+</main>
+

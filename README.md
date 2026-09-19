@@ -1,23 +1,35 @@
-# ML Conference Paper Cycle
+# BOLD OS
 
-BOLD Lab's tool suite for taking a paper from venue choice to conference presentation — an implementation of BOLDiquette § ML Conference Cycle.
+BOLD Lab's internal site — an operating system and research model for fundamental AI research. Today it hosts the ML Conference Paper Cycle tooling (an implementation of BOLDiquette § ML Conference Cycle), lab events, and profiles.
 
-**Live:** https://bold-lab-ai.github.io/bold-os/how-to-submit-a-paper.html
+**Live:** https://bold-lab-ai.github.io/bold-os/
 
-- `how-to-submit-a-paper.html` — the guide, and the homepage
-- `audit-board.html` — Internal Review Board (kanban tracker, Firebase-backed) — includes the Internal Review checklist on each card
-- `diff.html` — where this tooling diverges from BOLDiquette, and why
+## Layout
 
-Static HTML/CSS/JS, no build step, no framework. The masthead, sidebar nav, sign-in gate and auth live once, in `bold.js` + `bold.css`; each page is just its own content. `audit-board.html` talks to a Firebase backend (Firestore, Auth, Storage) for shared state and Sign-in-with-Slack; everything else is self-contained.
+```
+src/
+  pages/            one HTML file per page (front matter + body); ml-cycle/, events/, index, profile
+  _includes/        layouts/base.njk + partials/ — the shared chrome (head, masthead, gate, sidebar, footer)
+  _data/site.js     Firebase config, SDK version, repo URL, sidebar navigation
+  assets/css/       bold.css (design system + chrome) and pages/<page>.css
+  assets/js/        bold.js (auth, gating, sidebar), pages/<page>.js, audit-board/*.js
+functions/          Cloud Functions (Slack notifications, App Home, profile/project lookups)
+firebase/           Firestore + Storage rules, Firestore indexes  (firebase.json / .firebaserc stay at the root)
+checklists/         instructions for authors'/reviewers' coding agents (linked by raw URL from the site — don't move)
+docs/               contributor docs, BOLDiquette diff, Firebase design + build log
+.github/workflows/  build + deploy to GitHub Pages
+```
 
-## Contributing
-
-Start with **[`docs/AGENTS.md`](docs/AGENTS.md)** — the real guide to this repo's conventions, constraints, and how the pieces fit together. `docs/FIREBASE.md` covers the backend specifically.
+Pages are built with [Eleventy](https://www.11ty.dev/) — layouts and partials in Nunjucks, page bodies plain HTML, no client-side framework. Add a nav link in `src/_data/site.js`; change the masthead, sidebar or footer once in `src/_includes/`.
 
 ## Running locally
 
 ```
-python3 -m http.server 8137
+npm install
+npm start          # http://localhost:8137, rebuilds on change
+npm run build      # one-off build into _site/
 ```
 
-Then open `how-to-submit-a-paper.html` (or `index.html`, which just redirects there). The guide and diff pages also work opened as plain `file://` pages; `audit-board.html` needs to be served (it talks to Firebase, and Slack sign-in needs a real `http(s)` origin).
+## Contributing
+
+Start with **[`docs/AGENTS.md`](docs/AGENTS.md)** — the conventions, constraints and how the pieces fit together. `docs/FIREBASE.md` covers the backend.

@@ -147,7 +147,7 @@ function verifySlackSignatureRaw(signingSecret, timestamp, rawBody, signatureHea
   return crypto.timingSafeEqual(a, b);
 }
 
-// Mirrors firestore.rules' cards/{cardId} reviewer-reassignment condition
+// Mirrors firebase/firestore.rules' cards/{cardId} reviewer-reassignment condition
 // exactly (see the "Reassigning reviewers is narrower" comment there):
 // only the card's own submitter (the paper's owner) or a PI/admin may
 // reassign reviewers. This check exists ONLY because the Cloud Function
@@ -696,7 +696,7 @@ async function allPeople(){
 // Sorts a query snapshot's docs by updatedAt descending and caps to
 // `limit` — done here in JS rather than via Firestore .orderBy() so the
 // four dashboard queries only need the single-field COLLECTION_GROUP
-// overrides already in firestore.indexes.json (an equality filter plus an
+// overrides already in firebase/firestore.indexes.json (an equality filter plus an
 // orderBy on a different field would need its own composite index).
 function topRecent(snap, limit){
   return snap.docs
@@ -720,7 +720,7 @@ async function boardLabelsFor(boardIds){
 }
 
 // The four collection-group queries behind the dashboard's four buckets
-// (see firestore.indexes.json's fieldOverrides) — submitted, reviewing as
+// (see firebase/firestore.indexes.json's fieldOverrides) — submitted, reviewing as
 // junior/senior, and authoring (via the denormalized authorEmails, see
 // audit-board.html's authorEmailsOf). Capped to the 10 most recently
 // updated per bucket (topRecent) before boardLabelsFor/toItems ever run,
@@ -1202,16 +1202,16 @@ exports.getMyProfile = onCall(
 // it), Author (in `authors`, via the denormalized authorEmails) and
 // Reviewer (assigned junior or senior). Same four collection-group queries
 // as the Slack App Home (gatherDashboard) — run here with the Admin SDK
-// because firestore.rules has no collection-group rule for `cards`. A
+// because firebase/firestore.rules has no collection-group rule for `cards`. A
 // paper can appear under more than one heading. Keyed by the caller's own
 // verified sign-in email, never a request parameter.
 const PROFILE_PROJECTS_CAP = 50;
 
-// The board's own card-detail badges (audit-board-detail.js), minus
+// The board's own card-detail badges (audit-board/detail.js), minus
 // "overdue" — that one depends on the venue's deadlines and Rush-mode
-// cutoffs (audit-board-schedule.js), so it isn't ported. Hand-kept in sync
-// with audit-board-core.js (STATUS_LABELS, OUTCOME_LABELS) and
-// audit-board-board.js (reviewFilterState, reviewStateBadgeHtml,
+// cutoffs (audit-board/schedule.js), so it isn't ported. Hand-kept in sync
+// with audit-board/core.js (STATUS_LABELS, OUTCOME_LABELS) and
+// audit-board/board.js (reviewFilterState, reviewStateBadgeHtml,
 // rebuttalBadgeHtml). Each badge is { kind, label }; `kind` is the suffix
 // of the board's own `badge-<kind>` class.
 const BOARD_STAGE_LABEL = {

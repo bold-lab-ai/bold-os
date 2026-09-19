@@ -1,0 +1,32 @@
+---
+title: "Internal Review Board | BOLD Lab"
+description: "Tracker for papers going through Internal Review, one board per venue and year."
+sdk: ["firestore", "storage"]
+headExtra: "<!-- KaTeX, for rendering LaTeX pasted into a card's Abstract field.\n     docs/AGENTS.md-approved CDN exception, 2026-09-18, per Eduardo. Bump the\n     pinned version deliberately, not silently. -->\n<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.css\">\n<script src=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.js\"></script>"
+css: "audit-board"
+emulatorWarning: true
+scripts: ["audit-board/core.js", "audit-board/storage.js", "audit-board/venues.js", "audit-board/schedule.js", "audit-board/gates.js", "audit-board/board.js", "audit-board/detail.js", "audit-board/modals.js", "audit-board/handlers.js"]
+permalink: "audit-board.html"
+---
+<div class="backlink">
+  <a href="how-to-submit-a-paper.html">&larr; ML Conference Paper Cycle</a>
+</div>
+
+<div class="hero">
+  <h1>Internal Review Board</h1>
+  <p class="lede">One board per venue and year. Open a venue to register a paper, run it through Internal Review, and track it from draft to submitted.</p>
+  <p class="page-source">Extends <a href="https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp" target="_blank" rel="noopener">BOLDiquette &sect; ML Conference Cycle</a> &middot; current differences in <a href="diff.html">DIFF.md</a></p>
+</div>
+
+<div class="toolbar" id="toolbar">
+  <span class="toolbar-label">Venues</span>
+  <div class="toolbar-spacer"></div>
+  <button class="btn btn-primary" id="newBoardToggle" type="button">+ New venue</button>
+</div>
+
+<div class="toast" id="toastRegion"></div>
+
+<div id="venuesRegion"></div>
+<div id="boardRegion"></div>
+<div id="modalRegion"></div>
+

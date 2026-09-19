@@ -9,6 +9,10 @@ pglite-debug.log
 _test_*.html
 _test_*.js
 
+# Build output and dependencies
+_site/
+node_modules/
+
 # OS cruft
 .DS_Store
 

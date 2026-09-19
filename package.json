@@ -1,0 +1,15 @@
+{
+  "name": "bold-os",
+  "version": "1.0.0",
+  "description": "BOLD Lab's tool suite for taking a paper from venue choice to conference presentation \u2014 an implementation of BOLDiquette \u00a7 ML Conference Cycle.",
+  "scripts": {
+    "build": "eleventy",
+    "start": "eleventy --serve --port=8137"
+  },
+  "keywords": [],
+  "devDependencies": {
+    "@11ty/eleventy": "^3.1.6"
+  },
+  "private": true,
+  "type": "module"
+}

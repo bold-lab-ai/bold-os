@@ -1,0 +1,91 @@
+---
+title: "Propose a Workshop | BOLD Lab"
+description: "Propose a workshop, project pitch, or talk for BOLD Collaboration Week (5–10 October 2026)."
+sdk: ["firestore"]
+css: "event-collaboration-week-propose"
+nav: "event-collaboration-week.html"
+scripts: ["pages/event-collaboration-week-propose.js"]
+permalink: "event-collaboration-week-propose.html"
+---
+<div class="hero">
+  <a class="back-link" href="event-collaboration-week.html">&larr; BOLD Collaboration Week</a>
+  <h1 id="heroTitle">Propose a Workshop</h1>
+  <p class="hero-note" id="heroNote">A workshop, project pitch, or talk for BOLD Collaboration Week (5&ndash;10 Oct 2026). See what's already been proposed on the <a href="event-collaboration-week.html#proposals">Proposals tab</a>.</p>
+</div>
+
+<main>
+  <div id="proposeSignedOut">
+    <p>Sign in with Slack to propose a workshop, project pitch, or talk.</p>
+    <button class="auth-signin" type="button" id="signInBtn">Sign in with Slack</button>
+  </div>
+
+  <div id="proposeSignedIn" hidden>
+    <div class="auth-user">
+      <span class="auth-user-name" id="whoAmI"></span>
+      <button class="btn-text" type="button" id="signOutBtn">Sign out</button>
+    </div>
+
+    <div id="proposalForm">
+      <div class="field">
+        <label for="pfType">Contribution type</label>
+        <select id="pfType">
+          <option>Workshop</option>
+          <option>Project pitch</option>
+          <option>Research presentation</option>
+          <option>Other talk</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="pfTitle">Title (if known)</label>
+        <input type="text" id="pfTitle" placeholder="e.g. Can Bayesian Optimization Efficiently Find a Strong Single Expert in Neural Thickets?">
+      </div>
+      <div class="field">
+        <label for="pfDuration">Ideal duration</label>
+        <input type="text" id="pfDuration" placeholder="e.g. 10 min talk, or workshop-length">
+      </div>
+      <div class="field">
+        <label for="pfTiming">Timing constraints</label>
+        <input type="text" id="pfTiming" placeholder="When can you not do this? (optional)">
+      </div>
+      <div class="field">
+        <label for="pfPillar">Closest BOLD pillar</label>
+        <select id="pfPillar">
+          <option value="">Choose one&hellip;</option>
+          <option>Beyond Backprop</option>
+          <option>Human-Centric Learning and Discovery</option>
+          <option>Embodied Learning</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="pfCoOrg">Looking for co-organisers?</label>
+        <select id="pfCoOrg">
+          <option value="">&mdash;</option>
+          <option value="yes">Yes</option>
+          <option value="no">No</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="pfJoin">Interested in joining forces with someone else's idea? Add their name</label>
+        <input type="text" id="pfJoin" placeholder="Optional">
+      </div>
+      <div class="field">
+        <label for="pfNote">Note</label>
+        <textarea id="pfNote" placeholder="Anything else the group should know (optional)"></textarea>
+      </div>
+      <div class="field-error" id="proposalError" hidden></div>
+      <button class="btn btn-primary" type="button" id="submitProposalBtn">Submit proposal</button>
+    </div>
+
+    <div class="success-box" id="proposalSuccess" hidden>
+      <p id="successMsg">Thanks &mdash; your proposal is in.</p>
+      <div class="links">
+        <a href="event-collaboration-week.html#proposals">See all proposals &rarr;</a>
+        <a id="editLink" href="#">Edit this proposal</a>
+        <button class="btn-text" type="button" id="proposeAnotherBtn">Propose another</button>
+        <button class="btn-text" type="button" id="keepEditingBtn" hidden>Keep editing</button>
+      </div>
+    </div>
+  </div>
+</main>
+

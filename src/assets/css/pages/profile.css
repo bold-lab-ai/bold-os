@@ -1,0 +1,62 @@
+:root{
+  --success-text:#256b60;
+  --danger-text:#b42318;
+  --warn-text:#8a5a12;
+  --neutral-text:#4b5563;
+}
+/* ---------- hero ---------- */
+.hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
+.hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
+.hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
+.hero-actions{display:flex; flex-wrap:wrap; gap:24px; margin-top:10px; font-family:var(--sans); font-size:15px;}
+/* ---------- article ---------- */
+main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
+.btn{
+  display:inline-block; font-family:var(--sans); font-size:15px; font-weight:500;
+  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
+  padding:0; border:none;
+}
+.btn:hover{text-decoration-color:currentColor;}
+.btn-primary{color:var(--accent); font-weight:600;}
+.btn-secondary{color:var(--ink-soft);}
+/* Hierarchy on this page, outermost first: section (larger h2 + hairline,
+   wide gap) > group (small caps label + count) > row (faint hairline). */
+section.block{max-width:var(--article-max); margin:80px 0 0;}
+section.block:first-of-type{margin-top:28px;}
+.block-head{padding-bottom:10px; border-bottom:1px solid var(--line);}
+.block h2{font-family:var(--serif); font-size:28px; line-height:1.2; letter-spacing:-0.005em; color:var(--ink); font-weight:700;}
+/* ---------- profile ---------- */
+.profile-head{display:flex; align-items:center; gap:20px;}
+.profile-photo{width:72px; height:72px; border-radius:50%; object-fit:cover; flex:none; background:var(--wash);}
+.profile-photo[hidden]{display:none;}
+.facts{margin:0;}
+.facts--slack{margin-top:0;}
+.facts--slack[hidden]{display:none;}
+.fact{display:flex; gap:24px; padding:3px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+.fact dt{flex:0 0 150px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); padding-top:5px;}
+.fact dd{margin:0; font-size:17px; color:var(--ink); overflow-wrap:anywhere;}
+.proj-group{margin-top:34px;}
+.proj-group:first-child{margin-top:22px;}
+.proj-group h3{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-soft); margin:0 0 2px;}
+.proj-count{margin-left:6px; font-weight:400; color:var(--muted);}
+.proj-list{list-style:none; margin:0; padding:0;}
+.proj-list li{padding:12px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+.proj-title{font-size:18px; font-weight:500;}
+.proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+/* Same badges as the board's card page (audit-board.css .detail .badge):
+   outlined, small caps, colour by meaning. */
+.proj-badges{display:flex; flex-wrap:wrap; gap:6px 8px; margin-top:8px;}
+.badge{
+  font-family:var(--sans); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em;
+  border:1px solid currentColor; padding:2px 7px; color:var(--neutral-text);
+}
+.badge-stage{color:var(--accent);}
+.badge-review-approved, .badge-rebuttal-sent, .badge-outcome-accepted{color:var(--success-text);}
+.badge-review-changes_requested, .badge-outcome-rejected{color:var(--danger-text);}
+.badge-review-in_review, .badge-rebuttal-writing{color:var(--warn-text);}
+.badge-rebuttal-waiting, .badge-outcome-withdrawn{color:var(--neutral-text);}
+.proj-empty{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
+.proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
+@media (max-width:820px){
+  .hero{padding:44px var(--gutter) 8px;}
+}
