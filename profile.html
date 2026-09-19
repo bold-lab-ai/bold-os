@@ -13,7 +13,6 @@
 <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-functions-compat.js"></script>
 <style>
   /* Minimal editorial design system, shared across bold-lab.ai — one accent
@@ -95,34 +94,33 @@
   .btn-primary{color:var(--accent); font-weight:600;}
   .btn-secondary{color:var(--ink-soft);}
 
-  section.block{max-width:var(--article-max); margin:64px 0 0;}
-  section.block:first-of-type{margin-top:12px;}
-  .block-head{margin-bottom:6px;}
-  .block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+  /* Hierarchy on this page, outermost first: section (larger h2 + hairline,
+     wide gap) > group (small caps label + count) > row (faint hairline). */
+  section.block{max-width:var(--article-max); margin:80px 0 0;}
+  section.block:first-of-type{margin-top:28px;}
+  .block-head{padding-bottom:10px; border-bottom:1px solid var(--line);}
+  .block h2{font-family:var(--serif); font-size:28px; line-height:1.2; letter-spacing:-0.005em; color:var(--ink); font-weight:700;}
 
   /* ---------- profile ---------- */
   .profile-head{display:flex; align-items:center; gap:20px;}
   .profile-photo{width:72px; height:72px; border-radius:50%; object-fit:cover; flex:none; background:var(--wash);}
   .profile-photo[hidden]{display:none;}
-  .facts{margin:18px 0 0; border-top:1px solid var(--line);}
-  .facts--slack{border-top:none; margin-top:0;}
+  .facts{margin:0;}
+  .facts--slack{margin-top:0;}
   .facts--slack[hidden]{display:none;}
-  .fact{display:flex; gap:24px; padding:14px 0; border-bottom:1px solid var(--line);}
-  .fact dt{flex:0 0 96px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); padding-top:5px;}
+  .fact{display:flex; gap:24px; padding:3px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+  .fact dt{flex:0 0 150px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); padding-top:5px;}
   .fact dd{margin:0; font-size:17px; color:var(--ink); overflow-wrap:anywhere;}
-  .or-actions{margin-top:18px; font-family:var(--sans); font-size:15px; display:flex; flex-wrap:wrap; gap:8px 24px; align-items:center;}
-  .or-linked{margin:18px 0 0; font-size:17px; overflow-wrap:anywhere;}
-  .or-form[hidden], .or-linked[hidden], .or-actions[hidden]{display:none;}
-  .or-form{margin-top:18px; font-family:var(--sans);}
-  .or-form label{display:block; font-size:13px; color:var(--muted); margin-bottom:6px;}
-  .or-form input{
-    width:100%; max-width:420px; font-family:var(--sans); font-size:15px; color:var(--ink);
-    background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:9px 12px;
-  }
-  .or-form input:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
-  .or-form-row{display:flex; gap:24px; align-items:center; margin-top:12px;}
-  .or-msg{margin:10px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
-  .or-msg.is-error{color:#a3362b;}
+  .proj-group{margin-top:34px;}
+  .proj-group:first-child{margin-top:22px;}
+  .proj-group h3{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-soft); margin:0 0 2px;}
+  .proj-count{margin-left:6px; font-weight:400; color:var(--muted);}
+  .proj-list{list-style:none; margin:0; padding:0;}
+  .proj-list li{padding:12px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+  .proj-title{font-size:18px; font-weight:500;}
+  .proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+  .proj-empty{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
+  .proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
 
   footer{
     max-width:var(--content-max); margin:0 auto; padding:40px var(--gutter) 64px;
@@ -367,22 +365,14 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
 
   <section class="block">
     <div class="block-head">
-      <h2>OpenReview</h2>
+      <h2>Projects</h2>
     </div>
-    <p class="or-linked" id="orLinked" hidden></p>
-    <div class="or-actions" id="orActions">
-      <button class="btn btn-primary" type="button" id="orLinkBtn">Link to OpenReview</button>
-      <button class="btn-text" type="button" id="orUnlinkBtn" hidden>Unlink</button>
+    <p class="proj-msg" id="projMsg">Loading&hellip;</p>
+    <div id="projects" hidden>
+      <div class="proj-group"><h3>Owner<span class="proj-count" id="cntOwner"></span></h3><ul class="proj-list" id="projOwner"></ul></div>
+      <div class="proj-group"><h3>Author<span class="proj-count" id="cntAuthor"></span></h3><ul class="proj-list" id="projAuthor"></ul></div>
+      <div class="proj-group"><h3>Reviewer<span class="proj-count" id="cntReviewer"></span></h3><ul class="proj-list" id="projReviewer"></ul></div>
     </div>
-    <form class="or-form" id="orForm" hidden>
-      <label for="orInput">OpenReview profile URL or ID</label>
-      <input id="orInput" type="text" autocomplete="off" spellcheck="false" placeholder="https://openreview.net/profile?id=~Your_Name1">
-      <div class="or-form-row">
-        <button class="btn btn-primary" type="submit" id="orSaveBtn">Save</button>
-        <button class="btn-text" type="button" id="orCancelBtn">Cancel</button>
-      </div>
-    </form>
-    <p class="or-msg" id="orMsg" role="status" hidden></p>
   </section>
 
 </main>
@@ -454,7 +444,6 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
     measurementId: 'G-527H8R28KB'
   };
   var AUTH_USE_EMULATOR = false;
-  var FIRESTORE_USE_EMULATOR = false;
 
   var gate = document.getElementById('pageGate');
   var content = document.getElementById('pageContent');
@@ -547,142 +536,137 @@ try { if (localStorage.getItem('boldNavCollapsed') === '1') document.getElementB
   });
 
   /* ---------- profile ---------- */
-  var db = null;
-  try {
-    db = firebase.firestore();
-    if (FIRESTORE_USE_EMULATOR) db.useEmulator('localhost', 8080);
-  } catch (e) { db = null; }
-
   var el = function(id){ return document.getElementById(id); };
-  var orLinked = el('orLinked'), orActions = el('orActions'), orLinkBtn = el('orLinkBtn'),
-      orUnlinkBtn = el('orUnlinkBtn'), orForm = el('orForm'), orInput = el('orInput'),
-      orCancelBtn = el('orCancelBtn'), orSaveBtn = el('orSaveBtn'), orMsg = el('orMsg');
-  var profileRef = null;
-  var linkedId = '';
 
-  function setMsg(text, isError){
-    orMsg.hidden = !text;
-    orMsg.textContent = text || '';
-    orMsg.classList.toggle('is-error', !!isError);
+  // Cloud Function results are cached per person in localStorage: shown at
+  // once on open, refetched only once older than CACHE_TTL_MS (and cleared
+  // on sign-out). If a refetch fails, the cached copy stays on screen.
+  var CACHE_TTL_MS = 15 * 60 * 1000;
+  var CACHE_PREFIX = 'boldProfile:';
+
+  function cacheGet(key){
+    try { return JSON.parse(localStorage.getItem(CACHE_PREFIX + key) || 'null'); } catch (e) { return null; }
+  }
+  function cachePut(key, data){
+    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), d: data })); } catch (e){}
+  }
+  function cacheClearKey(key){
+    try { localStorage.removeItem(CACHE_PREFIX + key); } catch (e){}
+  }
+  function showPhoto(url){
+    var photo = el('profilePhoto');
+    if (url) { if (photo.getAttribute('src') !== url) photo.src = url; photo.hidden = false; } else { photo.hidden = true; }
+  }
+  function cacheClear(){
+    try {
+      Object.keys(localStorage).forEach(function(k){ if (k.indexOf(CACHE_PREFIX) === 0) localStorage.removeItem(k); });
+    } catch (e){}
   }
 
-  // Accepts a bare ~Profile_Id1 or an openreview.net profile URL; returns
-  // the ~id, or '' if the input is neither.
-  function parseOpenReviewId(raw){
-    var v = String(raw || '').trim();
-    if (!v) return '';
-    if (/^https?:\/\//i.test(v)) {
-      try {
-        var u = new URL(v);
-        if (!/(^|\.)openreview\.net$/i.test(u.hostname)) return '';
-        v = u.searchParams.get('id') || '';
-      } catch (e) { return ''; }
-    }
-    return /^~[^\s\/?#&=]+$/.test(v) ? v : '';
-  }
-
-  function renderLinked(){
-    if (linkedId) {
-      var url = 'https://openreview.net/profile?id=' + encodeURIComponent(linkedId);
-      orLinked.innerHTML = '<a href="' + escapeHtml(url) + '" target="_blank" rel="noopener">' + escapeHtml(linkedId) + '</a>';
-      orLinked.hidden = false;
-      orLinkBtn.textContent = 'Change';
-      orUnlinkBtn.hidden = false;
-    } else {
-      orLinked.hidden = true;
-      orLinkBtn.textContent = 'Link to OpenReview';
-      orUnlinkBtn.hidden = true;
-    }
-  }
-
-  function showForm(on){
-    orForm.hidden = !on;
-    orActions.hidden = on;
-    setMsg('');
-    if (on) { orInput.value = linkedId; orInput.focus(); }
+  // Renders from cache if any, then calls the function only if there's no
+  // fresh cache. onError only fires when there was nothing cached to show.
+  function loadCached(fn, email, render, onError){
+    var key = fn + ':' + email.toLowerCase();
+    var hit = cacheGet(key);
+    if (hit) render(hit.d);
+    var age = hit ? Math.round((Date.now() - hit.t) / 1000) : null;
+    if (hit && Date.now() - hit.t < CACHE_TTL_MS) { console.info('[BOLD Lab] ' + fn + ': cache hit (' + age + 's old), no call'); return; }
+    var call;
+    try { call = firebase.app().functions('europe-west2').httpsCallable(fn); }
+    catch (e) { if (!hit) onError(e); return; }
+    var t0 = performance.now();
+    call().then(function(res){
+      var data = res.data || {};
+      console.info('[BOLD Lab] ' + fn + ': fetched in ' + Math.round(performance.now() - t0) + 'ms (' + (hit ? 'stale cache shown ' + age + 's old' : 'no cache') + ')');
+      cachePut(key, data);
+      render(data);
+    }).catch(function(err){
+      console.error('[BOLD Lab] ' + fn + ' failed', err);
+      if (!hit) onError(err);
+    });
   }
 
   // Institution, role, supervisor, research interests, start date, ... —
-  // the caller's own Slack custom profile fields, via the getMyProfile
-  // Cloud Function. Silent on failure: the page is complete without them.
-  function loadSlackFacts(){
+  // the caller's own Slack custom profile fields (getMyProfile). Silent on
+  // failure: the page is complete without them.
+  function renderSlackFacts(data){
     var box = el('slackFacts');
-    var call;
-    try { call = firebase.app().functions('europe-west2').httpsCallable('getMyProfile'); }
-    catch (e) { return; }
-    call().then(function(res){
-      var fields = (res.data && res.data.fields) || [];
-      box.innerHTML = '';
-      fields.forEach(function(f){
-        var row = document.createElement('div'); row.className = 'fact';
-        var dt = document.createElement('dt'); dt.textContent = f.label;
-        var dd = document.createElement('dd'); dd.textContent = f.value;
-        row.appendChild(dt); row.appendChild(dd); box.appendChild(row);
-      });
-      box.hidden = !fields.length;
-    }).catch(function(err){
-      console.error('[BOLD Lab] could not load Slack profile fields', err);
+    var fields = data.fields || [];
+    box.innerHTML = '';
+    fields.forEach(function(f){
+      var row = document.createElement('div'); row.className = 'fact';
+      var dt = document.createElement('dt'); dt.textContent = f.label;
+      var dd = document.createElement('dd'); dd.textContent = f.value;
+      row.appendChild(dt); row.appendChild(dd); box.appendChild(row);
     });
+    box.hidden = !fields.length;
+  }
+
+  function renderIdentity(name, email){
+    el('profileName').textContent = name || email || 'Profile';
+    el('factName').textContent = name || '\u2014';
+    el('factEmail').textContent = email || '\u2014';
   }
 
   function renderProfile(user){
-    if (!user) { profileRef = null; linkedId = ''; el('slackFacts').hidden = true; showForm(false); renderLinked(); return; }
-    var name = user.displayName || '';
-    el('profileName').textContent = name || user.email || 'Profile';
-    el('factName').textContent = name || '\u2014';
-    el('factEmail').textContent = user.email || '\u2014';
-    var photo = el('profilePhoto');
-    if (user.photoURL) { photo.src = user.photoURL; photo.hidden = false; } else { photo.hidden = true; }
+    if (!user) { cacheClear(); el('slackFacts').hidden = true; return; }
+    renderIdentity(user.displayName || '', user.email);
+    showPhoto(user.photoURL);
+    if (user.photoURL) cachePut('photo', user.photoURL); else cacheClearKey('photo');
 
-    loadSlackFacts();
-
-    if (!db || !user.email) return;
-    // Keyed by lower-cased email, same as the people roster — what
-    // firestore.rules' profiles/{email} rule matches against.
-    profileRef = db.collection('profiles').doc(user.email.toLowerCase());
-    profileRef.get().then(function(snap){
-      linkedId = (snap.exists && snap.data().openreview) || '';
-      renderLinked();
-    }).catch(function(err){
-      console.error('[BOLD Lab] could not load profile', err);
-      setMsg('Could not load your OpenReview link.', true);
+    if (!user.email) return;
+    loadCached('getMyProfile', user.email, renderSlackFacts, function(){});
+    loadCached('getMyProjects', user.email, renderProjects, function(){
+      el('projMsg').textContent = 'Could not load projects.';
     });
   }
 
-  orLinkBtn.addEventListener('click', function(){ showForm(true); });
-  orCancelBtn.addEventListener('click', function(){ showForm(false); });
-
-  function saveOpenReview(id){
-    if (!profileRef) return Promise.reject(new Error('not signed in'));
-    return profileRef.set({
-      openreview: id,
-      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-    }).then(function(){ linkedId = id; renderLinked(); });
+  function renderProject(p){
+    var li = document.createElement('li');
+    var a = document.createElement('a');
+    a.className = 'proj-title';
+    a.href = 'audit-board.html#board=' + encodeURIComponent(p.boardId) + '&card=' + encodeURIComponent(p.cardId);
+    a.textContent = p.title;
+    var meta = document.createElement('span');
+    meta.className = 'proj-meta';
+    meta.textContent = [p.boardLabel, p.status, p.role && p.role + ' reviewer'].filter(Boolean).join(' · ');
+    li.appendChild(a); li.appendChild(meta);
+    return li;
   }
 
-  orForm.addEventListener('submit', function(e){
-    e.preventDefault();
-    var id = parseOpenReviewId(orInput.value);
-    if (!id) {
-      setMsg('Paste your OpenReview profile URL or ID (starts with ~).', true);
-      return;
+  // The caller's papers on the Internal Review Board, by relationship
+  // (getMyProjects).
+  function renderProjects(data){
+    [['projOwner', data.owner, 'cntOwner'], ['projAuthor', data.author, 'cntAuthor'], ['projReviewer', data.reviewer, 'cntReviewer']].forEach(function(g){
+      var ul = el(g[0]); ul.innerHTML = '';
+      var items = g[1] || [];
+      el(g[2]).textContent = items.length || '';
+      if (!items.length) {
+        var li = document.createElement('li');
+        li.innerHTML = '<p class="proj-empty">None</p>';
+        ul.appendChild(li);
+      }
+      items.forEach(function(p){ ul.appendChild(renderProject(p)); });
+    });
+    el('projMsg').hidden = true;
+    el('projects').hidden = false;
+  }
+  // First paint from the last visit's sign-in hint (same one the masthead
+  // uses) plus any cached sections — before Firebase has loaded or signed
+  // in. Cache only, no network; renderProfile() above takes over once auth
+  // resolves.
+  try {
+    var hint = JSON.parse(localStorage.getItem('boldAuthHint') || 'null');
+    if (hint && hint.e) {
+      renderIdentity(hint.n || '', hint.e);
+      var ph = cacheGet('photo');
+      if (ph && ph.d) showPhoto(ph.d);
+      [['getMyProfile', renderSlackFacts], ['getMyProjects', renderProjects]].forEach(function(p){
+        var hit = cacheGet(p[0] + ':' + hint.e.toLowerCase());
+        if (hit) p[1](hit.d);
+      });
     }
-    orSaveBtn.disabled = true;
-    saveOpenReview(id).then(function(){
-      showForm(false);
-    }).catch(function(err){
-      console.error('[BOLD Lab] could not save OpenReview link', err);
-      setMsg('Could not save \u2014 try again.', true);
-    }).then(function(){ orSaveBtn.disabled = false; });
-  });
-
-  orUnlinkBtn.addEventListener('click', function(){
-    if (!profileRef) return;
-    profileRef.delete().then(function(){ linkedId = ''; renderLinked(); }).catch(function(err){
-      console.error('[BOLD Lab] could not unlink OpenReview', err);
-      setMsg('Could not unlink \u2014 try again.', true);
-    });
-  });
+  } catch (e){}
 })();
 </script>
 

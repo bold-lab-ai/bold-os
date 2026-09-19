@@ -725,14 +725,15 @@ async function boardLabelsFor(boardIds){
 // audit-board.html's authorEmailsOf). Capped to the 10 most recently
 // updated per bucket (topRecent) before boardLabelsFor/toItems ever run,
 // so a prolific person's history doesn't blow out the Block Kit view.
-async function gatherDashboard(email){
+async function gatherDashboard(email, cap){
+  const limit = cap || 10;
   const [registeredSnap, juniorSnap, seniorSnap, authoringSnap] = await Promise.all([
     db.collectionGroup('cards').where('submittedBy.email', '==', email).get(),
     db.collectionGroup('cards').where('reviewers.junior', '==', email).get(),
     db.collectionGroup('cards').where('reviewers.senior', '==', email).get(),
     db.collectionGroup('cards').where('authorEmails', 'array-contains', email).get()
   ]);
-  const capped = [registeredSnap, juniorSnap, seniorSnap, authoringSnap].map(function(s){ return topRecent(s, 10); });
+  const capped = [registeredSnap, juniorSnap, seniorSnap, authoringSnap].map(function(s){ return topRecent(s, limit); });
   const allDocs = capped.reduce(function(a, b){ return a.concat(b); }, []);
   const labels = await boardLabelsFor(allDocs.map(function(d){ return d.ref.parent.parent.id; }));
 
@@ -1195,6 +1196,47 @@ exports.getMyProfile = onCall(
   }
 );
 
+// ---------- Profile page: the caller's projects ----------
+// profile.html's Projects section — the caller's papers on the Internal
+// Review Board, split by relationship: Owner (submittedBy, i.e. registered
+// it), Author (in `authors`, via the denormalized authorEmails) and
+// Reviewer (assigned junior or senior). Same four collection-group queries
+// as the Slack App Home (gatherDashboard) — run here with the Admin SDK
+// because firestore.rules has no collection-group rule for `cards`. A
+// paper can appear under more than one heading. Keyed by the caller's own
+// verified sign-in email, never a request parameter.
+const PROFILE_PROJECTS_CAP = 50;
+
+// Pure: gatherDashboard()'s sections → the profile page's three lists.
+function projectsFromDashboard(sections){
+  const item = function(i, role){
+    const label = i.status === 'paper' ? 'Paper' : (STATUS_LABEL[i.status] || i.status || '');
+    const out = { boardId: i.boardId, boardLabel: i.boardLabel, cardId: i.cardId, title: i.title, status: label };
+    if (role) out.role = role;
+    return out;
+  };
+  const reviewer = [];
+  const seen = {};
+  sections.reviewingJunior.forEach(function(i){ seen[i.cardId] = reviewer.push(item(i, 'Junior')) - 1; });
+  sections.reviewingSenior.forEach(function(i){
+    if (i.cardId in seen) reviewer[seen[i.cardId]].role = 'Junior & Senior';
+    else reviewer.push(item(i, 'Senior'));
+  });
+  return {
+    owner: sections.registered.map(function(i){ return item(i); }),
+    author: sections.authoring.map(function(i){ return item(i); }),
+    reviewer: reviewer
+  };
+}
+
+exports.getMyProjects = onCall(
+  async (request) => {
+    const email = request.auth && request.auth.token && request.auth.token.email;
+    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    return projectsFromDashboard(await gatherDashboard(email, PROFILE_PROJECTS_CAP));
+  }
+);
+
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
@@ -1202,5 +1244,6 @@ exports._internal = {
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
-  reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack
+  reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
+  projectsFromDashboard
 };
