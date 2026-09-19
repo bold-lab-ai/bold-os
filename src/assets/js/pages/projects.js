@@ -111,14 +111,51 @@
       main.appendChild(row);
     }
     li.appendChild(main);
-    // Placeholder: will add the user to the project's Slack channel and ask
-    // them to introduce themselves. No handler yet.
+    // Adds the signed-in user to the project's Slack channel (joinProjectChannel).
     var join = document.createElement('button');
     join.type = 'button';
     join.className = 'join-btn';
     join.textContent = 'Join the project';
-    li.appendChild(join);
+    var wrap = document.createElement('div');
+    wrap.className = 'join-wrap';
+    wrap.appendChild(join);
+    if (!p.slackChannel) {
+      join.disabled = true;
+      join.title = 'This project has no Slack channel yet';
+    } else {
+      var msg = document.createElement('span');
+      msg.className = 'join-msg';
+      msg.setAttribute('role', 'status');
+      join.addEventListener('click', function(){ joinChannel(p, join, msg); });
+      wrap.appendChild(msg);
+    }
+    li.appendChild(wrap);
     return li;
+  }
+
+  function joinChannel(p, btn, msg){
+    btn.disabled = true;
+    btn.textContent = 'Joining…';
+    msg.textContent = '';
+    var call;
+    try { call = firebase.app().functions('europe-west2').httpsCallable('joinProjectChannel')({ channel: p.slackChannel }); }
+    catch (e) { call = Promise.reject(e); }
+    call.then(function(res){
+      var d = res.data || {};
+      btn.textContent = d.status === 'already' ? 'Already in the channel' : 'Joined';
+      msg.textContent = '';
+      if (d.url) {
+        var a = document.createElement('a');
+        a.href = d.url; a.target = '_blank'; a.rel = 'noopener';
+        a.textContent = 'Open in Slack';
+        msg.appendChild(a);
+      }
+    }).catch(function(err){
+      console.error('[BOLD Lab] joinProjectChannel failed', err);
+      btn.disabled = false;
+      btn.textContent = 'Join the project';
+      msg.textContent = (err && err.message) || 'Couldn’t join the channel.';
+    });
   }
 
   /* ---------- search and filters ---------- */

@@ -1542,6 +1542,51 @@ exports.projectChannel = onCall(
   }
 );
 
+// The "Join the project" button: invites the caller (their own verified email →
+// Slack id via the `people` roster, never a parameter) to a project's channel.
+// Only channels named by a registered project can be joined, so this can't be
+// used to get into any other proj- channel. Needs the bot scope
+// `channels:manage` + `groups:write` (invite), as projectChannel does; the bot
+// must be a member of a private channel to invite into it (channels it created
+// are). Returns { status: 'joined' | 'already', url }.
+async function isRegisteredProjectChannel(name){
+  const tag = '#' + name;
+  const [cardsSnap, projectsSnap] = await Promise.all([db.collectionGroup('cards').get(), db.collection('projects').get()]);
+  return cardsSnap.docs.concat(projectsSnap.docs).some(function(d){
+    const c = d.data().slackChannel;
+    return typeof c === 'string' && c.toLowerCase() === tag;
+  });
+}
+
+exports.joinProjectChannel = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = request.auth && request.auth.token && request.auth.token.email;
+    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const n = normalizeProjectChannel((request.data || {}).channel);
+    if (n.error) throw new HttpsError('invalid-argument', n.error);
+    if (!(await isRegisteredProjectChannel(n.name))) throw new HttpsError('not-found', 'No project uses that Slack channel.');
+    const slackId = await slackIdForEmail(email);
+    if (!slackId) throw new HttpsError('failed-precondition', 'Your Slack account isn’t linked to this site yet.');
+    const token = SLACK_BOT_TOKEN.value();
+    const channelId = await slackChannelId(token, n.name);
+    if (!channelId){
+      const auth = await slackAuthInfo(token);
+      throw new HttpsError('failed-precondition', 'The bot can’t see #' + n.name + (auth && auth.bot ? ' — invite @' + auth.bot + ' to it first.' : '.'));
+    }
+    let res = await slackFetch(token, 'conversations.invite', { channel: channelId, users: slackId });
+    if (!res.ok && res.error === 'not_in_channel'){
+      // A public channel the bot isn't in yet: join it (channels:join), then retry once.
+      await slackFetch(token, 'conversations.join', { channel: channelId });
+      res = await slackFetch(token, 'conversations.invite', { channel: channelId, users: slackId });
+    }
+    const url = await slackChannelUrl(token, channelId);
+    if (res.ok) return { status: 'joined', url };
+    if (res.error === 'already_in_channel') return { status: 'already', url };
+    throw slackChannelError(res.error, res);
+  }
+);
+
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
