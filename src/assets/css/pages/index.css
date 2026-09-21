@@ -60,7 +60,13 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 }
 .home-hero h1.hero-clickable{cursor:pointer;}
 .home-hero h1.hero-clickable:focus-visible{outline:2px solid var(--accent); outline-offset:6px;}
-.shell-main{flex:1 1 auto; min-width:0; display:flex; align-items:center; justify-content:center;}
+/* The hero is pinned to the viewport centre rather than centred in whatever
+   space the sidebar/masthead leave, so "BOLD.OS" stays put while they open
+   and close. Sidebar and masthead sit above it (z-index) so they win any
+   overlap and stay clickable. */
+.shell-main{position:fixed; inset:0; z-index:0; display:flex; align-items:center; justify-content:center;}
+.shell .sidebar, .masthead{position:relative; z-index:1;}
+@media (max-width:820px){ .shell .sidebar{position:fixed; z-index:200;} }
 /* ---------- signed-out signup nudge (reuses the sign-in gate's own styling
    from the other pages, since the homepage doesn't hard-gate its content —
    only the sidebar hides for a signed-out visitor) ---------- */
