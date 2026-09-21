@@ -33,9 +33,30 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
    the hero off-centre and shifting it when the sidebar mounts. Also drops
    the border width — a border-box can't be narrower than its border. */
 .shell.chrome-collapsed .sidebar, .shell.chrome-collapsed.is-collapsed .sidebar{flex-basis:0; width:0; border-right-width:0; overflow:hidden;}
+/* Smooth open/close. The sidebar and masthead share one duration + easing so
+   the hero re-centres in step with both. The masthead's transition lives on
+   the base rule, not on .chrome-collapsed: a transition only applies from the
+   state being entered, so declaring it on the collapsed class animated
+   closing but made opening snap. max-height (not height) because height can't
+   interpolate to auto; 160px clears the wrapped mobile masthead. */
+:root{--chrome-ease:cubic-bezier(.22,.61,.36,1); --chrome-dur:.38s;}
+.shell .sidebar{
+  transition:flex-basis var(--chrome-dur) var(--chrome-ease), width var(--chrome-dur) var(--chrome-ease), border-right-width var(--chrome-dur) var(--chrome-ease);
+}
+.masthead{
+  max-height:160px; overflow:hidden;
+  transition:max-height var(--chrome-dur) var(--chrome-ease), padding var(--chrome-dur) var(--chrome-ease), opacity var(--chrome-dur) ease, border-bottom-color var(--chrome-dur) ease;
+}
 .masthead.chrome-collapsed{
-  height:0; padding-top:0; padding-bottom:0; opacity:0; overflow:hidden; border-bottom-color:transparent;
-  transition:height .22s ease, padding .22s ease, opacity .18s ease;
+  max-height:0; padding-top:0; padding-bottom:0; opacity:0; border-bottom-color:transparent;
+}
+/* Keep the sidebar's contents at full width while the box narrows, so the
+   links clip instead of re-wrapping each frame, and fade with the slide. */
+.shell:not(.is-collapsed) .sidebar-inner, .shell.chrome-collapsed .sidebar-inner{min-width:199px;}
+.shell .sidebar-inner{transition:padding .22s ease, opacity var(--chrome-dur) ease;}
+.shell.chrome-collapsed .sidebar-inner{opacity:0;}
+@media (prefers-reduced-motion:reduce){
+  .shell .sidebar, .masthead, .sidebar-inner{transition:none;}
 }
 .home-hero h1.hero-clickable{cursor:pointer;}
 .home-hero h1.hero-clickable:focus-visible{outline:2px solid var(--accent); outline-offset:6px;}

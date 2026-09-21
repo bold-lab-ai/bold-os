@@ -7,6 +7,16 @@
   var heroSignInBtn = document.getElementById('homeSignInBtn');
   var heroTitle = document.getElementById('homeHeroTitle');
   var chromeRevealed = false;
+  // A signed-in visitor who hasn't clicked "BOLD.OS" within this long gets the
+  // click simulated for them — once per page load, so it never re-opens menus
+  // they've closed.
+  var AUTO_REVEAL_MS = 2000;
+  var autoRevealTimer = null;
+  var autoRevealDone = false;
+  function cancelAutoReveal(){
+    if (autoRevealTimer){ clearTimeout(autoRevealTimer); autoRevealTimer = null; }
+    autoRevealDone = true;
+  }
 
   if (heroSignInBtn) heroSignInBtn.addEventListener('click', BOLD.signIn);
 
@@ -43,9 +53,9 @@
   }
   var chromeIsClickable = false;
   if (heroTitle){
-    heroTitle.addEventListener('click', function(){ if (chromeIsClickable) toggleChrome(); });
+    heroTitle.addEventListener('click', function(){ if (chromeIsClickable){ cancelAutoReveal(); toggleChrome(); } });
     heroTitle.addEventListener('keydown', function(e){
-      if (chromeIsClickable && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); toggleChrome(); }
+      if (chromeIsClickable && (e.key === 'Enter' || e.key === ' ')){ e.preventDefault(); cancelAutoReveal(); toggleChrome(); }
     });
   }
   // The masthead's own "BOLD.OS" links home, which is where we already are:
@@ -56,6 +66,7 @@
     if (!w || !chromeIsClickable) return;
     e.preventDefault();
     e.stopPropagation();
+    cancelAutoReveal();
     hideChrome();
   }, true);
 
@@ -99,8 +110,18 @@
       if (!chromeRevealed){
         if (shell) shell.classList.add('chrome-collapsed');
         if (masthead) masthead.classList.add('chrome-collapsed');
+        if (!autoRevealDone && !autoRevealTimer){
+          autoRevealTimer = setTimeout(function(){
+            autoRevealTimer = null;
+            autoRevealDone = true;
+            if (chromeIsClickable && !chromeRevealed) toggleChrome();
+          }, AUTO_REVEAL_MS);
+        }
       }
     } else {
+      // Signed out: drop the pending auto-open, but let a later sign-in
+      // on this page start a fresh countdown.
+      if (autoRevealTimer){ clearTimeout(autoRevealTimer); autoRevealTimer = null; }
       chromeRevealed = false;
       if (shell) shell.classList.remove('chrome-collapsed');
       if (masthead) masthead.classList.remove('chrome-collapsed');
