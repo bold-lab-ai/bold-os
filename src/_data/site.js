@@ -25,12 +25,14 @@ export default {
     { label: 'Work with us', href: 'work-with-us.html', links: [] },
     { label: 'Projects', href: 'projects.html', links: [] },
     { label: 'ML Conference Cycle', href: 'how-to-submit-a-paper.html', links: [
-      { label: 'Guide', href: 'how-to-submit-a-paper.html' },
+      { label: 'Guides', href: 'how-to-submit-a-paper.html' },
       { label: 'Internal review board', href: 'audit-board.html' },
     ] },
     { label: 'Events', href: 'events.html', links: [
       { label: 'Collaboration Week', href: 'event-collaboration-week.html' },
       { label: 'BOLD Festival 2026', href: 'event-bold-festival.html' },
     ] },
+    { label: 'Requirements', href: 'requirements.html', links: [] },
+    { label: 'Tutorials', href: 'tutorials.html', links: [] },
   ],
 };
