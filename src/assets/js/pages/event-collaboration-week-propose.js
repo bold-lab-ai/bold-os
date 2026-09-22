@@ -14,7 +14,9 @@
     editLink: document.getElementById('editLink'),
     successMsg: document.getElementById('successMsg'),
     heroTitle: document.getElementById('heroTitle'),
-    heroNote: document.getElementById('heroNote')
+    heroNote: document.getElementById('heroNote'),
+    workshopFields: document.getElementById('workshopFields'),
+    talkFields: document.getElementById('talkFields')
   };
 
   // FIRESTORE_USE_EMULATOR must be false in anything committed — see
@@ -41,19 +43,35 @@
   try { editId = new URLSearchParams(location.search).get('edit'); } catch (e){}
   var editLoaded = false;
 
-  var FIELD_IDS = ['pfType', 'pfTitle', 'pfDuration', 'pfTiming', 'pfPillar', 'pfCoOrg', 'pfJoin', 'pfNote'];
+  var FIELD_IDS = [
+    'pfType', 'pfTitle',
+    'pfTimeLocation', 'pfChair', 'pfOverallDesc', 'pfProblems', 'pfBackground', 'pfKeyQuestions', 'pfAim', 'pfAgenda',
+    'pfDuration', 'pfAbstract'
+  ];
+
+  function isWorkshopType(type){ return type === 'Workshop'; }
+
+  function updateFieldVisibility(){
+    var workshop = isWorkshopType(document.getElementById('pfType').value);
+    els.workshopFields.hidden = !workshop;
+    els.talkFields.hidden = workshop;
+  }
 
   function setForm(p){
     p = p || {};
     var vals = {
-      pfType: p.contributionType, pfTitle: p.title, pfDuration: p.duration, pfTiming: p.timingConstraints,
-      pfPillar: p.pillar, pfCoOrg: p.coOrganisers, pfJoin: p.joiningForces, pfNote: p.note
+      pfType: p.contributionType, pfTitle: p.title,
+      pfTimeLocation: p.timeLocation, pfChair: p.chair, pfOverallDesc: p.overallDescription,
+      pfProblems: p.problems, pfBackground: p.background, pfKeyQuestions: p.keyQuestions,
+      pfAim: p.aim, pfAgenda: p.agenda,
+      pfDuration: p.duration, pfAbstract: p.abstract
     };
     FIELD_IDS.forEach(function(id){
       var el = document.getElementById(id);
       el.value = vals[id] || '';
       if (el.tagName === 'SELECT' && el.selectedIndex < 0) el.selectedIndex = 0;
     });
+    updateFieldVisibility();
   }
 
   function resetForm(){
@@ -99,14 +117,21 @@
     var type = document.getElementById('pfType').value;
     var fields = {
       contributionType: type,
-      title: document.getElementById('pfTitle').value.trim(),
-      duration: document.getElementById('pfDuration').value.trim(),
-      timingConstraints: document.getElementById('pfTiming').value.trim(),
-      pillar: document.getElementById('pfPillar').value,
-      coOrganisers: document.getElementById('pfCoOrg').value,
-      joiningForces: document.getElementById('pfJoin').value.trim(),
-      note: document.getElementById('pfNote').value.trim()
+      title: document.getElementById('pfTitle').value.trim()
     };
+    if (isWorkshopType(type)){
+      fields.timeLocation = document.getElementById('pfTimeLocation').value.trim();
+      fields.chair = document.getElementById('pfChair').value.trim();
+      fields.overallDescription = document.getElementById('pfOverallDesc').value.trim();
+      fields.problems = document.getElementById('pfProblems').value.trim();
+      fields.background = document.getElementById('pfBackground').value.trim();
+      fields.keyQuestions = document.getElementById('pfKeyQuestions').value.trim();
+      fields.aim = document.getElementById('pfAim').value.trim();
+      fields.agenda = document.getElementById('pfAgenda').value.trim();
+    } else {
+      fields.duration = document.getElementById('pfDuration').value.trim();
+      fields.abstract = document.getElementById('pfAbstract').value.trim();
+    }
 
     if (!type){
       els.error.textContent = 'Pick a contribution type first.';
@@ -161,6 +186,8 @@
     }
   }
 
+  document.getElementById('pfType').addEventListener('change', updateFieldVisibility);
+  updateFieldVisibility();
   els.signInBtn.addEventListener('click', BOLD.signIn);
   els.signOutBtn.addEventListener('click', BOLD.signOut);
   els.submitBtn.addEventListener('click', submitProposal);

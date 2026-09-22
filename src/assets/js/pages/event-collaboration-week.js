@@ -67,12 +67,11 @@
         '<div class="proposal-meta">' +
           '<strong>' + escapeHtml(p.name || 'Someone') + '</strong>' +
           (p.duration ? ' &middot; ' + escapeHtml(p.duration) : '') +
-          (p.pillar ? ' &middot; ' + escapeHtml(p.pillar) : '') +
-          (p.coOrganisers === 'yes' ? ' &middot; looking for co-organisers' : '') +
+          (p.timeLocation ? ' &middot; ' + escapeHtml(p.timeLocation) : '') +
         '</div>' +
-        (p.timingConstraints ? '<div class="proposal-meta">Timing: ' + escapeHtml(p.timingConstraints) + '</div>' : '') +
-        (p.joiningForces ? '<div class="proposal-meta">Joining forces with: ' + escapeHtml(p.joiningForces) + '</div>' : '') +
-        (p.note ? '<div class="proposal-note">' + escapeHtml(p.note) + '</div>' : '') +
+        (p.chair ? '<div class="proposal-meta">Chair: ' + escapeHtml(p.chair) + '</div>' : '') +
+        (p.abstract ? '<div class="proposal-note">' + escapeHtml(p.abstract) + '</div>' : '') +
+        (p.overallDescription ? '<div class="proposal-note">' + escapeHtml(p.overallDescription) + '</div>' : '') +
         (currentUser && p.email === currentUser.email
           ? '<div class="proposal-actions"><a href="event-collaboration-week-propose.html?edit=' + encodeURIComponent(p.id) + '">Edit</a></div>'
           : '') +

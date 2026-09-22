@@ -1,8 +1,5 @@
 /* Minimal editorial design system, shared across bold-lab.ai — see
    events.html for the full rationale. */
-:root{
-  --callout-accent:rgb(157, 46, 134);
-}
 a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
 .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
@@ -21,8 +18,10 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 48px;}
 main > *{max-width:var(--article-max);}
 main p{margin:16px 0 0;}
-.callout{border:2px dashed var(--callout-accent); border-radius:var(--radius); padding:24px 24px; margin-top:8px;}
-.callout p{margin:0; font-size:18px;}
+/* Matches .cl-agent-note .note-lead (audit-board.css) and event-collaboration-week-propose.css's
+   .hero-note.note-lead so notes/callouts look the same everywhere on the site. */
+.callout{background:var(--wash); border-radius:var(--radius); padding:24px 24px; margin-top:8px; font-family:var(--sans); color:var(--muted);}
+.callout p{margin:0; font-size:12px; line-height:1.5;}
 .callout-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; font-family:var(--sans); font-size:15px;}
 .btn{
   display:inline-block; font-family:var(--sans); font-size:15px; font-weight:500;

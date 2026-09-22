@@ -11,6 +11,13 @@ h1,h2{font-family:var(--serif); color:var(--ink); font-weight:800; letter-spacin
 .back-link:hover{color:var(--accent);}
 .hero h1{font-size:clamp(27px, 4.4vw, 38px); line-height:1.15; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
 .hero-note{margin:16px 0 0; font-size:17px; color:var(--ink-soft); max-width:var(--article-max);}
+/* Matches .cl-agent-note .note-lead (audit-board.css) so supplementary
+   notes look the same wherever they show up on the site. */
+.hero-note.note-lead{
+  font-family:var(--sans); font-size:12px; color:var(--muted); line-height:1.5;
+  padding:8px 10px; background:var(--wash); border-radius:var(--radius);
+  margin-bottom:0;
+}
 main{max-width:var(--content-max); margin:0 auto; padding:24px var(--gutter) 48px;}
 main > *{max-width:var(--article-max);}
 /* ---------- sign-in ---------- */

@@ -10,7 +10,7 @@ permalink: "event-collaboration-week-propose.html"
 <div class="hero">
   <a class="back-link" href="event-collaboration-week.html">&larr; BOLD Collaboration Week</a>
   <h1 id="heroTitle">Propose a Workshop</h1>
-  <p class="hero-note" id="heroNote">A workshop, project pitch, or talk for BOLD Collaboration Week (5&ndash;10 Oct 2026). See what's already been proposed on the <a href="event-collaboration-week.html#proposals">Proposals tab</a>.</p>
+  <p class="hero-note note-lead" id="heroNote">A workshop, project pitch, or talk for BOLD Collaboration Week (5&ndash;10 Oct 2026). See what's already been proposed on the <a href="event-collaboration-week.html#proposals">Proposals tab</a>.</p>
 </div>
 
 <main>
@@ -39,40 +39,53 @@ permalink: "event-collaboration-week-propose.html"
         <label for="pfTitle">Title (if known)</label>
         <input type="text" id="pfTitle" placeholder="e.g. Can Bayesian Optimization Efficiently Find a Strong Single Expert in Neural Thickets?">
       </div>
-      <div class="field">
-        <label for="pfDuration">Ideal duration</label>
-        <input type="text" id="pfDuration" placeholder="e.g. 10 min talk, or workshop-length">
+
+      <div id="workshopFields">
+        <div class="field">
+          <label for="pfTimeLocation">Workshop time and location</label>
+          <input type="text" id="pfTimeLocation" placeholder="e.g. Tue 13.30&ndash;17.30, Seminar Room 2">
+        </div>
+        <div class="field">
+          <label for="pfChair">Workshop chair(s) and contact</label>
+          <input type="text" id="pfChair" placeholder="Who's running it, and how to reach them">
+        </div>
+        <div class="field">
+          <label for="pfOverallDesc">Overall description</label>
+          <textarea id="pfOverallDesc"></textarea>
+        </div>
+        <div class="field">
+          <label for="pfProblems">Problems</label>
+          <textarea id="pfProblems"></textarea>
+        </div>
+        <div class="field">
+          <label for="pfBackground">Background</label>
+          <textarea id="pfBackground"></textarea>
+        </div>
+        <div class="field">
+          <label for="pfKeyQuestions">Key questions</label>
+          <textarea id="pfKeyQuestions"></textarea>
+        </div>
+        <div class="field">
+          <label for="pfAim">Aim</label>
+          <textarea id="pfAim"></textarea>
+        </div>
+        <div class="field">
+          <label for="pfAgenda">Agenda</label>
+          <textarea id="pfAgenda" placeholder="Rough schedule (optional)"></textarea>
+        </div>
       </div>
-      <div class="field">
-        <label for="pfTiming">Timing constraints</label>
-        <input type="text" id="pfTiming" placeholder="When can you not do this? (optional)">
+
+      <div id="talkFields">
+        <div class="field">
+          <label for="pfDuration">Duration</label>
+          <input type="text" id="pfDuration" placeholder="e.g. 10 min">
+        </div>
+        <div class="field">
+          <label for="pfAbstract">Abstract</label>
+          <textarea id="pfAbstract"></textarea>
+        </div>
       </div>
-      <div class="field">
-        <label for="pfPillar">Closest BOLD pillar</label>
-        <select id="pfPillar">
-          <option value="">Choose one&hellip;</option>
-          <option>Beyond Backprop</option>
-          <option>Human-Centric Learning and Discovery</option>
-          <option>Embodied Learning</option>
-          <option>Other</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pfCoOrg">Looking for co-organisers?</label>
-        <select id="pfCoOrg">
-          <option value="">&mdash;</option>
-          <option value="yes">Yes</option>
-          <option value="no">No</option>
-        </select>
-      </div>
-      <div class="field">
-        <label for="pfJoin">Interested in joining forces with someone else's idea? Add their name</label>
-        <input type="text" id="pfJoin" placeholder="Optional">
-      </div>
-      <div class="field">
-        <label for="pfNote">Note</label>
-        <textarea id="pfNote" placeholder="Anything else the group should know (optional)"></textarea>
-      </div>
+
       <div class="field-error" id="proposalError" hidden></div>
       <button class="btn btn-primary" type="button" id="submitProposalBtn">Submit proposal</button>
     </div>
