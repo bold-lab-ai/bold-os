@@ -55,6 +55,8 @@ textarea{resize:vertical; min-height:96px; line-height:1.5;}
 .btn:hover{text-decoration-color:currentColor;}
 .btn-primary{color:var(--accent); font-weight:600;}
 .btn-primary:disabled{color:var(--muted); cursor:default; text-decoration-color:transparent;}
+.btn-text.danger{margin-left:16px;}
+.btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
 html.auth-hint #proposeSignedOut{display:none;}
 /* ---------- success ---------- */
 .success-box{border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:22px 0;}

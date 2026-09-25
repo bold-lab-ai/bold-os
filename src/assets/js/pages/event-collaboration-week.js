@@ -73,10 +73,27 @@
         (p.abstract ? '<div class="proposal-note">' + escapeHtml(p.abstract) + '</div>' : '') +
         (p.overallDescription ? '<div class="proposal-note">' + escapeHtml(p.overallDescription) + '</div>' : '') +
         (currentUser && p.email === currentUser.email
-          ? '<div class="proposal-actions"><a href="event-collaboration-week-propose.html?edit=' + encodeURIComponent(p.id) + '">Edit</a></div>'
+          ? '<div class="proposal-actions">' +
+              '<a href="event-collaboration-week-propose.html?edit=' + encodeURIComponent(p.id) + '">Edit</a>' +
+              '<button type="button" class="btn-text danger" data-delete-id="' + escapeHtml(p.id) + '">Delete</button>' +
+            '</div>'
           : '') +
       '</div>';
     }).join('');
+  }
+
+  function deleteProposal(id, btn){
+    // Client-side gate is UX only — the Delete button only renders for
+    // p.email === currentUser.email above, and firestore.rules enforces
+    // the same (email() == resource.data.email || hasFullWrite()) as the
+    // actual security boundary.
+    if (!window.confirm('Delete this proposal? This can’t be undone.')) return;
+    btn.disabled = true;
+    db.collection('collabWeekProposals').doc(id).delete().catch(function(err){
+      console.error('[BOLD Collaboration Week] delete proposal failed', err);
+      window.alert('Could not delete the proposal — try again.');
+      btn.disabled = false;
+    });
   }
 
   function watchProposals(){
@@ -109,6 +126,11 @@
   }
 
   els.signInBtn.addEventListener('click', BOLD.signIn);
+  els.list.addEventListener('click', function(e){
+    var btn = e.target.closest('[data-delete-id]');
+    if (!btn) return;
+    deleteProposal(btn.getAttribute('data-delete-id'), btn);
+  });
   // Signed in last visit: skip the "sign in" panel while Firebase Auth
   // resolves. BOLD.onUser below stays authoritative and swaps it
   // back if the session has expired.

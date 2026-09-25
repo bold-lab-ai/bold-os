@@ -7,6 +7,7 @@
     whoAmI: document.getElementById('whoAmI'),
     form: document.getElementById('proposalForm'),
     submitBtn: document.getElementById('submitProposalBtn'),
+    deleteBtn: document.getElementById('deleteProposalBtn'),
     error: document.getElementById('proposalError'),
     success: document.getElementById('proposalSuccess'),
     proposeAnotherBtn: document.getElementById('proposeAnotherBtn'),
@@ -87,6 +88,7 @@
     els.proposeAnotherBtn.hidden = true;
     els.editLink.hidden = true;
     els.keepEditingBtn.hidden = false;
+    els.deleteBtn.hidden = false;
   }
 
   function loadForEdit(){
@@ -99,6 +101,7 @@
         els.error.hidden = false;
         els.form.hidden = false;
         els.submitBtn.hidden = true;
+        els.deleteBtn.hidden = true;
         return;
       }
       setForm(doc.data());
@@ -109,6 +112,7 @@
       els.error.hidden = false;
       els.form.hidden = false;
       els.submitBtn.hidden = true;
+      els.deleteBtn.hidden = true;
     });
   }
 
@@ -172,6 +176,24 @@
     });
   }
 
+  function deleteProposal(){
+    // Client-side gate is UX only — loadForEdit() already hides this
+    // button unless the loaded doc's email matches currentUser, and
+    // firestore.rules enforces the same (email() == resource.data.email
+    // || hasFullWrite()) as the actual security boundary.
+    if (!editId || !currentUser) return;
+    if (!window.confirm('Delete this proposal? This can’t be undone.')) return;
+    els.deleteBtn.disabled = true;
+    db.collection('collabWeekProposals').doc(editId).delete().then(function(){
+      location.href = 'event-collaboration-week.html#proposals';
+    }).catch(function(err){
+      console.error('[Propose a Workshop] delete failed', err);
+      els.error.textContent = 'Could not delete your proposal — try again.';
+      els.error.hidden = false;
+      els.deleteBtn.disabled = false;
+    });
+  }
+
   function renderAuth(){
     if (currentUser){
       els.signedOut.hidden = true;
@@ -191,6 +213,7 @@
   els.signInBtn.addEventListener('click', BOLD.signIn);
   els.signOutBtn.addEventListener('click', BOLD.signOut);
   els.submitBtn.addEventListener('click', submitProposal);
+  els.deleteBtn.addEventListener('click', deleteProposal);
   els.proposeAnotherBtn.addEventListener('click', resetForm);
   els.keepEditingBtn.addEventListener('click', function(){ els.success.hidden = true; els.form.hidden = false; });
 
