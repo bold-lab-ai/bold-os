@@ -148,10 +148,10 @@ footer{
   position:relative; flex:none;
 }
 .nav-toggle span, .nav-toggle span::before, .nav-toggle span::after{
-  position:absolute; left:9px; width:16px; height:1.5px; background:currentColor; content:'';
+  position:absolute; left:9px; top:50%; width:16px; height:1.5px; margin-top:-0.75px; background:currentColor; content:'';
 }
-.nav-toggle span::before{top:-5px;}
-.nav-toggle span::after{top:5px;}
+.nav-toggle span::before{margin-top:-5.75px;}
+.nav-toggle span::after{margin-top:4.25px;}
 
 .sidebar-backdrop{display:none;}
 
