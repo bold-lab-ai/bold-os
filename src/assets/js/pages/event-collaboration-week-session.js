@@ -153,9 +153,10 @@
 
     if (!isEmpty(s.talks)) html += section('Talks', '<ul class="session-talks">' + s.talks.map(function(t){
       var title = t.slug ? '<a href="event-collaboration-week-talk-' + esc(t.slug) + '.html">' + esc(t.title) + '</a>' : esc(t.title);
-      return '<li><span class="t">' + esc(t.time || t.duration || '') + '</span><span class="e">' + (t.type ? badge(t.type) + ' ' : '') + title +
+      return '<li><span class="t">' + esc(t.time || t.duration || '') + '</span><span class="e">' + title +
         (t.speaker ? ' <span class="who">— ' + esc(t.speaker) + '</span>' : '') +
-        (t.notes ? '<span class="meta">' + esc(t.notes) + '</span>' : '') + '</span></li>';
+        (t.notes ? '<span class="meta">' + esc(t.notes) + '</span>' : '') + '</span>' +
+        (t.type ? '<span class="talk-type">' + badge(t.type) + '</span>' : '') + '</li>';
     }).join('') + '</ul>');
 
     if (!isEmpty(s.agenda)) html += section('Agenda', '<ul class="session-agenda">' + s.agenda.map(function(a){

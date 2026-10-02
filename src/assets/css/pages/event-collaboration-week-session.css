@@ -42,6 +42,7 @@
   .detail-grid dd{margin-bottom:10px;}
   .session-talks li, .session-agenda li{flex-direction:column; gap:2px;}
   .session-talks .t, .session-agenda .t{width:auto;}
+  .session-talks .talk-type{margin-left:0; padding-left:0;}
 }
 
 /* "Edit session" and its form — controls as on a project's page (project.css). */
@@ -90,4 +91,4 @@
 .type-pitches, .type-pitch{color:#7d5a99;}
 .type-keynote, .type-panel{color:#8a5a12;}
 .detail > .type-badge{margin-bottom:8px;}
-.session-talks .type-badge{vertical-align:2px; margin-right:2px;}
+.session-talks .talk-type{flex:0 0 auto; margin-left:auto; padding-left:12px;}
