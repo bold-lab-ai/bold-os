@@ -27,10 +27,11 @@ export default function (eleventyConfig) {
   // A collection rather than a data file importing collabWeekSessions.js, so
   // `--serve` rebuilds it whenever the sessions change.
   eleventyConfig.addCollection('collabWeekTalks', (api) => {
-    const sessions = api.getAll()[0]?.data.collabWeekSessions || [];
-    return sessions.flatMap((session) => (session.talks || [])
+    const data = api.getAll()[0]?.data || {};
+    const abstracts = data.collabWeekAbstracts || {};
+    return (data.collabWeekSessions || []).flatMap((session) => (session.talks || [])
       .filter((talk) => talk.slug)
-      .map((talk) => ({ ...talk, sessionSlug: session.slug, sessionTitle: session.title, locationSlug: session.locationSlug, day: session.day })));
+      .map((talk) => ({ ...talk, abstract: abstracts[talk.slug] || '', sessionSlug: session.slug, sessionTitle: session.title, locationSlug: session.locationSlug, day: session.day })));
   });
 
   // JSON safe to inline in a <script type="application/json"> (no "</script>").

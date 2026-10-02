@@ -25,6 +25,6 @@ css: "event-collaboration-week-session"
 
   <div class="detail-field">
     <p class="detail-field-label">Abstract</p>
-    <p class="detail-muted">Abstract not yet available.</p>
+    {% if talk.abstract %}<p>{{ talk.abstract }}</p>{% else %}<p class="detail-muted">Abstract not yet available.</p>{% endif %}
   </div>
 </div>
