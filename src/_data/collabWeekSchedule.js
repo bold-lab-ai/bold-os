@@ -1,6 +1,6 @@
 // Day-by-day shape of the BOLD Collaboration Week programme (5–9 Oct 2026),
-// from the programme spreadsheet (see event-collaboration-week.html's
-// provenance line). Session slugs point into collabWeekSessions.js.
+// from the programme spreadsheet (see collabWeekSessions.js for the source
+// links). Session slugs point into collabWeekSessions.js.
 export default {
   days: [
     {

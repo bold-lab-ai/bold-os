@@ -1,8 +1,9 @@
 // One record per Collaboration Week session (workshop / talk-track / panel),
 // transcribed from the "AGENDA" tab of the programme spreadsheet (grid
 // placement: day, time, location, parallel room) and the workshop
-// description doc (chair/contact, description fields, internal agenda) —
-// see event-collaboration-week.html's provenance line for both source links.
+// description doc (chair/contact, description fields, internal agenda).
+// Sources: https://docs.google.com/spreadsheets/d/1boDZM1KY52ajOw08fFYcBv2H7rqJ_t8UfL9WTu6k7lc
+// and https://docs.google.com/document/d/11NrAHUronz_sgHj0ESEwR7ganoaMCTgTyny_M1VgAvk
 //
 // Fields are only included when the source actually has them — no invented
 // abstracts or descriptions. `talks` entries only get a `slug` (and so their

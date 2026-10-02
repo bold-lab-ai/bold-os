@@ -15,9 +15,6 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
 .hero-when{margin-top:10px; font-family:var(--sans); font-size:15px; color:var(--muted); font-variant-numeric:tabular-nums;}
 .hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
-.page-source{font-family:var(--sans); font-size:12.5px; color:var(--muted); margin-top:18px;}
-.page-source a{color:var(--muted);}
-.page-source a:hover{color:var(--accent);}
 main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 48px;}
 main > *{max-width:var(--article-max);}
 main p{margin:16px 0 0;}
