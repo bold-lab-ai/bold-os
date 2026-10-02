@@ -50,8 +50,26 @@
       } catch (e){}
       listeners.slice().forEach(function(fn){ fn(user); });
     });
+    // Completes a signInWithRedirect() round trip (see BOLD.signIn's mobile
+    // path) — onAuthStateChanged above already picks up the resulting
+    // session either way; this just surfaces sign-in-specific errors (e.g.
+    // account-exists-with-different-credential) that would otherwise be silent.
+    auth.getRedirectResult().catch(function(err){
+      console.error('[BOLD Lab] redirect sign-in failed', err);
+    });
     return auth;
   };
+
+  // signInWithPopup silently breaks on mobile browsers: iOS Safari's storage
+  // partitioning (ITP) lets the popup complete the Slack OAuth round trip
+  // fine, then blocks it from handing the resulting session back to the
+  // opener — the exact "Slack recognises me, then I land back on the
+  // signed-out page" symptom. In-app browsers (e.g. a link opened from
+  // inside the Slack app) often can't open a working popup at all either.
+  // signInWithRedirect sidesteps both — same tab, no popup/opener handoff.
+  function isMobileBrowser(){
+    return /Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent || '');
+  }
 
   // fn(user|null) on every auth-state change; replayed at once if already resolved.
   // Never fires if Firebase can't start — check BOLD.getAuth() for that.
@@ -72,7 +90,8 @@
     provider.addScope('openid');
     provider.addScope('profile');
     provider.addScope('email');
-    a.signInWithPopup(provider).catch(function(err){
+    var signIn = isMobileBrowser() ? a.signInWithRedirect(provider) : a.signInWithPopup(provider);
+    signIn.catch(function(err){
       console.error('[BOLD Lab] sign-in failed', err);
       if (typeof onError === 'function') onError(err);
     });
