@@ -1,0 +1,64 @@
+---
+title: "BOLD Collaboration Week | BOLD Lab"
+description: "5–10 October 2026, Oxford — five days for BOLD Associates to engage more deeply with BOLD, in person."
+sdk: ["firestore"]
+css: "event-collaboration-week"
+scripts: ["pages/event-collaboration-week.js"]
+permalink: "event-collaboration-week.html"
+---
+<div class="hero">
+  <a class="back-link" href="events.html">&larr; All events</a>
+  <div><span class="eyebrow">Upcoming</span></div>
+  <h1>BOLD Collaboration Week</h1>
+  <p class="hero-when">5&ndash;10 October 2026 &middot; Oxford</p>
+  <p class="hero-note">Five days for BOLD Associates to engage more deeply with BOLD, in person &mdash; the deepest of the three ways to stay involved with BOLD.</p>
+  <p class="page-source">Provenance: <a href="https://docs.google.com/spreadsheets/d/1boDZM1KY52ajOw08fFYcBv2H7rqJ_t8UfL9WTu6k7lc/edit" target="_blank" rel="noopener">programme spreadsheet</a> &middot; <a href="https://docs.google.com/document/d/11NrAHUronz_sgHj0ESEwR7ganoaMCTgTyny_M1VgAvk/edit" target="_blank" rel="noopener">workshop descriptions</a></p>
+</div>
+
+<main>
+  <div class="tabs" role="tablist" aria-label="BOLD Collaboration Week">
+    <button class="tab" type="button" id="tabBtnSchedule" data-tab="schedule" role="tab" aria-controls="panelSchedule">Schedule</button>
+    <button class="tab" type="button" id="tabBtnProposals" data-tab="proposals" role="tab" aria-controls="panelProposals">Proposals</button>
+  </div>
+
+  <div class="tab-panel" id="panelSchedule" role="tabpanel" aria-labelledby="tabBtnSchedule">
+{% for day in collabWeekSchedule.days %}
+    <div class="day-card">
+      <h3>{{ day.label }}</h3>
+      {% for block in day.blocks %}
+      {% if block.kind == 'logistics' %}
+      <div class="slot slot-logistics"><div class="slot-time">{{ block.time }}</div><div class="slot-sessions">{{ block.label }}</div></div>
+      {% else %}
+      <div class="slot">
+        <div class="slot-time">{{ block.time }}</div>
+        <div class="slot-sessions{% if block.sessions.length > 1 %} is-parallel{% endif %}">
+          {% for slug in block.sessions %}
+          {% set s = collabWeekSessions | findBySlug(slug) %}
+          {% set loc = collabWeekLocations | findBySlug(s.locationSlug) %}
+          <a class="session-card" href="event-collaboration-week-session-{{ s.slug }}.html" data-session="{{ s.slug }}" data-venue="{{ loc.name }}">
+            <span class="type-badge type-{{ s.type }}">{{ collabWeekTypes[s.type] }}</span>
+            <span class="session-title">{{ s.title }}</span>
+            <span class="session-who">{% for l in s.leads %}{{ l.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+            <span class="session-where">{{ loc.name }}{% if s.room %} &middot; {{ s.room }}{% endif %}</span>
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+{% endfor %}
+  </div>
+
+  <div class="tab-panel" id="panelProposals" role="tabpanel" aria-labelledby="tabBtnProposals">
+    <div id="proposalsSignedOut">
+      <p>Sign in with Slack to see what's been proposed.</p>
+      <button class="auth-signin" type="button" id="signInBtn">Sign in with Slack</button>
+    </div>
+
+    <div id="proposalsSignedIn" hidden>
+      <div id="proposalsList"></div>
+    </div>
+  </div>
+</main>
+

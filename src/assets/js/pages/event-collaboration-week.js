@@ -22,6 +22,33 @@
   activate(panels[initial] ? initial : 'schedule', false);
 })();
 
+// Schedule — the cards are built from the programme
+// (src/_data/collabWeekSessions.js); a session's edits (title, leads, room)
+// live in Firestore's collabWeekSessions and are laid over them here.
+(function(){
+  var esc = BOLD.escapeHtml;
+  var cards = document.querySelectorAll('.session-card[data-session]');
+  if (!cards.length || !BOLD.getAuth()) return;
+  var db = null;
+  try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
+  var unsubscribe = null;
+  BOLD.onUser(function(user){
+    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    if (!user) return;
+    unsubscribe = db.collection('collabWeekSessions').onSnapshot(function(snap){
+      snap.forEach(function(doc){
+        var s = doc.data();
+        Array.prototype.forEach.call(document.querySelectorAll('.session-card[data-session="' + doc.id + '"]'), function(card){
+          if (s.title) card.querySelector('.session-title').textContent = s.title;
+          if (s.leads) card.querySelector('.session-who').textContent = s.leads.map(function(l){ return l.name; }).join(', ');
+          if (s.room !== undefined) card.querySelector('.session-where').innerHTML =
+            esc(card.getAttribute('data-venue')) + (s.room ? ' &middot; ' + esc(s.room) : '');
+        });
+      });
+    }, function(err){ console.error('[BOLD Collaboration Week] loading session edits failed', err); });
+  });
+})();
+
 // Proposals list — read-only here; submitting lives on its own page
 // (event-collaboration-week-propose.html) now.
 (function(){

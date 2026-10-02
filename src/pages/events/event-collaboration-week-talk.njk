@@ -1,0 +1,30 @@
+---
+pagination:
+  data: collections.collabWeekTalks
+  size: 1
+  alias: talk
+permalink: "event-collaboration-week-talk-{{ talk.slug }}.html"
+eleventyComputed:
+  title: "{{ talk.title }} | BOLD Collaboration Week"
+  description: "A talk at BOLD Collaboration Week."
+css: "event-collaboration-week-session"
+---
+<div class="detail">
+  <a class="detail-back" href="event-collaboration-week-session-{{ talk.sessionSlug }}.html">&larr; Back to {{ talk.sessionTitle }}</a>
+
+  {% if talk.type %}<span class="type-badge type-{{ talk.type }}">{{ collabWeekTypes[talk.type] }}</span>{% endif %}
+  <div class="detail-head"><h2>{{ talk.title }}</h2></div>
+
+  <dl class="detail-grid">
+    {% if talk.speaker %}<dt>Speaker</dt><dd>{{ talk.speaker }}</dd>{% endif %}
+    <dt>Session</dt><dd><a href="event-collaboration-week-session-{{ talk.sessionSlug }}.html">{{ talk.sessionTitle }}</a></dd>
+    {% if talk.day %}<dt>When</dt><dd>{{ talk.day }}{% if talk.time %}, {{ talk.time }}{% endif %}</dd>{% endif %}
+    {% if talk.duration %}<dt>Duration</dt><dd>{{ talk.duration }}</dd>{% endif %}
+    {% if talk.notes %}<dt>Notes</dt><dd>{{ talk.notes }}</dd>{% endif %}
+  </dl>
+
+  <div class="detail-field">
+    <p class="detail-field-label">Abstract</p>
+    <p class="detail-muted">Abstract not yet available.</p>
+  </div>
+</div>

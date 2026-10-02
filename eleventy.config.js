@@ -18,6 +18,24 @@ export default function (eleventyConfig) {
 
   eleventyConfig.addFilter('concat', (a, b) => a.concat(b));
 
+  // Looks up one item in a list by its `slug` field — used by the
+  // Collaboration Week session/talk pages to resolve a session's location.
+  eleventyConfig.addFilter('findBySlug', (arr, slug) => (arr || []).find((item) => item.slug === slug));
+
+  // Every Collaboration Week talk that has its own page (a `slug`), with its
+  // session's slug/title/day — paginated by event-collaboration-week-talk.njk.
+  // A collection rather than a data file importing collabWeekSessions.js, so
+  // `--serve` rebuilds it whenever the sessions change.
+  eleventyConfig.addCollection('collabWeekTalks', (api) => {
+    const sessions = api.getAll()[0]?.data.collabWeekSessions || [];
+    return sessions.flatMap((session) => (session.talks || [])
+      .filter((talk) => talk.slug)
+      .map((talk) => ({ ...talk, sessionSlug: session.slug, sessionTitle: session.title, locationSlug: session.locationSlug, day: session.day })));
+  });
+
+  // JSON safe to inline in a <script type="application/json"> (no "</script>").
+  eleventyConfig.addFilter('jsonScript', (value) => JSON.stringify(value ?? null).replace(/</g, '\\u003c'));
+
   return {
     dir: { input: 'src', includes: '_includes', data: '_data', output: '_site' },
     htmlTemplateEngine: false,
