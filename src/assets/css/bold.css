@@ -145,13 +145,12 @@ footer{
 .nav-toggle{
   display:none; font-family:inherit; background:none; border:1px solid var(--line);
   width:32px; height:32px; align-items:center; justify-content:center; cursor:pointer; color:var(--ink);
-  position:relative; flex:none;
+  font-size:16px; line-height:1; flex:none;
 }
-.nav-toggle span, .nav-toggle span::before, .nav-toggle span::after{
-  position:absolute; left:9px; top:50%; width:16px; height:1.5px; margin-top:-0.75px; background:currentColor; content:'';
+.nav-toggle span{
+  display:flex; align-items:center; justify-content:center; font-family:var(--sans); color:var(--muted);
+  width:100%; height:100%; line-height:0; padding-bottom:12%; transform:rotate(-90deg);
 }
-.nav-toggle span::before{margin-top:-5.75px;}
-.nav-toggle span::after{margin-top:4.25px;}
 
 .sidebar-backdrop{display:none;}
 
