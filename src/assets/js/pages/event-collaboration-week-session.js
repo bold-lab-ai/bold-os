@@ -134,7 +134,8 @@
     if (s.subtitle) html += '<p class="detail-subtitle">' + esc(s.subtitle) + '</p>';
 
     var where = esc(venue.name || '') + (s.room ? ' &mdash; ' + esc(s.room) : '') +
-      (venue.mapsUrl ? ' &middot; <a href="' + esc(venue.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a>' : '');
+      (venue.mapsUrl ? ' &middot; <a href="' + esc(venue.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a>' : '') +
+      (venue.address ? '<span class="meta">' + esc(venue.address) + '</span>' : '');
     html += '<dl class="detail-grid">' + row('When', esc(s.day + ', ' + s.time)) + row('Where', where);
     if (!isEmpty(s.leads)) html += row(s.leads.length > 1 ? 'Leads' : 'Lead', leadsHtml(s.leads));
     if (s.contact) html += row('Contact', esc(s.contact));

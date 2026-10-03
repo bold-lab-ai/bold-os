@@ -89,6 +89,6 @@
 }
 .type-research-talks, .type-research-talk{color:#256b60;}
 .type-pitches, .type-pitch{color:#7d5a99;}
-.type-keynote, .type-panel{color:#8a5a12;}
+.type-welcome, .type-keynote, .type-panel{color:#8a5a12;}
 .detail > .type-badge{margin-bottom:8px;}
 .session-talks .talk-type{flex:0 0 auto; margin-left:auto; padding-left:12px;}

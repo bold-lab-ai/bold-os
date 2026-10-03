@@ -12,16 +12,34 @@
 // break, workshop end) stay plain text in `agenda` instead.
 export default [
   {
+    slug: 'welcome-monday',
+    type: 'welcome',
+    title: 'Welcome from BOLD',
+    subtitle: 'Introducing BOLD and the BOLDiquette',
+    day: 'Monday 5 Oct', time: '09:00–09:45',
+    locationSlug: 'robert-hooke-building',
+    leads: [{ name: 'Jakob Foerster', email: 'jakobfoerster@gmail.com' }, { name: 'Tim Rocktäschel', email: 'tim.rocktaeschel@gmail.com' }, { name: 'Laura Toni', email: 'lauratoni.ucl@gmail.com' }, { name: 'Antoine Cully', email: 'a.cully@imperial.ac.uk' }, { name: 'Ani Calinescu', email: 'ani.calinescu@cs.ox.ac.uk' }],
+  },
+  {
+    slug: 'welcome-tuesday',
+    type: 'welcome',
+    title: 'Welcome from BOLD',
+    day: 'Tuesday 6 Oct', time: '09:00–09:45',
+    locationSlug: 'lamb',
+    leads: [{ name: 'Jakob Foerster', email: 'jakobfoerster@gmail.com' }, { name: 'Tim Rocktäschel', email: 'tim.rocktaeschel@gmail.com' }, { name: 'Laura Toni', email: 'lauratoni.ucl@gmail.com' }, { name: 'Antoine Cully', email: 'a.cully@imperial.ac.uk' }, { name: 'Ani Calinescu', email: 'ani.calinescu@cs.ox.ac.uk' }],
+  },
+  {
     slug: 'monday-keynote-and-pillars',
     type: 'keynote',
-    title: 'Keynote: The Membrane Free Research Organisation',
+    title: 'Keynote & the BOLD Pillars',
     day: 'Monday 5 Oct', time: '13:45–15:00',
     locationSlug: 'natural-history-museum',
     leads: [{ name: 'Irina Haivas', email: 'irina.haivas@gmail.com' }],
     talks: [
-      { slug: 'optimizing-circuits-for-efficient-hardware', title: 'Optimizing Circuits for Efficient Hardware', type: 'research-talk', speaker: 'Darius Muglich', time: '14:10–14:25', duration: '20 min', notes: 'Pillar 1' },
-      { title: 'Co-Scientist — call for problems', time: '14:25–14:40', notes: 'Pillar 2' },
-      { slug: 'controlling-world-model-generation', title: 'Controlling World Model Generation for Imagined Curriculum Learning', type: 'research-talk', speaker: 'Harry Mead', time: '14:40–14:55', duration: '20 min', notes: 'Pillar 3' },
+      { title: 'The Membrane-Free Research Organisation', speaker: 'Irina Haivas', time: '13:45–14:05', notes: 'Keynote' },
+      { slug: 'optimizing-circuits-for-efficient-hardware', title: 'Optimizing Circuits for Efficient Hardware', type: 'research-talk', speaker: 'Darius Muglich', time: '14:10–14:25', duration: '20 min', notes: 'Pillar 1 · Beyond Backpropagation' },
+      { title: 'Co-Scientist: Call for Problems', speaker: 'Yuhe Gao, Yulin Wang', time: '14:25–14:40', notes: 'Pillar 2 · Human-Centric Learning & Discovery' },
+      { slug: 'controlling-world-model-generation', title: 'Controlling World Model Generation for Imagined Curriculum Learning', type: 'research-talk', speaker: 'Harry Mead', time: '14:40–14:55', duration: '20 min', notes: 'Pillar 3 · Embodied AI' },
     ],
   },
   {
@@ -46,6 +64,7 @@ export default [
     title: 'Panel: After AGI, What is Left to Research and to Build',
     day: 'Monday 5 Oct', time: '16:45–17:30',
     locationSlug: 'natural-history-museum',
+    subtitle: 'With Irina Haivas, Frank Meehan, Mattie and Ola Kalisz · moderated by Theo Wolf',
     leads: [{ name: 'Irina Haivas', email: 'irina.haivas@gmail.com' }, { name: 'Frank Meehan' }, { name: 'Mattie', email: 'mgfellows18@gmail.com' }, { name: 'Ola Kalisz', email: 'kalisz.ola@gmail.com' }, { name: 'Theo Wolf', email: 'theo.wolf@eng.ox.ac.uk' }],
   },
   {
@@ -82,7 +101,7 @@ export default [
     day: 'Tuesday 6 Oct', time: '15:30–17:30',
     locationSlug: 'lamb',
     room: 'Seminar Rooms 1, 2 & 5',
-    leads: [{ name: 'Ola Kalisz', email: 'kalisz.ola@gmail.com' }],
+    leads: [{ name: 'Ola Kalisz', email: 'kalisz.ola@gmail.com' }, { name: 'Mattie', email: 'mgfellows18@gmail.com' }],
     contact: 'kalisz.ola@gmail.com',
     overallDescription: 'A lot of the algorithms folks at BOLD work on like meta-RL, opponent shaping, cooperative MARL, agentic LLMs are very applicable to sciences. In this workshop we\u2019ll explore AI applications to biology, including immunology and evolutionary biology, physics including fusion and automated synthetic chemistry.',
     problems: 'Finding and discussing impactful applications in science where AI and in particular methods what we work on at BOLD can make a real difference.',
@@ -253,10 +272,9 @@ export default [
     locationSlug: 'thom-building',
     leads: [{ name: 'Dylan Cope', email: 'dylanr.cope@gmail.com' }],
     talks: [
-      { slug: 'meta-learning-in-context-continual-learning-gated-delta-nets', title: 'Meta-learning In-Context Continual-Learning Strategies in Gated Delta Nets', type: 'research-talk', speaker: 'James Harvey', duration: '15 min + 5 min Q&A' },
-      { slug: 'towards-grounded-faithful-chain-of-thought', title: 'Towards Grounded & Faithful Chain-of-Thought', type: 'research-talk', speaker: 'Dylan Cope, Alex Rutherford', duration: '15–20 min' },
-      { slug: 'pretraining-priors-unexpected-side-effects-fine-tuning', title: 'Pretraining Priors and the Unexpected Side-Effects of Fine-Tuning', type: 'research-talk', speaker: 'Evžen Wybitul, Julian Minder', duration: '10–20 min' },
-      { slug: 'what-does-it-mean-for-agents-to-have-world-models', title: 'What Does It Mean For Agents To Have World Models?', type: 'research-talk', speaker: 'Alistair Letcher', duration: '30 min', notes: 'Talk followed by open discussion; remote' },
+      { slug: 'towards-grounded-faithful-chain-of-thought', title: 'Towards Grounded & Faithful Chain-of-Thought', type: 'research-talk', speaker: 'Dylan Cope, Alex Rutherford', duration: '15 min' },
+      { slug: 'pretraining-priors-unexpected-side-effects-fine-tuning', title: 'Pretraining Priors and the Unexpected Side-Effects of Fine-Tuning', type: 'research-talk', speaker: 'Evžen Wybitul, Julian Minder', duration: '20 min' },
+      { slug: 'what-does-it-mean-for-agents-to-have-world-models', title: 'What Does It Mean For Agents To Have World Models?', type: 'research-talk', speaker: 'Alistair Letcher', duration: '30 min', notes: 'Remote · talk followed by open discussion' },
     ],
   },
   {
@@ -306,8 +324,9 @@ export default [
     leads: [{ name: 'Sam Coward', email: 'samu.coward@gmail.com' }],
     talks: [
       { slug: 'learning-to-manage-context', title: 'Learning to Manage Context: Training Agents with Meta-Tools Beyond a Single Context Window', type: 'research-talk', speaker: 'Sam Coward', duration: '30 min' },
-      { slug: 'recurrent-memory-transformers', title: 'Recurrent Memory Transformers', type: 'research-talk', speaker: 'Mikhail Burtsev', duration: '45 min (35 talk + 10 discussion)' },
-      { slug: 'memory-goldilocks-zone', title: 'The Memory Goldilocks Zone: How History-Window Size and Memory Architecture Interact in LLM Agents', type: 'research-talk', speaker: 'Mert Albeyoglu', duration: '15 min (10 talk + 5 Q&A)', notes: 'With Davide Paglieri (Google DeepMind)' },
+      { slug: 'meta-learning-in-context-continual-learning-gated-delta-nets', type: 'research-talk', title: 'Meta-learning In-Context Continual-Learning Strategies in Gated Delta Nets', speaker: 'James Harvey', duration: '20 min' },
+      { slug: 'recurrent-memory-transformers', title: 'Recurrent Memory Transformers', type: 'research-talk', speaker: 'Mikhail Burtsev', duration: '45 min' },
+      { slug: 'memory-goldilocks-zone', title: 'The Memory Goldilocks Zone: How History-Window Size and Memory Architecture Interact in LLM Agents', type: 'research-talk', speaker: 'Mert Albeyoglu', duration: '15 min', notes: 'With Davide Paglieri (Google DeepMind)' },
     ],
   },
   {
@@ -321,6 +340,14 @@ export default [
     overallDescription: "A workshop session on the outer loop of research where we discuss methods and the tools to produce BOLD science.\n- 1h BOLDiquette and desiderata for BOLD.OS\n- 1h Debrief of Internal review for ICLR 2027\n- 30 minutes Automating BOLD.OS tasks with the co-scientist",
     notes: 'Continuation of "bold-os-workshop" (Tue 13:45), if needed. Followed up as "bold-os-follow-up" (Fri 13:45).',
     agenda: [{ activity: 'ICLR 2027 internal review debrief', duration: '1 h' }],
+  },
+  {
+    slug: 'opening-the-black-box',
+    type: 'session',
+    title: 'Opening the Black Box and Quantifying Uncertainty in Generative Models',
+    day: 'Friday 9 Oct', time: '13:45–15:00',
+    locationSlug: 'rhodes-house',
+    leads: [{ name: 'Sattar Vakili', email: 'sv388@cornell.edu' }],
   },
   {
     slug: 'bold-os-follow-up',

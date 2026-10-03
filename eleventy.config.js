@@ -22,16 +22,18 @@ export default function (eleventyConfig) {
   // Collaboration Week session/talk pages to resolve a session's location.
   eleventyConfig.addFilter('findBySlug', (arr, slug) => (arr || []).find((item) => item.slug === slug));
 
-  // Every Collaboration Week talk that has its own page (a `slug`), with its
-  // session's slug/title/day — paginated by event-collaboration-week-talk.njk.
-  // A collection rather than a data file importing collabWeekSessions.js, so
-  // `--serve` rebuilds it whenever the sessions change.
+  // Every Collaboration Week talk that has its own page: the morning research
+  // talks (collabWeekResearchTalks.js), then the talks inside sessions that
+  // have a `slug`, with their session's slug/title/day/venue — paginated by
+  // event-collaboration-week-talk.njk. A collection rather than a data file
+  // importing the others, so `--serve` rebuilds it whenever they change.
   eleventyConfig.addCollection('collabWeekTalks', (api) => {
     const data = api.getAll()[0]?.data || {};
     const abstracts = data.collabWeekAbstracts || {};
-    return (data.collabWeekSessions || []).flatMap((session) => (session.talks || [])
+    const inSessions = (data.collabWeekSessions || []).flatMap((session) => (session.talks || [])
       .filter((talk) => talk.slug)
       .map((talk) => ({ ...talk, abstract: abstracts[talk.slug] || '', sessionSlug: session.slug, sessionTitle: session.title, locationSlug: session.locationSlug, day: session.day })));
+    return [...(data.collabWeekResearchTalks || []), ...inSessions];
   });
 
   // JSON safe to inline in a <script type="application/json"> (no "</script>").

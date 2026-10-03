@@ -1,16 +1,15 @@
-// Venues used by Collaboration Week's afternoon programme (see
-// collabWeekSchedule.js). mapsQuery is a plain Google Maps search string —
-// built from the venue name, not a guessed address/postcode — turned into a
-// link on each session's page.
+// Venues for the Collaboration Week programme, with the addresses given in
+// the published programme. The Google Maps link searches for name + address.
 function mapsUrl(query) {
   return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(query);
 }
 
 const locations = [
-  { slug: 'natural-history-museum', name: 'Natural History Museum', mapsQuery: 'Oxford University Museum of Natural History, Oxford' },
-  { slug: 'lamb', name: 'LaMB', mapsQuery: 'LaMB, Oxford' },
-  { slug: 'thom-building', name: 'Thom Building', mapsQuery: 'Thom Building, Oxford' },
-  { slug: 'rhodes-house', name: 'Rhodes House', mapsQuery: 'Rhodes House, Oxford' },
+  { slug: 'robert-hooke-building', name: 'Robert Hooke Building', address: 'Parks Road, Oxford OX1 3PP' },
+  { slug: 'natural-history-museum', name: 'Natural History Museum', address: 'Oxford University Museum of Natural History, Parks Road, Oxford OX1 3PW' },
+  { slug: 'lamb', name: 'Life and Mind Building (LaMB)', address: 'South Parks Road, Oxford OX1 3EL' },
+  { slug: 'thom-building', name: 'Thom Building', address: 'Department of Engineering Science, Parks Road, Oxford OX1 3PJ' },
+  { slug: 'rhodes-house', name: 'Rhodes House', address: 'South Parks Road, Oxford OX1 3RG' },
 ];
 
-export default locations.map((loc) => ({ ...loc, mapsUrl: mapsUrl(loc.mapsQuery) }));
+export default locations.map((loc) => ({ ...loc, mapsUrl: mapsUrl(loc.name + ', ' + loc.address) }));
