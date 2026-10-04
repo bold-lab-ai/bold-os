@@ -4,7 +4,7 @@ Decided 2026-09-11: the Internal Review Board moves off per-browser `localStorag
 
 Everything below the data model and Security Rules is buildable **without any credentials** and is either already done or in progress. The "Inputs needed" section at the bottom is the only thing blocking the next step.
 
-**Hosting stays as-is — no Firebase Hosting.** Firestore/Auth/Functions are decoupled from where the static pages are served; the pages keep living wherever `bold-lab.ai` already does (GitHub Pages). The only hosting-adjacent step is adding that domain to Firebase Auth's **Authorized domains** allowlist once Phase 2 (Slack sign-in) starts — a config entry, not a migration.
+**Hosting stays as-is — no Firebase Hosting.** (Still true, and now a hard rule: enabling Firebase Hosting on this project broke Slack sign-in on the GitHub Pages site, 2026-10-04 — see `docs/AGENTS.md` "Sign-in".) Firestore/Auth/Functions are decoupled from where the static pages are served; the pages keep living wherever `bold-lab.ai` already does (GitHub Pages). The only hosting-adjacent step is adding that domain to Firebase Auth's **Authorized domains** allowlist once Phase 2 (Slack sign-in) starts — a config entry, not a migration.
 
 ---
 

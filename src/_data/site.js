@@ -5,6 +5,8 @@ export default {
 
   // Firebase compat build from gstatic (docs/AGENTS.md-approved CDN exception,
   // 2026-09-11 — see docs/FIREBASE.md). Bump the pinned version deliberately.
+  // Bumping it also means refreshing the self-hosted sign-in helper in the
+  // bold-lab-ai.github.io repo and re-testing sign-in — see docs/AGENTS.md "Sign-in".
   firebaseSdkVersion: '10.14.1',
   firebase: {
     apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
