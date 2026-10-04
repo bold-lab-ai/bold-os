@@ -8,7 +8,7 @@ export default {
   firebaseSdkVersion: '10.14.1',
   firebase: {
     apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
-    authDomain: 'bold-d7ff2.firebaseapp.com',
+    authDomain: 'bold-lab-ai.github.io',
     projectId: 'bold-d7ff2',
     storageBucket: 'bold-d7ff2.firebasestorage.app',
     messagingSenderId: '555050367135',
