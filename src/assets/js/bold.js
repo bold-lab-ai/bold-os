@@ -50,6 +50,11 @@
       } catch (e){}
       listeners.slice().forEach(function(fn){ fn(user); });
     });
+    // Finishes a sign-in after Slack redirects back here; onAuthStateChanged
+    // above picks up the user, this only surfaces errors from the round trip.
+    auth.getRedirectResult().catch(function(err){
+      console.error('[BOLD Lab] sign-in failed', err);
+    });
     return auth;
   };
 
@@ -64,7 +69,13 @@
   // The last visit's { n: displayName, e: email }, or null — for painting before auth resolves.
   BOLD.authHint = function(){ return hint; };
 
-  // onError(err), if given, runs after the failure is logged.
+  // Sign-in redirects the page to Slack and back rather than using a popup:
+  // when Slack hands off to Google sign-in, Google's pages cut the popup off
+  // from this page, which then reports it as closed (auth/popup-closed-by-user)
+  // and drops the sign-in. Redirect sign-in needs the Firebase authDomain on
+  // this same site — the helper is self-hosted at bold-lab-ai.github.io/__/auth/
+  // (bold-lab-ai.github.io repo; authDomain in src/_data/site.js).
+  // onError(err), if given, runs if sign-in fails before leaving the page.
   BOLD.signIn = function(onError){
     var a = BOLD.getAuth();
     if (!a) return;
@@ -72,7 +83,7 @@
     provider.addScope('openid');
     provider.addScope('profile');
     provider.addScope('email');
-    a.signInWithPopup(provider).catch(function(err){
+    a.signInWithRedirect(provider).catch(function(err){
       console.error('[BOLD Lab] sign-in failed', err);
       if (typeof onError === 'function') onError(err);
     });
