@@ -128,10 +128,16 @@
     return '<div class="detail-field"><p class="detail-field-label">' + label + '</p>' + html + '</div>';
   }
 
+  // Always shown; greyed out, with the reason on hover, for anyone who can't edit.
+  function editButton(){
+    var off = canEdit() ? '' : isLead() ? 'A PI or admin has to save this session once before its leads can edit it' : NOT_EDITOR;
+    return '<button class="btn" type="button" id="editOpen"' + (off ? ' disabled title="' + esc(off) + '"' : '') + '>Edit session</button>';
+  }
+
   function viewHtml(){
     var s = session();
     var html = badge(s.type) + '<div class="detail-head"><h2>' + esc(s.title) + '</h2>' +
-      (canEdit() ? '<button class="btn" type="button" id="editOpen">Edit session</button>' : '') + '</div>';
+      editButton() + '</div>';
     if (s.subtitle) html += '<p class="detail-subtitle">' + esc(s.subtitle) + '</p>';
 
     var where = esc(venue.name || '') + (s.room ? ' &mdash; ' + esc(s.room) : '') +

@@ -1684,13 +1684,13 @@ exports.approveHackathonJoins = onCall(
 // ---------- Collaboration Week: editing a talk ----------
 //
 // A talk's page comes from the programme (src/_data); collabWeekTalks/{slug}
-// holds what's been edited since (TALK_FIELDS, plus presentationUrl), readable
-// by the lab and written only here. The talk's speaker, its session's leads
-// or a PI/admin can edit it. Who those are comes from the published
-// programme (event-collaboration-week-talks.json, built from src/_data),
-// matched to sign-in emails through the people roster by name, as the
-// session page does for leads. Speaker, day, time and duration stay with
-// the schedule.
+// holds what's been edited since (TALK_FIELDS, incl. presentationUrl) and the
+// talk's presenterEmails, readable by the lab and written only here. Access
+// is by sign-in email only: a presenter (presenterEmails), a lead of the
+// talk's session (its leads' emails in the published programme,
+// event-collaboration-week-talks.json, plus collabWeekSessions/{slug}.leadEmails)
+// or a PI/admin can edit the talk; only leads and PIs/admins can set who the
+// presenters are. Speaker, day, time and duration stay with the schedule.
 const TALKS_URL = 'https://bold-lab-ai.github.io/bold-os/event-collaboration-week-talks.json';
 const TALK_FIELDS = { title: 300, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
 let talksCache = { at: 0, list: null };
@@ -1703,38 +1703,45 @@ async function collabWeekTalks(){
   return talksCache.list;
 }
 
-function normName(n){ return String(n || '').trim().toLowerCase(); }
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// "Yuhe Gao, Yulin Wang" / "A & B" / "A and B" → each name.
-function speakerNames(speaker){
-  return String(speaker || '').split(/,|&|\band\b/).map(normName).filter(Boolean);
-}
-
-async function canEditTalk(request, email, talk){
-  if (await isFullWrite(email)) return true;
-  const names = speakerNames(talk.speaker).concat(talk.leads.map(l => normName(l.name)));
-  if (names.indexOf(normName(request.auth.token.name)) >= 0) return true;
-  const emails = talk.leads.map(l => String(l.email || '').toLowerCase());
+// → 'admin' | 'lead' | 'presenter' | null, by the caller's sign-in email.
+async function talkRole(email, talk, saved){
+  if (await isFullWrite(email)) return 'admin';
+  const leads = talk.leads.map(l => String(l.email || '').toLowerCase());
   if (talk.sessionSlug) {
     const session = (await db.collection('collabWeekSessions').doc(talk.sessionSlug).get()).data();
-    if (session && Array.isArray(session.leadEmails)) emails.push(...session.leadEmails);
+    if (session && Array.isArray(session.leadEmails)) leads.push(...session.leadEmails);
   }
-  (await allPeople()).forEach(p => { if (p.email && names.indexOf(normName(p.name)) >= 0) emails.push(String(p.email).toLowerCase()); });
-  return emails.indexOf(email) >= 0;
+  if (leads.indexOf(email) >= 0) return 'lead';
+  if (saved && Array.isArray(saved.presenterEmails) && saved.presenterEmails.indexOf(email) >= 0) return 'presenter';
+  return null;
 }
 
-// data: { slug } → { canEdit }; { slug, edits: { field: text, … } } saves them.
+// data: { slug } → { canEdit, canSetPresenters };
+// { slug, edits: { field: text, …, presenterEmails?: [email, …] } } saves them.
 exports.editTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
     const data = request.data || {};
     const talk = (await collabWeekTalks()).find(t => t.slug === data.slug);
     if (!talk) throw new HttpsError('not-found', 'No such talk.');
-    const canEdit = await canEditTalk(request, email, talk);
-    if (!data.edits) return { canEdit };
-    if (!canEdit) throw new HttpsError('permission-denied', 'Only the speaker, the session’s leads, PIs and admins can edit this talk.');
+    const ref = db.collection('collabWeekTalks').doc(talk.slug);
+    const role = await talkRole(email, talk, (await ref.get()).data());
+    const access = { canEdit: !!role, canSetPresenters: role === 'admin' || role === 'lead' };
+    if (!data.edits) return access;
+    if (!role) throw new HttpsError('permission-denied', 'Only the talk’s presenters, the session’s leads, PIs and admins can edit this talk.');
     const doc = {};
     Object.keys(data.edits).forEach(key => {
+      if (key === 'presenterEmails') {
+        if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can change the presenters.');
+        const list = (Array.isArray(data.edits[key]) ? data.edits[key] : []).map(e => String(e).trim().toLowerCase()).filter(Boolean);
+        const bad = list.find(e => !EMAIL.test(e));
+        if (bad) throw new HttpsError('invalid-argument', 'Not an email: ' + bad);
+        if (list.length > 20) throw new HttpsError('invalid-argument', 'Too many presenters.');
+        doc.presenterEmails = list.filter((e, i) => list.indexOf(e) === i);
+        return;
+      }
       if (!(key in TALK_FIELDS)) throw new HttpsError('invalid-argument', 'Unknown field: ' + key);
       const v = String(data.edits[key] == null ? '' : data.edits[key]).trim();
       if (v.length > TALK_FIELDS[key]) throw new HttpsError('invalid-argument', 'Too long: ' + key);
@@ -1748,8 +1755,8 @@ exports.editTalk = onCall(
       updatedBy: { email, name: request.auth.token.name || '' },
       updatedAt: Date.now(),
     });
-    await db.collection('collabWeekTalks').doc(talk.slug).set(doc, { merge: true });
-    return { canEdit, saved: doc };
+    await ref.set(doc, { merge: true });
+    return Object.assign(access, { saved: doc });
   }
 );
 

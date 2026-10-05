@@ -53,7 +53,8 @@
   letter-spacing:0; text-transform:none; vertical-align:middle;
 }
 .detail .btn-text:hover{text-decoration-color:currentColor;}
-.detail .btn-text.danger:hover{color:var(--danger-text);}
+.detail .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
+.detail .btn-text:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
 .detail input[type="text"], .detail textarea, .detail select{
   width:100%; font-family:var(--sans); font-size:14px; line-height:1.5; color:var(--ink);
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px;

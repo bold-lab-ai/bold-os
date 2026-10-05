@@ -78,6 +78,7 @@
   }
 
   var currentUser = null;
+  var NOT_PROPOSER = 'Only whoever proposed it can edit or delete a proposal';
   var unsubscribeProposals = null;
 
   function renderProposals(docs){
@@ -99,18 +100,22 @@
         (p.chair ? '<div class="proposal-meta">Chair: ' + escapeHtml(p.chair) + '</div>' : '') +
         (p.abstract ? '<div class="proposal-note">' + escapeHtml(p.abstract) + '</div>' : '') +
         (p.overallDescription ? '<div class="proposal-note">' + escapeHtml(p.overallDescription) + '</div>' : '') +
+        // Always shown; greyed out, with the reason on hover, unless it's your own.
         (currentUser && p.email === currentUser.email
           ? '<div class="proposal-actions">' +
               '<a href="event-collaboration-week-propose.html?edit=' + encodeURIComponent(p.id) + '">Edit</a>' +
               '<button type="button" class="btn-text danger" data-delete-id="' + escapeHtml(p.id) + '">Delete</button>' +
             '</div>'
-          : '') +
+          : '<div class="proposal-actions">' +
+              '<button type="button" class="btn-text" disabled title="' + NOT_PROPOSER + '">Edit</button>' +
+              '<button type="button" class="btn-text danger" disabled title="' + NOT_PROPOSER + '">Delete</button>' +
+            '</div>') +
       '</div>';
     }).join('');
   }
 
   function deleteProposal(id, btn){
-    // Client-side gate is UX only — the Delete button only renders for
+    // Client-side gate is UX only — the Delete button is only enabled for
     // p.email === currentUser.email above, and firestore.rules enforces
     // the same (email() == resource.data.email || hasFullWrite()) as the
     // actual security boundary.

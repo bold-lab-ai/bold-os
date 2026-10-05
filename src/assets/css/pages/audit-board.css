@@ -164,7 +164,7 @@ select{min-width:180px;}
   color:var(--blue); background:none; border:none; padding:0; cursor:pointer;
   text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
 }
-.btn-text.danger:hover, #deleteBoardBtn:hover{color:var(--danger-text);}
+.btn-text.danger:hover:not(:disabled), #deleteBoardBtn:hover:not(:disabled){color:var(--danger-text);}
 .btn-text.rush-on{color:var(--amber); font-weight:700; text-decoration:none;}
 .btn-text.rush-on:hover{color:var(--focus);}
 /* ---------- venue meta + schedule ---------- */

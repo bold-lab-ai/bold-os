@@ -833,6 +833,7 @@
       html += '<div class="author-cap-alert">You’re an author on ' + capWarning.count +
         ' papers for this venue — over its ' + capWarning.max + '-per-author limit.</div>';
     }
+    var venueAdminOnly = state.canApproveVenues ? '' : ' disabled title="Only PIs and admins can edit or delete a venue"';
     html += '<div class="board-meta" style="display:block;">' +
       '<a href="#" id="backToList" style="font-size:13.5px;color:var(--muted);text-decoration:none;">&larr; All venues</a>' +
       '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:10px;">' +
@@ -855,9 +856,10 @@
               ? 'Rush mode is on — board is Registered / Drafted / Reviewed / Submitted only. Click to turn off.'
               : 'Turn on Rush mode — collapses this venue to Registered / Drafted / Reviewed / Submitted only, for a fast-moving deadline.') +
             '">' + (current && current.rushMode ? '⚡ Rush mode: On' : 'Rush mode: Off') + '</button>' +
-          '<button class="btn-text edit" id="editBoardBtn" type="button">Edit venue</button>' +
+          // Always shown; greyed out for anyone but a PI/admin (firestore.rules).
+          '<button class="btn-text edit" id="editBoardBtn" type="button"' + venueAdminOnly + '>Edit venue</button>' +
           (!current || current.status !== 'pending'
-            ? '<button class="btn-text" id="deleteBoardBtn" type="button">Delete this venue</button>'
+            ? '<button class="btn-text" id="deleteBoardBtn" type="button"' + venueAdminOnly + '>Delete this venue</button>'
             : '') +
         '</div>' +
       '</div>' +
