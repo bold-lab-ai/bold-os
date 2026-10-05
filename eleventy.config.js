@@ -36,6 +36,14 @@ export default function (eleventyConfig) {
     return [...(data.collabWeekResearchTalks || []), ...inSessions];
   });
 
+  // Who may set each talk's presentation link: its speaker(s) and its
+  // session's leads. Published as event-collaboration-week-talks.json, which
+  // the talkPresentation function (functions/index.js) reads.
+  eleventyConfig.addFilter('talkAccess', (talks, sessions) => (talks || []).map((t) => {
+    const session = (sessions || []).find((s) => s.slug === t.sessionSlug);
+    return { slug: t.slug, speaker: t.speaker || '', sessionSlug: t.sessionSlug || '', leads: (session && session.leads) || [] };
+  }));
+
   // JSON safe to inline in a <script type="application/json"> (no "</script>").
   eleventyConfig.addFilter('jsonScript', (value) => JSON.stringify(value ?? null).replace(/</g, '\\u003c'));
 

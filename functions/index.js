@@ -1681,6 +1681,68 @@ exports.approveHackathonJoins = onCall(
   }
 );
 
+// ---------- Collaboration Week: talk presentation links ----------
+//
+// Each talk's page has a Presentation link (collabWeekTalks/{slug}:
+// presentationUrl, readable by the lab, written only here). It can be set
+// by the talk's speaker, its session's leads, or a PI/admin. Who those
+// are comes from the published programme (event-collaboration-week-talks.json,
+// built from src/_data), matched to sign-in emails through the people roster
+// by name, as the session page does for leads.
+const TALKS_URL = 'https://bold-lab-ai.github.io/bold-os/event-collaboration-week-talks.json';
+let talksCache = { at: 0, list: null };
+
+async function collabWeekTalks(){
+  if (talksCache.list && Date.now() - talksCache.at < 5 * 60 * 1000) return talksCache.list;
+  const res = await fetch(TALKS_URL);
+  if (!res.ok) throw new HttpsError('unavailable', 'Could not load the programme; try again shortly.');
+  talksCache = { at: Date.now(), list: await res.json() };
+  return talksCache.list;
+}
+
+function normName(n){ return String(n || '').trim().toLowerCase(); }
+
+// "Yuhe Gao, Yulin Wang" / "A & B" / "A and B" → each name.
+function speakerNames(speaker){
+  return String(speaker || '').split(/,|&|\band\b/).map(normName).filter(Boolean);
+}
+
+async function canEditTalk(request, email, talk){
+  if (await isFullWrite(email)) return true;
+  const names = speakerNames(talk.speaker).concat(talk.leads.map(l => normName(l.name)));
+  if (names.indexOf(normName(request.auth.token.name)) >= 0) return true;
+  const emails = talk.leads.map(l => String(l.email || '').toLowerCase());
+  if (talk.sessionSlug) {
+    const session = (await db.collection('collabWeekSessions').doc(talk.sessionSlug).get()).data();
+    if (session && Array.isArray(session.leadEmails)) emails.push(...session.leadEmails);
+  }
+  (await allPeople()).forEach(p => { if (p.email && names.indexOf(normName(p.name)) >= 0) emails.push(String(p.email).toLowerCase()); });
+  return emails.indexOf(email) >= 0;
+}
+
+// data: { slug } → { canEdit }; { slug, url } sets the link ('' removes it).
+exports.talkPresentation = onCall(
+  async (request) => {
+    const email = callerEmail(request);
+    const data = request.data || {};
+    const talk = (await collabWeekTalks()).find(t => t.slug === data.slug);
+    if (!talk) throw new HttpsError('not-found', 'No such talk.');
+    const canEdit = await canEditTalk(request, email, talk);
+    if (data.url === undefined) return { canEdit };
+    if (!canEdit) throw new HttpsError('permission-denied', 'Only the speaker, the session’s leads, PIs and admins can change this.');
+    const url = String(data.url).trim();
+    if (url && !/^https?:\/\/\S+$/.test(url)) throw new HttpsError('invalid-argument', 'That isn’t a link (https://…).');
+    await db.collection('collabWeekTalks').doc(talk.slug).set({
+      slug: talk.slug,
+      sessionSlug: talk.sessionSlug,
+      presentationUrl: url,
+      updatedBy: { email, name: request.auth.token.name || '' },
+      updatedAt: Date.now(),
+    });
+    return { canEdit, presentationUrl: url };
+  }
+);
+
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {

@@ -8,6 +8,8 @@ eleventyComputed:
   title: "{{ talk.title }} | BOLD Collaboration Week"
   description: "A talk at BOLD Collaboration Week."
 css: "event-collaboration-week-session"
+sdk: ["firestore", "functions"]
+scripts: ["pages/event-collaboration-week-talk.js"]
 ---
 {% set venue = collabWeekLocations | findBySlug(talk.locationSlug) %}
 <div class="detail">
@@ -27,6 +29,7 @@ css: "event-collaboration-week-session"
     {% if venue %}<dt>Where</dt><dd>{{ venue.name }} &middot; <a href="{{ venue.mapsUrl }}" target="_blank" rel="noopener">Open in Google Maps</a><span class="meta">{{ venue.address }}</span></dd>{% endif %}
     {% if talk.duration %}<dt>Duration</dt><dd>{{ talk.duration }}</dd>{% endif %}
     {% if talk.notes %}<dt>Notes</dt><dd>{{ talk.notes }}</dd>{% endif %}
+    <dt>Presentation</dt><dd id="talkPresentation" data-slug="{{ talk.slug }}"><span class="detail-muted">Not added yet.</span></dd>
   </dl>
 
   <div class="detail-field">

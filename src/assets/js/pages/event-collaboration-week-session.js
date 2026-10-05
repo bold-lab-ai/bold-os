@@ -31,6 +31,7 @@
   var editing = false;      // the form is open
   var people = [];          // the `people` roster, for the leads picker
   var leadRows = [];        // in-progress rows while the form is open
+  var presentations = {};   // talk slug → presentation link (collabWeekTalks)
 
   function session(){ return Object.assign({}, base, saved || {}); }
 
@@ -156,6 +157,7 @@
       var title = t.slug ? '<a href="event-collaboration-week-talk-' + esc(t.slug) + '.html">' + esc(t.title) + '</a>' : esc(t.title);
       return '<li><span class="t">' + esc(t.time || t.duration || '') + '</span><span class="e">' + title +
         (t.speaker ? ' <span class="who">— ' + esc(t.speaker) + '</span>' : '') +
+        (presentations[t.slug] ? ' · <a class="talk-pres" href="' + esc(presentations[t.slug]) + '" target="_blank" rel="noopener">Presentation</a>' : '') +
         (t.notes ? '<span class="meta">' + esc(t.notes) + '</span>' : '') + '</span>' +
         (t.type ? '<span class="talk-type">' + badge(t.type) + '</span>' : '') + '</li>';
     }).join('') + '</ul>');
@@ -417,6 +419,12 @@
     loadJoin();
     if (!user || !ref) { render(); return; }
     loadAccess();
+    // Presentation links for this session's talks; each is set on the talk's own page.
+    presentations = {};
+    db.collection('collabWeekTalks').where('sessionSlug', '==', base.slug).get().then(function(snap){
+      snap.docs.forEach(function(d){ if (d.data().presentationUrl) presentations[d.id] = d.data().presentationUrl; });
+      if (!editing) render();
+    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading presentations failed', err); });
     unsubscribe = ref.onSnapshot(function(snap){
       saved = snap.exists ? snap.data() : null;
       if (!editing) render();

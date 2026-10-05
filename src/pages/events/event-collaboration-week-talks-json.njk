@@ -1,0 +1,6 @@
+---
+permalink: "event-collaboration-week-talks.json"
+layout: false
+eleventyExcludeFromCollections: true
+---
+{{ collections.collabWeekTalks | talkAccess(collabWeekSessions) | dump | safe }}

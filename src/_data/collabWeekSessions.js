@@ -36,9 +36,9 @@ export default [
     locationSlug: 'natural-history-museum',
     leads: [{ name: 'Irina Haivas', email: 'irina.haivas@gmail.com' }],
     talks: [
-      { title: 'The Membrane-Free Research Organisation', speaker: 'Irina Haivas', time: '13:45–14:05', notes: 'Keynote' },
+      { slug: 'membrane-free-research-organisation', title: 'The Membrane-Free Research Organisation', speaker: 'Irina Haivas', time: '13:45–14:05', notes: 'Keynote' },
       { slug: 'optimizing-circuits-for-efficient-hardware', title: 'Optimizing Circuits for Efficient Hardware', type: 'research-talk', speaker: 'Darius Muglich', time: '14:10–14:25', duration: '20 min', notes: 'Pillar 1 · Beyond Backpropagation' },
-      { title: 'Co-Scientist: Call for Problems', speaker: 'Yuhe Gao, Yulin Wang', time: '14:25–14:40', notes: 'Pillar 2 · Human-Centric Learning & Discovery' },
+      { slug: 'co-scientist-call-for-problems', title: 'Co-Scientist: Call for Problems', speaker: 'Yuhe Gao, Yulin Wang', time: '14:25–14:40', notes: 'Pillar 2 · Human-Centric Learning & Discovery' },
       { slug: 'controlling-world-model-generation', title: 'Controlling World Model Generation for Imagined Curriculum Learning', type: 'research-talk', speaker: 'Harry Mead', time: '14:40–14:55', duration: '20 min', notes: 'Pillar 3 · Embodied AI' },
     ],
   },
@@ -52,10 +52,10 @@ export default [
     talks: [
       { slug: 'asymmetric-self-play-open-ended-environments', title: 'Asymmetric Self-Play for Open-Ended Environments', type: 'pitch', speaker: 'Evangelos Chatzaroulas', duration: '10 min' },
       { slug: 'unsupervised-environment-design-co-evolution', title: 'Unsupervised Environment Design via Co-Evolution', type: 'pitch', speaker: 'Per Kristian Lehre', duration: '10 min', notes: 'Joint work with Siddharth Mukundan' },
-      { slug: 'what-makes-a-good-continual-learner', title: 'What makes a good continual learner?', type: 'pitch', speaker: 'Nathan Herr', duration: '20 min' },
-      { slug: 'measuring-misalignment-in-agent-swarms', title: 'Measuring misalignment in agent swarms', type: 'pitch', speaker: 'Max Davy', duration: '30 min', notes: 'Core team: Alistair Letcher, Yuhe Gao, Max Davy' },
+      { slug: 'what-makes-a-good-continual-learner', title: 'What makes a good continual learner?', type: 'pitch', speaker: 'Nathan Herr', duration: '10 min' },
+      { slug: 'measuring-misalignment-in-agent-swarms', title: 'Measuring misalignment in agent swarms', type: 'pitch', speaker: 'Max Davy', duration: '10 min', notes: 'Core team: Alistair Letcher, Yuhe Gao, Max Davy' },
       { slug: 'graph-lag-networks', title: 'Graph Lag Networks: Learning to Think and Act with Delayed Communication', type: 'pitch', speaker: 'Edward Gunn', duration: '10 min' },
-      { slug: 'ml-for-unlocking-nuclear-fusion', title: 'How Machine Learning can Help with Unlocking Nuclear Fusion', type: 'research-talk', speaker: 'Theo Wolf', duration: '60 min', notes: 'Shared with the AI4Science workshop' },
+      { slug: 'ml-for-unlocking-nuclear-fusion', title: 'How Machine Learning can Help with Unlocking Nuclear Fusion', type: 'pitch', speaker: 'Theo Wolf', duration: '10 min', notes: 'Shared with the AI4Science workshop' },
     ],
   },
   {
@@ -202,9 +202,9 @@ export default [
     aim: 'Bring together researchers across alignment, post-training, reasoning, and evaluation to develop a shared view of the most pressing reward-modeling challenges and identify opportunities for collaboration.',
     talks: [
       { title: 'Host opening', speaker: 'Tingchen Fu', notes: 'University of Oxford', time: '15:30–16:00' },
-      { title: 'Towards Self-Evolving Agents: Co-Evolving Process Supervision and Policy in a Shared Distribution Loop', speaker: 'Meng Fang', notes: 'University of Liverpool', time: '16:00–16:30' },
-      { title: 'Self-Improving Causality Seeking Agents in Open-Ended World', speaker: 'Mengyue Yang', notes: 'University of Bristol', time: '16:30–17:00' },
-      { title: 'From Preference to Experience: Reward-Guided Learning for Physical Intelligence', speaker: 'Cheng Deng', notes: 'University of Edinburgh', time: '17:00–17:30' },
+      { slug: 'towards-self-evolving-agents', title: 'Towards Self-Evolving Agents: Co-Evolving Process Supervision and Policy in a Shared Distribution Loop', speaker: 'Meng Fang', notes: 'University of Liverpool', time: '16:00–16:30' },
+      { slug: 'self-improving-causality-seeking-agents', title: 'Self-Improving Causality Seeking Agents in Open-Ended World', speaker: 'Mengyue Yang', notes: 'University of Bristol', time: '16:30–17:00' },
+      { slug: 'from-preference-to-experience', title: 'From Preference to Experience: Reward-Guided Learning for Physical Intelligence', speaker: 'Cheng Deng', notes: 'University of Edinburgh', time: '17:00–17:30' },
     ],
   },
   {
