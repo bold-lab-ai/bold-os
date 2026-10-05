@@ -38,6 +38,12 @@ The seed also adds fictional lab members (`@bold.test`) so lists, boards and pic
 - **Doesn't:** anything that calls Slack — DMs, notifications, creating or joining project channels, Slack profile fields. Those need real secrets, which stay off laptops. They'll fail with an error; build around them.
 - **The live site is untouched:** this setup only kicks in on `localhost`, and only on this branch. Sign-in is the only thing that talks to the real project, and it only proves who you are; everything you read or write is local.
 
+## If something's off
+
+- **Signed in but can't edit anything:** your Slack account uses a different email from the one you gave the seed. The masthead shows the email you're signed in with; re-run `npm run seed -- <that email>`.
+- **`package-lock.json` shows as changed after setup:** harmless npm noise; don't commit it.
+- **`npm run emulators` complains about Java:** check that `java -version` shows 21 or higher (see Setup).
+
 ## Rules of the game
 
 - **Work on your own branch** (`hack/<your-team>`), branched from `hackathon`.
