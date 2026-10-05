@@ -12,6 +12,15 @@
 
   BOLD.firebaseConfig = window.BOLD_CONFIG;
   BOLD.useAuthEmulator = false;
+  // Local development (npm start) signs in the way it did before 2026-10-04:
+  // popup via Firebase's own auth domain. The live site's setup (self-hosted
+  // helper on bold-lab-ai.github.io + redirect, see BOLD.signIn) needs the page
+  // to be on bold-lab-ai.github.io; from localhost that hand-off is cross-site,
+  // and Firefox, Safari and private windows block it.
+  var isLocalDev = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  if (isLocalDev && BOLD.firebaseConfig) {
+    BOLD.firebaseConfig = Object.assign({}, BOLD.firebaseConfig, { authDomain: 'bold-d7ff2.firebaseapp.com' });
+  }
 
   BOLD.escapeHtml = function(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -83,7 +92,7 @@
     provider.addScope('openid');
     provider.addScope('profile');
     provider.addScope('email');
-    a.signInWithRedirect(provider).catch(function(err){
+    (isLocalDev ? a.signInWithPopup(provider) : a.signInWithRedirect(provider)).catch(function(err){
       console.error('[BOLD Lab] sign-in failed', err);
       if (typeof onError === 'function') onError(err);
     });
