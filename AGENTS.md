@@ -6,6 +6,8 @@ For how the codebase works (pages, data model, conventions), read [`docs/AGENTS.
 
 ## Setup (≈5 minutes)
 
+**Before the hackathon, get push access:** sign in on the [BOLD OS workshop page](https://bold-lab-ai.github.io/bold-os/event-collaboration-week-session-bold-os-workshop.html), enter your GitHub username and click **Ask to join**. Once a PI or admin approves it, you're added to the `hackathon` team. If you're new to the bold-lab-ai organisation, you'll get GitHub's invitation email first; accept it. Without this you can still clone and run everything, but you can't push your branch.
+
 You need **Node 20+** and **Java 21+** (the Firestore emulator runs on Java). On a Mac: `brew install --cask temurin@21` (a prebuilt install, about a minute; not `brew install openjdk@21`, which can end up compiling from source for an hour). Otherwise, get the installer from [adoptium.net](https://adoptium.net/temurin/releases/?version=21). Check with `java -version`.
 
 ```sh
