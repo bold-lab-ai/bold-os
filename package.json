@@ -4,7 +4,10 @@
   "description": "BOLD Lab's tool suite for taking a paper from venue choice to conference presentation \u2014 an implementation of BOLDiquette \u00a7 ML Conference Cycle.",
   "scripts": {
     "build": "eleventy",
-    "start": "eleventy --serve --port=8137"
+    "start": "eleventy --serve --port=8137",
+    "hack:setup": "npm install && npm --prefix functions install && node hackathon/setup.mjs",
+    "emulators": "npx -y firebase-tools@15 emulators:start --project bold-d7ff2",
+    "seed": "node hackathon/seed.mjs"
   },
   "keywords": [],
   "devDependencies": {

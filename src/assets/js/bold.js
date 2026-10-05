@@ -21,6 +21,10 @@
   if (isLocalDev && BOLD.firebaseConfig) {
     BOLD.firebaseConfig = Object.assign({}, BOLD.firebaseConfig, { authDomain: 'bold-d7ff2.firebaseapp.com' });
   }
+  // Hackathon branch: on localhost, Firestore, Storage and Functions run on the
+  // local emulators (`npm run emulators`), so no data touches production.
+  // Sign-in stays real Slack. See AGENTS.md.
+  BOLD.isLocal = isLocalDev;
 
   BOLD.escapeHtml = function(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -41,6 +45,12 @@
   BOLD.getApp = function(){
     if (app) return app;
     try { app = firebase.apps.length ? firebase.app() : firebase.initializeApp(BOLD.firebaseConfig); } catch (e){ app = null; }
+    // Before any page script touches them: each SDK is only there if the page loads it.
+    if (app && BOLD.isLocal) {
+      try { if (firebase.firestore) firebase.firestore(app).useEmulator('localhost', 8080); } catch (e){ console.warn('[hackathon] Firestore emulator', e); }
+      try { if (firebase.storage) firebase.storage(app).useEmulator('localhost', 9199); } catch (e){ console.warn('[hackathon] Storage emulator', e); }
+      try { if (firebase.functions) app.functions('europe-west2').useEmulator('localhost', 5001); } catch (e){ console.warn('[hackathon] Functions emulator', e); }
+    }
     return app;
   };
 
