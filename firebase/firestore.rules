@@ -180,8 +180,8 @@ service cloud.firestore {
       );
     }
 
-    // A Collaboration Week talk's presentation link, keyed by the talk's slug.
-    // Written only by the talkPresentation function (functions/index.js),
+    // A Collaboration Week talk's edits (incl. its presentation link), keyed by its slug.
+    // Written only by the editTalk function (functions/index.js),
     // which checks the caller is the speaker, a session lead or a PI/admin.
     match /collabWeekTalks/{slug} {
       allow read: if isLabMember();

@@ -19,6 +19,7 @@ scripts: ["pages/event-collaboration-week-talk.js"]
   <a class="detail-back" href="event-collaboration-week.html">&larr; Back to schedule</a>
   {% endif %}
 
+  <div id="talkBody">
   {% if talk.type %}<span class="type-badge type-{{ talk.type }}">{{ collabWeekTypes[talk.type] }}</span>{% endif %}
   <div class="detail-head"><h2>{{ talk.title }}</h2></div>
 
@@ -29,7 +30,6 @@ scripts: ["pages/event-collaboration-week-talk.js"]
     {% if venue %}<dt>Where</dt><dd>{{ venue.name }} &middot; <a href="{{ venue.mapsUrl }}" target="_blank" rel="noopener">Open in Google Maps</a><span class="meta">{{ venue.address }}</span></dd>{% endif %}
     {% if talk.duration %}<dt>Duration</dt><dd>{{ talk.duration }}</dd>{% endif %}
     {% if talk.notes %}<dt>Notes</dt><dd>{{ talk.notes }}</dd>{% endif %}
-    <dt>Presentation</dt><dd id="talkPresentation" data-slug="{{ talk.slug }}"><span class="detail-muted">Not added yet.</span></dd>
   </dl>
 
   <div class="detail-field">
@@ -42,4 +42,8 @@ scripts: ["pages/event-collaboration-week-talk.js"]
     <p>{{ talk.bio }}</p>
   </div>
   {% endif %}
+  </div>
 </div>
+<script type="application/json" id="talkData">{{ talk | jsonScript | safe }}</script>
+<script type="application/json" id="talkTypes">{{ collabWeekTypes | jsonScript | safe }}</script>
+<script type="application/json" id="talkLocation">{{ venue | jsonScript | safe }}</script>

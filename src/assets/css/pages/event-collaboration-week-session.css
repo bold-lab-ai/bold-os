@@ -108,7 +108,7 @@
 .join-list .who{color:var(--muted); font-family:var(--sans); font-size:13px;}
 .join-list .btn-text{flex:0 0 auto;}
 
-/* Talk presentation links (talk page; session page talk list). */
-#talkPresentation a{overflow-wrap:anywhere;}
-#talkPresentation .join-row{margin-top:0;}
+/* Talk page: edited text keeps its paragraphs; long presentation links wrap. */
+.talk-text{white-space:pre-line;}
+dd.talk-pres a{overflow-wrap:anywhere;}
 .session-talks .talk-pres{font-family:var(--sans); font-size:13px;}

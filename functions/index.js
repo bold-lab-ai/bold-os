@@ -1681,15 +1681,18 @@ exports.approveHackathonJoins = onCall(
   }
 );
 
-// ---------- Collaboration Week: talk presentation links ----------
+// ---------- Collaboration Week: editing a talk ----------
 //
-// Each talk's page has a Presentation link (collabWeekTalks/{slug}:
-// presentationUrl, readable by the lab, written only here). It can be set
-// by the talk's speaker, its session's leads, or a PI/admin. Who those
-// are comes from the published programme (event-collaboration-week-talks.json,
-// built from src/_data), matched to sign-in emails through the people roster
-// by name, as the session page does for leads.
+// A talk's page comes from the programme (src/_data); collabWeekTalks/{slug}
+// holds what's been edited since (TALK_FIELDS, plus presentationUrl), readable
+// by the lab and written only here. The talk's speaker, its session's leads
+// or a PI/admin can edit it. Who those are comes from the published
+// programme (event-collaboration-week-talks.json, built from src/_data),
+// matched to sign-in emails through the people roster by name, as the
+// session page does for leads. Speaker, day, time and duration stay with
+// the schedule.
 const TALKS_URL = 'https://bold-lab-ai.github.io/bold-os/event-collaboration-week-talks.json';
+const TALK_FIELDS = { title: 300, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
 let talksCache = { at: 0, list: null };
 
 async function collabWeekTalks(){
@@ -1720,26 +1723,33 @@ async function canEditTalk(request, email, talk){
   return emails.indexOf(email) >= 0;
 }
 
-// data: { slug } → { canEdit }; { slug, url } sets the link ('' removes it).
-exports.talkPresentation = onCall(
+// data: { slug } → { canEdit }; { slug, edits: { field: text, … } } saves them.
+exports.editTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
     const data = request.data || {};
     const talk = (await collabWeekTalks()).find(t => t.slug === data.slug);
     if (!talk) throw new HttpsError('not-found', 'No such talk.');
     const canEdit = await canEditTalk(request, email, talk);
-    if (data.url === undefined) return { canEdit };
-    if (!canEdit) throw new HttpsError('permission-denied', 'Only the speaker, the session’s leads, PIs and admins can change this.');
-    const url = String(data.url).trim();
-    if (url && !/^https?:\/\/\S+$/.test(url)) throw new HttpsError('invalid-argument', 'That isn’t a link (https://…).');
-    await db.collection('collabWeekTalks').doc(talk.slug).set({
+    if (!data.edits) return { canEdit };
+    if (!canEdit) throw new HttpsError('permission-denied', 'Only the speaker, the session’s leads, PIs and admins can edit this talk.');
+    const doc = {};
+    Object.keys(data.edits).forEach(key => {
+      if (!(key in TALK_FIELDS)) throw new HttpsError('invalid-argument', 'Unknown field: ' + key);
+      const v = String(data.edits[key] == null ? '' : data.edits[key]).trim();
+      if (v.length > TALK_FIELDS[key]) throw new HttpsError('invalid-argument', 'Too long: ' + key);
+      doc[key] = v;
+    });
+    if ('title' in doc && !doc.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
+    if (doc.presentationUrl && !/^https?:\/\/\S+$/.test(doc.presentationUrl)) throw new HttpsError('invalid-argument', 'The presentation isn’t a link (https://…).');
+    Object.assign(doc, {
       slug: talk.slug,
       sessionSlug: talk.sessionSlug,
-      presentationUrl: url,
       updatedBy: { email, name: request.auth.token.name || '' },
       updatedAt: Date.now(),
     });
-    return { canEdit, presentationUrl: url };
+    await db.collection('collabWeekTalks').doc(talk.slug).set(doc, { merge: true });
+    return { canEdit, saved: doc };
   }
 );
 
