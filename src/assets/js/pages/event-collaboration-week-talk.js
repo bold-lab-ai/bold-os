@@ -200,6 +200,18 @@
       saved = snap.exists ? snap.data() : null;
       if (!editing) render();
     }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the talk failed', err); });
+    // A reordered session moves its talks between the start-time slots.
+    if (base.sessionSlug && (base.slotTimes || []).some(Boolean)) {
+      db.collection('collabWeekSessions').doc(base.sessionSlug).get().then(function(snap){
+        var order = snap.exists && snap.data().talkOrder;
+        if (!order || !order.length) return;
+        var keys = base.sessionTalkKeys.map(function(k, i){ return { k: k, i: i }; });
+        var pos = function(k){ var i = order.indexOf(k); return i < 0 ? order.length : i; };
+        keys.sort(function(a, b){ return (pos(a.k) - pos(b.k)) || (a.i - b.i); });
+        var slot = keys.map(function(x){ return x.k; }).indexOf(base.slug);
+        if (slot >= 0 && base.slotTimes[slot] !== base.time) { base.time = base.slotTimes[slot]; if (!editing) render(); }
+      }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the session failed', err); });
+    }
     editTalk({ slug: base.slug }).then(function(r){
       canEdit = !!r.data.canEdit;
       canSetPresenters = !!r.data.canSetPresenters;

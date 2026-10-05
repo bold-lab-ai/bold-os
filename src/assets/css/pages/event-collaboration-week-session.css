@@ -113,3 +113,5 @@
 .talk-text{white-space:pre-line;}
 dd.talk-pres a{overflow-wrap:anywhere;}
 .session-talks .talk-pres{font-family:var(--sans); font-size:13px;}
+.session-talks.talk-order li{flex-direction:row; align-items:center;}
+.talk-order .btn-text{flex:0 0 auto; font-size:16px; text-decoration:none; padding:0 4px;}

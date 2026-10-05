@@ -31,6 +31,7 @@
   var editing = false;      // the form is open
   var people = [];          // the `people` roster, for the leads picker
   var leadRows = [];        // in-progress rows while the form is open
+  var orderRows = [];       // talk keys, in the order being edited
   var talkEdits = {};       // talk slug → its edits (collabWeekTalks), e.g. title, presentationUrl
 
   function session(){ return Object.assign({}, base, saved || {}); }
@@ -114,6 +115,53 @@
     }) };
   }
 
+  // --- talk order ------------------------------------------------------------
+  // A session's talks come from the programme; `talkOrder` (talk slugs, or
+  // titles for talks without a page) reorders them. When the talks have start
+  // times, the times stay with their slots and the talks move between them.
+
+  function talkKey(t){ return t.slug || t.title; }
+
+  function orderedTalks(order){
+    var talks = (base.talks || []).slice();
+    if (order && order.length) {
+      var pos = function(t){ var i = order.indexOf(talkKey(t)); return i < 0 ? order.length : i; };
+      talks = talks.map(function(t, i){ return { t: t, i: i }; })
+        .sort(function(a, b){ return (pos(a.t) - pos(b.t)) || (a.i - b.i); })
+        .map(function(x){ return x.t; });
+    }
+    return talks.map(function(t, i){
+      return base.talks[i].time ? Object.assign({}, t, { time: base.talks[i].time }) : t;
+    });
+  }
+
+  function orderHtml(){
+    var byKey = {};
+    (base.talks || []).forEach(function(t){ byKey[talkKey(t)] = t; });
+    return orderRows.map(function(k, i){
+      var t = byKey[k];
+      return '<li><span class="e">' + esc(t.title) + (t.speaker ? ' <span class="who">— ' + esc(t.speaker) + '</span>' : '') + '</span>' +
+        '<button type="button" class="btn-text" data-move="' + i + '" data-dir="-1"' + (i ? '' : ' disabled') + ' aria-label="Move up">↑</button>' +
+        '<button type="button" class="btn-text" data-move="' + i + '" data-dir="1"' + (i < orderRows.length - 1 ? '' : ' disabled') + ' aria-label="Move down">↓</button></li>';
+    }).join('');
+  }
+
+  // Only the list is redrawn, so the rest of the form keeps what's been typed.
+  function wireOrder(){
+    var list = el('talkOrder');
+    if (!list) return;
+    list.innerHTML = orderHtml();
+    list.querySelectorAll('[data-move]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var i = Number(btn.getAttribute('data-move')), j = i + Number(btn.getAttribute('data-dir'));
+        var k = orderRows[i]; orderRows[i] = orderRows[j]; orderRows[j] = k;
+        wireOrder();
+        var again = list.querySelector('[data-move="' + j + '"][data-dir="' + btn.getAttribute('data-dir') + '"]');
+        (again && !again.disabled ? again : list.querySelector('[data-move="' + j + '"]:not(:disabled)')).focus();
+      });
+    });
+  }
+
   // --- the page everyone sees -------------------------------------------------
 
   function row(label, valueHtml){ return '<dt>' + label + '</dt><dd>' + valueHtml + '</dd>'; }
@@ -159,7 +207,7 @@
       return '<li><a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label) + '</a></li>';
     }).join('') + '</ul>';
 
-    if (!isEmpty(s.talks)) html += section('Talks', '<ul class="session-talks">' + s.talks.map(function(t){
+    if (!isEmpty(s.talks)) html += section('Talks', '<ul class="session-talks">' + orderedTalks(s.talkOrder).map(function(t){
       t = Object.assign({}, t, talkEdits[t.slug] || {});
       var title = t.slug ? '<a href="event-collaboration-week-talk-' + esc(t.slug) + '.html">' + esc(t.title) + '</a>' : esc(t.title);
       return '<li><span class="t">' + esc(t.time || t.duration || '') + '</span><span class="e">' + title +
@@ -196,6 +244,9 @@
         ? '<div id="leadRows"></div>'
         : '<p class="edit-static">' + leadsHtml(s.leads) + '</p><p class="edit-hint">Only PIs and admins can change the leads.</p>') + '</div>';
     });
+    if ((base.talks || []).length > 1) html += '<div class="edit-field"><span class="edit-label">Talk order</span>' +
+      '<ul class="session-talks talk-order" id="talkOrder"></ul>' +
+      (base.talks.some(function(t){ return t.time; }) ? '<p class="edit-hint">Start times stay in place; the talks move between them.</p>' : '') + '</div>';
     return html + '</div><div class="field-error" id="editError" hidden></div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="editSave">Save</button>' +
       '<button class="btn" type="button" id="editCancel">Cancel</button></div>';
@@ -255,6 +306,7 @@
     var ready = fullWrite ? loadPeople() : Promise.resolve();
     ready.then(function(){
       leadRows = (session().leads || []).map(function(l){ return { name: l.name, email: l.email || '', free: !l.email }; });
+      orderRows = orderedTalks(session().talkOrder).map(talkKey);
       editing = true;
       render();
       el('f_title').focus();
@@ -274,6 +326,8 @@
       if (parsed.error) return fail(parsed.error);
       if (JSON.stringify(parsed.value) !== JSON.stringify(fromText(f, toText(f.key, s[f.key])).value)) patch[f.key] = parsed.value;
     }
+    var currentOrder = orderedTalks(s.talkOrder).map(talkKey);
+    if (orderRows.length && JSON.stringify(orderRows) !== JSON.stringify(currentOrder)) patch.talkOrder = orderRows.slice();
     if (fullWrite) {
       var leads = leadRows
         .map(function(r){ return r.free ? { name: (r.name || '').trim() } : { name: r.name, email: r.email }; })
@@ -304,6 +358,7 @@
       return;
     }
     wireLeadRows();
+    wireOrder();
     el('editSave').addEventListener('click', saveForm);
     el('editCancel').addEventListener('click', function(){ editing = false; render(); });
   }
