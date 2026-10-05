@@ -1587,6 +1587,100 @@ exports.joinProjectChannel = onCall(
   }
 );
 
+// Collaboration Week hackathon: joining the bold-lab-ai `hackathon` team
+// (Write on bold-os). GitHub has no join-by-link, so the BOLD OS workshop page
+// does it in two steps:
+// - joinHackathonTeam: a signed-in lab member asks, with their GitHub
+//   username. Only recorded in hackathonJoins/{email}; nothing goes to GitHub.
+// - approveHackathonJoins: a PI/admin approves some or all requests; each is
+//   then sent to GitHub, which adds them (or emails an org invitation, which
+//   leaves them "pending" until they accept).
+// hackathonJoinRequests returns the caller's own request, and every request
+// for a PI/admin. hackathonJoins has no client access (firestore.rules'
+// catch-all). GITHUB_ORG_TOKEN: a fine-grained token on bold-lab-ai with
+// Organization → Members: read and write.
+const GITHUB_ORG_TOKEN = defineSecret('GITHUB_ORG_TOKEN');
+const GITHUB_USERNAME = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
+
+function callerEmail(request){
+  const email = request.auth && request.auth.token && request.auth.token.email;
+  if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+  return email.toLowerCase();
+}
+
+async function isFullWrite(email){
+  const [pis, admins] = await Promise.all([rolesEmails('pis'), rolesEmails('admins')]);
+  return pis.concat(admins).some(e => String(e).toLowerCase() === email);
+}
+
+function joinView(d){
+  return { email: d.email, name: d.name || '', github: d.github, status: d.status, error: d.error || '', requestedAt: d.requestedAt || 0 };
+}
+
+exports.joinHackathonTeam = onCall(
+  async (request) => {
+    const email = callerEmail(request);
+    const github = String((request.data || {}).username || '').trim().replace(/^@/, '');
+    if (!GITHUB_USERNAME.test(github)) throw new HttpsError('invalid-argument', 'That isn’t a GitHub username.');
+    const ref = db.collection('hackathonJoins').doc(email);
+    const prev = (await ref.get()).data();
+    // Already through: changing the username would need a fresh approval.
+    if (prev && prev.github.toLowerCase() === github.toLowerCase() && (prev.status === 'active' || prev.status === 'pending')) return joinView(prev);
+    const doc = { email, name: request.auth.token.name || '', github, status: 'requested', error: '', requestedAt: Date.now() };
+    await ref.set(doc);
+    return joinView(doc);
+  }
+);
+
+exports.hackathonJoinRequests = onCall(
+  async (request) => {
+    const email = callerEmail(request);
+    const mine = (await db.collection('hackathonJoins').doc(email).get()).data();
+    if (!(await isFullWrite(email))) return { mine: mine ? joinView(mine) : null, canApprove: false };
+    const all = (await db.collection('hackathonJoins').get()).docs.map(d => joinView(d.data()));
+    all.sort((a, b) => b.requestedAt - a.requestedAt);
+    return { mine: mine ? joinView(mine) : null, canApprove: true, all };
+  }
+);
+
+async function addToHackathonTeam(github){
+  const res = await fetch('https://api.github.com/orgs/bold-lab-ai/teams/hackathon/memberships/' + encodeURIComponent(github), {
+    method: 'PUT',
+    headers: {
+      Authorization: 'Bearer ' + GITHUB_ORG_TOKEN.value(),
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'bold-os',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ role: 'member' }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (res.ok) return { status: body.state === 'active' ? 'active' : 'pending', error: '' };
+  if (res.status === 404) return { status: 'failed', error: 'No GitHub account called ' + github + '.' };
+  logger.error('approveHackathonJoins: GitHub said ' + res.status, { github, message: body.message });
+  return { status: 'failed', error: 'GitHub refused (' + res.status + ').' };
+}
+
+// data.emails: the requests to approve; omitted = every request still waiting.
+exports.approveHackathonJoins = onCall(
+  { secrets: [GITHUB_ORG_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can approve.');
+    const wanted = Array.isArray((request.data || {}).emails) ? request.data.emails.map(e => String(e).toLowerCase()) : null;
+    const snap = await db.collection('hackathonJoins').where('status', 'in', ['requested', 'failed']).get();
+    const docs = snap.docs.filter(d => wanted ? wanted.indexOf(d.id) !== -1 : d.data().status === 'requested');
+    const results = [];
+    for (const d of docs) {
+      const r = await addToHackathonTeam(d.data().github);
+      await d.ref.update({ status: r.status, error: r.error, approvedBy: email, approvedAt: Date.now() });
+      results.push(Object.assign({ email: d.id, github: d.data().github }, r));
+    }
+    return { results };
+  }
+);
+
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {

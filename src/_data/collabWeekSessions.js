@@ -93,6 +93,8 @@ export default [
     overallDescription: "A workshop session on the outer loop of research where we discuss methods and the tools to produce BOLD science.\n- 1h BOLDiquette and desiderata for BOLD.OS\n- 1h Debrief of Internal review for ICLR 2027\n- 30 minutes Automating BOLD.OS tasks with the co-scientist",
     notes: 'Continues as "bold-os-workshop-continued" (Tue 15:30) and "bold-os-follow-up" (Fri 13:45).',
     agenda: [{ activity: 'BOLDiquette & BOLD.OS desiderata', duration: '1 h' }],
+    // Shows the "join the hackathon's GitHub team" box (joinHackathonTeam).
+    hackathonJoin: true,
   },
   {
     slug: 'ai4science-bold',

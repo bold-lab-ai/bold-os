@@ -92,3 +92,18 @@
 .type-welcome, .type-keynote, .type-panel{color:#8a5a12;}
 .detail > .type-badge{margin-bottom:8px;}
 .session-talks .talk-type{flex:0 0 auto; margin-left:auto; padding-left:12px;}
+
+/* Hackathon: join the GitHub team (bold-os-workshop only). */
+.join-box{margin-top:8px; padding-top:18px; border-top:1px solid var(--line);}
+.join-box p{font-size:16px; line-height:1.6;}
+.join-row{display:flex; gap:10px; margin-top:12px; max-width:420px;}
+.join-row input[type="text"]{flex:1 1 auto; width:auto; min-width:0;}
+.join-mine{margin-top:12px;}
+.join-admin{margin-top:26px;}
+.join-admin-head{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+.join-admin-head .detail-field-label{margin:0;}
+.join-list{list-style:none; margin:10px 0 0; padding:0; border-top:1px solid var(--line); font-size:16px; line-height:1.5;}
+.join-list li{display:flex; gap:14px; align-items:baseline; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--line);}
+.join-list .e{min-width:0; overflow-wrap:break-word;}
+.join-list .who{color:var(--muted); font-family:var(--sans); font-size:13px;}
+.join-list .btn-text{flex:0 0 auto;}

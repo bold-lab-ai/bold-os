@@ -310,13 +310,111 @@
     } catch (e){}
   }
 
+  // --- hackathon: join the GitHub team ----------------------------------------
+  // Its own box under the session, so the snapshot re-renders above don't wipe
+  // what's being typed. Asking only records a request (joinHackathonTeam); a
+  // PI/admin approves here, which is when it goes to GitHub (functions/index.js).
+
+  var joinEl = null, join = { mine: null, canApprove: false, all: [] };
+  if (base.hackathonJoin) {
+    joinEl = document.createElement('div');
+    joinEl.className = 'detail-field join-box';
+    bodyEl.parentNode.appendChild(joinEl);
+  }
+
+  function callable(name){ return firebase.app().functions('europe-west2').httpsCallable(name); }
+
+  var JOIN_STATUS = {
+    requested: 'waiting for approval',
+    pending: 'invited — accept the email from GitHub, or at github.com/orgs/bold-lab-ai/invitation',
+    active: 'in the team',
+    failed: 'not added',
+  };
+  function statusText(r){ return JOIN_STATUS[r.status] + (r.status === 'failed' && r.error ? ': ' + r.error : ''); }
+
+  function requestsHtml(){
+    if (!join.canApprove) return '';
+    var waiting = join.all.filter(function(r){ return r.status === 'requested'; }).length;
+    var html = '<div class="join-admin"><div class="join-admin-head"><p class="detail-field-label">Requests (' + join.all.length + ')</p>' +
+      (waiting ? '<button class="btn" type="button" id="joinApproveAll">Approve all (' + waiting + ')</button>' : '') + '</div>';
+    if (!join.all.length) return html + '<p class="detail-muted">No requests yet.</p></div>';
+    html += '<ul class="join-list">' + join.all.map(function(r){
+      var act = r.status === 'requested' || r.status === 'failed'
+        ? '<button class="btn-text" type="button" data-approve="' + esc(r.email) + '">' + (r.status === 'failed' ? 'Retry' : 'Approve') + '</button>' : '';
+      return '<li><span class="e">' + esc(r.name || r.email) + ' <span class="who">' + esc(r.email) + '</span>' +
+        '<span class="meta">GitHub: ' + esc(r.github) + ' · ' + esc(statusText(r)) + '</span></span>' + act + '</li>';
+    }).join('') + '</ul>';
+    return html + '<p class="edit-hint" id="joinAdminMsg" role="status"></p></div>';
+  }
+
+  function renderJoin(){
+    if (!joinEl) return;
+    var html = '<p class="detail-field-label">Hackathon</p>' +
+      '<p>To push your team’s branch, ask to join the <code>hackathon</code> team of ' +
+      '<a href="https://github.com/bold-lab-ai/bold-os/tree/hackathon" target="_blank" rel="noopener">bold-os</a> on GitHub. ' +
+      'Setup: <a href="https://github.com/bold-lab-ai/bold-os/blob/hackathon/AGENTS.md" target="_blank" rel="noopener">AGENTS.md</a>.</p>';
+    if (!me) { joinEl.innerHTML = html + '<p class="detail-muted">Sign in to join.</p>'; return; }
+    if (join.mine) html += '<p class="join-mine">Your request (GitHub: ' + esc(join.mine.github) + '): ' + esc(statusText(join.mine)) + '.</p>';
+    if (!join.mine || join.mine.status === 'requested' || join.mine.status === 'failed') {
+      html += '<div class="join-row"><input type="text" id="joinUser" placeholder="GitHub username" autocomplete="off" spellcheck="false"' +
+        (join.mine ? ' value="' + esc(join.mine.github) + '"' : '') + '>' +
+        '<button class="btn" type="button" id="joinBtn">' + (join.mine ? 'Update' : 'Ask to join') + '</button></div>' +
+        '<p class="edit-hint" id="joinMsg" role="status"></p>';
+    }
+    joinEl.innerHTML = html + requestsHtml();
+    wireJoin();
+  }
+
+  function wireJoin(){
+    var input = el('joinUser'), btn = el('joinBtn'), msg = el('joinMsg');
+    function ask(){
+      var username = input.value.trim();
+      if (!username) { input.focus(); return; }
+      btn.disabled = true; msg.textContent = 'Sending…';
+      callable('joinHackathonTeam')({ username: username }).then(function(){ return loadJoin(); }).catch(function(err){
+        console.error('[BOLD Collaboration Week] hackathon join request failed', err);
+        btn.disabled = false;
+        msg.textContent = (err && err.message) || 'Could not send — try again.';
+      });
+    }
+    if (btn) { btn.addEventListener('click', ask); input.addEventListener('keydown', function(e){ if (e.key === 'Enter') ask(); }); }
+
+    function approve(emails, button){
+      var adminMsg = el('joinAdminMsg');
+      button.disabled = true;
+      if (adminMsg) adminMsg.textContent = 'Adding on GitHub…';
+      callable('approveHackathonJoins')(emails ? { emails: emails } : {}).then(function(){ return loadJoin(); }).catch(function(err){
+        console.error('[BOLD Collaboration Week] approving hackathon joins failed', err);
+        button.disabled = false;
+        if (adminMsg) adminMsg.textContent = (err && err.message) || 'Could not approve — try again.';
+      });
+    }
+    var all = el('joinApproveAll');
+    if (all) all.addEventListener('click', function(){ approve(null, all); });
+    Array.prototype.slice.call(joinEl.querySelectorAll('[data-approve]')).forEach(function(b){
+      b.addEventListener('click', function(){ approve([b.getAttribute('data-approve')], b); });
+    });
+  }
+
+  function loadJoin(){
+    if (!joinEl || !me) return Promise.resolve();
+    return callable('hackathonJoinRequests')().then(function(r){
+      join = { mine: r.data.mine, canApprove: !!r.data.canApprove, all: r.data.all || [] };
+      renderJoin();
+    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading hackathon requests failed', err); });
+  }
+
   render();
+  renderJoin();
   var unsubscribe = null;
   BOLD.onUser(function(user){
     me = user ? { email: user.email || '' } : null;
     fullWrite = false;
     editing = false;
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    join = { mine: null, canApprove: false, all: [] };
+    renderJoin();
+    loadJoin();
     if (!user || !ref) { render(); return; }
     loadAccess();
     unsubscribe = ref.onSnapshot(function(snap){
