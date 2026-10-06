@@ -4,3 +4,4 @@ sessions/
 *.log
 *.pid
 __pycache__/
+eval/

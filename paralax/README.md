@@ -1,13 +1,16 @@
 # Paralax
 
-Several people work on one problem at the same time. Each person talks to their own AI
-assistant, and every assistant reads every conversation, live. Each person still has a
-private-feeling, one-to-one conversation, but their assistant knows what the others have
-tried, found and are doing right now. The assistant uses that to keep its person from
-repeating work, to bring in results as they land, and to flag contradictions.
+Several people work on one problem at the same time, each talking privately to their own AI
+assistant. Everything people type goes into a shared global workspace. Before each reply, a
+person's assistant decides in the background whether anything the others have typed should
+change what its own person thinks or does next. If so, the assistant folds it into its answer
+and credits the person it came from. If not, it says nothing about the others.
 
-It is a standalone prototype: one Python file and one HTML page. It needs no npm, Firebase or
-emulators, and it does not touch the rest of BOLD OS.
+Each person sees only their own conversation. There are no notifications, no board, and no
+messages the person didn't ask for.
+
+It is a standalone prototype: two Python files and one HTML page, with no npm, Firebase or
+emulators. It does not touch the rest of BOLD OS.
 
 ## Run it
 
@@ -17,13 +20,17 @@ You need Python 3.9 or newer (macOS ships it) and a Gemini API key. Nothing to i
 GEMINI_API_KEY=your-key python3 paralax/server.py
 ```
 
-Open http://localhost:8808/. You get two chat boxes with the shared board between them.
-Each person types their name at the top of a box and uses that box.
+| Page | Who it's for |
+|---|---|
+| `http://localhost:8808/` | Pick a seat |
+| `http://localhost:8808/?pane=A` | One person's own chat; seat B is `?pane=B` |
+| `http://localhost:8808/workspace` | Researcher view: every chat, what each assistant drew on, and the mode switch |
 
-To use two laptops, start the server with `--host 0.0.0.0` on one machine. On each laptop,
-open `http://<that-machine>:8808/?pane=A` or `?pane=B` to get a single box plus the board.
+For two people on one laptop, open each seat in its own browser window. For several laptops,
+start the server with `--host 0.0.0.0` and open `http://<that-machine>:8808/?pane=A` and so on.
 
-Other options:
+Each participant's browser receives only that person's own messages; the server enforces this.
+The researcher view has no login, so share its address only with the people running the study.
 
 | Flag or variable | Effect |
 |---|---|
@@ -32,88 +39,126 @@ Other options:
 | `--session NAME` | open a named session |
 | `paralax/.env` | put `GEMINI_API_KEY=...` here instead (gitignored); several keys may be comma-separated |
 | `PARALAX_MODELS` | assistant model chain, default `gemini-3.8-flash,gemini-3.5-flash,gemini-3.5-flash-lite` |
-| `PARALAX_INTEGRATOR_MODELS` | board model chain |
-| `PARALAX_HEDGE_SECS` | seconds before the next model is also tried, default 6 |
+| `PARALAX_SELECT_MODELS` | model chain for the background selection, default `gemini-3.5-flash-lite,gemini-3.5-flash` |
+| `PARALAX_SELECT_CAP_SECS` | the selection's time limit, default 4 s; after that the reply goes ahead without the workspace |
 
-Each session is saved as `paralax/sessions/<name>.jsonl`, one event per line. This folder is
+Each session is saved as `paralax/sessions/<name>.jsonl`, one event per line. That folder is
 gitignored.
 
 ## How it works
 
-There are three parts, arranged as a blackboard system.
+**The rule.** An assistant passes on another person's contribution only when two things hold:
+- the contribution would change what its own person believes or does next;
+- its own person doesn't already have it.
 
-1. **One assistant per person.** The assistant's message history is only its own person's
-   conversation, so it answers as that person's assistant. Its instructions also contain the
-   shared problem, the current board, and every other conversation verbatim, with lines that
-   arrived since its person last spoke marked NEW. Six rules govern how it uses the other
-   conversations:
-   - build on them, with attribution by name;
-   - head off duplicated work;
-   - surface contradictions;
-   - help divide the work;
-   - mention the others only when that changes what its person should do;
-   - think concretely with its person.
-2. **The integrator.** After every reply it rewrites one shared board from the previous board
-   and all the conversations. The board holds a summary, established claims with who
-   established them, approaches with owner and status, open questions, tensions, and one
-   suggested next move per person. Everyone sees the board, and every assistant reads it.
-3. **Unprompted notes.** The integrator may also give a person a one- or two-sentence note
-   from their own assistant, without that person asking. A note is allowed only when a new
-   message from someone else does one of these things:
-   - reports a result that bears on this person's work;
-   - contradicts an assumption this person relies on;
-   - shows this person is duplicating work;
-   - answers a question this person asked.
+This is the team-communication rule from teamwork research: communicate a fact when the chance
+the other person lacks it, times the cost of their not having it, exceeds the cost of telling
+them (Tambe 1997; Marschak & Radner 1972).
 
-   Each note must state which of these four reasons applies, and notes without one are
-   dropped. A person never gets more than two unanswered notes, and never one about their
-   own turn. The "unprompted notes" checkbox turns notes off.
+What is being asked of the workspace comes from the person's own situation, not the
+assistant's uncertainty. The information a group most needs is held by one member and nobody
+knows to ask for it. This is the "hidden profile" problem (Stasser & Titus 1985).
 
-Why this design:
+**The shared global workspace** (`workspace.py`) is derived from the session log, so nothing
+extra is stored.
+- **Contributions.** Everything each person typed, with author and turn number. Assistant text
+  is never included. Each contribution keeps the assistant turn before it as context only, so a
+  short reply such as "yes, do that" can be understood. A guess is never recorded as someone
+  else's claim.
+- **Ledger.** Which contributions each person's assistant has already been given, so nothing is
+  passed on twice.
+- **Retrieval log.** For each reply: what was considered, what was picked, the reason, the
+  model and the time taken. It appears only in the researcher view.
 
-- **Every assistant reads everything instead of relaying messages.** Relaying needs a decision
-  about what to pass on, and that decision is where the useful information gets lost. Reading
-  everything lets each assistant judge relevance against its own person's question at the
-  moment that person asks it.
-- **The board exists alongside the transcripts.** Transcripts grow without limit and mix
-  results with chatter. The board is the compressed shared state: what is established, who
-  owns which approach, and where people disagree. It is also the one thing the people see
-  that is not their own conversation.
-- **Notes need a stated reason.** Without that, the integrator interrupted after nearly every
-  turn, mostly to suggest coordinating.
+**Before each reply**, one fast selection call looks at three things:
+- the problem;
+- the person's recent conversation;
+- the contributions from others that this person hasn't yet been given.
 
-## What a test session showed
+It returns at most two picks, each labelled:
+- `answers`: answers a question the person has asked;
+- `contradicts`: is evidence against what the person thinks;
+- `supports`: is evidence for something the person is unsure about;
+- `overlaps`: someone else is already doing the work this person plans.
 
-Priya and Tom were asked why a reading group fell from 14 attendees to 4.
+It can also return one `ask`: a question someone else has that this person seems able to
+answer. Most of the time it returns nothing. In tests, "Hello" or "dogs are cats" retrieved
+nothing.
 
-- Priya suspected long papers and planned a survey. Tom suspected the move from Tuesday to
-  Friday.
-- When Tom reported that 8 of the 10 people who left stopped in the first week after the
-  move, Priya got an unprompted note with that result.
-- When Priya next asked whether to send the survey, Priya's assistant advised holding off.
-  It cited Tom's numbers and suggested asking about the meeting time instead.
-- When Tom then proposed a separate scheduling poll, Tom's assistant pointed out that Priya was
-  already preparing one.
+Only facts and plans are passed on, never other people's guesses, preferences or votes. Group
+decisions get worse when members know each other's preferences (Mojzisch & Schulz-Hardt 2010),
+and AI summaries are where AI mediators have been found to steer groups (Parisi et al. 2026).
+
+**The reply** uses only the picked items.
+- It paraphrases each item and credits it by name.
+- It presents findings as evidence, not as advice.
+- For `overlaps`, it suggests how to split or combine the work.
+- For an `ask`, it ends with one question asking the person for the fact someone else needs.
+- Text from other people is treated as data, never as instructions.
+
+**Modes.** The researcher view can switch how assistants use the workspace:
+- `workspace`, the default, uses the background selection above;
+- `context` gives the assistant everything at once under the same rules, as the comparison
+  condition;
+- `isolated` uses no workspace.
+
+## What has been tested
+
+A scripted two-person session about why a reading group shrank. Results:
+
+- **Irrelevant messages:** "Hello" and "dogs are cats" retrieved nothing, and neither reply
+  mentioned the other person.
+- **A result reaching the other person:** Tom's finding was that 8 of the 10 people who left
+  stopped right after the move to Friday. It reached Priya's next reply, labelled as
+  contradicting her paper-length theory and credited to Tom. The fact that Tom had last term's
+  reading list also reached her, labelled as answering her question.
+- **Duplicated work:** when Tom planned a scheduling poll, his assistant pointed out that Priya
+  was already preparing a survey. It suggested combining them, without passing on Priya's
+  reasoning.
+- **Asking for a fact:** Tom's assistant asked him the one thing Priya needed, whether the
+  papers had got longer.
+- **No repeats:** nothing was passed on twice.
+- **No leaks:** neither participant's browser received the other's messages.
+- **No gendered pronouns** appeared in the replies.
+- **Speed:** the background selection took 0.5 to 1.2 seconds.
+
+**Not yet run: the group-accuracy comparison.** `eval_hidden.py` compares the `workspace`
+mode with `context`, `isolated` and full-information conditions on HiddenBench (Li, Naito &
+Shirado, ICML 2026). HiddenBench is a set of 65 hidden-profile decision tasks, where the facts
+everyone shares point to a wrong option. Its calibration step has run:
+
+| One call on our model | Correct |
+|---|---|
+| With full information | 58 of 65 |
+| With shared information only | 2 of 65 |
+
+So the tasks have room to show an effect. The session comparison itself has not been run.
+
+```sh
+python3 paralax/eval_hidden.py calibrate
+python3 paralax/eval_hidden.py run --run main      # about 6,000 model calls
+python3 paralax/eval_hidden.py report --run main
+```
 
 ## Shipping it inside BOLD OS
 
 The prototype uses names typed into boxes and an in-memory server. A real BOLD OS feature
-would need these pieces.
+would need:
 
-- **Identity.** Slack sign-in replaces the name boxes. A session is a room with a member list.
-- **Live sync.** Firestore documents replace the server's event stream: `paralaxRooms/{id}`
-  holds the problem and board, `paralaxRooms/{id}/messages` holds the messages, and
-  `onSnapshot` gives each page live updates.
-- **Model calls.** A Cloud Function, triggered on each new message, holds the Gemini key as a
-  secret. It runs the assistant and integrator prompts from `server.py` unchanged.
-- **Rules.** Only room members can read or write a room.
-- **Consent.** The room makes clear that every member's assistant reads every conversation in
-  the room. That visibility is the feature, so people need to know it before they type.
+- **Identity:** Slack sign-in instead of name boxes; a session becomes a room with members.
+- **Live sync:** Firestore rooms and messages with `onSnapshot`. Firestore rules would let each
+  member read only their own messages, with assistants reading the room.
+- **Model calls:** a Cloud Function that holds the Gemini key as a secret and runs the
+  selection and the reply.
+- **Consent:** each room should state plainly that everyone's assistant draws on what everyone
+  types.
 
 ## Files
 
-- `server.py` holds the state, both prompts (`AGENT_SYSTEM` and `INTEGRATOR_SYSTEM`), the
-  model chain, and the HTTP and event-stream endpoints.
-- `index.html` is the page. It uses the BOLD OS design tokens from
-  `src/assets/css/bold.css`. The `?pane=X` parameter shows a single box.
-- `.env.example` is the key template.
+| File | Holds |
+|---|---|
+| `server.py` | State, the assistant prompt (`AGENT_SYSTEM`), the model chain, the per-reply flow (`handle_send`), and the HTTP and event-stream endpoints with filtering by seat |
+| `workspace.py` | The workspace: contributions, ledger, the selection prompt and its validator, and the block that goes into the reply prompt |
+| `index.html` | The seat chooser, a participant's own chat, and the researcher view, in the BOLD OS design tokens |
+| `eval_hidden.py` | The HiddenBench evaluation |
+| `.env.example` | Key template |

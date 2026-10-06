@@ -17,6 +17,7 @@
   --sans:'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 *{box-sizing:border-box}
+[hidden]{display:none !important}   /* flex/grid display rules otherwise beat the UA [hidden] rule */
 html,body{height:100%;margin:0}
 body{background:var(--paper);color:var(--ink-soft);font-family:var(--serif);font-size:17px;line-height:1.55;
   -webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
@@ -26,28 +27,27 @@ body{background:var(--paper);color:var(--ink-soft);font-family:var(--serif);font
 .sub{font-family:var(--sans);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-top:2px}
 .problem{flex:1 1 360px;display:flex;flex-direction:column;gap:4px}
 .label{font-family:var(--sans);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
-textarea,input{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:0}
-textarea:focus,input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+textarea,input,select{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:0}
+textarea:focus,input:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
 #problem{min-height:46px;max-height:130px;resize:vertical;padding:6px 10px;font-size:16px}
-.controls{display:flex;gap:16px;align-items:center;font-family:var(--sans);font-size:13px;color:var(--ink-soft);padding-top:18px}
-.controls label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.controls{display:flex;gap:16px;align-items:center;font-family:var(--sans);font-size:13px;color:var(--ink-soft);padding-top:18px;flex-wrap:wrap}
+.controls select{font-family:var(--sans);font-size:13px;padding:3px 6px}
 .btn-text{font-family:var(--sans);font-size:12.5px;color:var(--accent);background:none;border:none;padding:0;cursor:pointer;
   text-decoration:underline;text-decoration-color:rgba(26,43,74,.32);text-underline-offset:2px}
 .btn-text:hover{text-decoration-color:currentColor}
 .btn{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink);background:none;border:1px solid var(--ink);
   padding:8px 14px;cursor:pointer;border-radius:0}
 .btn:hover{background:var(--wash)}
-main{flex:1;display:grid;grid-template-columns:1fr minmax(260px,.72fr) 1fr;gap:16px;padding:16px;min-height:0}
-main.single{grid-template-columns:1fr minmax(260px,.6fr)}
-.pane,.boardcol{background:var(--surface);border:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow:hidden}
-.boardcol{background:var(--paper)}
+main{flex:1;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;padding:16px;min-height:0}
+main.single{grid-template-columns:minmax(0,760px);justify-content:center}
+.pane{background:var(--surface);border:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow:hidden}
 .top{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-family:var(--sans)}
 .badge{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--ink);border:1px solid var(--ink);
   padding:0 6px;line-height:18px;display:inline-block;white-space:nowrap}
 .badge.soft{border-color:var(--line);color:var(--muted);font-weight:500}
-.top input{flex:1;font-family:var(--sans);font-weight:600;font-size:15px;border:1px solid transparent;background:transparent;padding:3px 6px}
+.top input{flex:1;min-width:0;font-family:var(--sans);font-weight:600;font-size:15px;border:1px solid transparent;background:transparent;padding:3px 6px}
 .top input:hover{border-color:var(--line)}
-.top .hint{font-size:11px;color:var(--muted);letter-spacing:.04em}
+.top .hint{font-size:11px;color:var(--muted);letter-spacing:.04em;white-space:nowrap}
 .log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
 .msg{max-width:94%}
 .msg .who{font-family:var(--sans);font-size:11px;letter-spacing:.04em;color:var(--muted);margin-bottom:3px;display:flex;gap:6px;align-items:center}
@@ -56,8 +56,6 @@ main.single{grid-template-columns:1fr minmax(260px,.6fr)}
 .msg.user .who{justify-content:flex-end}
 .msg.user .body{background:var(--wash);border-color:transparent;color:var(--ink)}
 .msg.agent{align-self:flex-start}
-.msg.nudge{align-self:flex-start}
-.msg.nudge .body{border-left:3px solid var(--ink)}
 .msg.error .body{border-style:dashed;color:var(--muted)}
 .msg p{margin:0 0 6px}.msg p:last-child{margin:0}
 .msg ul{margin:2px 0 6px 20px;padding:0}.msg li{margin:2px 0}
@@ -66,36 +64,38 @@ main.single{grid-template-columns:1fr minmax(260px,.6fr)}
 .msg.pending .body{color:var(--muted);font-family:var(--sans);font-size:13px}
 .msg.pending .body::after{content:"composing a reply…";animation:fade 1.4s infinite}
 @keyframes fade{50%{opacity:.35}}
+.rtag{align-self:flex-start;max-width:94%;font-family:var(--sans);font-size:11.5px;color:var(--ink-soft);border-left:2px solid var(--line);padding:2px 0 2px 8px;margin-top:-6px}
+.rtag.none{color:var(--muted)}
+.rtag .pick{display:block;margin-top:2px}
 .composer{border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:10px;align-items:flex-end}
 .composer textarea{flex:1;min-height:46px;max-height:180px;resize:vertical;padding:7px 10px;font-size:16px}
-.board{flex:1;overflow-y:auto;padding:14px;font-size:15.5px}
-.board h3{font-family:var(--sans);font-size:11px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:16px 0 6px}
-.board .headline{font-weight:700;color:var(--ink);margin-bottom:6px}
-.board ul{margin:0;padding-left:0;list-style:none}
-.board li{margin:0 0 7px;padding-bottom:7px;border-bottom:1px solid var(--line)}
-.board li:last-child{border-bottom:none}
-.board .badge{margin-right:6px;vertical-align:1px}
-.board .st{font-family:var(--sans);font-size:11px;color:var(--muted)}
-.board .empty{color:var(--muted);font-style:italic}
-.live{margin-left:auto;font-size:11px;color:var(--muted);letter-spacing:.04em}
-.live.on{color:var(--ink);font-weight:600}
+a{color:var(--accent);text-decoration-color:rgba(26,43,74,.32);text-underline-offset:3px}
+a:hover{text-decoration-color:currentColor}
+.chooser{max-width:560px;margin:40px auto;padding:0 16px;font-size:18px}
+.chooser h1{font-size:28px;color:var(--ink);margin:0 0 10px}
+.chooser ul{list-style:none;padding:0;margin:18px 0}
+.chooser li{border-bottom:1px solid var(--line);padding:10px 0;display:flex;gap:10px;align-items:center}
 #err{position:fixed;left:16px;bottom:16px;background:var(--surface);color:#8a1c1c;border:1px solid #8a1c1c;padding:8px 12px;
   font-family:var(--sans);font-size:12px;display:none;max-width:70vw;white-space:pre-wrap}
-@media (max-width:900px){main,main.single{grid-template-columns:1fr;overflow-y:auto}.pane,.boardcol{min-height:440px}.controls{padding-top:0}}
+@media (max-width:900px){main{grid-template-columns:1fr;overflow-y:auto}.pane{min-height:440px}.controls{padding-top:0}}
 </style>
 </head>
 <body>
-<header class="masthead">
+<header class="masthead" id="masthead" hidden>
   <div class="brand">
     <div class="wordmark">BOLD OS · Paralax</div>
-    <div class="sub">one problem, everyone's assistant reads everything</div>
+    <div class="sub" id="sub">your own assistant, informed by the group</div>
   </div>
   <div class="problem">
     <span class="label">The shared problem</span>
     <textarea id="problem" placeholder="State the problem you are working on together. Everyone, and every assistant, sees this."></textarea>
   </div>
-  <div class="controls">
-    <label title="Let an assistant post a short note when another person's work changes what its person should do next"><input type="checkbox" id="nudges" checked> unprompted notes</label>
+  <div class="controls" id="controls" hidden>
+    <label>assistants use <select id="mode">
+      <option value="workspace">workspace (selection)</option>
+      <option value="context">context (control)</option>
+      <option value="isolated">isolated</option>
+    </select></label>
     <button class="btn-text" id="reset">new session</button>
   </div>
 </header>
@@ -104,14 +104,15 @@ main.single{grid-template-columns:1fr minmax(260px,.6fr)}
 <script>
 (function(){
 "use strict";
-var PANES = [], NAMES = {}, after = 0, byId = {}, es = null;
-var only = new URLSearchParams(location.search).get("pane");
+var params = new URLSearchParams(location.search);
+var VIEW = location.pathname.replace(/\/+$/, "") === "/workspace" ? "researcher" : (params.get("pane") ? "participant" : "chooser");
+var QS = VIEW === "researcher" ? "view=workspace" : VIEW === "participant" ? "pane=" + encodeURIComponent(params.get("pane")) : "";
+var PANES = [], NAMES = {}, after = 0, es = null;
 var mainEl = document.getElementById("main"), errEl = document.getElementById("err");
-var problemEl = document.getElementById("problem"), nudgesEl = document.getElementById("nudges");
+var problemEl = document.getElementById("problem"), modeEl = document.getElementById("mode");
 
 function showErr(t){ errEl.style.display = "block"; errEl.textContent = t; }
 window.onerror = function(m, src, line){ showErr("page error: " + m + " (line " + line + ")"); };
-
 function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
 
 // Minimal markdown: code fences, inline code, bold, italic, bulleted and numbered lists, paragraphs.
@@ -134,27 +135,38 @@ function md(s){
   return out.join("");
 }
 
-function badge(name){ return '<span class="badge">' + esc(name) + "</span>"; }
+function post(path, body){
+  return fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
+    .then(function(r){ return r.json(); })
+    .catch(function(e){ showErr("request failed: " + e); });
+}
 
+// ---------------------------------------------------------------- seat chooser
+function chooser(s){
+  var items = s.panes.map(function(p){
+    var named = !/^Person [A-Z]$/.test(s.names[p]);
+    return '<li><span class="badge">' + p + '</span><a href="/?pane=' + p + '">' + (named ? esc(s.names[p]) : "free seat") + "</a></li>";
+  }).join("");
+  mainEl.className = "";
+  mainEl.innerHTML = '<div class="chooser"><h1>Paralax</h1>' +
+    "<p>Pick your seat. You will see only your own conversation with your own assistant. " +
+    "Your assistant can draw on what the others in the session have typed when it helps, and theirs on what you type.</p>" +
+    "<ul>" + items + "</ul>" +
+    '<p style="font-size:15px">Two people on one laptop: open each seat in its own browser window. ' +
+    'Researchers: <a href="/workspace">workspace view</a>.</p></div>';
+}
+
+// ---------------------------------------------------------------- panes
 function build(panes){
   mainEl.innerHTML = "";
-  var shown = only ? panes.filter(function(p){ return p === only; }) : panes;
-  if (!shown.length) shown = panes;
-  if (shown.length === 1) mainEl.className = "single";
-  else mainEl.style.gridTemplateColumns = shown.length === 2 ? "" : "repeat(" + shown.length + ", 1fr) minmax(260px,.72fr)";
-  var order = shown.length === 2 ? [shown[0], "board", shown[1]] : shown.concat(["board"]);
-  order.forEach(function(p){
+  mainEl.className = panes.length === 1 ? "single" : "";
+  panes.forEach(function(p){
     var el = document.createElement("section");
-    if (p === "board") {
-      el.className = "boardcol";
-      el.innerHTML = '<div class="top"><span class="label">Shared board</span><span class="live" id="live">up to date</span></div><div class="board" id="board"></div>';
-      mainEl.appendChild(el); return;
-    }
     el.className = "pane";
     el.innerHTML =
       '<div class="top"><span class="badge">' + p + '</span>' +
-      '<input id="name' + p + '" placeholder="Who is typing in this box?" title="Your name: your assistant and the others see it">' +
-      '<span class="hint">your own assistant</span></div>' +
+      '<input id="name' + p + '" placeholder="Your name" title="Your name, as your assistant and the others’ assistants will refer to you">' +
+      '<span class="hint" id="hint' + p + '">' + (VIEW === "researcher" ? "" : "your own assistant") + '</span></div>' +
       '<div class="log" id="log' + p + '"></div>' +
       '<div class="composer"><textarea id="in' + p + '" placeholder="Write to your assistant. Enter sends, Shift+Enter starts a new line."></textarea>' +
       '<button class="btn" id="send' + p + '">Send</button></div>';
@@ -172,96 +184,89 @@ function send(p){
   ta.value = "";
   post("/send", {pane: p, text: text, name: nm.value.trim()});
 }
-function post(path, body){
-  return fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
-    .then(function(r){ return r.json(); })
-    .catch(function(e){ showErr("request failed: " + e); });
-}
 
 function nearBottom(log){ return log.scrollHeight - log.scrollTop - log.clientHeight < 80; }
+function append(log, el, force){ var stick = nearBottom(log); log.appendChild(el); if (stick || force) log.scrollTop = log.scrollHeight; }
+
 function renderMsg(e){
   var log = document.getElementById("log" + e.pane); if (!log) return;
-  var el = document.getElementById("m" + e.id), stick = nearBottom(log);
-  if (!el) {
-    el = document.createElement("div"); el.id = "m" + e.id;
-    el.innerHTML = '<div class="who"></div><div class="body"></div>';
-    log.appendChild(el);
-  }
-  var who;
-  if (e.type === "user") who = esc(NAMES[e.pane] || e.name);
-  else if (e.type === "nudge") who = 'your assistant <span class="badge soft">unprompted' + (e.reason ? ": " + esc(e.reason) : "") + "</span>";
-  else who = "your assistant" + (e.secs ? ' <span class="badge soft">' + esc(e.secs) + " s</span>" : "");
+  var el = document.getElementById("m" + e.id), isNew = !el;
+  if (isNew) { el = document.createElement("div"); el.id = "m" + e.id; el.innerHTML = '<div class="who"></div><div class="body"></div>'; }
+  var who = e.type === "user" ? esc(NAMES[e.pane] || e.name)
+          : "your assistant" + (e.secs ? ' <span class="badge soft">' + esc(e.secs) + " s</span>" : "");
   el.className = "msg " + e.type + (e.status === "pending" ? " pending" : "") + (e.status === "error" ? " error" : "");
   el.querySelector(".who").innerHTML = who;
   el.querySelector(".body").innerHTML = e.status === "pending" ? "" : md(e.text);
-  if (stick || e.type === "user") log.scrollTop = log.scrollHeight;
+  if (isNew) append(log, el, e.type === "user");
 }
 
-function list(title, items, fn){ return items && items.length ? "<h3>" + title + "</h3><ul>" + items.map(fn).join("") + "</ul>" : ""; }
-function renderBoard(b){
-  var el = document.getElementById("board"); if (!el) return;
-  if (!b || !b.updated) {
-    el.innerHTML = '<div class="empty">The board fills in after the first exchange. An integrator reads every conversation and writes it; every assistant reads it before replying.</div>';
-    return;
-  }
-  var nx = b.next || {};
-  el.innerHTML =
-    (b.headline ? '<div class="headline">' + esc(b.headline) + "</div>" : "") +
-    "<div>" + esc(b.summary) + "</div>" +
-    list("Suggested next moves", Object.keys(nx), function(k){ return "<li>" + badge(k) + esc(nx[k]) + "</li>"; }) +
-    list("Approaches", b.approaches, function(a){ return "<li>" + badge(a.owner) + esc(a.name) + ' <span class="st">' + esc(a.status) + "</span>" + (a.note ? "<br>" + esc(a.note) : "") + "</li>"; }) +
-    list("Established", b.established, function(x){ return "<li>" + badge(x.by) + esc(x.claim) + "</li>"; }) +
-    list("Open questions", b.open_questions, function(x){ return "<li>" + esc(x) + "</li>"; }) +
-    list("Tensions", b.tensions, function(x){ return "<li>" + esc(x) + "</li>"; }) +
-    '<div class="st" style="margin-top:14px">updated ' + new Date(b.updated * 1000).toLocaleTimeString() + (b.model ? " · " + esc(b.model) : "") + "</div>";
+// Researcher only: what the assistant's background step took from the workspace for this reply.
+var TURNS = {};
+function renderRetrieval(r){
+  var log = document.getElementById("log" + r.pane); if (!log || document.getElementById("r" + r.id)) return;
+  var el = document.createElement("div"); el.id = "r" + r.id;
+  var head = "workspace · " + (r.status === "ok" ? "" : r.status + " · ") + r.considered.length + " considered · " + r.secs + " s";
+  var picks = (r.inform || []).map(function(x){
+    var t = TURNS[x.turn] || {};
+    return '<span class="pick" title="' + esc(x.why) + '">[' + esc(x.relation) + "] " + esc(t.name || "") + " #" + x.turn + ": " + esc((t.text || "").slice(0, 90)) + "</span>";
+  });
+  if (r.ask) { var t = TURNS[r.ask.turn] || {}; picks.push('<span class="pick" title="' + esc(r.ask.why) + '">[ask] ' + esc(t.name || "") + " #" + r.ask.turn + ": " + esc((t.text || "").slice(0, 90)) + "</span>"); }
+  el.className = "rtag" + (picks.length ? "" : " none");
+  el.innerHTML = head + (picks.length ? picks.join("") : " · nothing used");
+  append(log, el, false);
 }
 
 function setNames(names){
   NAMES = names;
   PANES.forEach(function(p){
     var nm = document.getElementById("name" + p);
-    if (nm && document.activeElement !== nm) nm.value = /^Person [A-Z]$/.test(names[p]) ? "" : names[p];
+    if (nm && document.activeElement !== nm) nm.value = /^Person [A-Z]$/.test(names[p] || "") ? "" : names[p];
     var log = document.getElementById("log" + p);
     if (log) log.querySelectorAll(".msg.user .who").forEach(function(w){ w.textContent = names[p]; });
   });
 }
 
-function setLive(on){ var l = document.getElementById("live"); if (l) { l.textContent = on ? "integrating…" : "up to date"; l.className = "live" + (on ? " on" : ""); } }
-
 function handle(ev){
-  if (ev.type === "integrating") return setLive(ev.on);
   if (ev.type === "status") return;
   if (ev.type === "reset") return location.reload();
   if (ev.id) after = Math.max(after, ev.id);
-  if (ev.type === "user" || ev.type === "agent" || ev.type === "nudge") { byId[ev.id] = ev; renderMsg(ev); }
-  else if (ev.type === "board") renderBoard(ev.board);
+  if (ev.type === "user") TURNS[ev.id] = {name: NAMES[ev.pane] || ev.name, text: ev.text};
+  if (ev.type === "user" || ev.type === "agent") renderMsg(ev);
+  else if (ev.type === "retrieval") renderRetrieval(ev);
   else if (ev.type === "name") { NAMES[ev.pane] = ev.name; setNames(NAMES); }
   else if (ev.type === "problem") { if (document.activeElement !== problemEl) problemEl.value = ev.text; }
-  else if (ev.type === "settings") nudgesEl.checked = !!ev.settings.nudges;
+  else if (ev.type === "settings") modeEl.value = ev.settings.mode;
 }
 
 function connect(){
   if (es) es.close();
-  es = new EventSource("/events?after=" + after);
+  es = new EventSource("/events?" + QS + "&after=" + after);
   es.onmessage = function(e){ handle(JSON.parse(e.data)); };
   es.onerror = function(){ es.close(); setTimeout(connect, 1500); };
 }
 
 function load(){
-  fetch("/state").then(function(r){ return r.json(); }).then(function(s){
+  fetch("/state?" + QS).then(function(r){ return r.json(); }).then(function(s){
+    if (VIEW === "chooser") return chooser(s);
+    document.getElementById("masthead").hidden = false;
+    if (VIEW === "researcher") {
+      document.getElementById("controls").hidden = false;
+      document.getElementById("sub").textContent = "researcher view: every conversation and what each assistant drew on";
+      modeEl.value = (s.settings || {}).mode || "workspace";
+    }
     PANES = s.panes; build(PANES); setNames(s.names);
-    problemEl.value = s.problem || ""; nudgesEl.checked = !!s.settings.nudges;
-    s.events.forEach(function(e){ byId[e.id] = e; renderMsg(e); });
-    renderBoard(s.board);
+    problemEl.value = s.problem || "";
+    var all = s.events.concat(s.retrievals || []).sort(function(a, b){ return a.id - b.id; });
+    all.forEach(function(e){ handle(e); });
     after = s.last_id;
     connect();
   }).catch(function(e){ showErr("could not reach the Paralax server: " + e); });
 }
 
 problemEl.addEventListener("change", function(){ post("/problem", {text: problemEl.value}); });
-nudgesEl.addEventListener("change", function(){ post("/settings", {nudges: nudgesEl.checked}); });
+modeEl.addEventListener("change", function(){ post("/settings", {mode: modeEl.value}); });
 document.getElementById("reset").onclick = function(){
-  if (confirm("Start a new, empty session? The current one stays saved in paralax/sessions/.")) post("/reset", {});
+  if (confirm("Start a new, empty session for everyone? The current one stays saved in paralax/sessions/.")) post("/reset", {});
 };
 load();
 })();
