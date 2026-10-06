@@ -51,6 +51,8 @@ main{padding-top:10px; padding-bottom:64px;}
 .article [data-bold-list-level="4"]{margin-left:5em;}
 .article [data-bold-list-level="5"]{margin-left:6.25em;}
 .article [data-bold-list-level="6"]{margin-left:7.5em;}
+.article ul[data-bold-list-level="1"],.article ul[data-bold-list-level="3"],.article ul[data-bold-list-level="5"]{list-style-type:circle;}
+.article ul[data-bold-list-level="2"],.article ul[data-bold-list-level="4"],.article ul[data-bold-list-level="6"]{list-style-type:square;}
 .article li{margin:6px 0; padding-left:2px;}
 .article li > p{margin:0 0 8px;}
 .article li ul,.article li ol{margin-top:8px; margin-bottom:10px;}
