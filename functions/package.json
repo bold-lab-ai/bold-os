@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "firebase-admin": "^12.6.0",
-    "firebase-functions": "^5.1.0"
+    "firebase-functions": "^5.1.0",
+    "parse5": "^7.3.0"
   }
 }

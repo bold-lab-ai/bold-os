@@ -6,6 +6,7 @@
 // only, so you can sign in with Slack and use every feature.
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { createRequire } from 'node:module';
 
 const PROJECT = 'bold-d7ff2';
 const BASE = `http://127.0.0.1:8080/v1/projects/${PROJECT}/databases/(default)/documents`;
@@ -15,6 +16,8 @@ const ctx = {};
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(new URL('../src/assets/js/card-model.js', import.meta.url), 'utf8'), ctx);
 const { makeRegisteredCard } = ctx;
+const require = createRequire(import.meta.url);
+const { normalizeExport } = require('../functions/boldiquette-sync.js');
 
 function toValue(v) {
   if (v === null || v === undefined) return { nullValue: null };
@@ -108,7 +111,26 @@ async function main() {
     abstract: 'Agents that know what they do not know.', name: 'Barbara Student', email: 'student@bold.test', createdAt: now,
   });
 
-  console.log(`Seeded ${people.length} people, 4 roles, 1 venue with ${papers.length} papers, ${projects.length} projects, 2 proposals.`);
+  // Two explicitly fictional BOLDiquette snapshots for testing the UI.
+  // Visit boldiquette.html?demo=1 locally; the real page stays unchanged.
+  const demoExports = [
+    '<html><body><h1>BOLDiquette</h1><h2>Working together</h2><p>Share a short update at the imaginary Tuesday meeting.</p><h2>Reviewing ideas</h2><p>Ask one colleague for feedback before a demo.</p><h2>Taking breaks</h2><p>Keep the fictional lab cactus watered.</p></body></html>',
+    '<html><body><h1>BOLDiquette</h1><h2>Working together</h2><p>Share a short update at the imaginary Thursday meeting.</p><h2>Reviewing ideas</h2><p>Ask two colleagues for feedback before a demo.</p><h2>Taking breaks</h2><p>Keep the fictional lab cactus watered.</p><p>Take a walk after the demo.</p></body></html>',
+  ];
+  const demoVersions = demoExports.map(normalizeExport);
+  for (const [i, version] of demoVersions.entries()) {
+    await put(`boldiquetteDemoVersions/${version.hash}`, {
+      ...version, sourceModifiedAt: new Date(now - (2 - i) * day).toISOString(),
+      capturedAt: now - (2 - i) * day,
+    });
+  }
+  await put('boldiquetteDemoMeta/current', {
+    latestVersion: demoVersions[1].hash,
+    sourceModifiedAt: new Date(now - day).toISOString(),
+    lastCheckedAt: now,
+  });
+
+  console.log(`Seeded ${people.length} people, 4 roles, 1 venue with ${papers.length} papers, ${projects.length} projects, 2 proposals, 2 fictional BOLDiquette versions.`);
   if (me.length) console.log(`PI in your local database: ${me.join(', ')}. Sign in with Slack as that address.`);
   else console.log('No email given, so nobody who can sign in has a role. Re-run: npm run seed -- you@example.com');
 }

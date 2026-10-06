@@ -57,6 +57,34 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // BOLDiquette snapshots come only from the server's Google Doc sync.
+    // A read point belongs to one Firebase Auth identity across devices.
+    match /boldiquetteMeta/{metaId} {
+      allow read: if isLabMember();
+      allow write: if false;
+    }
+    match /boldiquetteVersions/{versionId} {
+      allow read: if isLabMember();
+      allow write: if false;
+    }
+    match /boldiquetteViews/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Fictional data for the localhost hackathon demo. These paths are never
+    // populated by the live Google Doc sync or shown outside localhost.
+    match /boldiquetteDemoMeta/{metaId} {
+      allow read: if isLabMember();
+      allow write: if false;
+    }
+    match /boldiquetteDemoVersions/{versionId} {
+      allow read: if isLabMember();
+      allow write: if false;
+    }
+    match /boldiquetteDemoViews/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
     match /boards/{boardId} {
       // A venue is either 'approved' (visible to the whole lab, same as
       // always) or 'pending' (a non-admin's proposal — visible only to

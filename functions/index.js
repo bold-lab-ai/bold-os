@@ -35,6 +35,7 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const { syncGoogleDoc } = require('./boldiquette-sync');
 
 admin.initializeApp();
 const db = admin.firestore();
@@ -54,6 +55,21 @@ const SLACK_SIGNING_SECRET = defineSecret('SLACK_SIGNING_SECRET');
 setGlobalOptions({ region: 'europe-west2', maxInstances: 10 });
 
 const APP_BASE_URL = 'https://bold-lab-ai.github.io/bold-os/audit-board.html';
+
+// The Google Doc remains authoritative. Set BOLDIQUETTE_DOC_ID in the
+// Functions environment; its main tab must remain publicly viewable.
+// Local demos use fictional emulator data.
+exports.syncBoldiquette = onSchedule(
+  { schedule: '*/5 * * * *', timeZone: 'Europe/London', maxInstances: 1 },
+  async () => {
+    try {
+      const result = await syncGoogleDoc(db, process.env.BOLDIQUETTE_DOC_ID, Date.now(), process.env.BOLDIQUETTE_TAB_ID || 't.0');
+      if (result.changed) logger.info('Captured a BOLDiquette version', { version: result.version });
+    } catch (err) {
+      logger.error('BOLDiquette synchronization failed; previous version retained', { error: String(err) });
+    }
+  }
+);
 
 // Deep links (2026-09-12) — mirrors audit-board.html's stateUrl(): a hash,
 // not a real path, since this is a static site with no server routing.
