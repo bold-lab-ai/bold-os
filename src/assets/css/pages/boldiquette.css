@@ -44,6 +44,13 @@ main{padding-top:10px; padding-bottom:64px;}
 .article h4{font-size:19px; margin:22px 0 10px;}
 .article p{margin:0 0 15px;}
 .article ul,.article ol{margin:0 0 17px; padding-left:1.5em;}
+.article ul[data-bold-list-level],.article ol[data-bold-list-level]{margin-bottom:5px;}
+.article [data-bold-list-level="1"]{margin-left:1.25em;}
+.article [data-bold-list-level="2"]{margin-left:2.5em;}
+.article [data-bold-list-level="3"]{margin-left:3.75em;}
+.article [data-bold-list-level="4"]{margin-left:5em;}
+.article [data-bold-list-level="5"]{margin-left:6.25em;}
+.article [data-bold-list-level="6"]{margin-left:7.5em;}
 .article li{margin:6px 0; padding-left:2px;}
 .article li > p{margin:0 0 8px;}
 .article li ul,.article li ol{margin-top:8px; margin-bottom:10px;}

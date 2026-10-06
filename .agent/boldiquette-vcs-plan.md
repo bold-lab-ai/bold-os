@@ -26,7 +26,7 @@ The user supplied the authoritative Doc URL and said it is viewable by anyone. O
 
 ### 1. Add navigation and restyle the reading page
 
-Add a top-level BOLDiquette link to `nav` in `src/_data/site.js`; make the page's own table of contents reveal subsection links. Refactor `src/assets/css/pages/boldiquette.css` to inherit shared tokens and typography from `bold.css`, remove the extra Inter font from page front matter, and make article headings, paragraphs, lists, links, and tables readable on desktop and mobile. Keep document wording and IDs intact. Wrap major sections and subsections in native disclosure toggles, with expand/collapse-all controls. Give the version controls the site's normal understated UI; use green/red only to convey changes in the diff.
+Add a top-level BOLDiquette link to `nav` in `src/_data/site.js`; make the page's own table of contents reveal subsection links. Refactor `src/assets/css/pages/boldiquette.css` to inherit shared tokens and typography from `bold.css`, remove the extra Inter font from page front matter, and make article headings, paragraphs, lists, links, and tables readable on desktop and mobile. Keep document wording and IDs intact. Wrap major sections and subsections in native disclosure toggles. Give the version controls the site's normal understated UI; use green/red only to convey changes in the diff.
 
 ### 2. Capture Google Doc versions automatically
 

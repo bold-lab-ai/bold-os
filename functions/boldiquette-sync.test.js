@@ -50,3 +50,14 @@ test('drops the Google Doc cover and generated contents before the first section
   assert.match(result.html, /^<h2 id="working-together">/);
   assert.doesNotMatch(result.html, /Confidential|Working together 2/);
 });
+
+test('preserves Google Docs list indentation without importing generated CSS', () => {
+  const exported = '<html><body><h4>Working together</h4>' +
+    '<ul class="c3 lst-kix_example-0"><li>Four outputs:</li></ul>' +
+    '<ul class="c3 lst-kix_example-1 start"><li>Technology:</li></ul>' +
+    '<ul class="c3 lst-kix_example-2 start"><li>A fictional tool.</li></ul></body></html>';
+  const result = normalizeExport(exported);
+  assert.match(result.html, /<ul data-bold-list-level="1"><li>Technology:<\/li><\/ul>/);
+  assert.match(result.html, /<ul data-bold-list-level="2"><li>A fictional tool\.<\/li><\/ul>/);
+  assert.doesNotMatch(result.html, /lst-kix|class=/);
+});

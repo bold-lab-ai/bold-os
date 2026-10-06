@@ -118,7 +118,12 @@ function normalizeExport(exportHtml) {
     }
     const cleanName = name === 'b' ? 'strong' : name === 'i' ? 'em' : name;
     const start = name === 'ol' && /^\d+$/.test(attr(node, 'start')) ? ` start="${attr(node, 'start')}"` : '';
-    return `<${cleanName}${start}>${inside}</${cleanName}>`;
+    // Google Docs exports adjacent list levels as separate <ul> elements.
+    // Retain only their numeric level; discard its generated CSS classes.
+    const listMatch = (name === 'ul' || name === 'ol')
+      && attr(node, 'class').match(/\blst-kix_[^\s]+-(\d+)\b/);
+    const level = listMatch ? ` data-bold-list-level="${Math.min(6, Number(listMatch[1]))}"` : '';
+    return `<${cleanName}${start}${level}>${inside}</${cleanName}>`;
   }
 
   const rendered = children(body).map((child) => render(child, tag(body))).join('');
