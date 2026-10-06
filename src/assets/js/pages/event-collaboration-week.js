@@ -20,6 +20,22 @@
   });
   var initial = (location.hash || '').slice(1);
   activate(panels[initial] ? initial : 'schedule', false);
+
+  // During the week, the schedule opens on today's day. Waits for sign-in,
+  // since the page stays hidden until then, and leaves the page alone if
+  // the visitor has already scrolled.
+  var now = new Date();
+  var pad = function(n){ return (n < 10 ? '0' : '') + n; };
+  var today = document.querySelector('.day-card[data-date="' + now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + '"]');
+  if (!today || panels.schedule.hidden || !BOLD.getAuth()) return;
+  var done = false;
+  BOLD.onUser(function(user){
+    if (!user || done) return;
+    done = true;
+    requestAnimationFrame(function(){
+      if (window.scrollY < 40 && !panels.schedule.hidden) today.scrollIntoView({ block: 'start' });
+    });
+  });
 })();
 
 // Schedule — the cards are built from the programme

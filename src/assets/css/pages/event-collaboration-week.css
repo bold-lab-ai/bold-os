@@ -30,7 +30,7 @@ main p{margin:16px 0 0;}
 .tab-panel{margin-top:28px;}
 .subhead-note{margin:0 0 18px; font-size:16px; color:var(--muted);}
 /* ---------- schedule ---------- */
-.day-card{border-top:1px solid var(--line); padding:22px 0;}
+.day-card{border-top:1px solid var(--line); padding:22px 0; scroll-margin-top:12px;}
 .day-card h3{font-size:19px;}
 /* The schedule gets the full content width: parallel sessions sit side by side. */
 main > #panelSchedule{max-width:none;}
