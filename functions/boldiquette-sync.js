@@ -2,7 +2,6 @@
 // hackathon can exercise this with fictional HTML and no Google credential.
 const crypto = require('node:crypto');
 const parse5 = require('parse5');
-const { GoogleAuth } = require('google-auth-library');
 
 const ALLOWED = new Set([
   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'ul', 'ol', 'li', 'blockquote',
@@ -132,22 +131,17 @@ function normalizeExport(exportHtml) {
   return { html, blocks, toc, hash };
 }
 
-async function fetchGoogleDoc(docId, knownModifiedAt) {
-  const auth = new GoogleAuth({ scopes: ['https://www.googleapis.com/auth/drive.readonly'] });
-  const client = await auth.getClient();
-  const tokenResult = await client.getAccessToken();
-  const token = typeof tokenResult === 'string' ? tokenResult : tokenResult?.token;
-  if (!token) throw new Error('Google Drive access token unavailable');
-  const headers = { Authorization: `Bearer ${token}` };
-  const base = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(docId)}`;
-  const metadata = await fetch(`${base}?fields=id,modifiedTime,version`, { headers });
-  if (!metadata.ok) throw new Error(`Google Drive metadata request failed (${metadata.status})`);
-  const { modifiedTime } = await metadata.json();
-  if (!modifiedTime) throw new Error('Google Drive did not return modifiedTime');
-  if (modifiedTime === knownModifiedAt) return { modifiedTime, unchanged: true };
-  const exported = await fetch(`${base}/export?mimeType=text%2Fhtml`, { headers });
-  if (!exported.ok) throw new Error(`Google Drive export failed (${exported.status})`);
-  return { modifiedTime, html: await exported.text() };
+async function fetchPublicGoogleDoc(docId, tabId = 't.0') {
+  if (!/^[A-Za-z0-9_-]+$/.test(docId)) throw new Error('Invalid BOLDiquette document ID');
+  if (!/^[A-Za-z0-9._-]+$/.test(tabId)) throw new Error('Invalid BOLDiquette tab ID');
+  const url = new URL(`https://docs.google.com/document/d/${docId}/export`);
+  url.searchParams.set('format', 'html');
+  url.searchParams.set('tab', tabId);
+  const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) throw new Error(`Public Google Doc export failed (${response.status})`);
+  const html = await response.text();
+  if (Buffer.byteLength(html, 'utf8') > 10_000_000) throw new Error('Public Google Doc export is too large');
+  return html;
 }
 
 async function captureVersion(db, sourceHtml, sourceModifiedAt, now = Date.now()) {
@@ -166,18 +160,19 @@ async function captureVersion(db, sourceHtml, sourceModifiedAt, now = Date.now()
   return version.hash;
 }
 
-async function syncGoogleDoc(db, docId, now = Date.now()) {
+async function syncGoogleDoc(db, docId, now = Date.now(), tabId = 't.0') {
   if (!docId) throw new Error('BOLDIQUETTE_DOC_ID is not configured');
   const metaRef = db.collection('boldiquetteMeta').doc('current');
   const metaSnap = await metaRef.get();
   const previous = metaSnap.exists && metaSnap.data();
-  const source = await fetchGoogleDoc(docId, previous?.latestVersion && previous.sourceModifiedAt);
-  if (source.unchanged) {
+  const html = await fetchPublicGoogleDoc(docId, tabId);
+  const normalized = normalizeExport(html);
+  if (previous?.latestVersion === normalized.hash) {
     await metaRef.set({ lastCheckedAt: now }, { merge: true });
     return { changed: false, version: previous.latestVersion };
   }
-  const hash = await captureVersion(db, source.html, source.modifiedTime, now);
+  const hash = await captureVersion(db, html, null, now);
   return { changed: !previous || previous.latestVersion !== hash, version: hash };
 }
 
-module.exports = { normalizeExport, blocksFromHtml, captureVersion, syncGoogleDoc };
+module.exports = { normalizeExport, blocksFromHtml, fetchPublicGoogleDoc, captureVersion, syncGoogleDoc };

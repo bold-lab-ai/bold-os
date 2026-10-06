@@ -32,3 +32,11 @@ test('a real wording change creates a new version with comparable text blocks', 
   assert.equal(a.blocks[1].text, 'Share a short update at the imaginary Tuesday meeting.');
   assert.equal(b.blocks[1].text, 'Share a short update at the imaginary Thursday meeting.');
 });
+
+test('the Google Docs main-tab heading levels become section and subsection headings', () => {
+  const exported = '<html><body><h4>Working together</h4><h5>Meetings</h5>' +
+    '<p>Bring a fictional agenda.</p><h4>Reviewing ideas</h4><p>Ask for feedback.</p></body></html>';
+  const result = normalizeExport(exported);
+  assert.match(result.html, /<h2 id="working-together">Working together<\/h2><h3 id="meetings">Meetings<\/h3>/);
+  assert.deepEqual(result.toc.map((item) => item.label), ['Working together', 'Reviewing ideas']);
+});

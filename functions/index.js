@@ -57,13 +57,13 @@ setGlobalOptions({ region: 'europe-west2', maxInstances: 10 });
 const APP_BASE_URL = 'https://bold-lab-ai.github.io/bold-os/audit-board.html';
 
 // The Google Doc remains authoritative. Set BOLDIQUETTE_DOC_ID in the
-// Functions environment and share that one document as Viewer with the
-// function's service identity. Local demos use fictional emulator data.
+// Functions environment; its main tab must remain publicly viewable.
+// Local demos use fictional emulator data.
 exports.syncBoldiquette = onSchedule(
   { schedule: '*/5 * * * *', timeZone: 'Europe/London', maxInstances: 1 },
   async () => {
     try {
-      const result = await syncGoogleDoc(db, process.env.BOLDIQUETTE_DOC_ID);
+      const result = await syncGoogleDoc(db, process.env.BOLDIQUETTE_DOC_ID, Date.now(), process.env.BOLDIQUETTE_TAB_ID || 't.0');
       if (result.changed) logger.info('Captured a BOLDiquette version', { version: result.version });
     } catch (err) {
       logger.error('BOLDiquette synchronization failed; previous version retained', { error: String(err) });
