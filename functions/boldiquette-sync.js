@@ -121,7 +121,11 @@ function normalizeExport(exportHtml) {
     return `<${cleanName}${start}>${inside}</${cleanName}>`;
   }
 
-  const html = children(body).map((child) => render(child, tag(body))).join('');
+  const rendered = children(body).map((child) => render(child, tag(body))).join('');
+  // The public export includes a cover page and its own long table of
+  // contents. Our page already has both, so start at the first real section.
+  const firstSection = rendered.indexOf('<h2 ');
+  const html = firstSection < 0 ? rendered : rendered.slice(firstSection);
   const blocks = blocksFromHtml(html);
   if (blocks.length < 3 || !toc.length) throw new Error('Google Doc export has no usable BOLDiquette sections');
   if (Buffer.byteLength(JSON.stringify({ html, blocks, toc }), 'utf8') > 900_000) {

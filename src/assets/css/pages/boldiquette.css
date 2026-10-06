@@ -1,7 +1,7 @@
 /* BOLDiquette is long-form reading; the shared bold.css owns colour and type. */
 .hero, main{max-width:var(--content-max); margin-inline:auto; padding-inline:var(--gutter);}
 .hero{padding-top:clamp(32px,5vw,64px); padding-bottom:10px;}
-.hero h1{font-size:clamp(40px,6vw,68px); line-height:1.05;}
+.hero h1{font-family:var(--sans); font-size:clamp(30px,4.5vw,44px); font-weight:700; line-height:1.08;}
 .hero-note{max-width:var(--article-max); margin:16px 0 0; font-size:21px; line-height:1.5;}
 .page-source{max-width:var(--article-max); font-family:var(--sans); font-size:12px; line-height:1.6; color:var(--muted); margin:18px 0 0;}
 .draft-badge{display:inline-block; margin-top:18px; padding:3px 9px; border:1px solid var(--line); color:var(--muted); font:600 11px/1.6 var(--sans); text-transform:uppercase; letter-spacing:.05em;}
@@ -32,20 +32,16 @@ main{padding-top:10px; padding-bottom:64px;}
 .toc a:hover{text-decoration:underline;}
 .bold-toc-groups{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 24px;}
 .bold-toc-group{border-top:1px solid var(--line); padding:9px 0; min-width:0;}
-.bold-toc-group summary{cursor:pointer; font:700 18px/1.35 var(--serif); color:var(--ink);}
+.bold-toc-group summary{cursor:pointer; font:700 13px/1.5 var(--sans); color:var(--ink);}
 .bold-toc-group summary::marker{color:var(--accent);}
 .bold-toc-group ol{columns:1; margin:8px 0 2px; padding-left:20px;}
-.bold-toc-group li{font:16px/1.4 var(--serif); margin:6px 0;}
-.bold-outline-actions{max-width:var(--article-max); display:flex; align-items:center; gap:15px; flex-wrap:wrap; margin:0 0 8px; font:12px/1.4 var(--sans); color:var(--muted);}
-.bold-outline-actions button{border:0; background:none; padding:3px 0; color:var(--accent); font:600 12px/1.4 var(--sans); text-decoration:underline; cursor:pointer;}
-.bold-outline-actions[hidden]{display:none;}
-
+.bold-toc-group li{font:12px/1.45 var(--sans); margin:6px 0;}
 .article{max-width:var(--article-max); color:var(--ink-soft); font-family:var(--serif); font-size:18px; line-height:1.7; overflow-wrap:anywhere;}
-.article h2,.article h3,.article h4{color:var(--ink); line-height:1.2; scroll-margin-top:24px;}
-.article h2{font-size:clamp(30px,4vw,40px); margin:60px 0 18px; padding-top:20px; border-top:1px solid var(--line);}
+.article h2,.article h3,.article h4{color:var(--ink); font-family:var(--sans); font-weight:700; line-height:1.3; scroll-margin-top:24px;}
+.article h2{font-size:clamp(27px,3.4vw,32px); margin:48px 0 16px; padding-top:18px; border-top:1px solid var(--line);}
 .article h2:first-child{margin-top:24px;}
-.article h3{font-size:26px; margin:36px 0 14px;}
-.article h4{font-size:21px; margin:25px 0 12px;}
+.article h3{font-size:23px; margin:30px 0 12px;}
+.article h4{font-size:19px; margin:22px 0 10px;}
 .article p{margin:0 0 15px;}
 .article ul,.article ol{margin:0 0 17px; padding-left:1.5em;}
 .article li{margin:6px 0; padding-left:2px;}
@@ -73,7 +69,7 @@ main{padding-top:10px; padding-bottom:64px;}
 
 .bold-changes-panel{max-width:var(--article-max);}
 .bold-changes-head{display:flex; justify-content:space-between; align-items:end; gap:20px; flex-wrap:wrap; margin:12px 0 22px;}
-.bold-changes-head h2{font-size:clamp(28px,4vw,38px); line-height:1.15;}
+.bold-changes-head h2{font-family:var(--sans); font-size:clamp(27px,3.4vw,32px); font-weight:700; line-height:1.2;}
 .bold-changes-head p{font:13px/1.5 var(--sans); color:var(--muted); margin:8px 0 0;}
 .bold-changes-head label{font:600 12px/1.4 var(--sans); color:var(--ink-soft);}
 .bold-changes-head select{display:block; max-width:260px; border:1px solid var(--line); background:var(--surface); color:var(--ink); padding:7px 9px; margin-top:5px; font:13px var(--sans);}
@@ -95,5 +91,5 @@ main{padding-top:10px; padding-bottom:64px;}
   .bold-toc-groups{grid-template-columns:1fr;}
   .article{font-size:17px;}
   .article h2{margin-top:42px;}
-  .article h3{font-size:23px;}
+  .article h3{font-size:21px;}
 }

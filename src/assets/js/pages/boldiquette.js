@@ -20,9 +20,6 @@
   var markRead = document.getElementById('boldMarkRead');
   var article = document.getElementById('boldArticle');
   var toc = document.getElementById('boldToc');
-  var outlineActions = document.getElementById('boldOutlineActions');
-  var expandAll = document.getElementById('boldExpandAll');
-  var collapseAll = document.getElementById('boldCollapseAll');
   var compare = document.getElementById('boldCompareFrom');
   var summary = document.getElementById('boldChangesSummary');
   var diff = document.getElementById('boldDiff');
@@ -109,7 +106,6 @@
       }
     });
     article.appendChild(root);
-    outlineActions.hidden = !headings.length;
   }
   function renderArticle(){
     if (!latest) article.innerHTML = initialArticle;
@@ -304,12 +300,6 @@
   readTab.addEventListener('click', function(){ showView('read'); });
   changesTab.addEventListener('click', function(){ showView('changes'); });
   compare.addEventListener('change', function(){ selectedFrom = compare.value; renderChanges(); });
-  expandAll.addEventListener('click', function(){
-    article.querySelectorAll('details.bold-section').forEach(function(section){ section.open = true; });
-  });
-  collapseAll.addEventListener('click', function(){
-    article.querySelectorAll('details.bold-section').forEach(function(section){ section.open = false; });
-  });
   toc.addEventListener('click', function(event){
     var link = event.target.closest('a[href^="#"]');
     if (!link) return;

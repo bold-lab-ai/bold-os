@@ -7,7 +7,9 @@
     "start": "eleventy --serve --port=8137",
     "hack:setup": "npm install && npm --prefix functions install && node hackathon/setup.mjs",
     "emulators": "npx -y firebase-tools@15 emulators:start --project bold-d7ff2",
-    "seed": "node hackathon/seed.mjs"
+    "seed": "node hackathon/seed.mjs",
+    "boldiquette:sync": "node hackathon/sync-boldiquette.mjs",
+    "boldiquette:watch": "node hackathon/sync-boldiquette.mjs --watch"
   },
   "keywords": [],
   "devDependencies": {

@@ -40,3 +40,13 @@ test('the Google Docs main-tab heading levels become section and subsection head
   assert.match(result.html, /<h2 id="working-together">Working together<\/h2><h3 id="meetings">Meetings<\/h3>/);
   assert.deepEqual(result.toc.map((item) => item.label), ['Working together', 'Reviewing ideas']);
 });
+
+test('drops the Google Doc cover and generated contents before the first section', () => {
+  const exported = '<html><body><p>Confidential — BOLD Internal</p>' +
+    '<p><a href="#toc">Working together 2</a></p>' +
+    '<h4>Working together</h4><p>Bring a fictional agenda.</p>' +
+    '<h4>Reviewing ideas</h4><p>Ask for feedback.</p></body></html>';
+  const result = normalizeExport(exported);
+  assert.match(result.html, /^<h2 id="working-together">/);
+  assert.doesNotMatch(result.html, /Confidential|Working together 2/);
+});
