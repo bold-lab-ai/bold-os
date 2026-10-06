@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paralax · BOLD OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+/* BOLD OS design tokens (src/assets/css/bold.css): one accent, serif to read, sans for chrome,
+   no border-radius, outlined badges, hairline rules. */
+:root{
+  --ink:#1a2b4a; --ink-soft:#33445f; --muted:#7d8698; --paper:#f5f3ee; --surface:#ffffff; --wash:#ece9e1;
+  --line:rgba(26,43,74,0.16); --accent:#1a2b4a;
+  --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
+  --sans:'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink-soft);font-family:var(--serif);font-size:17px;line-height:1.55;
+  -webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
+.masthead{border-bottom:1px solid var(--line);padding:14px 16px;display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.brand{flex:0 1 auto;min-width:0}
+.wordmark{font-family:var(--sans);font-weight:500;font-size:17px;color:var(--ink);letter-spacing:-0.01em}
+.sub{font-family:var(--sans);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-top:2px}
+.problem{flex:1 1 360px;display:flex;flex-direction:column;gap:4px}
+.label{font-family:var(--sans);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+textarea,input{font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:0}
+textarea:focus,input:focus{outline:2px solid var(--accent);outline-offset:-1px}
+#problem{min-height:46px;max-height:130px;resize:vertical;padding:6px 10px;font-size:16px}
+.controls{display:flex;gap:16px;align-items:center;font-family:var(--sans);font-size:13px;color:var(--ink-soft);padding-top:18px}
+.controls label{display:flex;gap:6px;align-items:center;cursor:pointer}
+.btn-text{font-family:var(--sans);font-size:12.5px;color:var(--accent);background:none;border:none;padding:0;cursor:pointer;
+  text-decoration:underline;text-decoration-color:rgba(26,43,74,.32);text-underline-offset:2px}
+.btn-text:hover{text-decoration-color:currentColor}
+.btn{font-family:var(--sans);font-size:13px;font-weight:500;color:var(--ink);background:none;border:1px solid var(--ink);
+  padding:8px 14px;cursor:pointer;border-radius:0}
+.btn:hover{background:var(--wash)}
+main{flex:1;display:grid;grid-template-columns:1fr minmax(260px,.72fr) 1fr;gap:16px;padding:16px;min-height:0}
+main.single{grid-template-columns:1fr minmax(260px,.6fr)}
+.pane,.boardcol{background:var(--surface);border:1px solid var(--line);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+.boardcol{background:var(--paper)}
+.top{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-family:var(--sans)}
+.badge{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--ink);border:1px solid var(--ink);
+  padding:0 6px;line-height:18px;display:inline-block;white-space:nowrap}
+.badge.soft{border-color:var(--line);color:var(--muted);font-weight:500}
+.top input{flex:1;font-family:var(--sans);font-weight:600;font-size:15px;border:1px solid transparent;background:transparent;padding:3px 6px}
+.top input:hover{border-color:var(--line)}
+.top .hint{font-size:11px;color:var(--muted);letter-spacing:.04em}
+.log{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.msg{max-width:94%}
+.msg .who{font-family:var(--sans);font-size:11px;letter-spacing:.04em;color:var(--muted);margin-bottom:3px;display:flex;gap:6px;align-items:center}
+.msg .body{padding:8px 12px;border:1px solid var(--line);word-wrap:break-word}
+.msg.user{align-self:flex-end}
+.msg.user .who{justify-content:flex-end}
+.msg.user .body{background:var(--wash);border-color:transparent;color:var(--ink)}
+.msg.agent{align-self:flex-start}
+.msg.nudge{align-self:flex-start}
+.msg.nudge .body{border-left:3px solid var(--ink)}
+.msg.error .body{border-style:dashed;color:var(--muted)}
+.msg p{margin:0 0 6px}.msg p:last-child{margin:0}
+.msg ul{margin:2px 0 6px 20px;padding:0}.msg li{margin:2px 0}
+.msg pre{background:var(--paper);padding:8px;overflow-x:auto;font-size:13px}
+.msg code{font-size:14px;background:var(--paper);padding:0 3px}
+.msg.pending .body{color:var(--muted);font-family:var(--sans);font-size:13px}
+.msg.pending .body::after{content:"composing a reply…";animation:fade 1.4s infinite}
+@keyframes fade{50%{opacity:.35}}
+.composer{border-top:1px solid var(--line);padding:10px 14px;display:flex;gap:10px;align-items:flex-end}
+.composer textarea{flex:1;min-height:46px;max-height:180px;resize:vertical;padding:7px 10px;font-size:16px}
+.board{flex:1;overflow-y:auto;padding:14px;font-size:15.5px}
+.board h3{font-family:var(--sans);font-size:11px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:16px 0 6px}
+.board .headline{font-weight:700;color:var(--ink);margin-bottom:6px}
+.board ul{margin:0;padding-left:0;list-style:none}
+.board li{margin:0 0 7px;padding-bottom:7px;border-bottom:1px solid var(--line)}
+.board li:last-child{border-bottom:none}
+.board .badge{margin-right:6px;vertical-align:1px}
+.board .st{font-family:var(--sans);font-size:11px;color:var(--muted)}
+.board .empty{color:var(--muted);font-style:italic}
+.live{margin-left:auto;font-size:11px;color:var(--muted);letter-spacing:.04em}
+.live.on{color:var(--ink);font-weight:600}
+#err{position:fixed;left:16px;bottom:16px;background:var(--surface);color:#8a1c1c;border:1px solid #8a1c1c;padding:8px 12px;
+  font-family:var(--sans);font-size:12px;display:none;max-width:70vw;white-space:pre-wrap}
+@media (max-width:900px){main,main.single{grid-template-columns:1fr;overflow-y:auto}.pane,.boardcol{min-height:440px}.controls{padding-top:0}}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div class="brand">
+    <div class="wordmark">BOLD OS · Paralax</div>
+    <div class="sub">one problem, everyone's assistant reads everything</div>
+  </div>
+  <div class="problem">
+    <span class="label">The shared problem</span>
+    <textarea id="problem" placeholder="State the problem you are working on together. Everyone, and every assistant, sees this."></textarea>
+  </div>
+  <div class="controls">
+    <label title="Let an assistant post a short note when another person's work changes what its person should do next"><input type="checkbox" id="nudges" checked> unprompted notes</label>
+    <button class="btn-text" id="reset">new session</button>
+  </div>
+</header>
+<main id="main"></main>
+<div id="err"></div>
+<script>
+(function(){
+"use strict";
+var PANES = [], NAMES = {}, after = 0, byId = {}, es = null;
+var only = new URLSearchParams(location.search).get("pane");
+var mainEl = document.getElementById("main"), errEl = document.getElementById("err");
+var problemEl = document.getElementById("problem"), nudgesEl = document.getElementById("nudges");
+
+function showErr(t){ errEl.style.display = "block"; errEl.textContent = t; }
+window.onerror = function(m, src, line){ showErr("page error: " + m + " (line " + line + ")"); };
+
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+
+// Minimal markdown: code fences, inline code, bold, italic, bulleted and numbered lists, paragraphs.
+function md(s){
+  var h = esc(s), pres = [];
+  h = h.replace(/```[a-z]*\n?([\s\S]*?)```/g, function(m, c){ pres.push(c); return "\u0001" + (pres.length - 1) + "\u0001"; });
+  h = h.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  h = h.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+  h = h.replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, "$1<i>$2</i>");
+  var out = [], list = null, lines = h.split("\n");
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i], m = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
+    if (m) { (list = list || []).push("<li>" + m[1] + "</li>"); continue; }
+    if (list) { out.push("<ul>" + list.join("") + "</ul>"); list = null; }
+    if (!line.trim()) continue;
+    var pm = line.match(/^\u0001(\d+)\u0001$/);
+    out.push(pm ? "<pre>" + pres[+pm[1]] + "</pre>" : "<p>" + line + "</p>");
+  }
+  if (list) out.push("<ul>" + list.join("") + "</ul>");
+  return out.join("");
+}
+
+function badge(name){ return '<span class="badge">' + esc(name) + "</span>"; }
+
+function build(panes){
+  mainEl.innerHTML = "";
+  var shown = only ? panes.filter(function(p){ return p === only; }) : panes;
+  if (!shown.length) shown = panes;
+  if (shown.length === 1) mainEl.className = "single";
+  else mainEl.style.gridTemplateColumns = shown.length === 2 ? "" : "repeat(" + shown.length + ", 1fr) minmax(260px,.72fr)";
+  var order = shown.length === 2 ? [shown[0], "board", shown[1]] : shown.concat(["board"]);
+  order.forEach(function(p){
+    var el = document.createElement("section");
+    if (p === "board") {
+      el.className = "boardcol";
+      el.innerHTML = '<div class="top"><span class="label">Shared board</span><span class="live" id="live">up to date</span></div><div class="board" id="board"></div>';
+      mainEl.appendChild(el); return;
+    }
+    el.className = "pane";
+    el.innerHTML =
+      '<div class="top"><span class="badge">' + p + '</span>' +
+      '<input id="name' + p + '" placeholder="Who is typing in this box?" title="Your name: your assistant and the others see it">' +
+      '<span class="hint">your own assistant</span></div>' +
+      '<div class="log" id="log' + p + '"></div>' +
+      '<div class="composer"><textarea id="in' + p + '" placeholder="Write to your assistant. Enter sends, Shift+Enter starts a new line."></textarea>' +
+      '<button class="btn" id="send' + p + '">Send</button></div>';
+    mainEl.appendChild(el);
+    var ta = document.getElementById("in" + p), nm = document.getElementById("name" + p);
+    document.getElementById("send" + p).onclick = function(){ send(p); };
+    ta.addEventListener("keydown", function(e){ if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(p); } });
+    nm.addEventListener("change", function(){ if (nm.value.trim()) post("/name", {pane: p, name: nm.value.trim()}); });
+  });
+}
+
+function send(p){
+  var ta = document.getElementById("in" + p), nm = document.getElementById("name" + p);
+  var text = ta.value.trim(); if (!text) return;
+  ta.value = "";
+  post("/send", {pane: p, text: text, name: nm.value.trim()});
+}
+function post(path, body){
+  return fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
+    .then(function(r){ return r.json(); })
+    .catch(function(e){ showErr("request failed: " + e); });
+}
+
+function nearBottom(log){ return log.scrollHeight - log.scrollTop - log.clientHeight < 80; }
+function renderMsg(e){
+  var log = document.getElementById("log" + e.pane); if (!log) return;
+  var el = document.getElementById("m" + e.id), stick = nearBottom(log);
+  if (!el) {
+    el = document.createElement("div"); el.id = "m" + e.id;
+    el.innerHTML = '<div class="who"></div><div class="body"></div>';
+    log.appendChild(el);
+  }
+  var who;
+  if (e.type === "user") who = esc(NAMES[e.pane] || e.name);
+  else if (e.type === "nudge") who = 'your assistant <span class="badge soft">unprompted' + (e.reason ? ": " + esc(e.reason) : "") + "</span>";
+  else who = "your assistant" + (e.secs ? ' <span class="badge soft">' + esc(e.secs) + " s</span>" : "");
+  el.className = "msg " + e.type + (e.status === "pending" ? " pending" : "") + (e.status === "error" ? " error" : "");
+  el.querySelector(".who").innerHTML = who;
+  el.querySelector(".body").innerHTML = e.status === "pending" ? "" : md(e.text);
+  if (stick || e.type === "user") log.scrollTop = log.scrollHeight;
+}
+
+function list(title, items, fn){ return items && items.length ? "<h3>" + title + "</h3><ul>" + items.map(fn).join("") + "</ul>" : ""; }
+function renderBoard(b){
+  var el = document.getElementById("board"); if (!el) return;
+  if (!b || !b.updated) {
+    el.innerHTML = '<div class="empty">The board fills in after the first exchange. An integrator reads every conversation and writes it; every assistant reads it before replying.</div>';
+    return;
+  }
+  var nx = b.next || {};
+  el.innerHTML =
+    (b.headline ? '<div class="headline">' + esc(b.headline) + "</div>" : "") +
+    "<div>" + esc(b.summary) + "</div>" +
+    list("Suggested next moves", Object.keys(nx), function(k){ return "<li>" + badge(k) + esc(nx[k]) + "</li>"; }) +
+    list("Approaches", b.approaches, function(a){ return "<li>" + badge(a.owner) + esc(a.name) + ' <span class="st">' + esc(a.status) + "</span>" + (a.note ? "<br>" + esc(a.note) : "") + "</li>"; }) +
+    list("Established", b.established, function(x){ return "<li>" + badge(x.by) + esc(x.claim) + "</li>"; }) +
+    list("Open questions", b.open_questions, function(x){ return "<li>" + esc(x) + "</li>"; }) +
+    list("Tensions", b.tensions, function(x){ return "<li>" + esc(x) + "</li>"; }) +
+    '<div class="st" style="margin-top:14px">updated ' + new Date(b.updated * 1000).toLocaleTimeString() + (b.model ? " · " + esc(b.model) : "") + "</div>";
+}
+
+function setNames(names){
+  NAMES = names;
+  PANES.forEach(function(p){
+    var nm = document.getElementById("name" + p);
+    if (nm && document.activeElement !== nm) nm.value = /^Person [A-Z]$/.test(names[p]) ? "" : names[p];
+    var log = document.getElementById("log" + p);
+    if (log) log.querySelectorAll(".msg.user .who").forEach(function(w){ w.textContent = names[p]; });
+  });
+}
+
+function setLive(on){ var l = document.getElementById("live"); if (l) { l.textContent = on ? "integrating…" : "up to date"; l.className = "live" + (on ? " on" : ""); } }
+
+function handle(ev){
+  if (ev.type === "integrating") return setLive(ev.on);
+  if (ev.type === "status") return;
+  if (ev.type === "reset") return location.reload();
+  if (ev.id) after = Math.max(after, ev.id);
+  if (ev.type === "user" || ev.type === "agent" || ev.type === "nudge") { byId[ev.id] = ev; renderMsg(ev); }
+  else if (ev.type === "board") renderBoard(ev.board);
+  else if (ev.type === "name") { NAMES[ev.pane] = ev.name; setNames(NAMES); }
+  else if (ev.type === "problem") { if (document.activeElement !== problemEl) problemEl.value = ev.text; }
+  else if (ev.type === "settings") nudgesEl.checked = !!ev.settings.nudges;
+}
+
+function connect(){
+  if (es) es.close();
+  es = new EventSource("/events?after=" + after);
+  es.onmessage = function(e){ handle(JSON.parse(e.data)); };
+  es.onerror = function(){ es.close(); setTimeout(connect, 1500); };
+}
+
+function load(){
+  fetch("/state").then(function(r){ return r.json(); }).then(function(s){
+    PANES = s.panes; build(PANES); setNames(s.names);
+    problemEl.value = s.problem || ""; nudgesEl.checked = !!s.settings.nudges;
+    s.events.forEach(function(e){ byId[e.id] = e; renderMsg(e); });
+    renderBoard(s.board);
+    after = s.last_id;
+    connect();
+  }).catch(function(e){ showErr("could not reach the Paralax server: " + e); });
+}
+
+problemEl.addEventListener("change", function(){ post("/problem", {text: problemEl.value}); });
+nudgesEl.addEventListener("change", function(){ post("/settings", {nudges: nudgesEl.checked}); });
+document.getElementById("reset").onclick = function(){
+  if (confirm("Start a new, empty session? The current one stays saved in paralax/sessions/.")) post("/reset", {});
+};
+load();
+})();
+</script>
+</body>
+</html>

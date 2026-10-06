@@ -1,0 +1,6 @@
+# Paralax: local secrets, conversation logs and run files are never committed
+.env
+sessions/
+*.log
+*.pid
+__pycache__/
