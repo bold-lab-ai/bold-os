@@ -32,10 +32,10 @@ main{padding-top:10px; padding-bottom:64px;}
 .toc a:hover{text-decoration:underline;}
 .bold-toc-groups{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 24px;}
 .bold-toc-group{border-top:1px solid var(--line); padding:9px 0; min-width:0;}
-.bold-toc-group summary{cursor:pointer; font-size:13px; font-weight:700; line-height:1.5; color:var(--ink);}
+.bold-toc-group summary{cursor:pointer; font:700 18px/1.35 var(--serif); color:var(--ink);}
 .bold-toc-group summary::marker{color:var(--accent);}
 .bold-toc-group ol{columns:1; margin:8px 0 2px; padding-left:20px;}
-.bold-toc-group li{font-size:12px; line-height:1.45; margin:6px 0;}
+.bold-toc-group li{font:16px/1.4 var(--serif); margin:6px 0;}
 .bold-outline-actions{max-width:var(--article-max); display:flex; align-items:center; gap:15px; flex-wrap:wrap; margin:0 0 8px; font:12px/1.4 var(--sans); color:var(--muted);}
 .bold-outline-actions button{border:0; background:none; padding:3px 0; color:var(--accent); font:600 12px/1.4 var(--sans); text-decoration:underline; cursor:pointer;}
 .bold-outline-actions[hidden]{display:none;}
