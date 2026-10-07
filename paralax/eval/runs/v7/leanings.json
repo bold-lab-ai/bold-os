@@ -1,0 +1,1322 @@
+{
+ "Emergency Event Relocation|workspace|0": {
+  "task": "Emergency Event Relocation",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Garden Hall",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "River Pavilion",
+    "River Pavilion",
+    "Garden Hall",
+    "Garden Hall",
+    "Garden Hall"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    null,
+    "River Pavilion",
+    "River Pavilion"
+   ],
+   "E": [
+    null,
+    null,
+    "River Pavilion",
+    "River Pavilion",
+    "Garden Hall",
+    "River Pavilion"
+   ]
+  }
+ },
+ "mountain_storm_shelter|workspace|0": {
+  "task": "mountain_storm_shelter",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Green Valley Outpost",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Blue Lake Cabin",
+    "Blue Lake Cabin",
+    "Blue Lake Cabin",
+    "Blue Lake Cabin",
+    "Blue Lake Cabin",
+    "Green Valley Outpost"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    "Green Valley Outpost",
+    "Green Valley Outpost"
+   ],
+   "C": [
+    null,
+    null,
+    "Red Cliff Lodge",
+    "Red Cliff Lodge",
+    "Red Cliff Lodge",
+    "Red Cliff Lodge"
+   ],
+   "D": [
+    null,
+    "Blue Lake Cabin",
+    null,
+    "Green Valley Outpost",
+    "Green Valley Outpost",
+    "Green Valley Outpost"
+   ],
+   "E": [
+    null,
+    "Blue Lake Cabin",
+    "Blue Lake Cabin",
+    "Blue Lake Cabin",
+    null,
+    "Green Valley Outpost"
+   ]
+  }
+ },
+ "Emergency Event Relocation|workspace|1": {
+  "task": "Emergency Event Relocation",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Garden Hall",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "River Pavilion",
+    "River Pavilion",
+    "River Pavilion",
+    "River Pavilion",
+    "Garden Hall"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    null,
+    "Garden Hall",
+    "River Pavilion"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "E": [
+    null,
+    null,
+    "River Pavilion",
+    null,
+    null,
+    "River Pavilion"
+   ]
+  }
+ },
+ "mountain_storm_shelter|workspace|1": {
+  "task": "mountain_storm_shelter",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Green Valley Outpost",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Blue Lake Cabin",
+    "Blue Lake Cabin",
+    "Blue Lake Cabin",
+    "Blue Lake Cabin",
+    "Green Valley Outpost",
+    "Green Valley Outpost"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    "Green Valley Outpost",
+    "Green Valley Outpost",
+    "Green Valley Outpost"
+   ],
+   "C": [
+    null,
+    "Blue Lake Cabin",
+    null,
+    "Red Cliff Lodge",
+    "Green Valley Outpost",
+    "Green Valley Outpost"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    null,
+    "Green Valley Outpost",
+    "Green Valley Outpost"
+   ],
+   "E": [
+    null,
+    "Blue Lake Cabin",
+    null,
+    "Green Valley Outpost",
+    "Green Valley Outpost",
+    "Green Valley Outpost"
+   ]
+  }
+ },
+ "Missing Medicine Delivery|workspace|1": {
+  "task": "Missing Medicine Delivery",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "School Gym",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Pharmacy",
+    "School Gym",
+    "Clinic",
+    "School Gym",
+    "Clinic",
+    "Pharmacy"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "C": [
+    null,
+    null,
+    "School Gym",
+    "School Gym",
+    "School Gym",
+    "School Gym"
+   ],
+   "D": [
+    "School Gym",
+    "Pharmacy",
+    null,
+    "School Gym",
+    "School Gym",
+    "School Gym"
+   ],
+   "E": [
+    null,
+    null,
+    null,
+    null,
+    "School Gym",
+    "School Gym"
+   ]
+  }
+ },
+ "Missing Medicine Delivery|workspace|0": {
+  "task": "Missing Medicine Delivery",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "School Gym",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Pharmacy",
+    null,
+    "School Gym",
+    "School Gym",
+    "School Gym",
+    "School Gym"
+   ],
+   "B": [
+    "Pharmacy",
+    null,
+    null,
+    null,
+    "School Gym",
+    "School Gym"
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    null,
+    "School Gym",
+    "School Gym"
+   ],
+   "D": [
+    null,
+    "School Gym",
+    "School Gym",
+    "School Gym",
+    "School Gym",
+    "School Gym"
+   ],
+   "E": [
+    null,
+    "Pharmacy",
+    "School Gym",
+    "School Gym",
+    "School Gym",
+    "School Gym"
+   ]
+  }
+ },
+ "emergency_supply_drop|workspace|0": {
+  "task": "emergency_supply_drop",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Warehouse C",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Warehouse B",
+    "Warehouse B",
+    "Warehouse B",
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    "Warehouse C",
+    "Warehouse C"
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    null,
+    "Warehouse C",
+    "Warehouse C"
+   ],
+   "E": [
+    null,
+    "Warehouse B",
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C"
+   ]
+  }
+ },
+ "emergency_supply_drop|workspace|1": {
+  "task": "emergency_supply_drop",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Warehouse C",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Warehouse B",
+    "Warehouse B",
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    "Warehouse C",
+    "Warehouse C"
+   ],
+   "C": [
+    null,
+    "Warehouse B",
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C"
+   ],
+   "E": [
+    null,
+    null,
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C",
+    "Warehouse C"
+   ]
+  }
+ },
+ "sensor_placement_decision|workspace|0": {
+  "task": "sensor_placement_decision",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Mountain Ridge",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Ocean Bluff",
+    "Forest Edge",
+    "Mountain Ridge",
+    "Mountain Ridge",
+    "Mountain Ridge",
+    "Mountain Ridge"
+   ],
+   "B": [
+    null,
+    null,
+    "Mountain Ridge",
+    "Mountain Ridge",
+    "Mountain Ridge",
+    "Forest Edge"
+   ],
+   "C": [
+    null,
+    "Mountain Ridge",
+    "Mountain Ridge",
+    "Mountain Ridge",
+    null,
+    null
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    "Forest Edge",
+    "Forest Edge",
+    "Forest Edge"
+   ],
+   "E": [
+    null,
+    "Ocean Bluff",
+    "Mountain Ridge",
+    "River Valley",
+    "Forest Edge",
+    "Forest Edge"
+   ]
+  }
+ },
+ "sensor_placement_decision|workspace|1": {
+  "task": "sensor_placement_decision",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Mountain Ridge",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Ocean Bluff",
+    "Ocean Bluff",
+    "River Valley",
+    "Mountain Ridge",
+    "Mountain Ridge",
+    "Mountain Ridge"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    "Forest Edge",
+    "Forest Edge",
+    "Forest Edge"
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    null,
+    "Mountain Ridge",
+    "Mountain Ridge"
+   ],
+   "D": [
+    null,
+    null,
+    "Forest Edge",
+    "Forest Edge",
+    "Mountain Ridge",
+    "Mountain Ridge"
+   ],
+   "E": [
+    null,
+    "Ocean Bluff",
+    "River Valley",
+    "Mountain Ridge",
+    null,
+    "Ocean Bluff"
+   ]
+  }
+ },
+ "last_minute_move|workspace|0": {
+  "task": "last_minute_move",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Bravo Moving Co.",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "Bravo Moving Co.",
+    "Bravo Moving Co.",
+    "Bravo Moving Co.",
+    "Bravo Moving Co.",
+    "Bravo Moving Co."
+   ],
+   "B": [
+    null,
+    null,
+    "Bravo Moving Co.",
+    "Bravo Moving Co.",
+    "Bravo Moving Co.",
+    "Bravo Moving Co."
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    null,
+    "Bravo Moving Co.",
+    "Bravo Moving Co."
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    "Bravo Moving Co."
+   ],
+   "E": [
+    null,
+    null,
+    "Bravo Moving Co.",
+    "Bravo Moving Co.",
+    "Bravo Moving Co.",
+    "Bravo Moving Co."
+   ]
+  }
+ },
+ "last_minute_move|workspace|1": {
+  "task": "last_minute_move",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Bravo Moving Co.",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "Charlie\u2019s Transport",
+    "Charlie\u2019s Transport",
+    "Charlie\u2019s Transport",
+    "Bravo Moving Co.",
+    "Bravo Moving Co."
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    "Bravo Moving Co."
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    "Bravo Moving Co.",
+    "Bravo Moving Co.",
+    "Bravo Moving Co."
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    "Bravo Moving Co."
+   ],
+   "E": [
+    null,
+    null,
+    "Charlie\u2019s Transport",
+    "Bravo Moving Co.",
+    "Bravo Moving Co.",
+    "Bravo Moving Co."
+   ]
+  }
+ },
+ "The Artifact Delivery|workspace|0": {
+  "task": "The Artifact Delivery",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Canyon Depot",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    null,
+    null,
+    "Canyon Depot",
+    "Canyon Depot",
+    "Canyon Depot"
+   ],
+   "B": [
+    null,
+    "Canyon Depot",
+    null,
+    null,
+    null,
+    null
+   ],
+   "C": [
+    null,
+    "Aurora Station",
+    null,
+    "Canyon Depot",
+    "Canyon Depot",
+    "Canyon Depot"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    "Canyon Depot",
+    "Canyon Depot",
+    "Canyon Depot"
+   ],
+   "E": [
+    null,
+    "Aurora Station",
+    null,
+    "Canyon Depot",
+    "Canyon Depot",
+    "Canyon Depot"
+   ]
+  }
+ },
+ "The Artifact Delivery|workspace|1": {
+  "task": "The Artifact Delivery",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Canyon Depot",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Aurora Station",
+    "Aurora Station",
+    null,
+    "Canyon Depot",
+    "Canyon Depot",
+    "Canyon Depot"
+   ],
+   "B": [
+    null,
+    null,
+    "Canyon Depot",
+    "Canyon Depot",
+    "Canyon Depot",
+    "Canyon Depot"
+   ],
+   "C": [
+    null,
+    null,
+    "Aurora Station",
+    null,
+    "Canyon Depot",
+    "Canyon Depot"
+   ],
+   "D": [
+    "Aurora Station",
+    "Aurora Station",
+    "Aurora Station",
+    "Canyon Depot",
+    "Canyon Depot",
+    "Canyon Depot"
+   ],
+   "E": [
+    "Aurora Station",
+    "Aurora Station",
+    null,
+    "Canyon Depot",
+    "Canyon Depot",
+    "Canyon Depot"
+   ]
+  }
+ },
+ "evacuate_park_dilemma|workspace|0": {
+  "task": "evacuate_park_dilemma",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Green Valley",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    null,
+    "Green Valley",
+    "Green Valley",
+    "Green Valley",
+    "Green Valley"
+   ],
+   "B": [
+    null,
+    null,
+    "Blueberry Ridge",
+    null,
+    "Green Valley",
+    "Green Valley"
+   ],
+   "C": [
+    null,
+    null,
+    "Green Valley",
+    "Green Valley",
+    "Green Valley",
+    "Green Valley"
+   ],
+   "D": [
+    null,
+    "Red Lake",
+    "Red Lake",
+    "Green Valley",
+    "Green Valley",
+    "Green Valley"
+   ],
+   "E": [
+    null,
+    "Blueberry Ridge",
+    "Green Valley",
+    "Green Valley",
+    "Green Valley",
+    "Green Valley"
+   ]
+  }
+ },
+ "evacuate_park_dilemma|workspace|1": {
+  "task": "evacuate_park_dilemma",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Green Valley",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "Green Valley",
+    "Red Lake",
+    "Blueberry Ridge",
+    "Green Valley",
+    "Green Valley"
+   ],
+   "B": [
+    null,
+    null,
+    "Green Valley",
+    "Green Valley",
+    "Green Valley",
+    "Green Valley"
+   ],
+   "C": [
+    null,
+    "Blueberry Ridge",
+    "Green Valley",
+    "Green Valley",
+    null,
+    null
+   ],
+   "D": [
+    null,
+    null,
+    "Red Lake",
+    "Green Valley",
+    "Green Valley",
+    "Green Valley"
+   ],
+   "E": [
+    null,
+    "Red Lake",
+    "Green Valley",
+    "Green Valley",
+    "Green Valley",
+    "Green Valley"
+   ]
+  }
+ },
+ "Safe Shelter Selection|workspace|1": {
+  "task": "Safe Shelter Selection",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Riverside Park",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "Summerfield School",
+    "Mountain Lodge",
+    "Mountain Lodge",
+    "Riverside Park",
+    "Riverside Park"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    "Riverside Park",
+    "Riverside Park",
+    "Riverside Park"
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "D": [
+    null,
+    null,
+    "Mountain Lodge",
+    "Mountain Lodge",
+    "Riverside Park",
+    "Riverside Park"
+   ],
+   "E": [
+    "Mountain Lodge",
+    "Mountain Lodge",
+    null,
+    null,
+    "Riverside Park",
+    "Riverside Park"
+   ]
+  }
+ },
+ "Safe Shelter Selection|workspace|0": {
+  "task": "Safe Shelter Selection",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Riverside Park",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    "Mountain Lodge",
+    "Summerfield School",
+    "Summerfield School",
+    "Riverside Park",
+    "Riverside Park",
+    "Riverside Park"
+   ],
+   "B": [
+    null,
+    "Mountain Lodge",
+    null,
+    "Riverside Park",
+    "Riverside Park",
+    "Riverside Park"
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    "Riverside Park",
+    "Riverside Park",
+    "Riverside Park"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "E": [
+    null,
+    null,
+    "Riverside Park",
+    "Riverside Park",
+    "Riverside Park",
+    "Riverside Park"
+   ]
+  }
+ },
+ "manuscript_flood_shelter|workspace|0": {
+  "task": "manuscript_flood_shelter",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Town Hall",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "University Science Library (USL)",
+    "University Science Library (USL)",
+    "Town Hall",
+    "Town Hall",
+    "Town Hall"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    "Town Hall",
+    "Town Hall"
+   ],
+   "C": [
+    null,
+    null,
+    "Hilltop Chapel",
+    null,
+    "Town Hall",
+    "Town Hall"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    null,
+    "Town Hall",
+    "Town Hall"
+   ],
+   "E": [
+    null,
+    null,
+    "University Science Library (USL)",
+    null,
+    "Hilltop Chapel",
+    "Hilltop Chapel"
+   ]
+  }
+ },
+ "toma_butera_2009|workspace|0": {
+  "task": "toma_butera_2009",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Mr. X's son",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "Mr. X",
+    "Mr. X",
+    "Mr. X",
+    "Mr. X",
+    "Mr. X"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    null,
+    "Mrs. Y",
+    "Mr. X's son"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    "Mr. Z",
+    null,
+    null
+   ],
+   "E": [
+    null,
+    "Mr. X",
+    "Mrs. Y",
+    "Mr. Z",
+    "Mr. X's son",
+    "Mr. X's son"
+   ]
+  }
+ },
+ "manuscript_flood_shelter|workspace|1": {
+  "task": "manuscript_flood_shelter",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Town Hall",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "University Science Library (USL)",
+    "University Science Library (USL)",
+    "University Science Library (USL)",
+    "University Science Library (USL)",
+    "Town Hall"
+   ],
+   "B": [
+    null,
+    null,
+    "University Science Library (USL)",
+    null,
+    "University Science Library (USL)",
+    "Town Hall"
+   ],
+   "C": [
+    null,
+    "Hilltop Chapel",
+    null,
+    null,
+    "Town Hall",
+    "Town Hall"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    "University Science Library (USL)",
+    "University Science Library (USL)",
+    "Town Hall"
+   ],
+   "E": [
+    null,
+    null,
+    "University Science Library (USL)",
+    "University Science Library (USL)",
+    "University Science Library (USL)",
+    "Town Hall"
+   ]
+  }
+ },
+ "toma_butera_2009|workspace|1": {
+  "task": "toma_butera_2009",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Mr. X's son",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "Mr. X",
+    "Mr. X",
+    "Mr. X",
+    "Mr. X",
+    "Mr. X"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    null,
+    "Mr. X's son",
+    "Mr. X's son"
+   ],
+   "D": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "E": [
+    null,
+    null,
+    "Mr. X",
+    "Mr. X",
+    null,
+    "Mrs. Y"
+   ]
+  }
+ },
+ "Choosing the Safe Offsite Venue|workspace|0": {
+  "task": "Choosing the Safe Offsite Venue",
+  "arm": "workspace",
+  "seed": 0,
+  "correct": "Hilltop Retreat",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    "Riverside Conference Center",
+    "Riverside Conference Center",
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    "Hilltop Retreat"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    null,
+    "Hilltop Retreat",
+    "Hilltop Retreat"
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    "Hilltop Retreat"
+   ],
+   "D": [
+    null,
+    "Riverside Conference Center",
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    "Hilltop Retreat"
+   ],
+   "E": [
+    "Downtown Hotel",
+    "Hilltop Retreat",
+    "Downtown Hotel",
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    "Hilltop Retreat"
+   ]
+  }
+ },
+ "Choosing the Safe Offsite Venue|workspace|1": {
+  "task": "Choosing the Safe Offsite Venue",
+  "arm": "workspace",
+  "seed": 1,
+  "correct": "Hilltop Retreat",
+  "names": {
+   "A": "Alex",
+   "B": "Sam",
+   "C": "Robin",
+   "D": "Jordan",
+   "E": "Casey"
+  },
+  "leanings": {
+   "A": [
+    null,
+    null,
+    "Hilltop Retreat",
+    "Riverside Conference Center",
+    "Hilltop Retreat",
+    "Riverside Conference Center"
+   ],
+   "B": [
+    null,
+    null,
+    null,
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    "Hilltop Retreat"
+   ],
+   "C": [
+    null,
+    null,
+    null,
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    null
+   ],
+   "D": [
+    null,
+    "Downtown Hotel",
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    "Hilltop Retreat"
+   ],
+   "E": [
+    null,
+    null,
+    null,
+    "Hilltop Retreat",
+    "Hilltop Retreat",
+    "Hilltop Retreat"
+   ]
+  }
+ }
+}

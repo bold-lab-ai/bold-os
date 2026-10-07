@@ -172,7 +172,11 @@ python3 paralax/eval/probes.py                             # off-task relays
 ```
 
 The `/viewer` page shows every recorded session: the five conversations, what each assistant
-read under each reply, and the workspace with the hidden facts marked.
+read under each reply, and the workspace with the hidden facts marked. The sessions behind the
+headline result are in the repository (`eval/runs/v1`, independent pairs and everything in
+context; `eval/runs/v7`, Paralax as adopted), with the benchmark file, so the viewer, the
+report and the talk's figure scripts work from a fresh clone without running anything. Every
+person in them is a simulated persona; no real people took part.
 
 ## Shipping it inside BOLD OS
 

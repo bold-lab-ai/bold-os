@@ -1,10 +1,18 @@
-# Paralax: local secrets, conversation logs, run output and benchmark data are never committed
+# Paralax: local secrets, run logs and most run output are never committed.
+# The recorded sessions behind the headline result are kept (eval/runs/v1 isolated+context, eval/runs/v7),
+# so the session viewer and the talk's figure scripts work from a fresh clone.
 .env
-sessions/
+/sessions/
 *.log
 *.pid
 __pycache__/
-eval/data/
-eval/runs/
 eval/*.log
 eval/*.pid
+eval/data/*
+!eval/data/benchmark.json
+eval/runs/*
+!eval/runs/v1/
+!eval/runs/v7/
+eval/runs/v1/sessions/*__workspace__*
+eval/runs/v1/sessions/*__full__*
+eval/runs/*/config.json

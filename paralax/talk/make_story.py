@@ -30,7 +30,8 @@ def leanings(run):
 
 
 def session(r):
-    evs = [json.loads(l) for l in open(r["session"])]
+    path = r["session"] if os.path.isabs(r["session"]) else os.path.join(EV, r["session"])
+    evs = [json.loads(l) for l in open(path)]
     names = {e["pane"]: e["name"] for e in evs if e["type"] == "name"}
     turns = defaultdict(list)
     for e in evs:

@@ -238,7 +238,7 @@ def run_session(t, arm, seed, n, rounds, run_dir):
                 answers[r] = dict(zip(panes, ex.map(lambda p: persona_answer(S, p, persona_sys[p], t), panes)))
     rec = {"task": t["name"], "arm": arm, "seed": seed, "n": n, "rounds": rounds, "version": W.VERSION,
            "correct": t["correct_answer"], "answers": answers, "slices": slices,
-           "secs": round(time.time() - t0, 1), "session": S.path}
+           "secs": round(time.time() - t0, 1), "session": os.path.relpath(S.path, os.path.join(HERE, "eval"))}
     rec.update(session_stats(S))
     if arm != "full":
         rec["funnel"] = clue_funnel(S, panes, slices)

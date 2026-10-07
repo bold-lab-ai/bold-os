@@ -20,6 +20,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def load_session(path):
+    if not os.path.isabs(path):
+        path = os.path.join(HERE, path)
     evs = [json.loads(l) for l in open(path) if l.strip()]
     return evs
 
