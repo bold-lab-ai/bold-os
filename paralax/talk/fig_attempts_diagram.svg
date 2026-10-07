@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 430" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#1a2b4a"/></marker></defs>
+  <style>
+    .box{fill:#fff;stroke:#1a2b4a;stroke-width:1.6}.ws{fill:#ece9e1;stroke:#1a2b4a;stroke-width:1.6}
+    .try{fill:#fff;stroke:#1a2b4a;stroke-width:1.2;stroke-dasharray:5 4}
+    .t{fill:#1a2b4a}.m{fill:#7d8698}.s{fill:#33445f}.h{font-size:16px;font-weight:700;fill:#1a2b4a}
+    .k{font-size:11px;letter-spacing:.12em;fill:#7d8698}.line{stroke:#1a2b4a;stroke-width:1.8;fill:none}
+    .bad{font-size:12.5px;fill:#8a1c1c}
+  </style>
+  <!-- the adopted pipeline -->
+  <text x="40" y="34" class="k">THE ADOPTED PIPELINE, FOR ONE PERSON</text>
+  <rect x="40" y="50" width="190" height="70" class="ws"/><text x="52" y="76" class="h">Workspace</text><text x="52" y="98" class="s" font-size="12.5">everything people typed</text>
+  <path d="M230 85 L 290 85" class="line" marker-end="url(#a)"/>
+  <rect x="290" y="50" width="150" height="70" class="box"/><text x="302" y="76" class="h">Switch</text><text x="302" y="98" class="s" font-size="12.5">bears on my person?</text>
+  <path d="M440 85 L 500 85" class="line" marker-end="url(#a)"/>
+  <rect x="500" y="50" width="150" height="70" class="box"/><text x="512" y="76" class="h">Read it all</text><text x="512" y="98" class="s" font-size="12.5">raw, attributed</text>
+  <path d="M650 85 L 710 85" class="line" marker-end="url(#a)"/>
+  <rect x="710" y="50" width="200" height="70" class="box"/><text x="722" y="76" class="h">Reply</text><text x="722" y="98" class="s" font-size="12.5">one picture, credited by name</text>
+  <path d="M910 85 L 970 85" class="line" marker-end="url(#a)"/>
+  <rect x="970" y="50" width="150" height="70" class="box"/><text x="982" y="76" class="h">Decision round</text><text x="982" y="98" class="s" font-size="12.5">each states a choice</text>
+
+  <!-- three attempts -->
+
+  <rect x="40" y="186" width="340" height="224" class="try"/>
+  <text x="54" y="212" class="h">v8 · a scoreboard, and votes</text>
+  <text x="54" y="234" class="s" font-size="12.5">Reply opens with a tally of facts for and against</text>
+  <text x="54" y="252" class="s" font-size="12.5">each course of action; at the end, others' choices</text>
+  <text x="54" y="270" class="s" font-size="12.5">reported as votes.</text>
+  <text x="54" y="300" class="bad">Counting let many small positives outweigh one</text>
+  <text x="54" y="318" class="bad">disqualifier. Workarounds entered the "for" column</text>
+  <text x="54" y="336" class="bad">as facts. A shared fact was counted once per reporter.</text>
+  <text x="54" y="354" class="bad">Relayed votes steered people to the wrong option.</text>
+  <text x="54" y="386" class="t" font-size="13" font-weight="700">−11 points HiddenBench, −24 Alsobay. Rejected.</text>
+  <path d="M210 186 L 210 130 L 810 130 L 810 120" class="line" marker-end="url(#a)" stroke-dasharray="5 4"/>
+
+  <rect x="410" y="186" width="340" height="224" class="try"/>
+  <text x="424" y="212" class="h">v9 · eliminate, then compare</text>
+  <text x="424" y="234" class="s" font-size="12.5">First name any reported fact that makes a course of</text>
+  <text x="424" y="252" class="s" font-size="12.5">action unworkable (decisive); suppositions and</text>
+  <text x="424" y="270" class="s" font-size="12.5">workarounds do not count; then compare the rest.</text>
+  <text x="424" y="300" class="s" font-size="12.5">+22 points on the Alsobay task over ten seeds;</text>
+  <text x="424" y="318" class="s" font-size="12.5">zero on the next eight. HiddenBench: −4, then +11.</text>
+  <text x="424" y="336" class="s" font-size="12.5">All seeds together: +3 and +11, neither significant.</text>
+  <text x="424" y="386" class="t" font-size="13" font-weight="700">A tie. Principled, kept as a candidate.</text>
+  <path d="M580 186 L 580 130 L 810 130 L 810 120" class="line" marker-end="url(#a)" stroke-dasharray="5 4"/>
+
+  <rect x="780" y="186" width="340" height="224" class="try"/>
+  <text x="794" y="212" class="h">v10 · a shared neutral brief</text>
+  <text x="794" y="234" class="s" font-size="12.5">One brief of what the group knows, written from</text>
+  <text x="794" y="252" class="s" font-size="12.5">the workspace alone, no one's leaning in view,</text>
+  <text x="794" y="270" class="s" font-size="12.5">refreshed when it changes, read by every reply.</text>
+  <text x="794" y="300" class="bad">Groups converged sooner, sometimes on the decoy:</text>
+  <text x="794" y="318" class="bad">a cascade. The brief read the facts the same</text>
+  <text x="794" y="336" class="bad">bait-favouring way, so the person's leaning was</text>
+  <text x="794" y="354" class="bad">not the cause after all.</text>
+  <text x="794" y="386" class="t" font-size="13" font-weight="700">−6 points HiddenBench, −10 Alsobay. Rejected.</text>
+  <path d="M950 186 L 950 150 L 575 150 L 575 120" class="line" marker-end="url(#a)" stroke-dasharray="5 4"/>
+  <text x="40" y="170" class="k" paint-order="stroke" stroke="#fff" stroke-width="7" stroke-linejoin="round">THREE ATTEMPTS TO MAKE THE REPLY INTEGRATE BETTER, AND WHAT HAPPENED</text>
+</svg>

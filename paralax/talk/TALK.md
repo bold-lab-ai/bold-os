@@ -1,7 +1,8 @@
 # Paralax: your own assistant, reading what the group knows
 
-A conference talk, 20 minutes. Slides are in `slides.html` (open it in a browser; arrow keys
-move). Each section below is one slide, followed by what to say.
+A conference talk, 25 minutes. Slides are in `slides.html` (open it from this folder in a
+browser; arrow keys move, `n` shows notes, and slide 11 is animated). Each section below is
+one slide, followed by what to say.
 
 ---
 
@@ -10,10 +11,10 @@ move). Each section below is one slide, followed by what to say.
 **Paralax: your own assistant, reading what the group knows.**
 Five people, five assistants, one shared workspace, and a switch.
 
-*Say:* This is a talk about a small algorithm with a measured result. When several people
-work on one problem with their own AI assistants, the assistants can pool what the people
-know, and the group decides better. The interesting part is what we had to take away to make
-that work.
+*Say:* This is a talk about a small algorithm, two benchmarks, and an honest hill-climb.
+When several people work on one problem with their own AI assistants, the assistants can pool
+what the people know and the group decides better than people left alone. Where the idea
+runs out, we measured too.
 
 ---
 
@@ -21,20 +22,21 @@ that work.
 
 - Groups talk about what everyone already knows.
 - The fact that settles a decision is often held by one person, and nobody knows to ask.
-- In 65 studies, groups mentioned shared information about two standard deviations more
-  often than unique information, and groups facing this "hidden profile" were eight times
-  less likely to be right. Computer mediation alone did not help. (Stasser & Titus 1985;
-  Lu, Yuan & McLeod 2012)
+- Across 65 studies, groups mentioned shared information about two standard deviations more
+  often than unique information; groups facing a hidden profile were eight times less likely
+  to be right. Computer mediation alone did not help. (Stasser & Titus 1985; Lu, Yuan &
+  McLeod 2012)
 - LLM agent groups fail the same way: 30% accuracy against 81% with full information.
   (HiddenBench, Li, Naito & Shirado, ICML 2026)
+- An LLM facilitator in a human chat got people to share 2.9 more facts and did not change
+  their decisions. (Alsobay et al. 2025)
 
-*Say:* This failure is forty years old and it survives the move to machines. It is not a
-failure of availability. An LLM facilitator that got people to share more facts did not
-improve their decisions (Alsobay et al. 2025). Facts that arrive are not facts that get used.
+*Say:* Forty years old, and it survives the move to machines. And it is not a failure of
+availability: facts that arrive are not facts that get used.
 
 ---
 
-## 3. The setting we care about
+## 3. The setting
 
 - A research department: people with different roles, comprehension and habits of sharing.
 - Each person already talks to an AI assistant. The conversations are private.
@@ -42,10 +44,8 @@ improve their decisions (Alsobay et al. 2025). Facts that arrive are not facts t
   own person?
 
 *Say:* The constraint that shaped everything: each person must still feel they are talking to
-their own assistant. No notifications about what others are doing, no shared board, no
-unprompted messages. We tried those first and the person who asked for the system rejected
-them within a day: "I don't want to see this kind of detailed information about what the
-other person is doing."
+their own assistant. No notifications about others, no shared board, no unprompted messages.
+We built those first and the person who asked for the system rejected them within a day.
 
 ---
 
@@ -61,11 +61,11 @@ other person is doing."
    courses of action they are weighing. Credit by name. Keep a report apart from a
    supposition. Pass on facts and plans, never others' preferences. Optionally ask the person
    for one fact someone else needs.
-5. If the switch is closed, say nothing about the others.
+5. **Decision round.** When the session ends, each person states a final choice to their
+   assistant. If the switch is closed, the assistant says nothing about the others.
 
 *Say:* Two model calls per reply, and the only decision the channel makes is whether to open.
-Everything else is the reader's judgment on primary text. That is the result of the talk; the
-next slides are how we got there.
+Everything else is the reader's judgment on primary text.
 
 ---
 
@@ -73,146 +73,124 @@ next slides are how we got there.
 
 ![the algorithm](fig_algorithm.svg)
 
-*Say:* Follow one person, A. What A types joins the workspace. Before A's assistant replies,
-the switch reads A's recent conversation and the workspace and decides whether anything bears
-on what A is doing. If so, the assistant reads all of it and answers A with one attributed
-picture. If not, the reply says nothing about the others. A reads the reply in A's own chat,
-and the loop continues.
-
 ---
 
 ## 5. Why those rules: the theory
 
-- Communicate when the value to the team exceeds the cost (Tambe 1997, STEAM; Marschak &
-  Radner 1972). The query is the person's situation, not the assistant's uncertainty.
+- Communicate when the value to the team exceeds the cost (Tambe 1997; Marschak & Radner
+  1972). The query is the person's situation, not the assistant's uncertainty.
 - Err open: an unneeded read costs tokens, a missed read costs the decision (Horvitz 1999).
-- Summaries are where AI mediators steer groups (Parisi et al. 2026). Others' preferences make
-  group decisions worse (Mojzisch & Schulz-Hardt 2010). So: primary text, facts only.
+- Broadcast everything relevant and let the knowledge sources judge (Hearsay-II, Erman et al.
+  1980).
+- Summaries are where AI mediators steer groups (Parisi et al. 2026); knowing others'
+  preferences makes group decisions worse (Mojzisch & Schulz-Hardt 2010). So: primary text,
+  facts only.
 - Attribution is the first thing to break in multi-party memory (EverMemBench 2026). So:
   author and turn on every item.
 
 ---
 
-## 6. The benchmark
+## 6. Two benchmarks
 
-- HiddenBench: 65 group-decision tasks. Shared facts point to a decoy; the hidden facts, one
-  per person, point to the right option. Answer judged by exact match.
-- Five simulated people (gemini-3.5-flash-lite), each with a department persona: a professor
-  who decides early, an evidence-first postdoc, a first-year student who misses implications,
-  a literal lab manager, a talkative visitor from another field.
-- Each gets the scenario, the shared facts and one hidden fact, and must describe the problem
-  to its own assistant (gemini-3.5-flash) in its own words. The assistants and the workspace
-  are never given the task.
-- Six rounds; people act concurrently; private answers; the group answer is the plurality.
-- Calibration: one call with full information solves 57 of 65; with shared facts only, 2 of 65.
+**HiddenBench** (Li, Naito & Shirado 2026): 65 group-decision tasks. Shared facts point to a
+decoy; hidden facts, one per person, point to the right option. Calibration with our models:
+one call with full information solves 57 of 65; with the shared facts only, 2 of 65.
 
-*Say:* The gap between pooled and unpooled is 55 tasks wide. That is the room the mediator has
-to work in.
+**The Alsobay task** (Alsobay, Rothschild, Hofman & Goldstein 2025): a real human study, 1,475
+people in 281 five-person groups, choosing a host city from Eldoron, Myloria and Cragnio on
+five different reports. Every report alone favours Myloria; pooled, Eldoron wins. Their humans
+chose Eldoron 31% of the time unaided and 23% with a GPT-4o facilitator in the chat. Their
+stimuli are public (MIT); we run them with our simulated people.
+
+**Our people**: five flash-lite personas with department roles (a professor who decides early,
+an evidence-first postdoc, a first-year who misses implications, a literal lab manager, a
+talkative visitor from another field). Each describes the problem to its own flash assistant
+in its own words; the assistants and the workspace are never given the task.
+
+*Say:* HiddenBench is a battery; the Alsobay task is one hard instance with a human reference
+number. We use both, paired on the same seeds, and adopt nothing that regresses either.
 
 ---
 
 ## 7. Arms and measures
 
-- **Independent pairs:** no workspace. The control.
-- **The people talk directly:** one group chat, no assistants at all, the seminar room. Added
-  after the main run as a second control.
-- **Paralax:** the algorithm, in seven versions.
-- **Everything in context:** every other person's messages in every reply prompt, no switch.
-  The strongest thing an assistant could do.
+- **Independent pairs:** no workspace. The floor.
+- **The people talk directly:** one group chat, no assistants. The seminar room, and
+  HiddenBench's own protocol.
+- **Paralax:** the algorithm.
+- **Everything in context:** every other person's messages in every reply, no switch.
 - **Full information:** everyone holds every fact. The ceiling.
-- Twelve tasks, two seeds, paired on the same sessions; sign-flip permutation test; the
-  seed-to-seed noise reported beside every difference.
-- A judge reads the transcripts and tracks each hidden fact: did the holder say it, did it
-  reach someone else, was it credited to the holder, did that person then answer correctly.
+- On the Alsobay task, their conditions: no help, a one-off message to share, and an LLM
+  facilitator posting into the chat with their prompt.
+- Twelve tasks, two seeds, paired on the same sessions; sign-flip permutation test;
+  seed-to-seed noise reported beside every difference. A judge tracks each hidden fact from
+  holder to use.
 
 ---
 
-## 8. Result
-
-![results](fig_results.svg)
+## 8. Result on HiddenBench
 
 | arm | individual accuracy | group correct |
 |---|---|---|
 | independent pairs | 0.14 | 0.00 |
-| the people talk directly (one group chat, no assistants) | 0.75 | 0.75 |
+| the people talk directly | 0.75 | 0.75 |
 | Paralax, first version | 0.63 | 0.58 |
 | **Paralax as adopted** | **0.83** | **0.88** |
 | everything in context | 0.91 | 0.96 |
 | full information | 0.97 | 1.00 |
 
-*Say:* Pooling through the assistants takes a group from 14% to 83%. The adopted version beats
-the first by 20 points (p = .009) and is not significantly different from reading everything
-every turn (8 points, p = .13). And it stays quiet when it should: on ten off-task messages,
-the everything-in-context assistant relayed the other person's report ten times; Paralax
-three times. Against the same people simply talking to each other in one chat, the gain is
-7.5 points and inside the noise (p = .21): these simulated people share their facts freely
-when they can talk, so the human hidden-profile bias is not reproduced. The structural
-difference stands, private conversations and restraint, but the accuracy claim against direct
-talk needs human participants or a benchmark where talking directly has real costs.
+*Say:* Pooling through the assistants takes a group from 14% to 83%. Against the people
+simply talking to each other in one chat, the gain is 7.5 points and inside the noise: these
+simulated people share freely, so the human hidden-profile bias is not reproduced. The
+structural difference stands, private conversations and restraint; the accuracy claim against
+direct talk is open.
 
 ---
 
-## 8a. The process, one session: where should the festival evacuate?
+## 8a. Result, as a picture
+
+![results](fig_results.svg)
+
+---
+
+## 8b. The process, one session: where should the festival evacuate?
 
 ![the instance](fig_instance.svg)
 
-(In `slides.html` this slide is animated: step through every message, switch decision and
-reply of the recorded session with the arrow keys, or press `p` to play.)
+(Animated in `slides.html`: step through every message, switch decision and reply.)
 
 - Three sites. The shared facts favour Blueberry Ridge and Red Lake and warn against Green
-  Valley, which has a pest outbreak. Four hidden facts, one per person: the bridge to Blueberry
-  Ridge is down (Jordan); a sinkhole closed the road to Red Lake (Sam); Blueberry Ridge lost
-  power (Robin); Green Valley is open for emergencies (Alex). Casey holds shared facts only.
-- Independent pairs: Jordan rules out Blueberry Ridge alone and nobody else hears it; Alex
-  pushes Blueberry Ridge; the group ends split between the two wrong sites, 0 of 5.
+  Valley. Four hidden facts, one per person. Casey holds shared facts only.
+- Independent pairs: Jordan rules out Blueberry Ridge alone and nobody hears it; the group
+  ends split between the two wrong sites, 0 of 5.
 - Paralax: Jordan states the bridge in round 1. In round 2 Sam reports the sinkhole; the
-  switch opens for Sam and carries Jordan's bridge report into Sam's reply, which rules out
-  both wrong sites at once. The same two facts reach Alex, Casey and Robin in their round-2
-  replies. In round 3 Alex adds that Green Valley is open for emergencies, and all five lean
-  to Green Valley. Robin, who forgets to mention things, brings up the power failure only in
-  round 4. In round 4 Jordan's assistant asks Jordan for the bridge timing Sam needs, and
-  Jordan answers it in round 5: the ask route.
+  switch carries Jordan's report into Sam's reply, which rules out both wrong sites. By round
+  3 all five lean to Green Valley. Jordan's assistant asks Jordan for the timing Sam needs,
+  and Jordan answers it: the ask route.
 
-*Say:* Watch where the arrows start: always at a message that states a hidden fact, and they
-arrive in the next reply to each other person. The markers fill in one round after the arrows.
-That lag, type, carry, take in, is the whole mechanism.
+*Say:* Watch where the arrows start: always at a message that states a hidden fact. The
+markers fill in one round after the arrows. Type, carry, take in.
 
 ---
 
-## 8b. What from the workspace helped
+## 8c. What from the workspace helped
 
-Across all Paralax sessions, for a person not yet on the right answer, what the reply before
-their next message had read:
-
-| the reply had… | turns | moved to the right answer next |
+| the reply before a person's next message had… | turns | moved to the right answer next |
 |---|---|---|
 | read a hidden fact held by someone else | 298 | 32% |
 | read the workspace, but no hidden fact in it yet | 82 | 4% |
 | switch closed | 46 | 11% |
 | independent pairs, nothing to read | 574 | 3% |
 
-*Say:* What helps is specific. A reply that carried someone else's hidden fact moved a
-not-yet-right person to the right answer one time in three. A reply that read the workspace
-before any hidden fact had been typed did almost nothing: the switch opening is necessary, not
-sufficient. Left alone, people moved to the right answer three times in a hundred.
-
 ---
 
-## 8c. How much faster
+## 8d. How much faster
 
 ![by round](fig_rounds.svg)
 
-- Independent pairs: never above 7% of people on the right answer; 93% never settle on it.
-- The people talking directly: faster at first (42% by round 3), 65% by round 6; 35% never
-  settle.
-- Paralax: 22% by round 3, 69% by round 5, 74% by round 6; the median person settles on the
-  right answer in round 5.
-- Everything in context: the same curve.
-
-*Say:* This is the "faster" claim measured properly: not the private answer at the end but
-what each person argued for after each message, judged from their own words. Independent pairs
-do not get there late; they do not get there. The two-round lag is the mechanism showing: a
-fact has to be typed, carried, and taken in.
+- Independent pairs: never above 7%; 93% never settle on the right answer.
+- The people talking directly: faster at first (42% by round 3), 65% by round 6.
+- Paralax: 22% by round 3, 74% by round 6; the median person settles in round 5.
 
 ---
 
@@ -220,101 +198,163 @@ fact has to be typed, carried, and taken in.
 
 ![versions](fig_versions.svg)
 
-- v1 handed over at most two items per turn and never repeated one: 0.63.
-- v2 allowed a second delivery when the person had not taken the item in: no change.
-- v3 and v4 widened the selection to everything that bears: small gains, but the selector
-  still returned under one item per turn when told to return everything.
-- v5 removed the relation labels and reasons: 0.70, and the late flips stopped.
-- v6 made the gate a switch and read the whole workspace: 0.79.
-- v7 made the switch close only for small talk: 0.83.
+v1 handed over two items per turn: 0.63. v5 removed relation labels: 0.70. v6 made the gate a
+switch that reads everything: 0.79. v7 made the switch close only for small talk: 0.83.
 
 *Say:* Accuracy rose with how much of the workspace reached the assistant. Every piece of
-machinery between the workspace and the reader cost accuracy: the cap, the ledger, the labels,
-the reasons. The one that survived is the switch.
+machinery between the workspace and the reader cost accuracy. The one that survived is the
+switch.
 
 ---
 
 ## 10. Why: delivery is not use
 
-- With Paralax v1, people who received every hidden fact were right 54% of the time. With
+- With v1, people who received every hidden fact were right 54% of the time. With
   everything in context, 89%.
-- The context assistant lays out the whole picture on every turn. v1 handed facts over one at
-  a time, aimed at what the person currently leaned towards, and stopped once each was given.
-- Labels made it worse. Items labelled "contradicts" pushed people off correct leanings: 29 of
-  120 people were right at round 3 and wrong at round 6. And a model-written reason turned
-  "if the road was cleared..." into "Jordan confirms the road was cleared."
-
-*Say:* This is the Alsobay result from the other side. Getting facts in front of people is
-easy. What moves a decision is the integrated picture, with each item's standing intact.
+- Labels made it worse: items marked "contradicts" pushed people off correct leanings, and a
+  model-written reason turned "if the road was cleared…" into "Jordan confirms the road was
+  cleared."
 
 ---
 
 ## 11. What the switch buys
 
-- Ten off-task messages after another person has reported a fact: "Hello", "Tell me a joke",
-  "What time is it?", "ok".
-- Everything in context: relayed the report 10 of 10 times.
-- Paralax: 3 of 10, two of them on "Sorry, I was away" and "ok".
-- In the open-ended check (two people diagnosing a shrinking reading group): greetings draw
-  nothing, a result reaches the other person credited to its finder, duplicated work is
-  caught, nothing leaks between browsers.
-
-*Say:* The eight-point gap to everything-in-context is the price of restraint. The loop's job
-was to make that price as small as possible.
+- Ten off-task messages after another person has reported a fact. Everything in context
+  relayed the report 10 of 10 times; Paralax 3 of 10.
 
 ---
 
-## 12. Scaling
+## 12. The Alsobay task: where Paralax falls short
+
+![the Alsobay task](fig_alsobay.svg)
+
+- Simulated groups unaided: 50% choose Eldoron (humans 31%). Their LLM facilitator, which did
+  nothing for humans, works on simulated people: 80%.
+- Paralax: about 50%. The facts reach the workspace (29 of 30 per session). People follow
+  their assistant almost perfectly: 20 of 21 whose assistant favoured Eldoron chose it. But a
+  third of the assistants' final replies favour the bait, with all the facts in front of them.
+
+*Say:* This is the honest slide. The pooling works; the integration does not. The
+facilitator's public scoreboard beats our private assistants on this task. So we tried to fix
+integration, three ways.
+
+---
+
+## 13. Three attempts, and why they failed
+
+![attempts](fig_attempts_diagram.svg)
+
+- **v8, a scoreboard and votes.** Counting let many small positives outweigh one
+  disqualifier; workarounds entered the "for" column as facts; a shared fact was counted once
+  per reporter; relayed votes steered people. −11 points on HiddenBench, −24 on Alsobay.
+- **v9, eliminate then compare** (Tversky 1972): +22 on Alsobay over ten seeds, then zero on
+  the next eight. A tie overall.
+- **v10, a shared neutral brief** written without anyone's leaning in view: groups converged
+  sooner, sometimes on the decoy. The brief read the facts the same bait-favouring way, so the
+  person's leaning was not the cause.
+
+---
+
+## 14. Replicate before adopting
+
+![attempts, replicated](fig_attempts.svg)
+
+- Ten seeds of a five-person task cannot distinguish differences under about 20 points.
+- v9's 22-point gain on the Alsobay task shrank to 11 on eighteen seeds (p = .19); its
+  4-point HiddenBench loss became a 3-point gain on 45 pairs (p = .33). Both were seed luck of
+  the same size.
+- The adopted algorithm is unchanged. The open problem is the integrator's reasoning on tasks
+  where facts differ in weight.
+
+*Say:* The winner's curse is real and it is quick. Every candidate now gets replicated on both
+benchmarks before anything changes.
+
+---
+
+## 15. Scaling
 
 ![scaling](fig_scaling.svg)
 
-- Calls per reply: two, at any group size.
-- Tokens per reply: linear in workspace size, about (N - 1) x turns x message length.
-- Three regimes, by items in the workspace: up to about 60, read it all (this study: 24);
-  up to about 600, retrieve over a claims index with pointers back to the turns; beyond, tiered
-  memory with a per-person reading record and a digest that keeps provenance.
-
-*Say:* We know the cost of the second regime already, because v1 to v5 were per-item
-retrieval: about 20 points on this benchmark. The next design has to beat that.
+Two calls per reply at any group size; tokens grow with people × turns × message length. Up
+to about 60 workspace items, read it all; up to about 600, retrieve over a claims index with
+pointers to the turns; beyond, tiered memory with provenance.
 
 ---
 
-## 13. Next steps
+## 16. Using the shared server
 
-1. **Larger groups and longer sessions.** N = 10 and 20, 20 and 50 turns, to find where the
-   whole read breaks and measure the claims-index retrieval against it.
-2. **Harder and open-ended problems.** Distributed reasoning tasks (quantities split across
-   people), design tasks with verifiable constraints, and a scientific-conversation case with
-   structural change in each person's model as the outcome.
-3. **People.** A study with real department members: the imitation-game measure of whether
-   the group ends up with one shared picture, and the steering and equity measures the
-   facilitation literature says to report.
-4. **Deployment.** One server, seat links, rooms, consent; then Firestore and a Cloud Function
-   inside BOLD OS. The plan is written (`DEPLOYMENT.md`); the algorithm does not change.
+![the server](fig_server.svg)
+
+- One command on the host's Mac: `deploy/meeting.sh 10`. It prints a join link and a
+  researcher link.
+- The join link hands each click the next free seat and opens that person's own chat. The
+  researcher link shows every chat, what each assistant read, the seat list and the box for
+  the shared problem.
+- Public address https://meet.chrisantha.uk, through the Cloudflare Tunnel already on the
+  host's Mac: HTTPS end to end, nothing inbound, no login. Keys and tokens never leave the Mac.
+
+*Say:* Say it out loud at the start of a session: everyone's assistant reads what everyone
+types, and only the host sees everything.
 
 ---
 
-## 14. Take-aways
+## 17. Next steps
 
-- Every assistant reading every conversation is a mediator that nobody has to talk to.
-- Getting facts to people is not the problem; one integrated picture is.
+1. **The integrator's reasoning.** The Alsobay gap is a reasoning failure with full
+   information in view. Candidates: a stronger reply model, a verification pass that checks
+   the reply's conclusion against the brief, and an explicit "what would change my mind"
+   step. Each gets both benchmarks and replication.
+2. **Larger groups and longer sessions.** Generated tasks with one fact per person at 10 and
+   20 people; drip-fed facts over 20 and 50 rounds; a seminar room with airtime and attention
+   limits (Diehl & Stroebe 1987; Gallupe et al. 1992), where direct talk is expected to
+   degrade and Paralax to hold.
+3. **People.** The Alsobay task on their open platform (GRAIL) with real department members,
+   pre-registered on the one outcome their facilitator did not move: groups choosing Eldoron.
+4. **Deployment.** Sign-in and consent on the server, then Firestore and a Cloud Function
+   inside BOLD OS. The algorithm does not change.
+
+---
+
+## 18. Take-aways
+
+- Every assistant reading every conversation is a mediator nobody has to talk to.
+- Getting facts to people is not the problem; one integrated picture is, and on hard tasks
+  the integrator itself is.
 - The channel should decide whether to open, and nothing else.
-- Honest limit: against the same people simply talking to each other, the accuracy gain is
-  7.5 points and inside the noise. The structural difference stands; the accuracy claim
-  against direct talk is open.
-- Code, prompts, ledger and talk: `bold-os/paralax` on branch `hack/paralax`, PR #23.
+- Replicate on two benchmarks before adopting anything.
+- Code, prompts, ledger, talk and server: `bold-os/paralax`, branch `hack/paralax`, PR #23.
 
 ---
 
 ## References
 
-Alsobay, Rothschild, Hofman & Goldstein (2025). Bringing everyone to the table. arXiv 2508.08242.
-Horvitz (1999). Principles of mixed-initiative user interfaces. CHI.
-Hu et al. (2026). EverMemBench. arXiv 2602.01313.
-Li, Naito & Shirado (2026). HiddenBench. ICML; arXiv 2505.11556.
-Lu, Yuan & McLeod (2012). Twenty-five years of hidden profiles. PSPR 16.
-Marschak & Radner (1972). Economic theory of teams.
-Mojzisch & Schulz-Hardt (2010). Knowing others' preferences degrades the quality of group decisions. JPSP 98.
-Parisi et al. (2026). arXiv 2605.14097.
-Stasser & Titus (1985). Pooling of unshared information in group decision making. JPSP 48.
-Tambe (1997). Towards flexible teamwork. JAIR 7.
+- Alsobay, M., Rothschild, D., Hofman, J. & Goldstein, D. (2025). Bringing everyone to the
+  table: an experimental study of LLM-facilitated group decision making.
+  [arXiv:2508.08242](https://arxiv.org/abs/2508.08242) ·
+  [GRAIL platform](https://github.com/microsoft/group_ai_lab) ·
+  [data and code](https://doi.org/10.17605/OSF.IO/ERVNB)
+- Diehl, M. & Stroebe, W. (1987). Productivity loss in brainstorming groups. JPSP 53.
+  [doi:10.1037/0022-3514.53.3.497](https://doi.org/10.1037/0022-3514.53.3.497)
+- Erman, L., Hayes-Roth, F., Lesser, V. & Reddy, D. (1980). The Hearsay-II speech-understanding
+  system. ACM Computing Surveys 12. [doi:10.1145/356810.356816](https://doi.org/10.1145/356810.356816)
+- Gallupe, R. B. et al. (1992). Electronic brainstorming and group size. Academy of Management
+  Journal 35. [doi:10.5465/256377](https://doi.org/10.5465/256377)
+- Horvitz, E. (1999). Principles of mixed-initiative user interfaces. CHI.
+  [pdf](https://erichorvitz.com/chi99horvitz.pdf)
+- Hu, et al. (2026). EverMemBench. [arXiv:2602.01313](https://arxiv.org/abs/2602.01313)
+- Li, Y., Naito, A. & Shirado, H. (2026). HiddenBench: assessing collective reasoning in
+  multi-agent LLMs via hidden profile tasks. ICML.
+  [arXiv:2505.11556](https://arxiv.org/abs/2505.11556) ·
+  [dataset](https://huggingface.co/datasets/YuxuanLi1225/HiddenBench)
+- Lu, L., Yuan, Y. C. & McLeod, P. L. (2012). Twenty-five years of hidden profiles in group
+  decision making. PSPR 16. [doi:10.1177/1088868311417243](https://doi.org/10.1177/1088868311417243)
+- Marschak, J. & Radner, R. (1972). Economic theory of teams. Yale University Press.
+- Mojzisch, A. & Schulz-Hardt, S. (2010). Knowing others' preferences degrades the quality of
+  group decisions. JPSP 98. [doi:10.1037/a0017627](https://doi.org/10.1037/a0017627)
+- Parisi, et al. (2026). Real-time group dynamics with LLM facilitation.
+  [arXiv:2605.14097](https://arxiv.org/abs/2605.14097)
+- Stasser, G. & Titus, W. (1985). Pooling of unshared information in group decision making.
+  JPSP 48. [doi:10.1037/0022-3514.48.6.1467](https://doi.org/10.1037/0022-3514.48.6.1467)
+- Tambe, M. (1997). Towards flexible teamwork. JAIR 7. [arXiv:cs/9709101](https://arxiv.org/abs/cs/9709101)
+- Tversky, A. (1972). Elimination by aspects: a theory of choice. Psychological Review 79.
+  [doi:10.1037/h0032955](https://doi.org/10.1037/h0032955)
