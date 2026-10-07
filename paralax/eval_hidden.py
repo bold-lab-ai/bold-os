@@ -244,7 +244,7 @@ def chat_answer(S, pane, persona_sys, t):
         return None
 
 
-def run_chat_session(t, seed, n, rounds, run_dir):
+def run_chat_session(t, seed, n, rounds, run_dir, floor=None):
     panes = [chr(ord("A") + i) for i in range(n)]
     S = fresh_state(panes, f"{t['name']}__chat__s{seed}", run_dir)
     hidden = t["hidden_information"]
@@ -262,17 +262,24 @@ def run_chat_session(t, seed, n, rounds, run_dir):
                                             people=", ".join(f"{q['name']} ({q['role']})" for q in PERSONAS[:n]),
                                             facts="\n".join("- " + f for f in mine))
     order_rng = random.Random(f"order-{t['name']}-{seed}")
+    # The room has `floor` speaking slots per round (default: everyone speaks every round). A room is
+    # serial: with a fixed meeting length, N people share the slots, so each speaks floor/N of the rounds.
+    # Slots are dealt from repeated random orderings, so everyone gets an equal share up to rounding.
+    floor = floor or n
+    speakers = []
+    while len(speakers) < rounds * floor:
+        perm = panes[:]
+        order_rng.shuffle(perm)
+        speakers += perm
     t0 = time.time()
     answers = {}
     for r in range(1, rounds + 1):
-        order = panes[:]
-        order_rng.shuffle(order)
-        for p in order:                                  # people post in turn and see what came before
+        for p in speakers[(r - 1) * floor: r * floor]:  # people post in turn and see what came before
             S.add({"type": "user", "pane": p, "name": S.names[p], "text": chat_message(S, p, persona_sys[p])})
         if r in (max(1, rounds // 2), rounds):
             with ThreadPoolExecutor(n) as ex:
                 answers[r] = dict(zip(panes, ex.map(lambda p: chat_answer(S, p, persona_sys[p], t), panes)))
-    rec = {"task": t["name"], "arm": "chat", "seed": seed, "n": n, "rounds": rounds, "version": W.VERSION,
+    rec = {"task": t["name"], "arm": "chat", "seed": seed, "n": n, "rounds": rounds, "floor": floor, "version": W.VERSION,
            "correct": t["correct_answer"], "answers": answers, "slices": slices,
            "secs": round(time.time() - t0, 1), "session": os.path.relpath(S.path, os.path.join(HERE, "eval"))}
     rec.update(session_stats(S))
@@ -391,7 +398,7 @@ def run(args):
             for seed in range(args.seeds if arm in ("isolated", "workspace", "context", "chat") else 1):
                 if f"{t['name']}|{arm}|{seed}" not in have:
                     jobs.append((t, arm, seed))
-    json.dump({"version": W.VERSION, "arms": arms, "tasks": [t["name"] for t in tasks], "n": args.people, "rounds": args.rounds,
+    json.dump({"version": W.VERSION, "arms": arms, "tasks": [t["name"] for t in tasks], "n": args.people, "rounds": args.rounds, "floor": args.floor,
                "seeds": args.seeds, "human_models": HUMAN_MODELS, "agent_models": SV.AGENT_MODELS,
                "select_models": SV.SELECT_MODELS, "select_cap": SV.SELECT_CAP_SECS, "started": time.strftime("%Y-%m-%d %H:%M")},
               open(os.path.join(run_dir, "config.json"), "w"), indent=1)
@@ -401,7 +408,7 @@ def run(args):
     def job(j):
         t, arm, seed = j
         try:
-            rec = (run_chat_session(t, seed, args.people, args.rounds, run_dir) if arm == "chat"
+            rec = (run_chat_session(t, seed, args.people, args.rounds, run_dir, floor=args.floor) if arm == "chat"
                    else run_session(t, arm, seed, args.people, args.rounds, run_dir, decide=args.decide))
             rec["key"] = f"{t['name']}|{arm}|{seed}"
             append(out, rec)
@@ -516,6 +523,7 @@ def main():
     r = sub.add_parser("run"); r.add_argument("--run", required=True); r.add_argument("--tasks", type=int, default=12)
     r.add_argument("--seeds", type=int, default=2); r.add_argument("--workers", type=int, default=3)
     r.add_argument("--people", type=int, default=5); r.add_argument("--rounds", type=int, default=6)
+    r.add_argument("--floor", type=int, default=None, help="chat arm: speaking slots per round (default: everyone, every round)")
     r.add_argument("--arms", default="isolated,workspace,context,full")
     r.add_argument("--decide", action="store_true", help="final round: each person states a final choice to their assistant")
     q = sub.add_parser("report"); q.add_argument("--run", required=True)

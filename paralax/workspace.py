@@ -19,7 +19,7 @@ Pure functions only; server.py makes the model calls.
 import json
 
 import os
-VERSION = {"v8": "v8", "v9": "v9", "v10": "v10"}.get(os.environ.get("PARALAX_VARIANT", ""), "v7")   # v8 rejected; v9 no gain; v10: a neutral brief of the workspace, shared by all assistants (under test)              # bump whenever a prompt or the representation changes; recorded in every eval result
+VERSION = {"v8": "v8", "v9": "v9", "v10": "v10", "v11": "v11", "v12": "v12"}.get(os.environ.get("PARALAX_VARIANT", ""), "v7")   # v8 rejected; v9 no gain; v10: a neutral brief of the workspace, shared by all assistants (under test)              # bump whenever a prompt or the representation changes; recorded in every eval result
 RELATIONS = ("bears",)
 MAX_INFORM = 60
 CANDIDATE_CAP = 60          # safety rail: most recent undelivered contributions only

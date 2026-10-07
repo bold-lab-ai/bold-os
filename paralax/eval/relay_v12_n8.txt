@@ -1,0 +1,1 @@
+v12_n8: N=8 sessions=24 replies judged 384/384 | relays others' choices 0.11 | anecdote as evidence 0.23

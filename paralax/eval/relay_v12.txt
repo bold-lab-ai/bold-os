@@ -1,0 +1,1 @@
+v12: N=5 sessions=24 replies judged 240/240 | relays others' choices 0.08 | anecdote as evidence 0.19

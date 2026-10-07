@@ -359,3 +359,324 @@ Limits: 12 tasks, 2 seeds, flash-lite people and flash assistants; seed-to-seed 
 among options, so open-ended problem solving is untested beyond the scripted scenario; the
 whole-workspace read will not scale to large N or long sessions, where a per-item or digest
 retrieval returns as a necessary approximation with a cost that this loop has now measured.
+
+## Human-like people: the pre-registered calibration rerun (registered 7 Oct 23:20, before the run)
+
+The Alsobay section set the rule: the `none` arm must land near the humans' 31% before the
+Paralax number counts, else rerun all arms with `--style human` and report both. The
+department personas scored 50% on `none` and 80% with their LLM facilitator (humans: 31% and
+23%): the simulated people pool facts in a chat far better than the humans did, which is also
+why the chat control on HiddenBench sits only 7.5 points under Paralax. This run is that rerun,
+unchanged in every other respect: the same four arms, ten seeds, the adopted algorithm (v7 +
+decision round), `--style human` (each person anchors on their own report's favourite, brings
+up a fact only to support a point or when asked, tends to repeat what others said, reads no
+report but their own). Nothing in the algorithm or its prompts changes.
+
+Prediction, restated from the registration above: `none` falls towards 31%; `llm` matches
+`none` on decisions, as it did for humans; `paralax` exceeds both, because each person's
+assistant integrates for them whether or not they volunteer. Refutation: `paralax` <= `none`
+under human style. Ten groups give ±15 points on the group measure; individual accuracy over
+50 people is the more reliable number, as before. Run: `alsobay_human`.
+
+## Group size under a fixed meeting length (registered 7 Oct 23:35, before the run)
+
+The structural claim that the chat control could not test at five people: a room is serial
+and private assistants are parallel. In a meeting of fixed length, N people share the floor;
+through assistants, every person has the whole time. HiddenBench at N = 8 (all eight
+department personas; facts dealt as before, so four people hold a hidden fact and four hold
+only the shared, decoy-pointing facts). The `chat` arm now takes `--floor K`, the number of
+speaking slots per round, dealt fairly from repeated random orderings; the default (everyone
+speaks every round) leaves every earlier run unchanged. Runs, same 12 tasks and 2 seeds, paired:
+
+- `n8`: chat with floor 5 (the same 30 posts a five-person meeting had, so each person speaks
+  3 or 4 of the 6 rounds) against Paralax as adopted (v7 + decision round), where each person
+  still types 6 messages and each assistant reads the whole workspace (up to 47 items).
+- `n8_open`: chat with floor 8 (everyone speaks every round), to separate the cost of the
+  floor from the cost of group size itself.
+
+Prediction: chat at floor 5 falls below its five-person level (0.75), because the holders
+speak less and half the room argues from shared facts; Paralax holds near its five-person
+level (0.83-0.86) and the gap to chat becomes detectable at 24 pairs. Chat at floor 8 sits
+between. Refutation: Paralax falls as far as chat, or chat does not fall. Cost reported
+alongside: assistant calls and workspace items read per session.
+
+**Premise check during the run (23:40).** The first human-style sessions had all five people
+leaning to Eldoron from their first message, each citing their own report. So the premise was
+measured directly: one flash-lite call per report asking which city the report alone favours,
+under three framings (15 calls, `norm_answer` on JSON):
+
+| report | plain read | department persona | human-style persona |
+|---|---|---|---|
+| Green | Myloria | Myloria | Eldoron |
+| Blue | Myloria | Cragnio | Eldoron |
+| Pink | Cragnio | Myloria | Eldoron |
+| Red | Cragnio | Cragnio | Cragnio |
+| Orange | Cragnio | Cragnio | Cragnio |
+
+Two things follow. (1) For flash-lite the bait is weaker than for Alsobay's humans: a report
+alone goes to Myloria or to Cragnio (the dry-season fact), not to Myloria five times out of
+five; the earlier one-call check that read "each report alone picks Myloria" was one draw per
+report and flash-lite's reading of a 15-fact report is fragile. (2) The human-style text is not
+answer-neutral: it moves three of five initial preferences onto the right answer, so it cannot
+calibrate anything. The run `alsobay_human` therefore counts as a manipulation check only: its
+round-1 leanings against the department run's (.04 Eldoron at round 1) measure how far the
+style shifted the prior, and its decision numbers are not evidence for or against Paralax.
+Lesson for the ledger: a persona trait meant to model a sharing bias must be checked for
+answer-neutrality before its run, by measuring initial preferences under it. The clean way to
+make talking costly without touching the people's priors is structural (speaking slots,
+reading budgets), which is what the group-size run does.
+
+## Is the Alsobay gap the integrator's reasoning? A model diagnostic (registered 7 Oct 23:31, before the run)
+
+The open problem: Paralax about 0.5 on the Alsobay task against 0.8 for their in-chat LLM
+facilitator, with the facts in the workspace (29 of 30) and a third of the assistants' final
+replies favouring the bait. Three reply rules did not move it once replicated. The cheapest
+remaining question is whether the reply model's reasoning is the limit: the same algorithm,
+unchanged, with the reply chain led by gemini-3.8-flash instead of gemini-3.5-flash. The
+facilitator arm gets the same chain, so the comparison stays fair; the people stay flash-lite
+and the switch stays on flash. Department personas, decision round, ten seeds, arms `llm` and
+`paralax`. Run: `alsobay_38`. Reading: if Paralax rises towards the facilitator, the limit is
+the integrator's capacity and the algorithm is sound; if both rise equally, the gap is in the
+structure (public scoreboard vs private integration); if neither moves, the model is not the
+limit. This is a diagnostic, not a candidate: no adoption follows from it alone.
+
+**Result of `alsobay_human` (23:15-23:30, 40 sessions): the manipulation check fails, as the
+premise check predicted.** Round-1 leanings (share of people leaning to Eldoron in their first
+message): department personas .04 (none), .10, .12, .00 (paralax); human-style personas .58,
+.50, .44, .36. The style put half the people on the right answer before anyone spoke, and the
+`none` arm then reached 100% of groups on Eldoron (humans: 31%), `message` 90%, `llm` 80%,
+`paralax` 80% (individual accuracy .96, .84, .70, .76). Under this style fewer facts are
+shared (13.7 of 30 in `none` against 25.7 under department personas), so the sharing trait
+did what it was meant to; the anchoring trait did the opposite of what it was meant to,
+because flash-lite's reading of a 15-fact report is fragile and the phrase "form a first
+preference from your own report" landed on Eldoron for three reports. None of these numbers
+is evidence about Paralax. The department personas remain the people for this task, and the
+Alsobay section's calibration rule is amended: a persona style is admissible only if its
+round-1 leaning distribution matches the department style's within noise (here, Eldoron
+under .15 at round 1).
+
+## The decision round relays preferences (measured 7 Oct 23:36, `eval/relay.py`)
+
+Reading the first eight-person sessions showed replies such as "everyone has now officially
+locked in the River Pavilion" and "Riley's historical evidence confirms the Pavilion can hold
+our crowd". The reply rule says facts and plans, never others' preferences, and a supposition
+is never passed on as a fact. So a judge (flash, one question each) reads every assistant
+reply in the last two rounds of a Paralax session: does it tell the person which option the
+others have chosen, lean to or agreed on; does it present a story, recollection or guess as
+established fact.
+
+| run | N | sessions | replies judged | relays others' choices | anecdote as evidence |
+|---|---|---|---|---|---|
+| v7d (adopted: v7 + decision round), seeds 0-1 | 5 | 24 | 240 | 0.60 | 0.17 |
+
+Mechanism: in the decision round each person types a final choice; the switch opens (people
+are choosing); the reply reads those choices in the workspace and reports them, against its
+rule. At five people on HiddenBench the holders of hidden facts are the majority (3-4 of 5),
+so the relayed majority is usually right and the decision round raised accuracy (.825 to
+.858, plurality .875 to .958). The relay is a majority amplifier, which Mojzisch &
+Schulz-Hardt (2010) predict helps exactly when the majority is right and harms otherwise.
+The eight-person run below has four people with a hidden fact and four without, so it tests
+the harmful case directly. Any fix is a candidate for the usual two-benchmark replication,
+not a change made here.
+
+**Result of `n8` (23:16-23:40, 48 sessions, 24 pairs; `eval/groupsize.py`, `eval/relay.py`):**
+
+| arm | N | individual acc | plurality | holders right | non-holders right | relays others' choices (last 2 rounds) |
+|---|---|---|---|---|---|---|
+| room, everyone speaks (run `chat`) | 5 | 0.750 | 0.75 | 0.74 | 0.79 | |
+| Paralax, adopted (run `v7d`, seeds 0-1) | 5 | 0.858 | 0.96 | 0.84 | 0.92 | 0.60 |
+| room, 5 slots per round for 8 people | 8 | 0.714 | 0.75 | 0.70 | 0.73 | |
+| Paralax, adopted | 8 | 0.740 | 0.75 | 0.73 | 0.75 | 0.59 |
+
+Paired: Paralax minus room at N = 8, +0.026 individual (p = .40), plurality +0.000. Paralax at
+5 minus Paralax at 8: +0.119 (p = .041), plurality +0.208 (p = .031). Room at 5 minus room at
+8: +0.036 (p = .34). Seed noise: room at 8 .30, Paralax at 8 .15. Funnel at N = 8: holders
+stated 86 of 94 hidden facts, 84 reached another person, 83 credited correctly, 1
+misattributed. Cost: 96 assistant calls and about 970 workspace items read per session.
+
+**The prediction failed both ways.** The room did not fall: eight simulated people share
+thirty posts well enough that every holder still gets their fact out, so the floor is not a
+binding cost for flash-lite personas (the attention cost that would bite for humans is not
+modelled). Paralax fell to the room's level, and delivery is intact, so the loss is in
+integration and decision: holders right fell from .84 to .73. The relay judge gives the
+mechanism. The share of replies relaying others' choices is the same at both sizes (.60,
+.59); what changes is who the majority is. At five, 3-4 of 5 hold a hidden fact and the relayed
+majority is usually right; at eight, 4 of 8 argue from the decoy-pointing shared facts, the
+people's choices in the workspace are split or wrong, and the replies pass that on ("everyone
+has now locked in River Pavilion"). The structural claim that private channels beat a room at
+larger N is therefore not shown; what is shown is that the adopted algorithm's one measured
+rule violation, relaying preferences, is harmless when the majority is right and costly when
+it is not. The run `n8_open` (room with everyone speaking) follows for completeness.
+
+## v11: others' choices are not facts (registered 7 Oct 23:42, before the run)
+
+One change to the reply rules, nothing else: after rule 2, "What another person has chosen,
+prefers, leans towards, has decided or agreed to is not a fact about the problem. Never
+report it, count it, or say where the group stands, even if {name} asks and even when {name}
+is making a final choice; use only what people report about the situation itself, and leave
+{name} to choose." Rule 2 already said "never as anyone's preference or vote" and was broken in
+60% of final-round replies; the new sentence names the thing itself (a typed choice) rather
+than a manner of presenting facts. General: it refers to no task, option or benchmark.
+
+Measures and predictions, all paired on the same tasks and seeds as the adopted algorithm:
+- relay judge, last two rounds: from .60 to under .15 (the manipulation check; if it fails,
+  the wording is not the lever and a verification pass is the next candidate);
+- HiddenBench N = 8 (`v11_n8`, 24 pairs vs `n8` workspace): individual accuracy rises from
+  .74 towards the five-person level, above the room's .71 by more than noise;
+- HiddenBench N = 5 (`v11`, 24 pairs vs `v7d` seeds 0-1): holds at .83-.86. Part of the
+  decision round's gain (.825 to .858) may have been majority amplification, so a small drop
+  is possible; a drop below .80 is a regression and v11 is rejected;
+- Alsobay (`alsobay_v11`, 10 seeds vs `alsobay_dept_decide` and the replication): holds or
+  rises, since every initial preference there is wrong and relaying them can only hurt.
+Adoption needs both benchmarks and the replication rule as before.
+
+**Result of `alsobay_38` (23:31-23:46, 20 sessions; 401 of 500 reply calls answered by
+gemini-3.8-flash, the rest fell back to 3.5-flash under 503s):**
+
+| arm | reply model | groups choosing Eldoron | individual accuracy | leaning Eldoron, rounds 1-10 |
+|---|---|---|---|---|
+| llm facilitator | 3.5-flash (run `alsobay_dept`) | 80% | 0.74 | .12 .12 .14 .20 .24 .44 .64 .74 .76 .76 |
+| llm facilitator | 3.8-flash | 70% | 0.70 | .08 .12 .14 .20 .28 .44 .58 .64 .68 .68 |
+| Paralax + decision round | 3.5-flash (18 seeds) | 50% | 0.52 | .00 .00 .01 .02 .11 .14 .20 .22 .28 .41 |
+| Paralax + decision round | 3.8-flash | 70% | 0.50 | .02 .00 .04 .10 .14 .22 .30 .34 .42 .48 |
+
+Reading: the stronger reply model leaves individual accuracy where it was (.50 against .52)
+and leaves the facilitator where it was (.70 against .74); the 20-point rise in Paralax's
+group measure is inside the ±15 binomial spread of ten groups and comes from more groups
+forming a majority, not from more people being right. So the reply model's capacity is not
+the limit on this task. The gap to the facilitator is structural: the facilitator keeps one
+public scoreboard that every person reads and that tags people by name, while each private
+assistant integrates afresh for one person who is anchored on their own report. Combined with
+the relay finding, the private integration is also being pulled by the others' typed
+preferences. v11 (no relay of choices) is the next measurement on this task.
+
+**`n8_open` (23:40-23:52, 24 sessions): the room with all eight speaking every round scores
+0.682 individual, 0.67 plurality, below the five-slot room (0.714, 0.75; paired −0.031,
+p = .71).** More talk does not help eight simulated people; the cost of size is the half of the
+room arguing from shared facts, not the floor. Paralax at eight is +0.057 over this arm
+(p = .30) and +0.026 over the five-slot room (p = .40). Complete table in
+`eval/groupsize.py` output; the five-to-eight drop is Paralax's (−0.119, p = .041), not the
+room's (−0.036 and −0.068).
+
+**v11 on the Alsobay task (`alsobay_v11`, 23:46-23:58, 10 seeds):** 80% of groups on Eldoron
+(8 of 10), individual accuracy 0.56, facts in the workspace 28.6 of 30, leaning curve ending
+.52. Against the adopted algorithm (18 seeds: 50%, 0.52), paired by seed on the ten shared
+seeds: +0.120 individual, p = .21. Consistent with the registered "holds or rises", and
+inside the noise, as v9's first ten seeds were; it counts only with the HiddenBench pairs and
+a replication.
+
+**v11 at eight people (`v11_n8`, 23:42-23:57, 24 sessions):** individual 0.797, plurality
+0.83, holders right .78, non-holders .81 (adopted: 0.740, 0.75, .73, .75). Paired: +0.057
+individual (p = .22), +0.083 plurality (p = .31) over the adopted algorithm; +0.083 (p = .13)
+over the five-slot room. Relay judge: 0.45 of final-round replies still report others'
+choices (adopted: 0.59); anecdote as evidence unchanged at .18. **The manipulation check
+fails:** the rule's wording cuts the relay by a quarter, not to under .15, so the accuracy
+movement, in the predicted direction and inside noise, cannot be credited to the mechanism.
+As registered, the next candidate is enforcement rather than wording.
+
+## v12: v11 plus a verification pass on the reply (registered 7 Oct 23:58, before the run)
+
+Same rules as v11. After each reply that used the workspace, one check call asks of the reply
+text only: does it tell the person which option others have chosen, lean to, prefer or agreed
+on? If yes, the reply is written once more with the draft and the failed check appended to the
+system prompt, and the rewrite is what the person sees (`server.py`, `verify_reply`; the
+check and rewrite are logged on the reply event as `checked` and `rewritten`). Cost: one short
+call per open reply, two when the check fails. General: the check names no task or option.
+This is the "verification pass on the reply's conclusion" from the talk's next steps, applied
+to the one rule violation that has been measured.
+
+Predictions, same tasks and seeds, paired: relay rate under .15 (the manipulation check;
+the judge is the same question, so this measures whether the rewrite holds); N = 8
+individual accuracy above the adopted .74 by more than noise and above the room; N = 5 holds
+at .83-.86; Alsobay holds or rises. Rejection: N = 5 under .80, or the relay rate not under
+.15 (then the rewrite is not doing what it claims). Runs `v12_n8`, `v12`, `alsobay_v12`.
+
+**v11 at five people (`v11`, 23:46-23:58, 24 sessions) and verdict.** Individual 0.800,
+plurality 0.83 (adopted: 0.858, 0.96; v7 without the decision round: 0.825, 0.88). Paired
+against the adopted algorithm: −0.058 individual (p = .83), −0.125 plurality. Seed noise .20.
+Relay rate .31 (adopted .60).
+
+| v11 vs adopted | individual | plurality | relay rate v11 / adopted |
+|---|---|---|---|
+| HiddenBench N = 5, 24 pairs | −0.058 (p = .83) | −0.125 | .31 / .60 |
+| HiddenBench N = 8, 24 pairs | +0.057 (p = .22) | +0.083 | .45 / .59 |
+| Alsobay, 10 pairs | +0.120 (p = .21) | 80% vs 50% groups | |
+
+**v11 is not adopted.** Every difference is inside seed noise, the five-person number sits
+exactly on the registered rejection line (.80), and the manipulation check failed (relay
+cut by a quarter to a half, never under .15). The pattern across the three is the
+majority-amplifier account in miniature: less relay of choices costs where the majority is
+right (five people, 3-4 holders) and pays where it is wrong (eight people, half holders; the
+Alsobay task, where every initial preference is wrong). The clean test of that account needs
+the relay actually removed, which is what v12 measures.
+
+**v12 on the Alsobay task (`alsobay_v12`, 00:00-00:12, 10 seeds):** 30% of groups on
+Eldoron, individual 0.36, leaning curve ending .26; the check flagged and rewrote 103 of 500
+replies. Paired against the adopted algorithm on the same seeds: −0.080 (p = .77); against
+v11 on the same seeds, −0.20. Inside the ten-seed noise, but the sign is against the
+prediction "holds or rises": with the relay of choices removed by the rewrite, fewer people
+leave their report's favourite. One reading, to be weighed with the HiddenBench pairs: on
+this task the typed choices of people who have already moved to Eldoron were part of what
+moved the others, so removing the relay removes a cascade that happened to run the right way.
+
+**v12 at eight people (`v12_n8`, 23:58-00:17, 24 sessions): the manipulation check passes
+and the accuracy prediction fails.** Relay rate 0.11 (adopted .59, v11 .45); the check
+flagged and rewrote 282 of 1152 replies; anecdote as evidence .23. Individual 0.776,
+plurality 0.75, holders right .80, non-holders .76. Paired: +0.036 over the adopted
+algorithm (p = .29), +0.062 over the five-slot room (p = .26), −0.021 against v11. With the
+relay gone the eight-person number does not return to the five-person .86, so the relay of
+choices is at most a small part of the eight-person drop. What remains in the workspace at
+eight people is what the four shared-fact holders type: workarounds ("the cracked floorboard
+is covered by a mat"), reassurances and recollections, which the replies pass on as reports;
+and the majority amplifier that survives is in the people, not the assistants, since each
+person reads a reply that integrates eight conversations in which most voices argue for the
+decoy.
+
+**v12 at five people (`v12`, 00:00-00:18, 24 sessions) and verdict.** Individual 0.792,
+plurality 0.83; relay rate 0.08 (check passes); anecdote as evidence .19; seed noise .22.
+Paired against the adopted algorithm: −0.067 (p = .84), plurality −0.125; against v7 without
+the decision round: −0.033.
+
+| v12 vs adopted | individual | plurality | relay rate v12 / adopted |
+|---|---|---|---|
+| HiddenBench N = 5, 24 pairs | −0.067 (p = .84) | −0.125 | .08 / .60 |
+| HiddenBench N = 8, 24 pairs | +0.036 (p = .29) | +0.000 | .11 / .59 |
+| Alsobay, 10 pairs | −0.080 (p = .77) | 30% vs 50% groups | |
+
+**v12 is not adopted** (five-person number under the .80 line; no gain beyond noise
+anywhere). Unlike v11, its mechanism check passed, so the result is informative: removing the
+relay of others' choices from the replies does not improve group decisions on either
+benchmark at either size, and at five people it costs about what the decision round gained.
+
+## Conclusion of the night (8 Oct 2026, 00:20)
+
+The adopted algorithm is unchanged: v7 with the decision round. What the night established,
+each with paired sessions and the noise beside it:
+
+1. **Persona traits cannot model human sharing costs.** The one "human-style" trait set moved
+   the people's priors onto the right answer (round-1 leaning .58 vs .04). Rule: a style is
+   admissible only if its round-1 leanings match the department style's within noise. Costs of
+   talking must be imposed structurally.
+2. **Eight people, fixed meeting length.** The room does not degrade (.75 → .71 and .68); eight
+   simulated people get thirty posts to carry four hidden facts. Paralax degrades to the room's
+   level (.86 → .74, p = .04) with delivery intact (86 of 94 facts said, 84 reached). The
+   structural advantage of private channels is not shown with simulated people at this size.
+3. **The replies relay choices.** 60% of final-round replies report what others chose, against
+   the rule; 17-23% treat anecdotes as evidence. The decision round is a majority amplifier.
+4. **Removing the relay does not help.** v11 (wording) halves it and is a wash; v12 (check and
+   rewrite) removes it (.08-.11) and is a wash at eight, a loss at five and on the Alsobay task.
+   The eight-person drop and the Alsobay gap lie elsewhere: in what the people type (workarounds,
+   reassurances, recollections, which the replies carry as reports) and in private integration
+   against a person anchored on their own report, where the facilitator's public scoreboard wins.
+5. **The reply model is not the limit.** gemini-3.8-flash leaves Alsobay individual accuracy at
+   .50 and the facilitator at .70.
+
+What follows for the programme: the rule "never others' preferences" (Mojzisch & Schulz-Hardt)
+is in tension with the measured decision-round gain on simulated people whose majority is
+right; the rule stands on the human evidence, and the tension is recorded rather than resolved
+by prompt. The next experiments are not more reply rules. They are: a standing-of-items judge
+on the people's turns (report / supposition / workaround), so that what the workspace carries
+is labelled by what it is before the reply reads it, tested against the anecdote rate; a
+public-scoreboard variant of the reply that the person can see across turns, tested on the
+Alsobay task against the facilitator; and the real-people session on the meeting server, where
+the costs of talking are real.

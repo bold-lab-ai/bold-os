@@ -406,6 +406,36 @@ V8_RULES = """
 V9_RULES = """
    When {name} is weighing courses of action, go in two steps. First, for each course of action, state any reported fact that would make it unworkable or unacceptable, with who reported it; such a fact is decisive no matter how much else favours that course. A supposition, a hope, or a workaround someone proposes is not such a fact, and a fact that several people share is one fact, not several. Second, compare only the courses of action that nothing rules out, on what is reported for and against them: say which considerations matter most and why, without counting items. Then advise."""
 
+# v11, under test: others' choices are not facts about the problem (eval/RESULTS.md, "The decision round relays preferences").
+V11_RULES = """
+   What another person has chosen, prefers, leans towards, has decided or agreed to is not a fact about the problem. Never report it, count it, or say where the group stands, even if {name} asks and even when {name} is making a final choice; use only what people report about the situation itself, and leave {name} to choose."""
+
+# v12, under test: v11's rule plus a verification pass on the reply (one check call; one rewrite if it fails).
+CHECK_SYSTEM = """You read one reply from an AI assistant to the person it works for. The person is one of several people deciding together. Answer one question about this reply only: does it tell the person which option other people have chosen, lean to, voted for, prefer, or agreed on (including "the consensus is", "everyone has locked in", "most of the group favours", "X has chosen Y")? Return JSON only: {"relays_choices": true|false}"""
+REWRITE_NOTE = """
+
+CHECK FAILED: your draft reply below reported what other people have chosen, prefer or agreed to. Write the reply again, keeping everything else, but with no mention of what anyone else has chosen, leans towards, prefers, decided or agreed to, and no statement of where the group stands. Reply with the new text only.
+
+DRAFT
+"""
+
+
+def verify_reply(system, contents, text, ev):
+    """v12: one check; if the reply relays others' choices, one rewrite. Never raises."""
+    try:
+        _, _, d = llm(CHECK_SYSTEM, [turn("user", "REPLY\n" + text[:4000])], AGENT_MODELS, json_mode=True, max_tokens=40,
+                      check=lambda raw: json.loads(raw[raw.find("{"): raw.rfind("}") + 1]))
+        ev["checked"] = bool(d.get("relays_choices"))
+        if not ev["checked"]:
+            return text
+        model, new, _ = llm(system + REWRITE_NOTE + text, contents, AGENT_MODELS)
+        ev["rewritten"] = True
+        return new
+    except Exception as e:                                 # noqa: BLE001
+        ev["check_error"] = str(e)[:120]
+        return text
+
+
 AGENT_SYSTEM = """You are {name}'s personal assistant.
 
 {name} is one of {n} people ({people}) working on the same problem at the same time. Each person talks only with their own assistant. You never see the others' conversations. Before each of your replies, a background step looks through what the other people have typed (the shared workspace) and puts in the WORKSPACE section below anything that should change what {name} thinks or does next and that {name} has not already been told.
@@ -433,7 +463,7 @@ def agent_system(S, pane, block):
     with S.lock:
         problem = S.problem.strip() or f"(not set yet: work from what {S.names[pane]} says, and ask if it is unclear)"
         return AGENT_SYSTEM.format(name=S.names[pane], n=len(S.panes), people=", ".join(S.names[p] for p in S.panes),
-                                   problem=problem, block=block, v8_rules={"v8": V8_RULES, "v9": V9_RULES}.get(VARIANT, "").format(name=S.names[pane]))
+                                   problem=problem, block=block, v8_rules={"v8": V8_RULES, "v9": V9_RULES, "v11": V11_RULES, "v12": V11_RULES}.get(VARIANT, "").format(name=S.names[pane]))
 
 
 def agent_contents(S, pane):
@@ -539,7 +569,10 @@ def handle_send(S, pane, text):
                 block = W.block(cands, everything=True)
             else:
                 block = "(not available in this session)"
-            model, text, _ = llm(agent_system(S, pane, block), agent_contents(S, pane), AGENT_MODELS)
+            system, contents = agent_system(S, pane, block), agent_contents(S, pane)
+            model, text, _ = llm(system, contents, AGENT_MODELS)
+            if VARIANT == "v12" and mode == "workspace" and sel["inform"]:
+                text = verify_reply(system, contents, text, ev)
             ev.update(model=model, text=text.strip(), status="done")
         except Exception as e:                             # noqa: BLE001
             ev.update(status="error", text=f"[assistant error: {str(e)[:300]}]")
