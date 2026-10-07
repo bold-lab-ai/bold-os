@@ -141,6 +141,7 @@ plurality was right, all paired on the same tasks and seeds:
 | arm | individual accuracy | group correct |
 |---|---|---|
 | independent pairs (no workspace) | 0.14 | 0.00 |
+| the people talk directly (one group chat, no assistants) | 0.75 | 0.75 |
 | Paralax, first version (hand over at most 2 items per turn) | 0.63 | 0.58 |
 | **Paralax as adopted (switch, whole workspace, standing rule)** | **0.83** | **0.88** |
 | everything in context, every turn | 0.91 | 0.96 |
@@ -148,6 +149,13 @@ plurality was right, all paired on the same tasks and seeds:
 
 Paralax as adopted beats independent pairs by 68 points (p < .001) and its first version by 20
 (p = .009), and is not significantly different from everything-in-context (8 points, p = .13).
+Against the group simply talking to each other it is 7.5 points higher, which is inside the
+noise at 24 paired sessions (p = .21): these simulated people share their facts readily when
+they can talk, unlike the human groups in the hidden-profile literature. What Paralax adds over
+a group chat is therefore structural on this benchmark: each person keeps a private
+conversation and sees only it, the assistant integrates for them, and the switch holds back
+off-task relays. The accuracy claim against direct talk needs human participants or more
+sessions.
 What the switch buys: on ten off-task messages ("Hello", "Tell me a joke", "What time is
 it?"), the everything-in-context assistant relayed the other person's report ten times out of
 ten; Paralax did so three times, two of them on "Sorry, I was away" and "ok".

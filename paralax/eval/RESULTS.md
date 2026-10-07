@@ -41,6 +41,37 @@ independent?
   paired difference on individual accuracy is positive with p < .05 AND the change is explained
   by a funnel stage it was built to fix. Prompt text is data: every version is in git.
 
+## Added control: the people simply talk to each other (registered 7 Oct 03:25, before its run)
+
+Chrisantha's point: the natural baseline is the group talking directly, not independent pairs.
+The `chat` arm: the same five personas with the same facts post to one shared channel, in a
+random order each round, six rounds, no assistants at all, then answer privately. This is also
+HiddenBench's own protocol (their agent groups: 30.1%). Same 12 tasks and 2 seeds, paired.
+Questions it settles: does Paralax beat the group just talking, or only beat silence; and how
+much of the hidden-profile failure the personas reproduce. Prediction, from the literature:
+chat lands well below full information, since groups discuss what they share; if chat matches
+Paralax, the contribution is privacy and restraint, not accuracy, and the ledger says so.
+
+**Result (run `chat`, 24 sessions, 03:27-03:34, flash-lite only):**
+
+| arm | individual accuracy | plurality | vs chat (individual, paired) |
+|---|---|---|---|
+| independent pairs | 0.142 | 0.00 | -0.608 (p < .001) |
+| **chat: the people talk directly** | **0.750** | **0.75** | |
+| Paralax (v7) | 0.825 | 0.875 | +0.075 (p = .21), plurality +0.125 (p = .19) |
+| everything in context | 0.908 | 0.958 | +0.158 (p = .022) |
+
+Seed noise for chat .17. The prediction failed: these simulated people pool their facts well
+when they can talk directly. The hidden-profile failure in humans (Lu et al. 2012: 8x less
+likely to be right) is a human bias that flash-lite personas told to "ask the others what they
+know" do not reproduce, and HiddenBench's 30.1% for agent groups came from a different protocol.
+So, honestly stated: on this benchmark Paralax's accuracy is 7.5 points above the group simply
+talking, and that difference is inside the noise at 24 pairs. What Paralax adds that chat does
+not is structural: no shared channel (each person keeps a private conversation and sees only
+it), the switch's restraint, and the assistant's integration. The accuracy claim that stands is
+against independent pairs; the claim against direct talk needs either human participants, where
+the bias is real, or more sessions. Both are now in the next steps.
+
 ## What the gate buys (measured 7 Oct 01:05, eval/probes.py)
 
 Two people. Sam reports a fact ("I called Lakeside Lodge: fully booked for May"). Alex then sends

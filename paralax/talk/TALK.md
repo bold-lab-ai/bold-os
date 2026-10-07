@@ -114,6 +114,8 @@ to work in.
 ## 7. Arms and measures
 
 - **Independent pairs:** no workspace. The control.
+- **The people talk directly:** one group chat, no assistants at all, the seminar room. Added
+  after the main run as a second control.
 - **Paralax:** the algorithm, in seven versions.
 - **Everything in context:** every other person's messages in every reply prompt, no switch.
   The strongest thing an assistant could do.
@@ -132,6 +134,7 @@ to work in.
 | arm | individual accuracy | group correct |
 |---|---|---|
 | independent pairs | 0.14 | 0.00 |
+| the people talk directly (one group chat, no assistants) | 0.75 | 0.75 |
 | Paralax, first version | 0.63 | 0.58 |
 | **Paralax as adopted** | **0.83** | **0.88** |
 | everything in context | 0.91 | 0.96 |
@@ -141,7 +144,11 @@ to work in.
 the first by 20 points (p = .009) and is not significantly different from reading everything
 every turn (8 points, p = .13). And it stays quiet when it should: on ten off-task messages,
 the everything-in-context assistant relayed the other person's report ten times; Paralax
-three times.
+three times. Against the same people simply talking to each other in one chat, the gain is
+7.5 points and inside the noise (p = .21): these simulated people share their facts freely
+when they can talk, so the human hidden-profile bias is not reproduced. The structural
+difference stands, private conversations and restraint, but the accuracy claim against direct
+talk needs human participants or a benchmark where talking directly has real costs.
 
 ---
 
@@ -196,6 +203,8 @@ sufficient. Left alone, people moved to the right answer three times in a hundre
 ![by round](fig_rounds.svg)
 
 - Independent pairs: never above 7% of people on the right answer; 93% never settle on it.
+- The people talking directly: faster at first (42% by round 3), 65% by round 6; 35% never
+  settle.
 - Paralax: 22% by round 3, 69% by round 5, 74% by round 6; the median person settles on the
   right answer in round 5.
 - Everything in context: the same curve.
@@ -290,6 +299,9 @@ retrieval: about 20 points on this benchmark. The next design has to beat that.
 - Every assistant reading every conversation is a mediator that nobody has to talk to.
 - Getting facts to people is not the problem; one integrated picture is.
 - The channel should decide whether to open, and nothing else.
+- Honest limit: against the same people simply talking to each other, the accuracy gain is
+  7.5 points and inside the noise. The structural difference stands; the accuracy claim
+  against direct talk is open.
 - Code, prompts, ledger and talk: `bold-os/paralax` on branch `hack/paralax`, PR #23.
 
 ---

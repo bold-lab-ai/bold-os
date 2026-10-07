@@ -125,6 +125,7 @@ kbd{font-family:var(--sans);font-size:12px;border:1px solid var(--line);padding:
   <table>
     <tr><th>arm</th><th>what the assistant gets</th></tr>
     <tr><td>Independent pairs</td><td>nothing from the others (control)</td></tr>
+    <tr><td>The people talk directly</td><td>one group chat, no assistants at all: the seminar room (control, added after the main run)</td></tr>
     <tr><td>Paralax</td><td>the algorithm, seven versions</td></tr>
     <tr><td>Everything in context</td><td>every other person's messages in every reply, no switch</td></tr>
     <tr><td>Full information</td><td>every person holds every fact (ceiling)</td></tr>
@@ -140,12 +141,13 @@ kbd{font-family:var(--sans);font-size:12px;border:1px solid var(--line);padding:
   <table style="font-size:28px">
     <tr><th>arm</th><th>individual accuracy</th><th>group correct</th></tr>
     <tr><td>Independent pairs (no workspace)</td><td class="n">0.14</td><td class="n">0.00</td></tr>
+    <tr><td>The people talk directly (one group chat, no assistants)</td><td class="n">0.75</td><td class="n">0.75</td></tr>
     <tr><td>Paralax, first version</td><td class="n">0.63</td><td class="n">0.58</td></tr>
     <tr class="hl"><td>Paralax as adopted</td><td class="n">0.83</td><td class="n">0.88</td></tr>
     <tr><td>Everything in context, every turn</td><td class="n">0.91</td><td class="n">0.96</td></tr>
     <tr><td>Full information (ceiling)</td><td class="n">0.97</td><td class="n">1.00</td></tr>
   </table>
-  <p class="small" style="margin-top:26px">HiddenBench, 12 tasks × 2 seeds, paired on the same sessions. Adopted vs first version: +20 points, p = .009. Adopted vs everything in context: 8 points, p = .13, not significant. Adopted vs independent pairs: +68 points, p &lt; .001.</p>
+  <p class="small" style="margin-top:26px">HiddenBench, 12 tasks × 2 seeds, paired on the same sessions. Adopted vs independent pairs: +68 points, p &lt; .001. Adopted vs first version: +20, p = .009. Adopted vs the group talking directly: +7.5, p = .21, not significant. Adopted vs everything in context: −8, p = .13, not significant.</p>
   <div class="notes">Pooling through the assistants takes a group from 14% to 83%. And it stays quiet when it should: on ten off-task messages, the everything-in-context assistant relayed the other person's report ten times; Paralax three times.</div>
 </section>
 
@@ -198,6 +200,7 @@ kbd{font-family:var(--sans);font-size:12px;border:1px solid var(--line);padding:
     <div class="fig"><img src="fig_rounds.svg" alt="Share of people leaning to the right answer after each round, for independent pairs, Paralax and everything in context"></div>
     <ul class="small" style="font-size:21px">
       <li>Independent pairs: never above 7% of people on the right answer. 93% of them never settle on it.</li>
+      <li>The people talking directly: faster at first (42% by round 3), 65% by round 6; 35% never settle.</li>
       <li>Paralax: 22% by round 3, 69% by round 5, 74% by round 6; the median person settles on the right answer in round 5.</li>
       <li>Everything in context: the same curve.</li>
       <li>The lag is the time for a hidden fact to be typed, carried and taken in: typically two rounds.</li>
@@ -267,6 +270,7 @@ kbd{font-family:var(--sans);font-size:12px;border:1px solid var(--line);padding:
     <li>Every assistant reading every conversation is a mediator nobody has to talk to.</li>
     <li>Getting facts to people is not the problem. One integrated picture is.</li>
     <li>The channel should decide whether to open, and nothing else.</li>
+    <li>Honest limit: against the same people simply talking to each other, the accuracy gain is 7.5 points and inside the noise. These simulated people share freely; the hidden-profile bias is a human one. The structural difference stands: private conversations, no shared channel, restraint.</li>
   </ul>
   <p class="small" style="margin-top:auto"><span class="badge">code</span>bold-os/paralax, branch hack/paralax, PR #23 · prompts, ledger (eval/RESULTS.md), session viewer, this talk</p>
 </section>

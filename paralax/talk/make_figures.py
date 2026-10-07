@@ -16,13 +16,13 @@ def clean(ax):
     ax.set_axisbelow(True)
 
 # ---- 1. results: individual accuracy and group correct per arm
-arms = ["Independent pairs\n(no workspace)", "Paralax, first version\n(hand over 2 items per turn)", "Paralax as adopted\n(switch, whole workspace)", "Everything in context\n(every turn, no switch)", "Full information\n(ceiling)"]
-ind = [0.14, 0.625, 0.825, 0.908, 0.967]
-grp = [0.00, 0.583, 0.875, 0.958, 1.00]
-fig, axes = plt.subplots(1, 2, figsize=(11, 3.9), sharey=True)
+arms = ["Independent pairs\n(no workspace)", "The people talk directly\n(one group chat, no assistants)", "Paralax, first version\n(hand over 2 items per turn)", "Paralax as adopted\n(switch, whole workspace)", "Everything in context\n(every turn, no switch)", "Full information\n(ceiling)"]
+ind = [0.14, 0.75, 0.625, 0.825, 0.908, 0.967]
+grp = [0.00, 0.75, 0.583, 0.875, 0.958, 1.00]
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.4), sharey=True)
 for ax, vals, title in zip(axes, (ind, grp), ("Individual accuracy at the end", "Sessions where the group's plurality was right")):
     y = np.arange(len(arms))[::-1]
-    colors = [MUTED, MUTED, INK, MUTED, MUTED]
+    colors = [MUTED, MUTED, MUTED, INK, MUTED, MUTED]
     ax.barh(y, vals, color=colors, height=0.58)
     for yi, v in zip(y, vals):
         ax.text(v + 0.015, yi, f"{v:.2f}", va="center", color=SOFT, fontsize=10.5)

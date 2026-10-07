@@ -17,6 +17,8 @@ Protocol (what the user asked for):
     person privately answers; the group answer is the plurality (ties count as wrong).
 
 Arms (the server's modes, through the shipped handle_send):
+  chat        the people talk to each other in one shared channel, no assistants at all
+              (the natural baseline, and HiddenBench's own protocol)
   isolated    N independent assistant pairs, no shared workspace            (the control)
   workspace   Paralax: background selection from the shared workspace       (the proposal)
   context     every other person's turns in the reply prompt, same rules    (strong baseline)
@@ -190,6 +192,90 @@ def persona_answer(S, pane, persona_sys, t):
         return None
 
 
+# ------------------------------------------------------------------ the group-chat arm (no assistants)
+
+CHAT_SYSTEM = """You are {name}, {role} in an academic research department. {character}
+
+The situation: {scenario}
+
+You are one of {n} people ({people}) who must make this decision together, and you are all in one group chat. You can read everything anyone posts.
+
+What you know (the others may know different things):
+{facts}
+
+Each turn, write one message to the group, in character: say what you think, bring up what you know when it is relevant to you, ask the others what they know, and react to what they have said. Do not paste your whole list at once. Write only your next message to the group, at most four sentences, in your own voice."""
+
+
+def chat_contents(S, pane):
+    """The channel from this person's side: their own posts are model turns, everyone else's are user turns."""
+    turns = [("user", "(The group chat is open. Write your first message to the group.)")]
+    with S.lock:
+        posts = [e for e in S.events if e["type"] == "user"]
+    for e in posts:
+        if e["pane"] == pane:
+            role, text = "model", e["text"]
+        else:
+            role, text = "user", f'{S.names[e["pane"]]}: {e["text"]}'
+        if turns[-1][0] == role:
+            turns[-1] = (role, turns[-1][1] + "\n\n" + text)
+        else:
+            turns.append((role, text))
+    if turns[-1][0] == "model":
+        turns.append(("user", "(Your turn again. Write your next message to the group.)"))
+    return [SV.turn(r, x) for r, x in turns]
+
+
+def chat_message(S, pane, persona_sys):
+    _, text, _ = SV.llm(persona_sys, chat_contents(S, pane), HUMAN_MODELS, max_tokens=300)
+    return text.strip()[:1500]
+
+
+def chat_answer(S, pane, persona_sys, t):
+    with S.lock:
+        convo = "\n".join(f'{S.names[e["pane"]]}: {e["text"]}' for e in S.events if e["type"] == "user")
+    user = (f"The group chat so far:\n{convo}\n\nPrivately, which option do you choose now? "
+            f"Options: {', '.join(t['possible_answers'])}. Return JSON only: {{\"answer\": \"<option>\"}}")
+    try:
+        return norm_answer(ask_json(persona_sys, user, HUMAN_MODELS).get("answer"), t["possible_answers"])
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
+def run_chat_session(t, seed, n, rounds, run_dir):
+    panes = [chr(ord("A") + i) for i in range(n)]
+    S = fresh_state(panes, f"{t['name']}__chat__s{seed}", run_dir)
+    hidden = t["hidden_information"]
+    slices = {p: [h for j, h in enumerate(hidden) if j % n == i] for i, p in enumerate(panes)}
+    for i, p in enumerate(panes):
+        S.add({"type": "name", "pane": p, "name": NAMES[i]})
+    S.add({"type": "settings", "settings": {"mode": "isolated"}})
+    rng = random.Random(f"{t['name']}-{seed}")
+    persona_sys = {}
+    for i, p in enumerate(panes):
+        mine = (t["shared_information"] + slices[p])[:]
+        rng.shuffle(mine)
+        persona_sys[p] = CHAT_SYSTEM.format(name=NAMES[i], role=PERSONAS[i]["role"], character=PERSONAS[i]["character"],
+                                            scenario=t["description"].strip(), n=n,
+                                            people=", ".join(f"{q['name']} ({q['role']})" for q in PERSONAS[:n]),
+                                            facts="\n".join("- " + f for f in mine))
+    order_rng = random.Random(f"order-{t['name']}-{seed}")
+    t0 = time.time()
+    answers = {}
+    for r in range(1, rounds + 1):
+        order = panes[:]
+        order_rng.shuffle(order)
+        for p in order:                                  # people post in turn and see what came before
+            S.add({"type": "user", "pane": p, "name": S.names[p], "text": chat_message(S, p, persona_sys[p])})
+        if r in (max(1, rounds // 2), rounds):
+            with ThreadPoolExecutor(n) as ex:
+                answers[r] = dict(zip(panes, ex.map(lambda p: chat_answer(S, p, persona_sys[p], t), panes)))
+    rec = {"task": t["name"], "arm": "chat", "seed": seed, "n": n, "rounds": rounds, "version": W.VERSION,
+           "correct": t["correct_answer"], "answers": answers, "slices": slices,
+           "secs": round(time.time() - t0, 1), "session": os.path.relpath(S.path, os.path.join(HERE, "eval"))}
+    rec.update(session_stats(S))
+    return rec
+
+
 # ------------------------------------------------------------------ one session
 
 def fresh_state(panes, name, run_dir):
@@ -298,7 +384,7 @@ def run(args):
     jobs = []
     for t in tasks:
         for arm in arms:
-            for seed in range(args.seeds if arm in ("isolated", "workspace", "context") else 1):
+            for seed in range(args.seeds if arm in ("isolated", "workspace", "context", "chat") else 1):
                 if f"{t['name']}|{arm}|{seed}" not in have:
                     jobs.append((t, arm, seed))
     json.dump({"version": W.VERSION, "arms": arms, "tasks": [t["name"] for t in tasks], "n": args.people, "rounds": args.rounds,
@@ -311,7 +397,8 @@ def run(args):
     def job(j):
         t, arm, seed = j
         try:
-            rec = run_session(t, arm, seed, args.people, args.rounds, run_dir)
+            rec = (run_chat_session(t, seed, args.people, args.rounds, run_dir) if arm == "chat"
+                   else run_session(t, arm, seed, args.people, args.rounds, run_dir))
             rec["key"] = f"{t['name']}|{arm}|{seed}"
             append(out, rec)
             fin = rec["answers"][args.rounds]
@@ -364,7 +451,7 @@ def report(args):
              "| arm | sessions | individual acc (mid) | individual acc (final) | plurality correct | holder said fact | fact reached another person | credited to holder | misattributed | assistant calls / session |",
              "|---|---|---|---|---|---|---|---|---|---|"]
     by_arm = {}
-    for arm in ("isolated", "context", "workspace", "full"):
+    for arm in ("chat", "isolated", "context", "workspace", "full"):
         rs = [r for r in rows if r["arm"] == arm]
         by_arm[arm] = rs
         if not rs:
@@ -391,13 +478,13 @@ def report(args):
         return keys, d, g
 
     lines.append("")
-    for a, b in (("workspace", "isolated"), ("workspace", "context"), ("context", "isolated")):
+    for a, b in (("workspace", "isolated"), ("workspace", "chat"), ("chat", "isolated"), ("workspace", "context"), ("context", "isolated")):
         keys, d, g = paired(a, b)
         if keys:
             lines.append(f"{a} - {b}: {len(keys)} paired sessions | individual acc {mean(d):+.3f} (one-sided p = {perm_test(d):.3f}) "
                          f"| plurality {mean(g):+.3f} (p = {perm_test(g):.3f})")
     # noise: same arm, seed 0 vs seed 1
-    for arm in ("isolated", "workspace", "context"):
+    for arm in ("chat", "isolated", "workspace", "context"):
         s0 = {r["task"]: r for r in by_arm.get(arm, []) if r["seed"] == 0}
         s1 = {r["task"]: r for r in by_arm.get(arm, []) if r["seed"] == 1}
         ks = sorted(set(s0) & set(s1))

@@ -45,7 +45,7 @@ def session(r):
     return evs, names, turns, hf
 
 
-ARMS = [("isolated", "v1", "independent pairs"), ("workspace", "v7", "Paralax"), ("context", "v1", "everything in context")]
+ARMS = [("isolated", "v1", "independent pairs"), ("chat", "chat", "the people talk directly"), ("workspace", "v7", "Paralax"), ("context", "v1", "everything in context")]
 
 # ------------------------------------------------------------ 1. share leaning correct, by round
 curves, first_correct = {}, {}
@@ -66,10 +66,10 @@ for arm, run, label in ARMS:
     curves[label] = [np.mean(per_round[k]) for k in range(1, 7)]
     first_correct[label] = firsts
 fig, ax = plt.subplots(figsize=(8.6, 4.4))
-styles = {"independent pairs": (0, (1, 2)), "Paralax": "-", "everything in context": (0, (5, 3))}
+styles = {"independent pairs": (0, (1, 2)), "the people talk directly": (0, (3, 2, 1, 2)), "Paralax": "-", "everything in context": (0, (5, 3))}
 for label, ys in curves.items():
     ax.plot(range(1, 7), ys, color=INK, linewidth=2.2, linestyle=styles[label])
-    off = {"everything in context": 0.035, "Paralax": -0.035}.get(label, 0)
+    off = {"everything in context": 0.04, "Paralax": -0.005, "the people talk directly": -0.05}.get(label, 0)
     ax.text(6.12, ys[-1] + off, label, color=INK, fontsize=10.5, va="center")
 ax.set_xlim(0.8, 8.4); ax.set_ylim(0, 1); ax.set_xticks(range(1, 7))
 ax.set_xlabel("round (each person's n-th message to their assistant)"); ax.set_ylabel("share of people leaning to the right answer")

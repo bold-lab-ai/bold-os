@@ -43,7 +43,8 @@ def main():
             if r.get("version") and r["arm"] == a.arm and r["key"] not in cache]
 
     def job(r):
-        evs = [json.loads(l) for l in open(r["session"])]
+        path = r["session"] if os.path.isabs(r["session"]) else os.path.join(HERE, r["session"])
+        evs = [json.loads(l) for l in open(path)]
         names = {e["pane"]: e["name"] for e in evs if e["type"] == "name"}
         out = {}
         for p in sorted(names):
