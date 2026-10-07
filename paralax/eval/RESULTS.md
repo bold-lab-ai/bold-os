@@ -277,7 +277,18 @@ from primary text with provenance. Risk acknowledged: a summary is where mediato
 
 The brief makes people converge sooner (the best mid-round number of any version) and then
 lose ground: a slide from 0.825 to 0.800 and two all-wrong sessions, so a shared integration
-cascades too when the early contributions favour the decoy. Not adopted on this evidence.
+cascades too when the early contributions favour the decoy.
+
+| Alsobay task, 10 seeds | v7 + decision round | v9 | v10 |
+|---|---|---|---|
+| groups choosing Eldoron | 4/10 | 7/10 | 4/10 |
+| individuals choosing Eldoron | 22/50 | 33/50 | 17/50 |
+
+**REJECTED on both benchmarks.** Removing the person's leaning from the integrator's view
+did not make the integrator conclude correctly; the brief reproduced the same bait-favouring
+reading from the same contributions. The person's leaning was not the cause after all. What
+distinguishes v9 is the rule about what counts as decisive and what does not count at all
+(suppositions, workarounds, repeated shared facts), applied in the reply itself.
 
 ## Replication before any adoption (launched 7 Oct 06:12)
 
@@ -287,6 +298,31 @@ rests on 10 seeds. Rule from the noise memory: measure the spread before compari
 more HiddenBench seeds of each (48 sessions) and ten more Alsobay seeds of each (20 sessions),
 same tasks, then the paired comparison on 48 and 20 pairs. Adopt v9 only if it holds on the
 Alsobay task and does not regress HiddenBench on the larger sample.
+
+**Result (06:12-06:57; 7 of 68 sessions failed on model errors and are excluded from the pairs):**
+
+| | v7 + decision round | v9 | difference | p (v9 better) |
+|---|---|---|---|---|
+| HiddenBench, seeds 0-1 (24 pairs), individual | 0.858 | 0.817 | −0.042 | .76 |
+| HiddenBench, seeds 2-3 (21 pairs), individual | 0.743 | 0.857 | +0.114 | .14 |
+| **HiddenBench, all 45 pairs, individual** | 0.804 | 0.836 | +0.031 | .33 |
+| HiddenBench, all 45 pairs, plurality | 0.889 | 0.867 | −0.022 | |
+| Alsobay, seeds 0-9 (10 pairs), individual | 0.44 | 0.66 | +0.220 | .12 |
+| Alsobay, seeds 10-19 (8 pairs), individual | 0.62 | 0.60 | −0.025 | .64 |
+| **Alsobay, all 18 pairs, individual** | 0.52 | 0.63 | +0.111 | .19 |
+| Alsobay, all 18 pairs, groups choosing Eldoron | 9/18 | 12/18 | | |
+
+**Decision: v7 with the decision round remains the adopted algorithm. v9 is a tie.** It did
+not regress either benchmark on the larger samples, and it is a principled rule, but the
+gain it was adopted for did not hold: the 22-point Alsobay difference on ten seeds became
+zero on the next eight, the winner's curse the noise memory warns about. Both the original
+HiddenBench "loss" and the original Alsobay "gain" were seed luck of about the same size.
+What the night established, beyond the versions: on these two benchmarks the adopted
+algorithm sits at 0.80-0.86 on HiddenBench and about 0.5 on the Alsobay task; three
+integration rules (tally, elimination, a shared neutral brief) move the Alsobay number by at
+most a few points once replicated; and ten seeds of a five-person task cannot distinguish
+differences under about 20 points. The Alsobay gap to their in-chat LLM facilitator (80%)
+stands and is the open problem.
 
 ## Conclusion (7 Oct 2026, 01:30)
 

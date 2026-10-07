@@ -170,6 +170,15 @@ What the switch buys: on ten off-task messages ("Hello", "Tell me a joke", "What
 it?"), the everything-in-context assistant relayed the other person's report ten times out of
 ten; Paralax did so three times, two of them on "Sorry, I was away" and "ok".
 
+A second benchmark, the human hidden-profile study of Alsobay and colleagues (2025) run with
+the same simulated people (`eval/alsobay.py`), gives a harder picture: simulated groups with
+no help choose the right city 50% of the time (humans: 31%), their in-chat LLM facilitator
+80%, and Paralax about 50%, with its facts all in the workspace but its replies concluding
+the bait a third of the time. Three further integration rules were tested on both benchmarks
+with the same seeds and replicated (a scoreboard, eliminate-then-compare, a shared neutral
+brief); none held up, and the adopted algorithm is unchanged apart from a decision round at
+the end of a session. That gap is the open problem.
+
 The version history, with what each change was meant to fix and what it did, is in
 `eval/RESULTS.md`. The two findings that drove the design: delivering facts is not the
 bottleneck, integrating them in one picture is; and relation labels such as "contradicts"
