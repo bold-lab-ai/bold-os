@@ -18,7 +18,8 @@ Pure functions only; server.py makes the model calls.
 """
 import json
 
-VERSION = "v7"              # v7: the switch closes only for small talk and setup; it opens whenever the person is deciding, acting or asserting              # bump whenever a prompt or the representation changes; recorded in every eval result
+import os
+VERSION = "v8" if os.environ.get("PARALAX_VARIANT") == "v8" else "v7"   # v8 (under test) adds the scoreboard and decision-time votes to the reply              # bump whenever a prompt or the representation changes; recorded in every eval result
 RELATIONS = ("bears",)
 MAX_INFORM = 60
 CANDIDATE_CAP = 60          # safety rail: most recent undelivered contributions only

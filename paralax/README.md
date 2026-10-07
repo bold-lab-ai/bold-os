@@ -42,8 +42,20 @@ server with users on different computers is in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 You need Python 3.9 or newer (macOS ships it) and a Gemini API key. Nothing to install.
 
+**A meeting with real people** (from the host's Mac, public address through Cloudflare):
+
 ```sh
-GEMINI_API_KEY=your-key python3 paralax/server.py
+deploy/meeting.sh 10          # 10 seats; prints the join link and the researcher link
+```
+
+Each click on the join link takes the next free seat and opens that person's own chat; the
+researcher link shows every chat and the controls. Details, and how the address is wired, in
+[`deploy/README.md`](deploy/README.md).
+
+**Locally, without tokens** (two people at one laptop, or development):
+
+```sh
+GEMINI_API_KEY=your-key python3 paralax/server.py --open
 ```
 
 | Page | Who it's for |
@@ -53,12 +65,10 @@ GEMINI_API_KEY=your-key python3 paralax/server.py
 | `http://localhost:8808/workspace` | Researcher view: every chat, what each assistant read, and the mode switch |
 | `http://localhost:8808/viewer` | Browse recorded evaluation sessions (see below) |
 
-For two people on one laptop, open each seat in its own browser window. For several laptops,
-start the server with `--host 0.0.0.0` and open `http://<that-machine>:8808/?pane=A` and so on.
-
-Each participant's browser receives only that person's own messages; the server enforces this.
-The researcher pages have no login, so share their addresses only with the people running the
-study.
+Without `--open`, the server mints a join link, one secret token per seat and a researcher key
+(printed at start and kept in `sessions/tokens.json`), and every route checks them: a seat sees
+only its own messages, and only the researcher key can set the problem, switch modes, reset, or
+open the researcher pages.
 
 | Flag or variable | Effect |
 |---|---|

@@ -165,7 +165,7 @@ def run_chat(arm, seed, style, run_dir):
 
 # ------------------------------------------------------------------ Paralax arm
 
-def run_paralax(seed, style, run_dir):
+def run_paralax(seed, style, run_dir, decide=False):
     panes = ["A", "B", "C", "D", "E"]
     S = E.fresh_state(panes, f"alsobay__paralax__{style}__s{seed}", run_dir)
     for i, p in enumerate(panes):
@@ -175,14 +175,15 @@ def run_paralax(seed, style, run_dir):
     stagger = random.Random(f"stagger-{seed}")
     t0 = time.time(); answers = {}
 
-    def one_turn(p, delay):
+    def one_turn(p, delay, final):
         time.sleep(delay)
-        SV.handle_send(S, p, E.persona_message(S, p, sysm[p]))
+        SV.handle_send(S, p, E.persona_message(S, p, sysm[p], final=final))
 
     for r in range(1, ROUNDS + 1):
         delays = {p: stagger.uniform(0, 3.0) for p in panes}
+        final = decide and r == ROUNDS
         with ThreadPoolExecutor(5) as ex:
-            list(ex.map(lambda p: one_turn(p, delays[p]), panes))
+            list(ex.map(lambda p: one_turn(p, delays[p], final), panes))
         if r in (ROUNDS // 2, ROUNDS):
             with ThreadPoolExecutor(5) as ex:
                 answers[r] = dict(zip(panes, ex.map(lambda p: E.persona_answer(S, p, sysm[p], TASK), panes)))
@@ -234,12 +235,12 @@ def run(args):
     def job(j):
         arm, seed = j
         try:
-            S, answers, secs = run_paralax(seed, args.style, run_dir) if arm == "paralax" else run_chat(arm, seed, args.style, run_dir)
+            S, answers, secs = run_paralax(seed, args.style, run_dir, decide=args.decide) if arm == "paralax" else run_chat(arm, seed, args.style, run_dir)
             fin = answers[ROUNDS]
             c = Counter(v for v in fin.values() if v); top = c.most_common()
             majority = None if not top or (len(top) > 1 and top[0][1] == top[1][1]) else top[0][0]
             shared = facts_shared(S)
-            rec = {"key": f"{arm}|{seed}", "arm": arm, "seed": seed, "style": args.style, "version": W.VERSION, "correct": CORRECT,
+            rec = {"key": f"{arm}|{seed}", "arm": arm, "seed": seed, "style": args.style, "version": W.VERSION, "decide": args.decide, "correct": CORRECT,
                    "answers": answers, "majority": majority, "facts_shared": shared, "leanings": leanings(S),
                    "secs": secs, "session": os.path.relpath(S.path, HERE)}
             rec.update(E.session_stats(S))
@@ -284,7 +285,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("run"); r.add_argument("--run", required=True); r.add_argument("--seeds", type=int, default=10)
     r.add_argument("--arms", default="none,message,llm,paralax"); r.add_argument("--style", default="department", choices=list(STYLE_EXTRA))
-    r.add_argument("--workers", type=int, default=4)
+    r.add_argument("--workers", type=int, default=4); r.add_argument("--decide", action="store_true")
     q = sub.add_parser("report"); q.add_argument("--run", required=True)
     a = ap.parse_args()
     {"run": run, "report": report}[a.cmd](a)

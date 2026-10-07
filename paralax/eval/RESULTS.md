@@ -95,6 +95,26 @@ assistants, workspace, no chat). Ten seeds each. Measures as theirs: share of gr
 majority is Eldoron, facts shared, complete participation; plus individual accuracy and the
 per-round leaning curve.
 
+**Result (run `alsobay_dept`, 10 seeds per arm, department personas, 03:59-04:19):**
+
+| arm | groups choosing Eldoron | humans | individual accuracy | facts typed or posted (of 30) | leaning Eldoron, rounds 1-10 |
+|---|---|---|---|---|---|
+| none (group chat) | 50% | 31% | 0.40 | 25.7 | .04 .10 .12 .10 .14 .16 .20 .26 .28 .26 |
+| message | 60% | 21% | 0.58 | 26.0 | .10 .10 .10 .12 .18 .28 .28 .30 .30 .30 |
+| llm facilitator in the chat | 80% | 23% | 0.74 | 25.1 | .12 .12 .14 .20 .24 .44 .64 .74 .76 .76 |
+| Paralax v7 (no decision round) | 50%, 4 of 10 split | | 0.42 | 29.0 | .00 .04 .06 .08 .12 .12 .14 .24 .22 .26 |
+
+Reading: (1) The simulated people are more capable than the humans but the task still defeats
+half of them, so calibration is close enough to proceed without the "human" style. (2) Their
+LLM facilitator, which did nothing for human decisions, works on simulated people: it keeps a
+public scoreboard of pros and cons and tags people, and 76% of individuals end on Eldoron.
+(3) Paralax v7 fails here on the use stage: the facts reach the workspace (29 of 30) but the
+replies do not tally them, so people stay with their report's favourite; and with no shared
+channel and no decision step, four groups never form a majority. Ten seeds give a binomial
+spread of about 15 points on the group measure, so the ordering llm > paralax on individual
+accuracy (0.74 vs 0.42) is the reliable part. This is the case for v8: a private scoreboard
+in each reply when the person is weighing, and a decision round.
+
 Calibration rule: the `none` arm must land near the humans' 31% before the Paralax number
 counts. If the department personas score far above it, as the chat control on HiddenBench
 suggests they may, rerun all arms with `--style human` (anchoring on the report's favourite,
@@ -129,6 +149,25 @@ information about what the other person is doing"). The accuracy cost of the gat
 | v5 | the gate decides relevance only and returns turn ids; no relation labels, no reasons; the assistant integrates the raw attributed text and keeps each item's standing (a report vs a supposition); facts-only rule kept in the gate (principle: the reader does the epistemics with the primary text; a classifier between workspace and reader is a lossy, biased channel) | v5 (workspace arm only, same 12 tasks x 2 seeds, 00:20-00:42) | | | 0.700 / 0.79 | | vs v1 +0.075 (p=.18), plurality +0.208 (p=.09); vs iso +0.558 (p<.001); vs context -0.208 (p=.002) | Best so far; noise down to .13; late flips balanced (18 each way); picks per session 50 (v1 19). Monotone trend: accuracy rises with how much of the workspace reaches the assistant (v1 19 items .625, v4 28 .667, v5 50 .700, context ~100 .908). The selector still returns <2 turns per call when told to include everything that bears. |
 | v6 | the gate is a switch: does anything in the workspace bear on this turn at all? If yes, the assistant reads the whole workspace (cap 60 items); if no, nothing. Ask kept. (principle: the only decision a channel should make is whether to open; what passes through is decided by the reader, Hearsay-II broadcast) | v6 (workspace arm only, same 12 tasks x 2 seeds, 00:43-01:01) | | | 0.792 / 0.79 | | vs v1 +0.167 (p=.011); vs v5 +0.092 (p=.12); vs iso +0.650 (p<.001); vs context -0.117 (p=.032) | Significant over v1 and explained (integration of the whole picture). Noise .28. The switch closed on 252 of 696 turns (36%), mostly late turns where the person states a conclusion; people for whom it opened more often were more accurate. |
 | **v7** | the switch closes only for greetings, small talk, remarks about the tool, or before the person has said what they are working on; it opens whenever the person is weighing, choosing, asserting a conclusion or about to act (principle: Horvitz 1999, asymmetric cost of acting vs not acting; an unneeded read costs tokens, a missed read can cost the decision) | v7 (workspace arm only, same 12 tasks x 2 seeds, 01:03-01:26) | | | **0.825 / 0.875** | | vs v1 +0.200 (p=.009), plurality +0.292 (p=.021); vs v6 +0.033 (p=.38); vs iso +0.683 (p<.001); vs context -0.083 (p=.13, not significant) | **ADOPTED.** Noise .15. Switch closed on 54 of 696 turns (8%). Facts reached someone 90/94; of people reached, 82% correct (context 91%). Off-task relays 3/10 vs context 10/10. |
+
+## The decision round (registered and run 7 Oct 04:16-04:29)
+
+A protocol step, not a prompt change: in the final round each person is asked to state a
+final choice to their assistant. Rationale: a group needs a decision procedure, and the
+private setting has no channel in which one forms by itself (four of ten Paralax groups on
+the Alsobay task ended with no majority).
+
+| HiddenBench, 24 paired sessions | v7 | v7 + decision round |
+|---|---|---|
+| individual accuracy | 0.825 | 0.858 (+0.033, p = .36) |
+| plurality correct | 0.875 | 0.958 (+0.083, p = .31) |
+| sessions with no majority | 0.042 | 0.000 |
+
+Kept as part of the protocol: no cost, removes the splits. On the Alsobay task
+(`alsobay_dept_decide`, 10 seeds) it changed nothing: groups choosing Eldoron 40% (v7: 50%),
+individual accuracy 0.44 (0.42), splits 2 of 10 (4 of 10). So convergence was not the problem
+there; integration is. v8 (scoreboard + decision-time votes) runs next on both benchmarks with
+the decision round, as `PARALAX_VARIANT=v8`; the default code stays v7 until adopted.
 
 ## Conclusion (7 Oct 2026, 01:30)
 

@@ -98,7 +98,8 @@ function md(s){
   if (list) out.push("<ul>" + list.join("") + "</ul>");
   return out.join("");
 }
-function get(url){ return fetch(url).then(function(r){ return r.json(); }); }
+var KEY = new URLSearchParams(location.search).get("key");
+function get(url){ return fetch(url + (KEY ? (url.indexOf("?") >= 0 ? "&" : "?") + "key=" + encodeURIComponent(KEY) : "")).then(function(r){ return r.json(); }); }
 
 function loadRuns(){
   return get("/runs").then(function(d){

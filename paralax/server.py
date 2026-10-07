@@ -24,7 +24,7 @@ Python 3.9+ standard library only. Needs one Gemini API key.
     python3 paralax/server.py --host 0.0.0.0                # let other laptops join
     python3 paralax/server.py --new --panes 3               # fresh session, three people
 """
-import argparse, glob, itertools, json, os, queue, re, threading, time
+import argparse, glob, itertools, json, os, queue, re, secrets, threading, time
 import urllib.error, urllib.request
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
@@ -77,6 +77,7 @@ SELECT_MODELS = [m.strip() for m in os.environ.get(
     "PARALAX_SELECT_MODELS", "gemini-3.5-flash-lite,gemini-3.5-flash").split(",") if m.strip()]
 SELECT_HEDGE_SECS = float(os.environ.get("PARALAX_SELECT_HEDGE_SECS", "2"))
 SELECT_CAP_SECS = float(os.environ.get("PARALAX_SELECT_CAP_SECS", "4"))  # then reply without the workspace
+VARIANT = os.environ.get("PARALAX_VARIANT", "v7")          # v7 = adopted; v8 = under test (see eval/RESULTS.md)
 THINKING_BUDGET = int(os.environ.get("PARALAX_THINKING", "0"))      # 0 = no hidden thinking; -1 = model default
 ATTEMPT_SECS = float(os.environ.get("PARALAX_ATTEMPT_SECS", "40"))  # give up on one model call after this
 HEDGE_SECS = float(os.environ.get("PARALAX_HEDGE_SECS", "6"))       # start the next model if no answer by then
@@ -220,6 +221,57 @@ def turn(role, text):
     return {"role": role, "parts": [{"text": text}]}
 
 
+# ------------------------------------------------------------------ access: seat tokens and a researcher key
+
+OPEN = False          # --open: no tokens; ?pane=A and /workspace work without a key (local use, the evaluation)
+TOKENS_PATH = os.path.join(SESS_DIR, "tokens.json")
+
+
+class Access:
+    """One join link for the room (hands out the next free seat), one secret token per seat, one
+    researcher key. Persisted so links survive restarts; a seat stays claimed until --new-tokens."""
+
+    def __init__(self, panes, fresh=False):
+        self.lock = threading.Lock()
+        data = None
+        if not fresh and os.path.exists(TOKENS_PATH):
+            try:
+                data = json.load(open(TOKENS_PATH))
+            except json.JSONDecodeError:
+                data = None
+        if not data or set(data.get("seats", {}).values()) != set(panes):
+            data = {"room": secrets.token_urlsafe(12), "researcher": secrets.token_urlsafe(18),
+                    "seats": {secrets.token_urlsafe(12): p for p in panes}, "claimed": {}}
+            json.dump(data, open(TOKENS_PATH, "w"), indent=1)
+            os.chmod(TOKENS_PATH, 0o600)
+        self.room, self.researcher, self.seats, self.claimed = data["room"], data["researcher"], data["seats"], data["claimed"]
+
+    def _save(self):
+        json.dump({"room": self.room, "researcher": self.researcher, "seats": self.seats, "claimed": self.claimed},
+                  open(TOKENS_PATH, "w"), indent=1)
+
+    def pane_for(self, seat):
+        return self.seats.get(seat or "")
+
+    def is_researcher(self, key):
+        return bool(key) and secrets.compare_digest(key, self.researcher)
+
+    def join(self, room):
+        """Hand out the next unclaimed seat for a valid room token; returns the seat token or None."""
+        if not room or not secrets.compare_digest(room, self.room):
+            return None
+        with self.lock:
+            for token, pane in self.seats.items():
+                if pane not in self.claimed:
+                    self.claimed[pane] = time.time()
+                    self._save()
+                    return token
+        return None
+
+    def links(self):
+        return {"room": self.room, "seats": [{"pane": p, "token": t, "claimed": p in self.claimed} for t, p in sorted(self.seats.items(), key=lambda x: x[1])]}
+
+
 # ------------------------------------------------------------------ shared state
 
 MODES = ("workspace", "context", "isolated")
@@ -244,6 +296,7 @@ class State:
         self.panes = panes
         self.sess_dir = sess_dir or SESS_DIR
         self.clients = {}                         # queue -> pane it may see (None = researcher)
+        self.access = None                        # set by main() unless --open
         self.pane_locks = {p: threading.Lock() for p in panes}
         self._fresh(session)
         self._load()
@@ -323,6 +376,9 @@ class State:
                 snap["retrievals"] = [e for e in self.events if e["type"] == "retrieval"]
                 snap["settings"] = self.settings
                 snap["models"] = {"agent": AGENT_MODELS, "select": SELECT_MODELS}
+                if self.access:
+                    snap["links"] = self.access.links()
+                    snap["names"] = {p: n for p, n in self.names.items()}
             return snap
 
     def reset(self):
@@ -339,6 +395,11 @@ class State:
 
 # ------------------------------------------------------------------ the personal assistant
 
+# v8, under test: decide well. A private scoreboard when weighing; votes pooled as votes at decision time only.
+V8_RULES = """
+   Scoreboard: when {name} is weighing courses of action, begin with a compact tally for each one: the reported facts for it and against it, each with the name of who reported it, drawing on the workspace and on what {name} has told you. Then advise. Keep the tally to facts; leave out guesses and preferences.
+   Votes, at decision time only: if {name} is making a final choice and other people have stated final choices in the workspace, report those as a tally of votes, labelled as votes and kept apart from the evidence, so {name} can see where the group stands. At any other time, never pass on anyone's preference or vote."""
+
 AGENT_SYSTEM = """You are {name}'s personal assistant.
 
 {name} is one of {n} people ({people}) working on the same problem at the same time. Each person talks only with their own assistant. You never see the others' conversations. Before each of your replies, a background step looks through what the other people have typed (the shared workspace) and puts in the WORKSPACE section below anything that should change what {name} thinks or does next and that {name} has not already been told.
@@ -348,8 +409,7 @@ THE SHARED PROBLEM
 
 HOW TO USE THE WORKSPACE
 1. Use an item only if it changes what {name} should think or do next. Fold it into your answer, attribute it by name ("Tom found that..."), and paraphrase it; never quote it word for word.
-2. [answers], [contradicts] and [supports] items: state the fact and who found or has it, and let it bear on {name}'s question or assumption. Present it as evidence, never as a recommendation, as "the others think", or as anyone's guess, preference or vote.
-   [overlaps] items: say briefly that the other person is already doing that piece of work, and suggest how {name} could divide or combine the work. Do not report the other person's reasons or opinions.
+2. State each fact and who found or has it, and let it bear on {name}'s question or assumption. Present it as evidence, never as a recommendation, as "the others think", or as anyone's guess, preference or vote. If another person is already doing a piece of work {name} plans, say so briefly and suggest how to divide or combine it, without reporting that person's reasons or opinions.{v8_rules}
 3. If the WORKSPACE section says nothing, say nothing about the other people: do not mention them, what they are doing, or whether they have written.
 4. When the WORKSPACE section holds several items, integrate them into one attributed picture of what is known, organised by the courses of action {name} is weighing (what is known for and against each), and then answer what {name} asked in the light of it. Do not hand them over one at a time across turns. An item marked (given before) is one you already told {name}: include it in the picture and say what it means for what {name} is now leaning towards.
    Keep each item's standing. Something a person says they checked, saw, measured or were told is a report: pass it on as that person's report. Something a person supposes, hopes, or puts conditionally ("if the road is clear...") is not a report: never pass it on as a fact, and say so if it matters.
@@ -367,7 +427,7 @@ def agent_system(S, pane, block):
     with S.lock:
         problem = S.problem.strip() or f"(not set yet: work from what {S.names[pane]} says, and ask if it is unclear)"
         return AGENT_SYSTEM.format(name=S.names[pane], n=len(S.panes), people=", ".join(S.names[p] for p in S.panes),
-                                   problem=problem, block=block)
+                                   problem=problem, block=block, v8_rules=V8_RULES.format(name=S.names[pane]) if VARIANT == "v8" else "")
 
 
 def agent_contents(S, pane):
@@ -547,11 +607,43 @@ def eval_session(run, file):
 
 # ------------------------------------------------------------------ HTTP
 
+PAGE_NO_SEAT = """<!doctype html><meta charset="utf-8"><title>Paralax</title>
+<body style="font-family:Georgia,serif;max-width:560px;margin:60px auto;padding:0 16px;color:#1a2b4a;line-height:1.5">
+<h1 style="font-size:28px">Paralax</h1><p>{msg}</p></body>"""
+
+
 class Handler(BaseHTTPRequestHandler):
     S = None
 
     def log_message(self, fmt, *args):
         pass
+
+    def _who(self, qs):
+        """('seat', pane) for a valid seat token, ('researcher', None) for the key, or (None, None).
+        In --open mode ?pane=X and view=workspace are accepted without tokens."""
+        S = self.S
+        if S.access:
+            pane = S.access.pane_for(qs.get("seat", [""])[0])
+            if pane:
+                return "seat", pane
+            if S.access.is_researcher(qs.get("key", [""])[0]):
+                return "researcher", None
+            return None, None
+        pane = qs.get("pane", [None])[0]
+        if pane in S.panes:
+            return "seat", pane
+        if qs.get("view", [""])[0] == "workspace":
+            return "researcher", None
+        return None, None
+
+    def _html(self, body, code=200):
+        body = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _json(self, obj, code=200):
         body = json.dumps(obj, ensure_ascii=False).encode()
@@ -564,9 +656,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         u, S = urlparse(self.path), self.S
-        q_pane = parse_qs(u.query).get("pane", [None])[0]
-        viewer = q_pane if q_pane in S.panes else None     # None = researcher view (/workspace only)
+        qs = parse_qs(u.query)
+        role, viewer = self._who(qs)
+        if u.path == "/join":
+            token = S.access.join(qs.get("room", [""])[0]) if S.access else None
+            if not token:
+                return self._html(PAGE_NO_SEAT.format(msg="This link is not valid, or every seat is taken. Ask the host."), 403)
+            self.send_response(302)
+            self.send_header("Location", "/?seat=" + token)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
         if u.path in ("/", "/index.html", "/workspace", "/viewer"):
+            if S.access and role is None and not (u.path == "/" and OPEN):
+                return self._html(PAGE_NO_SEAT.format(msg="This is a Paralax session. Ask the host for your join link."), 403)
+            if u.path in ("/workspace", "/viewer") and role != "researcher":
+                return self._html(PAGE_NO_SEAT.format(msg="The researcher view needs the researcher key."), 403)
             body = open(os.path.join(HERE, "viewer.html" if u.path == "/viewer" else "index.html"), "rb").read()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -574,23 +679,27 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
-        elif u.path == "/runs":
-            self._json({"runs": eval_runs()})
-        elif u.path == "/session":
-            qs = parse_qs(u.query)
+        elif u.path in ("/runs", "/session"):
+            if role != "researcher":
+                return self._json({"error": "researcher key required"}, 403)
+            if u.path == "/runs":
+                return self._json({"runs": eval_runs()})
             d = eval_session(qs.get("run", [""])[0], qs.get("file", [""])[0])
             self._json(d if d else {"error": "not found"}, 200 if d else 404)
         elif u.path == "/state":
-            if viewer is None and parse_qs(u.query).get("view", [""])[0] != "workspace":
+            if role is None:
+                if S.access:
+                    return self._json({"error": "seat token required"}, 403)
                 return self._json({"panes": S.panes, "names": S.names, "chooser": True})
             self._json(S.snapshot(viewer))
         elif u.path == "/events":
-            after = int(parse_qs(u.query).get("after", ["0"])[0])
+            after = int(qs.get("after", ["0"])[0])
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no")
             self.end_headers()
-            if viewer is None and parse_qs(u.query).get("view", [""])[0] != "workspace":
+            if role is None:
                 return
             q = queue.Queue()
             with S.lock:
@@ -616,31 +725,35 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404)
 
     def do_POST(self):
-        S, path = self.S, urlparse(self.path).path
+        S, u = self.S, urlparse(self.path)
+        path, qs = u.path, parse_qs(u.query)
+        role, pane = self._who(qs)
         try:
-            b = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
+            b = json.loads(self.rfile.read(min(int(self.headers.get("Content-Length") or 0), 100_000)) or b"{}")
         except json.JSONDecodeError:
             return self._json({"error": "bad json"}, 400)
-        if path == "/send":
-            pane, text = b.get("pane"), (b.get("text") or "").strip()
-            if pane not in S.panes or not text:
-                return self._json({"error": "pane and text required"}, 400)
+        if path in ("/send", "/name"):
+            if role != "seat":
+                return self._json({"error": "seat token required"}, 403)
             name = (b.get("name") or "").strip()[:40]
             if name and name != S.names[pane]:
                 S.add({"type": "name", "pane": pane, "name": name})
-            threading.Thread(target=handle_send, args=(S, pane, text[:8000]), daemon=True).start()
-        elif path == "/problem":
-            S.add({"type": "problem", "text": (b.get("text") or "").strip()[:4000]})
-        elif path == "/name":
-            pane, name = b.get("pane"), (b.get("name") or "").strip()[:40]
-            if pane in S.panes and name:
-                S.add({"type": "name", "pane": pane, "name": name})
-        elif path == "/settings":
-            if b.get("mode") not in MODES:
-                return self._json({"error": f"mode must be one of {MODES}"}, 400)
-            S.add({"type": "settings", "settings": {"mode": b["mode"]}})
-        elif path == "/reset":
-            S.reset()
+            if path == "/send":
+                text = (b.get("text") or "").strip()
+                if not text:
+                    return self._json({"error": "text required"}, 400)
+                threading.Thread(target=handle_send, args=(S, pane, text[:8000]), daemon=True).start()
+        elif path in ("/problem", "/settings", "/reset"):
+            if role != "researcher":
+                return self._json({"error": "researcher key required"}, 403)
+            if path == "/problem":
+                S.add({"type": "problem", "text": (b.get("text") or "").strip()[:4000]})
+            elif path == "/settings":
+                if b.get("mode") not in MODES:
+                    return self._json({"error": f"mode must be one of {MODES}"}, 400)
+                S.add({"type": "settings", "settings": {"mode": b["mode"]}})
+            else:
+                S.reset()
         else:
             return self._json({"error": "not found"}, 404)
         return self._json({"ok": True})
@@ -653,7 +766,11 @@ def main():
     ap.add_argument("--panes", type=int, default=2, help="number of people (default 2)")
     ap.add_argument("--session", default=None, help="session name (default: reopen the latest)")
     ap.add_argument("--new", action="store_true", help="start a fresh session")
+    ap.add_argument("--open", action="store_true", help="no tokens: ?pane=A and /workspace work for anyone (local use only)")
+    ap.add_argument("--new-tokens", action="store_true", help="mint a new join link, seat tokens and researcher key")
     a = ap.parse_args()
+    global OPEN
+    OPEN = a.open
     if not KEYS:
         raise SystemExit("No Gemini API key found. Run with GEMINI_API_KEY=... or put it in paralax/.env")
     panes = [chr(ord("A") + i) for i in range(max(1, min(a.panes, 8)))]
@@ -662,10 +779,17 @@ def main():
         files = sorted(glob.glob(os.path.join(SESS_DIR, "*.jsonl")), key=os.path.getmtime)
         session = os.path.splitext(os.path.basename(files[-1]))[0] if files else None
     S = State(panes, session or time.strftime("%Y%m%d-%H%M%S"))
+    if not a.open:
+        S.access = Access(panes, fresh=a.new_tokens)
     Handler.S = S
     log(f"keys={len(KEYS)} agent={AGENT_MODELS} select={SELECT_MODELS} thinking={THINKING_BUDGET}")
     log(f"session={S.session} panes={panes} mode={S.settings.get('mode')}")
-    log(f"open http://localhost:{a.port}/  (researcher view: /workspace)")
+    if S.access:
+        log(f"join link (give this to people):  http://localhost:{a.port}/join?room={S.access.room}")
+        log(f"researcher view:                  http://localhost:{a.port}/workspace?key={S.access.researcher}")
+        log(f"seat tokens are in {TOKENS_PATH} (mode 600); --new-tokens mints new ones")
+    else:
+        log(f"OPEN mode (no tokens): http://localhost:{a.port}/  (researcher view: /workspace)")
     ThreadingHTTPServer.daemon_threads = True
     ThreadingHTTPServer((a.host, a.port), Handler).serve_forever()
 

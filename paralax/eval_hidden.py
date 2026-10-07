@@ -176,8 +176,11 @@ def persona_contents(S, pane):
     return [SV.turn(r, x) for r, x in turns]
 
 
-def persona_message(S, pane, persona_sys):
-    _, text, _ = SV.llm(persona_sys, persona_contents(S, pane), HUMAN_MODELS, max_tokens=300)
+DECIDE_NOTE = "\n\nThis is the final round. Tell your assistant your final choice and the main reason, in one or two sentences."
+
+
+def persona_message(S, pane, persona_sys, final=False):
+    _, text, _ = SV.llm(persona_sys + (DECIDE_NOTE if final else ""), persona_contents(S, pane), HUMAN_MODELS, max_tokens=300)
     return text.strip()[:1500]
 
 
@@ -288,7 +291,7 @@ def fresh_state(panes, name, run_dir):
     return S
 
 
-def run_session(t, arm, seed, n, rounds, run_dir):
+def run_session(t, arm, seed, n, rounds, run_dir, decide=False):
     panes = [chr(ord("A") + i) for i in range(n)]
     S = fresh_state(panes, f"{t['name']}__{arm}__s{seed}", run_dir)
     hidden = t["hidden_information"]
@@ -311,18 +314,19 @@ def run_session(t, arm, seed, n, rounds, run_dir):
     t0 = time.time()
     answers = {}
 
-    def one_turn(p, delay):
+    def one_turn(p, delay, final):
         time.sleep(delay)
-        SV.handle_send(S, p, persona_message(S, p, persona_sys[p]))
+        SV.handle_send(S, p, persona_message(S, p, persona_sys[p], final=final))
 
     for r in range(1, rounds + 1):
         delays = {p: stagger.uniform(0, 3.0) for p in panes}      # people do not all type at once
+        final = decide and r == rounds                            # the decision round: each person states a choice
         with ThreadPoolExecutor(n) as ex:
-            list(ex.map(lambda p: one_turn(p, delays[p]), panes))
+            list(ex.map(lambda p: one_turn(p, delays[p], final), panes))
         if r in (max(1, rounds // 2), rounds):
             with ThreadPoolExecutor(n) as ex:
                 answers[r] = dict(zip(panes, ex.map(lambda p: persona_answer(S, p, persona_sys[p], t), panes)))
-    rec = {"task": t["name"], "arm": arm, "seed": seed, "n": n, "rounds": rounds, "version": W.VERSION,
+    rec = {"task": t["name"], "arm": arm, "seed": seed, "n": n, "rounds": rounds, "version": W.VERSION, "decide": decide,
            "correct": t["correct_answer"], "answers": answers, "slices": slices,
            "secs": round(time.time() - t0, 1), "session": os.path.relpath(S.path, os.path.join(HERE, "eval"))}
     rec.update(session_stats(S))
@@ -398,7 +402,7 @@ def run(args):
         t, arm, seed = j
         try:
             rec = (run_chat_session(t, seed, args.people, args.rounds, run_dir) if arm == "chat"
-                   else run_session(t, arm, seed, args.people, args.rounds, run_dir))
+                   else run_session(t, arm, seed, args.people, args.rounds, run_dir, decide=args.decide))
             rec["key"] = f"{t['name']}|{arm}|{seed}"
             append(out, rec)
             fin = rec["answers"][args.rounds]
@@ -513,6 +517,7 @@ def main():
     r.add_argument("--seeds", type=int, default=2); r.add_argument("--workers", type=int, default=3)
     r.add_argument("--people", type=int, default=5); r.add_argument("--rounds", type=int, default=6)
     r.add_argument("--arms", default="isolated,workspace,context,full")
+    r.add_argument("--decide", action="store_true", help="final round: each person states a final choice to their assistant")
     q = sub.add_parser("report"); q.add_argument("--run", required=True)
     a = ap.parse_args()
     {"calibrate": calibrate, "run": run, "report": report}[a.cmd](a)

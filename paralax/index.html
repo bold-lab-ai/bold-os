@@ -32,6 +32,9 @@ textarea:focus,input:focus,select:focus{outline:2px solid var(--accent);outline-
 #problem{min-height:46px;max-height:130px;resize:vertical;padding:6px 10px;font-size:16px}
 .controls{display:flex;gap:16px;align-items:center;font-family:var(--sans);font-size:13px;color:var(--ink-soft);padding-top:18px;flex-wrap:wrap}
 .controls select{font-family:var(--sans);font-size:13px;padding:3px 6px}
+.links{flex:1 1 100%;font-family:var(--sans);font-size:12.5px;color:var(--ink-soft);border-top:1px solid var(--line);padding-top:8px;display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+.links code{font-size:12px;background:var(--surface);border:1px solid var(--line);padding:1px 6px;user-select:all}
+.links .seat{color:var(--muted)}.links .seat.taken{color:var(--ink)}
 .btn-text{font-family:var(--sans);font-size:12.5px;color:var(--accent);background:none;border:none;padding:0;cursor:pointer;
   text-decoration:underline;text-decoration-color:rgba(26,43,74,.32);text-underline-offset:2px}
 .btn-text:hover{text-decoration-color:currentColor}
@@ -90,6 +93,7 @@ a:hover{text-decoration-color:currentColor}
     <span class="label">The shared problem</span>
     <textarea id="problem" placeholder="State the problem you are working on together. Everyone, and every assistant, sees this."></textarea>
   </div>
+  <div class="links" id="links" hidden></div>
   <div class="controls" id="controls" hidden>
     <label>assistants use <select id="mode">
       <option value="workspace">workspace (selection)</option>
@@ -105,8 +109,10 @@ a:hover{text-decoration-color:currentColor}
 (function(){
 "use strict";
 var params = new URLSearchParams(location.search);
-var VIEW = location.pathname.replace(/\/+$/, "") === "/workspace" ? "researcher" : (params.get("pane") ? "participant" : "chooser");
-var QS = VIEW === "researcher" ? "view=workspace" : VIEW === "participant" ? "pane=" + encodeURIComponent(params.get("pane")) : "";
+var SEAT = params.get("seat"), KEY = params.get("key");
+var VIEW = location.pathname.replace(/\/+$/, "") === "/workspace" ? "researcher" : ((SEAT || params.get("pane")) ? "participant" : "chooser");
+var QS = VIEW === "researcher" ? ("view=workspace" + (KEY ? "&key=" + encodeURIComponent(KEY) : ""))
+       : VIEW === "participant" ? (SEAT ? "seat=" + encodeURIComponent(SEAT) : "pane=" + encodeURIComponent(params.get("pane"))) : "";
 var PANES = [], NAMES = {}, after = 0, es = null;
 var mainEl = document.getElementById("main"), errEl = document.getElementById("err");
 var problemEl = document.getElementById("problem"), modeEl = document.getElementById("mode");
@@ -136,7 +142,7 @@ function md(s){
 }
 
 function post(path, body){
-  return fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
+  return fetch(path + (QS ? "?" + QS : ""), {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})
     .then(function(r){ return r.json(); })
     .catch(function(e){ showErr("request failed: " + e); });
 }
@@ -253,6 +259,15 @@ function load(){
       document.getElementById("controls").hidden = false;
       document.getElementById("sub").textContent = "researcher view: every conversation and what each assistant drew on";
       modeEl.value = (s.settings || {}).mode || "workspace";
+      if (s.links) {
+        var L = document.getElementById("links"); L.hidden = false;
+        L.innerHTML = '<span><b>Join link</b> (give this to people; each click takes the next free seat): <code>' + esc(location.origin + "/join?room=" + s.links.room) + "</code></span>" +
+          '<span><b>Seats</b>: ' + s.links.seats.map(function(x){ return '<span class="seat' + (x.claimed ? " taken" : "") + '" title="' + esc(location.origin + "/?seat=" + x.token) + '">' + x.pane + (x.claimed ? " " + esc(s.names[x.pane] || "taken") : " free") + "</span>"; }).join(" · ") +
+          '</span><span class="st">hover a seat for its direct link, to resend to someone who lost theirs</span>';
+      }
+    } else {
+      problemEl.readOnly = true;
+      problemEl.placeholder = "The host sets the shared problem here.";
     }
     PANES = s.panes; build(PANES); setNames(s.names);
     problemEl.value = s.problem || "";

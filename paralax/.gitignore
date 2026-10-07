@@ -16,3 +16,5 @@ eval/runs/*
 eval/runs/v1/sessions/*__workspace__*
 eval/runs/v1/sessions/*__full__*
 eval/runs/*/config.json
+deploy/bin/
+deploy/logs/
