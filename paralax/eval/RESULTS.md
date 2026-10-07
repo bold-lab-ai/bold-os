@@ -169,6 +169,125 @@ individual accuracy 0.44 (0.42), splits 2 of 10 (4 of 10). So convergence was no
 there; integration is. v8 (scoreboard + decision-time votes) runs next on both benchmarks with
 the decision round, as `PARALAX_VARIANT=v8`; the default code stays v7 until adopted.
 
+## v8: scoreboard + decision-time votes (run 7 Oct 04:40-05:03, both benchmarks, decision round on)
+
+Two reply rules (`PARALAX_VARIANT=v8`): when weighing, begin with a tally of reported facts for
+and against each course of action, attributed; at a final choice, report others' stated
+choices as votes. Principle claimed: integration in one picture (the Alsobay facilitator's
+scoreboard, done privately). Targets USE.
+
+| HiddenBench, 24 paired sessions | v7 + decision round | v8 |
+|---|---|---|
+| individual accuracy | 0.858 | 0.750 (−0.108) |
+| plurality correct | 0.958 | 0.792 (−0.167) |
+| noise (seed 0 vs 1) | | 0.33 |
+
+**REJECTED on HiddenBench** (a regression of about ten points, inside the noise but the wrong
+direction, and the rule is no regression on either benchmark). Two changes were bundled, which
+was a mistake. Reply inspection (21 people right under v7+decision and wrong under v8, 8 the
+reverse): the scoreboard's "for" column admitted proposals and workarounds as facts ("you
+reported we can bypass the kitchen", "staff will place barriers"), counted one shared fact once
+per reporter, and let a longer list of minor positives outweigh decisive negatives (spongy
+floor, electrical short, mould, for 200 people); 469 of 720 replies opened with the tally. And
+141 replies relayed votes ("Jordan has officially chosen River Pavilion"): the conformity the
+deliberation rule exists to prevent. Lessons, general: counting is the wrong integration when
+one fact is decisive; a tally's form overrides the standing rule; votes steer.
+
+| Alsobay task, 10 seeds | v7 | v7 + decision round | v8 |
+|---|---|---|---|
+| groups choosing Eldoron | 5/10 | 4/10 | 2/10 |
+| individuals choosing Eldoron | 21/50 | 22/50 | 10/50 |
+| individuals choosing Cragnio (the worst option) | 11 | 8 | 23 |
+
+**REJECTED on both benchmarks.** On the Alsobay task the tally pushed people towards Cragnio,
+the option with the most minor positives. Counting facts is not integration; it is a
+different decision rule, and a bad one when facts differ in weight.
+
+## v9: eliminate, then compare (registered 7 Oct 05:10, before the run)
+
+One reply rule (`PARALAX_VARIANT=v9`), decision round kept, no tally, no votes: when weighing
+courses of action, first state for each any reported fact that makes it unworkable or
+unacceptable, decisive whatever else favours it; suppositions, hopes and proposed workarounds
+are not such facts; a fact several people share is one fact. Then compare only the survivors
+on what is reported for and against them, without counting. Principle: elimination by aspects
+(Tversky 1972); feasibility before desirability. Prediction: on HiddenBench, where each hidden
+fact is a disqualifier, v9 >= v7+decision; on the Alsobay task, where few facts disqualify,
+the comparison step must do the work, so v9 may not beat v7 there, and that would be the
+honest result.
+
+| HiddenBench, 24 paired sessions | v7 | v7 + decision round | v9 |
+|---|---|---|---|
+| individual accuracy | 0.825 | 0.858 | 0.817 (−0.042 vs v7+dec, p = .76) |
+| plurality correct | 0.875 | 0.958 | 0.833 (−0.125) |
+| noise (seed 0 vs 1) | | | 0.20 |
+
+Not a gain on HiddenBench; the plurality drop counts against it. Alsobay result below.
+
+| Alsobay task, 10 seeds | v7 + decision round | v9 |
+|---|---|---|
+| groups choosing Eldoron | 4/10 | **7/10** |
+| individuals choosing Eldoron | 22/50 (0.44) | **33/50 (0.66)** |
+| individuals choosing Cragnio | 8 | 4 |
+| leaning Eldoron, rounds 7-10 | .18 .18 .22 .30 | .24 .28 .42 .60 |
+
+A gain of 22 points of individual accuracy on the Alsobay task (about three binomial standard
+deviations) against a loss of 4 points of individual accuracy on HiddenBench (inside a noise of
+20) and 12 points of plurality (plurality noise for v9: .17). Per task, v9 equals or beats
+v7+decision on nine of twelve HiddenBench tasks; the loss is three sessions, two of them
+collapses. Inspection of the two: (a) Emergency Event Relocation seed 1: all four hidden facts
+were stated, yet the assistants kept calling the decoy "our only confirmed viable option" on
+its shared positives and the group converged on it through the workspace, a cascade; (b) Safe
+Shelter Selection seed 1: Alex's assistant eliminated correctly and reached Riverside Park,
+the other four assistants reached Mountain Lodge from the same workspace. Neither is the
+elimination rule ruling out the right option; both are separate assistants integrating the
+same workspace differently, one of them swayed into a cascade. That is the case for one
+shared integration computed without anyone's leaning (v10). Decision on v9 deferred until v10
+reports on both benchmarks.
+
+## Where the Alsobay failure sits (judged 7 Oct 05:30, run `alsobay_dept_decide`)
+
+A judge read each assistant's final reply: 21 of 50 favoured Eldoron, 16 Myloria, 2 Cragnio,
+11 none. People followed their assistant almost perfectly: 20 of the 21 whose assistant
+favoured Eldoron chose it, 12 of the 16 whose assistant favoured Myloria chose Myloria. So the
+loss is the assistant's own conclusion, reached with 29 of 30 facts in the workspace. A clean
+one-call read of those facts picks Eldoron; the assistant reads them beside its own person's
+report and leaning, and a third of the time concludes the bait. Prompt rules about how to
+integrate (v8, v9) did not fix that, because the context is the problem, not the rule.
+
+## v10: a neutral brief of the workspace (registered 7 Oct 05:40, before the run)
+
+The workspace gains a derived layer: a brief of what the group has established, written from
+everyone's contributions alone, with no person's conversation in view; attributed facts
+organised by course of action, each item's standing kept, decisive facts named, open questions
+listed; no recommendation, tally, votes or preferences. Refreshed only when a contribution
+arrives (one call per change, shared by every assistant), never shown to participants, logged
+for the researcher. The reply reads the brief and then the raw items. Principle: separate
+integration from conversation, so the integrator never sees the leaning it would otherwise
+accommodate. This is the board of the first version, kept private to the assistants and built
+from primary text with provenance. Risk acknowledged: a summary is where mediators steer
+(Parisi et al.); the brief carries no recommendation and the raw items stay in view.
+
+| HiddenBench, 24 paired sessions | v7 + decision round | v9 | v10 |
+|---|---|---|---|
+| individual accuracy, mid-round | 0.733 | 0.733 | **0.825** |
+| individual accuracy, final | 0.858 | 0.817 | 0.800 (−0.058 vs v7+dec, p = .84) |
+| plurality correct | 0.958 | 0.833 | 0.833 |
+| sessions with all five wrong | 1 | 3 | 2 |
+| brief calls per session | | | 8.5 |
+
+The brief makes people converge sooner (the best mid-round number of any version) and then
+lose ground: a slide from 0.825 to 0.800 and two all-wrong sessions, so a shared integration
+cascades too when the early contributions favour the decoy. Not adopted on this evidence.
+
+## Replication before any adoption (launched 7 Oct 06:12)
+
+The contenders are v7+decision and v9. Their HiddenBench differences (4 points individual, 12
+plurality) sit inside seed-to-seed noise of 0.2-0.3, and the Alsobay difference (22 points)
+rests on 10 seeds. Rule from the noise memory: measure the spread before comparing. So: two
+more HiddenBench seeds of each (48 sessions) and ten more Alsobay seeds of each (20 sessions),
+same tasks, then the paired comparison on 48 and 20 pairs. Adopt v9 only if it holds on the
+Alsobay task and does not regress HiddenBench on the larger sample.
+
 ## Conclusion (7 Oct 2026, 01:30)
 
 The algorithm as adopted (v7), stated generally:

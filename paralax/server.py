@@ -77,7 +77,7 @@ SELECT_MODELS = [m.strip() for m in os.environ.get(
     "PARALAX_SELECT_MODELS", "gemini-3.5-flash-lite,gemini-3.5-flash").split(",") if m.strip()]
 SELECT_HEDGE_SECS = float(os.environ.get("PARALAX_SELECT_HEDGE_SECS", "2"))
 SELECT_CAP_SECS = float(os.environ.get("PARALAX_SELECT_CAP_SECS", "4"))  # then reply without the workspace
-VARIANT = os.environ.get("PARALAX_VARIANT", "v7")          # v7 = adopted; v8 = under test (see eval/RESULTS.md)
+VARIANT = os.environ.get("PARALAX_VARIANT", "v7")          # v7 = adopted; v8, v9 = under test (see eval/RESULTS.md)
 THINKING_BUDGET = int(os.environ.get("PARALAX_THINKING", "0"))      # 0 = no hidden thinking; -1 = model default
 ATTEMPT_SECS = float(os.environ.get("PARALAX_ATTEMPT_SECS", "40"))  # give up on one model call after this
 HEDGE_SECS = float(os.environ.get("PARALAX_HEDGE_SECS", "6"))       # start the next model if no answer by then
@@ -283,7 +283,7 @@ def visible(e, pane):
     person's messages, never retrieval records, never settings."""
     if pane is None:
         return True
-    if e.get("type") in ("retrieval", "settings"):
+    if e.get("type") in ("retrieval", "settings", "brief"):
         return False
     if "pane" in e:
         return e["pane"] == pane
@@ -310,6 +310,8 @@ class State:
         self.names = {p: f"Person {p}" for p in self.panes}
         self.settings = {"mode": "workspace"}
         self.busy = {p: False for p in self.panes}
+        self.brief = {"upto": 0, "text": ""}      # v10: the neutral brief, keyed on the last contribution it covers
+        self.brief_lock = threading.Lock()
 
     # ---- persistence: one JSON line per durable event
     def _load(self):
@@ -373,7 +375,7 @@ class State:
                     "events": [e for e in self.events if e["type"] in ("user", "agent") and visible(e, pane)],
                     "last_id": self.next_id - 1, "session": self.session}
             if pane is None:
-                snap["retrievals"] = [e for e in self.events if e["type"] == "retrieval"]
+                snap["retrievals"] = [e for e in self.events if e["type"] in ("retrieval", "brief")]
                 snap["settings"] = self.settings
                 snap["models"] = {"agent": AGENT_MODELS, "select": SELECT_MODELS}
                 if self.access:
@@ -399,6 +401,10 @@ class State:
 V8_RULES = """
    Scoreboard: when {name} is weighing courses of action, begin with a compact tally for each one: the reported facts for it and against it, each with the name of who reported it, drawing on the workspace and on what {name} has told you. Then advise. Keep the tally to facts; leave out guesses and preferences.
    Votes, at decision time only: if {name} is making a final choice and other people have stated final choices in the workspace, report those as a tally of votes, labelled as votes and kept apart from the evidence, so {name} can see where the group stands. At any other time, never pass on anyone's preference or vote."""
+
+# v9, under test: eliminate, then compare (Tversky 1972, elimination by aspects). No tally, no votes.
+V9_RULES = """
+   When {name} is weighing courses of action, go in two steps. First, for each course of action, state any reported fact that would make it unworkable or unacceptable, with who reported it; such a fact is decisive no matter how much else favours that course. A supposition, a hope, or a workaround someone proposes is not such a fact, and a fact that several people share is one fact, not several. Second, compare only the courses of action that nothing rules out, on what is reported for and against them: say which considerations matter most and why, without counting items. Then advise."""
 
 AGENT_SYSTEM = """You are {name}'s personal assistant.
 
@@ -427,7 +433,7 @@ def agent_system(S, pane, block):
     with S.lock:
         problem = S.problem.strip() or f"(not set yet: work from what {S.names[pane]} says, and ask if it is unclear)"
         return AGENT_SYSTEM.format(name=S.names[pane], n=len(S.panes), people=", ".join(S.names[p] for p in S.panes),
-                                   problem=problem, block=block, v8_rules=V8_RULES.format(name=S.names[pane]) if VARIANT == "v8" else "")
+                                   problem=problem, block=block, v8_rules={"v8": V8_RULES, "v9": V9_RULES}.get(VARIANT, "").format(name=S.names[pane]))
 
 
 def agent_contents(S, pane):
@@ -490,6 +496,26 @@ def run_select(S, pane, cands):
     return sel, rec
 
 
+def ensure_brief(S):
+    """v10: refresh the shared brief if a contribution arrived since it was written. One call per
+    workspace change, shared by every assistant; never shown to participants."""
+    with S.lock:
+        upto = max((e["id"] for e in S.events if e["type"] == "user"), default=0)
+    with S.brief_lock:
+        if S.brief["upto"] >= upto:
+            return S.brief["text"]
+        system, user = W.brief_request(S)
+        t0 = time.time()
+        try:
+            model, text, _ = llm(system, [turn("user", user)], AGENT_MODELS, max_tokens=900)
+        except Exception as e:                             # noqa: BLE001
+            log(f"brief failed: {str(e)[:80]}")
+            return S.brief["text"]
+        S.brief = {"upto": upto, "text": text.strip()}
+        S.add({"type": "brief", "upto": upto, "text": text.strip(), "model": model, "secs": round(time.time() - t0, 1)})
+        return S.brief["text"]
+
+
 def handle_send(S, pane, text):
     S.add({"type": "user", "pane": pane, "name": S.names[pane], "text": text})
     with S.pane_locks[pane]:
@@ -507,7 +533,8 @@ def handle_send(S, pane, text):
             if mode == "workspace":
                 sel, rec = run_select(S, pane, cands)
                 S.add(rec)
-                block = W.block(cands, sel)
+                brief = ensure_brief(S) if (VARIANT == "v10" and sel["inform"]) else None
+                block = W.block(cands, sel, brief=brief)
             elif mode == "context":
                 block = W.block(cands, everything=True)
             else:

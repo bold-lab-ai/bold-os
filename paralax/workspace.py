@@ -19,7 +19,7 @@ Pure functions only; server.py makes the model calls.
 import json
 
 import os
-VERSION = "v8" if os.environ.get("PARALAX_VARIANT") == "v8" else "v7"   # v8 (under test) adds the scoreboard and decision-time votes to the reply              # bump whenever a prompt or the representation changes; recorded in every eval result
+VERSION = {"v8": "v8", "v9": "v9", "v10": "v10"}.get(os.environ.get("PARALAX_VARIANT", ""), "v7")   # v8 rejected; v9 no gain; v10: a neutral brief of the workspace, shared by all assistants (under test)              # bump whenever a prompt or the representation changes; recorded in every eval result
 RELATIONS = ("bears",)
 MAX_INFORM = 60
 CANDIDATE_CAP = 60          # safety rail: most recent undelivered contributions only
@@ -130,7 +130,26 @@ def parse_selection(raw, cands):
     return {"inform": inform, "ask": {"turn": ask, "why": ""} if ask is not None else None}
 
 
-def block(cands, selection=None, everything=False):
+BRIEF_SYSTEM = """You maintain a brief of what a group of people working on one problem have established so far. You see only what they typed, each item with its author. No one's preferences or conclusions are in your view and none belong in the brief.
+
+Write the state of what is known, organised by the courses of action under consideration (if the group is not choosing between courses of action, organise by topic). For each course of action: the reported facts that bear on it, each with who reported it, and in particular any reported fact that would make it unworkable or unacceptable. Keep each item's standing: something a person checked, saw, measured or was told is a report; something a person supposes, hopes, or proposes as a workaround is not a fact and goes in a separate line marked as such, if at all. A fact several people share is one fact; name all who reported it. Then list open questions nobody has answered. No recommendation, no tally, no votes or preferences, no filler. Plain prose or short lists, under 350 words."""
+
+
+def brief_request(S):
+    """(system, user) for the brief, built from every person's contributions."""
+    with S.lock:
+        items = []
+        for p in S.panes:
+            for e in S.conv(p):
+                if e["type"] == "user":
+                    items.append((e["id"], S.names[p], e["text"]))
+        problem = S.problem.strip() or "(not written in the shared field; infer it from the contributions)"
+    items.sort()
+    text = "\n".join(f'#{i} {name} typed: "{t}"' for i, name, t in items)
+    return BRIEF_SYSTEM, f"THE SHARED PROBLEM\n{problem}\n\nCONTRIBUTIONS, in order\n{text}"
+
+
+def block(cands, selection=None, everything=False, brief=None):
     """The WORKSPACE section of the reply prompt. With a selection: only the picks (and the ask),
     quoted verbatim as data. With everything=True (the in-context control): every candidate."""
     by_id = {c["turn"]: c for c in cands}
@@ -143,6 +162,8 @@ def block(cands, selection=None, everything=False):
     if not selection or (not selection["inform"] and not selection["ask"]):
         return "(nothing for this reply)"
     lines = []
+    if brief:
+        lines.append("THE GROUP'S BRIEF (what is known so far, from everyone's contributions; facts with who reported them, no one's preferences):\n" + brief.strip() + "\n\nTHE ITEMS THEMSELVES:")
     for x in selection["inform"]:
         c = by_id[x["turn"]]
         before = " (given before)" if c.get("given") else ""
