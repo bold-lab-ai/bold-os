@@ -69,6 +69,18 @@ next slides are how we got there.
 
 ---
 
+## 4a. The algorithm, as a picture
+
+![the algorithm](fig_algorithm.svg)
+
+*Say:* Follow one person, A. What A types joins the workspace. Before A's assistant replies,
+the switch reads A's recent conversation and the workspace and decides whether anything bears
+on what A is doing. If so, the assistant reads all of it and answers A with one attributed
+picture. If not, the reply says nothing about the others. A reads the reply in A's own chat,
+and the loop continues.
+
+---
+
 ## 5. Why those rules: the theory
 
 - Communicate when the value to the team exceeds the cost (Tambe 1997, STEAM; Marschak &
@@ -130,6 +142,68 @@ the first by 20 points (p = .009) and is not significantly different from readin
 every turn (8 points, p = .13). And it stays quiet when it should: on ten off-task messages,
 the everything-in-context assistant relayed the other person's report ten times; Paralax
 three times.
+
+---
+
+## 8a. The process, one session: where should the festival evacuate?
+
+![the instance](fig_instance.svg)
+
+(In `slides.html` this slide is animated: step through every message, switch decision and
+reply of the recorded session with the arrow keys, or press `p` to play.)
+
+- Three sites. The shared facts favour Blueberry Ridge and Red Lake and warn against Green
+  Valley, which has a pest outbreak. Four hidden facts, one per person: the bridge to Blueberry
+  Ridge is down (Jordan); a sinkhole closed the road to Red Lake (Sam); Blueberry Ridge lost
+  power (Robin); Green Valley is open for emergencies (Alex). Casey holds shared facts only.
+- Independent pairs: Jordan rules out Blueberry Ridge alone and nobody else hears it; Alex
+  pushes Blueberry Ridge; the group ends split between the two wrong sites, 0 of 5.
+- Paralax: Jordan states the bridge in round 1. In round 2 Sam reports the sinkhole; the
+  switch opens for Sam and carries Jordan's bridge report into Sam's reply, which rules out
+  both wrong sites at once. The same two facts reach Alex, Casey and Robin in their round-2
+  replies. In round 3 Alex adds that Green Valley is open for emergencies, and all five lean
+  to Green Valley. Robin, who forgets to mention things, brings up the power failure only in
+  round 4. In round 4 Jordan's assistant asks Jordan for the bridge timing Sam needs, and
+  Jordan answers it in round 5: the ask route.
+
+*Say:* Watch where the arrows start: always at a message that states a hidden fact, and they
+arrive in the next reply to each other person. The markers fill in one round after the arrows.
+That lag, type, carry, take in, is the whole mechanism.
+
+---
+
+## 8b. What from the workspace helped
+
+Across all Paralax sessions, for a person not yet on the right answer, what the reply before
+their next message had read:
+
+| the reply had… | turns | moved to the right answer next |
+|---|---|---|
+| read a hidden fact held by someone else | 298 | 32% |
+| read the workspace, but no hidden fact in it yet | 82 | 4% |
+| switch closed | 46 | 11% |
+| independent pairs, nothing to read | 574 | 3% |
+
+*Say:* What helps is specific. A reply that carried someone else's hidden fact moved a
+not-yet-right person to the right answer one time in three. A reply that read the workspace
+before any hidden fact had been typed did almost nothing: the switch opening is necessary, not
+sufficient. Left alone, people moved to the right answer three times in a hundred.
+
+---
+
+## 8c. How much faster
+
+![by round](fig_rounds.svg)
+
+- Independent pairs: never above 7% of people on the right answer; 93% never settle on it.
+- Paralax: 22% by round 3, 69% by round 5, 74% by round 6; the median person settles on the
+  right answer in round 5.
+- Everything in context: the same curve.
+
+*Say:* This is the "faster" claim measured properly: not the private answer at the end but
+what each person argued for after each message, judged from their own words. Independent pairs
+do not get there late; they do not get there. The two-round lag is the mechanism showing: a
+fact has to be typed, carried, and taken in.
 
 ---
 
