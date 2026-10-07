@@ -72,6 +72,37 @@ it), the switch's restraint, and the assistant's integration. The accuracy claim
 against independent pairs; the claim against direct talk needs either human participants, where
 the bias is real, or more sessions. Both are now in the next steps.
 
+## Against a human study: the Alsobay et al. (2025) task (registered 7 Oct 03:55, before the run)
+
+Their task (stimuli from the MIT-licensed GRAIL platform, `eval/alsobay/HPTConfig.json`): five
+committee members pick a host city from Eldoron, Myloria and Cragnio; 30 facts, 14-15 per
+report; every report alone favours Myloria (the bait), the pooled facts favour Eldoron. Their
+1,475 humans in 281 groups chose Eldoron 31% of the time with no facilitation, 21% after a
+one-off message, 30% with a human facilitator, 23% with a GPT-4o facilitator in the chat; the
+facilitator raised facts shared by 2.9 and did not change decisions. Their transcripts (OSF,
+CDLA v2) are not used: the licence excludes evaluating AI models with them. Only their
+published numbers and their stimuli are.
+
+Checks before running: one flash-lite call with all 30 facts picks Eldoron (twice), as does
+flash, plain or by tally; each report alone picks Myloria (Orange: Cragnio). The config's
+"full information" sheet holds only 24 of the 30 facts, so the fact list is the union of the
+five reports.
+
+Arms (`eval/alsobay.py`, 10 rounds, five of our department personas with their colour names):
+`none` (group chat), `message` (their organiser message once), `llm` (a flash facilitator
+posting every 6 messages with their prompt, full transcript in view), `paralax` (private
+assistants, workspace, no chat). Ten seeds each. Measures as theirs: share of groups whose
+majority is Eldoron, facts shared, complete participation; plus individual accuracy and the
+per-round leaning curve.
+
+Calibration rule: the `none` arm must land near the humans' 31% before the Paralax number
+counts. If the department personas score far above it, as the chat control on HiddenBench
+suggests they may, rerun all arms with `--style human` (anchoring on the report's favourite,
+volunteering facts only to support a point or when asked) and report both. Prediction: under
+calibrated personas, `llm` matches `none` on decisions as it did for humans, and `paralax`
+exceeds both, because the assistant integrates for each person; if `paralax` does not exceed
+`none` under calibrated personas, the claim is refuted on this task.
+
 ## What the gate buys (measured 7 Oct 01:05, eval/probes.py)
 
 Two people. Sam reports a fact ("I called Lakeside Lodge: fully booked for May"). Alex then sends
