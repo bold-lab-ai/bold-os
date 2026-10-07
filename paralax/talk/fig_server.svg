@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 400" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="14">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1a2b4a"/></marker></defs>
+  <style>
+    .box{fill:#fff;stroke:#1a2b4a;stroke-width:1.6}.soft{fill:#f5f3ee;stroke:#1a2b4a;stroke-width:1.2}.ws{fill:#ece9e1;stroke:#1a2b4a;stroke-width:1.6}
+    .t{fill:#1a2b4a}.m{fill:#7d8698}.s{fill:#33445f}.h{font-size:16px;font-weight:700;fill:#1a2b4a}
+    .k{font-size:11px;letter-spacing:.12em;fill:#7d8698}.line{stroke:#1a2b4a;stroke-width:1.8;fill:none}.code{font-family:Menlo,Consolas,monospace;font-size:12px;fill:#1a2b4a}
+  </style>
+  <text x="40" y="34" class="k">PEOPLE, ANYWHERE</text>
+  <rect x="40" y="50" width="200" height="54" class="soft"/><text x="52" y="72" class="h" font-size="14">Each person's browser</text><text x="52" y="92" class="s" font-size="12">own chat only, HTTPS</text>
+  <rect x="40" y="118" width="200" height="54" class="soft"/><text x="52" y="140" class="h" font-size="14">The host's browser</text><text x="52" y="160" class="s" font-size="12">researcher view, with the key</text>
+  <path d="M240 77 L 330 110" class="line" marker-end="url(#a)" marker-start="url(#a)"/>
+  <path d="M240 145 L 330 125" class="line" marker-end="url(#a)" marker-start="url(#a)"/>
+
+  <text x="330" y="34" class="k">CLOUDFLARE</text>
+  <rect x="330" y="50" width="220" height="122" class="box"/>
+  <text x="342" y="76" class="h" font-size="15">meet.chrisantha.uk</text>
+  <text x="342" y="98" class="s" font-size="12.5">TLS, DNS record on the</text>
+  <text x="342" y="116" class="s" font-size="12.5">existing chrisantha.uk zone;</text>
+  <text x="342" y="134" class="s" font-size="12.5">bot check on the edge</text>
+  <text x="342" y="158" class="m" font-size="11.5">dashboard: Zero Trust › Tunnels</text>
+  <path d="M550 110 L 640 110" class="line" marker-end="url(#a)" marker-start="url(#a)"/>
+  <text x="556" y="100" class="m" font-size="11">outbound tunnel</text>
+
+  <text x="640" y="34" class="k">THE HOST'S MAC</text>
+  <rect x="640" y="50" width="480" height="300" class="box"/>
+  <rect x="656" y="66" width="228" height="60" class="soft"/><text x="668" y="88" class="h" font-size="14">cloudflared</text><text x="668" y="108" class="s" font-size="11.5">named tunnel "vera-study", via launchd</text>
+  <path d="M884 96 L 916 96" class="line" marker-end="url(#a)"/>
+  <rect x="916" y="66" width="188" height="60" class="soft"/><text x="928" y="88" class="h" font-size="14">server.py :8808</text><text x="928" y="108" class="s" font-size="11.5">Paralax v7 + decision round</text>
+  <rect x="656" y="146" width="448" height="80" class="ws"/>
+  <text x="668" y="168" class="h" font-size="14">sessions/ (gitignored)</text>
+  <text x="668" y="188" class="s" font-size="12">tokens.json: join link, one token per seat, the researcher key (mode 600)</text>
+  <text x="668" y="206" class="s" font-size="12">&lt;session&gt;.jsonl: every message, switch decision and reply</text>
+  <rect x="656" y="246" width="448" height="44" class="ws"/>
+  <text x="668" y="268" class="h" font-size="14">.env (gitignored)</text><text x="800" y="268" class="s" font-size="12">GEMINI_API_KEY, read only by the server</text>
+  <text x="656" y="322" class="k">ONE COMMAND</text>
+  <text x="656" y="342" class="code">deploy/meeting.sh 10   →  join link + researcher link</text>
+
+  <text x="40" y="214" class="k">THE JOIN FLOW</text>
+  <text x="40" y="240" class="s" font-size="13">1. The host runs the command and sends the join link.</text>
+  <text x="40" y="262" class="s" font-size="13">2. Each click takes the next free seat and opens that person's chat.</text>
+  <text x="40" y="284" class="s" font-size="13">3. The host sets the shared problem in the researcher view.</text>
+  <text x="40" y="306" class="s" font-size="13">4. Everyone talks to their own assistant. Nobody sees anyone</text>
+  <text x="40" y="326" class="s" font-size="13">    else's chat except the host.</text>
+  <text x="40" y="356" class="m" font-size="12">No login, no inbound ports, no key or token in the repository.</text>
+</svg>

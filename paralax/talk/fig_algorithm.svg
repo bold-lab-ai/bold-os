@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 525" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="15">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#1a2b4a"/></marker>
+    <marker id="am" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7d8698"/></marker>
+  </defs>
+  <style>
+    .box{fill:#fff;stroke:#1a2b4a;stroke-width:1.6}
+    .soft{fill:#f5f3ee;stroke:#1a2b4a;stroke-width:1.2}
+    .ws{fill:#ece9e1;stroke:#1a2b4a;stroke-width:1.6}
+    .t{fill:#1a2b4a}.m{fill:#7d8698}.s{fill:#33445f}
+    .k{font-size:11px;letter-spacing:.12em;fill:#7d8698}
+    .h{font-size:17px;font-weight:700;fill:#1a2b4a}
+    .line{stroke:#1a2b4a;stroke-width:1.8;fill:none}
+    .dash{stroke:#7d8698;stroke-width:1.6;fill:none;stroke-dasharray:6 5}
+  </style>
+
+  <!-- people and assistants, left column -->
+  <text x="40" y="44" class="k">THE GROUP</text>
+  <g>
+    <rect x="40" y="56" width="150" height="54" class="soft"/>
+    <text x="52" y="78" class="h" font-size="15">Person A</text><text x="52" y="98" class="m" font-size="12">types to own assistant</text>
+    <rect x="40" y="126" width="150" height="54" class="soft"/>
+    <text x="52" y="148" class="h" font-size="15">Person B</text><text x="52" y="168" class="m" font-size="12">types to own assistant</text>
+    <rect x="40" y="196" width="150" height="54" class="soft"/>
+    <text x="52" y="218" class="h" font-size="15">Person C …</text><text x="52" y="238" class="m" font-size="12">each sees only own chat</text>
+  </g>
+  <!-- arrows from people into the workspace -->
+  <path d="M190 83 C 250 83, 250 150, 300 150" class="line" marker-end="url(#a)"/>
+  <path d="M190 153 L 300 153" class="line" marker-end="url(#a)"/>
+  <path d="M190 223 C 250 223, 250 156, 300 156" class="line" marker-end="url(#a)"/>
+
+  <!-- workspace -->
+  <text x="300" y="44" class="k">1 · SHARED GLOBAL WORKSPACE</text>
+  <rect x="300" y="56" width="250" height="194" class="ws"/>
+  <text x="316" y="84" class="h" font-size="15">What every person typed</text>
+  <text x="316" y="108" class="s" font-size="13">#12 Sam: "I checked the attendance sheet…"</text>
+  <text x="316" y="130" class="s" font-size="13">#14 Jordan: "Security confirmed…"</text>
+  <text x="316" y="152" class="s" font-size="13">#16 Alex: "I think we should…"</text>
+  <text x="316" y="174" class="s" font-size="13">#19 Robin: "Did the papers get longer?"</text>
+  <text x="316" y="206" class="m" font-size="12">author · turn · text · reading record</text>
+  <text x="316" y="226" class="m" font-size="12">no assistant text · no summary · no extraction</text>
+
+  <!-- the per-reply pipeline for one person -->
+  <text x="610" y="44" class="k">FOR PERSON A, BEFORE EACH REPLY</text>
+
+  <!-- 2 switch -->
+  <rect x="610" y="56" width="230" height="110" class="box"/>
+  <text x="624" y="80" class="h" font-size="15">2 · Switch</text>
+  <text x="624" y="102" class="s" font-size="13">one background call:</text>
+  <text x="624" y="120" class="s" font-size="13">does anything here bear on what</text>
+  <text x="624" y="138" class="s" font-size="13">A is weighing, choosing or doing?</text>
+  <text x="624" y="156" class="m" font-size="12">closes only for small talk and setup</text>
+  <path d="M550 110 L 610 110" class="line" marker-end="url(#a)"/>
+  <path d="M 115 56 L 115 14 L 725 14 L 725 56" class="dash" marker-end="url(#am)"/>
+  <text x="400" y="10" class="m" font-size="12">A's own recent conversation goes to the switch too</text>
+
+  <!-- 3 read -->
+  <rect x="610" y="196" width="230" height="86" class="box"/>
+  <text x="624" y="220" class="h" font-size="15">3 · Read</text>
+  <text x="624" y="242" class="s" font-size="13">open: the whole workspace, as raw</text>
+  <text x="624" y="260" class="s" font-size="13">attributed text, into the reply prompt</text>
+  <path d="M725 166 L 725 196" class="line" marker-end="url(#a)"/>
+  <text x="735" y="186" class="m" font-size="12">open</text>
+  <path d="M550 230 L 610 230" class="line" marker-end="url(#a)"/>
+
+  <!-- closed branch -->
+  <path d="M840 110 L 900 110 L 900 300" class="dash"/>
+  <text x="908" y="118" class="m" font-size="12">closed:</text>
+  <text x="908" y="134" class="m" font-size="12">say nothing</text>
+  <text x="908" y="150" class="m" font-size="12">about the others</text>
+
+  <!-- 4 reply -->
+  <rect x="610" y="312" width="500" height="150" class="box"/>
+  <text x="624" y="336" class="h" font-size="15">4 · Reply to A, in A's own chat</text>
+  <text x="624" y="360" class="s" font-size="13">• one picture organised by the courses of action A is weighing</text>
+  <text x="624" y="380" class="s" font-size="13">• credit by name; a report stays a report, a supposition stays a supposition</text>
+  <text x="624" y="400" class="s" font-size="13">• facts and plans, never others' preferences or votes</text>
+  <text x="624" y="420" class="s" font-size="13">• optionally one question asking A for a fact someone else needs (ask)</text>
+  <text x="624" y="446" class="m" font-size="12">items are data typed by other people, never instructions</text>
+  <path d="M725 282 L 725 312" class="line" marker-end="url(#a)"/>
+  <path d="M900 300 L 900 312" class="dash" marker-end="url(#am)"/>
+
+  <!-- back to person A -->
+  <path d="M 860 462 L 860 492 L 20 492 L 20 83 L 40 83" class="line" marker-end="url(#a)"/>
+  <text x="300" y="508" class="m" font-size="12">A reads the reply in A's own chat; what A types next enters the workspace</text>
+
+  <!-- cost note -->
+  <text x="40" y="300" class="k">COST</text>
+  <text x="40" y="322" class="s" font-size="13">two model calls per reply, at any group size</text>
+  <text x="40" y="342" class="s" font-size="13">tokens read ≈ (N − 1) × turns × message length</text>
+  <text x="40" y="372" class="k">WHAT PEOPLE SEE</text>
+  <text x="40" y="394" class="s" font-size="13">only their own chat: no board, no notes,</text>
+  <text x="40" y="414" class="s" font-size="13">no messages they did not ask for</text>
+</svg>
