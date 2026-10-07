@@ -1,0 +1,105 @@
+# Paralax on HiddenBench: ledger
+
+Question. Do five flash-lite "people", each talking only to their own flash assistant, decide
+better when the assistants draw on Paralax's shared workspace than when the five pairs are
+independent?
+
+## Fixed protocol (registered before the first full run, 6 Oct 2026)
+
+- Benchmark: HiddenBench, 65 tasks (Li, Naito & Shirado, ICML 2026). Shared facts point to a
+  decoy; hidden facts, dealt one per person, point to the right option.
+- Calibration with the humans' model, one call per task:
+  gemini-3.5-flash-lite answers 57/65 with full information and 2/65 with shared facts only.
+  Usable tasks (full right, shared wrong): 56. Runs use the first 12 of a fixed shuffle.
+- People: 5, gemini-3.5-flash-lite, temperature 0.7. Each gets the scenario, the shared facts
+  and its hidden slice (with 3-4 hidden facts, one or two people hold shared facts only).
+  Each must describe the problem to its assistant in its own words.
+- The people are a research department with different comprehension and sharing habits
+  (PERSONAS in eval_hidden.py; seat i always gets persona i, so arms are matched): Alex, a
+  professor who decides early and treats own facts as obvious; Sam, an evidence-first postdoc;
+  Robin, a first-year PhD student who misses implications and forgets to mention what they
+  know; Jordan, a literal, terse lab manager; Casey, a talkative visitor from another field
+  who misjudges importance.
+- Infrastructure: when every model in a chain is congested (503), the chain is retried up to
+  3 times after 4, 8 and 12 s. Applies to both arms equally. Added after the pilot, in which
+  4-5 of 30 replies per session failed outright.
+- Pilot (one task, before personas and retries): isolated 1/5 correct, workspace 2/5; with the
+  workspace all 4 hidden facts reached other people and were credited to the holder; of the 12
+  people a fact reached, 5 answered correctly. Availability was not the bottleneck; use was.
+- Assistants and workspace selection: gemini-3.5-flash (gemini-3.8-flash as fallback). They are
+  never given the problem. Thinking budget 0.
+- 6 rounds; within a round the five people act concurrently, staggered 0-3 s.
+- Answers: each person privately after round 3 and round 6. Group answer = plurality at round 6,
+  ties wrong.
+- Arms: isolated (control), workspace (Paralax), context (every other turn in the prompt, same
+  rules), full (isolated with all facts: ceiling). 2 seeds for isolated/workspace/context.
+- Primary measure: individual accuracy at round 6, paired by (task, seed), one-sided sign-flip
+  permutation test. Secondary: plurality accuracy; the clue funnel (holder said it, it reached
+  another person, credited to the holder, misattributed), judged by flash from the transcripts.
+- Noise floor: mean |seed 0 - seed 1| within each arm, reported beside every difference.
+- Adopt rule for an algorithm change (vN+1 over vN): same tasks and seeds; adopt only if the
+  paired difference on individual accuracy is positive with p < .05 AND the change is explained
+  by a funnel stage it was built to fix. Prompt text is data: every version is in git.
+
+## What the gate buys (measured 7 Oct 01:05, eval/probes.py)
+
+Two people. Sam reports a fact ("I called Lakeside Lodge: fully booked for May"). Alex then sends
+ten off-task messages ("Hello", "Tell me a joke", "What time is it?", "ok", ...). How often does
+Alex's assistant relay Sam's report?
+
+| arm | relays Sam's report on off-task turns |
+|---|---|
+| context (everything in the prompt, every turn) | 10 of 10 |
+| workspace v7 (switch) | 3 of 10, and two of those were "Sorry, I was away" and "ok" |
+
+This is the behaviour Chrisantha rejected on 6 Oct ("I don't want to see this kind of detailed
+information about what the other person is doing"). The accuracy cost of the gate on HiddenBench
+(below) is the price of that restraint; the loop's job was to make it as small as possible.
+
+## Versions
+
+| version | what changed | run | isolated | context | workspace | full | workspace - isolated (p) | notes |
+|---|---|---|---|---|---|---|---|---|
+| v1 | as submitted in PR #23, plus: selection no longer stands down when the problem is stated only in the conversation | v1 (84 sessions, 22:06-23:25 6 Oct) | 0.14 / plurality 0.00 | 0.91 / 0.96 | 0.63 / 0.58 | 0.97 / 1.00 | +0.483 (p<.001); vs context -0.283 | noise (seed0 vs seed1): isolated .08, workspace .35, context .15. Funnel: facts reached someone 83/94 (context 89/94); of people reached, 61% correct (context 91%). Loss is at USE. Hidden-fact deliveries by round: 10, 94, 73, 61, 34, 9: the deliver-once ledger goes quiet before people decide. |
+| v2 | uptake-aware retrieval: a given item stays a candidate until the person's later messages show they took it in (marked GIVEN BEFORE); 3 picks; reply brings bearing items together when the person weighs a choice (principle: communicate until uptake, Clark/Longino; targets USE) | v2 (workspace arm only, same 12 tasks x 2 seeds, 23:24-23:55) | | | 0.625 / 0.71 | | vs v1 workspace +0.000 (p=.54), plurality +0.125 (p=.25); vs context -0.283 (p=.004) | NOT ADOPTED on accuracy. Noise .38. Coverage is not the lever: people who received ALL others' facts were right 54% (v1) / 66% (v2) in Paralax vs 89% in context. The difference is integration: context assistants lay out everything each turn; Paralax hands over 1-3 items aimed at the current leaning. |
+| v3 | the unit of retrieval is the set of items bearing on the current decision (up to 12), covering every course of action, not the strongest few; the reply integrates them into one attributed picture (principle: blackboard broadcast of all relevant hypotheses, Hearsay-II; the gate still returns nothing when nothing is relevant; targets USE) | v3 (workspace arm only, same 12 tasks x 2 seeds, 23:42-00:15) | | | 0.675 / 0.75 | | vs v1 +0.050 (p=.29), plurality +0.167 (p=.14); vs context -0.233 (p=.003) | NOT ADOPTED (not significant). Noise .25. Picks per selection still <1 on average (23 per session of 30 selections) although the cap was 12: the selection's two conditions (changes next action; not taken in) suppress items. Context assistants see ~20 messages per turn. |
+| v4 | relevance is the only criterion: pick every fact or plan that bears on what the person is working on now, whether or not they lean the same way or have had it before (cap 20); the GIVEN BEFORE mark is no longer shown to the selector; reply integrates as in v3 (principle: redundancy is not noise when the receiver has not integrated; the gate's job is relevance, not novelty) | v4 (workspace arm only, same 12 tasks x 2 seeds, 00:00-00:18) | | | 0.667 / 0.71 | | vs v1 +0.042 (p=.35); vs v3 -0.008; vs context -0.242 (p=.006) | NOT ADOPTED. Picks per session 28 (still ~1 per selection). Mid-round accuracy 0.758 (context 0.725) but FINAL 0.667: 29 of 120 people were right at round 3 and wrong at round 6 (18 the other way). Flippers' late picks were 58% "contradicts" (stayers 30%): the selection works against a correct leaning. Labels and reasons also upgrade speculation to fact ("if the road was cleared..." became "Jordan confirms the road was cleared"). |
+| v5 | the gate decides relevance only and returns turn ids; no relation labels, no reasons; the assistant integrates the raw attributed text and keeps each item's standing (a report vs a supposition); facts-only rule kept in the gate (principle: the reader does the epistemics with the primary text; a classifier between workspace and reader is a lossy, biased channel) | v5 (workspace arm only, same 12 tasks x 2 seeds, 00:20-00:42) | | | 0.700 / 0.79 | | vs v1 +0.075 (p=.18), plurality +0.208 (p=.09); vs iso +0.558 (p<.001); vs context -0.208 (p=.002) | Best so far; noise down to .13; late flips balanced (18 each way); picks per session 50 (v1 19). Monotone trend: accuracy rises with how much of the workspace reaches the assistant (v1 19 items .625, v4 28 .667, v5 50 .700, context ~100 .908). The selector still returns <2 turns per call when told to include everything that bears. |
+| v6 | the gate is a switch: does anything in the workspace bear on this turn at all? If yes, the assistant reads the whole workspace (cap 60 items); if no, nothing. Ask kept. (principle: the only decision a channel should make is whether to open; what passes through is decided by the reader, Hearsay-II broadcast) | v6 (workspace arm only, same 12 tasks x 2 seeds, 00:43-01:01) | | | 0.792 / 0.79 | | vs v1 +0.167 (p=.011); vs v5 +0.092 (p=.12); vs iso +0.650 (p<.001); vs context -0.117 (p=.032) | Significant over v1 and explained (integration of the whole picture). Noise .28. The switch closed on 252 of 696 turns (36%), mostly late turns where the person states a conclusion; people for whom it opened more often were more accurate. |
+| **v7** | the switch closes only for greetings, small talk, remarks about the tool, or before the person has said what they are working on; it opens whenever the person is weighing, choosing, asserting a conclusion or about to act (principle: Horvitz 1999, asymmetric cost of acting vs not acting; an unneeded read costs tokens, a missed read can cost the decision) | v7 (workspace arm only, same 12 tasks x 2 seeds, 01:03-01:26) | | | **0.825 / 0.875** | | vs v1 +0.200 (p=.009), plurality +0.292 (p=.021); vs v6 +0.033 (p=.38); vs iso +0.683 (p<.001); vs context -0.083 (p=.13, not significant) | **ADOPTED.** Noise .15. Switch closed on 54 of 696 turns (8%). Facts reached someone 90/94; of people reached, 82% correct (context 91%). Off-task relays 3/10 vs context 10/10. |
+
+## Conclusion (7 Oct 2026, 01:30)
+
+The algorithm as adopted (v7), stated generally:
+
+1. The shared global workspace is the ordered record of what every person typed, with author
+   and turn id. Assistant text is never in it; nothing is extracted or summarised.
+2. Before each reply, the person's assistant asks one background question of the workspace:
+   does anything in it bear on what my person is working on, and is my person weighing,
+   choosing, asserting or about to act? The switch closes only for greetings, small talk,
+   remarks about the tool, and before the person has said what they are working on.
+3. When it opens, the assistant reads the whole workspace (the raw attributed text), integrates
+   it into one picture organised by the courses of action its person is weighing, keeps each
+   item's standing (a report is passed on as that person's report; a supposition is never passed
+   on as a fact), and credits by name.
+4. It may also ask its person for one fact another person needs (the ask route).
+5. When the switch is closed, the assistant says nothing about the others.
+
+What the loop established, each with a paired test on the same 24 sessions:
+
+- Pooling through assistants works: every version beat independent pairs by 48-68 points.
+- Accuracy is monotone in how much of the workspace reaches the assistant (v1 19 items/session
+  .625; v4 28 .667; v5 50 .700; v6/v7 whole workspace .79/.83; context .91).
+- Delivering facts is not the bottleneck; integrating them is. People who received every fact
+  were right 54-66% of the time under per-item delivery and 89% under whole-picture integration.
+- Relation labels ("contradicts", "supports") and model-written reasons hurt: they push people
+  off correct leanings and upgrade suppositions to facts. The reader should get primary text.
+- The one thing a gate should decide is whether to open, and it should err open when the
+  person is deciding (v6 -> v7: closures fell from 36% to 8% of turns, accuracy .79 -> .83).
+- What the gate buys is restraint on off-task turns (3/10 relays vs 10/10).
+
+Limits: 12 tasks, 2 seeds, flash-lite people and flash assistants; seed-to-seed noise of
+.15-.38 means differences under ~15 points are not detectable here; HiddenBench is a choice
+among options, so open-ended problem solving is untested beyond the scripted scenario; the
+whole-workspace read will not scale to large N or long sessions, where a per-item or digest
+retrieval returns as a necessary approximation with a cost that this loop has now measured.

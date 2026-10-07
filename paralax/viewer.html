@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paralax sessions · BOLD OS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1a2b4a;--ink-soft:#33445f;--muted:#7d8698;--paper:#f5f3ee;--surface:#fff;--wash:#ece9e1;--line:rgba(26,43,74,.16);--accent:#1a2b4a;
+  --ok:#2d6a4f;--bad:#8a1c1c;--serif:'EB Garamond',Georgia,serif;--sans:'Cabin',system-ui,sans-serif}
+*{box-sizing:border-box}[hidden]{display:none !important}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink-soft);font-family:var(--serif);font-size:15.5px;line-height:1.5;display:flex;flex-direction:column;-webkit-font-smoothing:antialiased}
+.masthead{border-bottom:1px solid var(--line);padding:10px 16px;display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-family:var(--sans)}
+.wordmark{font-weight:500;font-size:17px;color:var(--ink)}
+.sub{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+select{font:inherit;font-family:var(--sans);font-size:13px;padding:3px 6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:0}
+.badge{font-family:var(--sans);font-size:11px;font-weight:600;letter-spacing:.06em;color:var(--ink);border:1px solid var(--ink);padding:0 6px;line-height:18px;display:inline-block;white-space:nowrap}
+.badge.soft{border-color:var(--line);color:var(--muted);font-weight:500}
+.badge.ok{border-color:var(--ok);color:var(--ok)}.badge.bad{border-color:var(--bad);color:var(--bad)}
+.badge.hidden{background:var(--ink);color:#fff}
+.layout{flex:1;display:grid;grid-template-columns:270px 1fr 330px;min-height:0}
+.side{border-right:1px solid var(--line);overflow-y:auto;font-family:var(--sans);font-size:12.5px}
+.side .task{padding:8px 12px 4px;font-weight:600;color:var(--ink);border-top:1px solid var(--line)}
+.side .row{display:flex;gap:6px;align-items:center;padding:4px 12px;cursor:pointer}
+.side .row:hover{background:var(--wash)}.side .row.sel{background:var(--surface);outline:1px solid var(--line)}
+.side .row .arm{width:76px}.side .row .score{margin-left:auto;font-variant-numeric:tabular-nums}
+.center{display:flex;flex-direction:column;min-height:0}
+.head{padding:8px 14px;border-bottom:1px solid var(--line);font-family:var(--sans);font-size:13px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.head b{color:var(--ink)}
+.panes{flex:1;display:grid;grid-auto-flow:column;grid-auto-columns:minmax(260px,1fr);gap:10px;padding:10px;overflow:auto;min-height:0}
+.pane{background:var(--surface);border:1px solid var(--line);display:flex;flex-direction:column;min-height:0;min-width:260px}
+.pane .top{padding:7px 10px;border-bottom:1px solid var(--line);font-family:var(--sans);font-size:12.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.pane .top .name{font-weight:600;color:var(--ink)}
+.pane .facts{font-family:var(--sans);font-size:11px;color:var(--muted);padding:6px 10px;border-bottom:1px solid var(--line)}
+.pane .facts .h{color:var(--ink)}
+.log{flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:9px}
+.msg{max-width:96%}
+.msg .who{font-family:var(--sans);font-size:10.5px;letter-spacing:.04em;color:var(--muted);margin-bottom:2px;display:flex;gap:5px;align-items:center}
+.msg .body{padding:6px 10px;border:1px solid var(--line);font-size:14.5px}
+.msg.user{align-self:flex-end}.msg.user .who{justify-content:flex-end}.msg.user .body{background:var(--wash);border-color:transparent;color:var(--ink)}
+.msg.user.hf .body{border-left:3px solid var(--ink)}
+.msg.agent{align-self:flex-start}
+.msg.error .body{border-style:dashed;color:var(--muted)}
+.msg p{margin:0 0 5px}.msg p:last-child{margin:0}.msg ul{margin:2px 0 5px 18px;padding:0}
+.hl .body{outline:2px solid var(--ink)}
+.rtag{align-self:flex-start;max-width:96%;font-family:var(--sans);font-size:11px;color:var(--ink-soft);border-left:2px solid var(--line);padding:2px 0 2px 8px;margin-top:-5px}
+.rtag.none{color:var(--muted)}.rtag .pick{display:block;margin-top:2px;cursor:pointer}.rtag .pick:hover{text-decoration:underline}
+.rtag .why{color:var(--muted)}
+.ws{border-left:1px solid var(--line);overflow-y:auto;padding:10px 12px;font-family:var(--sans);font-size:12px}
+.ws h3{font-size:11px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:12px 0 6px}
+.ws h3:first-child{margin-top:0}
+.ws .c{border-bottom:1px solid var(--line);padding:5px 0;cursor:pointer}.ws .c:hover{background:var(--wash)}
+.ws .c .id{color:var(--muted);margin-right:4px}.ws .c .nm{font-weight:600;color:var(--ink);margin-right:4px}
+.ws .c.hf{border-left:3px solid var(--ink);padding-left:6px}
+.ws table{border-collapse:collapse;width:100%}.ws td,.ws th{border-bottom:1px solid var(--line);padding:3px 4px;text-align:left;vertical-align:top;font-weight:400}
+.ws th{color:var(--muted);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+.ws .fact{padding:4px 0;border-bottom:1px solid var(--line)}
+.empty{color:var(--muted);font-style:italic;padding:20px}
+#err{position:fixed;left:16px;bottom:16px;background:var(--surface);color:var(--bad);border:1px solid var(--bad);padding:8px 12px;font-family:var(--sans);font-size:12px;display:none}
+</style>
+</head>
+<body>
+<header class="masthead">
+  <div><div class="wordmark">BOLD OS · Paralax sessions</div><div class="sub">five people, five assistants, one workspace: what was said, what was retrieved</div></div>
+  <label>run <select id="run"></select></label>
+  <label>arm <select id="armf"><option value="">all</option><option>isolated</option><option>workspace</option><option>context</option><option>full</option></select></label>
+  <span class="sub" id="live"></span>
+</header>
+<div class="layout">
+  <aside class="side" id="side"></aside>
+  <section class="center">
+    <div class="head" id="head">Pick a session on the left.</div>
+    <div class="panes" id="panes"></div>
+  </section>
+  <aside class="ws" id="ws"><div class="empty">The workspace: everything the people typed, who was given what, and the facts each person held.</div></aside>
+</div>
+<div id="err"></div>
+<script>
+(function(){
+"use strict";
+var runs = [], cur = null, timer = null, lastLen = -1;
+var runEl = document.getElementById("run"), armEl = document.getElementById("armf"), sideEl = document.getElementById("side");
+var headEl = document.getElementById("head"), panesEl = document.getElementById("panes"), wsEl = document.getElementById("ws"), liveEl = document.getElementById("live");
+function showErr(t){ var e = document.getElementById("err"); e.style.display = "block"; e.textContent = t; }
+window.onerror = function(m, s, l){ showErr("page error: " + m + " (line " + l + ")"); };
+function esc(s){ return String(s == null ? "" : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); }
+function md(s){
+  var h = esc(s), out = [], list = null, lines = h.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").split("\n");
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i], m = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
+    if (m) { (list = list || []).push("<li>" + m[1] + "</li>"); continue; }
+    if (list) { out.push("<ul>" + list.join("") + "</ul>"); list = null; }
+    if (line.trim()) out.push("<p>" + line + "</p>");
+  }
+  if (list) out.push("<ul>" + list.join("") + "</ul>");
+  return out.join("");
+}
+function get(url){ return fetch(url).then(function(r){ return r.json(); }); }
+
+function loadRuns(){
+  return get("/runs").then(function(d){
+    runs = d.runs;
+    var sel = runEl.value;
+    runEl.innerHTML = runs.map(function(r){ return '<option value="' + esc(r.name) + '">' + esc(r.name) + " (" + r.sessions.length + ")</option>"; }).join("");
+    if (sel && runs.some(function(r){ return r.name === sel; })) runEl.value = sel;
+    renderSide();
+  });
+}
+function renderSide(){
+  var r = runs.filter(function(x){ return x.name === runEl.value; })[0];
+  if (!r) { sideEl.innerHTML = '<div class="empty">No runs yet.</div>'; return; }
+  var byTask = {};
+  r.sessions.forEach(function(s){ if (!armEl.value || s.arm === armEl.value) (byTask[s.task] = byTask[s.task] || []).push(s); });
+  var order = {isolated: 0, context: 1, workspace: 2, full: 3};
+  sideEl.innerHTML = Object.keys(byTask).map(function(t){
+    var rows = byTask[t].sort(function(a, b){ return (order[a.arm] - order[b.arm]) || (a.seed - b.seed); }).map(function(s){
+      var score = s.done ? s.n_right + "/" + s.n : "running";
+      var cls = s.done ? (s.n_right >= Math.ceil(s.n / 2) ? "ok" : "bad") : "soft";
+      return '<div class="row' + (cur && cur.file === s.file && cur.run === r.name ? " sel" : "") + '" data-file="' + esc(s.file) + '">' +
+        '<span class="arm">' + esc(s.arm) + ' s' + s.seed + '</span>' + (s.picks != null && s.arm === "workspace" ? '<span class="badge soft">' + s.picks + ' picks</span>' : "") +
+        '<span class="score badge ' + cls + '">' + score + "</span></div>";
+    }).join("");
+    return '<div class="task">' + esc(t) + "</div>" + rows;
+  }).join("");
+  sideEl.querySelectorAll(".row").forEach(function(el){ el.onclick = function(){ open(runEl.value, el.getAttribute("data-file")); }; });
+}
+
+function open(run, file){
+  if (timer) clearTimeout(timer);
+  cur = {run: run, file: file}; lastLen = -1;
+  renderSide();
+  poll();
+}
+function poll(){
+  if (!cur) return;
+  get("/session?run=" + encodeURIComponent(cur.run) + "&file=" + encodeURIComponent(cur.file)).then(function(d){
+    if (d.error) { headEl.textContent = d.error; return; }
+    var running = !d.result;
+    liveEl.textContent = running ? "session running: refreshing" : "";
+    if (d.events.length !== lastLen || !running) { render(d); lastLen = d.events.length; }
+    if (running) timer = setTimeout(poll, 3000);
+    else if (!runs.filter(function(r){ return r.name === cur.run; })[0].sessions.filter(function(s){ return s.file === cur.file; })[0].done) loadRuns();
+  }).catch(function(e){ showErr("could not load the session: " + e); });
+}
+
+function render(d){
+  var ev = d.events, names = {}, panes = [], byId = {}, res = d.result, task = d.task || {};
+  ev.forEach(function(e){ if (e.type === "name") { names[e.pane] = e.name; if (panes.indexOf(e.pane) < 0) panes.push(e.pane); } if (e.id) byId[e.id] = e; });
+  var arm = (cur.file.match(/__([a-z]+)__s\d+$/) || [])[1] || "";
+  var fin = res ? (res.answers[String(res.rounds)] || {}) : {};
+  var slices = res ? res.slices : {};
+  var hiddenIdx = {}; (task.hidden || []).forEach(function(h, i){ hiddenIdx[h] = i; });
+  // which user turns carry a hidden fact, from the judge
+  var hfTurns = {};
+  ((res && res.funnel && res.funnel.items) || []).forEach(function(it){ (it.holder_turns || []).forEach(function(t){ hfTurns[String(t).replace("#", "")] = it.fact; }); });
+  headEl.innerHTML = "<b>" + esc(cur.file.split("__")[0]) + "</b> · arm <b>" + esc(arm) + "</b>" +
+    (task.correct ? " · correct answer <b>" + esc(task.correct) + "</b>" : "") +
+    (res ? " · final " + Object.keys(fin).filter(function(p){ return fin[p] === res.correct; }).length + "/" + res.n + " right" : ' · <span class="badge soft">running</span>') +
+    (res && res.select_status ? ' · selection ' + esc(JSON.stringify(res.select_status)) : "");
+  panesEl.innerHTML = "";
+  panes.forEach(function(p){
+    var el = document.createElement("div"); el.className = "pane";
+    var ans = fin[p]; var ansHtml = ans == null ? "" : '<span class="badge ' + (ans === (res && res.correct) ? "ok" : "bad") + '">' + esc(ans) + "</span>";
+    var held = (slices[p] || []).map(function(h){ return '<span class="h">hidden fact ' + hiddenIdx[h] + ":</span> " + esc(h); }).join("<br>");
+    el.innerHTML = '<div class="top"><span class="badge">' + p + '</span><span class="name">' + esc(names[p]) + "</span>" + ansHtml + "</div>" +
+      (held ? '<div class="facts">' + held + "</div>" : '<div class="facts">holds shared facts only</div>') + '<div class="log" id="log' + p + '"></div>';
+    panesEl.appendChild(el);
+  });
+  var others = function(p, before){ return ev.filter(function(e){ return e.type === "user" && e.pane !== p && e.id < before; }).length; };
+  ev.forEach(function(e){
+    if (e.type === "user" || e.type === "agent") {
+      var log = document.getElementById("log" + e.pane); if (!log) return;
+      var m = document.createElement("div"); m.id = "m" + e.id;
+      var hf = e.type === "user" && hfTurns[String(e.id)] != null;
+      m.className = "msg " + e.type + (hf ? " hf" : "") + (e.status === "error" ? " error" : "");
+      var who = e.type === "user" ? "#" + e.id + " " + esc(names[e.pane]) + (hf ? ' <span class="badge hidden">hidden fact ' + hfTurns[String(e.id)] + "</span>" : "")
+                                   : "assistant" + (e.model ? ' <span class="badge soft">' + esc(e.model.replace("gemini-", "")) + " · " + esc(e.secs) + " s</span>" : "");
+      m.innerHTML = '<div class="who">' + who + '</div><div class="body">' + (e.status === "pending" ? "<i>composing</i>" : md(e.text)) + "</div>";
+      log.appendChild(m);
+      if (e.type === "agent" && arm === "context") {
+        var t = document.createElement("div"); t.className = "rtag none"; t.textContent = "in prompt: all " + others(e.pane, e.id) + " messages the others had typed"; log.appendChild(t);
+      }
+    } else if (e.type === "retrieval") {
+      var log2 = document.getElementById("log" + e.pane); if (!log2) return;
+      var t2 = document.createElement("div");
+      var picks = (e.inform || []).map(function(x){ var s = byId[x.turn] || {}; return '<span class="pick" data-turn="' + x.turn + '">[' + esc(x.relation) + "] #" + x.turn + " " + esc(s.name || "") + ": " + esc((s.text || "").slice(0, 100)) + ' <span class="why">' + esc(x.why) + "</span></span>"; });
+      if (e.ask) { var s2 = byId[e.ask.turn] || {}; picks.push('<span class="pick" data-turn="' + e.ask.turn + '">[ask] #' + e.ask.turn + " " + esc(s2.name || "") + ": " + esc((s2.text || "").slice(0, 100)) + "</span>"); }
+      t2.className = "rtag" + (picks.length ? "" : " none");
+      t2.innerHTML = "workspace query · " + (e.status === "ok" ? "" : "<b>" + esc(e.status) + "</b> · ") + (e.considered || []).length + " candidates · " + esc(e.secs) + " s" +
+        (e.model ? " · " + esc(e.model.replace("gemini-", "")) : "") + (picks.length ? picks.join("") : " · nothing retrieved");
+      log2.appendChild(t2);
+    }
+  });
+  panesEl.querySelectorAll(".pick").forEach(function(el){ el.onclick = function(){ highlight(el.getAttribute("data-turn")); }; });
+  // workspace panel
+  var contribs = ev.filter(function(e){ return e.type === "user"; });
+  var deliveries = {};
+  ev.filter(function(e){ return e.type === "retrieval"; }).forEach(function(r){
+    (r.inform || []).forEach(function(x){ (deliveries[x.turn] = deliveries[x.turn] || []).push(names[r.pane] + " (" + x.relation + ")"); });
+    if (r.ask) (deliveries[r.ask.turn] = deliveries[r.ask.turn] || []).push(names[r.pane] + " (ask)");
+  });
+  var h = "<h3>Contributions: what people typed (" + contribs.length + ")</h3>" + contribs.map(function(e){
+    var hf = hfTurns[String(e.id)] != null;
+    return '<div class="c' + (hf ? " hf" : "") + '" data-turn="' + e.id + '"><span class="id">#' + e.id + '</span><span class="nm">' + esc(names[e.pane]) + "</span>" +
+      (hf ? '<span class="badge hidden">hidden fact ' + hfTurns[String(e.id)] + "</span> " : "") + esc(e.text.slice(0, 160)) + (e.text.length > 160 ? "…" : "") +
+      (deliveries[e.id] ? '<div class="why">given to: ' + esc(deliveries[e.id].join(", ")) + "</div>" : "") + "</div>";
+  }).join("");
+  if (arm === "workspace") {
+    h += "<h3>Ledger: who was given what</h3><table><tr><th>person</th><th>turns received</th></tr>" + panes.map(function(p){
+      var got = ev.filter(function(r){ return r.type === "retrieval" && r.pane === p; }).reduce(function(acc, r){ (r.inform || []).forEach(function(x){ acc.push("#" + x.turn); }); if (r.ask) acc.push("#" + r.ask.turn + " (ask)"); return acc; }, []);
+      return "<tr><td>" + esc(names[p]) + "</td><td>" + (got.join(", ") || "<i>nothing</i>") + "</td></tr>";
+    }).join("") + "</table>";
+  }
+  if (task.shared) {
+    h += "<h3>The task's facts (never shown to assistants)</h3>" + task.shared.map(function(f){ return '<div class="fact"><span class="badge soft">shared</span> ' + esc(f) + "</div>"; }).join("") +
+      task.hidden.map(function(f, i){ var holder = Object.keys(slices).filter(function(p){ return slices[p].indexOf(f) >= 0; }).map(function(p){ return names[p]; }).join(", "); return '<div class="fact"><span class="badge hidden">hidden ' + i + "</span> " + esc(f) + (holder ? ' <span class="why">held by ' + esc(holder) + "</span>" : "") + "</div>"; }).join("") +
+      '<div class="fact">options: ' + esc(task.options.join(", ")) + " · correct: <b>" + esc(task.correct) + "</b></div>";
+  }
+  wsEl.innerHTML = h;
+  wsEl.querySelectorAll(".c").forEach(function(el){ el.onclick = function(){ highlight(el.getAttribute("data-turn")); }; });
+}
+function highlight(turn){
+  panesEl.querySelectorAll(".hl").forEach(function(x){ x.classList.remove("hl"); });
+  var m = document.getElementById("m" + turn); if (!m) return;
+  m.classList.add("hl"); m.scrollIntoView({block: "center", behavior: "smooth"});
+}
+runEl.onchange = renderSide; armEl.onchange = renderSide;
+var qp = new URLSearchParams(location.search);
+loadRuns().then(function(){
+  if (qp.get("run") && qp.get("file")) { runEl.value = qp.get("run"); renderSide(); open(qp.get("run"), qp.get("file")); }
+  setInterval(function(){ if (!cur || !timer) loadRuns(); }, 15000);
+});
+})();
+</script>
+</body>
+</html>

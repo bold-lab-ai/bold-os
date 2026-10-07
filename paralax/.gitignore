@@ -1,7 +1,10 @@
-# Paralax: local secrets, conversation logs and run files are never committed
+# Paralax: local secrets, conversation logs, run output and benchmark data are never committed
 .env
 sessions/
 *.log
 *.pid
 __pycache__/
-eval/
+eval/data/
+eval/runs/
+eval/*.log
+eval/*.pid
