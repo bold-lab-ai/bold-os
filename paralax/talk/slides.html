@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paralax · talk</title>
+<style>
+/* BOLD OS tokens: one accent, serif to read, sans for chrome, no border-radius, outlined badges. No external scripts. */
+:root{--ink:#1a2b4a;--ink-soft:#33445f;--muted:#7d8698;--paper:#f5f3ee;--surface:#fff;--wash:#ece9e1;--line:rgba(26,43,74,.16);
+  --serif:'EB Garamond',Georgia,'Times New Roman',serif;--sans:'Cabin',system-ui,-apple-system,'Segoe UI',sans-serif}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--paper);color:var(--ink-soft);font-family:var(--serif)}
+.deck{height:100%;overflow:hidden}
+.slide{display:none;height:100%;padding:56px 72px 64px;flex-direction:column;position:relative}
+.slide.on{display:flex}
+h1{font-size:54px;line-height:1.1;color:var(--ink);margin:0 0 18px;font-weight:800;letter-spacing:-.01em}
+h2{font-size:38px;line-height:1.15;color:var(--ink);margin:0 0 22px;font-weight:800;letter-spacing:-.005em}
+p,li{font-size:25px;line-height:1.45}
+ul,ol{margin:0;padding-left:30px}li{margin:0 0 10px}
+.sub{font-family:var(--sans);font-size:14px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.lead{font-size:30px;color:var(--ink)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:40px;flex:1;min-height:0}
+.fig{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+.fig img{max-width:100%;max-height:100%;background:var(--surface);border:1px solid var(--line);padding:8px}
+.cap{font-family:var(--sans);font-size:14px;color:var(--muted);margin-top:8px}
+table{border-collapse:collapse;font-size:24px;margin-top:6px}
+td,th{border-bottom:1px solid var(--line);padding:8px 18px 8px 0;text-align:left;vertical-align:top}
+th{font-family:var(--sans);font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:500}
+td.n{font-variant-numeric:tabular-nums}
+tr.hl td{color:var(--ink);font-weight:700}
+.badge{font-family:var(--sans);font-size:13px;font-weight:600;letter-spacing:.06em;color:var(--ink);border:1px solid var(--ink);padding:0 7px;line-height:20px;display:inline-block;margin-right:8px;vertical-align:3px}
+.algo{counter-reset:s;display:grid;grid-template-columns:1fr 1fr;gap:18px 40px;margin-top:6px}
+.algo div{border-left:3px solid var(--ink);padding:2px 0 2px 16px;font-size:22px;line-height:1.4}
+.algo b{display:block;font-family:var(--sans);font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.foot{position:absolute;left:72px;right:72px;bottom:22px;display:flex;justify-content:space-between;font-family:var(--sans);font-size:13px;color:var(--muted);letter-spacing:.04em}
+.notes{position:absolute;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:14px 72px;font-family:var(--sans);font-size:15px;line-height:1.45;color:var(--ink-soft);display:none;max-height:38%;overflow:auto}
+body.notes .notes{display:block}
+.quote{border-left:3px solid var(--ink);padding-left:18px;color:var(--ink);font-style:italic}
+.small{font-size:20px;color:var(--ink-soft)}
+.refs p{font-size:17px;line-height:1.4;margin:0 0 4px}
+kbd{font-family:var(--sans);font-size:12px;border:1px solid var(--line);padding:0 5px}
+@media (max-width:1000px){.slide{padding:28px 24px 56px}h1{font-size:36px}h2{font-size:28px}p,li{font-size:19px}.two,.algo{grid-template-columns:1fr}table{font-size:17px}}
+</style>
+</head>
+<body>
+<div class="deck" id="deck">
+
+<section class="slide on">
+  <div class="sub">BOLD Lab · hackathon pitch</div>
+  <h1 style="margin-top:auto">Paralax: your own assistant, reading what the group knows</h1>
+  <p class="lead">Five people, five assistants, one shared workspace, and a switch.</p>
+  <p class="small" style="margin-top:auto"><kbd>→</kbd> next · <kbd>←</kbd> back · <kbd>n</kbd> speaker notes</p>
+  <div class="notes">A small algorithm with a measured result. When several people work on one problem with their own AI assistants, the assistants can pool what the people know, and the group decides better. The interesting part is what we had to take away to make that work.</div>
+</section>
+
+<section class="slide">
+  <h2>The problem groups have</h2>
+  <ul>
+    <li>Groups talk about what everyone already knows.</li>
+    <li>The fact that settles a decision is often held by one person, and nobody knows to ask.</li>
+    <li>Across 65 studies, groups mentioned shared information about two standard deviations more often than unique information; groups facing a hidden profile were eight times less likely to be right. Computer mediation alone did not help. <span class="small">(Stasser &amp; Titus 1985; Lu, Yuan &amp; McLeod 2012)</span></li>
+    <li>LLM agent groups fail the same way: 30% accuracy against 81% with full information. <span class="small">(HiddenBench, Li, Naito &amp; Shirado, ICML 2026)</span></li>
+  </ul>
+  <div class="notes">This failure is forty years old and it survives the move to machines. It is not a failure of availability: an LLM facilitator that got people to share more facts did not improve their decisions (Alsobay et al. 2025). Facts that arrive are not facts that get used.</div>
+</section>
+
+<section class="slide">
+  <h2>The setting</h2>
+  <ul>
+    <li>A research department: people with different roles, comprehension and habits of sharing.</li>
+    <li>Each person already talks to an AI assistant. The conversations are private.</li>
+    <li>What if every assistant could read every conversation, and use it only when it helps its own person?</li>
+  </ul>
+  <p class="quote" style="margin-top:auto">"I don't want to see this kind of detailed information about what the other person is doing."</p>
+  <div class="notes">The constraint that shaped everything: each person must still feel they are talking to their own assistant. No notifications about others, no shared board, no unprompted messages. We built those first, and the person who asked for the system rejected them within a day.</div>
+</section>
+
+<section class="slide">
+  <h2>The algorithm</h2>
+  <div class="algo">
+    <div><b>1 · Workspace</b>The ordered record of what every person typed: author, turn, text. No assistant text, no extraction, no summary.</div>
+    <div><b>2 · Switch</b>Before each reply, one background call: does anything here bear on what my person is working on, given that they are weighing, choosing, asserting or about to act? Closes only for greetings, small talk and setup.</div>
+    <div><b>3 · Read</b>If it opens, the assistant reads the whole workspace as raw attributed text.</div>
+    <div><b>4 · Reply</b>One picture organised by the courses of action the person is weighing. Credit by name. A report stays a report, a supposition stays a supposition. Facts and plans, never others' preferences. Optionally one question asking the person for a fact someone else needs. Switch closed: say nothing about the others.</div>
+  </div>
+  <p class="small" style="margin-top:auto">Two model calls per reply. The only decision the channel makes is whether to open.</p>
+  <div class="notes">That is the result of the talk. The next slides are how we got there: six versions, each tested against the last on the same sessions.</div>
+</section>
+
+<section class="slide">
+  <h2>Why those rules</h2>
+  <ul>
+    <li>Communicate when the value to the team exceeds the cost. The query is the person's situation, not the assistant's uncertainty. <span class="small">(Tambe 1997; Marschak &amp; Radner 1972)</span></li>
+    <li>Err open: an unneeded read costs tokens, a missed read costs the decision. <span class="small">(Horvitz 1999)</span></li>
+    <li>Summaries are where AI mediators steer groups; knowing others' preferences makes group decisions worse. So: primary text, facts only. <span class="small">(Parisi et al. 2026; Mojzisch &amp; Schulz-Hardt 2010)</span></li>
+    <li>Attribution is the first thing to break in multi-party memory. So: author and turn on every item. <span class="small">(EverMemBench 2026)</span></li>
+  </ul>
+</section>
+
+<section class="slide">
+  <h2>The benchmark</h2>
+  <ul>
+    <li><b>HiddenBench:</b> 65 group-decision tasks. Shared facts point to a decoy; hidden facts, one per person, point to the right option. Exact-match answer.</li>
+    <li><b>Five simulated people</b> (gemini-3.5-flash-lite) with department personas: a professor who decides early, an evidence-first postdoc, a first-year student who misses implications, a literal lab manager, a talkative visitor from another field.</li>
+    <li>Each describes the problem to its own assistant (gemini-3.5-flash) in its own words. <b>The assistants and the workspace are never given the task.</b></li>
+    <li>Six rounds, concurrent turns, private answers; the group answer is the plurality.</li>
+    <li>Calibration: one call with full information solves 57 of 65; with the shared facts only, 2 of 65.</li>
+  </ul>
+  <div class="notes">The gap between pooled and unpooled is 55 tasks wide. That is the room the mediator has to work in.</div>
+</section>
+
+<section class="slide">
+  <h2>Arms and measures</h2>
+  <table>
+    <tr><th>arm</th><th>what the assistant gets</th></tr>
+    <tr><td>Independent pairs</td><td>nothing from the others (control)</td></tr>
+    <tr><td>Paralax</td><td>the algorithm, seven versions</td></tr>
+    <tr><td>Everything in context</td><td>every other person's messages in every reply, no switch</td></tr>
+    <tr><td>Full information</td><td>every person holds every fact (ceiling)</td></tr>
+  </table>
+  <ul style="margin-top:22px">
+    <li>Twelve tasks, two seeds, paired on the same sessions; sign-flip permutation test; seed-to-seed noise reported beside every difference.</li>
+    <li>A judge tracks each hidden fact: said by its holder, reached someone else, credited to the holder, used in that person's answer.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <h2>Result</h2>
+  <table style="font-size:28px">
+    <tr><th>arm</th><th>individual accuracy</th><th>group correct</th></tr>
+    <tr><td>Independent pairs (no workspace)</td><td class="n">0.14</td><td class="n">0.00</td></tr>
+    <tr><td>Paralax, first version</td><td class="n">0.63</td><td class="n">0.58</td></tr>
+    <tr class="hl"><td>Paralax as adopted</td><td class="n">0.83</td><td class="n">0.88</td></tr>
+    <tr><td>Everything in context, every turn</td><td class="n">0.91</td><td class="n">0.96</td></tr>
+    <tr><td>Full information (ceiling)</td><td class="n">0.97</td><td class="n">1.00</td></tr>
+  </table>
+  <p class="small" style="margin-top:26px">HiddenBench, 12 tasks × 2 seeds, paired on the same sessions. Adopted vs first version: +20 points, p = .009. Adopted vs everything in context: 8 points, p = .13, not significant. Adopted vs independent pairs: +68 points, p &lt; .001.</p>
+  <div class="notes">Pooling through the assistants takes a group from 14% to 83%. And it stays quiet when it should: on ten off-task messages, the everything-in-context assistant relayed the other person's report ten times; Paralax three times.</div>
+</section>
+
+<section class="slide">
+  <h2>Result, as a picture</h2>
+  <div class="fig"><img src="fig_results.svg" alt="Bar chart: individual accuracy and group correct per arm"></div>
+  <p class="cap">Individual accuracy at the end of the session, and the share of sessions whose plurality answer was right.</p>
+</section>
+
+<section class="slide">
+  <h2>What we had to take away</h2>
+  <div class="two">
+    <div class="fig"><img src="fig_versions.svg" alt="Accuracy against workspace items read per session, versions 1 to 7 and context"></div>
+    <ul class="small" style="font-size:20px">
+      <li><b>v1</b> at most two items per turn, never repeated: 0.63</li>
+      <li><b>v2</b> re-deliver until taken in: no change</li>
+      <li><b>v3, v4</b> select everything that bears: small gains; the selector still returned under one item per turn</li>
+      <li><b>v5</b> no relation labels, no reasons: 0.70, late flips stop</li>
+      <li><b>v6</b> gate becomes a switch, read it all: 0.79</li>
+      <li><b>v7</b> switch closes only for small talk: 0.83</li>
+    </ul>
+  </div>
+  <div class="notes">Accuracy rose with how much of the workspace reached the assistant. Every piece of machinery between the workspace and the reader cost accuracy: the cap, the ledger, the labels, the reasons. The one that survived is the switch.</div>
+</section>
+
+<section class="slide">
+  <h2>Why: delivery is not use</h2>
+  <ul>
+    <li>With v1, people who received <i>every</i> hidden fact were right 54% of the time. With everything in context, 89%.</li>
+    <li>The context assistant lays out the whole picture every turn. v1 handed facts over one at a time, aimed at the person's current leaning, and stopped once each was given.</li>
+    <li>Labels made it worse: items marked "contradicts" pushed people off correct leanings. 29 of 120 people were right at round 3 and wrong at round 6.</li>
+    <li>A model-written reason turned <i>"if the road was cleared..."</i> into <i>"Jordan confirms the road was cleared."</i></li>
+  </ul>
+  <div class="notes">This is the Alsobay result from the other side. Getting facts in front of people is easy. What moves a decision is the integrated picture, with each item's standing intact.</div>
+</section>
+
+<section class="slide">
+  <h2>What the switch buys</h2>
+  <ul>
+    <li>Ten off-task messages after another person has reported a fact: "Hello", "Tell me a joke", "What time is it?", "ok".</li>
+    <li>Everything in context: relayed the report <b>10 of 10</b> times.</li>
+    <li>Paralax: <b>3 of 10</b>, two of them on "Sorry, I was away" and "ok".</li>
+    <li>Open-ended check, two people diagnosing a shrinking reading group: greetings draw nothing, a result reaches the other person credited to its finder, duplicated work is caught, nothing leaks between browsers.</li>
+  </ul>
+  <div class="notes">The eight-point gap to everything-in-context is the price of restraint. The loop's job was to make that price as small as possible.</div>
+</section>
+
+<section class="slide">
+  <h2>Scaling</h2>
+  <div class="fig"><img src="fig_scaling.svg" alt="Left: tokens per reply against group size for three session lengths. Right: regimes by group size and turns, boundaries at 60 and 600 workspace items."></div>
+  <p class="small">Two calls per reply at any N; tokens grow with (N − 1) × turns × message length. Up to ~60 items: read it all. Up to ~600: retrieve over a claims index with pointers to the turns. Beyond: tiered memory with a per-person reading record and a digest that keeps provenance.</p>
+  <div class="notes">We already know the cost of the second regime: v1 to v5 were per-item retrieval, about 20 points on this benchmark. The next design has to beat that.</div>
+</section>
+
+<section class="slide">
+  <h2>Next steps</h2>
+  <ol>
+    <li><b>Larger groups, longer sessions.</b> N = 10 and 20, 20 and 50 turns: find where the whole read breaks, measure claims-index retrieval against it.</li>
+    <li><b>Harder, open-ended problems.</b> Quantities split across people; design tasks with verifiable constraints; a scientific-conversation case where the outcome is structural change in each person's model.</li>
+    <li><b>People.</b> A study with real department members: does the group end with one shared picture; the steering and equity measures the facilitation literature says to report.</li>
+    <li><b>Deployment.</b> One server, seat links, rooms, consent; then Firestore and a Cloud Function inside BOLD OS. The algorithm does not change (DEPLOYMENT.md).</li>
+  </ol>
+</section>
+
+<section class="slide">
+  <h2>Take-aways</h2>
+  <ul>
+    <li>Every assistant reading every conversation is a mediator nobody has to talk to.</li>
+    <li>Getting facts to people is not the problem. One integrated picture is.</li>
+    <li>The channel should decide whether to open, and nothing else.</li>
+  </ul>
+  <p class="small" style="margin-top:auto"><span class="badge">code</span>bold-os/paralax, branch hack/paralax, PR #23 · prompts, ledger (eval/RESULTS.md), session viewer, this talk</p>
+</section>
+
+<section class="slide refs">
+  <h2>References</h2>
+  <p>Alsobay, Rothschild, Hofman &amp; Goldstein (2025). Bringing everyone to the table. arXiv 2508.08242.</p>
+  <p>Horvitz (1999). Principles of mixed-initiative user interfaces. CHI.</p>
+  <p>Hu et al. (2026). EverMemBench. arXiv 2602.01313.</p>
+  <p>Li, Naito &amp; Shirado (2026). HiddenBench. ICML; arXiv 2505.11556.</p>
+  <p>Lu, Yuan &amp; McLeod (2012). Twenty-five years of hidden profiles in group decision making. PSPR 16.</p>
+  <p>Marschak &amp; Radner (1972). Economic theory of teams.</p>
+  <p>Mojzisch &amp; Schulz-Hardt (2010). Knowing others' preferences degrades the quality of group decisions. JPSP 98.</p>
+  <p>Parisi et al. (2026). arXiv 2605.14097.</p>
+  <p>Stasser &amp; Titus (1985). Pooling of unshared information in group decision making. JPSP 48.</p>
+  <p>Tambe (1997). Towards flexible teamwork. JAIR 7.</p>
+</section>
+
+</div>
+<div class="foot"><span>Paralax · BOLD Lab</span><span id="pos"></span></div>
+<script>
+(function(){
+"use strict";
+var slides = document.querySelectorAll(".slide"), i = 0, pos = document.getElementById("pos");
+function show(k){ i = Math.max(0, Math.min(slides.length - 1, k)); slides.forEach(function(s, j){ s.classList.toggle("on", j === i); }); pos.textContent = (i + 1) + " / " + slides.length; location.hash = "s" + (i + 1); }
+document.addEventListener("keydown", function(e){
+  if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") show(i + 1);
+  else if (e.key === "ArrowLeft" || e.key === "PageUp") show(i - 1);
+  else if (e.key === "n") document.body.classList.toggle("notes");
+  else if (e.key === "Home") show(0);
+  else if (e.key === "End") show(slides.length - 1);
+});
+document.addEventListener("click", function(e){ if (e.target.closest("a")) return; show(e.clientX > innerWidth / 2 ? i + 1 : i - 1); });
+var m = location.hash.match(/^#s(\d+)$/); show(m ? +m[1] - 1 : 0);
+})();
+</script>
+</body>
+</html>

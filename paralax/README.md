@@ -9,8 +9,34 @@ the person each item came from. If not, it says nothing about the others.
 Each person sees only their own conversation: no notifications, no board, no messages they
 didn't ask for.
 
-It is a standalone prototype: two Python files and one HTML page, with no npm, Firebase or
+It is a standalone prototype: two Python files and two HTML pages, with no npm, Firebase or
 emulators. It does not touch the rest of BOLD OS.
+
+## The algorithm (the main result)
+
+For each person P, before each reply, the assistant runs these steps. The prompts are the
+data: `SELECT_SYSTEM` in [`workspace.py`](workspace.py) is the switch, `AGENT_SYSTEM` in
+[`server.py`](server.py) is the reply, and [`handle_send`](server.py) is the flow.
+
+1. **Workspace.** The shared global workspace is the ordered record of what every person has
+   typed: author, turn id, text, and the assistant turn before it as context. Assistant text
+   is never in it. Nothing is extracted or summarised.
+2. **Switch.** One background call reads P's recent conversation and the other people's
+   contributions and answers one question: does anything here bear on what P is working on,
+   given that P is weighing, choosing, asserting or about to act? It closes only for
+   greetings, small talk, remarks about the tool, or before P has said what they are working
+   on. It may also name one open question of another person that P looks placed to answer.
+3. **Read.** If the switch opens, the whole workspace goes into the reply prompt as raw
+   attributed text, with items P's assistant has read before marked as such.
+4. **Reply.** The assistant integrates what bears on P's work into one picture organised by
+   the courses of action P is weighing, credits each item by name, keeps a report apart from a
+   supposition, passes on facts and plans but never others' preferences, and may end with one
+   question asking P for the fact someone else needs. If the switch is closed it says nothing
+   about the others.
+
+Why these choices, each measured against the alternative on the same sessions, are in
+[`eval/RESULTS.md`](eval/RESULTS.md). The talk is in [`talk/`](talk/) and the plan for one
+server with users on different computers is in [`DEPLOYMENT.md`](DEPLOYMENT.md).
 
 ## Run it
 
