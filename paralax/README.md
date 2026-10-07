@@ -179,6 +179,17 @@ with the same seeds and replicated (a scoreboard, eliminate-then-compare, a shar
 brief); none held up, and the adopted algorithm is unchanged apart from a decision round at
 the end of a session. That gap is the open problem.
 
+A third round (8 Oct; `eval/RESULTS.md`, "Conclusion of the night") tested the structural claim
+at eight people under a fixed meeting length (the chat arm takes `--floor`, speaking slots per
+round; `eval/groupsize.py` compares across runs): the room held (.75 to .71) and Paralax fell to
+it (.86 to .74, p = .04) with delivery intact. `eval/relay.py` found that 60% of final-round
+replies tell the person what the others chose, against the reply rule; two candidates that
+removed the relay (v11, a rule; v12, one check call and one rewrite, both kept behind
+`PARALAX_VARIANT` for the record) changed nothing beyond noise and cost at five people, so
+neither is adopted. A stronger reply model (gemini-3.8-flash) did not move the Alsobay numbers,
+and a persona style meant to model human reticence proved not answer-neutral, so costs of
+talking are now imposed structurally in the harness rather than by trait text.
+
 The version history, with what each change was meant to fix and what it did, is in
 `eval/RESULTS.md`. The two findings that drove the design: delivering facts is not the
 bottleneck, integrating them in one picture is; and relation labels such as "contradicts"

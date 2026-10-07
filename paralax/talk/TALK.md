@@ -271,6 +271,34 @@ benchmarks before anything changes.
 
 ---
 
+## 14b. Eight people, and the relay of choices
+
+![eight people and the relay](fig_groupsize.svg)
+
+- Eight department personas, the same meeting length: the room gets the same thirty posts as
+  five people had (five speaking slots a round), or everyone speaks. Four people hold a
+  hidden fact, four hold only the shared facts.
+- The room holds (.75 → .71, or .68 with everyone speaking). Paralax falls to it (.86 → .74,
+  p = .04) with delivery intact: 86 of 94 hidden facts stated, 84 reached someone else.
+- Why: 60% of final-round replies tell the person what the others chose, against the reply
+  rule. With three or four holders in five, the relayed majority is right; with four in eight
+  it often is not.
+- Removing the relay does not help. A stronger wording (v11) halves it and is a wash; a check
+  and rewrite pass (v12) removes it (8-11% of replies) and is a wash at eight, a loss at five
+  and on the Alsobay task. Neither is adopted.
+- A stronger reply model (gemini-3.8-flash) leaves the Alsobay numbers where they were. The
+  model is not the limit.
+- A persona trait meant to model human reticence moved half the people onto the right answer
+  before anyone spoke. Costs of talking must be imposed structurally, never by trait text.
+
+*Say:* This is the night after the submission. The structural claim, that private channels
+beat a room as the group grows, is not shown with simulated people: they read everything and
+get their facts out in thirty posts. What we found instead is a measured rule violation that
+turned out not to be the cause. That is worth knowing: the next experiments are not more
+reply rules.
+
+---
+
 ## 15. Scaling
 
 ![scaling](fig_scaling.svg)
@@ -300,16 +328,17 @@ types, and only the host sees everything.
 
 ## 17. Next steps
 
-1. **The integrator's reasoning.** The Alsobay gap is a reasoning failure with full
-   information in view. Candidates: a stronger reply model, a verification pass that checks
-   the reply's conclusion against the brief, and an explicit "what would change my mind"
-   step. Each gets both benchmarks and replication.
-2. **Larger groups and longer sessions.** Generated tasks with one fact per person at 10 and
-   20 people; drip-fed facts over 20 and 50 rounds; a seminar room with airtime and attention
-   limits (Diehl & Stroebe 1987; Gallupe et al. 1992), where direct talk is expected to
-   degrade and Paralax to hold.
-3. **People.** The Alsobay task on their open platform (GRAIL) with real department members,
-   pre-registered on the one outcome their facilitator did not move: groups choosing Eldoron.
+1. **The standing of what people type.** Replies carry workarounds, reassurances and
+   recollections as reports (17-23% of replies treat an anecdote as evidence). A judge on
+   the people's turns labels each as report, supposition or workaround before the reply reads
+   it; measured against the anecdote rate and on both benchmarks, with replication.
+2. **A scoreboard the person can see.** The in-chat facilitator wins on the Alsobay task with
+   one public tally that persists across turns; a private tally inside each reply (v8)
+   failed. The candidate is a tally the person keeps in view, tested against the facilitator.
+3. **Costs of talking, imposed structurally.** Reading budgets and speaking slots for the
+   simulated people, since trait text is not answer-neutral; then real people on the meeting
+   server, where the costs are real, pre-registered on the Alsobay outcome their facilitator
+   did not move.
 4. **Deployment.** Sign-in and consent on the server, then Firestore and a Cloud Function
    inside BOLD OS. The algorithm does not change.
 
@@ -322,6 +351,8 @@ types, and only the host sees everything.
   the integrator itself is.
 - The channel should decide whether to open, and nothing else.
 - Replicate on two benchmarks before adopting anything.
+- A measured rule violation is not a cause until removing it changes the outcome. The relay
+  of choices was real; removing it changed nothing.
 - Code, prompts, ledger, talk and server: `bold-os/paralax`, branch `hack/paralax`, PR #23.
 
 ---

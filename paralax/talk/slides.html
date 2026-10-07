@@ -245,6 +245,20 @@ code{font-family:Menlo,Consolas,monospace;font-size:.85em;background:var(--surfa
 </section>
 
 <section class="slide">
+  <h2>Eight people, and the relay of choices</h2>
+  <div class="two" style="grid-template-columns:1.55fr 1fr">
+    <div class="fig"><img src="fig_groupsize.svg" alt="Left: individual accuracy at five and eight people for the room and for Paralax; the room holds and Paralax falls to it. Right: relay rate against accuracy for the adopted algorithm, v11 and v12 at both sizes; removing the relay changes nothing beyond noise."></div>
+    <ul class="small" style="font-size:19px">
+      <li>Same meeting length, eight personas, four with a hidden fact. The room holds (.75 to .71). Paralax falls to it (.86 to .74, p = .04) with 84 of 94 facts delivered.</li>
+      <li>60% of final-round replies tell the person what others chose, against the rule. At five the relayed majority is right; at eight it often is not.</li>
+      <li>Removing the relay (v11 wording; v12 check and rewrite, to 8-11%) changes nothing beyond noise, and costs at five. Neither adopted.</li>
+      <li>A stronger reply model leaves the Alsobay task where it was. The model is not the limit.</li>
+    </ul>
+  </div>
+  <div class="notes">The night after the submission. The structural claim, that private channels beat a room as the group grows, is not shown with simulated people: they read everything and get their facts out in thirty posts. What we found instead is a measured rule violation that turned out not to be the cause. A persona trait meant to model human reticence moved half the people onto the right answer before anyone spoke, so costs of talking must be imposed structurally, never by trait text. The next experiments are not more reply rules.</div>
+</section>
+
+<section class="slide">
   <h2>Scaling</h2>
   <div class="fig"><img src="fig_scaling.svg" alt="Left: tokens per reply against group size for three session lengths. Right: regimes by group size and turns, boundaries at 60 and 600 workspace items."></div>
   <p class="small">Two calls per reply at any N; tokens grow with (N − 1) × turns × message length. Up to ~60 items: read it all. Up to ~600: retrieve over a claims index with pointers to the turns. Beyond: tiered memory with provenance.</p>
@@ -259,9 +273,9 @@ code{font-family:Menlo,Consolas,monospace;font-size:.85em;background:var(--surfa
 <section class="slide">
   <h2>Next steps</h2>
   <ol>
-    <li><b>The integrator's reasoning.</b> The Alsobay gap is a reasoning failure with full information in view: a stronger reply model, a verification pass on the reply's conclusion, a "what would change my mind" step. Each gets both benchmarks and replication.</li>
-    <li><b>Larger groups and longer sessions.</b> One fact per person at 10 and 20 people; facts drip-fed over 20 and 50 rounds; a seminar room with airtime and attention limits, where direct talk is expected to degrade and Paralax to hold. <span class="small">(Diehl &amp; Stroebe 1987; Gallupe et al. 1992)</span></li>
-    <li><b>People.</b> The Alsobay task on their open platform with real department members, pre-registered on the outcome their facilitator did not move.</li>
+    <li><b>The standing of what people type.</b> Replies carry workarounds, reassurances and recollections as reports (17-23% treat an anecdote as evidence). A judge on the people's turns labels each as report, supposition or workaround before the reply reads it; measured against the anecdote rate on both benchmarks, with replication.</li>
+    <li><b>A scoreboard the person can see.</b> The in-chat facilitator wins on the Alsobay task with one public tally that persists; a private tally inside each reply (v8) failed. The candidate is a tally the person keeps in view, tested against the facilitator.</li>
+    <li><b>Costs of talking, imposed structurally.</b> Reading budgets and speaking slots for the simulated people, since trait text is not answer-neutral; then real people on the meeting server, where the costs are real, pre-registered on the outcome their facilitator did not move.</li>
     <li><b>Deployment.</b> Sign-in and consent on the server, then Firestore and a Cloud Function inside BOLD OS. The algorithm does not change.</li>
   </ol>
 </section>
@@ -273,6 +287,7 @@ code{font-family:Menlo,Consolas,monospace;font-size:.85em;background:var(--surfa
     <li>Getting facts to people is not the problem. One integrated picture is, and on hard tasks the integrator itself is.</li>
     <li>The channel should decide whether to open, and nothing else.</li>
     <li>Replicate on two benchmarks before adopting anything.</li>
+    <li>A measured rule violation is not a cause until removing it changes the outcome. The relay of choices was real; removing it changed nothing.</li>
   </ul>
   <p class="small" style="margin-top:auto"><span class="badge">code</span>bold-os/paralax, branch hack/paralax, PR #23 · prompts, ledger (eval/RESULTS.md), session viewer, server, this talk</p>
 </section>
