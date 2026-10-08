@@ -119,35 +119,19 @@
 
   // --- talk order ------------------------------------------------------------
   // A session's talks come from the programme, plus any added from this page
-  // (createTalk; collabWeekTalks with added: true), after them by default.
-  // `talkOrder` (talk slugs, or titles for talks without a page) reorders
-  // them. When the programme's talks have start times, the times stay with
-  // their slots and the talks move between them.
+  // (createTalk; collabWeekTalks with added: true). `talkOrder` reorders them;
+  // their times follow from the order (collab-week-talk-times.js).
 
-  function talkKey(t){ return t.slug || t.title; }
+  var talkKey = CollabWeekTalkTimes.key;
 
   function addedTalks(){
     return Object.keys(talkEdits).map(function(k){ return talkEdits[k]; })
-      .filter(function(t){ return t.added; })
-      .sort(function(a, b){ return (a.createdAt || 0) - (b.createdAt || 0); });
+      .filter(function(t){ return t.added; });
   }
 
   function allTalks(){ return (base.talks || []).concat(addedTalks()); }
 
-  function orderedTalks(order){
-    var talks = allTalks();
-    if (order && order.length) {
-      var pos = function(t){ var i = order.indexOf(talkKey(t)); return i < 0 ? order.length : i; };
-      talks = talks.map(function(t, i){ return { t: t, i: i }; })
-        .sort(function(a, b){ return (pos(a.t) - pos(b.t)) || (a.i - b.i); })
-        .map(function(x){ return x.t; });
-    }
-    var slots = base.talks || [];
-    if (!slots.some(function(t){ return t.time; })) return talks;
-    return talks.map(function(t, i){
-      return Object.assign({}, t, { time: i < slots.length ? slots[i].time : t.added ? t.time : '' });
-    });
-  }
+  function orderedTalks(order){ return CollabWeekTalkTimes.schedule(base.talks, addedTalks(), order, base.time); }
 
   function orderHtml(){
     var byKey = {};
@@ -201,19 +185,25 @@
 
   // --- adding a talk ----------------------------------------------------------
 
+  var TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // as in functions/index.js
   var ADD_FIELDS = [
     { key: 'title', label: 'Title' },
-    { key: 'duration', label: 'Duration', placeholder: 'e.g. 15 min' },
-    { key: 'time', label: 'Time', placeholder: 'e.g. 14:10–14:25 (optional)' }
+    { key: 'type', label: 'Type', type: 'select' },
+    { key: 'duration', label: 'Duration (minutes)', type: 'number', placeholder: 'e.g. 10' }
   ];
 
   function addFormHtml(){
     return '<div class="edit-form add-talk">' + ADD_FIELDS.map(function(f){
+      var dflt = { pitches: 'pitch', keynote: 'keynote' }[base.type] || 'research-talk';
       return '<div class="edit-field"><label for="a_' + f.key + '">' + f.label + '</label>' +
-        '<input type="text" id="a_' + f.key + '" placeholder="' + esc(f.placeholder || '') + '"></div>' +
+        (f.type === 'select'
+          ? '<select id="a_' + f.key + '">' + TALK_TYPES.map(function(o){
+              return '<option value="' + o + '"' + (o === dflt ? ' selected' : '') + '>' + esc(TYPES[o] || o) + '</option>';
+            }).join('') + '</select>'
+          : '<input type="' + (f.type || 'text') + '" id="a_' + f.key + '"' + (f.type === 'number' ? ' min="1" step="1"' : '') + ' placeholder="' + esc(f.placeholder || '') + '">') + '</div>' +
         (f.key === 'title' ? '<div class="edit-field"><span class="edit-label">Speakers</span><div id="addSpeakers"></div></div>' : '');
     }).join('') +
-      '<p class="edit-hint">Then open the talk to add its abstract and presentation.</p>' +
+      '<p class="edit-hint">Its time follows from its place in the talk order and the durations. Then open the talk to add its abstract and presentation.</p>' +
       '<div class="field-error" id="addError"' + (addError ? '' : ' hidden') + '>' + esc(addError) + '</div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="addSave"' + (addBusy ? ' disabled' : '') + '>Add talk</button>' +
       '<button class="btn" type="button" id="addCancel"' + (addBusy ? ' disabled' : '') + '>Cancel</button></div></div>';
@@ -229,8 +219,9 @@
 
   function saveAdd(){
     if (addBusy) return;
-    var data = { sessionSlug: base.slug, type: { pitches: 'pitch', 'research-talks': 'research-talk' }[base.type] || '' };
+    var data = { sessionSlug: base.slug };
     ADD_FIELDS.forEach(function(f){ data[f.key] = el('a_' + f.key).value.trim(); });
+    data.duration = Number(data.duration) > 0 ? Math.round(Number(data.duration)) + ' min' : '';
     var spk = CollabWeekSpeakers.toSave(addSpeakerRows);
     if (!data.title) addError = 'The title can’t be empty.';
     else if (spk.error) addError = spk.error;
@@ -310,9 +301,9 @@
         ? '<div id="leadRows"></div>'
         : '<p class="edit-static">' + leadsHtml(s.leads) + '</p><p class="edit-hint">Only PIs and admins can change the leads.</p>') + '</div>';
     });
-    if ((base.talks || []).length > 1) html += '<div class="edit-field"><span class="edit-label">Talk order</span>' +
+    if (allTalks().length > 1) html += '<div class="edit-field"><span class="edit-label">Talk order</span>' +
       '<ul class="session-talks talk-order" id="talkOrder"></ul>' +
-      (base.talks.some(function(t){ return t.time; }) ? '<p class="edit-hint">Start times stay in place; the talks move between them.</p>' : '') + '</div>';
+      '<p class="edit-hint">Times follow the order: back to back from the session’s start when every talk has a duration, otherwise the programme’s start times stay in place.</p></div>';
     return html + '</div><div class="field-error" id="editError" hidden></div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="editSave">Save</button>' +
       '<button class="btn" type="button" id="editCancel">Cancel</button></div>';

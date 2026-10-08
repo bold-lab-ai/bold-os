@@ -39,18 +39,37 @@
 })();
 
 // Schedule — the cards are built from the programme
-// (src/_data/collabWeekSessions.js); a session's edits (title, leads, room)
-// live in Firestore's collabWeekSessions and are laid over them here.
+// (src/_data/collabWeekSessions.js, collabWeekResearchTalks.js); edits
+// since live in Firestore and are laid over them here: a session's (title,
+// leads, room) from collabWeekSessions, a morning talk's (title, type,
+// affiliation) from collabWeekTalks.
 (function(){
   var esc = BOLD.escapeHtml;
-  var cards = document.querySelectorAll('.session-card[data-session]');
+  var cards = document.querySelectorAll('.session-card[data-session], .session-card[data-talk]');
   if (!cards.length || !BOLD.getAuth()) return;
   var db = null;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
-  var unsubscribe = null;
+  var TYPES = JSON.parse(document.getElementById('scheduleTypes').textContent) || {};
+  var unsubscribe = null, unsubscribeTalks = null;
   BOLD.onUser(function(user){
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    if (unsubscribeTalks) { unsubscribeTalks(); unsubscribeTalks = null; }
     if (!user) return;
+    unsubscribeTalks = db.collection('collabWeekTalks').onSnapshot(function(snap){
+      snap.forEach(function(doc){
+        var t = doc.data();
+        Array.prototype.forEach.call(document.querySelectorAll('.session-card[data-talk="' + doc.id + '"]'), function(card){
+          if (t.title) card.querySelector('.session-title').textContent = t.title;
+          if (t.type && TYPES[t.type]) {
+            var b = card.querySelector('.type-badge');
+            b.className = 'type-badge type-' + t.type;
+            b.textContent = TYPES[t.type];
+          }
+          if (t.affiliation !== undefined) card.querySelector('.session-who').textContent =
+            card.getAttribute('data-speaker') + (t.affiliation ? ' · ' + t.affiliation : '');
+        });
+      });
+    }, function(err){ console.error('[BOLD Collaboration Week] loading talk edits failed', err); });
     unsubscribe = db.collection('collabWeekSessions').onSnapshot(function(snap){
       snap.forEach(function(doc){
         var s = doc.data();

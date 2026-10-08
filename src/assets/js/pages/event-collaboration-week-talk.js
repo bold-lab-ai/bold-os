@@ -9,8 +9,8 @@
 //
 // A talk added from its session's page has no programme entry: it's all in
 // collabWeekTalks/{slug} (added: true), shown by the one page
-// event-collaboration-week-talk.html?talk=<slug>, where its duration and time
-// are edited too, and its session's leads and PIs/admins can remove it. Its
+// event-collaboration-week-talk.html?talk=<slug>, where its duration is
+// edited too, and its session's leads and PIs/admins can remove it. Its
 // speakers are people (collab-week-speakers.js), set by those same leads and
 // PIs/admins, and take the place of the Presenters list.
 (function(){
@@ -32,8 +32,11 @@
 
   var NOT_EDITOR = 'Only the talk’s presenters, the session’s leads, PIs and admins can edit it';
 
+  var TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // as in functions/index.js
+
   var FIELDS = [
     { key: 'title', label: 'Title', input: 'text' },
+    { key: 'type', label: 'Type', input: 'select', options: TALK_TYPES },
     { key: 'affiliation', label: 'Affiliation', input: 'text' },
     { key: 'presentationUrl', label: 'Presentation', input: 'text', placeholder: 'https://…', hint: 'Slides, a shared doc or a recording.' },
     { key: 'notes', label: 'Notes', input: 'text' },
@@ -41,10 +44,9 @@
     { key: 'bio', label: 'About the speaker', input: 'area', rows: 6 }
   ];
 
-  var ADDED_FIELDS = [FIELDS[0],
-    { key: 'duration', label: 'Duration', input: 'text', placeholder: 'e.g. 15 min' },
-    { key: 'time', label: 'Time', input: 'text', placeholder: 'e.g. 14:10–14:25' }
-  ].concat(FIELDS.slice(1));
+  var ADDED_FIELDS = [FIELDS[0], FIELDS[1],
+    { key: 'duration', label: 'Duration (minutes)', input: 'number', placeholder: 'e.g. 10', hint: 'Its time follows from its place in the session’s talk order.' }
+  ].concat(FIELDS.slice(2));
   function fields(){ return added ? ADDED_FIELDS : FIELDS; }
 
   // An added talk's session, venue and back link, from its Firestore doc.
@@ -53,7 +55,8 @@
     var locations = JSON.parse(el('talkLocations').textContent) || [];
     var s = sessions.filter(function(x){ return x.slug === doc.sessionSlug; })[0] || {};
     venue = locations.filter(function(l){ return l.slug === s.locationSlug; })[0] || {};
-    base = { slug: slug, sessionSlug: doc.sessionSlug, sessionTitle: s.title || '', day: s.day || '' };
+    base = { slug: slug, sessionSlug: doc.sessionSlug, sessionTitle: s.title || '', day: s.day || '',
+      sessionTime: s.time || '', sessionTalks: s.talks || [] };
     var back = el('talkBack');
     if (back && s.slug) { back.href = 'event-collaboration-week-session-' + s.slug + '.html'; back.textContent = '← Back to ' + (s.title || 'the session'); }
     document.title = (doc.title || 'Talk') + ' | BOLD Collaboration Week';
@@ -134,7 +137,12 @@
     return peoplePromise;
   }
 
-  function talk(){ return Object.assign({}, base, saved || {}); }
+  function talk(){
+    var t = Object.assign({}, base, saved || {});
+    if (timed !== null) t.time = timed;
+    else if (added) t.time = '';
+    return t;
+  }
 
   function viewHtml(){
     if (missing) return '<p class="detail-muted">This talk doesn’t exist — it may have been removed from its session.</p>';
@@ -168,9 +176,14 @@
       (t.duration ? ' · ' + esc(t.duration) : '') + (added ? '' : ' — speaker, time and duration are set with the schedule.') + '</p><div class="edit-form">';
     fields().forEach(function(f){
       var id = 'f_' + f.key, v = t[f.key] || '';
+      if (f.input === 'number') v = CollabWeekTalkTimes.minutesOf(v) || '';
       html += '<div class="edit-field"><label for="' + id + '">' + esc(f.label) + '</label>' +
-        (f.input === 'text'
-          ? '<input type="text" id="' + id + '" value="' + esc(v) + '" placeholder="' + esc(f.placeholder || '') + '">'
+        (f.input === 'select'
+          ? '<select id="' + id + '">' + (v ? '' : '<option value="">Choose…</option>') + f.options.map(function(o){
+              return '<option value="' + esc(o) + '"' + (o === v ? ' selected' : '') + '>' + esc(TYPES[o] || o) + '</option>';
+            }).join('') + '</select>'
+          : f.input !== 'area'
+          ? '<input type="' + f.input + '" id="' + id + '" value="' + esc(v) + '"' + (f.input === 'number' ? ' min="1" step="1"' : '') + ' placeholder="' + esc(f.placeholder || '') + '">'
           : '<textarea id="' + id + '" rows="' + f.rows + '">' + esc(v) + '</textarea>') +
         (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
       if (f.key === 'title') html += presentersHtml();
@@ -219,6 +232,8 @@
   function readFields(){
     var edits = {};
     fields().forEach(function(f){ edits[f.key] = el('f_' + f.key).value.trim(); });
+    if (!edits.type) delete edits.type;  // a programme talk with no type yet, left unchosen
+    if ('duration' in edits) edits.duration = Number(edits.duration) > 0 ? Math.round(Number(edits.duration)) + ' min' : '';
     return edits;
   }
 
@@ -249,7 +264,28 @@
   // Re-render the form (to show busy/error) without losing what was typed.
   function keepTyped(edits){
     render();
-    fields().forEach(function(f){ el('f_' + f.key).value = edits[f.key]; });
+    fields().forEach(function(f){
+      el('f_' + f.key).value = f.input === 'number' ? (CollabWeekTalkTimes.minutesOf(edits[f.key]) || '') : (edits[f.key] || '');
+    });
+  }
+
+  // This talk's time, worked out with the rest of its session's talks: their
+  // order (the session's talkOrder) and the ones added on the site
+  // (collab-week-talk-times.js, as on the session page).
+  var timed = null;         // the computed time, once known
+  function loadTime(){
+    if (!base.sessionSlug) return;
+    Promise.all([
+      db.collection('collabWeekSessions').doc(base.sessionSlug).get(),
+      db.collection('collabWeekTalks').where('sessionSlug', '==', base.sessionSlug).get()
+    ]).then(function(res){
+      var order = res[0].exists ? res[0].data().talkOrder : null;
+      var addedTalks = res[1].docs.map(function(d){ return d.data(); }).filter(function(t){ return t.added; });
+      var mine = CollabWeekTalkTimes.schedule(base.sessionTalks, addedTalks, order, base.sessionTime)
+        .filter(function(t){ return t.slug === slug; })[0];
+      timed = mine ? mine.time : null;
+      if (!editing) render();
+    }).catch(function(err){ console.error('[BOLD Collaboration Week] working out the talk’s time failed', err); });
   }
 
   BOLD.onUser(function(user){
@@ -259,24 +295,11 @@
       saved = snap.exists ? snap.data() : null;
       if (added) {
         missing = !saved || !saved.added;
-        if (!missing) useAddedDoc(saved);
+        if (!missing) { useAddedDoc(saved); loadTime(); }
       }
       if (!editing) render();
     }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the talk failed', err); });
-    // A reordered session moves its talks between the start-time slots.
-    if (!added && base.sessionSlug && (base.slotTimes || []).some(Boolean)) {
-      db.collection('collabWeekSessions').doc(base.sessionSlug).get().then(function(snap){
-        var order = snap.exists && snap.data().talkOrder;
-        if (!order || !order.length) return;
-        // The programme's talks, then any added ones in the order (as the session page does).
-        var all = base.sessionTalkKeys.concat(order.filter(function(k){ return base.sessionTalkKeys.indexOf(k) < 0; }));
-        var keys = all.map(function(k, i){ return { k: k, i: i }; });
-        var pos = function(k){ var i = order.indexOf(k); return i < 0 ? order.length : i; };
-        keys.sort(function(a, b){ return (pos(a.k) - pos(b.k)) || (a.i - b.i); });
-        var slot = keys.map(function(x){ return x.k; }).indexOf(base.slug);
-        if (slot >= 0 && base.slotTimes[slot] !== base.time) { base.time = base.slotTimes[slot]; if (!editing) render(); }
-      }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the session failed', err); });
-    }
+    if (!added) loadTime();
     editTalk({ slug: slug }).then(function(r){
       canEdit = !!r.data.canEdit;
       canSetPresenters = !!r.data.canSetPresenters;

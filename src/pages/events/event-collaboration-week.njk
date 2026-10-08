@@ -33,7 +33,7 @@ permalink: "event-collaboration-week.html"
       <div class="slot">
         <div class="slot-time">{{ block.time }}</div>
         <div class="slot-sessions">
-          <a class="session-card" href="event-collaboration-week-talk-{{ t.slug }}.html">
+          <a class="session-card" href="event-collaboration-week-talk-{{ t.slug }}.html" data-talk="{{ t.slug }}" data-speaker="{{ t.speaker }}">
             <span class="type-badge type-{{ t.type }}">{{ collabWeekTypes[t.type] }}</span>
             <span class="session-title">{{ t.title }}</span>
             <span class="session-who">{{ t.speaker }}{% if t.affiliation %} &middot; {{ t.affiliation }}{% endif %}</span>
@@ -75,3 +75,4 @@ permalink: "event-collaboration-week.html"
   </div>
 </main>
 
+<script type="application/json" id="scheduleTypes">{{ collabWeekTypes | jsonScript | safe }}</script>

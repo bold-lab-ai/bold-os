@@ -8,7 +8,9 @@
 //
 // A roster person is found by typing: the matches (name or email, accents
 // and case ignored) drop down under the box, picked by click or ↑/↓ + Enter;
-// the last option turns what's typed into a new speaker.
+// the last option turns what's typed into a new speaker. "Refresh from
+// Slack" (refreshPeople) pulls in people who joined Slack since the roster's
+// last daily sync, and reloads `people` in place.
 window.CollabWeekSpeakers = (function(){
   var esc = BOLD.escapeHtml;
   var EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -57,7 +59,9 @@ window.CollabWeekSpeakers = (function(){
   function mount(wrap, rows, people, focus){
     wrap.innerHTML = rows.map(function(r, i){ return rowHtml(r, i, rows.length); }).join('') +
       '<button type="button" class="btn-text spk-add">+ Add a speaker</button>' +
-      '<p class="edit-hint">Speakers with an email can edit the talk once they sign in with it.</p>';
+      '<p class="edit-hint">Speakers with an email can edit the talk once they sign in with it. ' +
+      'Someone on Slack missing from the list? <button type="button" class="btn-text spk-refresh">Refresh from Slack</button>' +
+      '<span class="spk-refresh-msg"></span></p>';
     var redraw = function(f){ mount(wrap, rows, people, f); };
 
     wrap.querySelectorAll('.spk-q').forEach(function(input){
@@ -121,6 +125,25 @@ window.CollabWeekSpeakers = (function(){
     });
     wrap.querySelectorAll('.spk-remove').forEach(function(btn){
       btn.addEventListener('click', function(){ rows.splice(Number(btn.getAttribute('data-i')), 1); redraw(); });
+    });
+    var refresh = wrap.querySelector('.spk-refresh');
+    refresh.addEventListener('click', function(){
+      var msg = wrap.querySelector('.spk-refresh-msg');
+      refresh.disabled = true; msg.textContent = ' Refreshing…';
+      firebase.app().functions('europe-west2').httpsCallable('refreshPeople')().then(function(r){
+        return firebase.firestore(BOLD.getApp()).collection('people').get().then(function(snap){
+          var fresh = snap.docs.map(function(d){ return d.data(); }).filter(function(p){ return p.email; })
+            .sort(function(a, b){ return (a.name || '').localeCompare(b.name || ''); });
+          people.length = 0;
+          Array.prototype.push.apply(people, fresh);
+          redraw();
+          var n = r.data.added || 0;
+          wrap.querySelector('.spk-refresh-msg').textContent = ' ' + (n ? n + (n === 1 ? ' person' : ' people') + ' added.' : 'The list is up to date.');
+        });
+      }).catch(function(err){
+        console.error('[BOLD Collaboration Week] refreshPeople failed', err);
+        refresh.disabled = false; msg.textContent = ' ' + ((err && err.message) || 'Couldn’t refresh — try again.');
+      });
     });
     wrap.querySelector('.spk-add').addEventListener('click', function(){
       rows.push({ name: '', email: '', isNew: false });

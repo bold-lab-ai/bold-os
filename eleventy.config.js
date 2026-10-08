@@ -33,8 +33,9 @@ export default function (eleventyConfig) {
     const inSessions = (data.collabWeekSessions || []).flatMap((session) => (session.talks || [])
       .filter((talk) => talk.slug)
       .map((talk) => ({ ...talk, abstract: abstracts[talk.slug] || '', sessionSlug: session.slug, sessionTitle: session.title, locationSlug: session.locationSlug, day: session.day,
-        // For a reordered session (talkOrder): every talk's key and the slots' start times.
-        sessionTalkKeys: session.talks.map((t) => t.slug || t.title), slotTimes: session.talks.map((t) => t.time || '') })));
+        // The session's start and its programme talks, for working out this talk's time
+        // once talks are reordered or added (collab-week-talk-times.js).
+        sessionTime: session.time, sessionTalks: session.talks.map((t) => ({ slug: t.slug, title: t.title, duration: t.duration, time: t.time })) })));
     return [...(data.collabWeekResearchTalks || []), ...inSessions];
   });
 

@@ -1689,8 +1689,9 @@ exports.approveHackathonJoins = onCall(
 // joined Slack, updates changed names and emails, and drops deactivated
 // accounts. Bots and accounts without an email are skipped. Needs the bot
 // token's users:read and users:read.email scopes; if Slack refuses, or
-// returns nobody with an email, nothing is written. Run it now with:
-//   gcloud scheduler jobs run firebase-schedule-syncPeople-europe-west2 --location europe-west2 --project bold-d7ff2
+// returns nobody with an email, nothing is written. Anyone signed in can
+// also run it from a person picker ("Refresh from Slack", refreshPeople),
+// at most once a minute (meta/peopleSync).
 async function slackMembers(token){
   const members = [];
   let cursor = '';
@@ -1706,39 +1707,58 @@ async function slackMembers(token){
   return members;
 }
 
+// → { added, updated, removed }
+async function syncPeopleFromSlack(token){
+  const members = await slackMembers(token);
+  const people = members
+    .filter(u => !u.deleted && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
+    .map(u => ({ slackId: u.id, email: u.profile.email, name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
+  if (!people.length) {
+    logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
+    throw new Error('Slack returned nobody with an email (is users:read.email granted?)');
+  }
+  const gone = members.filter(u => u.deleted).map(u => u.id);
+  const existing = await db.collection('people').get();
+  const current = {};
+  existing.docs.forEach(d => { current[d.id] = d.data(); });
+
+  const writes = [];
+  people.forEach(p => {
+    const was = current[p.slackId];
+    if (!was || was.name !== p.name || was.email !== p.email) writes.push({ id: p.slackId, data: p, added: !was });
+  });
+  const deletes = gone.filter(id => current[id]);
+  const ops = writes.map(w => batch => batch.set(db.collection('people').doc(w.id), w.data, { merge: true }))
+    .concat(deletes.map(id => batch => batch.delete(db.collection('people').doc(id))));
+  for (let i = 0; i < ops.length; i += 400) {
+    const batch = db.batch();
+    ops.slice(i, i + 400).forEach(op => op(batch));
+    await batch.commit();
+  }
+  const counts = { added: writes.filter(w => w.added).length, updated: writes.filter(w => !w.added).length, removed: deletes.length };
+  await db.collection('meta').doc('peopleSync').set(Object.assign({ at: Date.now() }, counts));
+  logger.info('syncPeople done', Object.assign({ members: members.length, people: people.length }, counts));
+  return counts;
+}
+
 exports.syncPeople = onSchedule(
   { schedule: '0 6 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
-  async function(){
-    const members = await slackMembers(SLACK_BOT_TOKEN.value());
-    const people = members
-      .filter(u => !u.deleted && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
-      .map(u => ({ slackId: u.id, email: u.profile.email, name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
-    if (!people.length) {
-      logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
-      return;
-    }
-    const gone = members.filter(u => u.deleted).map(u => u.id);
-    const existing = await db.collection('people').get();
-    const current = {};
-    existing.docs.forEach(d => { current[d.id] = d.data(); });
+  async function(){ await syncPeopleFromSlack(SLACK_BOT_TOKEN.value()); }
+);
 
-    const writes = [];
-    people.forEach(p => {
-      const was = current[p.slackId];
-      if (!was || was.name !== p.name || was.email !== p.email) writes.push({ id: p.slackId, data: p, added: !was });
-    });
-    const deletes = gone.filter(id => current[id]);
-    const ops = writes.map(w => batch => batch.set(db.collection('people').doc(w.id), w.data, { merge: true }))
-      .concat(deletes.map(id => batch => batch.delete(db.collection('people').doc(id))));
-    for (let i = 0; i < ops.length; i += 400) {
-      const batch = db.batch();
-      ops.slice(i, i + 400).forEach(op => op(batch));
-      await batch.commit();
+// → { added, updated, removed, at }. A sync in the last minute is reported, not repeated.
+exports.refreshPeople = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    callerEmail(request);
+    const last = (await db.collection('meta').doc('peopleSync').get()).data();
+    if (last && Date.now() - last.at < 60 * 1000) return last;
+    try {
+      return Object.assign(await syncPeopleFromSlack(SLACK_BOT_TOKEN.value()), { at: Date.now() });
+    } catch (err) {
+      logger.error('refreshPeople failed', { error: String(err && err.message || err) });
+      throw new HttpsError('unavailable', 'Couldn’t read the member list from Slack.');
     }
-    logger.info('syncPeople done', {
-      members: members.length, people: people.length,
-      added: writes.filter(w => w.added).length, updated: writes.filter(w => !w.added).length, removed: deletes.length,
-    });
   }
 );
 
@@ -1755,13 +1775,15 @@ exports.syncPeople = onSchedule(
 // event-collaboration-week-talks.json, plus collabWeekSessions/{slug}.leadEmails)
 // or a PI/admin can edit a talk. Only leads and PIs/admins can set who the
 // presenters are, add a talk to a session or remove an added one. A
-// programme talk's speaker, time and duration stay with the schedule; an
-// added talk's are edited here too. An added talk's speakers are people
+// programme talk's speaker and duration stay with the schedule; an added
+// talk's are edited here too. No talk's time is stored here: the pages work
+// it out from its session's order and durations. An added talk's speakers are people
 // ([{ name, email }]): their names make its `speaker` line and their emails
 // its presenterEmails.
 const TALKS_URL = 'https://bold-lab-ai.github.io/bold-os/event-collaboration-week-talks.json';
-const TALK_FIELDS = { title: 300, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
-const ADDED_TALK_FIELDS = Object.assign({ speaker: 300, duration: 100, time: 100 }, TALK_FIELDS);
+const TALK_FIELDS = { title: 300, type: 40, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
+const TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // labels in src/_data/collabWeekTypes.js
+const ADDED_TALK_FIELDS = Object.assign({ speaker: 300, duration: 100 }, TALK_FIELDS);
 
 // [{ name, email }] → { speakers, speaker, presenterEmails }
 function speakerFields(list){
@@ -1830,6 +1852,7 @@ function talkTextFields(edits, allowed){
   });
   if ('title' in doc && !doc.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
   if (doc.presentationUrl && !/^https?:\/\/\S+$/.test(doc.presentationUrl)) throw new HttpsError('invalid-argument', 'The presentation isn’t a link (https://…).');
+  if ('type' in doc && TALK_TYPES.indexOf(doc.type) < 0) throw new HttpsError('invalid-argument', 'A talk is a research talk, a pitch or a keynote.');
   return doc;
 }
 
@@ -1875,6 +1898,7 @@ exports.editTalk = onCall(
       presenterEmails = list.filter((e, i) => list.indexOf(e) === i);
       delete edits.presenterEmails;
     }
+    delete edits.time;  // no longer stored (see above); pages built before 2026-10-08 still send it
     const doc = talkTextFields(edits, talk.added ? ADDED_TALK_FIELDS : TALK_FIELDS);
     if (presenterEmails) doc.presenterEmails = presenterEmails;
     if (fromSpeakers) Object.assign(doc, fromSpeakers);
@@ -1889,7 +1913,8 @@ exports.editTalk = onCall(
   }
 );
 
-// data: { sessionSlug, title, speakers?: [{ name, email }], duration?, time?, type? } → { slug }.
+// data: { sessionSlug, title, speakers?: [{ name, email }], duration?, type? } → { slug }.
+// Its time isn't stored: the pages work it out from the session's order and durations.
 // Adds a talk to a session; only its leads and PIs/admins can.
 exports.createTalk = onCall(
   async (request) => {
@@ -1901,7 +1926,7 @@ exports.createTalk = onCall(
     if (!(await isFullWrite(email)) && !(await isSessionLead(catalog, email, sessionSlug))) {
       throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can add a talk.');
     }
-    const fields = talkTextFields({ title: data.title, speaker: data.speaker, duration: data.duration, time: data.time }, ADDED_TALK_FIELDS);
+    const fields = talkTextFields({ title: data.title, speaker: data.speaker, duration: data.duration, type: data.type || 'research-talk' }, ADDED_TALK_FIELDS);
     const people = data.speakers ? speakerFields(data.speakers) : { speakers: [], presenterEmails: [] };
     if (!fields.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
     const stem = fields.title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
@@ -1910,7 +1935,7 @@ exports.createTalk = onCall(
     const now = Date.now();
     const who = { email, name: request.auth.token.name || '' };
     await db.collection('collabWeekTalks').doc(slug).create(Object.assign(fields, {
-      added: true, slug, sessionSlug, type: ['pitch', 'research-talk'].indexOf(data.type) >= 0 ? data.type : '',
+      added: true, slug, sessionSlug,
     }, people, {
       createdBy: who, createdAt: now, updatedBy: who, updatedAt: now,
     }));
