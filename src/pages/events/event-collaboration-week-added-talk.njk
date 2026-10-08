@@ -1,0 +1,18 @@
+---
+permalink: "event-collaboration-week-talk.html"
+title: "Talk | BOLD Collaboration Week"
+description: "A talk at BOLD Collaboration Week."
+css: "event-collaboration-week-session"
+sdk: ["firestore", "functions"]
+scripts: ["pages/event-collaboration-week-talk.js"]
+---
+{# A talk added from its session's page (collabWeekTalks/{slug}, added: true): one page for all of them, ?talk=<slug>. #}
+<div class="detail">
+  <a class="detail-back" id="talkBack" href="event-collaboration-week.html">&larr; Back to schedule</a>
+  <div id="talkBody"><p class="detail-muted">Loading…</p></div>
+</div>
+<script type="application/json" id="talkData">null</script>
+<script type="application/json" id="talkTypes">{{ collabWeekTypes | jsonScript | safe }}</script>
+<script type="application/json" id="talkLocation">null</script>
+<script type="application/json" id="talkSessions">{{ collabWeekSessions | jsonScript | safe }}</script>
+<script type="application/json" id="talkLocations">{{ collabWeekLocations | jsonScript | safe }}</script>

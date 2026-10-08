@@ -10,6 +10,8 @@
 .detail-head{display:flex; align-items:flex-start; justify-content:space-between; gap:16px;}
 .detail-head h2{font-size:clamp(28px, 4.5vw, 40px); line-height:1.15; text-wrap:balance;}
 .detail-head .btn{flex:0 0 auto; margin-top:8px;}
+.detail-actions{flex:0 0 auto; display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px;}
+.add-talk{margin-top:18px;}
 .detail-subtitle{font-family:var(--sans); font-size:15px; color:var(--muted); margin:8px 0 0;}
 .detail-muted{color:var(--muted);}
 .detail-msg{font-family:var(--sans); font-size:13px; color:var(--muted); margin:24px 0 0;}

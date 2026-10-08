@@ -32,7 +32,8 @@
   var people = [];          // the `people` roster, for the leads picker
   var leadRows = [];        // in-progress rows while the form is open
   var orderRows = [];       // talk keys, in the order being edited
-  var talkEdits = {};       // talk slug → its edits (collabWeekTalks), e.g. title, presentationUrl
+  var talkEdits = {};       // talk slug → its edits (collabWeekTalks), e.g. title, presentationUrl; or the whole of an added talk
+  var adding = false, addBusy = false, addError = '';  // the "Add a talk" form
 
   function session(){ return Object.assign({}, base, saved || {}); }
 
@@ -116,28 +117,40 @@
   }
 
   // --- talk order ------------------------------------------------------------
-  // A session's talks come from the programme; `talkOrder` (talk slugs, or
-  // titles for talks without a page) reorders them. When the talks have start
-  // times, the times stay with their slots and the talks move between them.
+  // A session's talks come from the programme, plus any added from this page
+  // (createTalk; collabWeekTalks with added: true), after them by default.
+  // `talkOrder` (talk slugs, or titles for talks without a page) reorders
+  // them. When the programme's talks have start times, the times stay with
+  // their slots and the talks move between them.
 
   function talkKey(t){ return t.slug || t.title; }
 
+  function addedTalks(){
+    return Object.keys(talkEdits).map(function(k){ return talkEdits[k]; })
+      .filter(function(t){ return t.added; })
+      .sort(function(a, b){ return (a.createdAt || 0) - (b.createdAt || 0); });
+  }
+
+  function allTalks(){ return (base.talks || []).concat(addedTalks()); }
+
   function orderedTalks(order){
-    var talks = (base.talks || []).slice();
+    var talks = allTalks();
     if (order && order.length) {
       var pos = function(t){ var i = order.indexOf(talkKey(t)); return i < 0 ? order.length : i; };
       talks = talks.map(function(t, i){ return { t: t, i: i }; })
         .sort(function(a, b){ return (pos(a.t) - pos(b.t)) || (a.i - b.i); })
         .map(function(x){ return x.t; });
     }
+    var slots = base.talks || [];
+    if (!slots.some(function(t){ return t.time; })) return talks;
     return talks.map(function(t, i){
-      return base.talks[i].time ? Object.assign({}, t, { time: base.talks[i].time }) : t;
+      return Object.assign({}, t, { time: i < slots.length ? slots[i].time : t.added ? t.time : '' });
     });
   }
 
   function orderHtml(){
     var byKey = {};
-    (base.talks || []).forEach(function(t){ byKey[talkKey(t)] = t; });
+    allTalks().forEach(function(t){ byKey[talkKey(t)] = t; });
     return orderRows.map(function(k, i){
       var t = byKey[k];
       return '<li><span class="e">' + esc(t.title) + (t.speaker ? ' <span class="who">— ' + esc(t.speaker) + '</span>' : '') + '</span>' +
@@ -179,13 +192,59 @@
   // Always shown; greyed out, with the reason on hover, for anyone who can't edit.
   function editButton(){
     var off = canEdit() ? '' : isLead() ? 'A PI or admin has to save this session once before its leads can edit it' : NOT_EDITOR;
-    return '<button class="btn" type="button" id="editOpen"' + (off ? ' disabled title="' + esc(off) + '"' : '') + '>Edit session</button>';
+    var addOff = me && (fullWrite || isLead()) ? '' : 'Only the session’s leads, PIs and admins can add a talk';
+    return '<div class="detail-actions">' +
+      '<button class="btn" type="button" id="addTalkOpen"' + (addOff ? ' disabled title="' + esc(addOff) + '"' : '') + '>Add a talk</button>' +
+      '<button class="btn" type="button" id="editOpen"' + (off ? ' disabled title="' + esc(off) + '"' : '') + '>Edit session</button></div>';
+  }
+
+  // --- adding a talk ----------------------------------------------------------
+
+  var ADD_FIELDS = [
+    { key: 'title', label: 'Title' },
+    { key: 'speaker', label: 'Speaker' },
+    { key: 'duration', label: 'Duration', placeholder: 'e.g. 15 min' },
+    { key: 'time', label: 'Time', placeholder: 'e.g. 14:10–14:25 (optional)' }
+  ];
+
+  function addFormHtml(){
+    return '<div class="edit-form add-talk">' + ADD_FIELDS.map(function(f){
+      return '<div class="edit-field"><label for="a_' + f.key + '">' + f.label + '</label>' +
+        '<input type="text" id="a_' + f.key + '" placeholder="' + esc(f.placeholder || '') + '"></div>';
+    }).join('') +
+      '<p class="edit-hint">Then open the talk to add its abstract, presentation and presenters.</p>' +
+      '<div class="field-error" id="addError"' + (addError ? '' : ' hidden') + '>' + esc(addError) + '</div>' +
+      '<div class="edit-actions"><button class="btn btn-primary" type="button" id="addSave"' + (addBusy ? ' disabled' : '') + '>Add talk</button>' +
+      '<button class="btn" type="button" id="addCancel"' + (addBusy ? ' disabled' : '') + '>Cancel</button></div></div>';
+  }
+
+  // Re-render without losing what's been typed into the add form.
+  function renderKeepingAdd(){
+    var typed = {};
+    ADD_FIELDS.forEach(function(f){ var i = el('a_' + f.key); if (i) typed[f.key] = i.value; });
+    render();
+    ADD_FIELDS.forEach(function(f){ var i = el('a_' + f.key); if (i && typed[f.key] != null) i.value = typed[f.key]; });
+  }
+
+  function saveAdd(){
+    if (addBusy) return;
+    var data = { sessionSlug: base.slug, type: { pitches: 'pitch', 'research-talks': 'research-talk' }[base.type] || '' };
+    ADD_FIELDS.forEach(function(f){ data[f.key] = el('a_' + f.key).value.trim(); });
+    if (!data.title) { addError = 'The title can’t be empty.'; renderKeepingAdd(); return; }
+    addBusy = true; addError = ''; renderKeepingAdd();
+    callable('createTalk')(data).then(function(){
+      addBusy = false; adding = false;
+      return loadTalkEdits();
+    }).catch(function(err){
+      addBusy = false; addError = (err && err.message) || 'Couldn’t add the talk — try again.'; renderKeepingAdd();
+    });
   }
 
   function viewHtml(){
     var s = session();
     var html = badge(s.type) + '<div class="detail-head"><h2>' + esc(s.title) + '</h2>' +
       editButton() + '</div>';
+    if (adding) html += addFormHtml();
     if (s.subtitle) html += '<p class="detail-subtitle">' + esc(s.subtitle) + '</p>';
 
     var where = esc(venue.name || '') + (s.room ? ' &mdash; ' + esc(s.room) : '') +
@@ -207,9 +266,11 @@
       return '<li><a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label) + '</a></li>';
     }).join('') + '</ul>';
 
-    if (!isEmpty(s.talks)) html += section('Talks', '<ul class="session-talks">' + orderedTalks(s.talkOrder).map(function(t){
-      t = Object.assign({}, t, talkEdits[t.slug] || {});
-      var title = t.slug ? '<a href="event-collaboration-week-talk-' + esc(t.slug) + '.html">' + esc(t.title) + '</a>' : esc(t.title);
+    if (allTalks().length) html += section('Talks', '<ul class="session-talks">' + orderedTalks(s.talkOrder).map(function(t){
+      if (!t.added) t = Object.assign({}, t, talkEdits[t.slug] || {}, { time: t.time });
+      var href = t.added ? 'event-collaboration-week-talk.html?talk=' + encodeURIComponent(t.slug)
+        : t.slug ? 'event-collaboration-week-talk-' + t.slug + '.html' : '';
+      var title = href ? '<a href="' + esc(href) + '">' + esc(t.title) + '</a>' : esc(t.title);
       return '<li><span class="t">' + esc(t.time || t.duration || '') + '</span><span class="e">' + title +
         (t.speaker ? ' <span class="who">— ' + esc(t.speaker) + '</span>' : '') +
         (t.presentationUrl ? ' · <a class="talk-pres" href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">Presentation</a>' : '') +
@@ -354,7 +415,13 @@
     bodyEl.innerHTML = editing ? formHtml() : viewHtml();
     if (!editing) {
       var open = el('editOpen');
-      if (open) open.addEventListener('click', openForm);
+      if (open) open.addEventListener('click', function(){ adding = false; openForm(); });
+      var add = el('addTalkOpen');
+      if (add) add.addEventListener('click', function(){ adding = true; addError = ''; render(); el('a_title').focus(); });
+      if (adding) {
+        el('addSave').addEventListener('click', saveAdd);
+        el('addCancel').addEventListener('click', function(){ adding = false; addError = ''; render(); });
+      }
       return;
     }
     wireLeadRows();
@@ -369,7 +436,7 @@
     try {
       firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(r){
         var v = !!(r.data && r.data.fullWrite);
-        if (v !== fullWrite) { fullWrite = v; if (!editing) render(); }
+        if (v !== fullWrite) { fullWrite = v; if (!editing) (adding ? renderKeepingAdd : render)(); }
       }).catch(function(err){ console.error('[BOLD Collaboration Week] access check failed', err); });
     } catch (e){}
   }
@@ -471,7 +538,18 @@
   render();
   renderJoin();
   var unsubscribe = null;
+  // This session's talk docs: edits made on each talk's own page (title,
+  // presentation link…), and the talks added here.
+  function loadTalkEdits(){
+    return db.collection('collabWeekTalks').where('sessionSlug', '==', base.slug).get().then(function(snap){
+      talkEdits = {};
+      snap.docs.forEach(function(d){ talkEdits[d.id] = d.data(); });
+      if (!editing) (adding ? renderKeepingAdd : render)();
+    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading talk edits failed', err); });
+  }
+
   BOLD.onUser(function(user){
+    adding = false;
     me = user ? { email: user.email || '' } : null;
     fullWrite = false;
     editing = false;
@@ -481,15 +559,11 @@
     loadJoin();
     if (!user || !ref) { render(); return; }
     loadAccess();
-    // Edits to this session's talks (title, presentation link…), made on each talk's own page.
     talkEdits = {};
-    db.collection('collabWeekTalks').where('sessionSlug', '==', base.slug).get().then(function(snap){
-      snap.docs.forEach(function(d){ talkEdits[d.id] = d.data(); });
-      if (!editing) render();
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading talk edits failed', err); });
+    loadTalkEdits();
     unsubscribe = ref.onSnapshot(function(snap){
       saved = snap.exists ? snap.data() : null;
-      if (!editing) render();
+      if (!editing) (adding ? renderKeepingAdd : render)();
     }, function(err){
       console.error('[BOLD Collaboration Week] loading the session failed', err);
     });

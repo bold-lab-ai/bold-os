@@ -6,6 +6,11 @@
 // PIs/admins can set who the presenters are. Saving goes through the editTalk
 // function, which also says what the signed-in person may do. Speaker, day,
 // time and duration belong to the schedule, so they aren't edited here.
+//
+// A talk added from its session's page has no programme entry: it's all in
+// collabWeekTalks/{slug} (added: true), shown by the one page
+// event-collaboration-week-talk.html?talk=<slug>, where its speaker, duration
+// and time are edited too, and its session's leads and PIs/admins can remove it.
 (function(){
   if (!BOLD.getAuth()) return;
 
@@ -13,6 +18,9 @@
   var el = function(id){ return document.getElementById(id); };
   var bodyEl = el('talkBody');
   var base = JSON.parse(el('talkData').textContent);
+  var added = !base;        // an added talk: base comes from its Firestore doc
+  var slug = added ? (new URLSearchParams(location.search).get('talk') || '') : base.slug;
+  var missing = false;      // an added talk that doesn't exist (any more)
   var venue = JSON.parse(el('talkLocation').textContent) || {};
   var TYPES = JSON.parse(el('talkTypes').textContent) || {};
 
@@ -31,6 +39,25 @@
     { key: 'bio', label: 'About the speaker', input: 'area', rows: 6 }
   ];
 
+  var ADDED_FIELDS = [FIELDS[0],
+    { key: 'speaker', label: 'Speaker', input: 'text' },
+    { key: 'duration', label: 'Duration', input: 'text', placeholder: 'e.g. 15 min' },
+    { key: 'time', label: 'Time', input: 'text', placeholder: 'e.g. 14:10–14:25' }
+  ].concat(FIELDS.slice(1));
+  function fields(){ return added ? ADDED_FIELDS : FIELDS; }
+
+  // An added talk's session, venue and back link, from its Firestore doc.
+  function useAddedDoc(doc){
+    var sessions = JSON.parse(el('talkSessions').textContent) || [];
+    var locations = JSON.parse(el('talkLocations').textContent) || [];
+    var s = sessions.filter(function(x){ return x.slug === doc.sessionSlug; })[0] || {};
+    venue = locations.filter(function(l){ return l.slug === s.locationSlug; })[0] || {};
+    base = { slug: slug, sessionSlug: doc.sessionSlug, sessionTitle: s.title || '', day: s.day || '' };
+    var back = el('talkBack');
+    if (back && s.slug) { back.href = 'event-collaboration-week-session-' + s.slug + '.html'; back.textContent = '← Back to ' + (s.title || 'the session'); }
+    document.title = (doc.title || 'Talk') + ' | BOLD Collaboration Week';
+  }
+
   var saved = null, canEdit = false, canSetPresenters = false, editing = false, busy = false, error = '';
   var people = [];          // the `people` roster, for the presenters picker
   var presenterRows = [];   // { email, free } while the form is open
@@ -44,7 +71,7 @@
     var emails = saved && saved.presenterEmails;
     suggested = !emails;
     if (!emails) {
-      var names = String(base.speaker || '').split(/,|&|\band\b/).map(function(n){ return n.trim().toLowerCase(); }).filter(Boolean);
+      var names = String(talk().speaker || '').split(/,|&|\band\b/).map(function(n){ return n.trim().toLowerCase(); }).filter(Boolean);
       emails = people.filter(function(p){ return p.email && names.indexOf(String(p.name || '').trim().toLowerCase()) >= 0; })
         .map(function(p){ return p.email; });
     }
@@ -104,11 +131,15 @@
   function talk(){ return Object.assign({}, base, saved || {}); }
 
   function viewHtml(){
+    if (missing) return '<p class="detail-muted">This talk doesn’t exist — it may have been removed from its session.</p>';
+    if (!base) return '<p class="detail-muted">Loading…</p>';
     var t = talk();
     var html = (TYPES[t.type] ? '<span class="type-badge type-' + esc(t.type) + '">' + esc(TYPES[t.type]) + '</span>' : '') +
       '<div class="detail-head"><h2>' + esc(t.title) + '</h2>' +
+      '<div class="detail-actions">' +
+      (added ? '<button class="btn" type="button" id="talkRemove"' + (canSetPresenters ? '' : ' disabled title="Only the session’s leads, PIs and admins can remove a talk"') + '>Remove talk</button>' : '') +
       '<button class="btn" type="button" id="editOpen"' + (canEdit ? '' : ' disabled title="' + esc(NOT_EDITOR) + '"') + '>Edit talk</button>' +
-      '</div><dl class="detail-grid">';
+      '</div></div><dl class="detail-grid">';
     if (t.speaker) html += '<dt>Speaker</dt><dd>' + esc(t.speaker) + (t.affiliation ? ' <span class="detail-muted">(' + esc(t.affiliation) + ')</span>' : '') + '</dd>';
     if (t.sessionSlug) html += '<dt>Session</dt><dd><a href="event-collaboration-week-session-' + esc(t.sessionSlug) + '.html">' + esc(t.sessionTitle) + '</a></dd>';
     if (t.day) html += '<dt>When</dt><dd>' + esc(t.day) + (t.time ? ', ' + esc(t.time) : '') + '</dd>';
@@ -128,8 +159,8 @@
     var t = talk();
     var html = '<div class="detail-head"><h2>Edit talk</h2></div>' +
       '<p class="detail-subtitle">' + esc(t.speaker || '') + (t.day ? ' · ' + esc(t.day) + (t.time ? ', ' + esc(t.time) : '') : '') +
-      (t.duration ? ' · ' + esc(t.duration) : '') + ' — speaker, time and duration are set with the schedule.</p><div class="edit-form">';
-    FIELDS.forEach(function(f){
+      (t.duration ? ' · ' + esc(t.duration) : '') + (added ? '' : ' — speaker, time and duration are set with the schedule.') + '</p><div class="edit-form">';
+    fields().forEach(function(f){
       var id = 'f_' + f.key, v = t[f.key] || '';
       html += '<div class="edit-field"><label for="' + id + '">' + esc(f.label) + '</label>' +
         (f.input === 'text'
@@ -148,6 +179,8 @@
     if (!editing) {
       var open = el('editOpen');
       if (open) open.addEventListener('click', openForm);
+      var rm = el('talkRemove');
+      if (rm) rm.addEventListener('click', removeTalk);
       return;
     }
     wirePresenters();
@@ -160,9 +193,20 @@
     if (canSetPresenters) loadPeople().then(go); else go();
   }
 
+  function removeTalk(){
+    if (!window.confirm('Remove this talk from its session? This can’t be undone.')) return;
+    el('talkRemove').disabled = true;
+    editTalk({ slug: slug, remove: true }).then(function(){
+      location.href = 'event-collaboration-week-session-' + base.sessionSlug + '.html';
+    }).catch(function(err){
+      window.alert((err && err.message) || 'Couldn’t remove the talk — try again.');
+      el('talkRemove').disabled = false;
+    });
+  }
+
   function readFields(){
     var edits = {};
-    FIELDS.forEach(function(f){ edits[f.key] = el('f_' + f.key).value.trim(); });
+    fields().forEach(function(f){ edits[f.key] = el('f_' + f.key).value.trim(); });
     return edits;
   }
 
@@ -179,7 +223,7 @@
     busy = true; keepTyped(edits);
     var payload = Object.assign({}, edits);
     if (canSetPresenters) payload.presenterEmails = emails;
-    editTalk({ slug: base.slug, edits: payload }).then(function(r){
+    editTalk({ slug: slug, edits: payload }).then(function(r){
       saved = Object.assign({}, saved || {}, r.data.saved);
       busy = false; editing = false; render();
     }).catch(function(err){
@@ -190,29 +234,35 @@
   // Re-render the form (to show busy/error) without losing what was typed.
   function keepTyped(edits){
     render();
-    FIELDS.forEach(function(f){ el('f_' + f.key).value = edits[f.key]; });
+    fields().forEach(function(f){ el('f_' + f.key).value = edits[f.key]; });
   }
 
   BOLD.onUser(function(user){
     canEdit = false; canSetPresenters = false; editing = false;
     if (!user || !db) { render(); return; }
-    db.collection('collabWeekTalks').doc(base.slug).get().then(function(snap){
+    db.collection('collabWeekTalks').doc(slug).get().then(function(snap){
       saved = snap.exists ? snap.data() : null;
+      if (added) {
+        missing = !saved || !saved.added;
+        if (!missing) useAddedDoc(saved);
+      }
       if (!editing) render();
     }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the talk failed', err); });
     // A reordered session moves its talks between the start-time slots.
-    if (base.sessionSlug && (base.slotTimes || []).some(Boolean)) {
+    if (!added && base.sessionSlug && (base.slotTimes || []).some(Boolean)) {
       db.collection('collabWeekSessions').doc(base.sessionSlug).get().then(function(snap){
         var order = snap.exists && snap.data().talkOrder;
         if (!order || !order.length) return;
-        var keys = base.sessionTalkKeys.map(function(k, i){ return { k: k, i: i }; });
+        // The programme's talks, then any added ones in the order (as the session page does).
+        var all = base.sessionTalkKeys.concat(order.filter(function(k){ return base.sessionTalkKeys.indexOf(k) < 0; }));
+        var keys = all.map(function(k, i){ return { k: k, i: i }; });
         var pos = function(k){ var i = order.indexOf(k); return i < 0 ? order.length : i; };
         keys.sort(function(a, b){ return (pos(a.k) - pos(b.k)) || (a.i - b.i); });
         var slot = keys.map(function(x){ return x.k; }).indexOf(base.slug);
         if (slot >= 0 && base.slotTimes[slot] !== base.time) { base.time = base.slotTimes[slot]; if (!editing) render(); }
       }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the session failed', err); });
     }
-    editTalk({ slug: base.slug }).then(function(r){
+    editTalk({ slug: slug }).then(function(r){
       canEdit = !!r.data.canEdit;
       canSetPresenters = !!r.data.canSetPresenters;
       if (!editing) render();

@@ -1681,74 +1681,119 @@ exports.approveHackathonJoins = onCall(
   }
 );
 
-// ---------- Collaboration Week: editing a talk ----------
+// ---------- Collaboration Week: editing and adding talks ----------
 //
-// A talk's page comes from the programme (src/_data); collabWeekTalks/{slug}
-// holds what's been edited since (TALK_FIELDS, incl. presentationUrl) and the
-// talk's presenterEmails, readable by the lab and written only here. Access
-// is by sign-in email only: a presenter (presenterEmails), a lead of the
-// talk's session (its leads' emails in the published programme,
+// A talk comes either from the programme (src/_data, with its own generated
+// page) or was added from its session's page (createTalk; `added: true`).
+// collabWeekTalks/{slug} holds an added talk whole, and a programme talk's
+// edits since (TALK_FIELDS, incl. presentationUrl); both carry the talk's
+// presenterEmails. Readable by the lab, written only here.
+//
+// Access is by sign-in email only: a presenter (presenterEmails), a lead of
+// the talk's session (its leads' emails in the published programme,
 // event-collaboration-week-talks.json, plus collabWeekSessions/{slug}.leadEmails)
-// or a PI/admin can edit the talk; only leads and PIs/admins can set who the
-// presenters are. Speaker, day, time and duration stay with the schedule.
+// or a PI/admin can edit a talk. Only leads and PIs/admins can set who the
+// presenters are, add a talk to a session or remove an added one. A
+// programme talk's speaker, time and duration stay with the schedule; an
+// added talk's are edited here too.
 const TALKS_URL = 'https://bold-lab-ai.github.io/bold-os/event-collaboration-week-talks.json';
 const TALK_FIELDS = { title: 300, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
-let talksCache = { at: 0, list: null };
+const ADDED_TALK_FIELDS = Object.assign({ speaker: 300, duration: 100, time: 100 }, TALK_FIELDS);
+let catalogCache = { at: 0, value: null };
 
-async function collabWeekTalks(){
-  if (talksCache.list && Date.now() - talksCache.at < 5 * 60 * 1000) return talksCache.list;
+// → { talks: [{ slug, sessionSlug, leads }], sessions: [{ slug, leads }] }
+async function collabWeekCatalog(){
+  if (catalogCache.value && Date.now() - catalogCache.at < 5 * 60 * 1000) return catalogCache.value;
   const res = await fetch(TALKS_URL);
   if (!res.ok) throw new HttpsError('unavailable', 'Could not load the programme; try again shortly.');
-  talksCache = { at: Date.now(), list: await res.json() };
-  return talksCache.list;
+  const json = await res.json();
+  // Before 2026-10-08 the file was just the talks, each with its session's leads.
+  const value = Array.isArray(json)
+    ? { talks: json, sessions: json.filter(t => t.sessionSlug).map(t => ({ slug: t.sessionSlug, leads: t.leads || [] })) }
+    : { talks: json.talks || [], sessions: json.sessions || [] };
+  catalogCache = { at: Date.now(), value };
+  return catalogCache.value;
+}
+
+// The talk by slug, from the programme or added → { slug, sessionSlug, added }, or null.
+async function findTalk(catalog, slug){
+  const t = catalog.talks.find(x => x.slug === slug);
+  if (t) return { slug: t.slug, sessionSlug: t.sessionSlug || '', added: false };
+  if (typeof slug !== 'string' || !slug || slug.indexOf('/') >= 0) return null;
+  const doc = (await db.collection('collabWeekTalks').doc(slug).get()).data();
+  return doc && doc.added ? { slug, sessionSlug: doc.sessionSlug || '', added: true } : null;
+}
+
+async function isSessionLead(catalog, email, sessionSlug){
+  if (!sessionSlug) return false;
+  const s = catalog.sessions.find(x => x.slug === sessionSlug);
+  const leads = ((s && s.leads) || []).map(l => String(l.email || '').toLowerCase());
+  const doc = (await db.collection('collabWeekSessions').doc(sessionSlug).get()).data();
+  if (doc && Array.isArray(doc.leadEmails)) leads.push(...doc.leadEmails);
+  return leads.indexOf(email) >= 0;
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // → 'admin' | 'lead' | 'presenter' | null, by the caller's sign-in email.
-async function talkRole(email, talk, saved){
+async function talkRole(catalog, email, talk, saved){
   if (await isFullWrite(email)) return 'admin';
-  const leads = talk.leads.map(l => String(l.email || '').toLowerCase());
-  if (talk.sessionSlug) {
-    const session = (await db.collection('collabWeekSessions').doc(talk.sessionSlug).get()).data();
-    if (session && Array.isArray(session.leadEmails)) leads.push(...session.leadEmails);
-  }
-  if (leads.indexOf(email) >= 0) return 'lead';
+  if (await isSessionLead(catalog, email, talk.sessionSlug)) return 'lead';
   if (saved && Array.isArray(saved.presenterEmails) && saved.presenterEmails.indexOf(email) >= 0) return 'presenter';
   return null;
 }
 
+// Validated text fields → { key: text }.
+function talkTextFields(edits, allowed){
+  const doc = {};
+  Object.keys(edits).forEach(key => {
+    if (!(key in allowed)) throw new HttpsError('invalid-argument', 'Unknown field: ' + key);
+    const v = String(edits[key] == null ? '' : edits[key]).trim();
+    if (v.length > allowed[key]) throw new HttpsError('invalid-argument', 'Too long: ' + key);
+    doc[key] = v;
+  });
+  if ('title' in doc && !doc.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
+  if (doc.presentationUrl && !/^https?:\/\/\S+$/.test(doc.presentationUrl)) throw new HttpsError('invalid-argument', 'The presentation isn’t a link (https://…).');
+  return doc;
+}
+
 // data: { slug } → { canEdit, canSetPresenters };
-// { slug, edits: { field: text, …, presenterEmails?: [email, …] } } saves them.
+// { slug, edits: { field: text, …, presenterEmails?: [email, …] } } saves them;
+// { slug, remove: true } deletes an added talk.
 exports.editTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
     const data = request.data || {};
-    const talk = (await collabWeekTalks()).find(t => t.slug === data.slug);
+    const catalog = await collabWeekCatalog();
+    const talk = await findTalk(catalog, data.slug);
     if (!talk) throw new HttpsError('not-found', 'No such talk.');
     const ref = db.collection('collabWeekTalks').doc(talk.slug);
-    const role = await talkRole(email, talk, (await ref.get()).data());
+    const role = await talkRole(catalog, email, talk, (await ref.get()).data());
     const access = { canEdit: !!role, canSetPresenters: role === 'admin' || role === 'lead' };
+    if (data.remove) {
+      if (!talk.added) throw new HttpsError('failed-precondition', 'Only a talk added from the session page can be removed.');
+      if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can remove a talk.');
+      await ref.delete();
+      // …and from its session's talk order, if it was reordered.
+      const sessionRef = db.collection('collabWeekSessions').doc(talk.sessionSlug);
+      if ((await sessionRef.get()).exists) await sessionRef.update({ talkOrder: require('firebase-admin/firestore').FieldValue.arrayRemove(talk.slug) });
+      return { removed: true };
+    }
     if (!data.edits) return access;
     if (!role) throw new HttpsError('permission-denied', 'Only the talk’s presenters, the session’s leads, PIs and admins can edit this talk.');
-    const doc = {};
-    Object.keys(data.edits).forEach(key => {
-      if (key === 'presenterEmails') {
-        if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can change the presenters.');
-        const list = (Array.isArray(data.edits[key]) ? data.edits[key] : []).map(e => String(e).trim().toLowerCase()).filter(Boolean);
-        const bad = list.find(e => !EMAIL.test(e));
-        if (bad) throw new HttpsError('invalid-argument', 'Not an email: ' + bad);
-        if (list.length > 20) throw new HttpsError('invalid-argument', 'Too many presenters.');
-        doc.presenterEmails = list.filter((e, i) => list.indexOf(e) === i);
-        return;
-      }
-      if (!(key in TALK_FIELDS)) throw new HttpsError('invalid-argument', 'Unknown field: ' + key);
-      const v = String(data.edits[key] == null ? '' : data.edits[key]).trim();
-      if (v.length > TALK_FIELDS[key]) throw new HttpsError('invalid-argument', 'Too long: ' + key);
-      doc[key] = v;
-    });
-    if ('title' in doc && !doc.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
-    if (doc.presentationUrl && !/^https?:\/\/\S+$/.test(doc.presentationUrl)) throw new HttpsError('invalid-argument', 'The presentation isn’t a link (https://…).');
+    const edits = Object.assign({}, data.edits);
+    let presenterEmails;
+    if ('presenterEmails' in edits) {
+      if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can change the presenters.');
+      const list = (Array.isArray(edits.presenterEmails) ? edits.presenterEmails : []).map(e => String(e).trim().toLowerCase()).filter(Boolean);
+      const bad = list.find(e => !EMAIL.test(e));
+      if (bad) throw new HttpsError('invalid-argument', 'Not an email: ' + bad);
+      if (list.length > 20) throw new HttpsError('invalid-argument', 'Too many presenters.');
+      presenterEmails = list.filter((e, i) => list.indexOf(e) === i);
+      delete edits.presenterEmails;
+    }
+    const doc = talkTextFields(edits, talk.added ? ADDED_TALK_FIELDS : TALK_FIELDS);
+    if (presenterEmails) doc.presenterEmails = presenterEmails;
     Object.assign(doc, {
       slug: talk.slug,
       sessionSlug: talk.sessionSlug,
@@ -1757,6 +1802,33 @@ exports.editTalk = onCall(
     });
     await ref.set(doc, { merge: true });
     return Object.assign(access, { saved: doc });
+  }
+);
+
+// data: { sessionSlug, title, speaker?, duration?, time?, type? } → { slug }.
+// Adds a talk to a session; only its leads and PIs/admins can.
+exports.createTalk = onCall(
+  async (request) => {
+    const email = callerEmail(request);
+    const data = request.data || {};
+    const catalog = await collabWeekCatalog();
+    const sessionSlug = String(data.sessionSlug || '');
+    if (!catalog.sessions.some(s => s.slug === sessionSlug)) throw new HttpsError('not-found', 'No such session.');
+    if (!(await isFullWrite(email)) && !(await isSessionLead(catalog, email, sessionSlug))) {
+      throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can add a talk.');
+    }
+    const fields = talkTextFields({ title: data.title, speaker: data.speaker, duration: data.duration, time: data.time }, ADDED_TALK_FIELDS);
+    if (!fields.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
+    const stem = fields.title.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'talk';
+    const slug = stem + '-' + crypto.randomBytes(3).toString('hex');
+    const now = Date.now();
+    const who = { email, name: request.auth.token.name || '' };
+    await db.collection('collabWeekTalks').doc(slug).create(Object.assign(fields, {
+      added: true, slug, sessionSlug, type: ['pitch', 'research-talk'].indexOf(data.type) >= 0 ? data.type : '', presenterEmails: [],
+      createdBy: who, createdAt: now, updatedBy: who, updatedAt: now,
+    }));
+    return { slug };
   }
 );
 

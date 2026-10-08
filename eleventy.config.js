@@ -38,12 +38,12 @@ export default function (eleventyConfig) {
     return [...(data.collabWeekResearchTalks || []), ...inSessions];
   });
 
-  // Every talk with its session's leads, who may edit it. Published as
-  // event-collaboration-week-talks.json, which the editTalk function
-  // (functions/index.js) reads.
-  eleventyConfig.addFilter('talkAccess', (talks, sessions) => (talks || []).map((t) => {
-    const session = (sessions || []).find((s) => s.slug === t.sessionSlug);
-    return { slug: t.slug, sessionSlug: t.sessionSlug || '', leads: (session && session.leads) || [] };
+  // Every programme talk and session, with the session leads who may edit
+  // them. Published as event-collaboration-week-talks.json, which the
+  // editTalk and createTalk functions (functions/index.js) read.
+  eleventyConfig.addFilter('talkAccess', (talks, sessions) => ({
+    talks: (talks || []).map((t) => ({ slug: t.slug, sessionSlug: t.sessionSlug || '' })),
+    sessions: (sessions || []).map((s) => ({ slug: s.slug, leads: s.leads || [] })),
   }));
 
   // JSON safe to inline in a <script type="application/json"> (no "</script>").
