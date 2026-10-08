@@ -34,6 +34,7 @@
   var orderRows = [];       // talk keys, in the order being edited
   var talkEdits = {};       // talk slug → its edits (collabWeekTalks), e.g. title, presentationUrl; or the whole of an added talk
   var adding = false, addBusy = false, addError = '';  // the "Add a talk" form
+  var addSpeakerRows = [];  // its speakers (collab-week-speakers.js)
 
   function session(){ return Object.assign({}, base, saved || {}); }
 
@@ -202,7 +203,6 @@
 
   var ADD_FIELDS = [
     { key: 'title', label: 'Title' },
-    { key: 'speaker', label: 'Speaker' },
     { key: 'duration', label: 'Duration', placeholder: 'e.g. 15 min' },
     { key: 'time', label: 'Time', placeholder: 'e.g. 14:10–14:25 (optional)' }
   ];
@@ -210,9 +210,10 @@
   function addFormHtml(){
     return '<div class="edit-form add-talk">' + ADD_FIELDS.map(function(f){
       return '<div class="edit-field"><label for="a_' + f.key + '">' + f.label + '</label>' +
-        '<input type="text" id="a_' + f.key + '" placeholder="' + esc(f.placeholder || '') + '"></div>';
+        '<input type="text" id="a_' + f.key + '" placeholder="' + esc(f.placeholder || '') + '"></div>' +
+        (f.key === 'title' ? '<div class="edit-field"><span class="edit-label">Speakers</span><div id="addSpeakers"></div></div>' : '');
     }).join('') +
-      '<p class="edit-hint">Then open the talk to add its abstract, presentation and presenters.</p>' +
+      '<p class="edit-hint">Then open the talk to add its abstract and presentation.</p>' +
       '<div class="field-error" id="addError"' + (addError ? '' : ' hidden') + '>' + esc(addError) + '</div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="addSave"' + (addBusy ? ' disabled' : '') + '>Add talk</button>' +
       '<button class="btn" type="button" id="addCancel"' + (addBusy ? ' disabled' : '') + '>Cancel</button></div></div>';
@@ -230,7 +231,11 @@
     if (addBusy) return;
     var data = { sessionSlug: base.slug, type: { pitches: 'pitch', 'research-talks': 'research-talk' }[base.type] || '' };
     ADD_FIELDS.forEach(function(f){ data[f.key] = el('a_' + f.key).value.trim(); });
-    if (!data.title) { addError = 'The title can’t be empty.'; renderKeepingAdd(); return; }
+    var spk = CollabWeekSpeakers.toSave(addSpeakerRows);
+    if (!data.title) addError = 'The title can’t be empty.';
+    else if (spk.error) addError = spk.error;
+    if (!data.title || spk.error) { renderKeepingAdd(); return; }
+    data.speakers = spk.speakers;
     addBusy = true; addError = ''; renderKeepingAdd();
     callable('createTalk')(data).then(function(){
       addBusy = false; adding = false;
@@ -417,8 +422,14 @@
       var open = el('editOpen');
       if (open) open.addEventListener('click', function(){ adding = false; openForm(); });
       var add = el('addTalkOpen');
-      if (add) add.addEventListener('click', function(){ adding = true; addError = ''; render(); el('a_title').focus(); });
+      if (add) add.addEventListener('click', function(){
+        loadPeople().then(function(){
+          adding = true; addError = ''; addSpeakerRows = CollabWeekSpeakers.rowsFrom([], people);
+          render(); el('a_title').focus();
+        });
+      });
       if (adding) {
+        CollabWeekSpeakers.mount(el('addSpeakers'), addSpeakerRows, people);
         el('addSave').addEventListener('click', saveAdd);
         el('addCancel').addEventListener('click', function(){ adding = false; addError = ''; render(); });
       }

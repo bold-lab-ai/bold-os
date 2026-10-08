@@ -9,8 +9,10 @@
 //
 // A talk added from its session's page has no programme entry: it's all in
 // collabWeekTalks/{slug} (added: true), shown by the one page
-// event-collaboration-week-talk.html?talk=<slug>, where its speaker, duration
-// and time are edited too, and its session's leads and PIs/admins can remove it.
+// event-collaboration-week-talk.html?talk=<slug>, where its duration and time
+// are edited too, and its session's leads and PIs/admins can remove it. Its
+// speakers are people (collab-week-speakers.js), set by those same leads and
+// PIs/admins, and take the place of the Presenters list.
 (function(){
   if (!BOLD.getAuth()) return;
 
@@ -40,7 +42,6 @@
   ];
 
   var ADDED_FIELDS = [FIELDS[0],
-    { key: 'speaker', label: 'Speaker', input: 'text' },
     { key: 'duration', label: 'Duration', input: 'text', placeholder: 'e.g. 15 min' },
     { key: 'time', label: 'Time', input: 'text', placeholder: 'e.g. 14:10–14:25' }
   ].concat(FIELDS.slice(1));
@@ -62,6 +63,7 @@
   var people = [];          // the `people` roster, for the presenters picker
   var presenterRows = [];   // { email, free } while the form is open
   var suggested = false;    // presenterRows were guessed from the speaker's name
+  var speakerRows = [];     // an added talk's speakers while the form is open
 
   var EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   function personFor(email){ return people.filter(function(p){ return p.email === email; })[0]; }
@@ -80,6 +82,9 @@
   }
 
   function presentersHtml(){
+    if (added) return '<div class="edit-field"><span class="edit-label">Speakers</span>' + (canSetPresenters
+      ? '<div id="talkSpeakers"></div>'
+      : '<p class="edit-static">' + esc(talk().speaker || '—') + '</p><p class="edit-hint">Only the session’s leads, PIs and admins can change the speakers.</p>') + '</div>';
     if (!canSetPresenters) return '';
     return '<div class="edit-field"><span class="edit-label">Presenters</span>' +
       presenterRows.map(function(r, i){
@@ -100,6 +105,7 @@
 
   function wirePresenters(){
     if (!canSetPresenters) return;
+    if (added) { CollabWeekSpeakers.mount(el('talkSpeakers'), speakerRows, people); return; }
     bodyEl.querySelectorAll('.pres-select').forEach(function(sel){
       sel.addEventListener('change', function(){
         var i = Number(sel.getAttribute('data-i'));
@@ -189,7 +195,13 @@
   }
 
   function openForm(){
-    var go = function(){ startPresenterRows(); editing = true; error = ''; render(); };
+    var go = function(){
+      if (added) {
+        var t = talk();
+        speakerRows = CollabWeekSpeakers.rowsFrom(t.speakers || (t.speaker ? [{ name: t.speaker }] : []), people);
+      } else startPresenterRows();
+      editing = true; error = ''; render();
+    };
     if (canSetPresenters) loadPeople().then(go); else go();
   }
 
@@ -215,14 +227,17 @@
     var edits = readFields();
     var emails = presenterRows.map(function(r){ return r.email.trim().toLowerCase(); }).filter(Boolean);
     var badEmail = emails.filter(function(e){ return !EMAIL.test(e); })[0];
+    var spk = added && canSetPresenters ? CollabWeekSpeakers.toSave(speakerRows) : null;
     if (!edits.title) error = 'The title can’t be empty.';
-    else if (canSetPresenters && badEmail) error = 'Not an email: ' + badEmail;
+    else if (spk && spk.error) error = spk.error;
+    else if (!added && canSetPresenters && badEmail) error = 'Not an email: ' + badEmail;
     else if (edits.presentationUrl && !/^https?:\/\/\S+$/.test(edits.presentationUrl)) error = 'The presentation isn’t a link — paste the full https://… address.';
     else error = '';
     if (error) { keepTyped(edits); return; }
     busy = true; keepTyped(edits);
     var payload = Object.assign({}, edits);
-    if (canSetPresenters) payload.presenterEmails = emails;
+    if (spk) payload.speakers = spk.speakers;
+    else if (canSetPresenters) payload.presenterEmails = emails;
     editTalk({ slug: slug, edits: payload }).then(function(r){
       saved = Object.assign({}, saved || {}, r.data.saved);
       busy = false; editing = false; render();

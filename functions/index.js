@@ -1695,10 +1695,25 @@ exports.approveHackathonJoins = onCall(
 // or a PI/admin can edit a talk. Only leads and PIs/admins can set who the
 // presenters are, add a talk to a session or remove an added one. A
 // programme talk's speaker, time and duration stay with the schedule; an
-// added talk's are edited here too.
+// added talk's are edited here too. An added talk's speakers are people
+// ([{ name, email }]): their names make its `speaker` line and their emails
+// its presenterEmails.
 const TALKS_URL = 'https://bold-lab-ai.github.io/bold-os/event-collaboration-week-talks.json';
 const TALK_FIELDS = { title: 300, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
 const ADDED_TALK_FIELDS = Object.assign({ speaker: 300, duration: 100, time: 100 }, TALK_FIELDS);
+
+// [{ name, email }] → { speakers, speaker, presenterEmails }
+function speakerFields(list){
+  if (!Array.isArray(list) || list.length > 20) throw new HttpsError('invalid-argument', 'Too many speakers.');
+  const speakers = list.map(x => ({ name: String((x && x.name) || '').trim(), email: String((x && x.email) || '').trim().toLowerCase() }))
+    .filter(x => x.name || x.email);
+  speakers.forEach(x => {
+    if (!x.name || x.name.length > 200) throw new HttpsError('invalid-argument', 'Every speaker needs a name.');
+    if (x.email && !EMAIL.test(x.email)) throw new HttpsError('invalid-argument', 'Not an email: ' + x.email);
+  });
+  const emails = speakers.map(x => x.email).filter(Boolean);
+  return { speakers, speaker: speakers.map(x => x.name).join(', '), presenterEmails: emails.filter((e, i) => emails.indexOf(e) === i) };
+}
 let catalogCache = { at: 0, value: null };
 
 // → { talks: [{ slug, sessionSlug, leads }], sessions: [{ slug, leads }] }
@@ -1782,6 +1797,13 @@ exports.editTalk = onCall(
     if (!data.edits) return access;
     if (!role) throw new HttpsError('permission-denied', 'Only the talk’s presenters, the session’s leads, PIs and admins can edit this talk.');
     const edits = Object.assign({}, data.edits);
+    let fromSpeakers = null;
+    if ('speakers' in edits) {
+      if (!talk.added) throw new HttpsError('invalid-argument', 'Unknown field: speakers');
+      if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can change the speakers.');
+      fromSpeakers = speakerFields(edits.speakers);
+      delete edits.speakers; delete edits.speaker; delete edits.presenterEmails;
+    }
     let presenterEmails;
     if ('presenterEmails' in edits) {
       if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can change the presenters.');
@@ -1794,6 +1816,7 @@ exports.editTalk = onCall(
     }
     const doc = talkTextFields(edits, talk.added ? ADDED_TALK_FIELDS : TALK_FIELDS);
     if (presenterEmails) doc.presenterEmails = presenterEmails;
+    if (fromSpeakers) Object.assign(doc, fromSpeakers);
     Object.assign(doc, {
       slug: talk.slug,
       sessionSlug: talk.sessionSlug,
@@ -1805,7 +1828,7 @@ exports.editTalk = onCall(
   }
 );
 
-// data: { sessionSlug, title, speaker?, duration?, time?, type? } → { slug }.
+// data: { sessionSlug, title, speakers?: [{ name, email }], duration?, time?, type? } → { slug }.
 // Adds a talk to a session; only its leads and PIs/admins can.
 exports.createTalk = onCall(
   async (request) => {
@@ -1818,14 +1841,16 @@ exports.createTalk = onCall(
       throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can add a talk.');
     }
     const fields = talkTextFields({ title: data.title, speaker: data.speaker, duration: data.duration, time: data.time }, ADDED_TALK_FIELDS);
+    const people = data.speakers ? speakerFields(data.speakers) : { speakers: [], presenterEmails: [] };
     if (!fields.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
-    const stem = fields.title.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+    const stem = fields.title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'talk';
     const slug = stem + '-' + crypto.randomBytes(3).toString('hex');
     const now = Date.now();
     const who = { email, name: request.auth.token.name || '' };
     await db.collection('collabWeekTalks').doc(slug).create(Object.assign(fields, {
-      added: true, slug, sessionSlug, type: ['pitch', 'research-talk'].indexOf(data.type) >= 0 ? data.type : '', presenterEmails: [],
+      added: true, slug, sessionSlug, type: ['pitch', 'research-talk'].indexOf(data.type) >= 0 ? data.type : '',
+    }, people, {
       createdBy: who, createdAt: now, updatedBy: who, updatedAt: now,
     }));
     return { slug };

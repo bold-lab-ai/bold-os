@@ -117,3 +117,17 @@ dd.talk-pres a{overflow-wrap:anywhere;}
 .session-talks .talk-pres{font-family:var(--sans); font-size:13px;}
 .session-talks.talk-order li{flex-direction:row; align-items:center;}
 .talk-order .btn-text{flex:0 0 auto; font-size:16px; text-decoration:none; padding:0 4px;}
+
+/* Speaker picker (collab-week-speakers.js): type to search the roster. */
+.spk-search{position:relative; flex:1 1 auto; min-width:0;}
+.spk-chosen{flex:1 1 auto; min-width:0; font-size:15px; overflow-wrap:anywhere;}
+.spk-chosen .detail-muted{font-family:var(--sans); font-size:12.5px; margin-left:4px;}
+.spk-results{
+  position:absolute; z-index:20; left:0; right:0; top:calc(100% + 2px); margin:0; padding:4px 0; list-style:none;
+  max-height:280px; overflow-y:auto; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:0 6px 18px rgba(26,43,74,.12); font-family:var(--sans); font-size:14px;
+}
+.spk-results li{display:flex; justify-content:space-between; gap:12px; padding:7px 10px; cursor:pointer;}
+.spk-results li .detail-muted{font-size:12.5px; overflow-wrap:anywhere; text-align:right;}
+.spk-results li.active, .spk-results li:hover{background:var(--wash);}
+.spk-results li.spk-new{color:var(--muted); border-top:1px solid var(--line);}
