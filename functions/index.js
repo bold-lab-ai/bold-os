@@ -1681,6 +1681,67 @@ exports.approveHackathonJoins = onCall(
   }
 );
 
+// ---------- people roster: daily sync from Slack ----------
+//
+// `people` ({ name, email, slackId }, keyed by Slack id) backs every person
+// picker on the site. It was first filled by a one-off users.list script
+// (docs/FIREBASE.md); this keeps it current: once a day it adds people who
+// joined Slack, updates changed names and emails, and drops deactivated
+// accounts. Bots and accounts without an email are skipped. Needs the bot
+// token's users:read and users:read.email scopes; if Slack refuses, or
+// returns nobody with an email, nothing is written. Run it now with:
+//   gcloud scheduler jobs run firebase-schedule-syncPeople-europe-west2 --location europe-west2 --project bold-d7ff2
+async function slackMembers(token){
+  const members = [];
+  let cursor = '';
+  do {
+    const res = await fetch('https://slack.com/api/users.list?limit=200' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''), {
+      headers: { 'Authorization': 'Bearer ' + token },
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error('users.list failed: ' + json.error + (json.needed ? ' (needs ' + json.needed + ')' : ''));
+    members.push(...(json.members || []));
+    cursor = (json.response_metadata && json.response_metadata.next_cursor) || '';
+  } while (cursor);
+  return members;
+}
+
+exports.syncPeople = onSchedule(
+  { schedule: '0 6 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  async function(){
+    const members = await slackMembers(SLACK_BOT_TOKEN.value());
+    const people = members
+      .filter(u => !u.deleted && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
+      .map(u => ({ slackId: u.id, email: u.profile.email, name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
+    if (!people.length) {
+      logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
+      return;
+    }
+    const gone = members.filter(u => u.deleted).map(u => u.id);
+    const existing = await db.collection('people').get();
+    const current = {};
+    existing.docs.forEach(d => { current[d.id] = d.data(); });
+
+    const writes = [];
+    people.forEach(p => {
+      const was = current[p.slackId];
+      if (!was || was.name !== p.name || was.email !== p.email) writes.push({ id: p.slackId, data: p, added: !was });
+    });
+    const deletes = gone.filter(id => current[id]);
+    const ops = writes.map(w => batch => batch.set(db.collection('people').doc(w.id), w.data, { merge: true }))
+      .concat(deletes.map(id => batch => batch.delete(db.collection('people').doc(id))));
+    for (let i = 0; i < ops.length; i += 400) {
+      const batch = db.batch();
+      ops.slice(i, i + 400).forEach(op => op(batch));
+      await batch.commit();
+    }
+    logger.info('syncPeople done', {
+      members: members.length, people: people.length,
+      added: writes.filter(w => w.added).length, updated: writes.filter(w => !w.added).length, removed: deletes.length,
+    });
+  }
+);
+
 // ---------- Collaboration Week: editing and adding talks ----------
 //
 // A talk comes either from the programme (src/_data, with its own generated
