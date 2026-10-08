@@ -118,20 +118,19 @@
   }
 
   // --- talk order ------------------------------------------------------------
-  // A session's talks come from the programme, plus any added from this page
-  // (createTalk; collabWeekTalks with added: true). `talkOrder` reorders them;
-  // their times follow from the order (collab-week-talk-times.js).
+  // A session's talks come from the programme, with their edits, plus any
+  // added from this page (createTalk), less any removed — all from its
+  // collabWeekTalks docs (talkEdits). `talkOrder` reorders them; their times
+  // follow from the order and durations (collab-week-talk-times.js).
 
   var talkKey = CollabWeekTalkTimes.key;
 
-  function addedTalks(){
-    return Object.keys(talkEdits).map(function(k){ return talkEdits[k]; })
-      .filter(function(t){ return t.added; });
+  function orderedTalks(order){
+    var docs = Object.keys(talkEdits).map(function(k){ return talkEdits[k]; });
+    return CollabWeekTalkTimes.schedule(base.talks, docs, order, base.time);
   }
 
-  function allTalks(){ return (base.talks || []).concat(addedTalks()); }
-
-  function orderedTalks(order){ return CollabWeekTalkTimes.schedule(base.talks, addedTalks(), order, base.time); }
+  function allTalks(){ return orderedTalks(null); }
 
   function orderHtml(){
     var byKey = {};
@@ -263,7 +262,6 @@
     }).join('') + '</ul>';
 
     if (allTalks().length) html += section('Talks', '<ul class="session-talks">' + orderedTalks(s.talkOrder).map(function(t){
-      if (!t.added) t = Object.assign({}, t, talkEdits[t.slug] || {}, { time: t.time });
       var href = t.added ? 'event-collaboration-week-talk.html?talk=' + encodeURIComponent(t.slug)
         : t.slug ? 'event-collaboration-week-talk-' + t.slug + '.html' : '';
       var title = href ? '<a href="' + esc(href) + '">' + esc(t.title) + '</a>' : esc(t.title);

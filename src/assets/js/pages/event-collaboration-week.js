@@ -42,7 +42,7 @@
 // (src/_data/collabWeekSessions.js, collabWeekResearchTalks.js); edits
 // since live in Firestore and are laid over them here: a session's (title,
 // leads, room) from collabWeekSessions, a morning talk's (title, type,
-// affiliation) from collabWeekTalks.
+// speakers, affiliation) from collabWeekTalks.
 (function(){
   var esc = BOLD.escapeHtml;
   var cards = document.querySelectorAll('.session-card[data-session], .session-card[data-talk]');
@@ -65,8 +65,8 @@
             b.className = 'type-badge type-' + t.type;
             b.textContent = TYPES[t.type];
           }
-          if (t.affiliation !== undefined) card.querySelector('.session-who').textContent =
-            card.getAttribute('data-speaker') + (t.affiliation ? ' · ' + t.affiliation : '');
+          if (t.speaker !== undefined || t.affiliation !== undefined) card.querySelector('.session-who').textContent =
+            (t.speaker !== undefined ? t.speaker : card.getAttribute('data-speaker')) + (t.affiliation ? ' · ' + t.affiliation : '');
         });
       });
     }, function(err){ console.error('[BOLD Collaboration Week] loading talk edits failed', err); });

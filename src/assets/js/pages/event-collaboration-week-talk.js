@@ -1,18 +1,18 @@
-// A Collaboration Week talk's page. The programme (src/_data, inlined as
-// #talkData) is the default and the static first paint; Firestore's
-// collabWeekTalks/{slug} holds what's been edited since, including the
-// presentation link, and the presenters' sign-in emails. A presenter, a lead
-// of the session or a PI/admin gets an "Edit talk" button; only leads and
-// PIs/admins can set who the presenters are. Saving goes through the editTalk
-// function, which also says what the signed-in person may do. Speaker, day,
-// time and duration belong to the schedule, so they aren't edited here.
+// A Collaboration Week talk's page. Every talk works the same way, whether
+// it comes from the programme (src/_data, inlined as #talkData, the static
+// first paint) or was added from its session's page (no programme entry;
+// shown by the one page event-collaboration-week-talk.html?talk=<slug>).
+// Firestore's collabWeekTalks/{slug} holds an added talk whole, and a
+// programme talk's edits since.
 //
-// A talk added from its session's page has no programme entry: it's all in
-// collabWeekTalks/{slug} (added: true), shown by the one page
-// event-collaboration-week-talk.html?talk=<slug>, where its duration is
-// edited too, and its session's leads and PIs/admins can remove it. Its
-// speakers are people (collab-week-speakers.js), set by those same leads and
-// PIs/admins, and take the place of the Presenters list.
+// A presenter, a lead of the session or a PI/admin gets "Edit talk": title,
+// type, speakers, duration, affiliation, presentation, notes, abstract, bio.
+// The speakers are people (collab-week-speakers.js) — their emails are who
+// counts as a presenter — and only leads and PIs/admins change them, or
+// remove the talk from its session (a programme talk can be restored).
+// Saving goes through the editTalk function, which also says what the
+// signed-in person may do. The talk's time isn't edited: it follows from
+// its session's order and durations (collab-week-talk-times.js).
 (function(){
   if (!BOLD.getAuth()) return;
 
@@ -31,12 +31,14 @@
   function editTalk(data){ return firebase.app().functions('europe-west2').httpsCallable('editTalk')(data); }
 
   var NOT_EDITOR = 'Only the talk’s presenters, the session’s leads, PIs and admins can edit it';
-
+  var NOT_REMOVER = 'Only the session’s leads, PIs and admins can remove a talk';
   var TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // as in functions/index.js
 
+  // The form, in order; the Speakers picker goes after the type.
   var FIELDS = [
     { key: 'title', label: 'Title', input: 'text' },
     { key: 'type', label: 'Type', input: 'select', options: TALK_TYPES },
+    { key: 'duration', label: 'Duration (minutes)', input: 'number', placeholder: 'e.g. 10', hint: 'Its time follows from its place in the session’s talk order.' },
     { key: 'affiliation', label: 'Affiliation', input: 'text' },
     { key: 'presentationUrl', label: 'Presentation', input: 'text', placeholder: 'https://…', hint: 'Slides, a shared doc or a recording.' },
     { key: 'notes', label: 'Notes', input: 'text' },
@@ -44,10 +46,10 @@
     { key: 'bio', label: 'About the speaker', input: 'area', rows: 6 }
   ];
 
-  var ADDED_FIELDS = [FIELDS[0], FIELDS[1],
-    { key: 'duration', label: 'Duration (minutes)', input: 'number', placeholder: 'e.g. 10', hint: 'Its time follows from its place in the session’s talk order.' }
-  ].concat(FIELDS.slice(2));
-  function fields(){ return added ? ADDED_FIELDS : FIELDS; }
+  var saved = null, canEdit = false, canSetPresenters = false, editing = false, busy = false, error = '';
+  var people = [];          // the `people` roster, for the speakers picker
+  var speakerRows = [];     // the speakers while the form is open
+  var timed = null;         // the talk's time, once worked out
 
   // An added talk's session, venue and back link, from its Firestore doc.
   function useAddedDoc(doc){
@@ -62,72 +64,6 @@
     document.title = (doc.title || 'Talk') + ' | BOLD Collaboration Week';
   }
 
-  var saved = null, canEdit = false, canSetPresenters = false, editing = false, busy = false, error = '';
-  var people = [];          // the `people` roster, for the presenters picker
-  var presenterRows = [];   // { email, free } while the form is open
-  var suggested = false;    // presenterRows were guessed from the speaker's name
-  var speakerRows = [];     // an added talk's speakers while the form is open
-
-  var EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  function personFor(email){ return people.filter(function(p){ return p.email === email; })[0]; }
-
-  // Saved presenters, or, before any are set, roster people named like the speaker.
-  function startPresenterRows(){
-    var emails = saved && saved.presenterEmails;
-    suggested = !emails;
-    if (!emails) {
-      var names = String(talk().speaker || '').split(/,|&|\band\b/).map(function(n){ return n.trim().toLowerCase(); }).filter(Boolean);
-      emails = people.filter(function(p){ return p.email && names.indexOf(String(p.name || '').trim().toLowerCase()) >= 0; })
-        .map(function(p){ return p.email; });
-    }
-    presenterRows = emails.map(function(e){ return { email: e, free: !personFor(e) }; });
-    if (!presenterRows.length) presenterRows.push({ email: '', free: false });
-  }
-
-  function presentersHtml(){
-    if (added) return '<div class="edit-field"><span class="edit-label">Speakers</span>' + (canSetPresenters
-      ? '<div id="talkSpeakers"></div>'
-      : '<p class="edit-static">' + esc(talk().speaker || '—') + '</p><p class="edit-hint">Only the session’s leads, PIs and admins can change the speakers.</p>') + '</div>';
-    if (!canSetPresenters) return '';
-    return '<div class="edit-field"><span class="edit-label">Presenters</span>' +
-      presenterRows.map(function(r, i){
-        var control = r.free
-          ? '<input type="text" class="pres-email" data-i="' + i + '" value="' + esc(r.email) + '" placeholder="Their Slack sign-in email">' +
-            '<button type="button" class="btn-text pres-roster" data-i="' + i + '">Pick from list</button>'
-          : '<select class="pres-select" data-i="' + i + '"><option value="">Choose a person…</option>' +
-            people.map(function(p){
-              return '<option value="' + esc(p.email) + '"' + (p.email === r.email ? ' selected' : '') + '>' + esc(p.name) + ' (' + esc(p.email) + ')</option>';
-            }).join('') + '<option value="__free__">Someone not on the list…</option></select>';
-        return '<div class="lead-row">' + control +
-          '<button type="button" class="btn-text danger pres-remove" data-i="' + i + '">Remove</button></div>';
-      }).join('') +
-      '<button type="button" class="btn-text" id="presAdd">+ Add a presenter</button>' +
-      '<p class="edit-hint">' + (suggested ? 'Suggested from the speaker’s name — check before saving. ' : '') +
-      'Presenters can edit this talk, matched by the email they sign in to Slack with.</p></div>';
-  }
-
-  function wirePresenters(){
-    if (!canSetPresenters) return;
-    if (added) { CollabWeekSpeakers.mount(el('talkSpeakers'), speakerRows, people); return; }
-    bodyEl.querySelectorAll('.pres-select').forEach(function(sel){
-      sel.addEventListener('change', function(){
-        var i = Number(sel.getAttribute('data-i'));
-        presenterRows[i] = sel.value === '__free__' ? { email: '', free: true } : { email: sel.value, free: false };
-        keepTyped(readFields());
-      });
-    });
-    bodyEl.querySelectorAll('.pres-email').forEach(function(inp){
-      inp.addEventListener('input', function(){ presenterRows[Number(inp.getAttribute('data-i'))].email = inp.value; });
-    });
-    bodyEl.querySelectorAll('.pres-roster').forEach(function(btn){
-      btn.addEventListener('click', function(){ presenterRows[Number(btn.getAttribute('data-i'))] = { email: '', free: false }; keepTyped(readFields()); });
-    });
-    bodyEl.querySelectorAll('.pres-remove').forEach(function(btn){
-      btn.addEventListener('click', function(){ presenterRows.splice(Number(btn.getAttribute('data-i')), 1); keepTyped(readFields()); });
-    });
-    el('presAdd').addEventListener('click', function(){ presenterRows.push({ email: '', free: false }); keepTyped(readFields()); });
-  }
-
   var peoplePromise = null;
   function loadPeople(){
     if (!peoplePromise) peoplePromise = db.collection('people').get().then(function(snap){
@@ -139,21 +75,43 @@
 
   function talk(){
     var t = Object.assign({}, base, saved || {});
-    if (timed !== null) t.time = timed;
-    else if (added) t.time = '';
+    t.time = timed !== null ? timed : added ? '' : t.time;
     return t;
+  }
+
+  // The speakers to start the form with: as saved; or, for a programme talk
+  // not edited yet, its speaker names (matched to the roster by name) plus
+  // anyone already given access as a presenter.
+  function startSpeakerRows(){
+    var t = talk();
+    if (t.speakers) { speakerRows = CollabWeekSpeakers.rowsFrom(t.speakers, people); return; }
+    var fold = function(s){ return String(s || '').trim().toLowerCase(); };
+    var list = String(t.speaker || '').split(/,|&|\band\b/).map(function(n){ return n.trim(); }).filter(Boolean).map(function(name){
+      var p = people.filter(function(x){ return fold(x.name) === fold(name); })[0];
+      return { name: p ? p.name : name, email: p ? p.email : '' };
+    });
+    (t.presenterEmails || []).forEach(function(e){
+      if (list.some(function(x){ return x.email === e; })) return;
+      var p = people.filter(function(x){ return x.email === e; })[0];
+      list.push({ name: p ? p.name : e, email: e });
+    });
+    speakerRows = CollabWeekSpeakers.rowsFrom(list, people);
   }
 
   function viewHtml(){
     if (missing) return '<p class="detail-muted">This talk doesn’t exist — it may have been removed from its session.</p>';
     if (!base) return '<p class="detail-muted">Loading…</p>';
     var t = talk();
+    var removeOff = !t.sessionSlug ? 'Talks on the main schedule can’t be removed here' : canSetPresenters ? '' : NOT_REMOVER;
     var html = (TYPES[t.type] ? '<span class="type-badge type-' + esc(t.type) + '">' + esc(TYPES[t.type]) + '</span>' : '') +
-      '<div class="detail-head"><h2>' + esc(t.title) + '</h2>' +
-      '<div class="detail-actions">' +
-      (added ? '<button class="btn" type="button" id="talkRemove"' + (canSetPresenters ? '' : ' disabled title="Only the session’s leads, PIs and admins can remove a talk"') + '>Remove talk</button>' : '') +
+      '<div class="detail-head"><h2>' + esc(t.title) + '</h2><div class="detail-actions">' +
+      (t.removed
+        ? '<button class="btn" type="button" id="talkRestore"' + (canSetPresenters ? '' : ' disabled title="' + esc(NOT_REMOVER) + '"') + '>Restore talk</button>'
+        : '<button class="btn" type="button" id="talkRemove"' + (removeOff ? ' disabled title="' + esc(removeOff) + '"' : '') + '>Remove talk</button>') +
       '<button class="btn" type="button" id="editOpen"' + (canEdit ? '' : ' disabled title="' + esc(NOT_EDITOR) + '"') + '>Edit talk</button>' +
-      '</div></div><dl class="detail-grid">';
+      '</div></div>';
+    if (t.removed) html += '<p class="detail-msg">This talk was removed from its session, so it isn’t on the programme.</p>';
+    html += '<dl class="detail-grid">';
     if (t.speaker) html += '<dt>Speaker</dt><dd>' + esc(t.speaker) + (t.affiliation ? ' <span class="detail-muted">(' + esc(t.affiliation) + ')</span>' : '') + '</dd>';
     if (t.sessionSlug) html += '<dt>Session</dt><dd><a href="event-collaboration-week-session-' + esc(t.sessionSlug) + '.html">' + esc(t.sessionTitle) + '</a></dd>';
     if (t.day) html += '<dt>When</dt><dd>' + esc(t.day) + (t.time ? ', ' + esc(t.time) : '') + '</dd>';
@@ -164,17 +122,23 @@
     if (t.notes) html += '<dt>Notes</dt><dd>' + esc(t.notes) + '</dd>';
     if (t.presentationUrl) html += '<dt>Presentation</dt><dd class="talk-pres"><a href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">' + esc(t.presentationUrl) + '</a></dd>';
     html += '</dl><div class="detail-field"><p class="detail-field-label">Abstract</p>' +
-      (t.abstract ? '<p class="talk-text">' + esc(t.abstract) + '</p>' : '<p class="detail-muted">Abstract not yet available.</p>') + '</div>';
-    if (t.bio) html += '<div class="detail-field"><p class="detail-field-label">About the speaker</p><p class="talk-text">' + esc(t.bio) + '</p></div>';
+      (t.abstract ? '<p class="talk-text">' + esc(t.abstract) + '</p>' : '<p class="detail-muted">Abstract not yet available.</p>') + '</div>' +
+      '<div class="detail-field"><p class="detail-field-label">About the speaker</p>' +
+      (t.bio ? '<p class="talk-text">' + esc(t.bio) + '</p>' : '<p class="detail-muted">Not yet available.</p>') + '</div>';
     return html;
+  }
+
+  function speakersHtml(){
+    return '<div class="edit-field"><span class="edit-label">Speakers</span>' + (canSetPresenters
+      ? '<div id="talkSpeakers"></div>'
+      : '<p class="edit-static">' + esc(talk().speaker || '—') + '</p><p class="edit-hint">Only the session’s leads, PIs and admins can change the speakers.</p>') + '</div>';
   }
 
   function formHtml(){
     var t = talk();
     var html = '<div class="detail-head"><h2>Edit talk</h2></div>' +
-      '<p class="detail-subtitle">' + esc(t.speaker || '') + (t.day ? ' · ' + esc(t.day) + (t.time ? ', ' + esc(t.time) : '') : '') +
-      (t.duration ? ' · ' + esc(t.duration) : '') + (added ? '' : ' — speaker, time and duration are set with the schedule.') + '</p><div class="edit-form">';
-    fields().forEach(function(f){
+      '<p class="detail-subtitle">' + esc(t.day || '') + (t.time ? ', ' + esc(t.time) : '') + '</p><div class="edit-form">';
+    FIELDS.forEach(function(f){
       var id = 'f_' + f.key, v = t[f.key] || '';
       if (f.input === 'number') v = CollabWeekTalkTimes.minutesOf(v) || '';
       html += '<div class="edit-field"><label for="' + id + '">' + esc(f.label) + '</label>' +
@@ -182,11 +146,11 @@
           ? '<select id="' + id + '">' + (v ? '' : '<option value="">Choose…</option>') + f.options.map(function(o){
               return '<option value="' + esc(o) + '"' + (o === v ? ' selected' : '') + '>' + esc(TYPES[o] || o) + '</option>';
             }).join('') + '</select>'
-          : f.input !== 'area'
-          ? '<input type="' + f.input + '" id="' + id + '" value="' + esc(v) + '"' + (f.input === 'number' ? ' min="1" step="1"' : '') + ' placeholder="' + esc(f.placeholder || '') + '">'
-          : '<textarea id="' + id + '" rows="' + f.rows + '">' + esc(v) + '</textarea>') +
+          : f.input === 'area'
+          ? '<textarea id="' + id + '" rows="' + f.rows + '">' + esc(v) + '</textarea>'
+          : '<input type="' + f.input + '" id="' + id + '" value="' + esc(v) + '"' + (f.input === 'number' ? ' min="1" step="1"' : '') + ' placeholder="' + esc(f.placeholder || '') + '">') +
         (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
-      if (f.key === 'title') html += presentersHtml();
+      if (f.key === 'type') html += speakersHtml();
     });
     return html + '</div><div class="field-error" id="editError"' + (error ? '' : ' hidden') + '>' + esc(error) + '</div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="editSave"' + (busy ? ' disabled' : '') + '>Save</button>' +
@@ -199,63 +163,63 @@
       var open = el('editOpen');
       if (open) open.addEventListener('click', openForm);
       var rm = el('talkRemove');
-      if (rm) rm.addEventListener('click', removeTalk);
+      if (rm) rm.addEventListener('click', function(){ setRemoved(true); });
+      var rs = el('talkRestore');
+      if (rs) rs.addEventListener('click', function(){ setRemoved(false); });
       return;
     }
-    wirePresenters();
+    if (canSetPresenters) CollabWeekSpeakers.mount(el('talkSpeakers'), speakerRows, people);
     el('editSave').addEventListener('click', save);
     el('editCancel').addEventListener('click', function(){ editing = false; error = ''; render(); });
   }
 
   function openForm(){
-    var go = function(){
-      if (added) {
-        var t = talk();
-        speakerRows = CollabWeekSpeakers.rowsFrom(t.speakers || (t.speaker ? [{ name: t.speaker }] : []), people);
-      } else startPresenterRows();
-      editing = true; error = ''; render();
-    };
-    if (canSetPresenters) loadPeople().then(go); else go();
+    loadPeople().then(function(){ startSpeakerRows(); editing = true; error = ''; render(); });
   }
 
-  function removeTalk(){
-    if (!window.confirm('Remove this talk from its session? This can’t be undone.')) return;
-    el('talkRemove').disabled = true;
-    editTalk({ slug: slug, remove: true }).then(function(){
-      location.href = 'event-collaboration-week-session-' + base.sessionSlug + '.html';
+  // Removes the talk from its session (an added one for good), or restores a programme talk.
+  function setRemoved(remove){
+    var msg = !remove ? null : added ? 'Remove this talk from its session? This can’t be undone.'
+      : 'Remove this talk from its session? A lead or PI can restore it from this page.';
+    if (msg && !window.confirm(msg)) return;
+    var btn = el(remove ? 'talkRemove' : 'talkRestore');
+    btn.disabled = true;
+    editTalk(remove ? { slug: slug, remove: true } : { slug: slug, restore: true }).then(function(){
+      if (remove) { location.href = 'event-collaboration-week-session-' + base.sessionSlug + '.html'; return; }
+      saved = Object.assign({}, saved || {}, { removed: false });
+      render();
     }).catch(function(err){
-      window.alert((err && err.message) || 'Couldn’t remove the talk — try again.');
-      el('talkRemove').disabled = false;
+      window.alert((err && err.message) || 'Couldn’t do that — try again.');
+      btn.disabled = false;
     });
   }
 
   function readFields(){
     var edits = {};
-    fields().forEach(function(f){ edits[f.key] = el('f_' + f.key).value.trim(); });
+    FIELDS.forEach(function(f){ edits[f.key] = el('f_' + f.key).value.trim(); });
     if (!edits.type) delete edits.type;  // a programme talk with no type yet, left unchosen
-    if ('duration' in edits) edits.duration = Number(edits.duration) > 0 ? Math.round(Number(edits.duration)) + ' min' : '';
+    edits.duration = Number(edits.duration) > 0 ? Math.round(Number(edits.duration)) + ' min' : '';
     return edits;
   }
 
   function save(){
     if (busy) return;
     var edits = readFields();
-    var emails = presenterRows.map(function(r){ return r.email.trim().toLowerCase(); }).filter(Boolean);
-    var badEmail = emails.filter(function(e){ return !EMAIL.test(e); })[0];
-    var spk = added && canSetPresenters ? CollabWeekSpeakers.toSave(speakerRows) : null;
+    var spk = canSetPresenters ? CollabWeekSpeakers.toSave(speakerRows) : null;
     if (!edits.title) error = 'The title can’t be empty.';
     else if (spk && spk.error) error = spk.error;
-    else if (!added && canSetPresenters && badEmail) error = 'Not an email: ' + badEmail;
     else if (edits.presentationUrl && !/^https?:\/\/\S+$/.test(edits.presentationUrl)) error = 'The presentation isn’t a link — paste the full https://… address.';
     else error = '';
     if (error) { keepTyped(edits); return; }
+    // An unparseable programme duration ("10–20 min") left alone stays as it was.
+    if (!edits.duration && !CollabWeekTalkTimes.minutesOf(talk().duration)) delete edits.duration;
     busy = true; keepTyped(edits);
     var payload = Object.assign({}, edits);
     if (spk) payload.speakers = spk.speakers;
-    else if (canSetPresenters) payload.presenterEmails = emails;
     editTalk({ slug: slug, edits: payload }).then(function(r){
       saved = Object.assign({}, saved || {}, r.data.saved);
       busy = false; editing = false; render();
+      loadTime();
     }).catch(function(err){
       busy = false; error = (err && err.message) || 'Couldn’t save — try again.'; keepTyped(edits);
     });
@@ -264,26 +228,25 @@
   // Re-render the form (to show busy/error) without losing what was typed.
   function keepTyped(edits){
     render();
-    fields().forEach(function(f){
+    FIELDS.forEach(function(f){
       el('f_' + f.key).value = f.input === 'number' ? (CollabWeekTalkTimes.minutesOf(edits[f.key]) || '') : (edits[f.key] || '');
     });
   }
 
   // This talk's time, worked out with the rest of its session's talks: their
-  // order (the session's talkOrder) and the ones added on the site
+  // edits, the ones added on the site and the session's talkOrder
   // (collab-week-talk-times.js, as on the session page).
-  var timed = null;         // the computed time, once known
   function loadTime(){
-    if (!base.sessionSlug) return;
+    if (!base || !base.sessionSlug) return;
     Promise.all([
       db.collection('collabWeekSessions').doc(base.sessionSlug).get(),
       db.collection('collabWeekTalks').where('sessionSlug', '==', base.sessionSlug).get()
     ]).then(function(res){
       var order = res[0].exists ? res[0].data().talkOrder : null;
-      var addedTalks = res[1].docs.map(function(d){ return d.data(); }).filter(function(t){ return t.added; });
-      var mine = CollabWeekTalkTimes.schedule(base.sessionTalks, addedTalks, order, base.sessionTime)
+      var docs = res[1].docs.map(function(d){ return d.data(); });
+      var mine = CollabWeekTalkTimes.schedule(base.sessionTalks, docs, order, base.sessionTime)
         .filter(function(t){ return t.slug === slug; })[0];
-      timed = mine ? mine.time : null;
+      timed = mine ? mine.time : '';
       if (!editing) render();
     }).catch(function(err){ console.error('[BOLD Collaboration Week] working out the talk’s time failed', err); });
   }

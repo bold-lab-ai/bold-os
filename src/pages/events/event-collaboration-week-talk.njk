@@ -9,7 +9,7 @@ eleventyComputed:
   description: "A talk at BOLD Collaboration Week."
 css: "event-collaboration-week-session"
 sdk: ["firestore", "functions"]
-scripts: ["collab-week-talk-times.js", "pages/event-collaboration-week-talk.js"]
+scripts: ["collab-week-speakers.js", "collab-week-talk-times.js", "pages/event-collaboration-week-talk.js"]
 ---
 {% set venue = collabWeekLocations | findBySlug(talk.locationSlug) %}
 <div class="detail">

@@ -1767,23 +1767,22 @@ exports.refreshPeople = onCall(
 // A talk comes either from the programme (src/_data, with its own generated
 // page) or was added from its session's page (createTalk; `added: true`).
 // collabWeekTalks/{slug} holds an added talk whole, and a programme talk's
-// edits since (TALK_FIELDS, incl. presentationUrl); both carry the talk's
-// presenterEmails. Readable by the lab, written only here.
+// edits since. Either way the same fields can be edited (TALK_FIELDS), and
+// the talk's speakers are people ([{ name, email }]): their names make its
+// `speaker` line, their emails its presenterEmails. Readable by the lab,
+// written only here. No talk's time is stored: the pages work it out from
+// its session's order and durations.
 //
 // Access is by sign-in email only: a presenter (presenterEmails), a lead of
 // the talk's session (its leads' emails in the published programme,
 // event-collaboration-week-talks.json, plus collabWeekSessions/{slug}.leadEmails)
-// or a PI/admin can edit a talk. Only leads and PIs/admins can set who the
-// presenters are, add a talk to a session or remove an added one. A
-// programme talk's speaker and duration stay with the schedule; an added
-// talk's are edited here too. No talk's time is stored here: the pages work
-// it out from its session's order and durations. An added talk's speakers are people
-// ([{ name, email }]): their names make its `speaker` line and their emails
-// its presenterEmails.
+// or a PI/admin can edit a talk. Only leads and PIs/admins can change the
+// speakers, add a talk to a session, or remove one: an added talk is
+// deleted, a programme talk marked `removed` (and can be restored).
 const TALKS_URL = 'https://bold-lab-ai.github.io/bold-os/event-collaboration-week-talks.json';
-const TALK_FIELDS = { title: 300, type: 40, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
+const TALK_FIELDS = { title: 300, type: 40, duration: 100, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
 const TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // labels in src/_data/collabWeekTypes.js
-const ADDED_TALK_FIELDS = Object.assign({ speaker: 300, duration: 100 }, TALK_FIELDS);
+const ADDED_TALK_FIELDS = Object.assign({ speaker: 300 }, TALK_FIELDS);
 
 // [{ name, email }] → { speakers, speaker, presenterEmails }
 function speakerFields(list){
@@ -1858,7 +1857,8 @@ function talkTextFields(edits, allowed){
 
 // data: { slug } → { canEdit, canSetPresenters };
 // { slug, edits: { field: text, …, presenterEmails?: [email, …] } } saves them;
-// { slug, remove: true } deletes an added talk.
+// { slug, remove: true } removes it from its session; { slug, restore: true } puts
+// a removed programme talk back.
 exports.editTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
@@ -1869,9 +1869,15 @@ exports.editTalk = onCall(
     const ref = db.collection('collabWeekTalks').doc(talk.slug);
     const role = await talkRole(catalog, email, talk, (await ref.get()).data());
     const access = { canEdit: !!role, canSetPresenters: role === 'admin' || role === 'lead' };
-    if (data.remove) {
-      if (!talk.added) throw new HttpsError('failed-precondition', 'Only a talk added from the session page can be removed.');
-      if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can remove a talk.');
+    if (data.remove || data.restore) {
+      if (!talk.sessionSlug) throw new HttpsError('failed-precondition', 'Only a talk in a session can be removed.');
+      if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can remove or restore a talk.');
+      const who = { email, name: request.auth.token.name || '' };
+      if (!talk.added) {
+        await ref.set({ slug: talk.slug, sessionSlug: talk.sessionSlug, removed: !!data.remove, updatedBy: who, updatedAt: Date.now() }, { merge: true });
+        return { removed: !!data.remove };
+      }
+      if (data.restore) throw new HttpsError('failed-precondition', 'An added talk is deleted when removed.');
       await ref.delete();
       // …and from its session's talk order, if it was reordered.
       const sessionRef = db.collection('collabWeekSessions').doc(talk.sessionSlug);
@@ -1883,7 +1889,6 @@ exports.editTalk = onCall(
     const edits = Object.assign({}, data.edits);
     let fromSpeakers = null;
     if ('speakers' in edits) {
-      if (!talk.added) throw new HttpsError('invalid-argument', 'Unknown field: speakers');
       if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can change the speakers.');
       fromSpeakers = speakerFields(edits.speakers);
       delete edits.speakers; delete edits.speaker; delete edits.presenterEmails;

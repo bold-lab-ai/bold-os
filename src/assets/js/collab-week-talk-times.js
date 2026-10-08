@@ -2,9 +2,11 @@
 // shared by the session page (its talk list) and each talk's own page, so
 // both agree.
 //
-// Order: the programme's talks (src/_data/collabWeekSessions.js), then the
-// ones added on the site (oldest first), rearranged by the session's
-// `talkOrder` (talk slugs, or titles for talks without a page).
+// Talks: the programme's (src/_data/collabWeekSessions.js) with their edits
+// laid over them, then the ones added on the site (oldest first) — the
+// session's collabWeekTalks docs — leaving out any that were removed.
+// Order: rearranged by the session's `talkOrder` (talk slugs, or titles for
+// talks without a page).
 //
 // Times: talks run back to back from the session's start ("10 min" →
 // 15:30–15:40, 15:40–15:50, …), up to the first talk without a duration;
@@ -33,12 +35,19 @@ window.CollabWeekTalkTimes = (function(){
     return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
   }
 
-  // programme: the session's talks from src/_data; added: its talks added on
-  // the site; order: its talkOrder; sessionTime: e.g. '15:30–16:45'.
-  // → every talk, in order, each with `time` set (or '' if it can't be known).
-  function schedule(programme, added, order, sessionTime){
-    programme = programme || [];
-    var talks = programme.concat((added || []).slice().sort(function(a, b){ return (a.createdAt || 0) - (b.createdAt || 0); }));
+  // programme: the session's talks from src/_data; docs: its collabWeekTalks
+  // docs (edits, and talks added on the site); order: its talkOrder;
+  // sessionTime: e.g. '15:30–16:45'.
+  // → every talk still in the session, in order, each with `time` set (or ''
+  // if it can't be known).
+  function schedule(programme, docs, order, sessionTime){
+    var slots = programme || [];
+    var bySlug = {};
+    (docs || []).forEach(function(d){ if (d.slug) bySlug[d.slug] = d; });
+    programme = slots.map(function(t){ return t.slug && bySlug[t.slug] ? Object.assign({}, t, bySlug[t.slug], { time: t.time }) : t; });
+    var added = (docs || []).filter(function(d){ return d.added; })
+      .sort(function(a, b){ return (a.createdAt || 0) - (b.createdAt || 0); });
+    var talks = programme.concat(added).filter(function(t){ return !t.removed; });
     if (order && order.length) {
       var pos = function(t){ var i = order.indexOf(key(t)); return i < 0 ? order.length : i; };
       talks = talks.map(function(t, i){ return { t: t, i: i }; })
@@ -46,8 +55,8 @@ window.CollabWeekTalkTimes = (function(){
         .map(function(x){ return x.t; });
     }
     var mins = talks.map(function(t){ return minutesOf(t.duration); });
-    if (programme.some(function(t){ return t.time; }) && !mins.every(Boolean)) {
-      return talks.map(function(t, i){ return Object.assign({}, t, { time: i < programme.length ? programme[i].time || '' : '' }); });
+    if (slots.some(function(t){ return t.time; }) && !mins.every(Boolean)) {
+      return talks.map(function(t, i){ return Object.assign({}, t, { time: i < slots.length ? slots[i].time || '' : '' }); });
     }
     var start = startOf(sessionTime);
     return talks.map(function(t, i){
