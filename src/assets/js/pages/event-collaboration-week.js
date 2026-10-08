@@ -65,9 +65,9 @@
 // speakers, affiliation) from collabWeekTalks.
 //
 // PIs/admins also change the programme here: × on a session card removes
-// it (a programme session is marked `removed`, shown to them faded with ↺
-// to restore; a session added here is deleted), and "+ Add a session" under
-// a day adds one (collabWeekSessions with added: true — its page is
+// it (marked `removed`, shown to them faded, with ↺ to restore it and Delete
+// to delete it and its talks from Firestore for good — deleteSession), and
+// "+ Add a session" under a day adds one (collabWeekSessions with added: true — its page is
 // event-collaboration-week-session.html?session=<slug>). Both are always
 // shown, greyed out for everyone else (firestore.rules).
 (function(){
@@ -147,6 +147,15 @@
       ctl.textContent = removed ? '↺' : '×';
       ctl.setAttribute('aria-label', removed ? 'Restore this session' : 'Remove this session');
       ctl.title = fullWrite ? (removed ? 'Put this session back on the schedule' : 'Remove this session from the schedule') : NOT_PI;
+      var del = card.querySelector('.card-delete');
+      if (removed && fullWrite && !del) {
+        del = card.appendChild(document.createElement('span'));
+        del.className = 'card-delete';
+        del.setAttribute('role', 'button');
+        del.setAttribute('tabindex', '0');
+        del.textContent = 'Delete';
+        del.title = 'Delete this session and its talks for good';
+      } else if (del && !(removed && fullWrite)) del.remove();
     });
 
     // A slot with several visible sessions lays them out side by side; one with none is hidden.
@@ -170,12 +179,16 @@
     var title = ctl.closest('.session-card').querySelector('.session-title').textContent;
     var who = { updatedAt: Date.now(), updatedBy: me.email };
     var done;
-    if (x && x.removed) done = ref.update(Object.assign({ removed: false }, who));
+    if (ctl.classList.contains('card-delete')) {
+      if (!window.confirm('Delete “' + title + '” for good? Its talks, edits and leads are deleted too. This can’t be undone.')) return;
+      ctl.textContent = 'Deleting…';
+      done = firebase.app().functions('europe-west2').httpsCallable('deleteSession')({ slug: slug });
+    } else if (x && x.removed) done = ref.update(Object.assign({ removed: false }, who));
     else if (x && x.added) {
-      if (!window.confirm('Delete “' + title + '” from the schedule? This can’t be undone.')) return;
-      done = ref.delete();
+      if (!window.confirm('Remove “' + title + '” from the schedule? You can put it back with ↺, or delete it for good.')) return;
+      done = ref.update(Object.assign({ removed: true }, who));
     } else {
-      if (!window.confirm('Remove “' + title + '” from the schedule? You can put it back with ↺.')) return;
+      if (!window.confirm('Remove “' + title + '” from the schedule? You can put it back with ↺, or delete it for good.')) return;
       // The first doc for a programme session also records its leads, as the session page does.
       var p = PROGRAMME[slug] || {};
       var seed = x ? {} : { slug: slug, leads: p.leads || [],
@@ -184,18 +197,19 @@
     }
     done.catch(function(err){
       console.error('[BOLD Collaboration Week] changing the schedule failed', err);
-      window.alert('Couldn’t change the schedule — try again.');
+      window.alert((err && err.message) || 'Couldn’t change the schedule — try again.');
+      render();
     });
   }
 
   panel.addEventListener('click', function(e){
-    var ctl = e.target.closest('.card-x');
+    var ctl = e.target.closest('.card-x, .card-delete');
     if (ctl) { e.preventDefault(); e.stopPropagation(); onCardControl(ctl); return; }
     var add = e.target.closest('.day-add');
     if (add && !add.disabled) openAddForm(add.closest('.day-card'));
   });
   panel.addEventListener('keydown', function(e){
-    var ctl = e.target.closest && e.target.closest('.card-x');
+    var ctl = e.target.closest && e.target.closest('.card-x, .card-delete');
     if (ctl && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onCardControl(ctl); }
   });
 

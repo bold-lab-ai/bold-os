@@ -1926,6 +1926,33 @@ exports.editTalk = onCall(
   }
 );
 
+// data: { slug } → { talks }. Deletes a session removed from the schedule
+// for good, PIs/admins only: its talk docs (added talks and edits) and its
+// own doc. A programme session (src/_data) would come back from the repo
+// without a doc, so its doc is cut down to { slug, removed: true } instead.
+exports.deleteSession = onCall(
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can delete a session.');
+    const slug = String((request.data || {}).slug || '');
+    if (!slug || slug.indexOf('/') >= 0) throw new HttpsError('invalid-argument', 'No such session.');
+    const ref = db.collection('collabWeekSessions').doc(slug);
+    const doc = (await ref.get()).data();
+    if (!doc || !doc.removed) throw new HttpsError('failed-precondition', 'Remove the session from the schedule first.');
+    const talks = await db.collection('collabWeekTalks').where('sessionSlug', '==', slug).get();
+    for (let i = 0; i < talks.docs.length; i += 400) {
+      const batch = db.batch();
+      talks.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+    const inProgramme = (await collabWeekCatalog()).sessions.some(s => s.slug === slug);
+    if (inProgramme) await ref.set({ slug, removed: true, deletedAt: Date.now(), deletedBy: email });
+    else await ref.delete();
+    logger.info('deleteSession', { slug, inProgramme, talks: talks.size, by: email });
+    return { talks: talks.size };
+  }
+);
+
 // data: { sessionSlug, title, speakers?: [{ name, email }], duration?, type? } → { slug }.
 // Its time isn't stored: the pages work it out from the session's order and durations.
 // Adds a talk to a session; only its leads and PIs/admins can.
