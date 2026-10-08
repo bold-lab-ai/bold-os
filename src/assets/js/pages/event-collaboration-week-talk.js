@@ -62,6 +62,24 @@
     var back = el('talkBack');
     if (back && s.slug) { back.href = 'event-collaboration-week-session-' + s.slug + '.html'; back.textContent = '← Back to ' + (s.title || 'the session'); }
     document.title = (doc.title || 'Talk') + ' | BOLD Collaboration Week';
+    // A session added from the schedule page isn't in the programme: its details are in Firestore.
+    if (!s.slug && doc.sessionSlug) db.collection('collabWeekSessions').doc(doc.sessionSlug).get().then(function(snap){
+      var x = snap.data();
+      if (!x) return;
+      venue = locations.filter(function(l){ return l.slug === x.locationSlug; })[0] || {};
+      Object.assign(base, { sessionTitle: x.title || '', day: x.day || '', sessionTime: x.time || '' });
+      if (back) { back.href = 'event-collaboration-week-session.html?session=' + encodeURIComponent(doc.sessionSlug); back.textContent = '← Back to ' + (x.title || 'the session'); }
+      loadTime();
+      if (!editing) render();
+    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the session failed', err); });
+  }
+
+  // A programme session has its own page; one added from the schedule shares one.
+  function sessionHref(sessionSlug){
+    var sessions = JSON.parse((el('talkSessions') || {}).textContent || 'null');
+    var inProgramme = !added || (sessions || []).some(function(x){ return x.slug === sessionSlug; });
+    return inProgramme ? 'event-collaboration-week-session-' + sessionSlug + '.html'
+      : 'event-collaboration-week-session.html?session=' + encodeURIComponent(sessionSlug);
   }
 
   var peoplePromise = null;
@@ -113,7 +131,7 @@
     if (t.removed) html += '<p class="detail-msg">This talk was removed from its session, so it isn’t on the programme.</p>';
     html += '<dl class="detail-grid">';
     if (t.speaker) html += '<dt>Speaker</dt><dd>' + esc(t.speaker) + (t.affiliation ? ' <span class="detail-muted">(' + esc(t.affiliation) + ')</span>' : '') + '</dd>';
-    if (t.sessionSlug) html += '<dt>Session</dt><dd><a href="event-collaboration-week-session-' + esc(t.sessionSlug) + '.html">' + esc(t.sessionTitle) + '</a></dd>';
+    if (t.sessionSlug) html += '<dt>Session</dt><dd><a href="' + esc(sessionHref(t.sessionSlug)) + '">' + esc(t.sessionTitle) + '</a></dd>';
     if (t.day) html += '<dt>When</dt><dd>' + esc(t.day) + (t.time ? ', ' + esc(t.time) : '') + '</dd>';
     if (venue.name) html += '<dt>Where</dt><dd>' + esc(venue.name) +
       (venue.mapsUrl ? ' &middot; <a href="' + esc(venue.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a>' : '') +
@@ -185,7 +203,7 @@
     var btn = el(remove ? 'talkRemove' : 'talkRestore');
     btn.disabled = true;
     editTalk(remove ? { slug: slug, remove: true } : { slug: slug, restore: true }).then(function(){
-      if (remove) { location.href = 'event-collaboration-week-session-' + base.sessionSlug + '.html'; return; }
+      if (remove) { location.href = sessionHref(base.sessionSlug); return; }
       saved = Object.assign({}, saved || {}, { removed: false });
       render();
     }).catch(function(err){

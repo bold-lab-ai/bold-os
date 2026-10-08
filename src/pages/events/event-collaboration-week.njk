@@ -1,7 +1,7 @@
 ---
 title: "BOLD Collaboration Week | BOLD Lab"
 description: "5–10 October 2026, Oxford — five days for BOLD Associates to engage more deeply with BOLD, in person."
-sdk: ["firestore"]
+sdk: ["firestore", "functions"]
 css: "event-collaboration-week"
 scripts: ["pages/event-collaboration-week.js"]
 permalink: "event-collaboration-week.html"
@@ -22,7 +22,7 @@ permalink: "event-collaboration-week.html"
 
   <div class="tab-panel" id="panelSchedule" role="tabpanel" aria-labelledby="tabBtnSchedule">
 {% for day in collabWeekSchedule.days %}
-    <div class="day-card" id="day-{{ day.date }}" data-date="{{ day.date }}">
+    <div class="day-card" id="day-{{ day.date }}" data-date="{{ day.date }}" data-label="{{ day.label }}">
       <h3>{{ day.label }}</h3>
       {% for block in day.blocks %}
       {% if block.kind == 'logistics' %}
@@ -59,6 +59,7 @@ permalink: "event-collaboration-week.html"
       </div>
       {% endif %}
       {% endfor %}
+      <button class="day-add" type="button" disabled title="Only PIs and admins can add a session">+ Add a session</button>
     </div>
 {% endfor %}
   </div>
@@ -76,3 +77,5 @@ permalink: "event-collaboration-week.html"
 </main>
 
 <script type="application/json" id="scheduleTypes">{{ collabWeekTypes | jsonScript | safe }}</script>
+<script type="application/json" id="scheduleLocations">{{ collabWeekLocations | jsonScript | safe }}</script>
+<script type="application/json" id="scheduleSessions">{{ collabWeekSessions | jsonScript | safe }}</script>

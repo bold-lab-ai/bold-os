@@ -169,14 +169,16 @@ service cloud.firestore {
     // (src/_data/collabWeekSessions.js); a document here, keyed by the
     // session's slug, holds its edits and its leads ({name, email} people
     // records, plus leadEmails: every address they may sign in with,
-    // lowercased). A PI/admin creates it and can change anything; a lead
-    // can edit their session's fields but not who the leads are.
+    // lowercased) — or, with added: true, a whole session added from the
+    // schedule page. A PI/admin creates it and can change anything (incl.
+    // `removed`, which takes a session off the schedule) or delete it; a
+    // lead can edit their session's fields but not who the leads are.
     match /collabWeekSessions/{slug} {
       allow read: if isLabMember();
-      allow create: if hasFullWrite();
+      allow create, delete: if hasFullWrite();
       allow update: if hasFullWrite() || (
         isLabMember() && email().lower() in resource.data.leadEmails &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['leads', 'leadEmails', 'slug'])
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['leads', 'leadEmails', 'slug', 'added', 'removed', 'day', 'date', 'time', 'locationSlug', 'type'])
       );
     }
 

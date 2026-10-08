@@ -1821,6 +1821,14 @@ async function findTalk(catalog, slug){
   return doc && doc.added ? { slug, sessionSlug: doc.sessionSlug || '', added: true } : null;
 }
 
+// A session in the programme, or one added from the schedule page (and not removed).
+async function sessionExists(catalog, sessionSlug){
+  if (!sessionSlug || sessionSlug.indexOf('/') >= 0) return false;
+  if (catalog.sessions.some(s => s.slug === sessionSlug)) return true;
+  const doc = (await db.collection('collabWeekSessions').doc(sessionSlug).get()).data();
+  return !!(doc && doc.added);
+}
+
 async function isSessionLead(catalog, email, sessionSlug){
   if (!sessionSlug) return false;
   const s = catalog.sessions.find(x => x.slug === sessionSlug);
@@ -1927,7 +1935,7 @@ exports.createTalk = onCall(
     const data = request.data || {};
     const catalog = await collabWeekCatalog();
     const sessionSlug = String(data.sessionSlug || '');
-    if (!catalog.sessions.some(s => s.slug === sessionSlug)) throw new HttpsError('not-found', 'No such session.');
+    if (!(await sessionExists(catalog, sessionSlug))) throw new HttpsError('not-found', 'No such session.');
     if (!(await isFullWrite(email)) && !(await isSessionLead(catalog, email, sessionSlug))) {
       throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can add a talk.');
     }

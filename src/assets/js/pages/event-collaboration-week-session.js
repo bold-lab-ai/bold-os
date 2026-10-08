@@ -6,6 +6,10 @@
 // swaps it for a form. Only a PI/admin can change who the leads are
 // (firestore.rules). Day, time and venue belong to the whole schedule, and
 // each talk has its own generated page, so neither is edited here.
+//
+// A session added from the schedule page has no programme entry: it's all in
+// collabWeekSessions/{slug} (added: true), shown by the one page
+// event-collaboration-week-session.html?session=<slug>.
 (function(){
   if (!BOLD.getAuth()) return;
 
@@ -13,6 +17,9 @@
   var el = function(id){ return document.getElementById(id); };
   var bodyEl = el('sessionBody');
   var base = JSON.parse(el('sessionData').textContent);
+  var added = !base;        // an added session: its details come from its Firestore doc
+  var missing = false;      // an added session that doesn't exist (any more)
+  if (added) base = { slug: new URLSearchParams(location.search).get('session') || '', title: '', talks: [], leads: [] };
   var venue = JSON.parse(el('sessionLocation').textContent) || {};
   var TYPES = JSON.parse(el('sessionTypes').textContent) || {};
 
@@ -71,14 +78,24 @@
     { key: 'subtitle', label: 'Subtitle', input: 'text' },
     { key: 'room', label: 'Room', input: 'text', placeholder: 'e.g. Seminar Room 2' },
     { key: 'contact', label: 'Contact', input: 'text', placeholder: 'e.g. name@example.com' },
-    { key: 'overallDescription', label: 'Overall description', input: 'area' },
+    { key: 'overallDescription', label: 'Abstract', input: 'area' },
     { key: 'problems', label: 'Problems', input: 'area' },
     { key: 'background', label: 'Background', input: 'area' },
     { key: 'keyQuestions', label: 'Key questions', input: 'area', list: true, hint: 'One question per line.' },
     { key: 'aim', label: 'Aim', input: 'area' },
     { key: 'links', label: 'Links', input: 'area', list: true, hint: 'One per line: Label | https://…' },
-    { key: 'agenda', label: 'Agenda', input: 'area', list: true, hint: 'One per line: time | activity' }
+    { key: 'agenda', label: 'Schedule', input: 'area', list: true, hint: 'One per line: time | activity' }
   ];
+
+  // What the edit form changes, for every kind of session: title, room,
+  // abstract, and the schedule — written by hand for a workshop (agenda),
+  // worked out from the talks otherwise (the Talk order list below). The
+  // other FIELDS are still shown when the programme has them.
+  var EDIT_KEYS = ['title', 'room', 'overallDescription', 'agenda'];
+  function isWorkshop(){ return base.type === 'workshop'; }
+  function editFields(){
+    return FIELDS.filter(function(f){ return EDIT_KEYS.indexOf(f.key) >= 0 && (f.key !== 'agenda' || isWorkshop()); });
+  }
 
   function toText(key, v){
     if (!v) return '';
@@ -193,7 +210,11 @@
 
   function addFormHtml(){
     return '<div class="edit-form add-talk">' + ADD_FIELDS.map(function(f){
-      var dflt = { pitches: 'pitch', keynote: 'keynote' }[base.type] || 'research-talk';
+      // The type most of the session's talks have, or the session's own kind.
+      var counts = {};
+      allTalks().forEach(function(t){ if (t.type) counts[t.type] = (counts[t.type] || 0) + 1; });
+      var dflt = Object.keys(counts).sort(function(a, b){ return counts[b] - counts[a]; })[0] ||
+        (base.type === 'keynote' ? 'keynote' : 'research-talk');
       return '<div class="edit-field"><label for="a_' + f.key + '">' + f.label + '</label>' +
         (f.type === 'select'
           ? '<select id="a_' + f.key + '">' + TALK_TYPES.map(function(o){
@@ -235,12 +256,23 @@
     });
   }
 
+  // An added session's type, day, time and venue, from its doc.
+  function useAddedDoc(doc){
+    ['title', 'type', 'day', 'time', 'locationSlug'].forEach(function(k){ base[k] = doc[k] || ''; });
+    var locations = JSON.parse(el('sessionLocations').textContent) || [];
+    venue = locations.filter(function(l){ return l.slug === doc.locationSlug; })[0] || {};
+    document.title = (doc.title || 'Session') + ' | BOLD Collaboration Week';
+  }
+
   function viewHtml(){
+    if (missing) return '<p class="detail-muted">This session doesn’t exist — it may have been removed from the schedule.</p>';
+    if (added && !saved) return '<p class="detail-muted">Loading…</p>';
     var s = session();
     var html = badge(s.type) + '<div class="detail-head"><h2>' + esc(s.title) + '</h2>' +
       editButton() + '</div>';
     if (adding) html += addFormHtml();
     if (s.subtitle) html += '<p class="detail-subtitle">' + esc(s.subtitle) + '</p>';
+    if (s.removed) html += '<p class="detail-msg">This session was removed from the schedule. A PI or admin can put it back with ↺ on the schedule page.</p>';
 
     var where = esc(venue.name || '') + (s.room ? ' &mdash; ' + esc(s.room) : '') +
       (venue.mapsUrl ? ' &middot; <a href="' + esc(venue.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a>' : '') +
@@ -272,7 +304,7 @@
         (t.type ? '<span class="talk-type">' + badge(t.type) + '</span>' : '') + '</li>';
     }).join('') + '</ul>');
 
-    if (!isEmpty(s.agenda)) html += section('Agenda', '<ul class="session-agenda">' + s.agenda.map(function(a){
+    if (!isEmpty(s.agenda)) html += section('Schedule', '<ul class="session-agenda">' + s.agenda.map(function(a){
       return '<li><span class="t">' + esc(a.time || '') + '</span><span class="e">' + esc(a.activity) +
         (a.speaker ? ' — ' + esc(a.speaker) : '') + (a.duration ? ' (' + esc(a.duration) + ')' : '') + '</span></li>';
     }).join('') + '</ul>');
@@ -288,20 +320,22 @@
     var html = '<div class="detail-head"><h2>Edit session</h2></div>' +
       '<p class="detail-subtitle">' + esc(s.day + ', ' + s.time + ' · ' + (venue.name || '')) +
       ' — day, time and venue are set with the schedule.</p><div class="edit-form">';
-    FIELDS.forEach(function(f){
+    editFields().forEach(function(f){
       var id = 'f_' + f.key, v = toText(f.key, s[f.key]);
       html += '<div class="edit-field"><label for="' + id + '">' + esc(f.label) + '</label>' +
         (f.input === 'text'
           ? '<input type="text" id="' + id + '" value="' + esc(v) + '" placeholder="' + esc(f.placeholder || '') + '">'
           : '<textarea id="' + id + '" rows="' + (f.list ? 5 : 6) + '">' + esc(v) + '</textarea>') +
         (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
-      if (f.key === 'contact') html += '<div class="edit-field"><span class="edit-label">Leads</span>' + (fullWrite
-        ? '<div id="leadRows"></div>'
+      // The leads can edit the session and its talks; only PIs/admins change them.
+      if (f.key === 'room') html += '<div class="edit-field"><span class="edit-label">Leads</span>' + (fullWrite
+        ? '<div id="leadRows"></div><p class="edit-hint">The leads can edit this session and its talks.</p>'
         : '<p class="edit-static">' + leadsHtml(s.leads) + '</p><p class="edit-hint">Only PIs and admins can change the leads.</p>') + '</div>';
     });
-    if (allTalks().length > 1) html += '<div class="edit-field"><span class="edit-label">Talk order</span>' +
-      '<ul class="session-talks talk-order" id="talkOrder"></ul>' +
-      '<p class="edit-hint">Times follow the order: back to back from the session’s start when every talk has a duration, otherwise the programme’s start times stay in place.</p></div>';
+    if (!isWorkshop()) html += '<div class="edit-field"><span class="edit-label">Schedule</span>' + (allTalks().length > 1
+      ? '<ul class="session-talks talk-order" id="talkOrder"></ul>' +
+        '<p class="edit-hint">Worked out from the talks: back to back from the session’s start, in this order, by each talk’s duration. Add a talk with “Add a talk”; change one’s duration on its own page.</p>'
+      : '<p class="edit-hint">Worked out from the talks: add them with “Add a talk”, then set their order here.</p>') + '</div>';
     return html + '</div><div class="field-error" id="editError" hidden></div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="editSave">Save</button>' +
       '<button class="btn" type="button" id="editCancel">Cancel</button></div>';
@@ -376,8 +410,9 @@
     var fail = function(msg){ var e = el('editError'); e.textContent = msg; e.hidden = false; };
     if (!canEdit() || !ref) return fail(NOT_EDITOR + '.');
     var s = session(), patch = {};
-    for (var i = 0; i < FIELDS.length; i++) {
-      var f = FIELDS[i], parsed = fromText(f, el('f_' + f.key).value);
+    var fields = editFields();
+    for (var i = 0; i < fields.length; i++) {
+      var f = fields[i], parsed = fromText(f, el('f_' + f.key).value);
       if (parsed.error) return fail(parsed.error);
       if (JSON.stringify(parsed.value) !== JSON.stringify(fromText(f, toText(f.key, s[f.key])).value)) patch[f.key] = parsed.value;
     }
@@ -563,6 +598,10 @@
     loadTalkEdits();
     unsubscribe = ref.onSnapshot(function(snap){
       saved = snap.exists ? snap.data() : null;
+      if (added) {
+        missing = !saved || !saved.added;
+        if (missing) saved = null; else useAddedDoc(saved);
+      }
       if (!editing) (adding ? renderKeepingAdd : render)();
     }, function(err){
       console.error('[BOLD Collaboration Week] loading the session failed', err);

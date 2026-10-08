@@ -44,7 +44,7 @@ export default [
   },
   {
     slug: 'project-pitches-i',
-    type: 'pitches',
+    type: 'research-talks',
     title: 'Project Pitches I — Open-ended environments & discovery',
     day: 'Monday 5 Oct', time: '15:30–16:45',
     locationSlug: 'natural-history-museum',

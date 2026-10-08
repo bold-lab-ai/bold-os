@@ -34,7 +34,7 @@ main p{margin:16px 0 0;}
 .day-card h3{font-size:19px;}
 /* The schedule gets the full content width: parallel sessions sit side by side. */
 main > #panelSchedule{max-width:none;}
-.slot{display:flex; gap:20px; padding:14px 0; border-bottom:1px solid var(--line);}
+.slot{display:flex; gap:20px; padding:14px 0; border-bottom:1px solid var(--line); scroll-margin-top:12px;}
 .day-card .slot:first-of-type{border-top:1px solid var(--line); margin-top:14px;}
 .slot-time{flex:0 0 auto; width:96px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; padding-top:3px;}
 /* Each card spans four rows of the slot's grid (type / title / presenter / place)
@@ -97,5 +97,37 @@ html.auth-hint #proposalsSignedOut{display:none;}
   color:var(--accent); border:1px solid currentColor; white-space:nowrap; text-decoration:none;
 }
 .type-research-talks, .type-research-talk{color:#256b60;}
-.type-pitches, .type-pitch{color:#7d5a99;}
+.type-pitch{color:#7d5a99;}
 .type-welcome, .type-keynote, .type-panel{color:#8a5a12;}
+
+/* Changing the programme (PIs/admins; greyed out for everyone else). */
+.session-card{position:relative;}
+.card-x{
+  position:absolute; top:0; right:0; width:22px; height:22px; display:flex; align-items:center; justify-content:center;
+  font-family:var(--sans); font-size:15px; line-height:1; color:var(--muted); border-radius:var(--radius); cursor:pointer;
+}
+.card-x:hover:not(.is-off), .card-x:focus-visible{color:var(--danger-text); background:var(--wash);}
+.card-x.is-off{opacity:.35; cursor:default;}
+.session-card .session-title{padding-right:22px;}
+.session-card.is-removed{opacity:.45;}
+.session-card.is-removed .session-title{text-decoration:line-through;}
+.session-card.is-removed .card-x:hover{color:var(--accent);}
+.day-add{
+  margin-top:12px; font-family:var(--sans); font-size:13px; color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
+  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
+}
+.day-add:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
+.session-add-form{margin-top:14px; padding:14px 16px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); max-width:520px; font-family:var(--sans); font-size:13px;}
+.session-add-form label{display:block; margin-bottom:10px; color:var(--muted);}
+.session-add-form input, .session-add-form select{
+  display:block; width:100%; margin-top:4px; font-family:var(--sans); font-size:14px; color:var(--ink);
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:7px 9px; box-sizing:border-box;
+}
+.session-add-row{display:flex; gap:12px;}
+.session-add-row label{flex:1 1 0; min-width:0;}
+.session-add-head{margin:0 0 10px !important; font-weight:600; color:var(--ink);}
+.session-add-hint{margin:2px 0 0 !important; color:var(--muted);}
+.session-add-error{margin:8px 0 0 !important; color:var(--danger-text);}
+.session-add-actions{display:flex; gap:10px; margin-top:12px;}
+.session-add-actions button{font-family:var(--sans); font-size:14px; font-weight:600; padding:7px 14px; border:1px solid var(--line); background:var(--surface); color:var(--ink); border-radius:var(--radius); cursor:pointer;}
+.session-add-actions .sa-save{border-color:var(--ink);}
