@@ -81,7 +81,8 @@
   var LOCATIONS = json('scheduleLocations');
   var PROGRAMME = {};
   json('scheduleSessions').forEach(function(x){ PROGRAMME[x.slug] = x; });
-  var SESSION_TYPES = ['workshop', 'research-talks', 'keynote', 'panel'];
+  var SESSION_TYPES = ['workshop', 'keynote', 'oral', 'panel', 'welcome'];
+  var SOLO = ['keynote', 'oral'];  // a session that is one talk
   var NOT_PI = 'Only PIs and admins can change the programme';
 
   var docs = {};            // collabWeekSessions, by slug
@@ -132,7 +133,12 @@
     Array.prototype.forEach.call(panel.querySelectorAll('.session-card[data-session]'), function(card){
       var slug = card.getAttribute('data-session'), x = docs[slug] || {};
       if (!card.hasAttribute('data-added')) {
-        if (x.title) card.querySelector('.session-title').textContent = x.title;
+        if (x.title && !card.hasAttribute('data-talk')) card.querySelector('.session-title').textContent = x.title;
+        if (x.type && TYPES[x.type]) {
+          var badge = card.querySelector('.type-badge');
+          badge.className = 'type-badge type-' + x.type;
+          badge.textContent = TYPES[x.type];
+        }
         if (x.leads) card.querySelector('.session-who').textContent = x.leads.map(function(l){ return l.name; }).join(', ');
         if (x.room !== undefined) card.querySelector('.session-where').innerHTML =
           esc(card.getAttribute('data-venue')) + (x.room ? ' &middot; ' + esc(x.room) : '');
@@ -228,7 +234,7 @@
       '<label>Ends<input type="time" class="sa-end" step="300"></label></div>' +
       '<div class="session-add-row"><label>Venue<select class="sa-venue">' + LOCATIONS.map(function(l){ return '<option value="' + esc(l.slug) + '">' + esc(l.name) + '</option>'; }).join('') + '</select></label>' +
       '<label>Room<input type="text" class="sa-room" placeholder="optional"></label></div>' +
-      '<p class="session-add-hint">Then open it to add its leads, abstract, schedule and talks.</p>' +
+      '<p class="session-add-hint">Then open it to add the rest: leads, abstract and talks — or, for a keynote or an oral, its speaker and abstract.</p>' +
       '<p class="session-add-error" hidden></p>' +
       '<div class="session-add-actions"><button type="button" class="sa-save">Add session</button><button type="button" class="sa-cancel">Cancel</button></div>';
     day.insertBefore(form, day.querySelector('.day-add'));
@@ -244,11 +250,15 @@
       var slug = stem + '-' + Math.random().toString(16).slice(2, 8);
       var now = Date.now();
       q('.sa-save').disabled = true;
+      var type = q('.sa-type').value;
       db.collection('collabWeekSessions').doc(slug).set({
-        added: true, slug: slug, title: title, type: q('.sa-type').value,
+        added: true, slug: slug, title: title, type: type,
         date: day.getAttribute('data-date'), day: day.getAttribute('data-label'), time: start + '–' + end,
         locationSlug: q('.sa-venue').value, room: q('.sa-room').value.trim(),
         leads: [], leadEmails: [], createdAt: now, createdBy: me.email, updatedAt: now, updatedBy: me.email
+      }).then(function(){
+        // A keynote or an oral is one talk: add it now, with the session's title.
+        if (SOLO.indexOf(type) >= 0) return firebase.app().functions('europe-west2').httpsCallable('createTalk')({ sessionSlug: slug, title: title, type: 'research-talk' });
       }).then(function(){ form.remove(); }).catch(function(e){
         console.error('[BOLD Collaboration Week] adding a session failed', e);
         box.textContent = 'Couldn’t add the session — try again.'; box.hidden = false;
@@ -275,7 +285,7 @@
         var t = doc.data();
         Array.prototype.forEach.call(document.querySelectorAll('.session-card[data-talk="' + doc.id + '"]'), function(card){
           if (t.title) card.querySelector('.session-title').textContent = t.title;
-          if (t.type && TYPES[t.type]) {
+          if (t.type && TYPES[t.type] && !card.hasAttribute('data-session')) {  // a keynote's card shows the session's type
             var b = card.querySelector('.type-badge');
             b.className = 'type-badge type-' + t.type;
             b.textContent = TYPES[t.type];

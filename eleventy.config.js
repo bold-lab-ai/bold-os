@@ -22,9 +22,9 @@ export default function (eleventyConfig) {
   // Collaboration Week session/talk pages to resolve a session's location.
   eleventyConfig.addFilter('findBySlug', (arr, slug) => (arr || []).find((item) => item.slug === slug));
 
-  // Every Collaboration Week talk that has its own page: the morning research
-  // talks (collabWeekResearchTalks.js), then the talks inside sessions that
-  // have a `slug`, with their session's slug/title/day/venue — paginated by
+  // Every Collaboration Week talk that has its own page: the talks inside
+  // sessions that have a `slug` (a keynote session's one talk included), with
+  // their session's slug/title/day/venue — paginated by
   // event-collaboration-week-talk.njk. A collection rather than a data file
   // importing the others, so `--serve` rebuilds it whenever they change.
   eleventyConfig.addCollection('collabWeekTalks', (api) => {
@@ -32,11 +32,11 @@ export default function (eleventyConfig) {
     const abstracts = data.collabWeekAbstracts || {};
     const inSessions = (data.collabWeekSessions || []).flatMap((session) => (session.talks || [])
       .filter((talk) => talk.slug)
-      .map((talk) => ({ ...talk, abstract: abstracts[talk.slug] || '', sessionSlug: session.slug, sessionTitle: session.title, locationSlug: session.locationSlug, day: session.day,
+      .map((talk) => ({ ...talk, abstract: talk.abstract || abstracts[talk.slug] || '', sessionSlug: session.slug, sessionType: session.type, sessionTitle: session.title, locationSlug: session.locationSlug, day: session.day,
         // The session's start and its programme talks, for working out this talk's time
         // once talks are reordered or added (collab-week-talk-times.js).
         sessionTime: session.time, sessionTalks: session.talks.map((t) => ({ slug: t.slug, title: t.title, duration: t.duration, time: t.time })) })));
-    return [...(data.collabWeekResearchTalks || []), ...inSessions];
+    return inSessions;
   });
 
   // Every programme talk and session, with the session leads who may edit

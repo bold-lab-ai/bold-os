@@ -14,6 +14,12 @@
 // signed-in person may do. The talk's time isn't edited: it follows from
 // its session's order and durations (collab-week-talk-times.js).
 (function(){
+  // A keynote's or an oral's one talk is shown by its session's page.
+  var own = JSON.parse(document.getElementById('talkData').textContent);
+  if (own && (own.sessionType === 'keynote' || own.sessionType === 'oral') && (own.sessionTalks || []).length === 1) {
+    location.replace('event-collaboration-week-session-' + own.sessionSlug + '.html');
+    return;
+  }
   if (!BOLD.getAuth()) return;
 
   var esc = BOLD.escapeHtml;
@@ -32,7 +38,7 @@
 
   var NOT_EDITOR = 'Only the talk’s presenters, the session’s leads, PIs and admins can edit it';
   var NOT_REMOVER = 'Only the session’s leads, PIs and admins can remove a talk';
-  var TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // as in functions/index.js
+  var TALK_TYPES = ['research-talk', 'pitch'];  // as in functions/index.js
 
   // The form, in order; the Speakers picker goes after the type.
   var FIELDS = [

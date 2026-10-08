@@ -1,7 +1,23 @@
-// Morning research talks, open to everyone, from the published programme
-// (Google Doc 1U-RFL5O6NNN2CpPcLmJuEVHweBT2BVhu9VaEvVsVn3w). Text as written there;
-// "To be confirmed" left empty. Each gets its own page via event-collaboration-week-talk.njk.
+// Talks that are sessions of their own: each becomes a session (built in
+// collabWeekSessions.js) whose page shows the talk — an oral, or a keynote
+// where `sessionType` says so. The morning talks are open to everyone, from
+// the published programme (Google Doc 1U-RFL5O6NNN2CpPcLmJuEVHweBT2BVhu9VaEvVsVn3w;
+// text as written there, "To be confirmed" left empty); the rest are from the
+// programme spreadsheet.
 export default [
+  {
+    "slug": "membrane-free-research-organisation",
+    "sessionType": "keynote",
+    "type": "research-talk",
+    "day": "Monday 5 Oct",
+    "time": "13:45–14:05",
+    "locationSlug": "natural-history-museum",
+    "title": "The Membrane-Free Research Organisation",
+    "speaker": "Irina Haivas",
+    "affiliation": "",
+    "abstract": "",
+    "bio": ""
+  },
   {
     "slug": "alessandro-favero",
     "type": "research-talk",
@@ -217,5 +233,17 @@ export default [
     "affiliation": "London Institute for Mathematical Sciences",
     "abstract": "A discovery can change both what we know and what we are able to discover next. What allows this process to continue? How do adaptive systems generate new capabilities, preserve useful innovations, and create opportunities for further learning? This talk explores these questions across biological evolution and artificial intelligence. I will connect studies of emerging cooperation in artificial life and the interplay between learning and evolution with recent advances in memory architectures for AI. A central theme is how memory turns transient experience into reusable knowledge that can guide future behaviour. I will introduce the predictability frontier: what a system can reliably predict or control within a given resource budget. This framework connects the acquisition of individual capabilities to broader questions about open-ended learning, the growth of adaptive complexity and recursive self-improvement. Experiments in virtual biological systems could make these questions testable, allowing agents to infer mechanisms, choose interventions and build on earlier discoveries. The central challenge is to understand when accumulated knowledge improves the process of discovery itself, enabling learning systems to expand their own possibilities.",
     "bio": "Mikhail Burtsev is an Arnold and Landau AI Fellow at the London Institute for Mathematical Sciences. His research explores how natural and artificial systems acquire, retain and combine knowledge, spanning artificial life, evolutionary learning, neural memory and genomic foundation models. His current work focuses on open-ended learning and the conditions under which accumulated knowledge enables further discovery."
+  },
+  {
+    "slug": "opening-the-black-box",
+    "type": "research-talk",
+    "day": "Friday 9 Oct",
+    "time": "13:45–15:00",
+    "locationSlug": "rhodes-house",
+    "title": "Opening the Black Box and Quantifying Uncertainty in Generative Models",
+    "speaker": "Sattar Vakili",
+    "affiliation": "",
+    "abstract": "",
+    "bio": ""
   }
 ];

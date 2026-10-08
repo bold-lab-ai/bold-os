@@ -1781,7 +1781,7 @@ exports.refreshPeople = onCall(
 // deleted, a programme talk marked `removed` (and can be restored).
 const TALKS_URL = 'https://bold-lab-ai.github.io/bold-os/event-collaboration-week-talks.json';
 const TALK_FIELDS = { title: 300, type: 40, duration: 100, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
-const TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // labels in src/_data/collabWeekTypes.js
+const TALK_TYPES = ['research-talk', 'pitch'];  // labels in src/_data/collabWeekTypes.js; a keynote/oral is a session
 const ADDED_TALK_FIELDS = Object.assign({ speaker: 300 }, TALK_FIELDS);
 
 // [{ name, email }] → { speakers, speaker, presenterEmails }
@@ -1859,7 +1859,7 @@ function talkTextFields(edits, allowed){
   });
   if ('title' in doc && !doc.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
   if (doc.presentationUrl && !/^https?:\/\/\S+$/.test(doc.presentationUrl)) throw new HttpsError('invalid-argument', 'The presentation isn’t a link (https://…).');
-  if ('type' in doc && TALK_TYPES.indexOf(doc.type) < 0) throw new HttpsError('invalid-argument', 'A talk is a research talk, a pitch or a keynote.');
+  if ('type' in doc && TALK_TYPES.indexOf(doc.type) < 0) throw new HttpsError('invalid-argument', 'A talk is a research talk or a pitch.');
   return doc;
 }
 

@@ -96,7 +96,7 @@ html.auth-hint #proposalsSignedOut{display:none;}
   font-family:var(--sans); font-size:10.5px; font-weight:600; line-height:1.5; letter-spacing:0.08em; text-transform:uppercase;
   color:var(--accent); border:1px solid currentColor; white-space:nowrap; text-decoration:none;
 }
-.type-research-talks, .type-research-talk{color:#256b60;}
+.type-oral, .type-research-talk{color:#256b60;}
 .type-pitch{color:#7d5a99;}
 .type-welcome, .type-keynote, .type-panel{color:#8a5a12;}
 

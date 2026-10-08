@@ -27,20 +27,6 @@ permalink: "event-collaboration-week.html"
       {% for block in day.blocks %}
       {% if block.kind == 'logistics' %}
       <div class="slot slot-logistics"><div class="slot-time">{{ block.time }}</div><div class="slot-sessions">{{ block.label }}</div></div>
-      {% elif block.kind == 'talk' %}
-      {% set t = collabWeekResearchTalks | findBySlug(block.talk) %}
-      {% set loc = collabWeekLocations | findBySlug(t.locationSlug) %}
-      <div class="slot">
-        <div class="slot-time">{{ block.time }}</div>
-        <div class="slot-sessions">
-          <a class="session-card" href="event-collaboration-week-talk-{{ t.slug }}.html" data-talk="{{ t.slug }}" data-speaker="{{ t.speaker }}">
-            <span class="type-badge type-{{ t.type }}">{{ collabWeekTypes[t.type] }}</span>
-            <span class="session-title">{{ t.title }}</span>
-            <span class="session-who">{{ t.speaker }}{% if t.affiliation %} &middot; {{ t.affiliation }}{% endif %}</span>
-            <span class="session-where">{{ loc.name }}</span>
-          </a>
-        </div>
-      </div>
       {% else %}
       <div class="slot">
         <div class="slot-time">{{ block.time }}</div>
@@ -48,10 +34,12 @@ permalink: "event-collaboration-week.html"
           {% for slug in block.sessions %}
           {% set s = collabWeekSessions | findBySlug(slug) %}
           {% set loc = collabWeekLocations | findBySlug(s.locationSlug) %}
-          <a class="session-card" href="event-collaboration-week-session-{{ s.slug }}.html" data-session="{{ s.slug }}" data-venue="{{ loc.name }}">
+          {# A keynote/oral is one talk: its card names the speaker, not the leads, and follows the talk's edits (data-talk). #}
+          {% set solo = s.talks[0] if (s.type == 'keynote' or s.type == 'oral') and s.talks and s.talks.length == 1 else null %}
+          <a class="session-card" href="event-collaboration-week-session-{{ s.slug }}.html" data-session="{{ s.slug }}" data-venue="{{ loc.name }}"{% if solo %} data-talk="{{ solo.slug }}" data-speaker="{{ solo.speaker }}"{% endif %}>
             <span class="type-badge type-{{ s.type }}">{{ collabWeekTypes[s.type] }}</span>
-            <span class="session-title">{{ s.title }}</span>
-            <span class="session-who">{% for l in s.leads %}{{ l.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+            <span class="session-title">{{ solo.title if solo else s.title }}</span>
+            <span class="session-who">{% if solo %}{{ solo.speaker }}{% if solo.affiliation %} &middot; {{ solo.affiliation }}{% endif %}{% else %}{% for l in s.leads %}{{ l.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</span>
             <span class="session-where">{{ loc.name }}{% if s.room %} &middot; {{ s.room }}{% endif %}</span>
           </a>
           {% endfor %}
