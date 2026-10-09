@@ -1,0 +1,51 @@
+---
+title: "Presenting | BOLD Lab"
+description: "Slide templates and conventions for BOLD talks."
+css: "events"
+permalink: "presenting.html"
+---
+<div class="hero">
+  <span class="eyebrow">Resources</span>
+  <h1>Presenting</h1>
+  <p class="hero-note">Templates and conventions for research talks in BOLD's visual style.</p>
+</div>
+
+<main>
+
+  <section class="block">
+    <div class="block-head"><h2>Templates</h2></div>
+    <!-- One entry per format. A PowerPoint template goes here as a second card,
+         with its file next to the HTML one in assets/templates/presenting/. -->
+    <ul class="event-list">
+      <li>
+        <a class="event-card" href="assets/templates/presenting/bold-slides.html">
+          <h3>HTML slide deck</h3>
+          <p>A single self-contained file, opened in any browser. Ten example slides, one per layout: title and section dividers, text with a figure, the problem slide, notation, a definition with a worked example, a results table, a figure with key numbers, and conclusions. Each example says when to use it.</p>
+          <span class="event-cta">Open the template &rarr;</span>
+        </a>
+      </li>
+    </ul>
+    <p>To start a talk, <a href="assets/templates/presenting/bold-slides.html" download="bold-slides.html">download the file</a>, rename it, and replace the example slides with your own. Keep the slides you need and delete the rest.</p>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>Using the HTML deck</h2></div>
+    <p>Each slide is a <code>&lt;section class="slide"&gt;</code> with a unique <code>id</code>. Content slides start with a small label and a title; the title slide and section dividers are navy. Use the arrow keys, Space or Page Up/Down to move between slides, Home and End to jump to the first and last, and <strong>F</strong> for full screen. The deck remembers the current slide, so a refresh returns to the same place, and each slide's <code>id</code> is a direct link to it (<code>talk.html#results</code>).</p>
+    <p>Every piece of text has one role, with one style: title, heading, body, small (captions), label (small uppercase), data (table cells) and math. Pick a role rather than sizing text by hand. Labels that contain math keep their case: uppercasing turns α or <em>s<sub>t</sub></em> into A or S_T.</p>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>Conventions</h2></div>
+    <p>These apply to any format.</p>
+    <ul>
+      <li><strong>Titles describe.</strong> Name the slide's role or the measured quantity and its conditions, for example "Observation compression at matched success", not a slogan.</li>
+      <li><strong>Report measurements, not verdicts.</strong> "The spread across seeds falls to ±0.03" rather than "a stable head start". Mark speculation as such.</li>
+      <li><strong>Use the paper's tables verbatim.</strong> Same rows, values, headers, bold entries and caption, copied from the LaTeX source rather than retyped. A plot can sit beside a table, never replace it.</li>
+      <li><strong>Define every symbol before it is used,</strong> on a preliminaries slide.</li>
+      <li><strong>One accent.</strong> Navy does the work. Use green, amber and red only when the colour carries meaning, such as agree and disagree.</li>
+      <li><strong>Embed images in the file.</strong> A deck that carries its own figures can be sent and opened anywhere; images left in a folder from a downloaded zip may be blocked by macOS.</li>
+      <li><strong>Check the deck in the browser you will present with.</strong></li>
+    </ul>
+  </section>
+
+</main>
