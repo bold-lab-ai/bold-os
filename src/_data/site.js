@@ -24,7 +24,6 @@ export default {
 
   // Sidebar. `href` is the page a group's label opens; `links` are its sub-pages.
   nav: [
-    { label: 'Work with us', href: 'work-with-us.html', links: [] },
     { label: 'Projects', href: 'projects.html', links: [] },
     { label: 'ML Conference Cycle', href: 'how-to-submit-a-paper.html', links: [
       { label: 'Guide', href: 'how-to-submit-a-paper.html' },
@@ -33,6 +32,9 @@ export default {
     { label: 'Events', href: 'events.html', links: [
       { label: 'Collaboration Week', href: 'event-collaboration-week.html' },
       { label: 'BOLD Festival 2026', href: 'event-bold-festival.html' },
+    ] },
+    { label: 'Skills', href: 'presenting.html', links: [
+      { label: 'Presenting', href: 'presenting.html' },
     ] },
   ],
 };
