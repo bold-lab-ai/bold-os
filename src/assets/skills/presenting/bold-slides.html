@@ -203,6 +203,7 @@ table.grid td.mark{box-shadow:inset 0 0 0 2px var(--bad);}
 .box ol{margin:.7rem 0 0;padding-left:1.2rem;display:flex;flex-direction:column;gap:.6rem;}
 .box .open{display:block;margin-top:.4rem;padding:.5rem .7rem;background:var(--accent-soft);}
 
+.slide code{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:.85em;background:var(--wash);padding:.05em .3em;border-radius:var(--radius);}
 .thanks{margin-top:2.2rem;font-family:var(--serif);font-weight:700;font-size:1.5rem;color:var(--ink);}
 .thanks small{display:block;font-family:var(--sans);font-weight:400;font-size:.85rem;color:var(--muted);margin-top:.4rem;}
 </style>
@@ -211,7 +212,7 @@ table.grid td.mark{box-shadow:inset 0 0 0 2px var(--bad);}
 
 <div class="deck" id="deck">
 
-  <!-- ============ TITLE (dark) ============ -->
+  <!-- ============ LAYOUT: TITLE (dark) ============ -->
   <section class="slide s-title dark" id="title">
     <div class="slide-inner">
       <div class="brand">Event · Session</div>
@@ -225,183 +226,153 @@ table.grid td.mark{box-shadow:inset 0 0 0 2px var(--bad);}
     </div>
   </section>
 
-  <!-- ============ SECTION DIVIDER (dark) ============ -->
-  <section class="slide dark divider" id="part-1">
+  <!-- ============ LAYOUT: SECTION DIVIDER (dark) ============ -->
+  <section class="slide dark divider" id="divider">
     <div class="slide-inner">
       <div class="num">Part 1 of 4</div>
-      <h2>Introduction</h2>
-      <p class="q">One line that frames the part as a question.</p>
+      <h2>Section divider</h2>
+      <p class="q">One italic line that frames the part. Use one divider per part of the talk.</p>
     </div>
   </section>
 
-  <!-- ============ TEXT + FIGURE ============ -->
-  <section class="slide" id="text-figure">
+  <!-- ============ LAYOUT: ONE COLUMN ============ -->
+  <section class="slide" id="one-column">
     <div class="slide-inner">
-      <div class="kicker">Background · Area</div>
-      <h2>Title names what the slide shows</h2>
+      <div class="kicker">Layout · One column</div>
+      <h2>One column</h2>
+      <p class="lede">A title and running text, at most about 62 characters wide. Use it when the slide is an argument rather than a picture: a definition in words, a hypothesis, a short list.</p>
+      <ul class="stack" style="margin:1.2rem 0 0;padding-left:1.2rem">
+        <li>Body text: <code>.lede</code> or <code>.body</code>, lists as plain <code>&lt;ul&gt;</code> or <code>&lt;ol&gt;</code>.</li>
+        <li>For the one sentence the slide hangs on, add a <code>.callout</code>.</li>
+      </ul>
+      <div class="callout" style="margin-top:1.4rem;max-width:62ch"><span class="label">Callout</span><p class="body">The single claim or question this slide exists to make.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ LAYOUT: TWO COLUMNS ============ -->
+  <section class="slide" id="two-columns">
+    <div class="slide-inner">
+      <div class="kicker">Layout · Two columns</div>
+      <h2>Two columns</h2>
       <div class="split center">
         <div class="stack">
-          <p class="body"><b>Context first.</b> Open with one sentence for the audience outside your field: what the setting is and what an agent does in it.</p>
-          <p class="body">Then the idea in plain language. Keep formal definitions for a Preliminaries slide.</p>
+          <p class="body"><b><code>.split</code></b> puts two blocks side by side and stacks them on narrow screens. Text on one side, a figure, table or diagram on the other.</p>
+          <p class="body">Add <code>.center</code> to align the columns vertically, and <code>.wide-left</code> or <code>.wide-right</code> to give one side more room.</p>
         </div>
         <figure class="fig" style="margin:0">
-          <svg viewBox="0 0 440 150" role="img" aria-label="Placeholder diagram">
-            <rect x="0" y="20" width="440" height="110" fill="var(--wash)"/>
-            <text x="220" y="80" text-anchor="middle" font-family="Cabin, sans-serif" font-size="13" fill="var(--muted)">diagram or image</text>
+          <svg viewBox="0 0 440 220" role="img" aria-label="Placeholder figure">
+            <rect x="0" y="0" width="440" height="220" fill="var(--wash)"/>
+            <text x="220" y="115" text-anchor="middle" font-family="Cabin, sans-serif" font-size="13" fill="var(--muted)">figure or diagram</text>
           </svg>
         </figure>
       </div>
     </div>
   </section>
 
-  <!-- ============ PROBLEM: CARDS + REMARK ============ -->
-  <section class="slide" id="problem">
+  <!-- ============ LAYOUT: THREE COLUMNS ============ -->
+  <section class="slide" id="three-columns">
     <div class="slide-inner">
-      <div class="kicker">The problem</div>
-      <h2>State the open problem in one sentence.</h2>
+      <div class="kicker">Layout · Three columns</div>
+      <h2>Three columns</h2>
       <div class="cards" style="--n:3">
         <div class="card">
-          <h3>Approach A</h3>
-          <span class="ex">Method · Method · Method</span>
-          <p class="body">What it does, in one sentence.</p>
-          <p class="label warn-label">Why it's not enough</p>
-          <p class="body warn-text">The specific limitation, with a number if the paper has one.</p>
+          <h3>Column one</h3>
+          <span class="ex">Short tag · tag · tag</span>
+          <p class="body"><code>.cards</code> with <code>--n:3</code> sets the number of columns; use 2 to 4.</p>
+          <p class="label warn-label">Optional label</p>
+          <p class="body warn-text">Each <code>.card</code> has the same five parts, and each part lines up across columns.</p>
         </div>
         <div class="card">
-          <h3>Approach B</h3>
-          <span class="ex">Method · Method</span>
-          <p class="body">What it does, in one sentence.</p>
-          <p class="label warn-label">Why it's not enough</p>
-          <p class="body warn-text">The specific limitation.</p>
+          <h3>Column two</h3>
+          <span class="ex">Short tag · tag</span>
+          <p class="body">Use it for parallel items: approaches compared, implications, components.</p>
+          <p class="label warn-label">Optional label</p>
+          <p class="body warn-text">Drop the red classes when the parts don't describe a shortcoming.</p>
         </div>
         <div class="card">
-          <h3>Approach C</h3>
-          <span class="ex">Method · Method · Method</span>
-          <p class="body">What it does. The labels below line up across cards even when this text is longer.</p>
-          <p class="label warn-label">Why it's not enough</p>
-          <p class="body warn-text">The specific limitation.</p>
+          <h3>Column three</h3>
+          <span class="ex">Short tag · tag · tag</span>
+          <p class="body">Longer text in one card pushes the next row down in every card, so the labels stay aligned.</p>
+          <p class="label warn-label">Optional label</p>
+          <p class="body warn-text">Keep each part to a sentence or two.</p>
         </div>
       </div>
       <div class="remark">
-        <p class="body">Current methods fall short in one of two ways:</p>
-        <ol>
-          <li>First shared limitation.</li>
-          <li>Second shared limitation.</li>
-        </ol>
+        <p class="body">A <code>.remark</code> under the columns states what they add up to, optionally as a numbered list:</p>
+        <ol><li>First shared point.</li><li>Second shared point.</li></ol>
       </div>
     </div>
   </section>
 
-  <!-- ============ PRELIMINARIES: DEFINITION LISTS ============ -->
-  <section class="slide" id="preliminaries">
+  <!-- ============ LAYOUT: TABLE ============ -->
+  <section class="slide" id="table">
     <div class="slide-inner">
-      <div class="kicker">Method · Preliminaries</div>
-      <h2>Preliminaries</h2>
-      <div class="split">
-        <div>
-          <h3>Standard setting</h3>
-          <dl class="dl" style="margin-top:.8rem">
-            <div><dt><span class="v">s<sub>t</sub></span></dt><dd>the state at time <span class="v">t</span></dd></div>
-            <div><dt><span class="v">a<sub>t</sub></span></dt><dd>the action taken</dd></div>
-            <div><dt><span class="v">π</span>(<span class="v">a<sub>t</sub></span> | <span class="v">s<sub>t</sub></span>)</dt><dd>the policy</dd></div>
-          </dl>
-        </div>
-        <div>
-          <h3>Our objects</h3>
-          <dl class="dl" style="margin-top:.8rem">
-            <div><dt><span class="v">x</span></dt><dd>define every symbol before any slide uses it</dd></div>
-            <div><dt><span class="v">y</span></dt><dd>one line each</dd></div>
-          </dl>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ DEFINITION + WORKED GRID + EQUATIONS ============ -->
-  <section class="slide" id="definition">
-    <div class="slide-inner">
-      <div class="kicker">Method · Component</div>
-      <h2>Component name</h2>
-      <div class="split">
-        <div class="stack">
-          <div class="def">
-            <span class="label">Definition</span>
-            <p class="heading">Term at position <span class="v">j</span></p>
-            <p class="body">Plain-language definition first.</p>
-            <div class="eq"><i>α<sub>j</sub></i> = 𝟙[ formal definition ]</div>
-          </div>
-          <p class="lede" style="margin-top:0">What the definition is used for.</p>
-        </div>
-        <div class="stack">
-          <div class="grid-wrap">
-            <table class="grid" aria-label="Worked example by position">
-              <tr><th>position</th><td>1</td><td>2</td><td class="solid">3</td><td>4</td></tr>
-              <tr><th>reference</th><td class="warn">a</td><td class="warn">b</td><td class="warn mark">c</td><td class="off">d</td></tr>
-              <tr><th>model</th><td class="on">a</td><td class="on">b</td><td class="on mark">x</td><td class="off">d</td></tr>
-              <tr><th class="label math">agrees? <i>α<sub>j</sub></i></th><td class="ok">✓</td><td class="ok">✓</td><td class="no mark">✕</td><td class="off">✓</td></tr>
-            </table>
-            <p class="caption">Illustrative example. Mark the cell the slide is about.</p>
-          </div>
-          <div class="eq"><span class="lbl">Loss, labelled in words</span><i>𝓛</i> = 𝔼<sub><i>j</i></sub>[ … ]</div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============ RESULTS TABLE (verbatim from the paper) ============ -->
-  <section class="slide" id="results-table">
-    <div class="slide-inner">
-      <div class="kicker">Results · Experiment</div>
-      <h2>Measured quantity at stated conditions</h2>
+      <div class="kicker">Layout · Table</div>
+      <h2>Table</h2>
       <div class="rt-wrap" style="margin-top:1.4rem">
         <table class="rt">
-          <thead><tr><th>Task</th><th class="left">Method</th><th>Metric ↑</th><th>Metric ↓</th></tr></thead>
+          <thead><tr><th>Group</th><th class="left">Row</th><th>Metric ↑</th><th>Metric ↓</th></tr></thead>
           <tbody>
-            <tr class="first"><td class="group" rowspan="2">Task A</td><td class="left">Baseline</td><td>0.90<span class="pm">±</span>0.02</td><td>9.48<span class="pm">±</span>0.12</td></tr>
+            <tr class="first"><td class="group" rowspan="2">Group A</td><td class="left">Baseline</td><td>0.90<span class="pm">±</span>0.02</td><td>9.48<span class="pm">±</span>0.12</td></tr>
             <tr class="hl"><td class="left"><b>Ours</b></td><td>0.91<span class="pm">±</span>0.01</td><td><b>1.18<span class="pm">±</span>0.00</b></td></tr>
-            <tr class="first"><td class="group" rowspan="2">Task B</td><td class="left">Baseline</td><td>0.79<span class="pm">±</span>0.02</td><td>11.97<span class="pm">±</span>0.31</td></tr>
+            <tr class="first"><td class="group" rowspan="2">Group B</td><td class="left">Baseline</td><td>0.79<span class="pm">±</span>0.02</td><td>11.97<span class="pm">±</span>0.31</td></tr>
             <tr class="hl"><td class="left"><b>Ours</b></td><td>0.78<span class="pm">±</span>0.02</td><td><b>7.69<span class="pm">±</span>0.35</b></td></tr>
           </tbody>
         </table>
       </div>
-      <p class="caption">Paste the paper's caption verbatim. Parse values from the .tex rather than retyping them; keep the paper's headers and bold entries.</p>
+      <p class="caption">Full-width <code>table.rt</code> inside <code>.rt-wrap</code>. Group rows with <code>td.group</code> and <code>rowspan</code>, start each group with <code>tr.first</code>, highlight a row with <code>tr.hl</code>, write ± as <code>&lt;span class="pm"&gt;±&lt;/span&gt;</code>. For a paper's table, copy it verbatim from the <code>.tex</code>, caption included.</p>
     </div>
   </section>
 
-  <!-- ============ FIGURE + KEY NUMBERS ============ -->
+  <!-- ============ LAYOUT: FIGURE ============ -->
+  <section class="slide" id="figure">
+    <div class="slide-inner">
+      <div class="kicker">Layout · Figure</div>
+      <h2>Figure</h2>
+      <figure class="fig" style="margin:1.4rem 0 0;max-width:900px">
+        <svg viewBox="0 0 900 380" role="img" aria-label="Placeholder figure">
+          <rect x="0" y="0" width="900" height="380" fill="var(--wash)"/>
+          <text x="450" y="195" text-anchor="middle" font-family="Cabin, sans-serif" font-size="14" fill="var(--muted)">full-width figure (embed images as data: URIs)</text>
+        </svg>
+      </figure>
+      <p class="caption">One <code>figure.fig</code> with a <code>.caption</code> under it. Images are capped at 58% of the screen height and scale to fit.</p>
+    </div>
+  </section>
+
+  <!-- ============ LAYOUT: FIGURE + NUMBERS ============ -->
   <section class="slide" id="figure-numbers">
     <div class="slide-inner">
-      <div class="kicker">Results · Experiment</div>
-      <h2>Quantity under the varied condition</h2>
+      <div class="kicker">Layout · Figure and numbers</div>
+      <h2>Figure and numbers</h2>
       <div class="split wide-left center">
         <figure class="fig" style="margin:0">
           <svg viewBox="0 0 440 260" role="img" aria-label="Placeholder plot">
             <rect x="0" y="0" width="440" height="260" fill="var(--wash)"/>
-            <text x="220" y="135" text-anchor="middle" font-family="Cabin, sans-serif" font-size="13" fill="var(--muted)">paper figure (embed as data: URI)</text>
+            <text x="220" y="135" text-anchor="middle" font-family="Cabin, sans-serif" font-size="13" fill="var(--muted)">plot</text>
           </svg>
         </figure>
         <div>
-          <p class="lede" style="margin-top:0">What was varied, and what was held fixed.</p>
+          <p class="lede" style="margin-top:0">A figure with the two to four numbers worth reading off it, in <code>.keynums</code>.</p>
           <div class="keynums" style="margin-top:1.2rem">
-            <div><b>6.6×</b><span class="body">condition one</span></div>
-            <div><b>4.5×</b><span class="body">condition two</span></div>
-            <div><b>~1.5×</b><span class="body">condition three</span></div>
+            <div><b>6.6×</b><span class="body">first condition</span></div>
+            <div><b>4.5×</b><span class="body">second condition</span></div>
+            <div><b>~1.5×</b><span class="body">third condition</span></div>
           </div>
-          <p class="caption">State what is measured and what is read off the figure.</p>
+          <p class="caption">Say which numbers are read off the figure rather than taken from a table.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ============ BARS + TABLE ============ -->
+  <!-- ============ LAYOUT: TEXT + TABLE (bars) ============ -->
   <section class="slide" id="bars-table">
     <div class="slide-inner">
-      <div class="kicker">Results · Experiment</div>
-      <h2>Comparison at the hardest level</h2>
+      <div class="kicker">Layout · Bars and table</div>
+      <h2>Bars and table</h2>
       <div class="split">
         <div class="box">
-          <h3>Setting name</h3>
-          <p class="small" style="margin:.3rem 0 1rem">What the setting tests, and n seeds.</p>
+          <h3>Bars</h3>
+          <p class="small" style="margin:.3rem 0 1rem">One quantity across a few rows, in <code>.bars</code>. Highlight one bar with <code>i.hl</code>.</p>
           <div class="bars">
             <div><span class="nm"><b>Ours</b></span><span class="track"><i class="hl" style="width:88.5%"></i></span><span class="n">.885 ± .030</span></div>
             <div><span class="nm">Baseline</span><span class="track"><i style="width:25.1%"></i></span><span class="n">.251 ± .325</span></div>
@@ -412,29 +383,79 @@ table.grid td.mark{box-shadow:inset 0 0 0 2px var(--bad);}
           <div class="rt-wrap"><table class="rt"><thead><tr><th>Level</th><th>Baseline</th><th>Ours</th></tr></thead>
             <tbody><tr><td>L1</td><td>0.97<span class="pm">±</span>.01</td><td><b>0.98<span class="pm">±</span>.01</b></td></tr>
             <tr><td>L2</td><td>0.25<span class="pm">±</span>.33</td><td><b>0.89<span class="pm">±</span>.03</b></td></tr></tbody></table></div>
-          <p class="caption">The paper's per-level table, verbatim.</p>
+          <p class="caption">Bars show the headline row; the table beside them gives every row. The bars never replace the table.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- ============ CONCLUSIONS ============ -->
-  <section class="slide" id="conclusions">
+  <!-- ============ LAYOUT: EQUATIONS ============ -->
+  <section class="slide" id="equations">
     <div class="slide-inner">
-      <div class="kicker">Conclusions</div>
-      <h2>Conclusions and limitations</h2>
+      <div class="kicker">Layout · Equations</div>
+      <h2>Equations</h2>
+      <div class="split">
+        <div class="stack">
+          <div class="eq"><span class="lbl">1 · Name each equation in words</span><i>y</i> = <i>f</i>(<i>x</i>)</div>
+          <div class="eq"><span class="lbl">2 · Then the next step</span><i>f</i>(<i>x</i>) = ∏<sub><i>j</i></sub> <i>f<sub>j</sub></i>(<i>x</i>)</div>
+          <div class="eq"><span class="lbl">3 · Then the objective</span><i>𝓛</i> = 𝔼<sub><i>j</i></sub>[ ℓ<sub><i>j</i></sub> ]</div>
+        </div>
+        <div>
+          <p class="kicker" style="margin-bottom:.8rem">Symbols</p>
+          <dl class="dl">
+            <div><dt><span class="v">x</span></dt><dd>what each symbol is, in one line</dd></div>
+            <div><dt><span class="v">f<sub>j</sub></span></dt><dd>a <code>dl.dl</code> pairs a symbol with its meaning</dd></div>
+            <div><dt><span class="v">ℓ<sub>j</sub></span></dt><dd>define symbols before any slide uses them</dd></div>
+          </dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LAYOUT: DEFINITION + WORKED EXAMPLE ============ -->
+  <section class="slide" id="definition-example">
+    <div class="slide-inner">
+      <div class="kicker">Layout · Definition and worked example</div>
+      <h2>Definition and worked example</h2>
+      <div class="split">
+        <div class="stack">
+          <div class="def">
+            <span class="label">Definition</span>
+            <p class="heading">Term at position <span class="v">j</span></p>
+            <p class="body">Plain-language definition first, then the formal one.</p>
+            <div class="eq"><i>α<sub>j</sub></i> = 𝟙[ formal definition ]</div>
+          </div>
+        </div>
+        <div class="grid-wrap">
+          <table class="grid" aria-label="Worked example by position">
+            <tr><th>position</th><td>1</td><td>2</td><td class="solid">3</td><td>4</td></tr>
+            <tr><th>reference</th><td class="warn">a</td><td class="warn">b</td><td class="warn mark">c</td><td class="off">d</td></tr>
+            <tr><th>model</th><td class="on">a</td><td class="on">b</td><td class="on mark">x</td><td class="off">d</td></tr>
+            <tr><th class="label math">agrees? <i>α<sub>j</sub></i></th><td class="ok">✓</td><td class="ok">✓</td><td class="no mark">✕</td><td class="off">✓</td></tr>
+          </table>
+          <p class="caption"><code>table.grid</code> lays an example out by position. Cell classes: <code>.on</code>, <code>.solid</code>, <code>.warn</code>, <code>.ok</code>, <code>.no</code>, <code>.off</code>; <code>.mark</code> outlines the cell the slide is about.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LAYOUT: LIST + BOX ============ -->
+  <section class="slide" id="list-box">
+    <div class="slide-inner">
+      <div class="kicker">Layout · List and box</div>
+      <h2>List and box</h2>
       <div class="split wide-left">
         <div class="rows">
-          <div><span class="label">How</span><div><span class="heading">The method in one line</span><span class="body">One supporting sentence.</span></div></div>
-          <div><span class="label">Result</span><div><span class="heading">The main measured result</span><span class="body">With its conditions.</span></div></div>
+          <div><span class="label">Lead</span><div><span class="heading">A short heading</span><span class="body"><code>.rows</code>: a label, a heading and one sentence per row.</span></div></div>
+          <div><span class="label">Lead</span><div><span class="heading">Another heading</span><span class="body">Use it for takeaways or a summary.</span></div></div>
         </div>
         <div>
           <div class="box">
-            <h3>Limitations and open questions</h3>
+            <h3>Box</h3>
             <ol>
-              <li><b>Main limitation.</b> Explanation.</li>
-              <li><b>Second limitation.</b> Explanation.
-                <span class="open small"><b>Open question:</b> stated precisely.</span></li>
+              <li><b>A bordered list.</b> <code>.box</code>, for limitations or open questions.</li>
+              <li><b>Second item.</b> Explanation.
+                <span class="open small"><b>Open question:</b> an inset note, <code>.open</code>.</span></li>
             </ol>
           </div>
           <p class="thanks">Thank you. Questions?<small>Authors · Affiliation</small></p>

@@ -19,7 +19,24 @@ The template is `bold-slides.html`, next to this file (live: `https://bold-lab-a
 - Every slide needs a unique, readable `id` (`problem`, `termination`, `results-table`). It is the slide's URL fragment and the deck returns to it on refresh.
 - A typical arc: Introduction (background, the problem, the hypothesis or intuition, implications) → Method (preliminaries, overview, one slide per component, the formal version after the intuitive one) → Results (one slide per experiment) → Conclusions and limitations.
 
-Delete the template's example slides you don't use. Do not leave instructional text from the template in the talk.
+The template's slides are **layouts**, not parts of a talk. Build each slide by copying the layout that fits its content, then replace the text. Delete the layouts you don't use, and do not leave the template's instructional text in the talk.
+
+## Layouts
+
+| Layout (slide `id`) | Use for |
+|---|---|
+| Title (`title`) | the opening slide: short name, full title, authors, venue |
+| Section divider (`divider`) | the start of each part of the talk |
+| One column (`one-column`) | an argument in words: a definition, a hypothesis, a short list, an optional `.callout` |
+| Two columns (`two-columns`) | text beside a figure, table or diagram (`.split`, with `.center`, `.wide-left`, `.wide-right`) |
+| Three columns (`three-columns`) | parallel items with aligned parts (`.cards`, `--n` from 2 to 4), with a `.remark` under them |
+| Table (`table`) | a full-width table, e.g. a paper's results table verbatim |
+| Figure (`figure`) | one full-width figure with a caption |
+| Figure and numbers (`figure-numbers`) | a figure plus the two to four numbers read off it (`.keynums`) |
+| Bars and table (`bars-table`) | a headline comparison as bars, with the full table beside it |
+| Equations (`equations`) | a numbered stack of labelled equations with a symbol list (`dl.dl`) |
+| Definition and worked example (`definition-example`) | a `.def` box beside an example laid out by position (`table.grid`) |
+| List and box (`list-box`) | takeaways (`.rows`) beside a bordered list such as limitations (`.box`) |
 
 ## Type scale
 
