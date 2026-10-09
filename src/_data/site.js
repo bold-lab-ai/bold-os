@@ -34,7 +34,7 @@ export default {
       { label: 'Collaboration Week', href: 'event-collaboration-week.html' },
       { label: 'BOLD Festival 2026', href: 'event-bold-festival.html' },
     ] },
-    { label: 'Resources', href: 'presenting.html', links: [
+    { label: 'Skills', href: 'presenting.html', links: [
       { label: 'Presenting', href: 'presenting.html' },
     ] },
   ],

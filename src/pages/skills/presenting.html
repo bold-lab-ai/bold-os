@@ -1,0 +1,58 @@
+---
+title: "Presenting | BOLD Lab"
+description: "A slide template and agent instructions for BOLD research talks."
+css: "events"
+permalink: "presenting.html"
+---
+<div class="hero">
+  <span class="eyebrow">Skills</span>
+  <h1>Presenting</h1>
+  <p class="hero-note">Make research talks in BOLD's visual style, by hand or with a coding agent.</p>
+</div>
+
+<main>
+
+  <section class="block">
+    <div class="block-head"><h2>What's in this skill</h2></div>
+    <!-- One card per file. A PowerPoint template goes here as another card,
+         with its file next to these in assets/skills/presenting/. -->
+    <ul class="event-list">
+      <li>
+        <a class="event-card" href="assets/skills/presenting/bold-slides.html">
+          <h3>1 · The template</h3>
+          <p>A single self-contained HTML slide deck. Ten example slides, one per layout: title and section dividers, text with a figure, the problem slide, notation, a definition with a worked example, a results table, a figure with key numbers, and conclusions. Each example says when to use it.</p>
+          <span class="event-cta">Open the template &rarr;</span>
+        </a>
+      </li>
+      <li>
+        <a class="event-card" href="assets/skills/presenting/AGENTS.md">
+          <h3>2 · AGENTS.md</h3>
+          <p>Instructions for a coding agent asked to build a talk from a paper: how to start from the template, the slide structure, the type scale and components, how to take tables and figures from the LaTeX source, and the checks to run before handing the deck back.</p>
+          <span class="event-cta">Read AGENTS.md &rarr;</span>
+        </a>
+      </li>
+    </ul>
+    <p>To start a talk: <a href="assets/skills/presenting/bold-slides.html" download="bold-slides.html">download the template</a> and <a href="assets/skills/presenting/AGENTS.md" download="AGENTS.md">AGENTS.md</a> into the paper's folder, then ask your agent to read <code>AGENTS.md</code> and build the deck from the paper.</p>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>Using the deck</h2></div>
+    <p>Each slide is a <code>&lt;section class="slide"&gt;</code> with a unique <code>id</code>. Content slides start with a small label and a title; the title slide and section dividers are navy. Use the arrow keys, Space or Page Up/Down to move between slides, Home and End to jump to the first and last, and <strong>F</strong> for full screen. The deck remembers the current slide, so a refresh returns to the same place, and each slide's <code>id</code> is a direct link to it, for example <code>talk.html#results</code>.</p>
+    <p>Every piece of text has one role, with one style: title, heading, body, small (captions), label (small uppercase), data (table cells) and math. Pick a role rather than sizing text by hand.</p>
+  </section>
+
+  <section class="block">
+    <div class="block-head"><h2>Conventions</h2></div>
+    <p>These apply to any format.</p>
+    <ul>
+      <li><strong>Titles describe.</strong> Name the slide's role or the measured quantity and its conditions, for example "Observation compression at matched success", not a slogan.</li>
+      <li><strong>Report measurements, not verdicts.</strong> "The spread across seeds falls to ±0.03" rather than "a stable head start". Mark speculation as such.</li>
+      <li><strong>Use the paper's tables verbatim.</strong> Same rows, values, headers, bold entries and caption, copied from the LaTeX source rather than retyped. A plot can sit beside a table, never replace it.</li>
+      <li><strong>Intuition first, then the math.</strong> Define every symbol before it is used.</li>
+      <li><strong>One accent.</strong> Navy does the work. Use green, amber and red only when the colour carries meaning, such as agree and disagree.</li>
+      <li><strong>Embed images in the file.</strong> A deck that carries its own figures can be sent and opened anywhere.</li>
+      <li><strong>Check the deck in the browser you will present with.</strong></li>
+    </ul>
+  </section>
+
+</main>
