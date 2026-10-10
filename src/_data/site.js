@@ -31,8 +31,7 @@ export default {
     ] },
     // Its sub-pages are the released events (Firestore), filled in by bold.js.
     { label: 'Events', href: 'events.html', links: [], events: true },
-    { label: 'Skills', href: 'presenting.html', links: [
-      { label: 'Presenting', href: 'presenting.html' },
-    ] },
+    // Its sub-pages are the skills (Firestore), filled in by bold.js.
+    { label: 'Skills', href: 'skills.html', links: [], skills: true },
   ],
 };

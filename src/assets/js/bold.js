@@ -160,14 +160,13 @@
     });
   };
 
-  /* ---------- sidebar: the events ---------- */
+  /* ---------- sidebar: the events and the skills ---------- */
 
-  // The Events group's sub-links are the released events (events/{slug},
-  // where hidden == false — see events-common.js), newest first: an event
-  // with its own page links there, the rest to event.html?event=<slug>. The
-  // last list seen paints first; Firestore stays authoritative.
-  function eventsNav(){
-    var group = document.querySelector('[data-nav-events]');
+  // A group's sub-links come from Firestore: [data-nav-<key>] is filled from
+  // load() → [{ title, href }]. The last list seen paints first (localStorage
+  // `cacheKey`); Firestore stays authoritative.
+  function firestoreNav(key, cacheKey, load){
+    var group = document.querySelector('[data-nav-' + key + ']');
     if (!group) return;
     var page = location.pathname.split('/').pop() || 'index.html';
     function draw(list){
@@ -185,16 +184,37 @@
       });
       if (anyActive) label.classList.remove('active');
     }
-    try { draw(JSON.parse(localStorage.getItem('boldNavEvents') || '[]')); } catch (e){}
+    try { draw(JSON.parse(localStorage.getItem(cacheKey) || '[]')); } catch (e){}
     BOLD.onUser(function(user){
       if (!user || !firebase.firestore) return;
-      firebase.firestore(BOLD.getApp()).collection('events').where('hidden', '==', false).get().then(function(snap){
-        var list = snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title; })
+      load(firebase.firestore(BOLD.getApp())).then(function(list){
+        draw(list);
+        try { localStorage.setItem(cacheKey, JSON.stringify(list)); } catch (e){}
+      }).catch(function(err){ console.error('[BOLD Lab] loading the ' + key + ' for the sidebar failed', err); });
+    });
+  }
+
+  // The released events (events/{slug}, hidden == false — see events-common.js),
+  // newest first: an event with its own page links there, the rest to
+  // event.html?event=<slug>.
+  function eventsNav(){
+    firestoreNav('events', 'boldNavEvents', function(db){
+      return db.collection('events').where('hidden', '==', false).get().then(function(snap){
+        return snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title; })
           .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; })
           .map(function(e){ return { title: e.title, href: e.page || 'event.html?event=' + encodeURIComponent(e.slug) }; });
-        draw(list);
-        try { localStorage.setItem('boldNavEvents', JSON.stringify(list)); } catch (e){}
-      }).catch(function(err){ console.error('[BOLD Lab] loading the events for the sidebar failed', err); });
+      });
+    });
+  }
+
+  // The skills (skills/{name} — see skills-common.js), by title.
+  function skillsNav(){
+    firestoreNav('skills', 'boldNavSkills', function(db){
+      return db.collection('skills').get().then(function(snap){
+        return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.name; })
+          .map(function(x){ return { title: x.title || x.name, href: 'skill.html?skill=' + encodeURIComponent(x.name) }; })
+          .sort(function(a, b){ return a.title.localeCompare(b.title); });
+      });
     });
   }
 
@@ -206,7 +226,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) eventsNav();
+    if (BOLD.getAuth()) { eventsNav(); skillsNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');

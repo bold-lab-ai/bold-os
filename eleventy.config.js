@@ -4,9 +4,6 @@
 export default function (eleventyConfig) {
   // Static files served as-is.
   eleventyConfig.addPassthroughCopy({ 'src/assets': 'assets' });
-  // Skill files (e.g. assets/skills/presenting/bold-slides.html, AGENTS.md) are
-  // files to hand out, not pages: copy them, don't also render them as templates.
-  eleventyConfig.ignores.add('src/assets/skills/**');
 
   // Page bodies are plain HTML; only layouts and partials use Nunjucks.
   eleventyConfig.addFilter('navState', (groups, current) =>

@@ -200,6 +200,15 @@ service cloud.firestore {
       allow create, update, delete: if hasFullWrite();
     }
 
+    // Claude skills (skills/{name}; see skillPackage in functions/index.js).
+    // Public anyway — anyone can download one — so any lab member reads them;
+    // only PIs/admins add, change or delete them.
+    match /skills/{name} {
+      allow read: if isLabMember();
+      allow create, update: if hasFullWrite() && request.resource.data.name == name;
+      allow delete: if hasFullWrite();
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

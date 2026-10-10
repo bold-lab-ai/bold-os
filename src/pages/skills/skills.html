@@ -1,0 +1,22 @@
+---
+title: "Skills | BOLD Lab"
+description: "Claude skills for BOLD work."
+css: "events"
+sdk: ["firestore", "functions"]
+scripts: ["skills-common.js", "pages/skills.js"]
+permalink: "skills.html"
+---
+<div class="hero">
+  <h1>Skills</h1>
+  <p class="hero-note">Claude skills for BOLD work. Install one and Claude uses it whenever a task calls for it.</p>
+</div>
+
+<main>
+
+  <section class="block">
+    <ul class="event-list" id="skillList"></ul>
+    <p class="event-loading" id="skillLoading">Loading…</p>
+    <button type="button" class="event-add" id="skillAdd" disabled title="Only PIs and admins can add and change skills">+ Add a skill</button>
+  </section>
+
+</main>

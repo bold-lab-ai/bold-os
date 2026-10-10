@@ -10,7 +10,7 @@
     </div>
     <div class="nav-groups">
 {%- for group in site.nav | navState(current) %}
-      <div class="nav-group"{% if group.events %} data-nav-events{% endif %}>
+      <div class="nav-group"{% if group.events %} data-nav-events{% endif %}{% if group.skills %} data-nav-skills{% endif %}>
         <a class="nav-group-label{% if group.active %} active{% endif %}" href="{{ group.href }}">{{ group.label }}</a>
 {%- for link in group.links %}
         <a class="nav-link nav-sub{% if link.active %} active{% endif %}" href="{{ link.href }}">{{ link.label }}</a>
