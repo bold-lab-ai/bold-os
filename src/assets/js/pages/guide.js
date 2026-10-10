@@ -7,6 +7,11 @@
 // open. PIs/admins also move parts up and down and delete the guide.
 // guide.html?new is the form for a new guide (PIs/admins). History
 // (history.js) shows every version, with what changed; PIs/admins restore one.
+// Parts may carry a `section`: consecutive parts of one section show under its
+// heading. The same page serves other documents edited this way (BOLDiquette:
+// boldiquette.html), set by #guideBody's data attributes: data-collection,
+// data-slug, data-eyebrow, data-back (a link, or "" for none), data-anchor-prefix
+// and data-deletable.
 (function(){
   var esc = BOLD.escapeHtml;
   var G = window.BoldGuides;
@@ -16,29 +21,36 @@
   var db = null;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var params = new URLSearchParams(location.search);
-  var isNew = params.has('new');
-  var slug = params.get('guide') || '';
-  var ref = !isNew && G.SLUG.test(slug) ? db.collection('guides').doc(slug) : null;
+  var cfg = body.dataset;
+  var COLLECTION = cfg.collection || 'guides';
+  var EYEBROW = cfg.eyebrow !== undefined ? cfg.eyebrow : 'How to';
+  var PREFIX = cfg.anchorPrefix !== undefined ? cfg.anchorPrefix : 'p-';
+  var DELETABLE = cfg.deletable !== 'false';
+  var isNew = !cfg.slug && params.has('new');
+  var slug = cfg.slug || params.get('guide') || '';
+  var ref = !isNew && G.SLUG.test(slug) ? db.collection(COLLECTION).doc(slug) : null;
   var MAX_SIZE = 900000;
 
   var x = null, loaded = false, fullWrite = false, me = null;
   var proposals = [];
   // The form that's open: null, { kind: 'about' }, { kind: 'edit', id } or { kind: 'add' }.
   var form = null, notice = '';
-  var BACK = '<a class="back-link" href="guides.html">&larr; All guides</a>';
+  var BACK = cfg.back !== undefined ? cfg.back : '<a class="back-link" href="guides.html">&larr; All guides</a>';
+  var EYEBROW_HTML = EYEBROW ? '<div><span class="eyebrow">' + esc(EYEBROW) + '</span></div>' : '';
   var historyWrap = document.getElementById('guideHistoryWrap'), histPanel = null;
   var KIND = { about: 'Title and description', edit: 'Change to', add: 'New part', remove: 'Remove' };
 
   function parts(){ return (x && x.parts) || []; }
   function part(id){ return parts().filter(function(p){ return p.id === id; })[0] || null; }
-  function anchor(p){ return 'p-' + p.id; }
+  function anchor(p){ return PREFIX + p.id; }
+  function hasSections(){ return parts().some(function(p){ return p.section; }); }
   function stamp(note){ return { changeNote: note || '', updatedAt: Date.now(), updatedBy: me.email, proposedBy: '' }; }
 
   // What a version or the guide holds, as text to compare (history.js).
   function flatten(d){
     var out = { Title: d.title || '', Description: d.description || '' };
     var list = d.parts || [];
-    out['Order of parts'] = list.map(function(p){ return p.title; }).join('\n');
+    out['Order of parts'] = list.map(function(p){ return (p.section ? p.section + ' › ' : '') + p.title; }).join('\n');
     list.forEach(function(p){ out['Part: ' + p.title] = p.body || ''; });
     return out;
   }
@@ -62,9 +74,19 @@
 
   function contentsHtml(){
     if (parts().length < 2) return '';
-    return '<nav class="guide-contents" aria-label="Contents"><ol>' + parts().map(function(p){
+    if (!hasSections()) return '<nav class="guide-contents" aria-label="Contents"><ol>' + parts().map(function(p){
       return '<li><a href="#' + anchor(p) + '">' + esc(p.title) + '</a></li>';
     }).join('') + '</ol></nav>';
+    var html = '', open = false;
+    parts().forEach(function(p, i){
+      var prev = parts()[i - 1];
+      if (!prev || prev.section !== p.section) {
+        if (open) html += '</ol></li>';
+        html += '<li>' + esc(p.section || '') + '<ol>'; open = true;
+      }
+      html += '<li><a href="#' + anchor(p) + '">' + esc(p.title) + '</a></li>';
+    });
+    return '<nav class="guide-contents guide-contents--sections" aria-label="Contents"><ol>' + html + (open ? '</ol></li>' : '') + '</ol></nav>';
   }
 
   // ---------- forms ----------
@@ -85,6 +107,8 @@
     var isAdd = !p.id;
     return '<div class="event-form guide-form">' +
       '<p class="event-form-head">' + (isAdd ? 'New part' : 'Edit part') + '</p>' +
+      (hasSections() ? '<label>Section<input type="text" class="gd-section" value="' + esc(p.section || (isAdd && parts().length ? parts()[parts().length - 1].section : '') || '') + '" list="gdSections"></label>' +
+        '<datalist id="gdSections">' + parts().map(function(q){ return q.section; }).filter(function(v, i, a){ return v && a.indexOf(v) === i; }).map(function(v){ return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>' : '') +
       '<label>Title<input type="text" class="gd-title" value="' + esc(p.title) + '" placeholder="e.g. Before the reviews come in"></label>' +
       '<label>Text<textarea class="gd-body" rows="16">' + esc(p.body) + '</textarea></label>' +
       '<p class="event-form-hint">Markdown: **bold**, *italic*, [a link](https://…), lines starting with - or 1. for lists, a blank line between paragraphs.</p>' +
@@ -110,18 +134,25 @@
       '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save">Add guide</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
   }
 
+  // A part as a proposal records it.
+  function partSide(p){ var o = { title: p.title, body: p.body }; if (p.section) o.section = p.section; return o; }
+
   function showError(el, msg){ var b = el.querySelector('.ev-error'); b.textContent = msg; b.hidden = !msg; }
 
   // ---------- proposals ----------
 
   function sideText(kind, side){
     if (!side) return { };
-    return kind === 'about' ? { Title: side.title || '', Description: side.description || '' } : { Title: side.title || '', Text: side.body || '' };
+    if (kind === 'about') return { Title: side.title || '', Description: side.description || '' };
+    var o = { Title: side.title || '', Text: side.body || '' };
+    if (side.section !== undefined) o.Section = side.section;
+    return o;
   }
 
   function proposalHtml(q){
     var cur = q.kind === 'about' ? { title: x.title, description: x.description || '' } : q.partId ? part(q.partId) : null;
-    var stale = q.kind !== 'add' && (!cur || (q.before && (cur.title !== q.before.title || (q.kind === 'about' ? (cur.description || '') !== (q.before.description || '') : (cur.body || '') !== (q.before.body || '')))));
+    var stale = q.kind !== 'add' && (!cur || (q.before && (cur.title !== q.before.title || (q.kind === 'about' ? (cur.description || '') !== (q.before.description || '') :
+      (cur.body || '') !== (q.before.body || '') || (q.before.section !== undefined && (cur.section || '') !== q.before.section)))));
     var what = q.kind === 'about' ? KIND.about : KIND[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
     var mine = me && q.by && q.by.email === me.email;
     var off = fullWrite ? '' : ' disabled title="' + G.NOT_PI + '"';
@@ -147,9 +178,14 @@
   // The guide's parts with q applied.
   function applied(q){
     var list = parts().map(function(p){ return Object.assign({}, p); });
-    if (q.kind === 'add') list.push({ id: q.partId || G.partId(), title: q.after.title, body: q.after.body });
+    if (q.kind === 'add') {
+      // At the end of its section, if it names one that's there; else at the end.
+      var part = Object.assign({ id: q.partId || G.partId() }, q.after), at = -1;
+      list.forEach(function(p, i){ if (part.section && p.section === part.section) at = i; });
+      if (at === -1) list.push(part); else list.splice(at + 1, 0, part);
+    }
     else if (q.kind === 'remove') list = list.filter(function(p){ return p.id !== q.partId; });
-    else if (q.kind === 'edit') list.forEach(function(p){ if (p.id === q.partId) { p.title = q.after.title; p.body = q.after.body; } });
+    else if (q.kind === 'edit') list.forEach(function(p){ if (p.id === q.partId) Object.assign(p, q.after); });
     return list;
   }
 
@@ -184,30 +220,33 @@
     drawHistory();
     if (isNew) {
       document.title = 'New guide | BOLD Lab';
-      body.innerHTML = '<div class="hero">' + BACK + '<div><span class="eyebrow">How to</span></div><h1>New guide</h1>' +
+      body.innerHTML = '<div class="hero">' + BACK + EYEBROW_HTML + '<h1>New guide</h1>' +
         (fullWrite ? '' : '<p class="hero-note">' + G.NOT_PI + '.</p>') + '</div>' + (fullWrite ? '<main>' + newFormHtml() + '</main>' : '');
       if (fullWrite) bindNew();
       return;
     }
     if (!x) {
-      document.title = 'Guide not found | BOLD Lab';
-      body.innerHTML = '<div class="hero">' + BACK + '<h1>Guide not found</h1><p class="hero-note">It may have been deleted.</p></div>';
+      document.title = 'Not found | BOLD Lab';
+      body.innerHTML = '<div class="hero">' + BACK + '<h1>Not found</h1><p class="hero-note">It may have been deleted.</p></div>';
       return;
     }
     document.title = x.title + ' | BOLD Lab';
     var off = fullWrite ? '' : ' disabled title="' + G.NOT_PI + '"';
-    var hero = '<div class="hero">' + BACK + '<div><span class="eyebrow">How to</span></div>';
+    var hero = '<div class="hero">' + BACK + EYEBROW_HTML;
     if (form && form.kind === 'about') hero += aboutFormHtml();
     else hero += '<h1>' + esc(x.title) + '</h1>' + (x.description ? '<p class="hero-note">' + esc(x.description) + '</p>' : '') +
       '<div class="event-controls"><button type="button" class="btn-text gd-about">' + (fullWrite ? 'Edit' : 'Suggest a change') + '</button>' +
-      '<button type="button" class="btn-text danger gd-delete"' + off + '>Delete guide</button>' +
+      (DELETABLE ? '<button type="button" class="btn-text danger gd-delete"' + off + '>Delete guide</button>' : '') +
       (proposals.length ? '<a class="btn-text gd-pending" href="#proposals">' + proposals.length + ' proposed change' + (proposals.length === 1 ? '' : 's') + '</a>' : '') + '</div>';
     hero += '</div>';
     var adding = form && form.kind === 'add';
     body.innerHTML = hero + '<main>' +
       (notice ? '<p class="gd-notice">' + esc(notice) + '</p>' : '') +
       contentsHtml() +
-      parts().map(partHtml).join('') +
+      parts().map(function(p, i){
+        var prev = parts()[i - 1];
+        return (p.section && (!prev || prev.section !== p.section) ? '<h2 class="guide-section">' + esc(p.section) + '</h2>' : '') + partHtml(p, i);
+      }).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
         '<button type="button" class="event-add gd-add">' + (fullWrite ? '+ Add a part' : '+ Suggest a new part') + '</button>') +
       proposalsHtml() + '</main>';
@@ -248,18 +287,19 @@
     var p = form.kind === 'edit' ? part(form.id) : null;
     save.addEventListener('click', function(){
       var after = { title: v('.gd-title').trim(), body: v('.gd-body').replace(/\s+$/, '') };
+      if (el.querySelector('.gd-section')) after.section = v('.gd-section').trim();
       if (!after.title) { showError(el, 'Give the part a title.'); return; }
       if (!after.body.trim()) { showError(el, 'Write the part’s text.'); return; }
-      if (p && after.title === p.title && after.body === p.body) { closeForm(); return; }
+      if (p && after.title === p.title && after.body === p.body && (after.section === undefined || after.section === (p.section || ''))) { closeForm(); return; }
       if (needNote()) return;
-      run(p ? { kind: 'edit', partId: p.id, before: { title: p.title, body: p.body }, after: after, note: note() } :
+      run(p ? { kind: 'edit', partId: p.id, before: partSide(p), after: after, note: note() } :
         { kind: 'add', partId: G.partId(), before: null, after: after, note: note() });
     });
     var rm = el.querySelector('.gd-remove');
     if (rm) rm.addEventListener('click', function(){
       if (needNote()) return;
       if (fullWrite && !window.confirm('Remove the part “' + p.title + '”? It stays in the history.')) return;
-      run({ kind: 'remove', partId: p.id, before: { title: p.title, body: p.body }, after: null, note: note() });
+      run({ kind: 'remove', partId: p.id, before: partSide(p), after: null, note: note() });
     });
   }
 
@@ -304,7 +344,7 @@
     if (!t || t.disabled || !x || !me) return;
     var id = t.getAttribute('data-id');
     if (t.classList.contains('gd-about')) { notice = ''; form = { kind: 'about' }; render(); }
-    else if (t.classList.contains('gd-edit')) { notice = ''; form = { kind: 'edit', id: id }; render(); var f = document.getElementById('p-' + id); if (f) f.scrollIntoView({ block: 'start' }); }
+    else if (t.classList.contains('gd-edit')) { notice = ''; form = { kind: 'edit', id: id }; render(); var f = document.getElementById(PREFIX + id); if (f) f.scrollIntoView({ block: 'start' }); }
     else if (t.classList.contains('gd-add')) { notice = ''; form = { kind: 'add' }; render(); body.querySelector('.guide-form .gd-title').focus(); }
     else if (t.classList.contains('gd-up')) move(id, -1);
     else if (t.classList.contains('gd-down')) move(id, 1);
@@ -367,8 +407,18 @@
     return;
   }
   if (!ref) { loaded = true; render(); return; }
-  // Don't redraw over a form being filled in.
-  function refresh(){ if (!form) render(); }
+  // Don't redraw over a form being filled in. The page is drawn after it
+  // loads, so a link to one of its parts (#…) is followed once it's there.
+  var jumped = !location.hash;
+  function refresh(){
+    if (form) return;
+    render();
+    if (!jumped && x) {
+      jumped = true;
+      var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (target) target.scrollIntoView({ block: 'start' });
+    }
+  }
   BOLD.onUser(function(user){
     var mine = ++signIns;
     unsubs.forEach(function(u){ u(); }); unsubs = [];

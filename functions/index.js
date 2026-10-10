@@ -2070,7 +2070,7 @@ exports.skillPackage = onRequest(
 // written with each save. A write that changes only bookkeeping isn't a version.
 // `proposedBy` (guides) is whoever proposed the change the writer accepted.
 
-const TRACKED = ['skills', 'guides'];
+const TRACKED = ['skills', 'guides', 'handbook'];
 const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy'];
 
 function stableJson(v){

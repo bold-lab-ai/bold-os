@@ -11,7 +11,7 @@ Live: <https://bold-lab-ai.github.io/bold-os/>. A static [Eleventy](https://www.
 - Don't write content into pages or data files. If you find some hardcoded, the fix is to move it into Firestore and give it add/edit/delete controls on its page.
 - A code change is for how the site works: a new kind of content, a new page, a fix.
 - Controls a user can't use are shown greyed out with a reason in their tooltip, not hidden.
-- Where everyone may change something but PIs/admins must review it first (the how-to guides), a non-PI's edit is saved as a proposal that a PI/admin accepts or declines.
+- Where everyone may change something but PIs/admins must review it first (the how-to guides, BOLDiquette), a non-PI's edit is saved as a proposal that a PI/admin accepts or declines.
 
 ## Layout
 
@@ -56,9 +56,9 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
 
 ## Data and backend
 
-- **Firestore collections** include `events/{slug}` (with `days` and `venues` inside), `collabWeekSessions`, `collabWeekTalks`, `skills/{name}`, `guides/{slug}` (with `proposals`), `boards/{id}/cards` (the Internal Review Board), `projects`, `people` (the Slack roster) and `roles` (never readable by clients).
+- **Firestore collections** include `events/{slug}` (with `days` and `venues` inside), `collabWeekSessions`, `collabWeekTalks`, `skills/{name}`, `guides/{slug}` and `handbook/{slug}` (BOLDiquette; both with `proposals`), `boards/{id}/cards` (the Internal Review Board), `projects`, `people` (the Slack roster) and `roles` (never readable by clients).
 - **Every write path needs a rule** in `firebase/firestore.rules`. Test new rules in the emulator, both what should pass and what shouldn't.
-- **Version history:** each write to a tracked collection is saved as a full copy in `<doc>/versions` by a server function, and `history.js` shows versions, changes and Restore on the page. To track a new collection: add it to `TRACKED` in `functions/index.js`, require `updatedBy == email()` in its rules and let readers read `versions`, write `changeNote` on save, and mount `BoldHistory` on its page. `skills` and `guides` are tracked so far.
+- **Version history:** each write to a tracked collection is saved as a full copy in `<doc>/versions` by a server function, and `history.js` shows versions, changes and Restore on the page. To track a new collection: add it to `TRACKED` in `functions/index.js`, require `updatedBy == email()` in its rules and let readers read `versions`, write `changeNote` on save, and mount `BoldHistory` on its page. `skills`, `guides` and `handbook` are tracked so far.
 - **Functions** run on Node 20, which must move to Node 22 before 30 October 2026.
 
 ## Shipping

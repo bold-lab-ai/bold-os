@@ -60,3 +60,13 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
   .hero{padding:44px var(--gutter) 16px;}
   .guide-part h2{font-size:22px;}
 }
+
+/* ---------- sections (parts grouped under a heading, e.g. BOLDiquette) ---------- */
+.guide-section{
+  max-width:var(--article-max); margin:72px 0 0; padding-top:14px; border-top:1px solid var(--line);
+  font-family:var(--sans); font-size:12px; font-weight:500; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted);
+}
+.guide-section + .guide-part{margin-top:20px;}
+.guide-contents--sections > ol{list-style:none; padding-left:0;}
+.guide-contents--sections > ol > li{margin:12px 0 0; font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);}
+.guide-contents--sections > ol > li > ol{margin-top:4px; font-size:14px; letter-spacing:0; text-transform:none;}
