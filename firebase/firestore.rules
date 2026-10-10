@@ -205,8 +205,15 @@ service cloud.firestore {
     // only PIs/admins add, change or delete them.
     match /skills/{name} {
       allow read: if isLabMember();
-      allow create, update: if hasFullWrite() && request.resource.data.name == name;
+      // updatedBy is who the version history (functions/index.js) credits.
+      allow create, update: if hasFullWrite() && request.resource.data.name == name
+        && request.resource.data.updatedBy == email();
       allow delete: if hasFullWrite();
+      // Its history, written only by the historySkills function.
+      match /versions/{version} {
+        allow read: if isLabMember();
+        allow write: if false;
+      }
     }
 
     match /{document=**} {

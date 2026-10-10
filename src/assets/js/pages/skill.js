@@ -6,7 +6,9 @@
 // skill; those buttons are always shown, greyed out for everyone else. #edit
 // opens the form. skill.html?new is the same form for a new skill ("+ Add a
 // skill" on the skills page), with its name. Either form can import a whole
-// skill's folder (skill-import.js), which fills everything in.
+// skill's folder (skill-import.js), which fills everything in. History (any
+// lab member; history.js) lists every version the server recorded, with what
+// changed; PIs/admins restore one from there. Each save can carry a note.
 (function(){
   var esc = BOLD.escapeHtml;
   var S = window.BoldSkills;
@@ -23,6 +25,8 @@
 
   var x = null, loaded = false, editing = isNew || location.hash === '#edit', fullWrite = false, me = null, open = 'SKILL.md';
   var BACK = '<a class="back-link" href="skills.html">&larr; All skills</a>';
+  var CONTENT = ['title', 'description', 'body', 'files'];
+  var historyWrap = document.getElementById('skillHistoryWrap'), histPanel = null, showHistory = false;
 
   function skillMd(){
     return '---\nname: ' + x.name + '\ndescription: ' + JSON.stringify(x.description || '') + '\n---\n\n' + String(x.body || '').replace(/^\s+/, '');
@@ -38,6 +42,7 @@
   function controls(){
     var off = fullWrite ? '' : ' disabled title="' + S.NOT_PI + '"';
     return '<div class="event-controls"><button type="button" class="btn-text sk-edit"' + off + '>Edit</button>' +
+      '<button type="button" class="btn-text sk-history">' + (showHistory ? 'Hide history' : 'History') + '</button>' +
       '<button type="button" class="btn-text danger sk-delete"' + off + '>Delete</button></div>';
   }
 
@@ -84,6 +89,7 @@
       '<div class="sk-file-add"><button type="button" class="btn-text sk-add-empty">+ Add a file</button>' +
         '<label class="btn-text sk-add-upload">+ Add from your computer<input type="file" multiple hidden></label></div>' +
       '<p class="event-form-hint">Text files only (Markdown, HTML, code, …), under about 900 KB in all. Adding a SKILL.md fills in the description and instructions above.</p>' +
+      '<label>What changed (optional)<input type="text" class="sk-note" maxlength="300" placeholder="' + (isNew ? 'Added the skill' : 'e.g. Clearer figure rules') + '"></label>' +
       '<p class="ev-error" hidden></p>' +
       '<div class="event-form-actions"><button type="button" class="ev-save">' + (isNew ? 'Add skill' : 'Save') + '</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
   }
@@ -193,7 +199,8 @@
       if (r.error) { S.showError(form, r.error); return; }
       var f = readFiles(form);
       if (f.error) { S.showError(form, f.error); return; }
-      var fields = Object.assign(r.fields, { body: form.querySelector('.sk-body').value, files: f.files, updatedAt: Date.now(), updatedBy: me.email });
+      var fields = Object.assign(r.fields, { body: form.querySelector('.sk-body').value, files: f.files,
+        changeNote: form.querySelector('.sk-note').value.trim(), updatedAt: Date.now(), updatedBy: me.email });
       if (new Blob([JSON.stringify(fields)]).size > MAX_SIZE) { S.showError(form, 'That’s too much text for one skill — keep it under about 900 KB.'); return; }
       var save = form.querySelector('.ev-save');
       save.disabled = true;
@@ -218,8 +225,25 @@
     });
   }
 
+  function drawHistory(){
+    var on = showHistory && !!x && !isNew && !(editing && fullWrite);
+    historyWrap.hidden = !on;
+    if (!on || histPanel) return;
+    histPanel = BoldHistory.mount(document.getElementById('skillHistory'), {
+      ref: ref,
+      fields: { title: 'Title', description: 'Description', body: 'Instructions (SKILL.md)', files: 'File' },
+      canRestore: function(){ return fullWrite; },
+      restore: function(v){
+        var back = {};
+        CONTENT.forEach(function(k){ back[k] = v.data[k] !== undefined ? v.data[k] : (k === 'files' ? [] : ''); });
+        return ref.update(Object.assign(back, { changeNote: 'Restored the version of ' + BoldHistory.when(v.at), updatedAt: Date.now(), updatedBy: me.email }));
+      },
+    });
+  }
+
   function render(){
     if (!loaded) return;
+    if (historyWrap) drawHistory();
     if (isNew) {
       document.title = 'New skill | BOLD Lab';
       body.innerHTML = '<div class="hero">' + BACK + '<div><span class="eyebrow">Skill</span></div><h1>New skill</h1>' +
@@ -243,9 +267,16 @@
     body.innerHTML = head + '<p class="hero-note">' + esc(x.description || '') + '</p>' + controls() + '</div>' +
       '<main>' + installHtml() + filesHtml() + '</main>';
     body.querySelector('.sk-edit').addEventListener('click', function(){ if (fullWrite) { editing = true; render(); } });
+    body.querySelector('.sk-history').addEventListener('click', function(){
+      showHistory = !showHistory;
+      render();
+      if (showHistory) historyWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
     body.querySelector('.sk-delete').addEventListener('click', function(){
       if (!fullWrite || !window.confirm('Delete the skill “' + (x.title || x.name) + '” for good? Anyone who installed it keeps their copy.')) return;
-      ref.delete().then(function(){ location.href = 'skills.html'; }).catch(function(err){
+      // Stamp who's deleting it first: the history credits the last updatedBy.
+      ref.update({ updatedBy: me.email, updatedAt: Date.now(), changeNote: '' }).then(function(){ return ref.delete(); })
+        .then(function(){ location.href = 'skills.html'; }).catch(function(err){
         console.error('[BOLD Skills] deleting the skill failed', err);
         window.alert('Couldn’t delete the skill — try again.');
       });

@@ -27,7 +27,7 @@
 // Slack workspace — see scratchpad test scripts referenced in the
 // changelog.
 
-const { onDocumentCreated, onDocumentWritten } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentWritten, onDocumentWrittenWithAuthContext } = require('firebase-functions/v2/firestore');
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { defineSecret } = require('firebase-functions/params');
@@ -2056,6 +2056,65 @@ exports.skillPackage = onRequest(
   }
 );
 
+// ---------- history: every version of a tracked document ----------
+//
+// For each collection in TRACKED, every write to one of its documents is kept as
+// a version in <collection>/<id>/versions/{auto id}: { at, by: { email, name },
+// note, kind: 'created' | 'edited' | 'deleted', data } — `data` the whole
+// document after the change (before it, for a deletion), so a version is read or
+// restored on its own; the site compares two versions when showing what changed
+// (history.js). Recorded here, not by the pages, so no client can skip or alter
+// one (firestore.rules: versions are read-only). Who: the document's `updatedBy`,
+// which the rules require to be the signed-in writer's own email (a page about to
+// delete a document first stamps it). The note is the document's `changeNote`,
+// written with each save. A write that changes only bookkeeping isn't a version.
+
+const TRACKED = ['skills'];
+const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote'];
+
+function stableJson(v){
+  if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
+  if (v && typeof v === 'object' && !(v instanceof require('firebase-admin/firestore').Timestamp)) {
+    return '{' + Object.keys(v).sort().map((k) => JSON.stringify(k) + ':' + stableJson(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v);
+}
+function versionContent(data){
+  const out = Object.assign({}, data || {});
+  VERSION_META.forEach((k) => { delete out[k]; });
+  return out;
+}
+
+async function personFor(email){
+  if (!email) return null;
+  let name = '';
+  try {
+    const snap = await db.collection('people').where('email', '==', email).limit(1).get();
+    if (!snap.empty) name = snap.docs[0].data().name || '';
+  } catch (e) { /* the name is a nicety */ }
+  return { email, name };
+}
+
+function recordVersions(collection){
+  return onDocumentWrittenWithAuthContext({ document: collection + '/{id}', region: 'europe-west2' }, async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (before && after && stableJson(versionContent(before)) === stableJson(versionContent(after))) return;
+    const kind = !before ? 'created' : !after ? 'deleted' : 'edited';
+    const src = after || before;
+    const version = {
+      at: Date.now(),
+      by: await personFor(typeof src.updatedBy === 'string' ? src.updatedBy : (src.updatedBy && src.updatedBy.email) || ''),
+      note: after && typeof after.changeNote === 'string' ? after.changeNote.slice(0, 300) : '',
+      kind,
+      data: src,
+      authType: event.authType || '',
+    };
+    await event.data.after.ref.collection('versions').add(version);
+  });
+}
+TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice(1)] = recordVersions(c); });
+
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
@@ -2065,5 +2124,5 @@ exports._internal = {
   reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
-  projectsFromDashboard, badgesForCard, skillMd, skillZip
+  projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson
 };
