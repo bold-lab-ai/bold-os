@@ -45,6 +45,9 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .guide-text ul, .guide-text ol{margin:8px 0; padding-left:24px;}
 .guide-text li{margin:5px 0;}
 .guide-text li ul, .guide-text li ol{margin:4px 0;}
+/* A hand-numbered item ("1:", "(a)"): its label in place of the bullet. */
+.guide-text li.md-labelled{list-style:none; position:relative;}
+.guide-text .md-label{position:absolute; right:100%; margin-right:0.45em; white-space:nowrap; font-variant-numeric:tabular-nums; color:var(--ink-soft);}
 .guide-text h3, .guide-text h4, .guide-text h5, .guide-text h6{font-size:19px; margin:24px 0 6px;}
 .guide-text blockquote{margin:12px 0; padding-left:16px; border-left:2px solid var(--line); color:var(--ink-soft);}
 .guide-text a{overflow-wrap:break-word;}

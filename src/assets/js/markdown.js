@@ -44,6 +44,15 @@ window.BoldMarkdown = (function(){
     return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(function(c){ return c.trim(); });
   }
 
+  // A bullet whose text starts with its own label ("1:", "2.", "(a)", "(b1)"),
+  // as Google Docs exports hand-numbered lists: the label becomes its marker.
+  var LABEL = /^(\d+[:.)]|\([a-z0-9]{1,3}\))\s+/;
+  function itemHtml(bullet, text){
+    var l = bullet && LABEL.exec(text);
+    if (!l) return '<li>' + inline(text);
+    return '<li class="md-labelled"><span class="md-label">' + esc(l[1]) + '</span>' + inline(text.slice(l[0].length));
+  }
+
   // Lines of a list (and their continuation lines) → nested <ul>/<ol>.
   function list(lines){
     var html = '', stack = [];
@@ -56,11 +65,13 @@ window.BoldMarkdown = (function(){
       var indent = m[1].replace(/\t/g, '    ').length, tag = /\d/.test(m[2]) ? 'ol' : 'ul';
       close(indent);
       var top = stack[stack.length - 1];
+      // Bullets then numbers (or the other way) at one level: two lists.
+      if (top && indent === top.indent && top.tag !== tag) { html += '</li></' + stack.pop().tag + '>'; top = stack[stack.length - 1]; }
       if (!top || indent > top.indent) {
         stack.push({ indent: indent, tag: tag });
-        html += '<' + tag + (tag === 'ol' && parseInt(m[2], 10) > 1 ? ' start="' + parseInt(m[2], 10) + '"' : '') + '><li>';
-      } else html += '</li><li>';
-      html += inline(m[3]);
+        html += '<' + tag + (tag === 'ol' && parseInt(m[2], 10) > 1 ? ' start="' + parseInt(m[2], 10) + '"' : '') + '>';
+      } else html += '</li>';
+      html += itemHtml(tag === 'ul', m[3]);
     });
     close(-1);
     return html;
