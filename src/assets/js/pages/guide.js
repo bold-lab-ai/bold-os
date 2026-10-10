@@ -104,6 +104,23 @@
       '</div></section>';
   }
 
+  // Marks the contents entry of the part being read.
+  var contentsWatch = null;
+  function watchContents(){
+    if (contentsWatch) { contentsWatch.disconnect(); contentsWatch = null; }
+    var links = body.querySelectorAll('.guide-contents a');
+    if (!links.length || !('IntersectionObserver' in window)) return;
+    var seen = {};
+    contentsWatch = new IntersectionObserver(function(entries){
+      entries.forEach(function(e){ seen[e.target.id] = e.isIntersecting; });
+      var current = null;
+      Array.prototype.forEach.call(body.querySelectorAll('.guide-part[id]'), function(sec){ if (!current && seen[sec.id]) current = sec.id; });
+      if (!current) return;
+      Array.prototype.forEach.call(links, function(a){ a.classList.toggle('is-current', a.getAttribute('href') === '#' + current); });
+    }, { rootMargin: '0px 0px -60% 0px' });
+    Array.prototype.forEach.call(body.querySelectorAll('.guide-part[id]'), function(sec){ contentsWatch.observe(sec); });
+  }
+
   function contentsHtml(){
     if (shown().length < 2) return '';
     return '<nav class="guide-contents" aria-label="Contents"><ol>' + shown().map(function(p){
@@ -265,13 +282,15 @@
     body.innerHTML = hero + '<main>' +
       (notice ? '<p class="gd-notice">' + esc(notice) + '</p>' : '') +
       tabsHtml() +
-      contentsHtml() +
+      // The contents sit beside the parts and stay on screen (above them on narrow screens).
+      '<div class="guide-layout"><div class="guide-main">' +
       shown().map(partHtml).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
         '<button type="button" class="event-add gd-add">' + (fullWrite ? '+ Add a part' : '+ Suggest a new part') + '</button>') +
-      proposalsHtml() + '</main>';
+      proposalsHtml() + '</div>' + contentsHtml() + '</div></main>';
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
+    watchContents();
   }
 
   function closeForm(){ form = null; render(); }

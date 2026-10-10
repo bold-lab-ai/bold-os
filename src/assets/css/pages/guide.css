@@ -1,5 +1,8 @@
+/* The page is wider than others: the text plus its contents column. */
+:root{--guide-max:calc(var(--article-max) + 248px + 2 * var(--gutter));}
+
 /* A how-to guide's page (guide.html?guide=<slug>, pages/guide.js): its parts, proposed changes and history. */
-.hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 24px;}
+.hero{max-width:var(--guide-max); margin:0 auto; padding:56px var(--gutter) 24px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
 .back-link:hover{color:var(--accent);}
 .eyebrow{
@@ -11,18 +14,30 @@
 .hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
 .hero .event-controls{flex-wrap:wrap;}
 .gd-pending{text-decoration:none; font-family:var(--sans); font-size:14px;}
-main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
+main{max-width:var(--guide-max); margin:0 auto; padding:8px var(--gutter) 24px;}
 section.block{max-width:var(--article-max); margin:48px 0 0;}
 .block-head{margin-bottom:10px;}
 .block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
 .guide-history{padding-top:0;}
 
 /* ---------- contents and parts ---------- */
-.guide-contents{max-width:var(--article-max); margin:8px 0 8px; font-family:var(--sans); font-size:14px;}
-.guide-contents ol{margin:0; padding-left:22px;}
-.guide-contents li{margin:3px 0;}
-.guide-contents a{color:var(--ink-soft); text-decoration:none;}
-.guide-contents a:hover{color:var(--accent);}
+/* The parts, with the contents in a column beside them that stays on screen. */
+.guide-layout{display:grid; grid-template-columns:minmax(0, var(--article-max)) 200px; gap:0 48px; align-items:start;}
+.guide-main{min-width:0;}
+.guide-main > .guide-part:first-child{margin-top:28px;}
+.guide-contents{
+  position:sticky; top:24px; margin-top:32px; max-height:calc(100vh - 48px); overflow-y:auto;
+  font-family:var(--sans); font-size:13px; line-height:1.4; border-left:1px solid var(--line); padding-left:14px;
+}
+.guide-contents ol{margin:0; padding:0; list-style:none;}
+.guide-contents li{margin:0;}
+.guide-contents a{display:block; padding:4px 0; color:var(--muted); text-decoration:none;}
+.guide-contents a:hover, .guide-contents a.is-current{color:var(--accent);}
+.guide-contents a.is-current{font-weight:600;}
+@media (max-width:1180px){
+  .guide-layout{display:flex; flex-direction:column;}
+  .guide-contents{order:-1; position:static; max-height:none; margin-top:16px; max-width:var(--article-max);}
+}
 .guide-part{max-width:var(--article-max); margin:44px 0 0; scroll-margin-top:24px;}
 .guide-part h2{font-size:26px; line-height:1.25; margin:0 0 10px;}
 .guide-num{font-family:var(--sans); font-size:13px; font-weight:400; color:var(--muted); margin-right:12px; font-variant-numeric:tabular-nums;}
@@ -34,6 +49,11 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .guide-text blockquote{margin:12px 0; padding-left:16px; border-left:2px solid var(--line); color:var(--ink-soft);}
 .guide-text a{overflow-wrap:break-word;}
 .guide-text code{font-size:0.85em;}
+.guide-text pre{font-size:13px; white-space:pre; overflow-x:auto;}
+.md-table{overflow-x:auto; margin:14px 0;}
+.md-table table{border-collapse:collapse; font-family:var(--sans); font-size:13px; min-width:100%;}
+.md-table th, .md-table td{border-bottom:1px solid var(--line); padding:6px 10px 6px 0; text-align:left; vertical-align:top;}
+.md-table th{font-weight:600; color:var(--ink);}
 .guide-part-controls{margin-top:12px; flex-wrap:wrap;}
 .guide-part-controls .btn-text{font-size:13px;}
 .event-add{
@@ -63,7 +83,7 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 
 /* ---------- tabs: one per section (e.g. BOLDiquette) ---------- */
 .guide-tabs{
-  max-width:var(--content-max); display:flex; flex-wrap:wrap; gap:4px 22px; margin:8px 0 8px; padding-bottom:10px;
+  max-width:none; display:flex; flex-wrap:wrap; gap:4px 22px; margin:8px 0 8px; padding-bottom:10px;
   border-bottom:1px solid var(--line); scroll-margin-top:16px;
 }
 .guide-tab{
@@ -72,4 +92,3 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 }
 .guide-tab:hover{color:var(--accent);}
 .guide-tab.is-current{color:var(--ink); border-bottom-color:var(--accent);}
-.guide-tabs + .guide-contents{margin-top:20px;}

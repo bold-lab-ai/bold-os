@@ -2,7 +2,8 @@
 // parts): headings (#…####), paragraphs, bullet and numbered lists (nested by
 // indent), > quotes, ``` code blocks, **bold**, *italic* (asterisks only), ~~struck~~, `code` and
 // [links](https://…). Everything is escaped first; links are kept only when they
-// are http(s), mailto, a page of this site or an #anchor.
+// are http(s), mailto, a page of this site or an #anchor. Tables: a | row, a
+// |---| row under it, then | rows.
 // BoldMarkdown.render(text) → HTML.
 window.BoldMarkdown = (function(){
   var esc = BOLD.escapeHtml;
@@ -23,6 +24,10 @@ window.BoldMarkdown = (function(){
       var external = /^https?:/i.test(u);
       return '<a href="' + esc(u) + '"' + (external ? ' target="_blank" rel="noopener"' : '') + '>' + label + '</a>';
     });
+    // <https://…> and <name@host> (as Google Docs exports links and addresses).
+    s = s.replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, function(all, u){
+      return '<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>';
+    }).replace(/&lt;([\w.+-]+@[\w-]+(?:\.[\w-]+)+)&gt;/g, '<a href="mailto:$1">$1</a>');
     s = s.replace(/(^|[\s(])(https?:\/\/[^\s<]+[^\s<.,;:!?)])/g, function(all, pre, u){
       return pre + '<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>';
     });
@@ -33,6 +38,11 @@ window.BoldMarkdown = (function(){
   }
 
   var ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+  var TABLE_RULE = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+
+  function cells(line){
+    return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(function(c){ return c.trim(); });
+  }
 
   // Lines of a list (and their continuation lines) → nested <ul>/<ol>.
   function list(lines){
@@ -69,6 +79,15 @@ window.BoldMarkdown = (function(){
         out += '<pre><code>' + esc(code.join('\n')) + '</code></pre>';
         continue;
       }
+      if (/^\s*\|/.test(line) && i + 1 < lines.length && TABLE_RULE.test(lines[i + 1])) {
+        var head = cells(line), rows = [];
+        for (i += 2; i < lines.length && /^\s*\|/.test(lines[i]); i++) rows.push(cells(lines[i]));
+        // An empty header row (as Google Docs exports) means the first row is the header.
+        if (!head.join('') && rows.length) head = rows.shift();
+        out += '<div class="md-table"><table><thead><tr>' + head.map(function(c){ return '<th>' + inline(c) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+          rows.map(function(row){ return '<tr>' + row.map(function(c){ return '<td>' + inline(c) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div>';
+        continue;
+      }
       var h = /^(#{1,4})\s+(.*)$/.exec(line);
       if (h) { var n = Math.min(h[1].length + 2, 6); out += '<h' + n + '>' + inline(h[2]) + '</h' + n + '>'; i++; continue; }
       if (/^>\s?/.test(line)) {
@@ -88,7 +107,7 @@ window.BoldMarkdown = (function(){
         continue;
       }
       var para = [];
-      for (; i < lines.length && lines[i].trim() && !/^(```|#{1,4}\s|>)/.test(lines[i]) && !ITEM.test(lines[i]); i++) para.push(lines[i].trim());
+      for (; i < lines.length && lines[i].trim() && !/^(```|#{1,4}\s|>|\s*\|)/.test(lines[i]) && !ITEM.test(lines[i]); i++) para.push(lines[i].trim());
       out += '<p>' + para.map(inline).join(' ') + '</p>';
     }
     return out;
