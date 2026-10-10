@@ -7,8 +7,8 @@
 // open. PIs/admins also move parts up and down and delete the guide.
 // guide.html?new is the form for a new guide (PIs/admins). History
 // (history.js) shows every version, with what changed; PIs/admins restore one.
-// Parts may carry a `section`: consecutive parts of one section show under its
-// heading. The same page serves other documents edited this way (BOLDiquette:
+// Parts may carry a `section`: then the page has one tab per section, showing
+// that section's parts (#<section-slug> or a part's #id opens its tab). The same page serves other documents edited this way (BOLDiquette:
 // boldiquette.html), set by #guideBody's data attributes: data-collection,
 // data-slug, data-eyebrow, data-back (a link, or "" for none), data-anchor-prefix
 // and data-deletable.
@@ -44,6 +44,38 @@
   function part(id){ return parts().filter(function(p){ return p.id === id; })[0] || null; }
   function anchor(p){ return PREFIX + p.id; }
   function hasSections(){ return parts().some(function(p){ return p.section; }); }
+
+  // ---------- tabs (one per section) ----------
+
+  var tab = null;
+  function sections(){
+    return parts().map(function(p){ return p.section || ''; }).filter(function(v, i, a){ return a.indexOf(v) === i; });
+  }
+  function currentTab(){
+    if (!hasSections()) return null;
+    return sections().indexOf(tab) !== -1 ? tab : sections()[0];
+  }
+  // The parts on show: the current tab's, or all of them.
+  function shown(){
+    var t = currentTab();
+    return t === null ? parts() : parts().filter(function(p){ return (p.section || '') === t; });
+  }
+  // The section a #hash names: a section's slug, or one of its parts' id.
+  function tabFor(hash){
+    var h = decodeURIComponent(String(hash || '').replace(/^#/, ''));
+    if (!h) return null;
+    var byName = sections().filter(function(v){ return G.slugify(v) === h; })[0];
+    if (byName !== undefined) return byName;
+    var p = parts().filter(function(q){ return anchor(q) === h; })[0];
+    return p ? (p.section || '') : null;
+  }
+  function tabsHtml(){
+    var t = currentTab();
+    if (t === null) return '';
+    return '<nav class="guide-tabs" id="gdTabs" aria-label="Sections">' + sections().map(function(v){
+      return '<a class="guide-tab' + (v === t ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (v === t ? ' aria-current="page"' : '') + '>' + esc(v || 'Other') + '</a>';
+    }).join('') + '</nav>';
+  }
   function stamp(note){ return { changeNote: note || '', updatedAt: Date.now(), updatedBy: me.email, proposedBy: '' }; }
 
   // What a version or the guide holds, as text to compare (history.js).
@@ -58,7 +90,7 @@
   // ---------- reading ----------
 
   function partHtml(p, i){
-    var n = parts().length;
+    var n = shown().length;
     var editing = form && form.kind === 'edit' && form.id === p.id;
     if (editing) return '<section class="guide-part" id="' + anchor(p) + '">' + partFormHtml(p) + '</section>';
     var off = fullWrite ? '' : ' disabled title="' + G.NOT_PI + '"';
@@ -73,20 +105,10 @@
   }
 
   function contentsHtml(){
-    if (parts().length < 2) return '';
-    if (!hasSections()) return '<nav class="guide-contents" aria-label="Contents"><ol>' + parts().map(function(p){
+    if (shown().length < 2) return '';
+    return '<nav class="guide-contents" aria-label="Contents"><ol>' + shown().map(function(p){
       return '<li><a href="#' + anchor(p) + '">' + esc(p.title) + '</a></li>';
     }).join('') + '</ol></nav>';
-    var html = '', open = false;
-    parts().forEach(function(p, i){
-      var prev = parts()[i - 1];
-      if (!prev || prev.section !== p.section) {
-        if (open) html += '</ol></li>';
-        html += '<li>' + esc(p.section || '') + '<ol>'; open = true;
-      }
-      html += '<li><a href="#' + anchor(p) + '">' + esc(p.title) + '</a></li>';
-    });
-    return '<nav class="guide-contents guide-contents--sections" aria-label="Contents"><ol>' + html + (open ? '</ol></li>' : '') + '</ol></nav>';
   }
 
   // ---------- forms ----------
@@ -107,7 +129,7 @@
     var isAdd = !p.id;
     return '<div class="event-form guide-form">' +
       '<p class="event-form-head">' + (isAdd ? 'New part' : 'Edit part') + '</p>' +
-      (hasSections() ? '<label>Section<input type="text" class="gd-section" value="' + esc(p.section || (isAdd && parts().length ? parts()[parts().length - 1].section : '') || '') + '" list="gdSections"></label>' +
+      (hasSections() ? '<label>Section<input type="text" class="gd-section" value="' + esc(p.section || (isAdd ? currentTab() : '') || '') + '" list="gdSections"></label>' +
         '<datalist id="gdSections">' + parts().map(function(q){ return q.section; }).filter(function(v, i, a){ return v && a.indexOf(v) === i; }).map(function(v){ return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>' : '') +
       '<label>Title<input type="text" class="gd-title" value="' + esc(p.title) + '" placeholder="e.g. Before the reviews come in"></label>' +
       '<label>Text<textarea class="gd-body" rows="16">' + esc(p.body) + '</textarea></label>' +
@@ -242,11 +264,9 @@
     var adding = form && form.kind === 'add';
     body.innerHTML = hero + '<main>' +
       (notice ? '<p class="gd-notice">' + esc(notice) + '</p>' : '') +
+      tabsHtml() +
       contentsHtml() +
-      parts().map(function(p, i){
-        var prev = parts()[i - 1];
-        return (p.section && (!prev || prev.section !== p.section) ? '<h2 class="guide-section" id="' + esc(G.slugify(p.section)) + '">' + esc(p.section) + '</h2>' : '') + partHtml(p, i);
-      }).join('') +
+      shown().map(partHtml).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
         '<button type="button" class="event-add gd-add">' + (fullWrite ? '+ Add a part' : '+ Suggest a new part') + '</button>') +
       proposalsHtml() + '</main>';
@@ -330,8 +350,10 @@
     });
   }
 
+  // Swaps a part with the one before or after it on show (in its tab).
   function move(id, by){
     var list = parts().slice(), i = list.map(function(p){ return p.id; }).indexOf(id), j = i + by;
+    if (i >= 0 && currentTab() !== null) while (j >= 0 && j < list.length && (list[j].section || '') !== (list[i].section || '')) j += by;
     if (!fullWrite || i < 0 || j < 0 || j >= list.length) return;
     var p = list[i];
     list[i] = list[j]; list[j] = p;
@@ -412,13 +434,25 @@
   var jumped = !location.hash;
   function refresh(){
     if (form) return;
+    if (!jumped && x) tab = tabFor(location.hash);
     render();
-    if (!jumped && x) {
-      jumped = true;
-      var target = document.getElementById(decodeURIComponent(location.hash.slice(1)));
-      if (target) target.scrollIntoView({ block: 'start' });
-    }
+    if (!jumped && x) { jumped = true; goTo(location.hash); }
   }
+  // Shows what #hash names: a part (scrolled to) or a section's tab.
+  function goTo(hash){
+    var target = document.getElementById(decodeURIComponent(String(hash).replace(/^#/, '')));
+    if (!target && tabFor(hash) !== null) target = document.getElementById('gdTabs');
+    if (target) target.scrollIntoView({ block: 'start' });
+  }
+  // Tabs and the sidebar's section links change the #hash.
+  window.addEventListener('hashchange', function(){
+    if (!x || form) return;
+    var t = tabFor(location.hash);
+    if (t === null) return;
+    tab = t;
+    render();
+    goTo(location.hash);
+  });
   BOLD.onUser(function(user){
     var mine = ++signIns;
     unsubs.forEach(function(u){ u(); }); unsubs = [];
