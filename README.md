@@ -32,4 +32,4 @@ npm run build      # one-off build into _site/
 
 ## Contributing
 
-Start with **[`docs/AGENTS.md`](docs/AGENTS.md)** — the conventions, constraints and how the pieces fit together. `docs/FIREBASE.md` covers the backend.
+Start with **[`AGENTS.md`](AGENTS.md)**: how the site is built, its rules, and how to run, test and ship changes. `docs/REFERENCE.md` has detailed notes on every file; `docs/FIREBASE.md` covers the backend.

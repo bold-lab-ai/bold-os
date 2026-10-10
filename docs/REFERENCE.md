@@ -1,6 +1,6 @@
-# AGENTS.md
+# Reference
 
-Context for anyone — agent or human — editing this project.
+Detailed notes on every file and feature, with the reasoning behind them, for anyone editing this project. Start with the root [`AGENTS.md`](../AGENTS.md); search this file for what you're touching. Parts are dated and some describe earlier states of the site.
 
 ## What this is
 

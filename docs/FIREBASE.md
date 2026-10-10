@@ -4,7 +4,7 @@ Decided 2026-09-11: the Internal Review Board moves off per-browser `localStorag
 
 Everything below the data model and Security Rules is buildable **without any credentials** and is either already done or in progress. The "Inputs needed" section at the bottom is the only thing blocking the next step.
 
-**Hosting stays as-is — no Firebase Hosting.** (Still true, and now a hard rule: enabling Firebase Hosting on this project broke Slack sign-in on the GitHub Pages site, 2026-10-04 — see `docs/AGENTS.md` "Sign-in".) Firestore/Auth/Functions are decoupled from where the static pages are served; the pages keep living wherever `bold-lab.ai` already does (GitHub Pages). The only hosting-adjacent step is adding that domain to Firebase Auth's **Authorized domains** allowlist once Phase 2 (Slack sign-in) starts — a config entry, not a migration.
+**Hosting stays as-is — no Firebase Hosting.** (Still true, and now a hard rule: enabling Firebase Hosting on this project broke Slack sign-in on the GitHub Pages site, 2026-10-04 — see `docs/REFERENCE.md` "Sign-in".) Firestore/Auth/Functions are decoupled from where the static pages are served; the pages keep living wherever `bold-lab.ai` already does (GitHub Pages). The only hosting-adjacent step is adding that domain to Firebase Auth's **Authorized domains** allowlist once Phase 2 (Slack sign-in) starts — a config entry, not a migration.
 
 ---
 
@@ -30,7 +30,7 @@ boards/{boardId}
   submissionSystem, notes, createdAt, rushMode (bool, optional),
   status ('approved' | 'pending'), proposedBy ({name,email}, pending only)
   # replaces today's boards-index array entry — one doc per venue+year
-  # rushMode: client-only display toggle (2026-09-11, see docs/AGENTS.md
+  # rushMode: client-only display toggle (2026-09-11, see docs/REFERENCE.md
   # guideline 6) — collapses the board to 4 columns. No Security Rules
   # implication: it's just another field on a document create/update
   # already covered by hasFullWrite().
@@ -58,7 +58,7 @@ boards/{boardId}
     # so they never contend with a card-level edit or each other
     # jrReviewState/srReviewState: each reviewer's own sign-off, one of
     # 'in_review' | 'changes_requested' | 'approved' (2026-09-11, see
-    # docs/AGENTS.md guideline 6) — replaces an earlier, brief shape
+    # docs/REFERENCE.md guideline 6) — replaces an earlier, brief shape
     # (changesRequested + jrApproved/srApproved); normalizeCard() migrates
     # any card still holding that shape. Client-side gated so only the
     # matching card.reviewers[role] email can set it — Security Rules stay
@@ -175,7 +175,7 @@ Eduardo: any lab member should be able to propose a new venue, through the exact
 2. `where('status','==','pending').where('proposedBy.email','==', me)` — always succeeds, my own proposals.
 3. `where('status','==','pending')`, unfiltered — succeeds **only** for someone with `hasFullWrite()`, since that's the only way the rule can hold across every possible result without an ownership filter.
 
-Query 3's success/failure is also how the client learns whether to show the "Pending your approval" section and the Approve/Reject controls at all — there's no other way to ask, since `roles/{roleId}` stays permanently unreadable by clients (same constraint as Rush mode's own permission check, `docs/AGENTS.md` guideline 6). This can vacuously succeed for a genuine non-admin in the edge case where zero *other* people's proposals currently exist (nothing to violate the rule against) — harmless: it can only ever hand back their own proposal, and an Approve/Reject click against it still fails server-side (`update`/`delete` stay `hasFullWrite()`-only), same graceful failure as any other disallowed write in this app.
+Query 3's success/failure is also how the client learns whether to show the "Pending your approval" section and the Approve/Reject controls at all — there's no other way to ask, since `roles/{roleId}` stays permanently unreadable by clients (same constraint as Rush mode's own permission check, `docs/REFERENCE.md` guideline 6). This can vacuously succeed for a genuine non-admin in the edge case where zero *other* people's proposals currently exist (nothing to violate the rule against) — harmless: it can only ever hand back their own proposal, and an Approve/Reject click against it still fails server-side (`update`/`delete` stay `hasFullWrite()`-only), same graceful failure as any other disallowed write in this app.
 
 **Reviewing a proposal is now a click-in, not a blind list action (revised 2026-09-11, same day).** Every venue row — approved or pending — opens the normal venue page; a pending one shows a "Pending approval" badge, a `proposerLabel()`-rendered "Proposed by Name (email)" line (deliberately always both — a bare name wasn't enough to tell two pending proposals apart at a glance), the empty board, and no "+ Register paper" button at all (revised again same day — it used to render disabled-with-a-tooltip; Eduardo: it shouldn't be there at all on a pending venue, not just unusable — `renderBoard()` omits it entirely when `current.status === 'pending'`, `openModal()`'s existing check stays as a defense-in-depth backstop). Approve and a new **Reject** button live in that page's header (next to Edit venue), shown only when `state.canApproveVenues`. `onRejectVenue(id)` is the same underlying write as `onDeleteBoard()` — nothing's worth keeping on an unapproved venue, and there's no rejection-reason field in the schema — but gets its own confirm dialog and toast wording, and is a visually separate button from "Delete this venue" (which now only renders once a venue is actually `'approved'` — deleting a live venue with real registered papers is a much bigger, scarier action than declining a proposal that never went anywhere).
 
@@ -206,7 +206,7 @@ The project's first Cloud Function, and the first server-side code of any kind �
 
 **Design: a pure decision function, then a thin I/O wrapper.** `cardEventsToNotify(before, after, title, boardId, cardId)` computes *what* to notify — a list of `{ emails, headline, excludeEmail? }` — with zero I/O (no Firestore, no Slack, no `await` at all); the actual trigger just resolves each event's emails to Slack ids (`slackIdForEmail`, one `people` collection lookup per email — the roster is already synced from Slack's `users.list`, no live `users.lookupByEmail` call needed) and sends it (`chat.postMessage` after `conversations.open`, plain `fetch` against the Slack Web API, no SDK dependency — same minimal-deps preference as the rest of this project). Keeping the decision logic pure is what makes it unit-testable without a live Firestore emulator or a real Slack workspace: 36 standalone cases (every trigger, several multi-event-in-one-write cases, the "no email on file" no-op case, the deep-link URL, every comment-routing branch) verified before/after each round of this was wired to real Slack.
 
-**This depends on the author/comment identity fixes from the same day** (see docs/AGENTS.md guideline 8 and the "still embedded arrays" note above) — before those, the PI had no reliable email (`authors` was free text) and neither did a comment's poster. `dmByEmail`/`sendEvent` silently no-op (log only, never throw) for anyone with no email or no matching `people` roster entry, so an old, not-yet-migrated card just produces fewer notifications rather than an error.
+**This depends on the author/comment identity fixes from the same day** (see docs/REFERENCE.md guideline 8 and the "still embedded arrays" note above) — before those, the PI had no reliable email (`authors` was free text) and neither did a comment's poster. `dmByEmail`/`sendEvent` silently no-op (log only, never throw) for anyone with no email or no matching `people` roster entry, so an old, not-yet-migrated card just produces fewer notifications rather than an error.
 
 **Message design — went through several rounds of live feedback the same day, this is the current state:**
 
@@ -328,7 +328,7 @@ The old "Subscribable deadline feed" TODO item was blocked for as long as this w
 }
 ```
 
-**Superseded — the app is live against real production Firestore now (2026-09-11).** Originally built against the emulator only, deny-all in production, until auth existed (see the git history of this section for that reasoning while it applied). Real Security Rules deployed once Sign-in-with-Slack worked; `roles`/`people` seeded with real data; `FIRESTORE_USE_EMULATOR` in `audit-board.html` flipped to `false` the same day, after a real second user hit a silent failure caused by the client still pointing at a local test emulator that only ever existed on one laptop — see `docs/changelog.md`. Local dev still flips both `FIRESTORE_USE_EMULATOR`/`AUTH_USE_EMULATOR` to `true` (see `docs/AGENTS.md`), just never commits them that way.
+**Superseded — the app is live against real production Firestore now (2026-09-11).** Originally built against the emulator only, deny-all in production, until auth existed (see the git history of this section for that reasoning while it applied). Real Security Rules deployed once Sign-in-with-Slack worked; `roles`/`people` seeded with real data; `FIRESTORE_USE_EMULATOR` in `audit-board.html` flipped to `false` the same day, after a real second user hit a silent failure caused by the client still pointing at a local test emulator that only ever existed on one laptop — see `docs/changelog.md`. Local dev still flips both `FIRESTORE_USE_EMULATOR`/`AUTH_USE_EMULATOR` to `true` (see `docs/REFERENCE.md`), just never commits them that way.
 
 ## Inputs needed from Eduardo
 
