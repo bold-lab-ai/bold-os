@@ -1,14 +1,15 @@
 // A skill's page (skill.html?skill=<name>) — one skills/{name} doc (see
-// skills-common.js): its title and description, how to install or download its
-// package, and the files in it (SKILL.md first), each shown on click. PIs/admins
+// skills-common.js): its title and description, how to install it, and the
+// files in it (SKILL.md first), each shown on click. PIs/admins
 // edit it in place — description, SKILL.md's instructions, and the files: add
 // one empty or from the computer, rename, change or remove it — or delete the
 // skill; those buttons are always shown, greyed out for everyone else. #edit
 // opens the form. skill.html?new is the same form for a new skill ("+ Add a
 // skill" on the skills page), with its name. Either form can import a whole
-// skill's folder (skill-import.js), which fills everything in. History (any
-// lab member; history.js) lists every version the server recorded, with what
-// changed; PIs/admins restore one from there. Each save can carry a note.
+// skill's folder (skill-import.js), which fills everything in. The page's
+// sections: the description (hero), Install (the Claude Code command), Content
+// (the files), History (history.js: every version the server recorded, with
+// what changed; PIs/admins restore one). Each save can carry a note.
 (function(){
   var esc = BOLD.escapeHtml;
   var S = window.BoldSkills;
@@ -26,7 +27,7 @@
   var x = null, loaded = false, editing = isNew || location.hash === '#edit', fullWrite = false, me = null, open = 'SKILL.md';
   var BACK = '<a class="back-link" href="skills.html">&larr; All skills</a>';
   var CONTENT = ['title', 'description', 'body', 'files'];
-  var historyWrap = document.getElementById('skillHistoryWrap'), histPanel = null, showHistory = false;
+  var historyWrap = document.getElementById('skillHistoryWrap'), histPanel = null;
 
   function skillMd(){
     return '---\nname: ' + x.name + '\ndescription: ' + JSON.stringify(x.description || '') + '\n---\n\n' + String(x.body || '').replace(/^\s+/, '');
@@ -42,25 +43,18 @@
   function controls(){
     var off = fullWrite ? '' : ' disabled title="' + S.NOT_PI + '"';
     return '<div class="event-controls"><button type="button" class="btn-text sk-edit"' + off + '>Edit</button>' +
-      '<button type="button" class="btn-text sk-history">' + (showHistory ? 'Hide history' : 'History') + '</button>' +
       '<button type="button" class="btn-text danger sk-delete"' + off + '>Delete</button></div>';
   }
 
+  // The Claude Code command, ready to copy.
   function installHtml(){
-    var zip = x.name + '.zip';
     return '<section class="block"><div class="block-head"><h2>Install</h2></div>' +
-      '<p><a class="btn btn-primary" href="' + esc(S.packageUrl(x.name)) + '" download="' + esc(zip) + '">Download ' + esc(zip) + '</a></p>' +
-      '<div class="install-way"><h3>Claude Code</h3>' +
-        '<p>Run this in a terminal; Claude Code picks the skill up in its next session.</p>' +
-        '<div class="install-cmd"><pre><code>' + esc(S.installCommand(x.name)) + '</code></pre><button type="button" class="btn-text sk-copy">Copy</button></div>' +
-        '<p class="install-note">For one project only, unzip into that project’s <code>.claude/skills</code> instead.</p></div>' +
-      '<div class="install-way"><h3>Claude app and claude.ai</h3>' +
-        '<p>Download the .zip, then upload it under Settings &rarr; Capabilities &rarr; Skills.</p></div>' +
+      '<div class="install-cmd"><pre><code>' + esc(S.installCommand(x.name)) + '</code></pre><button type="button" class="btn-text sk-copy">Copy</button></div>' +
       '</section>';
   }
 
   function filesHtml(){
-    return '<section class="block"><div class="block-head"><h2>What’s in it</h2></div><ul class="skill-files">' +
+    return '<section class="block"><div class="block-head"><h2>Content</h2></div><ul class="skill-files">' +
       allFiles().map(function(f){
         var on = f.path === open;
         var preview = /\.html?$/i.test(f.path) ? '<button type="button" class="btn-text sk-preview" data-path="' + esc(f.path) + '">Preview</button>' : '';
@@ -226,7 +220,7 @@
   }
 
   function drawHistory(){
-    var on = showHistory && !!x && !isNew && !(editing && fullWrite);
+    var on = !!x && !isNew && !(editing && fullWrite);
     historyWrap.hidden = !on;
     if (!on || histPanel) return;
     histPanel = BoldHistory.mount(document.getElementById('skillHistory'), {
@@ -267,11 +261,6 @@
     body.innerHTML = head + '<p class="hero-note">' + esc(x.description || '') + '</p>' + controls() + '</div>' +
       '<main>' + installHtml() + filesHtml() + '</main>';
     body.querySelector('.sk-edit').addEventListener('click', function(){ if (fullWrite) { editing = true; render(); } });
-    body.querySelector('.sk-history').addEventListener('click', function(){
-      showHistory = !showHistory;
-      render();
-      if (showHistory) historyWrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
     body.querySelector('.sk-delete').addEventListener('click', function(){
       if (!fullWrite || !window.confirm('Delete the skill “' + (x.title || x.name) + '” for good? Anyone who installed it keeps their copy.')) return;
       // Stamp who's deleting it first: the history credits the last updatedBy.

@@ -17,21 +17,11 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 section.block:first-of-type{margin-top:12px;}
 .block-head{margin-bottom:10px;}
 .block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
-.btn{
-  display:inline-block; font-family:var(--sans); font-size:15px; font-weight:500;
-  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
-}
-.btn:hover{text-decoration-color:currentColor;}
-.btn-primary{color:var(--accent); font-weight:600;}
 
 /* ---------- install ---------- */
-.install-way{border-top:1px solid var(--line); padding:18px 0 4px; margin-top:18px;}
-.install-way h3{font-family:var(--sans); font-size:15px; font-weight:600;}
-.install-way p{margin:8px 0 0; font-size:17px; color:var(--ink-soft);}
-.install-cmd{display:flex; align-items:flex-start; gap:12px; margin-top:12px;}
+.install-cmd{display:flex; align-items:flex-start; gap:12px;}
 .install-cmd pre{flex:1 1 auto; min-width:0; margin:0; font-size:13px; white-space:pre-wrap; word-break:break-all;}
 .install-cmd .btn-text{margin-top:14px; font-size:13px;}
-.install-way p.install-note{font-size:15px; color:var(--muted);}
 
 /* ---------- files ---------- */
 .skill-files{list-style:none; margin:0; padding:0;}

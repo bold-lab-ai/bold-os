@@ -18,7 +18,7 @@
       '<h3>' + esc(x.title || x.name) + '</h3>' +
       '<p class="event-when">' + esc(x.name) + '</p>' +
       '<p>' + esc(x.description || '') + '</p>' +
-      '<span class="event-cta">Install or download &rarr;</span></a>';
+      '<span class="event-cta">See the skill &rarr;</span></a>';
   }
 
   function render(){
