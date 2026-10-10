@@ -119,8 +119,10 @@ footer{
 .nav-group-label.active{color:var(--accent);}
 /* The dash beside a group with sub-links. Untouched, a group opens on hover
    and stays open on its own pages. Clicking the dash fixes it: an open group
-   (on its own page, or kept open) closes and stays closed, even on hover; a
-   closed one opens and stays open. A strong dash marks a group that's open. */
+   (on its own page, or kept open) closes, so it no longer stays open on its
+   own pages, though hovering still opens it (not until the mouse has left,
+   right after closing it); a closed one opens and stays open. A strong dash
+   marks a group that's open. */
 .nav-group-toggle{
   position:relative; flex:none; width:22px; height:22px; padding:0; border:none; background:none;
   color:var(--ink); cursor:pointer;
@@ -161,7 +163,8 @@ footer{
 .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--accent);}
 /* A group fixed open or closed with its dash (outranks the rules above). */
 .nav-groups .nav-group.is-pinned .nav-link.nav-sub{max-height:32px; opacity:1; pointer-events:auto; padding-top:4px; padding-bottom:4px;}
-.nav-groups .nav-group.is-shut .nav-link.nav-sub{max-height:0; opacity:0; pointer-events:none; padding-top:0; padding-bottom:0;}
+.nav-groups .nav-group.is-shut:not(:hover) .nav-link.nav-sub,
+.nav-groups .nav-group.is-hushed .nav-link.nav-sub{max-height:0; opacity:0; pointer-events:none; padding-top:0; padding-bottom:0;}
 .nav-link.nav-sub{text-overflow:ellipsis;}
 .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
   outline:2px solid var(--accent); outline-offset:2px;

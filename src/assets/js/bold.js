@@ -324,7 +324,8 @@
         a.addEventListener('click', closeNav);
       });
       // A group's dash fixes it open or closed: an open group (on its own
-      // page, or fixed open) closes; any other opens. Remembered per group
+      // page, or fixed open) closes; any other opens. A closed group still
+      // opens on hover. Remembered per group
       // (by its page) across pages.
       var fixed = {};
       try { fixed = JSON.parse(localStorage.getItem('boldNavGroups') || '{}') || {}; } catch (e){}
@@ -344,9 +345,12 @@
           btn.title = open ? 'Close' : 'Keep open';
         }
         show(fixed[key]);
+        // Just closed: hidden even while hovered, until the mouse leaves.
+        group.addEventListener('mouseleave', function(){ group.classList.remove('is-hushed'); });
         btn.addEventListener('click', function(){
           var state = isOpen() ? 'closed' : 'open';
           show(state);
+          group.classList.toggle('is-hushed', state === 'closed');
           fixed[key] = state;
           try { localStorage.setItem('boldNavGroups', JSON.stringify(fixed)); } catch (e){}
         });
