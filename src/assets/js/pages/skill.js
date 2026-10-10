@@ -4,7 +4,9 @@
 // edit it in place — description, SKILL.md's instructions, and the files: add
 // one empty or from the computer, rename, change or remove it — or delete the
 // skill; those buttons are always shown, greyed out for everyone else. #edit
-// opens the form (a new skill lands there from the skills page).
+// opens the form. skill.html?new is the same form for a new skill ("+ Add a
+// skill" on the skills page), with its name. Either form can import a whole
+// skill — a folder or a .zip (skill-import.js) — which fills everything in.
 (function(){
   var esc = BOLD.escapeHtml;
   var S = window.BoldSkills;
@@ -12,12 +14,14 @@
   if (!body || !BOLD.getAuth()) return;
   var db = null;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
-  var name = new URLSearchParams(location.search).get('skill') || '';
-  var ref = S.NAME.test(name) ? db.collection('skills').doc(name) : null;
+  var params = new URLSearchParams(location.search);
+  var isNew = params.has('new');
+  var name = params.get('skill') || '';
+  var ref = !isNew && S.NAME.test(name) ? db.collection('skills').doc(name) : null;
   // Firestore keeps a document under 1 MiB; leave room for the rest of it.
   var MAX_SIZE = 900000;
 
-  var x = null, loaded = false, editing = location.hash === '#edit', fullWrite = false, me = null, open = 'SKILL.md';
+  var x = null, loaded = false, editing = isNew || location.hash === '#edit', fullWrite = false, me = null, open = 'SKILL.md';
   var BACK = '<a class="back-link" href="skills.html">&larr; All skills</a>';
 
   function skillMd(){
@@ -69,7 +73,11 @@
   }
 
   function formHtml(){
-    return '<div class="event-form skill-form">' + S.metaHtml(x, false) +
+    return '<div class="event-form skill-form">' +
+      '<div class="sk-import"><span>Have the skill already?</span>' +
+        '<label class="btn-text">Import a folder<input type="file" class="sk-import-folder" webkitdirectory hidden></label>' +
+        '<label class="btn-text">Import a .zip<input type="file" class="sk-import-zip" accept=".zip,application/zip" hidden></label></div>' +
+      S.metaHtml(x, isNew) +
       '<label>Instructions (SKILL.md, after its name and description)<textarea class="sk-body mono" rows="18" spellcheck="false">' + esc(x.body || '') + '</textarea></label>' +
       '<p class="event-form-hint">Point Claude to the other files by their path, e.g. <code>assets/template.html</code>; it opens them only when it needs them.</p>' +
       '<p class="event-form-head sk-files-head">Other files</p><div class="sk-files">' + (x.files || []).map(fileRowHtml).join('') + '</div>' +
@@ -77,15 +85,16 @@
         '<label class="btn-text sk-add-upload">+ Add from your computer<input type="file" multiple hidden></label></div>' +
       '<p class="event-form-hint">Text files only (Markdown, HTML, code, …), under about 900 KB in all. Adding a SKILL.md fills in the description and instructions above.</p>' +
       '<p class="ev-error" hidden></p>' +
-      '<div class="event-form-actions"><button type="button" class="ev-save">Save</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
+      '<div class="event-form-actions"><button type="button" class="ev-save">' + (isNew ? 'Add skill' : 'Save') + '</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
   }
 
   // SKILL.md's text → { description, body }: the front matter's description
   // (plain, quoted, or a folded/literal block), and everything after it.
   function parseSkillMd(text){
     var m = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
-    if (!m) return { description: '', body: text };
+    if (!m) return { name: '', description: '', body: text };
     var lines = m[1].split(/\r?\n/), description = '';
+    var nm = /^name:\s*["']?([^"'\s]*)["']?\s*$/m.exec(m[1]);
     for (var i = 0; i < lines.length; i++) {
       var d = /^description:\s*(.*)$/.exec(lines[i]);
       if (!d) continue;
@@ -101,7 +110,7 @@
       } else description = v;
       break;
     }
-    return { description: description, body: text.slice(m[0].length).replace(/^\s+/, '') };
+    return { name: nm ? nm[1] : '', description: description, body: text.slice(m[0].length).replace(/^\s+/, '') };
   }
 
   function readFiles(form){
@@ -141,21 +150,48 @@
         file.text().then(function(text){
           if (text.indexOf('\u0000') !== -1 || text.indexOf('�') !== -1) { S.showError(form, file.name + ' isn’t a text file, so it can’t be added.'); return; }
           // A SKILL.md fills the description and instructions instead of becoming a file.
-          if (file.name === 'SKILL.md') {
-            var md = parseSkillMd(text);
-            if (md.description) form.querySelector('.sk-description').value = md.description;
-            form.querySelector('.sk-body').value = md.body;
-            return;
-          }
+          if (file.name === 'SKILL.md') { fillSkillMd(text); return; }
           var guess = /\.(md|txt)$/i.test(file.name) ? 'references/' : /\.(py|sh|js|mjs|ts)$/i.test(file.name) ? 'scripts/' : 'assets/';
           addRow({ path: guess + file.name, content: text });
         });
       });
       upload.value = '';
     });
-    form.querySelector('.ev-cancel').addEventListener('click', function(){ editing = false; history.replaceState(null, '', location.pathname + location.search); render(); });
+
+    function fillSkillMd(text){
+      var md = parseSkillMd(text);
+      var nameInput = form.querySelector('.sk-name');
+      if (nameInput && md.name) nameInput.value = md.name;
+      if (md.description) form.querySelector('.sk-description').value = md.description;
+      form.querySelector('.sk-body').value = md.body;
+    }
+    // A whole skill: its SKILL.md fills the fields, its other files replace the list.
+    function importSkill(promise){
+      S.showError(form, '');
+      promise.then(function(r){
+        var md = r.files.filter(function(f){ return f.path === 'SKILL.md'; })[0];
+        if (!md) { S.showError(form, 'There’s no SKILL.md in it, so it isn’t a skill.'); return; }
+        fillSkillMd(md.content);
+        var nameInput = form.querySelector('.sk-name');
+        if (nameInput && !nameInput.value && r.folder) nameInput.value = r.folder;
+        list.innerHTML = '';
+        r.files.forEach(function(f){ if (f.path !== 'SKILL.md') addRow(f); });
+        if (r.skipped.length) S.showError(form, 'Left out, as they aren’t text files: ' + r.skipped.join(', ') + '.');
+      }).catch(function(err){
+        console.error('[BOLD Skills] importing a skill failed', err);
+        S.showError(form, 'Couldn’t read that — is it a skill folder or a .zip?');
+      });
+    }
+    var folderInput = form.querySelector('.sk-import-folder');
+    folderInput.addEventListener('change', function(){ if (folderInput.files.length) importSkill(SkillImport.fromFolder(folderInput.files)); folderInput.value = ''; });
+    var zipInput = form.querySelector('.sk-import-zip');
+    zipInput.addEventListener('change', function(){ if (zipInput.files[0]) importSkill(SkillImport.fromZip(zipInput.files[0])); zipInput.value = ''; });
+
+    form.querySelector('.ev-cancel').addEventListener('click', function(){
+      if (isNew) { location.href = 'skills.html'; return; }
+      editing = false; history.replaceState(null, '', location.pathname + location.search); render(); });
     form.querySelector('.ev-save').addEventListener('click', function(){
-      var r = S.readMeta(form, false);
+      var r = S.readMeta(form, isNew);
       if (r.error) { S.showError(form, r.error); return; }
       var f = readFiles(form);
       if (f.error) { S.showError(form, f.error); return; }
@@ -163,18 +199,36 @@
       if (new Blob([JSON.stringify(fields)]).size > MAX_SIZE) { S.showError(form, 'That’s too much text for one skill — keep it under about 900 KB.'); return; }
       var save = form.querySelector('.ev-save');
       save.disabled = true;
-      ref.update(fields).then(function(){
-        editing = false; history.replaceState(null, '', location.pathname + location.search); render();
-      }).catch(function(err){
+      var failed = function(err){
         console.error('[BOLD Skills] saving the skill failed', err);
         S.showError(form, 'Couldn’t save — try again.');
         save.disabled = false;
-      });
+      };
+      if (isNew) {
+        var newRef = db.collection('skills').doc(fields.name);
+        newRef.get().then(function(snap){
+          if (snap.exists) { S.showError(form, 'There’s already a skill called ' + fields.name + '.'); save.disabled = false; return; }
+          return newRef.set(Object.assign(fields, { createdAt: fields.updatedAt, createdBy: me.email })).then(function(){
+            location.replace('skill.html?skill=' + encodeURIComponent(fields.name));
+          });
+        }).catch(failed);
+        return;
+      }
+      ref.update(fields).then(function(){
+        editing = false; history.replaceState(null, '', location.pathname + location.search); render();
+      }).catch(failed);
     });
   }
 
   function render(){
     if (!loaded) return;
+    if (isNew) {
+      document.title = 'New skill | BOLD Lab';
+      body.innerHTML = '<div class="hero">' + BACK + '<div><span class="eyebrow">Skill</span></div><h1>New skill</h1>' +
+        (fullWrite ? '' : '<p class="hero-note">' + S.NOT_PI + '.</p>') + '</div>' + (fullWrite ? '<main>' + formHtml() + '</main>' : '');
+      if (fullWrite) bindForm();
+      return;
+    }
     if (!x) {
       document.title = 'Skill not found | BOLD Lab';
       body.innerHTML = '<div class="hero">' + BACK + '<h1>Skill not found</h1><p class="hero-note">It may have been deleted.</p></div>';
@@ -221,8 +275,17 @@
     });
   }
 
-  if (!ref) { loaded = true; render(); return; }
   var unsubscribe = null, signIns = 0;
+  if (isNew) {
+    x = { name: '', title: '', description: '', body: '', files: [] };
+    BOLD.onUser(function(user){
+      var mine = ++signIns;
+      me = user ? { email: user.email || '' } : null;
+      if (user) S.access(function(ok){ if (mine === signIns) { fullWrite = ok; loaded = true; render(); } });
+    });
+    return;
+  }
+  if (!ref) { loaded = true; render(); return; }
   BOLD.onUser(function(user){
     var mine = ++signIns;
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }

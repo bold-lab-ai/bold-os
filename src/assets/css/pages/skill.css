@@ -50,6 +50,8 @@ section.block:first-of-type{margin-top:12px;}
 .skill-file-body{margin:0 0 14px; max-height:70vh; overflow:auto; font-size:13px;}
 
 /* ---------- editing (PIs/admins) ---------- */
+.sk-import{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px; margin:0 0 14px; padding-bottom:12px; border-bottom:1px solid var(--line); color:var(--muted);}
+.sk-import label.btn-text{display:inline; margin:0; color:var(--accent); font-size:13px;}
 .skill-form{max-width:var(--article-max);}
 .skill-form textarea.mono{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace; font-size:13px;}
 .skill-form .event-form-hint{margin:-4px 0 12px; font-family:var(--sans); font-size:13px; color:var(--muted);}
