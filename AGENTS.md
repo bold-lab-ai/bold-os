@@ -11,6 +11,7 @@ Live: <https://bold-lab-ai.github.io/bold-os/>. A static [Eleventy](https://www.
 - Don't write content into pages or data files. If you find some hardcoded, the fix is to move it into Firestore and give it add/edit/delete controls on its page.
 - A code change is for how the site works: a new kind of content, a new page, a fix.
 - Controls a user can't use are shown greyed out with a reason in their tooltip, not hidden.
+- Where everyone may change something but PIs/admins must review it first (the how-to guides), a non-PI's edit is saved as a proposal that a PI/admin accepts or declines.
 
 ## Layout
 
@@ -47,7 +48,7 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
 - **Front matter:** `title`, `description`, `css` (a file in `assets/css/pages/`), `scripts` (files in `assets/js/`), `sdk` (extra Firebase SDKs, e.g. `["firestore", "functions"]`), `permalink` (keep URLs flat: `events.html`), `nav` (the sidebar link to highlight), `public` (no sign-in gate).
 - **JavaScript:** plain classic scripts, each wrapped in an IIFE; no framework, no bundler. Never initialise Firebase yourself: use `BOLD.getApp()`, `BOLD.getAuth()`, `BOLD.onUser(fn)` from `bold.js`. Put any user-provided text through `BOLD.escapeHtml` before it goes into HTML.
 - **External scripts:** only the pinned Firebase compat SDK (version in `site.js`), Google Fonts and KaTeX on the board. Ask before adding another.
-- **One page per kind of content**, chosen by a query parameter: `event.html?event=`, `session.html?session=`, `talk.html?talk=`, `skill.html?skill=`. **Never break a URL**: Slack messages and bookmarks link to them. When one moves, leave a redirect page (see `src/pages/events/old-session-talk-urls.njk`).
+- **One page per kind of content**, chosen by a query parameter: `event.html?event=`, `session.html?session=`, `talk.html?talk=`, `skill.html?skill=`, `guide.html?guide=`. **Never break a URL**: Slack messages and bookmarks link to them. When one moves, leave a redirect page (see `src/pages/events/old-session-talk-urls.njk`).
 - **Who can do what:** clients can't read the role lists. A page asks the `getMyAccess` function whether the user is a PI or admin to decide which controls to enable; the Firestore rules decide what is actually allowed.
 - **Look:** tokens in `bold.css` (cream paper, one navy accent, EB Garamond for reading, Cabin for labels and controls, hairline rules). Match the page you're editing; reuse the shared classes (`.event-form`, `.btn-text`, `.event-controls`, …).
 - **Copy boxes:** any text offered for copying uses `BOLD.copyBoxHtml(text)`: a code box with the clipboard icon inside it. Never a text "Copy" button.
@@ -55,9 +56,9 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
 
 ## Data and backend
 
-- **Firestore collections** include `events/{slug}` (with `days` and `venues` inside), `collabWeekSessions`, `collabWeekTalks`, `skills/{name}`, `boards/{id}/cards` (the Internal Review Board), `projects`, `people` (the Slack roster) and `roles` (never readable by clients).
+- **Firestore collections** include `events/{slug}` (with `days` and `venues` inside), `collabWeekSessions`, `collabWeekTalks`, `skills/{name}`, `guides/{slug}` (with `proposals`), `boards/{id}/cards` (the Internal Review Board), `projects`, `people` (the Slack roster) and `roles` (never readable by clients).
 - **Every write path needs a rule** in `firebase/firestore.rules`. Test new rules in the emulator, both what should pass and what shouldn't.
-- **Version history:** each write to a tracked collection is saved as a full copy in `<doc>/versions` by a server function, and `history.js` shows versions, changes and Restore on the page. To track a new collection: add it to `TRACKED` in `functions/index.js`, require `updatedBy == email()` in its rules and let readers read `versions`, write `changeNote` on save, and mount `BoldHistory` on its page. Only `skills` is tracked so far.
+- **Version history:** each write to a tracked collection is saved as a full copy in `<doc>/versions` by a server function, and `history.js` shows versions, changes and Restore on the page. To track a new collection: add it to `TRACKED` in `functions/index.js`, require `updatedBy == email()` in its rules and let readers read `versions`, write `changeNote` on save, and mount `BoldHistory` on its page. `skills` and `guides` are tracked so far.
 - **Functions** run on Node 20, which must move to Node 22 before 30 October 2026.
 
 ## Shipping

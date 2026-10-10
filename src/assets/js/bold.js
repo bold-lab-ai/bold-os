@@ -185,7 +185,7 @@
     });
   };
 
-  /* ---------- sidebar: the events and the skills ---------- */
+  /* ---------- sidebar: the events, the skills and the guides ---------- */
 
   // A group's sub-links come from Firestore: [data-nav-<key>] is filled from
   // load() → [{ title, href }]. The last list seen paints first (localStorage
@@ -243,6 +243,17 @@
     });
   }
 
+  // The how-to guides (guides/{slug} — see guides-common.js), by title.
+  function guidesNav(){
+    firestoreNav('guides', 'boldNavGuides', function(db){
+      return db.collection('guides').get().then(function(snap){
+        return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug; })
+          .map(function(x){ return { title: x.title || x.slug, href: 'guide.html?guide=' + encodeURIComponent(x.slug) }; })
+          .sort(function(a, b){ return a.title.localeCompare(b.title); });
+      });
+    });
+  }
+
   /* ---------- behaviour: gate button, sidebar collapse, mobile drawer ---------- */
 
   document.addEventListener('DOMContentLoaded', function(){
@@ -251,7 +262,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) { eventsNav(); skillsNav(); }
+    if (BOLD.getAuth()) { eventsNav(); skillsNav(); guidesNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');

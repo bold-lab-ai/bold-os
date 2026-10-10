@@ -7,10 +7,13 @@
 // back, which is recorded as a new version, so history is never rewritten.
 //
 // BoldHistory.mount(el, { ref, fields: { key: 'Label', … } (shown first, in
-// order), canRestore: () => bool, restore: (version) => Promise }) → { stop }.
+// order), flatten: data → { 'Label': text, … } (optional: what to compare, for
+// content that isn't one field per label), canRestore: () => bool,
+// restore: (version) => Promise }) → { stop }. A version made from someone's
+// proposed change (guides) names them too.
 window.BoldHistory = (function(){
   var esc = BOLD.escapeHtml;
-  var META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote'];
+  var META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy'];
   var CONTEXT = 3, MAX_LINES = 400, MAX_CELLS = 4e6;
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -93,9 +96,13 @@ window.BoldHistory = (function(){
 
   function mount(el, opts){
     var fields = opts.fields || {};
+    var flat = opts.flatten || function(d){ return d; };
     var versions = [], loaded = false, open = null;
 
-    function who(v){ return v.by ? esc(v.by.name || v.by.email) : 'Someone outside the site'; }
+    function who(v){
+      return (v.by ? esc(v.by.name || v.by.email) : 'Someone outside the site') +
+        (v.proposedBy ? ', proposed by ' + esc(v.proposedBy.name || v.proposedBy.email) : '');
+    }
     function kindLabel(v){ return v.kind === 'created' ? 'Added' : v.kind === 'deleted' ? 'Deleted' : 'Edited'; }
 
     function render(){
@@ -111,7 +118,7 @@ window.BoldHistory = (function(){
             '<span class="hist-who">' + kindLabel(v) + ' by ' + who(v) + (i === 0 ? ' · current' : '') + '</span>' +
             (v.note ? '<span class="hist-msg">' + esc(v.note) + '</span>' : '') +
           '</button>' +
-          (isOpen ? '<div class="hist-body">' + restore + changesHtml(versions[i + 1] ? versions[i + 1].data : null, v.kind === 'deleted' ? null : v.data, fields) + '</div>' : '') +
+          (isOpen ? '<div class="hist-body">' + restore + changesHtml(versions[i + 1] ? flat(versions[i + 1].data) : null, v.kind === 'deleted' ? null : flat(v.data), fields) + '</div>' : '') +
           '</li>';
       }).join('') + '</ol>';
     }
@@ -144,5 +151,5 @@ window.BoldHistory = (function(){
     return { stop: stop, when: when };
   }
 
-  return { mount: mount, when: when, lineDiff: lineDiff };
+  return { mount: mount, when: when, lineDiff: lineDiff, diffHtml: diffHtml, changesHtml: changesHtml };
 })();

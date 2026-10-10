@@ -25,12 +25,14 @@ export default {
   // Sidebar. `href` is the page a group's label opens; `links` are its sub-pages.
   nav: [
     { label: 'Projects', href: 'projects.html', links: [] },
+    // Its sub-pages are the released events (Firestore), filled in by bold.js.
+    { label: 'Events', href: 'events.html', links: [], events: true },
     { label: 'ML Conference Cycle', href: 'how-to-submit-a-paper.html', links: [
       { label: 'Guide', href: 'how-to-submit-a-paper.html' },
       { label: 'Internal review board', href: 'audit-board.html' },
     ] },
-    // Its sub-pages are the released events (Firestore), filled in by bold.js.
-    { label: 'Events', href: 'events.html', links: [], events: true },
+    // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.
+    { label: 'How to', href: 'guides.html', links: [], guides: true },
     // Its sub-pages are the skills (Firestore), filled in by bold.js.
     { label: 'Skills', href: 'skills.html', links: [], skills: true },
   ],

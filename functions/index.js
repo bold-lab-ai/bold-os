@@ -2068,9 +2068,10 @@ exports.skillPackage = onRequest(
 // which the rules require to be the signed-in writer's own email (a page about to
 // delete a document first stamps it). The note is the document's `changeNote`,
 // written with each save. A write that changes only bookkeeping isn't a version.
+// `proposedBy` (guides) is whoever proposed the change the writer accepted.
 
-const TRACKED = ['skills'];
-const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote'];
+const TRACKED = ['skills', 'guides'];
+const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy'];
 
 function stableJson(v){
   if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
@@ -2108,6 +2109,8 @@ function recordVersions(collection){
       note: after && typeof after.changeNote === 'string' ? after.changeNote.slice(0, 300) : '',
       kind,
       data: src,
+      // A guide's change someone proposed and a PI/admin accepted: who proposed it.
+      proposedBy: after && after.proposedBy ? await personFor(after.proposedBy) : null,
       authType: event.authType || '',
     };
     await event.data.after.ref.collection('versions').add(version);

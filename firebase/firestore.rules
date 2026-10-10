@@ -216,6 +216,32 @@ service cloud.firestore {
       }
     }
 
+    // How-to guides (guides/{slug}; see src/assets/js/guides-common.js). A
+    // PI/admin changes one directly; anyone else proposes a change
+    // (proposals/{id}, as themselves, open), which a PI/admin accepts or
+    // declines; whoever proposed it can withdraw it while it's open.
+    match /guides/{slug} {
+      allow read: if isLabMember();
+      // updatedBy is who the version history (functions/index.js) credits.
+      allow create, update: if hasFullWrite() && request.resource.data.slug == slug
+        && request.resource.data.updatedBy == email();
+      allow delete: if hasFullWrite();
+      // Its history, written only by the historyGuides function.
+      match /versions/{version} {
+        allow read: if isLabMember();
+        allow write: if false;
+      }
+      match /proposals/{id} {
+        allow read: if isLabMember();
+        allow create: if isLabMember() && request.resource.data.by.email == email()
+          && request.resource.data.status == 'open'
+          && request.resource.data.kind in ['about', 'edit', 'add', 'remove']
+          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status']);
+        allow update: if hasFullWrite();
+        allow delete: if hasFullWrite() || (isLabMember() && resource.data.by.email == email() && resource.data.status == 'open');
+      }
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
