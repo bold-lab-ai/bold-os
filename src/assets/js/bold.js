@@ -185,10 +185,10 @@
     });
   };
 
-  /* ---------- sidebar: the events, the skills and the guides ---------- */
+  /* ---------- sidebar: BOLDiquette's parts, the events, the skills and the guides ---------- */
 
   // A group's sub-links come from Firestore: [data-nav-<key>] is filled from
-  // load() → [{ title, href }]. The last list seen paints first (localStorage
+  // load() → [{ title, href }, or { heading } for a label between them]. The last list seen paints first (localStorage
   // `cacheKey`); Firestore stays authoritative.
   function firestoreNav(key, cacheKey, load){
     var group = document.querySelector('[data-nav-' + key + ']');
@@ -199,10 +199,18 @@
       var label = group.querySelector('.nav-group-label');
       var anyActive = false;
       list.forEach(function(e){
+        if (e.heading) {
+          var h = document.createElement('span');
+          h.className = 'nav-link nav-sub nav-heading';
+          h.textContent = e.heading;
+          group.appendChild(h);
+          return;
+        }
         var a = document.createElement('a');
         a.className = 'nav-link nav-sub';
         a.href = e.href;
         a.textContent = e.title;
+        a.title = e.title;
         var on = e.href === page || e.href === page + location.search;
         if (on) { a.classList.add('active'); anyActive = true; }
         group.appendChild(a);
@@ -254,6 +262,22 @@
     });
   }
 
+  // BOLDiquette's parts (handbook/boldiquette — see pages/guide.js), in order,
+  // under their sections' names.
+  function handbookNav(){
+    firestoreNav('handbook', 'boldNavHandbook', function(db){
+      return db.collection('handbook').doc('boldiquette').get().then(function(snap){
+        var out = [], section = null;
+        ((snap.exists && snap.data().parts) || []).forEach(function(p){
+          if (p.section && p.section !== section) out.push({ heading: p.section });
+          section = p.section;
+          out.push({ title: p.title, href: 'boldiquette.html#' + encodeURIComponent(p.id) });
+        });
+        return out;
+      });
+    });
+  }
+
   /* ---------- behaviour: gate button, sidebar collapse, mobile drawer ---------- */
 
   document.addEventListener('DOMContentLoaded', function(){
@@ -262,7 +286,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) { eventsNav(); skillsNav(); guidesNav(); }
+    if (BOLD.getAuth()) { handbookNav(); eventsNav(); skillsNav(); guidesNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');
