@@ -29,10 +29,8 @@ export default {
       { label: 'Guide', href: 'how-to-submit-a-paper.html' },
       { label: 'Internal review board', href: 'audit-board.html' },
     ] },
-    { label: 'Events', href: 'events.html', links: [
-      { label: 'Collaboration Week', href: 'event-collaboration-week.html' },
-      { label: 'BOLD Festival 2026', href: 'event-bold-festival.html' },
-    ] },
+    // Its sub-pages are the released events (Firestore), filled in by bold.js.
+    { label: 'Events', href: 'events.html', links: [], events: true },
     { label: 'Skills', href: 'presenting.html', links: [
       { label: 'Presenting', href: 'presenting.html' },
     ] },

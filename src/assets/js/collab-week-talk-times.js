@@ -1,10 +1,9 @@
-// A Collaboration Week session's talks, in order and with their times —
-// shared by the session page (its talk list) and each talk's own page, so
-// both agree.
+// A session's talks, in order and with their times — shared by the session
+// page (its talk list) and each talk's own page, so both agree.
 //
-// Talks: the programme's (src/_data/collabWeekSessions.js) with their edits
-// laid over them, then the ones added on the site (oldest first) — the
-// session's collabWeekTalks docs — leaving out any that were removed.
+// Talks: the session's collabWeekTalks docs (oldest first), leaving out any
+// removed — after `programme` ones with those docs laid over them, where a
+// caller still has such a list (none since 2026-10-10: pass []).
 // Order: rearranged by the session's `talkOrder` (talk slugs, or titles for
 // talks without a page).
 //
@@ -45,7 +44,9 @@ window.CollabWeekTalkTimes = (function(){
     var bySlug = {};
     (docs || []).forEach(function(d){ if (d.slug) bySlug[d.slug] = d; });
     programme = slots.map(function(t){ return t.slug && bySlug[t.slug] ? Object.assign({}, t, bySlug[t.slug], { time: t.time }) : t; });
-    var added = (docs || []).filter(function(d){ return d.added; })
+    var inProgramme = {};
+    slots.forEach(function(t){ if (t.slug) inProgramme[t.slug] = true; });
+    var added = (docs || []).filter(function(d){ return !inProgramme[d.slug]; })
       .sort(function(a, b){ return (a.createdAt || 0) - (b.createdAt || 0); });
     var talks = programme.concat(added).filter(function(t){ return !t.removed; });
     if (order && order.length) {

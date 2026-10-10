@@ -160,6 +160,44 @@
     });
   };
 
+  /* ---------- sidebar: the events ---------- */
+
+  // The Events group's sub-links are the released events (events/{slug},
+  // where hidden == false — see events-common.js), newest first: an event
+  // with its own page links there, the rest to event.html?event=<slug>. The
+  // last list seen paints first; Firestore stays authoritative.
+  function eventsNav(){
+    var group = document.querySelector('[data-nav-events]');
+    if (!group) return;
+    var page = location.pathname.split('/').pop() || 'index.html';
+    function draw(list){
+      Array.prototype.forEach.call(group.querySelectorAll('.nav-sub'), function(a){ a.remove(); });
+      var label = group.querySelector('.nav-group-label');
+      var anyActive = false;
+      list.forEach(function(e){
+        var a = document.createElement('a');
+        a.className = 'nav-link nav-sub';
+        a.href = e.href;
+        a.textContent = e.title;
+        var on = e.href === page || e.href === page + location.search;
+        if (on) { a.classList.add('active'); anyActive = true; }
+        group.appendChild(a);
+      });
+      if (anyActive) label.classList.remove('active');
+    }
+    try { draw(JSON.parse(localStorage.getItem('boldNavEvents') || '[]')); } catch (e){}
+    BOLD.onUser(function(user){
+      if (!user || !firebase.firestore) return;
+      firebase.firestore(BOLD.getApp()).collection('events').where('hidden', '==', false).get().then(function(snap){
+        var list = snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title; })
+          .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; })
+          .map(function(e){ return { title: e.title, href: e.page || 'event.html?event=' + encodeURIComponent(e.slug) }; });
+        draw(list);
+        try { localStorage.setItem('boldNavEvents', JSON.stringify(list)); } catch (e){}
+      }).catch(function(err){ console.error('[BOLD Lab] loading the events for the sidebar failed', err); });
+    });
+  }
+
   /* ---------- behaviour: gate button, sidebar collapse, mobile drawer ---------- */
 
   document.addEventListener('DOMContentLoaded', function(){
@@ -168,6 +206,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
+    if (BOLD.getAuth()) eventsNav();
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');

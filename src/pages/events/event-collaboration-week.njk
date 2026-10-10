@@ -3,15 +3,13 @@ title: "BOLD Collaboration Week | BOLD Lab"
 description: "5–10 October 2026, Oxford — five days for BOLD Associates to engage more deeply with BOLD, in person."
 sdk: ["firestore", "functions"]
 css: "event-collaboration-week"
-scripts: ["pages/event-collaboration-week.js"]
+scripts: ["events-common.js", "event-schedule.js", "event-sessions.js", "pages/event.js", "pages/event-collaboration-week.js"]
 permalink: "event-collaboration-week.html"
 ---
-<div class="hero">
+{# The header (title, dates, place, description) is events/collaboration-week in Firestore — see pages/event.js. #}
+<div class="hero" id="eventBody" data-event="collaboration-week">
   <a class="back-link" href="events.html">&larr; All events</a>
-  <div><span class="eyebrow">Upcoming</span></div>
-  <h1>BOLD Collaboration Week</h1>
-  <p class="hero-when">5&ndash;10 October 2026 &middot; Oxford</p>
-  <p class="hero-note">Five days for BOLD Associates to engage more deeply with BOLD, in person &mdash; the deepest of the three ways to stay involved with BOLD.</p>
+  <p class="hero-when">Loading…</p>
 </div>
 
 <main>
@@ -21,35 +19,8 @@ permalink: "event-collaboration-week.html"
   </div>
 
   <div class="tab-panel" id="panelSchedule" role="tabpanel" aria-labelledby="tabBtnSchedule">
-{% for day in collabWeekSchedule.days %}
-    <div class="day-card" id="day-{{ day.date }}" data-date="{{ day.date }}" data-label="{{ day.label }}">
-      <h3>{{ day.label }}</h3>
-      {% for block in day.blocks %}
-      {% if block.kind == 'logistics' %}
-      <div class="slot slot-logistics"><div class="slot-time">{{ block.time }}</div><div class="slot-sessions">{{ block.label }}</div></div>
-      {% else %}
-      <div class="slot">
-        <div class="slot-time">{{ block.time }}</div>
-        <div class="slot-sessions{% if block.sessions.length > 1 %} is-parallel{% endif %}">
-          {% for slug in block.sessions %}
-          {% set s = collabWeekSessions | findBySlug(slug) %}
-          {% set loc = collabWeekLocations | findBySlug(s.locationSlug) %}
-          {# A keynote/oral is one talk: its card names the speaker, not the leads, and follows the talk's edits (data-talk). #}
-          {% set solo = s.talks[0] if (s.type == 'keynote' or s.type == 'oral') and s.talks and s.talks.length == 1 else null %}
-          <a class="session-card" href="event-collaboration-week-session-{{ s.slug }}.html" data-session="{{ s.slug }}" data-venue="{{ loc.name }}"{% if solo %} data-talk="{{ solo.slug }}" data-speaker="{{ solo.speaker }}"{% endif %}>
-            <span class="type-badge type-{{ s.type }}">{{ collabWeekTypes[s.type] }}</span>
-            <span class="session-title">{{ solo.title if solo else s.title }}</span>
-            <span class="session-who">{% if solo %}{{ solo.speaker }}{% if solo.affiliation %} &middot; {{ solo.affiliation }}{% endif %}{% else %}{% for l in s.leads %}{{ l.name }}{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</span>
-            <span class="session-where">{{ loc.name }}{% if s.room %} &middot; {{ s.room }}{% endif %}</span>
-          </a>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
-      {% endfor %}
-      <button class="day-add" type="button" disabled title="Only PIs and admins can add a session">+ Add a session</button>
-    </div>
-{% endfor %}
+    {# Days, time slots and sessions: Firestore, drawn by event-sessions.js (from pages/event.js). #}
+    <div class="schedule" id="eventSchedule"><p class="sched-empty">Loading…</p></div>
   </div>
 
   <div class="tab-panel" id="panelProposals" role="tabpanel" aria-labelledby="tabBtnProposals">
@@ -64,6 +35,4 @@ permalink: "event-collaboration-week.html"
   </div>
 </main>
 
-<script type="application/json" id="scheduleTypes">{{ collabWeekTypes | jsonScript | safe }}</script>
-<script type="application/json" id="scheduleLocations">{{ collabWeekLocations | jsonScript | safe }}</script>
-<script type="application/json" id="scheduleSessions">{{ collabWeekSessions | jsonScript | safe }}</script>
+<script type="application/json" id="eventTypes">{{ collabWeekTypes | jsonScript | safe }}</script>

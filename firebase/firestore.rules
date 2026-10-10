@@ -165,30 +165,39 @@ service cloud.firestore {
       );
     }
 
-    // Collaboration Week sessions. The programme itself is static
-    // (src/_data/collabWeekSessions.js); a document here, keyed by the
-    // session's slug, holds its edits and its leads ({name, email} people
-    // records, plus leadEmails: every address they may sign in with,
-    // lowercased) — or, with added: true, a whole session added from the
-    // schedule page. A PI/admin creates it and can change anything (incl.
-    // `removed`, which takes a session off the schedule) or delete it; a
-    // lead can edit their session's fields but not who the leads are.
+    // Every event's sessions (Collaboration Week's, the Festival's…), keyed
+    // by slug: all of a session — its event (eventSlug), its leads ({name,
+    // email} records, plus leadEmails: every address they may sign in with,
+    // lowercased) and the rest. Its day and time are its event's time slot's
+    // (events/{eventSlug}.days). A PI/admin creates it and can change
+    // anything (incl. `removed`, which takes a session off the schedule) or
+    // delete it; a lead can edit their session's fields but not who the
+    // leads are, nor its event, type or venue.
     match /collabWeekSessions/{slug} {
       allow read: if isLabMember();
       allow create, delete: if hasFullWrite();
       allow update: if hasFullWrite() || (
         isLabMember() && email().lower() in resource.data.leadEmails &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['leads', 'leadEmails', 'slug', 'added', 'removed', 'day', 'date', 'time', 'locationSlug', 'type'])
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['leads', 'leadEmails', 'slug', 'added', 'removed', 'day', 'date', 'time', 'locationSlug', 'type', 'eventSlug'])
       );
     }
 
-    // A Collaboration Week talk's edits (incl. its presentation link) and its
-    // presenterEmails, keyed by its slug. Written only by the editTalk function
-    // (functions/index.js), which checks the caller's email is a presenter's,
+    // Every session's talks, keyed by slug, each naming its session
+    // (sessionSlug). Written only by the editTalk and createTalk functions
+    // (functions/index.js), which check the caller's email is a presenter's,
     // a session lead's or a PI/admin's.
     match /collabWeekTalks/{slug} {
       allow read: if isLabMember();
       allow write: if false;
+    }
+
+    // Events added from the events page (src/assets/js/events-common.js),
+    // keyed by their slug; the built-in events are static pages. A hidden
+    // one (still being planned) is for PIs/admins only — everyone else
+    // queries where('hidden', '==', false).
+    match /events/{slug} {
+      allow read: if isLabMember() && (resource.data.hidden == false || hasFullWrite());
+      allow create, update, delete: if hasFullWrite();
     }
 
     match /{document=**} {

@@ -1,0 +1,17 @@
+---
+permalink: "404.html"
+layout: false
+eleventyExcludeFromCollections: true
+---
+<!DOCTYPE html>
+{# GitHub Pages serves this for any missing page. Links from before 2026-10-10
+   to a session's or a talk's own page go to the one page for all of them. #}
+<html lang="en"><head><meta charset="UTF-8"><title>Not found | BOLD Lab</title>
+<script>
+(function(){
+  var p = location.pathname, base = p.slice(0, p.lastIndexOf('/') + 1), m;
+  if ((m = /\/event-collaboration-week-session-([^/]+)\.html$/.exec(p))) location.replace(base + 'session.html?session=' + encodeURIComponent(m[1]) + location.hash);
+  else if ((m = /\/event-collaboration-week-talk-([^/]+)\.html$/.exec(p))) location.replace(base + 'talk.html?talk=' + encodeURIComponent(m[1]) + location.hash);
+})();
+</script>
+</head><body><p>Page not found. <a href="index.html">BOLD Lab</a></p></body></html>

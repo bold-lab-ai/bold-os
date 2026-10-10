@@ -1,15 +1,12 @@
-// A Collaboration Week session's page. The programme in
-// src/_data/collabWeekSessions.js is the default (inlined as #sessionData);
-// Firestore's collabWeekSessions/{slug} holds what's been edited since, and
-// the session's leads. Everyone sees the same page; a lead (their own
-// session) or a PI/admin (any) also gets one "Edit session" button that
-// swaps it for a form. Only a PI/admin can change who the leads are
-// (firestore.rules). Day, time and venue belong to the whole schedule, and
-// each talk has its own generated page, so neither is edited here.
-//
-// A session added from the schedule page has no programme entry: it's all in
-// collabWeekSessions/{slug} (added: true), shown by the one page
-// event-collaboration-week-session.html?session=<slug>.
+// A session's page, for any event: session.html?session=<slug>, all of it
+// from Firestore — the session from collabWeekSessions/{slug}, its talks from
+// collabWeekTalks (sessionSlug), and from its event (events/{eventSlug}) its
+// day and time (the time slot that holds it, event-schedule.js) and its venue.
+// Everyone sees the same page; a lead (their own session) or a PI/admin (any)
+// also gets one "Edit session" button that swaps it for a form. Only a
+// PI/admin can change who the leads are (firestore.rules). Day, time and venue
+// belong to the whole schedule, and each talk has its own page
+// (talk.html?talk=<slug>), so neither is edited here.
 //
 // A keynote or an oral is a session that is one talk: its page shows that
 // talk (speaker, abstract, bio, presentation) instead of a talk list, and
@@ -22,11 +19,10 @@
   var esc = BOLD.escapeHtml;
   var el = function(id){ return document.getElementById(id); };
   var bodyEl = el('sessionBody');
-  var base = JSON.parse(el('sessionData').textContent);
-  var added = !base;        // an added session: its details come from its Firestore doc
-  var missing = false;      // an added session that doesn't exist (any more)
-  if (added) base = { slug: new URLSearchParams(location.search).get('session') || '', title: '', talks: [], leads: [] };
-  var venue = JSON.parse(el('sessionLocation').textContent) || {};
+  var base = { slug: new URLSearchParams(location.search).get('session') || '', title: '', leads: [] };
+  var missing = false;      // a session that doesn't exist (any more)
+  var venue = {};           // its venue, from its event's venues
+  var event = null;         // its event (events/{eventSlug})
   var TYPES = JSON.parse(el('sessionTypes').textContent) || {};
 
   function badge(type){ return TYPES[type] ? '<span class="type-badge type-' + esc(type) + '">' + esc(TYPES[type]) + '</span>' : ''; }
@@ -35,8 +31,9 @@
   var db = null, ref = null;
   try {
     db = firebase.firestore(BOLD.getApp());
-    ref = db.collection('collabWeekSessions').doc(base.slug);
+    ref = base.slug ? db.collection('collabWeekSessions').doc(base.slug) : null;
   } catch (e){}
+  if (!ref) missing = true;
 
   var me = null;            // { email } once signed in
   var saved = null;         // the Firestore doc's data, or null if it doesn't exist (yet)
@@ -45,13 +42,21 @@
   var people = [];          // the `people` roster, for the leads picker
   var leadRows = [];        // in-progress rows while the form is open
   var orderRows = [];       // talk keys, in the order being edited
-  var talkEdits = {};       // talk slug → its edits (collabWeekTalks), e.g. title, presentationUrl; or the whole of an added talk
+  var talkEdits = {};       // talk slug → the talk (collabWeekTalks)
   var adding = false, addBusy = false, addError = '';  // the "Add a talk" form
   var addSpeakerRows = [];  // its speakers (collab-week-speakers.js)
   var talkAccess = { canEdit: false, canSetPresenters: false };  // a keynote's/oral's talk (editTalk)
   var soloSpeakerRows = []; // its speakers while the form is open
+  // Opened as session.html?session=<slug>#edit (the pencil on the schedule):
+  // the form opens once the talks are in and the Edit button turns on.
+  var wantEdit = location.hash === '#edit', talksLoaded = false;
 
-  function session(){ return Object.assign({}, base, saved || {}); }
+  // Its slot's day and time win over any stored on the session (see usePlace).
+  function session(){
+    var s = Object.assign({}, base, saved || {});
+    if (placed) { s.day = placed.day; s.time = placed.time; }
+    return s;
+  }
 
   // Every address a lead could sign in with: their own, plus any other roster
   // account under the same name (some people are in Slack twice).
@@ -69,12 +74,11 @@
 
   function isLead(){
     if (!me || !me.email) return false;
-    var emails = saved && saved.leadEmails ? saved.leadEmails : emailsOf(base.leads);
+    var emails = saved && saved.leadEmails ? saved.leadEmails : emailsOf(session().leads);
     return emails.indexOf(me.email.toLowerCase()) >= 0;
   }
 
-  // A lead can only update an existing doc (a PI/admin creates it), as in the rules.
-  function canEdit(){ return !!me && (fullWrite || (isLead() && !!saved)); }
+  function canEdit(){ return !!me && !!saved && (fullWrite || isLead()); }
 
   function isEmpty(v){ return v == null || v === '' || (Array.isArray(v) && !v.length); }
 
@@ -152,16 +156,15 @@
   }
 
   // --- talk order ------------------------------------------------------------
-  // A session's talks come from the programme, with their edits, plus any
-  // added from this page (createTalk), less any removed — all from its
-  // collabWeekTalks docs (talkEdits). `talkOrder` reorders them; their times
-  // follow from the order and durations (collab-week-talk-times.js).
+  // A session's talks are its collabWeekTalks docs (talkEdits), less any
+  // removed. `talkOrder` orders them (the rest after, oldest first); their
+  // times follow from the order and durations (collab-week-talk-times.js).
 
   var talkKey = CollabWeekTalkTimes.key;
 
   function orderedTalks(order){
     var docs = Object.keys(talkEdits).map(function(k){ return talkEdits[k]; });
-    return CollabWeekTalkTimes.schedule(base.talks, docs, order, base.time);
+    return CollabWeekTalkTimes.schedule([], docs, order, session().time);
   }
 
   function allTalks(){ return orderedTalks(null); }
@@ -210,8 +213,7 @@
   // Always shown; greyed out, with the reason on hover, for anyone who can't edit.
   function editButton(){
     var solo = soloTalk();
-    var off = canEdit() || (solo && talkAccess.canEdit) ? '' : isLead() ? 'A PI or admin has to save this session once before its leads can edit it'
-      : solo ? 'Only its speakers, the session’s leads, PIs and admins can edit it' : NOT_EDITOR;
+    var off = canEdit() || (solo && talkAccess.canEdit) ? '' : solo ? 'Only its speakers, the session’s leads, PIs and admins can edit it' : NOT_EDITOR;
     var addOff = me && (fullWrite || isLead()) ? '' : 'Only the session’s leads, PIs and admins can add a talk';
     if (solo) return '<div class="detail-actions"><button class="btn" type="button" id="editOpen"' + (off ? ' disabled title="' + esc(off) + '"' : '') + '>Edit</button></div>';
     return '<div class="detail-actions">' +
@@ -234,7 +236,7 @@
       var counts = {};
       allTalks().forEach(function(t){ if (t.type) counts[t.type] = (counts[t.type] || 0) + 1; });
       var dflt = Object.keys(counts).sort(function(a, b){ return counts[b] - counts[a]; })[0] ||
-        (base.type === 'keynote' ? 'keynote' : 'research-talk');
+        'research-talk';
       return '<div class="edit-field"><label for="a_' + f.key + '">' + f.label + '</label>' +
         (f.type === 'select'
           ? '<select id="a_' + f.key + '">' + TALK_TYPES.map(function(o){
@@ -276,12 +278,34 @@
     });
   }
 
-  // An added session's type, day, time and venue, from its doc.
-  function useAddedDoc(doc){
-    ['title', 'type', 'day', 'time', 'locationSlug'].forEach(function(k){ base[k] = doc[k] || ''; });
-    var locations = JSON.parse(el('sessionLocations').textContent) || [];
-    venue = locations.filter(function(l){ return l.slug === doc.locationSlug; })[0] || {};
-    document.title = (doc.title || 'Session') + ' | BOLD Collaboration Week';
+  // Its day and time are those of its event's time slot that holds it
+  // (event-schedule.js), once loaded.
+  var placed = null, unsubscribePlace = null, placeFor = null;
+
+  // From its doc and its event's: venue, page title, back link, day and time.
+  function useDoc(doc){
+    var venues = (event && event.venues) || [];
+    var v = venues.filter(function(l){ return l.slug === doc.locationSlug; })[0];
+    venue = v ? Object.assign({ mapsUrl: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(v.name + ', ' + (v.address || '')) }, v) : {};
+    document.title = (doc.title || 'Session') + (event && event.title ? ' | ' + event.title : '');
+    var back = el('sessionBack');
+    if (back && event) {
+      back.href = event.page || 'event.html?event=' + encodeURIComponent(doc.eventSlug);
+      back.textContent = '← Back to ' + event.title;
+    }
+  }
+
+  // Follows its event (events/{eventSlug}): its time slot, venues and title.
+  function watchEvent(eventSlug){
+    if (!eventSlug || placeFor === eventSlug) return;
+    if (unsubscribePlace) unsubscribePlace();
+    placeFor = eventSlug;
+    unsubscribePlace = db.collection('events').doc(eventSlug).onSnapshot(function(snap){
+      event = snap.data() || null;
+      placed = event ? EventSchedule.findSession(event.days, base.slug) : null;
+      if (saved) useDoc(saved);
+      if (!editing) (adding ? renderKeepingAdd : render)();
+    }, function(err){ console.error('[BOLD Events] loading the session’s event failed', err); });
   }
 
   function whereHtml(s){
@@ -296,7 +320,7 @@
     if (s.removed) html += '<p class="detail-msg">This session was removed from the schedule. A PI or admin can put it back with ↺ on the schedule page.</p>';
     html += '<dl class="detail-grid">';
     if (t.speaker) html += row('Speaker', esc(t.speaker) + (t.affiliation ? ' <span class="detail-muted">(' + esc(t.affiliation) + ')</span>' : ''));
-    html += row('When', esc(s.day + ', ' + s.time)) + row('Where', whereHtml(s));
+    html += row('When', esc(when(s))) + row('Where', whereHtml(s));
     if (!isEmpty(s.leads)) html += row(s.leads.length > 1 ? 'Leads' : 'Lead', leadsHtml(s.leads));
     if (t.presentationUrl) html += row('Presentation', '<a href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">' + esc(t.presentationUrl) + '</a>');
     if (t.notes) html += row('Notes', esc(t.notes));
@@ -305,9 +329,11 @@
       section('About the speaker', t.bio ? '<p class="talk-text">' + esc(t.bio) + '</p>' : '<p class="detail-muted">Not yet available.</p>');
   }
 
+  function when(s){ return s.day ? s.day + (s.time ? ', ' + s.time : '') : 'Not on the schedule'; }
+
   function viewHtml(){
-    if (missing) return '<p class="detail-muted">This session doesn’t exist — it may have been removed from the schedule.</p>';
-    if (added && !saved) return '<p class="detail-muted">Loading…</p>';
+    if (missing) return '<p class="detail-muted">This session doesn’t exist — it may have been deleted.</p>';
+    if (!saved) return '<p class="detail-muted">Loading…</p>';
     var s = session();
     var solo = soloTalk();
     if (solo) return soloViewHtml(s, solo);
@@ -317,7 +343,7 @@
     if (s.subtitle) html += '<p class="detail-subtitle">' + esc(s.subtitle) + '</p>';
     if (s.removed) html += '<p class="detail-msg">This session was removed from the schedule. A PI or admin can put it back with ↺ on the schedule page.</p>';
 
-    html += '<dl class="detail-grid">' + row('When', esc(s.day + ', ' + s.time)) + row('Where', whereHtml(s));
+    html += '<dl class="detail-grid">' + row('When', esc(when(s))) + row('Where', whereHtml(s));
     if (!isEmpty(s.leads)) html += row(s.leads.length > 1 ? 'Leads' : 'Lead', leadsHtml(s.leads));
     if (s.contact) html += row('Contact', esc(s.contact));
     html += '</dl>';
@@ -334,8 +360,7 @@
     }).join('') + '</ul>';
 
     if (allTalks().length) html += section('Talks', '<ul class="session-talks">' + orderedTalks(s.talkOrder).map(function(t){
-      var href = t.added ? 'event-collaboration-week-talk.html?talk=' + encodeURIComponent(t.slug)
-        : t.slug ? 'event-collaboration-week-talk-' + t.slug + '.html' : '';
+      var href = t.slug ? 'talk.html?talk=' + encodeURIComponent(t.slug) : '';
       var title = href ? '<a href="' + esc(href) + '">' + esc(t.title) + '</a>' : esc(t.title);
       return '<li><span class="t">' + esc(t.time || t.duration || '') + '</span><span class="e">' + title +
         (t.speaker ? ' <span class="who">— ' + esc(t.speaker) + '</span>' : '') +
@@ -363,6 +388,37 @@
       : '<p class="edit-static">' + esc(TYPES[s.type] || '—') + '</p><p class="edit-hint">Only PIs and admins can change the type.</p>') + '</div>';
   }
 
+  // Its day and time: its time slot's. PIs/admins move it here (to the slot at
+  // that time, or a new one — EventSchedule.moveSession); the rest see it.
+  function whenFieldHtml(s){
+    if (!fullWrite || !event) return '<div class="edit-field"><span class="edit-label">When</span><p class="edit-static">' + esc(when(s)) +
+      '</p><p class="edit-hint">Only PIs and admins can change when it is.</p></div>';
+    var days = EventSchedule.sorted(event.days);
+    var cur = placed || {};
+    return '<div class="edit-field"><span class="edit-label">When</span><div class="when-row">' +
+      '<label>Day<select id="f_date">' + (cur.date ? '' : '<option value="">Choose a day…</option>') + days.map(function(d){
+        return '<option value="' + esc(d.date) + '"' + (d.date === cur.date ? ' selected' : '') + '>' + esc(EventSchedule.dayLabel(d.date)) + '</option>';
+      }).join('') + '</select></label>' +
+      '<label>Starts<input type="time" id="f_start" step="300" value="' + esc(cur.start || '') + '"></label>' +
+      '<label>Ends<input type="time" id="f_end" step="300" value="' + esc(cur.end || '') + '"></label></div>' +
+      '<p class="edit-hint">It joins any sessions already at that time, side by side; otherwise it gets a time slot of its own.</p></div>';
+  }
+
+  // → null (unchanged), { date, start, end }, or { error }.
+  function whenMove(){
+    var d = el('f_date');
+    if (!d) return null;
+    var date = d.value, start = el('f_start').value, end = el('f_end').value, cur = placed || {};
+    if (date === (cur.date || '') && start === (cur.start || '') && end === (cur.end || '')) return null;
+    if (!date) return { error: 'Choose its day.' };
+    if (!start || !end) return { error: 'Set when it starts and ends.' };
+    if (end <= start) return { error: 'It has to end after it starts.' };
+    return { date: date, start: start, end: end };
+  }
+  function doMove(move){
+    return move ? EventSchedule.moveSession(db.collection('events').doc(saved.eventSlug), base.slug, move.date, move.start, move.end, me.email) : Promise.resolve();
+  }
+
   function leadsFieldHtml(s){
     return '<div class="edit-field"><span class="edit-label">Leads</span>' + (fullWrite
       ? '<div id="leadRows"></div><p class="edit-hint">The leads can edit this session and its talks.</p>'
@@ -380,10 +436,10 @@
   // A keynote's or an oral's form: its talk's fields, and the session's type, room and leads.
   function soloFormHtml(s, t){
     var html = '<div class="detail-head"><h2>Edit ' + esc((TYPES[s.type] || 'session').toLowerCase()) + '</h2></div>' +
-      '<p class="detail-subtitle">' + esc(s.day + ', ' + s.time + ' · ' + (venue.name || '')) +
+      '<p class="detail-subtitle">' + esc(when(s) + (venue.name ? ' · ' + venue.name : '')) +
       ' — day, time and venue are set with the schedule.</p><div class="edit-form">' +
       '<div class="edit-field"><label for="f_title">Title</label><input type="text" id="f_title" value="' + esc(t.title) + '"></div>' +
-      typeFieldHtml(s) +
+      typeFieldHtml(s) + whenFieldHtml(s) +
       '<div class="edit-field"><span class="edit-label">Speakers</span>' + (talkAccess.canSetPresenters
         ? '<div id="soloSpeakers"></div>'
         : '<p class="edit-static">' + esc(t.speaker || '—') + '</p><p class="edit-hint">Only the session’s leads, PIs and admins can change the speakers.</p>') + '</div>';
@@ -405,7 +461,7 @@
     var solo = soloTalk();
     if (solo) return soloFormHtml(s, solo);
     var html = '<div class="detail-head"><h2>Edit session</h2></div>' +
-      '<p class="detail-subtitle">' + esc(s.day + ', ' + s.time + ' · ' + (venue.name || '')) +
+      '<p class="detail-subtitle">' + esc(when(s) + (venue.name ? ' · ' + venue.name : '')) +
       ' — day, time and venue are set with the schedule.</p><div class="edit-form">';
     editFields().forEach(function(f){
       var id = 'f_' + f.key, v = toText(f.key, s[f.key]);
@@ -414,7 +470,7 @@
           ? '<input type="text" id="' + id + '" value="' + esc(v) + '" placeholder="' + esc(f.placeholder || '') + '">'
           : '<textarea id="' + id + '" rows="' + (f.list ? 5 : 6) + '">' + esc(v) + '</textarea>') +
         (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
-      if (f.key === 'title') html += typeFieldHtml(s);
+      if (f.key === 'title') html += typeFieldHtml(s) + whenFieldHtml(s);
       if (f.key === 'room') html += leadsFieldHtml(s);
     });
     if (hasTalks()) html += '<div class="edit-field"><span class="edit-label">Schedule</span>' +
@@ -471,7 +527,7 @@
     if (!peoplePromise) peoplePromise = db.collection('people').get().then(function(snap){
       people = snap.docs.map(function(d){ return d.data(); })
         .sort(function(a, b){ return (a.name || '').localeCompare(b.name || ''); });
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the roster failed', err); });
+    }).catch(function(err){ console.error('[BOLD Events] loading the roster failed', err); });
     return peoplePromise;
   }
 
@@ -538,25 +594,24 @@
       if (typeError) return fail(typeError);
       leadsPatch(patch, s);
     }
+    var move = whenMove();
+    if (move && move.error) return fail(move.error);
     btn.disabled = true;
     var talkSave = talkAccess.canEdit ? callable('editTalk')({ slug: t.slug, edits: edits }) : Promise.resolve();
     talkSave.then(function(){
       if (!Object.keys(patch).length) return;
-      var seed = saved ? {} : { slug: base.slug, leads: base.leads || [], leadEmails: emailsOf(base.leads) };
-      var write = Object.assign(seed, patch, { updatedAt: Date.now(), updatedBy: me.email });
+      var write = Object.assign(patch, { updatedAt: Date.now(), updatedBy: me.email });
       return ref.set(write, { merge: true }).then(function(){ saved = Object.assign({}, saved || {}, write); });
-    }).then(function(){
+    }).then(function(){ return doMove(move); }).then(function(){
       editing = false;
       return loadTalkEdits();
     }).catch(function(err){
-      console.error('[BOLD Collaboration Week] saving the session failed', err);
+      console.error('[BOLD Events] saving the session failed', err);
       fail((err && err.message) || 'Could not save — try again.');
     });
   }
 
-  // Only the fields that changed are written. The first save of a session
-  // (always a PI's/admin's — see canEdit) also records its leads from the
-  // programme, so they can edit it from then on.
+  // Only the fields that changed are written.
   function saveForm(){
     var btn = el('editSave');
     var fail = function(msg){ var e = el('editError'); e.textContent = msg; e.hidden = false; };
@@ -573,18 +628,21 @@
     var typeError = typePatch(patch, s);
     if (typeError) return fail(typeError);
     leadsPatch(patch, s);
-    if (!Object.keys(patch).length) { editing = false; render(); return; }
+    var move = whenMove();
+    if (move && move.error) return fail(move.error);
+    if (!Object.keys(patch).length && !move) { editing = false; render(); return; }
     btn.disabled = true;
-    var seed = saved ? {} : { slug: base.slug, leads: base.leads || [], leadEmails: emailsOf(base.leads) };
-    var write = Object.assign(seed, patch, { updatedAt: Date.now(), updatedBy: me.email });
-    ref.set(write, { merge: true }).then(function(){
-      saved = Object.assign({}, saved || {}, write);
+    var write = Object.keys(patch).length ? Object.assign(patch, { updatedAt: Date.now(), updatedBy: me.email }) : null;
+    (write ? ref.set(write, { merge: true }) : Promise.resolve()).then(function(){
+      if (write) saved = Object.assign({}, saved || {}, write);
+      return doMove(move);
+    }).then(function(){
       editing = false;
       render();
     }).catch(function(err){
-      console.error('[BOLD Collaboration Week] saving the session failed', err);
+      console.error('[BOLD Events] saving the session failed', err);
       btn.disabled = false;
-      fail(err && err.code === 'permission-denied' ? NOT_EDITOR + '.' : 'Could not save — try again.');
+      fail(err && err.code === 'permission-denied' ? NOT_EDITOR + '.' : (err && err.message) || 'Could not save — try again.');
     });
   }
 
@@ -593,6 +651,12 @@
     if (!editing) {
       var open = el('editOpen');
       if (open) open.addEventListener('click', function(){ adding = false; openForm(); });
+      if (wantEdit && talksLoaded && open && !open.disabled) {
+        wantEdit = false;
+        history.replaceState(null, '', location.pathname + location.search);
+        openForm();
+        return;
+      }
       var add = el('addTalkOpen');
       if (add) add.addEventListener('click', function(){
         loadPeople().then(function(){
@@ -626,7 +690,7 @@
       firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(r){
         var v = !!(r.data && r.data.fullWrite);
         if (v !== fullWrite) { fullWrite = v; if (!editing) (adding ? renderKeepingAdd : render)(); }
-      }).catch(function(err){ console.error('[BOLD Collaboration Week] access check failed', err); });
+      }).catch(function(err){ console.error('[BOLD Events] access check failed', err); });
     } catch (e){}
   }
 
@@ -636,10 +700,14 @@
   // PI/admin approves here, which is when it goes to GitHub (functions/index.js).
 
   var joinEl = null, join = { mine: null, canApprove: false, all: [] };
-  if (base.hackathonJoin) {
+  // A session with hackathonJoin gets the box, once its doc says so.
+  function useJoin(doc){
+    if (joinEl || !doc || !doc.hackathonJoin) return;
     joinEl = document.createElement('div');
     joinEl.className = 'detail-field join-box';
     bodyEl.parentNode.appendChild(joinEl);
+    renderJoin();
+    loadJoin();
   }
 
   function callable(name){ return firebase.app().functions('europe-west2').httpsCallable(name); }
@@ -692,7 +760,7 @@
       if (!username) { input.focus(); return; }
       btn.disabled = true; msg.textContent = 'Sending…';
       callable('joinHackathonTeam')({ username: username }).then(function(){ return loadJoin(); }).catch(function(err){
-        console.error('[BOLD Collaboration Week] hackathon join request failed', err);
+        console.error('[BOLD Events] hackathon join request failed', err);
         btn.disabled = false;
         msg.textContent = (err && err.message) || 'Could not send — try again.';
       });
@@ -704,7 +772,7 @@
       button.disabled = true;
       if (adminMsg) adminMsg.textContent = 'Adding on GitHub…';
       callable('approveHackathonJoins')(emails ? { emails: emails } : {}).then(function(){ return loadJoin(); }).catch(function(err){
-        console.error('[BOLD Collaboration Week] approving hackathon joins failed', err);
+        console.error('[BOLD Events] approving hackathon joins failed', err);
         button.disabled = false;
         if (adminMsg) adminMsg.textContent = (err && err.message) || 'Could not approve — try again.';
       });
@@ -721,27 +789,21 @@
     return callable('hackathonJoinRequests')().then(function(r){
       join = { mine: r.data.mine, canApprove: !!r.data.canApprove, all: r.data.all || [] };
       renderJoin();
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading hackathon requests failed', err); });
+    }).catch(function(err){ console.error('[BOLD Events] loading hackathon requests failed', err); });
   }
 
   render();
   renderJoin();
   var unsubscribe = null;
-  // This session's talk docs: edits made on each talk's own page (title,
-  // presentation link…), and the talks added here.
-  // (A programme talk's doc is also read by its slug: one edited while it was
-  // a keynote on the schedule by itself may not name this session yet.)
+  // This session's talks (collabWeekTalks naming it).
   function loadTalkEdits(){
-    var talks = db.collection('collabWeekTalks');
-    return Promise.all([talks.where('sessionSlug', '==', base.slug).get()].concat(
-      (base.talks || []).filter(function(t){ return t.slug; }).map(function(t){ return talks.doc(t.slug).get(); })
-    )).then(function(res){
+    return db.collection('collabWeekTalks').where('sessionSlug', '==', base.slug).get().then(function(snap){
       talkEdits = {};
-      res[0].docs.forEach(function(d){ talkEdits[d.id] = d.data(); });
-      res.slice(1).forEach(function(d){ if (d.exists && !talkEdits[d.id]) talkEdits[d.id] = d.data(); });
+      snap.docs.forEach(function(d){ talkEdits[d.id] = d.data(); });
+      talksLoaded = true;
       loadTalkAccess();
       if (!editing) (adding ? renderKeepingAdd : render)();
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading talk edits failed', err); });
+    }).catch(function(err){ console.error('[BOLD Events] loading talk edits failed', err); });
   }
 
   // For a keynote/oral: whether the signed-in person may edit its talk.
@@ -751,7 +813,7 @@
     callable('editTalk')({ slug: solo.slug }).then(function(r){
       talkAccess = { canEdit: !!r.data.canEdit, canSetPresenters: !!r.data.canSetPresenters };
       if (!editing) (adding ? renderKeepingAdd : render)();
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] editTalk access check failed', err); });
+    }).catch(function(err){ console.error('[BOLD Events] editTalk access check failed', err); });
   }
 
   BOLD.onUser(function(user){
@@ -761,6 +823,7 @@
     fullWrite = false;
     editing = false;
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    if (unsubscribePlace) { unsubscribePlace(); unsubscribePlace = null; placeFor = null; }
     join = { mine: null, canApprove: false, all: [] };
     renderJoin();
     loadJoin();
@@ -769,15 +832,13 @@
     talkEdits = {};
     loadTalkEdits();
     unsubscribe = ref.onSnapshot(function(snap){
-      saved = snap.exists ? snap.data() : null;
-      if (added) {
-        missing = !saved || !saved.added;
-        if (missing) saved = null; else useAddedDoc(saved);
-      }
+      saved = snap.exists && !snap.data().deletedAt ? snap.data() : null;
+      missing = !saved;
+      if (saved) { useDoc(saved); useJoin(saved); watchEvent(saved.eventSlug); }
       loadTalkAccess();  // its type may have just become a keynote's or an oral's
       if (!editing) (adding ? renderKeepingAdd : render)();
     }, function(err){
-      console.error('[BOLD Collaboration Week] loading the session failed', err);
+      console.error('[BOLD Events] loading the session failed', err);
     });
   });
 })();

@@ -2,6 +2,8 @@
 title: "BOLD Events | BOLD Lab"
 description: "Where BOLD gathers — talks, workshops, and the people building the ecosystem. BOLD Festival, BOLD Collaboration Week, and what's next."
 css: "events"
+sdk: ["firestore", "functions"]
+scripts: ["events-common.js", "pages/events.js"]
 permalink: "events.html"
 ---
 <div class="hero">
@@ -12,30 +14,9 @@ permalink: "events.html"
 <main>
 
   <section class="block">
-    <ul class="event-list">
-      <li>
-        <a class="event-card" href="event-collaboration-week.html">
-          <div class="event-top">
-            <span class="eyebrow eyebrow--upcoming">Upcoming</span>
-          </div>
-          <h3>BOLD Collaboration Week</h3>
-          <p class="event-when">5&ndash;10 October 2026 &middot; Oxford</p>
-          <p>Five days for BOLD Associates to engage more deeply with BOLD, in person &mdash; the deepest of the three ways to stay involved.</p>
-          <span class="event-cta">See details &rarr;</span>
-        </a>
-      </li>
-      <li>
-        <a class="event-card" href="event-bold-festival.html">
-          <div class="event-top">
-            <span class="eyebrow eyebrow--past">Past</span>
-          </div>
-          <h3>BOLD Festival</h3>
-          <p class="event-when">3&ndash;5 August 2026 &middot; Oxford</p>
-          <p>The inaugural BOLD Festival &mdash; three days marking the official launch of the British Open-ended Learning and Discovery Lab.</p>
-          <span class="event-cta">See details &rarr;</span>
-        </a>
-      </li>
-    </ul>
+    <ul class="event-list" id="eventList"></ul>
+    <p class="event-loading" id="eventLoading">Loading…</p>
+    <button type="button" class="event-add" id="eventAdd" disabled title="Only PIs and admins can add and change events">+ Add an event</button>
   </section>
 
 </main>

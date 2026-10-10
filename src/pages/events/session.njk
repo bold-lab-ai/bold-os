@@ -1,0 +1,15 @@
+---
+permalink: "session.html"
+title: "Session | BOLD Lab"
+description: "A session at a BOLD event."
+nav: "events.html"
+sdk: ["firestore", "functions"]
+css: "session"
+scripts: ["event-schedule.js", "collab-week-speakers.js", "collab-week-talk-times.js", "pages/session.js"]
+---
+{# Any event's session (collabWeekSessions/{slug}): one page for all of them, ?session=<slug>. #}
+<div class="detail">
+  <a class="detail-back" id="sessionBack" href="events.html">&larr; All events</a>
+  <div id="sessionBody"><p class="detail-muted">Loading…</p></div>
+</div>
+<script type="application/json" id="sessionTypes">{{ collabWeekTypes | jsonScript | safe }}</script>

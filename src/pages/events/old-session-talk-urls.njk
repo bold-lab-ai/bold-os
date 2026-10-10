@@ -1,0 +1,17 @@
+---
+pagination:
+  data: oldUrls
+  size: 1
+  alias: old
+oldUrls:
+  - { from: "event-collaboration-week-session.html", to: "session.html" }
+  - { from: "event-collaboration-week-talk.html", to: "talk.html" }
+permalink: "{{ old.from }}"
+layout: false
+eleventyExcludeFromCollections: true
+---
+<!DOCTYPE html>
+{# Links from before 2026-10-10: the one page for added sessions/talks, now the one page for all of them. #}
+<html lang="en"><head><meta charset="UTF-8"><title>Moved</title>
+<script>location.replace('{{ old.to }}' + location.search + location.hash);</script>
+</head><body><p><a href="{{ old.to }}">This page has moved.</a></p></body></html>

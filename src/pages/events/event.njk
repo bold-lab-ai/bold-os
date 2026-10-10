@@ -1,0 +1,18 @@
+---
+title: "Event | BOLD Lab"
+description: "A BOLD event."
+css: "event"
+permalink: "event.html"
+nav: "events.html"
+sdk: ["firestore", "functions"]
+scripts: ["events-common.js", "event-schedule.js", "event-sessions.js", "pages/event.js"]
+---
+{# An event added from the events page (events/{slug}): one page for all of them, ?event=<slug>. #}
+<div class="hero" id="eventBody">
+  <a class="back-link" href="events.html">&larr; All events</a>
+  <p class="hero-when">Loading…</p>
+</div>
+<main>
+  <div class="schedule" id="eventSchedule"></div>
+</main>
+<script type="application/json" id="eventTypes">{{ collabWeekTypes | jsonScript | safe }}</script>

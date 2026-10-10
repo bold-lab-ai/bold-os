@@ -1,35 +1,27 @@
-// A Collaboration Week talk's page. Every talk works the same way, whether
-// it comes from the programme (src/_data, inlined as #talkData, the static
-// first paint) or was added from its session's page (no programme entry;
-// shown by the one page event-collaboration-week-talk.html?talk=<slug>).
-// Firestore's collabWeekTalks/{slug} holds an added talk whole, and a
-// programme talk's edits since.
+// A talk's page, for any event: talk.html?talk=<slug>, all of it from
+// Firestore — the talk from collabWeekTalks/{slug}, its session from
+// collabWeekSessions/{sessionSlug}, and from the session's event
+// (events/{eventSlug}) its day and venue. A keynote's or an oral's one talk
+// is shown by its session's page instead.
 //
 // A presenter, a lead of the session or a PI/admin gets "Edit talk": title,
 // type, speakers, duration, affiliation, presentation, notes, abstract, bio.
 // The speakers are people (collab-week-speakers.js) — their emails are who
 // counts as a presenter — and only leads and PIs/admins change them, or
-// remove the talk from its session (a programme talk can be restored).
+// remove the talk from its session (which deletes it).
 // Saving goes through the editTalk function, which also says what the
 // signed-in person may do. The talk's time isn't edited: it follows from
 // its session's order and durations (collab-week-talk-times.js).
 (function(){
-  // A keynote's or an oral's one talk is shown by its session's page.
-  var own = JSON.parse(document.getElementById('talkData').textContent);
-  if (own && (own.sessionType === 'keynote' || own.sessionType === 'oral') && (own.sessionTalks || []).length === 1) {
-    location.replace('event-collaboration-week-session-' + own.sessionSlug + '.html');
-    return;
-  }
   if (!BOLD.getAuth()) return;
 
   var esc = BOLD.escapeHtml;
   var el = function(id){ return document.getElementById(id); };
   var bodyEl = el('talkBody');
-  var base = JSON.parse(el('talkData').textContent);
-  var added = !base;        // an added talk: base comes from its Firestore doc
-  var slug = added ? (new URLSearchParams(location.search).get('talk') || '') : base.slug;
-  var missing = false;      // an added talk that doesn't exist (any more)
-  var venue = JSON.parse(el('talkLocation').textContent) || {};
+  var base = null;          // { slug, sessionSlug, sessionTitle, day, sessionTime }, once its session is loaded
+  var slug = new URLSearchParams(location.search).get('talk') || '';
+  var missing = !slug;      // a talk that doesn't exist (any more)
+  var venue = {};
   var TYPES = JSON.parse(el('talkTypes').textContent) || {};
 
   var db = null;
@@ -57,49 +49,21 @@
   var speakerRows = [];     // the speakers while the form is open
   var timed = null;         // the talk's time, once worked out
 
-  // An added talk's session, venue and back link, from its Firestore doc.
-  function useAddedDoc(doc){
-    var sessions = JSON.parse(el('talkSessions').textContent) || [];
-    var locations = JSON.parse(el('talkLocations').textContent) || [];
-    var s = sessions.filter(function(x){ return x.slug === doc.sessionSlug; })[0] || {};
-    venue = locations.filter(function(l){ return l.slug === s.locationSlug; })[0] || {};
-    base = { slug: slug, sessionSlug: doc.sessionSlug, sessionTitle: s.title || '', day: s.day || '',
-      sessionTime: s.time || '', sessionTalks: s.talks || [] };
-    var back = el('talkBack');
-    if (back && s.slug) { back.href = 'event-collaboration-week-session-' + s.slug + '.html'; back.textContent = '← Back to ' + (s.title || 'the session'); }
-    document.title = (doc.title || 'Talk') + ' | BOLD Collaboration Week';
-    // A session added from the schedule page isn't in the programme: its details are in Firestore.
-    if (!s.slug && doc.sessionSlug) db.collection('collabWeekSessions').doc(doc.sessionSlug).get().then(function(snap){
-      var x = snap.data();
-      if (!x) return;
-      venue = locations.filter(function(l){ return l.slug === x.locationSlug; })[0] || {};
-      Object.assign(base, { sessionTitle: x.title || '', day: x.day || '', sessionTime: x.time || '' });
-      if (back) { back.href = 'event-collaboration-week-session.html?session=' + encodeURIComponent(doc.sessionSlug); back.textContent = '← Back to ' + (x.title || 'the session'); }
-      loadTime();
-      if (!editing) render();
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the session failed', err); });
-  }
-
-  // A programme session has its own page; one added from the schedule shares one.
-  function sessionHref(sessionSlug){
-    var sessions = JSON.parse((el('talkSessions') || {}).textContent || 'null');
-    var inProgramme = !added || (sessions || []).some(function(x){ return x.slug === sessionSlug; });
-    return inProgramme ? 'event-collaboration-week-session-' + sessionSlug + '.html'
-      : 'event-collaboration-week-session.html?session=' + encodeURIComponent(sessionSlug);
-  }
+  function sessionHref(sessionSlug){ return 'session.html?session=' + encodeURIComponent(sessionSlug); }
+  var SOLO = ['keynote', 'oral'];
 
   var peoplePromise = null;
   function loadPeople(){
     if (!peoplePromise) peoplePromise = db.collection('people').get().then(function(snap){
       people = snap.docs.map(function(d){ return d.data(); }).filter(function(p){ return p.email; })
         .sort(function(a, b){ return (a.name || '').localeCompare(b.name || ''); });
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the roster failed', err); });
+    }).catch(function(err){ console.error('[BOLD Events] loading the roster failed', err); });
     return peoplePromise;
   }
 
   function talk(){
     var t = Object.assign({}, base, saved || {});
-    t.time = timed !== null ? timed : added ? '' : t.time;
+    t.time = timed || '';
     return t;
   }
 
@@ -126,7 +90,7 @@
     if (missing) return '<p class="detail-muted">This talk doesn’t exist — it may have been removed from its session.</p>';
     if (!base) return '<p class="detail-muted">Loading…</p>';
     var t = talk();
-    var removeOff = !t.sessionSlug ? 'Talks on the main schedule can’t be removed here' : canSetPresenters ? '' : NOT_REMOVER;
+    var removeOff = !t.sessionSlug ? 'This talk isn’t in a session' : canSetPresenters ? '' : NOT_REMOVER;
     var html = (TYPES[t.type] ? '<span class="type-badge type-' + esc(t.type) + '">' + esc(TYPES[t.type]) + '</span>' : '') +
       '<div class="detail-head"><h2>' + esc(t.title) + '</h2><div class="detail-actions">' +
       (t.removed
@@ -201,10 +165,9 @@
     loadPeople().then(function(){ startSpeakerRows(); editing = true; error = ''; render(); });
   }
 
-  // Removes the talk from its session (an added one for good), or restores a programme talk.
+  // Removes the talk from its session (deletes it), or restores one removed before 2026-10-10.
   function setRemoved(remove){
-    var msg = !remove ? null : added ? 'Remove this talk from its session? This can’t be undone.'
-      : 'Remove this talk from its session? A lead or PI can restore it from this page.';
+    var msg = remove ? 'Remove this talk from its session? It’s deleted, which can’t be undone.' : null;
     if (msg && !window.confirm(msg)) return;
     var btn = el(remove ? 'talkRemove' : 'talkRestore');
     btn.disabled = true;
@@ -257,40 +220,55 @@
     });
   }
 
-  // This talk's time, worked out with the rest of its session's talks: their
-  // edits, the ones added on the site and the session's talkOrder
-  // (collab-week-talk-times.js, as on the session page).
-  function loadTime(){
-    if (!base || !base.sessionSlug) return;
+  // Its session, and the session's event: title, venue, day, back link — and
+  // this talk's time, worked out with the rest of the session's talks and its
+  // talkOrder (collab-week-talk-times.js, as on the session page) from the
+  // start of the time slot that holds the session (event-schedule.js).
+  function loadSession(sessionSlug){
+    if (!sessionSlug) { base = { slug: slug, sessionSlug: '' }; if (!editing) render(); return; }
     Promise.all([
-      db.collection('collabWeekSessions').doc(base.sessionSlug).get(),
-      db.collection('collabWeekTalks').where('sessionSlug', '==', base.sessionSlug).get()
+      db.collection('collabWeekSessions').doc(sessionSlug).get(),
+      db.collection('collabWeekTalks').where('sessionSlug', '==', sessionSlug).get()
     ]).then(function(res){
-      var order = res[0].exists ? res[0].data().talkOrder : null;
+      var x = res[0].data() || {};
       var docs = res[1].docs.map(function(d){ return d.data(); });
-      var mine = CollabWeekTalkTimes.schedule(base.sessionTalks, docs, order, base.sessionTime)
-        .filter(function(t){ return t.slug === slug; })[0];
-      timed = mine ? mine.time : '';
-      if (!editing) render();
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] working out the talk’s time failed', err); });
+      // A keynote's or an oral's one talk is shown by its session's page.
+      if (SOLO.indexOf(x.type) >= 0 && docs.filter(function(d){ return !d.removed; }).length === 1) {
+        location.replace(sessionHref(sessionSlug));
+        return;
+      }
+      return (x.eventSlug ? db.collection('events').doc(x.eventSlug).get() : Promise.resolve(null)).then(function(ev){
+        var event = ev && ev.exists ? ev.data() : null;
+        var placed = event ? EventSchedule.findSession(event.days, sessionSlug) : null;
+        var v = ((event && event.venues) || []).filter(function(l){ return l.slug === x.locationSlug; })[0];
+        venue = v ? Object.assign({ mapsUrl: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(v.name + ', ' + (v.address || '')) }, v) : {};
+        base = { slug: slug, sessionSlug: sessionSlug, sessionTitle: x.title || '', day: placed ? placed.day : '', sessionTime: placed ? placed.time : '' };
+        var back = el('talkBack');
+        if (back) { back.href = sessionHref(sessionSlug); back.textContent = '← Back to ' + (x.title || 'the session'); }
+        document.title = ((saved && saved.title) || 'Talk') + (event && event.title ? ' | ' + event.title : '');
+        var mine = CollabWeekTalkTimes.schedule([], docs, x.talkOrder, base.sessionTime)
+          .filter(function(t){ return t.slug === slug; })[0];
+        timed = mine ? mine.time : '';
+        if (!editing) render();
+      });
+    }).catch(function(err){ console.error('[BOLD Events] loading the talk’s session failed', err); });
   }
+  function loadTime(){ if (base) loadSession(base.sessionSlug); }
 
   BOLD.onUser(function(user){
     canEdit = false; canSetPresenters = false; editing = false;
     if (!user || !db) { render(); return; }
+    if (missing) { render(); return; }
     db.collection('collabWeekTalks').doc(slug).get().then(function(snap){
       saved = snap.exists ? snap.data() : null;
-      if (added) {
-        missing = !saved || !saved.added;
-        if (!missing) { useAddedDoc(saved); loadTime(); }
-      }
+      missing = !saved;
+      if (saved) loadSession(saved.sessionSlug);
       if (!editing) render();
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] loading the talk failed', err); });
-    if (!added) loadTime();
+    }).catch(function(err){ console.error('[BOLD Events] loading the talk failed', err); });
     editTalk({ slug: slug }).then(function(r){
       canEdit = !!r.data.canEdit;
       canSetPresenters = !!r.data.canSetPresenters;
       if (!editing) render();
-    }).catch(function(err){ console.error('[BOLD Collaboration Week] editTalk access check failed', err); });
+    }).catch(function(err){ console.error('[BOLD Events] editTalk access check failed', err); });
   });
 })();

@@ -1773,16 +1773,15 @@ exports.refreshPeople = onCall(
 // written only here. No talk's time is stored: the pages work it out from
 // its session's order and durations.
 //
-// Access is by sign-in email only: a presenter (presenterEmails), a lead of
-// the talk's session (its leads' emails in the published programme,
-// event-collaboration-week-talks.json, plus collabWeekSessions/{slug}.leadEmails)
-// or a PI/admin can edit a talk. Only leads and PIs/admins can change the
-// speakers, add a talk to a session, or remove one: an added talk is
-// deleted, a programme talk marked `removed` (and can be restored).
-const TALKS_URL = 'https://bold-lab-ai.github.io/bold-os/event-collaboration-week-talks.json';
-const TALK_FIELDS = { title: 300, type: 40, duration: 100, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
+// Sessions and talks of every event (Collaboration Week's, the Festival's…)
+// live in collabWeekSessions/{slug} and collabWeekTalks/{slug}; a talk names
+// its session (sessionSlug), a session its event (eventSlug) and its leads'
+// sign-in emails (leadEmails). Access is by sign-in email only: a presenter
+// (presenterEmails), a lead of the talk's session or a PI/admin can edit a
+// talk. Only leads and PIs/admins can change the speakers, add a talk to a
+// session, or remove one (which deletes it).
+const TALK_FIELDS = { title: 300, type: 40, speaker: 300, duration: 100, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
 const TALK_TYPES = ['research-talk', 'pitch'];  // labels in src/_data/collabWeekTypes.js; a keynote/oral is a session
-const ADDED_TALK_FIELDS = Object.assign({ speaker: 300 }, TALK_FIELDS);
 
 // [{ name, email }] → { speakers, speaker, presenterEmails }
 function speakerFields(list){
@@ -1796,54 +1795,34 @@ function speakerFields(list){
   const emails = speakers.map(x => x.email).filter(Boolean);
   return { speakers, speaker: speakers.map(x => x.name).join(', '), presenterEmails: emails.filter((e, i) => emails.indexOf(e) === i) };
 }
-let catalogCache = { at: 0, value: null };
 
-// → { talks: [{ slug, sessionSlug, leads }], sessions: [{ slug, leads }] }
-async function collabWeekCatalog(){
-  if (catalogCache.value && Date.now() - catalogCache.at < 5 * 60 * 1000) return catalogCache.value;
-  const res = await fetch(TALKS_URL);
-  if (!res.ok) throw new HttpsError('unavailable', 'Could not load the programme; try again shortly.');
-  const json = await res.json();
-  // Before 2026-10-08 the file was just the talks, each with its session's leads.
-  const value = Array.isArray(json)
-    ? { talks: json, sessions: json.filter(t => t.sessionSlug).map(t => ({ slug: t.sessionSlug, leads: t.leads || [] })) }
-    : { talks: json.talks || [], sessions: json.sessions || [] };
-  catalogCache = { at: Date.now(), value };
-  return catalogCache.value;
+function validSlug(slug){ return typeof slug === 'string' && !!slug && slug.indexOf('/') < 0; }
+
+// A session's doc, or null if there's no such session (or it was deleted).
+async function sessionDoc(slug){
+  if (!validSlug(slug)) return null;
+  const doc = (await db.collection('collabWeekSessions').doc(slug).get()).data();
+  return doc && !doc.deletedAt ? doc : null;
 }
 
-// The talk by slug, from the programme or added → { slug, sessionSlug, added }, or null.
-async function findTalk(catalog, slug){
-  const t = catalog.talks.find(x => x.slug === slug);
-  if (t) return { slug: t.slug, sessionSlug: t.sessionSlug || '', added: false };
-  if (typeof slug !== 'string' || !slug || slug.indexOf('/') >= 0) return null;
+// A talk → { slug, sessionSlug, doc }, or null.
+async function findTalk(slug){
+  if (!validSlug(slug)) return null;
   const doc = (await db.collection('collabWeekTalks').doc(slug).get()).data();
-  return doc && doc.added ? { slug, sessionSlug: doc.sessionSlug || '', added: true } : null;
+  return doc ? { slug, sessionSlug: doc.sessionSlug || '', doc } : null;
 }
 
-// A session in the programme, or one added from the schedule page (and not removed).
-async function sessionExists(catalog, sessionSlug){
-  if (!sessionSlug || sessionSlug.indexOf('/') >= 0) return false;
-  if (catalog.sessions.some(s => s.slug === sessionSlug)) return true;
-  const doc = (await db.collection('collabWeekSessions').doc(sessionSlug).get()).data();
-  return !!(doc && doc.added);
-}
-
-async function isSessionLead(catalog, email, sessionSlug){
-  if (!sessionSlug) return false;
-  const s = catalog.sessions.find(x => x.slug === sessionSlug);
-  const leads = ((s && s.leads) || []).map(l => String(l.email || '').toLowerCase());
-  const doc = (await db.collection('collabWeekSessions').doc(sessionSlug).get()).data();
-  if (doc && Array.isArray(doc.leadEmails)) leads.push(...doc.leadEmails);
-  return leads.indexOf(email) >= 0;
+async function isSessionLead(email, sessionSlug){
+  const doc = await sessionDoc(sessionSlug);
+  return !!(doc && Array.isArray(doc.leadEmails) && doc.leadEmails.map(e => String(e).toLowerCase()).indexOf(email) >= 0);
 }
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // → 'admin' | 'lead' | 'presenter' | null, by the caller's sign-in email.
-async function talkRole(catalog, email, talk, saved){
+async function talkRole(email, talk, saved){
   if (await isFullWrite(email)) return 'admin';
-  if (await isSessionLead(catalog, email, talk.sessionSlug)) return 'lead';
+  if (await isSessionLead(email, talk.sessionSlug)) return 'lead';
   if (saved && Array.isArray(saved.presenterEmails) && saved.presenterEmails.indexOf(email) >= 0) return 'presenter';
   return null;
 }
@@ -1865,27 +1844,25 @@ function talkTextFields(edits, allowed){
 
 // data: { slug } → { canEdit, canSetPresenters };
 // { slug, edits: { field: text, …, presenterEmails?: [email, …] } } saves them;
-// { slug, remove: true } removes it from its session; { slug, restore: true } puts
-// a removed programme talk back.
+// { slug, remove: true } removes it from its session (deletes it);
+// { slug, restore: true } puts back a talk removed before 2026-10-10, when
+// removing only marked it.
 exports.editTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
     const data = request.data || {};
-    const catalog = await collabWeekCatalog();
-    const talk = await findTalk(catalog, data.slug);
+    const talk = await findTalk(data.slug);
     if (!talk) throw new HttpsError('not-found', 'No such talk.');
     const ref = db.collection('collabWeekTalks').doc(talk.slug);
-    const role = await talkRole(catalog, email, talk, (await ref.get()).data());
+    const role = await talkRole(email, talk, talk.doc);
     const access = { canEdit: !!role, canSetPresenters: role === 'admin' || role === 'lead' };
     if (data.remove || data.restore) {
       if (!talk.sessionSlug) throw new HttpsError('failed-precondition', 'Only a talk in a session can be removed.');
       if (!access.canSetPresenters) throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can remove or restore a talk.');
-      const who = { email, name: request.auth.token.name || '' };
-      if (!talk.added) {
-        await ref.set({ slug: talk.slug, sessionSlug: talk.sessionSlug, removed: !!data.remove, updatedBy: who, updatedAt: Date.now() }, { merge: true });
-        return { removed: !!data.remove };
+      if (data.restore) {
+        await ref.set({ removed: false, updatedBy: { email, name: request.auth.token.name || '' }, updatedAt: Date.now() }, { merge: true });
+        return { removed: false };
       }
-      if (data.restore) throw new HttpsError('failed-precondition', 'An added talk is deleted when removed.');
       await ref.delete();
       // …and from its session's talk order, if it was reordered.
       const sessionRef = db.collection('collabWeekSessions').doc(talk.sessionSlug);
@@ -1912,7 +1889,7 @@ exports.editTalk = onCall(
       delete edits.presenterEmails;
     }
     delete edits.time;  // no longer stored (see above); pages built before 2026-10-08 still send it
-    const doc = talkTextFields(edits, talk.added ? ADDED_TALK_FIELDS : TALK_FIELDS);
+    const doc = talkTextFields(edits, TALK_FIELDS);
     if (presenterEmails) doc.presenterEmails = presenterEmails;
     if (fromSpeakers) Object.assign(doc, fromSpeakers);
     Object.assign(doc, {
@@ -1927,9 +1904,8 @@ exports.editTalk = onCall(
 );
 
 // data: { slug } → { talks }. Deletes a session removed from the schedule
-// for good, PIs/admins only: its talk docs (added talks and edits) and its
-// own doc. A programme session (src/_data) would come back from the repo
-// without a doc, so its doc is cut down to { slug, removed: true } instead.
+// for good, PIs/admins only: its talks, its own doc, and its place in its
+// event's time slots (events/{eventSlug}.days) — the slot too, if it's left empty.
 exports.deleteSession = onCall(
   async (request) => {
     const email = callerEmail(request);
@@ -1945,10 +1921,22 @@ exports.deleteSession = onCall(
       talks.docs.slice(i, i + 400).forEach(d => batch.delete(d.ref));
       await batch.commit();
     }
-    const inProgramme = (await collabWeekCatalog()).sessions.some(s => s.slug === slug);
-    if (inProgramme) await ref.set({ slug, removed: true, deletedAt: Date.now(), deletedBy: email });
-    else await ref.delete();
-    logger.info('deleteSession', { slug, inProgramme, talks: talks.size, by: email });
+    await ref.delete();
+    const eventRef = db.collection('events').doc(doc.eventSlug || 'collaboration-week');
+    await db.runTransaction(async tx => {
+      const event = (await tx.get(eventRef)).data();
+      if (!event || !Array.isArray(event.days)) return;
+      let changed = false;
+      // …and the slot it leaves, if that leaves it empty.
+      const days = event.days.map(d => Object.assign({}, d, { slots: (d.slots || []).flatMap(sl => {
+        if (!(sl.sessions || []).includes(slug)) return [sl];
+        changed = true;
+        const rest = sl.sessions.filter(x => x !== slug);
+        return sl.kind === 'sessions' && !rest.length ? [] : [Object.assign({}, sl, { sessions: rest })];
+      }) }));
+      if (changed) tx.update(eventRef, { days, updatedAt: Date.now(), updatedBy: email });
+    });
+    logger.info('deleteSession', { slug, event: doc.eventSlug || '', talks: talks.size, by: email });
     return { talks: talks.size };
   }
 );
@@ -1960,13 +1948,12 @@ exports.createTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
     const data = request.data || {};
-    const catalog = await collabWeekCatalog();
     const sessionSlug = String(data.sessionSlug || '');
-    if (!(await sessionExists(catalog, sessionSlug))) throw new HttpsError('not-found', 'No such session.');
-    if (!(await isFullWrite(email)) && !(await isSessionLead(catalog, email, sessionSlug))) {
+    if (!(await sessionDoc(sessionSlug))) throw new HttpsError('not-found', 'No such session.');
+    if (!(await isFullWrite(email)) && !(await isSessionLead(email, sessionSlug))) {
       throw new HttpsError('permission-denied', 'Only the session’s leads, PIs and admins can add a talk.');
     }
-    const fields = talkTextFields({ title: data.title, speaker: data.speaker, duration: data.duration, type: data.type || 'research-talk' }, ADDED_TALK_FIELDS);
+    const fields = talkTextFields({ title: data.title, speaker: data.speaker, duration: data.duration, type: data.type || 'research-talk' }, TALK_FIELDS);
     const people = data.speakers ? speakerFields(data.speakers) : { speakers: [], presenterEmails: [] };
     if (!fields.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
     const stem = fields.title.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')

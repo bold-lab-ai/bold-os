@@ -56,3 +56,15 @@ section.block:first-of-type{margin-top:12px;}
   .hero{padding:44px var(--gutter) 8px;}
 }
 .brand{font-family:var(--sans);}
+/* ---------- adding an event (PIs/admins; greyed out for everyone else) ---------- */
+.event-add{
+  margin-top:16px; font-family:var(--sans); font-size:14px; color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
+  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
+}
+.event-add:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
+.event-form{margin-top:16px;}
+.event-form-head{margin:0 0 10px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink);}
+.event-form-hint{margin:2px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.eyebrow--hidden{color:var(--danger-text); opacity:.85;}
+.event-card.is-hidden > :not(.event-top){opacity:.55;}
+.event-loading{font-family:var(--sans); font-size:14px; color:var(--muted);}

@@ -57,7 +57,7 @@
 .detail .btn-text:hover{text-decoration-color:currentColor;}
 .detail .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
 .detail .btn-text:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
-.detail input[type="text"], .detail textarea, .detail select{
+.detail input[type="text"], .detail input[type="time"], .detail textarea, .detail select{
   width:100%; font-family:var(--sans); font-size:14px; line-height:1.5; color:var(--ink);
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px;
 }
@@ -84,15 +84,6 @@
 .lead-row select, .lead-row input[type="text"]{flex:1 1 auto; width:auto; min-width:0;}
 .lead-row .btn-text{flex:0 0 auto; white-space:nowrap;}
 
-/* Session/talk type badges: outlined, never filled (bold.css), one colour per kind. */
-.type-badge{
-  display:inline-block; justify-self:start; align-self:start; padding:1px 7px;
-  font-family:var(--sans); font-size:10.5px; font-weight:600; line-height:1.5; letter-spacing:0.08em; text-transform:uppercase;
-  color:var(--accent); border:1px solid currentColor; white-space:nowrap; text-decoration:none;
-}
-.type-oral, .type-research-talk{color:#256b60;}
-.type-pitch{color:#7d5a99;}
-.type-welcome, .type-keynote, .type-panel{color:#8a5a12;}
 .detail > .type-badge{margin-bottom:8px;}
 .session-talks .talk-type{flex:0 0 auto; margin-left:auto; padding-left:12px;}
 
@@ -131,3 +122,6 @@ dd.talk-pres a{overflow-wrap:anywhere;}
 .spk-results li .detail-muted{font-size:12.5px; overflow-wrap:anywhere; text-align:right;}
 .spk-results li.active, .spk-results li:hover{background:var(--wash);}
 .spk-results li.spk-new{color:var(--muted); border-top:1px solid var(--line);}
+/* The session's day and time, in its form (PIs/admins). */
+.when-row{display:flex; gap:12px; flex-wrap:wrap;}
+.when-row label{flex:1 1 130px; min-width:0;}
