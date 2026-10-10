@@ -27,6 +27,11 @@
       return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
     });
   };
+  // Text → a lowercase-and-hyphens name for a URL or an anchor.
+  BOLD.slugify = function(s){
+    return String(s || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
+  };
   var esc = BOLD.escapeHtml;
 
   /* ---------- copy boxes ---------- */
@@ -185,10 +190,10 @@
     });
   };
 
-  /* ---------- sidebar: BOLDiquette's parts, the events, the skills and the guides ---------- */
+  /* ---------- sidebar: BOLDiquette's sections, the events, the skills and the guides ---------- */
 
   // A group's sub-links come from Firestore: [data-nav-<key>] is filled from
-  // load() → [{ title, href }, or { heading } for a label between them]. The last list seen paints first (localStorage
+  // load() → [{ title, href }]. The last list seen paints first (localStorage
   // `cacheKey`); Firestore stays authoritative.
   function firestoreNav(key, cacheKey, load){
     var group = document.querySelector('[data-nav-' + key + ']');
@@ -199,13 +204,6 @@
       var label = group.querySelector('.nav-group-label');
       var anyActive = false;
       list.forEach(function(e){
-        if (e.heading) {
-          var h = document.createElement('span');
-          h.className = 'nav-link nav-sub nav-heading';
-          h.textContent = e.heading;
-          group.appendChild(h);
-          return;
-        }
         var a = document.createElement('a');
         a.className = 'nav-link nav-sub';
         a.href = e.href;
@@ -262,16 +260,15 @@
     });
   }
 
-  // BOLDiquette's parts (handbook/boldiquette — see pages/guide.js), in order,
-  // under their sections' names.
+  // BOLDiquette's sections (handbook/boldiquette — see pages/guide.js), in
+  // order, each linking to its heading on the page.
   function handbookNav(){
     firestoreNav('handbook', 'boldNavHandbook', function(db){
       return db.collection('handbook').doc('boldiquette').get().then(function(snap){
-        var out = [], section = null;
+        var out = [];
         ((snap.exists && snap.data().parts) || []).forEach(function(p){
-          if (p.section && p.section !== section) out.push({ heading: p.section });
-          section = p.section;
-          out.push({ title: p.title, href: 'boldiquette.html#' + encodeURIComponent(p.id) });
+          if (p.section && !out.some(function(e){ return e.title === p.section; }))
+            out.push({ title: p.section, href: 'boldiquette.html#' + BOLD.slugify(p.section) });
         });
         return out;
       });

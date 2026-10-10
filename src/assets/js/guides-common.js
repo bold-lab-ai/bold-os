@@ -12,10 +12,7 @@ window.BoldGuides = (function(){
   var NOT_PI = 'Only PIs and admins can do this';
   var SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-  function slugify(s){
-    return String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
-      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
-  }
+  var slugify = BOLD.slugify;
   function partId(){ return Math.random().toString(36).slice(2, 10); }
   function byTitle(a, b){ return (a.title || a.slug).localeCompare(b.title || b.slug); }
 

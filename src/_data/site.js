@@ -24,7 +24,7 @@ export default {
 
   // Sidebar. `href` is the page a group's label opens; `links` are its sub-pages.
   nav: [
-    // Its sub-pages are BOLDiquette's parts (Firestore), filled in by bold.js.
+    // Its sub-pages are BOLDiquette's sections (Firestore), filled in by bold.js.
     { label: 'BOLDiquette', href: 'boldiquette.html', links: [], handbook: true },
     { label: 'Projects', href: 'projects.html', links: [] },
     // Its sub-pages are the released events (Firestore), filled in by bold.js.

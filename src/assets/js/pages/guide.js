@@ -245,7 +245,7 @@
       contentsHtml() +
       parts().map(function(p, i){
         var prev = parts()[i - 1];
-        return (p.section && (!prev || prev.section !== p.section) ? '<h2 class="guide-section">' + esc(p.section) + '</h2>' : '') + partHtml(p, i);
+        return (p.section && (!prev || prev.section !== p.section) ? '<h2 class="guide-section" id="' + esc(G.slugify(p.section)) + '">' + esc(p.section) + '</h2>' : '') + partHtml(p, i);
       }).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
         '<button type="button" class="event-add gd-add">' + (fullWrite ? '+ Add a part' : '+ Suggest a new part') + '</button>') +

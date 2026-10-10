@@ -153,12 +153,6 @@ footer{
 }
 .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--accent);}
 .nav-link.nav-sub{text-overflow:ellipsis;}
-/* A label between sub-links (BOLDiquette's sections). */
-.nav-link.nav-sub.nav-heading{font-size:10.5px; letter-spacing:0.12em; text-transform:uppercase; opacity:0; cursor:default;}
-.nav-group:hover .nav-link.nav-sub.nav-heading,
-.nav-group:focus-within .nav-link.nav-sub.nav-heading,
-.nav-group:has(.active) .nav-link.nav-sub.nav-heading{opacity:.75; padding-top:10px;}
-.nav-link.nav-sub.nav-heading:hover{color:var(--muted);}
 .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
   outline:2px solid var(--accent); outline-offset:2px;
 }
