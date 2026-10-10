@@ -1,8 +1,8 @@
 # DIFF — implementation vs. BOLDiquette
 
-Every point where the paper-submission tooling in this folder (`how-to-submit-a-paper.html`, `audit-board.html`) differs from **BOLDiquette § ML Conference Cycle**. This is the list to work through when requesting changes to BOLDiquette.
+Every point where the site differs from BOLDiquette: the paper-submission tooling (`how-to-submit-a-paper.html`, `audit-board.html`) from **§ ML Conference Cycle** (1–10), and the How to guides (`guides.html`) from **§ Research Project Lifecycle** and the guides it links to (11–14). This is the list to work through when requesting changes to BOLDiquette.
 
-**BOLDiquette source:** <https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp> — § ML Conference Cycle (Pre-submission / Post-submission / Arxiv / Publicity / Rebuttal / On Acceptance / Pre-Conference). Text read 2026-09-10.
+**BOLDiquette source:** <https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp> — § ML Conference Cycle (Pre-submission / Post-submission / Arxiv / Publicity / Rebuttal / On Acceptance / Pre-Conference). Text read 2026-09-10; § Research Project Lifecycle read 2026-10-10.
 
 **Legend**
 
@@ -101,6 +101,38 @@ Every point where the paper-submission tooling in this folder (`how-to-submit-a-
 **Implementation (Phase 9):** adds two items — email people you want to meet at the conference at least **3 weeks beforehand** to set up a meeting; and attend as many of the conference's social events as you can (**mandatory**), since they're usually the best networking.
 
 **Proposed BOLDiquette change:** add both to Pre-Conference, including the mandatory framing on social events.
+
+## 11. What a pitch contains — DIVERGENCE
+
+**BOLDiquette (Research Project Lifecycle, Collective Brainstorm):** an *"XYZ format description of what we are planning to do and why"*, and a *"Proof-of Concept experiment that can validate the approach"*, with a hypothesis for what you expect to find.
+
+**Implementation:** the Pitch a project guide (*Write the pitch*) asks for seven sections, in order: area of research; problem and motivation (X); why should we solve it (X); why is it hard to solve (Y); intuition and hypothesis (Z); draft of the method (Z); how do we verify it, i.e. the experiment plan, starting with the proof-of-concept experiment. The Project pitch skill builds slides with the same sections.
+
+**Proposed BOLDiquette change:** replace the XYZ line with the seven sections, or with a link to the Pitch a project guide.
+
+## 12. Pitch slides with a Claude skill — NEW
+
+**BOLDiquette:** *"Present in BOLD Group Meeting ASAP"*; nothing on how to make the slides (and Google Slides for presentations, see §9).
+
+**Implementation:** the Pitch a project guide opens with *Make the slides*, pointing to the Project pitch skill (`skill.html?skill=bold-pitch`), which builds an HTML deck with the Presenting skill's template.
+
+**Proposed BOLDiquette change:** link the skill from "Present in BOLD Group Meeting".
+
+## 13. Research Project Lifecycle reorganised — DIVERGENCE
+
+**BOLDiquette:** a *"Remember:"* list first (post in #all-active-projects, present at group meeting, proj-NAME channel, add a PI, meeting notes and master slides, provenance), then Think → Collective Brainstorm → Run the experiments → (Sometimes) Reflect → Open source EVERYTHING → (optionally) Start a company.
+
+**Implementation:** the Pitch a project guide has Think → Brainstorm together → Write the pitch → Start the project (the "Remember:" list) → Run the proof of concept → Reflect, sometimes. *Open source EVERYTHING* and *Start a company* are left out, as they come after the pitch. Wording is lightly edited throughout; Jakob's first-person *"I have commonly returned to projects and ideas after a long time to then see them succeed"* became *"Projects often succeed after a long break."*
+
+**Proposed BOLDiquette change:** none needed if BOLDiquette links to the guide for these steps (see §14); otherwise reconcile the order.
+
+## 14. How to ML Paper and How to ML Rebuttal copied into the site — NEW
+
+**BOLDiquette (ML Conference Cycle):** links out to the *"How to ML Paper"* and *"How to ML Rebuttal"* Google Docs.
+
+**Implementation:** the Write a paper and Write a rebuttal guides are copies of those docs, lightly edited, split into parts, crediting their authors (the rebuttal guide keeps its CC BY-NC licence). They are edited on the site, through proposed changes, and don't follow later edits to the Google Docs.
+
+**Proposed BOLDiquette change:** point those links (and the Research Project Lifecycle steps) to the site's guides, so each text has one version.
 
 ---
 

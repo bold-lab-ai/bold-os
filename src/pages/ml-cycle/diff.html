@@ -1,14 +1,14 @@
 ---
 title: "Differences from BOLDiquette | BOLD Lab"
-description: "Every point where the paper-submission tooling differs from BOLDiquette &sect; ML Conference Cycle, with the proposed change back."
+description: "Every point where the site differs from BOLDiquette, with the proposed change back."
 headExtra: "<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400..800&display=swap\" rel=\"stylesheet\">"
 css: "diff"
 permalink: "diff.html"
 ---
 <div class="hero">
   <h1>Differences from BOLDiquette</h1>
-  <p class="hero-note">Every point where this tooling (<a href="how-to-submit-a-paper.html">the guide</a>, <a href="audit-board.html">the Internal Review Board</a>) differs from BOLDiquette &sect; ML Conference Cycle. This is the list to work through when requesting changes to BOLDiquette.</p>
-  <p class="page-source">Provenance: <a href="https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp" target="_blank" rel="noopener">BOLDiquette &sect; ML Conference Cycle</a> (Pre-submission / Post-submission / Arxiv / Publicity / Rebuttal / On Acceptance / Pre-Conference) &middot; text read 2026-09-10 &middot; also as plain <a href="https://github.com/bold-lab-ai/bold-os/blob/main/docs/DIFF.md" target="_blank" rel="noopener">DIFF.md</a></p>
+  <p class="hero-note">Every point where the site differs from BOLDiquette: <a href="how-to-submit-a-paper.html">the guide</a> and <a href="audit-board.html">the Internal Review Board</a> from &sect; ML Conference Cycle (1&ndash;10), and the <a href="guides.html">How to guides</a> from &sect; Research Project Lifecycle and the guides it links to (11&ndash;14). This is the list to work through when requesting changes to BOLDiquette.</p>
+  <p class="page-source">Provenance: <a href="https://docs.google.com/document/d/1xwgzA72U9oSt94E47H39-8vjV0QhxYCfSP_vkY91S5w/edit#heading=h.fw00d94v1wfp" target="_blank" rel="noopener">BOLDiquette &sect; ML Conference Cycle</a> (Pre-submission / Post-submission / Arxiv / Publicity / Rebuttal / On Acceptance / Pre-Conference) &middot; text read 2026-09-10; &sect; Research Project Lifecycle read 2026-10-10 &middot; also as plain <a href="https://github.com/bold-lab-ai/bold-os/blob/main/docs/DIFF.md" target="_blank" rel="noopener">DIFF.md</a></p>
 </div>
 
 <main>
@@ -19,7 +19,7 @@ permalink: "diff.html"
   </ul>
 
   <nav class="diff-jump" aria-label="Jump to a difference">
-    <a href="#diff-1">1</a><a href="#diff-2">2</a><a href="#diff-3">3</a><a href="#diff-4">4</a><a href="#diff-5">5</a><a href="#diff-6">6</a><a href="#diff-7">7</a><a href="#diff-8">8</a><a href="#diff-9">9</a><a href="#diff-10">10</a><a href="#reconciled">Reconciled</a>
+    <a href="#diff-1">1</a><a href="#diff-2">2</a><a href="#diff-3">3</a><a href="#diff-4">4</a><a href="#diff-5">5</a><a href="#diff-6">6</a><a href="#diff-7">7</a><a href="#diff-8">8</a><a href="#diff-9">9</a><a href="#diff-10">10</a><a href="#diff-11">11</a><a href="#diff-12">12</a><a href="#diff-13">13</a><a href="#diff-14">14</a><a href="#reconciled">Reconciled</a>
   </nav>
 
   <article class="diff-item" id="diff-1">
@@ -131,6 +131,46 @@ permalink: "diff.html"
     <p>Adds two items &mdash; email people you want to meet at the conference at least <strong>3 weeks</strong> beforehand to set up a meeting; and attend as many of the conference&rsquo;s social events as you can (<strong>mandatory</strong>), since they&rsquo;re usually the best networking.</p>
     <p class="diff-label">Proposed BOLDiquette change</p>
     <p>Add both to Pre-Conference, including the mandatory framing on social events.</p>
+  </article>
+
+  <article class="diff-item" id="diff-11">
+    <div class="diff-head"><span class="diff-badge diff-badge--divergence">Divergence</span><h2>11. What a pitch contains</h2></div>
+    <p class="diff-label">BOLDiquette (Research Project Lifecycle, Collective Brainstorm)</p>
+    <blockquote>An &ldquo;XYZ format description of what we are planning to do and why&rdquo;, and a &ldquo;Proof-of Concept experiment that can validate the approach&rdquo;, with a hypothesis for what you expect to find.</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>The <a href="guide.html?guide=pitch-a-project">Pitch a project</a> guide (<em>Write the pitch</em>) asks for seven sections, in order: area of research; problem and motivation (X); why should we solve it (X); why is it hard to solve (Y); intuition and hypothesis (Z); draft of the method (Z); how do we verify it, i.e. the experiment plan, starting with the proof-of-concept experiment. The <a href="skill.html?skill=bold-pitch">Project pitch</a> skill builds slides with the same sections.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Replace the XYZ line with the seven sections, or with a link to the Pitch a project guide.</p>
+  </article>
+
+  <article class="diff-item" id="diff-12">
+    <div class="diff-head"><span class="diff-badge diff-badge--new">New</span><h2>12. Pitch slides with a Claude skill</h2></div>
+    <p class="diff-label">BOLDiquette</p>
+    <blockquote>&ldquo;Present in BOLD Group Meeting ASAP&rdquo;; nothing on how to make the slides (and Google Slides for presentations, see 9).</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>The Pitch a project guide opens with <em>Make the slides</em>, pointing to the <a href="skill.html?skill=bold-pitch">Project pitch</a> skill, which builds an HTML deck with the Presenting skill&rsquo;s template.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Link the skill from &ldquo;Present in BOLD Group Meeting&rdquo;.</p>
+  </article>
+
+  <article class="diff-item" id="diff-13">
+    <div class="diff-head"><span class="diff-badge diff-badge--divergence">Divergence</span><h2>13. Research Project Lifecycle reorganised</h2></div>
+    <p class="diff-label">BOLDiquette</p>
+    <blockquote>A &ldquo;Remember:&rdquo; list first (post in #all-active-projects, present at group meeting, proj-NAME channel, add a PI, meeting notes and master slides, provenance), then Think &rarr; Collective Brainstorm &rarr; Run the experiments &rarr; (Sometimes) Reflect &rarr; Open source EVERYTHING &rarr; (optionally) Start a company.</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>The Pitch a project guide has Think &rarr; Brainstorm together &rarr; Write the pitch &rarr; Start the project (the &ldquo;Remember:&rdquo; list) &rarr; Run the proof of concept &rarr; Reflect, sometimes. <em>Open source EVERYTHING</em> and <em>Start a company</em> are left out, as they come after the pitch. Wording is lightly edited throughout; Jakob&rsquo;s first-person &ldquo;I have commonly returned to projects and ideas after a long time to then see them succeed&rdquo; became &ldquo;Projects often succeed after a long break.&rdquo;</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>None needed if BOLDiquette links to the guide for these steps (see 14); otherwise reconcile the order.</p>
+  </article>
+
+  <article class="diff-item" id="diff-14">
+    <div class="diff-head"><span class="diff-badge diff-badge--new">New</span><h2>14. How to ML Paper and How to ML Rebuttal copied into the site</h2></div>
+    <p class="diff-label">BOLDiquette (ML Conference Cycle)</p>
+    <blockquote>Links out to the &ldquo;How to ML Paper&rdquo; and &ldquo;How to ML Rebuttal&rdquo; Google Docs.</blockquote>
+    <p class="diff-label">Implementation</p>
+    <p>The <a href="guide.html?guide=write-a-paper">Write a paper</a> and <a href="guide.html?guide=write-a-rebuttal">Write a rebuttal</a> guides are copies of those docs, lightly edited, split into parts, crediting their authors (the rebuttal guide keeps its CC BY-NC licence). They are edited on the site, through proposed changes, and don&rsquo;t follow later edits to the Google Docs.</p>
+    <p class="diff-label">Proposed BOLDiquette change</p>
+    <p>Point those links (and the Research Project Lifecycle steps) to the site&rsquo;s guides, so each text has one version.</p>
   </article>
 
   <section class="diff-item" id="reconciled">

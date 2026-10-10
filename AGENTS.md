@@ -72,9 +72,9 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
 - **Sign-in:** don't change how it works without testing in private windows on desktop and phone. The setup and its history are in `docs/REFERENCE.md` under "Sign-in".
 - **Public repo:** no secrets, tokens or people's email addresses in code or docs. Role lists live in Firestore.
 
-## The paper process
+## BOLDiquette
 
-The ML Conference Cycle guide and the Internal Review Board implement BOLDiquette § ML Conference Cycle. Where the site differs from BOLDiquette, record it in `docs/DIFF.md` and its rendered copy `src/pages/ml-cycle/diff.html` (kept in sync by hand), never on the pages themselves.
+The ML Conference Cycle guide and the Internal Review Board implement BOLDiquette § ML Conference Cycle; the How to guides carry § Research Project Lifecycle and the How to ML docs BOLDiquette links to. Where the site differs from BOLDiquette, record it in `docs/DIFF.md` and its rendered copy `src/pages/ml-cycle/diff.html` (kept in sync by hand), never on the pages themselves.
 
 ## More detail
 
