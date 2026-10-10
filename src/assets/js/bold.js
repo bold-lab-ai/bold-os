@@ -323,6 +323,29 @@
       Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link, .nav-group-label')).forEach(function(a){
         a.addEventListener('click', closeNav);
       });
+      // A group's dash collapses its sub-links and opens them again; the
+      // groups left collapsed are remembered (by their page) across pages.
+      var shut = [];
+      try { shut = JSON.parse(localStorage.getItem('boldNavShut') || '[]'); } catch (e){}
+      Array.prototype.slice.call(sidebar.querySelectorAll('.nav-group')).forEach(function(group){
+        var key = group.querySelector('.nav-group-label').getAttribute('href');
+        var btn = group.querySelector('.nav-group-toggle');
+        function set(on){
+          group.classList.toggle('is-shut', on);
+          btn.setAttribute('aria-expanded', on ? 'false' : 'true');
+          var label = group.querySelector('.nav-group-label').textContent;
+          btn.setAttribute('aria-label', (on ? 'Open ' : 'Collapse ') + label);
+          btn.title = on ? 'Open' : 'Collapse';
+        }
+        set(shut.indexOf(key) !== -1);
+        btn.addEventListener('click', function(){
+          var on = !group.classList.contains('is-shut');
+          set(on);
+          shut = shut.filter(function(k){ return k !== key; });
+          if (on) shut.push(key);
+          try { localStorage.setItem('boldNavShut', JSON.stringify(shut)); } catch (e){}
+        });
+      });
     }
     document.addEventListener('keydown', function(e){ if (e.key === 'Escape') closeNav(); });
 
