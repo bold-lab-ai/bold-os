@@ -118,24 +118,20 @@ footer{
 .nav-group-label:hover{color:var(--accent);}
 .nav-group-label.active{color:var(--accent);}
 /* The dash beside a group with sub-links: hints at them, widening on
-   hover/focus as they expand, and toggles the group. Clicked, the group stays
-   collapsed (even on hover, even on its own pages) and the dash becomes a
-   plus; clicked again, it opens as before. */
+   hover/focus as they expand. Clicking it keeps the group open (dash at full
+   strength) until clicked again. */
 .nav-group-toggle{
   position:relative; flex:none; width:22px; height:22px; padding:0; border:none; background:none;
   color:var(--ink); cursor:pointer;
 }
-.nav-group-toggle::before, .nav-group-toggle::after{
+.nav-group-toggle::before{
   content:''; position:absolute; right:0; top:50%; height:1.5px; margin-top:-0.75px;
   width:8px; background:currentColor; opacity:.4;
-  transition:width .22s ease, opacity .18s ease, transform .18s ease;
+  transition:width .22s ease, opacity .18s ease;
 }
-.nav-group-toggle::after{transform:rotate(90deg) scaleX(0);}
-.nav-group:hover .nav-group-toggle::before, .nav-group:focus-within .nav-group-toggle::before,
-.nav-group-toggle:hover::before{width:14px; opacity:.75;}
+.nav-group:hover .nav-group-toggle::before, .nav-group:has(:focus-visible) .nav-group-toggle::before{width:14px; opacity:.75;}
 .nav-group-toggle:hover{color:var(--accent);}
-.nav-group.is-shut .nav-group-toggle::before{width:10px; opacity:.75;}
-.nav-group.is-shut .nav-group-toggle::after{width:10px; opacity:.75; transform:rotate(90deg);}
+.nav-group.is-pinned .nav-group-toggle::before{width:14px; height:2px; opacity:1;}
 .nav-group:not(:has(.nav-sub)) .nav-group-toggle{visibility:hidden;}
 .nav-link{
   display:block; font-family:var(--sans); font-size:13px; font-weight:400; color:var(--ink-soft);
@@ -153,15 +149,14 @@ footer{
   transition:max-height .22s ease, opacity .18s ease, padding .22s ease;
 }
 .nav-group:hover .nav-link.nav-sub,
-.nav-group:focus-within .nav-link.nav-sub,
+.nav-group:has(:focus-visible) .nav-link.nav-sub,
 .nav-group:has(.active) .nav-link.nav-sub,
 .nav-link.nav-sub.active{
   max-height:32px; opacity:1; pointer-events:auto; padding-top:4px; padding-bottom:4px;
 }
 .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--accent);}
-/* A group collapsed with its dash stays collapsed: this outranks the
-   hover / focus / current-page rules above. */
-.nav-groups .nav-group.is-shut .nav-link.nav-sub{max-height:0; opacity:0; pointer-events:none; padding-top:0; padding-bottom:0;}
+/* A group kept open with its dash. */
+.nav-groups .nav-group.is-pinned .nav-link.nav-sub{max-height:32px; opacity:1; pointer-events:auto; padding-top:4px; padding-bottom:4px;}
 .nav-link.nav-sub{text-overflow:ellipsis;}
 .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
   outline:2px solid var(--accent); outline-offset:2px;

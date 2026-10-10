@@ -323,27 +323,27 @@
       Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link, .nav-group-label')).forEach(function(a){
         a.addEventListener('click', closeNav);
       });
-      // A group's dash collapses its sub-links and opens them again; the
-      // groups left collapsed are remembered (by their page) across pages.
-      var shut = [];
-      try { shut = JSON.parse(localStorage.getItem('boldNavShut') || '[]'); } catch (e){}
+      // A group's dash keeps its sub-links open, and stops keeping them open;
+      // the groups kept open are remembered (by their page) across pages.
+      var pinned = [];
+      try { pinned = JSON.parse(localStorage.getItem('boldNavPinned') || '[]'); } catch (e){}
       Array.prototype.slice.call(sidebar.querySelectorAll('.nav-group')).forEach(function(group){
         var key = group.querySelector('.nav-group-label').getAttribute('href');
         var btn = group.querySelector('.nav-group-toggle');
+        var label = group.querySelector('.nav-group-label').textContent;
         function set(on){
-          group.classList.toggle('is-shut', on);
-          btn.setAttribute('aria-expanded', on ? 'false' : 'true');
-          var label = group.querySelector('.nav-group-label').textContent;
-          btn.setAttribute('aria-label', (on ? 'Open ' : 'Collapse ') + label);
-          btn.title = on ? 'Open' : 'Collapse';
+          group.classList.toggle('is-pinned', on);
+          btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+          btn.setAttribute('aria-label', (on ? 'Stop keeping ' : 'Keep ') + label + ' open');
+          btn.title = on ? 'Stop keeping open' : 'Keep open';
         }
-        set(shut.indexOf(key) !== -1);
+        set(pinned.indexOf(key) !== -1);
         btn.addEventListener('click', function(){
-          var on = !group.classList.contains('is-shut');
+          var on = !group.classList.contains('is-pinned');
           set(on);
-          shut = shut.filter(function(k){ return k !== key; });
-          if (on) shut.push(key);
-          try { localStorage.setItem('boldNavShut', JSON.stringify(shut)); } catch (e){}
+          pinned = pinned.filter(function(k){ return k !== key; });
+          if (on) pinned.push(key);
+          try { localStorage.setItem('boldNavPinned', JSON.stringify(pinned)); } catch (e){}
         });
       });
     }
