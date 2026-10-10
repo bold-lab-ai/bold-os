@@ -51,6 +51,15 @@ code,kbd,samp,pre{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,'Libe
 code,kbd,samp{font-size:0.5em; background:var(--wash); padding:0.08em 0.3em; border-radius:var(--radius);}
 pre{font-size:14px; line-height:1.55; background:var(--wash); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; overflow-x:auto;}
 pre code{font-size:inherit; background:none; padding:0;}
+/* Text to copy (BOLD.copyBoxHtml in bold.js): the clipboard icon sits inside the box, top right. */
+.copy-box{position:relative;}
+.copy-box pre{margin:0; padding-right:48px; white-space:pre-wrap; overflow-wrap:anywhere;}
+.copy-btn{
+  position:absolute; top:7px; right:7px; width:30px; height:30px; display:grid; place-items:center; padding:0;
+  background:none; border:1px solid transparent; border-radius:var(--radius); color:var(--muted); cursor:pointer;
+}
+.copy-btn:hover, .copy-btn:focus-visible{color:var(--accent); background:var(--surface); border-color:var(--line);}
+.copy-btn.is-done{color:var(--accent);}
 
 /* ---------- masthead ---------- */
 .masthead{

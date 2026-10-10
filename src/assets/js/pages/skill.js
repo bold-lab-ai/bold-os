@@ -49,7 +49,7 @@
   // The Claude Code command, ready to copy.
   function installHtml(){
     return '<section class="block"><div class="block-head"><h2>Install</h2></div>' +
-      '<div class="install-cmd"><pre><code>' + esc(S.installCommand(x.name)) + '</code></pre><button type="button" class="btn-text sk-copy">Copy</button></div>' +
+      BOLD.copyBoxHtml(S.installCommand(x.name)) +
       '</section>';
   }
 
@@ -268,12 +268,6 @@
         .then(function(){ location.href = 'skills.html'; }).catch(function(err){
         console.error('[BOLD Skills] deleting the skill failed', err);
         window.alert('Couldn’t delete the skill — try again.');
-      });
-    });
-    body.querySelector('.sk-copy').addEventListener('click', function(e){
-      var btn = e.currentTarget;
-      navigator.clipboard.writeText(S.installCommand(x.name)).then(function(){
-        btn.textContent = 'Copied'; setTimeout(function(){ btn.textContent = 'Copy'; }, 1500);
       });
     });
     body.querySelector('.skill-files').addEventListener('click', function(e){

@@ -29,6 +29,31 @@
   };
   var esc = BOLD.escapeHtml;
 
+  /* ---------- copy boxes ---------- */
+
+  // The site's one way to offer text to copy: a code box with the clipboard
+  // icon inside it, top right (.copy-box in bold.css). Any .copy-btn copies the
+  // text of the <pre> beside it and shows a tick for a moment.
+  var ICON_COPY = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  var ICON_DONE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
+  BOLD.copyBoxHtml = function(text){
+    return '<div class="copy-box"><pre><code>' + esc(text) + '</code></pre>' +
+      '<button type="button" class="copy-btn" aria-label="Copy" title="Copy">' + ICON_COPY + '</button></div>';
+  };
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest && e.target.closest('.copy-btn');
+    if (!btn) return;
+    var pre = btn.parentNode.querySelector('pre');
+    if (!pre || !navigator.clipboard) return;
+    navigator.clipboard.writeText(pre.textContent).then(function(){
+      btn.innerHTML = ICON_DONE; btn.classList.add('is-done'); btn.setAttribute('aria-label', 'Copied'); btn.title = 'Copied';
+      clearTimeout(btn._reset);
+      btn._reset = setTimeout(function(){
+        btn.innerHTML = ICON_COPY; btn.classList.remove('is-done'); btn.setAttribute('aria-label', 'Copy'); btn.title = 'Copy';
+      }, 1500);
+    }).catch(function(err){ console.error('[BOLD Lab] copying failed', err); });
+  });
+
   var hint = null;
   try { hint = JSON.parse(localStorage.getItem('boldAuthHint') || 'null'); } catch (e){}
   // Signed in last visit: lets page CSS keep "sign in" panels out of the first paint.
