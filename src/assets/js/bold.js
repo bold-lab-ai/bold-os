@@ -323,27 +323,32 @@
       Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link, .nav-group-label')).forEach(function(a){
         a.addEventListener('click', closeNav);
       });
-      // A group's dash keeps its sub-links open, and stops keeping them open;
-      // the groups kept open are remembered (by their page) across pages.
-      var pinned = [];
-      try { pinned = JSON.parse(localStorage.getItem('boldNavPinned') || '[]'); } catch (e){}
+      // A group's dash fixes it open or closed: an open group (on its own
+      // page, or fixed open) closes; any other opens. Remembered per group
+      // (by its page) across pages.
+      var fixed = {};
+      try { fixed = JSON.parse(localStorage.getItem('boldNavGroups') || '{}') || {}; } catch (e){}
       Array.prototype.slice.call(sidebar.querySelectorAll('.nav-group')).forEach(function(group){
         var key = group.querySelector('.nav-group-label').getAttribute('href');
         var btn = group.querySelector('.nav-group-toggle');
         var label = group.querySelector('.nav-group-label').textContent;
-        function set(on){
-          group.classList.toggle('is-pinned', on);
-          btn.setAttribute('aria-pressed', on ? 'true' : 'false');
-          btn.setAttribute('aria-label', (on ? 'Stop keeping ' : 'Keep ') + label + ' open');
-          btn.title = on ? 'Stop keeping open' : 'Keep open';
+        function isOpen(){
+          return group.classList.contains('is-pinned') || (!group.classList.contains('is-shut') && !!group.querySelector('.active'));
         }
-        set(pinned.indexOf(key) !== -1);
+        function show(state){
+          group.classList.toggle('is-pinned', state === 'open');
+          group.classList.toggle('is-shut', state === 'closed');
+          var open = isOpen();
+          btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          btn.setAttribute('aria-label', (open ? 'Close ' : 'Open ') + label);
+          btn.title = open ? 'Close' : 'Keep open';
+        }
+        show(fixed[key]);
         btn.addEventListener('click', function(){
-          var on = !group.classList.contains('is-pinned');
-          set(on);
-          pinned = pinned.filter(function(k){ return k !== key; });
-          if (on) pinned.push(key);
-          try { localStorage.setItem('boldNavPinned', JSON.stringify(pinned)); } catch (e){}
+          var state = isOpen() ? 'closed' : 'open';
+          show(state);
+          fixed[key] = state;
+          try { localStorage.setItem('boldNavGroups', JSON.stringify(fixed)); } catch (e){}
         });
       });
     }
