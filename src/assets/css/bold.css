@@ -137,7 +137,6 @@ footer{
 .nav-group.is-shut .nav-group-toggle::before{width:10px; opacity:.75;}
 .nav-group.is-shut .nav-group-toggle::after{width:10px; opacity:.75; transform:rotate(90deg);}
 .nav-group:not(:has(.nav-sub)) .nav-group-toggle{visibility:hidden;}
-.nav-group.is-shut .nav-link.nav-sub{max-height:0; opacity:0; pointer-events:none; padding-top:0; padding-bottom:0;}
 .nav-link{
   display:block; font-family:var(--sans); font-size:13px; font-weight:400; color:var(--ink-soft);
   text-decoration:none; padding:4px 0; white-space:nowrap;
@@ -160,6 +159,9 @@ footer{
   max-height:32px; opacity:1; pointer-events:auto; padding-top:4px; padding-bottom:4px;
 }
 .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--accent);}
+/* A group collapsed with its dash stays collapsed: this outranks the
+   hover / focus / current-page rules above. */
+.nav-groups .nav-group.is-shut .nav-link.nav-sub{max-height:0; opacity:0; pointer-events:none; padding-top:0; padding-bottom:0;}
 .nav-link.nav-sub{text-overflow:ellipsis;}
 .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
   outline:2px solid var(--accent); outline-offset:2px;
