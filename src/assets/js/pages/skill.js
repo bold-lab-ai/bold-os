@@ -6,7 +6,7 @@
 // skill; those buttons are always shown, greyed out for everyone else. #edit
 // opens the form. skill.html?new is the same form for a new skill ("+ Add a
 // skill" on the skills page), with its name. Either form can import a whole
-// skill — a folder or a .zip (skill-import.js) — which fills everything in.
+// skill's folder (skill-import.js), which fills everything in.
 (function(){
   var esc = BOLD.escapeHtml;
   var S = window.BoldSkills;
@@ -76,7 +76,7 @@
     return '<div class="event-form skill-form">' +
       '<div class="sk-import"><span>Have the skill already?</span>' +
         '<label class="btn-text">Import a folder<input type="file" class="sk-import-folder" webkitdirectory hidden></label>' +
-        '<label class="btn-text">Import a .zip<input type="file" class="sk-import-zip" accept=".zip,application/zip" hidden></label></div>' +
+        '</div>' +
       S.metaHtml(x, isNew) +
       '<label>Instructions (SKILL.md, after its name and description)<textarea class="sk-body mono" rows="18" spellcheck="false">' + esc(x.body || '') + '</textarea></label>' +
       '<p class="event-form-hint">Point Claude to the other files by their path, e.g. <code>assets/template.html</code>; it opens them only when it needs them.</p>' +
@@ -179,13 +179,11 @@
         if (r.skipped.length) S.showError(form, 'Left out, as they aren’t text files: ' + r.skipped.join(', ') + '.');
       }).catch(function(err){
         console.error('[BOLD Skills] importing a skill failed', err);
-        S.showError(form, 'Couldn’t read that — is it a skill folder or a .zip?');
+        S.showError(form, 'Couldn’t read that folder — try again.');
       });
     }
     var folderInput = form.querySelector('.sk-import-folder');
     folderInput.addEventListener('change', function(){ if (folderInput.files.length) importSkill(SkillImport.fromFolder(folderInput.files)); folderInput.value = ''; });
-    var zipInput = form.querySelector('.sk-import-zip');
-    zipInput.addEventListener('change', function(){ if (zipInput.files[0]) importSkill(SkillImport.fromZip(zipInput.files[0])); zipInput.value = ''; });
 
     form.querySelector('.ev-cancel').addEventListener('click', function(){
       if (isNew) { location.href = 'skills.html'; return; }

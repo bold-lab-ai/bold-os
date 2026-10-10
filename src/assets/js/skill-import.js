@@ -1,9 +1,8 @@
-// Reads a whole skill — a folder picked on the computer, or a .zip — into
+// Reads a whole skill — a folder picked on the computer — into
 // { folder, files: [{ path, content }], skipped: [paths] }: paths relative to the
 // skill's folder (the folder holding SKILL.md), text files only (anything that
 // isn't UTF-8 text is skipped), macOS clutter left out. Used by the skill page's
-// "Import a folder" / "Import a .zip" (pages/skill.js). A .zip is unpacked here,
-// with the browser's own DecompressionStream — no library.
+// "Import a folder" (pages/skill.js).
 window.SkillImport = (function(){
   var JUNK = /(^|\/)(__MACOSX|\.DS_Store|\._[^/]*|Thumbs\.db)(\/|$)/;
 
@@ -42,39 +41,5 @@ window.SkillImport = (function(){
     })).then(collect);
   }
 
-  function inflate(bytes){
-    var stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-    return new Response(stream).arrayBuffer().then(function(b){ return new Uint8Array(b); });
-  }
-
-  // A .zip File → Promise of the result. Reads the central directory; entries
-  // are stored or deflated (what every zip tool writes).
-  function fromZip(file){
-    return file.arrayBuffer().then(function(buf){
-      var v = new DataView(buf), u8 = new Uint8Array(buf);
-      var end = -1;
-      for (var i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) {
-        if (v.getUint32(i, true) === 0x06054b50) { end = i; break; }
-      }
-      if (end < 0) throw new Error('not a zip');
-      var count = v.getUint16(end + 10, true), at = v.getUint32(end + 16, true), jobs = [];
-      for (var n = 0; n < count; n++) {
-        if (v.getUint32(at, true) !== 0x02014b50) throw new Error('bad zip');
-        var flags = v.getUint16(at + 8, true), method = v.getUint16(at + 10, true), size = v.getUint32(at + 20, true);
-        var nameLen = v.getUint16(at + 28, true), extraLen = v.getUint16(at + 30, true), commentLen = v.getUint16(at + 32, true);
-        var local = v.getUint32(at + 42, true);
-        var nameBytes = u8.subarray(at + 46, at + 46 + nameLen);
-        var path = flags & 0x800 ? new TextDecoder().decode(nameBytes) : Array.prototype.map.call(nameBytes, function(c){ return String.fromCharCode(c); }).join('');
-        at += 46 + nameLen + extraLen + commentLen;
-        if (/\/$/.test(path) || JUNK.test(path)) continue;
-        var start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true);
-        var data = u8.subarray(start, start + size);
-        jobs.push((method === 0 ? Promise.resolve(data) : method === 8 ? inflate(data) : Promise.resolve(new Uint8Array([0])))
-          .then(function(p){ return function(bytes){ return { path: p, bytes: bytes }; }; }(path)));
-      }
-      return Promise.all(jobs).then(collect);
-    });
-  }
-
-  return { fromFolder: fromFolder, fromZip: fromZip };
+  return { fromFolder: fromFolder };
 })();
