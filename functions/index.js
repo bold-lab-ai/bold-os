@@ -877,6 +877,56 @@ exports.onVenueProposed = onDocumentCreated(
   }
 );
 
+// ---------- Suggested changes to a guide or the BOLDiquette ----------
+// Anyone who isn't a PI/admin changes a guide (guides/{slug}) or the
+// BOLDiquette (handbook/{slug}) by proposing it (…/proposals/{id}, see
+// pages/guide.js); a PI or admin accepts or declines it on the page. Tell
+// them all when one arrives, with a link to it.
+
+const SITE_URL = APP_BASE_URL.replace(/[^/]*$/, '');
+
+// Slack mrkdwn treats &, < and > as markup.
+function slackText(s){
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// What a proposal does, in words: pure, so it's testable on its own.
+function proposalSummary(q){
+  const title = (side) => '“' + slackText((side && side.title) || '') + '”';
+  if (q.kind === 'about') return 'a change to the title and description';
+  if (q.kind === 'add') return 'a new part, ' + title(q.after);
+  if (q.kind === 'remove') return 'removing the part ' + title(q.before);
+  return 'a change to the part ' + title(q.before || q.after);
+}
+
+function onProposed(collection, pageUrl){
+  return onDocumentCreated(
+    { document: collection + '/{slug}/proposals/{id}', secrets: [SLACK_BOT_TOKEN] },
+    async function(event){
+      const q = event.data && event.data.data();
+      if (!q || q.status !== 'open') return;
+      const doc = await db.collection(collection).doc(event.params.slug).get();
+      const name = (doc.exists && doc.data().title) || event.params.slug;
+      const who = (q.by && (q.by.name || q.by.email)) || 'Someone';
+      const headline = '🔔 ' + slackText(who) + ' suggested ' + proposalSummary(q) + ' in ' +
+        linkedTitle(slackText(name), pageUrl(event.params.slug) + '#proposals') +
+        (q.note ? ': “' + slackText(String(q.note).slice(0, 300)) + '”' : '') +
+        '. It needs a PI or admin to accept or decline it.';
+      const pis = await rolesEmails('pis');
+      const admins = await rolesEmails('admins');
+      await sendEvent(SLACK_BOT_TOKEN.value(), {
+        emails: pis.concat(admins),
+        excludeEmail: q.by && q.by.email,
+        headline: headline
+      });
+    }
+  );
+}
+
+exports.onGuideProposed = onProposed('guides', (slug) => SITE_URL + 'guide.html?guide=' + encodeURIComponent(slug));
+// The BOLDiquette is the one handbook document; it has its own page.
+exports.onHandbookProposed = onProposed('handbook', (slug) => SITE_URL + (slug === 'boldiquette' ? 'boldiquette.html' : 'index.html'));
+
 // ---------- 2, 3, 4: card events ----------
 
 // Max papers per author — the I/O half (2026-09-14, see

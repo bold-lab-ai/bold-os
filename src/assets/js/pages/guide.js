@@ -456,12 +456,14 @@
   if (!ref) { loaded = true; render(); return; }
   // Don't redraw over a form being filled in. The page is drawn after it
   // loads, so a link to one of its parts (#…) is followed once it's there.
-  var jumped = !location.hash;
+  // A link to the proposed changes (#proposals, as Slack sends PIs) waits for them too.
+  var jumped = !location.hash, proposalsLoaded = false;
   function refresh(){
     if (form) return;
-    if (!jumped && x) tab = tabFor(location.hash);
+    var ready = !jumped && x && (proposalsLoaded || location.hash !== '#proposals');
+    if (ready) tab = tabFor(location.hash);
     render();
-    if (!jumped && x) { jumped = true; goTo(location.hash); }
+    if (ready) { jumped = true; goTo(location.hash); }
   }
   // Shows what #hash names: a part (scrolled to) or a section's tab.
   function goTo(hash){
@@ -497,6 +499,7 @@
     unsubs.push(ref.collection('proposals').where('status', '==', 'open').onSnapshot(function(snap){
       proposals = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
         .sort(function(a, b){ return a.at - b.at; });
+      proposalsLoaded = true;
       refresh();
     }, function(err){ console.error('[BOLD Guides] loading proposed changes failed', err); }));
   });
