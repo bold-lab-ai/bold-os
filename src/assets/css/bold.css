@@ -437,6 +437,8 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .hist-add{background:rgba(47,107,79,.12);}
 .hist-del{background:rgba(180,35,24,.10); text-decoration:line-through; text-decoration-color:rgba(180,35,24,.35);}
 .hist-ctx{color:var(--ink-soft);}
+.hist-add .hist-word{background:rgba(47,107,79,.28);}
+.hist-del .hist-word{background:rgba(180,35,24,.24);}
 .hist-gap{color:var(--muted); padding-left:22px;}
 @media (max-width:820px){
   .hist-msg{padding-left:0;}

@@ -70,6 +70,12 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .event-form-actions .btn-text{margin-left:auto; font-weight:400; border:none; background:none; padding:0;}
 .btn-text.danger:hover{color:var(--danger-text);}
 .gd-notice{max-width:var(--article-max); margin:8px 0 0; padding:10px 14px; border:1px solid var(--line); border-radius:var(--radius); font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+/* What changed since the reader last marked the page read (read-point.js). */
+.rp-line{max-width:var(--article-max); margin:8px 0 0; font-family:var(--sans); font-size:14px; color:var(--muted);}
+.rp-line .btn-text{font-size:14px; margin-left:12px;}
+section.block.read-point{margin-top:24px;}
+.read-point .rp-line{margin-bottom:8px;}
+.read-point .hist-label a{color:inherit;}
 
 /* ---------- proposed changes ---------- */
 .gd-proposal-list{list-style:none; margin:0; padding:0;}

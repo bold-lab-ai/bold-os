@@ -48,10 +48,41 @@ window.BoldHistory = (function(){
     return out.concat(A.slice(A.length - suf).map(function(t){ return { op: ' ', text: t }; }));
   }
 
-  // The changed lines with CONTEXT lines around them; long runs elided.
+  // A changed line, before and after → [before, after] as HTML with the words
+  // that differ marked; null when they share no words or are too long to compare.
+  function wordMarks(a, b){
+    var A = a.split(/(\s+)/), B = b.split(/(\s+)/), n = A.length, m = B.length;
+    if (n * m > 40000) return null;
+    var L = [];
+    for (var i = 0; i <= n; i++) L.push(new Uint16Array(m + 1));
+    for (i = n - 1; i >= 0; i--) for (var j = m - 1; j >= 0; j--)
+      L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+    var ha = '', hb = '', common = false;
+    var mark = function(t){ return /\S/.test(t) ? '<span class="hist-word">' + esc(t) + '</span>' : esc(t); };
+    i = 0; j = 0;
+    while (i < n || j < m) {
+      if (i < n && j < m && A[i] === B[j]) { if (/\S/.test(A[i])) common = true; ha += esc(A[i]); hb += esc(B[j]); i++; j++; }
+      else if (i < n && (j === m || L[i + 1][j] >= L[i][j + 1])) { ha += mark(A[i]); i++; }
+      else { hb += mark(B[j]); j++; }
+    }
+    return common ? [ha, hb] : null;
+  }
+
+  // The changed lines with CONTEXT lines around them; long runs elided. Where
+  // lines were removed and as many added in their place, the changed words are marked.
   function diffHtml(a, b){
     var d = lineDiff(a, b);
     if (!d) return '<p class="hist-note">Too long to compare line by line.</p>';
+    for (var r = 0; r < d.length;) {
+      var dels = 0, adds = 0;
+      while (r + dels < d.length && d[r + dels].op === '-') dels++;
+      while (r + dels + adds < d.length && d[r + dels + adds].op === '+') adds++;
+      if (dels && dels === adds) for (var q = 0; q < dels; q++) {
+        var w = wordMarks(d[r + q].text, d[r + dels + q].text);
+        if (w) { d[r + q].html = w[0]; d[r + dels + q].html = w[1]; }
+      }
+      r += Math.max(1, dels + adds);
+    }
     var keep = d.map(function(){ return false; });
     d.forEach(function(x, k){ if (x.op !== ' ') for (var c = Math.max(0, k - CONTEXT); c <= Math.min(d.length - 1, k + CONTEXT); c++) keep[c] = true; });
     var html = '', shown = 0, gap = false;
@@ -61,7 +92,7 @@ window.BoldHistory = (function(){
       if (gap && html) html += '<div class="hist-gap">⋯</div>';
       gap = false;
       var cls = d[k].op === '+' ? 'hist-add' : d[k].op === '-' ? 'hist-del' : 'hist-ctx';
-      html += '<div class="' + cls + '"><span class="hist-op">' + (d[k].op === ' ' ? '' : d[k].op) + '</span>' + (esc(d[k].text) || ' ') + '</div>';
+      html += '<div class="' + cls + '"><span class="hist-op">' + (d[k].op === ' ' ? '' : d[k].op) + '</span>' + (d[k].html || esc(d[k].text) || ' ') + '</div>';
       shown++;
     }
     return '<pre class="hist-diff">' + html + '</pre>';

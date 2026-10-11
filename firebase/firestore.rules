@@ -242,6 +242,15 @@ service cloud.firestore {
       }
     }
 
+    // A person's read points (read-point.js): which version of a document they
+    // last marked as read. Theirs alone, keyed by their Firebase Auth uid.
+    match /readPoints/{userId}/docs/{key} {
+      allow read, delete: if isSignedIn() && request.auth.uid == userId;
+      allow create, update: if isSignedIn() && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['version', 'at', 'readAt'])
+        && request.resource.data.version is string && request.resource.data.at is number;
+    }
+
     // BOLDiquette and any other document edited like the guides
     // (handbook/{slug}; boldiquette.html): the same rules as guides/{slug}.
     match /handbook/{slug} {

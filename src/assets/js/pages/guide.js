@@ -10,8 +10,9 @@
 // Parts may carry a `section`: then the page has one tab per section, showing
 // that section's parts (#<section-slug> or a part's #id opens its tab). The same page serves other documents edited this way (BOLDiquette:
 // boldiquette.html), set by #guideBody's data attributes: data-collection,
-// data-slug, data-eyebrow, data-back (a link, or "" for none), data-anchor-prefix
-// and data-deletable.
+// data-slug, data-eyebrow, data-back (a link, or "" for none), data-anchor-prefix,
+// data-deletable and data-read-point ("true": what changed since the reader
+// last marked it read, read-point.js).
 (function(){
   var esc = BOLD.escapeHtml;
   var G = window.BoldGuides;
@@ -39,6 +40,9 @@
   var EYEBROW_HTML = EYEBROW ? '<div><span class="eyebrow">' + esc(EYEBROW) + '</span></div>' : '';
   var historyWrap = document.getElementById('guideHistoryWrap'), histPanel = null;
   var KIND = { about: 'Title and description', edit: 'Change to', add: 'New part', remove: 'Remove' };
+  var readPoint = cfg.readPoint === 'true' && ref ? BoldReadPoint.create({
+    ref: ref, key: COLLECTION + '-' + slug, anchor: anchor, onChange: function(){ refresh(); },
+  }) : null;
 
   function parts(){ return (x && x.parts) || []; }
   function part(id){ return parts().filter(function(p){ return p.id === id; })[0] || null; }
@@ -281,6 +285,7 @@
     var adding = form && form.kind === 'add';
     body.innerHTML = hero + '<main>' +
       (notice ? '<p class="gd-notice">' + esc(notice) + '</p>' : '') +
+      (readPoint ? readPoint.html(x) : '') +
       tabsHtml() +
       // The contents sit beside the parts and stay on screen (above them on narrow screens).
       '<div class="guide-layout"><div class="guide-main">' +
@@ -381,6 +386,7 @@
   }
 
   body.addEventListener('click', function(e){
+    if (readPoint && readPoint.click(e)) return;
     var t = e.target.closest('button');
     if (!t || t.disabled || !x || !me) return;
     var id = t.getAttribute('data-id');
@@ -477,6 +483,7 @@
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user ? { email: user.email || '', name: user.displayName || '' } : null;
     fullWrite = false;
+    if (readPoint) readPoint.start(user);
     if (!user) return;
     G.access(function(ok){ if (mine === signIns) { fullWrite = ok; refresh(); } });
     unsubs.push(ref.onSnapshot(function(snap){
