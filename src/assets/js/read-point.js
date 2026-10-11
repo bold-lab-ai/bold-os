@@ -96,7 +96,13 @@ window.BoldReadPoint = (function(){
       return '<button type="button" class="btn-text rp-mark"' + (busy ? ' disabled' : '') + '>Mark as read</button>';
     }
 
+    // In a box of its own, apart from the document.
     function html(doc){
+      var inner = innerHtml(doc);
+      return inner ? '<aside class="read-point" aria-label="Your reading">' + inner + '</aside>' : '';
+    }
+
+    function innerHtml(doc){
       if (!doc || !pointLoaded || !latest) return '';
       var err = error ? '<p class="ev-error">' + esc(error) + '</p>' : '';
       if (!point) return '<p class="rp-line">Not marked as read yet. ' + markButton() + '</p>' + err;
@@ -107,14 +113,13 @@ window.BoldReadPoint = (function(){
       var who = edits.map(function(v){ return v.by ? (v.by.name || v.by.email) : ''; })
         .filter(function(n, i, all){ return n && all.indexOf(n) === i; });
       var count = edits.length >= MAX_EDITS ? MAX_EDITS + '+ edits' : edits.length === 1 ? '1 edit' : edits.length + ' edits';
-      return '<section class="block read-point"><div class="block-head"><h2>Changed since you last read</h2></div>' +
+      return '<div class="block-head"><h2>Changed since you last read</h2></div>' +
         '<p class="rp-line">' + (edits.length ? count + ' since ' + esc(read) + (who.length ? ', by ' + esc(names(who)) : '') + '. ' : '') +
           '<button type="button" class="btn-text rp-toggle">' + (open ? 'Hide changes' : 'Show changes') + '</button>' + markButton() + '</p>' + err +
         (open ? list.map(function(c){
           var title = c.href ? '<a href="#' + esc(c.href) + '">' + esc(c.label) + '</a>' : esc(c.label);
           return '<div class="hist-field"><p class="hist-label">' + title + (c.what ? ' · ' + esc(c.what) : '') + '</p>' + c.diff + '</div>';
-        }).join('') : '') +
-        '</section>';
+        }).join('') : '');
     }
 
     function click(e){

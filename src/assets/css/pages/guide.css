@@ -17,7 +17,7 @@
 main{max-width:var(--guide-max); margin:0 auto; padding:8px var(--gutter) 24px;}
 section.block{max-width:var(--article-max); margin:48px 0 0;}
 .block-head{margin-bottom:10px;}
-.block h2, .guide-text h3{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+.block h2, .guide-text h3, .read-point h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
 .guide-history{padding-top:0;}
 
 /* ---------- contents and parts ---------- */
@@ -70,11 +70,12 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .event-form-actions .btn-text{margin-left:auto; font-weight:400; border:none; background:none; padding:0;}
 .btn-text.danger:hover{color:var(--danger-text);}
 .gd-notice{max-width:var(--article-max); margin:8px 0 0; padding:10px 14px; border:1px solid var(--line); border-radius:var(--radius); font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
-/* What changed since the reader last marked the page read (read-point.js). */
-.rp-line{max-width:var(--article-max); margin:8px 0 0; font-family:var(--sans); font-size:14px; color:var(--muted);}
+/* What changed since the reader last marked the page read (read-point.js): a box
+   of its own, so it doesn't read as part of the document. */
+.read-point{max-width:var(--article-max); margin:16px 0 0; padding:12px 16px; border:1px solid var(--line); border-radius:var(--radius); background:var(--wash);}
+.read-point .block-head{margin-bottom:6px;}
+.rp-line{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
 .rp-line .btn-text{font-size:14px; margin-left:12px;}
-section.block.read-point{margin-top:24px;}
-.read-point .rp-line{margin-bottom:8px;}
 .read-point .hist-label a{color:inherit;}
 
 /* ---------- proposed changes ---------- */
