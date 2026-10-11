@@ -12,11 +12,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="{{ site.fonts }}" rel="stylesheet">
 {% for name in [ 'app', 'auth', 'firestore' ] | concat(sdk or []) | uniq %}<script src="https://www.gstatic.com/firebasejs/{{ site.firebaseSdkVersion }}/firebase-{{ name }}-compat.js"></script>
-{% endfor %}<link rel="stylesheet" href="assets/css/bold.css">
+{% endfor %}<link rel="stylesheet" href="assets/css/bold.css?v={{ build.stamp }}">
 {% if headExtra %}{{ headExtra | safe }}
-{% endif %}{% if css %}<link rel="stylesheet" href="assets/css/pages/{{ css }}.css">
+{% endif %}{% if css %}<link rel="stylesheet" href="assets/css/pages/{{ css }}.css?v={{ build.stamp }}">
 {% endif %}<script>window.BOLD_CONFIG = {{ site.firebase | dump | safe }};</script>
-<script src="assets/js/bold.js"></script>
+<script src="assets/js/bold.js?v={{ build.stamp }}"></script>
 </head>
 <body>
 {% if emulatorWarning %}
@@ -28,7 +28,7 @@
 {{ content | safe }}
 {% if not noFooter %}{% include "partials/footer.njk" %}{% endif %}
 {% include "partials/shell-close.njk" %}
-{% for script in scripts %}<script src="assets/js/{{ script }}"></script>
+{% for script in scripts %}<script src="assets/js/{{ script }}?v={{ build.stamp }}"></script>
 {% endfor %}
 </body>
 </html>
