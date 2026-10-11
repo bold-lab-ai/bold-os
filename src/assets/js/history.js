@@ -1,6 +1,6 @@
 // A document's history — the versions the server records for it
 // (<collection>/<id>/versions, see recordVersions in functions/index.js) — as a
-// panel any page can show: newest first, who and when, the note, and on click
+// panel any page can show: the latest few (all on request), newest first, who and when, the note, and on click
 // what changed since the version before (line by line for text; a list of
 // files { path, content } file by file; anything else as JSON). PIs/admins (or
 // whoever the page says) can restore a version: the page writes its content
@@ -14,7 +14,7 @@
 window.BoldHistory = (function(){
   var esc = BOLD.escapeHtml;
   var META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy'];
-  var CONTEXT = 3, MAX_LINES = 400, MAX_CELLS = 4e6;
+  var CONTEXT = 3, MAX_LINES = 400, MAX_CELLS = 4e6, FIRST = 3;
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
   function when(ms){
@@ -128,7 +128,7 @@ window.BoldHistory = (function(){
   function mount(el, opts){
     var fields = opts.fields || {};
     var flat = opts.flatten || function(d){ return d; };
-    var versions = [], loaded = false, open = null;
+    var versions = [], loaded = false, open = null, all = false;
 
     function who(v){
       return (v.by ? esc(v.by.name || v.by.email) : 'Someone outside the site') +
@@ -139,7 +139,7 @@ window.BoldHistory = (function(){
     function render(){
       if (!loaded) { el.innerHTML = '<p class="hist-note">Loading…</p>'; return; }
       if (!versions.length) { el.innerHTML = '<p class="hist-note">No changes recorded yet. Changes are kept from 10 October 2026 on.</p>'; return; }
-      el.innerHTML = '<ol class="hist-list">' + versions.map(function(v, i){
+      el.innerHTML = '<ol class="hist-list">' + versions.slice(0, all ? versions.length : FIRST).map(function(v, i){
         var isOpen = v.id === open;
         var restore = i > 0 && v.kind !== 'deleted' && isOpen ?
           '<button type="button" class="btn-text hist-restore"' + (opts.canRestore() ? '' : ' disabled title="You can’t edit this"') + '>Restore this version</button>' : '';
@@ -151,10 +151,12 @@ window.BoldHistory = (function(){
           '</button>' +
           (isOpen ? '<div class="hist-body">' + restore + changesHtml(versions[i + 1] ? flat(versions[i + 1].data) : null, v.kind === 'deleted' ? null : flat(v.data), fields) + '</div>' : '') +
           '</li>';
-      }).join('') + '</ol>';
+      }).join('') + '</ol>' +
+        (versions.length > FIRST ? '<button type="button" class="btn-text hist-more">' + (all ? 'Show only the latest ' + FIRST : 'Show all ' + versions.length + ' versions') + '</button>' : '');
     }
 
     el.addEventListener('click', function(e){
+      if (e.target.closest('.hist-more')) { all = !all; render(); return; }
       var head = e.target.closest('.hist-head');
       if (head) { var id = head.getAttribute('data-id'); open = open === id ? null : id; render(); return; }
       var btn = e.target.closest('.hist-restore');
