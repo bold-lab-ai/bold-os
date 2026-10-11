@@ -2,7 +2,8 @@
 // Each person's read point, the version they last marked as read, is kept in
 // readPoints/{uid}/docs/{key}: { version, at, readAt }, which only they can read
 // or write (firestore.rules). Until they mark the document read again, the page
-// shows what changed between that version and the document now, part by part.
+// shows what changed between that version and the document now: a one-line
+// summary, and on request each changed part and the parts moved to another section.
 // The read point moves only when they click Mark as read.
 //
 // BoldReadPoint.create({ ref, key, anchor: part → its element id, onChange })
@@ -30,9 +31,13 @@ window.BoldReadPoint = (function(){
       var b = was[p.id];
       if (!b) { out.push({ label: p.title, what: 'new', href: anchor(p), diff: BoldHistory.diffHtml('', partText(p)) }); return; }
       var moved = (b.section || '') !== (p.section || '');
-      if (partText(b) === partText(p) && !moved) return;
-      out.push({ label: p.title, what: moved ? 'moved to ' + (p.section || 'no section') : 'changed', href: anchor(p),
-        diff: partText(b) === partText(p) ? '' : BoldHistory.diffHtml(partText(b), partText(p)) });
+      if (partText(b) === partText(p)) {
+        // Only moved: listed with the others moved to the same section.
+        if (moved) out.push({ label: p.title, href: anchor(p), movedTo: p.section || 'no section' });
+        return;
+      }
+      out.push({ label: p.title, what: moved ? 'changed, and moved to ' + (p.section || 'no section') : 'changed', href: anchor(p),
+        diff: BoldHistory.diffHtml(partText(b), partText(p)) });
     });
     (before.parts || []).forEach(function(p){
       if (!now[p.id]) out.push({ label: p.title, what: 'removed', diff: BoldHistory.diffHtml(partText(p), '') });
@@ -46,7 +51,7 @@ window.BoldReadPoint = (function(){
     var db = opts.ref.firestore;
     var mine = null, unsubs = [];
     var point = null, pointLoaded = false, latest = null, base = null, edits = [];
-    var open = true, busy = false, error = '';
+    var open = false, busy = false, error = '';
 
     function changed(){ opts.onChange(); }
     function fail(what){
@@ -113,13 +118,23 @@ window.BoldReadPoint = (function(){
       var who = edits.map(function(v){ return v.by ? (v.by.name || v.by.email) : ''; })
         .filter(function(n, i, all){ return n && all.indexOf(n) === i; });
       var count = edits.length >= MAX_EDITS ? MAX_EDITS + '+ edits' : edits.length === 1 ? '1 edit' : edits.length + ' edits';
+      var link = function(c){ return c.href ? '<a href="#' + esc(c.href) + '">' + esc(c.label) + '</a>' : esc(c.label); };
+      var moves = list.filter(function(c){ return c.movedTo !== undefined; });
+      var rest = list.filter(function(c){ return c.movedTo === undefined; });
+      var what = [];
+      if (rest.length) what.push(rest.length === 1 ? '1 part changed' : rest.length + ' parts changed');
+      if (moves.length) what.push(moves.length === 1 ? '1 moved' : moves.length + ' moved');
+      // The moves, one line per section they went to.
+      var to = moves.map(function(c){ return c.movedTo; }).filter(function(v, i, all){ return all.indexOf(v) === i; });
+      var movesHtml = to.map(function(sec){
+        return '<p class="rp-moves">Moved to ' + esc(sec) + ': ' + moves.filter(function(c){ return c.movedTo === sec; }).map(link).join(', ') + '</p>';
+      }).join('');
       return '<div class="block-head"><h2>Changed since you last read</h2></div>' +
-        '<p class="rp-line">' + (edits.length ? count + ' since ' + esc(read) + (who.length ? ', by ' + esc(names(who)) : '') + '. ' : '') +
+        '<p class="rp-line">' + (edits.length ? count + ' since ' + esc(read) + (who.length ? ', by ' + esc(names(who)) : '') + ': ' : '') + what.join(', ') + '. ' +
           '<button type="button" class="btn-text rp-toggle">' + (open ? 'Hide changes' : 'Show changes') + '</button>' + markButton() + '</p>' + err +
-        (open ? list.map(function(c){
-          var title = c.href ? '<a href="#' + esc(c.href) + '">' + esc(c.label) + '</a>' : esc(c.label);
-          return '<div class="hist-field"><p class="hist-label">' + title + (c.what ? ' · ' + esc(c.what) : '') + '</p>' + c.diff + '</div>';
-        }).join('') : '');
+        (open ? '<div class="rp-changes">' + rest.map(function(c){
+          return '<div class="hist-field"><p class="hist-label">' + link(c) + (c.what ? ' · ' + esc(c.what) : '') + '</p>' + c.diff + '</div>';
+        }).join('') + movesHtml + '</div>' : '');
     }
 
     function click(e){
