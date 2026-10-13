@@ -9,7 +9,8 @@
 // Who has read the document is public to the lab: marking it read also writes
 // <doc>/readers/{uid}: { email, name, version, at, readAt } (firestore.rules:
 // lab members read them, each person writes only their own), listed under
-// "Read by" (readersHtml): up to date with the latest version, or an earlier one.
+// "Read by" (readersHtml): how many are up to date with the latest version or on
+// an earlier one, and their names on request.
 //
 // BoldReadPoint.create({ ref, key, anchor: part → its element id, onChange })
 // → { start(user), stop(), html(doc), readersHtml(), click(event) → true if it handled it }.
@@ -55,7 +56,7 @@ window.BoldReadPoint = (function(){
   function create(opts){
     var db = opts.ref.firestore;
     var mine = null, myReader = null, me = null, unsubs = [];
-    var readers = [], readersLoaded = false;
+    var readers = [], readersLoaded = false, readersOpen = false;
     var point = null, pointLoaded = false, latest = null, base = null, edits = [];
     var open = false, busy = false, error = '';
 
@@ -127,13 +128,18 @@ window.BoldReadPoint = (function(){
     function readersHtml(){
       if (!readersLoaded || !latest) return '';
       var name = function(r){ return r.name || r.email; };
-      var byName = function(a, b){ return name(a).localeCompare(name(b)); };
+      var byName = function(a, b){ return name(a).localeCompare(name(b), undefined, { numeric: true, sensitivity: 'base' }); };
       var current = readers.filter(function(r){ return r.version === latest.id; }).sort(byName);
       var earlier = readers.filter(function(r){ return r.version !== latest.id; }).sort(byName);
       var day = function(ms){ return BoldHistory.when(ms).replace(/,.*$/, ''); };
+      var count = function(n, what){ return n + (n === 1 ? ' person ' : ' people ') + what; };
+      var summary = [current.length ? count(current.length, 'up to date') : '', earlier.length ? earlier.length + ' on an earlier version' : '']
+        .filter(Boolean).join(', ');
+      // Collapsed to the counts, as the history is to its latest versions.
       var body = !readers.length ? '<p class="rp-readers">Nobody has marked it as read yet.</p>' :
-        (current.length ? '<p class="rp-readers"><span class="rp-readers-label">Up to date</span>' + current.map(function(r){ return esc(name(r)); }).join(', ') + '</p>' : '') +
-        (earlier.length ? '<p class="rp-readers"><span class="rp-readers-label">Read an earlier version</span>' + earlier.map(function(r){ return esc(name(r)) + ' <span class="rp-readers-when">(' + esc(day(r.readAt || r.at)) + ')</span>'; }).join(', ') + '</p>' : '');
+        '<p class="rp-readers">' + esc(summary) + '. <button type="button" class="btn-text rp-readers-more">' + (readersOpen ? 'Hide names' : 'Show names') + '</button></p>' +
+        (!readersOpen ? '' : (current.length ? '<p class="rp-readers"><span class="rp-readers-label">Up to date</span>' + current.map(function(r){ return esc(name(r)); }).join(', ') + '</p>' : '') +
+        (earlier.length ? '<p class="rp-readers"><span class="rp-readers-label">Read an earlier version</span>' + earlier.map(function(r){ return esc(name(r)) + ' <span class="rp-readers-when">(' + esc(day(r.readAt || r.at)) + ')</span>'; }).join(', ') + '</p>' : ''));
       return '<section class="block" id="readers"><div class="block-head"><h2>Read by</h2></div>' + body + '</section>';
     }
 
@@ -181,8 +187,9 @@ window.BoldReadPoint = (function(){
     }
 
     function click(e){
-      var t = e.target.closest('.rp-toggle, .rp-mark');
+      var t = e.target.closest('.rp-toggle, .rp-mark, .rp-readers-more');
       if (!t) return false;
+      if (t.classList.contains('rp-readers-more')) { readersOpen = !readersOpen; changed(); return true; }
       if (t.classList.contains('rp-toggle')) { open = !open; changed(); return true; }
       if (busy || !mine || !latest) return true;
       busy = true; error = ''; changed();
