@@ -136,6 +136,16 @@ Every point where the site differs from BOLDiquette: the paper-submission toolin
 
 ---
 
+## 15. Who changes the BOLDiquette — DIVERGENCE
+
+**BOLDiquette (Modification):** anyone suggests edits; BOLD-exec holds edit rights.
+
+**Implementation:** nobody edits it directly. Every change, a PI's or admin's included, is a proposed change, and a PI or admin other than whoever proposed it accepts or declines it.
+
+**Proposed BOLDiquette change:** say that every change, BOLD-exec's too, is accepted by a second member of BOLD-exec.
+
+---
+
 ## Reconciled — no longer a difference
 
 - **arXiv affiliation.** Guide now uses "BOLD, {University of Oxford / Imperial College / UCL}", matching BOLDiquette exactly (was Oxford-only). *Fixed 2026-09-10.*

@@ -11,8 +11,11 @@
 // that section's parts (#<section-slug> or a part's #id opens its tab). The same page serves other documents edited this way (BOLDiquette:
 // boldiquette.html), set by #guideBody's data attributes: data-collection,
 // data-slug, data-eyebrow, data-back (a link, or "" for none), data-anchor-prefix,
-// data-deletable and data-read-point ("true": what changed since the reader
-// last marked it read, read-point.js).
+// data-deletable, data-read-point ("true": what changed since the reader
+// last marked it read, read-point.js) and data-review ("all": every change is a
+// proposal, a PI's or admin's too, including moves and restores; another PI or
+// admin decides it through the decideProposal function, firestore.rules allowing
+// no other write).
 (function(){
   var esc = BOLD.escapeHtml;
   var G = window.BoldGuides;
@@ -27,19 +30,22 @@
   var EYEBROW = cfg.eyebrow !== undefined ? cfg.eyebrow : 'How to';
   var PREFIX = cfg.anchorPrefix !== undefined ? cfg.anchorPrefix : 'p-';
   var DELETABLE = cfg.deletable !== 'false';
+  var REVIEW_ALL = cfg.review === 'all';
   var isNew = !cfg.slug && params.has('new');
   var slug = cfg.slug || params.get('guide') || '';
   var ref = !isNew && G.SLUG.test(slug) ? db.collection(COLLECTION).doc(slug) : null;
   var MAX_SIZE = 900000;
 
   var x = null, loaded = false, fullWrite = false, me = null;
+  // Whether the user's changes are saved at once rather than proposed.
+  function direct(){ return fullWrite && !REVIEW_ALL; }
   var proposals = [];
   // The form that's open: null, { kind: 'about' }, { kind: 'edit', id } or { kind: 'add' }.
   var form = null, notice = '';
   var BACK = cfg.back !== undefined ? cfg.back : '<a class="back-link" href="guides.html">&larr; All guides</a>';
   var EYEBROW_HTML = EYEBROW ? '<div><span class="eyebrow">' + esc(EYEBROW) + '</span></div>' : '';
   var historyWrap = document.getElementById('guideHistoryWrap'), histPanel = null;
-  var KIND = { about: 'Title and description', edit: 'Change to', add: 'New part', remove: 'Remove' };
+  var KIND = { about: 'Title and description', edit: 'Change to', add: 'New part', remove: 'Remove', move: 'Move', restore: 'Restore' };
   var readPoint = cfg.readPoint === 'true' && ref ? BoldReadPoint.create({
     ref: ref, key: COLLECTION + '-' + slug, anchor: anchor, onChange: function(){ refresh(); },
   }) : null;
@@ -97,12 +103,12 @@
     var n = shown().length;
     var editing = form && form.kind === 'edit' && form.id === p.id;
     if (editing) return '<section class="guide-part" id="' + anchor(p) + '">' + partFormHtml(p) + '</section>';
-    var off = fullWrite ? '' : ' disabled title="' + G.NOT_PI + '"';
+    var off = direct() || REVIEW_ALL ? '' : ' disabled title="' + G.NOT_PI + '"';
     return '<section class="guide-part" id="' + anchor(p) + '">' +
       '<h2><span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</h2>' +
       '<div class="guide-text">' + md(p.body) + '</div>' +
       '<div class="event-controls guide-part-controls">' +
-        '<button type="button" class="btn-text gd-edit" data-id="' + esc(p.id) + '">' + (fullWrite ? 'Edit' : 'Suggest a change') + '</button>' +
+        '<button type="button" class="btn-text gd-edit" data-id="' + esc(p.id) + '">' + (direct() ? 'Edit' : 'Suggest a change') + '</button>' +
         '<button type="button" class="btn-text gd-up" data-id="' + esc(p.id) + '"' + (i === 0 ? ' disabled' : off) + '>Move up</button>' +
         '<button type="button" class="btn-text gd-down" data-id="' + esc(p.id) + '"' + (i === n - 1 ? ' disabled' : off) + '>Move down</button>' +
       '</div></section>';
@@ -135,13 +141,13 @@
   // ---------- forms ----------
 
   function noteHtml(placeholder){
-    return '<label>' + (fullWrite ? 'What changed (optional)' : 'What you changed and why') +
+    return '<label>' + (direct() ? 'What changed (optional)' : 'What you changed and why') +
       '<input type="text" class="gd-note" maxlength="300" placeholder="' + esc(placeholder) + '"></label>' +
-      (fullWrite ? '' : '<p class="event-form-hint">A PI or admin reviews your change before it shows in the guide.</p>');
+      (direct() ? '' : '<p class="event-form-hint">' + (fullWrite ? 'Another PI or admin' : 'A PI or admin') + ' reviews your change before it shows.</p>');
   }
   function actionsHtml(extra){
     return '<p class="ev-error" hidden></p><div class="event-form-actions">' +
-      '<button type="button" class="ev-save">' + (fullWrite ? 'Save' : 'Propose change') + '</button>' +
+      '<button type="button" class="ev-save">' + (direct() ? 'Save' : 'Propose change') + '</button>' +
       '<button type="button" class="ev-cancel">Cancel</button>' + (extra || '') + '</div>';
   }
 
@@ -156,7 +162,7 @@
       '<label>Text<textarea class="gd-body" rows="16">' + esc(p.body) + '</textarea></label>' +
       '<p class="event-form-hint">Markdown: **bold**, *italic*, [a link](https://…), lines starting with - or 1. for lists, a blank line between paragraphs.</p>' +
       noteHtml(isAdd ? 'e.g. Added a part on posters' : 'e.g. Clearer advice on ablations') +
-      actionsHtml(isAdd ? '' : '<button type="button" class="btn-text danger gd-remove">' + (fullWrite ? 'Remove this part' : 'Propose removing this part') + '</button>') +
+      actionsHtml(isAdd ? '' : '<button type="button" class="btn-text danger gd-remove">' + (direct() ? 'Remove this part' : 'Propose removing this part') + '</button>') +
       '</div>';
   }
 
@@ -184,8 +190,11 @@
 
   // ---------- proposals ----------
 
+  function titleOf(id){ var p = part(id); return p ? p.title : '(a removed part)'; }
   function sideText(kind, side){
     if (!side) return { };
+    if (kind === 'move') return { 'Order of parts': (side.order || []).map(titleOf).join('\n') };
+    if (kind === 'restore') return flatten(side);
     if (kind === 'about') return { Title: side.title || '', Description: side.description || '' };
     var o = { Title: side.title || '', Text: side.body || '' };
     if (side.section !== undefined) o.Section = side.section;
@@ -194,19 +203,21 @@
 
   function proposalHtml(q){
     var cur = q.kind === 'about' ? { title: x.title, description: x.description || '' } : q.partId ? part(q.partId) : null;
-    var stale = q.kind !== 'add' && (!cur || (q.before && (cur.title !== q.before.title || (q.kind === 'about' ? (cur.description || '') !== (q.before.description || '') :
+    var stale = (q.kind === 'about' || q.kind === 'edit' || q.kind === 'remove') && (!cur || (q.before && (cur.title !== q.before.title || (q.kind === 'about' ? (cur.description || '') !== (q.before.description || '') :
       (cur.body || '') !== (q.before.body || '') || (q.before.section !== undefined && (cur.section || '') !== q.before.section)))));
-    var what = q.kind === 'about' ? KIND.about : KIND[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
+    var what = q.kind === 'about' ? KIND.about : q.kind === 'restore' ? 'Restore the version of ' + esc(BoldHistory.when(q.after.versionAt)) :
+      KIND[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
     var mine = me && q.by && q.by.email === me.email;
-    var off = fullWrite ? '' : ' disabled title="' + G.NOT_PI + '"';
+    var off = !fullWrite ? ' disabled title="' + G.NOT_PI + '"' :
+      REVIEW_ALL && mine ? ' disabled title="Another PI or admin reviews your change"' : '';
     return '<li class="gd-proposal" data-id="' + esc(q.id) + '">' +
       '<p class="gd-proposal-head"><span class="hist-when">' + BoldHistory.when(q.at) + '</span>' +
         '<span>' + what + ' · proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') + '</span></p>' +
       (q.note ? '<p class="gd-proposal-note">' + esc(q.note) + '</p>' : '') +
       (stale ? '<p class="gd-proposal-stale">' + (q.kind !== 'about' && !cur ? 'That part has since been removed.' : 'This has changed since it was proposed; accepting replaces the current text.') + '</p>' : '') +
-      BoldHistory.changesHtml(sideText(q.kind, q.before), sideText(q.kind, q.after), {}) +
+      BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {}) +
       '<div class="event-controls">' +
-        '<button type="button" class="btn-text gd-accept"' + off + (q.kind !== 'add' && q.kind !== 'about' && !cur ? ' disabled' : '') + '>Accept</button>' +
+        '<button type="button" class="btn-text gd-accept"' + off + (q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && !cur ? ' disabled' : '') + '>Accept</button>' +
         '<button type="button" class="btn-text danger gd-decline"' + off + '>Decline</button>' +
         (mine ? '<button type="button" class="btn-text gd-withdraw">Withdraw</button>' : '') +
       '</div></li>';
@@ -233,6 +244,8 @@
   }
 
   function decide(q, accept){
+    // Applied by the server, which checks who decides it.
+    if (REVIEW_ALL) return firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: COLLECTION, slug: slug, id: q.id, accept: accept });
     var batch = db.batch();
     var who = q.by ? (q.by.name || q.by.email) : '';
     if (accept) {
@@ -243,17 +256,17 @@
     return batch.commit();
   }
 
-  // Saves a change: at once for a PI/admin, as a proposal for anyone else.
-  // change: { kind, partId, before, after, note } → Promise.
+  // Saves a change: at once for a PI/admin, as a proposal for anyone else (or
+  // for everyone, with data-review="all"). change: { kind, partId, before, after, note } → Promise.
   function submit(change){
-    if (fullWrite) {
+    if (direct()) {
       var q = Object.assign({ by: null }, change);
-      var direct = q.kind === 'about' ? { title: q.after.title, description: q.after.description } : { parts: applied(q) };
-      return ref.update(Object.assign(direct, stamp(change.note)));
+      var now = q.kind === 'about' ? { title: q.after.title, description: q.after.description } : { parts: applied(q) };
+      return ref.update(Object.assign(now, stamp(change.note)));
     }
     return ref.collection('proposals').add(Object.assign({}, change, {
       by: { email: me.email, name: me.name }, at: Date.now(), status: 'open',
-    })).then(function(){ notice = 'Thanks — your change is under “Proposed changes” until a PI or admin reviews it.'; });
+    })).then(function(){ notice = 'Thanks — your change is under “Proposed changes” until ' + (fullWrite ? 'another' : 'a') + ' PI or admin reviews it.'; });
   }
 
   // ---------- page ----------
@@ -278,7 +291,7 @@
     var hero = '<div class="hero">' + BACK + EYEBROW_HTML;
     if (form && form.kind === 'about') hero += aboutFormHtml();
     else hero += '<h1>' + esc(x.title) + '</h1>' + (x.description ? '<p class="hero-note">' + esc(x.description) + '</p>' : '') +
-      '<div class="event-controls"><button type="button" class="btn-text gd-about">' + (fullWrite ? 'Edit' : 'Suggest a change') + '</button>' +
+      '<div class="event-controls"><button type="button" class="btn-text gd-about">' + (direct() ? 'Edit' : 'Suggest a change') + '</button>' +
       (DELETABLE ? '<button type="button" class="btn-text danger gd-delete"' + off + '>Delete guide</button>' : '') +
       (proposals.length ? '<a class="btn-text gd-pending" href="#proposals">' + proposals.length + ' proposed change' + (proposals.length === 1 ? '' : 's') + '</a>' : '') + '</div>';
     hero += '</div>';
@@ -291,7 +304,7 @@
       '<div class="guide-layout"><div class="guide-main">' +
       shown().map(partHtml).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
-        '<button type="button" class="event-add gd-add">' + (fullWrite ? '+ Add a part' : '+ Suggest a new part') + '</button>') +
+        '<button type="button" class="event-add gd-add">' + (direct() ? '+ Add a part' : '+ Suggest a new part') + '</button>') +
       proposalsHtml() + (readPoint ? readPoint.readersHtml() : '') + '</div>' + contentsHtml() + '</div></main>';
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
@@ -315,7 +328,7 @@
     }
     function note(){ return v('.gd-note').trim(); }
     function needNote(){
-      if (!fullWrite && !note()) { showError(el, 'Say what you changed and why, for whoever reviews it.'); return true; }
+      if (!direct() && !note()) { showError(el, 'Say what you changed and why, for whoever reviews it.'); return true; }
       return false;
     }
     if (form.kind === 'about') {
@@ -342,7 +355,7 @@
     var rm = el.querySelector('.gd-remove');
     if (rm) rm.addEventListener('click', function(){
       if (needNote()) return;
-      if (fullWrite && !window.confirm('Remove the part “' + p.title + '”? It stays in the history.')) return;
+      if (direct() && !window.confirm('Remove the part “' + p.title + '”? It stays in the history.')) return;
       run({ kind: 'remove', partId: p.id, before: partSide(p), after: null, note: note() });
     });
   }
@@ -378,11 +391,14 @@
   function move(id, by){
     var list = parts().slice(), i = list.map(function(p){ return p.id; }).indexOf(id), j = i + by;
     if (i >= 0 && currentTab() !== null) while (j >= 0 && j < list.length && (list[j].section || '') !== (list[i].section || '')) j += by;
-    if (!fullWrite || i < 0 || j < 0 || j >= list.length) return;
-    var p = list[i];
+    if (!(direct() || REVIEW_ALL) || i < 0 || j < 0 || j >= list.length) return;
+    var p = list[i], ids = function(l){ return l.map(function(q){ return q.id; }); };
+    var before = ids(list);
     list[i] = list[j]; list[j] = p;
-    ref.update(Object.assign({ parts: list }, stamp('Moved “' + p.title + '” ' + (by < 0 ? 'up' : 'down'))))
-      .catch(function(err){ console.error('[BOLD Guides] moving a part failed', err); window.alert('Couldn’t move it — try again.'); });
+    var note = 'Moved “' + p.title + '” ' + (by < 0 ? 'up' : 'down');
+    var job = direct() ? ref.update(Object.assign({ parts: list }, stamp(note))) :
+      submit({ kind: 'move', partId: p.id, before: { title: p.title, order: before }, after: { title: p.title, order: ids(list) }, note: note }).then(render);
+    job.catch(function(err){ console.error('[BOLD Guides] moving a part failed', err); window.alert('Couldn’t move it — try again.'); });
   }
 
   body.addEventListener('click', function(e){
@@ -436,8 +452,12 @@
       ref: ref,
       fields: {},
       flatten: flatten,
-      canRestore: function(){ return fullWrite; },
+      canRestore: function(){ return direct() || (REVIEW_ALL && !!me); },
       restore: function(v){
+        if (!direct()) {
+          return submit({ kind: 'restore', partId: '', before: null, note: 'Restore the version of ' + BoldHistory.when(v.at),
+            after: { title: v.data.title || '', description: v.data.description || '', parts: v.data.parts || [], versionAt: v.at } }).then(render);
+        }
         return ref.update(Object.assign({ title: v.data.title || '', description: v.data.description || '', parts: v.data.parts || [] },
           stamp('Restored the version of ' + BoldHistory.when(v.at))));
       },

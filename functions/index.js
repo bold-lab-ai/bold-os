@@ -912,10 +912,11 @@ exports.onVenueProposed = onDocumentCreated(
 );
 
 // ---------- Suggested changes to a guide or the BOLDiquette ----------
-// Anyone who isn't a PI/admin changes a guide (guides/{slug}) or the
-// BOLDiquette (handbook/{slug}) by proposing it (…/proposals/{id}, see
-// pages/guide.js); a PI or admin accepts or declines it on the page. Tell
-// them all when one arrives, with a link to it.
+// Anyone who isn't a PI/admin changes a guide (guides/{slug}) by proposing it
+// (…/proposals/{id}, see pages/guide.js), and everyone, PIs and admins too, so
+// changes the BOLDiquette (handbook/{slug}); a PI or admin accepts or declines
+// it on the page (decideProposal, for the BOLDiquette). Tell them all, but
+// whoever proposed it, when one arrives, with a link to it.
 
 const SITE_URL = APP_BASE_URL.replace(/[^/]*$/, '');
 
@@ -930,6 +931,8 @@ function proposalSummary(q){
   if (q.kind === 'about') return 'a change to the title and description';
   if (q.kind === 'add') return 'a new part, ' + title(q.after);
   if (q.kind === 'remove') return 'removing the part ' + title(q.before);
+  if (q.kind === 'move') return 'moving the part ' + title(q.before);
+  if (q.kind === 'restore') return 'restoring an earlier version';
   return 'a change to the part ' + title(q.before || q.after);
 }
 
@@ -960,6 +963,80 @@ function onProposed(collection, pageUrl){
 exports.onGuideProposed = onProposed('guides', (slug) => SITE_URL + 'guide.html?guide=' + encodeURIComponent(slug));
 // The BOLDiquette is the one handbook document; it has its own page.
 exports.onHandbookProposed = onProposed('handbook', (slug) => SITE_URL + (slug === 'boldiquette' ? 'boldiquette.html' : 'index.html'));
+
+// ---------- Deciding a suggested change to the BOLDiquette ----------
+// The BOLDiquette (handbook/{slug}) changes only by an accepted proposal, a PI's
+// or admin's own included: clients can't write it (firestore.rules), so a PI or
+// admin who didn't propose the change accepts or declines it here.
+// data: { collection: 'handbook', slug, id, accept: bool } → { status }.
+
+const REVIEWED = ['handbook'];
+
+// The parts with proposal q applied (pages/guide.js does the same for guides):
+// pure, so it's testable on its own. → { title, description, parts } changed.
+function appliedProposal(doc, q){
+  const parts = (doc.parts || []).map((p) => Object.assign({}, p));
+  const after = q.after || {};
+  if (q.kind === 'about') return { title: String(after.title || ''), description: String(after.description || '') };
+  if (q.kind === 'restore') return { title: String(after.title || ''), description: String(after.description || ''), parts: after.parts || [] };
+  if (q.kind === 'add') {
+    // At the end of its section, if it names one that's there; else at the end.
+    const part = Object.assign({ id: q.partId }, after);
+    let at = -1;
+    parts.forEach((p, i) => { if (part.section && p.section === part.section) at = i; });
+    if (at === -1) parts.push(part); else parts.splice(at + 1, 0, part);
+    return { parts };
+  }
+  if (q.kind === 'remove') return { parts: parts.filter((p) => p.id !== q.partId) };
+  if (q.kind === 'edit') {
+    const p = parts.find((x) => x.id === q.partId);
+    if (!p) throw new HttpsError('failed-precondition', 'That part has since been removed.');
+    Object.assign(p, after);
+    return { parts };
+  }
+  if (q.kind === 'move') {
+    // The proposed order; parts added since keep their place after it.
+    const order = Array.isArray(after.order) ? after.order : [];
+    const byId = {};
+    parts.forEach((p) => { byId[p.id] = p; });
+    const moved = order.filter((id) => byId[id]).map((id) => byId[id]);
+    return { parts: moved.concat(parts.filter((p) => order.indexOf(p.id) === -1)) };
+  }
+  throw new HttpsError('invalid-argument', 'Unknown kind of change.');
+}
+
+exports.decideProposal = onCall(
+  async (request) => {
+    const email = signedInEmail(request).toLowerCase();
+    const data = request.data || {};
+    if (REVIEWED.indexOf(data.collection) === -1 || !/^[a-z0-9-]{1,60}$/.test(String(data.slug || '')) || !/^[A-Za-z0-9]{1,40}$/.test(String(data.id || ''))) {
+      throw new HttpsError('invalid-argument', 'No such proposal.');
+    }
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    const name = request.auth.token.name || '';
+    const ref = db.collection(data.collection).doc(data.slug);
+    const qRef = ref.collection('proposals').doc(data.id);
+    return db.runTransaction(async (tx) => {
+      const [snap, qSnap] = await Promise.all([tx.get(ref), tx.get(qRef)]);
+      if (!snap.exists || !qSnap.exists) throw new HttpsError('not-found', 'No such proposal.');
+      const q = qSnap.data();
+      if (q.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been decided.');
+      const by = q.by && q.by.email ? String(q.by.email).toLowerCase() : '';
+      if (by === email) throw new HttpsError('permission-denied', 'Another PI or admin reviews your own change.');
+      const now = Date.now();
+      if (data.accept) {
+        const who = (q.by && (q.by.name || q.by.email)) || '';
+        tx.update(ref, Object.assign(appliedProposal(snap.data(), q), {
+          changeNote: String(q.note || ('Proposed by ' + who)).slice(0, 300),
+          updatedAt: now, updatedBy: email, proposedBy: by,
+        }));
+      }
+      const status = data.accept ? 'accepted' : 'declined';
+      tx.update(qRef, { status, decidedBy: email, decidedByName: name, decidedAt: now });
+      return { status };
+    });
+  }
+);
 
 // ---------- 2, 3, 4: card events ----------
 
@@ -2297,7 +2374,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson

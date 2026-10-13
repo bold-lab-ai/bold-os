@@ -267,7 +267,10 @@ service cloud.firestore {
     }
 
     // BOLDiquette and any other document edited like the guides
-    // (handbook/{slug}; boldiquette.html): the same rules as guides/{slug}.
+    // (handbook/{slug}; boldiquette.html), except that it changes only by an
+    // accepted proposal, a PI's or admin's too: another PI or admin accepts it
+    // through the decideProposal function, the only writer of the document and
+    // of a proposal's status.
     match /handbook/{slug} {
       allow read: if isLabMember();
       // Who has marked it read (read-point.js): readable by the lab; each
@@ -280,9 +283,7 @@ service cloud.firestore {
           && request.resource.data.email == email()
           && request.resource.data.version is string && request.resource.data.at is number;
       }
-      allow create, update: if hasFullWrite() && request.resource.data.slug == slug
-        && request.resource.data.updatedBy == email();
-      allow delete: if hasFullWrite();
+      allow write: if false;
       match /versions/{version} {
         allow read: if isLabMember();
         allow write: if false;
@@ -291,10 +292,11 @@ service cloud.firestore {
         allow read: if isLabMember();
         allow create: if isLabMember() && request.resource.data.by.email == email()
           && request.resource.data.status == 'open'
-          && request.resource.data.kind in ['about', 'edit', 'add', 'remove']
+          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore']
           && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status']);
-        allow update: if hasFullWrite();
-        allow delete: if hasFullWrite() || (isLabMember() && resource.data.by.email == email() && resource.data.status == 'open');
+        allow update: if false;
+        // Withdrawn by whoever proposed it, while it's open.
+        allow delete: if isLabMember() && resource.data.by.email == email() && resource.data.status == 'open';
       }
     }
 
