@@ -1731,6 +1731,86 @@ exports.approveHackathonJoins = onCall(
   }
 );
 
+// ---------- GitHub: link an account, join bold-lab-ai ----------
+//
+// On their profile (profile.html) a signed-in person links their GitHub account
+// to their BOLD.OS sign-in (Firebase Auth's GitHub provider), which proves the
+// account is theirs. linkGithub then invites that account to the bold-lab-ai
+// organisation, with no approval: everyone who can sign in may join. The
+// GitHub account is read from Firebase Auth, never from the client, so nobody
+// can have someone else's account invited. GitHub emails the invitation; the
+// person is "pending" until they accept it, then "active". Kept in
+// githubLinks/{email}: { email, name, github (login), githubId, status:
+// 'active' | 'pending' | 'failed', error, linkedAt, updatedAt } (no client
+// access: firestore.rules' catch-all). Calling it again refreshes the status;
+// after the account is unlinked it forgets the link (org membership stays).
+// Needs GITHUB_ORG_TOKEN with Organization → Members: read and write.
+
+function githubFetch(path, init){
+  return fetch('https://api.github.com' + path, Object.assign({}, init, {
+    headers: {
+      Authorization: 'Bearer ' + GITHUB_ORG_TOKEN.value(),
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'bold-os',
+      'Content-Type': 'application/json',
+    },
+  }));
+}
+
+// The org membership of GitHub account `login` (numeric `id`), inviting it if
+// it has none → { status, error }.
+async function joinOrg(login, id){
+  const member = await githubFetch('/orgs/bold-lab-ai/memberships/' + encodeURIComponent(login));
+  if (member.ok) {
+    const m = await member.json().catch(() => ({}));
+    return { status: m.state === 'active' ? 'active' : 'pending', error: '' };
+  }
+  if (member.status !== 404) {
+    logger.error('linkGithub: membership check got ' + member.status, { login });
+    return { status: 'failed', error: 'GitHub refused (' + member.status + ').' };
+  }
+  const invite = await githubFetch('/orgs/bold-lab-ai/invitations', {
+    method: 'POST', body: JSON.stringify({ invitee_id: Number(id), role: 'direct_member' }),
+  });
+  if (invite.ok) return { status: 'pending', error: '' };
+  const body = await invite.json().catch(() => ({}));
+  // 422: already invited (or similar); the invitation stands.
+  if (invite.status === 422) return { status: 'pending', error: '' };
+  logger.error('linkGithub: invitation got ' + invite.status, { login, message: body.message });
+  return { status: 'failed', error: 'GitHub refused the invitation (' + invite.status + ').' };
+}
+
+function githubView(d){
+  return d ? { github: d.github, status: d.status, error: d.error || '', linkedAt: d.linkedAt || 0 } : null;
+}
+
+exports.linkGithub = onCall(
+  { secrets: [GITHUB_ORG_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const ref = db.collection('githubLinks').doc(email);
+    const user = await admin.auth().getUser(request.auth.uid);
+    const gh = (user.providerData || []).find((p) => p.providerId === 'github.com');
+    if (!gh) { await ref.delete(); return { link: null }; }
+    const prev = (await ref.get()).data();
+    if (prev && prev.githubId === gh.uid && prev.status === 'active') return { link: githubView(prev) };
+    // The login, from GitHub itself (Firebase keeps the numeric id).
+    const who = await githubFetch('/user/' + encodeURIComponent(gh.uid));
+    if (!who.ok) {
+      logger.error('linkGithub: looking up GitHub user ' + gh.uid + ' got ' + who.status);
+      throw new HttpsError('unavailable', 'Couldn’t reach GitHub — try again.');
+    }
+    const login = (await who.json()).login;
+    const r = await joinOrg(login, gh.uid);
+    const now = Date.now();
+    const doc = { email, name: request.auth.token.name || '', github: login, githubId: gh.uid,
+      status: r.status, error: r.error, linkedAt: (prev && prev.githubId === gh.uid && prev.linkedAt) || now, updatedAt: now };
+    await ref.set(doc);
+    return { link: githubView(doc) };
+  }
+);
+
 // ---------- people roster: daily sync from Slack ----------
 //
 // `people` ({ name, email, slackId }, keyed by Slack id) backs every person

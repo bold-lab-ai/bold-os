@@ -89,9 +89,12 @@
       } catch (e){}
       listeners.slice().forEach(function(fn){ fn(user); });
     });
-    // Finishes a sign-in after Slack redirects back here; onAuthStateChanged
-    // above picks up the user, this only surfaces errors from the round trip.
-    auth.getRedirectResult().catch(function(err){
+    // Finishes a sign-in after Slack redirects back here (or linking an
+    // account, BOLD.link); onAuthStateChanged above picks up the user, this
+    // only surfaces errors from the round trip. A page can read the outcome
+    // from BOLD.redirectResult.
+    BOLD.redirectResult = auth.getRedirectResult();
+    BOLD.redirectResult.catch(function(err){
       console.error('[BOLD Lab] sign-in failed', err);
     });
     return auth;
@@ -126,6 +129,15 @@
       console.error('[BOLD Lab] sign-in failed', err);
       if (typeof onError === 'function') onError(err);
     });
+  };
+
+  // Links another sign-in provider (e.g. GitHub) to the signed-in account: a
+  // redirect, as sign-in is, except on localhost (a popup). Resolves with the
+  // result after a popup; after a redirect, see BOLD.redirectResult.
+  BOLD.link = function(provider){
+    var a = BOLD.getAuth(), u = a && a.currentUser;
+    if (!u) return Promise.reject(new Error('Not signed in.'));
+    return isLocalDev ? u.linkWithPopup(provider) : u.linkWithRedirect(provider);
   };
 
   BOLD.signOut = function(){
