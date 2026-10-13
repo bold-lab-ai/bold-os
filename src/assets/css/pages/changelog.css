@@ -1,0 +1,26 @@
+/* The changelog (changelog.html, pages/changelog.js): every change, by day. */
+.hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
+.hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14;}
+.hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
+main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
+section.block{max-width:var(--article-max); margin:36px 0 0;}
+.block-head{margin-bottom:6px;}
+.block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+
+.cl-filters{display:flex; gap:18px; margin:8px 0 0; font-family:var(--sans); font-size:14px;}
+.cl-filter{color:var(--muted);}
+.cl-filter.is-current{color:var(--ink); text-decoration-color:currentColor;}
+.cl-note{font-family:var(--sans); font-size:14px; color:var(--muted);}
+.cl-list{list-style:none; margin:0; padding:0;}
+.cl-item{display:grid; grid-template-columns:48px 68px minmax(0, 1fr); gap:0 12px; padding:9px 0; border-top:1px solid var(--line); font-family:var(--sans); font-size:14px; line-height:1.45; color:var(--ink);}
+.cl-list .cl-item:last-child{border-bottom:1px solid var(--line);}
+.cl-time{color:var(--muted); font-variant-numeric:tabular-nums;}
+.cl-type{color:var(--muted); font-size:12px; letter-spacing:0.06em; text-transform:uppercase; padding-top:1px;}
+.cl-what a{overflow-wrap:anywhere;}
+.cl-who{color:var(--muted); margin-left:8px;}
+.cl-msg{display:block; color:var(--ink-soft);}
+.cl-more{margin-top:20px; font-family:var(--sans); font-size:14px;}
+@media (max-width:560px){
+  .cl-item{grid-template-columns:44px minmax(0, 1fr);}
+  .cl-type{display:none;}
+}

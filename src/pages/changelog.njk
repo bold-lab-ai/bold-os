@@ -1,0 +1,14 @@
+---
+title: "Changelog | BOLD Lab"
+description: "Every change to BOLD.OS: its code and its content."
+css: "changelog"
+sdk: ["firestore"]
+scripts: ["pages/changelog.js"]
+permalink: "changelog.html"
+---
+<div class="hero">
+  <h1>Changelog</h1>
+  <p class="hero-note">Every change to BOLD.OS: its code and its content.</p>
+</div>
+<main id="changelog"><p class="cl-note">Loading…</p></main>
+<script>window.BOLD_COMMITS = {{ commits.json | safe }};</script>

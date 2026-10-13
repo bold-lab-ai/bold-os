@@ -2119,6 +2119,8 @@ exports.skillPackage = onRequest(
 // delete a document first stamps it). The note is the document's `changeNote`,
 // written with each save. A write that changes only bookkeeping isn't a version.
 // `proposedBy` (guides) is whoever proposed the change the writer accepted.
+// Each version is also listed in brief in changelog/{version id} (changelog.html):
+// { at, by, note, kind, proposedBy, collection, docId, title }; clients only read it.
 
 const TRACKED = ['skills', 'guides', 'handbook'];
 const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy'];
@@ -2163,7 +2165,13 @@ function recordVersions(collection){
       proposedBy: after && after.proposedBy ? await personFor(after.proposedBy) : null,
       authType: event.authType || '',
     };
-    await event.data.after.ref.collection('versions').add(version);
+    const added = await event.data.after.ref.collection('versions').add(version);
+    // The site's changelog (changelog.html) lists it too, in brief: a version
+    // holds the whole document, too much to load dozens of at once.
+    await db.collection('changelog').doc(added.id).set({
+      at: version.at, by: version.by, note: version.note, kind, proposedBy: version.proposedBy,
+      collection, docId: event.params.id, title: String(src.title || src.name || event.params.id),
+    });
   });
 }
 TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice(1)] = recordVersions(c); });

@@ -242,6 +242,13 @@ service cloud.firestore {
       }
     }
 
+    // The changelog's content changes (changelog.html), one per version of a
+    // tracked document, written only by the server (recordVersions).
+    match /changelog/{id} {
+      allow read: if isLabMember();
+      allow write: if false;
+    }
+
     // A person's read points (read-point.js): which version of a document they
     // last marked as read. Theirs alone, keyed by their Firebase Auth uid.
     match /readPoints/{userId}/docs/{key} {
