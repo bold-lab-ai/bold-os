@@ -98,14 +98,14 @@
     var n = shown().length;
     var editing = form && form.kind === 'edit' && form.id === p.id;
     if (editing) return '<section class="guide-part" id="' + anchor(p) + '">' + partFormHtml(p) + '</section>';
+    var icon = function(cls, label, svg, off){
+      return '<button type="button" class="icon-btn ' + cls + '" data-id="' + esc(p.id) + '" aria-label="' + label + '" title="' + label + '"' + (off ? ' disabled' : '') + '>' + svg + '</button>';
+    };
     return '<section class="guide-part" id="' + anchor(p) + '">' +
+      '<div class="guide-part-controls">' + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
+        icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, i === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, i === n - 1) + '</div>' +
       '<h2><span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</h2>' +
-      '<div class="guide-text">' + md(p.body) + '</div>' +
-      '<div class="event-controls guide-part-controls">' +
-        '<button type="button" class="btn-text gd-edit" data-id="' + esc(p.id) + '">' + 'Suggest a change' + '</button>' +
-        '<button type="button" class="btn-text gd-up" data-id="' + esc(p.id) + '"' + (i === 0 ? ' disabled' : '') + '>Move up</button>' +
-        '<button type="button" class="btn-text gd-down" data-id="' + esc(p.id) + '"' + (i === n - 1 ? ' disabled' : '') + '>Move down</button>' +
-      '</div></section>';
+      '<div class="guide-text">' + md(p.body) + '</div></section>';
   }
 
   // Marks the contents entry of the part being read.

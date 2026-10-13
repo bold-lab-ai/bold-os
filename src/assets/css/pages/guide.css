@@ -58,8 +58,8 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .md-table table{border-collapse:collapse; font-family:var(--sans); font-size:13px; min-width:100%;}
 .md-table th, .md-table td{border-bottom:1px solid var(--line); padding:6px 10px 6px 0; text-align:left; vertical-align:top;}
 .md-table th{font-weight:600; color:var(--ink);}
-.guide-part-controls{margin-top:12px; flex-wrap:wrap;}
-.guide-part-controls .btn-text{font-size:13px;}
+/* A part's pencil and arrows, above its title. */
+.guide-part-controls{display:flex; gap:2px; margin:0 0 4px -4px;}
 .event-add{
   margin-top:40px; font-family:var(--sans); font-size:14px; color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
   text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;

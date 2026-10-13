@@ -16,7 +16,7 @@
 window.EventSchedule = (function(){
   var esc = BOLD.escapeHtml;
   var NOT_PI = 'Only PIs and admins can change the schedule';
-  var PENCIL = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M11.6 1.6a1.5 1.5 0 0 1 2.1 0l.7.7a1.5 1.5 0 0 1 0 2.1L5.6 13.2l-3.5.9.9-3.5 8.6-9zM10.9 3.7l1.4 1.4 1.1-1.1-1.4-1.4-1.1 1.1z"/></svg>';
+  var PENCIL = BOLD.ICON_PENCIL;
   var WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 

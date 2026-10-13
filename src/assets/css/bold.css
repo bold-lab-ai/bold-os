@@ -410,7 +410,7 @@ a.mast-auth-name:hover{text-decoration:underline;}
   width:22px; height:22px; padding:0; display:inline-flex; align-items:center; justify-content:center;
   border:none; background:none; color:var(--muted); font-family:var(--sans); font-size:15px; line-height:1; border-radius:var(--radius); cursor:pointer;
 }
-.icon-btn.slot-edit:hover:not(:disabled){color:var(--accent); background:var(--wash);}
+.icon-btn:hover:not(:disabled){color:var(--accent); background:var(--wash);}
 .icon-btn.slot-delete:hover:not(:disabled){color:var(--danger-text); background:var(--wash);}
 .icon-btn:disabled{opacity:.35; cursor:default;}
 .slot-add-wrap{display:flex; align-items:center; gap:6px;}
