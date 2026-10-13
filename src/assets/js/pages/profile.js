@@ -131,7 +131,8 @@
     }).catch(function(err){
       console.error('[BOLD Lab] linkGithub failed', err);
       ghBusy = false;
-      ghError = err && err.code === 'functions/failed-precondition' && err.message ? err.message : 'Couldn’t reach GitHub — try again.';
+      // The SDK may or may not prefix the code with "functions/".
+      ghError = err && /failed-precondition$/.test(err.code || '') && err.message ? err.message : 'Couldn’t reach GitHub — try again.';
       // Still linked, if it is: only the check failed.
       var user = BOLD.getAuth() && BOLD.getAuth().currentUser;
       renderGithub(hasGithub(user) ? { status: 'unchecked' } : null);
