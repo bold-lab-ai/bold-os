@@ -59,6 +59,7 @@
   // the caller's own Slack custom profile fields (getMyProfile). Silent on
   // failure: the page is complete without them.
   function renderSlackFacts(data){
+    renderSlackAccount(data.slack);
     var box = el('slackFacts');
     var fields = data.fields || [];
     box.innerHTML = '';
@@ -93,8 +94,38 @@
     var code = err && err.code;
     return code in GH_ERRORS ? GH_ERRORS[code] : 'Couldn’t link GitHub — try again.';
   }
-  function hasGithub(user){
-    return !!(user && (user.providerData || []).some(function(p){ return p && p.providerId === 'github.com'; }));
+  function providerOf(user, id){
+    return ((user && user.providerData) || []).filter(function(p){ return p && p.providerId === id; })[0] || null;
+  }
+  function hasGithub(user){ return !!providerOf(user, 'github.com'); }
+  function me(){ return BOLD.getAuth() && BOLD.getAuth().currentUser; }
+
+  // An account on another platform: its photo, name (linking to the profile
+  // there), handle and a note. a: { photo, name, url, handle, note }.
+  function accountHtml(a){
+    var name = escapeHtml(a.name || a.handle || '');
+    return '<span class="acct">' + (a.photo ? '<img class="acct-photo" src="' + escapeHtml(a.photo) + '" alt="">' : '') +
+      '<span class="acct-text"><span class="acct-name">' + (a.url ? '<a href="' + escapeHtml(a.url) + '" target="_blank" rel="noopener">' + name + '</a>' : name) +
+      (a.handle && a.handle !== a.name ? ' <span class="acct-handle">@' + escapeHtml(a.handle) + '</span>' : '') + '</span>' +
+      (a.note ? '<span class="acct-note">' + a.note + '</span>' : '') + '</span></span>';
+  }
+
+  // Slack, the account they sign in with; its handle and profile come from getMyProfile.
+  function renderSlackAccount(slack){
+    var user = me(), p = providerOf(user, 'oidc.slack');
+    el('slackAccount').innerHTML = accountHtml({
+      photo: (p && p.photoURL) || (user && user.photoURL) || '', name: (user && user.displayName) || (p && p.displayName) || '',
+      handle: slack && slack.handle, url: slack && slack.url, note: 'Signed in with Slack',
+    });
+  }
+
+  // The GitHub login of a linked account, from GitHub's public API (no token),
+  // so the account shows even if the org check fails.
+  var ghLogin = {};
+  function githubLogin(id){
+    if (ghLogin[id] !== undefined) return Promise.resolve(ghLogin[id]);
+    return fetch('https://api.github.com/user/' + encodeURIComponent(id)).then(function(r){ return r.ok ? r.json() : {}; })
+      .then(function(j){ ghLogin[id] = j.login || ''; return ghLogin[id]; }).catch(function(){ return ''; });
   }
 
   // The GitHub row of the linked accounts: the account and its bold-lab-ai
@@ -108,18 +139,21 @@
         '<span class="gh-actions"><button type="button" class="btn-box is-primary gh-link"' + off + '>Link GitHub</button></span>';
       return;
     }
-    if (link.status === 'unchecked') {
-      box.innerHTML = '<span class="gh-line">Linked, but couldn’t check bold-lab-ai.</span>' + err +
-        '<span class="gh-actions"><button type="button" class="btn-box is-primary gh-retry"' + off + '>Try again</button>' +
-        '<button type="button" class="btn-box gh-unlink"' + off + '>Unlink GitHub</button></span>';
-      return;
-    }
-    var status = link.status === 'active' ? 'member of bold-lab-ai' :
-      link.status === 'pending' ? 'invited to bold-lab-ai: <a href="' + ORG + '/invitation" target="_blank" rel="noopener">accept the invitation</a>' :
-      'not invited to bold-lab-ai: ' + escapeHtml(link.error || 'GitHub refused.');
-    box.innerHTML = '<span class="gh-line"><a href="https://github.com/' + encodeURIComponent(link.github) + '" target="_blank" rel="noopener">@' + escapeHtml(link.github) + '</a>, ' + status + '</span>' + err +
-      '<span class="gh-actions">' + (link.status === 'failed' ? '<button type="button" class="btn-box is-primary gh-retry"' + off + '>Try again</button>' : '') +
+    var p = providerOf(me(), 'github.com');
+    var login = link.github || (p && ghLogin[p.uid]) || '';
+    var status = link.status === 'active' ? 'Member of bold-lab-ai' :
+      link.status === 'pending' ? 'Invited to bold-lab-ai: <a href="' + ORG + '/invitation" target="_blank" rel="noopener">accept the invitation</a>' :
+      link.status === 'unchecked' ? 'Linked, but couldn’t check bold-lab-ai' :
+      'Not invited to bold-lab-ai: ' + escapeHtml(link.error || 'GitHub refused.');
+    box.innerHTML = accountHtml({
+      photo: (p && p.photoURL) || (login ? 'https://github.com/' + encodeURIComponent(login) + '.png?size=80' : ''),
+      name: (p && p.displayName) || login, handle: login,
+      url: login ? 'https://github.com/' + encodeURIComponent(login) : '', note: status,
+    }) + err +
+      '<span class="gh-actions">' + (link.status === 'failed' || link.status === 'unchecked' ? '<button type="button" class="btn-box is-primary gh-retry"' + off + '>Try again</button>' : '') +
       '<button type="button" class="btn-box gh-unlink"' + off + '>Unlink GitHub</button></span>';
+    // The login isn't known until GitHub says (only the numeric id is): ask, then redraw.
+    if (!login && p && ghLogin[p.uid] === undefined) githubLogin(p.uid).then(function(l){ if (l) renderGithub(link); });
   }
 
   // Asks linkGithub for the link's state (inviting the account if need be).
@@ -182,6 +216,7 @@
 
   function renderProfile(user){
     showGithub(user);
+    if (user) renderSlackAccount(null);
     if (!user) { cacheClear(); el('slackFacts').hidden = true; return; }
     renderIdentity(user.displayName || '', user.email);
     showPhoto(user.photoURL);

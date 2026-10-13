@@ -58,6 +58,12 @@ section.block:first-of-type{margin-top:28px;}
 .proj-empty{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
 .proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
 .gh-line{display:block;}
+/* A linked account: its photo, name and handle (linking to the profile there), and a note. */
+.acct{display:flex; align-items:center; gap:12px;}
+.acct-photo{width:36px; height:36px; border-radius:50%; object-fit:cover; flex:none; background:var(--wash);}
+.acct-text{display:flex; flex-direction:column; min-width:0;}
+.acct-handle{font-family:var(--sans); font-size:14px; color:var(--muted);}
+.acct-note{font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
 .gh-error{display:block; margin-top:6px; font-family:var(--sans); font-size:14px; color:var(--danger-text);}
 .gh-actions{display:flex; flex-wrap:wrap; gap:10px; margin:10px 0 8px;}
 .profile-tabs{margin-top:64px;}

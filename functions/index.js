@@ -1281,7 +1281,12 @@ exports.getMyProfile = onCall(
       logger.warn('users.profile.get failed', { error: json.error });
       throw new HttpsError('unavailable', 'Could not read Slack profile.');
     }
-    return { fields: profileFieldsFromSlack(json.profile) };
+    // Their Slack account, for profile.html's Linked accounts: the handle and
+    // their profile in the workspace (the workspace's address from auth.test).
+    const auth = await slackAuthInfo(SLACK_BOT_TOKEN.value());
+    const p = json.profile || {};
+    const slack = { handle: p.display_name || p.real_name || '', url: auth && auth.url ? auth.url + 'team/' + slackId : '' };
+    return { fields: profileFieldsFromSlack(json.profile), slack };
   }
 );
 
@@ -1552,7 +1557,7 @@ async function slackAuthInfo(token){
   if (!slackAuthCache){
     const auth = await slackFetch(token, 'auth.test', {});
     if (!auth.ok) return null;
-    slackAuthCache = { teamId: auth.team_id, bot: auth.user };
+    slackAuthCache = { teamId: auth.team_id, bot: auth.user, url: auth.url || '' };
   }
   return slackAuthCache;
 }
