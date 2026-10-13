@@ -41,7 +41,7 @@ npm run build      # one-off build into _site/
 npx firebase emulators:start --only firestore,functions --project demo-test
 ```
 
-There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling the emulator's REST API with unsigned tokens (`alg: none`, with an `email` claim and `firebase.sign_in_provider: 'oidc.slack'`: only Slack sessions count as signed in), and seed `roles/pis` and `roles/admins` to give a test user PI or admin rights.
+There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling the emulator's REST API with unsigned tokens (`alg: none`, with an `email` claim and `firebase.identities: { 'oidc.slack': [...] }`: only Slack accounts count as signed in), and seed `roles/pis` and `roles/admins` to give a test user PI or admin rights.
 
 ## How pages are built
 
@@ -69,7 +69,7 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
   - **Never a bare `firebase deploy`**: production runs functions that aren't in this code.
   - Deploy rules together with the client code that needs them.
 - **Never enable Firebase Hosting** on the project: it breaks sign-in.
-- **Only Slack sign-ins count.** `isSignedIn()` in the rules, `signedInEmail` in the functions and `onlySlackSignUps` (which refuses any new account that isn't a Slack one) together mean another provider linked to an account, such as GitHub, never gives access on its own. Keep any new rule or callable behind them.
+- **Only Slack accounts count.** `isSignedIn()` in the rules and `signedInEmail` in the functions require a Slack identity on the account (`token.firebase.identities`, not `sign_in_provider`, which linking GitHub changes), and `onlySlackSignUps` refuses any new account that isn't a Slack one; together another provider, such as GitHub, never gives access on its own. Keep any new rule or callable behind them.
 - **Sign-in:** don't change how it works without testing in private windows on desktop and phone. The setup and its history are in `docs/REFERENCE.md` under "Sign-in".
 - **Public repo:** no secrets, tokens or people's email addresses in code or docs. Role lists live in Firestore.
 

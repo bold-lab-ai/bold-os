@@ -56,20 +56,25 @@ setGlobalOptions({ region: 'europe-west2', maxInstances: 10 });
 
 const APP_BASE_URL = 'https://bold-lab-ai.github.io/bold-os/audit-board.html';
 
-// ---------- who may use BOLD.OS: Slack sign-ins only ----------
+// ---------- who may use BOLD.OS: Slack accounts only ----------
 // Membership of the BOLD Slack is what makes someone a lab member, so a session
-// counts only if it was signed in with Slack. Other providers may be linked to
-// an account (GitHub, to join bold-lab-ai: linkGithub), but signing in with one
-// gives no access: firestore.rules' isSignedIn() and storage.rules check the
-// same, and onlySlackSignUps refuses any new account that isn't a Slack one, so
-// GitHub (or any other provider) can't be used to sign up.
+// counts only if its account has a Slack identity (token.firebase.identities),
+// and onlySlackSignUps refuses any new account that isn't a Slack one: GitHub
+// (or any other provider) can't be used to sign up, and a GitHub sign-in can
+// only reach an account that already has Slack. firestore.rules' isSignedIn()
+// and storage.rules check the same. Not the session's sign_in_provider: linking
+// GitHub (linkGithub) turns that into github.com for the rest of the session.
 const SIGN_IN_PROVIDER = 'oidc.slack';
 
-// The caller's email, if signed in with Slack; otherwise refuses the call.
+// The caller's email, if their account is a Slack one; otherwise refuses the call.
 function signedInEmail(request){
   const token = request.auth && request.auth.token;
   if (!token || !token.email) throw new HttpsError('unauthenticated', 'Sign in required.');
-  if (!token.firebase || token.firebase.sign_in_provider !== SIGN_IN_PROVIDER) {
+  const identities = (token.firebase && token.firebase.identities) || {};
+  if (!identities[SIGN_IN_PROVIDER]) {
+    logger.warn('signedInEmail: refused an account without Slack', {
+      provider: token.firebase && token.firebase.sign_in_provider, identities: Object.keys(identities),
+    });
     throw new HttpsError('permission-denied', 'Sign in with Slack.');
   }
   return token.email;

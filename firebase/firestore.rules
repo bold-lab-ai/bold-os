@@ -25,12 +25,14 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Signed in with Slack: membership of the BOLD Slack is what makes someone
-    // a lab member. Another provider linked to an account (GitHub, to join
-    // bold-lab-ai) gives no access if used to sign in; functions/index.js
-    // (signedInEmail, onlySlackSignUps) holds to the same.
+    // Signed in to a Slack account: membership of the BOLD Slack is what makes
+    // someone a lab member. Checked by the account's identities, not the
+    // session's sign_in_provider, which linking GitHub turns into github.com.
+    // Only Slack accounts can be created (onlySlackSignUps), so another
+    // provider can't reach anything on its own; functions/index.js
+    // (signedInEmail) holds to the same.
     function isSignedIn() {
-      return request.auth != null && request.auth.token.firebase.sign_in_provider == 'oidc.slack';
+      return request.auth != null && 'oidc.slack' in request.auth.token.firebase.identities;
     }
     function email()      { return request.auth.token.email; }
     function roleList(name) {
