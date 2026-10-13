@@ -30,6 +30,7 @@
 const { onDocumentCreated, onDocumentWritten, onDocumentWrittenWithAuthContext } = require('firebase-functions/v2/firestore');
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { beforeUserCreated, HttpsError: IdentityHttpsError } = require('firebase-functions/v2/identity');
 const { defineSecret } = require('firebase-functions/params');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
@@ -54,6 +55,34 @@ const SLACK_SIGNING_SECRET = defineSecret('SLACK_SIGNING_SECRET');
 setGlobalOptions({ region: 'europe-west2', maxInstances: 10 });
 
 const APP_BASE_URL = 'https://bold-lab-ai.github.io/bold-os/audit-board.html';
+
+// ---------- who may use BOLD.OS: Slack sign-ins only ----------
+// Membership of the BOLD Slack is what makes someone a lab member, so a session
+// counts only if it was signed in with Slack. Other providers may be linked to
+// an account (GitHub, to join bold-lab-ai: linkGithub), but signing in with one
+// gives no access: firestore.rules' isSignedIn() and storage.rules check the
+// same, and onlySlackSignUps refuses any new account that isn't a Slack one, so
+// GitHub (or any other provider) can't be used to sign up.
+const SIGN_IN_PROVIDER = 'oidc.slack';
+
+// The caller's email, if signed in with Slack; otherwise refuses the call.
+function signedInEmail(request){
+  const token = request.auth && request.auth.token;
+  if (!token || !token.email) throw new HttpsError('unauthenticated', 'Sign in required.');
+  if (!token.firebase || token.firebase.sign_in_provider !== SIGN_IN_PROVIDER) {
+    throw new HttpsError('permission-denied', 'Sign in with Slack.');
+  }
+  return token.email;
+}
+
+exports.onlySlackSignUps = beforeUserCreated((event) => {
+  const provider = (event.additionalUserInfo && event.additionalUserInfo.providerId) ||
+    (event.credential && event.credential.providerId) || '';
+  if (provider !== SIGN_IN_PROVIDER) {
+    logger.warn('onlySlackSignUps: refused a sign-up', { provider });
+    throw new IdentityHttpsError('permission-denied', 'BOLD.OS is for the BOLD Slack: sign in with Slack.');
+  }
+});
 
 // Deep links (2026-09-12) — mirrors audit-board.html's stateUrl(): a hash,
 // not a real path, since this is a static site with no server routing.
@@ -1232,8 +1261,7 @@ function profileFieldsFromSlack(profile){
 // what is actually allowed.
 exports.getMyAccess = onCall(
   async (request) => {
-    const email = request.auth && request.auth.token && request.auth.token.email;
-    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const email = signedInEmail(request);
     const [pis, admins] = await Promise.all([rolesEmails('pis'), rolesEmails('admins')]);
     return { fullWrite: pis.indexOf(email) !== -1 || admins.indexOf(email) !== -1 };
   }
@@ -1242,8 +1270,7 @@ exports.getMyAccess = onCall(
 exports.getMyProfile = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
-    const email = request.auth && request.auth.token && request.auth.token.email;
-    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const email = signedInEmail(request);
     const slackId = await slackIdForEmail(email);
     if (!slackId) return { fields: [] };
     const url = 'https://slack.com/api/users.profile.get?' +
@@ -1331,8 +1358,7 @@ function projectsFromDashboard(sections){
 
 exports.getMyProjects = onCall(
   async (request) => {
-    const email = request.auth && request.auth.token && request.auth.token.email;
-    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const email = signedInEmail(request);
     return projectsFromDashboard(await gatherDashboard(email, PROFILE_PROJECTS_CAP));
   }
 );
@@ -1406,8 +1432,7 @@ async function slackLinksFor(names){
 exports.getAllProjects = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
-    const email = request.auth && request.auth.token && request.auth.token.email;
-    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const email = signedInEmail(request);
     const [boardsSnap, cardsSnap, unassignedSnap] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
@@ -1442,8 +1467,7 @@ function keywordCounts(cardDatas){
 
 exports.getProjectKeywords = onCall(
   async (request) => {
-    const email = request.auth && request.auth.token && request.auth.token.email;
-    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const email = signedInEmail(request);
     const [cardsSnap, projectsSnap] = await Promise.all([
       db.collectionGroup('cards').get(),
       db.collection('projects').get()
@@ -1557,8 +1581,7 @@ function slackChannelError(code, json){
 exports.projectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
-    const email = request.auth && request.auth.token && request.auth.token.email;
-    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const email = signedInEmail(request);
     const data = request.data || {};
     const n = normalizeProjectChannel(data.name);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
@@ -1611,8 +1634,7 @@ async function isRegisteredProjectChannel(name){
 exports.joinProjectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
-    const email = request.auth && request.auth.token && request.auth.token.email;
-    if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
+    const email = signedInEmail(request);
     const n = normalizeProjectChannel((request.data || {}).channel);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
     if (!(await isRegisteredProjectChannel(n.name))) throw new HttpsError('not-found', 'No project uses that Slack channel.');
@@ -1653,9 +1675,7 @@ const GITHUB_ORG_TOKEN = defineSecret('GITHUB_ORG_TOKEN');
 const GITHUB_USERNAME = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
 
 function callerEmail(request){
-  const email = request.auth && request.auth.token && request.auth.token.email;
-  if (!email) throw new HttpsError('unauthenticated', 'Sign in required.');
-  return email.toLowerCase();
+  return signedInEmail(request).toLowerCase();
 }
 
 async function isFullWrite(email){

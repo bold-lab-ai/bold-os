@@ -14,7 +14,8 @@ service firebase.storage {
   match /b/{bucket}/o {
     match /venues/{boardId}/feed.ics {
       allow read: if true;
-      allow write: if request.auth != null && (
+      // Signed in with Slack, as firestore.rules' isSignedIn() requires.
+      allow write: if request.auth != null && request.auth.token.firebase.sign_in_provider == 'oidc.slack' && (
         request.auth.token.email in firestore.get(/databases/(default)/documents/roles/pis).data.emails ||
         request.auth.token.email in firestore.get(/databases/(default)/documents/roles/admins).data.emails
       );
