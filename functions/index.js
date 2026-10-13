@@ -912,11 +912,11 @@ exports.onVenueProposed = onDocumentCreated(
 );
 
 // ---------- Suggested changes to a guide or the BOLDiquette ----------
-// Anyone who isn't a PI/admin changes a guide (guides/{slug}) by proposing it
-// (…/proposals/{id}, see pages/guide.js), and everyone, PIs and admins too, so
-// changes the BOLDiquette (handbook/{slug}); a PI or admin accepts or declines
-// it on the page (decideProposal, for the BOLDiquette). Tell them all, but
-// whoever proposed it, when one arrives, with a link to it.
+// Everyone, PIs and admins too, changes a guide (guides/{slug}) or the
+// BOLDiquette (handbook/{slug}) by proposing it (…/proposals/{id}, see
+// pages/guide.js); another PI or admin accepts or declines it on the page
+// (decideProposal). Tell them all, but whoever proposed it, when one arrives,
+// with a link to it.
 
 const SITE_URL = APP_BASE_URL.replace(/[^/]*$/, '');
 
@@ -964,16 +964,16 @@ exports.onGuideProposed = onProposed('guides', (slug) => SITE_URL + 'guide.html?
 // The BOLDiquette is the one handbook document; it has its own page.
 exports.onHandbookProposed = onProposed('handbook', (slug) => SITE_URL + (slug === 'boldiquette' ? 'boldiquette.html' : 'index.html'));
 
-// ---------- Deciding a suggested change to the BOLDiquette ----------
-// The BOLDiquette (handbook/{slug}) changes only by an accepted proposal, a PI's
-// or admin's own included: clients can't write it (firestore.rules), so a PI or
-// admin who didn't propose the change accepts or declines it here.
-// data: { collection: 'handbook', slug, id, accept: bool } → { status }.
+// ---------- Deciding a suggested change to a guide or the BOLDiquette ----------
+// A guide (guides/{slug}) or the BOLDiquette (handbook/{slug}) changes only by
+// an accepted proposal, a PI's or admin's own included: clients can't change
+// their content (firestore.rules), so a PI or admin who didn't propose the
+// change accepts or declines it here.
+// data: { collection: 'guides' | 'handbook', slug, id, accept: bool } → { status }.
 
-const REVIEWED = ['handbook'];
+const REVIEWED = ['guides', 'handbook'];
 
-// The parts with proposal q applied (pages/guide.js does the same for guides):
-// pure, so it's testable on its own. → { title, description, parts } changed.
+// The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q){
   const parts = (doc.parts || []).map((p) => Object.assign({}, p));
   const after = q.after || {};

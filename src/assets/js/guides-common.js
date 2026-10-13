@@ -1,11 +1,11 @@
 // How-to guides — guides/{slug} in Firestore: { slug, title, description,
 // parts: [{ id, title, body (Markdown, markdown.js) }], createdAt, createdBy,
-// updatedAt, updatedBy, changeNote, proposedBy }. PIs/admins change a guide
-// directly; anyone else's change is a proposal, guides/{slug}/proposals/{id}:
-// { kind: 'about' | 'edit' | 'add' | 'remove', partId, before, after, note,
+// updatedAt, updatedBy, changeNote, proposedBy }. Every change, a PI's or
+// admin's too, is a proposal, guides/{slug}/proposals/{id}: { kind: 'about' |
+// 'edit' | 'add' | 'remove' | 'move' | 'restore', partId, before, after, note,
 // by: { email, name }, at, status: 'open' | 'accepted' | 'declined',
-// decidedBy, decidedAt }, which a PI/admin accepts (it's applied then) or
-// declines (firestore.rules). Every change is kept in the guide's history
+// decidedBy, decidedAt }, which a PI/admin other than whoever proposed it
+// accepts (decideProposal applies it) or declines (firestore.rules). Every change is kept in the guide's history
 // (history.js). Shared by the guides page (guides.html) and a guide's page
 // (guide.html?guide=<slug>).
 window.BoldGuides = (function(){
