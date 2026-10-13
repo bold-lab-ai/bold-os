@@ -108,6 +108,12 @@
         '<span class="gh-actions"><button type="button" class="btn-box is-primary gh-link"' + off + '>Link GitHub</button></span>';
       return;
     }
+    if (link.status === 'unchecked') {
+      box.innerHTML = '<span class="gh-line">Linked, but couldn’t check bold-lab-ai.</span>' + err +
+        '<span class="gh-actions"><button type="button" class="btn-box is-primary gh-retry"' + off + '>Try again</button>' +
+        '<button type="button" class="btn-box gh-unlink"' + off + '>Unlink GitHub</button></span>';
+      return;
+    }
     var status = link.status === 'active' ? 'member of bold-lab-ai' :
       link.status === 'pending' ? 'invited to bold-lab-ai: <a href="' + ORG + '/invitation" target="_blank" rel="noopener">accept the invitation</a>' :
       'not invited to bold-lab-ai: ' + escapeHtml(link.error || 'GitHub refused.');
@@ -126,7 +132,9 @@
       console.error('[BOLD Lab] linkGithub failed', err);
       ghBusy = false;
       ghError = err && err.code === 'functions/failed-precondition' && err.message ? err.message : 'Couldn’t reach GitHub — try again.';
-      renderGithub(null);
+      // Still linked, if it is: only the check failed.
+      var user = BOLD.getAuth() && BOLD.getAuth().currentUser;
+      renderGithub(hasGithub(user) ? { status: 'unchecked' } : null);
     });
   }
 
@@ -144,6 +152,8 @@
       ghBusy = true; renderGithub(null);
       // After a popup (localhost) the account is linked here; live, the page goes to GitHub and back.
       BOLD.link(new firebase.auth.GithubAuthProvider()).then(function(){ loadGithub(); }).catch(function(err){
+        // Linked already (the page didn't know): just check it.
+        if (err && err.code === 'auth/provider-already-linked') { loadGithub(); return; }
         console.error('[BOLD Lab] linking GitHub failed', err);
         ghBusy = false; ghError = ghMessage(err); renderGithub(null);
       });
