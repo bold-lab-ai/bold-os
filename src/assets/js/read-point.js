@@ -6,8 +6,13 @@
 // summary, and on request each changed part and the parts moved to another section.
 // The read point moves only when they click Mark as read.
 //
+// Who has read the document is public to the lab: marking it read also writes
+// <doc>/readers/{uid}: { email, name, version, at, readAt } (firestore.rules:
+// lab members read them, each person writes only their own), listed under
+// "Read by" (readersHtml): up to date with the latest version, or an earlier one.
+//
 // BoldReadPoint.create({ ref, key, anchor: part → its element id, onChange })
-// → { start(user), stop(), html(doc), click(event) → true if it handled it }.
+// → { start(user), stop(), html(doc), readersHtml(), click(event) → true if it handled it }.
 window.BoldReadPoint = (function(){
   var esc = BOLD.escapeHtml;
   var MAX_EDITS = 20;
@@ -49,7 +54,8 @@ window.BoldReadPoint = (function(){
 
   function create(opts){
     var db = opts.ref.firestore;
-    var mine = null, unsubs = [];
+    var mine = null, myReader = null, me = null, unsubs = [];
+    var readers = [], readersLoaded = false;
     var point = null, pointLoaded = false, latest = null, base = null, edits = [];
     var open = false, busy = false, error = '';
 
@@ -75,26 +81,60 @@ window.BoldReadPoint = (function(){
 
     function stop(){
       unsubs.forEach(function(u){ u(); });
-      unsubs = []; mine = null;
+      unsubs = []; mine = null; myReader = null; me = null;
+      readers = []; readersLoaded = false;
       point = null; pointLoaded = false; latest = null; base = null; edits = []; error = '';
     }
 
     function start(user){
       stop();
       if (!user) return;
+      me = { email: user.email || '', name: user.displayName || '' };
       mine = db.collection('readPoints').doc(user.uid).collection('docs').doc(opts.key);
+      myReader = opts.ref.collection('readers').doc(user.uid);
       unsubs.push(mine.onSnapshot(function(snap){
         point = snap.exists ? snap.data() : null;
         pointLoaded = true;
         loadBase();
+        backfill();
         changed();
       }, fail('loading your read point')));
+      unsubs.push(opts.ref.collection('readers').onSnapshot(function(snap){
+        readers = snap.docs.map(function(d){ return Object.assign({ uid: d.id }, d.data()); });
+        readersLoaded = true;
+        backfill();
+        changed();
+      }, fail('loading who has read it')));
       unsubs.push(opts.ref.collection('versions').orderBy('at', 'desc').limit(1).onSnapshot(function(snap){
         var was = latest && latest.id;
         latest = snap.empty ? null : Object.assign({ id: snap.docs[0].id }, snap.docs[0].data());
         if (point && latest && latest.id !== was) loadBase();
         changed();
       }, fail('loading the latest version')));
+    }
+
+    // Someone who marked it read before readers were listed: list them now, as of that read.
+    var backfilled = false;
+    function backfill(){
+      if (backfilled || !point || !readersLoaded || !myReader || !me.email) return;
+      if (readers.some(function(r){ return r.uid === myReader.id; })) return;
+      backfilled = true;
+      myReader.set(readerOf(point)).catch(fail('listing you as a reader'));
+    }
+    function readerOf(p){ return { email: me.email, name: me.name, version: p.version, at: p.at, readAt: p.readAt || p.at }; }
+
+    // Who has read it: up to date, or as of an earlier version.
+    function readersHtml(){
+      if (!readersLoaded || !latest) return '';
+      var name = function(r){ return r.name || r.email; };
+      var byName = function(a, b){ return name(a).localeCompare(name(b)); };
+      var current = readers.filter(function(r){ return r.version === latest.id; }).sort(byName);
+      var earlier = readers.filter(function(r){ return r.version !== latest.id; }).sort(byName);
+      var day = function(ms){ return BoldHistory.when(ms).replace(/,.*$/, ''); };
+      var body = !readers.length ? '<p class="rp-readers">Nobody has marked it as read yet.</p>' :
+        (current.length ? '<p class="rp-readers"><span class="rp-readers-label">Up to date</span>' + current.map(function(r){ return esc(name(r)); }).join(', ') + '</p>' : '') +
+        (earlier.length ? '<p class="rp-readers"><span class="rp-readers-label">Read an earlier version</span>' + earlier.map(function(r){ return esc(name(r)) + ' <span class="rp-readers-when">(' + esc(day(r.readAt || r.at)) + ')</span>'; }).join(', ') + '</p>' : '');
+      return '<section class="block" id="readers"><div class="block-head"><h2>Read by</h2></div>' + body + '</section>';
     }
 
     function markButton(){
@@ -114,7 +154,10 @@ window.BoldReadPoint = (function(){
       if (!base) return '';
       var list = base.missing ? [] : changes(base.data || {}, doc, opts.anchor);
       var read = BoldHistory.when(point.readAt || point.at);
-      if (!list.length) return '<p class="rp-line">No changes since you last read it, on ' + esc(read) + '.</p>';
+      // Edits since that changed nothing in the end (undone, say): marking it read
+      // again moves them to the latest version in "Read by".
+      if (!list.length) return '<p class="rp-line">No changes since you last read it, on ' + esc(read) + '.' +
+        (point.version !== latest.id ? ' ' + markButton() : '') + '</p>' + err;
       var who = edits.map(function(v){ return v.by ? (v.by.name || v.by.email) : ''; })
         .filter(function(n, i, all){ return n && all.indexOf(n) === i; });
       var count = edits.length >= MAX_EDITS ? MAX_EDITS + '+ edits' : edits.length === 1 ? '1 edit' : edits.length + ' edits';
@@ -143,7 +186,11 @@ window.BoldReadPoint = (function(){
       if (t.classList.contains('rp-toggle')) { open = !open; changed(); return true; }
       if (busy || !mine || !latest) return true;
       busy = true; error = ''; changed();
-      mine.set({ version: latest.id, at: latest.at, readAt: Date.now() }).then(function(){
+      var p = { version: latest.id, at: latest.at, readAt: Date.now() };
+      var batch = db.batch();
+      batch.set(mine, p);
+      if (me.email) batch.set(myReader, readerOf(p));
+      batch.commit().then(function(){
         busy = false; changed();
       }).catch(function(err){
         console.error('[BOLD Read point] marking as read failed', err);
@@ -152,7 +199,7 @@ window.BoldReadPoint = (function(){
       return true;
     }
 
-    return { start: start, stop: stop, html: html, click: click };
+    return { start: start, stop: stop, html: html, readersHtml: readersHtml, click: click };
   }
 
   return { create: create };

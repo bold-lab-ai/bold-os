@@ -255,6 +255,16 @@ service cloud.firestore {
     // (handbook/{slug}; boldiquette.html): the same rules as guides/{slug}.
     match /handbook/{slug} {
       allow read: if isLabMember();
+      // Who has marked it read (read-point.js): readable by the lab; each
+      // person writes only their own, under their uid and email.
+      match /readers/{userId} {
+        allow read: if isLabMember();
+        allow delete: if isSignedIn() && request.auth.uid == userId;
+        allow create, update: if isSignedIn() && request.auth.uid == userId
+          && request.resource.data.keys().hasOnly(['email', 'name', 'version', 'at', 'readAt'])
+          && request.resource.data.email == email()
+          && request.resource.data.version is string && request.resource.data.at is number;
+      }
       allow create, update: if hasFullWrite() && request.resource.data.slug == slug
         && request.resource.data.updatedBy == email();
       allow delete: if hasFullWrite();

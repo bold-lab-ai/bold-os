@@ -79,6 +79,9 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .read-point .hist-label a{color:inherit;}
 .rp-changes{margin-top:4px; padding-top:4px; border-top:1px solid var(--line);}
 .rp-moves{margin:10px 0 0; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}
+.rp-readers{margin:6px 0 0; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+.rp-readers-label{display:block; font-size:12px; color:var(--muted);}
+.rp-readers-when{color:var(--muted);}
 
 /* ---------- proposed changes ---------- */
 .gd-proposal-list{list-style:none; margin:0; padding:0;}
