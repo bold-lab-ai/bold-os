@@ -100,11 +100,11 @@
   function hasGithub(user){ return !!providerOf(user, 'github.com'); }
   function me(){ return BOLD.getAuth() && BOLD.getAuth().currentUser; }
 
-  // An account on another platform: its photo, name (linking to the profile
-  // there), handle and a note. a: { photo, name, url, handle, note }.
+  // An account on another platform: its name (linking to the profile there),
+  // handle and a note. a: { name, url, handle, note }.
   function accountHtml(a){
     var name = escapeHtml(a.name || a.handle || '');
-    return '<span class="acct">' + (a.photo ? '<img class="acct-photo" src="' + escapeHtml(a.photo) + '" alt="">' : '') +
+    return '<span class="acct">' +
       '<span class="acct-text"><span class="acct-name">' + (a.url ? '<a href="' + escapeHtml(a.url) + '" target="_blank" rel="noopener">' + name + '</a>' : name) +
       (a.handle && a.handle !== a.name ? ' <span class="acct-handle">@' + escapeHtml(a.handle) + '</span>' : '') + '</span>' +
       (a.note ? '<span class="acct-note">' + a.note + '</span>' : '') + '</span></span>';
@@ -114,7 +114,7 @@
   function renderSlackAccount(slack){
     var user = me(), p = providerOf(user, 'oidc.slack');
     el('slackAccount').innerHTML = accountHtml({
-      photo: (p && p.photoURL) || (user && user.photoURL) || '', name: (user && user.displayName) || (p && p.displayName) || '',
+      name: (user && user.displayName) || (p && p.displayName) || '',
       handle: slack && slack.handle, url: slack && slack.url, note: 'Signed in with Slack',
     });
   }
@@ -146,7 +146,6 @@
       link.status === 'unchecked' ? 'Linked, but couldn’t check bold-lab-ai' :
       'Not invited to bold-lab-ai: ' + escapeHtml(link.error || 'GitHub refused.');
     box.innerHTML = accountHtml({
-      photo: (p && p.photoURL) || (login ? 'https://github.com/' + encodeURIComponent(login) + '.png?size=80' : ''),
       name: (p && p.displayName) || login, handle: login,
       url: login ? 'https://github.com/' + encodeURIComponent(login) : '', note: status,
     }) + err +
