@@ -98,14 +98,3 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
   .guide-part h2{font-size:22px;}
 }
 
-/* ---------- tabs: one per section (e.g. BOLDiquette) ---------- */
-.guide-tabs{
-  max-width:none; display:flex; flex-wrap:wrap; gap:4px 22px; margin:8px 0 8px; padding-bottom:10px;
-  border-bottom:1px solid var(--line); scroll-margin-top:16px;
-}
-.guide-tab{
-  font-family:var(--sans); font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted);
-  text-decoration:none; padding:6px 0; border-bottom:2px solid transparent; margin-bottom:-11px;
-}
-.guide-tab:hover{color:var(--accent);}
-.guide-tab.is-current{color:var(--ink); border-bottom-color:var(--accent);}

@@ -97,33 +97,35 @@
     return !!(user && (user.providerData || []).some(function(p){ return p && p.providerId === 'github.com'; }));
   }
 
+  // The GitHub row of the linked accounts: the account and its bold-lab-ai
+  // membership, with the button to link or unlink it.
   function renderGithub(link){
     var box = el('githubBody');
-    var err = ghError ? '<p class="gh-error">' + escapeHtml(ghError) + '</p>' : '';
+    var off = ghBusy ? ' disabled' : '';
+    var err = ghError ? '<span class="gh-error">' + escapeHtml(ghError) + '</span>' : '';
     if (!link) {
-      box.innerHTML = '<p class="gh-line">Link your GitHub account to join the bold-lab-ai organisation.</p>' + err +
-        '<button type="button" class="btn btn-primary gh-link"' + (ghBusy ? ' disabled' : '') + '>Link GitHub</button>';
+      box.innerHTML = '<span class="gh-line">Not linked. Linking it invites you to the bold-lab-ai organisation.</span>' + err +
+        '<span class="gh-actions"><button type="button" class="btn-box is-primary gh-link"' + off + '>Link GitHub</button></span>';
       return;
     }
-    var status = link.status === 'active' ? 'Member' :
-      link.status === 'pending' ? 'Invited: <a href="' + ORG + '/invitation" target="_blank" rel="noopener">accept the invitation</a>' :
-      'Not invited: ' + escapeHtml(link.error || 'GitHub refused.');
-    box.innerHTML = '<dl class="facts">' +
-      '<div class="fact"><dt>Account</dt><dd><a href="https://github.com/' + encodeURIComponent(link.github) + '" target="_blank" rel="noopener">@' + escapeHtml(link.github) + '</a></dd></div>' +
-      '<div class="fact"><dt>bold-lab-ai</dt><dd>' + status + '</dd></div></dl>' + err +
-      '<p class="gh-actions">' + (link.status === 'failed' ? '<button type="button" class="btn btn-primary gh-retry"' + (ghBusy ? ' disabled' : '') + '>Try again</button>' : '') +
-      '<button type="button" class="btn btn-secondary gh-unlink"' + (ghBusy ? ' disabled' : '') + '>Unlink GitHub</button></p>';
+    var status = link.status === 'active' ? 'member of bold-lab-ai' :
+      link.status === 'pending' ? 'invited to bold-lab-ai: <a href="' + ORG + '/invitation" target="_blank" rel="noopener">accept the invitation</a>' :
+      'not invited to bold-lab-ai: ' + escapeHtml(link.error || 'GitHub refused.');
+    box.innerHTML = '<span class="gh-line"><a href="https://github.com/' + encodeURIComponent(link.github) + '" target="_blank" rel="noopener">@' + escapeHtml(link.github) + '</a>, ' + status + '</span>' + err +
+      '<span class="gh-actions">' + (link.status === 'failed' ? '<button type="button" class="btn-box is-primary gh-retry"' + off + '>Try again</button>' : '') +
+      '<button type="button" class="btn-box gh-unlink"' + off + '>Unlink GitHub</button></span>';
   }
 
   // Asks linkGithub for the link's state (inviting the account if need be).
   function loadGithub(){
     ghBusy = true;
-    el('githubBody').innerHTML = '<p class="proj-msg">Checking GitHub&hellip;</p>';
+    el('githubBody').innerHTML = '<span class="proj-msg">Checking GitHub&hellip;</span>';
     firebase.app().functions('europe-west2').httpsCallable('linkGithub')().then(function(res){
       ghBusy = false; renderGithub((res.data || {}).link || null);
     }).catch(function(err){
       console.error('[BOLD Lab] linkGithub failed', err);
-      ghBusy = false; ghError = 'Couldn’t reach GitHub — try again.';
+      ghBusy = false;
+      ghError = err && err.code === 'functions/failed-precondition' && err.message ? err.message : 'Couldn’t reach GitHub — try again.';
       renderGithub(null);
     });
   }
@@ -220,7 +222,7 @@
       items.forEach(function(p){ ul.appendChild(renderProject(p)); });
     });
     el('projMsg').hidden = true;
-    el('projects').hidden = false;
+    el('projGroups').hidden = false;
   }
   // First paint from the last visit's sign-in hint (same one the masthead
   // uses) plus any cached sections — before Firebase has loaded or signed
@@ -238,6 +240,22 @@
       });
     }
   } catch (e){}
+
+  /* ---------- tabs ---------- */
+  // Projects and Linked accounts, one shown at a time; the #hash names it.
+  var TABS = ['projects', 'linked-accounts'];
+  function showTab(){
+    var want = String(location.hash || '').replace(/^#/, '');
+    if (TABS.indexOf(want) === -1) want = TABS[0];
+    TABS.forEach(function(id){ el(id).hidden = id !== want; });
+    Array.prototype.forEach.call(document.querySelectorAll('#profileTabs .guide-tab'), function(a){
+      var on = a.getAttribute('href') === '#' + want;
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+  window.addEventListener('hashchange', showTab);
+  showTab();
 
   // Last, so everything above is defined if the user is already known.
   BOLD.onUser(renderProfile);

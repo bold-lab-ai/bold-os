@@ -26,23 +26,25 @@ permalink: "profile.html"
     <dl class="facts facts--slack" id="slackFacts" hidden></dl>
   </section>
 
-  <section class="block" id="github">
-    <div class="block-head">
-      <h2>GitHub</h2>
-    </div>
-    <div id="githubBody"><p class="proj-msg">Loading&hellip;</p></div>
-  </section>
+  <nav class="guide-tabs profile-tabs" id="profileTabs" aria-label="Profile">
+    <a class="guide-tab" href="#projects">Projects</a>
+    <a class="guide-tab" href="#linked-accounts">Linked accounts</a>
+  </nav>
 
-  <section class="block">
-    <div class="block-head">
-      <h2>Projects</h2>
-    </div>
+  <section class="profile-panel" id="projects">
     <p class="proj-msg" id="projMsg">Loading&hellip;</p>
-    <div id="projects" hidden>
+    <div id="projGroups" hidden>
       <div class="proj-group"><h3>Owner<span class="proj-count" id="cntOwner"></span></h3><ul class="proj-list" id="projOwner"></ul></div>
       <div class="proj-group"><h3>Author<span class="proj-count" id="cntAuthor"></span></h3><ul class="proj-list" id="projAuthor"></ul></div>
       <div class="proj-group"><h3>Reviewer<span class="proj-count" id="cntReviewer"></span></h3><ul class="proj-list" id="projReviewer"></ul></div>
     </div>
+  </section>
+
+  <section class="profile-panel" id="linked-accounts" hidden>
+    <dl class="facts" id="accounts">
+      <div class="fact"><dt>Slack</dt><dd>Signed in with Slack</dd></div>
+      <div class="fact"><dt>GitHub</dt><dd id="githubBody"><span class="proj-msg">Loading&hellip;</span></dd></div>
+    </dl>
   </section>
 
 </main>

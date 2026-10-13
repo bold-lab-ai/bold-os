@@ -1766,6 +1766,9 @@ exports.approveHackathonJoins = onCall(
 // after the account is unlinked it forgets the link (org membership stays).
 // Needs GITHUB_ORG_TOKEN with Organization → Members: read and write.
 
+// GitHub answers 401 when GITHUB_ORG_TOKEN has expired or been revoked.
+const TOKEN_EXPIRED = 'BOLD.OS’s access to GitHub has expired: ask an admin to renew it, then try again.';
+
 function githubFetch(path, init){
   return fetch('https://api.github.com' + path, Object.assign({}, init, {
     headers: {
@@ -1786,6 +1789,7 @@ async function joinOrg(login, id){
     const m = await member.json().catch(() => ({}));
     return { status: m.state === 'active' ? 'active' : 'pending', error: '' };
   }
+  if (member.status === 401) throw new HttpsError('failed-precondition', TOKEN_EXPIRED);
   if (member.status !== 404) {
     logger.error('linkGithub: membership check got ' + member.status, { login });
     return { status: 'failed', error: 'GitHub refused (' + member.status + ').' };
@@ -1819,6 +1823,7 @@ exports.linkGithub = onCall(
     const who = await githubFetch('/user/' + encodeURIComponent(gh.uid));
     if (!who.ok) {
       logger.error('linkGithub: looking up GitHub user ' + gh.uid + ' got ' + who.status);
+      if (who.status === 401) throw new HttpsError('failed-precondition', TOKEN_EXPIRED);
       throw new HttpsError('unavailable', 'Couldn’t reach GitHub — try again.');
     }
     const login = (await who.json()).login;
