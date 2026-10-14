@@ -67,7 +67,9 @@ section.block:first-of-type{margin-top:28px;}
 /* A linked account's row: the account (or "Not linked"), its buttons beside it, an error below. */
 .acct-row{display:flex; flex-wrap:wrap; align-items:center; column-gap:16px; flex:1 1 auto; min-width:0;}
 .acct-row > .acct, .acct-row > .gh-line{flex:1 1 220px; min-width:0;}
-.acct-row > .gh-actions{margin:6px 0; flex:0 0 auto;}
+/* A column of its own on the right, one width, so every row's buttons line up. */
+.acct-row > .gh-actions{margin:6px 0; flex:0 0 136px; flex-direction:column; gap:6px;}
+.acct-row > .gh-actions .btn-box{width:100%; text-align:center;}
 .acct-row > .gh-error{flex:1 0 100%; order:3; margin-bottom:8px;}
 .profile-tabs{margin-top:64px;}
 .profile-panel{max-width:var(--article-max); margin-top:16px;}
