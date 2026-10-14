@@ -153,11 +153,14 @@
       (hasSections() ? '<label>Section<input type="text" class="gd-section" value="' + esc(p.section || (isAdd ? currentTab() : '') || '') + '" list="gdSections"></label>' +
         '<datalist id="gdSections">' + parts().map(function(q){ return q.section; }).filter(function(v, i, a){ return v && a.indexOf(v) === i; }).map(function(v){ return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>' : '') +
       '<label>Title<input type="text" class="gd-title" value="' + esc(p.title) + '" placeholder="e.g. Before the reviews come in"></label>' +
-      '<label>Text<textarea class="gd-body" rows="16">' + esc(p.body) + '</textarea></label>' +
-      '<p class="event-form-hint">Markdown: **bold**, *italic*, [a link](https://…), lines starting with - or 1. for lists, a blank line between paragraphs.</p>' +
-      // How the text will look, as the abstract's Preview (card-model.js).
-      '<button type="button" class="btn-text gd-preview">Preview</button>' +
+      // Write or Preview, as GitHub's comments: how the text will look, in its place.
+      '<div class="gd-text-label">Text</div>' +
+      '<div class="guide-tabs gd-modes" role="tablist">' +
+        '<button type="button" class="guide-tab gd-mode is-current" data-mode="write" role="tab" aria-selected="true">Write</button>' +
+        '<button type="button" class="guide-tab gd-mode" data-mode="preview" role="tab" aria-selected="false">Preview</button></div>' +
+      '<textarea class="gd-body" rows="16" aria-label="Text">' + esc(p.body) + '</textarea>' +
       '<div class="guide-text gd-preview-box" hidden></div>' +
+      '<p class="event-form-hint">Markdown: **bold**, *italic*, [a link](https://…), lines starting with - or 1. for lists, a blank line between paragraphs.</p>' +
       noteHtml(isAdd ? 'e.g. Added a part on posters' : 'e.g. Clearer advice on ablations') +
       actionsHtml(isAdd ? '' : '<button type="button" class="btn-text danger gd-remove">' + 'Propose removing this part' + '</button>') +
       '</div>';
@@ -284,16 +287,22 @@
 
   function bindForm(el){
     el.querySelector('.ev-cancel').addEventListener('click', closeForm);
-    var previewBtn = el.querySelector('.gd-preview'), previewBox = el.querySelector('.gd-preview-box'), text = el.querySelector('.gd-body');
-    if (previewBtn && previewBox && text) {
-      var refresh = function(){ previewBox.innerHTML = text.value.trim() ? md(text.value) : '<p class="gd-preview-empty">Nothing to preview yet.</p>'; };
-      previewBtn.addEventListener('click', function(){
-        previewBox.hidden = !previewBox.hidden;
-        previewBtn.textContent = previewBox.hidden ? 'Preview' : 'Hide preview';
-        if (!previewBox.hidden) refresh();
+    var previewBox = el.querySelector('.gd-preview-box'), text = el.querySelector('.gd-body');
+    Array.prototype.forEach.call(el.querySelectorAll('.gd-mode'), function(b){
+      b.addEventListener('click', function(){
+        var preview = b.getAttribute('data-mode') === 'preview';
+        Array.prototype.forEach.call(el.querySelectorAll('.gd-mode'), function(o){
+          o.classList.toggle('is-current', o === b); o.setAttribute('aria-selected', o === b ? 'true' : 'false');
+        });
+        // The preview as tall as the text box, so the form doesn't jump.
+        if (preview) {
+          previewBox.style.minHeight = text.offsetHeight + 'px';
+          previewBox.innerHTML = text.value.trim() ? md(text.value) : '<p class="gd-preview-empty">Nothing to preview.</p>';
+        }
+        text.hidden = preview; previewBox.hidden = !preview;
+        if (!preview) text.focus();
       });
-      text.addEventListener('input', function(){ if (!previewBox.hidden) refresh(); });
-    }
+    });
     var save = el.querySelector('.ev-save');
     var v = function(c){ var f = el.querySelector(c); return f ? f.value : ''; };
     function run(change){
