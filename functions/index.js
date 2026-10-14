@@ -2377,6 +2377,39 @@ function onProjectCard(document){
     if ((await wsRef.get()).exists) await syncWorkspace(pid);
   });
 }
+// A new project, registered on the Projects page, announced in
+// #all-active-projects: the channel is read-only for people (BOLDiquette §
+// Research Project Lifecycle), so the lab hears of projects from here. The bot
+// must be in the channel. A project submitted to another venue isn't new.
+const ACTIVE_PROJECTS_CHANNEL = 'all-active-projects';
+
+// The announcement: pure, so it's testable on its own.
+function projectAnnouncement(card, url){
+  const who = slackText((card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone');
+  const abstract = String(card.abstractText || '').trim().replace(/\s+/g, ' ');
+  const lines = ['🆕 ' + linkedTitle(slackText(card.title || 'Untitled project'), url) + ' — registered by ' + who];
+  if (abstract) lines.push('> ' + slackText(abstract.length > 400 ? abstract.slice(0, 400).replace(/\s+\S*$/, '') + '…' : abstract));
+  const keywords = (card.keywords || []).filter(Boolean);
+  if (keywords.length) lines.push('Keywords: ' + keywords.map(slackText).join(', '));
+  if (card.slackChannel) lines.push('Channel: ' + slackText(card.slackChannel) + ' (join the project on its page to be added)');
+  return lines.join('\n');
+}
+
+exports.onProjectRegistered = onDocumentCreated(
+  { document: 'projects/{cardId}', secrets: [SLACK_BOT_TOKEN] },
+  async function(event){
+    const card = event.data && event.data.data();
+    if (!card) return;
+    const token = SLACK_BOT_TOKEN.value();
+    const channel = await slackChannelId(token, ACTIVE_PROJECTS_CHANNEL);
+    if (!channel){ logger.warn('#' + ACTIVE_PROJECTS_CHANNEL + ' not found: the bot can’t see it'); return; }
+    const posted = await slackFetch(token, 'chat.postMessage', {
+      channel, text: projectAnnouncement(card, projectPageUrl(event.params.cardId)), unfurl_links: false,
+    });
+    if (!posted.ok) logger.warn('Announcing a new project failed', { error: posted.error });
+  }
+);
+
 exports.onProjectWritten = onProjectCard('projects/{cardId}');
 exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 
@@ -3170,7 +3203,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, projectAnnouncement, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
