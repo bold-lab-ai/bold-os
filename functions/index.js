@@ -1957,8 +1957,9 @@ function workspaceView(ws){
 // can offer to try again. Runs one at a time per project (a lease on the workspace).
 // --- GitHub: each project's repository in bold-lab-ai, and a team for its people ---
 // The repository is made from a template repository in the org (any repo marked
-// "Template repository" on GitHub; the register form lists them), or empty, or
-// is an existing repository given by URL, which is only linked. One made here
+// "Template repository" on GitHub; the register form lists them), never empty:
+// the template carries the project-tracking tools the lab's QA audit checks. Or
+// it is an existing repository given by URL, which is only linked. One made here
 // gets a team of the same name with write access; its members are the project's
 // people who have linked their GitHub account (githubLinks). Removing a project
 // leaves its repository and team alone.
@@ -1970,10 +1971,9 @@ const GITHUB_APP = defineSecret('GITHUB_APP');
 const GITHUB_ORG = 'bold-lab-ai';
 const GITHUB_NOT_CONNECTED = 'BOLD.OS isn’t connected to GitHub yet — ask an admin.';
 
-// Pure: a repository choice as sent by a page → { mode, template } | { mode } | { mode, url } or { error }.
+// Pure: a repository choice as sent by a page → { mode, template } | { mode, url } or { error }.
 function normalizeRepo(r){
   if (!r || typeof r !== 'object') return { error: 'Choose a repository.' };
-  if (r.mode === 'empty') return { mode: 'empty' };
   if (r.mode === 'template'){
     const t = String(r.template || '');
     return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/.test(t) ? { mode: 'template', template: t } : { error: 'Choose a template.' };
@@ -2181,16 +2181,14 @@ async function syncWorkspace(id, boardId, changes){
       if (ws.repo && ws.repo.mode === 'existing'){
         if (ws.repoUrl !== ws.repo.url){ patch.repoUrl = ws.repo.url; await save(); }
       } else if (ws.repo && !ws.repoName){
-        if (ws.repo.mode === 'template' && !(await projectTemplates()).some(function(t){ return t.name === ws.repo.template; })) {
+        if (!(await projectTemplates()).some(function(t){ return t.name === ws.repo.template; })) {
           throw new HttpsError('invalid-argument', ws.repo.template + ' isn\u2019t one of the lab\u2019s templates.');
         }
         const name = projectRepoName(ws);
         const about = { owner: GITHUB_ORG, name, private: true, description: ws.title.slice(0, 300) };
         let r;
         try {
-          r = ws.repo.mode === 'template'
-            ? await githubApp('POST', '/repos/' + GITHUB_ORG + '/' + ws.repo.template + '/generate', about)
-            : await githubApp('POST', '/orgs/' + GITHUB_ORG + '/repos', Object.assign({ auto_init: true }, about));
+          r = await githubApp('POST', '/repos/' + GITHUB_ORG + '/' + ws.repo.template + '/generate', about);
         } catch (err){
           if (err.status === 422) throw new HttpsError('already-exists', GITHUB_ORG + '/' + name + ' already exists \u2014 link it as an existing repository.');
           throw err;
@@ -2273,7 +2271,7 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'meeting': sets the meeting ({ day, time, minutes, every }, or null for none); same.
 // - 'join': makes the caller a member (and invites them to the Slack channel).
 // - 'leave': stops them being one; not its submitter or authors.
-// - 'repo': makes its repository ({ mode: 'template', template } or { mode: 'empty' })
+// - 'repo': makes its repository from a template ({ mode: 'template', template })
 //   or links one ({ mode: 'existing', url }); editors only; one made here stays.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
 // → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
@@ -2336,9 +2334,8 @@ exports.projectWorkspace = onCall(
 //   leaves them "pending" until they accept).
 // hackathonJoinRequests returns the caller's own request, and every request
 // for a PI/admin. hackathonJoins has no client access (firestore.rules'
-// catch-all). GITHUB_ORG_TOKEN: a fine-grained token on bold-lab-ai with
-// Organization → Members: read and write.
-const GITHUB_ORG_TOKEN = defineSecret('GITHUB_ORG_TOKEN');
+// catch-all). GitHub is called as the BOLD.OS GitHub App (GITHUB_APP, see the
+// projects' repositories), which has Organization → Members: read and write.
 const GITHUB_USERNAME = /^[a-z\d](?:[a-z\d]|-(?=[a-z\d])){0,38}$/i;
 
 function callerEmail(request){
@@ -2381,15 +2378,8 @@ exports.hackathonJoinRequests = onCall(
 );
 
 async function addToHackathonTeam(github){
-  const res = await fetch('https://api.github.com/orgs/bold-lab-ai/teams/hackathon/memberships/' + encodeURIComponent(github), {
+  const res = await githubFetch('/orgs/bold-lab-ai/teams/hackathon/memberships/' + encodeURIComponent(github), {
     method: 'PUT',
-    headers: {
-      Authorization: 'Bearer ' + GITHUB_ORG_TOKEN.value(),
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28',
-      'User-Agent': 'bold-os',
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify({ role: 'member' }),
   });
   const body = await res.json().catch(() => ({}));
@@ -2401,7 +2391,7 @@ async function addToHackathonTeam(github){
 
 // data.emails: the requests to approve; omitted = every request still waiting.
 exports.approveHackathonJoins = onCall(
-  { secrets: [GITHUB_ORG_TOKEN] },
+  { secrets: [GITHUB_APP] },
   async (request) => {
     const email = callerEmail(request);
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can approve.');
@@ -2431,15 +2421,17 @@ exports.approveHackathonJoins = onCall(
 // 'active' | 'pending' | 'failed', error, linkedAt, updatedAt } (no client
 // access: firestore.rules' catch-all). Calling it again refreshes the status;
 // after the account is unlinked it forgets the link (org membership stays).
-// Needs GITHUB_ORG_TOKEN with Organization → Members: read and write.
+// Called as the BOLD.OS GitHub App (GITHUB_APP), with Organization → Members: read and write.
 
-// GitHub answers 401 when GITHUB_ORG_TOKEN has expired or been revoked.
-const TOKEN_EXPIRED = 'BOLD.OS’s access to GitHub has expired: ask an admin to renew it, then try again.';
+// GitHub answers 401 when the app has lost its access (uninstalled, or its key revoked).
+const TOKEN_EXPIRED = 'BOLD.OS’s access to GitHub has stopped working: ask an admin to reconnect it, then try again.';
 
-function githubFetch(path, init){
+// → the fetch Response, as the app.
+async function githubFetch(path, init){
+  const token = await githubAppToken();
   return fetch('https://api.github.com' + path, Object.assign({}, init, {
     headers: {
-      Authorization: 'Bearer ' + GITHUB_ORG_TOKEN.value(),
+      Authorization: 'Bearer ' + token,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
       'User-Agent': 'bold-os',
@@ -2477,7 +2469,7 @@ function githubView(d){
 }
 
 exports.linkGithub = onCall(
-  { secrets: [GITHUB_ORG_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
+  { secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
     const ref = db.collection('githubLinks').doc(email);

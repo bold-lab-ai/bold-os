@@ -202,11 +202,12 @@ function meetingText(m){
 }
 
 // The project's GitHub repository (projectWorkspace in functions/index.js): made from
-// one of bold-lab-ai's template repositories, or empty, or an existing one's link.
+// one of bold-lab-ai's template repositories (never empty: the template has the
+// project-tracking tools the QA audit checks), or an existing one's link.
 // Fixed ids #prMode, #prUrl, #prHint.
 function repoEntryHtml(){
   return '<select id="prMode" aria-label="Repository">' +
-      '<option value="empty">Empty repository</option>' +
+      '<option value="" id="prLoading">Loading templates\u2026</option>' +
       '<option value="existing">An existing repository</option>' +
     '</select>' +
     '<input type="url" id="prUrl" placeholder="https://github.com/owner/name" hidden>' +
@@ -227,7 +228,10 @@ function wireRepoEntry(){
   try {
     firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')({ action: 'templates' }).then(function(r){
       templates = (r.data && r.data.templates) || [];
-      var first = mode.firstChild;
+      var loading = document.getElementById('prLoading');
+      if (!templates.length) { loading.textContent = 'No templates yet \u2014 ask an admin'; return; }
+      var first = loading.nextSibling;
+      mode.removeChild(loading);
       templates.forEach(function(t){
         var o = document.createElement('option');
         o.value = 'template:' + t.name; o.textContent = 'From the template ' + t.name;
@@ -235,15 +239,18 @@ function wireRepoEntry(){
       });
       if (templates.length) mode.value = 'template:' + templates[0].name;
       update();
-    }).catch(function(err){ console.error('[BOLD Lab] loading the repository templates failed', err); });
+    }).catch(function(err){
+      console.error('[BOLD Lab] loading the repository templates failed', err);
+      document.getElementById('prLoading').textContent = 'Templates couldn\u2019t load \u2014 reload to try again';
+    });
   } catch (e){}
   update();
 }
 
-// → { mode: 'template', template } | { mode: 'empty' } | { mode: 'existing', url } or { error }.
+// → { mode: 'template', template } | { mode: 'existing', url } or { error }.
 function readRepoEntry(){
   var mode = document.getElementById('prMode').value, url = document.getElementById('prUrl').value.trim();
   if (mode.indexOf('template:') === 0) return { mode: 'template', template: mode.slice(9) };
   if (mode === 'existing') return /^https:\/\/github\.com\/[^\/\s]+\/[^\/\s]+\/?$/.test(url) ? { mode: 'existing', url: url } : { error: 'Enter the repository’s GitHub link: https://github.com/owner/name' };
-  return { mode: 'empty' };
+  return { error: 'The repository templates haven\u2019t loaded \u2014 reload, or check back shortly.' };
 }
