@@ -224,6 +224,12 @@
     try { history.replaceState(null, '', location.pathname + location.search + (parts.length ? '#' + parts.join('&') : '')); } catch (e){}
   }
 
+  // Leaving the page keeps its tab and filters for a project page's "Back to Projects".
+  window.addEventListener('pagehide', function(){
+    syncHash();
+    try { sessionStorage.setItem('boldProjects:back', location.hash); } catch (e){}
+  });
+
   function setFilter(name, value){
     filters[name] = value;
     if (name === 'q') el('projSearch').value = value;

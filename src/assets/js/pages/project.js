@@ -43,6 +43,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   if (boardId) boardId = decodeURIComponent(boardId);
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
 
+  // Back to the Projects tab and filters you came from (projects.js keeps them).
+  try {
+    var back = sessionStorage.getItem('boldProjects:back');
+    if (back) el('detailBack').href = 'projects.html' + back;
+  } catch (e){}
+
   // The project and its Slack link are kept in localStorage: shown at once on the
   // next visit, then checked against Firestore (one document read) and redrawn only
   // if something changed. Cleared on sign-out.
