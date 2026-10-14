@@ -63,7 +63,9 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .md-table th, .md-table td{border-bottom:1px solid var(--line); padding:6px 10px 6px 0; text-align:left; vertical-align:top;}
 .md-table th{font-weight:600; color:var(--ink);}
 /* A part's pencil and arrows, above its title. */
-.guide-part-head{display:flex; align-items:center; gap:10px; margin:0 0 10px;}
+/* The icons sit on the title's baseline. */
+.guide-part-head{display:flex; align-items:flex-end; gap:10px; margin:0 0 10px;}
+.guide-part-head .guide-part-controls{padding-bottom:var(--gd-icons-drop, 2px);}
 .guide-part-head h2{margin:0;}
 .guide-part-controls{display:flex; flex:none; gap:0; margin:0 0 0 -4px;}
 .event-add{
@@ -162,5 +164,5 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 }
 @media (hover:hover) and (pointer:fine) and (min-width:1240px){
   .guide-part-head{position:relative;}
-  .guide-part-controls{position:absolute; right:100%; top:50%; transform:translateY(-50%); margin:0 14px 0 0;}
+  .guide-part-controls{position:absolute; right:100%; bottom:var(--gd-icons-drop, 2px); margin:0 14px 0 0;}
 }
