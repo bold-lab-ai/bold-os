@@ -69,6 +69,8 @@
       var inVenue = document.createElement('span');
       inVenue.appendChild(textNode('In: '));
       inVenue.appendChild(linkNode(p.boardLabel, 'audit-board.html#board=' + encodeURIComponent(p.boardId)));
+      // A project submitted to more than one venue shows its latest.
+      if (p.earlier) inVenue.appendChild(textNode(' (+' + p.earlier + ' earlier)'));
       parts.push(inVenue);
     } else {
       parts.push(textNode('No venue yet'));

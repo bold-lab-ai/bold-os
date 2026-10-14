@@ -102,7 +102,9 @@ service cloud.firestore {
 
       match /cards/{cardId} {
         allow read: if isLabMember();
-        allow create: if isLabMember();
+        // Only the server (projectWorkspace 'submit') files a card under another
+        // card's project (`projectId`); nobody changes it afterwards.
+        allow create: if isLabMember() && request.resource.data.get('projectId', cardId) == cardId;
         // A card can be changed only by whoever created it, a reviewer
         // assigned to it, or a PI/admin — same base condition as before.
         //
@@ -126,7 +128,7 @@ service cloud.firestore {
           request.resource.data.reviewers == resource.data.reviewers ||
           email() == resource.data.submittedBy.email ||
           hasFullWrite()
-        );
+        ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
         allow delete: if isLabMember() && (
           email() == resource.data.submittedBy.email ||
           email() == resource.data.reviewers.junior ||
@@ -145,12 +147,13 @@ service cloud.firestore {
     // submitter or a PI/admin.
     match /projects/{projectId} {
       allow read: if isLabMember();
-      allow create: if isLabMember() && request.resource.data.submittedBy.email == email();
+      allow create: if isLabMember() && request.resource.data.submittedBy.email == email() &&
+        request.resource.data.get('projectId', projectId) == projectId;
       allow update: if isLabMember() && (
         email() == resource.data.submittedBy.email ||
         email() in resource.data.get('authorEmails', []) ||
         hasFullWrite()
-      );
+      ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
       allow delete: if isLabMember() && (
         email() == resource.data.submittedBy.email || hasFullWrite()
       );

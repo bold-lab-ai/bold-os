@@ -1487,15 +1487,24 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds){
   };
   cards.forEach(function(c){
     if (!(c.boardId in labels)) return;
-    entries.push({ id: c.id, d: c.data, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
+    entries.push({ pid: projectIdOf(c.data, c.id), d: c.data, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
   });
   (unassigned || []).forEach(function(u){
-    entries.push({ id: u.id, d: u.data, item: Object.assign(base(u.id, u.data), { projectId: u.id }) });
+    entries.push({ pid: projectIdOf(u.data, u.id), d: u.data, item: Object.assign(base(u.id, u.data), { projectId: u.id }) });
+  });
+  // One row per project: its latest card, with how many venues came before.
+  const byProject = {};
+  entries.forEach(function(e){ (byProject[e.pid] = byProject[e.pid] || []).push(e); });
+  const rows = Object.keys(byProject).map(function(pid){
+    const list = byProject[pid].sort(function(a, b){ return (a.d.createdAt || 0) - (b.d.createdAt || 0); });
+    const last = list[list.length - 1];
+    if (list.length > 1) last.item.earlier = list.length - 1;
+    return { group: projectGroupForCards(list.map(function(e){ return e.d; }), done.has(pid)), updatedAt: Math.max.apply(null, list.map(function(e){ return e.d.updatedAt || 0; })), item: last.item };
   });
   const out = { ongoing: [], completed: [], planned: [] };
-  entries
-    .sort(function(a, b){ return (b.d.updatedAt || 0) - (a.d.updatedAt || 0); })
-    .forEach(function(e){ out[projectGroupForCard(e.d, done.has(e.id))].push(e.item); });
+  rows
+    .sort(function(a, b){ return b.updatedAt - a.updatedAt; })
+    .forEach(function(r){ out[r.group].push(r.item); });
   return out;
 }
 
@@ -1948,10 +1957,36 @@ function cardRefFor(id, boardId){
   return boardId ? db.collection('boards').doc(boardId).collection('cards').doc(id) : db.collection('projects').doc(id);
 }
 
+// A project is one or more cards, one per venue it went to (`projects/{id}` until
+// it has a venue). A card submitted from a project's page to another venue carries
+// that project's id (`projectId`); every other card is its own project, with its
+// own id. The workspace is projectWorkspaces/{project id}.
+function projectIdOf(card, cardId){ return (card && card.projectId) || cardId; }
+
+// Every card of project `pid` → [{ id, boardId, ref, data }], oldest first. Read
+// whole and filtered here: a lab has a few hundred cards at most.
+async function projectCards(pid){
+  const [venueCards, own] = await Promise.all([db.collectionGroup('cards').get(), db.collection('projects').get()]);
+  const out = [];
+  venueCards.docs.concat(own.docs).forEach(function(d){
+    if (projectIdOf(d.data(), d.id) !== pid) return;
+    const parent = d.ref.parent.parent;
+    out.push({ id: d.id, boardId: parent ? parent.id : null, ref: d.ref, data: d.data() });
+  });
+  return out.sort(function(a, b){ return (a.data.createdAt || 0) - (b.data.createdAt || 0); });
+}
+
+// Pure: a project's group from its cards (oldest first): completed if marked so or
+// accepted at any venue; otherwise its latest card's.
+function projectGroupForCards(cards, completed){
+  if (completed || cards.some(function(c){ return projectGroupForCard(c) === 'completed'; })) return 'completed';
+  return projectGroupForCard(cards[cards.length - 1]);
+}
+
 // What a page reads: the workspace, as stored.
 function workspaceView(ws){
   const out = {};
-  ['cardId', 'boardId', 'title', 'group', 'completedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
+  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
     'deckUrl', 'notesUrl', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   return out;
 }
@@ -2081,14 +2116,14 @@ async function githubLoginsFor(emails){
 // Google and GitHub fail apart: each records its error on the workspace (`error`,
 // `repoError`) instead of throwing, so the page can offer to try again. Runs one
 // at a time per project (a lease on the workspace).
-async function syncWorkspace(id, boardId, changes){
+async function syncWorkspace(id, changes){
   changes = changes || {};
   const wsRef = db.collection('projectWorkspaces').doc(id);
   const lease = await db.runTransaction(async function(tx){
     const snap = await tx.get(wsRef);
     const d = snap.exists ? snap.data() : {};
     if (d.syncing && d.syncing > Date.now() - 2 * 60000) return false;
-    tx.set(wsRef, { syncing: Date.now(), cardId: id, boardId: boardId || null }, { merge: true });
+    tx.set(wsRef, { syncing: Date.now() }, { merge: true });
     return true;
   });
   if (!lease){
@@ -2103,9 +2138,16 @@ async function syncWorkspace(id, boardId, changes){
   const patch = {};
   const save = async function(){ await wsRef.set(Object.assign({ updatedAt: Date.now() }, patch), { merge: true }); Object.assign(ws, patch); };
   try {
-    const cardSnap = await cardRefFor(id, boardId).get();
-    if (!cardSnap.exists) throw new Error('The project isn\u2019t there any more.');
-    const card = cardSnap.data();
+    // Its cards: the latest one's title and channel, everyone on any of them.
+    const cards = await projectCards(id);
+    if (!cards.length) throw new Error('The project isn\u2019t there any more.');
+    const latest = cards[cards.length - 1], card = latest.data;
+    const labels = await boardLabelsFor(cards.map(function(c){ return c.boardId; }).filter(Boolean));
+    patch.cardId = latest.id;
+    patch.boardId = latest.boardId;
+    patch.venues = cards.map(function(c){
+      return { cardId: c.id, boardId: c.boardId, label: c.boardId ? labels[c.boardId] : '', status: c.data.status || '', outcome: c.data.outcome || '', createdAt: c.data.createdAt || 0 };
+    });
     const meeting = changes.meeting !== undefined ? changes.meeting : ws.pendingMeeting;
     const repo = changes.repo !== undefined ? changes.repo : ws.pendingRepo;
     patch.pendingMeeting = FieldValue.delete();
@@ -2113,9 +2155,11 @@ async function syncWorkspace(id, boardId, changes){
     patch.again = FieldValue.delete();
     patch.title = card.title || 'Untitled project';
     // Planned, ongoing or completed, as on the Projects page (the meetings page leaves out completed ones).
-    patch.group = projectGroupForCard(card, !!ws.completedAt);
+    patch.group = projectGroupForCards(cards.map(function(c){ return c.data; }), !!ws.completedAt);
     patch.slackChannel = card.slackChannel || '';
-    patch.members = projectMembers(card, ws.joined);
+    const everyone = [];
+    cards.forEach(function(c){ projectMembers(c.data, []).forEach(function(e){ if (everyone.indexOf(e) < 0) everyone.push(e); }); });
+    patch.members = projectMembers({ authorEmails: everyone }, ws.joined);
     patch.joined = ws.joined || [];
     if (!ws.createdAt) patch.createdAt = Date.now();
     // Kept even if Google or GitHub fails below, so trying again picks them up.
@@ -2132,7 +2176,7 @@ async function syncWorkspace(id, boardId, changes){
         patch.deckId = f.id; patch.deckUrl = f.webViewLink; await save();
       }
       if (!ws.notesId){
-        const f = await createNotes(ws.title, folder, { page: projectPageUrl(id, boardId), deck: ws.deckUrl });
+        const f = await createNotes(ws.title, folder, { page: projectPageUrl(ws.cardId, ws.boardId), deck: ws.deckUrl });
         patch.notesId = f.id; patch.notesUrl = f.webViewLink; await save();
       }
       // Each member's address for Google: their linked Google account, or their Slack email.
@@ -2192,7 +2236,7 @@ async function syncWorkspace(id, boardId, changes){
       }
       patch.error = FieldValue.delete();
     } catch (err){
-      logger.error('Setting up the project\u2019s meeting, slides and notes failed', { id, boardId, error: String(err && err.message || err) });
+      logger.error('Setting up the project\u2019s meeting, slides and notes failed', { id, error: String(err && err.message || err) });
       patch.error = err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the meeting, slides and notes.';
     }
     await save();
@@ -2236,49 +2280,54 @@ async function syncWorkspace(id, boardId, changes){
       }
       patch.repoError = FieldValue.delete();
     } catch (err){
-      logger.error('Setting up the project\u2019s repository failed', { id, boardId, error: String(err && err.message || err) });
+      logger.error('Setting up the project\u2019s repository failed', { id, error: String(err && err.message || err) });
       patch.repoError = err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the GitHub repository.';
     }
     patch.syncing = FieldValue.delete();
     await save();
   } catch (err){
-    logger.error('Setting up the project workspace failed', { id, boardId, error: String(err && err.message || err) });
+    logger.error('Setting up the project workspace failed', { id, error: String(err && err.message || err) });
     await wsRef.set({ error: err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the project.', syncing: FieldValue.delete(), again: FieldValue.delete(), updatedAt: Date.now() }, { merge: true });
     return (await wsRef.get()).data();
   }
-  if ((await wsRef.get()).data().again) return syncWorkspace(id, boardId);
+  if ((await wsRef.get()).data().again) return syncWorkspace(id);
   return (await wsRef.get()).data();
 }
 
-// A new project is set up at once; a changed one is brought in line when its
-// title, channel, submitter, authors or stage change; a removed one's meeting is cancelled.
+// A new project is set up at once (a card submitted to another venue from its
+// project's page joins that project's); a changed one is brought in line when its
+// title, channel, submitter, authors or stage change; when a project's last card
+// is removed, its meeting is cancelled.
 function onProjectCard(document){
   return onDocumentWritten({ document, secrets: [GOOGLE_OAUTH, GITHUB_APP] }, async function(event){
     const before = event.data.before.exists ? event.data.before.data() : null;
     const after = event.data.after.exists ? event.data.after.data() : null;
-    const id = event.params.cardId, boardId = event.params.boardId || null;
-    const wsRef = db.collection('projectWorkspaces').doc(id);
+    const id = event.params.cardId;
+    const pid = projectIdOf(after || before, id);
+    const wsRef = db.collection('projectWorkspaces').doc(pid);
     if (!after){
       const snap = await wsRef.get();
-      if (!snap.exists || (snap.data().boardId || null) !== boardId) return;
+      if (!snap.exists) return;
+      if ((await projectCards(pid)).length) { await syncWorkspace(pid); return; }
       const ws = snap.data();
       if (ws.eventId){
         await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all')
-          .catch(function(err){ logger.warn('Cancelling a removed project’s meeting failed', { id, error: String(err.message) }); });
+          .catch(function(err){ logger.warn('Cancelling a removed project\u2019s meeting failed', { pid, error: String(err.message) }); });
       }
-      // The slides and notes stay in the lab's Drive folder; its presentations go with it.
+      // The slides, notes and repository stay; its presentations go with it.
       await db.recursiveDelete(wsRef);
       return;
     }
     if (!before){
+      if (pid !== id) { await syncWorkspace(pid); return; }
       const m = after.setUpMeeting ? normalizeMeeting(after.setUpMeeting) : null;
       const r = after.setUpRepo ? normalizeRepo(after.setUpRepo) : null;
-      await syncWorkspace(id, boardId, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined });
+      await syncWorkspace(pid, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined });
       return;
     }
-    const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails, projectGroupForCard(d)]); };
+    const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails, d.status, d.outcome]); };
     if (key(before) === key(after)) return;
-    if ((await wsRef.get()).exists) await syncWorkspace(id, boardId);
+    if ((await wsRef.get()).exists) await syncWorkspace(pid);
   });
 }
 exports.onProjectWritten = onProjectCard('projects/{cardId}');
@@ -2293,7 +2342,10 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 //   editors only; once made, it stays.
 // - 'complete' / 'reopen': marks the project completed (its meeting is cancelled) or
 //   not; editors only. Completion by acceptance at a venue needs neither.
+// - 'submit': submits the project to another venue ({ venue, card }: a card the page
+//   built); editors only; → { cardId, boardId }.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
+// - 'venues': no project; the approved venues → { venues: [{ id, label, deadline }] }.
 // → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
 exports.projectWorkspace = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 120 },
@@ -2301,12 +2353,20 @@ exports.projectWorkspace = onCall(
     const email = callerEmail(request);
     const data = request.data || {};
     if (data.action === 'templates') return { templates: await projectTemplates() };
+    if (data.action === 'venues'){
+      // The venues a project can be submitted to: every approved one, newest first.
+      const boards = await db.collection('boards').get();
+      return { venues: boards.docs.filter(function(d){ return (d.data().status || 'approved') !== 'pending'; })
+        .map(function(d){ return { id: d.id, label: d.data().label || d.id, deadline: d.data().deadline || '' }; })
+        .sort(function(a, b){ return String(b.deadline).localeCompare(String(a.deadline)) || a.label.localeCompare(b.label); }) };
+    }
     const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
     if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
     const cardSnap = await cardRefFor(id, boardId).get();
     if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
     const card = cardSnap.data();
-    const wsRef = db.collection('projectWorkspaces').doc(id);
+    const pid = projectIdOf(card, id);
+    const wsRef = db.collection('projectWorkspaces').doc(pid);
 
     if (data.action === 'setUp' || data.action === 'meeting' || data.action === 'repo'){
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can do this.');
@@ -2321,15 +2381,39 @@ exports.projectWorkspace = onCall(
         const ws = (await wsRef.get()).data() || {};
         if (ws.repoName) throw new HttpsError('failed-precondition', 'It already has ' + GITHUB_ORG + '/' + ws.repoName + '.');
       }
-      return workspaceView(await syncWorkspace(id, boardId, changes));
+      return workspaceView(await syncWorkspace(pid, changes));
     }
 
     if (data.action === 'complete' || data.action === 'reopen'){
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
       await wsRef.set(data.action === 'complete'
-        ? { cardId: id, boardId, completedAt: Date.now(), completedBy: email }
-        : { cardId: id, boardId, completedAt: FieldValue.delete(), completedBy: FieldValue.delete() }, { merge: true });
-      return workspaceView(await syncWorkspace(id, boardId));
+        ? { completedAt: Date.now(), completedBy: email }
+        : { completedAt: FieldValue.delete(), completedBy: FieldValue.delete() }, { merge: true });
+      return workspaceView(await syncWorkspace(pid));
+    }
+
+    if (data.action === 'submit'){
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
+      const venue = String(data.venue || '');
+      if (!validSlug(venue)) throw new HttpsError('invalid-argument', 'Choose a venue.');
+      const board = await db.collection('boards').doc(venue).get();
+      if (!board.exists || (board.data().status || 'approved') === 'pending') throw new HttpsError('not-found', 'That venue isn\u2019t on the board.');
+      const cards = await projectCards(pid);
+      if (cards.some(function(c){ return c.boardId === venue; })) throw new HttpsError('failed-precondition', 'It\u2019s already at ' + (board.data().label || venue) + '.');
+      // The page builds the card (card-model.js, as the board does); it joins this
+      // project, registered by the caller, at the first stage.
+      const c = data.card && typeof data.card === 'object' ? Object.assign({}, data.card) : null;
+      if (!c || typeof c.title !== 'string' || !c.title.trim()) throw new HttpsError('invalid-argument', 'The new card has no title.');
+      const cardId = /^card-[a-z0-9-]{1,60}$/.test(String(c.id || '')) ? c.id : 'card-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
+      ['id', 'setUpMeeting', 'setUpRepo'].forEach(function(k){ delete c[k]; });
+      const now = Date.now();
+      await db.collection('boards').doc(venue).collection('cards').doc(cardId).set(Object.assign(c, {
+        projectId: pid, status: 'register', outcome: '', createdAt: now, updatedAt: now,
+        submittedBy: { name: request.auth.token.name || request.auth.token.email, email: request.auth.token.email, slackId: null }
+      }));
+      // A project without a venue moves onto the board: its venue-less card goes.
+      for (const old of cards) if (!old.boardId) await old.ref.delete();
+      return { cardId, boardId: venue };
     }
 
     if (data.action === 'join' || data.action === 'leave'){
@@ -2337,10 +2421,10 @@ exports.projectWorkspace = onCall(
       if (!joining && projectMembers(card, []).indexOf(email) >= 0) {
         throw new HttpsError('failed-precondition', 'Its submitter and authors stay on the project — remove yourself from the authors first.');
       }
-      await wsRef.set({ cardId: id, boardId, joined: joining
+      await wsRef.set({ joined: joining
         ? FieldValue.arrayUnion(email)
         : FieldValue.arrayRemove(email) }, { merge: true });
-      const out = workspaceView(await syncWorkspace(id, boardId));
+      const out = workspaceView(await syncWorkspace(pid));
       if (joining && card.slackChannel){
         const n = normalizeProjectChannel(card.slackChannel);
         try { out.slack = await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, n.name); }
@@ -2523,7 +2607,7 @@ exports.linkGithub = onCall(
     if (doc.status !== 'failed'){
       const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
       for (const d of mine.docs){
-        if (d.data().teamSlug) await syncWorkspace(d.id, d.data().boardId || null);
+        if (d.data().teamSlug) await syncWorkspace(d.id);
       }
     }
     return { link: githubView(doc) };
@@ -2553,7 +2637,7 @@ exports.linkGoogle = onCall(
       else await ref.delete();
       // Their projects: invitations and files move to the new address.
       const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
-      for (const d of mine.docs) await syncWorkspace(d.id, d.data().boardId || null);
+      for (const d of mine.docs) await syncWorkspace(d.id);
     }
     return { link: google ? { google } : null };
   }
@@ -3014,5 +3098,6 @@ exports._internal = {
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
-  normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName
+  normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
+  projectIdOf, projectGroupForCards
 };
