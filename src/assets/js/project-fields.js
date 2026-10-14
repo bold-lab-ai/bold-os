@@ -202,55 +202,44 @@ function meetingText(m){
 }
 
 // The project's GitHub repository (projectWorkspace in functions/index.js): made from
-// one of bold-lab-ai's template repositories (never empty: the template has the
-// project-tracking tools the QA audit checks), or an existing one's link.
-// Fixed ids #prMode, #prUrl, #prHint.
+// one of bold-lab-ai's template repositories, never empty: the template has the
+// project-tracking tools the QA audit checks. Fixed ids #prMode, #prHint.
 function repoEntryHtml(){
-  return '<select id="prMode" aria-label="Repository">' +
+  return '<select id="prMode" aria-label="Template">' +
       '<option value="" id="prLoading">Loading templates\u2026</option>' +
-      '<option value="existing">An existing repository</option>' +
     '</select>' +
-    '<input type="url" id="prUrl" placeholder="https://github.com/owner/name" hidden>' +
     '<div class="field-hint" id="prHint"></div>';
 }
 
-// Lists the templates (first, and chosen, when there are any) and shows the link
-// field for an existing repository.
+// Lists the templates, the first chosen, with the chosen one's description.
 function wireRepoEntry(){
-  var mode = document.getElementById('prMode'), url = document.getElementById('prUrl'), hint = document.getElementById('prHint');
+  var mode = document.getElementById('prMode'), hint = document.getElementById('prHint');
   var templates = [];
   function update(){
-    var t = templates.filter(function(x){ return 'template:' + x.name === mode.value; })[0];
-    url.hidden = mode.value !== 'existing';
-    hint.textContent = t ? (t.description || '') : mode.value === 'existing' ? 'It’s linked from the project; its access stays as it is.' : '';
+    var t = templates.filter(function(x){ return x.name === mode.value; })[0];
+    hint.textContent = t ? (t.description || '') : '';
   }
   mode.addEventListener('change', update);
   try {
     firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')({ action: 'templates' }).then(function(r){
       templates = (r.data && r.data.templates) || [];
-      var loading = document.getElementById('prLoading');
-      if (!templates.length) { loading.textContent = 'No templates yet \u2014 ask an admin'; return; }
-      var first = loading.nextSibling;
-      mode.removeChild(loading);
+      if (!templates.length) { document.getElementById('prLoading').textContent = 'No templates yet \u2014 ask an admin'; return; }
+      mode.innerHTML = '';
       templates.forEach(function(t){
         var o = document.createElement('option');
-        o.value = 'template:' + t.name; o.textContent = 'From the template ' + t.name;
-        mode.insertBefore(o, first);
+        o.value = t.name; o.textContent = 'From the template ' + t.name;
+        mode.appendChild(o);
       });
-      if (templates.length) mode.value = 'template:' + templates[0].name;
       update();
     }).catch(function(err){
       console.error('[BOLD Lab] loading the repository templates failed', err);
       document.getElementById('prLoading').textContent = 'Templates couldn\u2019t load \u2014 reload to try again';
     });
   } catch (e){}
-  update();
 }
 
-// → { mode: 'template', template } | { mode: 'existing', url } or { error }.
+// → { mode: 'template', template } or { error }.
 function readRepoEntry(){
-  var mode = document.getElementById('prMode').value, url = document.getElementById('prUrl').value.trim();
-  if (mode.indexOf('template:') === 0) return { mode: 'template', template: mode.slice(9) };
-  if (mode === 'existing') return /^https:\/\/github\.com\/[^\/\s]+\/[^\/\s]+\/?$/.test(url) ? { mode: 'existing', url: url } : { error: 'Enter the repository’s GitHub link: https://github.com/owner/name' };
-  return { error: 'The repository templates haven\u2019t loaded \u2014 reload, or check back shortly.' };
+  var t = document.getElementById('prMode').value;
+  return t ? { mode: 'template', template: t } : { error: 'The repository templates haven\u2019t loaded \u2014 reload, or check back shortly.' };
 }

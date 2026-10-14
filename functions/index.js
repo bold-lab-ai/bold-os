@@ -1958,8 +1958,7 @@ function workspaceView(ws){
 // --- GitHub: each project's repository in bold-lab-ai, and a team for its people ---
 // The repository is made from a template repository in the org (any repo marked
 // "Template repository" on GitHub; the register form lists them), never empty:
-// the template carries the project-tracking tools the lab's QA audit checks. Or
-// it is an existing repository given by URL, which is only linked. One made here
+// the template carries the project-tracking tools the lab's QA audit checks. It
 // gets a team of the same name with write access; its members are the project's
 // people who have linked their GitHub account (githubLinks). Removing a project
 // leaves its repository and team alone.
@@ -1971,16 +1970,12 @@ const GITHUB_APP = defineSecret('GITHUB_APP');
 const GITHUB_ORG = 'bold-lab-ai';
 const GITHUB_NOT_CONNECTED = 'BOLD.OS isn’t connected to GitHub yet — ask an admin.';
 
-// Pure: a repository choice as sent by a page → { mode, template } | { mode, url } or { error }.
+// Pure: a repository choice as sent by a page → { mode: 'template', template } or { error }.
 function normalizeRepo(r){
   if (!r || typeof r !== 'object') return { error: 'Choose a repository.' };
   if (r.mode === 'template'){
     const t = String(r.template || '');
     return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/.test(t) ? { mode: 'template', template: t } : { error: 'Choose a template.' };
-  }
-  if (r.mode === 'existing'){
-    const m = String(r.url || '').trim().match(/^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/);
-    return m ? { mode: 'existing', url: 'https://github.com/' + m[1] + '/' + m[2] } : { error: 'Enter the repository’s GitHub link: https://github.com/owner/name' };
   }
   return { error: 'Choose a repository.' };
 }
@@ -2178,9 +2173,7 @@ async function syncWorkspace(id, boardId, changes){
     await save();
 
     try {
-      if (ws.repo && ws.repo.mode === 'existing'){
-        if (ws.repoUrl !== ws.repo.url){ patch.repoUrl = ws.repo.url; await save(); }
-      } else if (ws.repo && !ws.repoName){
+      if (ws.repo && !ws.repoName){
         if (!(await projectTemplates()).some(function(t){ return t.name === ws.repo.template; })) {
           throw new HttpsError('invalid-argument', ws.repo.template + ' isn\u2019t one of the lab\u2019s templates.');
         }
@@ -2271,8 +2264,8 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'meeting': sets the meeting ({ day, time, minutes, every }, or null for none); same.
 // - 'join': makes the caller a member (and invites them to the Slack channel).
 // - 'leave': stops them being one; not its submitter or authors.
-// - 'repo': makes its repository from a template ({ mode: 'template', template })
-//   or links one ({ mode: 'existing', url }); editors only; one made here stays.
+// - 'repo': makes its repository from a template ({ mode: 'template', template });
+//   editors only; once made, it stays.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
 // → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
 exports.projectWorkspace = onCall(

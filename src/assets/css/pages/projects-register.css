@@ -100,6 +100,4 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 }
 /* ---------- meeting (project-fields.js) ---------- */
 .meeting-entry{display:flex; flex-wrap:wrap; gap:8px;}
-#prUrl{margin-top:8px;}
-#prUrl[hidden]{display:none;}
 .field .meeting-entry select, .field .meeting-entry input{width:auto; min-width:0; flex:1 1 120px;}

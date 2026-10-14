@@ -313,8 +313,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     return html;
   }
 
-  // Its GitHub repository: a link once there is one; until then (or while it's an
-  // existing one's link) editors choose one, as on the register form.
+  // Its GitHub repository: a link once there is one; until then editors choose its
+  // template, as on the register form.
   function repoRow(){
     var linked = ws && ws.repoUrl;
     var value = linked ? '<a href="' + esc(ws.repoUrl) + '" target="_blank" rel="noopener">' + esc(ws.repoUrl.replace(/^https:\/\/github\.com\//, '')) + '</a>'
@@ -324,7 +324,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : missing();
     var retry = ws && ws.repoError && ws.repo && !linked
       ? ' <button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Try again</button>' : '';
-    // A repository made here stays; an existing one's link can change.
+    // Once made, it stays.
     if (ws && ws.repoName) return row('Repository', value);
     return editableRow('repo', 'Repository', value + retry, '', repoEntryHtml(), 'repoSave');
   }

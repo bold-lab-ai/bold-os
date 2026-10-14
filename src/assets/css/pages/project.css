@@ -46,9 +46,6 @@
 .tab:hover{color:var(--ink);}
 .tab.active{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
 .tab-panel .detail-grid{border-top:none; padding-top:0;}
-/* the repository editor (project-fields.js) */
-#prUrl{margin-top:8px;}
-#prUrl[hidden]{display:none;}
 /* presentations */
 .talk-list{list-style:none; margin:8px 0 0; padding:0; max-width:var(--article-max);}
 .talk-list li{padding:12px 0; border-bottom:1px solid var(--line);}
