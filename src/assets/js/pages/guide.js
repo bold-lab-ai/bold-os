@@ -859,11 +859,14 @@
   function drawHistory(){
     var on = !!x && !isNew;
     historyWrap.hidden = !on;
+    if (on && histPanel) histPanel.refresh();
     if (!on || histPanel) return;
     histPanel = BoldHistory.mount(document.getElementById('guideHistory'), {
       ref: ref,
       fields: {},
       flatten: flatten,
+      // Resolved comments are listed among the edits.
+      extras: function(){ return comments ? comments.resolvedItems() : []; },
       canRestore: function(){ return !!me; },
       restore: function(v){
         return submit({ kind: 'restore', partId: '', before: null, note: 'Restore the version of ' + BoldHistory.when(v.at),

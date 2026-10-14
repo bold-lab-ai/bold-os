@@ -219,7 +219,7 @@ window.BoldComments = (function(){
       });
     }
     function resolve(id){
-      col.doc(id).update({ resolved: true, resolvedBy: me.email, resolvedAt: Date.now() }).then(function(){ if (open === id) open = null; changed(); })
+      col.doc(id).update({ resolved: true, resolvedBy: me.email, resolvedByName: me.name, resolvedAt: Date.now() }).then(function(){ if (open === id) open = null; changed(); })
         .catch(function(err){ console.error('[BOLD Comments] resolving failed', err); error = 'Couldn’t resolve it — try again.'; changed(); });
     }
     function remove(id){
@@ -245,7 +245,20 @@ window.BoldComments = (function(){
       return true;
     }
 
-    return { start: start, stop: stop, decorate: decorate, click: click };
+    // Resolved threads, for the page's history (history.js extras): newest first there.
+    function resolvedItems(){
+      return comments.filter(function(c){ return !c.parent && c.resolved; }).map(function(c){
+        var all = [c].concat(replies(c.id));
+        return { id: c.id, at: c.resolvedAt || c.at,
+          head: 'Comment resolved by ' + esc(c.resolvedByName || c.resolvedBy || 'someone'),
+          msg: '“' + esc(c.quote.length > 80 ? c.quote.slice(0, 80) + '…' : c.quote) + '”',
+          body: '<div class="cm-history">' + all.map(function(r){
+            return '<p class="cm-meta"><strong>' + esc(r.by ? (r.by.name || r.by.email) : 'Someone') + '</strong> ' + esc(when(r.at)) + '</p><p class="cm-text">' + esc(r.text) + '</p>';
+          }).join('') + '</div>' };
+      });
+    }
+
+    return { start: start, stop: stop, decorate: decorate, click: click, resolvedItems: resolvedItems };
   }
 
   return { create: create };

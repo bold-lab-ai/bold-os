@@ -136,10 +136,28 @@ window.BoldHistory = (function(){
     }
     function kindLabel(v){ return v.kind === 'created' ? 'Added' : v.kind === 'deleted' ? 'Deleted' : 'Edited'; }
 
+    // Versions, and anything else the page lists among them (opts.extras(): resolved
+    // comments, say: [{ id, at, head, msg, body }], as HTML), newest first.
+    function entries(){
+      var list = versions.map(function(v, i){ return { v: v, i: i, at: v.at }; });
+      (opts.extras ? opts.extras() : []).forEach(function(x){ list.push({ x: x, at: x.at }); });
+      return list.sort(function(a, b){ return b.at - a.at; });
+    }
+    function extraHtml(x){
+      var isOpen = 'x:' + x.id === open;
+      return '<li class="hist-item hist-extra' + (isOpen ? ' is-open' : '') + '">' +
+        '<button type="button" class="hist-head" data-id="x:' + esc(x.id) + '" aria-expanded="' + isOpen + '">' +
+          '<span class="hist-when">' + when(x.at) + '</span><span class="hist-who">' + x.head + '</span>' +
+          (x.msg ? '<span class="hist-msg">' + x.msg + '</span>' : '') + '</button>' +
+        (isOpen ? '<div class="hist-body">' + x.body + '</div>' : '') + '</li>';
+    }
     function render(){
       if (!loaded) { el.innerHTML = '<p class="hist-note">Loading…</p>'; return; }
-      if (!versions.length) { el.innerHTML = '<p class="hist-note">No changes recorded yet. Changes are kept from 10 October 2026 on.</p>'; return; }
-      el.innerHTML = '<ol class="hist-list">' + versions.slice(0, all ? versions.length : FIRST).map(function(v, i){
+      var list = entries();
+      if (!list.length) { el.innerHTML = '<p class="hist-note">No changes recorded yet. Changes are kept from 10 October 2026 on.</p>'; return; }
+      el.innerHTML = '<ol class="hist-list">' + list.slice(0, all ? list.length : FIRST).map(function(e){
+        if (e.x) return extraHtml(e.x);
+        var v = e.v, i = e.i;
         var isOpen = v.id === open;
         var restore = i > 0 && v.kind !== 'deleted' && isOpen ?
           '<button type="button" class="btn-text hist-restore"' + (opts.canRestore() ? '' : ' disabled title="You can’t edit this"') + '>Restore this version</button>' : '';
@@ -152,7 +170,7 @@ window.BoldHistory = (function(){
           (isOpen ? '<div class="hist-body">' + restore + changesHtml(versions[i + 1] ? flat(versions[i + 1].data) : null, v.kind === 'deleted' ? null : flat(v.data), fields) + '</div>' : '') +
           '</li>';
       }).join('') + '</ol>' +
-        (versions.length > FIRST ? '<button type="button" class="btn-text hist-more">' + (all ? 'Show only the latest ' + FIRST : 'Show all ' + versions.length + ' versions') + '</button>' : '');
+        (list.length > FIRST ? '<button type="button" class="btn-text hist-more">' + (all ? 'Show only the latest ' + FIRST : 'Show all ' + list.length) + '</button>' : '');
     }
 
     el.addEventListener('click', function(e){
@@ -181,7 +199,7 @@ window.BoldHistory = (function(){
       console.error('[BOLD History] loading the history failed', err);
       el.innerHTML = '<p class="hist-note">Couldn’t load the history.</p>';
     });
-    return { stop: stop, when: when };
+    return { stop: stop, when: when, refresh: function(){ if (loaded) render(); } };
   }
 
   return { mount: mount, when: when, lineDiff: lineDiff, diffHtml: diffHtml, changesHtml: changesHtml };

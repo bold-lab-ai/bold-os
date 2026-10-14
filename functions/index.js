@@ -1016,6 +1016,96 @@ exports.onHandbookProposed = onProposed('handbook', handbookUrl);
 exports.onGuideProposalDecided = onProposalDecided('guides', guideUrl);
 exports.onHandbookProposalDecided = onProposalDecided('handbook', handbookUrl);
 
+// ---------- Comments on a guide or the BOLDiquette, in Slack, batched ----------
+// A comment (<collection>/{slug}/comments/{id}, comments.js) joins its page's queue
+// (commentQueue/{collection}__{slug}, server only); every few minutes the queue of a
+// page that has had no new comment for COMMENT_QUIET (or has waited COMMENT_MAX) is
+// sent: one message per person, however many comments it holds. New threads go to
+// the PIs and admins; replies to whoever is in the thread; nobody hears of their own.
+const COMMENT_QUIET = 10 * 60 * 1000;
+const COMMENT_MAX = 60 * 60 * 1000;
+
+function onCommented(collection){
+  return onDocumentCreated({ document: collection + '/{slug}/comments/{id}' }, async function(event){
+    const c = event.data && event.data.data();
+    if (!c) return;
+    const ref = db.collection('commentQueue').doc(collection + '__' + event.params.slug);
+    const item = { id: event.params.id, partId: String(c.partId || ''), parent: c.parent || null, quote: String(c.quote || '').slice(0, 200),
+      text: String(c.text || '').slice(0, 300), by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: c.at || Date.now() };
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const q = snap.exists ? snap.data() : { collection, slug: event.params.slug, items: [], firstAt: Date.now() };
+      q.items = (q.items || []).concat([item]).slice(-200);
+      q.lastAt = Date.now();
+      tx.set(ref, q);
+    });
+  });
+}
+exports.onGuideCommented = onCommented('guides');
+exports.onHandbookCommented = onCommented('handbook');
+
+// Whether a queue is ready to send: quiet long enough, or waited long enough. Pure.
+function commentQueueDue(q, now){
+  return !!q && (now - (q.lastAt || 0) >= COMMENT_QUIET || now - (q.firstAt || 0) >= COMMENT_MAX);
+}
+
+// Who hears of which comments → { email: [items] }. threads: { rootId: [emails in it] }. Pure.
+function commentRecipients(items, staff, threads){
+  const out = {};
+  const add = (email, it) => {
+    if (!email || email === it.by.email) return;
+    (out[email] = out[email] || []).push(it);
+  };
+  items.forEach((it) => {
+    if (!it.parent) staff.forEach((e) => add(e, it));
+    else (threads[it.parent] || []).forEach((e) => add(e, it));
+  });
+  return out;
+}
+
+// One person's message. Pure.
+function commentDigest(items, name, url){
+  const n = items.length;
+  const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.parent ? ' replied' : ' on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
+    ': ' + slackText(it.text.length > 140 ? it.text.slice(0, 140) + '…' : it.text);
+  return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), url) + '\n' +
+    items.slice(0, 5).map(line).join('\n') + (n > 5 ? '\n…and ' + (n - 5) + ' more.' : '');
+}
+
+exports.flushCommentQueue = onSchedule(
+  { schedule: 'every 5 minutes', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  async function(){
+    const now = Date.now();
+    const snap = await db.collection('commentQueue').get();
+    for (const doc of snap.docs) {
+      const q = doc.data();
+      if (!commentQueueDue(q, now)) continue;
+      // Taken off the queue first, so a comment arriving meanwhile starts a new one.
+      const taken = await db.runTransaction(async (tx) => {
+        const s = await tx.get(doc.ref);
+        if (!s.exists || s.data().lastAt !== q.lastAt) return null;
+        tx.delete(doc.ref);
+        return s.data();
+      });
+      if (!taken || !(taken.items || []).length) continue;
+      const page = db.collection(taken.collection).doc(taken.slug);
+      const [pageSnap, all] = await Promise.all([page.get(), page.collection('comments').get()]);
+      if (!pageSnap.exists) continue;
+      const threads = {};
+      all.docs.forEach((d) => {
+        const c = d.data(), root = c.parent || d.id, e = c.by && c.by.email ? String(c.by.email).toLowerCase() : '';
+        if (e) (threads[root] = threads[root] || []).indexOf(e) === -1 && threads[root].push(e);
+      });
+      const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase());
+      const url = (taken.collection === 'guides' ? guideUrl : handbookUrl)(taken.slug);
+      const name = pageSnap.data().title || taken.slug;
+      const byPerson = commentRecipients(taken.items, Array.from(new Set(staff)), threads);
+      const token = SLACK_BOT_TOKEN.value();
+      await Promise.all(Object.keys(byPerson).map((email) => dmByEmail(token, email, commentDigest(byPerson[email], name, url))));
+    }
+  }
+);
+
 // ---------- Deciding a suggested change to a guide or the BOLDiquette ----------
 // A guide (guides/{slug}) or the BOLDiquette (handbook/{slug}) changes only by
 // an accepted proposal, a PI's or admin's own included: clients can't change
@@ -3228,7 +3318,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, projectAnnouncement, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,

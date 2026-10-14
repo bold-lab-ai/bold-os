@@ -195,3 +195,5 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .cm-add{position:absolute; z-index:30; transform:translateX(-50%); display:inline-flex; align-items:center; gap:5px; padding:5px 10px; cursor:pointer;
   font-family:var(--sans); font-size:12.5px; color:var(--surface); background:var(--ink); border:none; border-radius:var(--radius); box-shadow:0 6px 18px rgba(26,43,74,.25);}
 @media (max-width:900px){ .cm-icon{left:auto; right:-8px;} .guide-part .guide-text{padding-right:24px;} }
+.cm-history .cm-meta{margin-top:8px; font-family:var(--sans); font-size:13px;}
+.cm-history .cm-text{font-family:var(--serif); font-size:16px;}

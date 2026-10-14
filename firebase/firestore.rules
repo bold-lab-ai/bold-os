@@ -309,7 +309,7 @@ service cloud.firestore {
           (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
             && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
           || ((resource.data.by.email == email() || hasFullWrite())
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedAt'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedByName', 'resolvedAt'])
             && request.resource.data.resolvedBy == email()));
         allow delete: if isLabMember() && (resource.data.by.email == email() || hasFullWrite()
           || ('parent' in resource.data && resource.data.parent is string
@@ -383,7 +383,7 @@ service cloud.firestore {
           (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
             && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
           || ((resource.data.by.email == email() || hasFullWrite())
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedAt'])
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedByName', 'resolvedAt'])
             && request.resource.data.resolvedBy == email()));
         allow delete: if isLabMember() && (resource.data.by.email == email() || hasFullWrite()
           || ('parent' in resource.data && resource.data.parent is string
