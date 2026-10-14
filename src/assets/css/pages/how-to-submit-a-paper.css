@@ -20,7 +20,7 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 }
 .hero-note{
   margin:20px 0 0;
-  font-size:18px;
+  font-size:16px;
   color:var(--ink-soft);
 }
 .page-source{
@@ -174,7 +174,7 @@ main{min-width:0;}
   color:var(--ink-soft);
   max-width:64ch;
   margin:0 0 18px;
-  font-size:18px;
+  font-size:16px;
 }
 .phase-intro.muted{color:var(--muted);}
 /* ---------- Rush-mode phase toggle ---------- */
@@ -249,7 +249,7 @@ ul.list, ol.list{
 ul.list li, ol.list li{
   position:relative;
   padding:7px 0 7px 22px;
-  font-size:17px;
+  font-size:16px;
 }
 ul.list li::before{
   content:'';
@@ -285,7 +285,7 @@ blockquote{
   border-left:2px solid var(--accent);
   max-width:62ch;
   color:var(--ink-soft);
-  font-size:18px;
+  font-size:16px;
   line-height:1.6;
   font-style:italic;
 }

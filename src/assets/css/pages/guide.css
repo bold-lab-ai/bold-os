@@ -11,13 +11,13 @@
   margin-bottom:12px;
 }
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
-.hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
+.hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 .hero .event-controls{flex-wrap:wrap;}
 .gd-pending{text-decoration:none; font-family:var(--sans); font-size:14px;}
 main{max-width:var(--guide-max); margin:0 auto; padding:8px var(--gutter) 24px;}
 section.block{max-width:var(--article-max); margin:48px 0 0;}
 .block-head{margin-bottom:10px;}
-.block h2, .guide-text h3, .read-point h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+.block h2, .read-point h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
 .guide-history{padding-top:0;}
 
 /* ---------- contents and parts ---------- */
@@ -48,8 +48,12 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 /* A hand-numbered item ("1:", "(a)"): its label in place of the bullet. */
 .guide-text li.md-labelled{list-style:none; position:relative;}
 .guide-text .md-label{position:absolute; right:100%; margin-right:0.45em; white-space:nowrap; font-variant-numeric:tabular-nums; color:var(--ink-soft);}
-.guide-text h3{margin:36px 0 10px;}
-.guide-text h4, .guide-text h5, .guide-text h6{font-size:19px; margin:24px 0 6px;}
+/* Headings in the text, smaller than a part's own title (26px): # 22px, ## 19px, ### 17px, #### a small-caps label. */
+.guide-text h3, .guide-text h4, .guide-text h5, .guide-text h6{font-family:var(--serif); color:var(--ink); line-height:1.25;}
+.guide-text h3{font-size:22px; font-weight:800; margin:36px 0 10px;}
+.guide-text h4{font-size:19px; font-weight:700; margin:28px 0 8px;}
+.guide-text h5{font-size:17px; font-weight:700; margin:22px 0 6px;}
+.guide-text h6{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); margin:20px 0 6px;}
 .guide-text blockquote{margin:12px 0; padding-left:16px; border-left:2px solid var(--line); color:var(--ink-soft);}
 .guide-text a{overflow-wrap:break-word;}
 .guide-text code{font-size:0.85em;}
@@ -89,7 +93,7 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .gd-proposal{border-top:1px solid var(--line); padding:12px 0 16px;}
 .gd-proposal:last-child{border-bottom:1px solid var(--line);}
 .gd-proposal-head{display:flex; flex-wrap:wrap; gap:4px 14px; margin:0; font-family:var(--sans); font-size:14px;}
-.gd-proposal-note{margin:6px 0 0; font-size:15px; color:var(--ink-soft);}
+.gd-proposal-note{margin:6px 0 0; font-size:16px; color:var(--ink-soft);}
 .gd-proposal-stale{margin:6px 0 0; font-family:var(--sans); font-size:13px; color:var(--danger-text);}
 .gd-proposal .event-controls{margin-top:12px;}
 
@@ -102,7 +106,7 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .gd-text-label{color:var(--muted);}
 .gd-modes{margin:2px 0 12px;}
 .gd-mode{background:none; border:none; border-bottom:2px solid transparent; cursor:pointer;}
-.gd-preview-box{box-sizing:border-box; margin:0; padding:4px 16px; overflow:auto; background:var(--paper); border:1px solid var(--line); font-family:var(--serif); font-size:17px; line-height:1.55; color:var(--ink-soft);}
+.gd-preview-box{box-sizing:border-box; margin:0; padding:4px 16px; overflow:auto; background:var(--paper); border:1px solid var(--line); font-family:var(--serif); font-size:16px; line-height:1.55; color:var(--ink-soft);}
 .gd-preview-empty{color:var(--muted);}
 .event-form .gd-body{margin-top:0;}
 .event-form .gd-body[hidden], .gd-preview-box[hidden]{display:none;}

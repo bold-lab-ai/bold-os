@@ -7,7 +7,7 @@
 /* ---------- hero ---------- */
 .hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
-.hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
+.hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 .hero-actions{display:flex; flex-wrap:wrap; gap:24px; margin-top:10px; font-family:var(--sans); font-size:15px;}
 /* ---------- article ---------- */
 main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
@@ -34,7 +34,7 @@ section.block:first-of-type{margin-top:28px;}
 .facts--slack[hidden]{display:none;}
 .fact{display:flex; gap:24px; padding:3px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
 .fact dt{flex:0 0 150px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); padding-top:5px;}
-.fact dd{margin:0; font-size:17px; color:var(--ink); overflow-wrap:anywhere;}
+.fact dd{margin:0; font-size:16px; color:var(--ink); overflow-wrap:anywhere;}
 .proj-group{margin-top:34px;}
 .proj-group:first-child{margin-top:22px;}
 .proj-group h3{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-soft); margin:0 0 2px;}

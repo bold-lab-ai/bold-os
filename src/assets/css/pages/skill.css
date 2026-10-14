@@ -8,7 +8,7 @@
   margin-bottom:12px;
 }
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
-.hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
+.hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 .skill-name{margin:10px 0 0; font-size:15px; color:var(--muted);}
 code{font-size:0.85em;}
 pre code{font-size:inherit;}

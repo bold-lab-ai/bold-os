@@ -10,7 +10,7 @@ h1,h2{font-family:var(--serif); color:var(--ink); font-weight:800; letter-spacin
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
 .back-link:hover{color:var(--accent);}
 .hero h1{font-size:clamp(27px, 4.4vw, 38px); line-height:1.15; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
-.hero-note{margin:16px 0 0; font-size:17px; color:var(--ink-soft); max-width:var(--article-max);}
+.hero-note{margin:16px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 /* Matches .cl-agent-note .note-lead (audit-board.css) so supplementary
    notes look the same wherever they show up on the site. */
 .hero-note.note-lead{
@@ -60,7 +60,7 @@ textarea{resize:vertical; min-height:96px; line-height:1.5;}
 html.auth-hint #proposeSignedOut{display:none;}
 /* ---------- success ---------- */
 .success-box{border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:22px 0;}
-.success-box p{margin:0; font-size:18px; color:var(--ink-soft);}
+.success-box p{margin:0; font-size:16px; color:var(--ink-soft);}
 .success-box .links{margin-top:14px; display:flex; gap:20px; font-family:var(--sans); font-size:14px;}
 @media (max-width:820px){
   .hero{padding:44px var(--gutter) 8px;}

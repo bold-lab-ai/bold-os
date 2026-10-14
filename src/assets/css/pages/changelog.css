@@ -1,7 +1,7 @@
 /* The changelog (changelog.html, pages/changelog.js): every change, by day. */
 .hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14;}
-.hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
+.hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
 section.block{max-width:var(--article-max); margin:36px 0 0;}
 .block-head{margin-bottom:6px;}

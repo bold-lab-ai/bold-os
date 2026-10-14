@@ -1,7 +1,7 @@
 /* ---------- hero ---------- */
 .hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
-.hero-note{margin:20px 0 0; font-size:18px; color:var(--ink-soft); max-width:var(--article-max);}
+.hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 .hero-actions{display:flex; flex-wrap:wrap; gap:24px; margin-top:10px; font-family:var(--sans); font-size:15px;}
 /* ---------- article ---------- */
 main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
@@ -36,7 +36,7 @@ section.block:first-of-type{margin-top:12px;}
 .eyebrow--past{color:var(--muted);}
 .event-card h3{font-size:26px; margin-top:8px; font-weight:500;}
 .event-when{margin-top:6px; font-size:15px; color:var(--muted); font-family:var(--sans); font-variant-numeric:tabular-nums;}
-.event-card p{margin:12px 0 0; font-size:17px; color:var(--ink-soft); max-width:64ch;}
+.event-card p{margin:12px 0 0; font-size:16px; color:var(--ink-soft); max-width:64ch;}
 .event-cta{
   display:inline-block; margin-top:14px; font-family:var(--sans); font-weight:500; font-size:14px;
   color:var(--accent); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;

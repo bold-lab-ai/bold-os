@@ -8,7 +8,7 @@
 /* Sans body, serif headings — same as the review board, so the rows, buttons
    and controls here match it. Scoped to the content: the masthead and side nav
    keep bold.css's type, as on every other page. */
-main{font-family:var(--sans); font-size:15.5px; line-height:1.55;}
+main{font-family:var(--sans); font-size:16px; line-height:1.55;}
 main button{font-family:inherit;}
 /* ---------- hero ---------- */
 .hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
