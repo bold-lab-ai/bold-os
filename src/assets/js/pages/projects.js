@@ -189,7 +189,8 @@
   // Older cached lists have no `authors`; refetch those.
   function hasAuthors(d){
     return ['ongoing', 'completed', 'planned'].every(function(g){
-      return (d[g] || []).every(function(p){ return Array.isArray(p.authors); });
+      // …and lists from before projects spanned venues (no `pid`): refetch those too.
+      return (d[g] || []).every(function(p){ return Array.isArray(p.authors) && p.pid; });
     });
   }
 
