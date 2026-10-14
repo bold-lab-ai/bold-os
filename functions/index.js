@@ -960,9 +960,55 @@ function onProposed(collection, pageUrl){
   );
 }
 
-exports.onGuideProposed = onProposed('guides', (slug) => SITE_URL + 'guide.html?guide=' + encodeURIComponent(slug));
+// What became of a proposal, once it's no longer open: accepted or declined
+// (decideProposal), or withdrawn (deleted while open). Whoever proposed it
+// hears it was decided; the PIs and admins, but whoever decided it, hear
+// either, so a "needs a decision" message isn't left standing.
+// Pure, so it's testable on its own. → { proposer, others } headlines, or null.
+function proposalOutcome(before, after, name, url){
+  if (!before || before.status !== 'open') return null;
+  const who = (before.by && (before.by.name || before.by.email)) || 'Someone';
+  const what = proposalSummary(before) + ' in ' + linkedTitle(slackText(name), url);
+  if (!after) return { others: '↩️ ' + slackText(who) + ' withdrew ' + what + '. Nothing to decide.' };
+  if (after.status !== 'accepted' && after.status !== 'declined') return null;
+  const decider = slackText(after.decidedByName || after.decidedBy || 'A PI or admin');
+  const icon = after.status === 'accepted' ? '✅ ' : '✖️ ';
+  return {
+    proposer: icon + decider + ' ' + after.status + ' your suggestion, ' + what + '.',
+    others: icon + decider + ' ' + after.status + ' ' + slackText(who) + '’s suggestion, ' + what + '.',
+  };
+}
+
+function onProposalDecided(collection, pageUrl){
+  return onDocumentWritten(
+    { document: collection + '/{slug}/proposals/{id}', secrets: [SLACK_BOT_TOKEN] },
+    async function(event){
+      const before = event.data.before.exists ? event.data.before.data() : null;
+      const after = event.data.after.exists ? event.data.after.data() : null;
+      const doc = await db.collection(collection).doc(event.params.slug).get();
+      // Deleted with its guide: nothing to tell.
+      if (!doc.exists) return;
+      const out = proposalOutcome(before, after, doc.data().title || event.params.slug, pageUrl(event.params.slug));
+      if (!out) return;
+      const token = SLACK_BOT_TOKEN.value();
+      const proposer = before.by && before.by.email ? String(before.by.email).toLowerCase() : '';
+      const decider = after && after.decidedBy ? String(after.decidedBy).toLowerCase() : '';
+      const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'))
+        .map((e) => String(e).toLowerCase()).filter((e) => e !== proposer && e !== decider);
+      const jobs = [sendEvent(token, { emails: staff, headline: out.others })];
+      if (out.proposer && proposer) jobs.push(sendEvent(token, { emails: [proposer], headline: out.proposer }));
+      await Promise.all(jobs);
+    }
+  );
+}
+
+const guideUrl = (slug) => SITE_URL + 'guide.html?guide=' + encodeURIComponent(slug);
 // The BOLDiquette is the one handbook document; it has its own page.
-exports.onHandbookProposed = onProposed('handbook', (slug) => SITE_URL + (slug === 'boldiquette' ? 'boldiquette.html' : 'index.html'));
+const handbookUrl = (slug) => SITE_URL + (slug === 'boldiquette' ? 'boldiquette.html' : 'index.html');
+exports.onGuideProposed = onProposed('guides', guideUrl);
+exports.onHandbookProposed = onProposed('handbook', handbookUrl);
+exports.onGuideProposalDecided = onProposalDecided('guides', guideUrl);
+exports.onHandbookProposalDecided = onProposalDecided('handbook', handbookUrl);
 
 // ---------- Deciding a suggested change to a guide or the BOLDiquette ----------
 // A guide (guides/{slug}) or the BOLDiquette (handbook/{slug}) changes only by
@@ -3124,7 +3170,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
