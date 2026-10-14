@@ -931,6 +931,7 @@ function proposalSummary(q){
   if (q.kind === 'about') return 'a change to the title and description';
   if (q.kind === 'add') return 'a new part, ' + title(q.after);
   if (q.kind === 'remove') return 'removing the part ' + title(q.before);
+  if (q.kind === 'move' && q.after && q.after.tab) return 'moving the tab ' + title(q.after);
   if (q.kind === 'move') return 'moving the part ' + title(q.before);
   if (q.kind === 'restore') return 'restoring an earlier version';
   if (q.kind === 'batch') {

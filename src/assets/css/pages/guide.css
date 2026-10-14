@@ -126,3 +126,7 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .gd-draft .gd-draft-form{margin-top:12px; max-width:none;}
 .gd-batch{margin:8px 0; padding-left:20px;}
 .gd-batch > li{margin-bottom:10px;}
+/* The current tab's arrows (into your draft) and + for a new tab (pages/guide.js). */
+.gd-tab-move{display:inline-flex; align-items:center; gap:0; margin:0 0 -11px -16px; padding-bottom:6px;}
+.gd-tab-move .icon-btn svg{transform:rotate(-90deg);}
+.gd-tab-add{background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; font-size:15px; letter-spacing:0; line-height:1; padding:6px 2px;}

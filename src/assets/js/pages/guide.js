@@ -99,9 +99,16 @@
   function tabsHtml(){
     var t = currentTab();
     if (t === null) return '';
-    return '<nav class="guide-tabs" id="gdTabs" aria-label="Sections">' + sections().map(function(v){
-      return '<a class="guide-tab' + (v === t ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (v === t ? ' aria-current="page"' : '') + '>' + esc(v || 'Other') + '</a>';
-    }).join('') + '</nav>';
+    var secs = sections(), i = secs.indexOf(t), newTab = form && form.newTab;
+    // The current tab's arrows move it (into your draft); + adds a tab. Not while viewing a proposal.
+    var arrows = viewing || newTab ? '' : '<span class="gd-tab-move">' +
+      '<button type="button" class="icon-btn gd-tab-left" aria-label="Move this tab left" title="Move this tab left"' + (i <= 0 ? ' disabled' : '') + '>' + BOLD.ICON_UP + '</button>' +
+      '<button type="button" class="icon-btn gd-tab-right" aria-label="Move this tab right" title="Move this tab right"' + (i >= secs.length - 1 ? ' disabled' : '') + '>' + BOLD.ICON_DOWN + '</button></span>';
+    return '<nav class="guide-tabs" id="gdTabs" aria-label="Sections">' + secs.map(function(v){
+      var cur = v === t && !newTab;
+      return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (cur ? ' aria-current="page"' : '') + '>' + esc(v || 'Other') + '</a>' + (cur ? arrows : '');
+    }).join('') +
+      (viewing ? '' : '<button type="button" class="guide-tab gd-tab-add' + (newTab ? ' is-current' : '') + '" aria-label="Suggest a new tab" title="Suggest a new tab">+</button>') + '</nav>';
   }
   function stamp(note){ return { changeNote: note || '', updatedAt: Date.now(), updatedBy: me.email, proposedBy: '' }; }
 
@@ -175,8 +182,9 @@
     p = p || { title: '', body: '' };
     var isAdd = !p.id;
     return '<div class="event-form guide-form">' +
-      '<p class="event-form-head">' + (isAdd ? 'New part' : 'Edit part') + '</p>' +
-      (hasSections() ? '<label>Section<input type="text" class="gd-section" value="' + esc(p.section || (isAdd ? currentTab() : '') || '') + '" list="gdSections"></label>' +
+      '<p class="event-form-head">' + (isAdd && form.newTab ? 'New tab, with its first part' : isAdd ? 'New part' : 'Edit part') + '</p>' +
+      (isAdd && form.newTab ? '<label>Tab<input type="text" class="gd-section gd-new-tab" maxlength="60" placeholder="e.g. Cambridge"></label>' :
+      hasSections() ? '<label>Section<input type="text" class="gd-section" value="' + esc(p.section || (isAdd ? currentTab() : '') || '') + '" list="gdSections"></label>' +
         '<datalist id="gdSections">' + parts().map(function(q){ return q.section; }).filter(function(v, i, a){ return v && a.indexOf(v) === i; }).map(function(v){ return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>' : '') +
       '<label>Title<input type="text" class="gd-title" value="' + esc(p.title) + '" placeholder="e.g. Before the reviews come in"></label>' +
       // Write or Preview, as GitHub's comments: how the text will look, in its place.
@@ -396,9 +404,9 @@
       tabsHtml() +
       // The contents sit beside the parts and stay on screen (above them on narrow screens).
       '<div class="guide-layout"><div class="guide-main">' +
-      shown().map(partHtml).join('') +
+      (adding && form.newTab ? '<section class="guide-part">' + partFormHtml(null) + '</section>' : shown().map(partHtml).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
-        '<button type="button" class="event-add gd-add">' + '+ Suggest a new part' + '</button>') +
+        '<button type="button" class="event-add gd-add">' + '+ Suggest a new part' + '</button>')) +
       proposalsHtml() + (readPoint ? readPoint.readersHtml() : '') + '</div>' + contentsHtml() + '</div></main>';
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
@@ -410,6 +418,10 @@
   // The draft's bar: how many changes, each on request, and Propose all / Discard.
   function changeLabel(c){
     if (c.kind === 'about') return 'New title and description';
+    if (c.kind === 'move' && c.after && c.after.tab) return 'Move the tab “' + esc(c.after.title || 'Other') + '”';
+    if (c.kind === 'add' && c.after && c.after.section && !(x.parts || []).some(function(p){ return p.section === c.after.section; })) {
+      return 'New tab “' + esc(c.after.section) + '”, with “' + esc(c.after.title || '') + '”';
+    }
     return KIND[c.kind] + ' “' + esc((c.after || c.before || {}).title || '') + '”';
   }
   function draftHtml(){
@@ -443,6 +455,20 @@
       draftBusy = false; draftError = 'Couldn’t propose it — try again.'; render();
     });
   }
+  // Moves the current tab left (-1) or right (1): all its parts as a block, into your draft.
+  function moveTab(by){
+    var secs = sections(), name = currentTab(), i = secs.indexOf(name), j = i + by;
+    if (name === null || j < 0 || j >= secs.length) return;
+    var order = secs.slice(); order[i] = secs[j]; order[j] = name;
+    var ids = function(list){ return list.map(function(p){ return p.id; }); };
+    var after = [];
+    order.forEach(function(sec){ after = after.concat(parts().filter(function(p){ return (p.section || '') === sec; })); });
+    draft.push({ kind: 'move', partId: '', before: { title: name, tab: true, order: ids(parts()) }, after: { title: name, tab: true, order: ids(after) },
+      note: 'Moved the tab “' + (name || 'Other') + '” ' + (by < 0 ? 'left' : 'right') });
+    saveDraft(); notice = ''; tab = name;
+    render();
+  }
+
   // Removing a change also removes later ones on the part it added.
   function dropFromDraft(i){
     var c = draft[i];
@@ -565,10 +591,15 @@
     save.addEventListener('click', function(){
       var after = { title: v('.gd-title').trim(), body: v('.gd-body').replace(/\s+$/, '') };
       if (el.querySelector('.gd-section')) after.section = v('.gd-section').trim();
+      if (form.newTab) {
+        if (!after.section) { showError(el, 'Name the tab.'); return; }
+        if (sections().indexOf(after.section) !== -1) { showError(el, 'There’s already a tab called ' + after.section + '.'); return; }
+      }
       if (!after.title) { showError(el, 'Give the part a title.'); return; }
       if (!after.body.trim()) { showError(el, 'Write the part’s text.'); return; }
       if (p && after.title === p.title && after.body === p.body && (after.section === undefined || after.section === (p.section || ''))) { closeForm(); return; }
       if (needNote()) return;
+      if (form.newTab && staging) tab = after.section;
       run(p ? { kind: 'edit', partId: p.id, before: partSide(p), after: after, note: note() } :
         { kind: 'add', partId: G.partId(), before: null, after: after, note: note() });
     });
@@ -614,6 +645,12 @@
     if (!t || t.disabled || !x || !me) return;
     if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
     if (t.classList.contains('gd-draft-toggle')) { draftOpen = !draftOpen; render(); return; }
+    if (t.classList.contains('gd-tab-left') || t.classList.contains('gd-tab-right')) { if (!form) moveTab(t.classList.contains('gd-tab-left') ? -1 : 1); return; }
+    if (t.classList.contains('gd-tab-add')) {
+      notice = ''; form = { kind: 'add', newTab: true }; render();
+      var nt = body.querySelector('.gd-new-tab'); if (nt) nt.focus();
+      return;
+    }
     if (t.classList.contains('gd-draft-propose')) { proposeDraft(); return; }
     if (t.classList.contains('gd-draft-drop')) { dropFromDraft(Number(t.getAttribute('data-i'))); return; }
     if (t.classList.contains('gd-draft-discard')) {
