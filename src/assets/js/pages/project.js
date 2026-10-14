@@ -40,6 +40,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // Where each was given (`occasion`): one of the site's events, a venue on the board,
   // or another occasion, named. Group meetings come later, from the meetings rota.
   // Presentations saved before had a `kind` instead; they still show by it.
+  // A presentation's type: a talk's (src/_data/collabWeekTypes.js), the same for both.
+  var PRES_TYPES = [['research-talk', 'Research talk'], ['pitch', 'Pitch'], ['keynote', 'Keynote']];
   var OLD_KINDS = { group: 'Group meeting', pitch: 'Pitch Day', conference: 'Conference', invited: 'Invited talk', other: 'Other' };
   var events = null;   // the released events, loaded when a presentation is edited
   var authorRows = [];     // in-progress rows while editing the authors, see authors.js
@@ -521,12 +523,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var v = el('talkOccasion').value;
     if (v === 'other') {
       var name = el('talkOther').value.trim();
-      return name ? { kind: 'other', id: '', label: name.slice(0, 200) } : { error: 'Name the occasion.' };
+      return name ? { kind: 'other', id: '', label: name.slice(0, 200) } : { error: 'Name the venue.' };
     }
     var kind = v.split(':')[0], id = v.slice(kind.length + 1);
     var list = kind === 'event' ? (events || []).map(function(e){ return { id: e.slug, label: e.title }; }) : (venues || []);
     var hit = list.filter(function(x){ return x.id === id; })[0];
-    if (!hit) return { error: 'Choose the occasion.' };
+    if (!hit) return { error: 'Choose the venue.' };
     var o = { kind: kind, id: id, label: hit.label };
     var s = kind === 'event' && pickedSession(), t = s && pickedTalk();
     if (s) { o.sessionSlug = s.slug; o.sessionTitle = s.title.slice(0, 200); }
@@ -563,7 +565,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         .filter(function(t){ return !t.removed; })
         .map(function(t){
           var names = (t.speakers || []).map(function(p){ return p.name || p.email; }).filter(Boolean).join(', ') || t.speaker || '';
-          return { slug: t.slug, title: t.title || 'Untitled talk', speakers: names, slidesUrl: t.presentationUrl || '' };
+          return { slug: t.slug, title: t.title || 'Untitled talk', type: t.type || '', speakers: names, slidesUrl: t.presentationUrl || '' };
         }));
     });
   }
@@ -608,34 +610,72 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       sel.innerHTML = '<option value="">The whole session</option>' + list.map(function(t){
         return '<option value="' + esc(t.slug) + '"' + (t.slug === cur ? ' selected' : '') + '>' + esc(t.title + (t.speakers ? ' \u2014 ' + t.speakers : '')) + '</option>';
       }).join('');
+      if (cur) fillFromTalk();
     }).catch(function(err){ console.error('[BOLD Lab] loading the talks failed', err); });
   }
 
   // Choosing a talk fills in what the programme knows, except what was typed here.
   var typed = {};
+  // A presentation of a talk on an event's programme is that talk: its title, type,
+  // speakers and slides are the talk's, shown here and edited on its page.
+  var TALK_OWN = ['talkTitle', 'talkType', 'talkPresenter', 'talkSlides'];
   function fillFromTalk(){
     var s = pickedSession(), t = pickedTalk();
     var set = function(id, v){ if (v && !typed[id]) el(id).value = v; };
     if (s) set('talkDate', s.date);
-    if (t) { set('talkTitle', t.title); set('talkPresenter', t.speakers); set('talkSlides', t.slidesUrl); }
+    if (t) {
+      el('talkTitle').value = t.title; el('talkType').value = t.type || ''; el('talkPresenter').value = t.speakers; el('talkSlides').value = t.slidesUrl;
+    }
+    TALK_OWN.forEach(function(id){ el(id).disabled = !!t; });
+    var note = el('talkFromTalk');
+    if (note) {
+      note.hidden = !t;
+      if (t) note.innerHTML = 'Title, type, speakers and slides are the talk\u2019s: <a href="talk.html?talk=' + encodeURIComponent(t.slug) + '">edit them on its page</a>.';
+    }
   }
 
   function talkFormHtml(t){
     t = t || { title: '', date: new Date().toISOString().slice(0, 10), presenter: me && me.displayName || '', occasion: null, slidesUrl: '', recordingUrl: '' };
     var input = function(id, type, v, ph){ return '<input type="' + type + '" id="' + id + '" value="' + esc(v || '') + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '>'; };
     var o = t.occasion || {};
+    // Where it was given first: choosing a talk there fills in the rest.
     return '<dl class="detail-grid talk-form">' +
-      row('Title', input('talkTitle', 'text', t.title)) +
-      row('Date', input('talkDate', 'date', t.date)) +
-      row('Presenter', input('talkPresenter', 'text', t.presenter)) +
-      row('Occasion', '<select id="talkOccasion" data-value="' + esc(occasionValue(t)) + '">' + occasionOptionsHtml(occasionValue(t)) + '</select>' +
+      row('Venue', '<select id="talkOccasion" data-value="' + esc(occasionValue(t)) + '">' + occasionOptionsHtml(occasionValue(t)) + '</select>' +
         '<input type="text" id="talkOther" placeholder="e.g. a workshop or an invited talk" value="' + esc(t.occasion && t.occasion.kind === 'other' ? t.occasion.label : '') + '"' + (occasionValue(t) === 'other' ? '' : ' hidden') + '>') +
       row('Session', '<select id="talkSession" data-value="' + esc(o.sessionSlug || '') + '"><option value="">Loading\u2026</option></select>', ' id="talkSessionRow" hidden') +
-      row('Talk', '<select id="talkTalk" data-value="' + esc(o.talkSlug || '') + '"></select>', ' id="talkTalkRow" hidden') +
+      row('Talk', '<select id="talkTalk" data-value="' + esc(o.talkSlug || '') + '"></select><p class="detail-hint" id="talkFromTalk" hidden></p>', ' id="talkTalkRow" hidden') +
+      row('Title', input('talkTitle', 'text', t.title)) +
+      row('Type', '<select id="talkType"><option value="">\u2014</option>' + PRES_TYPES.map(function(x){
+        return '<option value="' + x[0] + '"' + (x[0] === t.type ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>') +
+      row('Presenter', input('talkPresenter', 'text', t.presenter)) +
+      row('Date', input('talkDate', 'date', t.date)) +
       row('Slides', input('talkSlides', 'url', t.slidesUrl, 'https://\u2026')) +
       row('Recording', input('talkRecording', 'url', t.recordingUrl, 'https://\u2026 (optional)')) +
       '</dl>' + saveCancelHtml('talkSave');
   }
+
+  // The talks the presentations are of, as they are now on their event's programme.
+  var liveTalks = {};
+  function loadLiveTalks(){
+    talks.forEach(function(t){
+      var slug = t.occasion && t.occasion.talkSlug;
+      if (!slug || liveTalks[slug]) return;
+      liveTalks[slug] = { loading: true };
+      db.collection('collabWeekTalks').doc(slug).get().then(function(snap){
+        var x = snap.exists ? snap.data() : null;
+        liveTalks[slug] = x ? { title: x.title || '', type: x.type || '', slidesUrl: x.presentationUrl || '',
+          presenter: (x.speakers || []).map(function(p){ return p.name || p.email; }).filter(Boolean).join(', ') || x.speaker || '' } : { gone: true };
+        if (card && !editing) render();
+      }).catch(function(err){ console.error('[BOLD Lab] loading a presented talk failed', err); });
+    });
+  }
+  // A presentation as shown: a talk's own details from the talk itself.
+  function shown(t){
+    var live = t.occasion && t.occasion.talkSlug && liveTalks[t.occasion.talkSlug];
+    if (!live || live.loading || live.gone) return t;
+    return Object.assign({}, t, { title: live.title || t.title, type: live.type, presenter: live.presenter, slidesUrl: live.slidesUrl || t.slidesUrl });
+  }
+  function typeLabel(k){ var x = PRES_TYPES.filter(function(p){ return p[0] === k; })[0]; return x ? x[1] : ''; }
 
   function presentationsHtml(){
     var off = canTalk() ? '' : ' disabled title="' + NOT_MEMBER + '"';
@@ -645,10 +685,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     if (!talks.length && editing !== 'talk:new') return html + missing();
     html += '<ul class="talk-list">' + talks.map(function(t){
       if (editing === 'talk:' + t.id) return '<li>' + talkFormHtml(t) + '</li>';
+      t = shown(t);
       var title = t.slidesUrl ? '<a href="' + esc(t.slidesUrl) + '" target="_blank" rel="noopener">' + esc(t.title) + '</a>' : esc(t.title);
       var when = new Date(t.date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
       var occasion = occasionHtml(t);
-      return '<li><div class="talk-when">' + esc(when) + (occasion ? ' \u00b7 ' + occasion : '') + '</div>' +
+      return '<li><div class="talk-when">' + esc(when) + (occasion ? ' \u00b7 ' + occasion : '') + (typeLabel(t.type) ? ' \u00b7 ' + typeLabel(t.type) : '') + '</div>' +
         '<div class="talk-title">' + title + (t.presenter ? ' <span class="detail-muted">\u2014 ' + esc(t.presenter) + '</span>' : '') + '</div>' +
         '<div class="talk-actions">' +
           (t.recordingUrl ? '<a href="' + esc(t.recordingUrl) + '" target="_blank" rel="noopener">Recording</a>' : '') +
@@ -665,7 +706,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var fail = failer(), id = editing.slice(5), v = function(x){ return el(x).value.trim(); };
     var occasion = readOccasion();
     if (occasion.error) return fail(occasion.error);
-    var t = { title: v('talkTitle'), date: v('talkDate'), presenter: v('talkPresenter'), occasion: occasion, slidesUrl: v('talkSlides'), recordingUrl: v('talkRecording') };
+    var t = { title: v('talkTitle'), type: v('talkType'), date: v('talkDate'), presenter: v('talkPresenter'), occasion: occasion, slidesUrl: v('talkSlides'), recordingUrl: v('talkRecording') };
     if (!t.title) return fail('Give it a title.');
     if (!/^\d{4}-\d\d-\d\d$/.test(t.date)) return fail('Choose a date.');
     if ([t.slidesUrl, t.recordingUrl].some(function(u){ return u && !/^https?:\/\//i.test(u); })) return fail('Enter full links, starting with https://');
@@ -715,6 +756,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     talksUnsub = talksRef().onSnapshot(function(snap){
       talks = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
         .sort(function(a, b){ return (b.date || '').localeCompare(a.date || '') || (b.at || 0) - (a.at || 0); });
+      loadLiveTalks();
       if (card && !editing) render();
     }, function(err){ console.error('[BOLD Lab] loading the presentations failed', err); });
   }

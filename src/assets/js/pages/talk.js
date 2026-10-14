@@ -5,7 +5,7 @@
 // is shown by its session's page instead.
 //
 // A presenter, a lead of the session or a PI/admin gets "Edit talk": title,
-// type, speakers, duration, affiliation, presentation, notes, abstract, bio.
+// type, speakers, duration, affiliation, presentation, abstract, bio.
 // The speakers are people (collab-week-speakers.js) — their emails are who
 // counts as a presenter — and only leads and PIs/admins change them, or
 // remove the talk from its session (which deletes it).
@@ -30,7 +30,7 @@
 
   var NOT_EDITOR = 'Only the talk’s presenters, the session’s leads, PIs and admins can edit it';
   var NOT_REMOVER = 'Only the session’s leads, PIs and admins can remove a talk';
-  var TALK_TYPES = ['research-talk', 'pitch'];  // as in functions/index.js
+  var TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // as in functions/index.js
 
   // The form, in order, two to a row unless wide: the Speakers go after the
   // duration (beside the affiliation), its Project after the presentation.
@@ -40,9 +40,8 @@
     { key: 'duration', label: 'Duration (minutes)', input: 'number', placeholder: 'e.g. 10', hint: 'Its time follows from the session’s talk order.' },
     { key: 'affiliation', label: 'Affiliation', input: 'text' },
     { key: 'presentationUrl', label: 'Presentation', input: 'text', placeholder: 'https://…', hint: 'Slides, a shared doc or a recording.' },
-    { key: 'notes', label: 'Notes', input: 'text', wide: true },
-    { key: 'abstract', label: 'Abstract', input: 'area', rows: 8 },
-    { key: 'bio', label: 'About the speaker', input: 'area', rows: 8 }
+    { key: 'abstract', label: 'Abstract', input: 'area', rows: 8, wide: true },
+    { key: 'bio', label: 'About the speaker', input: 'area', rows: 6, wide: true }
   ];
 
   var saved = null, canEdit = false, canSetPresenters = false, editing = false, busy = false, error = '';
@@ -108,7 +107,6 @@
       (venue.mapsUrl ? ' &middot; <a href="' + esc(venue.mapsUrl) + '" target="_blank" rel="noopener">Open in Google Maps</a>' : '') +
       (venue.address ? '<span class="meta">' + esc(venue.address) + '</span>' : '') + '</dd>';
     if (t.duration) html += '<dt>Duration</dt><dd>' + esc(t.duration) + '</dd>';
-    if (t.notes) html += '<dt>Notes</dt><dd>' + esc(t.notes) + '</dd>';
     if (t.presentationUrl) html += '<dt>Presentation</dt><dd class="talk-pres"><a href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">' + esc(t.presentationUrl) + '</a></dd>';
     html += links.rowHtml();
     html += '</dl><div class="detail-field"><p class="detail-field-label">Abstract</p>' +
@@ -274,7 +272,7 @@
     prefill: function(){
       var t = saved || {};
       var who = (t.speakers || []).map(function(p){ return p.name || p.email; }).filter(Boolean).join(', ') || t.speaker || '';
-      return { title: t.title, presenter: who, date: base && base.date, slidesUrl: t.presentationUrl };
+      return { title: t.title, type: t.type, presenter: who, date: base && base.date, slidesUrl: t.presentationUrl };
     },
     onChange: function(){ if (!editing) render(); }
   });

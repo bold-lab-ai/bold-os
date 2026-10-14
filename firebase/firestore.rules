@@ -180,7 +180,8 @@ service cloud.firestore {
         return exists(ws) && email().lower() in get(ws).data.get('members', []);
       }
       function validPresentation(d) {
-        return d.keys().hasOnly(['title', 'date', 'presenter', 'occasion', 'slidesUrl', 'recordingUrl', 'by', 'at']) &&
+        return d.keys().hasOnly(['title', 'type', 'date', 'presenter', 'occasion', 'slidesUrl', 'recordingUrl', 'by', 'at']) &&
+          d.get('type', '') in ['', 'research-talk', 'pitch', 'keynote'] &&
           d.title is string && d.title.size() > 0 && d.title.size() <= 200 &&
           d.date is string && d.date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') &&
           d.presenter is string && d.presenter.size() <= 200 &&

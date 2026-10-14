@@ -114,6 +114,7 @@ window.BoldProjectLinks = (function(){
       var p = (mine || []).filter(function(x){ return x.id === projectId; })[0];
       var t = {
         title: String(pre.title || occasion.talkTitle || occasion.sessionTitle || occasion.label).slice(0, 200),
+        type: ['research-talk', 'pitch', 'keynote'].indexOf(pre.type) >= 0 ? pre.type : '',
         date: /^\d{4}-\d\d-\d\d$/.test(pre.date || '') ? pre.date : new Date().toISOString().slice(0, 10),
         presenter: String(pre.presenter || me.name || '').slice(0, 200),
         occasion: occasion,

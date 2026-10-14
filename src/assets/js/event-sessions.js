@@ -150,7 +150,7 @@ window.EventSessions = (function(){
           return schedule.addToSlot(day.id, slot.id, slug);
         }).then(function(){
           // A keynote or an oral is one talk: add it now, with the session's title.
-          if (SOLO.indexOf(type) >= 0) return callable('createTalk')({ sessionSlug: slug, title: title, type: 'research-talk' });
+          if (SOLO.indexOf(type) >= 0) return callable('createTalk')({ sessionSlug: slug, title: title, type: type === 'keynote' ? 'keynote' : 'research-talk' });
         }).then(function(){ close(); refresh(); }).catch(function(e){
           console.error('[BOLD Events] adding a session failed', e);
           errBox.textContent = 'Couldn’t add the session — try again.'; errBox.hidden = false;

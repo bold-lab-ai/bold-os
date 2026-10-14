@@ -2,7 +2,8 @@
 // Session types (collabWeekSessions/{slug}.type): workshop, keynote, oral, panel,
 // welcome. A keynote or an oral is a session that is one talk: its page shows
 // that talk (speaker, abstract, bio, presentation), and its time is the session's.
-// Talk types inside a session (collabWeekTalks/{slug}.type): research-talk, pitch.
+// Talk types (collabWeekTalks/{slug}.type, and a project's presentations' type):
+// research-talk, pitch, keynote.
 export default {
   workshop: 'Workshop',
   keynote: 'Keynote',

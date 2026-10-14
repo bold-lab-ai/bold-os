@@ -2773,7 +2773,7 @@ exports.refreshPeople = onCall(
 // talk. Only leads and PIs/admins can change the speakers, add a talk to a
 // session, or remove one (which deletes it).
 const TALK_FIELDS = { title: 300, type: 40, speaker: 300, duration: 100, affiliation: 300, notes: 1000, abstract: 10000, bio: 10000, presentationUrl: 2000 };
-const TALK_TYPES = ['research-talk', 'pitch'];  // labels in src/_data/collabWeekTypes.js; a keynote/oral is a session
+const TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // labels in src/_data/collabWeekTypes.js; a keynote/oral session is one talk
 
 // [{ name, email }] → { speakers, speaker, presenterEmails }
 function speakerFields(list){
@@ -2830,7 +2830,7 @@ function talkTextFields(edits, allowed){
   });
   if ('title' in doc && !doc.title) throw new HttpsError('invalid-argument', 'The title can’t be empty.');
   if (doc.presentationUrl && !/^https?:\/\/\S+$/.test(doc.presentationUrl)) throw new HttpsError('invalid-argument', 'The presentation isn’t a link (https://…).');
-  if ('type' in doc && TALK_TYPES.indexOf(doc.type) < 0) throw new HttpsError('invalid-argument', 'A talk is a research talk or a pitch.');
+  if ('type' in doc && TALK_TYPES.indexOf(doc.type) < 0) throw new HttpsError('invalid-argument', 'A talk is a research talk, a pitch or a keynote.');
   return doc;
 }
 

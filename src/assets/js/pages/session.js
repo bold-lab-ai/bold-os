@@ -223,7 +223,7 @@
 
   // --- adding a talk ----------------------------------------------------------
 
-  var TALK_TYPES = ['research-talk', 'pitch'];  // as in functions/index.js
+  var TALK_TYPES = ['research-talk', 'pitch', 'keynote'];  // as in functions/index.js
   var ADD_FIELDS = [
     { key: 'title', label: 'Title' },
     { key: 'type', label: 'Type', type: 'select' },
@@ -323,7 +323,6 @@
     html += row('When', esc(when(s))) + row('Where', whereHtml(s));
     if (!isEmpty(s.leads)) html += row(s.leads.length > 1 ? 'Leads' : 'Lead', leadsHtml(s.leads));
     if (t.presentationUrl) html += row('Presentation', '<a href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">' + esc(t.presentationUrl) + '</a>');
-    if (t.notes) html += row('Notes', esc(t.notes));
     html += links.rowHtml();
     return html + '</dl>' +
       section('Abstract', t.abstract ? '<p class="talk-text">' + esc(t.abstract) + '</p>' : '<p class="detail-muted">Abstract not yet available.</p>') +
@@ -367,7 +366,7 @@
       return '<li><span class="t">' + esc(t.time || t.duration || '') + '</span><span class="e">' + title +
         (t.speaker ? ' <span class="who">— ' + esc(t.speaker) + '</span>' : '') +
         (t.presentationUrl ? ' · <a class="talk-pres" href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">Presentation</a>' : '') +
-        (t.notes ? '<span class="meta">' + esc(t.notes) + '</span>' : '') + '</span>' +
+        '</span>' +
         (t.type ? '<span class="talk-type">' + badge(t.type) + '</span>' : '') + '</li>';
     }).join('') + '</ul>');
 
@@ -430,9 +429,8 @@
   var SOLO_FIELDS = [
     { key: 'affiliation', label: 'Affiliation' },
     { key: 'presentationUrl', label: 'Presentation', placeholder: 'https://…', hint: 'Slides, a shared doc or a recording.' },
-    { key: 'notes', label: 'Notes', wide: true },
-    { key: 'abstract', label: 'Abstract', area: 8 },
-    { key: 'bio', label: 'About the speaker', area: 8 }
+    { key: 'abstract', label: 'Abstract', area: 8, wide: true },
+    { key: 'bio', label: 'About the speaker', area: 6, wide: true }
   ];
 
   // A keynote's or an oral's form: its talk's fields, and the session's type, room and leads.
@@ -838,7 +836,7 @@
     },
     prefill: function(){
       var solo = soloTalk(), s = session();
-      return { title: solo ? solo.title : s.title, presenter: solo ? solo.speaker : '', date: placed ? placed.date : '', slidesUrl: solo ? solo.presentationUrl : '' };
+      return { title: solo ? solo.title : s.title, type: solo ? solo.type : '', presenter: solo ? solo.speaker : '', date: placed ? placed.date : '', slidesUrl: solo ? solo.presentationUrl : '' };
     },
     onChange: function(){ if (!editing) (adding ? renderKeepingAdd : render)(); }
   });
