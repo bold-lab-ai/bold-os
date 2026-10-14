@@ -2126,7 +2126,7 @@ exports.projectWorkspace = onCall(
     if (data.action === 'join' || data.action === 'leave'){
       const joining = data.action === 'join';
       if (!joining && projectMembers(card, []).indexOf(email) >= 0) {
-        throw new HttpsError('failed-precondition', 'Its submitter and authors stay members — remove yourself from the authors first.');
+        throw new HttpsError('failed-precondition', 'Its submitter and authors stay on the project — remove yourself from the authors first.');
       }
       await wsRef.set({ cardId: id, boardId, joined: joining
         ? FieldValue.arrayUnion(email)

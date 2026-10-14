@@ -211,8 +211,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
             : missing()) + editButton('authors')) + '</dd>';
       html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
         '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
-      html += row('Venue', !boardId ? '<span class="detail-muted">No venue yet</span>'
-        : '<a href="audit-board.html#board=' + encodeURIComponent(boardId) + '">' + esc(venueLabel || boardId) + '</a>');
       html += row('Submitted by', card.submittedBy && card.submittedBy.name
         ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
         : missing());
@@ -234,7 +232,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     },
     // Who's on it and how they meet.
     team: function(){
-      return '<dl class="detail-grid">' + row('Members', membersHtml()) +
+      return '<dl class="detail-grid">' + row('People', membersHtml()) +
         editableRow('slack', 'Slack channel', card.slackChannel ? esc(card.slackChannel) : missing(),
           card.slackChannel ? ' id="slackChannel"' : '', channelEntryHtml(card.slackChannel), 'slackSave') +
         workspaceRows() + '</dl>';
@@ -245,7 +243,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     },
     // The write-up and its submission.
     paper: function(){
-      return '<dl class="detail-grid">' + simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') +
+      return '<dl class="detail-grid">' + row('Venue', !boardId ? '<span class="detail-muted">No venue yet</span>'
+          : '<a href="audit-board.html#board=' + encodeURIComponent(boardId) + '">' + esc(venueLabel || boardId) + '</a>') +
+        simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') +
         row('Internal review', boardId
           ? '<a href="audit-board.html#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(projectId) + '">Its card on ' + esc(venueLabel || 'the board') + '</a>'
           : '<span class="detail-muted">Once the project has a venue</span>') + '</dl>';

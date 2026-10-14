@@ -32,14 +32,14 @@
         var members = w.members || [];
         var mine = members.some(isMe), joined = (w.joined || []).some(isMe);
         var when = meetingText(w.meeting).replace(/^[^,]*, /, '');
-        var meta = [esc(when), members.length + (members.length === 1 ? ' member' : ' members')];
+        var meta = [esc(when), members.length + (members.length === 1 ? ' person' : ' people')];
         if (mine && w.meetUrl) meta.push('<a href="' + esc(w.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>');
-        var label = !mine ? 'Join the project' : joined ? 'Leave' : 'Member';
+        var label = !mine ? 'Join the project' : joined ? 'Leave' : 'On the project';
         var off = busy[w.cardId] || (mine && !joined);
         html += '<li><div class="proj-main"><a class="proj-title" href="' + projectUrl(w) + '">' + esc(w.title || 'Untitled') + '</a>' +
           '<span class="proj-meta">' + meta.join(' · ') + '</span></div>' +
           '<div class="join-wrap"><button type="button" class="join-btn" data-id="' + esc(w.cardId) + '" data-action="' + (mine ? 'leave' : 'join') + '"' +
-            (off ? ' disabled' : '') + (mine && !joined ? ' title="Its submitter and authors are members"' : '') + '>' + label + '</button>' +
+            (off ? ' disabled' : '') + (mine && !joined ? ' title="Its submitter and authors stay on the project"' : '') + '>' + label + '</button>' +
           '<span class="join-msg" role="status">' + (msgs[w.cardId] || '') + '</span></div></li>';
       });
       html += '</ul>';
