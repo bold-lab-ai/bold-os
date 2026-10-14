@@ -309,13 +309,18 @@
       el(t.getAttribute('aria-controls')).hidden = !on;
     });
   }
+  // A click or arrow key: the tab bar stays where it is on screen.
+  function switchTo(name){
+    BOLD.switchTab('.tabs', el('projects').parentNode, function(){ setTab(name); });
+    syncHash();
+  }
   tabs.forEach(function(t, i){
-    t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); syncHash(); });
+    t.addEventListener('click', function(){ switchTo(t.getAttribute('data-tab')); });
     t.addEventListener('keydown', function(e){
       var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
       if (!d) return;
       var next = tabs[(i + d + tabs.length) % tabs.length];
-      setTab(next.getAttribute('data-tab')); syncHash(); next.focus(); e.preventDefault();
+      switchTo(next.getAttribute('data-tab')); next.focus(); e.preventDefault();
     });
   });
 

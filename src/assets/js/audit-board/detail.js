@@ -683,8 +683,8 @@
     document.getElementById('detailBack').addEventListener('click', function(e){ e.preventDefault(); backToBoard(); });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-detail-tab]'), function(btn){
       btn.addEventListener('click', function(){
-        state.detailTab = btn.getAttribute('data-detail-tab');
-        renderCardDetail();
+        var name = btn.getAttribute('data-detail-tab');
+        BOLD.switchTab('.detail-tabbar', els.boardRegion, function(){ state.detailTab = name; renderCardDetail(); });
       });
     });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-abstract-review]'), function(btn){

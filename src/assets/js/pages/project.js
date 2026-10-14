@@ -194,10 +194,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
 
   function setTab(name, focus){
     if (name === tab) return;
-    tab = name; editing = false;
     var hash = location.hash.replace(/&tab=[^&]*/, '') + (name === 'overview' ? '' : '&tab=' + name);
     try { history.replaceState(null, '', location.pathname + location.search + hash); } catch (e){}
-    render();
+    BOLD.switchTab('.tabs', el('projectBody'), function(){ tab = name; editing = false; render(); });
     if (focus) document.querySelector('.tab.active').focus();
   }
 

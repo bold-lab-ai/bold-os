@@ -451,7 +451,17 @@
     if (!target && tabFor(hash) !== null) target = document.getElementById('gdTabs');
     if (target) target.scrollIntoView({ block: 'start' });
   }
-  // Tabs and the sidebar's section links change the #hash.
+  // A section tab switches in place, the tab bar staying where it is on screen.
+  body.addEventListener('click', function(e){
+    var a = e.target.closest('.guide-tab');
+    if (!a || !x || form || e.metaKey || e.ctrlKey || e.shiftKey) return;
+    var t = tabFor(a.getAttribute('href'));
+    if (t === null) return;
+    e.preventDefault();
+    try { history.pushState(null, '', a.getAttribute('href')); } catch (err){}
+    BOLD.switchTab('#gdTabs', body, function(){ tab = t; render(); });
+  });
+  // The sidebar's section links (and Back) change the #hash.
   window.addEventListener('hashchange', function(){
     if (!x || form) return;
     var t = tabFor(location.hash);

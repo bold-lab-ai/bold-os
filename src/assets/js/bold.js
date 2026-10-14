@@ -45,6 +45,27 @@
   BOLD.ICON_PENCIL = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M11.6 1.6a1.5 1.5 0 0 1 2.1 0l.7.7a1.5 1.5 0 0 1 0 2.1L5.6 13.2l-3.5.9.9-3.5 8.6-9zM10.9 3.7l1.4 1.4 1.1-1.1-1.4-1.4-1.1 1.1z"/></svg>';
   BOLD.ICON_UP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>';
   BOLD.ICON_DOWN = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg>';
+  // Switching tabs leaves the tab bar where it is on screen: runs change() (which may
+  // redraw), then scrolls so the bar (a selector, found again after) sits where it
+  // was. When the new tab is shorter, `container` (an element that isn't redrawn,
+  // holding the tabs) keeps the height that takes, until the next switch.
+  BOLD.switchTab = function(bar, container, change){
+    var before = document.querySelector(bar);
+    var top = before ? before.getBoundingClientRect().top : null;
+    container.style.minHeight = '';
+    change();
+    var after = document.querySelector(bar);
+    if (top === null || !after) return;
+    var y = after.getBoundingClientRect().top + window.scrollY - top;
+    // Checked again after each top-up: margins inside the container change what it adds.
+    for (var i = 0; i < 3; i++){
+      var short = y + window.innerHeight - document.documentElement.scrollHeight;
+      if (short <= 0) break;
+      container.style.minHeight = container.offsetHeight + short + 'px';
+    }
+    // Instant: the page scrolls smoothly (bold.css), which would show a jump and a glide back.
+    window.scrollTo({ top: Math.max(0, y), behavior: 'instant' });
+  };
   BOLD.copyBoxHtml = function(text){
     return '<div class="copy-box"><pre><code>' + esc(text) + '</code></pre>' +
       '<button type="button" class="copy-btn" aria-label="Copy" title="Copy">' + ICON_COPY + '</button></div>';

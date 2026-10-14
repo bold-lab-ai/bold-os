@@ -16,7 +16,9 @@
     if (pushHash !== false) history.replaceState(null, '', '#' + name);
   }
   buttons.forEach(function(b){
-    b.addEventListener('click', function(){ activate(b.getAttribute('data-tab')); });
+    b.addEventListener('click', function(){
+      BOLD.switchTab('.tabs', b.closest('main'), function(){ activate(b.getAttribute('data-tab')); });
+    });
   });
   var initial = (location.hash || '').slice(1);
   activate(panels[initial] ? initial : 'schedule', false);
