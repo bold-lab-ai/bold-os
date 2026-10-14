@@ -61,6 +61,17 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
 - **Version history:** each write to a tracked collection is saved as a full copy in `<doc>/versions` by a server function, and `history.js` shows versions, changes and Restore on the page. To track a new collection: add it to `TRACKED` in `functions/index.js`, require `updatedBy == email()` in its rules and let readers read `versions`, write `changeNote` on save, and mount `BoldHistory` on its page. `skills`, `guides` and `handbook` are tracked so far.
 - **Functions** run on Node 20, which must move to Node 22 before 30 October 2026.
 
+## Adding a feature
+
+Building a feature (a page that reads and writes its own data, say a rota) needs no keys and no access to the Firebase project:
+
+- **No API key.** The Firebase web config in `src/_data/site.js`, its `apiKey` included, is public: it names the project and grants nothing. People write as themselves, signed in with Slack, and the rules decide what they may do.
+- **In the PR:** the page and its script, its Firestore collection, the rules for it in `firebase/firestore.rules` (behind `isSignedIn()`/`isLabMember()`; who may manage it as a rule of its own, such as a list it checks, rather than making them site admins), and any server work (reminders, schedules, Slack messages) as functions in `functions/index.js`, using the secrets already there (e.g. `SLACK_BOT_TOKEN`) without seeing them.
+- **Test in the emulators** (see Run it): they need no access to the real project.
+- **Deploying:** someone with access to the Firebase project reviews the rules and deploys them, and any functions, when the PR merges.
+- **Don't give contributors rules access** to deploy their own. The rules are one file for the whole database, so whoever deploys them can change any rule; reviewing them is what keeps data from leaking or being overwritten.
+- **No service-account keys.** A tool that ran outside the site with its own key becomes a page or a function here; no key leaves the project.
+
 ## Shipping
 
 - **Pull requests:** work on a branch and open a PR to `main` (one approval needed). **Merging deploys the site** through GitHub Actions; there is no staging site.
