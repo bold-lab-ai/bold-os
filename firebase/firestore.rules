@@ -174,11 +174,15 @@ service cloud.firestore {
         return exists(ws) && email().lower() in get(ws).data.get('members', []);
       }
       function validPresentation(d) {
-        return d.keys().hasOnly(['title', 'date', 'presenter', 'kind', 'slidesUrl', 'recordingUrl', 'by', 'at']) &&
+        return d.keys().hasOnly(['title', 'date', 'presenter', 'occasion', 'slidesUrl', 'recordingUrl', 'by', 'at']) &&
           d.title is string && d.title.size() > 0 && d.title.size() <= 200 &&
           d.date is string && d.date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') &&
           d.presenter is string && d.presenter.size() <= 200 &&
-          d.kind in ['group', 'pitch', 'conference', 'invited', 'other'] &&
+          // Where it was given: one of the site's events, a venue on the board, or named.
+          d.occasion is map && d.occasion.keys().hasOnly(['kind', 'id', 'label']) &&
+          d.occasion.kind in ['event', 'venue', 'other'] &&
+          d.occasion.id is string && d.occasion.id.size() <= 200 &&
+          d.occasion.label is string && d.occasion.label.size() > 0 && d.occasion.label.size() <= 200 &&
           d.slidesUrl is string && d.slidesUrl.size() <= 2000 &&
           d.recordingUrl is string && d.recordingUrl.size() <= 2000;
       }

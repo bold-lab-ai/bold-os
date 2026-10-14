@@ -51,6 +51,8 @@
 .venue-list{list-style:none; margin:0 0 6px; padding:0;}
 .venue-list li{margin:0 0 2px;}
 #submitVenue{display:block; margin-top:6px;}
+#talkOther{margin-top:8px;}
+#talkOther[hidden]{display:none;}
 /* presentations */
 .talk-list{list-style:none; margin:8px 0 0; padding:0; max-width:var(--article-max);}
 .talk-list li{padding:12px 0; border-bottom:1px solid var(--line);}
