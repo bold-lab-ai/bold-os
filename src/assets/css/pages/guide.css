@@ -170,3 +170,28 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .gd-fold-all-btn:hover{color:var(--accent);}
 .gd-fold-all{max-width:var(--article-max); display:flex; margin:12px 0 -20px;}
 .gd-fold-all .gd-fold-all-btn{margin-bottom:0;}
+/* Comments (comments.js): the highlighted text, an icon in the right margin level with
+   it, the thread as a card beside it, and the button that appears on selecting text. */
+.guide-part{position:relative;}
+.cm-mark{background:rgba(232,190,80,.28); color:inherit; border-bottom:1.5px solid rgba(200,150,30,.55); cursor:pointer; padding:0;}
+.cm-mark.is-open{background:rgba(232,190,80,.55);}
+.cm-icon{position:absolute; left:calc(100% + 14px); display:inline-flex; align-items:center; gap:3px; padding:2px 4px; background:none; border:none; cursor:pointer;
+  font-family:var(--sans); font-size:11px; color:var(--muted); border-radius:var(--radius);}
+.cm-icon:hover, .cm-icon.is-open{color:var(--accent); background:var(--wash);}
+.cm-card{position:absolute; left:calc(100% + 48px); z-index:20; width:300px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:12px 14px;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 14px 44px rgba(26,43,74,.18); font-family:var(--sans); font-size:13px; color:var(--ink);}
+.cm-card.is-sheet{position:fixed; left:12px; right:12px; bottom:12px; top:auto !important; width:auto; max-height:70vh; overflow:auto;}
+.cm-close{position:absolute; top:4px; right:8px; background:none; border:none; font-size:18px; line-height:1; color:var(--muted); cursor:pointer;}
+.cm-quote{margin:0 18px 10px 0; padding-left:8px; border-left:2px solid rgba(200,150,30,.55); color:var(--ink-soft); font-family:var(--serif); font-size:14px;}
+.cm-lost{margin:0 0 8px; color:var(--muted); font-style:italic;}
+.cm-comment{margin:0 0 10px; padding-bottom:8px; border-bottom:1px solid var(--line);}
+.cm-meta{margin:0 0 2px; color:var(--muted);}
+.cm-meta strong{color:var(--ink); font-weight:600;}
+.cm-text{margin:0; white-space:pre-wrap; font-size:14px; line-height:1.45;}
+.cm-actions{margin:4px 0 0; display:flex; gap:12px;}
+.cm-card textarea{display:block; width:100%; box-sizing:border-box; margin:4px 0 8px; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); resize:vertical;}
+.cm-buttons{display:flex; align-items:center; gap:12px;}
+.cm-more{margin:10px 0 0; color:var(--muted);}
+.cm-add{position:absolute; z-index:30; transform:translateX(-50%); display:inline-flex; align-items:center; gap:5px; padding:5px 10px; cursor:pointer;
+  font-family:var(--sans); font-size:12.5px; color:var(--surface); background:var(--ink); border:none; border-radius:var(--radius); box-shadow:0 6px 18px rgba(26,43,74,.25);}
+@media (max-width:900px){ .cm-icon{left:auto; right:-8px;} .guide-part .guide-text{padding-right:24px;} }

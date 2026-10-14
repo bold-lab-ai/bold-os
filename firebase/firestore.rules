@@ -293,6 +293,28 @@ service cloud.firestore {
         allow read: if isLabMember();
         allow write: if false;
       }
+      // Comments on selected text (comments.js): the lab reads and comments as
+      // themselves; the author edits their text; the author or a PI/admin resolves or
+      // deletes it; whoever started a thread can delete its replies with it.
+      match /comments/{id} {
+        allow read: if isLabMember();
+        allow create: if isLabMember() && request.resource.data.by.email == email()
+          && request.resource.data.keys().hasOnly(['partId', 'quote', 'prefix', 'suffix', 'text', 'by', 'at', 'parent'])
+          && request.resource.data.partId is string && request.resource.data.at is number
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+          && ('parent' in request.resource.data
+            ? request.resource.data.parent is string && exists(/databases/$(database)/documents/guides/$(slug)/comments/$(request.resource.data.parent))
+            : request.resource.data.quote is string && request.resource.data.quote.size() > 0 && request.resource.data.quote.size() <= 500);
+        allow update: if isLabMember() && (
+          (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
+            && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
+          || ((resource.data.by.email == email() || hasFullWrite())
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedAt'])
+            && request.resource.data.resolvedBy == email()));
+        allow delete: if isLabMember() && (resource.data.by.email == email() || hasFullWrite()
+          || ('parent' in resource.data && resource.data.parent is string
+            && get(/databases/$(database)/documents/guides/$(slug)/comments/$(resource.data.parent)).data.by.email == email()));
+      }
       match /proposals/{id} {
         allow read: if isLabMember();
         allow create: if isLabMember() && request.resource.data.by.email == email()
@@ -344,6 +366,28 @@ service cloud.firestore {
       match /versions/{version} {
         allow read: if isLabMember();
         allow write: if false;
+      }
+      // Comments on selected text (comments.js): the lab reads and comments as
+      // themselves; the author edits their text; the author or a PI/admin resolves or
+      // deletes it; whoever started a thread can delete its replies with it.
+      match /comments/{id} {
+        allow read: if isLabMember();
+        allow create: if isLabMember() && request.resource.data.by.email == email()
+          && request.resource.data.keys().hasOnly(['partId', 'quote', 'prefix', 'suffix', 'text', 'by', 'at', 'parent'])
+          && request.resource.data.partId is string && request.resource.data.at is number
+          && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+          && ('parent' in request.resource.data
+            ? request.resource.data.parent is string && exists(/databases/$(database)/documents/handbook/$(slug)/comments/$(request.resource.data.parent))
+            : request.resource.data.quote is string && request.resource.data.quote.size() > 0 && request.resource.data.quote.size() <= 500);
+        allow update: if isLabMember() && (
+          (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
+            && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
+          || ((resource.data.by.email == email() || hasFullWrite())
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedAt'])
+            && request.resource.data.resolvedBy == email()));
+        allow delete: if isLabMember() && (resource.data.by.email == email() || hasFullWrite()
+          || ('parent' in resource.data && resource.data.parent is string
+            && get(/databases/$(database)/documents/handbook/$(slug)/comments/$(resource.data.parent)).data.by.email == email()));
       }
       match /proposals/{id} {
         allow read: if isLabMember();

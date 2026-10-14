@@ -44,6 +44,10 @@
   var readPoint = cfg.readPoint === 'true' && ref ? BoldReadPoint.create({
     ref: ref, key: COLLECTION + '-' + slug, anchor: anchor, onChange: function(){ refresh(); },
   }) : null;
+  // Comments on selected text (comments.js).
+  var comments = ref && window.BoldComments ? BoldComments.create({
+    ref: ref, root: body, fullWrite: function(){ return fullWrite; }, onChange: function(){ refresh(); },
+  }) : null;
 
   // The proposal whose result is on show ("View as proposed"), or null.
   var viewing = null, tabBefore = null;
@@ -429,6 +433,7 @@
     var dn = body.querySelector('.gd-draft-note');
     if (dn) dn.addEventListener('input', function(){ draftNote = dn.value; });
     watchContents();
+    if (comments && !form) comments.decorate();
   }
 
   // The draft's bar: how many changes, each on request, and Propose all / Discard.
@@ -777,6 +782,7 @@
   // Proposes swapping a part with the one before or after it on show (in its tab).
   body.addEventListener('click', function(e){
     if (readPoint && readPoint.click(e)) return;
+    if (comments && comments.click(e)) return;
     var t = e.target.closest('button');
     if (!t || t.disabled || !x || !me) return;
     if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
@@ -922,6 +928,7 @@
     loadDraft();
     fullWrite = false;
     if (readPoint) readPoint.start(user);
+    if (comments) comments.start(user);
     if (!user) return;
     G.access(function(ok){ if (mine === signIns) { fullWrite = ok; refresh(); } });
     unsubs.push(ref.onSnapshot(function(snap){
