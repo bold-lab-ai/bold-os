@@ -324,6 +324,7 @@
     if (!isEmpty(s.leads)) html += row(s.leads.length > 1 ? 'Leads' : 'Lead', leadsHtml(s.leads));
     if (t.presentationUrl) html += row('Presentation', '<a href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">' + esc(t.presentationUrl) + '</a>');
     if (t.notes) html += row('Notes', esc(t.notes));
+    html += BoldProjectLinks.rowHtml(projects);
     return html + '</dl>' +
       section('Abstract', t.abstract ? '<p class="talk-text">' + esc(t.abstract) + '</p>' : '<p class="detail-muted">Abstract not yet available.</p>') +
       section('About the speaker', t.bio ? '<p class="talk-text">' + esc(t.bio) + '</p>' : '<p class="detail-muted">Not yet available.</p>');
@@ -346,6 +347,7 @@
     html += '<dl class="detail-grid">' + row('When', esc(when(s))) + row('Where', whereHtml(s));
     if (!isEmpty(s.leads)) html += row(s.leads.length > 1 ? 'Leads' : 'Lead', leadsHtml(s.leads));
     if (s.contact) html += row('Contact', esc(s.contact));
+    html += BoldProjectLinks.rowHtml(projects);
     html += '</dl>';
 
     FIELDS.forEach(function(f){
@@ -816,8 +818,12 @@
     }).catch(function(err){ console.error('[BOLD Events] editTalk access check failed', err); });
   }
 
+  // The projects that presented here, this session or one of its talks (project-links.js).
+  var projects = [];
   BOLD.onUser(function(user){
     adding = false;
+    projects = [];
+    if (user && base && base.slug) BoldProjectLinks.find('sessionSlug', base.slug).then(function(list){ projects = list; if (!editing) render(); });
     talkAccess = { canEdit: false, canSetPresenters: false };
     me = user ? { email: user.email || '' } : null;
     fullWrite = false;

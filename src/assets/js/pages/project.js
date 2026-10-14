@@ -475,7 +475,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function occasionHtml(t){
     var o = t.occasion;
     if (!o) return esc(OLD_KINDS[t.kind] || '');
-    if (o.kind === 'event') return '<a href="event.html?event=' + encodeURIComponent(o.id) + '">' + esc(o.label) + '</a>';
+    if (o.kind === 'event') {
+      // The exact talk or session on the event's programme, when it was one.
+      var href = o.talkSlug ? 'talk.html?talk=' + encodeURIComponent(o.talkSlug)
+        : o.sessionSlug ? 'session.html?session=' + encodeURIComponent(o.sessionSlug)
+        : 'event.html?event=' + encodeURIComponent(o.id);
+      return '<a href="' + href + '">' + esc(o.label) + (o.sessionTitle ? ' \u00b7 ' + esc(o.sessionTitle) : '') + '</a>';
+    }
     if (o.kind === 'venue') return '<a href="audit-board.html#board=' + encodeURIComponent(o.id) + '">' + esc(o.label) + '</a>';
     return esc(o.label);
   }
@@ -487,7 +493,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     db.collection('events').where('hidden', '==', false).get().then(function(snap){
       events = snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title; })
         .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; });
-      if (editing && editing.indexOf('talk:') === 0) renderTalkOccasion();
+      if (editing && editing.indexOf('talk:') === 0) { renderTalkOccasion(); fillSessions(); }
     }).catch(function(err){ console.error('[BOLD Lab] loading the events failed', err); events = []; });
   }
 
@@ -520,18 +526,112 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var kind = v.split(':')[0], id = v.slice(kind.length + 1);
     var list = kind === 'event' ? (events || []).map(function(e){ return { id: e.slug, label: e.title }; }) : (venues || []);
     var hit = list.filter(function(x){ return x.id === id; })[0];
-    return hit ? { kind: kind, id: id, label: hit.label } : { error: 'Choose the occasion.' };
+    if (!hit) return { error: 'Choose the occasion.' };
+    var o = { kind: kind, id: id, label: hit.label };
+    var s = kind === 'event' && pickedSession(), t = s && pickedTalk();
+    if (s) { o.sessionSlug = s.slug; o.sessionTitle = s.title.slice(0, 200); }
+    if (t) { o.talkSlug = t.slug; o.talkTitle = t.title.slice(0, 200); }
+    return o;
+  }
+
+  // An event's sessions, in programme order (its days and slots), and a session's
+  // talks: the event's own (collabWeekSessions, collabWeekTalks), loaded as needed.
+  var sessionsBy = {}, talksBy = {};
+  function loadSessions(eventSlug){
+    if (sessionsBy[eventSlug]) return Promise.resolve(sessionsBy[eventSlug]);
+    var ev = (events || []).filter(function(e){ return e.slug === eventSlug; })[0] || {};
+    return db.collection('collabWeekSessions').where('eventSlug', '==', eventSlug).get().then(function(snap){
+      var bySlug = {};
+      snap.docs.forEach(function(d){ var x = d.data(); if (!x.removed) bySlug[d.id] = x; });
+      var list = [];
+      (ev.days || []).forEach(function(day){
+        (day.slots || []).forEach(function(slot){
+          (slot.sessions || []).forEach(function(slug){
+            if (bySlug[slug]) { list.push({ slug: slug, title: bySlug[slug].title || slug, date: day.date || '', start: slot.start || '', type: bySlug[slug].type || '' }); delete bySlug[slug]; }
+          });
+        });
+      });
+      // Any not on the schedule (yet) come last.
+      Object.keys(bySlug).forEach(function(slug){ list.push({ slug: slug, title: bySlug[slug].title || slug, date: '', start: '', type: bySlug[slug].type || '' }); });
+      return (sessionsBy[eventSlug] = list);
+    });
+  }
+  function loadTalks(sessionSlug){
+    if (talksBy[sessionSlug]) return Promise.resolve(talksBy[sessionSlug]);
+    return db.collection('collabWeekTalks').where('sessionSlug', '==', sessionSlug).get().then(function(snap){
+      return (talksBy[sessionSlug] = snap.docs.map(function(d){ return Object.assign({ slug: d.id }, d.data()); })
+        .filter(function(t){ return !t.removed; })
+        .map(function(t){
+          var names = (t.speakers || []).map(function(p){ return p.name || p.email; }).filter(Boolean).join(', ') || t.speaker || '';
+          return { slug: t.slug, title: t.title || 'Untitled talk', speakers: names, slidesUrl: t.presentationUrl || '' };
+        }));
+    });
+  }
+  function pickedSession(){
+    var v = el('talkSession') && el('talkSession').value, ev = el('talkOccasion').value.slice(6);
+    return v ? (sessionsBy[ev] || []).filter(function(s){ return s.slug === v; })[0] || null : null;
+  }
+  function pickedTalk(){
+    var s = pickedSession(), v = el('talkTalk') && el('talkTalk').value;
+    return s && v ? (talksBy[s.slug] || []).filter(function(t){ return t.slug === v; })[0] || null : null;
+  }
+
+  // Shows a form row (its dt and dd) or hides it.
+  function showRow(ddId, on){ var dd = el(ddId); if (dd) { dd.hidden = !on; dd.previousElementSibling.hidden = !on; } }
+
+  // The Session menu for the chosen event, and the Talk menu for the chosen session.
+  var dayFmt = function(iso){ return iso ? new Date(iso + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' }) : ''; };
+  function fillSessions(){
+    var occ = el('talkOccasion').value, sel = el('talkSession');
+    if (occ.indexOf('event:') !== 0) { showRow('talkSessionRow', false); showRow('talkTalkRow', false); return; }
+    showRow('talkSessionRow', true);
+    if (!events) return;   // called again once they're in: the order comes from their schedule
+    var ev = occ.slice(6);
+    loadSessions(ev).then(function(list){
+      if (el('talkOccasion').value !== occ) return;
+      var cur = sel.getAttribute('data-value') || '';
+      sel.innerHTML = '<option value="">Not a session on its programme</option>' + list.map(function(s){
+        return '<option value="' + esc(s.slug) + '"' + (s.slug === cur ? ' selected' : '') + '>' + esc([dayFmt(s.date), s.start, s.title].filter(Boolean).join(' \u00b7 ')) + '</option>';
+      }).join('');
+      fillTalks();
+    }).catch(function(err){ console.error('[BOLD Lab] loading the sessions failed', err); });
+  }
+  function fillTalks(){
+    var s = pickedSession(), sel = el('talkTalk');
+    if (!s) { showRow('talkTalkRow', false); return; }
+    loadTalks(s.slug).then(function(list){
+      if (pickedSession() !== s) return;
+      // A keynote's or an oral's one talk is the session itself.
+      if (!list.length) { showRow('talkTalkRow', false); return; }
+      showRow('talkTalkRow', true);
+      var cur = sel.getAttribute('data-value') || '';
+      sel.innerHTML = '<option value="">The whole session</option>' + list.map(function(t){
+        return '<option value="' + esc(t.slug) + '"' + (t.slug === cur ? ' selected' : '') + '>' + esc(t.title + (t.speakers ? ' \u2014 ' + t.speakers : '')) + '</option>';
+      }).join('');
+    }).catch(function(err){ console.error('[BOLD Lab] loading the talks failed', err); });
+  }
+
+  // Choosing a talk fills in what the programme knows, except what was typed here.
+  var typed = {};
+  function fillFromTalk(){
+    var s = pickedSession(), t = pickedTalk();
+    var set = function(id, v){ if (v && !typed[id]) el(id).value = v; };
+    if (s) set('talkDate', s.date);
+    if (t) { set('talkTitle', t.title); set('talkPresenter', t.speakers); set('talkSlides', t.slidesUrl); }
   }
 
   function talkFormHtml(t){
     t = t || { title: '', date: new Date().toISOString().slice(0, 10), presenter: me && me.displayName || '', occasion: null, slidesUrl: '', recordingUrl: '' };
     var input = function(id, type, v, ph){ return '<input type="' + type + '" id="' + id + '" value="' + esc(v || '') + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '>'; };
+    var o = t.occasion || {};
     return '<dl class="detail-grid talk-form">' +
       row('Title', input('talkTitle', 'text', t.title)) +
       row('Date', input('talkDate', 'date', t.date)) +
       row('Presenter', input('talkPresenter', 'text', t.presenter)) +
       row('Occasion', '<select id="talkOccasion" data-value="' + esc(occasionValue(t)) + '">' + occasionOptionsHtml(occasionValue(t)) + '</select>' +
         '<input type="text" id="talkOther" placeholder="e.g. a workshop or an invited talk" value="' + esc(t.occasion && t.occasion.kind === 'other' ? t.occasion.label : '') + '"' + (occasionValue(t) === 'other' ? '' : ' hidden') + '>') +
+      row('Session', '<select id="talkSession" data-value="' + esc(o.sessionSlug || '') + '"><option value="">Loading\u2026</option></select>', ' id="talkSessionRow" hidden') +
+      row('Talk', '<select id="talkTalk" data-value="' + esc(o.talkSlug || '') + '"></select>', ' id="talkTalkRow" hidden') +
       row('Slides', input('talkSlides', 'url', t.slidesUrl, 'https://\u2026')) +
       row('Recording', input('talkRecording', 'url', t.recordingUrl, 'https://\u2026 (optional)')) +
       '</dl>' + saveCancelHtml('talkSave');
@@ -667,15 +767,27 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     } else if (editing.indexOf('talk:') === 0) {
       el('talkSave').addEventListener('click', saveTalk);
       loadOccasions();
-      // Choosing an event sets the date to its first day, unless a date was typed.
-      var dateTyped = editing !== 'talk:new';
-      el('talkDate').addEventListener('input', function(){ dateTyped = true; });
+      // Choosing an event sets the date to its first day; a session or a talk on its
+      // programme fills in more (fillFromTalk). Only fields not typed in here.
+      typed = {};
+      if (editing !== 'talk:new') ['talkTitle', 'talkDate', 'talkPresenter', 'talkSlides'].forEach(function(id){ typed[id] = true; });
+      ['talkTitle', 'talkDate', 'talkPresenter', 'talkSlides'].forEach(function(id){
+        el(id).addEventListener('input', function(){ typed[id] = true; });
+      });
       el('talkOccasion').addEventListener('change', function(){
         this.setAttribute('data-value', this.value);
+        el('talkSession').setAttribute('data-value', ''); el('talkTalk').setAttribute('data-value', '');
         el('talkOther').hidden = this.value !== 'other';
         var e = this.value.indexOf('event:') === 0 && (events || []).filter(function(x){ return 'event:' + x.slug === this.value; }, this)[0];
-        if (e && e.startDate && !dateTyped) el('talkDate').value = e.startDate;
+        if (e && e.startDate && !typed.talkDate) el('talkDate').value = e.startDate;
+        fillSessions();
       });
+      el('talkSession').addEventListener('change', function(){
+        this.setAttribute('data-value', this.value); el('talkTalk').setAttribute('data-value', '');
+        fillFromTalk(); fillTalks();
+      });
+      el('talkTalk').addEventListener('change', function(){ this.setAttribute('data-value', this.value); fillFromTalk(); });
+      fillSessions();
     } else if (editing === 'repo') {
       wireRepoEntry();
       el('repoSave').addEventListener('click', saveRepo);

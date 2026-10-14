@@ -65,6 +65,24 @@
   // complete or exactly right, before this feature is considered
   // deploy-ready.
   "fieldOverrides": [
+    // A talk's and a session's page find the presentations given there across
+    // every project (2026-10-14).
+    {
+      "collectionGroup": "presentations",
+      "fieldPath": "occasion.talkSlug",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "presentations",
+      "fieldPath": "occasion.sessionSlug",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
     {
       "collectionGroup": "cards",
       "fieldPath": "submittedBy.email",

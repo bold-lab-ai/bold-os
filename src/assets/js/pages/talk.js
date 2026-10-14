@@ -109,6 +109,7 @@
     if (t.duration) html += '<dt>Duration</dt><dd>' + esc(t.duration) + '</dd>';
     if (t.notes) html += '<dt>Notes</dt><dd>' + esc(t.notes) + '</dd>';
     if (t.presentationUrl) html += '<dt>Presentation</dt><dd class="talk-pres"><a href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">' + esc(t.presentationUrl) + '</a></dd>';
+    html += BoldProjectLinks.rowHtml(projects);
     html += '</dl><div class="detail-field"><p class="detail-field-label">Abstract</p>' +
       (t.abstract ? '<p class="talk-text">' + esc(t.abstract) + '</p>' : '<p class="detail-muted">Abstract not yet available.</p>') + '</div>' +
       '<div class="detail-field"><p class="detail-field-label">About the speaker</p>' +
@@ -255,10 +256,13 @@
   }
   function loadTime(){ if (base) loadSession(base.sessionSlug); }
 
+  // The projects that presented this talk (project-links.js).
+  var projects = [];
   BOLD.onUser(function(user){
     canEdit = false; canSetPresenters = false; editing = false;
     if (!user || !db) { render(); return; }
     if (missing) { render(); return; }
+    BoldProjectLinks.find('talkSlug', slug).then(function(list){ projects = list; if (!editing) render(); });
     db.collection('collabWeekTalks').doc(slug).get().then(function(snap){
       saved = snap.exists ? snap.data() : null;
       missing = !saved;
