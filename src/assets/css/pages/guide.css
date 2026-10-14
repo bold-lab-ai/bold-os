@@ -98,3 +98,7 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
   .guide-part h2{font-size:22px;}
 }
 
+/* Preview of a part's text in its form (pages/guide.js), as the abstract's. */
+.gd-preview{display:block; margin-bottom:4px;}
+.gd-preview-box{margin:8px 0 10px; padding:4px 16px; overflow-x:auto; background:var(--paper); border:1px solid var(--line); font-family:var(--serif); font-size:17px; line-height:1.55; color:var(--ink-soft);}
+.gd-preview-empty{color:var(--muted);}

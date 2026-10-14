@@ -155,6 +155,9 @@
       '<label>Title<input type="text" class="gd-title" value="' + esc(p.title) + '" placeholder="e.g. Before the reviews come in"></label>' +
       '<label>Text<textarea class="gd-body" rows="16">' + esc(p.body) + '</textarea></label>' +
       '<p class="event-form-hint">Markdown: **bold**, *italic*, [a link](https://…), lines starting with - or 1. for lists, a blank line between paragraphs.</p>' +
+      // How the text will look, as the abstract's Preview (card-model.js).
+      '<button type="button" class="btn-text gd-preview">Preview</button>' +
+      '<div class="guide-text gd-preview-box" hidden></div>' +
       noteHtml(isAdd ? 'e.g. Added a part on posters' : 'e.g. Clearer advice on ablations') +
       actionsHtml(isAdd ? '' : '<button type="button" class="btn-text danger gd-remove">' + 'Propose removing this part' + '</button>') +
       '</div>';
@@ -281,6 +284,16 @@
 
   function bindForm(el){
     el.querySelector('.ev-cancel').addEventListener('click', closeForm);
+    var previewBtn = el.querySelector('.gd-preview'), previewBox = el.querySelector('.gd-preview-box'), text = el.querySelector('.gd-body');
+    if (previewBtn && previewBox && text) {
+      var refresh = function(){ previewBox.innerHTML = text.value.trim() ? md(text.value) : '<p class="gd-preview-empty">Nothing to preview yet.</p>'; };
+      previewBtn.addEventListener('click', function(){
+        previewBox.hidden = !previewBox.hidden;
+        previewBtn.textContent = previewBox.hidden ? 'Preview' : 'Hide preview';
+        if (!previewBox.hidden) refresh();
+      });
+      text.addEventListener('input', function(){ if (!previewBox.hidden) refresh(); });
+    }
     var save = el.querySelector('.ev-save');
     var v = function(c){ var f = el.querySelector(c); return f ? f.value : ''; };
     function run(change){
