@@ -100,16 +100,17 @@
   // ---------- reading ----------
 
   function partHtml(p, i){
-    var n = shown().length;
+    var all = parts(), at = all.indexOf(p);
     var editing = form && form.kind === 'edit' && form.id === p.id;
     if (editing) return '<section class="guide-part" id="' + anchor(p) + '">' + partFormHtml(p) + '</section>';
+    if (form && form.kind === 'move' && form.id === p.id) return '<section class="guide-part" id="' + anchor(p) + '">' + moveFormHtml(p) + '</section>';
     var icon = function(cls, label, svg, off){
       return '<button type="button" class="icon-btn ' + cls + '" data-id="' + esc(p.id) + '" aria-label="' + label + '" title="' + label + '"' + (off ? ' disabled' : '') + '>' + svg + '</button>';
     };
     var q = viewed();
     return '<section class="guide-part' + (q && q.partId === p.id ? ' gd-proposed' : '') + '" id="' + anchor(p) + '">' +
       (q ? '' : '<div class="guide-part-controls">' + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
-        icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, i === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, i === n - 1) + '</div>') +
+        icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, at === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, at === all.length - 1) + '</div>') +
       '<h2><span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</h2>' +
       '<div class="guide-text">' + md(p.body) + '</div></section>';
   }
@@ -172,6 +173,60 @@
       '</div>';
   }
 
+  // Where a part can go: the top of a section (or of the guide), or after any other part.
+  // → [{ value: 'top:<section>' | 'after:<id>', label, section }]
+  function positions(p){
+    var out = [], secs = hasSections() ? sections() : [null];
+    secs.forEach(function(sec){
+      var inSec = parts().filter(function(q){ return sec === null || (q.section || '') === sec; });
+      out.push({ value: 'top:' + (sec || ''), label: sec === null ? 'At the top' : 'At the top of ' + (sec || 'Other'), section: sec });
+      inSec.forEach(function(q){ if (q.id !== p.id) out.push({ value: 'after:' + q.id, label: 'After “' + q.title + '”', section: sec }); });
+    });
+    return out;
+  }
+  // The position one step up (by -1) or down (1) from where p is, across sections.
+  function stepFrom(p, by){
+    var list = positions(p), here = currentPosition(p);
+    var i = list.map(function(o){ return o.value; }).indexOf(here);
+    var j = Math.max(0, Math.min(list.length - 1, i + by));
+    return list[j].value;
+  }
+  function currentPosition(p){
+    var all = parts(), i = all.indexOf(p), sec = p.section || '';
+    var prev = all.slice(0, i).filter(function(q){ return !hasSections() || (q.section || '') === sec; }).pop();
+    return prev ? 'after:' + prev.id : 'top:' + (hasSections() ? sec : '');
+  }
+  // The guide's parts with p at position pos → { order, section }.
+  function placed(p, pos){
+    var rest = parts().filter(function(q){ return q.id !== p.id; });
+    var section = p.section || '', at;
+    if (pos.indexOf('after:') === 0) {
+      var id = pos.slice(6);
+      at = rest.map(function(q){ return q.id; }).indexOf(id) + 1;
+      section = (rest[at - 1] && rest[at - 1].section) || '';
+    } else {
+      section = pos.slice(4);
+      var first = hasSections() ? rest.map(function(q){ return q.section || ''; }).indexOf(section) : 0;
+      at = first === -1 ? rest.length : first;
+    }
+    rest.splice(at, 0, p);
+    return { order: rest.map(function(q){ return q.id; }), section: section };
+  }
+  function moveFormHtml(p){
+    var list = positions(p), cur = form.to || currentPosition(p), groups = [], last = {};
+    list.forEach(function(o){
+      var opt = '<option value="' + esc(o.value) + '"' + (o.value === cur ? ' selected' : '') + '>' + esc(o.label) + (o.value === currentPosition(p) ? ' (where it is now)' : '') + '</option>';
+      if (o.section === null) { groups.push(opt); return; }
+      if (last.section !== o.section) { last = { section: o.section, opts: [] }; groups.push(last); }
+      last.opts.push(opt);
+    });
+    var select = groups.map(function(g){ return typeof g === 'string' ? g : '<optgroup label="' + esc(g.section || 'Other') + '">' + g.opts.join('') + '</optgroup>'; }).join('');
+    return '<div class="event-form guide-form">' +
+      '<p class="event-form-head">Move “' + esc(p.title) + '”</p>' +
+      '<label>Put it<select class="gd-move-to">' + select + '</select></label>' +
+      noteHtml('e.g. Setup belongs before the checklists') + actionsHtml() + '</div>';
+  }
+
   function aboutFormHtml(){
     return '<div class="event-form guide-form">' +
       '<label>Title<input type="text" class="gd-title" value="' + esc(x.title) + '"></label>' +
@@ -214,6 +269,7 @@
     if (q.kind === 'move') {
       var order = after.order || [], byId = {};
       list.forEach(function(p){ byId[p.id] = p; });
+      if (after.section !== undefined && byId[q.partId]) byId[q.partId].section = after.section;
       return { parts: order.filter(function(id){ return byId[id]; }).map(function(id){ return byId[id]; })
         .concat(list.filter(function(p){ return order.indexOf(p.id) === -1; })) };
     }
@@ -223,7 +279,11 @@
   function titleOf(id){ var p = part(id); return p ? p.title : '(a removed part)'; }
   function sideText(kind, side){
     if (!side) return { };
-    if (kind === 'move') return { 'Order of parts': (side.order || []).map(titleOf).join('\n') };
+    if (kind === 'move') {
+      var m = { 'Order of parts': (side.order || []).map(titleOf).join('\n') };
+      if (side.section !== undefined) m.Section = side.section || 'Other';
+      return m;
+    }
     if (kind === 'restore') return flatten(side);
     if (kind === 'about') return { Title: side.title || '', Description: side.description || '' };
     var o = { Title: side.title || '', Text: side.body || '' };
@@ -393,6 +453,21 @@
       });
       return;
     }
+    if (form.kind === 'move') {
+      var mp = part(form.id);
+      el.querySelector('.gd-move-to').addEventListener('change', function(e){ form.to = e.target.value; });
+      save.addEventListener('click', function(){
+        var to = v('.gd-move-to');
+        if (to === currentPosition(mp)) { closeForm(); return; }
+        var now = { title: mp.title, order: parts().map(function(q){ return q.id; }) }, then = placed(mp, to);
+        var after = { title: mp.title, order: then.order };
+        if (hasSections()) { now.section = mp.section || ''; after.section = then.section; }
+        var label = el.querySelector('.gd-move-to').selectedOptions[0].textContent.replace(/ \(where it is now\)$/, '');
+        run({ kind: 'move', partId: mp.id, before: now, after: after,
+          note: note() || 'Moved “' + mp.title + '”: ' + label.charAt(0).toLowerCase() + label.slice(1) });
+      });
+      return;
+    }
     var p = form.kind === 'edit' ? part(form.id) : null;
     save.addEventListener('click', function(){
       var after = { title: v('.gd-title').trim(), body: v('.gd-body').replace(/\s+$/, '') };
@@ -439,18 +514,6 @@
   }
 
   // Proposes swapping a part with the one before or after it on show (in its tab).
-  function move(id, by){
-    var list = parts().slice(), i = list.map(function(p){ return p.id; }).indexOf(id), j = i + by;
-    if (i >= 0 && currentTab() !== null) while (j >= 0 && j < list.length && (list[j].section || '') !== (list[i].section || '')) j += by;
-    if (i < 0 || j < 0 || j >= list.length) return;
-    var p = list[i], ids = function(l){ return l.map(function(q){ return q.id; }); };
-    var before = ids(list);
-    list[i] = list[j]; list[j] = p;
-    var note = 'Moved “' + p.title + '” ' + (by < 0 ? 'up' : 'down');
-    var job = submit({ kind: 'move', partId: p.id, before: { title: p.title, order: before }, after: { title: p.title, order: ids(list) }, note: note }).then(render);
-    job.catch(function(err){ console.error('[BOLD Guides] moving a part failed', err); window.alert('Couldn’t move it — try again.'); });
-  }
-
   body.addEventListener('click', function(e){
     if (readPoint && readPoint.click(e)) return;
     var t = e.target.closest('button');
@@ -460,8 +523,13 @@
     if (t.classList.contains('gd-about')) { notice = ''; form = { kind: 'about' }; render(); }
     else if (t.classList.contains('gd-edit')) { notice = ''; form = { kind: 'edit', id: id }; render(); var f = document.getElementById(PREFIX + id); if (f) f.scrollIntoView({ block: 'start' }); }
     else if (t.classList.contains('gd-add')) { notice = ''; form = { kind: 'add' }; render(); body.querySelector('.guide-form .gd-title').focus(); }
-    else if (t.classList.contains('gd-up')) move(id, -1);
-    else if (t.classList.contains('gd-down')) move(id, 1);
+    else if (t.classList.contains('gd-up') || t.classList.contains('gd-down')) {
+      var mp = part(id);
+      notice = ''; form = { kind: 'move', id: id, to: stepFrom(mp, t.classList.contains('gd-up') ? -1 : 1) };
+      if (hasSections()) tab = mp.section || '';
+      render();
+      var mf = document.getElementById(PREFIX + id); if (mf) mf.scrollIntoView({ block: 'start' });
+    }
     else if (t.classList.contains('gd-delete')) {
       if (!fullWrite || !window.confirm('Delete the guide “' + x.title + '” for good?')) return;
       // Stamp who's deleting it first: the history credits the last updatedBy.

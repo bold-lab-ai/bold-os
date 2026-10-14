@@ -1045,6 +1045,8 @@ function appliedProposal(doc, q){
     const order = Array.isArray(after.order) ? after.order : [];
     const byId = {};
     parts.forEach((p) => { byId[p.id] = p; });
+    // A move can take it to another section.
+    if (typeof after.section === 'string' && byId[q.partId]) byId[q.partId].section = after.section;
     const moved = order.filter((id) => byId[id]).map((id) => byId[id]);
     return { parts: moved.concat(parts.filter((p) => order.indexOf(p.id) === -1)) };
   }
