@@ -199,6 +199,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var TABS = [['overview', 'Overview'], ['team', 'Team'], ['presentations', 'Presentations'], ['paper', 'Paper']];
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
   if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
+  // &join=1, the link in a project's #all-active-projects announcement: join it
+  // once it's loaded, on the Team tab (maybeJoin).
+  var joinRequested = /[#&]join=1(&|$)/.test(location.hash);
+  if (joinRequested) tab = 'team';
 
   function setTab(name, focus){
     if (name === tab) return;
@@ -430,6 +434,15 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     try {
       return firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')(Object.assign({ id: projectId, board: boardId || null }, args));
     } catch (e){ return Promise.reject(e); }
+  }
+
+  // Once, and only for someone not on it yet; the address loses &join=1, so a reload doesn't join again.
+  function maybeJoin(){
+    if (!joinRequested || !card || !wsLoaded) return;
+    joinRequested = false;
+    try { history.replaceState(null, '', location.pathname + location.search + location.hash.replace(/&join=1(?=&|$)/, '')); } catch (e){}
+    if (memberEmails().some(isMe)) { wsMsg = 'You\u2019re already on this project.'; return; }
+    workspaceAction('join');
   }
 
   // Join, Leave, Set up / Try again.
@@ -745,10 +758,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       // An earlier venue's card: the project page is its latest one's.
       if (ws && ws.cardId && (ws.cardId !== projectId || (ws.boardId || null) !== (boardId || null))) {
         location.replace('project.html#id=' + encodeURIComponent(ws.cardId) + (ws.boardId ? '&board=' + encodeURIComponent(ws.boardId) : '') +
-          (tab !== 'overview' ? '&tab=' + tab : ''));
+          (tab !== 'overview' ? '&tab=' + tab : '') + (joinRequested ? '&join=1' : ''));
         location.reload();
         return;
       }
+      maybeJoin();
       // Members show by name.
       loadPeople().then(function(){ if (card && !editing) render(); });
       if (card && !editing) render();

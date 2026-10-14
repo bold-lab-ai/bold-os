@@ -2391,7 +2391,10 @@ function projectAnnouncement(card, url){
   if (abstract) lines.push('> ' + slackText(abstract.length > 400 ? abstract.slice(0, 400).replace(/\s+\S*$/, '') + '…' : abstract));
   const keywords = (card.keywords || []).filter(Boolean);
   if (keywords.length) lines.push('Keywords: ' + keywords.map(slackText).join(', '));
-  if (card.slackChannel) lines.push('Channel: ' + slackText(card.slackChannel) + ' (join the project on its page to be added)');
+  if (card.slackChannel) lines.push('Channel: ' + slackText(card.slackChannel));
+  // Opens the project's page, which joins whoever clicked (pages/project.js, &join=1):
+  // its channel, meeting, notes, slides and repository.
+  lines.push('<' + url + '&join=1|Join the project>');
   return lines.join('\n');
 }
 
