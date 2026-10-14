@@ -45,7 +45,12 @@
     ref: ref, key: COLLECTION + '-' + slug, anchor: anchor, onChange: function(){ refresh(); },
   }) : null;
 
-  function parts(){ return (x && x.parts) || []; }
+  // The proposal whose result is on show ("View as proposed"), or null.
+  var viewing = null, tabBefore = null;
+  function viewed(){ return viewing ? proposals.filter(function(q){ return q.id === viewing; })[0] || null : null; }
+  // The guide as shown: as it is, or with the proposal on show applied.
+  function doc(){ var q = viewed(); return q && x ? Object.assign({}, x, applied(x, q)) : x; }
+  function parts(){ var d = doc(); return (d && d.parts) || []; }
   function part(id){ return parts().filter(function(p){ return p.id === id; })[0] || null; }
   function anchor(p){ return PREFIX + p.id; }
   function hasSections(){ return parts().some(function(p){ return p.section; }); }
@@ -101,9 +106,10 @@
     var icon = function(cls, label, svg, off){
       return '<button type="button" class="icon-btn ' + cls + '" data-id="' + esc(p.id) + '" aria-label="' + label + '" title="' + label + '"' + (off ? ' disabled' : '') + '>' + svg + '</button>';
     };
-    return '<section class="guide-part" id="' + anchor(p) + '">' +
-      '<div class="guide-part-controls">' + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
-        icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, i === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, i === n - 1) + '</div>' +
+    var q = viewed();
+    return '<section class="guide-part' + (q && q.partId === p.id ? ' gd-proposed' : '') + '" id="' + anchor(p) + '">' +
+      (q ? '' : '<div class="guide-part-controls">' + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
+        icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, i === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, i === n - 1) + '</div>') +
       '<h2><span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</h2>' +
       '<div class="guide-text">' + md(p.body) + '</div></section>';
   }
@@ -190,6 +196,30 @@
 
   // ---------- proposals ----------
 
+  // The guide with proposal q applied, as decideProposal (functions/index.js
+  // appliedProposal) will apply it → { title, description, parts } changed.
+  function applied(d, q){
+    var list = (d.parts || []).map(function(p){ return Object.assign({}, p); });
+    var after = q.after || {};
+    if (q.kind === 'about') return { title: after.title || '', description: after.description || '' };
+    if (q.kind === 'restore') return { title: after.title || '', description: after.description || '', parts: after.parts || [] };
+    if (q.kind === 'add') {
+      var np = Object.assign({ id: q.partId }, after), at = -1;
+      list.forEach(function(p, i){ if (np.section && p.section === np.section) at = i; });
+      if (at === -1) list.push(np); else list.splice(at + 1, 0, np);
+      return { parts: list };
+    }
+    if (q.kind === 'remove') return { parts: list.filter(function(p){ return p.id !== q.partId; }) };
+    if (q.kind === 'edit') { list.forEach(function(p){ if (p.id === q.partId) Object.assign(p, after); }); return { parts: list }; }
+    if (q.kind === 'move') {
+      var order = after.order || [], byId = {};
+      list.forEach(function(p){ byId[p.id] = p; });
+      return { parts: order.filter(function(id){ return byId[id]; }).map(function(id){ return byId[id]; })
+        .concat(list.filter(function(p){ return order.indexOf(p.id) === -1; })) };
+    }
+    return {};
+  }
+
   function titleOf(id){ var p = part(id); return p ? p.title : '(a removed part)'; }
   function sideText(kind, side){
     if (!side) return { };
@@ -217,6 +247,7 @@
       (stale ? '<p class="gd-proposal-stale">' + (q.kind !== 'about' && !cur ? 'That part has since been removed.' : 'This has changed since it was proposed; accepting replaces the current text.') + '</p>' : '') +
       BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {}) +
       '<div class="event-controls">' +
+        '<button type="button" class="btn-text gd-view">View as proposed</button>' +
         '<button type="button" class="btn-text gd-accept"' + off + (q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && !cur ? ' disabled' : '') + '>Accept</button>' +
         '<button type="button" class="btn-text danger gd-decline"' + off + '>Decline</button>' +
         (mine ? '<button type="button" class="btn-text gd-withdraw">Withdraw</button>' : '') +
@@ -259,6 +290,8 @@
       return;
     }
     document.title = x.title + ' | BOLD Lab';
+    if (viewing && !viewed()) viewing = null; // decided or withdrawn meanwhile
+    if (viewing) { renderViewing(); return; }
     var off = fullWrite ? '' : ' disabled title="' + G.NOT_PI + '"';
     var hero = '<div class="hero">' + BACK + EYEBROW_HTML;
     if (form && form.kind === 'about') hero += aboutFormHtml();
@@ -281,6 +314,37 @@
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
     watchContents();
+  }
+
+  // The page as the proposal on show would make it: no controls, the changed part
+  // marked, and a bar to go back.
+  function renderViewing(){
+    var q = viewed(), d = doc();
+    var what = q.kind === 'about' ? 'a new title and description' : q.kind === 'restore' ? 'restoring an earlier version' :
+      { edit: 'a change to', add: 'a new part,', remove: 'removing', move: 'moving' }[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
+    body.innerHTML = '<div class="gd-viewing" role="status"><span>Viewing the page as proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') + ': ' + what +
+        '.</span>' +
+        '<button type="button" class="btn-text gd-view-exit">Back to the current page</button></div>' +
+      '<div class="hero">' + BACK + EYEBROW_HTML + '<h1' + (q.kind === 'about' ? ' class="gd-proposed"' : '') + '>' + esc(d.title) + '</h1>' +
+        (d.description ? '<p class="hero-note">' + esc(d.description) + '</p>' : '') + '</div>' +
+      '<main>' + tabsHtml() + '<div class="guide-layout"><div class="guide-main">' + shown().map(partHtml).join('') + '</div>' + contentsHtml() + '</div></main>';
+    watchContents();
+  }
+
+  function view(id){
+    if (!viewing) tabBefore = tab;
+    viewing = id; form = null; notice = '';
+    var q = viewed(), target = q && q.partId && parts().filter(function(p){ return p.id === q.partId; })[0];
+    if (target && hasSections()) tab = target.section || '';
+    render();
+    var el = target && document.getElementById(anchor(target));
+    (el || body).scrollIntoView({ block: 'start' });
+  }
+  function stopViewing(){
+    var id = viewing;
+    viewing = null; tab = tabBefore; render();
+    var li = body.querySelector('.gd-proposal[data-id="' + id + '"]');
+    if (li) li.scrollIntoView({ block: 'center' });
   }
 
   function closeForm(){ form = null; render(); }
@@ -391,6 +455,7 @@
     if (readPoint && readPoint.click(e)) return;
     var t = e.target.closest('button');
     if (!t || t.disabled || !x || !me) return;
+    if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
     var id = t.getAttribute('data-id');
     if (t.classList.contains('gd-about')) { notice = ''; form = { kind: 'about' }; render(); }
     else if (t.classList.contains('gd-edit')) { notice = ''; form = { kind: 'edit', id: id }; render(); var f = document.getElementById(PREFIX + id); if (f) f.scrollIntoView({ block: 'start' }); }
@@ -415,6 +480,7 @@
       var li = t.closest('.gd-proposal');
       var q = li && proposals.filter(function(p){ return p.id === li.getAttribute('data-id'); })[0];
       if (!q) return;
+      if (t.classList.contains('gd-view')) { view(q.id); return; }
       var job = null;
       if (t.classList.contains('gd-accept') && fullWrite) job = decide(q, true);
       else if (t.classList.contains('gd-decline') && fullWrite && window.confirm('Decline this proposed change?')) job = decide(q, false);

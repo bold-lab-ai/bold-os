@@ -106,3 +106,7 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .gd-preview-empty{color:var(--muted);}
 .event-form .gd-body{margin-top:0;}
 .event-form .gd-body[hidden], .gd-preview-box[hidden]{display:none;}
+/* "View as proposed" (pages/guide.js): the bar on top, and the changed part marked. */
+.gd-viewing{position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:6px 16px;
+  margin:0 0 16px; padding:10px 14px; background:var(--wash); border:1px solid var(--line); font-family:var(--sans); font-size:13px; color:var(--ink);}
+.gd-proposed{border-left:3px solid var(--accent); padding-left:14px; margin-left:-17px;}
