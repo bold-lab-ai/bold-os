@@ -147,8 +147,6 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .guide-part.is-folded h2 .gd-fold::after{transform:rotate(-45deg); margin-bottom:2px;}
 .guide-part.is-folded{margin-top:22px;}
 .guide-part.is-folded .guide-part-head{margin-bottom:0;}
-.gd-fold-all{max-width:var(--article-max); margin:20px 0 -24px;}
-.gd-fold-all .btn-text{font-size:13px;}
 .gd-grip{cursor:grab; color:var(--muted);}
 .guide-part.gd-dragging{opacity:.45;}
 .guide-part.gd-drop-before{box-shadow:0 -3px 0 var(--accent);}
@@ -166,3 +164,9 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
   .guide-part-head{position:relative;}
   .guide-part-controls{position:absolute; right:100%; bottom:var(--gd-icons-drop, 2px); margin:0 14px 0 0;}
 }
+/* Collapse all / Expand all: the tab bar's last item, in the tabs' type (pages/guide.js). */
+.gd-fold-all-btn{margin-left:auto; margin-bottom:-11px; display:inline-flex; align-items:center; gap:6px; background:none; border:none; padding:6px 0; cursor:pointer;
+  font-family:var(--sans); font-size:12px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted);}
+.gd-fold-all-btn:hover{color:var(--accent);}
+.gd-fold-all{max-width:var(--article-max); display:flex; margin:12px 0 -20px;}
+.gd-fold-all .gd-fold-all-btn{margin-bottom:0;}

@@ -117,7 +117,7 @@
       return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (cur ? ' aria-current="page"' : '') + drag + '>' +
         esc(v || 'Other') + '</a>' + (cur ? arrows : '');
     }).join('') +
-      (viewing ? '' : '<button type="button" class="guide-tab gd-tab-add' + (newTab ? ' is-current' : '') + '" aria-label="Suggest a new tab" title="Suggest a new tab">+</button>') + '</nav>';
+      (viewing ? '' : '<button type="button" class="guide-tab gd-tab-add' + (newTab ? ' is-current' : '') + '" aria-label="Suggest a new tab" title="Suggest a new tab">+</button>') + foldAllButton() + '</nav>';
   }
   function stamp(note){ return { changeNote: note || '', updatedAt: Date.now(), updatedBy: me.email, proposedBy: '' }; }
 
@@ -597,11 +597,19 @@
   }
 
   // Collapse all / Expand all, for the parts on show.
-  function foldAllHtml(){
+  // At the end of the tab bar, or (no tabs) on a line of its own above the parts.
+  function foldAllButton(){
     var list = shown();
-    if (list.length < 2) return '';
+    if (list.length < 2 || viewing || (form && form.newTab)) return '';
     var all = list.every(function(p){ return folded[p.id]; });
-    return '<div class="gd-fold-all"><button type="button" class="btn-text gd-fold-all-btn" data-fold="' + (all ? '0' : '1') + '">' + (all ? 'Expand all' : 'Collapse all') + '</button></div>';
+    var icon = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      (all ? '<path d="M4 3.5 8 7.5l4-4M4 8.5l4 4 4-4"/>' : '<path d="M4 7.5 8 3.5l4 4M4 12.5l4-4 4 4"/>') + '</svg>';
+    return '<button type="button" class="gd-fold-all-btn" data-fold="' + (all ? '0' : '1') + '">' + icon + (all ? 'Expand all' : 'Collapse all') + '</button>';
+  }
+  function foldAllHtml(){
+    if (currentTab() !== null) return '';
+    var b = foldAllButton();
+    return b ? '<div class="gd-fold-all">' + b + '</div>' : '';
   }
 
   // The page as the proposal on show would make it: no controls, the changed part
