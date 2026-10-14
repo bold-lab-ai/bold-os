@@ -136,3 +136,22 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .guide-tab.gd-drop-before{box-shadow:-3px 0 0 var(--accent);}
 .guide-tab.gd-drop-after{box-shadow:3px 0 0 var(--accent);}
 @media (hover:hover) and (pointer:fine){ .gd-tab-move{display:none;} }
+/* Folding a part by its title, Collapse all, and dragging a part by its grip (pages/guide.js). */
+.gd-fold{all:unset; cursor:pointer; display:inline;}
+.gd-fold:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
+.guide-part h2 .gd-fold::after{content:''; display:inline-block; width:7px; height:7px; margin:0 0 4px 12px; border-right:1.5px solid var(--muted); border-bottom:1.5px solid var(--muted); transform:rotate(45deg); vertical-align:middle;}
+.guide-part.is-folded h2 .gd-fold::after{transform:rotate(-45deg); margin-bottom:2px;}
+.guide-part.is-folded{margin-top:22px;}
+.guide-part.is-folded h2{margin-bottom:0;}
+.gd-fold-all{max-width:var(--article-max); margin:20px 0 -24px;}
+.gd-fold-all .btn-text{font-size:13px;}
+.gd-grip{cursor:grab; color:var(--muted);}
+.guide-part.gd-dragging{opacity:.45;}
+.guide-part.gd-drop-before{box-shadow:0 -3px 0 var(--accent);}
+.guide-part.gd-drop-after{box-shadow:0 3px 0 var(--accent);}
+.guide-tab.gd-drop-into{color:var(--accent); border-bottom-color:var(--accent);}
+@media (hover:none), (pointer:coarse){ .gd-grip{display:none;} }
+.gd-tab-grip{display:inline-flex; vertical-align:-2px; margin-right:5px; opacity:.55;}
+.gd-tab-grip svg{width:11px; height:11px;}
+.guide-tab:hover .gd-tab-grip{opacity:1;}
+@media (hover:none), (pointer:coarse){ .gd-tab-grip{display:none;} }

@@ -48,6 +48,12 @@
   // The proposal whose result is on show ("View as proposed"), or null.
   var viewing = null, tabBefore = null;
   function viewed(){ return viewing ? proposals.filter(function(q){ return q.id === viewing; })[0] || null : null; }
+  // Parts you've folded (only their title shows): this browser's, per guide.
+  var folded = {};
+  function foldKey(){ return 'bold-folded:' + COLLECTION + '/' + slug; }
+  try { (JSON.parse(localStorage.getItem(foldKey()) || '[]') || []).forEach(function(id){ folded[id] = true; }); } catch (e){}
+  function saveFolded(){ try { localStorage.setItem(foldKey(), JSON.stringify(Object.keys(folded).filter(function(k){ return folded[k]; }))); } catch (e){} }
+
   // Your draft: changes staged before proposing them together (one "batch"
   // proposal). Kept in this browser only, per guide and person.
   var draft = [], draftOpen = false, draftNote = '', draftBusy = false, draftError = '';
@@ -108,7 +114,8 @@
       var cur = v === t && !newTab;
       // Dragged onto another tab, it moves there (into your draft).
       var drag = viewing || form ? '' : ' draggable="true" data-sec="' + esc(v) + '" title="Drag to move this tab"';
-      return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (cur ? ' aria-current="page"' : '') + drag + '>' + esc(v || 'Other') + '</a>' + (cur ? arrows : '');
+      return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (cur ? ' aria-current="page"' : '') + drag + '>' +
+        (drag ? '<span class="gd-tab-grip">' + GRIP + '</span>' : '') + esc(v || 'Other') + '</a>' + (cur ? arrows : '');
     }).join('') +
       (viewing ? '' : '<button type="button" class="guide-tab gd-tab-add' + (newTab ? ' is-current' : '') + '" aria-label="Suggest a new tab" title="Suggest a new tab">+</button>') + '</nav>';
   }
@@ -125,6 +132,8 @@
 
   // ---------- reading ----------
 
+  // Three lines: "drag me", on a part's grip and on each tab.
+  var GRIP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h10"/></svg>';
   function partHtml(p, i){
     var all = parts(), at = all.indexOf(p);
     var editing = form && form.kind === 'edit' && form.id === p.id;
@@ -133,12 +142,15 @@
     var icon = function(cls, label, svg, off){
       return '<button type="button" class="icon-btn ' + cls + '" data-id="' + esc(p.id) + '" aria-label="' + label + '" title="' + label + '"' + (off ? ' disabled' : '') + '>' + svg + '</button>';
     };
-    var q = viewed();
-    return '<section class="guide-part' + (q && changedIds(q).indexOf(p.id) !== -1 ? ' gd-proposed' : '') + '" id="' + anchor(p) + '">' +
-      (q ? '' : '<div class="guide-part-controls">' + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
+    var q = viewed(), fold = !!folded[p.id] && !q;
+    // The grip drags it above or below another part, or onto a tab (into your draft).
+    var grip = '<span class="icon-btn gd-grip" draggable="true" data-id="' + esc(p.id) + '" role="img" aria-label="Drag to move it" title="Drag to move it">' + GRIP + '</span>';
+    return '<section class="guide-part' + (q && changedIds(q).indexOf(p.id) !== -1 ? ' gd-proposed' : '') + (fold ? ' is-folded' : '') + '" id="' + anchor(p) + '" data-pid="' + esc(p.id) + '">' +
+      (q ? '' : '<div class="guide-part-controls">' + (form ? '' : grip) + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
         icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, at === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, at === all.length - 1) + '</div>') +
-      '<h2><span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</h2>' +
-      '<div class="guide-text">' + md(p.body) + '</div></section>';
+      '<h2><button type="button" class="gd-fold" data-id="' + esc(p.id) + '" aria-expanded="' + !fold + '" title="' + (fold ? 'Show' : 'Fold') + ' this part">' +
+        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button></h2>' +
+      (fold ? '' : '<div class="guide-text">' + md(p.body) + '</div>') + '</section>';
   }
 
   // Marks the contents entry of the part being read.
@@ -406,7 +418,7 @@
       tabsHtml() +
       // The contents sit beside the parts and stay on screen (above them on narrow screens).
       '<div class="guide-layout"><div class="guide-main">' +
-      (adding && form.newTab ? '<section class="guide-part">' + partFormHtml(null) + '</section>' : shown().map(partHtml).join('') +
+      (adding && form.newTab ? '<section class="guide-part">' + partFormHtml(null) + '</section>' : foldAllHtml() + shown().map(partHtml).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
         '<button type="button" class="event-add gd-add">' + '+ Suggest a new part' + '</button>')) +
       proposalsHtml() + (readPoint ? readPoint.readersHtml() : '') + '</div>' + contentsHtml() + '</div></main>';
@@ -476,10 +488,69 @@
     render();
   }
 
+  // A move of part p to position pos (as the Move form's), for your draft.
+  function moveChange(p, pos, how){
+    var now = { title: p.title, order: parts().map(function(q){ return q.id; }) }, then = placed(p, pos);
+    var after = { title: p.title, order: then.order };
+    if (hasSections()) { now.section = p.section || ''; after.section = then.section; }
+    if (now.order.join() === after.order.join() && now.section === after.section) return null;
+    return { kind: 'move', partId: p.id, before: now, after: after, note: 'Moved “' + p.title + '” ' + how };
+  }
+  function stageMove(change){
+    if (!change) return;
+    draft.push(change); saveDraft(); notice = ''; render();
+  }
+  // Dragging a part (by its grip): above or below another part, by which half it's
+  // dropped on, or onto a tab, to the end of it.
+  var draggedPart = null;
+  function partDropSide(e, el){ var r = el.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 ? 'before' : 'after'; }
+  body.addEventListener('dragstart', function(e){
+    var g = e.target.closest && e.target.closest('.gd-grip');
+    if (!g) return;
+    draggedPart = g.getAttribute('data-id');
+    var sec = g.closest('.guide-part'); if (sec) sec.classList.add('gd-dragging');
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', draggedPart); if (sec) e.dataTransfer.setDragImage(sec, 20, 20); } catch (err){}
+  });
+  body.addEventListener('dragover', function(e){
+    if (draggedPart === null || !e.target.closest) return;
+    var el = e.target.closest('.guide-part[data-pid]') || e.target.closest('.guide-tab[data-sec]');
+    if (!el) return;
+    e.preventDefault();
+    clearDrop();
+    var src = body.querySelector('.guide-part[data-pid="' + CSS.escape(draggedPart) + '"]'); if (src) src.classList.add('gd-dragging');
+    if (el.classList.contains('guide-tab')) el.classList.add('gd-drop-into');
+    else if (el.getAttribute('data-pid') !== draggedPart) el.classList.add('gd-drop-' + partDropSide(e, el));
+  });
+  body.addEventListener('drop', function(e){
+    if (draggedPart === null || !e.target.closest) return;
+    var el = e.target.closest('.guide-part[data-pid]') || e.target.closest('.guide-tab[data-sec]');
+    if (!el) return;
+    e.preventDefault();
+    var p = part(draggedPart); draggedPart = null; clearDrop();
+    if (!p) return;
+    if (el.classList.contains('guide-tab')) {
+      var sec = el.getAttribute('data-sec');
+      var last = parts().filter(function(q){ return q.id !== p.id && (q.section || '') === sec; }).pop();
+      stageMove(moveChange(p, last ? 'after:' + last.id : 'top:' + sec, 'to the tab “' + (sec || 'Other') + '”'));
+      return;
+    }
+    var target = part(el.getAttribute('data-pid'));
+    if (!target || target.id === p.id) return;
+    var side = partDropSide(e, el), pos;
+    if (side === 'after') pos = 'after:' + target.id;
+    else {
+      var tsec = target.section || '';
+      var prev = parts().filter(function(q){ return q.id !== p.id; });
+      var at = prev.indexOf(target), before = at > 0 ? prev[at - 1] : null;
+      pos = before && (!hasSections() || (before.section || '') === tsec) ? 'after:' + before.id : 'top:' + (hasSections() ? tsec : '');
+    }
+    stageMove(moveChange(p, pos, side + ' “' + target.title + '”'));
+  });
+
   // Dragging a tab onto another: before it or after it, by which half it's dropped on.
   var dragged = null;
   function dropSide(e, a){ var r = a.getBoundingClientRect(); return e.clientX < r.left + r.width / 2 ? 'before' : 'after'; }
-  function clearDrop(){ Array.prototype.forEach.call(body.querySelectorAll('.gd-drop-before, .gd-drop-after, .gd-dragging'), function(el){ el.classList.remove('gd-drop-before', 'gd-drop-after', 'gd-dragging'); }); }
+  function clearDrop(){ Array.prototype.forEach.call(body.querySelectorAll('.gd-drop-before, .gd-drop-after, .gd-drop-into, .gd-dragging'), function(el){ el.classList.remove('gd-drop-before', 'gd-drop-after', 'gd-drop-into', 'gd-dragging'); }); }
   body.addEventListener('dragstart', function(e){
     var a = e.target.closest && e.target.closest('.guide-tab[data-sec]');
     if (!a) return;
@@ -505,13 +576,21 @@
     order.splice(order.indexOf(target) + (side === 'after' ? 1 : 0), 0, name);
     placeTabs(name, order, side + ' “' + (target || 'Other') + '”');
   });
-  body.addEventListener('dragend', function(){ dragged = null; clearDrop(); });
+  body.addEventListener('dragend', function(){ dragged = null; draggedPart = null; clearDrop(); });
 
   // Removing a change also removes later ones on the part it added.
   function dropFromDraft(i){
     var c = draft[i];
     draft = draft.filter(function(d, j){ return j !== i && !(j > i && c.kind === 'add' && d.partId === c.partId); });
     saveDraft(); render();
+  }
+
+  // Collapse all / Expand all, for the parts on show.
+  function foldAllHtml(){
+    var list = shown();
+    if (list.length < 2) return '';
+    var all = list.every(function(p){ return folded[p.id]; });
+    return '<div class="gd-fold-all"><button type="button" class="btn-text gd-fold-all-btn" data-fold="' + (all ? '0' : '1') + '">' + (all ? 'Expand all' : 'Collapse all') + '</button></div>';
   }
 
   // The page as the proposal on show would make it: no controls, the changed part
@@ -682,6 +761,11 @@
     var t = e.target.closest('button');
     if (!t || t.disabled || !x || !me) return;
     if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
+    if (t.classList.contains('gd-fold')) { var fid = t.getAttribute('data-id'); folded[fid] = !folded[fid]; saveFolded(); render(); return; }
+    if (t.classList.contains('gd-fold-all-btn')) {
+      var on = t.getAttribute('data-fold') === '1';
+      shown().forEach(function(p){ folded[p.id] = on; }); saveFolded(); render(); return;
+    }
     if (t.classList.contains('gd-draft-toggle')) { draftOpen = !draftOpen; render(); return; }
     if (t.classList.contains('gd-tab-left') || t.classList.contains('gd-tab-right')) { if (!form) moveTab(t.classList.contains('gd-tab-left') ? -1 : 1); return; }
     if (t.classList.contains('gd-tab-add')) {
@@ -779,7 +863,10 @@
   }
   // Shows what #hash names: a part (scrolled to) or a section's tab.
   function goTo(hash){
-    var target = document.getElementById(decodeURIComponent(String(hash).replace(/^#/, '')));
+    var id = decodeURIComponent(String(hash).replace(/^#/, ''));
+    var fp = parts().filter(function(q){ return anchor(q) === id; })[0];
+    if (fp && folded[fp.id]) { folded[fp.id] = false; saveFolded(); render(); }
+    var target = document.getElementById(id);
     if (!target && tabFor(hash) !== null) target = document.getElementById('gdTabs');
     if (target) target.scrollIntoView({ block: 'start' });
   }
