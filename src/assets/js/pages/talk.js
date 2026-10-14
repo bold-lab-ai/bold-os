@@ -32,16 +32,17 @@
   var NOT_REMOVER = 'Only the session’s leads, PIs and admins can remove a talk';
   var TALK_TYPES = ['research-talk', 'pitch'];  // as in functions/index.js
 
-  // The form, in order; the Speakers picker goes after the type.
+  // The form, in order, two to a row unless wide: the Speakers go after the
+  // duration (beside the affiliation), its Project after the presentation.
   var FIELDS = [
-    { key: 'title', label: 'Title', input: 'text' },
+    { key: 'title', label: 'Title', input: 'text', wide: true },
     { key: 'type', label: 'Type', input: 'select', options: TALK_TYPES },
-    { key: 'duration', label: 'Duration (minutes)', input: 'number', placeholder: 'e.g. 10', hint: 'Its time follows from its place in the session’s talk order.' },
+    { key: 'duration', label: 'Duration (minutes)', input: 'number', placeholder: 'e.g. 10', hint: 'Its time follows from the session’s talk order.' },
     { key: 'affiliation', label: 'Affiliation', input: 'text' },
     { key: 'presentationUrl', label: 'Presentation', input: 'text', placeholder: 'https://…', hint: 'Slides, a shared doc or a recording.' },
-    { key: 'notes', label: 'Notes', input: 'text' },
-    { key: 'abstract', label: 'Abstract', input: 'area', rows: 10 },
-    { key: 'bio', label: 'About the speaker', input: 'area', rows: 6 }
+    { key: 'notes', label: 'Notes', input: 'text', wide: true },
+    { key: 'abstract', label: 'Abstract', input: 'area', rows: 8 },
+    { key: 'bio', label: 'About the speaker', input: 'area', rows: 8 }
   ];
 
   var saved = null, canEdit = false, canSetPresenters = false, editing = false, busy = false, error = '';
@@ -118,9 +119,10 @@
   }
 
   function speakersHtml(){
-    return '<div class="edit-field"><span class="edit-label">Speakers</span>' + (canSetPresenters
+    // The picker needs the width; as text it sits beside the affiliation.
+    return '<div class="edit-field' + (canSetPresenters ? ' edit-field--wide' : '') + '"><span class="edit-label">Speakers</span>' + (canSetPresenters
       ? '<div id="talkSpeakers"></div>'
-      : '<p class="edit-static">' + esc(talk().speaker || '—') + '</p><p class="edit-hint">Only the session’s leads, PIs and admins can change the speakers.</p>') + '</div>';
+      : '<p class="edit-static">' + esc(talk().speaker || '—') + '</p><p class="edit-hint">Only the session’s leads, PIs and admins change them.</p>') + '</div>';
   }
 
   function formHtml(){
@@ -130,7 +132,7 @@
     FIELDS.forEach(function(f){
       var id = 'f_' + f.key, v = t[f.key] || '';
       if (f.input === 'number') v = CollabWeekTalkTimes.minutesOf(v) || '';
-      html += '<div class="edit-field"><label for="' + id + '">' + esc(f.label) + '</label>' +
+      html += '<div class="edit-field' + (f.wide ? ' edit-field--wide' : '') + '"><label for="' + id + '">' + esc(f.label) + '</label>' +
         (f.input === 'select'
           ? '<select id="' + id + '">' + (v ? '' : '<option value="">Choose…</option>') + f.options.map(function(o){
               return '<option value="' + esc(o) + '"' + (o === v ? ' selected' : '') + '>' + esc(TYPES[o] || o) + '</option>';
@@ -139,9 +141,9 @@
           ? '<textarea id="' + id + '" rows="' + f.rows + '">' + esc(v) + '</textarea>'
           : '<input type="' + f.input + '" id="' + id + '" value="' + esc(v) + '"' + (f.input === 'number' ? ' min="1" step="1"' : '') + ' placeholder="' + esc(f.placeholder || '') + '">') +
         (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
-      if (f.key === 'type') html += speakersHtml();
+      if (f.key === 'duration') html += speakersHtml();
+      if (f.key === 'presentationUrl') html += links.fieldHtml();
     });
-    html += links.fieldHtml();
     return html + '</div><div class="field-error" id="editError"' + (error ? '' : ' hidden') + '>' + esc(error) + '</div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="editSave"' + (busy ? ' disabled' : '') + '>Save</button>' +
       '<button class="btn" type="button" id="editCancel"' + (busy ? ' disabled' : '') + '>Cancel</button></div>';

@@ -48,18 +48,20 @@ window.BoldProjectLinks = (function(){
       }).catch(function(err){ console.error('[BOLD Events] loading the projects presented here failed', err); });
     }
 
-    // The projects the viewer is on: where they can add a presentation (firestore.rules).
+    // The viewer's planned and ongoing projects, where they can add a presentation:
+    // from the server, which sets up any registered before projects had workspaces.
+    var mineLoading = false;
     function loadMine(){
-      if (mine) return;
-      db.collection('projectWorkspaces').where('members', 'array-contains', me.email.toLowerCase()).get().then(function(snap){
-        mine = snap.docs.map(function(d){ return { id: d.id, title: d.data().title || 'Untitled project', w: d.data() }; })
-          .filter(function(p){ return p.w.group !== 'completed'; })
-          .sort(function(a, b){ return a.title.localeCompare(b.title); });
+      if (mine || mineLoading) return;
+      mineLoading = true;
+      firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')({ action: 'mine' }).then(function(r){
+        mineLoading = false;
+        mine = ((r.data && r.data.projects) || []).map(function(p){ return { id: p.id, title: p.title || 'Untitled project', w: { cardId: p.cardId, boardId: p.boardId } }; });
         // An edit form already open gets its Project field without being redrawn.
         var field = document.getElementById('bplField' + key);
         if (field) field.outerHTML = fieldHtml();
         changed();
-      }).catch(function(err){ console.error('[BOLD Events] loading your projects failed', err); mine = []; changed(); });
+      }).catch(function(err){ console.error('[BOLD Events] loading your projects failed', err); mineLoading = false; mine = []; changed(); });
     }
 
     function load(user){
@@ -88,7 +90,7 @@ window.BoldProjectLinks = (function(){
           }).join('') + '</select>';
       return '<div class="edit-field" id="bplField' + key + '"><label for="bplProject">Project</label>' + control +
         '<p class="edit-hint">' + (mine && !mine.length ? 'You\u2019re not on any project yet \u2014 join one from <a href="projects.html">Projects</a>.'
-          : 'The project it presents: it\u2019s added to that project\u2019s Presentations, filled in from here.') + '</p></div>';
+          : 'Adds it to that project\u2019s Presentations.') + '</p></div>';
     }
     // On saving the form: added to the chosen project, taken off the one it was in (if it changed).
     function apply(){

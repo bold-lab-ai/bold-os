@@ -237,13 +237,13 @@
       allTalks().forEach(function(t){ if (t.type) counts[t.type] = (counts[t.type] || 0) + 1; });
       var dflt = Object.keys(counts).sort(function(a, b){ return counts[b] - counts[a]; })[0] ||
         'research-talk';
-      return '<div class="edit-field"><label for="a_' + f.key + '">' + f.label + '</label>' +
+      return '<div class="edit-field' + (f.key === 'title' ? ' edit-field--wide' : '') + '"><label for="a_' + f.key + '">' + f.label + '</label>' +
         (f.type === 'select'
           ? '<select id="a_' + f.key + '">' + TALK_TYPES.map(function(o){
               return '<option value="' + o + '"' + (o === dflt ? ' selected' : '') + '>' + esc(TYPES[o] || o) + '</option>';
             }).join('') + '</select>'
           : '<input type="' + (f.type || 'text') + '" id="a_' + f.key + '"' + (f.type === 'number' ? ' min="1" step="1"' : '') + ' placeholder="' + esc(f.placeholder || '') + '">') + '</div>' +
-        (f.key === 'title' ? '<div class="edit-field"><span class="edit-label">Speakers</span><div id="addSpeakers"></div></div>' : '');
+        (f.key === 'title' ? '<div class="edit-field edit-field--wide"><span class="edit-label">Speakers</span><div id="addSpeakers"></div></div>' : '');
     }).join('') +
       '<p class="edit-hint">Its time follows from its place in the talk order and the durations. Then open the talk to add its abstract and presentation.</p>' +
       '<div class="field-error" id="addError"' + (addError ? '' : ' hidden') + '>' + esc(addError) + '</div>' +
@@ -397,7 +397,7 @@
       '</p><p class="edit-hint">Only PIs and admins can change when it is.</p></div>';
     var days = EventSchedule.sorted(event.days);
     var cur = placed || {};
-    return '<div class="edit-field"><span class="edit-label">When</span><div class="when-row">' +
+    return '<div class="edit-field edit-field--wide"><span class="edit-label">When</span><div class="when-row">' +
       '<label>Day<select id="f_date">' + (cur.date ? '' : '<option value="">Choose a day…</option>') + days.map(function(d){
         return '<option value="' + esc(d.date) + '"' + (d.date === cur.date ? ' selected' : '') + '>' + esc(EventSchedule.dayLabel(d.date)) + '</option>';
       }).join('') + '</select></label>' +
@@ -422,7 +422,7 @@
   }
 
   function leadsFieldHtml(s){
-    return '<div class="edit-field"><span class="edit-label">Leads</span>' + (fullWrite
+    return '<div class="edit-field' + (fullWrite ? ' edit-field--wide' : '') + '"><span class="edit-label">Leads</span>' + (fullWrite
       ? '<div id="leadRows"></div><p class="edit-hint">The leads can edit this session and its talks.</p>'
       : '<p class="edit-static">' + (leadsHtml(s.leads) || '—') + '</p><p class="edit-hint">Only PIs and admins can change the leads.</p>') + '</div>';
   }
@@ -430,9 +430,9 @@
   var SOLO_FIELDS = [
     { key: 'affiliation', label: 'Affiliation' },
     { key: 'presentationUrl', label: 'Presentation', placeholder: 'https://…', hint: 'Slides, a shared doc or a recording.' },
-    { key: 'notes', label: 'Notes' },
-    { key: 'abstract', label: 'Abstract', area: 10 },
-    { key: 'bio', label: 'About the speaker', area: 6 }
+    { key: 'notes', label: 'Notes', wide: true },
+    { key: 'abstract', label: 'Abstract', area: 8 },
+    { key: 'bio', label: 'About the speaker', area: 8 }
   ];
 
   // A keynote's or an oral's form: its talk's fields, and the session's type, room and leads.
@@ -440,20 +440,20 @@
     var html = '<div class="detail-head"><h2>Edit ' + esc((TYPES[s.type] || 'session').toLowerCase()) + '</h2></div>' +
       '<p class="detail-subtitle">' + esc(when(s) + (venue.name ? ' · ' + venue.name : '')) +
       ' — day, time and venue are set with the schedule.</p><div class="edit-form">' +
-      '<div class="edit-field"><label for="f_title">Title</label><input type="text" id="f_title" value="' + esc(t.title) + '"></div>' +
+      '<div class="edit-field edit-field--wide"><label for="f_title">Title</label><input type="text" id="f_title" value="' + esc(t.title) + '"></div>' +
       typeFieldHtml(s) + whenFieldHtml(s) +
-      '<div class="edit-field"><span class="edit-label">Speakers</span>' + (talkAccess.canSetPresenters
+      '<div class="edit-field' + (talkAccess.canSetPresenters ? ' edit-field--wide' : '') + '"><span class="edit-label">Speakers</span>' + (talkAccess.canSetPresenters
         ? '<div id="soloSpeakers"></div>'
         : '<p class="edit-static">' + esc(t.speaker || '—') + '</p><p class="edit-hint">Only the session’s leads, PIs and admins can change the speakers.</p>') + '</div>';
     if (canEdit()) html += '<div class="edit-field"><label for="f_room">Room</label><input type="text" id="f_room" value="' + esc(s.room || '') + '" placeholder="e.g. Seminar Room 2"></div>' + leadsFieldHtml(s);
     SOLO_FIELDS.forEach(function(f){
       var v = t[f.key] || '';
-      html += '<div class="edit-field"><label for="t_' + f.key + '">' + esc(f.label) + '</label>' +
+      html += '<div class="edit-field' + (f.wide ? ' edit-field--wide' : '') + '"><label for="t_' + f.key + '">' + esc(f.label) + '</label>' +
         (f.area ? '<textarea id="t_' + f.key + '" rows="' + f.area + '">' + esc(v) + '</textarea>'
           : '<input type="text" id="t_' + f.key + '" value="' + esc(v) + '" placeholder="' + esc(f.placeholder || '') + '">') +
         (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
+      if (f.key === 'presentationUrl') html += links.fieldHtml();
     });
-    html += links.fieldHtml();
     return html + '</div><div class="field-error" id="editError" hidden></div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="editSave">Save</button>' +
       '<button class="btn" type="button" id="editCancel">Cancel</button></div>';
@@ -468,7 +468,7 @@
       ' — day, time and venue are set with the schedule.</p><div class="edit-form">';
     editFields().forEach(function(f){
       var id = 'f_' + f.key, v = toText(f.key, s[f.key]);
-      html += '<div class="edit-field"><label for="' + id + '">' + esc(f.label) + '</label>' +
+      html += '<div class="edit-field' + (f.input !== 'text' || f.key === 'title' ? ' edit-field--wide' : '') + '"><label for="' + id + '">' + esc(f.label) + '</label>' +
         (f.input === 'text'
           ? '<input type="text" id="' + id + '" value="' + esc(v) + '" placeholder="' + esc(f.placeholder || '') + '">'
           : '<textarea id="' + id + '" rows="' + (f.list ? 5 : 6) + '">' + esc(v) + '</textarea>') +
@@ -476,7 +476,7 @@
       if (f.key === 'title') html += typeFieldHtml(s) + whenFieldHtml(s);
       if (f.key === 'room') html += leadsFieldHtml(s);
     });
-    if (hasTalks()) html += '<div class="edit-field"><span class="edit-label">Schedule</span>' +
+    if (hasTalks()) html += '<div class="edit-field edit-field--wide"><span class="edit-label">Schedule</span>' +
       '<ul class="session-talks talk-order" id="talkOrder"></ul>' +
       '<p class="edit-hint">Worked out from the talks: back to back from the session’s start, in this order, by each talk’s duration. Add a talk with “Add a talk”; change one’s duration on its own page.</p></div>';
     html += links.fieldHtml();
