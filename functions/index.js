@@ -2078,8 +2078,8 @@ function onProjectCard(document){
         await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all')
           .catch(function(err){ logger.warn('Cancelling a removed project’s meeting failed', { id, error: String(err.message) }); });
       }
-      // The slides and notes stay in the lab's Drive folder.
-      await wsRef.delete();
+      // The slides and notes stay in the lab's Drive folder; its presentations go with it.
+      await db.recursiveDelete(wsRef);
       return;
     }
     if (!before){

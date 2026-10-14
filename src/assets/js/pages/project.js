@@ -33,6 +33,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // Its meeting, slides, notes and members: projectWorkspaces/{id}, kept by the
   // server (projectWorkspace in functions/index.js), followed live.
   var ws = null, wsLoaded = false, wsUnsub = null, wsBusy = false, wsMsg = '';
+  // Its presentations, projectWorkspaces/{id}/presentations, newest first.
+  var talks = [], talksUnsub = null;
+  var TALK_KINDS = [['group', 'Group meeting'], ['pitch', 'Pitch Day'], ['conference', 'Conference'], ['invited', 'Invited talk'], ['other', 'Other']];
   var authorRows = [];     // in-progress rows while editing the authors, see authors.js
   var projectId = (location.hash.match(/[#&]id=([^&]+)/) || [])[1];
   if (projectId) projectId = decodeURIComponent(projectId);
@@ -178,6 +181,77 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       (off ? ' disabled title="' + off + '"' : '') + '>Edit</button>';
   }
 
+  // The page's tabs, chosen by &tab= in the address (Overview when there's none).
+  var TABS = [['overview', 'Overview'], ['team', 'Team'], ['presentations', 'Presentations'], ['paper', 'Paper']];
+  var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
+  if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
+
+  function setTab(name, focus){
+    if (name === tab) return;
+    tab = name; editing = false;
+    var hash = location.hash.replace(/&tab=[^&]*/, '') + (name === 'overview' ? '' : '&tab=' + name);
+    try { history.replaceState(null, '', location.pathname + location.search + hash); } catch (e){}
+    render();
+    if (focus) document.querySelector('.tab.active').focus();
+  }
+
+  // What each tab shows; a field that isn't filled in says so.
+  var PANELS = {
+    // What the project is.
+    overview: function(){
+      var html = '<dl class="detail-grid">';
+      html += '<dt>Authors</dt><dd>' + (editing === 'authors'
+        ? '<div id="authorsWrap"></div>' +
+          '<button class="btn-text" type="button" id="authorsAdd">+ Add author</button>' +
+          '<div class="detail-hint">In author order \u2014 the last one is the PI.</div>' +
+          '<div class="field-error" id="detailEditError" hidden></div>' +
+          '<div class="stage-fields-actions"><button class="btn" type="button" id="authorsSave">Save</button><button class="btn" type="button" id="editCancel">Cancel</button></div>'
+        : (card.authors && card.authors.length
+            ? card.authors.map(function(a){ return esc(a.name || a.email || '?'); }).join(', ')
+            : missing()) + editButton('authors')) + '</dd>';
+      html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
+        '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
+      html += row('Venue', !boardId ? '<span class="detail-muted">No venue yet</span>'
+        : '<a href="audit-board.html#board=' + encodeURIComponent(boardId) + '">' + esc(venueLabel || boardId) + '</a>');
+      html += row('Submitted by', card.submittedBy && card.submittedBy.name
+        ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
+        : missing());
+      html += row('Registered', card.createdAt ? formatDate(card.createdAt) : missing());
+      html += '</dl>';
+      if (editing === 'abstract') {
+        // Same editor as the registration form, with Save and Cancel.
+        html += '<div class="detail-abstract">' + abstractTextFieldHtml(card.abstractText, '') +
+          '<div class="field-error" id="detailEditError" hidden></div>' +
+          '<div class="stage-fields-actions"><button class="btn" type="button" id="abstractSave">Save</button><button class="btn" type="button" id="editCancel">Cancel</button></div></div>';
+      } else {
+        html += '<div class="detail-abstract"><div class="detail-abstract-label">Abstract' +
+          editButton('abstract') + '</div>' +
+          (card.abstractText
+            ? '<div class="abstract-render">' + renderAbstractHtml(card.abstractText) + '</div>'
+            : missing()) + '</div>';
+      }
+      return html;
+    },
+    // Who's on it and how they meet.
+    team: function(){
+      return '<dl class="detail-grid">' + row('Members', membersHtml()) +
+        editableRow('slack', 'Slack channel', card.slackChannel ? esc(card.slackChannel) : missing(),
+          card.slackChannel ? ' id="slackChannel"' : '', channelEntryHtml(card.slackChannel), 'slackSave') +
+        workspaceRows() + '</dl>';
+    },
+    // Talks about the project; the pitch deck is the card's own (the board uses it).
+    presentations: function(){
+      return '<dl class="detail-grid">' + simpleRow('pitch') + '</dl>' + presentationsHtml();
+    },
+    // The write-up and its submission.
+    paper: function(){
+      return '<dl class="detail-grid">' + simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') +
+        row('Internal review', boardId
+          ? '<a href="audit-board.html#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(projectId) + '">Its card on ' + esc(venueLabel || 'the board') + '</a>'
+          : '<span class="detail-muted">Once the project has a venue</span>') + '</dl>';
+    }
+  };
+
   function render(){
     var html = '<div class="detail-head"><h2>' + esc(card.title) + '</h2>';
     html += '<div class="detail-badges">';
@@ -187,51 +261,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     }
     html += '<button class="btn-text danger detail-remove" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
     html += '</div></div>';
-    // Only a project in a venue has this line.
-    if (boardId && venueLabel) {
-      html += '<p class="detail-venue">See project in: <a href="audit-board.html#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(projectId) + '">' + esc(venueLabel) + '</a></p>';
-    }
-
-    // Every project shows the same rows, in the board card's order; a field that isn't
-    // filled in says so.
-    html += '<dl class="detail-grid">';
-    html += '<dt>Authors</dt><dd>' + (editing === 'authors'
-      ? '<div id="authorsWrap"></div>' +
-        '<button class="btn-text" type="button" id="authorsAdd">+ Add author</button>' +
-        '<div class="detail-hint">In author order \u2014 the last one is the PI.</div>' +
-        '<div class="field-error" id="detailEditError" hidden></div>' +
-        '<div class="stage-fields-actions"><button class="btn" type="button" id="authorsSave">Save</button><button class="btn" type="button" id="editCancel">Cancel</button></div>'
-      : (card.authors && card.authors.length
-          ? card.authors.map(function(a){ return esc(a.name || a.email || '?'); }).join(', ')
-          : missing()) + editButton('authors')) + '</dd>';
-    html += editableRow('slack', 'Slack channel', card.slackChannel ? esc(card.slackChannel) : missing(),
-      card.slackChannel ? ' id="slackChannel"' : '',
-      channelEntryHtml(card.slackChannel), 'slackSave');
-    html += workspaceRows();
-    html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
-      '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
-    html += simpleRow('pitch');
-    html += simpleRow('overleaf');
-    html += simpleRow('arxiv');
-    html += simpleRow('compute');
-    html += row('Submitted by', card.submittedBy && card.submittedBy.name
-      ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
-      : missing());
-    html += row('Registered', card.createdAt ? formatDate(card.createdAt) : missing());
-    html += '</dl>';
-
-    if (editing === 'abstract') {
-      // Same editor as the registration form, with Save and Cancel.
-      html += '<div class="detail-abstract">' + abstractTextFieldHtml(card.abstractText, '') +
-        '<div class="field-error" id="detailEditError" hidden></div>' +
-        '<div class="stage-fields-actions"><button class="btn" type="button" id="abstractSave">Save</button><button class="btn" type="button" id="editCancel">Cancel</button></div></div>';
-    } else {
-      html += '<div class="detail-abstract"><div class="detail-abstract-label">Abstract' +
-        editButton('abstract') + '</div>' +
-        (card.abstractText
-          ? '<div class="abstract-render">' + renderAbstractHtml(card.abstractText) + '</div>'
-          : missing()) + '</div>';
-    }
+    html += '<div class="tabs" role="tablist" aria-label="Project">' + TABS.map(function(t){
+      var on = t[0] === tab;
+      return '<button class="tab' + (on ? ' active' : '') + '" type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + on + '"' +
+        (on ? '' : ' tabindex="-1"') + ' aria-controls="projectPanel">' + t[1] + '</button>';
+    }).join('') + '</div>';
+    html += '<div class="tab-panel" id="projectPanel" role="tabpanel">' + PANELS[tab]() + '</div>';
 
     el('projectBody').innerHTML = html;
     el('projectBody').hidden = false;
@@ -240,9 +275,18 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     linkSlackChannel();
     wireAbstract();
     el('removeProject').addEventListener('click', removeProject);
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t, i, all){
+      t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); });
+      t.addEventListener('keydown', function(e){
+        var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+        if (!d) return;
+        e.preventDefault();
+        setTab(all[(i + d + all.length) % all.length].getAttribute('data-tab'), true);
+      });
+    });
   }
 
-  // The workspace's rows: meeting, slides, notes, members.
+  // The workspace's rows: meeting, slides, notes.
   function workspaceRows(){
     var setting = ws && ws.syncing, failed = ws && ws.error;
     var state = !wsLoaded ? '<span class="detail-muted">Loading\u2026</span>'
@@ -261,7 +305,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       meetingEntryHtml(m) + (m ? '<button class="btn-text danger" type="button" id="meetingRemove">Remove the meeting</button>' : ''), 'meetingSave');
     html += row('Slides', ws && ws.deckUrl ? openLink(ws.deckUrl) : state + retry);
     html += row('Meeting notes', ws && ws.notesUrl ? openLink(ws.notesUrl) : failed ? missing() : state);
-    html += row('Members', membersHtml());
     return html;
   }
 
@@ -324,6 +367,78 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     });
   }
 
+  // Members and PIs/admins add, change and remove presentations (firestore.rules).
+  var NOT_MEMBER = 'Join the project to add presentations';
+  function canTalk(){ return fullWrite || memberEmails().some(isMe); }
+
+  function talkKind(k){ var t = TALK_KINDS.filter(function(x){ return x[0] === k; })[0]; return t ? t[1] : ''; }
+
+  function talkFormHtml(t){
+    t = t || { title: '', date: new Date().toISOString().slice(0, 10), presenter: me && me.displayName || '', kind: 'group', slidesUrl: '', recordingUrl: '' };
+    var input = function(id, type, v, ph){ return '<input type="' + type + '" id="' + id + '" value="' + esc(v || '') + '"' + (ph ? ' placeholder="' + ph + '"' : '') + '>'; };
+    return '<dl class="detail-grid talk-form">' +
+      row('Title', input('talkTitle', 'text', t.title)) +
+      row('Date', input('talkDate', 'date', t.date)) +
+      row('Presenter', input('talkPresenter', 'text', t.presenter)) +
+      row('Type', '<select id="talkKind">' + TALK_KINDS.map(function(k){ return '<option value="' + k[0] + '"' + (k[0] === t.kind ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select>') +
+      row('Slides', input('talkSlides', 'url', t.slidesUrl, 'https://\u2026')) +
+      row('Recording', input('talkRecording', 'url', t.recordingUrl, 'https://\u2026 (optional)')) +
+      '</dl>' + saveCancelHtml('talkSave');
+  }
+
+  function presentationsHtml(){
+    var off = canTalk() ? '' : ' disabled title="' + NOT_MEMBER + '"';
+    var html = '<div class="detail-abstract-label">Presentations' +
+      (editing === 'talk:new' ? '' : ' <button class="btn-text detail-inline-edit" type="button" data-talk="new"' + off + '>+ Add presentation</button>') + '</div>';
+    if (editing === 'talk:new') html += talkFormHtml();
+    if (!talks.length && editing !== 'talk:new') return html + missing();
+    html += '<ul class="talk-list">' + talks.map(function(t){
+      if (editing === 'talk:' + t.id) return '<li>' + talkFormHtml(t) + '</li>';
+      var title = t.slidesUrl ? '<a href="' + esc(t.slidesUrl) + '" target="_blank" rel="noopener">' + esc(t.title) + '</a>' : esc(t.title);
+      var when = new Date(t.date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+      return '<li><div class="talk-when">' + esc(when) + ' \u00b7 ' + esc(talkKind(t.kind)) + '</div>' +
+        '<div class="talk-title">' + title + (t.presenter ? ' <span class="detail-muted">\u2014 ' + esc(t.presenter) + '</span>' : '') + '</div>' +
+        '<div class="talk-actions">' +
+          (t.recordingUrl ? '<a href="' + esc(t.recordingUrl) + '" target="_blank" rel="noopener">Recording</a>' : '') +
+          '<button class="btn-text" type="button" data-talk="' + esc(t.id) + '"' + off + '>Edit</button>' +
+          '<button class="btn-text danger" type="button" data-talk-remove="' + esc(t.id) + '"' + (canTalk() || (t.by && isMe(t.by.email)) ? '' : off) + '>Remove</button>' +
+        '</div></li>';
+    }).join('') + '</ul>';
+    return html;
+  }
+
+  function talksRef(){ return db.collection('projectWorkspaces').doc(projectId).collection('presentations'); }
+
+  function saveTalk(){
+    var fail = failer(), id = editing.slice(5), v = function(x){ return el(x).value.trim(); };
+    var t = { title: v('talkTitle'), date: v('talkDate'), presenter: v('talkPresenter'), kind: v('talkKind'), slidesUrl: v('talkSlides'), recordingUrl: v('talkRecording') };
+    if (!t.title) return fail('Give it a title.');
+    if (!/^\d{4}-\d\d-\d\d$/.test(t.date)) return fail('Choose a date.');
+    if ([t.slidesUrl, t.recordingUrl].some(function(u){ return u && !/^https?:\/\//i.test(u); })) return fail('Enter full links, starting with https://');
+    var old = talks.filter(function(x){ return x.id === id; })[0];
+    t.by = old ? old.by : { email: me.email, name: me.displayName || '' };
+    t.at = Date.now();
+    var btn = el('talkSave');
+    btn.disabled = true;
+    // An older project has no workspace yet: set it up first (its members are what the rules check).
+    (ws ? Promise.resolve() : callWorkspace({ action: 'setUp' })).then(function(){
+      return old ? talksRef().doc(id).set(t) : talksRef().add(t);
+    }).then(function(){ editing = false; render(); }).catch(function(err){
+      console.error('[BOLD Lab] saving the presentation failed', err);
+      btn.disabled = false;
+      fail(err && err.code === 'permission-denied' ? NOT_MEMBER + '.' : 'Could not save \u2014 try again.');
+    });
+  }
+
+  function removeTalk(id){
+    var t = talks.filter(function(x){ return x.id === id; })[0];
+    if (!t || !window.confirm('Remove "' + t.title + '"?')) return;
+    talksRef().doc(id).delete().catch(function(err){
+      console.error('[BOLD Lab] removing the presentation failed', err);
+      window.alert('Could not remove it \u2014 try again.');
+    });
+  }
+
   function watchWorkspace(){
     if (wsUnsub || !db || !projectId) return;
     wsUnsub = db.collection('projectWorkspaces').doc(projectId).onSnapshot(function(snap){
@@ -333,9 +448,20 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       loadPeople().then(function(){ if (card && !editing) render(); });
       if (card && !editing) render();
     }, function(err){ console.error('[BOLD Lab] loading the meeting failed', err); });
+    talksUnsub = talksRef().onSnapshot(function(snap){
+      talks = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
+        .sort(function(a, b){ return (b.date || '').localeCompare(a.date || '') || (b.at || 0) - (a.at || 0); });
+      if (card && !editing) render();
+    }, function(err){ console.error('[BOLD Lab] loading the presentations failed', err); });
   }
 
   function wireAbstract(){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-talk]'), function(btn){
+      btn.addEventListener('click', function(){ editing = 'talk:' + btn.getAttribute('data-talk'); render(); });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-talk-remove]'), function(btn){
+      btn.addEventListener('click', function(){ removeTalk(btn.getAttribute('data-talk-remove')); });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('[data-ws]'), function(btn){
       btn.addEventListener('click', function(){ workspaceAction(btn.getAttribute('data-ws')); });
     });
@@ -371,6 +497,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       var errorEl = el('detailEditError');
       keywordField = wireKeywordField(card.keywords, failer(), function(){ errorEl.hidden = true; });
       el('keywordsSave').addEventListener('click', saveKeywords);
+    } else if (editing.indexOf('talk:') === 0) {
+      el('talkSave').addEventListener('click', saveTalk);
     } else if (editing === 'meeting') {
       el('meetingSave').addEventListener('click', function(){ saveMeeting(false); });
       if (el('meetingRemove')) el('meetingRemove').addEventListener('click', function(){
@@ -548,7 +676,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   BOLD.onUser(function(user){
     var was = me && me.email && me.email.toLowerCase();
     me = user;
-    if (!user) { if (wsUnsub) { wsUnsub(); wsUnsub = null; } return cacheClear(); }
+    if (!user) {
+      if (wsUnsub) { wsUnsub(); talksUnsub(); wsUnsub = talksUnsub = null; }
+      return cacheClear();
+    }
     // The Edit buttons depend on who's signed in; already right if the first paint used the same person.
     if (card && !editing && was !== (user.email || '').toLowerCase()) render();
     load();

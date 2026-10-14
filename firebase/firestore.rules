@@ -159,9 +159,34 @@ service cloud.firestore {
     // Each project's meeting, slides, notes and members (projectWorkspaces/{card id}),
     // written only by the functions (projectWorkspace, onProjectWritten,
     // onVenueCardWritten); the lab reads them for the project and meetings pages.
+    // Its presentations (projectWorkspaces/{card id}/presentations): the lab reads
+    // them; the project's members (the workspace's `members`, lowercase) and
+    // PIs/admins add, change and remove them; whoever added one can remove it.
     match /projectWorkspaces/{cardId} {
       allow read: if isLabMember();
       allow write: if false;
+
+      function isProjectMember() {
+        let ws = /databases/$(database)/documents/projectWorkspaces/$(cardId);
+        return exists(ws) && email().lower() in get(ws).data.get('members', []);
+      }
+      function validPresentation(d) {
+        return d.keys().hasOnly(['title', 'date', 'presenter', 'kind', 'slidesUrl', 'recordingUrl', 'by', 'at']) &&
+          d.title is string && d.title.size() > 0 && d.title.size() <= 200 &&
+          d.date is string && d.date.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') &&
+          d.presenter is string && d.presenter.size() <= 200 &&
+          d.kind in ['group', 'pitch', 'conference', 'invited', 'other'] &&
+          d.slidesUrl is string && d.slidesUrl.size() <= 2000 &&
+          d.recordingUrl is string && d.recordingUrl.size() <= 2000;
+      }
+      match /presentations/{id} {
+        allow read: if isLabMember();
+        allow create: if isLabMember() && (isProjectMember() || hasFullWrite()) &&
+          request.resource.data.by.email == email() && validPresentation(request.resource.data);
+        allow update: if isLabMember() && (isProjectMember() || hasFullWrite()) &&
+          request.resource.data.by == resource.data.by && validPresentation(request.resource.data);
+        allow delete: if isLabMember() && (isProjectMember() || hasFullWrite() || resource.data.by.email == email());
+      }
     }
 
     // BOLD Collaboration Week workshop proposals (2026-09-15) — a separate

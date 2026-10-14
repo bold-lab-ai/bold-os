@@ -36,6 +36,23 @@
   border:1px solid currentColor; padding:2px 7px; color:var(--neutral-text);
 }
 .detail .badge-stage{color:var(--accent);}
+/* tabs (the Projects page's) */
+.tabs{display:flex; gap:28px; border-bottom:1px solid var(--line); margin-top:20px; overflow-x:auto;}
+.tab{
+  font-family:var(--sans); font-size:14px; font-weight:500; color:var(--muted);
+  background:none; border:none; border-bottom:2px solid transparent;
+  padding:10px 2px; margin-bottom:-1px; cursor:pointer; white-space:nowrap;
+}
+.tab:hover{color:var(--ink);}
+.tab.active{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
+.tab-panel .detail-grid{border-top:none; padding-top:0;}
+/* presentations */
+.talk-list{list-style:none; margin:8px 0 0; padding:0; max-width:var(--article-max);}
+.talk-list li{padding:12px 0; border-bottom:1px solid var(--line);}
+.talk-when{font-family:var(--sans); font-size:12.5px; color:var(--muted);}
+.talk-title{font-size:17px; line-height:1.45;}
+.talk-actions{display:flex; gap:14px; align-items:baseline; margin-top:4px; font-family:var(--sans); font-size:13.5px;}
+.talk-form{margin:10px 0 0;}
 /* grid */
 .detail-grid{
   display:grid; grid-template-columns:150px 1fr; gap:10px 20px; margin:26px 0 32px; padding-top:18px;
