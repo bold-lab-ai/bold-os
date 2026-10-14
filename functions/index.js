@@ -2045,6 +2045,18 @@ async function projectTemplates(){
   return list;
 }
 
+// Where each of `emails` (Slack emails) gets the project's Google invitations and
+// files: the Google account they linked (googleLinks), or the email itself.
+async function googleAddressesFor(emails){
+  const out = [];
+  for (const e of emails){
+    const snap = await db.collection('googleLinks').doc(e).get();
+    const a = snap.exists && snap.data().google ? String(snap.data().google).toLowerCase() : e;
+    if (out.indexOf(a) < 0) out.push(a);
+  }
+  return out;
+}
+
 // The GitHub logins of `emails` who have linked their account (githubLinks).
 async function githubLoginsFor(emails){
   const out = [];
@@ -2115,13 +2127,15 @@ async function syncWorkspace(id, boardId, changes){
         const f = await createNotes(ws.title, folder, { page: projectPageUrl(id, boardId), deck: ws.deckUrl });
         patch.notesId = f.id; patch.notesUrl = f.webViewLink; await save();
       }
+      // Each member's address for Google: their linked Google account, or their Slack email.
+      const addrs = await googleAddressesFor(ws.members);
       // Files: shared with every member, unshared from whoever left.
       const shared = ws.shared || [];
-      for (const e of ws.members.filter(function(m){ return shared.indexOf(m) < 0; })){
+      for (const e of addrs.filter(function(m){ return shared.indexOf(m) < 0; })){
         await shareFile(ws.deckId, e); await shareFile(ws.notesId, e);
         patch.shared = (ws.shared || []).concat(e); await save();
       }
-      for (const e of shared.filter(function(m){ return ws.members.indexOf(m) < 0; })){
+      for (const e of shared.filter(function(m){ return addrs.indexOf(m) < 0; })){
         await unshareFile(ws.deckId, e); await unshareFile(ws.notesId, e);
         patch.shared = ws.shared.filter(function(m){ return m !== e; }); await save();
       }
@@ -2129,8 +2143,8 @@ async function syncWorkspace(id, boardId, changes){
       // The meeting: Google emails the guests an invitation, or a change, or a cancellation.
       const attendees = function(existing){
         // Keeps each guest's reply; adds new members; drops who left.
-        const kept = (existing || []).filter(function(a){ return a.organizer || a.self || ws.members.indexOf(String(a.email).toLowerCase()) >= 0; });
-        return kept.concat(ws.members.filter(function(m){
+        const kept = (existing || []).filter(function(a){ return a.organizer || a.self || addrs.indexOf(String(a.email).toLowerCase()) >= 0; });
+        return kept.concat(addrs.filter(function(m){
           return !kept.some(function(a){ return String(a.email).toLowerCase() === m; });
         }).map(function(m){ return { email: m }; }));
       };
@@ -2492,6 +2506,35 @@ exports.linkGithub = onCall(
       }
     }
     return { link: githubView(doc) };
+  }
+);
+
+// ---------- Linking a Google account ----------
+// On their profile a signed-in person links the Google account they use (Firebase
+// Auth's Google provider, BOLD.link), which proves it's theirs. linkGoogle reads it
+// from Firebase Auth (never from the client) and keeps it in googleLinks/{email}:
+// { email, google, linkedAt } (no client access: firestore.rules' catch-all); their
+// projects' meeting invitations and slides and notes then go to it instead of
+// their Slack email (googleAddressesFor). Called again after unlinking, it forgets
+// the link and moves them back. Its Google account never signs anyone in: only
+// Slack accounts count (onlySlackSignUps, isSignedIn()). → { link: { google } | null }.
+exports.linkGoogle = onCall(
+  { secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
+  async (request) => {
+    const email = callerEmail(request);
+    const user = await admin.auth().getUser(request.auth.uid);
+    const g = (user.providerData || []).filter(function(p){ return p.providerId === 'google.com'; })[0];
+    const google = g && g.email ? g.email.toLowerCase() : '';
+    const ref = db.collection('googleLinks').doc(email);
+    const prev = (await ref.get()).data();
+    if ((prev && prev.google || '') !== google){
+      if (google) await ref.set({ email, google, linkedAt: Date.now() });
+      else await ref.delete();
+      // Their projects: invitations and files move to the new address.
+      const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
+      for (const d of mine.docs) await syncWorkspace(d.id, d.data().boardId || null);
+    }
+    return { link: google ? { google } : null };
   }
 );
 

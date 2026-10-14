@@ -177,6 +177,71 @@
     if (hasGithub(user)) loadGithub(); else renderGithub(null);
   }
 
+  /* ---------- Google ---------- */
+  // Linking the Google account they use (BOLD.link) proves it's theirs; linkGoogle
+  // (functions/index.js) then sends their projects' meeting invitations, slides and
+  // notes to it instead of their Slack email.
+  var gError = '', gBusy = false;
+  var G_ERRORS = {
+    'auth/credential-already-in-use': 'That Google account is already linked to another BOLD.OS account.',
+    'auth/provider-already-linked': 'A Google account is already linked.',
+    'auth/popup-closed-by-user': '',
+    'auth/cancelled-popup-request': '',
+  };
+  function renderGoogle(link){
+    var box = el('googleBody');
+    var off = gBusy ? ' disabled' : '';
+    var err = gError ? '<span class="gh-error">' + escapeHtml(gError) + '</span>' : '';
+    if (!link) {
+      box.innerHTML = '<span class="gh-line">Not linked. Your projects\u2019 meeting invitations, slides and notes go to your Slack email.</span>' + err +
+        '<span class="gh-actions"><button type="button" class="btn-box is-primary g-link"' + off + '>Link Google</button></span>';
+      return;
+    }
+    var p = providerOf(me(), 'google.com');
+    box.innerHTML = accountHtml({ name: (p && p.displayName) || link.google, handle: '', note: escapeHtml(link.google) + ' \u00b7 your projects\u2019 meeting invitations, slides and notes go here' }) + err +
+      '<span class="gh-actions"><button type="button" class="btn-box g-unlink"' + off + '>Unlink Google</button></span>';
+  }
+  // Tells linkGoogle what's linked now (it moves their projects over if that changed).
+  function loadGoogle(){
+    gBusy = true;
+    el('googleBody').innerHTML = '<span class="proj-msg">Checking Google&hellip;</span>';
+    firebase.app().functions('europe-west2').httpsCallable('linkGoogle')().then(function(res){
+      gBusy = false; renderGoogle((res.data || {}).link || null);
+    }).catch(function(err){
+      console.error('[BOLD Lab] linkGoogle failed', err);
+      gBusy = false;
+      gError = 'Couldn\u2019t check your Google account \u2014 reload to try again.';
+      var p = providerOf(me(), 'google.com');
+      renderGoogle(p ? { google: p.email || '' } : null);
+    });
+  }
+  function showGoogle(user){
+    if (!user) { el('googleBody').innerHTML = ''; return; }
+    loadGoogle();
+  }
+  el('googleBody').addEventListener('click', function(e){
+    var t = e.target.closest('button');
+    var user = me();
+    if (!t || t.disabled || !user) return;
+    gError = '';
+    if (t.classList.contains('g-link')) {
+      gBusy = true; renderGoogle(null);
+      // After a popup (localhost) the account is linked here; live, the page goes to Google and back.
+      BOLD.link(new firebase.auth.GoogleAuthProvider()).then(loadGoogle).catch(function(err){
+        if (err && err.code === 'auth/provider-already-linked') { loadGoogle(); return; }
+        console.error('[BOLD Lab] linking Google failed', err);
+        gBusy = false; gError = err && err.code in G_ERRORS ? G_ERRORS[err.code] : 'Couldn\u2019t link Google \u2014 try again.'; renderGoogle(null);
+      });
+    } else if (t.classList.contains('g-unlink')) {
+      if (!window.confirm('Unlink your Google account? Your projects\u2019 invitations and files go back to your Slack email.')) return;
+      t.disabled = true;
+      user.unlink('google.com').then(loadGoogle).catch(function(err){
+        console.error('[BOLD Lab] unlinking Google failed', err);
+        gError = 'Couldn\u2019t unlink Google \u2014 try again.'; loadGoogle();
+      });
+    }
+  });
+
   el('githubBody').addEventListener('click', function(e){
     var t = e.target.closest('button');
     var user = BOLD.getAuth() && BOLD.getAuth().currentUser;
@@ -215,6 +280,7 @@
 
   function renderProfile(user){
     showGithub(user);
+    showGoogle(user);
     if (user) renderSlackAccount(null);
     if (!user) { cacheClear(); el('slackFacts').hidden = true; return; }
     renderIdentity(user.displayName || '', user.email);
