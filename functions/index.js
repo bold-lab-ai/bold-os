@@ -1499,6 +1499,7 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds){
     const list = byProject[pid].sort(function(a, b){ return (a.d.createdAt || 0) - (b.d.createdAt || 0); });
     const last = list[list.length - 1];
     if (list.length > 1) last.item.earlier = list.length - 1;
+    last.item.pid = pid;
     return { group: projectGroupForCards(list.map(function(e){ return e.d; }), done.has(pid)), updatedAt: Math.max.apply(null, list.map(function(e){ return e.d.updatedAt || 0; })), item: last.item };
   });
   const out = { ongoing: [], completed: [], planned: [] };
@@ -1546,11 +1547,20 @@ exports.getAllProjects = onCall(
       doneSnap.docs.map(function(d){ return d.id; })
     );
     const items = groups.ongoing.concat(groups.completed, groups.planned);
+    // For PIs/admins: how many planned or ongoing projects have no workspace yet
+    // (registered before workspaces existed), which projectWorkspace 'setUpAll' sets up.
+    if (await isFullWrite(email.toLowerCase())) groups.notSetUp = (await projectsNotSetUp(groups)).length;
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
     return groups;
   }
 );
+
+// The planned and ongoing projects without a workspace → their project ids.
+async function projectsNotSetUp(groups){
+  const have = new Set((await db.collection('projectWorkspaces').select().get()).docs.map(function(d){ return d.id; }));
+  return groups.planned.concat(groups.ongoing).map(function(i){ return i.pid; }).filter(function(pid){ return pid && !have.has(pid); });
+}
 
 // ---------- Projects page: keyword suggestions ----------
 // Pure: every card's `keywords` → [{ name, count }], most used first (then
@@ -2345,14 +2355,30 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'submit': submits the project to another venue ({ venue, card }: a card the page
 //   built); editors only; → { cardId, boardId }.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
+// - 'setUpAll': no project; PIs/admins: sets up every planned or ongoing project
+//   without a workspace (registered before they existed) → { setUp: count }.
 // - 'venues': no project; the approved venues → { venues: [{ id, label, deadline }] }.
 // → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
 exports.projectWorkspace = onCall(
-  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 120 },
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540 },
   async (request) => {
     const email = callerEmail(request);
     const data = request.data || {};
     if (data.action === 'templates') return { templates: await projectTemplates() };
+    if (data.action === 'setUpAll'){
+      // PIs/admins: a workspace for every planned or ongoing project without one.
+      if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+      const [boardsSnap, cardsSnap, unassignedSnap] = await Promise.all([
+        db.collection('boards').get(), db.collectionGroup('cards').get(), db.collection('projects').get()
+      ]);
+      const groups = allProjectsFromCards(
+        boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
+        cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
+        unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; }), []);
+      const todo = await projectsNotSetUp(groups);
+      for (const pid of todo) await syncWorkspace(pid);
+      return { setUp: todo.length };
+    }
     if (data.action === 'venues'){
       // The venues a project can be submitted to: every approved one, newest first.
       const boards = await db.collection('boards').get();

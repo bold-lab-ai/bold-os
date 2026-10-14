@@ -158,6 +158,29 @@
     });
   }
 
+  // For PIs/admins: projects registered before workspaces existed have no people,
+  // meeting or repository on the site until they're set up (projectWorkspace 'setUpAll').
+  function renderSetUp(n, msg){
+    var box = el('projSetUp');
+    box.hidden = !n && !msg;
+    if (box.hidden) return;
+    box.innerHTML = msg ? BOLD.escapeHtml(msg) : n + (n === 1 ? ' project isn\u2019t' : ' projects aren\u2019t') +
+      ' set up yet: no people, meeting or repository on the site. <button type="button" class="btn-text" id="projSetUpBtn">Set them up</button>';
+    var btn = el('projSetUpBtn');
+    if (btn) btn.addEventListener('click', function(){
+      btn.disabled = true; btn.textContent = 'Setting up\u2026';
+      firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')({ action: 'setUpAll' }).then(function(r){
+        var done = (r.data && r.data.setUp) || 0;
+        renderSetUp(0, done + (done === 1 ? ' project' : ' projects') + ' set up.');
+        try { localStorage.removeItem(CACHE_PREFIX + 'getAllProjects:' + (BOLD.authHint() || {}).e.toLowerCase()); } catch (e){}
+      }).catch(function(err){
+        console.error('[BOLD Lab] setting up the projects failed', err);
+        btn.disabled = false; btn.textContent = 'Set them up';
+        renderSetUp(0, (err && err.message) || 'Couldn\u2019t set them up \u2014 try again.');
+      });
+    });
+  }
+
   /* ---------- search and filters ---------- */
   var current = null;                                  // the last list from the function
   var filters = { q: '', author: '', keyword: '' };
@@ -245,6 +268,7 @@
     current = data;
     fillOptions();
     renderLists();
+    renderSetUp(data.notSetUp || 0);
     el('projMsg').hidden = true;
     el('projects').hidden = false;
   }
