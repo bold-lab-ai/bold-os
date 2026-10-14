@@ -1945,7 +1945,7 @@ function cardRefFor(id, boardId){
 // What a page reads: the workspace, as stored.
 function workspaceView(ws){
   const out = {};
-  ['cardId', 'boardId', 'title', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
+  ['cardId', 'boardId', 'title', 'group', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
     'deckUrl', 'notesUrl', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   return out;
 }
@@ -2106,6 +2106,8 @@ async function syncWorkspace(id, boardId, changes){
     patch.pendingRepo = FieldValue.delete();
     patch.again = FieldValue.delete();
     patch.title = card.title || 'Untitled project';
+    // Planned, ongoing or completed, as on the Projects page (the meetings page leaves out completed ones).
+    patch.group = projectGroupForCard(card);
     patch.slackChannel = card.slackChannel || '';
     patch.members = projectMembers(card, ws.joined);
     patch.joined = ws.joined || [];
@@ -2240,7 +2242,7 @@ async function syncWorkspace(id, boardId, changes){
 }
 
 // A new project is set up at once; a changed one is brought in line when its
-// title, channel, submitter or authors change; a removed one's meeting is cancelled.
+// title, channel, submitter, authors or stage change; a removed one's meeting is cancelled.
 function onProjectCard(document){
   return onDocumentWritten({ document, secrets: [GOOGLE_OAUTH, GITHUB_APP] }, async function(event){
     const before = event.data.before.exists ? event.data.before.data() : null;
@@ -2265,7 +2267,7 @@ function onProjectCard(document){
       await syncWorkspace(id, boardId, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined });
       return;
     }
-    const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails]); };
+    const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails, projectGroupForCard(d)]); };
     if (key(before) === key(after)) return;
     if ((await wsRef.get()).exists) await syncWorkspace(id, boardId);
   });

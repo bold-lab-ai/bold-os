@@ -1,8 +1,9 @@
 (function(){
   // The masthead, gate and sidebar are bold.js's; this page lists every project's
   // recurring meeting (projectWorkspaces, see projectWorkspace in functions/index.js):
-  // a list by weekday, with Join and Leave, or a week grid. Only meetings that are
-  // in Google Calendar (an eventId): one chosen but not yet made isn't listed.
+  // a list by weekday, with Join and Leave, or a week grid, each marked Planned or
+  // Ongoing. Only meetings that are in Google Calendar (an eventId), of projects
+  // that aren't completed: one chosen but not yet made isn't listed.
   if (!BOLD.getAuth()) return;
 
   var el = function(id){ return document.getElementById(id); };
@@ -10,6 +11,10 @@
   var db = null, me = null, list = [], busy = {}, msgs = {}, unsub = null, loaded = false;
   var VIEW_KEY = 'boldMeetings:view', view = 'list';
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
+
+  var GROUP_LABELS = { planned: 'Planned', ongoing: 'Ongoing' };
+  // The Projects page's badge: Ongoing in the accent, Planned plain.
+  function badgeHtml(w){ return GROUP_LABELS[w.group] ? '<span class="badge' + (w.group === 'ongoing' ? ' badge-stage' : '') + '">' + GROUP_LABELS[w.group] + '</span>' : ''; }
 
   function isMe(email){ return !!(me && me.email && String(email).toLowerCase() === me.email.toLowerCase()); }
 
@@ -19,7 +24,8 @@
 
   function render(){
     if (!loaded) return;
-    var withMeeting = list.filter(function(w){ return w.meeting && w.eventId; });
+    // Planned and ongoing projects only: a completed one's meeting is over.
+    var withMeeting = list.filter(function(w){ return w.meeting && w.eventId && w.group !== 'completed'; });
     if (!withMeeting.length) {
       el('meetMsg').textContent = 'No project has a meeting yet.';
       el('meetMsg').hidden = false; el('meetings').hidden = true;
@@ -45,7 +51,8 @@
         var label = !mine ? 'Join the project' : joined ? 'Leave' : 'On the project';
         var off = busy[w.cardId] || (mine && !joined);
         html += '<li><div class="proj-main"><a class="proj-title" href="' + projectUrl(w) + '">' + esc(w.title || 'Untitled') + '</a>' +
-          '<span class="proj-meta">' + meta.join(' · ') + '</span></div>' +
+          '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
+          (badgeHtml(w) ? '<div class="proj-badges">' + badgeHtml(w) + '</div>' : '') + '</div>' +
           '<div class="join-wrap"><button type="button" class="join-btn" data-id="' + esc(w.cardId) + '" data-action="' + (mine ? 'leave' : 'join') + '"' +
             (off ? ' disabled' : '') + (mine && !joined ? ' title="Its submitter and authors stay on the project"' : '') + '>' + label + '</button>' +
           '<span class="join-msg" role="status">' + (msgs[w.cardId] || '') + '</span></div></li>';
@@ -90,8 +97,8 @@
         g.items.forEach(function(m){
           var w = m.w, mine = (w.members || []).some(isMe), n = g.lanes.length;
           html += '<a class="week-block' + (mine ? ' is-mine' : '') + '" href="' + projectUrl(w) + '" style="top:' + ((m.s - from * 60) / 60 * HOUR) + 'px;height:' + Math.max(18, (m.e - m.s) / 60 * HOUR - 2) + 'px;' +
-            'left:calc(' + (m.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc((w.title || 'Untitled') + ' \u00b7 ' + meetingText(w.meeting)) + '">' +
-            '<span class="week-time">' + esc(w.meeting.time) + '</span> ' + esc(w.title || 'Untitled') + '</a>';
+            'left:calc(' + (m.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc((w.title || 'Untitled') + ' \u00b7 ' + meetingText(w.meeting) + (GROUP_LABELS[w.group] ? ' \u00b7 ' + GROUP_LABELS[w.group] : '')) + '">' +
+            '<span class="week-time">' + esc(w.meeting.time) + '</span> ' + esc(w.title || 'Untitled') + ' ' + badgeHtml(w) + '</a>';
         });
       });
       html += '</div>';
