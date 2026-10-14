@@ -933,6 +933,11 @@ function proposalSummary(q){
   if (q.kind === 'remove') return 'removing the part ' + title(q.before);
   if (q.kind === 'move') return 'moving the part ' + title(q.before);
   if (q.kind === 'restore') return 'restoring an earlier version';
+  if (q.kind === 'batch') {
+    const n = (q.changes || []).length;
+    const list = (q.changes || []).slice(0, 3).map((c) => proposalSummary(c));
+    return n + ' changes (' + list.join('; ') + (n > 3 ? '; and ' + (n - 3) + ' more' : '') + ')';
+  }
   return 'a change to the part ' + title(q.before || q.after);
 }
 
@@ -1021,6 +1026,20 @@ const REVIEWED = ['guides', 'handbook'];
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q){
+  // Several changes proposed together (a draft): each in turn, on the result of the last.
+  if (q.kind === 'batch') {
+    const changes = Array.isArray(q.changes) ? q.changes : [];
+    if (!changes.length || changes.length > 50) throw new HttpsError('invalid-argument', 'No changes to apply.');
+    let cur = Object.assign({}, doc);
+    const out = {};
+    changes.forEach((c) => {
+      if (!c || c.kind === 'batch' || c.kind === 'restore') throw new HttpsError('invalid-argument', 'Unknown kind of change.');
+      const r = appliedProposal(cur, c);
+      cur = Object.assign({}, cur, r);
+      Object.assign(out, r);
+    });
+    return out;
+  }
   const parts = (doc.parts || []).map((p) => Object.assign({}, p));
   const after = q.after || {};
   if (q.kind === 'about') return { title: String(after.title || ''), description: String(after.description || '') };

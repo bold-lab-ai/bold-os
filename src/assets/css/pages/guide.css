@@ -116,3 +116,13 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .gd-proposed{border-left:3px solid var(--accent); padding-left:14px; margin-left:-17px;}
 /* Where to move a part (pages/guide.js), as the form's other fields. */
 .event-form select.gd-move-to{display:block; width:100%; margin-top:4px; font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:7px 9px; box-sizing:border-box;}
+/* Your draft (pages/guide.js): changes staged before proposing them together. */
+.gd-draft{max-width:var(--article-max); margin:0 0 28px; padding:12px 16px; background:var(--wash); border:1px solid var(--line); font-family:var(--sans); font-size:13px; color:var(--ink);}
+.gd-draft-head{display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px 16px; margin:0;}
+.gd-draft-actions{display:inline-flex; gap:14px;}
+.gd-draft-list{margin:12px 0 0; padding-left:20px;}
+.gd-draft-list > li{margin:0 0 12px;}
+.gd-draft-list > li > span{margin-right:10px;}
+.gd-draft .gd-draft-form{margin-top:12px; max-width:none;}
+.gd-batch{margin:8px 0; padding-left:20px;}
+.gd-batch > li{margin-bottom:10px;}

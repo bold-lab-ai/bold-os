@@ -297,8 +297,12 @@ service cloud.firestore {
         allow read: if isLabMember();
         allow create: if isLabMember() && request.resource.data.by.email == email()
           && request.resource.data.status == 'open'
-          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore']
-          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status']);
+          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch']
+          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes'])
+          // Several changes proposed together (a draft): a list of them, as single proposals.
+          && (request.resource.data.kind == 'batch'
+            ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
+            : !('changes' in request.resource.data));
         allow update: if false;
         // Withdrawn by whoever proposed it while it's open, or with its guide.
         allow delete: if hasFullWrite() || (isLabMember() && resource.data.by.email == email() && resource.data.status == 'open');
@@ -345,8 +349,12 @@ service cloud.firestore {
         allow read: if isLabMember();
         allow create: if isLabMember() && request.resource.data.by.email == email()
           && request.resource.data.status == 'open'
-          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore']
-          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status']);
+          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch']
+          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes'])
+          // Several changes proposed together (a draft): a list of them, as single proposals.
+          && (request.resource.data.kind == 'batch'
+            ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
+            : !('changes' in request.resource.data));
         allow update: if false;
         // Withdrawn by whoever proposed it, while it's open.
         allow delete: if isLabMember() && resource.data.by.email == email() && resource.data.status == 'open';

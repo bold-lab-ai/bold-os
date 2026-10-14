@@ -40,7 +40,7 @@
   var BACK = cfg.back !== undefined ? cfg.back : '<a class="back-link" href="guides.html">&larr; All guides</a>';
   var EYEBROW_HTML = EYEBROW ? '<div><span class="eyebrow">' + esc(EYEBROW) + '</span></div>' : '';
   var historyWrap = document.getElementById('guideHistoryWrap'), histPanel = null;
-  var KIND = { about: 'Title and description', edit: 'Change to', add: 'New part', remove: 'Remove', move: 'Move', restore: 'Restore' };
+  var KIND = { about: 'Title and description', edit: 'Change to', add: 'New part', remove: 'Remove', move: 'Move', restore: 'Restore', batch: 'Changes' };
   var readPoint = cfg.readPoint === 'true' && ref ? BoldReadPoint.create({
     ref: ref, key: COLLECTION + '-' + slug, anchor: anchor, onChange: function(){ refresh(); },
   }) : null;
@@ -48,8 +48,25 @@
   // The proposal whose result is on show ("View as proposed"), or null.
   var viewing = null, tabBefore = null;
   function viewed(){ return viewing ? proposals.filter(function(q){ return q.id === viewing; })[0] || null : null; }
-  // The guide as shown: as it is, or with the proposal on show applied.
-  function doc(){ var q = viewed(); return q && x ? Object.assign({}, x, applied(x, q)) : x; }
+  // Your draft: changes staged before proposing them together (one "batch"
+  // proposal). Kept in this browser only, per guide and person.
+  var draft = [], draftOpen = false, draftNote = '', draftBusy = false, draftError = '';
+  function draftKey(){ return me && ref ? 'bold-draft:' + COLLECTION + '/' + slug + ':' + me.email : null; }
+  function loadDraft(){
+    draft = [];
+    try { var raw = draftKey() && localStorage.getItem(draftKey()); if (raw) draft = JSON.parse(raw) || []; } catch (e){ draft = []; }
+    if (!Array.isArray(draft)) draft = [];
+  }
+  function saveDraft(){
+    try { if (draftKey()) { if (draft.length) localStorage.setItem(draftKey(), JSON.stringify(draft)); else localStorage.removeItem(draftKey()); } } catch (e){}
+  }
+  // The guide as shown: as it is, with the proposal on show applied, or with your draft.
+  function doc(){
+    if (!x) return x;
+    var q = viewed();
+    if (q) return Object.assign({}, x, applied(x, q));
+    return draft.length ? Object.assign({}, x, applied(x, { kind: 'batch', changes: draft })) : x;
+  }
   function parts(){ var d = doc(); return (d && d.parts) || []; }
   function part(id){ return parts().filter(function(p){ return p.id === id; })[0] || null; }
   function anchor(p){ return PREFIX + p.id; }
@@ -108,7 +125,7 @@
       return '<button type="button" class="icon-btn ' + cls + '" data-id="' + esc(p.id) + '" aria-label="' + label + '" title="' + label + '"' + (off ? ' disabled' : '') + '>' + svg + '</button>';
     };
     var q = viewed();
-    return '<section class="guide-part' + (q && q.partId === p.id ? ' gd-proposed' : '') + '" id="' + anchor(p) + '">' +
+    return '<section class="guide-part' + (q && changedIds(q).indexOf(p.id) !== -1 ? ' gd-proposed' : '') + '" id="' + anchor(p) + '">' +
       (q ? '' : '<div class="guide-part-controls">' + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
         icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, at === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, at === all.length - 1) + '</div>') +
       '<h2><span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</h2>' +
@@ -146,9 +163,11 @@
       '<input type="text" class="gd-note" maxlength="300" placeholder="' + esc(placeholder) + '"></label>' +
       '<p class="event-form-hint">' + (fullWrite ? 'Another PI or admin' : 'A PI or admin') + ' reviews your change before it shows.</p>';
   }
+  // With a draft open, a change joins it; without, it's proposed or starts one.
   function actionsHtml(extra){
     return '<p class="ev-error" hidden></p><div class="event-form-actions">' +
-      '<button type="button" class="ev-save">' + 'Propose change' + '</button>' +
+      (draft.length ? '<button type="button" class="ev-save" data-stage="1">Add to draft</button>' :
+        '<button type="button" class="ev-save">Propose change</button><button type="button" class="ev-save ev-stage" data-stage="1">Add to draft</button>') +
       '<button type="button" class="ev-cancel">Cancel</button>' + (extra || '') + '</div>';
   }
 
@@ -229,8 +248,8 @@
 
   function aboutFormHtml(){
     return '<div class="event-form guide-form">' +
-      '<label>Title<input type="text" class="gd-title" value="' + esc(x.title) + '"></label>' +
-      '<label>Description<textarea class="gd-description" rows="3">' + esc(x.description || '') + '</textarea></label>' +
+      '<label>Title<input type="text" class="gd-title" value="' + esc(doc().title) + '"></label>' +
+      '<label>Description<textarea class="gd-description" rows="3">' + esc(doc().description || '') + '</textarea></label>' +
       noteHtml('e.g. Shorter description') + actionsHtml() + '</div>';
   }
 
@@ -254,6 +273,11 @@
   // The guide with proposal q applied, as decideProposal (functions/index.js
   // appliedProposal) will apply it → { title, description, parts } changed.
   function applied(d, q){
+    if (q.kind === 'batch') {
+      var cur = Object.assign({}, d), out = {};
+      (q.changes || []).forEach(function(c){ var r = applied(cur, c); Object.assign(cur, r); Object.assign(out, r); });
+      return out;
+    }
     var list = (d.parts || []).map(function(p){ return Object.assign({}, p); });
     var after = q.after || {};
     if (q.kind === 'about') return { title: after.title || '', description: after.description || '' };
@@ -296,6 +320,7 @@
     var stale = (q.kind === 'about' || q.kind === 'edit' || q.kind === 'remove') && (!cur || (q.before && (cur.title !== q.before.title || (q.kind === 'about' ? (cur.description || '') !== (q.before.description || '') :
       (cur.body || '') !== (q.before.body || '') || (q.before.section !== undefined && (cur.section || '') !== q.before.section)))));
     var what = q.kind === 'about' ? KIND.about : q.kind === 'restore' ? 'Restore the version of ' + esc(BoldHistory.when(q.after.versionAt)) :
+      q.kind === 'batch' ? (q.changes || []).length + ' changes' :
       KIND[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
     var mine = me && q.by && q.by.email === me.email;
     var off = !fullWrite ? ' disabled title="' + G.NOT_PI + '"' :
@@ -305,10 +330,13 @@
         '<span>' + what + ' · proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') + '</span></p>' +
       (q.note ? '<p class="gd-proposal-note">' + esc(q.note) + '</p>' : '') +
       (stale ? '<p class="gd-proposal-stale">' + (q.kind !== 'about' && !cur ? 'That part has since been removed.' : 'This has changed since it was proposed; accepting replaces the current text.') + '</p>' : '') +
-      BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {}) +
+      (q.kind === 'batch' ? '<ol class="gd-batch">' + (q.changes || []).map(function(c){
+          return '<li><p class="hist-label">' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + '</p>' + BoldHistory.changesHtml(sideText(c.kind, c.before), sideText(c.kind, c.after), {}) + '</li>';
+        }).join('') + '</ol>' :
+        BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {})) +
       '<div class="event-controls">' +
         '<button type="button" class="btn-text gd-view">View as proposed</button>' +
-        '<button type="button" class="btn-text gd-accept"' + off + (q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && !cur ? ' disabled' : '') + '>Accept</button>' +
+        '<button type="button" class="btn-text gd-accept"' + off + (q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && q.kind !== 'batch' && !cur ? ' disabled' : '') + '>Accept</button>' +
         '<button type="button" class="btn-text danger gd-decline"' + off + '>Decline</button>' +
         (mine ? '<button type="button" class="btn-text gd-withdraw">Withdraw</button>' : '') +
       '</div></li>';
@@ -355,7 +383,7 @@
     var off = fullWrite ? '' : ' disabled title="' + G.NOT_PI + '"';
     var hero = '<div class="hero">' + BACK + EYEBROW_HTML;
     if (form && form.kind === 'about') hero += aboutFormHtml();
-    else hero += '<h1>' + esc(x.title) + '</h1>' + (x.description ? '<p class="hero-note">' + esc(x.description) + '</p>' : '') +
+    else hero += '<h1>' + esc(doc().title) + '</h1>' + (doc().description ? '<p class="hero-note">' + esc(doc().description) + '</p>' : '') +
       '<div class="event-controls"><button type="button" class="btn-text gd-about">' + 'Suggest a change' + '</button>' +
       (DELETABLE ? '<button type="button" class="btn-text danger gd-delete"' + off + '>Delete guide</button>' : '') +
       (proposals.length ? '<a class="btn-text gd-pending" href="#proposals">' + proposals.length + ' proposed change' + (proposals.length === 1 ? '' : 's') + '</a>' : '') + '</div>';
@@ -363,6 +391,7 @@
     var adding = form && form.kind === 'add';
     body.innerHTML = hero + '<main>' +
       (notice ? '<p class="gd-notice">' + esc(notice) + '</p>' : '') +
+      draftHtml() +
       (readPoint ? readPoint.html(x) : '') +
       tabsHtml() +
       // The contents sit beside the parts and stay on screen (above them on narrow screens).
@@ -373,7 +402,52 @@
       proposalsHtml() + (readPoint ? readPoint.readersHtml() : '') + '</div>' + contentsHtml() + '</div></main>';
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
+    var dn = body.querySelector('.gd-draft-note');
+    if (dn) dn.addEventListener('input', function(){ draftNote = dn.value; });
     watchContents();
+  }
+
+  // The draft's bar: how many changes, each on request, and Propose all / Discard.
+  function changeLabel(c){
+    if (c.kind === 'about') return 'New title and description';
+    return KIND[c.kind] + ' “' + esc((c.after || c.before || {}).title || '') + '”';
+  }
+  function draftHtml(){
+    if (!draft.length) return '';
+    var n = draft.length + (draft.length === 1 ? ' change' : ' changes');
+    return '<aside class="gd-draft" aria-label="Your draft">' +
+      '<p class="gd-draft-head"><span><strong>Your draft:</strong> ' + n + ', not proposed yet. It shows here only for you.</span>' +
+        '<span class="gd-draft-actions"><button type="button" class="btn-text gd-draft-toggle">' + (draftOpen ? 'Hide' : 'Review') + '</button>' +
+        '<button type="button" class="btn-text danger gd-draft-discard">Discard</button></span></p>' +
+      (draftOpen ? '<ol class="gd-draft-list">' + draft.map(function(c, i){
+        return '<li><span>' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + '</span>' +
+          '<button type="button" class="btn-text gd-draft-drop" data-i="' + i + '">Remove</button>' +
+          BoldHistory.changesHtml(sideText(c.kind, c.before), sideText(c.kind, c.after), {}) + '</li>';
+      }).join('') + '</ol>' : '') +
+      '<div class="event-form gd-draft-form"><label>What you changed and why<input type="text" class="gd-draft-note" maxlength="300" value="' + esc(draftNote) + '" placeholder="e.g. Brought the setup section up to date"></label>' +
+        (draftError ? '<p class="ev-error">' + esc(draftError) + '</p>' : '') +
+        '<div class="event-form-actions"><button type="button" class="ev-save gd-draft-propose"' + (draftBusy ? ' disabled' : '') + '>Propose ' + (draft.length === 1 ? 'it' : 'all ' + draft.length) + '</button></div></div>' +
+      '</aside>';
+  }
+  function proposeDraft(){
+    if (draftBusy) return;
+    draftNote = (body.querySelector('.gd-draft-note') || {}).value || draftNote;
+    if (!draftNote.trim()) { draftError = 'Say what you changed and why, for whoever reviews it.'; render(); return; }
+    draftBusy = true; draftError = ''; render();
+    var change = draft.length === 1 ? Object.assign({}, draft[0], { note: draftNote.trim() }) :
+      { kind: 'batch', partId: '', before: null, after: null, changes: draft, note: draftNote.trim() };
+    submit(change).then(function(){
+      draft = []; saveDraft(); draftBusy = false; draftNote = ''; draftOpen = false; render();
+    }).catch(function(err){
+      console.error('[BOLD Guides] proposing the draft failed', err);
+      draftBusy = false; draftError = 'Couldn’t propose it — try again.'; render();
+    });
+  }
+  // Removing a change also removes later ones on the part it added.
+  function dropFromDraft(i){
+    var c = draft[i];
+    draft = draft.filter(function(d, j){ return j !== i && !(j > i && c.kind === 'add' && d.partId === c.partId); });
+    saveDraft(); render();
   }
 
   // The page as the proposal on show would make it: no controls, the changed part
@@ -381,20 +455,27 @@
   function renderViewing(){
     var q = viewed(), d = doc();
     var what = q.kind === 'about' ? 'a new title and description' : q.kind === 'restore' ? 'restoring an earlier version' :
+      q.kind === 'batch' ? (q.changes || []).length + ' changes' :
       { edit: 'a change to', add: 'a new part,', remove: 'removing', move: 'moving' }[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
     body.innerHTML = '<div class="gd-viewing" role="status"><span>Viewing the page as proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') + ': ' + what +
         '.</span>' +
         '<button type="button" class="btn-text gd-view-exit">Back to the current page</button></div>' +
-      '<div class="hero">' + BACK + EYEBROW_HTML + '<h1' + (q.kind === 'about' ? ' class="gd-proposed"' : '') + '>' + esc(d.title) + '</h1>' +
+      '<div class="hero">' + BACK + EYEBROW_HTML + '<h1' + (q.kind === 'about' || (q.kind === 'batch' && (q.changes || []).some(function(c){ return c.kind === 'about'; })) ? ' class="gd-proposed"' : '') + '>' + esc(d.title) + '</h1>' +
         (d.description ? '<p class="hero-note">' + esc(d.description) + '</p>' : '') + '</div>' +
       '<main>' + tabsHtml() + '<div class="guide-layout"><div class="guide-main">' + shown().map(partHtml).join('') + '</div>' + contentsHtml() + '</div></main>';
     watchContents();
   }
 
+  // The parts a proposal changes.
+  function changedIds(q){
+    if (!q) return [];
+    return (q.kind === 'batch' ? q.changes || [] : [q]).map(function(c){ return c.partId; }).filter(Boolean);
+  }
+
   function view(id){
     if (!viewing) tabBefore = tab;
     viewing = id; form = null; notice = '';
-    var q = viewed(), target = q && q.partId && parts().filter(function(p){ return p.id === q.partId; })[0];
+    var q = viewed(), ids = changedIds(q), target = parts().filter(function(p){ return ids.indexOf(p.id) !== -1; })[0];
     if (target && hasSections()) tab = target.section || '';
     render();
     var el = target && document.getElementById(anchor(target));
@@ -427,29 +508,41 @@
         if (!preview) text.focus();
       });
     });
-    var save = el.querySelector('.ev-save');
+    // Each save button (Propose change, Add to draft) runs the form's save; staging says which.
+    var buttons = el.querySelectorAll('.ev-save'), staging = false;
+    var save = { addEventListener: function(type, fn){
+      Array.prototype.forEach.call(buttons, function(b){ b.addEventListener(type, function(e){ staging = !!b.getAttribute('data-stage'); fn(e); }); });
+    } };
+    function setBusy(on){ Array.prototype.forEach.call(buttons, function(b){ b.disabled = on; }); }
     var v = function(c){ var f = el.querySelector(c); return f ? f.value : ''; };
     function run(change){
-      if (new Blob([JSON.stringify(x.parts || []) + JSON.stringify(change)]).size > MAX_SIZE) { showError(el, 'That’s too much text for one guide.'); return; }
-      save.disabled = true;
+      if (new Blob([JSON.stringify(x.parts || []) + JSON.stringify(draft) + JSON.stringify(change)]).size > MAX_SIZE) { showError(el, 'That’s too much text for one guide.'); return; }
+      if (staging) {
+        draft.push(change); saveDraft(); notice = '';
+        closeForm();
+        return;
+      }
+      setBusy(true);
       submit(change).then(closeForm).catch(function(err){
         console.error('[BOLD Guides] saving failed', err);
         showError(el, 'Couldn’t save — try again.');
-        save.disabled = false;
+        setBusy(false);
       });
     }
     function note(){ return v('.gd-note').trim(); }
+    // A drafted change's note is optional: the draft has one of its own when proposed.
     function needNote(){
-      if (!note()) { showError(el, 'Say what you changed and why, for whoever reviews it.'); return true; }
+      if (!staging && !note()) { showError(el, 'Say what you changed and why, for whoever reviews it.'); return true; }
       return false;
     }
     if (form.kind === 'about') {
       save.addEventListener('click', function(){
         var after = { title: v('.gd-title').trim(), description: v('.gd-description').trim() };
         if (!after.title) { showError(el, 'Give the guide a title.'); return; }
-        if (after.title === x.title && after.description === (x.description || '')) { closeForm(); return; }
+        var d = doc();
+        if (after.title === d.title && after.description === (d.description || '')) { closeForm(); return; }
         if (needNote()) return;
-        run({ kind: 'about', partId: '', before: { title: x.title, description: x.description || '' }, after: after, note: note() });
+        run({ kind: 'about', partId: '', before: { title: d.title, description: d.description || '' }, after: after, note: note() });
       });
       return;
     }
@@ -481,6 +574,7 @@
     });
     var rm = el.querySelector('.gd-remove');
     if (rm) rm.addEventListener('click', function(){
+      staging = draft.length > 0;
       if (needNote()) return;
       run({ kind: 'remove', partId: p.id, before: partSide(p), after: null, note: note() });
     });
@@ -519,6 +613,13 @@
     var t = e.target.closest('button');
     if (!t || t.disabled || !x || !me) return;
     if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
+    if (t.classList.contains('gd-draft-toggle')) { draftOpen = !draftOpen; render(); return; }
+    if (t.classList.contains('gd-draft-propose')) { proposeDraft(); return; }
+    if (t.classList.contains('gd-draft-drop')) { dropFromDraft(Number(t.getAttribute('data-i'))); return; }
+    if (t.classList.contains('gd-draft-discard')) {
+      if (window.confirm('Discard your draft of ' + draft.length + (draft.length === 1 ? ' change' : ' changes') + '?')) { draft = []; saveDraft(); draftNote = ''; render(); }
+      return;
+    }
     var id = t.getAttribute('data-id');
     if (t.classList.contains('gd-about')) { notice = ''; form = { kind: 'about' }; render(); }
     else if (t.classList.contains('gd-edit')) { notice = ''; form = { kind: 'edit', id: id }; render(); var f = document.getElementById(PREFIX + id); if (f) f.scrollIntoView({ block: 'start' }); }
@@ -630,6 +731,7 @@
     var mine = ++signIns;
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user ? { email: user.email || '', name: user.displayName || '' } : null;
+    loadDraft();
     fullWrite = false;
     if (readPoint) readPoint.start(user);
     if (!user) return;
