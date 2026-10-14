@@ -303,7 +303,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : '';
     var m = ws && ws.meeting;
     // Chosen but not in Google Calendar yet (the lab's Google account isn't connected, say).
-    var meeting = m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 not set up yet</span>'
+    var meeting = m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 ' + (ws.group === 'completed' ? 'ended with the project' : 'not set up yet') + '</span>'
       : m ? esc(meetingText(m)) +
         (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>' : '') +
         (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')

@@ -2143,6 +2143,9 @@ async function syncWorkspace(id, boardId, changes){
       }
 
       // The meeting: Google emails the guests an invitation, or a change, or a cancellation.
+      // A completed project's meeting is cancelled; the time is kept, so it comes back
+      // if the project is reopened.
+      const wantEvent = !!ws.meeting && ws.group !== 'completed';
       const attendees = function(existing){
         // Keeps each guest's reply; adds new members; drops who left.
         const kept = (existing || []).filter(function(a){ return a.organizer || a.self || addrs.indexOf(String(a.email).toLowerCase()) >= 0; });
@@ -2150,7 +2153,7 @@ async function syncWorkspace(id, boardId, changes){
           return !kept.some(function(a){ return String(a.email).toLowerCase() === m; });
         }).map(function(m){ return { email: m }; }));
       };
-      if (ws.meeting && !ws.eventId){
+      if (wantEvent && !ws.eventId){
         const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
           summary: ws.title,
           description: eventDescription(ws),
@@ -2161,7 +2164,7 @@ async function syncWorkspace(id, boardId, changes){
         patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ev.hangoutLink || '';
         patch.eventMeeting = ws.meeting;
         await save();
-      } else if (!ws.meeting && ws.eventId){
+      } else if (!wantEvent && ws.eventId){
         await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
         patch.eventId = FieldValue.delete(); patch.eventLink = FieldValue.delete();
         patch.meetUrl = FieldValue.delete(); patch.eventMeeting = FieldValue.delete();
