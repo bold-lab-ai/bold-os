@@ -155,3 +155,12 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 @media (hover:none), (pointer:coarse){ .gd-grip{display:none;} }
 /* A tab is dragged by itself: a grab cursor and a lift on hover say so (pages/guide.js). */
 .guide-tab[draggable="true"]:hover{background:var(--wash); border-radius:var(--radius) var(--radius) 0 0;}
+/* With a mouse a part moves by its grip, so no arrows; and its icons hang in the margin
+   left of the title where there's room. Touch screens keep the arrows (no dragging there). */
+@media (hover:hover) and (pointer:fine){
+  .guide-part-controls .gd-up, .guide-part-controls .gd-down{display:none;}
+}
+@media (hover:hover) and (pointer:fine) and (min-width:1240px){
+  .guide-part-head{position:relative;}
+  .guide-part-controls{position:absolute; right:100%; top:50%; transform:translateY(-50%); margin:0 14px 0 0;}
+}
