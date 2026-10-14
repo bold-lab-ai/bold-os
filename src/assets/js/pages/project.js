@@ -302,7 +302,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       ? ' <button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (failed ? 'Try again' : 'Set up') + '</button>'
       : '';
     var m = ws && ws.meeting;
-    var meeting = m ? esc(meetingText(m)) +
+    // Chosen but not in Google Calendar yet (the lab's Google account isn't connected, say).
+    var meeting = m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 not set up yet</span>'
+      : m ? esc(meetingText(m)) +
         (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>' : '') +
         (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')
       : wsLoaded && !setting ? missing() : state;

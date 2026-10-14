@@ -132,3 +132,25 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 /* ---------- meetings page: one list per weekday ---------- */
 .meet-day{font-family:var(--serif); font-size:22px; font-weight:700; color:var(--ink); margin:32px 0 2px;}
 #meetings[hidden]{display:none;}
+#meetMsg{margin-top:20px;}
+/* the week grid: days across, hours down; scrolls sideways inside itself on a phone */
+.week{margin-top:24px; overflow-x:auto; font-family:var(--sans);}
+.week-head, .week-body{display:grid; grid-template-columns:52px repeat(var(--days), minmax(110px, 1fr)); min-width:calc(52px + var(--days) * 110px);}
+.week-head span{font-size:13px; font-weight:600; color:var(--ink); padding:0 4px 8px; border-bottom:1px solid var(--line);}
+.week-body{position:relative;}
+.week-hours, .week-day{position:relative; height:100%;}
+.week-day{border-left:1px solid var(--line);}
+.week-hours span{position:absolute; right:8px; transform:translateY(-50%); font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums;}
+.week-hours span:first-child{transform:none;}
+.week-line{position:absolute; left:0; right:0; border-top:1px solid rgba(26,43,74,0.07);}
+.week-block{
+  position:absolute; overflow:hidden; box-sizing:border-box; padding:3px 6px;
+  font-size:12px; line-height:1.3; color:var(--accent); text-decoration:none;
+  background:var(--surface); border:1px solid var(--accent); border-left-width:3px;
+}
+.week-block:hover{background:var(--wash);}
+.week-block.is-mine{background:var(--accent); color:#fff;}
+.week-block.is-mine:hover{background:#0f1c33;}
+.week-time{font-weight:600; font-variant-numeric:tabular-nums;}
+.week-note{display:flex; align-items:center; gap:6px; margin:10px 0 0; font-size:12.5px; color:var(--muted);}
+.week-key{display:inline-block; width:12px; height:12px; background:var(--accent);}
