@@ -1450,11 +1450,13 @@ exports.getMyProjects = onCall(
   }
 );
 
-// Which of the Projects page's three groups a card belongs to. Planned = not
-// yet drafted (Registered/Pitched); Completed = accepted (last column) or
-// closed out with an outcome (accepted/rejected/withdrawn); Ongoing = the rest.
-function projectGroupForCard(card){
-  if (card.status === 'conference' || BOARD_OUTCOME_LABEL[card.outcome]) return 'completed';
+// Which of the Projects page's three groups a card belongs to. Completed =
+// accepted at a venue (the last column, or the outcome Accepted), or marked
+// completed on its project page (`completed`: its workspace's completedAt);
+// Planned = not yet drafted (Registered/Pitched); Ongoing = the rest, a rejected
+// or withdrawn paper included: the project goes on.
+function projectGroupForCard(card, completed){
+  if (completed || card.status === 'conference' || card.outcome === 'accepted') return 'completed';
   if (card.status === 'register' || card.status === 'pitch') return 'planned';
   return 'ongoing';
 }
@@ -1465,7 +1467,9 @@ function projectGroupForCard(card){
 // projects registered without a venue yet (top-level `projects` collection).
 // Both are cards in the same shape (src/assets/js/card-model.js); the only
 // difference is that an unassigned one has no board, so no boardId/link.
-function allProjectsFromCards(boards, cards, unassigned){
+// `completedIds`: cards marked completed on their project page (workspaces' completedAt).
+function allProjectsFromCards(boards, cards, unassigned, completedIds){
+  const done = new Set(completedIds || []);
   const labels = {};
   boards.forEach(function(b){ if (b.status !== 'pending') labels[b.id] = b.label || b.id; });
   const entries = [];
@@ -1483,15 +1487,15 @@ function allProjectsFromCards(boards, cards, unassigned){
   };
   cards.forEach(function(c){
     if (!(c.boardId in labels)) return;
-    entries.push({ d: c.data, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
+    entries.push({ id: c.id, d: c.data, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
   });
   (unassigned || []).forEach(function(u){
-    entries.push({ d: u.data, item: Object.assign(base(u.id, u.data), { projectId: u.id }) });
+    entries.push({ id: u.id, d: u.data, item: Object.assign(base(u.id, u.data), { projectId: u.id }) });
   });
   const out = { ongoing: [], completed: [], planned: [] };
   entries
     .sort(function(a, b){ return (b.d.updatedAt || 0) - (a.d.updatedAt || 0); })
-    .forEach(function(e){ out[projectGroupForCard(e.d)].push(e.item); });
+    .forEach(function(e){ out[projectGroupForCard(e.d, done.has(e.id))].push(e.item); });
   return out;
 }
 
@@ -1520,15 +1524,17 @@ exports.getAllProjects = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = signedInEmail(request);
-    const [boardsSnap, cardsSnap, unassignedSnap] = await Promise.all([
+    const [boardsSnap, cardsSnap, unassignedSnap, doneSnap] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
-      db.collection('projects').get()
+      db.collection('projects').get(),
+      db.collection('projectWorkspaces').where('completedAt', '>', 0).get()
     ]);
     const groups = allProjectsFromCards(
       boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
       cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
-      unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; })
+      unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; }),
+      doneSnap.docs.map(function(d){ return d.id; })
     );
     const items = groups.ongoing.concat(groups.completed, groups.planned);
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
@@ -1945,7 +1951,7 @@ function cardRefFor(id, boardId){
 // What a page reads: the workspace, as stored.
 function workspaceView(ws){
   const out = {};
-  ['cardId', 'boardId', 'title', 'group', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
+  ['cardId', 'boardId', 'title', 'group', 'completedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
     'deckUrl', 'notesUrl', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   return out;
 }
@@ -2107,7 +2113,7 @@ async function syncWorkspace(id, boardId, changes){
     patch.again = FieldValue.delete();
     patch.title = card.title || 'Untitled project';
     // Planned, ongoing or completed, as on the Projects page (the meetings page leaves out completed ones).
-    patch.group = projectGroupForCard(card);
+    patch.group = projectGroupForCard(card, !!ws.completedAt);
     patch.slackChannel = card.slackChannel || '';
     patch.members = projectMembers(card, ws.joined);
     patch.joined = ws.joined || [];
@@ -2285,6 +2291,8 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'leave': stops them being one; not its submitter or authors.
 // - 'repo': makes its repository from a template ({ mode: 'template', template });
 //   editors only; once made, it stays.
+// - 'complete' / 'reopen': marks the project completed (its meeting is cancelled) or
+//   not; editors only. Completion by acceptance at a venue needs neither.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
 // → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
 exports.projectWorkspace = onCall(
@@ -2314,6 +2322,14 @@ exports.projectWorkspace = onCall(
         if (ws.repoName) throw new HttpsError('failed-precondition', 'It already has ' + GITHUB_ORG + '/' + ws.repoName + '.');
       }
       return workspaceView(await syncWorkspace(id, boardId, changes));
+    }
+
+    if (data.action === 'complete' || data.action === 'reopen'){
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
+      await wsRef.set(data.action === 'complete'
+        ? { cardId: id, boardId, completedAt: Date.now(), completedBy: email }
+        : { cardId: id, boardId, completedAt: FieldValue.delete(), completedBy: FieldValue.delete() }, { merge: true });
+      return workspaceView(await syncWorkspace(id, boardId));
     }
 
     if (data.action === 'join' || data.action === 'leave'){

@@ -27,6 +27,7 @@
   letter-spacing:-0.005em; max-width:var(--article-max); text-wrap:balance;
 }
 .detail-remove{margin-left:auto;}
+.detail-badges .btn-text + .btn-text{margin-left:14px;}
 .detail .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
 .detail-venue{font-family:var(--sans); font-size:14px; color:var(--muted); margin:10px 0 0;}
 .detail-venue a{color:inherit;}

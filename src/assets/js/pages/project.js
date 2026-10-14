@@ -264,7 +264,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     if (OUTCOME_LABELS[card.outcome] && !(card.outcome === 'accepted' && card.status === 'conference')) {
       html += '<span class="badge">' + OUTCOME_LABELS[card.outcome] + '</span>';
     }
-    html += '<button class="btn-text danger detail-remove" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
+    if (ws && ws.completedAt) html += '<span class="badge">Completed</span>';
+    // Marking it completed (or reopening it): its meeting is cancelled (or comes back).
+    var done = !!(ws && ws.completedAt);
+    html += '<button class="btn-text detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
+      (done ? 'Reopen project' : 'Mark as completed') + '</button>';
+    html += '<button class="btn-text danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
     html += '</div></div>';
     html += '<div class="tabs" role="tablist" aria-label="Project">' + TABS.map(function(t){
       var on = t[0] === tab;
@@ -280,6 +285,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     linkSlackChannel();
     wireAbstract();
     el('removeProject').addEventListener('click', removeProject);
+    el('completeProject').addEventListener('click', completeProject);
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t, i, all){
       t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); });
       t.addEventListener('keydown', function(e){
@@ -574,6 +580,22 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function failer(){
     var errorEl = el('detailEditError');
     return function(msg){ errorEl.textContent = msg; errorEl.hidden = false; };
+  }
+
+  function completeProject(){
+    var reopen = !!(ws && ws.completedAt);
+    if (!reopen && !window.confirm('Mark "' + card.title + '" as completed? Its meeting is cancelled, and everyone on it is told.')) return;
+    wsBusy = true; render();
+    callWorkspace({ action: reopen ? 'reopen' : 'complete' }).then(function(){
+      wsBusy = false;
+      // The Projects page's cached list still has it in its old tab.
+      try { localStorage.removeItem(CACHE_KEY + me.email.toLowerCase()); } catch (e){}
+      if (!editing) render();
+    }).catch(function(err){
+      console.error('[BOLD Lab] ' + (reopen ? 'reopening' : 'completing') + ' the project failed', err);
+      wsBusy = false; render();
+      window.alert((err && err.message) || 'That didn\u2019t work \u2014 try again.');
+    });
   }
 
   // Deletes the project's document. Its Slack channel is left as it is.
