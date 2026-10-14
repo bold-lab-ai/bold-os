@@ -117,8 +117,10 @@ window.BoldMarkdown = (function(){
         out += list(items);
         continue;
       }
-      var para = [];
-      for (; i < lines.length && lines[i].trim() && !/^(```|#{1,4}\s|>|\s*\|)/.test(lines[i]) && !ITEM.test(lines[i]); i++) para.push(lines[i].trim());
+      // Its first line always, so a line no block took (a "|" with no table rule
+      // under it, say) can't stop the loop from moving on.
+      var para = [line.trim()];
+      for (i++; i < lines.length && lines[i].trim() && !/^(```|#{1,4}\s|>|\s*\|)/.test(lines[i]) && !ITEM.test(lines[i]); i++) para.push(lines[i].trim());
       out += '<p>' + para.map(inline).join(' ') + '</p>';
     }
     return out;
