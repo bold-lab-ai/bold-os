@@ -77,6 +77,14 @@
     },
     {
       "collectionGroup": "presentations",
+      "fieldPath": "occasion.id",
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "ASCENDING", "queryScope": "COLLECTION_GROUP" }
+      ]
+    },
+    {
+      "collectionGroup": "presentations",
       "fieldPath": "occasion.sessionSlug",
       "indexes": [
         { "order": "ASCENDING", "queryScope": "COLLECTION" },

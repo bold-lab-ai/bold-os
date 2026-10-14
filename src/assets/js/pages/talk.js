@@ -109,7 +109,7 @@
     if (t.duration) html += '<dt>Duration</dt><dd>' + esc(t.duration) + '</dd>';
     if (t.notes) html += '<dt>Notes</dt><dd>' + esc(t.notes) + '</dd>';
     if (t.presentationUrl) html += '<dt>Presentation</dt><dd class="talk-pres"><a href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">' + esc(t.presentationUrl) + '</a></dd>';
-    html += BoldProjectLinks.rowHtml(projects);
+    html += links.rowHtml();
     html += '</dl><div class="detail-field"><p class="detail-field-label">Abstract</p>' +
       (t.abstract ? '<p class="talk-text">' + esc(t.abstract) + '</p>' : '<p class="detail-muted">Abstract not yet available.</p>') + '</div>' +
       '<div class="detail-field"><p class="detail-field-label">About the speaker</p>' +
@@ -243,7 +243,8 @@
         var placed = event ? EventSchedule.findSession(event.days, sessionSlug) : null;
         var v = ((event && event.venues) || []).filter(function(l){ return l.slug === x.locationSlug; })[0];
         venue = v ? Object.assign({ mapsUrl: 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(v.name + ', ' + (v.address || '')) }, v) : {};
-        base = { slug: slug, sessionSlug: sessionSlug, sessionTitle: x.title || '', day: placed ? placed.day : '', sessionTime: placed ? placed.time : '' };
+        base = { slug: slug, sessionSlug: sessionSlug, sessionTitle: x.title || '', day: placed ? placed.day : '', sessionTime: placed ? placed.time : '',
+          date: placed ? placed.date : '', eventSlug: x.eventSlug || '', eventTitle: event ? event.title : '' };
         var back = el('talkBack');
         if (back) { back.href = sessionHref(sessionSlug); back.textContent = '← Back to ' + (x.title || 'the session'); }
         document.title = ((saved && saved.title) || 'Talk') + (event && event.title ? ' | ' + event.title : '');
@@ -256,13 +257,25 @@
   }
   function loadTime(){ if (base) loadSession(base.sessionSlug); }
 
-  // The projects that presented this talk (project-links.js).
-  var projects = [];
+  // The projects that presented this talk, and adding it to one (project-links.js).
+  var links = BoldProjectLinks.create({
+    field: 'talkSlug', slug: slug,
+    occasion: function(){
+      return base && base.eventSlug ? { kind: 'event', id: base.eventSlug, label: base.eventTitle || base.eventSlug,
+        sessionSlug: base.sessionSlug, sessionTitle: base.sessionTitle || '', talkSlug: slug, talkTitle: (saved && saved.title) || '' } : null;
+    },
+    prefill: function(){
+      var t = saved || {};
+      var who = (t.speakers || []).map(function(p){ return p.name || p.email; }).filter(Boolean).join(', ') || t.speaker || '';
+      return { title: t.title, presenter: who, date: base && base.date, slidesUrl: t.presentationUrl };
+    },
+    onChange: function(){ if (!editing) render(); }
+  });
   BOLD.onUser(function(user){
     canEdit = false; canSetPresenters = false; editing = false;
     if (!user || !db) { render(); return; }
     if (missing) { render(); return; }
-    BoldProjectLinks.find('talkSlug', slug).then(function(list){ projects = list; if (!editing) render(); });
+    links.load(user);
     db.collection('collabWeekTalks').doc(slug).get().then(function(snap){
       saved = snap.exists ? snap.data() : null;
       missing = !saved;

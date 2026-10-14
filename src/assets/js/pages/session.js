@@ -324,7 +324,7 @@
     if (!isEmpty(s.leads)) html += row(s.leads.length > 1 ? 'Leads' : 'Lead', leadsHtml(s.leads));
     if (t.presentationUrl) html += row('Presentation', '<a href="' + esc(t.presentationUrl) + '" target="_blank" rel="noopener">' + esc(t.presentationUrl) + '</a>');
     if (t.notes) html += row('Notes', esc(t.notes));
-    html += BoldProjectLinks.rowHtml(projects);
+    html += links.rowHtml();
     return html + '</dl>' +
       section('Abstract', t.abstract ? '<p class="talk-text">' + esc(t.abstract) + '</p>' : '<p class="detail-muted">Abstract not yet available.</p>') +
       section('About the speaker', t.bio ? '<p class="talk-text">' + esc(t.bio) + '</p>' : '<p class="detail-muted">Not yet available.</p>');
@@ -347,7 +347,7 @@
     html += '<dl class="detail-grid">' + row('When', esc(when(s))) + row('Where', whereHtml(s));
     if (!isEmpty(s.leads)) html += row(s.leads.length > 1 ? 'Leads' : 'Lead', leadsHtml(s.leads));
     if (s.contact) html += row('Contact', esc(s.contact));
-    html += BoldProjectLinks.rowHtml(projects);
+    html += links.rowHtml();
     html += '</dl>';
 
     FIELDS.forEach(function(f){
@@ -818,12 +818,26 @@
     }).catch(function(err){ console.error('[BOLD Events] editTalk access check failed', err); });
   }
 
-  // The projects that presented here, this session or one of its talks (project-links.js).
-  var projects = [];
+  // The projects that presented here, this session or one of its talks, and adding
+  // it to one (project-links.js): a keynote's or an oral's one talk, else the session.
+  var links = BoldProjectLinks.create({
+    field: 'sessionSlug', slug: base.slug,
+    occasion: function(){
+      if (!saved || !saved.eventSlug) return null;
+      var solo = soloTalk(), o = { kind: 'event', id: saved.eventSlug, label: (event && event.title) || saved.eventSlug,
+        sessionSlug: base.slug, sessionTitle: session().title || '' };
+      if (solo && solo.slug) { o.talkSlug = solo.slug; o.talkTitle = solo.title || ''; }
+      return o;
+    },
+    prefill: function(){
+      var solo = soloTalk(), s = session();
+      return { title: solo ? solo.title : s.title, presenter: solo ? solo.speaker : '', date: placed ? placed.date : '', slidesUrl: solo ? solo.presentationUrl : '' };
+    },
+    onChange: function(){ if (!editing) (adding ? renderKeepingAdd : render)(); }
+  });
   BOLD.onUser(function(user){
     adding = false;
-    projects = [];
-    if (user && base && base.slug) BoldProjectLinks.find('sessionSlug', base.slug).then(function(list){ projects = list; if (!editing) render(); });
+    links.load(user);
     talkAccess = { canEdit: false, canSetPresenters: false };
     me = user ? { email: user.email || '' } : null;
     fullWrite = false;

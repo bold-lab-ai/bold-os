@@ -457,3 +457,9 @@ a.mast-auth-name:hover{text-decoration:underline;}
 }
 .guide-tab:hover{color:var(--accent);}
 .guide-tab.is-current{color:var(--ink); border-bottom-color:var(--accent);}
+/* Projects presented at a talk, session or event, and adding to one (project-links.js). */
+.bpl-form{display:inline-flex; flex-wrap:wrap; align-items:center; gap:10px;}
+.bpl-form select{font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:6px 8px; max-width:100%;}
+.bpl-note{display:block; margin-top:4px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.bpl-error{color:#b42318;}
+.bpl-line{margin-top:14px; font-family:var(--sans); font-size:14px; color:var(--muted);}

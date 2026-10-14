@@ -23,6 +23,13 @@
   function drawSchedule(){ if (schedule && x) schedule.update(x, fullWrite, me); }
 
   var x = null, loaded = false, editing = false, fullWrite = false, me = null;
+  // The projects that presented at the event, and adding it to one (project-links.js).
+  var links = window.BoldProjectLinks ? BoldProjectLinks.create({
+    field: 'id', slug: slug,
+    occasion: function(){ return x ? { kind: 'event', id: slug, label: x.title || slug } : null; },
+    prefill: function(){ return x ? { title: x.title, date: x.startDate } : {}; },
+    onChange: function(){ if (!editing) render(); }
+  }) : null;
   var BACK = '<a class="back-link" href="events.html">&larr; All events</a>';
 
   function paragraphs(s){
@@ -73,7 +80,7 @@
       '<h1>' + esc(x.title) + '</h1>' +
       '<p class="hero-when">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' &middot; ' + esc(x.place) : '') + '</p>' +
       paragraphs(x.description) +
-      controls();
+      controls() + (links ? links.lineHtml() : '');
     body.querySelector('.ev-edit').addEventListener('click', function(){ if (fullWrite) { editing = true; render(); } });
     body.querySelector('.ev-visibility').addEventListener('click', function(){
       if (!fullWrite) return;
@@ -100,6 +107,7 @@
     if (!user) { if (schedule) schedule.update(x, false, null); return; }
     if (!ref) { loaded = true; render(); return; }
     E.access(function(ok){ fullWrite = ok; render(); drawSchedule(); });
+    if (links) links.load(user);
     unsubscribe = ref.onSnapshot(function(doc){
       x = doc.exists ? doc.data() : null;
       loaded = true;
