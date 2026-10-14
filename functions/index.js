@@ -1946,7 +1946,7 @@ function cardRefFor(id, boardId){
 function workspaceView(ws){
   const out = {};
   ['cardId', 'boardId', 'title', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
-    'deckUrl', 'notesUrl', 'error'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
+    'deckUrl', 'notesUrl', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   return out;
 }
 
@@ -1955,7 +1955,121 @@ function workspaceView(ws){
 // leave it), invites the members and lets them edit the files, and drops those
 // who left. Records an error on the workspace instead of throwing, so the page
 // can offer to try again. Runs one at a time per project (a lease on the workspace).
-async function syncWorkspace(id, boardId, meeting){
+// --- GitHub: each project's repository in bold-lab-ai, and a team for its people ---
+// The repository is made from a template repository in the org (any repo marked
+// "Template repository" on GitHub; the register form lists them), or empty, or
+// is an existing repository given by URL, which is only linked. One made here
+// gets a team of the same name with write access; its members are the project's
+// people who have linked their GitHub account (githubLinks). Removing a project
+// leaves its repository and team alone.
+//
+// GITHUB_APP: JSON { app_id, installation_id, private_key } for the BOLD.OS GitHub
+// App installed on bold-lab-ai, with Repository → Administration: read and write,
+// Contents: read, Metadata: read, and Organization → Members: read and write.
+const GITHUB_APP = defineSecret('GITHUB_APP');
+const GITHUB_ORG = 'bold-lab-ai';
+const GITHUB_NOT_CONNECTED = 'BOLD.OS isn’t connected to GitHub yet — ask an admin.';
+
+// Pure: a repository choice as sent by a page → { mode, template } | { mode } | { mode, url } or { error }.
+function normalizeRepo(r){
+  if (!r || typeof r !== 'object') return { error: 'Choose a repository.' };
+  if (r.mode === 'empty') return { mode: 'empty' };
+  if (r.mode === 'template'){
+    const t = String(r.template || '');
+    return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/.test(t) ? { mode: 'template', template: t } : { error: 'Choose a template.' };
+  }
+  if (r.mode === 'existing'){
+    const m = String(r.url || '').trim().match(/^https:\/\/github\.com\/([A-Za-z0-9-]{1,39})\/([A-Za-z0-9._-]{1,100}?)(?:\.git)?\/?$/);
+    return m ? { mode: 'existing', url: 'https://github.com/' + m[1] + '/' + m[2] } : { error: 'Enter the repository’s GitHub link: https://github.com/owner/name' };
+  }
+  return { error: 'Choose a repository.' };
+}
+
+// Pure: the name of a project's new repository: its Slack channel's ("proj-…"),
+// or "proj-" and its title.
+function projectRepoName(ws){
+  const channel = String(ws.slackChannel || '').replace(/^#/, '');
+  if (/^[a-z0-9_-]+$/.test(channel)) return channel;
+  return 'proj-' + (String(ws.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'project');
+}
+
+// An installation token for the app (an hour; cached), from a JWT it signs itself.
+let githubAppCache = null;
+async function githubAppToken(){
+  if (githubAppCache && githubAppCache.exp > Date.now() + 60000) return githubAppCache.token;
+  let o;
+  try { o = JSON.parse(GITHUB_APP.value()); } catch (e){ o = null; }
+  if (!o || !o.private_key) throw new HttpsError('failed-precondition', GITHUB_NOT_CONNECTED);
+  const now = Math.floor(Date.now() / 1000);
+  const part = function(x){ return Buffer.from(JSON.stringify(x)).toString('base64url'); };
+  const unsigned = part({ alg: 'RS256', typ: 'JWT' }) + '.' + part({ iat: now - 60, exp: now + 540, iss: String(o.app_id) });
+  const jwt = unsigned + '.' + crypto.createSign('RSA-SHA256').update(unsigned).sign(o.private_key, 'base64url');
+  const res = await fetch('https://api.github.com/app/installations/' + o.installation_id + '/access_tokens', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + jwt, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'bold-os' }
+  });
+  const json = await res.json();
+  if (!res.ok){
+    logger.error('GitHub app token failed', { status: res.status, message: json.message });
+    throw new HttpsError('failed-precondition', GITHUB_NOT_CONNECTED);
+  }
+  githubAppCache = { token: json.token, exp: Date.parse(json.expires_at) };
+  return json.token;
+}
+
+// → the parsed JSON (null when empty); throws { status, message } on an error.
+async function githubApp(method, path, body){
+  const res = await fetch('https://api.github.com' + path, {
+    method,
+    headers: { Authorization: 'Bearer ' + await githubAppToken(), Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'bold-os', 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : null;
+  if (!res.ok){
+    logger.warn('GitHub call failed', { method, path, status: res.status, message: json && json.message });
+    throw Object.assign(new Error((json && json.message) || 'GitHub said no (' + res.status + ').'), { status: res.status });
+  }
+  return json;
+}
+
+// The org's template repositories → [{ name, description }], cached for a few minutes.
+let templatesCache = null;
+async function projectTemplates(){
+  if (templatesCache && templatesCache.t > Date.now() - 5 * 60000) return templatesCache.list;
+  const list = [];
+  for (let page = 1; page < 10; page++){
+    const repos = await githubApp('GET', '/orgs/' + GITHUB_ORG + '/repos?type=all&per_page=100&page=' + page);
+    repos.filter(function(r){ return r.is_template && !r.archived; })
+      .forEach(function(r){ list.push({ name: r.name, description: r.description || '' }); });
+    if (repos.length < 100) break;
+  }
+  list.sort(function(a, b){ return a.name.localeCompare(b.name); });
+  templatesCache = { t: Date.now(), list };
+  return list;
+}
+
+// The GitHub logins of `emails` who have linked their account (githubLinks).
+async function githubLoginsFor(emails){
+  const out = [];
+  for (const e of emails){
+    const snap = await db.collection('githubLinks').doc(e).get();
+    const d = snap.exists ? snap.data() : null;
+    if (d && d.github && d.status !== 'failed') out.push(d.github.toLowerCase());
+  }
+  return out;
+}
+
+// Brings the workspace for card `id` in line with the card: makes the deck and the
+// notes if there are none, invites the members and lets them edit the files, and
+// drops those who left; makes or links the repository and keeps its team to the
+// members with GitHub. `changes` may set `meeting` (null: none) and `repo`.
+// Google and GitHub fail apart: each records its error on the workspace (`error`,
+// `repoError`) instead of throwing, so the page can offer to try again. Runs one
+// at a time per project (a lease on the workspace).
+async function syncWorkspace(id, boardId, changes){
+  changes = changes || {};
   const wsRef = db.collection('projectWorkspaces').doc(id);
   const lease = await db.runTransaction(async function(tx){
     const snap = await tx.get(wsRef);
@@ -1965,8 +2079,11 @@ async function syncWorkspace(id, boardId, meeting){
     return true;
   });
   if (!lease){
-    // Another sync is running: it runs once more when it's done, with this meeting.
-    await wsRef.set(meeting !== undefined ? { again: true, pendingMeeting: meeting } : { again: true }, { merge: true });
+    // Another sync is running: it runs once more when it's done, with these changes.
+    const later = { again: true };
+    if (changes.meeting !== undefined) later.pendingMeeting = changes.meeting;
+    if (changes.repo !== undefined) later.pendingRepo = changes.repo;
+    await wsRef.set(later, { merge: true });
     return (await wsRef.get()).data();
   }
   let ws = (await wsRef.get()).data();
@@ -1974,98 +2091,153 @@ async function syncWorkspace(id, boardId, meeting){
   const save = async function(){ await wsRef.set(Object.assign({ updatedAt: Date.now() }, patch), { merge: true }); Object.assign(ws, patch); };
   try {
     const cardSnap = await cardRefFor(id, boardId).get();
-    if (!cardSnap.exists) throw new Error('The project isn’t there any more.');
+    if (!cardSnap.exists) throw new Error('The project isn\u2019t there any more.');
     const card = cardSnap.data();
-    if (meeting === undefined && ws.pendingMeeting !== undefined) meeting = ws.pendingMeeting;
+    const meeting = changes.meeting !== undefined ? changes.meeting : ws.pendingMeeting;
+    const repo = changes.repo !== undefined ? changes.repo : ws.pendingRepo;
     patch.pendingMeeting = FieldValue.delete();
+    patch.pendingRepo = FieldValue.delete();
     patch.again = FieldValue.delete();
     patch.title = card.title || 'Untitled project';
     patch.slackChannel = card.slackChannel || '';
     patch.members = projectMembers(card, ws.joined);
     patch.joined = ws.joined || [];
     if (!ws.createdAt) patch.createdAt = Date.now();
-    // Kept even if Google fails below, so trying again picks it up.
+    // Kept even if Google or GitHub fails below, so trying again picks them up.
     if (meeting !== undefined) patch.meeting = meeting;
+    if (repo !== undefined) patch.repo = repo;
     await save();
 
-    // Slides, then notes (which link the slides): saved as each is made, so a
-    // failure part way never makes the same file twice.
-    const folder = (!ws.deckId || !ws.notesId) ? await projectFolderId() : null;
-    if (!ws.deckId){
-      const f = await createDeck(ws.title, folder);
-      patch.deckId = f.id; patch.deckUrl = f.webViewLink; await save();
-    }
-    if (!ws.notesId){
-      const f = await createNotes(ws.title, folder, { page: projectPageUrl(id, boardId), deck: ws.deckUrl });
-      patch.notesId = f.id; patch.notesUrl = f.webViewLink; await save();
-    }
-    // Files: shared with every member, unshared from whoever left.
-    const shared = ws.shared || [];
-    for (const e of ws.members.filter(function(m){ return shared.indexOf(m) < 0; })){
-      await shareFile(ws.deckId, e); await shareFile(ws.notesId, e);
-      patch.shared = (ws.shared || []).concat(e); await save();
-    }
-    for (const e of shared.filter(function(m){ return ws.members.indexOf(m) < 0; })){
-      await unshareFile(ws.deckId, e); await unshareFile(ws.notesId, e);
-      patch.shared = ws.shared.filter(function(m){ return m !== e; }); await save();
-    }
-
-    // The meeting: Google emails the guests an invitation, or a change, or a cancellation.
-    const attendees = function(existing){
-      // Keeps each guest's reply; adds new members; drops who left.
-      const kept = (existing || []).filter(function(a){ return a.organizer || a.self || ws.members.indexOf(String(a.email).toLowerCase()) >= 0; });
-      return kept.concat(ws.members.filter(function(m){
-        return !kept.some(function(a){ return String(a.email).toLowerCase() === m; });
-      }).map(function(m){ return { email: m }; }));
-    };
-    if (ws.meeting && !ws.eventId){
-      const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
-        summary: ws.title,
-        description: eventDescription(ws),
-        attendees: attendees([]),
-        guestsCanModify: false,
-        conferenceData: { createRequest: { requestId: 'bold-' + id + '-' + Date.now(), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
-      }, eventTimes(ws.meeting)));
-      patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ev.hangoutLink || '';
-      patch.eventMeeting = ws.meeting;
-      await save();
-    } else if (!ws.meeting && ws.eventId){
-      await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
-      patch.eventId = FieldValue.delete(); patch.eventLink = FieldValue.delete();
-      patch.meetUrl = FieldValue.delete(); patch.eventMeeting = FieldValue.delete();
-      await save();
-      ['eventId', 'eventLink', 'meetUrl', 'eventMeeting'].forEach(function(k){ delete ws[k]; });
-    } else if (ws.eventId){
-      const ev = await googleFetch('GET', CAL + '/' + ws.eventId);
-      const change = {};
-      const want = attendees(ev.attendees);
-      if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
-      if (ev.summary !== ws.title) change.summary = ws.title;
-      const desc = eventDescription(ws);
-      if (ev.description !== desc) change.description = desc;
-      if (JSON.stringify(ws.eventMeeting) !== JSON.stringify(ws.meeting)) Object.assign(change, eventTimes(ws.meeting));
-      if (Object.keys(change).length){
-        await googleFetch('PATCH', CAL + '/' + ws.eventId + '?sendUpdates=all', change);
-        patch.eventMeeting = ws.meeting; await save();
+    try {
+      // Slides, then notes (which link the slides): saved as each is made, so a
+      // failure part way never makes the same file twice.
+      const folder = (!ws.deckId || !ws.notesId) ? await projectFolderId() : null;
+      if (!ws.deckId){
+        const f = await createDeck(ws.title, folder);
+        patch.deckId = f.id; patch.deckUrl = f.webViewLink; await save();
       }
+      if (!ws.notesId){
+        const f = await createNotes(ws.title, folder, { page: projectPageUrl(id, boardId), deck: ws.deckUrl });
+        patch.notesId = f.id; patch.notesUrl = f.webViewLink; await save();
+      }
+      // Files: shared with every member, unshared from whoever left.
+      const shared = ws.shared || [];
+      for (const e of ws.members.filter(function(m){ return shared.indexOf(m) < 0; })){
+        await shareFile(ws.deckId, e); await shareFile(ws.notesId, e);
+        patch.shared = (ws.shared || []).concat(e); await save();
+      }
+      for (const e of shared.filter(function(m){ return ws.members.indexOf(m) < 0; })){
+        await unshareFile(ws.deckId, e); await unshareFile(ws.notesId, e);
+        patch.shared = ws.shared.filter(function(m){ return m !== e; }); await save();
+      }
+
+      // The meeting: Google emails the guests an invitation, or a change, or a cancellation.
+      const attendees = function(existing){
+        // Keeps each guest's reply; adds new members; drops who left.
+        const kept = (existing || []).filter(function(a){ return a.organizer || a.self || ws.members.indexOf(String(a.email).toLowerCase()) >= 0; });
+        return kept.concat(ws.members.filter(function(m){
+          return !kept.some(function(a){ return String(a.email).toLowerCase() === m; });
+        }).map(function(m){ return { email: m }; }));
+      };
+      if (ws.meeting && !ws.eventId){
+        const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
+          summary: ws.title,
+          description: eventDescription(ws),
+          attendees: attendees([]),
+          guestsCanModify: false,
+          conferenceData: { createRequest: { requestId: 'bold-' + id + '-' + Date.now(), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
+        }, eventTimes(ws.meeting)));
+        patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ev.hangoutLink || '';
+        patch.eventMeeting = ws.meeting;
+        await save();
+      } else if (!ws.meeting && ws.eventId){
+        await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
+        patch.eventId = FieldValue.delete(); patch.eventLink = FieldValue.delete();
+        patch.meetUrl = FieldValue.delete(); patch.eventMeeting = FieldValue.delete();
+        await save();
+        ['eventId', 'eventLink', 'meetUrl', 'eventMeeting'].forEach(function(k){ delete ws[k]; });
+      } else if (ws.eventId){
+        const ev = await googleFetch('GET', CAL + '/' + ws.eventId);
+        const change = {};
+        const want = attendees(ev.attendees);
+        if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
+        if (ev.summary !== ws.title) change.summary = ws.title;
+        const desc = eventDescription(ws);
+        if (ev.description !== desc) change.description = desc;
+        if (JSON.stringify(ws.eventMeeting) !== JSON.stringify(ws.meeting)) Object.assign(change, eventTimes(ws.meeting));
+        if (Object.keys(change).length){
+          await googleFetch('PATCH', CAL + '/' + ws.eventId + '?sendUpdates=all', change);
+          patch.eventMeeting = ws.meeting; await save();
+        }
+      }
+      patch.error = FieldValue.delete();
+    } catch (err){
+      logger.error('Setting up the project\u2019s meeting, slides and notes failed', { id, boardId, error: String(err && err.message || err) });
+      patch.error = err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the meeting, slides and notes.';
     }
-    patch.error = FieldValue.delete();
+    await save();
+
+    try {
+      if (ws.repo && ws.repo.mode === 'existing'){
+        if (ws.repoUrl !== ws.repo.url){ patch.repoUrl = ws.repo.url; await save(); }
+      } else if (ws.repo && !ws.repoName){
+        if (ws.repo.mode === 'template' && !(await projectTemplates()).some(function(t){ return t.name === ws.repo.template; })) {
+          throw new HttpsError('invalid-argument', ws.repo.template + ' isn\u2019t one of the lab\u2019s templates.');
+        }
+        const name = projectRepoName(ws);
+        const about = { owner: GITHUB_ORG, name, private: true, description: ws.title.slice(0, 300) };
+        let r;
+        try {
+          r = ws.repo.mode === 'template'
+            ? await githubApp('POST', '/repos/' + GITHUB_ORG + '/' + ws.repo.template + '/generate', about)
+            : await githubApp('POST', '/orgs/' + GITHUB_ORG + '/repos', Object.assign({ auto_init: true }, about));
+        } catch (err){
+          if (err.status === 422) throw new HttpsError('already-exists', GITHUB_ORG + '/' + name + ' already exists \u2014 link it as an existing repository.');
+          throw err;
+        }
+        patch.repoName = name; patch.repoUrl = r.html_url; await save();
+      }
+      if (ws.repoName){
+        // Its team, with write access.
+        if (!ws.teamSlug){
+          let team;
+          try { team = await githubApp('POST', '/orgs/' + GITHUB_ORG + '/teams', { name: ws.repoName, privacy: 'closed', description: 'People on ' + ws.title.slice(0, 200) }); }
+          catch (err){ if (err.status !== 422) throw err; team = await githubApp('GET', '/orgs/' + GITHUB_ORG + '/teams/' + ws.repoName); }
+          await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + team.slug + '/repos/' + GITHUB_ORG + '/' + ws.repoName, { permission: 'push' });
+          patch.teamSlug = team.slug; patch.teamMembers = []; await save();
+        }
+        const want = await githubLoginsFor(ws.members);
+        const have = ws.teamMembers || [];
+        for (const login of want.filter(function(l){ return have.indexOf(l) < 0; })){
+          await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + ws.teamSlug + '/memberships/' + login, { role: 'member' });
+          patch.teamMembers = (ws.teamMembers || []).concat(login); await save();
+        }
+        for (const login of have.filter(function(l){ return want.indexOf(l) < 0; })){
+          await githubApp('DELETE', '/orgs/' + GITHUB_ORG + '/teams/' + ws.teamSlug + '/memberships/' + login)
+            .catch(function(err){ if (err.status !== 404) throw err; });
+          patch.teamMembers = ws.teamMembers.filter(function(l){ return l !== login; }); await save();
+        }
+      }
+      patch.repoError = FieldValue.delete();
+    } catch (err){
+      logger.error('Setting up the project\u2019s repository failed', { id, boardId, error: String(err && err.message || err) });
+      patch.repoError = err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the GitHub repository.';
+    }
     patch.syncing = FieldValue.delete();
     await save();
-    delete ws.error;
   } catch (err){
     logger.error('Setting up the project workspace failed', { id, boardId, error: String(err && err.message || err) });
-    await wsRef.set({ error: err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting, slides and notes.', syncing: FieldValue.delete(), again: FieldValue.delete(), updatedAt: Date.now() }, { merge: true });
+    await wsRef.set({ error: err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the project.', syncing: FieldValue.delete(), again: FieldValue.delete(), updatedAt: Date.now() }, { merge: true });
     return (await wsRef.get()).data();
   }
   if ((await wsRef.get()).data().again) return syncWorkspace(id, boardId);
-  return ws;
+  return (await wsRef.get()).data();
 }
 
 // A new project is set up at once; a changed one is brought in line when its
 // title, channel, submitter or authors change; a removed one's meeting is cancelled.
 function onProjectCard(document){
-  return onDocumentWritten({ document, secrets: [GOOGLE_OAUTH] }, async function(event){
+  return onDocumentWritten({ document, secrets: [GOOGLE_OAUTH, GITHUB_APP] }, async function(event){
     const before = event.data.before.exists ? event.data.before.data() : null;
     const after = event.data.after.exists ? event.data.after.data() : null;
     const id = event.params.cardId, boardId = event.params.boardId || null;
@@ -2084,7 +2256,8 @@ function onProjectCard(document){
     }
     if (!before){
       const m = after.setUpMeeting ? normalizeMeeting(after.setUpMeeting) : null;
-      await syncWorkspace(id, boardId, m && !m.error ? m : undefined);
+      const r = after.setUpRepo ? normalizeRepo(after.setUpRepo) : null;
+      await syncWorkspace(id, boardId, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined });
       return;
     }
     const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails]); };
@@ -2100,12 +2273,16 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'meeting': sets the meeting ({ day, time, minutes, every }, or null for none); same.
 // - 'join': makes the caller a member (and invites them to the Slack channel).
 // - 'leave': stops them being one; not its submitter or authors.
+// - 'repo': makes its repository ({ mode: 'template', template } or { mode: 'empty' })
+//   or links one ({ mode: 'existing', url }); editors only; one made here stays.
+// - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
 // → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
 exports.projectWorkspace = onCall(
-  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
     const data = request.data || {};
+    if (data.action === 'templates') return { templates: await projectTemplates() };
     const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
     if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
     const cardSnap = await cardRefFor(id, boardId).get();
@@ -2113,14 +2290,20 @@ exports.projectWorkspace = onCall(
     const card = cardSnap.data();
     const wsRef = db.collection('projectWorkspaces').doc(id);
 
-    if (data.action === 'setUp' || data.action === 'meeting'){
+    if (data.action === 'setUp' || data.action === 'meeting' || data.action === 'repo'){
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can do this.');
-      let meeting;
+      const changes = {};
       if (data.action === 'meeting'){
-        meeting = data.meeting === null ? null : normalizeMeeting(data.meeting);
-        if (meeting && meeting.error) throw new HttpsError('invalid-argument', meeting.error);
+        changes.meeting = data.meeting === null ? null : normalizeMeeting(data.meeting);
+        if (changes.meeting && changes.meeting.error) throw new HttpsError('invalid-argument', changes.meeting.error);
       }
-      return workspaceView(await syncWorkspace(id, boardId, meeting));
+      if (data.action === 'repo'){
+        changes.repo = normalizeRepo(data.repo);
+        if (changes.repo.error) throw new HttpsError('invalid-argument', changes.repo.error);
+        const ws = (await wsRef.get()).data() || {};
+        if (ws.repoName) throw new HttpsError('failed-precondition', 'It already has ' + GITHUB_ORG + '/' + ws.repoName + '.');
+      }
+      return workspaceView(await syncWorkspace(id, boardId, changes));
     }
 
     if (data.action === 'join' || data.action === 'leave'){
@@ -2294,7 +2477,7 @@ function githubView(d){
 }
 
 exports.linkGithub = onCall(
-  { secrets: [GITHUB_ORG_TOKEN] },
+  { secrets: [GITHUB_ORG_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
     const ref = db.collection('githubLinks').doc(email);
@@ -2316,6 +2499,13 @@ exports.linkGithub = onCall(
     const doc = { email, name: request.auth.token.name || '', github: login, githubId: gh.uid,
       status: r.status, error: r.error, linkedAt: (prev && prev.githubId === gh.uid && prev.linkedAt) || now, updatedAt: now };
     await ref.set(doc);
+    // Their projects' repositories: added to each one's team.
+    if (doc.status !== 'failed'){
+      const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
+      for (const d of mine.docs){
+        if (d.data().teamSlug) await syncWorkspace(d.id, d.data().boardId || null);
+      }
+    }
     return { link: githubView(doc) };
   }
 );
@@ -2775,5 +2965,5 @@ exports._internal = {
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
-  normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers
+  normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName
 };

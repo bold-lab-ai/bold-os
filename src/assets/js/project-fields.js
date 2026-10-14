@@ -200,3 +200,50 @@ function meetingText(m){
   var end = pad(Math.floor(endMin / 60) % 24) + ':' + pad(endMin % 60);
   return (day ? day[1] + 's' : m.day) + ', ' + m.time + '\u2013' + end + (m.every > 1 ? ', every ' + m.every + ' weeks' : '');
 }
+
+// The project's GitHub repository (projectWorkspace in functions/index.js): made from
+// one of bold-lab-ai's template repositories, or empty, or an existing one's link.
+// Fixed ids #prMode, #prUrl, #prHint.
+function repoEntryHtml(){
+  return '<select id="prMode" aria-label="Repository">' +
+      '<option value="empty">Empty repository</option>' +
+      '<option value="existing">An existing repository</option>' +
+    '</select>' +
+    '<input type="url" id="prUrl" placeholder="https://github.com/owner/name" hidden>' +
+    '<div class="field-hint" id="prHint"></div>';
+}
+
+// Lists the templates (first, and chosen, when there are any) and shows the link
+// field for an existing repository.
+function wireRepoEntry(){
+  var mode = document.getElementById('prMode'), url = document.getElementById('prUrl'), hint = document.getElementById('prHint');
+  var templates = [];
+  function update(){
+    var t = templates.filter(function(x){ return 'template:' + x.name === mode.value; })[0];
+    url.hidden = mode.value !== 'existing';
+    hint.textContent = t ? (t.description || '') : mode.value === 'existing' ? 'It’s linked from the project; its access stays as it is.' : '';
+  }
+  mode.addEventListener('change', update);
+  try {
+    firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')({ action: 'templates' }).then(function(r){
+      templates = (r.data && r.data.templates) || [];
+      var first = mode.firstChild;
+      templates.forEach(function(t){
+        var o = document.createElement('option');
+        o.value = 'template:' + t.name; o.textContent = 'From the template ' + t.name;
+        mode.insertBefore(o, first);
+      });
+      if (templates.length) mode.value = 'template:' + templates[0].name;
+      update();
+    }).catch(function(err){ console.error('[BOLD Lab] loading the repository templates failed', err); });
+  } catch (e){}
+  update();
+}
+
+// → { mode: 'template', template } | { mode: 'empty' } | { mode: 'existing', url } or { error }.
+function readRepoEntry(){
+  var mode = document.getElementById('prMode').value, url = document.getElementById('prUrl').value.trim();
+  if (mode.indexOf('template:') === 0) return { mode: 'template', template: mode.slice(9) };
+  if (mode === 'existing') return /^https:\/\/github\.com\/[^\/\s]+\/[^\/\s]+\/?$/.test(url) ? { mode: 'existing', url: url } : { error: 'Enter the repository’s GitHub link: https://github.com/owner/name' };
+  return { mode: 'empty' };
+}

@@ -250,7 +250,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     paper: function(){
       return '<dl class="detail-grid">' + row('Venue', !boardId ? '<span class="detail-muted">No venue yet</span>'
           : '<a href="audit-board.html#board=' + encodeURIComponent(boardId) + '">' + esc(venueLabel || boardId) + '</a>') +
-        simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') +
+        repoRow() + simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') +
         row('Internal review', boardId
           ? '<a href="audit-board.html#board=' + encodeURIComponent(boardId) + '&card=' + encodeURIComponent(projectId) + '">Its card on ' + esc(venueLabel || 'the board') + '</a>'
           : '<span class="detail-muted">Once the project has a venue</span>') + '</dl>';
@@ -311,6 +311,36 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     html += row('Slides', ws && ws.deckUrl ? openLink(ws.deckUrl) : state + retry);
     html += row('Meeting notes', ws && ws.notesUrl ? openLink(ws.notesUrl) : failed ? missing() : state);
     return html;
+  }
+
+  // Its GitHub repository: a link once there is one; until then (or while it's an
+  // existing one's link) editors choose one, as on the register form.
+  function repoRow(){
+    var linked = ws && ws.repoUrl;
+    var value = linked ? '<a href="' + esc(ws.repoUrl) + '" target="_blank" rel="noopener">' + esc(ws.repoUrl.replace(/^https:\/\/github\.com\//, '')) + '</a>'
+      : !wsLoaded ? '<span class="detail-muted">Loading\u2026</span>'
+      : ws && ws.repoError ? '<span class="detail-muted">' + esc(ws.repoError) + '</span>'
+      : ws && ws.repo && ws.syncing ? '<span class="detail-muted">Setting up\u2026</span>'
+      : missing();
+    var retry = ws && ws.repoError && ws.repo && !linked
+      ? ' <button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Try again</button>' : '';
+    // A repository made here stays; an existing one's link can change.
+    if (ws && ws.repoName) return row('Repository', value);
+    return editableRow('repo', 'Repository', value + retry, '', repoEntryHtml(), 'repoSave');
+  }
+
+  function saveRepo(){
+    var fail = failer(), repo = readRepoEntry();
+    if (repo.error) return fail(repo.error);
+    el('repoSave').disabled = true;
+    callWorkspace({ action: 'repo', repo: repo }).then(function(r){
+      if (r.data && r.data.repoError) { el('repoSave').disabled = false; return fail(r.data.repoError); }
+      editing = false; render();
+    }).catch(function(err){
+      console.error('[BOLD Lab] setting up the repository failed', err);
+      el('repoSave').disabled = false;
+      fail((err && err.message) || 'Could not save \u2014 try again.');
+    });
   }
 
   // Whoever registered it, its authors and whoever joined; Join or Leave for the viewer.
@@ -504,6 +534,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       el('keywordsSave').addEventListener('click', saveKeywords);
     } else if (editing.indexOf('talk:') === 0) {
       el('talkSave').addEventListener('click', saveTalk);
+    } else if (editing === 'repo') {
+      wireRepoEntry();
+      el('repoSave').addEventListener('click', saveRepo);
     } else if (editing === 'meeting') {
       el('meetingSave').addEventListener('click', function(){ saveMeeting(false); });
       if (el('meetingRemove')) el('meetingRemove').addEventListener('click', function(){
