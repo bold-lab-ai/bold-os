@@ -22,6 +22,7 @@
   var keywordField = wireKeywordField([], showError, function(){ errorBox.hidden = true; });
   var channelField = wireChannelField('submit');
   var channelInput = el('pfChannel');
+  el('meetingEntry').innerHTML = meetingEntryHtml();
 
   form.addEventListener('submit', function(e){
     e.preventDefault();
@@ -32,6 +33,8 @@
     if (!abstractText) return showError('Add an abstract or pitch.');
     var channel = normalizeProjectChannel(channelInput.value);
     if (channel.error) return showError(channel.error);
+    var meeting = readMeetingEntry();
+    if (meeting.error) return showError(meeting.error);
     keywordField.addTyped();
     errorBox.hidden = true;
     submitBtn.disabled = true;
@@ -43,6 +46,8 @@
       var card = makeRegisteredCard({ name: me.displayName, email: me.email }, {
         title: title, abstractText: abstractText, keywords: keywordField.get(), slackChannel: '#' + r.name
       });
+      // The server sets up the meeting, slides and notes from it (onProjectWritten).
+      card.setUpMeeting = meeting;
       var id = card.id; delete card.id; // the id is the document's, as in the board's saveBoard()
       var ref = db.collection('projects').doc(id);
       return ref.set(card);

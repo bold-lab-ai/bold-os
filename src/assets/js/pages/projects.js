@@ -111,7 +111,8 @@
       main.appendChild(row);
     }
     li.appendChild(main);
-    // Adds the signed-in user to the project's Slack channel (joinProjectChannel).
+    // Makes the signed-in user a member: invited to its meeting and Slack channel,
+    // and able to edit its slides and notes (projectWorkspace).
     var join = document.createElement('button');
     join.type = 'button';
     join.className = 'join-btn';
@@ -119,42 +120,39 @@
     var wrap = document.createElement('div');
     wrap.className = 'join-wrap';
     wrap.appendChild(join);
-    if (!p.slackChannel) {
-      join.disabled = true;
-      join.title = 'This project has no Slack channel yet';
-    } else {
-      var msg = document.createElement('span');
-      msg.className = 'join-msg';
-      msg.setAttribute('role', 'status');
-      join.addEventListener('click', function(){ joinChannel(p, join, msg); });
-      wrap.appendChild(msg);
-    }
+    var msg = document.createElement('span');
+    msg.className = 'join-msg';
+    msg.setAttribute('role', 'status');
+    join.addEventListener('click', function(){ joinProject(p, join, msg); });
+    wrap.appendChild(msg);
     li.appendChild(wrap);
     return li;
   }
 
-  function joinChannel(p, btn, msg){
+  function joinProject(p, btn, msg){
     btn.disabled = true;
     btn.textContent = 'Joining…';
     msg.textContent = '';
     var call;
-    try { call = firebase.app().functions('europe-west2').httpsCallable('joinProjectChannel')({ channel: p.slackChannel }); }
-    catch (e) { call = Promise.reject(e); }
+    try {
+      call = firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')(
+        { action: 'join', id: p.projectId || p.cardId, board: p.boardId || null });
+    } catch (e) { call = Promise.reject(e); }
     call.then(function(res){
-      var d = res.data || {};
-      btn.textContent = d.status === 'already' ? 'Already in the channel' : 'Joined';
-      msg.textContent = '';
-      if (d.url) {
+      var slack = (res.data || {}).slack || {};
+      btn.textContent = 'Joined';
+      msg.textContent = slack.error || '';
+      if (slack.url) {
         var a = document.createElement('a');
-        a.href = d.url; a.target = '_blank'; a.rel = 'noopener';
+        a.href = slack.url; a.target = '_blank'; a.rel = 'noopener';
         a.textContent = 'Open in Slack';
         msg.appendChild(a);
       }
     }).catch(function(err){
-      console.error('[BOLD Lab] joinProjectChannel failed', err);
+      console.error('[BOLD Lab] joining the project failed', err);
       btn.disabled = false;
       btn.textContent = 'Join the project';
-      msg.textContent = (err && err.message) || 'Couldn’t join the channel.';
+      msg.textContent = (err && err.message) || 'Couldn’t join the project.';
     });
   }
 

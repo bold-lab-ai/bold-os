@@ -1718,6 +1718,28 @@ async function isRegisteredProjectChannel(name){
   });
 }
 
+// Invites `email` to the project channel `name` (normalized, without '#').
+// → { status: 'joined' | 'already', url }; throws an HttpsError a page can show.
+async function inviteToProjectChannel(token, email, name){
+  const slackId = await slackIdForEmail(email);
+  if (!slackId) throw new HttpsError('failed-precondition', 'Your Slack account isn’t linked to this site yet.');
+  const channelId = await slackChannelId(token, name);
+  if (!channelId){
+    const auth = await slackAuthInfo(token);
+    throw new HttpsError('failed-precondition', 'The bot can’t see #' + name + (auth && auth.bot ? ' — invite @' + auth.bot + ' to it first.' : '.'));
+  }
+  let res = await slackFetch(token, 'conversations.invite', { channel: channelId, users: slackId });
+  if (!res.ok && res.error === 'not_in_channel'){
+    // A public channel the bot isn't in yet: join it (channels:join), then retry once.
+    await slackFetch(token, 'conversations.join', { channel: channelId });
+    res = await slackFetch(token, 'conversations.invite', { channel: channelId, users: slackId });
+  }
+  const url = await slackChannelUrl(token, channelId);
+  if (res.ok) return { status: 'joined', url };
+  if (res.error === 'already_in_channel') return { status: 'already', url };
+  throw slackChannelError(res.error, res);
+}
+
 exports.joinProjectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -1725,24 +1747,399 @@ exports.joinProjectChannel = onCall(
     const n = normalizeProjectChannel((request.data || {}).channel);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
     if (!(await isRegisteredProjectChannel(n.name))) throw new HttpsError('not-found', 'No project uses that Slack channel.');
-    const slackId = await slackIdForEmail(email);
-    if (!slackId) throw new HttpsError('failed-precondition', 'Your Slack account isn’t linked to this site yet.');
-    const token = SLACK_BOT_TOKEN.value();
-    const channelId = await slackChannelId(token, n.name);
-    if (!channelId){
-      const auth = await slackAuthInfo(token);
-      throw new HttpsError('failed-precondition', 'The bot can’t see #' + n.name + (auth && auth.bot ? ' — invite @' + auth.bot + ' to it first.' : '.'));
+    return inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, n.name);
+  }
+);
+
+// ---------- Projects: each project's meeting, slides and notes ----------
+// Every project (a card in `projects`, or in a venue's cards) gets a workspace,
+// projectWorkspaces/{card id}: a recurring Google Calendar meeting with a Meet
+// link, a slide deck and a notes doc, all owned by the lab's Google account.
+// Its members are whoever registered the project, its authors and whoever
+// joined it: each is a guest of the meeting (Google emails them the invitation)
+// and can edit the deck and the notes. The lab reads workspaces; only these
+// functions write them. They're kept apart from the card because the board
+// saves whole cards from its own copy, which would drop fields the server added.
+//
+// A new card is set up by onProjectCardWritten (with the meeting the register
+// form asked for, `setUpMeeting` on the card); the project page sets up older
+// ones, changes the meeting, and joins or leaves (projectWorkspace).
+//
+// GOOGLE_OAUTH: JSON { client_id, client_secret, refresh_token } for the lab's
+// Google account, with the scopes calendar.events and drive.file
+// (functions/tools/google-token.js makes it).
+const GOOGLE_OAUTH = defineSecret('GOOGLE_OAUTH');
+const { FieldValue } = require('firebase-admin/firestore');
+const PROJECT_TZ = 'Europe/London';
+const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+
+// Pure: a meeting as sent by a page → { day, time, minutes, every } or { error }.
+// day: 'MO'…'SU'; time: 'HH:MM' in London; minutes: 15–240 in 15s; every: 1–4 weeks.
+function normalizeMeeting(m){
+  if (!m || typeof m !== 'object') return { error: 'Choose a day and time for the meeting.' };
+  const day = String(m.day || '').toUpperCase();
+  if (WEEKDAYS.indexOf(day) < 0) return { error: 'Choose a day.' };
+  const time = String(m.time || '');
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) return { error: 'Choose a time.' };
+  const minutes = Number(m.minutes);
+  if (!(minutes >= 15 && minutes <= 240 && minutes % 15 === 0)) return { error: 'Choose how long it lasts.' };
+  const every = Number(m.every);
+  if ([1, 2, 3, 4].indexOf(every) < 0) return { error: 'Choose how often it runs.' };
+  return { day, time, minutes, every };
+}
+
+// Pure: the first meeting, as local times in London ('2026-10-19T14:00:00'),
+// on the meeting's weekday on or after `todayIso`; today only if `nowHm` is before it.
+function firstMeetingTimes(meeting, todayIso, nowHm){
+  const d = new Date(todayIso + 'T00:00:00Z');
+  let add = (WEEKDAYS.indexOf(meeting.day) - (d.getUTCDay() + 6) % 7 + 7) % 7;
+  if (add === 0 && nowHm >= meeting.time) add = 7;
+  d.setUTCDate(d.getUTCDate() + add);
+  const start = new Date(d.toISOString().slice(0, 10) + 'T' + meeting.time + ':00Z');
+  const end = new Date(start.getTime() + meeting.minutes * 60000);
+  const local = function(t){ return t.toISOString().slice(0, 19); };
+  return { start: local(start), end: local(end) };
+}
+
+function meetingRecurrence(m){
+  return ['RRULE:FREQ=WEEKLY' + (m.every > 1 ? ';INTERVAL=' + m.every : '') + ';BYDAY=' + m.day];
+}
+
+function nowHmLondon(){
+  return new Intl.DateTimeFormat('en-GB', { timeZone: PROJECT_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date());
+}
+
+// Pure: the project's members, lowercase and once each: whoever registered it,
+// its authors, then whoever joined.
+function projectMembers(card, joined){
+  const out = [];
+  [card.submittedBy && card.submittedBy.email].concat(card.authorEmails || [], joined || []).forEach(function(e){
+    const v = String(e || '').trim().toLowerCase();
+    if (v && v.indexOf('@') > 0 && out.indexOf(v) < 0) out.push(v);
+  });
+  return out;
+}
+
+// Whoever registered the card, one of its authors, or a PI/admin.
+async function canEditCard(email, card){
+  return String(card.submittedBy && card.submittedBy.email || '').toLowerCase() === email ||
+    (card.authorEmails || []).some(function(e){ return String(e).toLowerCase() === email; }) ||
+    isFullWrite(email);
+}
+
+function projectPageUrl(id, boardId){
+  return SITE_URL + 'project.html#id=' + encodeURIComponent(id) + (boardId ? '&board=' + encodeURIComponent(boardId) : '');
+}
+
+// --- Google: an access token from the refresh token, then plain REST calls ---
+let googleTokenCache = null;
+async function googleToken(){
+  if (googleTokenCache && googleTokenCache.exp > Date.now() + 60000) return googleTokenCache.token;
+  let o;
+  try { o = JSON.parse(GOOGLE_OAUTH.value()); } catch (e){ o = null; }
+  if (!o || !o.refresh_token) throw new HttpsError('failed-precondition', 'The lab’s Google account isn’t connected yet — ask an admin.');
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: o.client_id, client_secret: o.client_secret, refresh_token: o.refresh_token, grant_type: 'refresh_token' })
+  });
+  const json = await res.json();
+  if (!res.ok){
+    logger.error('Google token refresh failed', { error: json.error, description: json.error_description });
+    throw new HttpsError('failed-precondition', 'The lab’s Google account needs reconnecting — ask an admin.');
+  }
+  googleTokenCache = { token: json.access_token, exp: Date.now() + json.expires_in * 1000 };
+  return json.access_token;
+}
+
+// → the parsed JSON (null for an empty reply); throws { status, reason, message } on an error.
+async function googleFetch(method, url, body, contentType){
+  const headers = { 'Authorization': 'Bearer ' + await googleToken() };
+  if (body !== undefined) headers['Content-Type'] = contentType || 'application/json';
+  const res = await fetch(url, { method, headers, body: body === undefined ? undefined : contentType ? body : JSON.stringify(body) });
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : null;
+  if (!res.ok){
+    const e = (json && json.error) || {};
+    const reason = (e.errors && e.errors[0] && e.errors[0].reason) || e.status || '';
+    logger.warn('Google API call failed', { method, url: url.replace(/\?.*$/, ''), status: res.status, reason, message: e.message });
+    throw Object.assign(new Error(e.message || 'Google said no (' + res.status + ').'), { status: res.status, reason });
+  }
+  return json;
+}
+
+const CAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+const DRIVE = 'https://www.googleapis.com/drive/v3/files';
+
+// The Drive folder every project's files go in, made once (drive.file can only
+// reach files this app made). settings/projectDrive has no client access.
+async function projectFolderId(){
+  const ref = db.collection('settings').doc('projectDrive');
+  const snap = await ref.get();
+  if (snap.exists && snap.data().folderId) return snap.data().folderId;
+  const f = await googleFetch('POST', DRIVE + '?fields=id', { name: 'BOLD.OS projects', mimeType: 'application/vnd.google-apps.folder' });
+  await ref.set({ folderId: f.id, at: Date.now() });
+  return f.id;
+}
+
+async function createDeck(title, folder){
+  return googleFetch('POST', DRIVE + '?fields=id,webViewLink',
+    { name: title + ' — slides', mimeType: 'application/vnd.google-apps.presentation', parents: [folder] });
+}
+
+// A Google Doc made from a little HTML: the title, then where everything else is.
+async function createNotes(title, folder, links){
+  const boundary = 'bold' + crypto.randomBytes(8).toString('hex');
+  const meta = { name: title + ' — meeting notes', mimeType: 'application/vnd.google-apps.document', parents: [folder] };
+  const esc = function(s){ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+  const html = '<html><body><h1>' + esc(title) + ' — meeting notes</h1>' +
+    '<p><a href="' + esc(links.page) + '">Project page</a> · <a href="' + esc(links.deck) + '">Slides</a></p>' +
+    '<p>Newest meeting first.</p></body></html>';
+  const body = '--' + boundary + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + JSON.stringify(meta) +
+    '\r\n--' + boundary + '\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n' + html + '\r\n--' + boundary + '--';
+  return googleFetch('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink',
+    body, 'multipart/related; boundary=' + boundary);
+}
+
+// Lets `email` edit file `id`. Quietly, unless they have no Google account under that
+// address: then Drive only shares by sending them an email.
+async function shareFile(id, email){
+  const url = DRIVE + '/' + id + '/permissions?sendNotificationEmail=';
+  const body = { type: 'user', role: 'writer', emailAddress: email };
+  try {
+    await googleFetch('POST', url + 'false', body);
+  } catch (err){
+    if (err.status !== 400) throw err;
+    await googleFetch('POST', url + 'true', body);
+  }
+}
+async function unshareFile(id, email){
+  const list = await googleFetch('GET', DRIVE + '/' + id + '/permissions?fields=permissions(id,emailAddress,role)');
+  for (const p of (list && list.permissions) || []){
+    if (p.role !== 'owner' && String(p.emailAddress || '').toLowerCase() === email) await googleFetch('DELETE', DRIVE + '/' + id + '/permissions/' + p.id);
+  }
+}
+
+function eventDescription(ws){
+  const lines = ['<a href="' + projectPageUrl(ws.cardId, ws.boardId) + '">Project page</a>'];
+  if (ws.deckUrl) lines.push('<a href="' + ws.deckUrl + '">Slides</a>');
+  if (ws.notesUrl) lines.push('<a href="' + ws.notesUrl + '">Meeting notes</a>');
+  if (ws.slackChannel) lines.push('Slack: ' + ws.slackChannel);
+  return lines.join('<br>');
+}
+
+function eventTimes(meeting){
+  const t = firstMeetingTimes(meeting, todayIsoLondon(), nowHmLondon());
+  return {
+    start: { dateTime: t.start, timeZone: PROJECT_TZ },
+    end: { dateTime: t.end, timeZone: PROJECT_TZ },
+    recurrence: meetingRecurrence(meeting)
+  };
+}
+
+// --- the workspace itself ---
+function cardRefFor(id, boardId){
+  return boardId ? db.collection('boards').doc(boardId).collection('cards').doc(id) : db.collection('projects').doc(id);
+}
+
+// What a page reads: the workspace, as stored.
+function workspaceView(ws){
+  const out = {};
+  ['cardId', 'boardId', 'title', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
+    'deckUrl', 'notesUrl', 'error'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
+  return out;
+}
+
+// Brings the workspace for card `id` in line with the card: makes the deck and the
+// notes if there are none, sets the meeting to `meeting` (null: none; undefined:
+// leave it), invites the members and lets them edit the files, and drops those
+// who left. Records an error on the workspace instead of throwing, so the page
+// can offer to try again. Runs one at a time per project (a lease on the workspace).
+async function syncWorkspace(id, boardId, meeting){
+  const wsRef = db.collection('projectWorkspaces').doc(id);
+  const lease = await db.runTransaction(async function(tx){
+    const snap = await tx.get(wsRef);
+    const d = snap.exists ? snap.data() : {};
+    if (d.syncing && d.syncing > Date.now() - 2 * 60000) return false;
+    tx.set(wsRef, { syncing: Date.now(), cardId: id, boardId: boardId || null }, { merge: true });
+    return true;
+  });
+  if (!lease){
+    // Another sync is running: it runs once more when it's done, with this meeting.
+    await wsRef.set(meeting !== undefined ? { again: true, pendingMeeting: meeting } : { again: true }, { merge: true });
+    return (await wsRef.get()).data();
+  }
+  let ws = (await wsRef.get()).data();
+  const patch = {};
+  const save = async function(){ await wsRef.set(Object.assign({ updatedAt: Date.now() }, patch), { merge: true }); Object.assign(ws, patch); };
+  try {
+    const cardSnap = await cardRefFor(id, boardId).get();
+    if (!cardSnap.exists) throw new Error('The project isn’t there any more.');
+    const card = cardSnap.data();
+    if (meeting === undefined && ws.pendingMeeting !== undefined) meeting = ws.pendingMeeting;
+    patch.pendingMeeting = FieldValue.delete();
+    patch.again = FieldValue.delete();
+    patch.title = card.title || 'Untitled project';
+    patch.slackChannel = card.slackChannel || '';
+    patch.members = projectMembers(card, ws.joined);
+    patch.joined = ws.joined || [];
+    if (!ws.createdAt) patch.createdAt = Date.now();
+    // Kept even if Google fails below, so trying again picks it up.
+    if (meeting !== undefined) patch.meeting = meeting;
+    await save();
+
+    // Slides, then notes (which link the slides): saved as each is made, so a
+    // failure part way never makes the same file twice.
+    const folder = (!ws.deckId || !ws.notesId) ? await projectFolderId() : null;
+    if (!ws.deckId){
+      const f = await createDeck(ws.title, folder);
+      patch.deckId = f.id; patch.deckUrl = f.webViewLink; await save();
     }
-    let res = await slackFetch(token, 'conversations.invite', { channel: channelId, users: slackId });
-    if (!res.ok && res.error === 'not_in_channel'){
-      // A public channel the bot isn't in yet: join it (channels:join), then retry once.
-      await slackFetch(token, 'conversations.join', { channel: channelId });
-      res = await slackFetch(token, 'conversations.invite', { channel: channelId, users: slackId });
+    if (!ws.notesId){
+      const f = await createNotes(ws.title, folder, { page: projectPageUrl(id, boardId), deck: ws.deckUrl });
+      patch.notesId = f.id; patch.notesUrl = f.webViewLink; await save();
     }
-    const url = await slackChannelUrl(token, channelId);
-    if (res.ok) return { status: 'joined', url };
-    if (res.error === 'already_in_channel') return { status: 'already', url };
-    throw slackChannelError(res.error, res);
+    // Files: shared with every member, unshared from whoever left.
+    const shared = ws.shared || [];
+    for (const e of ws.members.filter(function(m){ return shared.indexOf(m) < 0; })){
+      await shareFile(ws.deckId, e); await shareFile(ws.notesId, e);
+      patch.shared = (ws.shared || []).concat(e); await save();
+    }
+    for (const e of shared.filter(function(m){ return ws.members.indexOf(m) < 0; })){
+      await unshareFile(ws.deckId, e); await unshareFile(ws.notesId, e);
+      patch.shared = ws.shared.filter(function(m){ return m !== e; }); await save();
+    }
+
+    // The meeting: Google emails the guests an invitation, or a change, or a cancellation.
+    const attendees = function(existing){
+      // Keeps each guest's reply; adds new members; drops who left.
+      const kept = (existing || []).filter(function(a){ return a.organizer || a.self || ws.members.indexOf(String(a.email).toLowerCase()) >= 0; });
+      return kept.concat(ws.members.filter(function(m){
+        return !kept.some(function(a){ return String(a.email).toLowerCase() === m; });
+      }).map(function(m){ return { email: m }; }));
+    };
+    if (ws.meeting && !ws.eventId){
+      const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
+        summary: ws.title,
+        description: eventDescription(ws),
+        attendees: attendees([]),
+        guestsCanModify: false,
+        conferenceData: { createRequest: { requestId: 'bold-' + id + '-' + Date.now(), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
+      }, eventTimes(ws.meeting)));
+      patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ev.hangoutLink || '';
+      patch.eventMeeting = ws.meeting;
+      await save();
+    } else if (!ws.meeting && ws.eventId){
+      await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
+      patch.eventId = FieldValue.delete(); patch.eventLink = FieldValue.delete();
+      patch.meetUrl = FieldValue.delete(); patch.eventMeeting = FieldValue.delete();
+      await save();
+      ['eventId', 'eventLink', 'meetUrl', 'eventMeeting'].forEach(function(k){ delete ws[k]; });
+    } else if (ws.eventId){
+      const ev = await googleFetch('GET', CAL + '/' + ws.eventId);
+      const change = {};
+      const want = attendees(ev.attendees);
+      if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
+      if (ev.summary !== ws.title) change.summary = ws.title;
+      const desc = eventDescription(ws);
+      if (ev.description !== desc) change.description = desc;
+      if (JSON.stringify(ws.eventMeeting) !== JSON.stringify(ws.meeting)) Object.assign(change, eventTimes(ws.meeting));
+      if (Object.keys(change).length){
+        await googleFetch('PATCH', CAL + '/' + ws.eventId + '?sendUpdates=all', change);
+        patch.eventMeeting = ws.meeting; await save();
+      }
+    }
+    patch.error = FieldValue.delete();
+    patch.syncing = FieldValue.delete();
+    await save();
+    delete ws.error;
+  } catch (err){
+    logger.error('Setting up the project workspace failed', { id, boardId, error: String(err && err.message || err) });
+    await wsRef.set({ error: err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting, slides and notes.', syncing: FieldValue.delete(), again: FieldValue.delete(), updatedAt: Date.now() }, { merge: true });
+    return (await wsRef.get()).data();
+  }
+  if ((await wsRef.get()).data().again) return syncWorkspace(id, boardId);
+  return ws;
+}
+
+// A new project is set up at once; a changed one is brought in line when its
+// title, channel, submitter or authors change; a removed one's meeting is cancelled.
+function onProjectCard(document){
+  return onDocumentWritten({ document, secrets: [GOOGLE_OAUTH] }, async function(event){
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    const id = event.params.cardId, boardId = event.params.boardId || null;
+    const wsRef = db.collection('projectWorkspaces').doc(id);
+    if (!after){
+      const snap = await wsRef.get();
+      if (!snap.exists || (snap.data().boardId || null) !== boardId) return;
+      const ws = snap.data();
+      if (ws.eventId){
+        await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all')
+          .catch(function(err){ logger.warn('Cancelling a removed project’s meeting failed', { id, error: String(err.message) }); });
+      }
+      // The slides and notes stay in the lab's Drive folder.
+      await wsRef.delete();
+      return;
+    }
+    if (!before){
+      const m = after.setUpMeeting ? normalizeMeeting(after.setUpMeeting) : null;
+      await syncWorkspace(id, boardId, m && !m.error ? m : undefined);
+      return;
+    }
+    const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails]); };
+    if (key(before) === key(after)) return;
+    if ((await wsRef.get()).exists) await syncWorkspace(id, boardId);
+  });
+}
+exports.onProjectWritten = onProjectCard('projects/{cardId}');
+exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
+
+// The project page and the meetings page:
+// - 'setUp': (re)tries setting up the workspace; whoever can edit the project.
+// - 'meeting': sets the meeting ({ day, time, minutes, every }, or null for none); same.
+// - 'join': makes the caller a member (and invites them to the Slack channel).
+// - 'leave': stops them being one; not its submitter or authors.
+// → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
+exports.projectWorkspace = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },
+  async (request) => {
+    const email = callerEmail(request);
+    const data = request.data || {};
+    const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
+    if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
+    const cardSnap = await cardRefFor(id, boardId).get();
+    if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
+    const card = cardSnap.data();
+    const wsRef = db.collection('projectWorkspaces').doc(id);
+
+    if (data.action === 'setUp' || data.action === 'meeting'){
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can do this.');
+      let meeting;
+      if (data.action === 'meeting'){
+        meeting = data.meeting === null ? null : normalizeMeeting(data.meeting);
+        if (meeting && meeting.error) throw new HttpsError('invalid-argument', meeting.error);
+      }
+      return workspaceView(await syncWorkspace(id, boardId, meeting));
+    }
+
+    if (data.action === 'join' || data.action === 'leave'){
+      const joining = data.action === 'join';
+      if (!joining && projectMembers(card, []).indexOf(email) >= 0) {
+        throw new HttpsError('failed-precondition', 'Its submitter and authors stay members — remove yourself from the authors first.');
+      }
+      await wsRef.set({ cardId: id, boardId, joined: joining
+        ? FieldValue.arrayUnion(email)
+        : FieldValue.arrayRemove(email) }, { merge: true });
+      const out = workspaceView(await syncWorkspace(id, boardId));
+      if (joining && card.slackChannel){
+        const n = normalizeProjectChannel(card.slackChannel);
+        try { out.slack = await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, n.name); }
+        catch (err){ out.slack = { error: err.message || 'Couldn’t add you to the Slack channel.' }; }
+      }
+      return out;
+    }
+    throw new HttpsError('invalid-argument', 'Unknown action.');
   }
 );
 
@@ -2377,5 +2774,6 @@ exports._internal = {
   reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
-  projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson
+  projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
+  normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers
 };

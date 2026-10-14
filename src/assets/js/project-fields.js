@@ -168,3 +168,35 @@ function wireChannelField(verb){
     }
   };
 }
+
+// The project's recurring meeting (projectWorkspace in functions/index.js): weekday,
+// time in London, length and how often. Fixed ids #pmDay, #pmTime, #pmMinutes, #pmEvery.
+var MEETING_DAYS = [['MO', 'Monday'], ['TU', 'Tuesday'], ['WE', 'Wednesday'], ['TH', 'Thursday'], ['FR', 'Friday'], ['SA', 'Saturday'], ['SU', 'Sunday']];
+var MEETING_MINUTES = [30, 45, 60, 90, 120];
+
+function meetingEntryHtml(m){
+  m = m || { day: 'MO', time: '', minutes: 60, every: 1 };
+  var opt = function(v, label, cur){ return '<option value="' + v + '"' + (String(v) === String(cur) ? ' selected' : '') + '>' + label + '</option>'; };
+  return '<div class="meeting-entry">' +
+      '<select id="pmDay" aria-label="Day">' + MEETING_DAYS.map(function(d){ return opt(d[0], d[1] + 's', m.day); }).join('') + '</select>' +
+      '<input type="time" id="pmTime" step="900" aria-label="Time" value="' + BOLD.escapeHtml(m.time || '') + '">' +
+      '<select id="pmMinutes" aria-label="Length">' + MEETING_MINUTES.map(function(n){ return opt(n, n < 60 ? n + ' min' : (n / 60) + ' h', m.minutes); }).join('') + '</select>' +
+      '<select id="pmEvery" aria-label="How often">' + [1, 2, 3, 4].map(function(n){ return opt(n, n === 1 ? 'Every week' : 'Every ' + n + ' weeks', m.every); }).join('') + '</select>' +
+    '</div>';
+}
+
+// → { day, time, minutes, every } or { error }.
+function readMeetingEntry(){
+  var v = function(id){ return document.getElementById(id).value; };
+  if (!/^\d\d:\d\d$/.test(v('pmTime'))) return { error: 'Choose a time for the meeting.' };
+  return { day: v('pmDay'), time: v('pmTime'), minutes: Number(v('pmMinutes')), every: Number(v('pmEvery')) };
+}
+
+// "Mondays, 14:00–15:00, every 2 weeks"
+function meetingText(m){
+  var day = MEETING_DAYS.filter(function(d){ return d[0] === m.day; })[0];
+  var start = m.time.split(':').map(Number), endMin = start[0] * 60 + start[1] + m.minutes;
+  var pad = function(n){ return (n < 10 ? '0' : '') + n; };
+  var end = pad(Math.floor(endMin / 60) % 24) + ':' + pad(endMin % 60);
+  return (day ? day[1] + 's' : m.day) + ', ' + m.time + '\u2013' + end + (m.every > 1 ? ', every ' + m.every + ' weeks' : '');
+}

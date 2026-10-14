@@ -30,6 +30,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var venueLabel = '';                // the venue's name, once read (only for a project in a venue)
   var fullWrite = false;   // the viewer is a PI or admin (getMyAccess)
   var keywordField = null, channelField = null;   // project-fields.js
+  // Its meeting, slides, notes and members: projectWorkspaces/{id}, kept by the
+  // server (projectWorkspace in functions/index.js), followed live.
+  var ws = null, wsLoaded = false, wsUnsub = null, wsBusy = false, wsMsg = '';
   var authorRows = [];     // in-progress rows while editing the authors, see authors.js
   var projectId = (location.hash.match(/[#&]id=([^&]+)/) || [])[1];
   if (projectId) projectId = decodeURIComponent(projectId);
@@ -204,6 +207,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     html += editableRow('slack', 'Slack channel', card.slackChannel ? esc(card.slackChannel) : missing(),
       card.slackChannel ? ' id="slackChannel"' : '',
       channelEntryHtml(card.slackChannel), 'slackSave');
+    html += workspaceRows();
     html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
       '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
     html += simpleRow('pitch');
@@ -238,7 +242,103 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     el('removeProject').addEventListener('click', removeProject);
   }
 
+  // The workspace's rows: meeting, slides, notes, members.
+  function workspaceRows(){
+    var setting = ws && ws.syncing, failed = ws && ws.error;
+    var state = !wsLoaded ? '<span class="detail-muted">Loading\u2026</span>'
+      : setting ? '<span class="detail-muted">Setting up\u2026</span>'
+      : failed ? '<span class="detail-muted">' + esc(ws.error) + '</span>'
+      : missing();
+    var retry = wsLoaded && !setting && (failed || !ws || !ws.deckUrl)
+      ? ' <button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (failed ? 'Try again' : 'Set up') + '</button>'
+      : '';
+    var m = ws && ws.meeting;
+    var meeting = m ? esc(meetingText(m)) +
+        (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>' : '') +
+        (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')
+      : wsLoaded && !setting ? missing() : state;
+    var html = editableRow('meeting', 'Meeting', meeting, '',
+      meetingEntryHtml(m) + (m ? '<button class="btn-text danger" type="button" id="meetingRemove">Remove the meeting</button>' : ''), 'meetingSave');
+    html += row('Slides', ws && ws.deckUrl ? openLink(ws.deckUrl) : state + retry);
+    html += row('Meeting notes', ws && ws.notesUrl ? openLink(ws.notesUrl) : failed ? missing() : state);
+    html += row('Members', membersHtml());
+    return html;
+  }
+
+  // Whoever registered it, its authors and whoever joined; Join or Leave for the viewer.
+  function memberEmails(){
+    if (ws && ws.members) return ws.members;
+    return [card.submittedBy && card.submittedBy.email].concat(card.authorEmails || []).filter(function(e, i, all){ return e && all.indexOf(e) === i; });
+  }
+  function membersHtml(){
+    var list = memberEmails();
+    var names = list.map(function(e){ var p = personByEmail(e); return esc(p && p.name || e); }).join(', ');
+    var mine = list.some(isMe);
+    var joined = ws && (ws.joined || []).some(isMe);
+    var btn = !mine ? '<button class="btn-text detail-inline-edit" type="button" data-ws="join"' + (wsBusy ? ' disabled' : '') + '>Join the project</button>'
+      : joined ? '<button class="btn-text detail-inline-edit" type="button" data-ws="leave"' + (wsBusy ? ' disabled' : '') + '>Leave</button>'
+      : '';
+    return (names || missing()) + btn + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '');
+  }
+
+  function callWorkspace(args){
+    try {
+      return firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')(Object.assign({ id: projectId, board: boardId || null }, args));
+    } catch (e){ return Promise.reject(e); }
+  }
+
+  // Join, Leave, Set up / Try again.
+  function workspaceAction(action){
+    if (wsBusy) return;
+    wsBusy = true; wsMsg = '';
+    render();
+    callWorkspace({ action: action }).then(function(r){
+      var d = r.data || {};
+      wsBusy = false;
+      if (action === 'join' && d.slack) {
+        wsMsg = d.slack.error ? esc(d.slack.error)
+          : 'You\u2019re invited to the meeting' + (d.slack.url ? ' and in <a href="' + esc(d.slack.url) + '" target="_blank" rel="noopener">' + esc(card.slackChannel) + '</a>' : '') + '.';
+      } else if (action === 'join') wsMsg = 'You\u2019re invited to the meeting.';
+      if (!editing) render();
+    }).catch(function(err){
+      console.error('[BOLD Lab] projectWorkspace ' + action + ' failed', err);
+      wsBusy = false;
+      wsMsg = esc((err && err.message) || 'That didn\u2019t work \u2014 try again.');
+      if (!editing) render();
+    });
+  }
+
+  function saveMeeting(remove){
+    var fail = failer(), meeting = null;
+    if (!remove) {
+      meeting = readMeetingEntry();
+      if (meeting.error) return fail(meeting.error);
+    }
+    el('meetingSave').disabled = true;
+    callWorkspace({ action: 'meeting', meeting: meeting }).then(function(){
+      editing = false; render();
+    }).catch(function(err){
+      console.error('[BOLD Lab] saving the meeting failed', err);
+      el('meetingSave').disabled = false;
+      fail((err && err.message) || 'Could not save \u2014 try again.');
+    });
+  }
+
+  function watchWorkspace(){
+    if (wsUnsub || !db || !projectId) return;
+    wsUnsub = db.collection('projectWorkspaces').doc(projectId).onSnapshot(function(snap){
+      ws = snap.exists ? snap.data() : null;
+      wsLoaded = true;
+      // Members show by name.
+      loadPeople().then(function(){ if (card && !editing) render(); });
+      if (card && !editing) render();
+    }, function(err){ console.error('[BOLD Lab] loading the meeting failed', err); });
+  }
+
   function wireAbstract(){
+    Array.prototype.forEach.call(document.querySelectorAll('[data-ws]'), function(btn){
+      btn.addEventListener('click', function(){ workspaceAction(btn.getAttribute('data-ws')); });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function(btn){
       btn.addEventListener('click', function(){
         if (!canEdit()) return;
@@ -271,6 +371,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       var errorEl = el('detailEditError');
       keywordField = wireKeywordField(card.keywords, failer(), function(){ errorEl.hidden = true; });
       el('keywordsSave').addEventListener('click', saveKeywords);
+    } else if (editing === 'meeting') {
+      el('meetingSave').addEventListener('click', function(){ saveMeeting(false); });
+      if (el('meetingRemove')) el('meetingRemove').addEventListener('click', function(){
+        if (window.confirm('Remove the meeting? Its guests are told it\u2019s cancelled.')) saveMeeting(true);
+      });
     } else if (editing === 'slack') {
       channelField = wireChannelField('save');
       channelField.refresh();
@@ -443,10 +548,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   BOLD.onUser(function(user){
     var was = me && me.email && me.email.toLowerCase();
     me = user;
-    if (!user) return cacheClear();
+    if (!user) { if (wsUnsub) { wsUnsub(); wsUnsub = null; } return cacheClear(); }
     // The Edit buttons depend on who's signed in; already right if the first paint used the same person.
     if (card && !editing && was !== (user.email || '').toLowerCase()) render();
     load();
     loadAccess();
+    watchWorkspace();
   });
 })();

@@ -26,7 +26,10 @@ export default {
   nav: [
     // Its sub-pages are BOLDiquette's sections (Firestore), filled in by bold.js.
     { label: 'BOLDiquette', href: 'boldiquette.html', links: [], handbook: true },
-    { label: 'Projects', href: 'projects.html', links: [] },
+    { label: 'Projects', href: 'projects.html', links: [
+      { label: 'All projects', href: 'projects.html' },
+      { label: 'Meetings', href: 'project-meetings.html' },
+    ] },
     // Its sub-pages are the released events (Firestore), filled in by bold.js.
     { label: 'Events', href: 'events.html', links: [], events: true },
     { label: 'ML Conference Cycle', href: 'how-to-submit-a-paper.html', links: [

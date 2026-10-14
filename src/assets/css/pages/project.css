@@ -77,6 +77,9 @@
 .channel-status li.warn{color:var(--danger-text);}
 .channel-status li.pending{color:var(--muted);}
 .kw-entry{position:relative; display:flex; gap:8px;}
+/* the meeting (project-fields.js), as on the register form */
+.meeting-entry{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:8px;}
+.detail-grid dd .meeting-entry select, .detail-grid dd .meeting-entry input{width:auto; min-width:0; flex:1 1 120px;}
 .kw-add{padding:8px 14px; font-size:16px; line-height:1;}
 .kw-suggest{
   position:absolute; top:100%; left:0; right:0; z-index:5; margin:2px 0 0; padding:4px 0; list-style:none;

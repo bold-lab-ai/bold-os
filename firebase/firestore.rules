@@ -156,6 +156,14 @@ service cloud.firestore {
       );
     }
 
+    // Each project's meeting, slides, notes and members (projectWorkspaces/{card id}),
+    // written only by the functions (projectWorkspace, onProjectWritten,
+    // onVenueCardWritten); the lab reads them for the project and meetings pages.
+    match /projectWorkspaces/{cardId} {
+      allow read: if isLabMember();
+      allow write: if false;
+    }
+
     // BOLD Collaboration Week workshop proposals (2026-09-15) — a separate
     // top-level collection, not nested under boards/{boardId}: a proposal
     // isn't a venue or a paper, it's its own flow entirely (see

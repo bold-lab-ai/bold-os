@@ -129,3 +129,6 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 @media (max-width:820px){
   .hero{padding:44px var(--gutter) 8px;}
 }
+/* ---------- meetings page: one list per weekday ---------- */
+.meet-day{font-family:var(--serif); font-size:22px; font-weight:700; color:var(--ink); margin:32px 0 2px;}
+#meetings[hidden]{display:none;}

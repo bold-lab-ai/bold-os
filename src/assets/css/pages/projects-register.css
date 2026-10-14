@@ -98,3 +98,6 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 @media (max-width:820px){
   .hero{padding:44px var(--gutter) 8px;}
 }
+/* ---------- meeting (project-fields.js) ---------- */
+.meeting-entry{display:flex; flex-wrap:wrap; gap:8px;}
+.field .meeting-entry select, .field .meeting-entry input{width:auto; min-width:0; flex:1 1 120px;}
