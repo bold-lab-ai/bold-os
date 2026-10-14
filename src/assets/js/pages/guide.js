@@ -115,7 +115,7 @@
       // Dragged onto another tab, it moves there (into your draft).
       var drag = viewing || form ? '' : ' draggable="true" data-sec="' + esc(v) + '" title="Drag to move this tab"';
       return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (cur ? ' aria-current="page"' : '') + drag + '>' +
-        (drag ? '<span class="gd-tab-grip">' + GRIP + '</span>' : '') + esc(v || 'Other') + '</a>' + (cur ? arrows : '');
+        esc(v || 'Other') + '</a>' + (cur ? arrows : '');
     }).join('') +
       (viewing ? '' : '<button type="button" class="guide-tab gd-tab-add' + (newTab ? ' is-current' : '') + '" aria-label="Suggest a new tab" title="Suggest a new tab">+</button>') + '</nav>';
   }
@@ -146,10 +146,12 @@
     // The grip drags it above or below another part, or onto a tab (into your draft).
     var grip = '<span class="icon-btn gd-grip" draggable="true" data-id="' + esc(p.id) + '" role="img" aria-label="Drag to move it" title="Drag to move it">' + GRIP + '</span>';
     return '<section class="guide-part' + (q && changedIds(q).indexOf(p.id) !== -1 ? ' gd-proposed' : '') + (fold ? ' is-folded' : '') + '" id="' + anchor(p) + '" data-pid="' + esc(p.id) + '">' +
+      // Its controls on the title's line, before it.
+      '<div class="guide-part-head">' +
       (q ? '' : '<div class="guide-part-controls">' + (form ? '' : grip) + icon('gd-edit', 'Suggest a change', BOLD.ICON_PENCIL) +
         icon('gd-up', 'Suggest moving it up', BOLD.ICON_UP, at === 0) + icon('gd-down', 'Suggest moving it down', BOLD.ICON_DOWN, at === all.length - 1) + '</div>') +
       '<h2><button type="button" class="gd-fold" data-id="' + esc(p.id) + '" aria-expanded="' + !fold + '" title="' + (fold ? 'Show' : 'Fold') + ' this part">' +
-        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button></h2>' +
+        '<span class="guide-num">' + (i + 1) + '</span>' + esc(p.title) + '</button></h2></div>' +
       (fold ? '' : '<div class="guide-text">' + md(p.body) + '</div>') + '</section>';
   }
 
@@ -585,6 +587,15 @@
     saveDraft(); render();
   }
 
+  // Runs fn (which re-renders) keeping part id's title where it is on screen.
+  function keepInPlace(id, fn){
+    var el = id && document.getElementById(PREFIX + id), was = el ? el.getBoundingClientRect().top : null;
+    fn();
+    var now = id && document.getElementById(PREFIX + id);
+    // At once, not smoothly (bold.css scrolls smoothly), so nothing seems to move.
+    if (now && was !== null) window.scrollBy({ top: now.getBoundingClientRect().top - was, behavior: 'instant' });
+  }
+
   // Collapse all / Expand all, for the parts on show.
   function foldAllHtml(){
     var list = shown();
@@ -761,10 +772,17 @@
     var t = e.target.closest('button');
     if (!t || t.disabled || !x || !me) return;
     if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
-    if (t.classList.contains('gd-fold')) { var fid = t.getAttribute('data-id'); folded[fid] = !folded[fid]; saveFolded(); render(); return; }
+    if (t.classList.contains('gd-fold')) {
+      var fid = t.getAttribute('data-id');
+      keepInPlace(fid, function(){ folded[fid] = !folded[fid]; saveFolded(); render(); });
+      return;
+    }
     if (t.classList.contains('gd-fold-all-btn')) {
       var on = t.getAttribute('data-fold') === '1';
-      shown().forEach(function(p){ folded[p.id] = on; }); saveFolded(); render(); return;
+      // The part at the top of the screen stays there.
+      var top = shown().filter(function(p){ var el = document.getElementById(anchor(p)); return el && el.getBoundingClientRect().bottom > 0; })[0];
+      keepInPlace(top && top.id, function(){ shown().forEach(function(p){ folded[p.id] = on; }); saveFolded(); render(); });
+      return;
     }
     if (t.classList.contains('gd-draft-toggle')) { draftOpen = !draftOpen; render(); return; }
     if (t.classList.contains('gd-tab-left') || t.classList.contains('gd-tab-right')) { if (!form) moveTab(t.classList.contains('gd-tab-left') ? -1 : 1); return; }
