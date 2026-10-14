@@ -453,6 +453,7 @@
           : '<input type="text" id="t_' + f.key + '" value="' + esc(v) + '" placeholder="' + esc(f.placeholder || '') + '">') +
         (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
     });
+    html += links.fieldHtml();
     return html + '</div><div class="field-error" id="editError" hidden></div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="editSave">Save</button>' +
       '<button class="btn" type="button" id="editCancel">Cancel</button></div>';
@@ -478,6 +479,7 @@
     if (hasTalks()) html += '<div class="edit-field"><span class="edit-label">Schedule</span>' +
       '<ul class="session-talks talk-order" id="talkOrder"></ul>' +
       '<p class="edit-hint">Worked out from the talks: back to back from the session’s start, in this order, by each talk’s duration. Add a talk with “Add a talk”; change one’s duration on its own page.</p></div>';
+    html += links.fieldHtml();
     return html + '</div><div class="field-error" id="editError" hidden></div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="editSave">Save</button>' +
       '<button class="btn" type="button" id="editCancel">Cancel</button></div>';
@@ -534,6 +536,7 @@
   }
 
   function openForm(){
+    links.prepare();
     var solo = soloTalk();
     var ready = fullWrite || (solo && talkAccess.canSetPresenters) ? loadPeople() : Promise.resolve();
     ready.then(function(){
@@ -606,6 +609,7 @@
       return ref.set(write, { merge: true }).then(function(){ saved = Object.assign({}, saved || {}, write); });
     }).then(function(){ return doMove(move); }).then(function(){
       editing = false;
+      links.apply();
       return loadTalkEdits();
     }).catch(function(err){
       console.error('[BOLD Events] saving the session failed', err);
@@ -632,7 +636,7 @@
     leadsPatch(patch, s);
     var move = whenMove();
     if (move && move.error) return fail(move.error);
-    if (!Object.keys(patch).length && !move) { editing = false; render(); return; }
+    if (!Object.keys(patch).length && !move) { editing = false; render(); links.apply(); return; }
     btn.disabled = true;
     var write = Object.keys(patch).length ? Object.assign(patch, { updatedAt: Date.now(), updatedBy: me.email }) : null;
     (write ? ref.set(write, { merge: true }) : Promise.resolve()).then(function(){
@@ -641,6 +645,7 @@
     }).then(function(){
       editing = false;
       render();
+      links.apply();
     }).catch(function(err){
       console.error('[BOLD Events] saving the session failed', err);
       btn.disabled = false;
@@ -822,6 +827,8 @@
   // it to one (project-links.js): a keynote's or an oral's one talk, else the session.
   var links = BoldProjectLinks.create({
     field: 'sessionSlug', slug: base.slug,
+    // This session's own: a keynote's or an oral's one talk, or the session itself (not one of its talks).
+    exact: function(o){ return o.sessionSlug === base.slug && (!!soloTalk() || !o.talkSlug); },
     occasion: function(){
       if (!saved || !saved.eventSlug) return null;
       var solo = soloTalk(), o = { kind: 'event', id: saved.eventSlug, label: (event && event.title) || saved.eventSlug,

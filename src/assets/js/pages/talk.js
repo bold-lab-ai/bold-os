@@ -141,6 +141,7 @@
         (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
       if (f.key === 'type') html += speakersHtml();
     });
+    html += links.fieldHtml();
     return html + '</div><div class="field-error" id="editError"' + (error ? '' : ' hidden') + '>' + esc(error) + '</div>' +
       '<div class="edit-actions"><button class="btn btn-primary" type="button" id="editSave"' + (busy ? ' disabled' : '') + '>Save</button>' +
       '<button class="btn" type="button" id="editCancel"' + (busy ? ' disabled' : '') + '>Cancel</button></div>';
@@ -163,6 +164,7 @@
   }
 
   function openForm(){
+    links.prepare();
     loadPeople().then(function(){ startSpeakerRows(); editing = true; error = ''; render(); });
   }
 
@@ -208,6 +210,8 @@
       saved = Object.assign({}, saved || {}, r.data.saved);
       busy = false; editing = false; render();
       loadTime();
+      // Its project, as chosen in the form: filled in from the talk just saved.
+      links.apply();
     }).catch(function(err){
       busy = false; error = (err && err.message) || 'Couldn’t save — try again.'; keepTyped(edits);
     });
@@ -260,6 +264,7 @@
   // The projects that presented this talk, and adding it to one (project-links.js).
   var links = BoldProjectLinks.create({
     field: 'talkSlug', slug: slug,
+    exact: function(o){ return o.talkSlug === slug; },
     occasion: function(){
       return base && base.eventSlug ? { kind: 'event', id: base.eventSlug, label: base.eventTitle || base.eventSlug,
         sessionSlug: base.sessionSlug, sessionTitle: base.sessionTitle || '', talkSlug: slug, talkTitle: (saved && saved.title) || '' } : null;
