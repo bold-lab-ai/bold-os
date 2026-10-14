@@ -106,7 +106,9 @@
       '<button type="button" class="icon-btn gd-tab-right" aria-label="Move this tab right" title="Move this tab right"' + (i >= secs.length - 1 ? ' disabled' : '') + '>' + BOLD.ICON_DOWN + '</button></span>';
     return '<nav class="guide-tabs" id="gdTabs" aria-label="Sections">' + secs.map(function(v){
       var cur = v === t && !newTab;
-      return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (cur ? ' aria-current="page"' : '') + '>' + esc(v || 'Other') + '</a>' + (cur ? arrows : '');
+      // Dragged onto another tab, it moves there (into your draft).
+      var drag = viewing || form ? '' : ' draggable="true" data-sec="' + esc(v) + '" title="Drag to move this tab"';
+      return '<a class="guide-tab' + (cur ? ' is-current' : '') + '" href="#' + esc(G.slugify(v)) + '"' + (cur ? ' aria-current="page"' : '') + drag + '>' + esc(v || 'Other') + '</a>' + (cur ? arrows : '');
     }).join('') +
       (viewing ? '' : '<button type="button" class="guide-tab gd-tab-add' + (newTab ? ' is-current' : '') + '" aria-label="Suggest a new tab" title="Suggest a new tab">+</button>') + '</nav>';
   }
@@ -460,14 +462,50 @@
     var secs = sections(), name = currentTab(), i = secs.indexOf(name), j = i + by;
     if (name === null || j < 0 || j >= secs.length) return;
     var order = secs.slice(); order[i] = secs[j]; order[j] = name;
+    placeTabs(name, order, by < 0 ? 'left' : 'right');
+  }
+  // The tabs in a new order (name: the one moved), into your draft.
+  function placeTabs(name, order, how){
+    if (order.join('\u0000') === sections().join('\u0000')) return;
     var ids = function(list){ return list.map(function(p){ return p.id; }); };
     var after = [];
     order.forEach(function(sec){ after = after.concat(parts().filter(function(p){ return (p.section || '') === sec; })); });
     draft.push({ kind: 'move', partId: '', before: { title: name, tab: true, order: ids(parts()) }, after: { title: name, tab: true, order: ids(after) },
-      note: 'Moved the tab “' + (name || 'Other') + '” ' + (by < 0 ? 'left' : 'right') });
+      note: 'Moved the tab “' + (name || 'Other') + '” ' + how });
     saveDraft(); notice = ''; tab = name;
     render();
   }
+
+  // Dragging a tab onto another: before it or after it, by which half it's dropped on.
+  var dragged = null;
+  function dropSide(e, a){ var r = a.getBoundingClientRect(); return e.clientX < r.left + r.width / 2 ? 'before' : 'after'; }
+  function clearDrop(){ Array.prototype.forEach.call(body.querySelectorAll('.gd-drop-before, .gd-drop-after, .gd-dragging'), function(el){ el.classList.remove('gd-drop-before', 'gd-drop-after', 'gd-dragging'); }); }
+  body.addEventListener('dragstart', function(e){
+    var a = e.target.closest && e.target.closest('.guide-tab[data-sec]');
+    if (!a) return;
+    dragged = a.getAttribute('data-sec');
+    a.classList.add('gd-dragging');
+    try { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', dragged); } catch (err){}
+  });
+  body.addEventListener('dragover', function(e){
+    var a = dragged !== null && e.target.closest && e.target.closest('.guide-tab[data-sec]');
+    if (!a) return;
+    e.preventDefault();
+    clearDrop(); body.querySelector('.guide-tab[data-sec="' + CSS.escape(dragged) + '"]').classList.add('gd-dragging');
+    if (a.getAttribute('data-sec') !== dragged) a.classList.add('gd-drop-' + dropSide(e, a));
+  });
+  body.addEventListener('drop', function(e){
+    var a = dragged !== null && e.target.closest && e.target.closest('.guide-tab[data-sec]');
+    if (!a) return;
+    e.preventDefault();
+    var target = a.getAttribute('data-sec'), name = dragged, side = dropSide(e, a);
+    dragged = null; clearDrop();
+    if (target === name) return;
+    var order = sections().filter(function(v){ return v !== name; });
+    order.splice(order.indexOf(target) + (side === 'after' ? 1 : 0), 0, name);
+    placeTabs(name, order, side + ' “' + (target || 'Other') + '”');
+  });
+  body.addEventListener('dragend', function(){ dragged = null; clearDrop(); });
 
   // Removing a change also removes later ones on the part it added.
   function dropFromDraft(i){

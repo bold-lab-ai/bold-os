@@ -130,3 +130,9 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .gd-tab-move{display:inline-flex; align-items:center; gap:0; margin:0 0 -11px -16px; padding-bottom:6px;}
 .gd-tab-move .icon-btn svg{transform:rotate(-90deg);}
 .gd-tab-add{background:none; border:none; border-bottom:2px solid transparent; cursor:pointer; font-size:15px; letter-spacing:0; line-height:1; padding:6px 2px;}
+/* Dragging a tab (pages/guide.js): where it will land, and the arrows only on touch screens. */
+.guide-tab[draggable="true"]{cursor:grab;}
+.guide-tab.gd-dragging{opacity:.45;}
+.guide-tab.gd-drop-before{box-shadow:-3px 0 0 var(--accent);}
+.guide-tab.gd-drop-after{box-shadow:3px 0 0 var(--accent);}
+@media (hover:hover) and (pointer:fine){ .gd-tab-move{display:none;} }
