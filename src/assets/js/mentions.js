@@ -1,7 +1,7 @@
 // Tagging people: in any textarea with class "md-mentions", typing @ and the start of
 // a name lists the lab's people (the `people` roster); picking one writes
 // @[Name](SlackId), which markdown.js shows as @Name, linking to their Slack profile.
-// Nobody is notified. One list for the whole page, on whichever box is being typed in.
+// Whoever is tagged gets a Slack DM (functions/index.js, "Tagging people"). One list for the whole page, on whichever box is being typed in.
 (function(){
   var people = null, loading = null;
   var box = null, list = [], at = 0, field = null, start = -1;

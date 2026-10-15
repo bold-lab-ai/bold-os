@@ -1020,6 +1020,63 @@ exports.onHandbookProposed = onProposed('handbook', handbookUrl);
 exports.onGuideProposalDecided = onProposalDecided('guides', guideUrl);
 exports.onHandbookProposalDecided = onProposalDecided('handbook', handbookUrl);
 
+// ---------- Tagging people ----------
+// A tag is @[Name](SlackId) in any text (mentions.js). Whoever is tagged gets a
+// DM: in a comment, with its page's comment digest (below); in a proposed change,
+// right away, for the tags it adds.
+const TAG = /@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g;
+
+// The Slack ids tagged anywhere in value (a string, or any data holding strings). Pure.
+function taggedIds(value){
+  const out = [];
+  const walk = (v) => {
+    if (typeof v === 'string') { for (const m of v.matchAll(TAG)) if (out.indexOf(m[2]) === -1) out.push(m[2]); }
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') Object.keys(v).forEach((k) => walk(v[k]));
+  };
+  walk(value);
+  return out;
+}
+
+// Who a proposal tags that wasn't tagged already: in the text it proposes (and
+// its note), not in the text it replaces, nor in what it proposed before an edit
+// (prev). Pure.
+function proposalNewTags(prev, q){
+  const sides = (x, side) => !x ? [] : [x[side]].concat((x.changes || []).map((c) => c[side]));
+  const old = taggedIds(sides(q, 'before')).concat(taggedIds(prev && sides(prev, 'after').concat([prev.note])));
+  return taggedIds(sides(q, 'after').concat([q.note])).filter((id) => old.indexOf(id) === -1);
+}
+
+// { Slack id: email } for those ids that are on the roster.
+async function emailsForSlackIds(ids){
+  const out = {};
+  for (const id of Array.from(new Set(ids))) {
+    const email = await emailForSlackId(id);
+    if (email) out[id] = String(email).toLowerCase();
+  }
+  return out;
+}
+
+function onProposalTagged(collection, pageUrl){
+  return onDocumentWritten(
+    { document: collection + '/{slug}/proposals/{id}', secrets: [SLACK_BOT_TOKEN] },
+    async function(event){
+      const prev = event.data.before.exists ? event.data.before.data() : null;
+      const q = event.data.after.exists ? event.data.after.data() : null;
+      if (!q || q.status !== 'open') return;
+      const ids = proposalNewTags(prev, q);
+      if (!ids.length) return;
+      const doc = await db.collection(collection).doc(event.params.slug).get();
+      if (!doc.exists) return;
+      const by = String((q.by && q.by.email) || '').toLowerCase();
+      const text = '🏷️ ' + slackText((q.by && (q.by.name || q.by.email)) || 'Someone') + ' tagged you in a suggested change to ' +
+        linkedTitle(slackText(doc.data().title || event.params.slug), pageUrl(event.params.slug) + '#proposals') + ': ' + proposalSummary(q) + '.';
+      const emails = await emailsForSlackIds(ids);
+      for (const id of ids) if (emails[id] && emails[id] !== by) await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text);
+    }
+  );
+}
+
 // ---------- Comments on a guide or the BOLDiquette, in Slack, batched ----------
 // A comment (<collection>/{slug}/comments/{id}, comments.js) joins its page's queue
 // (commentQueue/{collection}__{slug}, server only); every few minutes the queue of a
@@ -1035,7 +1092,7 @@ function onCommented(collection){
     if (!c) return;
     const ref = db.collection('commentQueue').doc(collection + '__' + event.params.slug);
     const item = { id: event.params.id, partId: String(c.partId || ''), parent: c.parent || null, proposalId: c.proposalId || null, quote: String(c.quote || '').slice(0, 200),
-      text: String(c.text || '').slice(0, 300), by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: c.at || Date.now() };
+      text: String(c.text || '').slice(0, 300), tagged: taggedIds(c.text), by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: c.at || Date.now() };
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const q = snap.exists ? snap.data() : { collection, slug: event.params.slug, items: [], firstAt: Date.now() };
@@ -1047,6 +1104,8 @@ function onCommented(collection){
 }
 exports.onGuideCommented = onCommented('guides');
 exports.onHandbookCommented = onCommented('handbook');
+exports.onGuideProposalTagged = onProposalTagged('guides', guideUrl);
+exports.onHandbookProposalTagged = onProposalTagged('handbook', handbookUrl);
 
 // Whether a queue is ready to send: quiet long enough, or waited long enough. Pure.
 function commentQueueDue(q, now){
@@ -1054,18 +1113,23 @@ function commentQueueDue(q, now){
 }
 
 // Who hears of which comments → { email: [items] }. threads: { rootId: [emails in it] },
-// and 'p:<proposal id>': [whoever proposed it and has commented on it]. Pure.
-function commentRecipients(items, staff, threads){
+// and 'p:<proposal id>': [whoever proposed it and has commented on it]. tagEmails:
+// { Slack id: email }; whoever a comment tags hears of it too (taggedYou). Pure.
+function commentRecipients(items, staff, threads, tagEmails){
   const out = {};
-  const add = (email, it) => {
+  const add = (email, it, tagged) => {
     if (!email || email === it.by.email) return;
-    (out[email] = out[email] || []).push(it);
+    const mine = out[email] = out[email] || [];
+    const had = mine.filter((x) => x.id === it.id)[0];
+    if (had) { if (tagged) had.taggedYou = true; return; }
+    mine.push(Object.assign({}, it, tagged ? { taggedYou: true } : {}));
   };
   items.forEach((it) => {
     // On a proposed change: whoever proposed it and whoever's in its discussion.
-    if (it.proposalId) { (threads['p:' + it.proposalId] || []).forEach((e) => add(e, it)); return; }
-    if (!it.parent) staff.forEach((e) => add(e, it));
+    if (it.proposalId) (threads['p:' + it.proposalId] || []).forEach((e) => add(e, it));
+    else if (!it.parent) staff.forEach((e) => add(e, it));
     else (threads[it.parent] || []).forEach((e) => add(e, it));
+    (it.tagged || []).forEach((id) => add((tagEmails || {})[id], it, true));
   });
   return out;
 }
@@ -1073,10 +1137,10 @@ function commentRecipients(items, staff, threads){
 // One person's message. Pure.
 function commentDigest(items, name, url){
   const n = items.length;
-  // A tag (@[Name](SlackId), mentions.js) as plain @Name: tagging notifies nobody.
-  const untag = (t) => String(t || '').replace(/@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g, '@$1');
+  // A tag (@[Name](SlackId), mentions.js) as plain @Name.
+  const untag = (t) => String(t || '').replace(TAG, '@$1');
   items = items.map((it) => Object.assign({}, it, { text: untag(it.text), quote: untag(it.quote) }));
-  const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.proposalId ? ' on a proposed change' : it.parent ? ' replied' : ' on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
+  const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.taggedYou ? ' tagged you' : '') + (it.proposalId ? ' on a proposed change' : it.parent ? ' replied' : ' on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
     ': ' + slackText(it.text.length > 140 ? it.text.slice(0, 140) + '…' : it.text);
   return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), url) + '\n' +
     items.slice(0, 5).map(line).join('\n') + (n > 5 ? '\n…and ' + (n - 5) + ' more.' : '');
@@ -1111,7 +1175,8 @@ exports.flushCommentQueue = onSchedule(
       const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase());
       const url = (taken.collection === 'guides' ? guideUrl : handbookUrl)(taken.slug);
       const name = pageSnap.data().title || taken.slug;
-      const byPerson = commentRecipients(taken.items, Array.from(new Set(staff)), threads);
+      const byPerson = commentRecipients(taken.items, Array.from(new Set(staff)), threads,
+        await emailsForSlackIds([].concat.apply([], taken.items.map((it) => it.tagged || []))));
       const token = SLACK_BOT_TOKEN.value();
       await Promise.all(Object.keys(byPerson).map((email) => dmByEmail(token, email, commentDigest(byPerson[email], name, url))));
     }
@@ -3862,5 +3927,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, taggedIds, proposalNewTags, venueCallsToCheck, venueCallMessage
 };
