@@ -3561,6 +3561,202 @@ exports.retryWelcomeEmails = onSchedule(
 
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
+// ---------- Service desk: recommendation letters ----------
+//
+// Anyone in the lab asks anyone in the lab for a recommendation letter
+// (letters.html). letterRequests/{id}: { requesterEmail, requesterName,
+// writerEmail, writerName, purpose, links, notes, recipients: [{ id, name, url,
+// deadline, sentBy: 'writer' | 'requester', submittedAt, letterUrl, reminded }],
+// acknowledgedAt, open, at, updatedAt }. Only the two of them read it; every
+// write goes through letterRequest, which DMs the other one on Slack. The letter
+// itself stays out of BOLD.OS: the writer marks each recipient submitted, and
+// shares the letter (letterUrl) only where the requester has to send it on.
+// remindLetterWriters nudges the writer before each deadline.
+
+const LETTER_TEXT = { purpose: 300, links: 1000, notes: 3000 };
+const LETTER_REMIND_DAYS = [7, 2];
+const letterUrl = (id) => SITE_URL + 'letters.html#l=' + id;
+
+// Pure: what letters.html sent → { request } (the fields the requester sets) or { error }.
+// `was`: the recipients so far, whose ids, submissions and reminders are kept.
+function normalizeLetterRequest(d, was){
+  d = d && typeof d === 'object' ? d : {};
+  const out = {};
+  for (const k of Object.keys(LETTER_TEXT)) {
+    const v = String(d[k] == null ? '' : d[k]).trim();
+    if (v.length > LETTER_TEXT[k]) return { error: 'That’s too long: ' + k + '.' };
+    out[k] = v;
+  }
+  if (!out.purpose) return { error: 'Say what the letter is for.' };
+  const list = Array.isArray(d.recipients) ? d.recipients : [];
+  if (!list.length) return { error: 'Add where the letter goes.' };
+  if (list.length > 20) return { error: 'Twenty recipients at most.' };
+  const old = {};
+  (was || []).forEach((r) => { old[r.id] = r; });
+  const seen = {};
+  const recipients = [];
+  for (const raw of list) {
+    const r = raw && typeof raw === 'object' ? raw : {};
+    const name = String(r.name || '').trim(), url = String(r.url || '').trim(), deadline = String(r.deadline || '');
+    if (!name) return { error: 'Give each recipient a name.' };
+    if (name.length > 200 || url.length > 500) return { error: 'That’s too long: ' + name.slice(0, 40) + '.' };
+    if (url && !/^https?:\/\/\S+$/.test(url)) return { error: 'A link starts with https://: ' + name + '.' };
+    if (!ISO_DAY.test(deadline)) return { error: 'Give a deadline for ' + name + '.' };
+    const sentBy = r.sentBy === 'requester' ? 'requester' : 'writer';
+    const prev = r.id && old[r.id];
+    if (prev && prev.submittedAt && (prev.sentBy !== sentBy)) return { error: 'The letter for ' + prev.name + ' is already in: who sends it can’t change.' };
+    const id = prev ? prev.id : crypto.randomBytes(6).toString('hex');
+    if (seen[id]) return { error: 'A recipient appears twice.' };
+    seen[id] = true;
+    recipients.push({
+      id, name, url, deadline, sentBy,
+      submittedAt: prev ? prev.submittedAt || null : null,
+      letterUrl: prev && sentBy === 'requester' ? prev.letterUrl || '' : '',
+      // A moved deadline gets its reminders again.
+      reminded: prev && prev.deadline === deadline ? prev.reminded || [] : [],
+    });
+  }
+  out.recipients = recipients;
+  return { request: out };
+}
+
+const letterOpen = (recipients) => recipients.some((r) => !r.submittedAt);
+
+// Pure: the reminders due today → [{ id, recipientId, days }]. `requests`: [{ id, recipients }].
+function letterRemindersDue(requests, today){
+  const day = (s) => Date.parse(s + 'T00:00:00Z') / 86400000;
+  const out = [];
+  requests.forEach((q) => (q.recipients || []).forEach((r) => {
+    if (r.submittedAt) return;
+    const left = day(r.deadline) - day(today);
+    // The nearest reminder not sent yet, once it's due (a missed day still sends it).
+    const due = LETTER_REMIND_DAYS.filter((n) => left <= n && left >= 0 && (r.reminded || []).indexOf(n) === -1);
+    if (due.length) out.push({ id: q.id, recipientId: r.id, days: Math.min.apply(null, due), left });
+  }));
+  return out;
+}
+
+function letterDeadlines(recipients){
+  return recipients.map((r) => slackText(r.name) + ' (' + r.deadline + ')').join(', ');
+}
+
+// data: { action, … } → { id? }. Actions:
+//   create { writerEmail, purpose, links, notes, recipients }   anyone, for themselves
+//   update { id, purpose, links, notes, recipients }              the requester
+//   withdraw { id }                                               the requester (deletes it)
+//   acknowledge { id }                                            the writer
+//   submit { id, recipientId, letterUrl? }, unsubmit { id, recipientId }   the writer
+exports.letterRequest = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    const token = SLACK_BOT_TOKEN.value();
+    const myName = request.auth.token.name || email;
+    const tell = (to, text) => dmByEmail(token, to, text);
+
+    if (d.action === 'create') {
+      const writerEmail = String(d.writerEmail || '').trim().toLowerCase();
+      if (!writerEmail) throw new HttpsError('invalid-argument', 'Choose who writes the letter.');
+      if (writerEmail === email) throw new HttpsError('invalid-argument', 'Ask someone else for the letter.');
+      const people = await db.collection('people').where('email', 'in', [writerEmail, d.writerEmail]).limit(1).get();
+      if (people.empty) throw new HttpsError('invalid-argument', 'They’re not on the BOLD Slack.');
+      const n = normalizeLetterRequest(d, []);
+      if (n.error) throw new HttpsError('invalid-argument', n.error);
+      const open = await db.collection('letterRequests').where('requesterEmail', '==', email).where('open', '==', true).count().get();
+      if (open.data().count >= 50) throw new HttpsError('resource-exhausted', 'You have fifty requests open: withdraw some first.');
+      const now = Date.now();
+      const ref = await db.collection('letterRequests').add(Object.assign(n.request, {
+        requesterEmail: email, requesterName: myName, writerEmail, writerName: people.docs[0].data().name || writerEmail,
+        acknowledgedAt: null, open: true, at: now, updatedAt: now,
+      }));
+      await tell(writerEmail, '✉️ ' + slackText(myName) + ' asked you for a recommendation letter: ' +
+        linkedTitle(slackText(n.request.purpose), letterUrl(ref.id)) + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.');
+      return { id: ref.id };
+    }
+
+    const id = String(d.id || '');
+    if (!/^[A-Za-z0-9]{1,40}$/.test(id)) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('letterRequests').doc(id);
+    const mine = (q) => {
+      const isRequester = q.requesterEmail === email, isWriter = q.writerEmail === email;
+      if (['update', 'withdraw'].indexOf(d.action) !== -1 && !isRequester) throw new HttpsError('permission-denied', 'Only whoever asked for the letter can do this.');
+      if (['acknowledge', 'submit', 'unsubmit'].indexOf(d.action) !== -1 && !isWriter) throw new HttpsError('permission-denied', 'Only whoever writes the letter can do this.');
+    };
+    let note = null;
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError('not-found', 'No such request: it may have been withdrawn.');
+      const q = snap.data();
+      mine(q);
+      const title = linkedTitle(slackText(q.purpose), letterUrl(id));
+      if (d.action === 'update') {
+        const n = normalizeLetterRequest(d, q.recipients);
+        if (n.error) throw new HttpsError('invalid-argument', n.error);
+        tx.update(ref, Object.assign(n.request, { open: letterOpen(n.request.recipients), updatedAt: Date.now() }));
+        note = { to: q.writerEmail, text: '✏️ ' + slackText(q.requesterName) + ' updated their letter request: ' +
+          linkedTitle(slackText(n.request.purpose), letterUrl(id)) + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.' };
+      } else if (d.action === 'withdraw') {
+        tx.delete(ref);
+        if (q.open) note = { to: q.writerEmail, text: '↩️ ' + slackText(q.requesterName) + ' withdrew their request for a letter: *' + slackText(q.purpose) + '*. Nothing more to do.' };
+      } else if (d.action === 'acknowledge') {
+        if (q.acknowledgedAt) return;
+        tx.update(ref, { acknowledgedAt: Date.now() });
+        note = { to: q.requesterEmail, text: '👍 ' + slackText(q.writerName) + ' got your request for a letter: ' + title + '.' };
+      } else if (d.action === 'submit' || d.action === 'unsubmit') {
+        const recipients = (q.recipients || []).map((r) => Object.assign({}, r));
+        const r = recipients.filter((x) => x.id === d.recipientId)[0];
+        if (!r) throw new HttpsError('not-found', 'No such recipient.');
+        if (d.action === 'submit') {
+          const link = String(d.letterUrl || '').trim();
+          if (r.sentBy === 'requester') {
+            if (!/^https?:\/\/\S+$/.test(link) || link.length > 1000) throw new HttpsError('invalid-argument', 'Give a link to the letter, starting with https://, for them to send.');
+            r.letterUrl = link;
+          }
+          r.submittedAt = Date.now();
+          note = { to: q.requesterEmail, text: r.sentBy === 'requester'
+            ? '📎 ' + slackText(q.writerName) + ' shared your letter for ' + slackText(r.name) + ', for you to send by ' + r.deadline + ': ' + title + '.'
+            : '✅ ' + slackText(q.writerName) + ' submitted your letter to ' + slackText(r.name) + ': ' + title + '.' };
+        } else {
+          r.submittedAt = null;
+          r.letterUrl = '';
+        }
+        tx.update(ref, { recipients, open: letterOpen(recipients), acknowledgedAt: q.acknowledgedAt || Date.now(), updatedAt: Date.now() });
+      } else {
+        throw new HttpsError('invalid-argument', 'Unknown action.');
+      }
+    });
+    if (note) await tell(note.to, note.text);
+    return { id };
+  }
+);
+
+exports.remindLetterWriters = onSchedule(
+  { schedule: '0 9 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  async function(){
+    const snap = await db.collection('letterRequests').where('open', '==', true).get();
+    const byId = {};
+    snap.docs.forEach((doc) => { byId[doc.id] = doc.data(); });
+    const due = letterRemindersDue(snap.docs.map((doc) => ({ id: doc.id, recipients: doc.data().recipients })), todayIsoLondon());
+    for (const x of due) {
+      const q = byId[x.id];
+      const r = q.recipients.filter((y) => y.id === x.recipientId)[0];
+      const when = x.left === 0 ? 'today' : x.left === 1 ? 'tomorrow' : 'in ' + x.left + ' days';
+      const sent = await dmByEmail(SLACK_BOT_TOKEN.value(), q.writerEmail, '⏰ ' + slackText(q.requesterName) + '’s letter for ' + slackText(r.name) +
+        ' is due ' + when + ' (' + r.deadline + '): ' + linkedTitle(slackText(q.purpose), letterUrl(x.id)) + '.');
+      if (!sent) continue;
+      // Marks every reminder up to this one sent, so a missed one doesn't follow.
+      await db.runTransaction(async (tx) => {
+        const s = await tx.get(db.collection('letterRequests').doc(x.id));
+        if (!s.exists) return;
+        const recipients = s.data().recipients.map((y) => y.id !== x.recipientId ? y
+          : Object.assign({}, y, { reminded: Array.from(new Set((y.reminded || []).concat(LETTER_REMIND_DAYS.filter((n) => n >= x.days)))) }));
+        tx.update(s.ref, { recipients });
+      });
+    }
+  }
+);
+
 exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
@@ -3570,5 +3766,6 @@ exports._internal = {
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
-  projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage
+  projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
+  normalizeLetterRequest, letterRemindersDue
 };

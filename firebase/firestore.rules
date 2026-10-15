@@ -87,6 +87,13 @@ service cloud.firestore {
         && request.resource.data.get('pillars', []) is list && request.resource.data.get('pillars', []).size() <= 20;
       allow delete: if false;
     }
+    // Recommendation letters (letters.html; functions/index.js "Service desk"):
+    // only whoever asked and whoever writes it read a request; every write goes
+    // through letterRequest, which tells the other one on Slack.
+    match /letterRequests/{id} {
+      allow read: if isLabMember() && (resource.data.requesterEmail == email().lower() || resource.data.writerEmail == email().lower());
+      allow write: if false;
+    }
     // The join form's choices (join.html, read before signing in) and, for PIs and
     // admins only, the Slack invite link and the welcome email's text.
     match /settings/joinForm {

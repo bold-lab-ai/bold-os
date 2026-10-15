@@ -1,0 +1,64 @@
+/* Recommendation letters (letters.html, pages/letters.js). */
+:root{--success-text:#256b60; --danger-text:#b42318; --neutral-text:#4b5563;}
+.hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
+.back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
+.back-link:hover{color:var(--accent);}
+.hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
+.hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
+main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
+section.block{max-width:var(--article-max); margin:56px 0 0;}
+section.block:first-of-type{margin-top:20px;}
+.block-head{margin-bottom:6px;}
+.block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+.proj-count{margin-left:6px;}
+.proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:10px 0 0;}
+.event-add{
+  font-family:var(--sans); font-size:14px; color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
+  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
+}
+
+/* ---------- a request ---------- */
+.lt-list{list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
+.lt-item{padding:18px 0; border-bottom:1px solid var(--line); scroll-margin-top:12px;}
+.lt-item.is-target{background:var(--wash); box-shadow:0 0 0 12px var(--wash);}
+.lt-title{font-size:20px; font-weight:500;}
+.lt-meta{display:block; margin-top:3px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.lt-meta .is-ok{color:var(--success-text);}
+.lt-text{margin:10px 0 0; font-size:15px; color:var(--ink-soft); white-space:pre-line; overflow-wrap:anywhere;}
+.lt-label{display:block; margin-top:12px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted);}
+.lt-recipients{list-style:none; margin:8px 0 0; padding:0;}
+.lt-recipients > li{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 14px; padding:8px 0; border-top:1px solid rgba(26,43,74,0.08); font-size:15px;}
+.lt-rname{flex:1 1 200px; min-width:0; overflow-wrap:anywhere;}
+.lt-rinfo{font-family:var(--sans); font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums;}
+.lt-status{font-family:var(--sans); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; border:1px solid currentColor; padding:2px 7px; color:var(--neutral-text);}
+.lt-status.is-done{color:var(--success-text);}
+.lt-status.is-late{color:var(--danger-text);}
+.lt-share{display:flex; gap:8px; flex:1 1 100%; max-width:520px;}
+.lt-share input{flex:1 1 auto; min-width:0; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.lt-item .event-controls{margin-top:14px;}
+.lt-item .event-form{margin-top:14px;}
+
+/* ---------- the form ---------- */
+.lt-form{max-width:640px;}
+.lt-form select{display:block; width:100%; margin-top:4px; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.lt-form fieldset{border:0; margin:0 0 10px; padding:0;}
+.lt-form legend{padding:0; margin-bottom:6px; color:var(--muted);}
+.lt-rrow{display:grid; grid-template-columns:1fr 1fr; gap:0 12px; padding:10px 0 4px; border-top:1px solid rgba(26,43,74,0.08);}
+.lt-rrow .lt-rremove{grid-column:1 / -1; justify-self:start; margin-bottom:8px;}
+.lt-rrow input[disabled], .lt-rrow select[disabled]{opacity:.6;}
+@media (max-width:560px){ .lt-rrow{grid-template-columns:1fr;} }
+.edit-hint{margin:0 0 10px; color:var(--muted);}
+
+/* Person picker: type to search the Slack roster (as the speaker picker, session.css). */
+.spk-search{position:relative; margin-top:4px;}
+.spk-chosen{display:flex; gap:12px; align-items:baseline; margin-top:4px; font-size:15px; color:var(--ink); overflow-wrap:anywhere;}
+.spk-chosen .detail-muted{font-family:var(--sans); font-size:12.5px; color:var(--muted);}
+.spk-results{
+  position:absolute; z-index:20; left:0; right:0; top:calc(100% + 2px); margin:0; padding:4px 0; list-style:none;
+  max-height:280px; overflow-y:auto; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  box-shadow:0 6px 18px rgba(26,43,74,.12); font-family:var(--sans); font-size:14px;
+}
+.spk-results li{display:flex; justify-content:space-between; gap:12px; padding:7px 10px; cursor:pointer; color:var(--ink);}
+.spk-results li .detail-muted{font-size:12.5px; color:var(--muted); overflow-wrap:anywhere; text-align:right;}
+.spk-results li.active, .spk-results li:hover{background:var(--wash);}
+.spk-results li.spk-none{color:var(--muted); cursor:default;}

@@ -1,0 +1,297 @@
+// letters.html: recommendation letters (functions/index.js "Service desk").
+// Anyone asks anyone in the lab for a letter; the writer gets a Slack message,
+// acknowledges it, and marks each recipient submitted, or shares the letter
+// where the requester sends it on. Every write is letterRequest; the page reads
+// the requests asked by and of the viewer (letterRequests, theirs alone).
+(function(){
+  var esc = BOLD.escapeHtml;
+  var main = document.getElementById('letters');
+  if (!main || !BOLD.getAuth()) return;
+  var db;
+  try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
+  var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('letterRequest')(data); };
+  var me = null, byMe = null, ofMe = null, people = null, unsubs = [];
+  // The open form: null, 'new', or a request's id.
+  var editing = null, busy = {};
+
+  function day(iso){ return iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
+  function when(t){ return t ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
+  function today(){ var d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
+  function first(name){ return String(name || '').split(' ')[0] || name; }
+
+  function linkify(text){
+    return esc(text).replace(/https?:\/\/[^\s<>"]+/g, function(u){ return '<a href="' + u + '" target="_blank" rel="noopener">' + u + '</a>'; });
+  }
+
+  // The nearest deadline not submitted yet, for sorting.
+  function nextDeadline(q){
+    return (q.recipients || []).filter(function(r){ return !r.submittedAt; }).map(function(r){ return r.deadline; }).sort()[0] || '9999';
+  }
+  function sorted(list){
+    return list.slice().sort(function(a, b){
+      if (a.open !== b.open) return a.open ? -1 : 1;
+      return a.open ? nextDeadline(a).localeCompare(nextDeadline(b)) : (b.at || 0) - (a.at || 0);
+    });
+  }
+
+  function recipientHtml(q, r, asWriter){
+    var late = !r.submittedAt && r.deadline < today();
+    var status = r.submittedAt
+      ? '<span class="lt-status is-done">' + (r.sentBy === 'requester' ? 'Shared ' : 'Submitted ') + when(r.submittedAt) + '</span>'
+      : '<span class="lt-status' + (late ? ' is-late' : '') + '">' + (late ? 'Overdue' : 'Not submitted') + '</span>';
+    var who = r.sentBy === 'requester' ? (asWriter ? first(q.requesterName) + ' sends it' : 'You send it') : (asWriter ? 'You submit it' : first(q.writerName) + ' submits it');
+    var name = r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.name) + '</a>' : esc(r.name);
+    var b = busy[q.id + '/' + r.id] ? ' disabled' : '';
+    var controls = '';
+    if (asWriter && !r.submittedAt && r.sentBy === 'requester') {
+      controls = '<div class="lt-share"><input type="url" class="lt-letter" placeholder="Link to the letter, for ' + esc(first(q.requesterName)) + ' to send" aria-label="Link to the letter">' +
+        '<button type="button" class="btn-text lt-submit" data-id="' + esc(q.id) + '" data-r="' + esc(r.id) + '"' + b + '>Share the letter</button></div>';
+    } else if (asWriter && !r.submittedAt) {
+      controls = '<button type="button" class="btn-text lt-submit" data-id="' + esc(q.id) + '" data-r="' + esc(r.id) + '"' + b + '>Mark submitted</button>';
+    } else if (asWriter) {
+      controls = '<button type="button" class="btn-text danger lt-unsubmit" data-id="' + esc(q.id) + '" data-r="' + esc(r.id) + '"' + b + '>Undo</button>';
+    }
+    return '<li><span class="lt-rname">' + name + '</span>' +
+      '<span class="lt-rinfo">Due ' + day(r.deadline) + ' · ' + esc(who) + '</span>' + status +
+      (r.letterUrl ? '<a class="btn-text" href="' + esc(r.letterUrl) + '" target="_blank" rel="noopener">The letter</a>' : '') +
+      controls + '</li>';
+  }
+
+  function requestHtml(q, asWriter){
+    var ack = q.acknowledgedAt ? '<span class="is-ok">Received ' + when(q.acknowledgedAt) + '</span>' : 'Not acknowledged yet';
+    var meta = asWriter
+      ? 'From ' + esc(q.requesterName) + ' · asked ' + when(q.at) + (q.acknowledgedAt ? '' : ' · not acknowledged yet')
+      : 'To ' + esc(q.writerName) + ' · asked ' + when(q.at) + ' · ' + ack;
+    var b = busy[q.id] ? ' disabled' : '';
+    var controls = asWriter
+      ? (q.acknowledgedAt ? '' : '<button type="button" class="btn-text lt-ack" data-id="' + esc(q.id) + '"' + b + '>Got it</button>')
+      : '<button type="button" class="btn-text lt-edit" data-id="' + esc(q.id) + '"' + b + '>Edit</button>' +
+        '<button type="button" class="btn-text danger lt-withdraw" data-id="' + esc(q.id) + '"' + b + '>Withdraw</button>';
+    return '<li class="lt-item" id="l-' + esc(q.id) + '">' +
+      '<span class="lt-title">' + esc(q.purpose) + '</span><span class="lt-meta">' + meta + '</span>' +
+      '<span class="lt-label">Where it goes</span><ul class="lt-recipients">' +
+        (q.recipients || []).map(function(r){ return recipientHtml(q, r, asWriter); }).join('') + '</ul>' +
+      (q.links ? '<span class="lt-label">Materials</span><p class="lt-text">' + linkify(q.links) + '</p>' : '') +
+      (q.notes ? '<span class="lt-label">Notes for the writer</span><p class="lt-text">' + linkify(q.notes) + '</p>' : '') +
+      (controls ? '<div class="event-controls">' + controls + '</div>' : '') +
+      (editing === q.id ? formHtml(q) : '') + '</li>';
+  }
+
+  function rowHtml(r){
+    r = r || {};
+    var done = !!r.submittedAt;
+    return '<div class="lt-rrow" data-rid="' + esc(r.id || '') + '">' +
+      '<label>Recipient<input type="text" class="lt-rn" maxlength="200" value="' + esc(r.name || '') + '" placeholder="e.g. MIT EECS PhD programme"></label>' +
+      '<label>Deadline<input type="date" class="lt-rd" value="' + esc(r.deadline || '') + '"></label>' +
+      '<label>Link to the portal or the call<input type="url" class="lt-ru" maxlength="500" value="' + esc(r.url || '') + '" placeholder="https://…"></label>' +
+      '<label>Who sends the letter<select class="lt-rs"' + (done ? ' disabled title="The letter is in already"' : '') + '>' +
+        '<option value="writer"' + (r.sentBy !== 'requester' ? ' selected' : '') + '>The writer, to the recipient</option>' +
+        '<option value="requester"' + (r.sentBy === 'requester' ? ' selected' : '') + '>Me: the writer shares it with me</option></select></label>' +
+      '<button type="button" class="btn-text danger lt-rremove">Remove</button></div>';
+  }
+
+  // The form, empty (asking) or filled from q (editing).
+  function formHtml(q){
+    var who = q
+      ? '<label>Who writes it<span class="spk-chosen">' + esc(q.writerName) + '</span></label>'
+      : '<label>Who writes it</label><div class="lt-who"></div>';
+    return '<div class="event-form lt-form" data-id="' + esc(q ? q.id : '') + '">' + who +
+      '<label>What it’s for<input type="text" class="lt-purpose" maxlength="300" value="' + esc(q ? q.purpose : '') + '" placeholder="e.g. PhD applications, Fall 2027"></label>' +
+      '<fieldset><legend>Where it goes</legend><div class="lt-rows">' +
+        ((q ? q.recipients : null) || [null]).map(rowHtml).join('') + '</div>' +
+        '<button type="button" class="btn-text lt-radd">+ Add a recipient</button></fieldset>' +
+      '<label>Materials for the writer (CV, statement, papers: links)<textarea class="lt-links" rows="3" maxlength="1000">' + esc(q ? q.links : '') + '</textarea></label>' +
+      '<label>Notes for the writer (what you did together, what to cover)<textarea class="lt-notes" rows="5" maxlength="3000">' + esc(q ? q.notes : '') + '</textarea></label>' +
+      '<p class="ev-error" hidden></p><div class="event-form-actions">' +
+        '<button type="button" class="ev-save lt-save">' + (q ? 'Save' : 'Ask for the letter') + '</button>' +
+        '<button type="button" class="lt-cancel">Cancel</button></div></div>';
+  }
+
+  function render(){
+    if (!me) return;
+    if (byMe === null || ofMe === null) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
+    if (editing) return; // don't redraw over a form being filled in
+    var openOf = ofMe.filter(function(q){ return q.open; }).length;
+    main.innerHTML =
+      '<section class="block"><div class="block-head"><h2>Asked of you' + (openOf ? '<span class="proj-count">' + openOf + ' open</span>' : '') + '</h2></div>' +
+        (ofMe.length ? '<ul class="lt-list">' + sorted(ofMe).map(function(q){ return requestHtml(q, true); }).join('') + '</ul>' : '<p class="proj-msg">Nobody has asked you for a letter.</p>') + '</section>' +
+      '<section class="block"><div class="block-head"><h2>Asked by you</h2></div>' +
+        (byMe.length ? '<ul class="lt-list">' + sorted(byMe).map(function(q){ return requestHtml(q, false); }).join('') + '</ul>' : '<p class="proj-msg">You haven’t asked for a letter yet.</p>') +
+        '<div class="lt-new"><button type="button" class="event-add lt-ask">+ Ask for a letter</button></div></section>';
+    var m = /#l=([A-Za-z0-9]+)/.exec(location.hash), el = m && document.getElementById('l-' + m[1]);
+    if (el && !render.jumped) { render.jumped = true; el.classList.add('is-target'); el.scrollIntoView({ block: 'start' }); }
+  }
+
+  // ---------- choosing the writer: type to search the Slack roster ----------
+  function mountWho(wrap, form){
+    var chosen = form.writer;
+    if (chosen) {
+      wrap.innerHTML = '<span class="spk-chosen">' + esc(chosen.name) + ' <span class="detail-muted">' + esc(chosen.email) + '</span>' +
+        '<button type="button" class="btn-text lt-who-change">Change</button></span>';
+      wrap.querySelector('.lt-who-change').addEventListener('click', function(){ form.writer = null; mountWho(wrap, form); wrap.querySelector('input').focus(); });
+      return;
+    }
+    wrap.innerHTML = '<div class="spk-search"><input type="text" class="lt-who-q" placeholder="Type a name or email…" autocomplete="off" role="combobox" aria-expanded="false" aria-label="Who writes it">' +
+      '<ul class="spk-results" role="listbox" hidden></ul></div>';
+    var input = wrap.querySelector('input'), list = wrap.querySelector('ul'), found = [], active = 0;
+    var fold = function(s){ return String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, ''); };
+    function pick(k){ if (!found[k]) return; form.writer = { name: found[k].name || found[k].email, email: found[k].email }; mountWho(wrap, form); }
+    function show(){
+      var words = fold(input.value).split(/\s+/).filter(Boolean);
+      found = !words.length ? [] : (people || []).filter(function(p){
+        var hay = fold(p.name) + ' ' + fold(p.email);
+        return p.email && p.email.toLowerCase() !== me.email && words.every(function(w){ return hay.indexOf(w) >= 0; });
+      }).slice(0, 8);
+      active = 0;
+      list.innerHTML = found.length ? found.map(function(p, k){
+        return '<li role="option" data-k="' + k + '"' + (k === active ? ' class="active"' : '') + '>' + esc(p.name) + '<span class="detail-muted">' + esc(p.email) + '</span></li>';
+      }).join('') : '<li class="spk-none">' + (people ? 'Nobody on the BOLD Slack matches.' : 'Loading…') + '</li>';
+      list.hidden = !words.length;
+      input.setAttribute('aria-expanded', String(!list.hidden));
+      list.querySelectorAll('li[data-k]').forEach(function(li){
+        li.addEventListener('mousedown', function(e){ e.preventDefault(); pick(Number(li.getAttribute('data-k'))); });
+      });
+    }
+    function highlight(k){
+      var items = list.querySelectorAll('li[data-k]');
+      if (!items.length) return;
+      active = (k + items.length) % items.length;
+      items.forEach(function(li, j){ li.classList.toggle('active', j === active); });
+    }
+    input.addEventListener('input', show);
+    input.addEventListener('focus', show);
+    input.addEventListener('blur', function(){ list.hidden = true; input.setAttribute('aria-expanded', 'false'); });
+    input.addEventListener('keydown', function(e){
+      if (list.hidden) return;
+      if (e.key === 'ArrowDown') { e.preventDefault(); highlight(active + 1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); highlight(active - 1); }
+      else if (e.key === 'Enter') { e.preventDefault(); pick(active); }
+      else if (e.key === 'Escape') { e.preventDefault(); list.hidden = true; }
+    });
+  }
+
+  var newForm = null; // { writer } while asking
+
+  function openForm(id){
+    editing = id;
+    if (id === 'new') {
+      newForm = { writer: null };
+      var wrap = main.querySelector('.lt-new');
+      wrap.innerHTML = formHtml(null);
+      mountWho(wrap.querySelector('.lt-who'), newForm);
+      if (!people) db.collection('people').get().then(function(snap){
+        people = snap.docs.map(function(d){ return d.data(); }).filter(function(p){ return p.email; })
+          .sort(function(a, b){ return (a.name || '').localeCompare(b.name || ''); });
+        var q = main.querySelector('.lt-who-q');
+        if (q && q === document.activeElement) q.dispatchEvent(new Event('input'));
+      }).catch(function(err){ console.error('[BOLD Letters] loading the roster failed', err); people = []; });
+      wrap.querySelector('.lt-who-q').focus();
+      return;
+    }
+    var q = byMe.filter(function(x){ return x.id === id; })[0], li = document.getElementById('l-' + id);
+    if (!q || !li) { editing = null; return; }
+    li.insertAdjacentHTML('beforeend', formHtml(q));
+    li.querySelector('.lt-purpose').focus();
+  }
+
+  function closeForm(){ editing = null; newForm = null; render(); }
+
+  function readForm(f){
+    var v = function(c){ return f.querySelector(c).value.trim(); };
+    return {
+      purpose: v('.lt-purpose'), links: v('.lt-links'), notes: v('.lt-notes'),
+      recipients: Array.prototype.map.call(f.querySelectorAll('.lt-rrow'), function(row){
+        return { id: row.getAttribute('data-rid') || undefined, name: row.querySelector('.lt-rn').value.trim(), url: row.querySelector('.lt-ru').value.trim(),
+          deadline: row.querySelector('.lt-rd').value, sentBy: row.querySelector('.lt-rs').value };
+      }),
+    };
+  }
+
+  function problem(d, isNew){
+    if (isNew && !newForm.writer) return 'Choose who writes the letter.';
+    if (!d.purpose) return 'Say what the letter is for.';
+    if (!d.recipients.length) return 'Add where the letter goes.';
+    for (var i = 0; i < d.recipients.length; i++) {
+      var r = d.recipients[i];
+      if (!r.name) return 'Give each recipient a name.';
+      if (!r.deadline) return 'Give a deadline for ' + r.name + '.';
+      if (r.url && !/^https?:\/\/\S+$/.test(r.url)) return 'A link starts with https://: ' + r.name + '.';
+    }
+    return '';
+  }
+
+  function save(f, btn){
+    var id = f.getAttribute('data-id'), d = readForm(f), err = f.querySelector('.ev-error');
+    var p = problem(d, !id);
+    if (p) { err.textContent = p; err.hidden = false; return; }
+    if (!id && d.recipients.some(function(r){ return r.deadline < today(); }) && !window.confirm('A deadline has passed already. Ask anyway?')) return;
+    btn.disabled = true; err.hidden = true;
+    var data = Object.assign(d, id ? { action: 'update', id: id } : { action: 'create', writerEmail: newForm.writer.email });
+    call(data).then(function(){ closeForm(); }).catch(function(e){
+      console.error('[BOLD Letters] saving failed', e);
+      err.textContent = e && e.message && e.code !== 'functions/internal' ? e.message : 'Couldn’t save — try again.';
+      err.hidden = false; btn.disabled = false;
+    });
+  }
+
+  function act(key, data, btn){
+    busy[key] = true; btn.disabled = true;
+    call(data).catch(function(e){
+      console.error('[BOLD Letters] that failed', e);
+      window.alert(e && e.message && e.code !== 'functions/internal' ? e.message : 'Couldn’t do that — try again.');
+    }).then(function(){ delete busy[key]; render(); });
+  }
+
+  // A message about the form goes once it's changed.
+  main.addEventListener('input', function(e){
+    var err = e.target.closest('.lt-form') && e.target.closest('.lt-form').querySelector('.ev-error');
+    if (err) err.hidden = true;
+  });
+
+  main.addEventListener('click', function(e){
+    var t = e.target.closest('button');
+    if (!t || t.disabled) return;
+    var f = t.closest('.lt-form');
+    if (t.classList.contains('lt-ask')) { if (!editing) openForm('new'); return; }
+    if (t.classList.contains('lt-edit')) { if (!editing) openForm(t.getAttribute('data-id')); return; }
+    if (t.classList.contains('lt-cancel')) { closeForm(); return; }
+    if (t.classList.contains('lt-save')) { save(f, t); return; }
+    if (t.classList.contains('lt-radd')) { f.querySelector('.lt-rows').insertAdjacentHTML('beforeend', rowHtml(null)); f.querySelector('.lt-rrow:last-child .lt-rn').focus(); return; }
+    if (t.classList.contains('lt-rremove')) {
+      var row = t.closest('.lt-rrow');
+      if (f.querySelectorAll('.lt-rrow').length > 1) row.parentNode.removeChild(row);
+      return;
+    }
+    if (editing) return;
+    var id = t.getAttribute('data-id'), rid = t.getAttribute('data-r');
+    var q = (byMe || []).concat(ofMe || []).filter(function(x){ return x.id === id; })[0];
+    if (!q) return;
+    if (t.classList.contains('lt-ack')) act(id, { action: 'acknowledge', id: id }, t);
+    else if (t.classList.contains('lt-withdraw')) {
+      if (window.confirm('Withdraw your request to ' + q.writerName + '? It’s deleted, and they’re told on Slack.')) act(id, { action: 'withdraw', id: id }, t);
+    } else if (t.classList.contains('lt-submit')) {
+      var input = t.parentNode.querySelector('.lt-letter');
+      var link = input ? input.value.trim() : '';
+      if (input && !/^https?:\/\/\S+$/.test(link)) { window.alert('Give a link to the letter, starting with https://.'); input.focus(); return; }
+      act(id + '/' + rid, { action: 'submit', id: id, recipientId: rid, letterUrl: link }, t);
+    } else if (t.classList.contains('lt-unsubmit')) {
+      if (window.confirm('Mark it not submitted again?')) act(id + '/' + rid, { action: 'unsubmit', id: id, recipientId: rid }, t);
+    }
+  });
+
+  BOLD.onUser(function(user){
+    unsubs.forEach(function(u){ u(); }); unsubs = [];
+    me = user ? { email: (user.email || '').toLowerCase() } : null;
+    byMe = null; ofMe = null; editing = null;
+    if (!user) return;
+    render();
+    var listen = function(field, set){
+      unsubs.push(db.collection('letterRequests').where(field, '==', me.email).onSnapshot(function(snap){
+        set(snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }));
+        render();
+      }, function(err){ console.error('[BOLD Letters] loading requests failed', err); set([]); render(); }));
+    };
+    listen('requesterEmail', function(v){ byMe = v; });
+    listen('writerEmail', function(v){ ofMe = v; });
+  });
+})();
