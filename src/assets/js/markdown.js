@@ -3,10 +3,22 @@
 // indent), > quotes, ``` code blocks, **bold**, *italic* (asterisks only), ~~struck~~, `code` and
 // [links](https://…). Everything is escaped first; links are kept only when they
 // are http(s), mailto, a page of this site or an #anchor. Tables: a | row, a
-// |---| row under it, then | rows.
-// BoldMarkdown.render(text) → HTML.
+// |---| row under it, then | rows. @[Name](SlackId), a tagged person (mentions.js),
+// shows as @Name, linking to their Slack profile.
+// BoldMarkdown.render(text) → HTML; BoldMarkdown.plain(text) → plain text, escaped,
+// with its tags as links (comments).
 window.BoldMarkdown = (function(){
   var esc = BOLD.escapeHtml;
+
+  // A tag, with its link to the person's profile in the Slack app (Slack's own
+  // slack://user link: it opens their profile; nobody is notified).
+  var MENTION = /@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g;
+  function mentions(escaped){
+    return escaped.replace(MENTION, function(all, name, id){
+      return '<a class="md-mention" href="slack://user?team=' + BOLD.SLACK_TEAM + '&amp;id=' + id + '" title="Open in Slack">@' + name + '</a>';
+    });
+  }
+  function plain(text){ return mentions(esc(text)); }
 
   function safeUrl(u){
     u = u.trim();
@@ -17,7 +29,7 @@ window.BoldMarkdown = (function(){
   // nothing inside them is formatted.
   function inline(text){
     var codes = [];
-    var s = esc(text).replace(/`([^`]+)`/g, function(_, c){ codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000'; });
+    var s = mentions(esc(text).replace(/`([^`]+)`/g, function(_, c){ codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000'; }));
     s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, function(all, label, url){
       var u = safeUrl(url.replace(/&amp;/g, '&'));
       if (!u) return label;
@@ -126,5 +138,5 @@ window.BoldMarkdown = (function(){
     return out;
   }
 
-  return { render: render };
+  return { render: render, plain: plain };
 })();

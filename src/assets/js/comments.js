@@ -179,7 +179,7 @@ window.BoldComments = (function(){
     function commentHtml(c, isRoot){
       var can = mine(c) || opts.fullWrite();
       return '<div class="cm-comment"><p class="cm-meta"><strong>' + esc(c.by ? (c.by.name || c.by.email) : 'Someone') + '</strong> ' + esc(when(c.at)) + '</p>' +
-        '<p class="cm-text">' + esc(c.text) + '</p>' +
+        '<p class="cm-text">' + BoldMarkdown.plain(c.text) + '</p>' +
         (can ? '<p class="cm-actions">' + (isRoot ? '<button type="button" class="btn-text cm-resolve" data-id="' + esc(c.id) + '">Resolve</button>' : '') +
           '<button type="button" class="btn-text danger cm-delete" data-id="' + esc(c.id) + '">Delete</button></p>' : '') + '</div>';
     }
@@ -194,7 +194,7 @@ window.BoldComments = (function(){
         (row.lost ? '<p class="cm-lost">The text this was on has since changed.</p>' : '') +
         '<blockquote class="cm-quote">' + esc(c.quote.length > 160 ? c.quote.slice(0, 160) + '…' : c.quote) + '</blockquote>' +
         (id === 'new' ? '' : commentHtml(c, true) + replies(id).map(function(r){ return commentHtml(r, false); }).join('')) +
-        '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
+        '<textarea class="md-mentions" rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
         (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
         '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-send"' + (busy ? ' disabled' : '') + '>' + (id === 'new' ? 'Comment' : 'Reply') + '</button>' +
           '<button type="button" class="btn-text cm-cancel">Cancel</button></div>' +
@@ -211,9 +211,9 @@ window.BoldComments = (function(){
       return '<div class="cm-discussion">' + list.map(function(c){
           return '<div class="cm-comment"><p class="cm-meta"><strong>' + esc(c.by ? (c.by.name || c.by.email) : 'Someone') + '</strong> ' + esc(when(c.at)) +
             (mine(c) || opts.fullWrite() ? ' <button type="button" class="btn-text danger cm-delete" data-id="' + esc(c.id) + '">Delete</button>' : '') + '</p>' +
-            '<p class="cm-text">' + esc(c.text) + '</p></div>';
+            '<p class="cm-text">' + BoldMarkdown.plain(c.text) + '</p></div>';
         }).join('') +
-        (boxOpen[key] ? '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="Your comment" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
+        (boxOpen[key] ? '<textarea class="md-mentions" rows="3" maxlength="' + MAX_TEXT + '" placeholder="Your comment" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
           (error && open === key ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
           '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-p-send" data-pid="' + esc(pid) + '"' + (busy ? ' disabled' : '') + '>Comment</button>' +
           '<button type="button" class="btn-text cm-p-cancel" data-pid="' + esc(pid) + '">Cancel</button></div>' :
@@ -298,7 +298,7 @@ window.BoldComments = (function(){
           head: 'Comment resolved by ' + esc(c.resolvedByName || c.resolvedBy || 'someone'),
           msg: '“' + esc(c.quote.length > 80 ? c.quote.slice(0, 80) + '…' : c.quote) + '”',
           body: '<div class="cm-history">' + all.map(function(r){
-            return '<p class="cm-meta"><strong>' + esc(r.by ? (r.by.name || r.by.email) : 'Someone') + '</strong> ' + esc(when(r.at)) + '</p><p class="cm-text">' + esc(r.text) + '</p>';
+            return '<p class="cm-meta"><strong>' + esc(r.by ? (r.by.name || r.by.email) : 'Someone') + '</strong> ' + esc(when(r.at)) + '</p><p class="cm-text">' + BoldMarkdown.plain(r.text) + '</p>';
           }).join('') + '</div>' };
       });
     }

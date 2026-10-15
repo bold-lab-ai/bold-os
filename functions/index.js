@@ -1069,6 +1069,9 @@ function commentRecipients(items, staff, threads){
 // One person's message. Pure.
 function commentDigest(items, name, url){
   const n = items.length;
+  // A tag (@[Name](SlackId), mentions.js) as plain @Name: tagging notifies nobody.
+  const untag = (t) => String(t || '').replace(/@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g, '@$1');
+  items = items.map((it) => Object.assign({}, it, { text: untag(it.text), quote: untag(it.quote) }));
   const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.proposalId ? ' on a proposed change' : it.parent ? ' replied' : ' on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
     ': ' + slackText(it.text.length > 140 ? it.text.slice(0, 140) + '…' : it.text);
   return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), url) + '\n' +
