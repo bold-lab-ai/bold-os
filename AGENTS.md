@@ -88,6 +88,10 @@ Building a feature (a page that reads and writes its own data, say a rota) needs
 
 The ML Conference Cycle guide and the Internal Review Board implement BOLDiquette § ML Conference Cycle; the How to guides carry § Research Project Lifecycle and the How to ML docs BOLDiquette links to. Where the site differs from BOLDiquette, record it in `docs/DIFF.md` and its rendered copy `src/pages/ml-cycle/diff.html` (kept in sync by hand), never on the pages themselves.
 
+## Waiting on the lab's Google account
+
+Project meetings, slides and notes, and joining BOLD (sign-up, approval, the welcome email) are built but wait for the lab's Google account. `docs/GOOGLE-ACCOUNT.md` lists everything that depends on it and the steps to ship it all; keep it current when you add anything else that needs the account.
+
 ## More detail
 
 `docs/REFERENCE.md` has notes on every file and feature, often with the reasoning behind them. It's long, so search it for the file or feature you're touching rather than reading it top to bottom. `docs/FIREBASE.md` covers the backend design.
