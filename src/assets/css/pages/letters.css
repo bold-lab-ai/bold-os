@@ -44,6 +44,8 @@ section.block:first-of-type{margin-top:20px;}
 .lt-materials .lt-text{display:block; margin:0;}
 @media (max-width:560px){ .lt-materials .fact{flex-direction:column; gap:2px;} .lt-materials dt{flex:none;} }
 .lt-item .event-form{margin-top:14px;}
+.lt-agent p{margin:6px 0 8px; font-family:var(--sans); font-size:13px;}
+.lt-agent .copy-box pre{max-height:11em; overflow:auto;}
 
 /* ---------- the form ---------- */
 .lt-form{max-width:640px;}
