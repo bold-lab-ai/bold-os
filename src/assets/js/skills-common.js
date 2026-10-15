@@ -25,7 +25,7 @@ window.BoldSkills = (function(){
     return '<label>Title<input type="text" class="sk-title" value="' + esc(x.title || '') + '" placeholder="e.g. Presenting"></label>' +
       (isNew ? '<label>Name<input type="text" class="sk-name" value="' + esc(x.name || '') + '" placeholder="e.g. bold-presenting" spellcheck="false" autocapitalize="off"></label>' +
         '<p class="event-form-hint">The skill’s folder name: lowercase letters, numbers and hyphens. It can’t be changed later.</p>' : '') +
-      '<label>Description<textarea class="sk-description" rows="4" maxlength="' + MAX_DESCRIPTION + '">' + esc(x.description || '') + '</textarea></label>' +
+      '<label>Description<textarea class="sk-description no-tags" rows="4" maxlength="' + MAX_DESCRIPTION + '">' + esc(x.description || '') + '</textarea></label>' +
       '<p class="event-form-hint">What the skill does and when to use it. Claude reads only this to decide when to load the skill.</p>';
   }
 

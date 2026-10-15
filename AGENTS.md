@@ -51,6 +51,7 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
 - **One page per kind of content**, chosen by a query parameter: `event.html?event=`, `session.html?session=`, `talk.html?talk=`, `skill.html?skill=`, `guide.html?guide=`. **Never break a URL**: Slack messages and bookmarks link to them. When one moves, leave a redirect page (see `src/pages/events/old-session-talk-urls.njk`).
 - **Who can do what:** clients can't read the role lists. A page asks the `getMyAccess` function whether the user is a PI or admin to decide which controls to enable; the Firestore rules decide what is actually allowed.
 - **Look:** tokens in `bold.css` (cream paper, one navy accent, EB Garamond for reading, Cabin for labels and controls, hairline rules). Match the page you're editing; reuse the shared classes (`.event-form`, `.btn-text`, `.event-controls`, …).
+- **Tagging people:** any textarea offers `@` tags, shown as @Name everywhere and DMed to whoever is tagged by `onTagged`, for any collection. Give a box `.no-tags` when its text leaves BOLD.OS (an abstract, a SKILL.md); add a new collection to `tagPlace` (its link) or `TAG_SILENT` in `functions/index.js`.
 - **Copy boxes:** any text offered for copying uses `BOLD.copyBoxHtml(text)`: a code box with the clipboard icon inside it. Never a text "Copy" button.
 - **Page copy is terse:** one or two sentences of description, no commentary about the process or the code.
 

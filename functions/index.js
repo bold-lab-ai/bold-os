@@ -518,7 +518,7 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       var newBody = (afterMsg.body || '').slice(0, 140);
       events.push({
         emails: stakeholders,
-        excludeEmail: afterMsg.authorEmail,
+        excludeEmail: afterMsg.authorEmail, comment: true,
         headline: '💬 ' + (afterMsg.author || 'Someone') + ' commented on ' + linked + ': “' + newBody + '”'
       });
       return;
@@ -530,7 +530,7 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       var replyBody = (reply.body || '').slice(0, 140);
       events.push({
         emails: participants,
-        excludeEmail: reply.authorEmail,
+        excludeEmail: reply.authorEmail, comment: true,
         headline: '💬 ' + (reply.author || 'Someone') + ' replied on ' + linked + ': “' + replyBody + '”'
       });
     });
@@ -558,7 +558,7 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       var body = (msg.body || '').slice(0, 140);
       events.push({
         emails: recipients,
-        excludeEmail: msg.authorEmail,
+        excludeEmail: msg.authorEmail, comment: true,
         headline: '💬 ' + posterName + ' commented on ' + linked + ': “' + body + '”'
       });
     });
@@ -652,7 +652,8 @@ async function slackFetch(token, method, body){
       'Authorization': 'Bearer ' + token,
       'Content-Type': 'application/json; charset=utf-8'
     },
-    body: JSON.stringify(body)
+    // A tag (@[Name](SlackId), "Tagging people") reads as plain @Name in Slack.
+    body: JSON.stringify(body).replace(TAG, '@$1')
   });
   const json = await res.json();
   if (!json.ok) logger.warn('Slack API call failed', { method, error: json.error });
@@ -1021,9 +1022,10 @@ exports.onGuideProposalDecided = onProposalDecided('guides', guideUrl);
 exports.onHandbookProposalDecided = onProposalDecided('handbook', handbookUrl);
 
 // ---------- Tagging people ----------
-// A tag is @[Name](SlackId) in any text (mentions.js). Whoever is tagged gets a
-// DM: in a comment, with its page's comment digest (below); in a proposed change,
-// right away, for the tags it adds.
+// A tag is @[Name](SlackId) in any text (mentions.js). Whoever is newly tagged in
+// any document gets a DM (onTagged), except: in a guide's or the BOLDiquette's
+// comment, with that page's comment digest (below); in a proposed change, at once,
+// for the tags it adds (onProposalTagged); accepting it tells nobody again.
 const TAG = /@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g;
 
 // The Slack ids tagged anywhere in value (a string, or any data holding strings). Pure.
@@ -1056,6 +1058,79 @@ async function emailsForSlackIds(ids){
   }
   return out;
 }
+
+// The Slack ids tagged in after and not in before. Pure.
+function newTags(before, after){
+  const old = taggedIds(before);
+  return taggedIds(after).filter((id) => old.indexOf(id) === -1);
+}
+
+// Where a tag is: { title, url } for a document's path, or null where tags tell
+// nobody here: bookkeeping and private collections, and guides and the
+// BOLDiquette (their comments and proposed changes tell, above). Pure.
+const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
+  'letterRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook'];
+function tagPlace(path, data){
+  const seg = path.split('/');
+  if (TAG_SILENT.indexOf(seg[0]) !== -1 || seg.indexOf('versions') !== -1) return null;
+  const d = data || {}, id = seg[1], q = encodeURIComponent(id);
+  const named = (fallback) => String(d.title || d.label || d.name || fallback);
+  if (seg[0] === 'boards' && seg[2] === 'cards' && seg.length === 4) return { title: named('a paper'), url: cardUrl(id, seg[3]) };
+  if (seg.length > 2) return { title: named(seg[2]), url: SITE_URL };
+  if (seg[0] === 'boards') return { title: named(id), url: venueUrl(id) };
+  if (seg[0] === 'events') return { title: named(id), url: SITE_URL + 'event.html?event=' + q };
+  if (seg[0] === 'collabWeekSessions') return { title: named(id), url: SITE_URL + 'session.html?session=' + q };
+  if (seg[0] === 'collabWeekTalks') return { title: named(id), url: SITE_URL + 'talk.html?talk=' + q };
+  if (seg[0] === 'collabWeekProposals') return { title: named('a session proposal'), url: SITE_URL + 'event-collaboration-week.html' };
+  if (seg[0] === 'skills') return { title: named(id), url: SITE_URL + 'skill.html?skill=' + q };
+  if (seg[0] === 'projects') return { title: named('a project'), url: projectPageUrl(id) };
+  return { title: named(seg[0]), url: SITE_URL };
+}
+
+// The first text in data that tags id, as plain text, shortened. Pure.
+function tagExcerpt(data, id){
+  let found = '';
+  const walk = (v) => {
+    if (found) return;
+    if (typeof v === 'string') { if (v.indexOf('](' + id + ')') !== -1) found = v; }
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') Object.keys(v).forEach((k) => walk(v[k]));
+  };
+  walk(data);
+  const t = found.replace(TAG, '@$1').replace(/\s+/g, ' ').trim();
+  return t.length > 200 ? t.slice(0, 200) + '…' : t;
+}
+
+// Any document anywhere, written by anyone: whoever it newly tags gets a DM.
+// Who wrote it: the signed-in person, or the document's updatedBy (a function's write).
+function onTagged(document){
+  return onDocumentWrittenWithAuthContext({ document, secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;
+    const path = event.data.after.ref.path;
+    const place = tagPlace(path, after);
+    const ids = place ? newTags(before, after) : [];
+    if (!ids.length) return;
+    let by = '';
+    try { if (event.authType === 'app_user' && event.authId) by = String((await admin.auth().getUser(event.authId)).email || ''); } catch (e) { /* who is a nicety */ }
+    if (!by) by = typeof after.updatedBy === 'string' ? after.updatedBy : String((after.updatedBy && after.updatedBy.email) || '');
+    by = by.toLowerCase();
+    const who = by ? await personFor(by) : null;
+    const emails = await emailsForSlackIds(ids);
+    for (const id of ids) {
+      if (!emails[id] || emails[id] === by) continue;
+      const excerpt = tagExcerpt(after, id);
+      const text = '🏷️ ' + (who ? slackText(who.name || who.email) + ' tagged you' : 'You were tagged') + ' in ' + linkedTitle(slackText(place.title), place.url) +
+        (excerpt ? ': “' + slackText(excerpt) + '”' : '.');
+      const sent = await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text);
+      logger.info('Tag DM', { path, to: id, by, sent, authType: event.authType, authId: event.authId });
+    }
+  });
+}
+// Every document at the top level and one collection down.
+exports.onTagged = onTagged('{c1}/{d1}');
+exports.onTaggedNested = onTagged('{c1}/{d1}/{c2}/{d2}');
 
 function onProposalTagged(collection, pageUrl){
   return onDocumentWritten(
@@ -1319,8 +1394,11 @@ exports.onCardWritten = onDocumentWritten(
     const token = SLACK_BOT_TOKEN.value();
     const title = after.title || 'a paper';
     const events = cardEventsToNotify(before, after, title, event.params.boardId, event.params.cardId);
+    // Whoever this write tags hears of it from onTagged instead: not twice.
+    const tagged = Object.values(await emailsForSlackIds(newTags(before, after)));
     for (let i = 0; i < events.length; i++){
-      await sendEvent(token, events[i]);
+      const e = events[i];
+      await sendEvent(token, e.comment ? Object.assign({}, e, { emails: e.emails.filter((x) => tagged.indexOf(String(x || '').toLowerCase()) === -1) }) : e);
     }
 
     // Refresh anyone whose Home tab dashboard is now stale because
@@ -3927,5 +4005,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, taggedIds, proposalNewTags, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, venueCallsToCheck, venueCallMessage
 };

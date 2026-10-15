@@ -86,7 +86,7 @@
   // in both places, 2026-09-18+32, per Eduardo).
   function abstractTextFieldHtml(text, disabledAttr){
     var len = (text || '').length;
-    return '<div class="field"><label for="stageAbstractText">Abstract</label><textarea id="stageAbstractText" maxlength="' + ABSTRACT_MAX_CHARS + '"' + (disabledAttr || '') + ' placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + BOLD.escapeHtml(text || '') + '</textarea>' +
+    return '<div class="field"><label for="stageAbstractText">Abstract</label><textarea id="stageAbstractText" class="no-tags" maxlength="' + ABSTRACT_MAX_CHARS + '"' + (disabledAttr || '') + ' placeholder="Paste the abstract text. LaTeX is fine, typed as plain text: $inline formula$ or $$block formula$$.">' + BOLD.escapeHtml(text || '') + '</textarea>' +
       '<div class="abstract-counter' + (len > ABSTRACT_MAX_CHARS ? ' over' : '') + '" id="stageAbstractCounter">' + abstractCounterText(len) + '</div>' +
       '<button class="btn-text" type="button" id="stageAbstractPreviewBtn" style="margin-top:6px;">Preview</button>' +
       '<div class="abstract-render abstract-preview" id="stageAbstractPreview" hidden></div>' +

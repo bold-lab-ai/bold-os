@@ -12,9 +12,8 @@ window.BoldMarkdown = (function(){
 
   // A tag, with its link to the person's profile in the Slack app (Slack's own
   // slack://user link: it opens their profile; nobody is notified).
-  var MENTION = /@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g;
   function mentions(escaped){
-    return escaped.replace(MENTION, function(all, name, id){
+    return escaped.replace(BOLD.TAG, function(all, name, id){
       return '<a class="md-mention" href="slack://user?team=' + BOLD.SLACK_TEAM + '&amp;id=' + id + '" title="Open in Slack">@' + name + '</a>';
     });
   }

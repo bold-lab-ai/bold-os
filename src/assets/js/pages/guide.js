@@ -222,7 +222,7 @@
       '<div class="guide-tabs gd-modes" role="tablist">' +
         '<button type="button" class="guide-tab gd-mode is-current" data-mode="write" role="tab" aria-selected="true">Write</button>' +
         '<button type="button" class="guide-tab gd-mode" data-mode="preview" role="tab" aria-selected="false">Preview</button></div>' +
-      '<textarea class="gd-body md-mentions" rows="16" aria-label="Text">' + esc(p.body) + '</textarea>' +
+      '<textarea class="gd-body" rows="16" aria-label="Text">' + esc(p.body) + '</textarea>' +
       '<div class="guide-text gd-preview-box" hidden></div>' +
       '<p class="event-form-hint">Markdown: **bold**, *italic*, [a link](https://…), lines starting with - or 1. for lists, a blank line between paragraphs, @ to tag someone.</p>' +
       noteHtml(isAdd ? 'e.g. Added a part on posters' : 'e.g. Clearer advice on ablations') +

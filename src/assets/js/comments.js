@@ -194,7 +194,7 @@ window.BoldComments = (function(){
         (row.lost ? '<p class="cm-lost">The text this was on has since changed.</p>' : '') +
         '<blockquote class="cm-quote">' + esc(c.quote.length > 160 ? c.quote.slice(0, 160) + '…' : c.quote) + '</blockquote>' +
         (id === 'new' ? '' : commentHtml(c, true) + replies(id).map(function(r){ return commentHtml(r, false); }).join('')) +
-        '<textarea class="md-mentions" rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
+        '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
         (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
         '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-send"' + (busy ? ' disabled' : '') + '>' + (id === 'new' ? 'Comment' : 'Reply') + '</button>' +
           '<button type="button" class="btn-text cm-cancel">Cancel</button></div>' +
@@ -213,7 +213,7 @@ window.BoldComments = (function(){
             (mine(c) || opts.fullWrite() ? ' <button type="button" class="btn-text danger cm-delete" data-id="' + esc(c.id) + '">Delete</button>' : '') + '</p>' +
             '<p class="cm-text">' + BoldMarkdown.plain(c.text) + '</p></div>';
         }).join('') +
-        (boxOpen[key] ? '<textarea class="md-mentions" rows="3" maxlength="' + MAX_TEXT + '" placeholder="Your comment" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
+        (boxOpen[key] ? '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="Your comment" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
           (error && open === key ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
           '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-p-send" data-pid="' + esc(pid) + '"' + (busy ? ' disabled' : '') + '>Comment</button>' +
           '<button type="button" class="btn-text cm-p-cancel" data-pid="' + esc(pid) + '">Cancel</button></div>' :

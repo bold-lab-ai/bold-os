@@ -477,9 +477,9 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .bpl-note{display:block; margin-top:4px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .bpl-error{color:#b42318;}
 .bpl-line{margin-top:14px; font-family:var(--sans); font-size:14px; color:var(--muted);}
-/* Tagged people (markdown.js) and the list for tagging them (mentions.js). */
+/* Tagged people (bold.js, markdown.js) and the list for tagging them (mentions.js). */
 .md-mention{text-decoration:none; color:var(--accent); background:var(--wash); border-radius:var(--radius); padding:0 3px; font-weight:600;}
 .md-mention:hover{text-decoration:underline;}
-.mention-list{position:absolute; z-index:40; margin:0; padding:4px 0; list-style:none; min-width:200px; max-width:320px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 10px 30px rgba(26,43,74,.16); font-family:var(--sans); font-size:14px; color:var(--ink);}
+.mention-list{position:absolute; z-index:300; margin:0; padding:4px 0; list-style:none; min-width:200px; max-width:320px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 10px 30px rgba(26,43,74,.16); font-family:var(--sans); font-size:14px; color:var(--ink);}
 .mention-list li{padding:5px 12px; cursor:pointer;}
 .mention-list li.is-active, .mention-list li:hover{background:var(--wash);}

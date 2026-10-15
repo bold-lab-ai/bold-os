@@ -29,6 +29,7 @@
 {% if not noFooter %}{% include "partials/footer.njk" %}{% endif %}
 {% include "partials/shell-close.njk" %}
 {% for script in scripts %}<script src="assets/js/{{ script }}?v={{ build.stamp }}"></script>
-{% endfor %}
+{% endfor %}{% if not public %}<script src="assets/js/mentions.js?v={{ build.stamp }}"></script>
+{% endif %}
 </body>
 </html>

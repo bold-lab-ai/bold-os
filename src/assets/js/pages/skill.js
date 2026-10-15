@@ -68,7 +68,7 @@
   function fileRowHtml(f){
     return '<div class="sk-file"><div class="sk-file-head"><input type="text" class="sk-path" value="' + esc(f.path || '') + '" placeholder="e.g. references/style.md" spellcheck="false">' +
       '<button type="button" class="btn-text danger sk-remove">Remove</button></div>' +
-      '<textarea class="sk-content mono" rows="8" spellcheck="false">' + esc(f.content || '') + '</textarea></div>';
+      '<textarea class="sk-content mono no-tags" rows="8" spellcheck="false">' + esc(f.content || '') + '</textarea></div>';
   }
 
   function formHtml(){
@@ -77,7 +77,7 @@
         '<label class="btn-text">Import a folder<input type="file" class="sk-import-folder" webkitdirectory hidden></label>' +
         '</div>' +
       S.metaHtml(x, isNew) +
-      '<label>Instructions (SKILL.md, after its name and description)<textarea class="sk-body mono" rows="18" spellcheck="false">' + esc(x.body || '') + '</textarea></label>' +
+      '<label>Instructions (SKILL.md, after its name and description)<textarea class="sk-body mono no-tags" rows="18" spellcheck="false">' + esc(x.body || '') + '</textarea></label>' +
       '<p class="event-form-hint">Point Claude to the other files by their path, e.g. <code>assets/template.html</code>; it opens them only when it needs them.</p>' +
       '<p class="event-form-head sk-files-head">Other files</p><div class="sk-files">' + (x.files || []).map(fileRowHtml).join('') + '</div>' +
       '<div class="sk-file-add"><button type="button" class="btn-text sk-add-empty">+ Add a file</button>' +

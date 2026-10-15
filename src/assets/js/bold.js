@@ -42,8 +42,45 @@
   var ICON_COPY = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_DONE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
   // Icons for .icon-btn buttons: edit, and move up and down.
-  // The lab's Slack workspace, for links into the Slack app (markdown.js tags).
+  // The lab's Slack workspace, for links into the Slack app (tags).
   BOLD.SLACK_TEAM = 'T0B7DUVFEM8';
+
+  // Tags: @[Name](SlackId) in any text people write (mentions.js) reads as @Name,
+  // linking to their profile in the Slack app (Slack's slack://user link). Pages
+  // show text as it's stored; this turns the tags in it into links wherever it
+  // appears, except in boxes being edited, code and .no-tags.
+  BOLD.TAG = /@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g;
+  BOLD.tagHtml = function(name, id){
+    return '<a class="md-mention" href="slack://user?team=' + BOLD.SLACK_TEAM + '&amp;id=' + id + '" title="Open in Slack">@' + BOLD.escapeHtml(name) + '</a>';
+  };
+  var TAG_SKIP = 'textarea, input, script, style, pre, code, [contenteditable], .no-tags';
+  function showTags(node){
+    var texts = [];
+    if (node.nodeType === 3) texts.push(node);
+    else if (node.nodeType === 1) {
+      var walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+      while (walk.nextNode()) texts.push(walk.currentNode);
+    }
+    texts.forEach(function(t){
+      var v = t.nodeValue;
+      if (v.indexOf('](U') === -1 || !t.parentNode || !t.parentElement || t.parentElement.closest(TAG_SKIP)) return;
+      var html = BOLD.escapeHtml(v).replace(BOLD.TAG, function(all, name, id){ return BOLD.tagHtml(name.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'"), id); });
+      var span = document.createElement('span');
+      span.innerHTML = html;
+      var frag = document.createDocumentFragment();
+      while (span.firstChild) frag.appendChild(span.firstChild);
+      t.parentNode.replaceChild(frag, t);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    showTags(document.body);
+    new MutationObserver(function(list){
+      list.forEach(function(m){
+        if (m.type === 'characterData') showTags(m.target);
+        else Array.prototype.forEach.call(m.addedNodes, showTags);
+      });
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
   BOLD.ICON_PENCIL = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M11.6 1.6a1.5 1.5 0 0 1 2.1 0l.7.7a1.5 1.5 0 0 1 0 2.1L5.6 13.2l-3.5.9.9-3.5 8.6-9zM10.9 3.7l1.4 1.4 1.1-1.1-1.4-1.4-1.1 1.1z"/></svg>';
   BOLD.ICON_UP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>';
   BOLD.ICON_DOWN = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg>';

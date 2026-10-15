@@ -116,7 +116,7 @@
         '<label>Cover letter or research statement (link, optional)<input type="url" class="lt-statement" maxlength="1000" value="' + esc(q ? q.statement || '' : '') + '" placeholder="https://…"></label>' +
       '</fieldset>' +
       '<fieldset><legend>About your work with me</legend>' + WORK.map(function(w){
-        return '<label>' + esc(w.q) + '<textarea class="lt-w" data-key="' + w.key + '" rows="' + (w.key === 'howWorked' ? 7 : 4) + '" maxlength="' + (w.key === 'howWorked' ? 6000 : 3000) + '">' + esc(q ? q[w.key] || '' : '') + '</textarea></label>';
+        return '<label>' + esc(w.q) + '<textarea class="lt-w no-tags" data-key="' + w.key + '" rows="' + (w.key === 'howWorked' ? 7 : 4) + '" maxlength="' + (w.key === 'howWorked' ? 6000 : 3000) + '">' + esc(q ? q[w.key] || '' : '') + '</textarea></label>';
       }).join('') + '</fieldset>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions">' +
         '<button type="button" class="ev-save lt-save">' + (q ? 'Save' : 'Ask for the letter') + '</button>' +
