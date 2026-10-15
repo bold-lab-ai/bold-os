@@ -1013,7 +1013,9 @@ function onProposalDecided(collection, pageUrl){
   );
 }
 
-const guideUrl = (slug) => SITE_URL + 'guide.html?guide=' + encodeURIComponent(slug);
+// A guide with a page of its own (bold.js BOLD.GUIDE_PAGES) links there.
+const GUIDE_PAGES = { 'get-started-at-bold': 'get-started.html' };
+const guideUrl = (slug) => SITE_URL + (GUIDE_PAGES[slug] || 'guide.html?guide=' + encodeURIComponent(slug));
 // The BOLDiquette is the one handbook document; it has its own page.
 const handbookUrl = (slug) => SITE_URL + (slug === 'boldiquette' ? 'boldiquette.html' : 'index.html');
 exports.onGuideProposed = onProposed('guides', guideUrl);

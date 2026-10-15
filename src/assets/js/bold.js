@@ -42,6 +42,11 @@
   var ICON_COPY = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_DONE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
   // Icons for .icon-btn buttons: edit, and move up and down.
+  // Guides with a page of their own elsewhere (guides/{slug} → its page): edited
+  // like any guide, but not listed under How to. guide.html?guide=<slug> goes there.
+  BOLD.GUIDE_PAGES = { 'get-started-at-bold': 'get-started.html' };
+  BOLD.guideHref = function(slug){ return BOLD.GUIDE_PAGES[slug] || 'guide.html?guide=' + encodeURIComponent(slug); };
+
   // The lab's Slack workspace, for links into the Slack app (tags).
   BOLD.SLACK_TEAM = 'T0B7DUVFEM8';
 
@@ -329,7 +334,7 @@
   function guidesNav(){
     firestoreNav('guides', 'boldNavGuides', function(db){
       return db.collection('guides').get().then(function(snap){
-        return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug; })
+        return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug && !BOLD.GUIDE_PAGES[x.slug]; })
           .map(function(x){ return { title: x.title || x.slug, href: 'guide.html?guide=' + encodeURIComponent(x.slug) }; })
           .sort(function(a, b){ return a.title.localeCompare(b.title); });
       });

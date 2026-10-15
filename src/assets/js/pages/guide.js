@@ -30,6 +30,8 @@
   var DELETABLE = cfg.deletable !== 'false';
   var isNew = !cfg.slug && params.has('new');
   var slug = cfg.slug || params.get('guide') || '';
+  // A guide with a page of its own (BOLD.GUIDE_PAGES) is read there.
+  if (!cfg.slug && BOLD.GUIDE_PAGES[slug]) { location.replace(BOLD.GUIDE_PAGES[slug] + location.hash); return; }
   var ref = !isNew && G.SLUG.test(slug) ? db.collection(COLLECTION).doc(slug) : null;
   var MAX_SIZE = 900000;
 

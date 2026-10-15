@@ -42,7 +42,7 @@
     G.access(function(ok){ if (mine === signIns) { fullWrite = ok; render(); } });
     unsubscribe = db.collection('guides').onSnapshot(function(snap){
       loading.hidden = true;
-      guides = snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug; }).sort(G.byTitle);
+      guides = snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug && !BOLD.GUIDE_PAGES[x.slug]; }).sort(G.byTitle);
       render();
       guides.forEach(function(x){
         db.collection('guides').doc(x.slug).collection('proposals').where('status', '==', 'open').get().then(function(s){

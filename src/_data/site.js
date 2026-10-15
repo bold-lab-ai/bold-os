@@ -42,6 +42,7 @@ export default {
     // Its sub-pages are the skills (Firestore), filled in by bold.js.
     { label: 'Skills', href: 'skills.html', links: [], skills: true, separatorAfter: true },
     { label: 'Service desk', href: 'service-desk.html', links: [
+      { label: 'Get started at BOLD', href: 'get-started.html' },
       { label: 'Recommendation letters', href: 'letters.html' },
       { label: 'Introductions', href: 'introductions.html' },
     ] },
