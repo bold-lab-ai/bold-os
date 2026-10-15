@@ -39,7 +39,7 @@
     var status = r.submittedAt
       ? '<span class="lt-status is-done">' + (r.sentBy === 'requester' ? 'Shared ' : 'Submitted ') + when(r.submittedAt) + '</span>'
       : '<span class="lt-status' + (late ? ' is-late' : '') + '">' + (late ? 'Overdue' : 'Not submitted') + '</span>';
-    var who = r.sentBy === 'requester' ? (asWriter ? first(q.requesterName) + ' sends it' : 'You send it') : (asWriter ? 'You submit it' : first(q.writerName) + ' submits it');
+    var who = r.sentBy === 'requester' ? 'Applicant sends it' : 'Referee sends it';
     var name = r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener">' + esc(r.name) + '</a>' : esc(r.name);
     var b = busy[q.id + '/' + r.id] ? ' disabled' : '';
     var controls = '';
@@ -57,7 +57,7 @@
       controls + '</li>';
   }
 
-  // "About your work with me": the writer's questions.
+  // "About your work with me": the referee's questions.
   var WORK = [
     { key: 'howWorked', short: 'Worked together', q: 'How we’ve worked together: modules, project or dissertation supervision, research work, and the dates. What you did yourself, as opposed to your group: the project title, methods and tools, results, and any outputs (code, report, paper, talk).' },
     { key: 'best', short: 'Best moments', q: 'One or two moments you think show you at your best, such as a problem you solved on your own, an idea that was yours, or how you handled a setback (optional).' },
@@ -69,8 +69,8 @@
   function requestHtml(q, asWriter){
     var ack = q.acknowledgedAt ? '<span class="is-ok">Received ' + when(q.acknowledgedAt) + '</span>' : 'Not acknowledged yet';
     var meta = asWriter
-      ? 'From ' + esc(q.requesterName) + ' · asked ' + when(q.at) + (q.acknowledgedAt ? '' : ' · not acknowledged yet')
-      : 'To ' + esc(q.writerName) + ' · asked ' + when(q.at) + ' · ' + ack;
+      ? 'Applicant: ' + esc(q.requesterName) + ' · asked ' + when(q.at) + (q.acknowledgedAt ? '' : ' · not acknowledged yet')
+      : 'Referee: ' + esc(q.writerName) + ' · asked ' + when(q.at) + ' · ' + ack;
     var b = busy[q.id] ? ' disabled' : '';
     var controls = asWriter
       ? (q.acknowledgedAt ? '' : '<button type="button" class="btn-text lt-ack" data-id="' + esc(q.id) + '"' + b + '>Got it</button>')
@@ -104,14 +104,14 @@
   // The form, empty (asking) or filled from q (editing).
   function formHtml(q){
     var who = q
-      ? '<label>Who writes it<span class="spk-chosen">' + esc(q.writerName) + '</span></label>'
-      : '<label>Who writes it</label><div class="lt-who"></div>';
+      ? '<label>Referee<span class="spk-chosen">' + esc(q.writerName) + '</span></label>'
+      : '<label>Referee</label><div class="lt-who"></div>';
     return '<div class="event-form lt-form" data-id="' + esc(q ? q.id : '') + '">' + who +
       '<label>What it’s for<input type="text" class="lt-purpose" maxlength="300" value="' + esc(q ? q.purpose : '') + '" placeholder="e.g. PhD applications, Fall 2027"></label>' +
       '<fieldset><legend>Where it goes</legend><div class="lt-rows">' +
         ((q ? q.recipients : null) || [null]).map(rowHtml).join('') + '</div>' +
         '<button type="button" class="btn-text lt-radd">+ Add a recipient</button></fieldset>' +
-      '<fieldset><legend>Materials for the writer</legend>' +
+      '<fieldset><legend>Materials for the referee</legend>' +
         '<label>CV (link)<input type="url" class="lt-cv" maxlength="1000" value="' + esc(q ? q.cv || '' : '') + '" placeholder="https://…"></label>' +
         '<label>Cover letter or research statement (link, optional)<input type="url" class="lt-statement" maxlength="1000" value="' + esc(q ? q.statement || '' : '') + '" placeholder="https://…"></label>' +
       '</fieldset>' +
@@ -129,9 +129,9 @@
     if (editing) return; // don't redraw over a form being filled in
     var openOf = ofMe.filter(function(q){ return q.open; }).length;
     main.innerHTML =
-      '<section class="block"><div class="block-head"><h2>Asked of you' + (openOf ? '<span class="proj-count">' + openOf + ' open</span>' : '') + '</h2></div>' +
+      '<section class="block"><div class="block-head"><h2>As referee' + (openOf ? '<span class="proj-count">' + openOf + ' open</span>' : '') + '</h2></div>' +
         (ofMe.length ? '<ul class="lt-list">' + sorted(ofMe).map(function(q){ return requestHtml(q, true); }).join('') + '</ul>' : '<p class="proj-msg">Nobody has asked you for a letter.</p>') + '</section>' +
-      '<section class="block"><div class="block-head"><h2>Asked by you</h2></div>' +
+      '<section class="block"><div class="block-head"><h2>As applicant</h2></div>' +
         (byMe.length ? '<ul class="lt-list">' + sorted(byMe).map(function(q){ return requestHtml(q, false); }).join('') + '</ul>' : '<p class="proj-msg">You haven’t asked for a letter yet.</p>') +
         '<div class="lt-new"><button type="button" class="event-add lt-ask">+ Ask for a letter</button></div></section>';
     var m = /#l=([A-Za-z0-9]+)/.exec(location.hash), el = m && document.getElementById('l-' + m[1]);
@@ -147,7 +147,7 @@
       wrap.querySelector('.lt-who-change').addEventListener('click', function(){ form.writer = null; mountWho(wrap, form); wrap.querySelector('input').focus(); });
       return;
     }
-    wrap.innerHTML = '<div class="spk-search"><input type="text" class="lt-who-q" placeholder="Choose, or type a name…" autocomplete="off" role="combobox" aria-expanded="false" aria-label="Who writes it">' +
+    wrap.innerHTML = '<div class="spk-search"><input type="text" class="lt-who-q" placeholder="Choose, or type a name…" autocomplete="off" role="combobox" aria-expanded="false" aria-label="Referee">' +
       '<ul class="spk-results" role="listbox" hidden></ul></div>';
     var input = wrap.querySelector('input'), list = wrap.querySelector('ul'), found = [], active = 0;
     var fold = function(s){ return String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, ''); };
@@ -226,7 +226,7 @@
   }
 
   function problem(d, isNew){
-    if (isNew && !newForm.writer) return 'Choose who writes the letter.';
+    if (isNew && !newForm.writer) return 'Choose your referee.';
     if (!d.purpose) return 'Say what the letter is for.';
     if (!d.recipients.length) return 'Add where the letter goes.';
     if (!/^https?:\/\/\S+$/.test(d.cv)) return 'Give a link to your CV, starting with https://.';

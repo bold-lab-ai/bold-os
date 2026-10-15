@@ -3667,8 +3667,8 @@ exports.letterRequest = onCall(
 
     if (d.action === 'create') {
       const writerEmail = String(d.writerEmail || '').trim().toLowerCase();
-      if (!writerEmail) throw new HttpsError('invalid-argument', 'Choose who writes the letter.');
-      if (writerEmail === email) throw new HttpsError('invalid-argument', 'Ask someone else for the letter.');
+      if (!writerEmail) throw new HttpsError('invalid-argument', 'Choose your referee.');
+      if (writerEmail === email) throw new HttpsError('invalid-argument', 'Choose someone else as your referee.');
       const writer = (await letterWriters()).filter((w) => w.email === writerEmail)[0];
       if (!writer) throw new HttpsError('invalid-argument', 'They haven’t signed in to BOLD.OS yet.');
       const n = normalizeLetterRequest(d, []);
@@ -3690,8 +3690,8 @@ exports.letterRequest = onCall(
     const ref = db.collection('letterRequests').doc(id);
     const mine = (q) => {
       const isRequester = q.requesterEmail === email, isWriter = q.writerEmail === email;
-      if (['update', 'withdraw'].indexOf(d.action) !== -1 && !isRequester) throw new HttpsError('permission-denied', 'Only whoever asked for the letter can do this.');
-      if (['acknowledge', 'submit', 'unsubmit'].indexOf(d.action) !== -1 && !isWriter) throw new HttpsError('permission-denied', 'Only whoever writes the letter can do this.');
+      if (['update', 'withdraw'].indexOf(d.action) !== -1 && !isRequester) throw new HttpsError('permission-denied', 'Only the applicant can do this.');
+      if (['acknowledge', 'submit', 'unsubmit'].indexOf(d.action) !== -1 && !isWriter) throw new HttpsError('permission-denied', 'Only the referee can do this.');
     };
     let note = null;
     await db.runTransaction(async (tx) => {
