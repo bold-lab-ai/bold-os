@@ -3,7 +3,9 @@
 // { partId, quote, prefix, suffix, text, by: { email, name }, at, parent?, resolved?,
 //   resolvedBy?, resolvedAt? } (firestore.rules: the lab reads and comments; the
 // author edits their text; the author or a PI/admin resolves or deletes). A reply has
-// the thread's first comment as its parent.
+// the thread's first comment as its parent. A comment on a proposed change has
+// { proposalId, partId: '' } instead of a quote: its discussion, listed under the
+// proposal (proposalThreadHtml).
 //
 // The quoted text is highlighted where it still is in the part (prefix and suffix
 // pick the right one when it's there more than once), with an icon in the right
@@ -64,7 +66,8 @@ window.BoldComments = (function(){
     var btn = null;           // the floating "Comment" button
 
     function changed(){ opts.onChange(); }
-    function threads(){ return comments.filter(function(c){ return !c.parent && !c.resolved; }); }
+    function threads(){ return comments.filter(function(c){ return !c.parent && !c.resolved && !c.proposalId; }); }
+    var boxOpen = {};         // proposals whose comment box is open
     function replies(id){ return comments.filter(function(c){ return c.parent === id; }).sort(function(a, b){ return a.at - b.at; }); }
     function byId(id){ return comments.filter(function(c){ return c.id === id; })[0] || null; }
     function mine(c){ return me && c.by && c.by.email === me.email; }
@@ -201,6 +204,40 @@ window.BoldComments = (function(){
       return el;
     }
 
+    // ---------- a proposed change's discussion ----------
+    function proposalThreadHtml(pid){
+      var list = comments.filter(function(c){ return c.proposalId === pid; }).sort(function(a, b){ return a.at - b.at; });
+      var key = 'p:' + pid;
+      return '<div class="cm-discussion">' + list.map(function(c){
+          return '<div class="cm-comment"><p class="cm-meta"><strong>' + esc(c.by ? (c.by.name || c.by.email) : 'Someone') + '</strong> ' + esc(when(c.at)) +
+            (mine(c) || opts.fullWrite() ? ' <button type="button" class="btn-text danger cm-delete" data-id="' + esc(c.id) + '">Delete</button>' : '') + '</p>' +
+            '<p class="cm-text">' + esc(c.text) + '</p></div>';
+        }).join('') +
+        (boxOpen[key] ? '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="Your comment" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
+          (error && open === key ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
+          '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-p-send" data-pid="' + esc(pid) + '"' + (busy ? ' disabled' : '') + '>Comment</button>' +
+          '<button type="button" class="btn-text cm-p-cancel" data-pid="' + esc(pid) + '">Cancel</button></div>' :
+          '<button type="button" class="btn-text cm-p-open" data-pid="' + esc(pid) + '">' + (list.length ? 'Reply' : 'Comment') + '</button>') +
+        '</div>';
+    }
+    // What's typed survives the page re-rendering.
+    opts.root.addEventListener('input', function(e){
+      var k = e.target.getAttribute && e.target.getAttribute('data-key');
+      if (k && e.target.tagName === 'TEXTAREA') drafts[k] = e.target.value;
+    });
+    function sendOnProposal(pid){
+      var key = 'p:' + pid, text = (drafts[key] || '').trim();
+      open = key;
+      if (!text) { error = 'Write something first.'; changed(); return; }
+      busy = true; error = ''; changed();
+      col.add({ partId: '', proposalId: pid, text: text, by: { email: me.email, name: me.name }, at: Date.now() }).then(function(){
+        busy = false; drafts[key] = ''; boxOpen[key] = false; open = null; changed();
+      }).catch(function(err){
+        console.error('[BOLD Comments] saving the comment failed', err);
+        busy = false; error = 'Couldn’t save it — try again.'; changed();
+      });
+    }
+
     // ---------- writing ----------
     function send(){
       var text = (drafts[open] || '').trim();
@@ -233,8 +270,16 @@ window.BoldComments = (function(){
     }
 
     function click(e){
-      var t = e.target.closest('.cm-icon, .cm-mark, .cm-close, .cm-cancel, .cm-send, .cm-resolve, .cm-delete, .cm-switch');
+      var t = e.target.closest('.cm-icon, .cm-mark, .cm-close, .cm-cancel, .cm-send, .cm-resolve, .cm-delete, .cm-switch, .cm-p-open, .cm-p-send, .cm-p-cancel');
       if (!t) return false;
+      var pid = t.getAttribute('data-pid');
+      if (t.classList.contains('cm-p-open')) {
+        boxOpen['p:' + pid] = true; error = ''; changed();
+        var ta = opts.root.querySelector('textarea[data-key="p:' + pid + '"]'); if (ta) ta.focus();
+        return true;
+      }
+      if (t.classList.contains('cm-p-cancel')) { boxOpen['p:' + pid] = false; if (open === 'p:' + pid) { open = null; error = ''; } changed(); return true; }
+      if (t.classList.contains('cm-p-send')) { sendOnProposal(pid); return true; }
       if (t.classList.contains('cm-icon')) { var ids = t.getAttribute('data-threads').split(' '); open = ids.indexOf(open) !== -1 ? null : ids[0]; error = ''; changed(); }
       else if (t.classList.contains('cm-mark')) { open = t.getAttribute('data-thread'); error = ''; changed(); }
       else if (t.classList.contains('cm-close') || t.classList.contains('cm-cancel')) { if (open === 'new') pending = null; open = null; error = ''; changed(); }
@@ -258,7 +303,7 @@ window.BoldComments = (function(){
       });
     }
 
-    return { start: start, stop: stop, decorate: decorate, click: click, resolvedItems: resolvedItems };
+    return { start: start, stop: stop, decorate: decorate, click: click, resolvedItems: resolvedItems, proposalThreadHtml: proposalThreadHtml };
   }
 
   return { create: create };

@@ -367,7 +367,7 @@
         '<button type="button" class="btn-text gd-accept"' + off + (q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && q.kind !== 'batch' && !cur ? ' disabled' : '') + '>Accept</button>' +
         '<button type="button" class="btn-text danger gd-decline"' + off + '>Decline</button>' +
         (mine ? '<button type="button" class="btn-text gd-withdraw">Withdraw</button>' : '') +
-      '</div></li>';
+      '</div>' + (comments ? comments.proposalThreadHtml(q.id) : '') + '</li>';
   }
 
   function proposalsHtml(){

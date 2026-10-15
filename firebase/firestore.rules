@@ -299,11 +299,14 @@ service cloud.firestore {
       match /comments/{id} {
         allow read: if isLabMember();
         allow create: if isLabMember() && request.resource.data.by.email == email()
-          && request.resource.data.keys().hasOnly(['partId', 'quote', 'prefix', 'suffix', 'text', 'by', 'at', 'parent'])
+          && request.resource.data.keys().hasOnly(['partId', 'quote', 'prefix', 'suffix', 'text', 'by', 'at', 'parent', 'proposalId'])
           && request.resource.data.partId is string && request.resource.data.at is number
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
           && ('parent' in request.resource.data
             ? request.resource.data.parent is string && exists(/databases/$(database)/documents/guides/$(slug)/comments/$(request.resource.data.parent))
+            // On a proposed change: its discussion.
+            : 'proposalId' in request.resource.data
+            ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/guides/$(slug)/proposals/$(request.resource.data.proposalId))
             : request.resource.data.quote is string && request.resource.data.quote.size() > 0 && request.resource.data.quote.size() <= 500);
         allow update: if isLabMember() && (
           (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
@@ -373,11 +376,14 @@ service cloud.firestore {
       match /comments/{id} {
         allow read: if isLabMember();
         allow create: if isLabMember() && request.resource.data.by.email == email()
-          && request.resource.data.keys().hasOnly(['partId', 'quote', 'prefix', 'suffix', 'text', 'by', 'at', 'parent'])
+          && request.resource.data.keys().hasOnly(['partId', 'quote', 'prefix', 'suffix', 'text', 'by', 'at', 'parent', 'proposalId'])
           && request.resource.data.partId is string && request.resource.data.at is number
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
           && ('parent' in request.resource.data
             ? request.resource.data.parent is string && exists(/databases/$(database)/documents/handbook/$(slug)/comments/$(request.resource.data.parent))
+            // On a proposed change: its discussion.
+            : 'proposalId' in request.resource.data
+            ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/handbook/$(slug)/proposals/$(request.resource.data.proposalId))
             : request.resource.data.quote is string && request.resource.data.quote.size() > 0 && request.resource.data.quote.size() <= 500);
         allow update: if isLabMember() && (
           (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])

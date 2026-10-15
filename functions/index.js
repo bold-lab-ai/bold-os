@@ -1030,7 +1030,7 @@ function onCommented(collection){
     const c = event.data && event.data.data();
     if (!c) return;
     const ref = db.collection('commentQueue').doc(collection + '__' + event.params.slug);
-    const item = { id: event.params.id, partId: String(c.partId || ''), parent: c.parent || null, quote: String(c.quote || '').slice(0, 200),
+    const item = { id: event.params.id, partId: String(c.partId || ''), parent: c.parent || null, proposalId: c.proposalId || null, quote: String(c.quote || '').slice(0, 200),
       text: String(c.text || '').slice(0, 300), by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: c.at || Date.now() };
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
@@ -1049,7 +1049,8 @@ function commentQueueDue(q, now){
   return !!q && (now - (q.lastAt || 0) >= COMMENT_QUIET || now - (q.firstAt || 0) >= COMMENT_MAX);
 }
 
-// Who hears of which comments → { email: [items] }. threads: { rootId: [emails in it] }. Pure.
+// Who hears of which comments → { email: [items] }. threads: { rootId: [emails in it] },
+// and 'p:<proposal id>': [whoever proposed it and has commented on it]. Pure.
 function commentRecipients(items, staff, threads){
   const out = {};
   const add = (email, it) => {
@@ -1057,6 +1058,8 @@ function commentRecipients(items, staff, threads){
     (out[email] = out[email] || []).push(it);
   };
   items.forEach((it) => {
+    // On a proposed change: the PIs and admins, whoever proposed it and whoever's in its discussion.
+    if (it.proposalId) { staff.concat(threads['p:' + it.proposalId] || []).filter((e, i, all) => all.indexOf(e) === i).forEach((e) => add(e, it)); return; }
     if (!it.parent) staff.forEach((e) => add(e, it));
     else (threads[it.parent] || []).forEach((e) => add(e, it));
   });
@@ -1066,7 +1069,7 @@ function commentRecipients(items, staff, threads){
 // One person's message. Pure.
 function commentDigest(items, name, url){
   const n = items.length;
-  const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.parent ? ' replied' : ' on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
+  const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.proposalId ? ' on a proposed change' : it.parent ? ' replied' : ' on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
     ': ' + slackText(it.text.length > 140 ? it.text.slice(0, 140) + '…' : it.text);
   return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), url) + '\n' +
     items.slice(0, 5).map(line).join('\n') + (n > 5 ? '\n…and ' + (n - 5) + ' more.' : '');
@@ -1089,13 +1092,15 @@ exports.flushCommentQueue = onSchedule(
       });
       if (!taken || !(taken.items || []).length) continue;
       const page = db.collection(taken.collection).doc(taken.slug);
-      const [pageSnap, all] = await Promise.all([page.get(), page.collection('comments').get()]);
+      const [pageSnap, all, props] = await Promise.all([page.get(), page.collection('comments').get(), page.collection('proposals').get()]);
       if (!pageSnap.exists) continue;
       const threads = {};
+      const join = (key, e) => { if (e && (threads[key] = threads[key] || []).indexOf(e) === -1) threads[key].push(e); };
       all.docs.forEach((d) => {
-        const c = d.data(), root = c.parent || d.id, e = c.by && c.by.email ? String(c.by.email).toLowerCase() : '';
-        if (e) (threads[root] = threads[root] || []).indexOf(e) === -1 && threads[root].push(e);
+        const c = d.data(), e = c.by && c.by.email ? String(c.by.email).toLowerCase() : '';
+        join(c.proposalId ? 'p:' + c.proposalId : c.parent || d.id, e);
       });
+      props.docs.forEach((d) => { const q = d.data(); join('p:' + d.id, q.by && q.by.email ? String(q.by.email).toLowerCase() : ''); });
       const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase());
       const url = (taken.collection === 'guides' ? guideUrl : handbookUrl)(taken.slug);
       const name = pageSnap.data().title || taken.slug;
