@@ -182,6 +182,8 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 14px 44px rgba(26,43,74,.18); font-family:var(--sans); font-size:13px; color:var(--ink);}
 .cm-card.is-sheet{position:fixed; left:12px; right:12px; bottom:12px; top:auto !important; width:auto; max-height:70vh; overflow:auto;}
 .cm-close{position:absolute; top:4px; right:8px; background:none; border:none; font-size:18px; line-height:1; color:var(--muted); cursor:pointer;}
+.cm-resolve{position:absolute; top:7px; right:34px; font-size:13px;}
+.cm-card.has-resolve .cm-quote{margin-right:84px;}
 .cm-quote{margin:0 18px 10px 0; padding-left:8px; border-left:2px solid rgba(200,150,30,.55); color:var(--ink-soft); font-family:var(--serif); font-size:14px;}
 .cm-lost{margin:0 0 8px; color:var(--muted); font-style:italic;}
 .cm-comment{margin:0 0 10px; padding-bottom:8px; border-bottom:1px solid var(--line);}

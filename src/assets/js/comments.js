@@ -189,12 +189,12 @@ window.BoldComments = (function(){
         '<button type="button" class="btn-text cm-e-cancel" data-id="' + esc(c.id) + '">Cancel</button></div>';
     }
     function editButton(c){ return mine(c) ? '<button type="button" class="btn-text cm-edit" data-id="' + esc(c.id) + '">Edit</button>' : ''; }
-    function commentHtml(c, isRoot){
+    function commentHtml(c){
       if (editing === c.id) return '<div class="cm-comment"><p class="cm-meta">' + metaHtml(c) + '</p>' + editBoxHtml(c) + '</div>';
       var can = mine(c) || opts.fullWrite();
       return '<div class="cm-comment"><p class="cm-meta">' + metaHtml(c) + '</p>' +
         '<p class="cm-text">' + BoldMarkdown.plain(c.text) + '</p>' +
-        (can ? '<p class="cm-actions">' + editButton(c) + (isRoot ? '<button type="button" class="btn-text cm-resolve" data-id="' + esc(c.id) + '">Resolve</button>' : '') +
+        (can ? '<p class="cm-actions">' + editButton(c) +
           '<button type="button" class="btn-text danger cm-delete" data-id="' + esc(c.id) + '">Delete</button></p>' : '') + '</div>';
     }
     // The open thread (or the new comment), beside the icon.
@@ -204,10 +204,14 @@ window.BoldComments = (function(){
       var c = id === 'new' ? pending : byId(id);
       var others = row.ids.filter(function(x){ return x !== id; });
       var key = id;
+      // Resolving closes the whole thread: at its top, beside ×.
+      var resolvable = id !== 'new' && (mine(c) || opts.fullWrite());
+      if (resolvable) el.classList.add('has-resolve');
       el.innerHTML = '<button type="button" class="cm-close" aria-label="Close">×</button>' +
+        (resolvable ? '<button type="button" class="btn-text cm-resolve" data-id="' + esc(id) + '" title="Close the thread; it stays in the history">Resolve</button>' : '') +
         (row.lost ? '<p class="cm-lost">The text this was on has since changed.</p>' : '') +
         '<blockquote class="cm-quote">' + esc(c.quote.length > 160 ? c.quote.slice(0, 160) + '…' : c.quote) + '</blockquote>' +
-        (id === 'new' ? '' : commentHtml(c, true) + replies(id).map(function(r){ return commentHtml(r, false); }).join('')) +
+        (id === 'new' ? '' : commentHtml(c) + replies(id).map(function(r){ return commentHtml(r); }).join('')) +
         '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
         (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
         '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-send"' + (busy ? ' disabled' : '') + '>' + (id === 'new' ? 'Comment' : 'Reply') + '</button>' +
