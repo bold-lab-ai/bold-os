@@ -66,6 +66,33 @@
 
   function material(label, html){ return html ? '<div class="fact"><dt>' + label + '</dt><dd>' + html + '</dd></div>' : ''; }
 
+  // The request as a prompt for the referee's agent (the bold-recommendation-letter skill).
+  var SKILL = 'bold-recommendation-letter';
+  function agentPrompt(q){
+    var skillUrl = new URL('skill.html?skill=' + SKILL, location.href).href;
+    var lines = [
+      'Draft a recommendation letter with the ' + SKILL + ' skill (install it from ' + skillUrl + ' if you don’t have it).',
+      '',
+      'Applicant: ' + q.requesterName,
+      'What it’s for: ' + q.purpose,
+      'Asked: ' + when(q.at),
+      '',
+      'Where it goes:',
+    ];
+    (q.recipients || []).forEach(function(r){
+      lines.push('- ' + r.name +
+        (r.deadline ? '; due ' + day(r.deadline) : '; no deadline') +
+        (r.sentBy === 'requester' ? '; the applicant sends it (the referee shares it with them)' : '; the referee sends it') +
+        (r.url ? '; ' + r.url : '') +
+        (r.submittedAt ? '; ALREADY SUBMITTED ' + when(r.submittedAt) : ''));
+    });
+    lines.push('', 'CV: ' + (q.cv || 'none'), 'Cover letter or research statement: ' + (q.statement || 'none'));
+    WORK.forEach(function(w){
+      if (q[w.key]) lines.push('', w.short + ' (asked: “' + w.q + '”):', q[w.key]);
+    });
+    return lines.join('\n');
+  }
+
   function requestHtml(q, asWriter){
     var ack = q.acknowledgedAt ? '<span class="is-ok">Received ' + when(q.acknowledgedAt) + '</span>' : 'Not acknowledged yet';
     var meta = asWriter
@@ -84,6 +111,9 @@
         material('CV', q.cv && '<a href="' + esc(q.cv) + '" target="_blank" rel="noopener">Open</a>') +
         material('Cover letter or research statement', q.statement && '<a href="' + esc(q.statement) + '" target="_blank" rel="noopener">Open</a>') +
         WORK.map(function(w){ return material(w.short, q[w.key] && '<span class="lt-text">' + linkify(q[w.key]) + '</span>'); }).join('') + '</dl>' +
+      (asWriter && q.open !== false ? '<span class="lt-label">For your agent</span><div class="lt-agent">' +
+        '<p class="detail-muted">Paste it into Claude Code to draft the letter with the <a href="skill.html?skill=' + SKILL + '">' + SKILL + '</a> skill.</p>' +
+        BOLD.copyBoxHtml(agentPrompt(q)) + '</div>' : '') +
       (controls ? '<div class="event-controls">' + controls + '</div>' : '') +
       (editing === q.id ? formHtml(q) : '') + '</li>';
   }
