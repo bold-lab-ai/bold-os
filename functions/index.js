@@ -1058,8 +1058,8 @@ function commentRecipients(items, staff, threads){
     (out[email] = out[email] || []).push(it);
   };
   items.forEach((it) => {
-    // On a proposed change: the PIs and admins, whoever proposed it and whoever's in its discussion.
-    if (it.proposalId) { staff.concat(threads['p:' + it.proposalId] || []).filter((e, i, all) => all.indexOf(e) === i).forEach((e) => add(e, it)); return; }
+    // On a proposed change: whoever proposed it and whoever's in its discussion.
+    if (it.proposalId) { (threads['p:' + it.proposalId] || []).forEach((e) => add(e, it)); return; }
     if (!it.parent) staff.forEach((e) => add(e, it));
     else (threads[it.parent] || []).forEach((e) => add(e, it));
   });
