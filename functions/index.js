@@ -3790,6 +3790,68 @@ exports.remindLetterWriters = onSchedule(
   }
 );
 
+// ---------- Calls for papers on OpenReview ----------
+
+// When each venue's next call is looked for, as months of the year: from
+// `start`, for `months` months. Its submission invitation appears on OpenReview
+// months before submissions open (ICLR in Jun–Jul, ICML in Sep–Oct, NeurIPS in
+// Feb, 2024–2027), so each window is that, with a month or two either side.
+// `offset` takes the year the window starts in to the edition's year.
+const CALL_VENUES = [
+  { name: 'ICLR', group: 'ICLR.cc', start: 5, months: 5, offset: 1 },
+  { name: 'ICML', group: 'ICML.cc', start: 8, months: 6, offset: 1 },
+  { name: 'NeurIPS', group: 'NeurIPS.cc', start: 1, months: 5, offset: 0 },
+];
+const OPENREVIEW_API = 'https://api2.openreview.net';
+
+// The venues to look for on iso (YYYY-MM-DD) → [{ name, group, year }]: each
+// venue whose window it's in, with the edition that window is for.
+function venueCallsToCheck(iso){
+  const y = Number(iso.slice(0, 4)), m = Number(iso.slice(5, 7));
+  return CALL_VENUES.filter((v) => (m - v.start + 12) % 12 < v.months)
+    .map((v) => ({ name: v.name, group: v.group, year: (m < v.start ? y - 1 : y) + v.offset }));
+}
+
+// The edition's submission invitation, or null if it isn't on OpenReview yet.
+// `expired=true` finds it after its deadline too (without it, a 400).
+async function openReviewSubmission(group, year){
+  const id = group + '/' + year + '/Conference/-/Submission';
+  const res = await fetch(OPENREVIEW_API + '/invitations?expired=true&id=' + encodeURIComponent(id));
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('OpenReview answered ' + res.status + ' for ' + id);
+  const json = await res.json();
+  return (json.invitations || [])[0] || null;
+}
+
+// The DM for a call found.
+function venueCallMessage(name, year, group, inv){
+  const day = (ms) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/London' });
+  const when = [inv.cdate && 'submissions open ' + day(inv.cdate), inv.duedate && 'deadline ' + day(inv.duedate)].filter(Boolean).join(', ');
+  return '📣 ' + linkedTitle(name + ' ' + year, 'https://openreview.net/group?id=' + encodeURIComponent(group + '/' + year + '/Conference')) +
+    ' is on OpenReview' + (when ? ': ' + when : '') + '.';
+}
+
+// Mondays 09:00 London: looks for each venue's next call, in its window, and
+// DMs the PIs and admins once when it appears (venueCalls/{name}-{year},
+// server only).
+exports.checkVenueCalls = onSchedule(
+  { schedule: '0 9 * * 1', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  async function(){
+    for (const v of venueCallsToCheck(todayIsoLondon())) {
+      const ref = db.collection('venueCalls').doc(v.name + '-' + v.year);
+      if ((await ref.get()).exists) continue;
+      let inv;
+      try { inv = await openReviewSubmission(v.group, v.year); }
+      catch (err) { logger.warn('checkVenueCalls: OpenReview failed', { venue: v.name, year: v.year, error: String(err) }); continue; }
+      if (!inv) continue;
+      const text = venueCallMessage(v.name, v.year, v.group, inv);
+      const to = Array.from(new Set((await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => e.toLowerCase())));
+      for (const email of to) await dmByEmail(SLACK_BOT_TOKEN.value(), email, text);
+      await ref.set({ venue: v.name, year: v.year, cdate: inv.cdate || null, duedate: inv.duedate || null, notified: to, at: FieldValue.serverTimestamp() });
+    }
+  }
+);
+
 exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
@@ -3800,5 +3862,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue
+  normalizeLetterRequest, letterRemindersDue, venueCallsToCheck, venueCallMessage
 };
