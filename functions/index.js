@@ -2829,10 +2829,9 @@ exports.projectWorkspace = onCall(
       if (!joining && projectMembers(card, []).indexOf(email) >= 0) {
         throw new HttpsError('failed-precondition', 'Its submitter and authors stay on the project — remove yourself from the authors first.');
       }
-      // `left`: who left here, so syncProjectChannels doesn't add them back from the channel.
-      await wsRef.set(joining
-        ? { joined: FieldValue.arrayUnion(email), left: FieldValue.arrayRemove(email) }
-        : { joined: FieldValue.arrayRemove(email), left: FieldValue.arrayUnion(email) }, { merge: true });
+      await wsRef.set({ joined: joining
+        ? FieldValue.arrayUnion(email)
+        : FieldValue.arrayRemove(email) }, { merge: true });
       const out = workspaceView(await syncWorkspace(pid));
       if (joining && card.slackChannel){
         const n = normalizeProjectChannel(card.slackChannel);
@@ -2842,64 +2841,6 @@ exports.projectWorkspace = onCall(
       return out;
     }
     throw new HttpsError('invalid-argument', 'Unknown action.');
-  }
-);
-
-// ---------- Projects: whoever is in a project's Slack channel has joined it ----------
-// Joining on BOLD.OS adds you to the channel (above); joining the channel in Slack
-// is joining too. Hourly, each project's channel members (on the `people` roster)
-// who aren't on the project yet are added to its `joined`, but not whoever left
-// it here (`left`), and the workspace is synced (meeting, files, GitHub team).
-// Leaving the channel doesn't take anyone off the project.
-
-// Who to add → [emails]. Pure.
-function projectChannelJoins(channelEmails, members, joined, left){
-  const skip = new Set([].concat(members || [], joined || [], left || []).map((e) => String(e).toLowerCase()));
-  return Array.from(new Set((channelEmails || []).map((e) => String(e).toLowerCase()))).filter((e) => e && !skip.has(e));
-}
-
-// A channel's members → [Slack ids], or null if the bot can't see them.
-async function slackChannelMembers(token, channelId){
-  const ids = [];
-  let cursor = '';
-  do {
-    const params = { channel: channelId, limit: '1000' };
-    if (cursor) params.cursor = cursor;
-    const res = await fetch('https://slack.com/api/conversations.members?' + new URLSearchParams(params), { headers: { 'Authorization': 'Bearer ' + token } });
-    const json = await res.json();
-    if (!json.ok) { logger.warn('conversations.members failed', { channelId, error: json.error, needed: json.needed }); return null; }
-    ids.push(...(json.members || []));
-    cursor = (json.response_metadata && json.response_metadata.next_cursor) || '';
-  } while (cursor);
-  return ids;
-}
-
-exports.syncProjectChannels = onSchedule(
-  { schedule: '17 * * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 540 },
-  async function(){
-    const token = SLACK_BOT_TOKEN.value();
-    const emailOf = {};
-    (await db.collection('people').get()).docs.forEach((d) => { const p = d.data(); if (p.slackId && p.email) emailOf[p.slackId] = String(p.email).toLowerCase(); });
-    const wss = await db.collection('projectWorkspaces').get();
-    let added = 0;
-    for (const doc of wss.docs) {
-      const ws = doc.data();
-      if (!ws.slackChannel || ws.group === 'completed') continue;
-      const n = normalizeProjectChannel(ws.slackChannel);
-      if (n.error) continue;
-      let channelId;
-      try { channelId = await slackChannelId(token, n.name); } catch (err) { logger.warn('syncProjectChannels: listing channels failed', { error: String(err) }); return; }
-      if (!channelId) continue;
-      const ids = await slackChannelMembers(token, channelId);
-      if (!ids) continue;
-      const add = projectChannelJoins(ids.map((id) => emailOf[id]).filter(Boolean), ws.members, ws.joined, ws.left);
-      if (!add.length) continue;
-      await doc.ref.set({ joined: FieldValue.arrayUnion(...add) }, { merge: true });
-      added += add.length;
-      logger.info('syncProjectChannels: joined from the channel', { project: doc.id, channel: n.name, emails: add });
-      try { await syncWorkspace(doc.id); } catch (err) { logger.error('syncProjectChannels: syncWorkspace failed', { project: doc.id, error: String(err) }); }
-    }
-    logger.info('syncProjectChannels done', { projects: wss.size, added });
   }
 );
 
@@ -4177,5 +4118,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, projectChannelJoins, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, venueCallsToCheck, venueCallMessage
 };
