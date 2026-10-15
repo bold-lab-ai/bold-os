@@ -94,6 +94,27 @@ service cloud.firestore {
       allow read: if isLabMember() && (resource.data.requesterEmail == email().lower() || resource.data.writerEmail == email().lower());
       allow write: if false;
     }
+    // Introductions (introductions.html): offers, by anyone, read by the lab, changed
+    // by whoever made them (removed by a PI or admin too); requests on them, read by
+    // the two people only, every write through introRequest.
+    match /introOffers/{id} {
+      allow read: if isLabMember();
+      allow create: if isLabMember() && request.resource.data.keys().hasOnly(['org', 'area', 'by', 'at', 'updatedAt'])
+        && request.resource.data.by.email == email().lower() && request.resource.data.by.name is string
+        && request.resource.data.org is string && request.resource.data.org.size() > 0 && request.resource.data.org.size() <= 120
+        && request.resource.data.area is string && request.resource.data.area.size() <= 300
+        && request.resource.data.at is number && request.resource.data.updatedAt is number;
+      allow update: if isLabMember() && resource.data.by.email == email().lower()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['org', 'area', 'updatedAt'])
+        && request.resource.data.org is string && request.resource.data.org.size() > 0 && request.resource.data.org.size() <= 120
+        && request.resource.data.area is string && request.resource.data.area.size() <= 300
+        && request.resource.data.updatedAt is number;
+      allow delete: if isLabMember() && (resource.data.by.email == email().lower() || hasFullWrite());
+    }
+    match /introRequests/{id} {
+      allow read: if isLabMember() && (resource.data.requesterEmail == email().lower() || resource.data.offererEmail == email().lower());
+      allow write: if false;
+    }
     // The join form's choices (join.html, read before signing in) and, for PIs and
     // admins only, the Slack invite link and the welcome email's text.
     match /settings/joinForm {

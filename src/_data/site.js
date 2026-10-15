@@ -43,6 +43,7 @@ export default {
     { label: 'Skills', href: 'skills.html', links: [], skills: true, separatorAfter: true },
     { label: 'Service desk', href: 'service-desk.html', links: [
       { label: 'Recommendation letters', href: 'letters.html' },
+      { label: 'Introductions', href: 'introductions.html' },
     ] },
   ],
 };

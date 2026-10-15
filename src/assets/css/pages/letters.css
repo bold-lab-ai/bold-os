@@ -1,4 +1,5 @@
-/* Recommendation letters (letters.html, pages/letters.js). */
+/* Recommendation letters (letters.html, pages/letters.js) and introductions
+   (introductions.html, pages/introductions.js), which share it. */
 :root{--success-text:#256b60; --danger-text:#b42318; --neutral-text:#4b5563;}
 .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
@@ -69,3 +70,11 @@ section.block:first-of-type{margin-top:20px;}
 .spk-results li .detail-muted{font-size:12.5px; color:var(--muted); overflow-wrap:anywhere; text-align:right;}
 .spk-results li.active, .spk-results li:hover{background:var(--wash);}
 .spk-results li.spk-none{color:var(--muted); cursor:default;}
+
+/* Introductions: the filter over the offers, and an offer's note on its own line. */
+.in-filter{display:block; width:100%; max-width:360px; box-sizing:border-box; margin:6px 0 14px; font-family:var(--sans); font-size:14px; padding:7px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+#intros .lt-title + .lt-text{display:block; margin-top:4px;}
+#intros .lt-meta .lt-status{margin-left:6px;}
+#intros .lt-text{display:block; margin-top:4px;}
+.in-reply{display:block; width:100%; max-width:520px; box-sizing:border-box; margin-top:14px; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+#intros .in-reply + .event-controls{margin-top:8px;}

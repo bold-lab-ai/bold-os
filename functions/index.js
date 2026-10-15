@@ -1069,7 +1069,7 @@ function newTags(before, after){
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
 const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
-  'letterRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook'];
+  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook'];
 function tagPlace(path, data){
   const seg = path.split('/');
   if (TAG_SILENT.indexOf(seg[0]) !== -1 || seg.indexOf('versions') !== -1) return null;
@@ -1084,6 +1084,7 @@ function tagPlace(path, data){
   if (seg[0] === 'collabWeekProposals') return { title: named('a session proposal'), url: SITE_URL + 'event-collaboration-week.html' };
   if (seg[0] === 'skills') return { title: named(id), url: SITE_URL + 'skill.html?skill=' + q };
   if (seg[0] === 'projects') return { title: named('a project'), url: projectPageUrl(id) };
+  if (seg[0] === 'introOffers') return { title: 'an introduction offer at ' + String(d.org || 'an organisation'), url: introUrl() };
   return { title: named(seg[0]), url: SITE_URL };
 }
 
@@ -3952,6 +3953,94 @@ exports.remindLetterWriters = onSchedule(
         tx.update(s.ref, { recipients });
       });
     }
+  }
+);
+
+// ---------- Service desk: introductions ----------
+// introductions.html. Anyone offers to introduce people to someone at an
+// organisation they know (introOffers/{id}: { org, area, by: { email, name }, at,
+// updatedAt }; written by its author under the rules; no names of whoever they'd
+// introduce). Anyone else asks on an offer (introRequests/{id}: { offerId, org,
+// area, requesterEmail, requesterName, offererEmail, offererName, why, status:
+// asked | accepted | declined | done, reply, at, updatedAt }); only the two of
+// them read it, and every write goes through introRequest, which DMs the other.
+const INTRO_WHY_MAX = 2000, INTRO_REPLY_MAX = 1000;
+const introUrl = (id) => SITE_URL + 'introductions.html' + (id ? '#i=' + id : '');
+const INTRO_OPEN = ['asked', 'accepted'];
+
+// data: { action, … } → { id }. Actions:
+//   create { offerId, why }        anyone but the offer's author
+//   withdraw { id }                the requester, while it's open (deletes it)
+//   accept | decline { id, reply? }, done { id }   whoever made the offer
+exports.introRequest = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    const token = SLACK_BOT_TOKEN.value();
+    const me = await personFor(email);
+    const myName = (me && me.name) || request.auth.token.name || email;
+    const tell = (to, text) => dmByEmail(token, to, text);
+
+    if (d.action === 'create') {
+      const offerId = String(d.offerId || '');
+      if (!/^[A-Za-z0-9]{1,40}$/.test(offerId)) throw new HttpsError('invalid-argument', 'No such offer.');
+      const why = String(d.why || '').trim();
+      if (!why) throw new HttpsError('invalid-argument', 'Say what you’d like and why.');
+      if (why.length > INTRO_WHY_MAX) throw new HttpsError('invalid-argument', 'That’s too long.');
+      const offerSnap = await db.collection('introOffers').doc(offerId).get();
+      if (!offerSnap.exists) throw new HttpsError('not-found', 'That offer has been removed.');
+      const o = offerSnap.data(), offererEmail = String((o.by && o.by.email) || '').toLowerCase();
+      if (offererEmail === email) throw new HttpsError('invalid-argument', 'That’s your own offer.');
+      const mine = (await db.collection('introRequests').where('requesterEmail', '==', email).get()).docs.map((x) => x.data());
+      if (mine.some((q) => q.offerId === offerId && INTRO_OPEN.indexOf(q.status) !== -1)) throw new HttpsError('already-exists', 'You’ve asked on this offer already.');
+      if (mine.filter((q) => INTRO_OPEN.indexOf(q.status) !== -1).length >= 50) throw new HttpsError('resource-exhausted', 'You have fifty requests open: withdraw some first.');
+      const now = Date.now();
+      const ref = await db.collection('introRequests').add({
+        offerId, org: String(o.org || ''), area: String(o.area || ''), requesterEmail: email, requesterName: myName,
+        offererEmail, offererName: String((o.by && o.by.name) || offererEmail), why, status: 'asked', reply: '', at: now, updatedAt: now,
+      });
+      await tell(offererEmail, '🤝 ' + slackText(myName) + ' asked you for an introduction at ' + linkedTitle(slackText(o.org), introUrl(ref.id)) +
+        ': “' + slackText(why.length > 300 ? why.slice(0, 300) + '…' : why) + '”');
+      return { id: ref.id };
+    }
+
+    const id = String(d.id || '');
+    if (!/^[A-Za-z0-9]{1,40}$/.test(id)) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('introRequests').doc(id);
+    let note = null;
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError('not-found', 'No such request: it may have been withdrawn.');
+      const q = snap.data();
+      const title = linkedTitle(slackText(q.org), introUrl(id));
+      if (d.action === 'withdraw') {
+        if (q.requesterEmail !== email) throw new HttpsError('permission-denied', 'Only whoever asked can withdraw it.');
+        tx.delete(ref);
+        if (INTRO_OPEN.indexOf(q.status) !== -1) note = { to: q.offererEmail, text: '↩️ ' + slackText(q.requesterName) + ' withdrew their request for an introduction at *' + slackText(q.org) + '*. Nothing more to do.' };
+        return;
+      }
+      if (['accept', 'decline', 'done'].indexOf(d.action) === -1) throw new HttpsError('invalid-argument', 'Unknown action.');
+      if (q.offererEmail !== email) throw new HttpsError('permission-denied', 'Only whoever made the offer can do this.');
+      const reply = String(d.reply || '').trim();
+      if (reply.length > INTRO_REPLY_MAX) throw new HttpsError('invalid-argument', 'That note is too long.');
+      const said = reply ? ': “' + slackText(reply) + '”' : '.';
+      if (d.action === 'accept') {
+        if (q.status !== 'asked') throw new HttpsError('failed-precondition', 'You’ve answered this one already.');
+        tx.update(ref, { status: 'accepted', reply, updatedAt: Date.now() });
+        note = { to: q.requesterEmail, text: '🤝 ' + slackText(q.offererName) + ' will introduce you at ' + title + said };
+      } else if (d.action === 'decline') {
+        if (INTRO_OPEN.indexOf(q.status) === -1) throw new HttpsError('failed-precondition', 'This one is closed already.');
+        tx.update(ref, { status: 'declined', reply, updatedAt: Date.now() });
+        note = { to: q.requesterEmail, text: '✖️ ' + slackText(q.offererName) + ' can’t introduce you at ' + title + ' this time' + said };
+      } else {
+        if (q.status !== 'accepted') throw new HttpsError('failed-precondition', 'Say you’ll do it first.');
+        tx.update(ref, { status: 'done', updatedAt: Date.now() });
+        note = { to: q.requesterEmail, text: '✅ ' + slackText(q.offererName) + ' has introduced you at ' + title + '.' };
+      }
+    });
+    if (note) await tell(note.to, note.text);
+    return { id };
   }
 );
 
