@@ -88,7 +88,7 @@
   function isField(el){ return el && el.tagName === 'TEXTAREA' && !el.closest('.no-tags'); }
   document.addEventListener('input', function(e){ if (isField(e.target)) { if (field !== e.target) at = 0; show(e.target); } });
   document.addEventListener('keydown', function(e){
-    if (!box || e.target !== field) return;
+    if (!box || e.target !== field || e.metaKey || e.ctrlKey) return;
     if (e.key === 'ArrowDown') { at = (at + 1) % list.length; show(field); e.preventDefault(); }
     else if (e.key === 'ArrowUp') { at = (at + list.length - 1) % list.length; show(field); e.preventDefault(); }
     else if (e.key === 'Enter' || e.key === 'Tab') { pick(at); e.preventDefault(); }

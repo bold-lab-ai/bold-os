@@ -40,7 +40,7 @@ export default {
     // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.
     { label: 'How to', href: 'guides.html', links: [], guides: true },
     // Its sub-pages are the skills (Firestore), filled in by bold.js.
-    { label: 'Skills', href: 'skills.html', links: [], skills: true },
+    { label: 'Skills', href: 'skills.html', links: [], skills: true, separatorAfter: true },
     { label: 'Service desk', href: 'service-desk.html', links: [
       { label: 'Recommendation letters', href: 'letters.html' },
     ] },

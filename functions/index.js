@@ -27,7 +27,7 @@
 // Slack workspace — see scratchpad test scripts referenced in the
 // changelog.
 
-const { onDocumentCreated, onDocumentWritten, onDocumentWrittenWithAuthContext } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentWrittenWithAuthContext } = require('firebase-functions/v2/firestore');
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { beforeUserCreated, HttpsError: IdentityHttpsError } = require('firebase-functions/v2/identity');
@@ -1177,6 +1177,26 @@ function onCommented(collection){
     });
   });
 }
+// An edited comment (comments.js): whoever it newly tags joins the queue, and only they hear of it.
+function onCommentEdited(collection){
+  return onDocumentUpdated({ document: collection + '/{slug}/comments/{id}' }, async function(event){
+    const before = event.data.before.data(), c = event.data.after.data();
+    const tagged = newTags(before.text, c.text);
+    if (!tagged.length) return;
+    const ref = db.collection('commentQueue').doc(collection + '__' + event.params.slug);
+    const item = { id: event.params.id, partId: String(c.partId || ''), parent: c.parent || null, proposalId: c.proposalId || null, quote: String(c.quote || '').slice(0, 200),
+      text: String(c.text || '').slice(0, 300), tagged, tagsOnly: true, by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: Date.now() };
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const q = snap.exists ? snap.data() : { collection, slug: event.params.slug, items: [], firstAt: Date.now() };
+      q.items = (q.items || []).concat([item]).slice(-200);
+      q.lastAt = Date.now();
+      tx.set(ref, q);
+    });
+  });
+}
+exports.onGuideCommentEdited = onCommentEdited('guides');
+exports.onHandbookCommentEdited = onCommentEdited('handbook');
 exports.onGuideCommented = onCommented('guides');
 exports.onHandbookCommented = onCommented('handbook');
 exports.onGuideProposalTagged = onProposalTagged('guides', guideUrl);
@@ -1201,7 +1221,9 @@ function commentRecipients(items, staff, threads, tagEmails){
   };
   items.forEach((it) => {
     // On a proposed change: whoever proposed it and whoever's in its discussion.
-    if (it.proposalId) (threads['p:' + it.proposalId] || []).forEach((e) => add(e, it));
+    // An edit that tags someone new: only they hear of it.
+    if (it.tagsOnly) {}
+    else if (it.proposalId) (threads['p:' + it.proposalId] || []).forEach((e) => add(e, it));
     else if (!it.parent) staff.forEach((e) => add(e, it));
     else (threads[it.parent] || []).forEach((e) => add(e, it));
     (it.tagged || []).forEach((id) => add((tagEmails || {})[id], it, true));

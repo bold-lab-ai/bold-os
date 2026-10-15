@@ -353,8 +353,9 @@ service cloud.firestore {
             ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/guides/$(slug)/proposals/$(request.resource.data.proposalId))
             : request.resource.data.quote is string && request.resource.data.quote.size() > 0 && request.resource.data.quote.size() <= 500);
         allow update: if isLabMember() && (
-          (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
-            && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
+          (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+            && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+            && (!('editedAt' in request.resource.data) || request.resource.data.editedAt is number))
           || ((resource.data.by.email == email() || hasFullWrite())
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedByName', 'resolvedAt'])
             && request.resource.data.resolvedBy == email()));
@@ -439,8 +440,9 @@ service cloud.firestore {
             ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/handbook/$(slug)/proposals/$(request.resource.data.proposalId))
             : request.resource.data.quote is string && request.resource.data.quote.size() > 0 && request.resource.data.quote.size() <= 500);
         allow update: if isLabMember() && (
-          (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text'])
-            && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000)
+          (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
+            && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
+            && (!('editedAt' in request.resource.data) || request.resource.data.editedAt is number))
           || ((resource.data.by.email == email() || hasFullWrite())
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedByName', 'resolvedAt'])
             && request.resource.data.resolvedBy == email()));
