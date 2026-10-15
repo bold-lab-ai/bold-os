@@ -59,9 +59,8 @@
 
   // "About your work with me": the writer's questions.
   var WORK = [
-    { key: 'howWorked', short: 'Worked together', q: 'How we’ve worked together: modules, project or dissertation supervision, research work, and the dates.' },
-    { key: 'ownWork', short: 'Own contribution', q: 'What you did yourself, as opposed to your group: the project title, methods and tools, results, and any outputs (code, report, paper, talk).' },
-    { key: 'best', short: 'Best moments', q: 'One or two moments you think show you at your best, such as a problem you solved on your own, an idea that was yours, or how you handled a setback.' },
+    { key: 'howWorked', short: 'Worked together', q: 'How we’ve worked together: modules, project or dissertation supervision, research work, and the dates. What you did yourself, as opposed to your group: the project title, methods and tools, results, and any outputs (code, report, paper, talk).' },
+    { key: 'best', short: 'Best moments', q: 'One or two moments you think show you at your best, such as a problem you solved on your own, an idea that was yours, or how you handled a setback (optional).' },
     { key: 'extra', short: 'Also relevant', q: 'Anything relevant I might not know about: publications, awards, other research, work outside the course (optional).' },
   ];
 
@@ -117,7 +116,7 @@
         '<label>Cover letter or research statement (link, optional)<input type="url" class="lt-statement" maxlength="1000" value="' + esc(q ? q.statement || '' : '') + '" placeholder="https://…"></label>' +
       '</fieldset>' +
       '<fieldset><legend>About your work with me</legend>' + WORK.map(function(w){
-        return '<label>' + esc(w.q) + '<textarea class="lt-w" data-key="' + w.key + '" rows="4" maxlength="' + (w.key === 'ownWork' ? 5000 : 3000) + '">' + esc(q ? q[w.key] || '' : '') + '</textarea></label>';
+        return '<label>' + esc(w.q) + '<textarea class="lt-w" data-key="' + w.key + '" rows="' + (w.key === 'howWorked' ? 7 : 4) + '" maxlength="' + (w.key === 'howWorked' ? 6000 : 3000) + '">' + esc(q ? q[w.key] || '' : '') + '</textarea></label>';
       }).join('') + '</fieldset>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions">' +
         '<button type="button" class="ev-save lt-save">' + (q ? 'Save' : 'Ask for the letter') + '</button>' +
@@ -218,7 +217,7 @@
     var v = function(c){ return f.querySelector(c).value.trim(); };
     return {
       purpose: v('.lt-purpose'), cv: v('.lt-cv'), statement: v('.lt-statement'),
-      howWorked: v('[data-key="howWorked"]'), ownWork: v('[data-key="ownWork"]'), best: v('[data-key="best"]'), extra: v('[data-key="extra"]'),
+      howWorked: v('[data-key="howWorked"]'), best: v('[data-key="best"]'), extra: v('[data-key="extra"]'),
       recipients: Array.prototype.map.call(f.querySelectorAll('.lt-rrow'), function(row){
         return { id: row.getAttribute('data-rid') || undefined, name: row.querySelector('.lt-rn').value.trim(), url: row.querySelector('.lt-ru').value.trim(),
           deadline: row.querySelector('.lt-rd').value, sentBy: row.querySelector('.lt-rs').value };
@@ -231,9 +230,7 @@
     if (!d.purpose) return 'Say what the letter is for.';
     if (!d.recipients.length) return 'Add where the letter goes.';
     if (!/^https?:\/\/\S+$/.test(d.cv)) return 'Give a link to your CV, starting with https://.';
-    if (!d.howWorked) return 'Say how you’ve worked together.';
-    if (!d.ownWork) return 'Say what you did yourself.';
-    if (!d.best) return 'Give a moment or two that show you at your best.';
+    if (!d.howWorked) return 'Say how you’ve worked together and what you did yourself.';
     if (d.statement && !/^https?:\/\/\S+$/.test(d.statement)) return 'The cover letter or statement link starts with https://.';
     for (var i = 0; i < d.recipients.length; i++) {
       var r = d.recipients[i];

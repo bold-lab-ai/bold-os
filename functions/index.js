@@ -3565,7 +3565,7 @@ exports.retryWelcomeEmails = onSchedule(
 //
 // Anyone in the lab asks anyone in the lab for a recommendation letter
 // (letters.html). letterRequests/{id}: { requesterEmail, requesterName,
-// writerEmail, writerName, purpose, cv, statement, howWorked, ownWork, best, extra,
+// writerEmail, writerName, purpose, cv, statement, howWorked, best, extra,
 // recipients: [{ id, name, url,
 // deadline, sentBy: 'writer' | 'requester', submittedAt, letterUrl, reminded }],
 // acknowledgedAt, open, at, updatedAt }. Only the two of them read it; every
@@ -3577,9 +3577,9 @@ exports.retryWelcomeEmails = onSchedule(
 
 // The materials are a set list: a link to their CV, optionally a link to a cover
 // letter or research statement, and "About your work with me": how they worked
-// with the writer, what they did themselves, a moment or two at their best and,
-// optionally, anything else relevant.
-const LETTER_TEXT = { purpose: 300, cv: 1000, statement: 1000, howWorked: 3000, ownWork: 5000, best: 3000, extra: 3000 };
+// with the writer and what they did themselves and, optionally, a moment or two
+// at their best and anything else relevant.
+const LETTER_TEXT = { purpose: 300, cv: 1000, statement: 1000, howWorked: 6000, best: 3000, extra: 3000 };
 const LETTER_REMIND_DAYS = [7, 2];
 const letterUrl = (id) => SITE_URL + 'letters.html#l=' + id;
 
@@ -3595,9 +3595,7 @@ function normalizeLetterRequest(d, was){
   }
   if (!out.purpose) return { error: 'Say what the letter is for.' };
   if (!/^https?:\/\/\S+$/.test(out.cv)) return { error: 'Give a link to your CV, starting with https://.' };
-  if (!out.howWorked) return { error: 'Say how you’ve worked together.' };
-  if (!out.ownWork) return { error: 'Say what you did yourself.' };
-  if (!out.best) return { error: 'Give a moment or two that show you at your best.' };
+  if (!out.howWorked) return { error: 'Say how you’ve worked together and what you did yourself.' };
   if (out.statement && !/^https?:\/\/\S+$/.test(out.statement)) return { error: 'The cover letter or statement link starts with https://.' };
   const list = Array.isArray(d.recipients) ? d.recipients : [];
   if (!list.length) return { error: 'Add where the letter goes.' };
