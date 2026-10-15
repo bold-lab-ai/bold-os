@@ -36,13 +36,19 @@ section.block:first-of-type{margin-top:20px;}
 .lt-share{display:flex; gap:8px; flex:1 1 100%; max-width:520px;}
 .lt-share input{flex:1 1 auto; min-width:0; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 .lt-item .event-controls{margin-top:14px;}
+.lt-materials{margin:6px 0 0;}
+.lt-materials .fact{display:flex; gap:24px; padding:6px 0; border-top:1px solid rgba(26,43,74,0.08);}
+.lt-materials dt{flex:0 0 190px; font-family:var(--sans); font-size:13px; color:var(--muted); padding-top:2px;}
+.lt-materials dd{margin:0; font-size:15px; min-width:0; overflow-wrap:anywhere;}
+.lt-materials .lt-text{display:block; margin:0;}
+@media (max-width:560px){ .lt-materials .fact{flex-direction:column; gap:2px;} .lt-materials dt{flex:none;} }
 .lt-item .event-form{margin-top:14px;}
 
 /* ---------- the form ---------- */
 .lt-form{max-width:640px;}
 .lt-form select{display:block; width:100%; margin-top:4px; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 .lt-form fieldset{border:0; margin:0 0 10px; padding:0;}
-.lt-form legend{padding:0; margin-bottom:6px; color:var(--muted);}
+.lt-form legend{padding:0; margin:8px 0 6px; color:var(--ink); font-weight:600;}
 .lt-rrow{display:grid; grid-template-columns:1fr 1fr; gap:0 12px; padding:10px 0 4px; border-top:1px solid rgba(26,43,74,0.08);}
 .lt-rrow .lt-rremove{grid-column:1 / -1; justify-self:start; margin-bottom:8px;}
 .lt-rrow input[disabled], .lt-rrow select[disabled]{opacity:.6;}
@@ -51,6 +57,7 @@ section.block:first-of-type{margin-top:20px;}
 
 /* Person picker: type to search the Slack roster (as the speaker picker, session.css). */
 .spk-search{position:relative; margin-top:4px;}
+.spk-search::after{content:'▾'; position:absolute; right:10px; top:50%; transform:translateY(-50%); color:var(--muted); pointer-events:none; font-size:12px;}
 .spk-chosen{display:flex; gap:12px; align-items:baseline; margin-top:4px; font-size:15px; color:var(--ink); overflow-wrap:anywhere;}
 .spk-chosen .detail-muted{font-family:var(--sans); font-size:12.5px; color:var(--muted);}
 .spk-results{

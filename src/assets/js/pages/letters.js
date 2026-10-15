@@ -10,7 +10,7 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('letterRequest')(data); };
-  var me = null, byMe = null, ofMe = null, people = null, unsubs = [];
+  var me = null, byMe = null, ofMe = null, writers = null, unsubs = [];
   // The open form: null, 'new', or a request's id.
   var editing = null, busy = {};
 
@@ -57,6 +57,16 @@
       controls + '</li>';
   }
 
+  // "About your work with me": the writer's questions.
+  var WORK = [
+    { key: 'howWorked', short: 'Worked together', q: 'How we’ve worked together: modules, project or dissertation supervision, research work, and the dates.' },
+    { key: 'ownWork', short: 'Own contribution', q: 'What you did yourself, as opposed to your group: the project title, methods and tools, results, and any outputs (code, report, paper, talk).' },
+    { key: 'best', short: 'Best moments', q: 'One or two moments you think show you at your best, such as a problem you solved on your own, an idea that was yours, or how you handled a setback.' },
+    { key: 'extra', short: 'Also relevant', q: 'Anything relevant I might not know about: publications, awards, other research, work outside the course (optional).' },
+  ];
+
+  function material(label, html){ return html ? '<div class="fact"><dt>' + label + '</dt><dd>' + html + '</dd></div>' : ''; }
+
   function requestHtml(q, asWriter){
     var ack = q.acknowledgedAt ? '<span class="is-ok">Received ' + when(q.acknowledgedAt) + '</span>' : 'Not acknowledged yet';
     var meta = asWriter
@@ -71,8 +81,10 @@
       '<span class="lt-title">' + esc(q.purpose) + '</span><span class="lt-meta">' + meta + '</span>' +
       '<span class="lt-label">Where it goes</span><ul class="lt-recipients">' +
         (q.recipients || []).map(function(r){ return recipientHtml(q, r, asWriter); }).join('') + '</ul>' +
-      (q.links ? '<span class="lt-label">Materials</span><p class="lt-text">' + linkify(q.links) + '</p>' : '') +
-      (q.notes ? '<span class="lt-label">Notes for the writer</span><p class="lt-text">' + linkify(q.notes) + '</p>' : '') +
+      '<span class="lt-label">Materials</span><dl class="lt-materials">' +
+        material('CV', q.cv && '<a href="' + esc(q.cv) + '" target="_blank" rel="noopener">Open</a>') +
+        material('Cover letter or research statement', q.statement && '<a href="' + esc(q.statement) + '" target="_blank" rel="noopener">Open</a>') +
+        WORK.map(function(w){ return material(w.short, q[w.key] && '<span class="lt-text">' + linkify(q[w.key]) + '</span>'); }).join('') + '</dl>' +
       (controls ? '<div class="event-controls">' + controls + '</div>' : '') +
       (editing === q.id ? formHtml(q) : '') + '</li>';
   }
@@ -100,8 +112,13 @@
       '<fieldset><legend>Where it goes</legend><div class="lt-rows">' +
         ((q ? q.recipients : null) || [null]).map(rowHtml).join('') + '</div>' +
         '<button type="button" class="btn-text lt-radd">+ Add a recipient</button></fieldset>' +
-      '<label>Materials for the writer (CV, statement, papers: links)<textarea class="lt-links" rows="3" maxlength="1000">' + esc(q ? q.links : '') + '</textarea></label>' +
-      '<label>Notes for the writer (what you did together, what to cover)<textarea class="lt-notes" rows="5" maxlength="3000">' + esc(q ? q.notes : '') + '</textarea></label>' +
+      '<fieldset><legend>Materials for the writer</legend>' +
+        '<label>CV (link)<input type="url" class="lt-cv" maxlength="1000" value="' + esc(q ? q.cv || '' : '') + '" placeholder="https://…"></label>' +
+        '<label>Cover letter or research statement (link, optional)<input type="url" class="lt-statement" maxlength="1000" value="' + esc(q ? q.statement || '' : '') + '" placeholder="https://…"></label>' +
+      '</fieldset>' +
+      '<fieldset><legend>About your work with me</legend>' + WORK.map(function(w){
+        return '<label>' + esc(w.q) + '<textarea class="lt-w" data-key="' + w.key + '" rows="4" maxlength="' + (w.key === 'ownWork' ? 5000 : 3000) + '">' + esc(q ? q[w.key] || '' : '') + '</textarea></label>';
+      }).join('') + '</fieldset>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions">' +
         '<button type="button" class="ev-save lt-save">' + (q ? 'Save' : 'Ask for the letter') + '</button>' +
         '<button type="button" class="lt-cancel">Cancel</button></div></div>';
@@ -122,7 +139,7 @@
     if (el && !render.jumped) { render.jumped = true; el.classList.add('is-target'); el.scrollIntoView({ block: 'start' }); }
   }
 
-  // ---------- choosing the writer: type to search the Slack roster ----------
+  // ---------- choosing the writer: a list of the BOLD.OS users, filtered by typing ----------
   function mountWho(wrap, form){
     var chosen = form.writer;
     if (chosen) {
@@ -131,22 +148,22 @@
       wrap.querySelector('.lt-who-change').addEventListener('click', function(){ form.writer = null; mountWho(wrap, form); wrap.querySelector('input').focus(); });
       return;
     }
-    wrap.innerHTML = '<div class="spk-search"><input type="text" class="lt-who-q" placeholder="Type a name or email…" autocomplete="off" role="combobox" aria-expanded="false" aria-label="Who writes it">' +
+    wrap.innerHTML = '<div class="spk-search"><input type="text" class="lt-who-q" placeholder="Choose, or type a name…" autocomplete="off" role="combobox" aria-expanded="false" aria-label="Who writes it">' +
       '<ul class="spk-results" role="listbox" hidden></ul></div>';
     var input = wrap.querySelector('input'), list = wrap.querySelector('ul'), found = [], active = 0;
     var fold = function(s){ return String(s || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, ''); };
     function pick(k){ if (!found[k]) return; form.writer = { name: found[k].name || found[k].email, email: found[k].email }; mountWho(wrap, form); }
     function show(){
       var words = fold(input.value).split(/\s+/).filter(Boolean);
-      found = !words.length ? [] : (people || []).filter(function(p){
+      found = (writers || []).filter(function(p){
         var hay = fold(p.name) + ' ' + fold(p.email);
-        return p.email && p.email.toLowerCase() !== me.email && words.every(function(w){ return hay.indexOf(w) >= 0; });
-      }).slice(0, 8);
+        return p.email !== me.email && words.every(function(w){ return hay.indexOf(w) >= 0; });
+      });
       active = 0;
       list.innerHTML = found.length ? found.map(function(p, k){
         return '<li role="option" data-k="' + k + '"' + (k === active ? ' class="active"' : '') + '>' + esc(p.name) + '<span class="detail-muted">' + esc(p.email) + '</span></li>';
-      }).join('') : '<li class="spk-none">' + (people ? 'Nobody on the BOLD Slack matches.' : 'Loading…') + '</li>';
-      list.hidden = !words.length;
+      }).join('') : '<li class="spk-none">' + (writers ? 'Nobody in BOLD.OS matches.' : 'Loading…') + '</li>';
+      list.hidden = false;
       input.setAttribute('aria-expanded', String(!list.hidden));
       list.querySelectorAll('li[data-k]').forEach(function(li){
         li.addEventListener('mousedown', function(e){ e.preventDefault(); pick(Number(li.getAttribute('data-k'))); });
@@ -157,9 +174,11 @@
       if (!items.length) return;
       active = (k + items.length) % items.length;
       items.forEach(function(li, j){ li.classList.toggle('active', j === active); });
+      items[active].scrollIntoView({ block: 'nearest' });
     }
     input.addEventListener('input', show);
     input.addEventListener('focus', show);
+    input.addEventListener('click', show);
     input.addEventListener('blur', function(){ list.hidden = true; input.setAttribute('aria-expanded', 'false'); });
     input.addEventListener('keydown', function(e){
       if (list.hidden) return;
@@ -179,12 +198,11 @@
       var wrap = main.querySelector('.lt-new');
       wrap.innerHTML = formHtml(null);
       mountWho(wrap.querySelector('.lt-who'), newForm);
-      if (!people) db.collection('people').get().then(function(snap){
-        people = snap.docs.map(function(d){ return d.data(); }).filter(function(p){ return p.email; })
-          .sort(function(a, b){ return (a.name || '').localeCompare(b.name || ''); });
+      if (!writers) firebase.app().functions('europe-west2').httpsCallable('letterWriters')().then(function(r){
+        writers = (r.data && r.data.writers) || [];
         var q = main.querySelector('.lt-who-q');
         if (q && q === document.activeElement) q.dispatchEvent(new Event('input'));
-      }).catch(function(err){ console.error('[BOLD Letters] loading the roster failed', err); people = []; });
+      }).catch(function(err){ console.error('[BOLD Letters] loading the BOLD.OS users failed', err); writers = []; });
       wrap.querySelector('.lt-who-q').focus();
       return;
     }
@@ -199,7 +217,8 @@
   function readForm(f){
     var v = function(c){ return f.querySelector(c).value.trim(); };
     return {
-      purpose: v('.lt-purpose'), links: v('.lt-links'), notes: v('.lt-notes'),
+      purpose: v('.lt-purpose'), cv: v('.lt-cv'), statement: v('.lt-statement'),
+      howWorked: v('[data-key="howWorked"]'), ownWork: v('[data-key="ownWork"]'), best: v('[data-key="best"]'), extra: v('[data-key="extra"]'),
       recipients: Array.prototype.map.call(f.querySelectorAll('.lt-rrow'), function(row){
         return { id: row.getAttribute('data-rid') || undefined, name: row.querySelector('.lt-rn').value.trim(), url: row.querySelector('.lt-ru').value.trim(),
           deadline: row.querySelector('.lt-rd').value, sentBy: row.querySelector('.lt-rs').value };
@@ -211,6 +230,11 @@
     if (isNew && !newForm.writer) return 'Choose who writes the letter.';
     if (!d.purpose) return 'Say what the letter is for.';
     if (!d.recipients.length) return 'Add where the letter goes.';
+    if (!/^https?:\/\/\S+$/.test(d.cv)) return 'Give a link to your CV, starting with https://.';
+    if (!d.howWorked) return 'Say how you’ve worked together.';
+    if (!d.ownWork) return 'Say what you did yourself.';
+    if (!d.best) return 'Give a moment or two that show you at your best.';
+    if (d.statement && !/^https?:\/\/\S+$/.test(d.statement)) return 'The cover letter or statement link starts with https://.';
     for (var i = 0; i < d.recipients.length; i++) {
       var r = d.recipients[i];
       if (!r.name) return 'Give each recipient a name.';

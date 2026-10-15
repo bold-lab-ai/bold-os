@@ -3565,15 +3565,21 @@ exports.retryWelcomeEmails = onSchedule(
 //
 // Anyone in the lab asks anyone in the lab for a recommendation letter
 // (letters.html). letterRequests/{id}: { requesterEmail, requesterName,
-// writerEmail, writerName, purpose, links, notes, recipients: [{ id, name, url,
+// writerEmail, writerName, purpose, cv, statement, howWorked, ownWork, best, extra,
+// recipients: [{ id, name, url,
 // deadline, sentBy: 'writer' | 'requester', submittedAt, letterUrl, reminded }],
 // acknowledgedAt, open, at, updatedAt }. Only the two of them read it; every
 // write goes through letterRequest, which DMs the other one on Slack. The letter
 // itself stays out of BOLD.OS: the writer marks each recipient submitted, and
 // shares the letter (letterUrl) only where the requester has to send it on.
-// remindLetterWriters nudges the writer before each deadline.
+// remindLetterWriters nudges the writer before each deadline. Writers are
+// BOLD.OS users: accounts that have signed in with Slack (letterWriters).
 
-const LETTER_TEXT = { purpose: 300, links: 1000, notes: 3000 };
+// The materials are a set list: a link to their CV, optionally a link to a cover
+// letter or research statement, and "About your work with me": how they worked
+// with the writer, what they did themselves, a moment or two at their best and,
+// optionally, anything else relevant.
+const LETTER_TEXT = { purpose: 300, cv: 1000, statement: 1000, howWorked: 3000, ownWork: 5000, best: 3000, extra: 3000 };
 const LETTER_REMIND_DAYS = [7, 2];
 const letterUrl = (id) => SITE_URL + 'letters.html#l=' + id;
 
@@ -3588,6 +3594,11 @@ function normalizeLetterRequest(d, was){
     out[k] = v;
   }
   if (!out.purpose) return { error: 'Say what the letter is for.' };
+  if (!/^https?:\/\/\S+$/.test(out.cv)) return { error: 'Give a link to your CV, starting with https://.' };
+  if (!out.howWorked) return { error: 'Say how you’ve worked together.' };
+  if (!out.ownWork) return { error: 'Say what you did yourself.' };
+  if (!out.best) return { error: 'Give a moment or two that show you at your best.' };
+  if (out.statement && !/^https?:\/\/\S+$/.test(out.statement)) return { error: 'The cover letter or statement link starts with https://.' };
   const list = Array.isArray(d.recipients) ? d.recipients : [];
   if (!list.length) return { error: 'Add where the letter goes.' };
   if (list.length > 20) return { error: 'Twenty recipients at most.' };
@@ -3659,15 +3670,15 @@ exports.letterRequest = onCall(
       const writerEmail = String(d.writerEmail || '').trim().toLowerCase();
       if (!writerEmail) throw new HttpsError('invalid-argument', 'Choose who writes the letter.');
       if (writerEmail === email) throw new HttpsError('invalid-argument', 'Ask someone else for the letter.');
-      const people = await db.collection('people').where('email', 'in', [writerEmail, d.writerEmail]).limit(1).get();
-      if (people.empty) throw new HttpsError('invalid-argument', 'They’re not on the BOLD Slack.');
+      const writer = (await letterWriters()).filter((w) => w.email === writerEmail)[0];
+      if (!writer) throw new HttpsError('invalid-argument', 'They haven’t signed in to BOLD.OS yet.');
       const n = normalizeLetterRequest(d, []);
       if (n.error) throw new HttpsError('invalid-argument', n.error);
       const open = await db.collection('letterRequests').where('requesterEmail', '==', email).where('open', '==', true).count().get();
       if (open.data().count >= 50) throw new HttpsError('resource-exhausted', 'You have fifty requests open: withdraw some first.');
       const now = Date.now();
       const ref = await db.collection('letterRequests').add(Object.assign(n.request, {
-        requesterEmail: email, requesterName: myName, writerEmail, writerName: people.docs[0].data().name || writerEmail,
+        requesterEmail: email, requesterName: myName, writerEmail, writerName: writer.name,
         acknowledgedAt: null, open: true, at: now, updatedAt: now,
       }));
       await tell(writerEmail, '✉️ ' + slackText(myName) + ' asked you for a recommendation letter: ' +
@@ -3730,6 +3741,29 @@ exports.letterRequest = onCall(
     return { id };
   }
 );
+
+// Everyone who can write a letter: the BOLD.OS users (Slack accounts, not
+// disabled) → [{ name, email }], named as on the Slack roster.
+async function letterWriters(){
+  const users = [];
+  let page;
+  do {
+    page = await admin.auth().listUsers(1000, page && page.pageToken);
+    users.push(...page.users);
+  } while (page.pageToken);
+  const roster = {};
+  (await db.collection('people').get()).docs.forEach((doc) => { const p = doc.data(); if (p.email) roster[p.email.toLowerCase()] = p.name; });
+  return users
+    .filter((u) => u.email && !u.disabled && u.providerData.some((p) => p.providerId === SIGN_IN_PROVIDER))
+    .map((u) => { const email = u.email.toLowerCase(); return { email, name: roster[email] || u.displayName || email }; })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// → { writers: [{ name, email }] }, for the "Who writes it" list.
+exports.letterWriters = onCall(async (request) => {
+  callerEmail(request);
+  return { writers: await letterWriters() };
+});
 
 exports.remindLetterWriters = onSchedule(
   { schedule: '0 9 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
