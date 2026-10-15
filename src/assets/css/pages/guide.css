@@ -201,3 +201,4 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .cm-discussion{margin:10px 0 0; padding:8px 0 0 12px; border-left:2px solid var(--line); font-family:var(--sans); font-size:13px; max-width:560px;}
 .cm-discussion .cm-comment:last-of-type{border-bottom:none;}
 .cm-discussion textarea{display:block; width:100%; box-sizing:border-box; margin:4px 0 8px; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); resize:vertical;}
+.gd-draft-empty{margin:10px 0 0; color:var(--muted);}

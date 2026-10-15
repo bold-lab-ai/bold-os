@@ -966,7 +966,7 @@ function onProposed(collection, pageUrl){
   );
 }
 
-// What became of a proposal, once it's no longer open: accepted or declined
+// What became of a proposal: edited by whoever proposed it, accepted or declined
 // (decideProposal), or withdrawn (deleted while open). Whoever proposed it
 // hears it was decided; the PIs and admins, but whoever decided it, hear
 // either, so a "needs a decision" message isn't left standing.
@@ -976,6 +976,10 @@ function proposalOutcome(before, after, name, url){
   const who = (before.by && (before.by.name || before.by.email)) || 'Someone';
   const what = proposalSummary(before) + ' in ' + linkedTitle(slackText(name), url);
   if (!after) return { others: '↩️ ' + slackText(who) + ' withdrew ' + what + '. Nothing to decide.' };
+  // Edited by whoever proposed it (pages/guide.js): the reviewers hear what it is now.
+  if (after.status === 'open' && after.editedAt && after.editedAt !== before.editedAt) {
+    return { others: '✏️ ' + slackText(who) + ' edited their suggestion: it’s now ' + proposalSummary(after) + ' in ' + linkedTitle(slackText(name), url) + '.' };
+  }
   if (after.status !== 'accepted' && after.status !== 'declined') return null;
   const decider = slackText(after.decidedByName || after.decidedBy || 'A PI or admin');
   const icon = after.status === 'accepted' ? '✅ ' : '✖️ ';
@@ -1189,6 +1193,10 @@ exports.decideProposal = onCall(
       if (q.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been decided.');
       const by = q.by && q.by.email ? String(q.by.email).toLowerCase() : '';
       if (by === email) throw new HttpsError('permission-denied', 'Another PI or admin reviews your own change.');
+      // Edited since the page showed it: look at it again first.
+      if (typeof data.editedAt === 'number' && (q.editedAt || 0) !== data.editedAt) {
+        throw new HttpsError('failed-precondition', 'It has just been edited. Have a look at it again.');
+      }
       const now = Date.now();
       if (data.accept) {
         const who = (q.by && (q.by.name || q.by.email)) || '';

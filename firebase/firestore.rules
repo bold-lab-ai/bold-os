@@ -278,7 +278,7 @@ service cloud.firestore {
     // themselves, open), which a PI/admin other than whoever proposed it
     // accepts or declines through the decideProposal function, the only writer
     // of a guide's content and of a proposal's status; whoever proposed it can
-    // withdraw it while it's open. PIs/admins add a guide (empty) and delete one.
+    // edit or withdraw it while it's open. PIs/admins add a guide (empty) and delete one.
     match /guides/{slug} {
       allow read: if isLabMember();
       // updatedBy is who the version history (functions/index.js) credits.
@@ -328,7 +328,16 @@ service cloud.firestore {
           && (request.resource.data.kind == 'batch'
             ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
             : !('changes' in request.resource.data));
-        allow update: if false;
+        // Edited by whoever proposed it, while it's open: its changes and note, as when
+        // proposed; who, when and its status stay as they were.
+        allow update: if isLabMember() && resource.data.by.email == email() && resource.data.status == 'open'
+          && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
+          && request.resource.data.editedAt is number
+          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'batch']
+          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes', 'editedAt'])
+          && (request.resource.data.kind == 'batch'
+            ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
+            : !('changes' in request.resource.data));
         // Withdrawn by whoever proposed it while it's open, or with its guide.
         allow delete: if hasFullWrite() || (isLabMember() && resource.data.by.email == email() && resource.data.status == 'open');
       }
@@ -405,7 +414,16 @@ service cloud.firestore {
           && (request.resource.data.kind == 'batch'
             ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
             : !('changes' in request.resource.data));
-        allow update: if false;
+        // Edited by whoever proposed it, while it's open: its changes and note, as when
+        // proposed; who, when and its status stay as they were.
+        allow update: if isLabMember() && resource.data.by.email == email() && resource.data.status == 'open'
+          && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
+          && request.resource.data.editedAt is number
+          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'batch']
+          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes', 'editedAt'])
+          && (request.resource.data.kind == 'batch'
+            ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
+            : !('changes' in request.resource.data));
         // Withdrawn by whoever proposed it, while it's open.
         allow delete: if isLabMember() && resource.data.by.email == email() && resource.data.status == 'open';
       }

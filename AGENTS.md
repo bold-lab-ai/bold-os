@@ -11,7 +11,7 @@ Live: <https://bold-lab-ai.github.io/bold-os/>. A static [Eleventy](https://www.
 - Don't write content into pages or data files. If you find some hardcoded, the fix is to move it into Firestore and give it add/edit/delete controls on its page.
 - A code change is for how the site works: a new kind of content, a new page, a fix.
 - Controls a user can't use are shown greyed out with a reason in their tooltip, not hidden.
-- Where changes must be reviewed (the how-to guides, BOLDiquette), every change is saved as a proposal, a PI's or admin's too, and a PI/admin other than whoever proposed it accepts or declines it (`decideProposal`, which applies it); nobody changes the content directly.
+- Where changes must be reviewed (the how-to guides, BOLDiquette), every change is saved as a proposal, a PI's or admin's too, and a PI/admin other than whoever proposed it accepts or declines it (`decideProposal`, which applies it); nobody changes the content directly. Whoever proposed it can edit it (back into their draft, then **Update proposed change**) or withdraw it while it's open.
 
 ## Layout
 
