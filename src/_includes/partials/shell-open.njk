@@ -19,6 +19,9 @@
         <a class="nav-link nav-sub{% if link.active %} active{% endif %}" href="{{ link.href }}">{{ link.label }}</a>
 {%- endfor %}
       </div>
+{%- if group.separatorAfter %}
+      <hr class="nav-sep">
+{%- endif %}
 {%- endfor %}
     </div>
   </div>
