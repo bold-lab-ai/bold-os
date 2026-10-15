@@ -3,7 +3,7 @@ title: "Profile | BOLD Lab"
 description: "Your BOLD Lab profile."
 sdk: ["functions"]
 css: "profile"
-scripts: ["pages/profile.js"]
+scripts: ["pages/profile.js", "join-common.js", "pages/member-details.js"]
 permalink: "profile.html"
 ---
 <div class="hero">
@@ -24,6 +24,13 @@ permalink: "profile.html"
       <div class="fact"><dt>Email</dt><dd id="factEmail"></dd></div>
     </dl>
     <dl class="facts facts--slack" id="slackFacts" hidden></dl>
+  </section>
+
+  <section class="block" id="details-block">
+    <div class="block-head">
+      <h2>Your BOLD details</h2>
+    </div>
+    <div id="memberDetails"><p class="proj-msg">Loading&hellip;</p></div>
   </section>
 
   <nav class="guide-tabs profile-tabs" id="profileTabs" aria-label="Profile">

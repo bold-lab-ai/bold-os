@@ -40,5 +40,7 @@ export default {
     { label: 'How to', href: 'guides.html', links: [], guides: true },
     // Its sub-pages are the skills (Firestore), filled in by bold.js.
     { label: 'Skills', href: 'skills.html', links: [], skills: true },
+    // For the PIs and admins: requests to join BOLD (join.html).
+    { label: 'Join requests', href: 'join-requests.html', links: [] },
   ],
 };

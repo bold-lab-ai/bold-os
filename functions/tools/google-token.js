@@ -13,7 +13,8 @@ if (!clientId || !clientSecret) {
   console.error('Usage: node functions/tools/google-token.js <client id> <client secret>');
   process.exit(1);
 }
-const SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/drive.file'];
+// gmail.send: the welcome email to people who join BOLD (sendWelcome).
+const SCOPES = ['https://www.googleapis.com/auth/calendar.events', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/gmail.send'];
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');

@@ -272,6 +272,18 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .event-form-actions .ev-save, .btn-box.is-primary{border-color:var(--ink);}
 .btn-box:disabled{opacity:.5; cursor:default;}
 
+/* A member's details form (join-common.js): join.html, profile.html, join-requests.html. */
+.join-form{max-width:640px;}
+.join-form select{display:block; width:100%; margin-top:4px; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.jn-pillars{border:0; margin:0 0 10px; padding:0;}
+.jn-pillars legend{padding:0; margin-bottom:6px; color:var(--muted);}
+.event-form label.jn-check{display:flex; gap:8px; align-items:flex-start; color:var(--ink); margin-bottom:8px;}
+.event-form .jn-check input{width:auto; margin:3px 0 0;}
+.jn-dates{display:grid; grid-template-columns:1fr 1fr; gap:0 14px; align-items:end;}
+.jn-trap{position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden;}
+@media (max-width:560px){ .jn-dates{grid-template-columns:1fr;} }
+.jn-notice{max-width:640px; margin:8px 0 0; padding:10px 14px; border:1px solid var(--line); border-radius:var(--radius); font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+
 /* An event's header controls (pages/event.js) — event.html and the events with their own page. */
 .event-controls{display:flex; gap:16px; margin-top:28px;}
 .event-controls .btn-text:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}

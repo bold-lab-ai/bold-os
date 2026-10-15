@@ -1956,7 +1956,7 @@ exports.joinProjectChannel = onCall(
 // ones, changes the meeting, and joins or leaves (projectWorkspace).
 //
 // GOOGLE_OAUTH: JSON { client_id, client_secret, refresh_token } for the lab's
-// Google account, with the scopes calendar.events and drive.file
+// Google account, with the scopes calendar.events, drive.file and gmail.send
 // (functions/tools/google-token.js makes it).
 const GOOGLE_OAUTH = defineSecret('GOOGLE_OAUTH');
 const { FieldValue } = require('firebase-admin/firestore');
@@ -3328,6 +3328,237 @@ function recordVersions(collection){
 }
 TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice(1)] = recordVersions(c); });
 
+// ---------- Joining BOLD: requests, approval, the welcome email ----------
+// Anyone can ask to join on join.html (requestToJoin; no sign-in, since they
+// aren't in the Slack yet). The PIs and admins are told in Slack and decide on
+// join-requests.html (decideJoinRequest). Approving keeps what they told us as
+// their member record (members/{email}, which they can edit on their profile)
+// and sends them the welcome email from the lab's Google account (Gmail,
+// GOOGLE_OAUTH with gmail.send): join the Slack with the workspace's invite
+// link, complete the profile, link accounts, read the BOLDiquette, add projects.
+// The invite link and the email's text are settings/joinInvite, edited on
+// join-requests.html; the form's choices are settings/joinForm. An email that
+// can't be sent yet (no Google account or invite link) waits and is retried
+// hourly (retryWelcomeEmails), or from the page.
+
+const JOIN_ROLES = ['PhD student', 'Master student', 'Postdoc', 'Visitor', 'Collaborator', 'PI', 'Alumni', 'Staff', 'Other'];
+const JOIN_NO_END = ['PI', 'Alumni', 'Collaborator'];
+// BOLD's research pillars, as the Google Form had them; settings/joinForm replaces them.
+const JOIN_PILLARS = [
+  'Core Algorithmic Innovation Questioning the Foundations of the Field',
+  'Human-Centric Learning and Discovery (incl. Human-AI Coordination, MARL, Co-Scientist)',
+  'Robust Adaptation and Learning incl. in Embodied Envs (RL, Open-Ended Learning, Robotics)',
+];
+const JOIN_TEXT = { name: 120, email: 200, links: 500, institution: 120, role: 60, contact: 200, interests: 300, basedIn: 120, note: 1000 };
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const WELCOME_SUBJECT = 'Welcome to BOLD';
+const WELCOME_BODY = [
+  'Hi {name},',
+  '',
+  'Welcome to BOLD! Your request to join has been approved. Here are your next steps:',
+  '',
+  '1. Join the BOLD Slack: {slackInvite}',
+  '   You sign in to BOLD.OS with your Slack account, using this email address.',
+  '2. Complete your profile: {site}profile.html',
+  '3. Link your accounts (GitHub and Google): {site}profile.html#linked-accounts',
+  '4. Read the BOLDiquette: {site}boldiquette.html',
+  '5. Add your projects, if you have any: {site}projects-register.html',
+  '',
+  'See you on Slack,',
+  'The BOLD team',
+].join('\n');
+
+// Pure: what join.html sent → { request } or { error }. `roles` and `pillars`
+// are the choices on offer (settings/joinForm).
+function normalizeJoinRequest(d, roles, pillars){
+  d = d && typeof d === 'object' ? d : {};
+  const out = {};
+  for (const k of Object.keys(JOIN_TEXT)) {
+    const v = String(d[k] == null ? '' : d[k]).trim();
+    if (v.length > JOIN_TEXT[k]) return { error: 'That’s too long: ' + k + '.' };
+    out[k] = v;
+  }
+  out.email = out.email.toLowerCase();
+  if (!out.name) return { error: 'Give your full name.' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.email)) return { error: 'Give a valid email address.' };
+  if (!out.institution) return { error: 'Give your home institution.' };
+  if ((roles || JOIN_ROLES).indexOf(out.role) === -1) return { error: 'Choose your role at BOLD.' };
+  if (!out.contact) return { error: 'Say who your BOLD point of contact is.' };
+  if (!out.interests) return { error: 'Give your main research interests.' };
+  const chosen = Array.isArray(d.pillars) ? d.pillars.map(String) : [];
+  out.pillars = (pillars || []).filter((p) => chosen.indexOf(p) !== -1);
+  out.listOnWebsite = d.listOnWebsite === true;
+  out.startDate = String(d.startDate || '');
+  out.endDate = String(d.endDate || '');
+  if (out.startDate && !ISO_DAY.test(out.startDate)) return { error: 'Give a valid start date.' };
+  if (out.endDate && !ISO_DAY.test(out.endDate)) return { error: 'Give a valid end date.' };
+  if (!out.endDate && JOIN_NO_END.indexOf(out.role) === -1) return { error: 'Give your end date (not needed for PIs, alumni and collaborators).' };
+  if (out.startDate && out.endDate && out.endDate < out.startDate) return { error: 'The end date is before the start date.' };
+  return { request: out };
+}
+
+// Pure: the welcome email for request r → { subject, body } or { error } (what's missing).
+function welcomeEmail(r, settings){
+  const s = settings || {};
+  const invite = String(s.slackInviteUrl || '').trim();
+  if (!invite) return { error: 'No Slack invite link yet: add it on the join requests page.' };
+  const fill = (t) => String(t).replace(/\{name\}/g, (r.name || '').split(' ')[0] || r.name || '')
+    .replace(/\{fullName\}/g, r.name || '').replace(/\{slackInvite\}/g, invite).replace(/\{site\}/g, SITE_URL);
+  return { subject: fill(s.subject || WELCOME_SUBJECT), body: fill(s.body || WELCOME_BODY) };
+}
+
+// Pure: a plain-text UTF-8 email as Gmail's API takes it (base64url of the MIME message).
+function mimeMessage(to, subject, body){
+  const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
+  const msg = [
+    // Gmail sends it from the lab's account; no From needed.
+    'To: ' + to,
+    'Subject: =?UTF-8?B?' + b64(subject) + '?=',
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64(body).replace(/.{76}/g, '$&\r\n'),
+  ].join('\r\n');
+  return Buffer.from(msg, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function joinSettings(){
+  const [form, invite] = await Promise.all([db.collection('settings').doc('joinForm').get(), db.collection('settings').doc('joinInvite').get()]);
+  const f = form.exists ? form.data() : {};
+  return {
+    roles: Array.isArray(f.roles) && f.roles.length ? f.roles : JOIN_ROLES,
+    pillars: Array.isArray(f.pillars) && f.pillars.length ? f.pillars : JOIN_PILLARS,
+    invite: invite.exists ? invite.data() : {},
+  };
+}
+
+// Sends request id's welcome email, if it's due; records how it went on the request. → { status, error? }
+async function sendWelcome(id){
+  const ref = db.collection('joinRequests').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { status: 'missing' };
+  const r = snap.data();
+  if (r.status !== 'approved' || (r.welcome && r.welcome.status === 'sent')) return { status: (r.welcome && r.welcome.status) || r.status };
+  const tries = ((r.welcome && r.welcome.tries) || 0) + 1;
+  const mail = welcomeEmail(r, (await joinSettings()).invite);
+  let error = mail.error || '';
+  if (!error) {
+    try {
+      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw: mimeMessage(r.email, mail.subject, mail.body) }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        logger.error('sendWelcome: Gmail refused', { id, status: res.status, error: j.error && j.error.message });
+        error = res.status === 403 ? 'The lab’s Google account can’t send email yet (gmail.send): reconnect it.' : 'Gmail refused it (' + res.status + ').';
+      }
+    } catch (e) {
+      error = e instanceof HttpsError ? e.message : 'Couldn’t reach Gmail.';
+      if (!(e instanceof HttpsError)) logger.error('sendWelcome threw', { id, error: String(e) });
+    }
+  }
+  const welcome = error ? { status: 'waiting', error, tries, at: Date.now() } : { status: 'sent', tries, at: Date.now() };
+  await ref.update({ welcome });
+  return welcome;
+}
+
+exports.requestToJoin = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const d = request.data || {};
+    // A field people don't see: filled in, it's a bot. Say nothing different.
+    if (d.website) return { ok: true };
+    const set = await joinSettings();
+    const n = normalizeJoinRequest(d, set.roles, set.pillars);
+    if (n.error) throw new HttpsError('invalid-argument', n.error);
+    const r = n.request;
+    const open = await db.collection('joinRequests').where('email', '==', r.email).where('status', '==', 'open').limit(1).get();
+    if (!open.empty) throw new HttpsError('already-exists', 'There’s already a request for this email address, waiting for a PI. You’ll hear by email.');
+    const recent = await db.collection('joinRequests').where('at', '>', Date.now() - 3600000).count().get();
+    if (recent.data().count >= 30) throw new HttpsError('resource-exhausted', 'Too many requests right now: try again in an hour.');
+    await db.collection('joinRequests').add(Object.assign(r, { status: 'open', at: Date.now() }));
+    return { ok: true };
+  }
+);
+
+const joinPageUrl = () => SITE_URL + 'join-requests.html';
+
+exports.onJoinRequested = onDocumentCreated(
+  { document: 'joinRequests/{id}', secrets: [SLACK_BOT_TOKEN] },
+  async function(event){
+    const r = event.data && event.data.data();
+    if (!r || r.status !== 'open') return;
+    const headline = '👋 ' + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ') asked to join BOLD' +
+      (r.contact ? ', with ' + slackText(r.contact) + ' as their point of contact' : '') + '. ' +
+      linkedTitle('Approve or decline', joinPageUrl() + '#r=' + event.params.id) + '.';
+    const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline });
+  }
+);
+
+// data: { id, accept: bool } → { status, welcome? }. PIs and admins only.
+exports.decideJoinRequest = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    const d = request.data || {};
+    if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('joinRequests').doc(d.id);
+    const name = request.auth.token.name || '';
+    const r = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError('not-found', 'No such request.');
+      const q = snap.data();
+      if (q.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been ' + q.status + '.');
+      const status = d.accept ? 'approved' : 'declined';
+      tx.update(ref, { status, decidedBy: email, decidedByName: name, decidedAt: Date.now() });
+      if (d.accept) {
+        // Their record in BOLD.OS: what they told us. They keep it up to date on their profile.
+        const m = db.collection('members').doc(q.email);
+        const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'startDate', 'endDate'];
+        const rec = {};
+        keep.forEach((k) => { if (q[k] !== undefined) rec[k] = q[k]; });
+        tx.set(m, Object.assign(rec, { requestId: d.id, approvedBy: email, approvedAt: Date.now() }), { merge: true });
+      }
+      return Object.assign({}, q, { status });
+    });
+    const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase()).filter((e) => e !== email);
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff,
+      headline: (r.status === 'approved' ? '✅ ' : '✖️ ') + slackText(name || email) + ' ' + r.status + ' ' + slackText(r.name) + '’s request to join BOLD.' });
+    if (r.status !== 'approved') return { status: r.status };
+    return { status: r.status, welcome: await sendWelcome(d.id) };
+  }
+);
+
+// data: { id } → the welcome email's new state. Sends it again if it hasn't gone.
+exports.sendWelcomeEmail = onCall(
+  { secrets: [GOOGLE_OAUTH] },
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    const id = String((request.data || {}).id || '');
+    if (!/^[A-Za-z0-9]{1,40}$/.test(id)) throw new HttpsError('invalid-argument', 'No such request.');
+    return sendWelcome(id);
+  }
+);
+
+exports.retryWelcomeEmails = onSchedule(
+  { schedule: '15 * * * *', timeZone: 'Europe/London', secrets: [GOOGLE_OAUTH] },
+  async function(){
+    const snap = await db.collection('joinRequests').where('welcome.status', '==', 'waiting').get();
+    for (const doc of snap.docs) {
+      const w = doc.data().welcome || {};
+      // Hourly for two days, then daily.
+      if (w.tries > 48 && Date.now() - (w.at || 0) < 86400000) continue;
+      await sendWelcome(doc.id);
+    }
+  }
+);
+
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
 exports._internal = {
@@ -3339,5 +3570,5 @@ exports._internal = {
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
-  projectIdOf, projectGroupForCards
+  projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage
 };

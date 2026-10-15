@@ -65,6 +65,43 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Joining BOLD (functions/index.js "Joining BOLD"): requests come in through
+    // requestToJoin and are decided through decideJoinRequest, so clients write
+    // neither; PIs and admins read them (join-requests.html).
+    match /joinRequests/{id} {
+      allow read: if hasFullWrite();
+      allow write: if false;
+    }
+    // Each member's record (members/{email, lowercase}): made on approval from what
+    // they asked with, or by them on their profile; theirs to edit, but not who approved it.
+    match /members/{memberEmail} {
+      allow read: if isLabMember();
+      allow create, update: if isLabMember() && email().lower() == memberEmail
+        && request.resource.data.email == memberEmail
+        && request.resource.data.keys().hasOnly(['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'startDate', 'endDate', 'updatedAt', 'requestId', 'approvedBy', 'approvedAt'])
+        && (resource == null
+          ? !('approvedBy' in request.resource.data) && !('requestId' in request.resource.data) && !('approvedAt' in request.resource.data)
+          : request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'startDate', 'endDate', 'updatedAt']))
+        && request.resource.data.name is string && request.resource.data.name.size() <= 120
+        && request.resource.data.get('links', '').size() <= 500 && request.resource.data.get('interests', '').size() <= 300
+        && request.resource.data.get('pillars', []) is list && request.resource.data.get('pillars', []).size() <= 20;
+      allow delete: if false;
+    }
+    // The join form's choices (join.html, read before signing in) and, for PIs and
+    // admins only, the Slack invite link and the welcome email's text.
+    match /settings/joinForm {
+      allow read: if true;
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['roles', 'pillars', 'updatedAt', 'updatedBy'])
+        && request.resource.data.roles is list && request.resource.data.roles.size() <= 30
+        && request.resource.data.pillars is list && request.resource.data.pillars.size() <= 20;
+    }
+    match /settings/joinInvite {
+      allow read: if hasFullWrite();
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['slackInviteUrl', 'subject', 'body', 'updatedAt', 'updatedBy'])
+        && request.resource.data.get('slackInviteUrl', '').size() <= 300
+        && request.resource.data.get('subject', '').size() <= 200 && request.resource.data.get('body', '').size() <= 5000;
+    }
+
     match /boards/{boardId} {
       // A venue is either 'approved' (visible to the whole lab, same as
       // always) or 'pending' (a non-admin's proposal — visible only to
