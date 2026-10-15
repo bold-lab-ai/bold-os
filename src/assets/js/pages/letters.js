@@ -96,8 +96,8 @@
       '<label>Deadline (optional)<input type="date" class="lt-rd" value="' + esc(r.deadline || '') + '"></label>' +
       '<label>Link to the portal or the call<input type="url" class="lt-ru" maxlength="500" value="' + esc(r.url || '') + '" placeholder="https://…"></label>' +
       '<label>Who sends the letter<select class="lt-rs"' + (done ? ' disabled title="The letter is in already"' : '') + '>' +
-        '<option value="writer"' + (r.sentBy !== 'requester' ? ' selected' : '') + '>The writer, to the recipient</option>' +
-        '<option value="requester"' + (r.sentBy === 'requester' ? ' selected' : '') + '>Me: the writer shares it with me</option></select></label>' +
+        '<option value="writer"' + (r.sentBy !== 'requester' ? ' selected' : '') + '>Referee</option>' +
+        '<option value="requester"' + (r.sentBy === 'requester' ? ' selected' : '') + '>Applicant (the referee shares it with you)</option></select></label>' +
       '<button type="button" class="btn-text danger lt-rremove">Remove</button></div>';
   }
 
