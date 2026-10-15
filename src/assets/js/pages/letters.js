@@ -25,7 +25,7 @@
 
   // The nearest deadline not submitted yet, for sorting.
   function nextDeadline(q){
-    return (q.recipients || []).filter(function(r){ return !r.submittedAt; }).map(function(r){ return r.deadline; }).sort()[0] || '9999';
+    return (q.recipients || []).filter(function(r){ return !r.submittedAt && r.deadline; }).map(function(r){ return r.deadline; }).sort()[0] || '9999';
   }
   function sorted(list){
     return list.slice().sort(function(a, b){
@@ -35,7 +35,7 @@
   }
 
   function recipientHtml(q, r, asWriter){
-    var late = !r.submittedAt && r.deadline < today();
+    var late = !r.submittedAt && r.deadline && r.deadline < today();
     var status = r.submittedAt
       ? '<span class="lt-status is-done">' + (r.sentBy === 'requester' ? 'Shared ' : 'Submitted ') + when(r.submittedAt) + '</span>'
       : '<span class="lt-status' + (late ? ' is-late' : '') + '">' + (late ? 'Overdue' : 'Not submitted') + '</span>';
@@ -52,7 +52,7 @@
       controls = '<button type="button" class="btn-text danger lt-unsubmit" data-id="' + esc(q.id) + '" data-r="' + esc(r.id) + '"' + b + '>Undo</button>';
     }
     return '<li><span class="lt-rname">' + name + '</span>' +
-      '<span class="lt-rinfo">Due ' + day(r.deadline) + ' · ' + esc(who) + '</span>' + status +
+      '<span class="lt-rinfo">' + (r.deadline ? 'Due ' + day(r.deadline) : 'No deadline') + ' · ' + esc(who) + '</span>' + status +
       (r.letterUrl ? '<a class="btn-text" href="' + esc(r.letterUrl) + '" target="_blank" rel="noopener">The letter</a>' : '') +
       controls + '</li>';
   }
@@ -93,7 +93,7 @@
     var done = !!r.submittedAt;
     return '<div class="lt-rrow" data-rid="' + esc(r.id || '') + '">' +
       '<label>Recipient<input type="text" class="lt-rn" maxlength="200" value="' + esc(r.name || '') + '" placeholder="e.g. MIT EECS PhD programme"></label>' +
-      '<label>Deadline<input type="date" class="lt-rd" value="' + esc(r.deadline || '') + '"></label>' +
+      '<label>Deadline (optional)<input type="date" class="lt-rd" value="' + esc(r.deadline || '') + '"></label>' +
       '<label>Link to the portal or the call<input type="url" class="lt-ru" maxlength="500" value="' + esc(r.url || '') + '" placeholder="https://…"></label>' +
       '<label>Who sends the letter<select class="lt-rs"' + (done ? ' disabled title="The letter is in already"' : '') + '>' +
         '<option value="writer"' + (r.sentBy !== 'requester' ? ' selected' : '') + '>The writer, to the recipient</option>' +
@@ -235,7 +235,6 @@
     for (var i = 0; i < d.recipients.length; i++) {
       var r = d.recipients[i];
       if (!r.name) return 'Give each recipient a name.';
-      if (!r.deadline) return 'Give a deadline for ' + r.name + '.';
       if (r.url && !/^https?:\/\/\S+$/.test(r.url)) return 'A link starts with https://: ' + r.name + '.';
     }
     return '';
@@ -245,7 +244,7 @@
     var id = f.getAttribute('data-id'), d = readForm(f), err = f.querySelector('.ev-error');
     var p = problem(d, !id);
     if (p) { err.textContent = p; err.hidden = false; return; }
-    if (!id && d.recipients.some(function(r){ return r.deadline < today(); }) && !window.confirm('A deadline has passed already. Ask anyway?')) return;
+    if (!id && d.recipients.some(function(r){ return r.deadline && r.deadline < today(); }) && !window.confirm('A deadline has passed already. Ask anyway?')) return;
     btn.disabled = true; err.hidden = true;
     var data = Object.assign(d, id ? { action: 'update', id: id } : { action: 'create', writerEmail: newForm.writer.email });
     call(data).then(function(){ closeForm(); }).catch(function(e){

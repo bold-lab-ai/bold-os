@@ -3610,7 +3610,8 @@ function normalizeLetterRequest(d, was){
     if (!name) return { error: 'Give each recipient a name.' };
     if (name.length > 200 || url.length > 500) return { error: 'That’s too long: ' + name.slice(0, 40) + '.' };
     if (url && !/^https?:\/\/\S+$/.test(url)) return { error: 'A link starts with https://: ' + name + '.' };
-    if (!ISO_DAY.test(deadline)) return { error: 'Give a deadline for ' + name + '.' };
+    // The deadline is optional; one without gets no reminders.
+    if (deadline && !ISO_DAY.test(deadline)) return { error: 'Give a valid deadline for ' + name + '.' };
     const sentBy = r.sentBy === 'requester' ? 'requester' : 'writer';
     const prev = r.id && old[r.id];
     if (prev && prev.submittedAt && (prev.sentBy !== sentBy)) return { error: 'The letter for ' + prev.name + ' is already in: who sends it can’t change.' };
@@ -3636,7 +3637,7 @@ function letterRemindersDue(requests, today){
   const day = (s) => Date.parse(s + 'T00:00:00Z') / 86400000;
   const out = [];
   requests.forEach((q) => (q.recipients || []).forEach((r) => {
-    if (r.submittedAt) return;
+    if (r.submittedAt || !r.deadline) return;
     const left = day(r.deadline) - day(today);
     // The nearest reminder not sent yet, once it's due (a missed day still sends it).
     const due = LETTER_REMIND_DAYS.filter((n) => left <= n && left >= 0 && (r.reminded || []).indexOf(n) === -1);
@@ -3646,7 +3647,7 @@ function letterRemindersDue(requests, today){
 }
 
 function letterDeadlines(recipients){
-  return recipients.map((r) => slackText(r.name) + ' (' + r.deadline + ')').join(', ');
+  return recipients.map((r) => slackText(r.name) + ' (' + (r.deadline || 'no deadline') + ')').join(', ');
 }
 
 // data: { action, … } → { id? }. Actions:
@@ -3724,7 +3725,7 @@ exports.letterRequest = onCall(
           }
           r.submittedAt = Date.now();
           note = { to: q.requesterEmail, text: r.sentBy === 'requester'
-            ? '📎 ' + slackText(q.writerName) + ' shared your letter for ' + slackText(r.name) + ', for you to send by ' + r.deadline + ': ' + title + '.'
+            ? '📎 ' + slackText(q.writerName) + ' shared your letter for ' + slackText(r.name) + ', for you to send' + (r.deadline ? ' by ' + r.deadline : '') + ': ' + title + '.'
             : '✅ ' + slackText(q.writerName) + ' submitted your letter to ' + slackText(r.name) + ': ' + title + '.' };
         } else {
           r.submittedAt = null;
