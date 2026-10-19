@@ -575,7 +575,6 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-legend{margin:12px 0 28px; padding-bottom:14px; border-bottom:1px solid var(--line); gap:6px 18px;}
 .cx-legend .cx-bar-items{gap:4px 18px; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}
 .cx-key{display:inline-flex; align-items:center; gap:7px;}
-.cx-key-link{font-family:var(--sans); font-size:13px;}
 @media (max-width:600px){ .cx-bar{grid-template-columns:1fr; gap:4px;} .cx-bar-label{margin-top:6px;} }
 .cx-sample{width:26px; height:8px; overflow:visible;}
 .cx-sample .cx-edge{opacity:.75; stroke-width:1.4;}

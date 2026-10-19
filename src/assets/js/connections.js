@@ -343,8 +343,7 @@ window.BoldConnections = (function(){
   // People's rings: each group in Who is BOLD, and people outside BOLD.
   function groupsRow(){
     return ['Groups', BoldJoin.CATEGORIES.map(function(c){ return key(icon('<circle class="cx-ring" r="4.2"></circle>', 'pp-' + c[0]), esc(c[1])); }).join('') +
-      key(icon('<circle class="cx-ring is-outside" r="4.2"></circle>', 'is-outside'), 'Outside BOLD') +
-      '<a class="cx-key-link" href="boldiquette.html#who-is-bold">Who is BOLD</a>'];
+      key(icon('<circle class="cx-ring is-outside" r="4.2"></circle>', 'is-outside'), 'Outside BOLD')];
   }
   function legendHtml(things){
     return bar([
