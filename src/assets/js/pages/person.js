@@ -4,7 +4,8 @@
 // (projectWorkspaces they're a member of). Read-only: each person edits their own on
 // profile.html. The Slack id (the `people` roster) keeps email addresses out of links.
 // Buttons: Message me on Slack (slack://user, a DM in the app) and Book time with me
-// (their `bookingUrl`; greyed out until they add one).
+// (their `bookingUrl`; without one, Find a time in Google Calendar: a new event in your
+// own calendar with their email as a guest).
 (function(){
   var esc = BOLD.escapeHtml;
   var root = document.getElementById('person');
@@ -47,12 +48,16 @@
         db.collection('projectWorkspaces').where('members', 'array-contains', email).get(),
       ]).then(function(r){
         var m = r[0].exists ? r[0].data() : null, s = r[1].exists ? r[1].data() : null;
-        // Message them (a DM in the Slack app) and book time (their booking link, if they gave one).
+        // Message them (a DM in the Slack app) and book time: their booking link, or else a new
+        // event in your own Google Calendar with them as a guest (its Find a time shows their
+        // busy times only if they share their calendar with you).
         var booking = m && /^https:\/\/\S+$/.test(m.bookingUrl || '') ? m.bookingUrl : '';
+        var first = (person.name || '').split(' ')[0];
+        var gcal = 'https://calendar.google.com/calendar/render?' + new URLSearchParams({ action: 'TEMPLATE', add: email, text: first ? 'Meeting with ' + first : 'Meeting' });
         var actions = document.getElementById('personActions');
         actions.innerHTML = '<a class="btn-box is-primary" href="slack://user?team=' + BOLD.SLACK_TEAM + '&amp;id=' + encodeURIComponent(id) + '">Message me on Slack</a>' +
           (booking ? '<a class="btn-box" href="' + esc(booking) + '" target="_blank" rel="noopener">Book time with me</a>'
-            : '<button type="button" class="btn-box" disabled title="' + esc((person.name || 'They').split(' ')[0]) + ' hasn’t added a booking link to their profile yet">Book time with me</button>');
+            : '<a class="btn-box" href="' + esc(gcal) + '" target="_blank" rel="noopener" title="Opens a new event in your Google Calendar with ' + esc(first || 'them') + ' invited; Find a time shows when they’re busy if they share their calendar with you">Find a time in Google Calendar</a>');
         actions.hidden = false;
         var projects = r[2].docs.map(function(d){ return d.data(); }).filter(function(w){ return w.group !== 'completed'; })
           .sort(function(a, b){ return String(a.title).localeCompare(String(b.title)); });
