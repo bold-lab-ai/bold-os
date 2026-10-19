@@ -7,7 +7,7 @@
   if (!root || !BOLD.getAuth() || !window.BoldJoin) return;
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
-  var members = null, unsub = null, staff = false, me = null;
+  var members = null, unsub = null, staff = false, me = null, picking = '';
 
   function links(t){
     return String(t || '').split(/[\s,;]+/).filter(Boolean).map(function(u){
@@ -20,11 +20,14 @@
     var meta = [m.institution, m.basedIn, m.contact ? 'with ' + m.contact : ''].filter(Boolean).map(esc).join(' · ');
     var l = links(m.links);
     var cat = m.category || 'pan';
-    var badge = staff
-      ? '<select class="pp-cat" data-email="' + esc(m.email) + '" aria-label="Group of ' + esc(m.name || m.email) + '">' + BoldJoin.CATEGORIES.map(function(c){
-          return '<option value="' + c[0] + '"' + (c[0] === cat ? ' selected' : '') + '>' + c[1] + '</option>'; }).join('') + '</select>'
-      : '<span class="badge pp-badge pp-' + cat + '">' + esc(BoldJoin.categoryLabel(cat)) + '</span>';
-    return '<li><div><span class="proj-title">' + esc(m.name || m.email) + '</span>' + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + badge +
+    var badge = function(c, attrs){ return '<span class="type-badge pp-' + c + '"' + (attrs || '') + '>' + esc(BoldJoin.categoryLabel(c)) + '</span>'; };
+    // PIs and admins: the badge opens the four, and choosing one sets it.
+    var tag = !staff ? badge(cat)
+      : picking === m.email ? '<span class="pp-choices">' + BoldJoin.CATEGORIES.map(function(c){
+          return '<button type="button" class="type-badge pp-' + c[0] + ' pp-choose' + (c[0] === cat ? ' is-current' : '') + '" data-email="' + esc(m.email) + '" data-cat="' + c[0] + '">' + esc(c[1]) + '</button>';
+        }).join('') + '</span>'
+      : '<button type="button" class="type-badge pp-' + cat + ' pp-open" data-email="' + esc(m.email) + '" title="Change ' + esc(m.name || m.email) + '’s group">' + esc(BoldJoin.categoryLabel(cat)) + '</button>';
+    return '<li><div><span class="proj-title">' + esc(m.name || m.email) + '</span>' + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag +
       (meta ? '<span class="proj-meta">' + meta + '</span>' : '') +
       (m.interests ? '<span class="proj-meta">' + esc(m.interests) + '</span>' : '') +
       (l ? '<span class="proj-meta">' + l + '</span>' : '') + '</div></li>';
@@ -50,13 +53,20 @@
   }
 
   search.addEventListener('input', render);
-  root.addEventListener('change', function(e){
-    var sel = e.target.closest('.pp-cat');
-    if (!sel) return;
-    sel.disabled = true;
-    db.collection('members').doc(sel.getAttribute('data-email')).update({ category: sel.value, categoryBy: me, categoryAt: Date.now() })
-      .catch(function(err){ console.error('[BOLD People] setting the group failed', err); render(); });
+  root.addEventListener('click', function(e){
+    var open = e.target.closest('.pp-open'), pick = e.target.closest('.pp-choose');
+    if (open) { picking = open.getAttribute('data-email'); render(); return; }
+    if (!pick) return;
+    var email = pick.getAttribute('data-email'), cat = pick.getAttribute('data-cat');
+    picking = '';
+    var m = members.filter(function(x){ return x.email === email; })[0];
+    if (m && (m.category || 'pan') === cat) { render(); return; }
+    if (m) m.category = cat;
+    render();
+    db.collection('members').doc(email).update({ category: cat, categoryBy: me, categoryAt: Date.now() })
+      .catch(function(err){ console.error('[BOLD People] setting the group failed', err); });
   });
+
   BOLD.onUser(function(user){
     if (unsub) { unsub(); unsub = null; }
     members = null;

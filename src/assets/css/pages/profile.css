@@ -102,8 +102,15 @@ fieldset.md-group:first-child{margin-top:0;}
 /* People (people.js): the search box above the groups. */
 .pp-filter{max-width:var(--article-max); margin-top:16px;}
 .pp-filter input{width:100%; font-family:var(--sans); font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
-/* A person's group (Who is BOLD), as a badge; PIs and admins get a choice instead. */
-.pp-badge{margin-left:6px; vertical-align:2px;}
+/* A person's group (Who is BOLD): the talks' type badges (bold.css .type-badge). For
+   PIs and admins the badge is a button that shows the four to choose from. */
+.proj-list .type-badge{margin-left:6px; vertical-align:2px;}
 .pp-exec{color:var(--accent);}
-.pp-internal{color:var(--success-text);}
-.pp-cat{margin-left:6px; font-family:var(--sans); font-size:12px; padding:2px 4px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); vertical-align:2px;}
+.pp-internal{color:#256b60;}
+.pp-associate{color:#7d5a99;}
+.pp-pan{color:var(--neutral-text);}
+button.type-badge{background:none; cursor:pointer;}
+button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);}
+.pp-choices{display:inline-flex; flex-wrap:wrap; gap:4px; vertical-align:2px;}
+.pp-choices .type-badge{margin-left:0; opacity:.55;}
+.pp-choices .type-badge.is-current, .pp-choices .type-badge:hover{opacity:1;}
