@@ -66,7 +66,7 @@ window.BoldJoin = (function(){
     var group = function(title, body){ return '<fieldset class="md-group"><legend>' + title + '</legend>' + body + '</fieldset>'; };
     return group('About you', (o.withIdentity ? t('jn-name', 'Full name', v.name, '', 120) +
         t('jn-email', 'Email address (for Slack; Gmail preferred, for Google Calendar)', v.email, 'you@gmail.com', 200, 'email') : '') +
-      t('jn-pronouns', 'Pronouns (optional)', v.pronouns, 'e.g. she/her, they/them', 40) +
+      t('jn-pronouns', 'Pronouns', v.pronouns, 'e.g. she/her, they/them', 40) +
       t('jn-institution', 'Home institution', v.institution, 'e.g. UCL, Oxford, Imperial', 120) +
       t('jn-based', 'Primarily based in (for events and socials)', v.basedIn, 'e.g. London', 120) +
       t('jn-links', 'Links (website, X, Google Scholar)', v.links, 'https://…', 500)) +

@@ -59,7 +59,7 @@
     var options = (roster || []).filter(function(p){ return p.email !== me.email && !e.people.some(function(x){ return x.email === p.email; }); })
       .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('');
     return '<div class="event-form join-form">' +
-      '<label>Working title (optional)<input type="text" class="st-title" maxlength="200" value="' + esc(e.title) + '" placeholder="Your thesis or project, as it stands"></label>' +
+      '<label>Working title<input type="text" class="st-title" maxlength="200" value="' + esc(e.title) + '" placeholder="Your thesis or project, as it stands"></label>' +
       '<label>People involved in your studies, supervisors first</label>' +
       (e.people.length ? '<ul class="st-people">' + e.people.map(function(p, i){
         return '<li>' + esc(p.name) + '<span class="st-email">' + esc(p.email) + '</span><button type="button" class="btn-text danger st-remove" data-i="' + i + '">Remove</button></li>';
