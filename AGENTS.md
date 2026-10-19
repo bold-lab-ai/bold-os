@@ -53,6 +53,7 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
 - **Look:** tokens in `bold.css` (cream paper, one navy accent, EB Garamond for reading, Cabin for labels and controls, hairline rules). Match the page you're editing; reuse the shared classes (`.event-form`, `.btn-text`, `.event-controls`, …).
 - **Tagging people:** any textarea offers `@` tags, shown as @Name everywhere and DMed to whoever is tagged by `onTagged`, for any collection. Give a box `.no-tags` when its text leaves BOLD.OS (an abstract, a SKILL.md); add a new collection to `tagPlace` (its link) or `TAG_SILENT` in `functions/index.js`.
 - **Comments:** a new kind of comment thread belongs on `comments.html` (`pages/comments.js`), and every Slack message about a comment links to the comment itself, not just its page (`#c=` on a guide, `&msg=` on the board).
+- **Search:** a new kind of content gets a section in `BoldSearch.SCOPES` (`search-box.js`) and a loader in `LOAD` (`pages/search.js`).
 - **Copy boxes:** any text offered for copying uses `BOLD.copyBoxHtml(text)`: a code box with the clipboard icon inside it. Never a text "Copy" button.
 - **Page copy is terse:** one or two sentences of description, no commentary about the process or the code.
 

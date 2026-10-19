@@ -3521,8 +3521,8 @@ TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice
 // can't be sent yet (no Google account or invite link) waits and is retried
 // hourly (retryWelcomeEmails), or from the page.
 
-const JOIN_ROLES = ['PhD student', 'Master student', 'Postdoc', 'Visitor', 'Collaborator', 'PI', 'Alumni', 'Staff', 'Other'];
-const JOIN_NO_END = ['PI', 'Alumni', 'Collaborator'];
+const JOIN_ROLES = ['PhD student', 'Master student', 'Postdoc', 'Visitor', 'Collaborator', 'Adjunct', 'PI', 'Alumni', 'Staff', 'Other'];
+const JOIN_NO_END = ['PI', 'Adjunct', 'Alumni', 'Collaborator'];
 // BOLD's research pillars, as the Google Form had them; settings/joinForm replaces them.
 const JOIN_PILLARS = [
   'Core Algorithmic Innovation Questioning the Foundations of the Field',
@@ -3575,7 +3575,7 @@ function normalizeJoinRequest(d, roles, pillars){
   out.endDate = String(d.endDate || '');
   if (out.startDate && !ISO_DAY.test(out.startDate)) return { error: 'Give a valid start date.' };
   if (out.endDate && !ISO_DAY.test(out.endDate)) return { error: 'Give a valid end date.' };
-  if (!out.endDate && JOIN_NO_END.indexOf(out.role) === -1) return { error: 'Give your end date (not needed for PIs, alumni and collaborators).' };
+  if (!out.endDate && JOIN_NO_END.indexOf(out.role) === -1) return { error: 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).' };
   if (out.startDate && out.endDate && out.endDate < out.startDate) return { error: 'The end date is before the start date.' };
   return { request: out };
 }

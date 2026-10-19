@@ -243,6 +243,21 @@ footer{
 
 /* ---------- masthead auth marker ---------- */
 .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+/* The search box (search-box.js): a menu of where to search under it, as the person picker's. */
+.mast-search{position:relative;}
+.ms-form{display:flex; align-items:center; position:relative;}
+.ms-input{width:220px; font-family:var(--sans); font-size:13px; padding:5px 26px 5px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.ms-input:focus{width:300px; outline:none; border-color:var(--accent);}
+.ms-input::-webkit-search-cancel-button{display:none;}
+.ms-key{position:absolute; right:7px; font-family:var(--sans); font-size:11px; line-height:1; color:var(--muted); border:1px solid var(--line); border-radius:3px; padding:2px 5px; pointer-events:none; background:var(--paper);}
+.ms-input:focus + .ms-key{display:none;}
+.ms-menu{position:absolute; z-index:60; right:0; top:calc(100% + 4px); width:340px; max-width:calc(100vw - 32px); margin:0; padding:4px 0; list-style:none;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 6px 18px rgba(26,43,74,.12); font-family:var(--sans); font-size:13.5px;}
+.ms-row{display:flex; justify-content:space-between; gap:12px; padding:7px 10px; cursor:pointer; color:var(--ink);}
+.ms-row.is-active, .ms-row:hover{background:var(--wash);}
+.ms-q{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+.ms-where{flex:none; color:var(--muted);}
+@media (max-width:560px){ .ms-input, .ms-input:focus{width:150px;} .ms-key{display:none;} }
 .mast-auth{display:flex; align-items:center; gap:8px; font-size:13px; color:var(--ink-soft); font-family:var(--sans);}
 .mast-auth-name{font-weight:500; color:var(--ink);}
 a.mast-auth-name{text-decoration:none;}

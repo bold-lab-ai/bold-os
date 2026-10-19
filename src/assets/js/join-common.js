@@ -4,14 +4,14 @@
 // are the defaults, as functions/index.js has them (JOIN_ROLES, JOIN_PILLARS).
 window.BoldJoin = (function(){
   var esc = BOLD.escapeHtml;
-  var ROLES = ['PhD student', 'Master student', 'Postdoc', 'Visitor', 'Collaborator', 'PI', 'Alumni', 'Staff', 'Other'];
+  var ROLES = ['PhD student', 'Master student', 'Postdoc', 'Visitor', 'Collaborator', 'Adjunct', 'PI', 'Alumni', 'Staff', 'Other'];
   var PILLARS = [
     'Core Algorithmic Innovation Questioning the Foundations of the Field',
     'Human-Centric Learning and Discovery (incl. Human-AI Coordination, MARL, Co-Scientist)',
     'Robust Adaptation and Learning incl. in Embodied Envs (RL, Open-Ended Learning, Robotics)',
   ];
   // These roles have no end date.
-  var NO_END = ['PI', 'Alumni', 'Collaborator'];
+  var NO_END = ['PI', 'Adjunct', 'Alumni', 'Collaborator'];
   // How someone likes to receive feedback (functions/index.js JOIN_FEEDBACK, firestore.rules).
   var FEEDBACK = [
     ['direct', 'Direct', 'Be blunt: tell me plainly what’s wrong.'],
@@ -51,7 +51,7 @@ window.BoldJoin = (function(){
         return '<label class="jn-check"><input type="radio" name="jn-feedback" value="' + f[0] + '"' + (v.feedback === f[0] ? ' checked' : '') + '> <strong>' + f[1] + '</strong>: ' + esc(f[2]) + '</label>';
       }).join('') + '</fieldset>' +
       '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
-        t('jn-end', 'End date (not needed for PIs, alumni and collaborators)', v.endDate, '', 10, 'date') + '</div>' +
+        t('jn-end', 'End date (not needed for PIs, adjuncts, alumni and collaborators)', v.endDate, '', 10, 'date') + '</div>' +
       '<label class="jn-check"><input type="checkbox" class="jn-list"' + (v.listOnWebsite ? ' checked' : '') + '> List me on the BOLD website</label>';
   }
 
@@ -77,7 +77,7 @@ window.BoldJoin = (function(){
     if (!d.role) return 'Choose your role at BOLD.';
     if (!d.contact) return 'Say who your BOLD point of contact is.';
     if (!d.interests) return 'Give your main research interests.';
-    if (!d.endDate && NO_END.indexOf(d.role) === -1) return 'Give your end date (not needed for PIs, alumni and collaborators).';
+    if (!d.endDate && NO_END.indexOf(d.role) === -1) return 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).';
     if (d.startDate && d.endDate && d.endDate < d.startDate) return 'The end date is before the start date.';
     return '';
   }
