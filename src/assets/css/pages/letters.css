@@ -19,11 +19,20 @@ section.block:first-of-type{margin-top:20px;}
   text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
 }
 
+/* ---------- As referee, As applicant (letters.js) ---------- */
+.lt-tabs{max-width:var(--article-max); margin-top:28px;}
+.lt-panel{max-width:var(--article-max); margin-top:4px;}
+.lt-panel > .lt-list{border-top:0;}
+
 /* ---------- a request ---------- */
 .lt-list{list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
 .lt-item{padding:18px 0; border-bottom:1px solid var(--line); scroll-margin-top:12px;}
 .lt-item.is-target{background:var(--wash); box-shadow:0 0 0 12px var(--wash);}
 .lt-title{font-size:20px; font-weight:500;}
+/* A request's title opens its details (letters.js). */
+button.lt-open{display:block; padding:0; border:0; background:none; text-align:left; font-family:inherit; color:var(--ink); cursor:pointer;}
+button.lt-open:hover{color:var(--accent); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;}
+.lt-meta .is-late{color:var(--danger-text);}
 .lt-meta{display:block; margin-top:3px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .lt-meta .is-ok{color:var(--success-text);}
 .lt-text{margin:10px 0 0; font-size:15px; color:var(--ink-soft); white-space:pre-line; overflow-wrap:anywhere;}

@@ -72,7 +72,7 @@
         db.collection('collabWeekSessions').get(),
         db.collection('collabWeekTalks').get(),
       ]).then(function(r){
-        return r[0].docs.map(function(d){ var x = d.data(); return item(x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), 'event.html?event=' + encodeURIComponent(d.id)); })
+        return r[0].docs.map(function(d){ var x = d.data(); return item(x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), x.page || 'event.html?event=' + encodeURIComponent(d.id)); })
           .concat(r[1].docs.map(function(d){ var x = d.data(); return item(x.title, 'Session', talk(x), 'session.html?session=' + encodeURIComponent(d.id)); }))
           .concat(r[2].docs.map(function(d){ var x = d.data(); return item(x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(d.id)); }));
       });

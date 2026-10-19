@@ -2,7 +2,8 @@
 // Anyone asks anyone in the lab for a letter; the writer gets a Slack message,
 // acknowledges it, and marks each recipient submitted, or shares the letter
 // where the requester sends it on. Every write is letterRequest; the page reads
-// the requests asked by and of the viewer (letterRequests, theirs alone).
+// the requests asked by and of the viewer (letterRequests, theirs alone). Each request
+// is one line (what it's for, who, how many letters are in); clicking it opens the rest.
 (function(){
   var esc = BOLD.escapeHtml;
   var main = document.getElementById('letters');
@@ -13,6 +14,8 @@
   var me = null, byMe = null, ofMe = null, writers = null, unsubs = [];
   // The open form: null, 'new', or a request's id.
   var editing = null, busy = {};
+  // The requests opened (clicked) to show their details: id → true.
+  var shown = {};
 
   function day(iso){ return iso ? new Date(iso + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
   function when(t){ return t ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
@@ -93,6 +96,14 @@
     return lines.join('\n');
   }
 
+  // Collapsed: how many letters are in, and the next deadline (or that one is late).
+  function summary(q){
+    var rs = q.recipients || [], done = rs.filter(function(r){ return r.submittedAt; }).length;
+    var next = nextDeadline(q), late = next !== '9999' && next < today();
+    return '<span class="lt-sum">' + done + ' of ' + rs.length + ' in' +
+      (done < rs.length && next !== '9999' ? ' · ' + (late ? '<span class="is-late">overdue since ' + day(next) + '</span>' : 'next due ' + day(next)) : '') + '</span>';
+  }
+
   function requestHtml(q, asWriter){
     var ack = q.acknowledgedAt ? '<span class="is-ok">Received ' + when(q.acknowledgedAt) + '</span>' : 'Not acknowledged yet';
     var meta = asWriter
@@ -103,8 +114,11 @@
       ? (q.acknowledgedAt ? '' : '<button type="button" class="btn-text lt-ack" data-id="' + esc(q.id) + '"' + b + '>Got it</button>')
       : '<button type="button" class="btn-text lt-edit" data-id="' + esc(q.id) + '"' + b + '>Edit</button>' +
         '<button type="button" class="btn-text danger lt-withdraw" data-id="' + esc(q.id) + '"' + b + '>Withdraw</button>';
-    return '<li class="lt-item" id="l-' + esc(q.id) + '">' +
-      '<span class="lt-title">' + esc(q.purpose) + '</span><span class="lt-meta">' + meta + '</span>' +
+    var open = !!shown[q.id] || editing === q.id;
+    var head = '<button type="button" class="lt-title lt-open" data-id="' + esc(q.id) + '" aria-expanded="' + open + '">' + esc(q.purpose) + '</button>' +
+      '<span class="lt-meta">' + meta + ' · ' + summary(q) + '</span>';
+    if (!open) return '<li class="lt-item" id="l-' + esc(q.id) + '">' + head + '</li>';
+    return '<li class="lt-item is-open" id="l-' + esc(q.id) + '">' + head +
       '<span class="lt-label">Where it goes</span><ul class="lt-recipients">' +
         (q.recipients || []).map(function(r){ return recipientHtml(q, r, asWriter); }).join('') + '</ul>' +
       '<span class="lt-label">Materials</span><dl class="lt-materials">' +
@@ -157,16 +171,40 @@
     if (!me) return;
     if (byMe === null || ofMe === null) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
     if (editing) return; // don't redraw over a form being filled in
-    var openOf = ofMe.filter(function(q){ return q.open; }).length;
+    var openOf = ofMe.filter(function(q){ return q.open; }).length, openBy = byMe.filter(function(q){ return q.open; }).length;
+    // Two tabs, named by the #hash: as referee, as applicant (with how many are open).
     main.innerHTML =
-      '<section class="block"><div class="block-head"><h2>As referee' + (openOf ? '<span class="proj-count">' + openOf + ' open</span>' : '') + '</h2></div>' +
+      '<nav class="guide-tabs lt-tabs" id="ltTabs" aria-label="Letters">' +
+        '<a class="guide-tab" href="#referee">As referee' + (openOf ? ' (' + openOf + ')' : '') + '</a>' +
+        '<a class="guide-tab" href="#applicant">As applicant' + (openBy ? ' (' + openBy + ')' : '') + '</a></nav>' +
+      '<section class="lt-panel" id="referee">' +
         (ofMe.length ? '<ul class="lt-list">' + sorted(ofMe).map(function(q){ return requestHtml(q, true); }).join('') + '</ul>' : '<p class="proj-msg">Nobody has asked you for a letter.</p>') + '</section>' +
-      '<section class="block"><div class="block-head"><h2>As applicant</h2></div>' +
+      '<section class="lt-panel" id="applicant">' +
         (byMe.length ? '<ul class="lt-list">' + sorted(byMe).map(function(q){ return requestHtml(q, false); }).join('') + '</ul>' : '<p class="proj-msg">You haven’t asked for a letter yet.</p>') +
         '<div class="lt-new"><button type="button" class="event-add lt-ask">+ Ask for a letter</button></div></section>';
+    showTab();
     var m = /#l=([A-Za-z0-9]+)/.exec(location.hash), el = m && document.getElementById('l-' + m[1]);
+    if (el && !render.jumped && !shown[m[1]]) { shown[m[1]] = true; render(); return; }
     if (el && !render.jumped) { render.jumped = true; el.classList.add('is-target'); el.scrollIntoView({ block: 'start' }); }
   }
+
+  // The tab the #hash names; a link to one request (#l=) opens the tab it's in. Without
+  // one: As referee if anyone asked you, else As applicant.
+  function showTab(){
+    var tabs = document.getElementById('ltTabs');
+    if (!tabs) return;
+    var h = location.hash, m = /^#l=([A-Za-z0-9]+)/.exec(h), want;
+    if (h === '#referee' || h === '#applicant') want = h.slice(1);
+    else if (m) want = ofMe.some(function(q){ return q.id === m[1]; }) ? 'referee' : 'applicant';
+    else want = ofMe.length ? 'referee' : 'applicant';
+    ['referee', 'applicant'].forEach(function(t){ document.getElementById(t).hidden = t !== want; });
+    Array.prototype.forEach.call(tabs.querySelectorAll('.guide-tab'), function(a){
+      var on = a.getAttribute('href') === '#' + want;
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+  window.addEventListener('hashchange', function(){ if (byMe && ofMe) showTab(); });
 
   // ---------- choosing the writer: a list of the BOLD.OS users, filtered by typing ----------
   function mountWho(wrap, form){
@@ -302,6 +340,7 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     var f = t.closest('.lt-form');
+    if (t.classList.contains('lt-open')) { if (!editing) { var oid = t.getAttribute('data-id'); shown[oid] = !shown[oid]; render(); } return; }
     if (t.classList.contains('lt-ask')) { if (!editing) openForm('new'); return; }
     if (t.classList.contains('lt-edit')) { if (!editing) openForm(t.getAttribute('data-id')); return; }
     if (t.classList.contains('lt-cancel')) { closeForm(); return; }

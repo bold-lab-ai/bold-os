@@ -1096,6 +1096,10 @@ function newTags(before, after){
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
 const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
   'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions'];
+// An event's page: its own (d.page: Collaboration Week, the Festival) or event.html.
+function eventUrl(slug, d){
+  return SITE_URL + (d && /^[a-z0-9-]+\.html$/.test(d.page || '') ? d.page : 'event.html?event=' + encodeURIComponent(slug));
+}
 function tagPlace(path, data){
   const seg = path.split('/');
   if (TAG_SILENT.indexOf(seg[0]) !== -1 || seg.indexOf('versions') !== -1) return null;
@@ -1104,7 +1108,7 @@ function tagPlace(path, data){
   if (seg[0] === 'boards' && seg[2] === 'cards' && seg.length === 4) return { title: named('a paper'), url: cardUrl(id, seg[3]) };
   if (seg.length > 2) return { title: named(seg[2]), url: SITE_URL };
   if (seg[0] === 'boards') return { title: named(id), url: venueUrl(id) };
-  if (seg[0] === 'events') return { title: named(id), url: SITE_URL + 'event.html?event=' + q };
+  if (seg[0] === 'events') return { title: named(id), url: eventUrl(id, d) };
   if (seg[0] === 'collabWeekSessions') return { title: named(id), url: SITE_URL + 'session.html?session=' + q };
   if (seg[0] === 'collabWeekTalks') return { title: named(id), url: SITE_URL + 'talk.html?talk=' + q };
   if (seg[0] === 'collabWeekProposals') return { title: named('a session proposal'), url: SITE_URL + 'event-collaboration-week.html' };
@@ -4870,7 +4874,7 @@ async function interactionsFor(path, d, lookup){
     add('letter', d.requesterEmail, d.writerEmail, d.at, 'A recommendation letter', letterUrl(seg[1]));
   } else if (n === 2 && ['skills', 'guides', 'events', 'collabWeekSessions'].indexOf(top) >= 0){
     const href = top === 'skills' ? SITE_URL + 'skill.html?skill=' + encodeURIComponent(seg[1]) : top === 'guides' ? guideUrl(seg[1])
-      : top === 'events' ? SITE_URL + 'event.html?event=' + encodeURIComponent(seg[1]) : SITE_URL + 'session.html?session=' + encodeURIComponent(seg[1]);
+      : top === 'events' ? eventUrl(seg[1], d) : SITE_URL + 'session.html?session=' + encodeURIComponent(seg[1]);
     add('added', d.createdBy, '', d.createdAt, d.title || d.name || seg[1], href);
   } else if (n === 4 && (top === 'guides' || top === 'handbook' || top === 'skills')){
     const page = top === 'guides' ? guideUrl(seg[1]) : top === 'handbook' ? handbookUrl(seg[1]) : SITE_URL + 'skill.html?skill=' + encodeURIComponent(seg[1]);

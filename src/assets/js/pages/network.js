@@ -3,7 +3,8 @@
 // working together, talking, on the site) and groups of Who is BOLD (and outside BOLD),
 // each on or off, both people's groups on; since when; and with or without things
 // (projects and papers, events, guides, skills). Find someone selects them. Clicking a person or thing selects it: its lines
-// stay lit and its busiest connections are listed below, each with its two latest
+// stay lit (a double click opens its page), and its
+// busiest connections are listed below, each with its two latest
 // interactions; clicking a line (or All) lists every interaction behind it. PIs and admins
 // can rebuild every interaction from the documents they come from (rebuildInteractions).
 (function(){
@@ -17,7 +18,7 @@
   var kinds = { joining: true, working: true, talking: true, site: true }, groups = { outside: true };
   BoldJoin.CATEGORIES.forEach(function(c){ groups[c[0]] = true; });
   var SINCE = [['all', 'All time'], ['365', 'Year'], ['90', '3 months']], find = '';
-  var W = 1000, H = 680;
+  var W = 1000, H = 680, lastClick = {};
 
   // View, Show and Since: one choice each; Kinds and Who: each on or off (connections.js).
   function controls(){
@@ -65,7 +66,7 @@
   function draw(){
     var people = g.nodes.filter(function(v){ return !v.thing; }).length, stuff = g.nodes.length - people;
     var n = g.edges.reduce(function(s, e){ return s + e.n; }, 0);
-    el('nwMsg').textContent = g.nodes.length ? people + ' people' + (stuff ? ' · ' + stuff + ' things' : '') + ' · ' + n + ' link' + (n === 1 ? '' : 's') : 'No interactions for these filters.';
+    el('nwMsg').textContent = g.nodes.length ? people + ' people' + (stuff ? ' · ' + stuff + ' things' : '') + ' · ' + n + ' link' + (n === 1 ? '' : 's') + ' · Double click to open one' : 'No interactions for these filters.';
     graph.hidden = !g.nodes.length;
     var chosen = why && C.edgeOf(g, why.split(' ')[0], why.split(' ')[1]);
     if (!chosen) why = '';
@@ -98,7 +99,11 @@
     else if (e.target.closest('.cx-why-close')) { why = ''; draw(); }
     else if (n && graph.contains(n)) {
       if (view === 'lineage') { var h = n.getAttribute('data-href'); if (h) location.href = h; return; }
-      var id = n.getAttribute('data-id'); selected = selected === id ? '' : id; draw();
+      var id = n.getAttribute('data-id'), now = e.timeStamp; // when clicked, not when handled (redraws are slow)
+      // A double click opens its page (each click redraws, so the browser's dblclick never fires).
+      if (lastClick.id === id && now - lastClick.at < 500) { var h2 = C.hrefOf(dir, id, me, g); if (h2) { location.href = h2; return; } }
+      lastClick = { id: id, at: now };
+      selected = selected === id ? '' : id; draw();
     }
     // An empty part of the graph: nothing selected.
     else if ((selected || why) && view === 'graph' && graph.contains(e.target)) { selected = ''; why = ''; draw(); }
