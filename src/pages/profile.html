@@ -3,7 +3,7 @@ title: "Profile | BOLD Lab"
 description: "Your BOLD Lab profile."
 sdk: ["functions"]
 css: "profile"
-scripts: ["pages/profile.js", "join-common.js", "pages/member-details.js"]
+scripts: ["pages/profile.js", "join-common.js", "pages/member-details.js", "project-fields.js", "pages/studies.js"]
 permalink: "profile.html"
 ---
 <div class="hero">
@@ -17,6 +17,7 @@ permalink: "profile.html"
 
   <nav class="guide-tabs profile-tabs" id="profileTabs" aria-label="Profile">
     <a class="guide-tab" href="#details">Your details</a>
+    <a class="guide-tab" href="#studies" id="studiesTab" hidden>Studies</a>
     <a class="guide-tab" href="#projects">Projects</a>
     <a class="guide-tab" href="#linked-accounts">Linked accounts</a>
   </nav>
@@ -27,6 +28,10 @@ permalink: "profile.html"
       <div class="fact"><dt>Email</dt><dd id="factEmail"></dd></div>
     </dl>
     <div id="memberDetails"><p class="proj-msg">Loading&hellip;</p></div>
+  </section>
+
+  <section class="profile-panel" id="studies" hidden>
+    <div id="studiesBody"><p class="proj-msg">Loading&hellip;</p></div>
   </section>
 
   <section class="profile-panel" id="projects" hidden>

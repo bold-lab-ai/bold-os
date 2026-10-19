@@ -1,0 +1,159 @@
+// profile.html's Studies tab, for PhD and Master students (their members record's
+// role; or anyone who already has studies): their working title, the people involved
+// in their studies (supervisors first) and a recurring meeting with them, which the
+// `studies` function (functions/index.js) saves to studies/{email} and puts in Google
+// Calendar, with every one of them invited. The meeting's fields are project-fields.js's.
+(function(){
+  var esc = BOLD.escapeHtml;
+  var box = document.getElementById('studiesBody'), tab = document.getElementById('studiesTab');
+  if (!box || !BOLD.getAuth()) return;
+  var db;
+  try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
+  var STUDY_ROLES = ['PhD student', 'Master student'];
+  var me = null, member, studies, editing = null, roster = null, busy = false, msg = '', unsubs = [];
+
+  function call(data){ return firebase.app().functions('europe-west2').httpsCallable('studies')(data); }
+  function isStudent(){ return !!(member && STUDY_ROLES.indexOf(member.role) !== -1) || !!studies; }
+
+  function render(){
+    if (!me || member === undefined || studies === undefined) return;
+    keep();
+    tab.hidden = !isStudent();
+    if (!isStudent()) { box.innerHTML = '<p class="proj-msg">For PhD and Master students: set your role in <a href="#details">Your details</a>.</p>'; return; }
+    box.innerHTML = editing ? formHtml() : factsHtml();
+  }
+
+  function factsHtml(){
+    var s = studies || {}, m = member || {};
+    var row = function(k, v){ return '<div class="fact"><dt>' + k + '</dt><dd>' + v + '</dd></div>'; };
+    var dates = m.startDate && m.endDate ? m.startDate + ' – ' + m.endDate : m.startDate ? 'From ' + m.startDate : m.endDate ? 'Until ' + m.endDate : '';
+    var people = (s.people || []).map(function(p){ return esc(p.name) + (p.name !== p.email ? ' <span class="acct-handle">' + esc(p.email) + '</span>' : ''); }).join('<br>');
+    var meeting = s.meeting ? esc(meetingText(s.meeting)) +
+        (s.eventLink || s.meetUrl ? '<span class="st-links">' + [s.eventLink ? '<a href="' + esc(s.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '',
+          s.meetUrl ? '<a href="' + esc(s.meetUrl) + '" target="_blank" rel="noopener">Meet</a>' : ''].filter(Boolean).join(' · ') + '</span>' : '') +
+        (s.error ? '<span class="st-error">' + esc(s.error) + ' <button type="button" class="btn-text st-retry"' + (busy ? ' disabled' : '') + '>Try again</button></span>' : '')
+      : '';
+    return (studies ? '<dl class="facts">' +
+        row('Degree', esc(s.degree || m.role || '')) + (dates ? row('Dates', esc(dates)) : '') +
+        row('Working title', esc(s.title || '') || '—') +
+        row('People involved', people || '—') + row('Meeting', meeting || 'None') + '</dl>'
+      : '<p class="proj-msg">Add who supervises your studies and set a recurring meeting with them.</p>') +
+      (msg ? '<p class="proj-msg">' + esc(msg) + '</p>' : '') +
+      '<div class="event-controls"><button type="button" class="btn-text st-edit">' + (studies ? 'Edit your studies' : 'Add your studies') + '</button></div>';
+  }
+
+  function formHtml(){
+    var e = editing;
+    var options = (roster || []).filter(function(p){ return p.email !== me.email && !e.people.some(function(x){ return x.email === p.email; }); })
+      .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('');
+    return '<div class="event-form join-form">' +
+      '<label>Working title (optional)<input type="text" class="st-title" maxlength="200" value="' + esc(e.title) + '" placeholder="Your thesis or project, as it stands"></label>' +
+      '<label>People involved in your studies, supervisors first</label>' +
+      (e.people.length ? '<ul class="st-people">' + e.people.map(function(p, i){
+        return '<li>' + esc(p.name) + '<span class="st-email">' + esc(p.email) + '</span><button type="button" class="btn-text danger st-remove" data-i="' + i + '">Remove</button></li>';
+      }).join('') + '</ul>' : '') +
+      (e.adding ? '<div class="st-add"><input type="text" class="st-new-name" maxlength="120" placeholder="Name" aria-label="Name">' +
+          '<input type="email" class="st-new-email" maxlength="200" placeholder="Email" aria-label="Email">' +
+          '<button type="button" class="btn-text st-add-new">Add</button><button type="button" class="btn-text st-add-cancel">Cancel</button></div>'
+        : '<div class="st-add"><select class="st-pick" aria-label="Add a person"><option value="">' + (roster ? 'Add a person…' : 'Loading…') + '</option>' + options +
+          '<option value="__new__">+ Someone not on Slack…</option></select></div>') +
+      '<label class="jn-check st-meeting-check"><input type="checkbox" class="st-has-meeting"' + (e.hasMeeting ? ' checked' : '') + '> A recurring meeting with them (London time)</label>' +
+      (e.hasMeeting ? meetingEntryHtml(e.meeting) : '') +
+      '<p class="ev-error"' + (e.error ? '' : ' hidden') + '>' + esc(e.error || '') + '</p>' +
+      '<div class="event-form-actions"><button type="button" class="ev-save st-save"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save') + '</button>' +
+        '<button type="button" class="st-cancel"' + (busy ? ' disabled' : '') + '>Cancel</button></div></div>';
+  }
+
+  // What the form says now, kept across redraws.
+  function keep(){
+    if (!editing) return;
+    var t = box.querySelector('.st-title');
+    if (t) editing.title = t.value;
+    if (editing.hasMeeting && document.getElementById('pmDay')) {
+      editing.meeting = { day: document.getElementById('pmDay').value, time: document.getElementById('pmTime').value,
+        minutes: Number(document.getElementById('pmMinutes').value), every: Number(document.getElementById('pmEvery').value) };
+    }
+  }
+
+  function loadRoster(){
+    if (roster) return;
+    db.collection('people').get().then(function(s){
+      roster = s.docs.map(function(d){ var x = d.data(); return { name: x.name || x.email, email: String(x.email || '').toLowerCase() }; })
+        .filter(function(p){ return p.email; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+      keep(); render();
+    }).catch(function(err){ console.error('[BOLD Studies] loading the people failed', err); roster = []; keep(); render(); });
+  }
+
+  function save(){
+    keep();
+    var e = editing, meeting = null;
+    if (e.hasMeeting) {
+      meeting = readMeetingEntry();
+      if (meeting.error) { e.error = meeting.error; render(); return; }
+      if (!e.people.length) { e.error = 'Add who the meeting is with.'; render(); return; }
+    }
+    busy = true; e.error = ''; render();
+    call({ action: 'save', title: e.title.trim(), people: e.people, meeting: meeting }).then(function(r){
+      busy = false; editing = null;
+      var s = r.data || {};
+      msg = s.meeting && !s.error ? 'Saved. Google Calendar sends everyone the invitation.' : 'Saved.';
+      render();
+    }).catch(function(err){
+      console.error('[BOLD Studies] saving failed', err);
+      busy = false; e.error = (err && err.message) || 'Couldn’t save — try again.'; render();
+    });
+  }
+
+  box.addEventListener('click', function(ev){
+    var t = ev.target.closest('button');
+    if (!t || t.disabled) return;
+    if (t.classList.contains('st-edit')) {
+      var s = studies || {};
+      msg = '';
+      editing = { title: s.title || '', people: (s.people || []).slice(), hasMeeting: !!s.meeting, meeting: s.meeting || null, adding: false, error: '' };
+      loadRoster(); render(); return;
+    }
+    if (t.classList.contains('st-retry')) {
+      busy = true; render();
+      call({ action: 'retry' }).catch(function(err){ console.error('[BOLD Studies] retrying failed', err); })
+        .then(function(){ busy = false; render(); });
+      return;
+    }
+    if (!editing) return;
+    keep();
+    if (t.classList.contains('st-cancel')) { editing = null; render(); return; }
+    if (t.classList.contains('st-save')) { save(); return; }
+    if (t.classList.contains('st-remove')) { editing.people.splice(+t.getAttribute('data-i'), 1); render(); return; }
+    if (t.classList.contains('st-add-cancel')) { editing.adding = false; render(); return; }
+    if (t.classList.contains('st-add-new')) {
+      var name = box.querySelector('.st-new-name').value.trim(), email = box.querySelector('.st-new-email').value.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { editing.error = 'Give a valid email.'; render(); return; }
+      if (email !== me.email && !editing.people.some(function(p){ return p.email === email; })) editing.people.push({ name: name || email, email: email });
+      editing.adding = false; editing.error = ''; render();
+    }
+  });
+  box.addEventListener('change', function(ev){
+    if (!editing) return;
+    var t = ev.target;
+    keep();
+    if (t.classList.contains('st-pick')) {
+      if (t.value === '__new__') editing.adding = true;
+      else {
+        var p = (roster || []).filter(function(x){ return x.email === t.value; })[0];
+        if (p) editing.people.push({ name: p.name, email: p.email });
+      }
+      render();
+    } else if (t.classList.contains('st-has-meeting')) { editing.hasMeeting = t.checked; render(); }
+  });
+
+  BOLD.onUser(function(user){
+    unsubs.forEach(function(u){ u(); }); unsubs = [];
+    me = user && user.email ? { email: user.email.toLowerCase() } : null;
+    member = undefined; studies = undefined; editing = null; msg = '';
+    if (!me) { tab.hidden = true; return; }
+    unsubs.push(db.collection('members').doc(me.email).onSnapshot(function(s){ member = s.exists ? s.data() : null; render(); },
+      function(e){ console.error('[BOLD Studies] loading your details failed', e); member = null; render(); }));
+    unsubs.push(db.collection('studies').doc(me.email).onSnapshot(function(s){ studies = s.exists ? s.data() : null; render(); },
+      function(e){ console.error('[BOLD Studies] loading your studies failed', e); studies = null; render(); }));
+  });
+})();

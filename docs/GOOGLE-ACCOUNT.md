@@ -8,6 +8,7 @@ Everything here is built and deployed but does nothing until the lab has a Googl
 |---|---|---|---|
 | **Project meetings** | `syncWorkspace`, `onProjectWritten`, `onVenueCardWritten`, `projectWorkspace` | Projects register, but no meeting is created | A recurring Google Calendar meeting with a Meet link, every member invited |
 | **Master slides and meeting notes** | `createDeck`, `createNotes`, `shareFile` | None are made | A Slides deck and a "living notes" Doc per project in the Drive folder "BOLD.OS projects", shared with the members and linked from the invite |
+| **Students' meetings** | `studies`, `syncStudyMeeting` (profile → Studies) | Saved, with "The lab's Google account isn't connected yet" | A recurring Google Calendar meeting with Meet between a PhD or Master student and the people involved in their studies |
 | **Linked Google addresses** | `linkGoogle`, `googleAddressesFor` | Linking works and is stored | Invitations and files go to the linked address instead of the Slack email |
 | **Joining BOLD** | `join.html`, `join-requests.html`, `requestToJoin`, `decideJoinRequest`, `sendWelcome`, `retryWelcomeEmails` | Latent: the pages exist but nothing links to them; sign-up still goes to the Google Form | Sign-up on BOLD.OS, PIs approve on Join requests, approved people get the welcome email with the next steps |
 
@@ -23,12 +24,13 @@ Everything here is built and deployed but does nothing until the lab has a Googl
    ```
 5. **Redeploy every function that uses it**, so they read the new secret:
    ```
-   npx firebase deploy --only functions:onProjectWritten,functions:onVenueCardWritten,functions:projectWorkspace,functions:linkGithub,functions:linkGoogle,functions:decideJoinRequest,functions:sendWelcomeEmail,functions:retryWelcomeEmails --project bold-d7ff2
+   npx firebase deploy --only functions:onProjectWritten,functions:onVenueCardWritten,functions:projectWorkspace,functions:linkGithub,functions:linkGoogle,functions:studies,functions:decideJoinRequest,functions:sendWelcomeEmail,functions:retryWelcomeEmails --project bold-d7ff2
    ```
 
 ## Check it works
 
 - **Projects:** register a test project with a meeting time. It should get a Calendar invite with Meet, a deck and notes linked from its page. Then delete it.
+- **Students' meetings:** on a PhD student's profile, Studies → **Try again** on a meeting saved before now (or save one); the invite should arrive.
 - **Older projects:** projects registered before now have no workspace yet. Each is set up when someone opens its page, or when a member opens their projects (`projectWorkspace` `mine`).
 - **Welcome email:** approve a test request sent to your own address (step 3 under "Launch joining" below) and check the email arrives. Approved requests still waiting are retried within the hour, or with **Send the welcome email**.
 

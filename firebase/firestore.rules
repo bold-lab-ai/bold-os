@@ -246,6 +246,13 @@ service cloud.firestore {
       allow read: if isLabMember();
     }
 
+    // A PhD or Master student's studies (studies/{email}): working title, the people
+    // involved and their recurring meeting; written only by the `studies` function.
+    match /studies/{studentEmail} {
+      allow read: if isLabMember();
+      allow write: if false;
+    }
+
     match /projectWorkspaces/{cardId} {
       allow read: if isLabMember();
       allow write: if false;

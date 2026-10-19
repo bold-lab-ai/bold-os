@@ -346,8 +346,9 @@
   } catch (e){}
 
   /* ---------- tabs ---------- */
-  // Your details, Projects and Linked accounts, one shown at a time; the #hash names it.
-  var TABS = ['details', 'projects', 'linked-accounts'];
+  // Your details, Studies (PhD and Master students; pages/studies.js shows its tab),
+  // Projects and Linked accounts, one shown at a time; the #hash names it.
+  var TABS = ['details', 'studies', 'projects', 'linked-accounts'];
   function showTab(){
     var want = String(location.hash || '').replace(/^#/, '');
     if (TABS.indexOf(want) === -1) want = TABS[0];

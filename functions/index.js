@@ -3058,8 +3058,127 @@ exports.linkGoogle = onCall(
       // Their projects: invitations and files move to the new address.
       const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
       for (const d of mine.docs) await syncWorkspace(d.id);
+      // And the study meetings they're in.
+      const studies = await db.collection('studies').where('everyone', 'array-contains', email).get();
+      for (const d of studies.docs) await syncStudyMeeting(d.id);
     }
     return { link: google ? { google } : null };
+  }
+);
+
+// ---------- Studies: a PhD or Master student's details and supervision meeting ----------
+// studies/{email}: the student's working title, the people involved in their studies
+// (supervisors first) and their recurring meeting with them, a Google Calendar event
+// with a Meet link owned by the lab's Google account, every one of them a guest (as a
+// project's meeting, syncWorkspace). Only `studies` writes it; the lab reads it.
+// The profile's Studies tab shows it to students (STUDY_ROLES, their members record).
+const STUDY_ROLES = ['PhD student', 'Master student'];
+
+// Pure: what a page sends → { title, people: [{ name, email }], meeting } or { error }.
+// `me` (lowercase) can't be one of the people; meeting: normalizeMeeting's, or null.
+function normalizeStudies(d, me){
+  d = d && typeof d === 'object' ? d : {};
+  const title = String(d.title || '').trim();
+  if (title.length > 200) return { error: 'Keep the title under 200 characters.' };
+  const people = [];
+  for (const p of Array.isArray(d.people) ? d.people : []){
+    const email = String(p && p.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'Give a valid email for everyone.' };
+    if (email === me || people.some(function(x){ return x.email === email; })) continue;
+    people.push({ name: String(p.name || '').trim().slice(0, 120) || email, email });
+  }
+  if (people.length > 10) return { error: 'Up to 10 people.' };
+  let meeting = null;
+  if (d.meeting){
+    meeting = normalizeMeeting(d.meeting);
+    if (meeting.error) return { error: meeting.error };
+    if (!people.length) return { error: 'Add who the meeting is with.' };
+  }
+  return { title, people, meeting };
+}
+
+function studiesView(s){
+  const out = {};
+  ['degree', 'title', 'people', 'meeting', 'eventLink', 'meetUrl', 'error', 'updatedAt'].forEach(function(k){ if (s[k] !== undefined) out[k] = s[k]; });
+  return out;
+}
+
+// Brings studies/{email}'s Calendar event in line with its meeting and people. Records
+// an error on it instead of throwing, so the profile can show it and offer to try again.
+async function syncStudyMeeting(email){
+  const ref = db.collection('studies').doc(email);
+  const s = (await ref.get()).data();
+  if (!s) return null;
+  const patch = {};
+  try {
+    const addrs = await googleAddressesFor([email].concat((s.people || []).map(function(p){ return p.email; })));
+    const summary = (s.name || email) + ' — ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting';
+    const description = (s.title ? s.title + '<br>' : '') + 'Set on <a href="' + SITE_URL + 'profile.html#studies">BOLD.OS</a> by ' + (s.name || email) + '.';
+    const attendees = function(existing){
+      const kept = (existing || []).filter(function(a){ return a.organizer || a.self || addrs.indexOf(String(a.email).toLowerCase()) >= 0; });
+      return kept.concat(addrs.filter(function(m){
+        return !kept.some(function(a){ return String(a.email).toLowerCase() === m; });
+      }).map(function(m){ return { email: m }; }));
+    };
+    if (s.meeting && !s.eventId){
+      const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
+        summary, description, attendees: attendees([]), guestsCanModify: false,
+        conferenceData: { createRequest: { requestId: 'bold-study-' + crypto.randomBytes(6).toString('hex'), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
+      }, eventTimes(s.meeting)));
+      Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: ev.hangoutLink || '', eventMeeting: s.meeting });
+    } else if (!s.meeting && s.eventId){
+      await googleFetch('DELETE', CAL + '/' + s.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
+      ['eventId', 'eventLink', 'meetUrl', 'eventMeeting'].forEach(function(k){ patch[k] = FieldValue.delete(); });
+    } else if (s.eventId){
+      const ev = await googleFetch('GET', CAL + '/' + s.eventId);
+      const change = {};
+      const want = attendees(ev.attendees);
+      if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
+      if (ev.summary !== summary) change.summary = summary;
+      if (ev.description !== description) change.description = description;
+      if (JSON.stringify(s.eventMeeting) !== JSON.stringify(s.meeting)) Object.assign(change, eventTimes(s.meeting));
+      if (Object.keys(change).length){
+        await googleFetch('PATCH', CAL + '/' + s.eventId + '?sendUpdates=all', change);
+        patch.eventMeeting = s.meeting;
+      }
+    }
+    patch.error = FieldValue.delete();
+  } catch (err){
+    logger.error('Setting up a study meeting failed', { error: String(err && err.message || err) });
+    patch.error = err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting in Google Calendar.';
+  }
+  await ref.set(patch, { merge: true });
+  return (await ref.get()).data();
+}
+
+// The profile's Studies tab, for the caller's own studies:
+// - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } | null };
+//   only PhD and Master students (their members record's role), or whoever already has studies.
+// - 'retry': tries the Calendar event again.
+// → the studies (studiesView).
+exports.studies = onCall(
+  { secrets: [GOOGLE_OAUTH], timeoutSeconds: 120 },
+  async (request) => {
+    const email = callerEmail(request);
+    const data = request.data || {};
+    const ref = db.collection('studies').doc(email);
+    const [prev, member] = await Promise.all([ref.get(), db.collection('members').doc(email).get()]);
+    const role = member.exists ? member.data().role : '';
+    if (data.action === 'retry'){
+      if (!prev.exists) throw new HttpsError('not-found', 'Save your studies first.');
+      return studiesView(await syncStudyMeeting(email));
+    }
+    if (data.action !== 'save') throw new HttpsError('invalid-argument', 'Unknown action.');
+    if (STUDY_ROLES.indexOf(role) < 0 && !prev.exists) throw new HttpsError('permission-denied', 'Studies are for PhD and Master students: set your role in Your details first.');
+    const n = normalizeStudies(data, email);
+    if (n.error) throw new HttpsError('invalid-argument', n.error);
+    await ref.set({
+      email, name: (member.exists && member.data().name) || request.auth.token.name || email,
+      degree: STUDY_ROLES.indexOf(role) >= 0 ? role : (prev.exists && prev.data().degree) || '',
+      title: n.title, people: n.people, meeting: n.meeting,
+      everyone: [email].concat(n.people.map(function(p){ return p.email; })), updatedAt: Date.now()
+    }, { merge: true });
+    return studiesView(await syncStudyMeeting(email));
   }
 );
 
@@ -4135,5 +4254,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
 };
