@@ -511,31 +511,47 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .view-btn:hover{color:var(--accent);}
 .view-btn[aria-pressed="true"]{background:var(--wash); color:var(--accent); font-weight:600;}
 .view-btn:focus-visible{outline:2px solid var(--accent); outline-offset:-2px;}
-/* ---------- connections: who did what with whom (connections.js) ---------- */
-.cx-filter{display:inline-flex; flex-wrap:wrap; margin:6px 0 12px;}
-.cx-graph{border:1px solid var(--line); background:var(--surface); border-radius:var(--radius);}
-.cx-svg{display:block; width:100%; height:auto;}
-.cx-edge{stroke-linecap:round; opacity:.55;}
-.cx-edge.cx-joining, .cx-key.cx-joining::before{stroke:#b0652a; background:#b0652a;}
-.cx-edge.cx-working, .cx-key.cx-working::before{stroke:#3d7fb8; background:#3d7fb8;}
-.cx-edge.cx-talking, .cx-key.cx-talking::before{stroke:#9a8f3c; background:#9a8f3c;}
-.cx-edge.is-dim{opacity:.08;}
-.cx-node{cursor:pointer;}
-.cx-node circle{fill:currentColor; stroke:var(--surface); stroke-width:1.5;}
-.cx-node.is-outside{color:#b7bcc6;}
-.cx-node.is-centre circle, .cx-node.is-selected circle{stroke:var(--ink); stroke-width:2.5;}
-.cx-node text{font-family:var(--sans); font-size:12px; fill:var(--ink); paint-order:stroke; stroke:var(--surface); stroke-width:3px; stroke-linejoin:round; pointer-events:none;}
-.cx-node.is-dim{opacity:.2;}
-.cx-node:focus-visible circle{stroke:var(--accent); stroke-width:3;}
-.cx-legend{display:flex; flex-wrap:wrap; gap:6px 18px; margin:8px 0 18px; font-family:var(--sans); font-size:13px; color:var(--muted);}
-.cx-key::before{content:''; display:inline-block; width:18px; height:3px; margin-right:6px; vertical-align:middle; border-radius:2px;}
+/* ---------- connections: who did what with whom (connections.js) ----------
+   Ink on paper: hairlines and rings in navy, people ringed in their group's colour
+   (.pp-*), names in the reading face; the kind of a line is its pattern, not a colour. */
+.cx-filter{display:inline-flex; flex-wrap:wrap; margin:6px 0 14px;}
+.cx-graph{border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:
+  radial-gradient(circle, rgba(26,43,74,.07) 1px, transparent 1.2px) 0 0/22px 22px;}
+.cx-svg{display:block; width:100%; height:auto; overflow:visible;}
+.cx-edge{fill:none; stroke:var(--ink); stroke-linecap:round; opacity:.32; transition:opacity .15s;}
+.cx-edge.cx-joining{stroke-dasharray:0.1 4;}
+.cx-svg.is-ego .cx-edge{opacity:.55;}
+.cx-svg.is-ego .cx-edge.cx-joining{stroke-width:2;}
+.cx-edge.cx-talking{stroke-dasharray:5 3.5;}
+.cx-node{cursor:pointer; transition:opacity .15s;}
+.cx-node circle{fill:var(--paper); stroke:currentColor; stroke-width:1.6; transition:fill .15s;}
+.cx-node.pp-pan, .cx-node.is-outside{color:var(--muted);}
+.cx-node.is-outside circle{stroke-dasharray:2 2;}
+.cx-node.is-centre circle, .cx-node.is-selected circle{fill:var(--ink); stroke:var(--ink);}
+.cx-node:hover circle, .cx-node:focus-visible circle{fill:currentColor;}
+.cx-node:focus{outline:none;}
+.cx-label{font-family:var(--serif); font-size:13.5px; fill:var(--ink); paint-order:stroke; stroke:var(--paper); stroke-width:4px; stroke-linejoin:round; pointer-events:none;}
+.cx-node.is-centre .cx-label{font-weight:700; font-size:16px;}
+.cx-label.is-quiet{opacity:0; transition:opacity .15s;}
+.cx-node:hover .cx-label.is-quiet, .cx-node.is-hot .cx-label.is-quiet, .cx-node.is-lit .cx-label.is-quiet{opacity:1;}
+/* A chosen person (Network) or the one under the pointer: their lines and people stay, the rest fade. */
+.cx-svg.has-selected .cx-edge:not(.is-lit), .cx-svg.is-hover .cx-edge:not(.is-hot){opacity:.06;}
+.cx-svg.has-selected .cx-edge.is-lit, .cx-svg.is-hover .cx-edge.is-hot{opacity:.85;}
+.cx-svg.has-selected .cx-node:not(.is-lit), .cx-svg.is-hover .cx-node:not(.is-hot){opacity:.28;}
+.cx-legend{display:flex; flex-wrap:wrap; gap:6px 22px; margin:10px 0 26px; font-family:var(--sans); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
+.cx-legend a{color:inherit;}
+.cx-key{display:inline-flex; align-items:center; gap:7px;}
+.cx-sample{width:26px; height:8px; overflow:visible;}
+.cx-sample .cx-edge{opacity:.75; stroke-width:1.4;}
+.cx-key svg[viewBox="0 0 12 12"]{width:12px; height:12px;}
+.cx-ring{fill:var(--paper); stroke:#256b60; stroke-width:1.6;}
 .cx-timeline{list-style:none; margin:0; padding:0;}
-.cx-row{display:flex; gap:14px; padding:7px 0 7px 10px; border-bottom:1px solid var(--line); border-left:3px solid transparent;}
-.cx-row.cx-joining{border-left-color:#b0652a;} .cx-row.cx-working{border-left-color:#3d7fb8;} .cx-row.cx-talking{border-left-color:#9a8f3c;} .cx-row.cx-site{border-left-color:var(--line);}
-.cx-when{flex:0 0 96px; font-family:var(--sans); font-size:13px; color:var(--muted); padding-top:2px;}
+.cx-row{display:flex; align-items:baseline; gap:14px; padding:9px 0; border-bottom:1px solid var(--line);}
+.cx-when{flex:0 0 92px; font-family:var(--sans); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
+.cx-kind{flex:0 0 26px; line-height:0; align-self:center;}
 .cx-what{flex:1 1 auto; min-width:0; overflow-wrap:anywhere;}
-.cx-more{margin-top:10px;}
-@media (max-width:600px){ .cx-row{flex-direction:column; gap:2px;} .cx-when{flex-basis:auto;} }
+.cx-more{margin-top:12px;}
+@media (max-width:600px){ .cx-row{flex-wrap:wrap; gap:2px 10px;} .cx-when{flex-basis:auto;} .cx-what{flex-basis:100%;} }
 .nw-controls{display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; margin:0 0 14px;}
 .nw-controls select, .nw-controls input{font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:5px 8px; max-width:100%;}
 .nw-admin{margin-top:24px; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;}

@@ -72,6 +72,7 @@
     var n = e.target.closest && e.target.closest('.cx-node');
     if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); n.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
   });
+  C.bindHover(graph);
   el('nwGroup').addEventListener('change', function(){ group = this.value; build(); });
   el('nwFind').addEventListener('change', function(){
     var q = this.value.trim().toLowerCase();

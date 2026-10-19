@@ -117,7 +117,34 @@ window.BoldConnections = (function(){
     }
   }
 
-  // The graph as SVG. opts: { dir, me, centre, labels: 'all' | 'big', selected }.
+  // Ego layout: the person at the middle, the others on a ring around them, grouped by
+  // their main kind and nearer the more they've interacted; past 28 people, two rings.
+  function radial(g, w, h, centre){
+    var byId = {}, cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 - 56;
+    g.nodes.forEach(function(v){ byId[v.id] = v; });
+    var others = g.edges.map(function(e){ return { id: e.a === centre ? e.b : e.a, e: e }; })
+      .sort(function(p, q){ return GROUPS.findIndex(function(x){ return x[0] === p.e.main; }) - GROUPS.findIndex(function(x){ return x[0] === q.e.main; }) || q.e.n - p.e.n; });
+    var max = Math.max.apply(null, others.map(function(o){ return o.e.n; }).concat([1]));
+    if (byId[centre]) { byId[centre].x = cx; byId[centre].y = cy; }
+    others.forEach(function(o, i){
+      var a = -Math.PI / 2 + i * 2 * Math.PI / Math.max(1, others.length);
+      var near = max > 1 ? Math.log(o.e.n) / Math.log(max) : 0;
+      var r = R * (1 - 0.38 * near) * (others.length > 28 && i % 2 ? 0.78 : 1);
+      var v = byId[o.id]; v.x = cx + Math.cos(a) * r * w / Math.min(w, h) * 0.92; v.y = cy + Math.sin(a) * r; v.angle = a;
+    });
+  }
+
+  // A line from p to q, bowed a little to one side (always the same side for a pair).
+  function curve(p, q, bend){
+    var mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2, dx = q.x - p.x, dy = q.y - p.y;
+    var cx = mx - dy * bend, cy = my + dx * bend, f = function(n){ return n.toFixed(1); };
+    return 'M' + f(p.x) + ' ' + f(p.y) + 'Q' + f(cx) + ' ' + f(cy) + ' ' + f(q.x) + ' ' + f(q.y);
+  }
+
+  // The graph as SVG, in ink on paper: people are rings in their group's colour (Who is
+  // BOLD), filled when chosen; lines are hairlines, thicker with more interactions,
+  // dotted for joining, solid for working together, dashed for talking.
+  // opts: { dir, me, centre, labels: 'all' | 'big', selected }.
   function svg(g, w, h, opts){
     var dir = opts.dir, byId = {}, degree = {};
     g.nodes.forEach(function(v){ byId[v.id] = v; });
@@ -125,28 +152,59 @@ window.BoldConnections = (function(){
     var sel = opts.selected, near = {};
     if (sel) { near[sel] = 1; g.edges.forEach(function(e){ if (e.a === sel) near[e.b] = 1; if (e.b === sel) near[e.a] = 1; }); }
     var big = Object.keys(degree).sort(function(a, b){ return degree[b] - degree[a]; }).slice(0, 25);
-    var radius = function(id){ return id === opts.centre ? 11 : 4 + Math.min(7, Math.sqrt(degree[id] || 1) * 1.4); };
-    return '<svg class="cx-svg" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Who has interacted with whom">' +
+    var radius = function(id){ return id === opts.centre ? 9 : 3.5 + Math.min(5.5, Math.sqrt(degree[id] || 1) * 1.1); };
+    return '<svg class="cx-svg' + (opts.centre ? ' is-ego' : '') + (sel ? ' has-selected' : '') + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Who has interacted with whom">' +
       '<g class="cx-edges">' + g.edges.map(function(e){
-        var p = byId[e.a], q = byId[e.b], dim = sel && !(e.a === sel || e.b === sel);
+        var p = byId[e.a], q = byId[e.b], lit = sel && (e.a === sel || e.b === sel);
         var parts = GROUPS.filter(function(x){ return e.groups[x[0]]; }).map(function(x){ return e.groups[x[0]] + ' ' + x[1].toLowerCase(); }).join(', ');
-        return '<line class="cx-edge cx-' + e.main + (dim ? ' is-dim' : '') + '" x1="' + p.x.toFixed(1) + '" y1="' + p.y.toFixed(1) + '" x2="' + q.x.toFixed(1) + '" y2="' + q.y.toFixed(1) +
-          '" stroke-width="' + (1 + Math.min(5, Math.log(e.n) * 1.6)).toFixed(1) + '"><title>' + esc(nameOf(dir, e.a) + ' – ' + nameOf(dir, e.b) + ': ' + parts) + '</title></line>';
+        return '<path class="cx-edge cx-' + e.main + (lit ? ' is-lit' : '') + '" data-a="' + esc(e.a) + '" data-b="' + esc(e.b) + '" d="' + curve(p, q, (seed(e.a + e.b) - 0.5) * 0.3) +
+          '" stroke-width="' + (0.8 + Math.min(2.6, Math.log(e.n) * 0.9)).toFixed(2) + '"><title>' + esc(nameOf(dir, e.a) + ' and ' + nameOf(dir, e.b) + ': ' + parts) + '</title></path>';
       }).join('') + '</g>' +
       '<g class="cx-nodes">' + g.nodes.map(function(v){
-        var d = dir[v.id], cls = 'cx-node ' + (d && d.member ? 'pp-' + d.group : 'is-outside') + (v.id === opts.centre ? ' is-centre' : '') + (sel && !near[v.id] ? ' is-dim' : '') + (v.id === sel ? ' is-selected' : '');
+        var d = dir[v.id], cls = 'cx-node ' + (d && d.member ? 'pp-' + d.group : 'is-outside') + (v.id === opts.centre ? ' is-centre' : '') + (near[v.id] ? ' is-lit' : '') + (v.id === sel ? ' is-selected' : '');
         var label = opts.labels === 'all' || v.id === opts.centre || near[v.id] || big.indexOf(v.id) >= 0;
-        var r = radius(v.id), anchor = v.x > w - 120 ? 'end' : 'start', lx = anchor === 'end' ? -r - 4 : r + 4;
+        var r = radius(v.id), lx = r + 5, ly = 4, anchor = 'start';
+        if (v.id === opts.centre) { lx = 0; ly = r + 17; anchor = 'middle'; }
+        else if (v.angle !== undefined) { var c = Math.cos(v.angle), sn = Math.sin(v.angle); anchor = c < -0.3 ? 'end' : c > 0.3 ? 'start' : 'middle'; lx = c * (r + 6); ly = sn * (r + 6) + (anchor === 'middle' ? (sn > 0 ? 12 : -4) : 4); }
+        else if (v.x > w - 140) { anchor = 'end'; lx = -r - 5; }
         return '<g class="' + cls + '" data-email="' + esc(v.id) + '" transform="translate(' + v.x.toFixed(1) + ',' + v.y.toFixed(1) + ')" tabindex="0">' +
           '<circle r="' + r.toFixed(1) + '"></circle>' +
-          (label ? '<text x="' + lx + '" y="4" text-anchor="' + anchor + '">' + esc(nameOf(dir, v.id)) + '</text>' : '') +
+          '<text class="cx-label' + (label ? '' : ' is-quiet') + '" x="' + lx.toFixed(1) + '" y="' + ly.toFixed(1) + '" text-anchor="' + anchor + '">' + esc(nameOf(dir, v.id)) + '</text>' +
           '<title>' + esc(nameOf(dir, v.id) + (degree[v.id] ? ' · ' + degree[v.id] + ' interaction' + (degree[v.id] === 1 ? '' : 's') : '')) + '</title></g>';
       }).join('') + '</g></svg>';
   }
 
+  // Hovering (or focusing) someone lights their lines and the people at the other end.
+  function bindHover(root){
+    var on = function(e){
+      var n = e.target.closest && e.target.closest('.cx-node'), s = n && n.closest('.cx-svg');
+      if (!s) return;
+      var id = n.getAttribute('data-email');
+      s.classList.add('is-hover');
+      Array.prototype.forEach.call(s.querySelectorAll('.cx-edge'), function(p){
+        var hit = p.getAttribute('data-a') === id || p.getAttribute('data-b') === id;
+        p.classList.toggle('is-hot', hit);
+        if (hit) [p.getAttribute('data-a'), p.getAttribute('data-b')].forEach(function(x){ var m = s.querySelector('.cx-node[data-email="' + CSS.escape(x) + '"]'); if (m) m.classList.add('is-hot'); });
+      });
+      n.classList.add('is-hot');
+    };
+    var off = function(e){
+      var s = e.target.closest && e.target.closest('.cx-svg');
+      if (!s) return;
+      s.classList.remove('is-hover');
+      Array.prototype.forEach.call(s.querySelectorAll('.is-hot'), function(x){ x.classList.remove('is-hot'); });
+    };
+    root.addEventListener('mouseover', on); root.addEventListener('focusin', on);
+    root.addEventListener('mouseout', off); root.addEventListener('focusout', off);
+  }
+
+  // A short sample of a kind's line, for the legend and the timeline.
+  function sample(group){
+    return '<svg class="cx-sample cx-' + group + '" viewBox="0 0 26 6" aria-hidden="true"><path class="cx-edge cx-' + group + '" d="M1 3H25"></path></svg>';
+  }
   function legendHtml(){
-    return '<div class="cx-legend">' + GROUPS.slice(0, 3).map(function(x){ return '<span class="cx-key cx-' + x[0] + '">' + esc(x[1]) + '</span>'; }).join('') +
-      '<span class="cx-key-note">Dots: their group in <a href="boldiquette.html#who-is-bold">Who is BOLD</a></span></div>';
+    return '<div class="cx-legend">' + GROUPS.slice(0, 3).map(function(x){ return '<span class="cx-key">' + sample(x[0]) + esc(x[1]) + '</span>'; }).join('') +
+      '<span class="cx-key"><svg class="cx-sample" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.2" class="cx-ring"></circle></svg><span>Ring: their group in <a href="boldiquette.html#who-is-bold">Who is BOLD</a></span></span></div>';
   }
 
   function sentence(x, dir, me){
@@ -167,7 +225,7 @@ window.BoldConnections = (function(){
     var start = list.filter(function(x){ return JOINING_FIRST.indexOf(x.kind) >= 0 && (x.to === person || (x.from === person && !x.to)); })
       .sort(function(a, b){ return a.at - b.at; });
     var rest = list.filter(function(x){ return start.indexOf(x) < 0; });
-    var row = function(x){ return '<li class="cx-row cx-' + x.group + '"><span class="cx-when">' + day(x.at) + '</span><span class="cx-what">' + sentence(x, dir, me) + '</span></li>'; };
+    var row = function(x){ return '<li class="cx-row"><span class="cx-when">' + day(x.at) + '</span><span class="cx-kind" title="' + esc((GROUPS.filter(function(gr){ return gr[0] === x.group; })[0] || ['', ''])[1]) + '">' + sample(x.group) + '</span><span class="cx-what">' + sentence(x, dir, me) + '</span></li>'; };
     return (start.length ? '<div class="md-group"><h3>Coming to BOLD</h3><ul class="cx-timeline">' + start.map(row).join('') + '</ul></div>' : '') +
       '<div class="md-group"><h3>Since</h3>' + (rest.length ? '<ul class="cx-timeline">' + rest.slice(0, shown).map(row).join('') + '</ul>' +
         (rest.length > shown ? '<button type="button" class="btn-text cx-more">Show more (' + (rest.length - shown) + ')</button>' : '') : '<p class="proj-msg">Nothing yet.</p>') + '</div>';
@@ -184,8 +242,8 @@ window.BoldConnections = (function(){
         var edges = list.filter(function(x){ return x.to && (filter === 'all' || x.group === filter); });
         var g = graphOf(edges);
         if (!g.nodes.length) g.nodes.push({ id: email });
-        var w = 760, h = Math.max(320, Math.min(560, 200 + g.nodes.length * 14));
-        layout(g, w, h, email);
+        var w = 760, h = Math.max(380, Math.min(620, 300 + g.nodes.length * 8));
+        radial(g, w, h, email);
         var counts = {};
         list.forEach(function(x){ counts[x.group] = (counts[x.group] || 0) + 1; });
         root.innerHTML =
@@ -195,6 +253,7 @@ window.BoldConnections = (function(){
           '<div class="cx-graph">' + svg(g, w, h, { dir: dir, me: me, centre: email, labels: 'all' }) + '</div>' + legendHtml() +
           timelineHtml(list.filter(function(x){ return filter === 'all' || x.group === filter; }), dir, email, me, shown);
       }
+      bindHover(root);
       root.addEventListener('click', function(e){
         var b = e.target.closest('[data-cx]');
         if (b) { filter = b.getAttribute('data-cx'); draw(); return; }
@@ -209,6 +268,6 @@ window.BoldConnections = (function(){
     });
   }
 
-  return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, graphOf: graphOf, layout: layout, svg: svg, legendHtml: legendHtml,
+  return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, graphOf: graphOf, layout: layout, svg: svg, legendHtml: legendHtml, bindHover: bindHover,
     nameOf: nameOf, hrefOf: hrefOf, mountPerson: mountPerson };
 })();
