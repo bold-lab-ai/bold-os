@@ -260,6 +260,7 @@ window.BoldConnections = (function(){
   function mountPerson(root, email, me){
     email = lower(email); me = lower(me);
     root.innerHTML = '<p class="proj-msg">Loading&hellip;</p>';
+    // steps: 2, or 1 if everyone's interactions couldn't be loaded.
     var shown = 30, filter = 'all', steps = 2, everyone = null;
     Promise.all([loadFor(email), directory()]).then(function(r){
       var list = r[0], dir = r[1];
@@ -289,9 +290,6 @@ window.BoldConnections = (function(){
         root.innerHTML =
           '<div class="view-toggle cx-filter" role="group" aria-label="Show">' + [['all', 'All']].concat(GROUPS).map(function(x){
             return '<button type="button" class="view-btn" data-cx="' + x[0] + '" aria-pressed="' + (filter === x[0]) + '">' + esc(x[1]) + (x[0] !== 'all' && counts[x[0]] ? ' · ' + counts[x[0]] : '') + '</button>';
-          }).join('') + '</div> ' +
-          '<div class="view-toggle cx-filter" role="group" aria-label="How far">' + [[1, 'Direct'], [2, 'Two steps']].map(function(x){
-            return '<button type="button" class="view-btn" data-steps="' + x[0] + '" aria-pressed="' + (steps === x[0]) + '">' + x[1] + '</button>';
           }).join('') + '</div>' +
           '<div class="cx-graph">' + svg(g, w, h, { dir: dir, me: me, centre: email, labels: 'all' }) + '</div>' + legendHtml() +
           timelineHtml(list.filter(function(x){ return filter === 'all' || x.group === filter; }), dir, email, me, shown);
@@ -300,8 +298,6 @@ window.BoldConnections = (function(){
       root.addEventListener('click', function(e){
         var b = e.target.closest('[data-cx]');
         if (b) { filter = b.getAttribute('data-cx'); draw(); return; }
-        var st = e.target.closest('[data-steps]');
-        if (st) { steps = Number(st.getAttribute('data-steps')); draw(); return; }
         if (e.target.closest('.cx-more')) { shown += 50; draw(); return; }
         var n = e.target.closest('.cx-node');
         if (n && n.getAttribute('data-email') !== email) { var h = hrefOf(dir, n.getAttribute('data-email'), me); if (h) location.href = h; }
