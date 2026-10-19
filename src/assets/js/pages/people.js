@@ -7,7 +7,7 @@
   if (!root || !BOLD.getAuth() || !window.BoldJoin) return;
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
-  var members = null, unsub = null, staff = false, me = null, picking = '';
+  var members = null, unsub = null, staff = false, me = null, picking = '', slackIds = {};
 
   function links(t){
     return String(t || '').split(/[\s,;]+/).filter(Boolean).map(function(u){
@@ -27,7 +27,9 @@
           return '<button type="button" class="type-badge pp-' + c[0] + ' pp-choose' + (c[0] === cat ? ' is-current' : '') + '" data-email="' + esc(m.email) + '" data-cat="' + c[0] + '">' + esc(c[1]) + '</button>';
         }).join('') + '</span>'
       : '<button type="button" class="type-badge pp-' + cat + ' pp-open" data-email="' + esc(m.email) + '" title="Change ' + esc(m.name || m.email) + '’s group">' + esc(BoldJoin.categoryLabel(cat)) + '</button>';
-    return '<li><div><span class="proj-title">' + esc(m.name || m.email) + '</span>' + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag +
+    var sid = slackIds[String(m.email || '').toLowerCase()];
+    var name = sid ? '<a class="proj-title" href="person.html?id=' + encodeURIComponent(sid) + '">' + esc(m.name || m.email) + '</a>' : '<span class="proj-title">' + esc(m.name || m.email) + '</span>';
+    return '<li><div>' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag +
       (meta ? '<span class="proj-meta">' + meta + '</span>' : '') +
       (m.interests ? '<span class="proj-meta">' + esc(m.interests) + '</span>' : '') +
       (l ? '<span class="proj-meta">' + l + '</span>' : '') + '</div></li>';
@@ -72,6 +74,11 @@
     members = null;
     if (!user) return;
     me = user.email; staff = false;
+    // Each person's page is person.html?id=<their Slack id> (the people roster).
+    db.collection('people').get().then(function(ps){
+      ps.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });
+      render();
+    }).catch(function(){});
     firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(r){ staff = !!(r.data && r.data.fullWrite); render(); }).catch(function(){});
     unsub = db.collection('members').onSnapshot(function(s){
       members = s.docs.map(function(d){ return d.data(); })

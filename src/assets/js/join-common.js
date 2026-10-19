@@ -123,7 +123,8 @@ window.BoldJoin = (function(){
   }
 
   // The details as lists of facts, for reading, in the form's groups. o: { name, email }
-  // to show first (the profile's own sign-in), else d's; group: the Group row's html.
+  // to show first (the profile's own sign-in), else d's; group: the Group row's html;
+  // other: someone else's (person.html), for the headings.
   function factsHtml(d, o){
     o = o || {};
     var fb = FEEDBACK.filter(function(f){ return f[0] === d.feedback; })[0];
@@ -133,14 +134,14 @@ window.BoldJoin = (function(){
       var href = /^https?:\/\//.test(u) ? u : 'https://' + u;
       return /^https?:\/\/[^\s<>"]+$/.test(href) ? '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(u) + '</a>' : esc(u);
     }).join(' · ');
-    return group('About you', row('Name', esc(o.name || d.name || '')) + row('Email', esc(o.email || d.email || '')) +
+    return group(o.other ? 'About' : 'About you', row('Name', esc(o.name || d.name || '')) + row('Email', esc(o.email || d.email || '')) +
         row('Pronouns', esc(d.pronouns || '')) + row('Institution', esc(d.institution || '')) +
         row('Based in', esc(d.basedIn || '')) + row('Links', links)) +
       group('At BOLD', row('Group', o.group || '') + row('Role', esc(d.role || '')) + row('Point of contact', esc(d.contact || '')) +
         row('Dates', esc(d.startDate && d.endDate ? d.startDate + ' – ' + d.endDate : d.startDate ? 'From ' + d.startDate : d.endDate ? 'Until ' + d.endDate : '')) +
         (d.role !== undefined ? row('On the website', d.listOnWebsite ? 'Yes' : 'No') : '')) +
       group('Research', row('Interests', esc(d.interests || '')) + row('Pillars', (d.pillars || []).map(esc).join('<br>'))) +
-      group('Working with you', row('Feedback', fb ? '<strong>' + fb[1] + '</strong>: ' + esc(fb[2]) : ''));
+      group(o.other ? 'Working with them' : 'Working with you', row('Feedback', fb ? '<strong>' + fb[1] + '</strong>: ' + esc(fb[2]) : ''));
   }
 
   return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };

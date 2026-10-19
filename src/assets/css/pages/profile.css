@@ -120,3 +120,7 @@ button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);
 .md-g-form textarea{width:100%; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); margin:4px 0 8px;}
 .facts dd .type-badge{vertical-align:2px;}
 .jr-move{margin:6px 0 0; display:flex; gap:6px; align-items:center; font-family:var(--sans); font-size:13px; color:var(--muted);}
+/* A person's page (person.html): the way back to People, as on a skill's page. */
+.back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
+.back-link:hover{color:var(--accent);}
+#person .md-group:first-child{margin-top:24px;}
