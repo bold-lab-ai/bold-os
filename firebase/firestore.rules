@@ -148,6 +148,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Requests to join a student's supervision meeting (studyRequest in functions/index.js):
+    // whoever asked and the student read them; no client writes.
+    match /studyRequests/{id} {
+      allow read: if isLabMember() && (resource.data.email == email().lower() || resource.data.student == email().lower());
+      allow write: if false;
+    }
+
     match /settings/joinInvite {
       allow read: if hasFullWrite();
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['slackInviteUrl', 'slackInviteExpires', 'subject', 'body', 'updatedAt', 'updatedBy'])

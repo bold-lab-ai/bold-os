@@ -3270,6 +3270,77 @@ exports.studies = onCall(
   }
 );
 
+// A lab member's request to be among the people involved in a student's studies, from
+// the Calendar, and the student's decision (on their Studies tab). studyRequests/{id}:
+// { student, studentName, email, name, note, status: open|approved|declined|withdrawn, at };
+// read by the two of them, written only here.
+// - 'request': { student, note } → { id }; one open request per student; DMs the student.
+// - 'withdraw': { id }: whoever asked, while it's open.
+// - 'decide': { id, accept }: the student; accepting adds them to the people involved
+//   (the meeting's guests, the Slack channel). DMs whoever asked.
+exports.studyRequest = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    const col = db.collection('studyRequests');
+    const token = SLACK_BOT_TOKEN.value();
+    if (d.action === 'request'){
+      const student = String(d.student || '').trim().toLowerCase();
+      if (!student || student === email) throw new HttpsError('invalid-argument', 'Choose someone else’s studies.');
+      const s = (await db.collection('studies').doc(student).get()).data();
+      if (!s) throw new HttpsError('not-found', 'Those studies aren’t there.');
+      if ((s.everyone || []).indexOf(email) >= 0) throw new HttpsError('already-exists', 'You’re already in their meeting.');
+      const open = await col.where('email', '==', email).where('student', '==', student).where('status', '==', 'open').limit(1).get();
+      if (!open.empty) throw new HttpsError('already-exists', 'You’ve already asked.');
+      const m = await db.collection('members').doc(email).get();
+      const name = (m.exists && m.data().name) || request.auth.token.name || email;
+      const note = String(d.note || '').trim().slice(0, 1000);
+      const ref = await col.add({ student, studentName: s.name || student, email, name, note, status: 'open', at: Date.now() });
+      await sendEvent(token, { emails: [student], headline: '🎓 ' + slackText(name) + ' asks to join your supervision meeting' +
+        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', SITE_URL + 'profile.html#studies') + '.' });
+      return { id: ref.id };
+    }
+    const id = String(d.id || '');
+    if (!validSlug(id)) throw new HttpsError('invalid-argument', 'No request given.');
+    const ref = col.doc(id);
+    if (d.action === 'withdraw'){
+      await db.runTransaction(async function(tx){
+        const r = (await tx.get(ref)).data();
+        if (!r || r.email !== email) throw new HttpsError('not-found', 'That request isn’t there.');
+        if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+        tx.update(ref, { status: 'withdrawn', decidedAt: Date.now() });
+      });
+      return { ok: true };
+    }
+    if (d.action !== 'decide') throw new HttpsError('invalid-argument', 'Unknown action.');
+    const accept = !!d.accept;
+    const sref = db.collection('studies').doc(email);
+    const r = await db.runTransaction(async function(tx){
+      const [rs, ss] = await Promise.all([tx.get(ref), tx.get(sref)]);
+      const r = rs.data();
+      if (!r || r.student !== email) throw new HttpsError('not-found', 'That request isn’t there.');
+      if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+      tx.update(ref, { status: accept ? 'approved' : 'declined', decidedAt: Date.now() });
+      if (accept){
+        const s = ss.data() || {};
+        const people = (s.people || []).slice();
+        if (!people.some(function(p){ return p.email === r.email; })){
+          if (people.length >= 10) throw new HttpsError('failed-precondition', 'Up to 10 people: remove someone first.');
+          people.push({ name: r.name || r.email, email: r.email });
+        }
+        tx.update(sref, { people, everyone: [email].concat(people.map(function(p){ return p.email; })), updatedAt: Date.now() });
+      }
+      return r;
+    });
+    if (accept){ await syncStudyChannel(email); await syncStudyMeeting(email); }
+    await sendEvent(token, { emails: [r.email], headline: accept
+      ? '🎓 ' + slackText(r.studentName) + ' added you to their supervision meeting: Google Calendar sends the invitation.'
+      : '🎓 ' + slackText(r.studentName) + ' declined your request to join their supervision meeting.' });
+    return { ok: true };
+  }
+);
+
 // ---------- people roster: daily sync from Slack ----------
 //
 // `people` ({ name, email, slackId }, keyed by Slack id) backs every person

@@ -20,6 +20,8 @@
   }
   var channelCheck = { name: '', text: '' }, checkTimer = null;
   var me = null, member, studies, editing = null, roster = null, busy = false, msg = '', unsubs = [];
+  // Open requests to join their meeting, from the Calendar (studyRequest in functions/index.js).
+  var asks = [], deciding = {};
 
   function call(data){ return firebase.app().functions('europe-west2').httpsCallable('studies')(data); }
   function isStudent(){ return !!(member && STUDY_ROLES.indexOf(member.role) !== -1) || !!studies; }
@@ -29,7 +31,18 @@
     keep();
     tab.hidden = !isStudent();
     if (!isStudent()) { box.innerHTML = '<p class="proj-msg">For PhD and Master students: set your role in <a href="#details">Your details</a>.</p>'; return; }
-    box.innerHTML = editing ? formHtml() : factsHtml();
+    box.innerHTML = (editing ? '' : asksHtml()) + (editing ? formHtml() : factsHtml());
+  }
+
+  function asksHtml(){
+    if (!asks.length) return '';
+    return '<h3 class="st-asks-head">Asking to join your meeting</h3><ul class="st-asks">' + asks.map(function(a){
+      var off = deciding[a.id] ? ' disabled' : '';
+      return '<li><div><b>' + esc(a.name || a.email) + '</b> <span class="acct-handle">' + esc(a.email) + '</span>' +
+        (a.note ? '<p class="st-ask-note">' + esc(a.note) + '</p>' : '') + (a.error ? '<span class="st-error">' + esc(a.error) + '</span>' : '') + '</div>' +
+        '<div class="event-controls"><button type="button" class="btn-text st-decide" data-id="' + esc(a.id) + '" data-accept="1"' + off + '>Approve</button>' +
+        '<button type="button" class="btn-text danger st-decide" data-id="' + esc(a.id) + '"' + off + '>Decline</button></div></li>';
+    }).join('') + '</ul>';
   }
 
   function factsHtml(){
@@ -127,6 +140,14 @@
         channelFixed: !!s.channelUrl, channel: s.channel || channelFor((member && member.name) || me.name) };
       loadRoster(); render(); if (!editing.channelFixed) checkChannel(); return;
     }
+    if (t.classList.contains('st-decide')) {
+      var id = t.getAttribute('data-id'), a = asks.filter(function(x){ return x.id === id; })[0];
+      deciding[id] = true; if (a) a.error = ''; render();
+      firebase.app().functions('europe-west2').httpsCallable('studyRequest')({ action: 'decide', id: id, accept: !!t.getAttribute('data-accept') })
+        .catch(function(err){ console.error('[BOLD Studies] deciding failed', err); if (a) a.error = (err && err.message) || 'That didn’t work — try again.'; })
+        .then(function(){ deciding[id] = false; render(); });
+      return;
+    }
     if (t.classList.contains('st-retry')) {
       busy = true; render();
       call({ action: 'retry' }).catch(function(err){ console.error('[BOLD Studies] retrying failed', err); })
@@ -180,11 +201,15 @@
   BOLD.onUser(function(user){
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user && user.email ? { email: user.email.toLowerCase(), name: user.displayName || '' } : null;
-    member = undefined; studies = undefined; editing = null; msg = '';
+    member = undefined; studies = undefined; editing = null; msg = ''; asks = [];
     if (!me) { tab.hidden = true; return; }
     unsubs.push(db.collection('members').doc(me.email).onSnapshot(function(s){ member = s.exists ? s.data() : null; render(); },
       function(e){ console.error('[BOLD Studies] loading your details failed', e); member = null; render(); }));
     unsubs.push(db.collection('studies').doc(me.email).onSnapshot(function(s){ studies = s.exists ? s.data() : null; render(); },
       function(e){ console.error('[BOLD Studies] loading your studies failed', e); studies = null; render(); }));
+    unsubs.push(db.collection('studyRequests').where('student', '==', me.email).where('status', '==', 'open').onSnapshot(function(s){
+      asks = s.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return a.at - b.at; });
+      render();
+    }, function(e){ console.error('[BOLD Studies] loading the requests failed', e); }));
   });
 })();

@@ -7,12 +7,15 @@
   // - supervision meetings: studies/{email} (see exports.studies) in Google Calendar.
   // A Week grid (a dated week, events across the top; the default) or a List
   // (upcoming events, then the meetings by weekday), filtered by kind; both choices kept in localStorage.
+  // Clicking a meeting opens a card to join it: a project's at once (projectWorkspace
+  // join), a student's by asking them (studyRequest, approved on their Studies tab).
   if (!BOLD.getAuth()) return;
 
   var el = function(id){ return document.getElementById(id); };
   var esc = BOLD.escapeHtml;
   var E = window.BoldEvents;
   var db = null, me = null, busy = {}, msgs = {}, unsubs = [], slackIds = {};
+  var asked = {}, pop = null; // asked: student email → my open request's id; pop: the open card { key, x, y }
   var data = { project: null, study: null, event: null };
   var VIEW_KEY = 'boldCalendar:view', KIND_KEY = 'boldCalendar:kind', view = 'week', kind = 'all';
   var weekOffset = 0;
@@ -29,18 +32,19 @@
 
   // Every recurring meeting, projects' and students', as one shape:
   // { kind, id, title, href, meeting, mine, meetUrl, people, w (a project's workspace) }.
-  function meetings(){
+  function meetings(all){
     var out = [];
-    if (shown('project')) (data.project || []).forEach(function(w){
+    if (all || shown('project')) (data.project || []).forEach(function(w){
       if (!w.meeting || !w.eventId || w.group === 'completed') return;
       out.push({ kind: 'project', id: w.cardId, title: w.title || 'Untitled', href: projectUrl(w), meeting: w.meeting,
         mine: (w.members || []).some(isMe), meetUrl: w.meetUrl, people: (w.members || []).length, w: w });
     });
-    if (shown('study')) (data.study || []).forEach(function(s){
+    if (all || shown('study')) (data.study || []).forEach(function(s){
       if (!s.meeting || !s.eventId) return;
       var mine = isMe(s.email) || (s.people || []).some(function(p){ return isMe(p.email); });
       var id = slackIds[s.email];
       out.push({ kind: 'study', id: s.email, meeting: s.meeting, mine: mine, meetUrl: s.meetUrl, people: (s.people || []).length + 1,
+        first: String(s.name || s.email).split(' ')[0],
         title: (s.name || s.email) + ' · ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision',
         href: isMe(s.email) ? 'profile.html#studies' : id ? 'person.html?id=' + encodeURIComponent(id) : '' });
     });
@@ -66,7 +70,41 @@
     }
     el('meetings').innerHTML = view === 'week' ? weekHtml(ms, evs) : listHtml(ms, evs);
     el('meetings').hidden = false; el('meetMsg').hidden = true;
+    renderPop();
   }
+
+  // The card for one meeting, by the block or button that opened it.
+  function keyOf(m){ return m.kind + ':' + m.id; }
+  function renderPop(){
+    var box = el('calPop');
+    var m = pop && meetings(true).filter(function(x){ return keyOf(x) === pop.key; })[0];
+    if (!m) { box.hidden = true; box.innerHTML = ''; return; }
+    var meta = [esc(meetingText(m.meeting)), m.people + (m.people === 1 ? ' person' : ' people')];
+    if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>');
+    var html = '<button type="button" class="cal-pop-close" aria-label="Close">&times;</button>' +
+      '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + '</div>' +
+      titleHtml(m, 'proj-title') + '<span class="proj-meta">' + meta.join(' \u00b7 ') + '</span>';
+    if (m.kind === 'project') html += '<div class="cal-pop-act">' + joinHtml(m.w) + '</div>';
+    else if (isMe(m.id)) html += '<p class="cal-pop-note">Your supervision meeting. <a href="profile.html#studies">Edit it</a>.</p>';
+    else if (m.mine) html += '<p class="cal-pop-note">You’re in this meeting.</p>';
+    else if (asked[m.id]) html += '<p class="cal-pop-note">You asked to join. <button type="button" class="btn-text cal-withdraw"' + (busy[m.id] ? ' disabled' : '') + '>Withdraw</button></p>';
+    else html += '<label class="cal-pop-label">Ask ' + esc(m.first) + ' to add you to the people involved in their studies: their meeting and Slack channel' +
+        '<textarea class="cal-ask-note" rows="2" maxlength="1000" placeholder="A note (optional)"></textarea></label>' +
+      '<div class="cal-pop-act"><button type="button" class="join-btn cal-ask"' + (busy[m.id] ? ' disabled' : '') + '>Ask to join</button></div>';
+    if (m.kind === 'study' && msgs[m.id]) html += '<p class="join-msg cal-pop-msg" role="status">' + msgs[m.id] + '</p>';
+    var note = box.querySelector('.cal-ask-note'), typed = note ? note.value : '';
+    box.innerHTML = html; box.hidden = false;
+    if (typed && box.querySelector('.cal-ask-note')) box.querySelector('.cal-ask-note').value = typed;
+    var w = box.offsetWidth, maxX = document.documentElement.clientWidth - w - 12;
+    box.style.left = Math.max(12, Math.min(pop.x, maxX)) + 'px';
+    box.style.top = pop.y + 'px';
+  }
+  function openPop(key, anchor){
+    var r = anchor.getBoundingClientRect();
+    pop = { key: key, x: r.left + window.scrollX, y: r.bottom + window.scrollY + 6 };
+    renderPop();
+  }
+  function closePop(){ pop = null; renderPop(); }
 
   function listHtml(ms, evs){
     var html = '';
@@ -93,7 +131,7 @@
         html += '<li><div class="proj-main">' + titleHtml(m, 'proj-title') +
           '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
           '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + '</div></div>' +
-          (m.kind === 'project' ? joinHtml(m.w) : '') + '</li>';
+          (m.kind === 'project' ? joinHtml(m.w) : m.mine ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">' + (asked[m.id] ? 'Asked' : 'Ask to join') + '</button></div>') + '</li>';
       });
       html += '</ul>';
     });
@@ -174,7 +212,7 @@
       groups.forEach(function(g){
         g.items.forEach(function(b){
           var m = b.m, n = g.lanes.length, tag = m.href ? 'a' : 'span';
-          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + '"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
+          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + '" data-key="' + esc(keyOf(m)) + '"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + ((b.s - from * 60) / 60 * HOUR) + 'px;height:' + Math.max(18, (b.e - b.s) / 60 * HOUR - 2) + 'px;' +
             'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind]) + '">' +
             '<span class="week-time">' + esc(m.meeting.time) + '</span> ' + esc(m.title) + (m.w ? ' ' + groupBadge(m.w) : '') + '</' + tag + '>';
@@ -215,6 +253,44 @@
   el('meetings').addEventListener('click', function(e){
     var step = e.target.closest('.cal-step');
     if (step) { var s = +step.getAttribute('data-step'); weekOffset = s ? weekOffset + s : 0; render(); return; }
+    // A meeting's block (a plain click: a new tab still opens its page) or Ask to join.
+    var opener = e.target.closest('.week-block, .cal-open');
+    if (opener && !(e.metaKey || e.ctrlKey || e.shiftKey || e.button)) { e.preventDefault(); openPop(opener.getAttribute('data-key'), opener); return; }
+    onJoin(e);
+  });
+  el('calPop').addEventListener('click', function(e){
+    if (e.target.closest('.cal-pop-close')) { closePop(); return; }
+    var m = pop && meetings(true).filter(function(x){ return keyOf(x) === pop.key; })[0];
+    if (m && e.target.closest('.cal-ask, .cal-withdraw')) { askOrWithdraw(m, !!e.target.closest('.cal-ask')); return; }
+    onJoin(e);
+  });
+  document.addEventListener('click', function(e){
+    // (a button the card redrew away is no longer in the page: not a click outside)
+    if (pop && document.contains(e.target) && !e.target.closest('#calPop, .week-block, .cal-open')) closePop();
+  });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && pop) closePop(); });
+
+  function askOrWithdraw(m, ask){
+    var note = el('calPop').querySelector('.cal-ask-note');
+    var text = note ? note.value : '';
+    busy[m.id] = true; msgs[m.id] = ''; render();
+    var call;
+    try { call = firebase.app().functions('europe-west2').httpsCallable('studyRequest')(ask ? { action: 'request', student: m.id, note: text } : { action: 'withdraw', id: asked[m.id] }); }
+    catch (err){ call = Promise.reject(err); }
+    call.then(function(r){
+      busy[m.id] = false;
+      if (ask) asked[m.id] = (r.data || {}).id || true; else delete asked[m.id];
+      msgs[m.id] = ask ? 'Asked: ' + esc(m.first) + ' gets a Slack message to approve it.' : '';
+      render();
+    }).catch(function(err){
+      console.error('[BOLD Lab] studyRequest failed', err);
+      busy[m.id] = false;
+      msgs[m.id] = esc((err && err.message) || 'That didn’t work — try again.');
+      render();
+    });
+  }
+
+  function onJoin(e){
     var btn = e.target.closest('.join-btn');
     if (!btn || btn.disabled) return;
     var id = btn.getAttribute('data-id'), action = btn.getAttribute('data-action');
@@ -236,7 +312,7 @@
       msgs[id] = esc((err && err.message) || 'That didn’t work — try again.');
       render();
     });
-  });
+  }
 
   function watch(key, query, map){
     unsubs.push(query.onSnapshot(function(snap){
@@ -262,5 +338,11 @@
     watch('study', db.collection('studies'), function(d){ return Object.assign({ email: d.id }, d.data()); });
     // Everyone but PIs/admins may only query the released ones (firestore.rules); hidden ones stay off here for all.
     watch('event', db.collection('events').where('hidden', '==', false), function(d){ return d.data(); });
+    // My open requests to join a student's meeting.
+    unsubs.push(db.collection('studyRequests').where('email', '==', String(user.email || '').toLowerCase()).where('status', '==', 'open').onSnapshot(function(snap){
+      asked = {};
+      snap.docs.forEach(function(d){ asked[d.data().student] = d.id; });
+      render();
+    }, function(err){ console.error('[BOLD Lab] loading your requests failed', err); }));
   });
 })();

@@ -126,3 +126,9 @@ button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);
 #person .md-group:first-child{margin-top:24px;}
 .pp-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;}
 a.btn-box{text-decoration:none; display:inline-block;}
+/* Studies: requests to join the meeting, from the Calendar */
+.st-asks-head{font-family:var(--sans); font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-soft); margin:8px 0 6px;}
+.st-asks{list-style:none; margin:0 0 22px; padding:0;}
+.st-asks li{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:10px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+.st-asks .event-controls{margin:0; flex:none;}
+.st-ask-note{margin:4px 0 0; font-size:15px; color:var(--ink-soft);}
