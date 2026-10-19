@@ -37,7 +37,7 @@ export default {
     ] },
     { label: 'People', href: 'people.html', links: [
       { label: 'Members', href: 'people.html' },
-      { label: 'Join requests', href: 'join-requests.html' },
+      { label: 'Requests', href: 'join-requests.html' },
     ] },
     // Its sub-pages are the released events (Firestore), filled in by bold.js.
     { label: 'Events', href: 'events.html', links: [], events: true, separatorAfter: true },
