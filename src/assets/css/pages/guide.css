@@ -13,7 +13,6 @@
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
 .hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 .hero .event-controls{flex-wrap:wrap;}
-.gd-pending{text-decoration:none; font-family:var(--sans); font-size:14px;}
 main{max-width:var(--guide-max); margin:0 auto; padding:8px var(--gutter) 24px;}
 section.block{max-width:var(--article-max); margin:48px 0 0;}
 .block-head{margin-bottom:10px;}
@@ -85,6 +84,8 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .rp-line{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
 .rp-line .btn-text{font-size:14px; margin-left:12px;}
 .read-point .hist-label a{color:inherit;}
+.read-point > * + .rp-activity{margin-top:8px;}
+.rp-activity a{color:var(--ink);}
 .rp-changes{margin-top:4px; padding-top:4px; border-top:1px solid var(--line);}
 .rp-moves{margin:10px 0 0; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}
 .rp-readers{margin:6px 0 0; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}

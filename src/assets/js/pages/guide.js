@@ -392,6 +392,16 @@
       '</div>' + (comments ? comments.proposalThreadHtml(q.id) : '') + '</li>';
   }
 
+  // The box under the title: what changed since you last read it (read-point.js),
+  // the proposed changes open, and the open comment threads (on the Comments page).
+  function statusHtml(){
+    var n = proposals.length, c = comments ? comments.openCount() : 0, bits = [];
+    if (n) bits.push('<a href="#proposals">' + n + ' proposed change' + (n === 1 ? '' : 's') + '</a>');
+    if (c) bits.push('<a href="comments.html?on=' + encodeURIComponent(COLLECTION + '/' + slug) + '">' + c + ' open comment' + (c === 1 ? '' : 's') + '</a>');
+    var inner = (readPoint ? readPoint.inner(x) : '') + (bits.length ? '<p class="rp-line rp-activity">' + bits.join(' · ') + '</p>' : '');
+    return inner ? '<aside class="read-point" aria-label="What’s new">' + inner + '</aside>' : '';
+  }
+
   function proposalsHtml(){
     if (!proposals.length) return '';
     return '<section class="block guide-proposals" id="proposals"><div class="block-head"><h2>Proposed changes</h2></div>' +
@@ -436,17 +446,13 @@
     if (form && form.kind === 'about') hero += aboutFormHtml();
     else hero += '<h1>' + esc(doc().title) + '</h1>' + (doc().description ? '<p class="hero-note">' + esc(doc().description) + '</p>' : '') +
       '<div class="event-controls"><button type="button" class="btn-text gd-about">' + 'Suggest a change' + '</button>' +
-      (DELETABLE ? '<button type="button" class="btn-text danger gd-delete"' + off + '>Delete guide</button>' : '') +
-      (proposals.length ? '<a class="btn-text gd-pending" href="#proposals">' + proposals.length + ' proposed change' + (proposals.length === 1 ? '' : 's') + '</a>' : '') +
-      // Its open comment threads, listed on the Comments page.
-      (comments && comments.openCount() ? '<a class="btn-text gd-pending" href="comments.html?on=' + encodeURIComponent(COLLECTION + '/' + slug) + '">' +
-        comments.openCount() + ' comment' + (comments.openCount() === 1 ? '' : 's') + '</a>' : '') + '</div>';
+      (DELETABLE ? '<button type="button" class="btn-text danger gd-delete"' + off + '>Delete guide</button>' : '') + '</div>';
     hero += '</div>';
     var adding = form && form.kind === 'add';
     body.innerHTML = hero + '<main>' +
       (notice ? '<p class="gd-notice">' + esc(notice) + '</p>' : '') +
       draftHtml() +
-      (readPoint ? readPoint.html(x) : '') +
+      statusHtml() +
       tabsHtml() +
       // The contents sit beside the parts and stay on screen (above them on narrow screens).
       '<div class="guide-layout"><div class="guide-main">' +
