@@ -155,3 +155,25 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .week-block .badge{display:inline-block; color:inherit; font-size:9px; padding:0 4px; margin-top:2px; vertical-align:1px;}
 .week-note{display:flex; align-items:center; gap:6px; margin:10px 0 0; font-size:12.5px; color:var(--muted);}
 .week-key{display:inline-block; width:12px; height:12px; background:var(--accent);}
+/* ---------- calendar: kinds, the week's dates and its events ---------- */
+.cal-actions{flex-wrap:wrap;}
+.type-badge.cal-event{color:#7d5a99;}
+.type-badge.cal-study{color:#256b60;}
+.week-block.cal-study{color:#256b60; border-color:#256b60;}
+.week-block.cal-study.is-mine{background:#256b60; color:#fff;}
+.week-block.cal-study.is-mine:hover{background:#1b4f47;}
+.week-key.is-outline{background:none; border:1px solid var(--accent); border-left-width:3px; margin-left:10px;}
+.week-key.is-outline.cal-study{border-color:#256b60;}
+.cal-nav{display:flex; align-items:center; gap:0; margin-top:24px; font-family:var(--sans);}
+.cal-nav .view-btn{border:1px solid var(--line);}
+.cal-nav .view-btn + .view-btn{border-left:none;}
+.cal-nav .view-btn:disabled{color:var(--muted); cursor:default;}
+.cal-range{margin-left:14px; font-size:14px; font-weight:600; color:var(--ink);}
+.cal-nav + .week{margin-top:14px;}
+.week-head span.is-today{color:var(--accent); border-bottom:2px solid var(--accent);}
+.week-allday span{display:flex; flex-direction:column; gap:3px; padding:6px 2px; border-bottom:1px solid var(--line); font-weight:400;}
+.cal-chip{
+  display:block; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding:2px 6px;
+  font-size:12px; color:#fff; background:#7d5a99; text-decoration:none;
+}
+.cal-chip:hover{background:#654780;}

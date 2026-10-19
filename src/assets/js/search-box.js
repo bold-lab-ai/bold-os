@@ -10,7 +10,7 @@ window.BoldSearch = (function(){
     { key: 'boldiquette', label: 'BOLDiquette', pages: /^boldiquette\.html$/ },
     { key: 'guides', label: 'How to', pages: /^(guides?|get-started)\.html$/ },
     { key: 'skills', label: 'Skills', pages: /^skills?\.html$/ },
-    { key: 'events', label: 'Events', pages: /^(events?|session|talk|event-collaboration-week.*)\.html$/ },
+    { key: 'events', label: 'Events', pages: /^(events?|session|talk|calendar|event-.*)\.html$/ },
     { key: 'projects', label: 'Projects', pages: /^(projects?|project-meetings|projects-register)\.html$/ },
     { key: 'people', label: 'People', pages: /^(people|join-requests)\.html$/ },
     { key: 'board', label: 'Review board', pages: /^(audit-board|how-to-submit-a-paper)\.html$/ },

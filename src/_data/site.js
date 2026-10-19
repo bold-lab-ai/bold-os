@@ -30,10 +30,10 @@ export default {
     { label: 'ML Conference Cycle', href: 'how-to-submit-a-paper.html', links: [
       { label: 'Guide', href: 'how-to-submit-a-paper.html' },
       { label: 'Internal review board', href: 'audit-board.html' },
-    ], separatorAfter: true },
+    ] },
+    { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true },
     { label: 'Projects', href: 'projects.html', links: [
       { label: 'All projects', href: 'projects.html' },
-      { label: 'Meetings', href: 'project-meetings.html' },
     ] },
     { label: 'People', href: 'people.html', links: [
       { label: 'Members', href: 'people.html' },

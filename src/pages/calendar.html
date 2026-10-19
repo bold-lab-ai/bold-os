@@ -1,0 +1,29 @@
+---
+title: "Calendar | BOLD Lab"
+description: "Every event and recurring meeting on BOLD.OS."
+sdk: ["firestore", "functions"]
+css: "projects"
+nav: "calendar.html"
+scripts: ["project-fields.js", "events-common.js", "pages/calendar.js"]
+permalink: "calendar.html"
+---
+<div class="hero">
+  <h1>Calendar</h1>
+</div>
+
+<main>
+  <div class="actions cal-actions">
+    <div class="view-toggle" role="group" aria-label="Show">
+      <button type="button" class="view-btn kind-btn" data-kind="all" aria-pressed="true">All</button>
+      <button type="button" class="view-btn kind-btn" data-kind="event" aria-pressed="false">Events</button>
+      <button type="button" class="view-btn kind-btn" data-kind="project" aria-pressed="false">Projects</button>
+      <button type="button" class="view-btn kind-btn" data-kind="study" aria-pressed="false">Supervision</button>
+    </div>
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" class="view-btn" data-view="week" aria-pressed="true">Week</button>
+      <button type="button" class="view-btn" data-view="list" aria-pressed="false">List</button>
+    </div>
+  </div>
+  <p class="proj-msg" id="meetMsg">Loading&hellip;</p>
+  <div id="meetings" hidden></div>
+</main>
