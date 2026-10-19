@@ -547,7 +547,9 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-node.is-centre .cx-mark, .cx-node.is-selected .cx-mark{fill:var(--ink); stroke:var(--ink);}
 .cx-node:hover .cx-mark, .cx-node:focus-visible .cx-mark{fill:currentColor;}
 .cx-node:focus{outline:none;}
-.cx-label{font-family:var(--serif); font-size:13.5px; fill:var(--ink); paint-order:stroke; stroke:var(--paper); stroke-width:4px; stroke-linejoin:round; pointer-events:none;}
+.cx-label{font-family:var(--serif); font-size:13.5px; fill:var(--ink); paint-order:stroke; stroke:var(--paper); stroke-width:4px; stroke-linejoin:round; cursor:pointer;}
+/* A hidden name doesn't catch the pointer; a shown one is part of its dot. */
+.cx-label.is-quiet{pointer-events:none;}
 .cx-node.is-centre .cx-label{font-weight:700; font-size:16px;}
 .cx-label.is-quiet{opacity:0; transition:opacity .15s;}
 .cx-node:hover .cx-label.is-quiet, .cx-node.is-hot .cx-label.is-quiet, .cx-node.is-lit .cx-label.is-quiet{opacity:1;}
@@ -567,11 +569,9 @@ a.mast-auth-name:hover{text-decoration:underline;}
 /* Chips: choices that add up, each on or off, with a box that fills when on. */
 .cx-chips{display:inline-flex; flex-wrap:wrap; gap:6px;}
 .cx-chip{display:inline-flex; align-items:center; gap:7px; font-family:var(--sans); font-size:13px; color:var(--muted); background:none; border:1px solid var(--line); border-radius:var(--radius); padding:4px 10px 4px 8px; cursor:pointer;}
-.cx-chip:not(.has-icon)::before{content:''; width:9px; height:9px; border:1px solid currentColor; border-radius:1px; box-sizing:border-box;}
+.cx-chip::before{content:''; width:9px; height:9px; border:1px solid currentColor; border-radius:1px; box-sizing:border-box;}
 .cx-chip[aria-pressed="true"]{color:var(--ink); background:var(--wash); border-color:rgba(26,43,74,.28);}
 .cx-chip[aria-pressed="true"]::before{background:currentColor;}
-.cx-chip[aria-pressed="false"] .cx-icon{opacity:.45;}
-.cx-chip[aria-pressed="true"] .cx-ring{fill:currentColor;}
 .cx-chip:hover{color:var(--accent); border-color:var(--accent);}
 .cx-chip:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
 .cx-chip-n{color:var(--muted); font-size:12px;}

@@ -27,7 +27,7 @@
       (graphOnly ? C.pair('Show', C.seg('Show', 'data-things', [['1', 'People and things'], ['0', 'People only']], things ? '1' : '0')) +
         C.pair('Since', C.seg('Since', 'data-since', SINCE, since)) : '') + '</div>' +
       (graphOnly ? '<div class="cx-ctl-row">' + C.pair('Kinds', C.chips('Kinds', 'data-kind', C.GROUPS, function(k){ return kinds[k]; })) + '</div>' +
-        '<div class="cx-ctl-row">' + C.pair('Who', C.chips('Who', 'data-group', BoldJoin.CATEGORIES.concat([['outside', 'Outside BOLD']]), function(k){ return groups[k]; }, C.groupRing)) + '</div>' +
+        '<div class="cx-ctl-row">' + C.pair('Who', C.chips('Who', 'data-group', BoldJoin.CATEGORIES.concat([['outside', 'Outside BOLD']]), function(k){ return groups[k]; })) + '</div>' +
         '<div class="cx-ctl-row">' + C.pair('Find', '<input class="cx-field cx-find" type="search" id="nwFind" placeholder="Someone or something" aria-label="Find someone or something" list="nwPeople" value="' + esc(find) + '">') + '</div>' : '');
   }
 
@@ -70,7 +70,7 @@
     var chosen = why && C.edgeOf(g, why.split(' ')[0], why.split(' ')[1]);
     if (!chosen) why = '';
     if (g.nodes.length) graph.innerHTML = C.svg(g, W, H, { dir: dir, me: me, labels: 'big', selected: selected, selectedEdge: why });
-    el('nwLegend').innerHTML = g.nodes.length ? C.legendHtml(things, true) : '';
+    el('nwLegend').innerHTML = g.nodes.length ? C.legendHtml(things) : '';
     el('nwPerson').innerHTML = (chosen ? C.reasonsHtml(chosen, g, dir, me) : '') + personHtml();
   }
 

@@ -330,15 +330,13 @@ window.BoldConnections = (function(){
       return '<button type="button" class="view-btn" ' + attr + '="' + x[0] + '" aria-pressed="' + (String(cur) === String(x[0])) + '">' + esc(x[1]) + '</button>';
     }).join('') + '</span>';
   }
-  function chips(label, attr, opts, isOn, iconOf){
+  function chips(label, attr, opts, isOn){
     return '<span class="cx-chips" role="group" aria-label="' + esc(label) + '">' + opts.map(function(x){
-      return '<button type="button" class="cx-chip' + (iconOf ? ' has-icon' : '') + '" ' + attr + '="' + x[0] + '" aria-pressed="' + !!isOn(x[0]) + '">' +
-        (iconOf ? iconOf(x[0]) : '') + '<span>' + esc(x[1]) + '</span>' + (x[2] !== undefined ? '<span class="cx-chip-n">' + x[2] + '</span>' : '') + '</button>';
+      return '<button type="button" class="cx-chip" ' + attr + '="' + x[0] + '" aria-pressed="' + !!isOn(x[0]) + '">' +
+        '<span>' + esc(x[1]) + '</span>' + (x[2] !== undefined ? '<span class="cx-chip-n">' + x[2] + '</span>' : '') + '</button>';
     }).join('') + '</span>';
   }
   function pair(label, html, cls){ return '<span class="cx-pair' + (cls ? ' ' + cls : '') + '"><span class="cx-bar-label">' + esc(label) + '</span>' + html + '</span>'; }
-  // A group's ring, for the Who chips.
-  function groupRing(k){ return icon('<circle class="cx-ring' + (k === 'outside' ? ' is-outside' : '') + '" r="4.2"></circle>', k === 'outside' ? 'is-outside' : 'pp-' + k); }
 
   function key(icon, text){ return '<span class="cx-key">' + icon + '<span>' + text + '</span></span>'; }
   function icon(inner, cls){ return '<svg class="cx-icon' + (cls ? ' ' + cls : '') + '" viewBox="-7 -7 14 14" aria-hidden="true">' + inner + '</svg>'; }
@@ -348,12 +346,11 @@ window.BoldConnections = (function(){
       key(icon('<circle class="cx-ring is-outside" r="4.2"></circle>', 'is-outside'), 'Outside BOLD') +
       '<a class="cx-key-link" href="boldiquette.html#who-is-bold">Who is BOLD</a>'];
   }
-  // noGroups: the page shows the groups already (Network's Who chips).
-  function legendHtml(things, noGroups){
+  function legendHtml(things){
     return bar([
       ['Lines', GROUPS.slice(0, things ? 4 : 3).map(function(x){ return key(sample(x[0]), esc(x[1])); }).join('')],
       things ? ['Things', ['project', 'event', 'guide', 'skill'].map(function(t){ return key(icon(shape(t, 4), 'is-thing'), esc(THINGS[t][1])); }).join('')] : null,
-      noGroups ? null : groupsRow(),
+      groupsRow(),
     ], 'cx-legend');
   }
 
@@ -564,5 +561,5 @@ window.BoldConnections = (function(){
   }
 
   return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, graphOf: graphOf, concentric: concentric, svg: svg, legendHtml: legendHtml, bindHover: bindHover,
-    lineageHtml: lineageHtml, bar: bar, seg: seg, chips: chips, pair: pair, groupRing: groupRing, reasons: reasons, reasonsHtml: reasonsHtml, rowHtml: rowHtml, edgeOf: edgeOf, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
+    lineageHtml: lineageHtml, bar: bar, seg: seg, chips: chips, pair: pair, reasons: reasons, reasonsHtml: reasonsHtml, rowHtml: rowHtml, edgeOf: edgeOf, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
 })();
