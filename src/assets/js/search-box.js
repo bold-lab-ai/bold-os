@@ -1,6 +1,6 @@
 // The search box in the masthead (every signed-in page; partials/masthead.njk),
 // GitHub-style: typing offers to search the section you're in, everywhere, or
-// another section (BoldSearch.SCOPES); Enter, or a click, opens search.html?q=&in=.
+// another section (BoldSearch.SCOPES); Enter or Tab, or a click, opens search.html?q=&in=.
 // "in:<scope>" in the text picks the section too. "/" focuses the box.
 window.BoldSearch = (function(){
   var esc = BOLD.escapeHtml;
@@ -65,9 +65,17 @@ window.BoldSearch = (function(){
         if (!rows.length) return;
         e.preventDefault();
         active = (active + (e.key === 'ArrowDown' ? 1 : rows.length - 1)) % rows.length; draw();
+      } else if ((e.key === 'Tab' && !e.shiftKey || e.key === 'Enter') && !menu.hidden && rows.length) {
+        // Tab, like Enter, opens the highlighted place.
+        e.preventDefault(); go(rows[active]);
       } else if (e.key === 'Escape') { menu.hidden = true; input.blur(); }
     });
     box.querySelector('form').addEventListener('submit', function(e){ e.preventDefault(); go(rows[active] || options()[0]); });
+    // The row under the pointer is the highlighted one, for Enter and Tab too.
+    menu.addEventListener('mousemove', function(e){
+      var li = e.target.closest('.ms-row'), i = li ? +li.getAttribute('data-i') : active;
+      if (i !== active) { active = i; draw(); }
+    });
     menu.addEventListener('mousedown', function(e){
       var li = e.target.closest('.ms-row');
       if (li) { e.preventDefault(); go(rows[+li.getAttribute('data-i')]); }
