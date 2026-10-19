@@ -992,6 +992,27 @@ function proposalOutcome(before, after, name, url){
   };
 }
 
+// Pure: what closes a proposal's discussion → { resolvedWith, resolvedBy, resolvedByName }
+// once it's accepted, declined or withdrawn (deleted while open), else null.
+function proposalClosed(before, after){
+  if (!before || before.status !== 'open') return null;
+  if (!after) return { resolvedWith: 'withdrawn', resolvedBy: String((before.by && before.by.email) || ''), resolvedByName: String((before.by && before.by.name) || '') };
+  if (after.status !== 'accepted' && after.status !== 'declined') return null;
+  return { resolvedWith: after.status, resolvedBy: String(after.decidedBy || ''), resolvedByName: String(after.decidedByName || '') };
+}
+
+// Its comments are resolved with it, so they leave the open threads (comments.html).
+async function resolveProposalComments(collection, slug, id, before, after){
+  const closed = proposalClosed(before, after);
+  if (!closed) return;
+  const snap = await db.collection(collection).doc(slug).collection('comments').where('proposalId', '==', id).get();
+  const open = snap.docs.filter(function(d){ return !d.data().resolved; });
+  if (!open.length) return;
+  const batch = db.batch();
+  open.forEach(function(d){ batch.update(d.ref, Object.assign({ resolved: true, resolvedAt: Date.now() }, closed)); });
+  await batch.commit();
+}
+
 function onProposalDecided(collection, pageUrl){
   return onDocumentWritten(
     { document: collection + '/{slug}/proposals/{id}', secrets: [SLACK_BOT_TOKEN] },
@@ -1001,6 +1022,7 @@ function onProposalDecided(collection, pageUrl){
       const doc = await db.collection(collection).doc(event.params.slug).get();
       // Deleted with its guide: nothing to tell.
       if (!doc.exists) return;
+      await resolveProposalComments(collection, event.params.slug, event.params.id, before, after);
       const out = proposalOutcome(before, after, doc.data().title || event.params.slug, pageUrl(event.params.slug));
       if (!out) return;
       const token = SLACK_BOT_TOKEN.value();
@@ -4667,7 +4689,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,

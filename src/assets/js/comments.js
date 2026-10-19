@@ -359,8 +359,10 @@ window.BoldComments = (function(){
       return comments.filter(function(c){ return !c.parent && c.resolved; }).map(function(c){
         var all = [c].concat(replies(c.id));
         return { id: c.id, at: c.resolvedAt || c.at,
-          head: 'Comment resolved by ' + esc(c.resolvedByName || c.resolvedBy || 'someone'),
-          msg: '“' + esc(c.quote.length > 80 ? c.quote.slice(0, 80) + '…' : c.quote) + '”',
+          // A proposed change's discussion closes with it (resolvedWith: accepted, declined, withdrawn).
+          head: c.resolvedWith ? 'Comment closed: its change was ' + esc(c.resolvedWith) + (c.resolvedWith !== 'withdrawn' && (c.resolvedByName || c.resolvedBy) ? ' by ' + esc(c.resolvedByName || c.resolvedBy) : '')
+            : 'Comment resolved by ' + esc(c.resolvedByName || c.resolvedBy || 'someone'),
+          msg: c.proposalId ? 'On a proposed change' : '“' + esc(c.quote.length > 80 ? c.quote.slice(0, 80) + '…' : c.quote) + '”',
           body: '<div class="cm-history">' + all.map(function(r){
             return '<p class="cm-meta"><strong>' + esc(r.by ? (r.by.name || r.by.email) : 'Someone') + '</strong> ' + esc(when(r.at)) + '</p><p class="cm-text">' + BoldMarkdown.plain(r.text) + '</p>';
           }).join('') + '</div>' };
