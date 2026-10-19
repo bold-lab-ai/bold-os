@@ -514,7 +514,7 @@ a.mast-auth-name:hover{text-decoration:underline;}
 /* ---------- connections: who did what with whom (connections.js) ----------
    Ink on paper: hairlines and rings in navy, people ringed in their group's colour
    (.pp-*), names in the reading face; the kind of a line is its pattern, not a colour. */
-.cx-filter{display:inline-flex; flex-wrap:wrap; margin:6px 0 14px;}
+.cx-filter{display:inline-flex; flex-wrap:wrap; margin:6px 10px 14px 0; vertical-align:top;}
 .cx-graph{border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:
   radial-gradient(circle, rgba(26,43,74,.07) 1px, transparent 1.2px) 0 0/22px 22px;}
 .cx-svg{display:block; width:100%; height:auto; overflow:visible;}
@@ -522,6 +522,10 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-edge.cx-joining{stroke-dasharray:0.1 4;}
 .cx-svg.is-ego .cx-edge{opacity:.55;}
 .cx-svg.is-ego .cx-edge.cx-joining{stroke-width:2;}
+/* Two steps away: present but quiet until someone points at them. */
+.cx-svg.is-ego .cx-edge.is-far{opacity:.13;}
+.cx-node.is-far{opacity:.5;}
+.cx-node.is-far circle{stroke-width:1.2;}
 .cx-edge.cx-talking{stroke-dasharray:5 3.5;}
 .cx-node{cursor:pointer; transition:opacity .15s;}
 .cx-node circle{fill:var(--paper); stroke:currentColor; stroke-width:1.6; transition:fill .15s;}
@@ -538,6 +542,7 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-svg.has-selected .cx-edge:not(.is-lit), .cx-svg.is-hover .cx-edge:not(.is-hot){opacity:.06;}
 .cx-svg.has-selected .cx-edge.is-lit, .cx-svg.is-hover .cx-edge.is-hot{opacity:.85;}
 .cx-svg.has-selected .cx-node:not(.is-lit), .cx-svg.is-hover .cx-node:not(.is-hot){opacity:.28;}
+.cx-svg.is-hover .cx-node.is-hot{opacity:1;}
 .cx-legend{display:flex; flex-wrap:wrap; gap:6px 22px; margin:10px 0 26px; font-family:var(--sans); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
 .cx-legend a{color:inherit;}
 .cx-key{display:inline-flex; align-items:center; gap:7px;}

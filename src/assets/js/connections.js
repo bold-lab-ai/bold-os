@@ -117,20 +117,45 @@ window.BoldConnections = (function(){
     }
   }
 
-  // Ego layout: the person at the middle, the others on a ring around them, grouped by
-  // their main kind and nearer the more they've interacted; past 28 people, two rings.
+  // Ego layout: the person at the middle, the people they've interacted with on a ring
+  // around them, grouped by their main kind and nearer the more they've interacted (two
+  // rings past 28); people two steps away (v.far) on an outer ring, each beside the
+  // people who link them in.
   function radial(g, w, h, centre){
-    var byId = {}, cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 - 56;
+    var byId = {}, cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 - 56, sx = w / Math.min(w, h) * 0.92;
     g.nodes.forEach(function(v){ byId[v.id] = v; });
-    var others = g.edges.map(function(e){ return { id: e.a === centre ? e.b : e.a, e: e }; })
+    var far = g.nodes.filter(function(v){ return v.far; });
+    var R1 = far.length ? R * 0.58 : R;
+    var others = g.edges.filter(function(e){ return e.a === centre || e.b === centre; }).map(function(e){ return { id: e.a === centre ? e.b : e.a, e: e }; })
       .sort(function(p, q){ return GROUPS.findIndex(function(x){ return x[0] === p.e.main; }) - GROUPS.findIndex(function(x){ return x[0] === q.e.main; }) || q.e.n - p.e.n; });
     var max = Math.max.apply(null, others.map(function(o){ return o.e.n; }).concat([1]));
     if (byId[centre]) { byId[centre].x = cx; byId[centre].y = cy; }
     others.forEach(function(o, i){
       var a = -Math.PI / 2 + i * 2 * Math.PI / Math.max(1, others.length);
       var near = max > 1 ? Math.log(o.e.n) / Math.log(max) : 0;
-      var r = R * (1 - 0.38 * near) * (others.length > 28 && i % 2 ? 0.78 : 1);
-      var v = byId[o.id]; v.x = cx + Math.cos(a) * r * w / Math.min(w, h) * 0.92; v.y = cy + Math.sin(a) * r; v.angle = a;
+      var r = R1 * (1 - 0.38 * near) * (others.length > 28 && i % 2 ? 0.78 : 1);
+      var v = byId[o.id]; v.x = cx + Math.cos(a) * r * sx; v.y = cy + Math.sin(a) * r; v.angle = a;
+    });
+    if (!far.length) return;
+    // Each far person's angle: the average direction of the people linking them in, then
+    // spread so neighbours on the ring keep a little apart.
+    far.forEach(function(v){
+      var sxv = 0, syv = 0;
+      g.edges.forEach(function(e){
+        var o = e.a === v.id ? byId[e.b] : e.b === v.id ? byId[e.a] : null;
+        if (o && !o.far && o.angle !== undefined) { sxv += Math.cos(o.angle) * e.n; syv += Math.sin(o.angle) * e.n; }
+      });
+      v.angle = Math.atan2(syv, sxv) + (seed(v.id) - 0.5) * 0.05;
+    });
+    far.sort(function(p, q){ return p.angle - q.angle; });
+    var gap = Math.min(0.2, 2 * Math.PI / far.length * 0.9);
+    for (var it = 0; it < 60; it++) for (var i = 0; i < far.length; i++) {
+      var p = far[i], q = far[(i + 1) % far.length], d = q.angle - p.angle + (i === far.length - 1 ? 2 * Math.PI : 0);
+      if (far.length > 1 && d < gap) { p.angle -= (gap - d) / 2; q.angle += (gap - d) / 2; }
+    }
+    far.forEach(function(v, i){
+      var r = R * (far.length > 40 && i % 2 ? 0.9 : 1);
+      v.x = cx + Math.cos(v.angle) * r * sx; v.y = cy + Math.sin(v.angle) * r;
     });
   }
 
@@ -157,12 +182,12 @@ window.BoldConnections = (function(){
       '<g class="cx-edges">' + g.edges.map(function(e){
         var p = byId[e.a], q = byId[e.b], lit = sel && (e.a === sel || e.b === sel);
         var parts = GROUPS.filter(function(x){ return e.groups[x[0]]; }).map(function(x){ return e.groups[x[0]] + ' ' + x[1].toLowerCase(); }).join(', ');
-        return '<path class="cx-edge cx-' + e.main + (lit ? ' is-lit' : '') + '" data-a="' + esc(e.a) + '" data-b="' + esc(e.b) + '" d="' + curve(p, q, (seed(e.a + e.b) - 0.5) * 0.3) +
+        return '<path class="cx-edge cx-' + e.main + (lit ? ' is-lit' : '') + (e.far ? ' is-far' : '') + '" data-a="' + esc(e.a) + '" data-b="' + esc(e.b) + '" d="' + curve(p, q, (seed(e.a + e.b) - 0.5) * 0.3) +
           '" stroke-width="' + (0.8 + Math.min(2.6, Math.log(e.n) * 0.9)).toFixed(2) + '"><title>' + esc(nameOf(dir, e.a) + ' and ' + nameOf(dir, e.b) + ': ' + parts) + '</title></path>';
       }).join('') + '</g>' +
       '<g class="cx-nodes">' + g.nodes.map(function(v){
-        var d = dir[v.id], cls = 'cx-node ' + (d && d.member ? 'pp-' + d.group : 'is-outside') + (v.id === opts.centre ? ' is-centre' : '') + (near[v.id] ? ' is-lit' : '') + (v.id === sel ? ' is-selected' : '');
-        var label = opts.labels === 'all' || v.id === opts.centre || near[v.id] || big.indexOf(v.id) >= 0;
+        var d = dir[v.id], cls = 'cx-node ' + (d && d.member ? 'pp-' + d.group : 'is-outside') + (v.id === opts.centre ? ' is-centre' : '') + (near[v.id] ? ' is-lit' : '') + (v.id === sel ? ' is-selected' : '') + (v.far ? ' is-far' : '');
+        var label = (opts.labels === 'all' && !v.far) || v.id === opts.centre || near[v.id] || big.indexOf(v.id) >= 0;
         var r = radius(v.id), lx = r + 5, ly = 4, anchor = 'start';
         if (v.id === opts.centre) { lx = 0; ly = r + 17; anchor = 'middle'; }
         else if (v.angle !== undefined) { var c = Math.cos(v.angle), sn = Math.sin(v.angle); anchor = c < -0.3 ? 'end' : c > 0.3 ? 'start' : 'middle'; lx = c * (r + 6); ly = sn * (r + 6) + (anchor === 'middle' ? (sn > 0 ? 12 : -4) : 4); }
@@ -235,20 +260,38 @@ window.BoldConnections = (function(){
   function mountPerson(root, email, me){
     email = lower(email); me = lower(me);
     root.innerHTML = '<p class="proj-msg">Loading&hellip;</p>';
-    var shown = 30, filter = 'all';
+    var shown = 30, filter = 'all', steps = 2, everyone = null;
     Promise.all([loadFor(email), directory()]).then(function(r){
       var list = r[0], dir = r[1];
       function draw(){
-        var edges = list.filter(function(x){ return x.to && (filter === 'all' || x.group === filter); });
-        var g = graphOf(edges);
+        if (steps === 2 && !everyone) { loadAll().then(function(a){ everyone = a; draw(); }).catch(function(err){ console.error('[BOLD Connections] loading everyone failed', err); steps = 1; draw(); }); }
+        var kind = function(x){ return x.to && (filter === 'all' || x.group === filter); };
+        var direct = list.filter(kind), g = graphOf(direct);
+        // Two steps: the people they've interacted with, and whoever those people have
+        // interacted with (up to 60, the most connected first), faded.
+        if (steps === 2 && everyone) {
+          var first = {};
+          g.nodes.forEach(function(v){ if (v.id !== email) first[v.id] = 1; });
+          var more = everyone.filter(function(x){ return kind(x) && x.from !== email && x.to !== email && (first[x.from] || first[x.to]); });
+          var weight = {};
+          more.forEach(function(x){ [x.from, x.to].forEach(function(e){ if (!first[e]) weight[e] = (weight[e] || 0) + 1; }); });
+          var keep = Object.keys(weight).sort(function(a, b){ return weight[b] - weight[a]; }).slice(0, 60);
+          more = more.filter(function(x){ return (first[x.from] || keep.indexOf(x.from) >= 0) && (first[x.to] || keep.indexOf(x.to) >= 0); });
+          g = graphOf(direct.concat(more));
+          g.edges.forEach(function(e){ e.far = e.a !== email && e.b !== email; });
+          g.nodes.forEach(function(v){ v.far = v.id !== email && !first[v.id]; });
+        }
         if (!g.nodes.length) g.nodes.push({ id: email });
-        var w = 760, h = Math.max(380, Math.min(620, 300 + g.nodes.length * 8));
+        var w = 760, h = Math.max(380, Math.min(steps === 2 ? 700 : 620, 300 + g.nodes.length * 8));
         radial(g, w, h, email);
         var counts = {};
         list.forEach(function(x){ counts[x.group] = (counts[x.group] || 0) + 1; });
         root.innerHTML =
           '<div class="view-toggle cx-filter" role="group" aria-label="Show">' + [['all', 'All']].concat(GROUPS).map(function(x){
             return '<button type="button" class="view-btn" data-cx="' + x[0] + '" aria-pressed="' + (filter === x[0]) + '">' + esc(x[1]) + (x[0] !== 'all' && counts[x[0]] ? ' · ' + counts[x[0]] : '') + '</button>';
+          }).join('') + '</div> ' +
+          '<div class="view-toggle cx-filter" role="group" aria-label="How far">' + [[1, 'Direct'], [2, 'Two steps']].map(function(x){
+            return '<button type="button" class="view-btn" data-steps="' + x[0] + '" aria-pressed="' + (steps === x[0]) + '">' + x[1] + '</button>';
           }).join('') + '</div>' +
           '<div class="cx-graph">' + svg(g, w, h, { dir: dir, me: me, centre: email, labels: 'all' }) + '</div>' + legendHtml() +
           timelineHtml(list.filter(function(x){ return filter === 'all' || x.group === filter; }), dir, email, me, shown);
@@ -257,6 +300,8 @@ window.BoldConnections = (function(){
       root.addEventListener('click', function(e){
         var b = e.target.closest('[data-cx]');
         if (b) { filter = b.getAttribute('data-cx'); draw(); return; }
+        var st = e.target.closest('[data-steps]');
+        if (st) { steps = Number(st.getAttribute('data-steps')); draw(); return; }
         if (e.target.closest('.cx-more')) { shown += 50; draw(); return; }
         var n = e.target.closest('.cx-node');
         if (n && n.getAttribute('data-email') !== email) { var h = hrefOf(dir, n.getAttribute('data-email'), me); if (h) location.href = h; }
