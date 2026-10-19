@@ -9,6 +9,8 @@
   // (upcoming events, then the meetings by weekday), filtered by kind; both choices kept in localStorage.
   // Clicking a meeting opens a card to join it: a project's at once (projectWorkspace
   // join), a student's by asking them (studyRequest, approved on their Studies tab).
+  // A paused meeting (pausedAt: cancelled in Google Calendar, the time kept) shows
+  // greyed out; whoever is in it can Pause or Resume it from its card.
   if (!BOLD.getAuth()) return;
 
   var el = function(id){ return document.getElementById(id); };
@@ -31,19 +33,19 @@
   function shown(k){ return kind === 'all' || kind === k; }
 
   // Every recurring meeting, projects' and students', as one shape:
-  // { kind, id, title, href, meeting, mine, meetUrl, people, w (a project's workspace) }.
+  // { kind, id, title, href, meeting, mine, paused, meetUrl, people, w (a project's workspace) }.
   function meetings(all){
     var out = [];
     if (all || shown('project')) (data.project || []).forEach(function(w){
-      if (!w.meeting || !w.eventId || w.group === 'completed') return;
+      if (!w.meeting || !(w.eventId || w.pausedAt) || w.group === 'completed') return;
       out.push({ kind: 'project', id: w.cardId, title: w.title || 'Untitled', href: projectUrl(w), meeting: w.meeting,
-        mine: (w.members || []).some(isMe), meetUrl: w.meetUrl, people: (w.members || []).length, w: w });
+        mine: (w.members || []).some(isMe), paused: !!w.pausedAt, meetUrl: w.meetUrl, people: (w.members || []).length, w: w });
     });
     if (all || shown('study')) (data.study || []).forEach(function(s){
-      if (!s.meeting || !s.eventId) return;
+      if (!s.meeting || !(s.eventId || s.pausedAt)) return;
       var mine = isMe(s.email) || (s.people || []).some(function(p){ return isMe(p.email); });
       var id = slackIds[s.email];
-      out.push({ kind: 'study', id: s.email, meeting: s.meeting, mine: mine, meetUrl: s.meetUrl, people: (s.people || []).length + 1,
+      out.push({ kind: 'study', id: s.email, meeting: s.meeting, mine: mine, paused: !!s.pausedAt, meetUrl: s.meetUrl, people: (s.people || []).length + 1,
         first: String(s.name || s.email).split(' ')[0],
         title: (s.name || s.email) + ' · ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision',
         href: isMe(s.email) ? 'profile.html#studies' : id ? 'person.html?id=' + encodeURIComponent(id) : '' });
@@ -75,6 +77,7 @@
 
   // The card for one meeting, by the block or button that opened it.
   function keyOf(m){ return m.kind + ':' + m.id; }
+  function pausedBadge(m){ return m.paused ? '<span class="badge">Paused</span>' : ''; }
   function renderPop(){
     var box = el('calPop');
     var m = pop && meetings(true).filter(function(x){ return keyOf(x) === pop.key; })[0];
@@ -82,8 +85,10 @@
     var meta = [esc(meetingText(m.meeting)), m.people + (m.people === 1 ? ' person' : ' people')];
     if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>');
     var html = '<button type="button" class="cal-pop-close" aria-label="Close">&times;</button>' +
-      '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + '</div>' +
+      '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + '</div>' +
       titleHtml(m, 'proj-title') + '<span class="proj-meta">' + meta.join(' \u00b7 ') + '</span>';
+    if (m.mine) html += '<p class="cal-pop-note">' + (m.paused ? 'Paused: not in Google Calendar until it’s resumed.' : '') +
+      ' <button type="button" class="btn-text cal-pause" data-action="' + (m.paused ? 'resume' : 'pause') + '"' + (busy[keyOf(m)] ? ' disabled' : '') + '>' + (m.paused ? 'Resume' : 'Pause the meeting') + '</button></p>';
     if (m.kind === 'project') html += '<div class="cal-pop-act">' + joinHtml(m.w) + '</div>';
     else if (isMe(m.id)) html += '<p class="cal-pop-note">Your supervision meeting. <a href="profile.html#studies">Edit it</a>.</p>';
     else if (m.mine) html += '<p class="cal-pop-note">You’re in this meeting.</p>';
@@ -91,6 +96,7 @@
     else html += '<label class="cal-pop-label">Ask ' + esc(m.first) + ' to add you to the people involved in their studies: their meeting and Slack channel' +
         '<textarea class="cal-ask-note" rows="2" maxlength="1000" placeholder="A note (optional)"></textarea></label>' +
       '<div class="cal-pop-act"><button type="button" class="join-btn cal-ask"' + (busy[m.id] ? ' disabled' : '') + '>Ask to join</button></div>';
+    if (msgs[keyOf(m)]) html += '<p class="join-msg cal-pop-msg" role="status">' + msgs[keyOf(m)] + '</p>';
     if (m.kind === 'study' && msgs[m.id]) html += '<p class="join-msg cal-pop-msg" role="status">' + msgs[m.id] + '</p>';
     var note = box.querySelector('.cal-ask-note'), typed = note ? note.value : '';
     box.innerHTML = html; box.hidden = false;
@@ -128,9 +134,9 @@
         var when = meetingText(m.meeting).replace(/^[^,]*, /, '');
         var meta = [esc(when), m.people + (m.people === 1 ? ' person' : ' people')];
         if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>');
-        html += '<li><div class="proj-main">' + titleHtml(m, 'proj-title') +
+        html += '<li' + (m.paused ? ' class="is-paused"' : '') + '><div class="proj-main">' + titleHtml(m, 'proj-title') +
           '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
-          '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + '</div></div>' +
+          '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + '</div></div>' +
           (m.kind === 'project' ? joinHtml(m.w) : m.mine ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">' + (asked[m.id] ? 'Asked' : 'Ask to join') + '</button></div>') + '</li>';
       });
       html += '</ul>';
@@ -212,9 +218,9 @@
       groups.forEach(function(g){
         g.items.forEach(function(b){
           var m = b.m, n = g.lanes.length, tag = m.href ? 'a' : 'span';
-          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + '" data-key="' + esc(keyOf(m)) + '"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
+          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (m.paused ? ' is-paused' : '') + '" data-key="' + esc(keyOf(m)) + '"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + ((b.s - from * 60) / 60 * HOUR) + 'px;height:' + Math.max(18, (b.e - b.s) / 60 * HOUR - 2) + 'px;' +
-            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind]) + '">' +
+            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.paused ? ' · Paused' : '')) + '">' +
             '<span class="week-time">' + esc(m.meeting.time) + '</span> ' + esc(m.title) + (m.w ? ' ' + groupBadge(m.w) : '') + '</' + tag + '>';
         });
       });
@@ -222,7 +228,8 @@
     });
     html += '</div></div>' +
       '<p class="week-note"><span class="week-key"></span> Yours' +
-      (shown('project') && shown('study') ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision' : '') + '</p>';
+      (shown('project') && shown('study') ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision' : '') +
+      (ms.some(function(m){ return m.paused; }) ? ' <span class="week-key is-outline is-paused"></span> Paused' : '') + '</p>';
     return html;
   }
 
@@ -262,6 +269,8 @@
     if (e.target.closest('.cal-pop-close')) { closePop(); return; }
     var m = pop && meetings(true).filter(function(x){ return keyOf(x) === pop.key; })[0];
     if (m && e.target.closest('.cal-ask, .cal-withdraw')) { askOrWithdraw(m, !!e.target.closest('.cal-ask')); return; }
+    var pz = e.target.closest('.cal-pause');
+    if (m && pz && !pz.disabled) { pauseOrResume(m, pz.getAttribute('data-action')); return; }
     onJoin(e);
   });
   document.addEventListener('click', function(e){
@@ -269,6 +278,23 @@
     if (pop && document.contains(e.target) && !e.target.closest('#calPop, .week-block, .cal-open')) closePop();
   });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && pop) closePop(); });
+
+  // Pause or resume a meeting: projectWorkspace for a project, studies for a student's.
+  function pauseOrResume(m, action){
+    if (action === 'pause' && !window.confirm('Pause “' + m.title + '”? Google Calendar tells its guests it’s cancelled; resuming sends them a new invitation, with a new Meet link.')) return;
+    var k = keyOf(m), fns = firebase.app().functions('europe-west2'), call;
+    busy[k] = true; msgs[k] = ''; render();
+    try {
+      call = m.kind === 'project' ? fns.httpsCallable('projectWorkspace')({ action: action, id: m.id, board: m.w.boardId || null })
+        : fns.httpsCallable('studies')({ action: action, student: m.id });
+    } catch (err){ call = Promise.reject(err); }
+    call.then(function(){
+      busy[k] = false; msgs[k] = action === 'pause' ? 'Paused.' : 'Resumed: Google Calendar sends everyone the invitation.'; render();
+    }).catch(function(err){
+      console.error('[BOLD Lab] ' + action + ' failed', err);
+      busy[k] = false; msgs[k] = esc((err && err.message) || 'That didn’t work — try again.'); render();
+    });
+  }
 
   function askOrWithdraw(m, ask){
     var note = el('calPop').querySelector('.cal-ask-note');

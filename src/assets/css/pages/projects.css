@@ -194,3 +194,8 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .cal-pop-label{display:block; margin-top:12px; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}
 .cal-pop-label textarea{display:block; width:100%; box-sizing:border-box; margin-top:6px; font:inherit; font-size:14px; padding:6px 8px; border:1px solid var(--line); background:var(--paper, #fff); resize:vertical;}
 .cal-pop-msg{display:block; text-align:left; max-width:none; margin:8px 0 0;}
+/* a paused meeting: greyed out */
+.week-block.is-paused, .week-block.is-paused.is-mine{background:var(--paper); color:var(--muted); border-color:var(--line); border-style:dashed; opacity:.75;}
+.week-block.is-paused:hover{background:var(--wash);}
+.proj-list li.is-paused .proj-main{opacity:.55;}
+.week-key.is-outline.is-paused{border-color:var(--muted); border-style:dashed;}

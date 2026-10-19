@@ -2343,7 +2343,7 @@ function projectGroupForCards(cards, completed){
 // What a page reads: the workspace, as stored.
 function workspaceView(ws){
   const out = {};
-  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
+  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
     'deckUrl', 'notesUrl', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   return out;
 }
@@ -2550,9 +2550,10 @@ async function syncWorkspace(id, changes){
       }
 
       // The meeting: Google emails the guests an invitation, or a change, or a cancellation.
-      // A completed project's meeting is cancelled; the time is kept, so it comes back
-      // if the project is reopened.
-      const wantEvent = !!ws.meeting && ws.group !== 'completed';
+      // A completed project's meeting is cancelled, and so is a paused one; the time is
+      // kept, so it comes back (a new series, with a new Meet link) if the project is
+      // reopened or the meeting resumed.
+      const wantEvent = !!ws.meeting && ws.group !== 'completed' && !ws.pausedAt;
       const attendees = function(existing){
         // Keeps each guest's reply; adds new members; drops who left.
         const kept = (existing || []).filter(function(a){ return a.organizer || a.self || addrs.indexOf(String(a.email).toLowerCase()) >= 0; });
@@ -2734,7 +2735,9 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'repo': makes its repository from a template ({ mode: 'template', template });
 //   editors only; once made, it stays.
 // - 'complete' / 'reopen': marks the project completed (its meeting is cancelled) or
-//   not; editors only. Completion by acceptance at a venue needs neither.
+//   not; editors only.
+// - 'pause' / 'resume': pauses its meeting (cancelled in Google Calendar, the time kept)
+//   or brings it back; editors only. Completion by acceptance at a venue needs neither.
 // - 'submit': submits the project to another venue ({ venue, card }: a card the page
 //   built); editors only; → { cardId, boardId }.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
@@ -2804,6 +2807,14 @@ exports.projectWorkspace = onCall(
         if (ws.repoName) throw new HttpsError('failed-precondition', 'It already has ' + GITHUB_ORG + '/' + ws.repoName + '.');
       }
       return workspaceView(await syncWorkspace(pid, changes));
+    }
+
+    if (data.action === 'pause' || data.action === 'resume'){
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
+      await wsRef.set(data.action === 'pause'
+        ? { pausedAt: Date.now(), pausedBy: email }
+        : { pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() }, { merge: true });
+      return workspaceView(await syncWorkspace(pid));
     }
 
     if (data.action === 'complete' || data.action === 'reopen'){
@@ -3169,7 +3180,7 @@ function normalizeStudies(d, me){
 
 function studiesView(s){
   const out = {};
-  ['degree', 'title', 'people', 'meeting', 'eventLink', 'meetUrl', 'error', 'channel', 'channelUrl', 'channelError', 'updatedAt'].forEach(function(k){ if (s[k] !== undefined) out[k] = s[k]; });
+  ['degree', 'title', 'people', 'meeting', 'pausedAt', 'eventLink', 'meetUrl', 'error', 'channel', 'channelUrl', 'channelError', 'updatedAt'].forEach(function(k){ if (s[k] !== undefined) out[k] = s[k]; });
   return out;
 }
 
@@ -3190,13 +3201,15 @@ async function syncStudyMeeting(email){
         return !kept.some(function(a){ return String(a.email).toLowerCase() === m; });
       }).map(function(m){ return { email: m }; }));
     };
-    if (s.meeting && !s.eventId){
+    // A paused meeting is cancelled in Google Calendar; resuming makes a new series.
+    const want = !!s.meeting && !s.pausedAt;
+    if (want && !s.eventId){
       const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
         summary, description, attendees: attendees([]), guestsCanModify: false,
         conferenceData: { createRequest: { requestId: 'bold-study-' + crypto.randomBytes(6).toString('hex'), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
       }, eventTimes(s.meeting)));
       Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: ev.hangoutLink || '', eventMeeting: s.meeting });
-    } else if (!s.meeting && s.eventId){
+    } else if (!want && s.eventId){
       await googleFetch('DELETE', CAL + '/' + s.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
       ['eventId', 'eventLink', 'meetUrl', 'eventMeeting'].forEach(function(k){ patch[k] = FieldValue.delete(); });
     } else if (s.eventId){
@@ -3226,12 +3239,24 @@ async function syncStudyMeeting(email){
 //   only PhD and Master students (their members record's role), or whoever already has studies.
 // - 'retry': tries the Slack channel and the Calendar event again.
 // - 'channel': { name } (or none: the default) → { name, prefixed, exists }, for the form's hint.
+// - 'pause' / 'resume': { student } (the caller's own when none): pauses the meeting
+//   (cancelled in Google Calendar, the time kept) or brings it back; the student or
+//   anyone involved in their studies.
 // → the studies (studiesView).
 exports.studies = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
     const data = request.data || {};
+    if (data.action === 'pause' || data.action === 'resume'){
+      const student = String(data.student || email).trim().toLowerCase();
+      const sref = db.collection('studies').doc(student);
+      const s = (await sref.get()).data();
+      if (!s || !s.meeting) throw new HttpsError('not-found', 'There’s no meeting to ' + data.action + '.');
+      if ((s.everyone || [student]).indexOf(email) < 0) throw new HttpsError('permission-denied', 'Only the student and the people involved in their studies can do this.');
+      await sref.set(data.action === 'pause' ? { pausedAt: Date.now(), pausedBy: email } : { pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() }, { merge: true });
+      return studiesView(await syncStudyMeeting(student));
+    }
     const ref = db.collection('studies').doc(email);
     const [prev, member] = await Promise.all([ref.get(), db.collection('members').doc(email).get()]);
     const role = member.exists ? member.data().role : '';
