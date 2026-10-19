@@ -554,7 +554,8 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-controls{display:flex; flex-direction:column; gap:10px; margin:4px 0 18px;}
 .cx-ctl-row{display:flex; flex-wrap:wrap; align-items:center; gap:10px 26px;}
 .cx-ctl-row[hidden], .cx-pair[hidden]{display:none;}
-.cx-pair{display:inline-flex; align-items:center; gap:10px;}
+.cx-pair{display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px 10px; min-width:0; max-width:100%;}
+.cx-pair .view-toggle{flex-wrap:wrap;}
 .cx-field{font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:5px 8px; max-width:100%;}
 .cx-legend{margin:12px 0 28px; padding-bottom:14px; border-bottom:1px solid var(--line); gap:6px 18px;}
 .cx-legend .cx-bar-items{gap:4px 18px; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}

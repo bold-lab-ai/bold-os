@@ -1,8 +1,8 @@
 // Network (network.html, under People): everyone's interactions (connections.js), as a
-// Graph or as a Lineage (who brought whom into BOLD). Graph filters: kind (all, joining,
-// working together, talking, on the site), since when, a group of Who is BOLD (both
-// people in it), and with or without things (projects and papers, events, guides,
-// skills); Find someone selects them. Clicking a person or thing selects it: its lines
+// Graph or as a Lineage (who brought whom into BOLD). Graph filters: kinds (joining,
+// working together, talking, on the site) and groups of Who is BOLD (and outside BOLD),
+// each on or off, both people's groups on; since when; and with or without things
+// (projects and papers, events, guides, skills). Find someone selects them. Clicking a person or thing selects it: its lines
 // stay lit and its busiest connections are listed below. PIs and admins can rebuild every
 // interaction from the documents they come from (rebuildInteractions).
 (function(){
@@ -11,7 +11,10 @@
   if (!graph || !BOLD.getAuth() || !C || !window.BoldJoin) return;
   var el = function(id){ return document.getElementById(id); };
   var all = null, dir = null, me = '', g = null, selected = '';
-  var view = 'graph', kind = 'all', since = 'all', group = '', things = true;
+  var view = 'graph', since = 'all', things = true;
+  // Kinds and groups add up: each is on or off, all on to start (people outside BOLD: 'outside').
+  var kinds = { joining: true, working: true, talking: true, site: true }, groups = { outside: true };
+  BoldJoin.CATEGORIES.forEach(function(c){ groups[c[0]] = true; });
   var SINCE = [['all', 'All time'], ['365', 'Past year'], ['90', 'Past 3 months']];
   var W = 1000, H = 680;
 
@@ -19,22 +22,21 @@
     return opts.map(function(x){ return '<button type="button" class="view-btn" ' + attr + '="' + x[0] + '" aria-pressed="' + !!isOn(x[0]) + '">' + esc(x[1]) + '</button>'; }).join('');
   }
   function controls(){
-    el('nwView').innerHTML = toggle('data-view', [['graph', 'Graph'], ['lineage', 'Lineage']], function(k){ return view === k; });
-    var opts = function(list, cur){ return list.map(function(x){ return '<option value="' + x[0] + '"' + (cur === x[0] ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join(''); };
-    el('nwKinds').innerHTML = opts([['all', 'All kinds']].concat(C.GROUPS), kind);
+    // One choice: a dropdown; choices that add up (kinds, groups): buttons, each on or off.
+    var opts = function(list, cur){ return list.map(function(x){ return '<option value="' + x[0] + '"' + (String(cur) === String(x[0]) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join(''); };
+    el('nwView').innerHTML = opts([['graph', 'Graph'], ['lineage', 'Lineage']], view);
+    el('nwThings').innerHTML = opts([['1', 'People and things'], ['0', 'People']], things ? '1' : '0');
     el('nwSince').innerHTML = opts(SINCE, since);
-    el('nwThings').innerHTML = toggle('data-things', [['1', 'People and things'], ['0', 'People']], function(k){ return (k === '1') === things; });
-    el('nwGroup').innerHTML = '<option value="">Every group</option>' + BoldJoin.CATEGORIES.map(function(c){
-      return '<option value="' + c[0] + '"' + (group === c[0] ? ' selected' : '') + '>' + esc(c[1]) + '</option>';
-    }).join('');
+    el('nwKinds').innerHTML = toggle('data-kind', C.GROUPS, function(k){ return kinds[k]; });
+    el('nwGroup').innerHTML = toggle('data-group', BoldJoin.CATEGORIES.concat([['outside', 'Outside BOLD']]), function(k){ return groups[k]; });
     Array.prototype.forEach.call(document.querySelectorAll('.nw-graph-only'), function(x){ x.hidden = view !== 'graph'; });
   }
 
   function build(){
     if (view === 'lineage') { drawLineage(); return; }
     var from = since === 'all' ? 0 : Date.now() - Number(since) * 86400000;
-    var inGroup = function(e){ return !e || C.isThing(e) || !group || (dir[e] && dir[e].member && dir[e].group === group); };
-    var list = all.filter(function(x){ return (kind === 'all' || x.group === kind) && x.at >= from && (x.to || (things && x.thing)) && inGroup(x.from) && inGroup(x.to); });
+    var inGroup = function(e){ return !e || C.isThing(e) || !!groups[dir[e] && dir[e].member ? dir[e].group : 'outside']; };
+    var list = all.filter(function(x){ return kinds[x.group] && x.at >= from && (x.to || (things && x.thing)) && inGroup(x.from) && inGroup(x.to); });
     g = C.graphOf(list, things);
     // Narrow screens: a taller box, so the graph isn't squeezed into a strip.
     if (graph.parentNode.clientWidth < 600) { W = 600; H = 760; } else { W = 1000; H = 760; }
@@ -78,9 +80,9 @@
   }
 
   document.addEventListener('click', function(e){
-    var v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]'), n = e.target.closest('.cx-node');
-    if (v) { view = v.getAttribute('data-view'); controls(); build(); }
-    else if (t) { things = t.getAttribute('data-things') === '1'; controls(); build(); }
+    var k = e.target.closest('[data-kind]'), gr = e.target.closest('[data-group]'), n = e.target.closest('.cx-node');
+    if (k) { kinds[k.getAttribute('data-kind')] = !kinds[k.getAttribute('data-kind')]; controls(); build(); }
+    else if (gr) { groups[gr.getAttribute('data-group')] = !groups[gr.getAttribute('data-group')]; controls(); build(); }
     else if (n && graph.contains(n)) {
       if (view === 'lineage') { var h = n.getAttribute('data-href'); if (h) location.href = h; return; }
       var id = n.getAttribute('data-id'); selected = selected === id ? '' : id; draw();
@@ -93,8 +95,8 @@
     if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); n.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
   });
   C.bindHover(graph);
-  el('nwGroup').addEventListener('change', function(){ group = this.value; build(); });
-  el('nwKinds').addEventListener('change', function(){ kind = this.value; build(); });
+  el('nwView').addEventListener('change', function(){ view = this.value; controls(); build(); });
+  el('nwThings').addEventListener('change', function(){ things = this.value === '1'; build(); });
   el('nwSince').addEventListener('change', function(){ since = this.value; build(); });
   el('nwFind').addEventListener('change', function(){
     var q = this.value.trim().toLowerCase();

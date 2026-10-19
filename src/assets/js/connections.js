@@ -439,12 +439,12 @@ window.BoldConnections = (function(){
     email = lower(email); me = lower(me);
     root.innerHTML = '<p class="proj-msg">Loading&hellip;</p>';
     // steps: 2, or 1 if everyone's interactions couldn't be loaded.
-    var shown = 30, filter = 'all', steps = 2, everyone = null, view = 'graph', things = true, g = null;
+    var shown = 30, on = { joining: true, working: true, talking: true, site: true }, steps = 2, everyone = null, view = 'graph', things = true, g = null;
     Promise.all([loadFor(email), directory()]).then(function(r){
       var list = r[0], dir = r[1];
       function graphHtml(){
         if (steps === 2 && !everyone) { loadAll().then(function(a){ everyone = a; draw(); }).catch(function(err){ console.error('[BOLD Connections] loading everyone failed', err); steps = 1; draw(); }); }
-        var kind = function(x){ return (x.to || (things && x.thing)) && (filter === 'all' || x.group === filter); };
+        var kind = function(x){ return (x.to || (things && x.thing)) && on[x.group]; };
         var direct = list.filter(kind);
         g = graphOf(direct, things);
         // The inner ring: what's joined to them directly. (With things, a co-author is
@@ -477,28 +477,29 @@ window.BoldConnections = (function(){
       function draw(){
         var counts = {};
         list.forEach(function(x){ counts[x.group] = (counts[x.group] || 0) + 1; });
-        var toggle = function(label, attr, opts, cur){
-          return '<div class="view-toggle" role="group" aria-label="' + label + '">' + opts.map(function(x){
-            return '<button type="button" class="view-btn" ' + attr + '="' + x[0] + '" aria-pressed="' + (String(cur) === String(x[0])) + '">' + esc(x[1]) + '</button>';
-          }).join('') + '</div>';
+        // One choice: a dropdown; choices that add up (kinds): buttons, each on or off.
+        var select = function(label, cls, opts, cur){
+          return '<label class="cx-pair"><span class="cx-bar-label">' + label + '</span><select class="cx-field ' + cls + '">' + opts.map(function(x){
+            return '<option value="' + x[0] + '"' + (String(cur) === String(x[0]) ? ' selected' : '') + '>' + esc(x[1]) + '</option>';
+          }).join('') + '</select></label>';
         };
-        var pair = function(label, html){ return '<span class="cx-pair"><span class="cx-bar-label">' + label + '</span>' + html + '</span>'; };
         root.innerHTML = '<div class="cx-controls"><div class="cx-ctl-row">' +
-          pair('View', toggle('View', 'data-view', [['graph', 'Graph'], ['time', 'Over time']], view)) +
-          pair('Show', toggle('Show', 'data-things', [['1', 'People and things'], ['0', 'People']], things ? '1' : '0')) + '</div>' +
-          '<div class="cx-ctl-row"><label class="cx-pair"><span class="cx-bar-label">Kinds</span><select class="cx-field cx-kinds">' +
-          [['all', 'All kinds', list.length]].concat(GROUPS.map(function(x){ return [x[0], x[1], counts[x[0]] || 0]; })).map(function(x){
-            return '<option value="' + x[0] + '"' + (filter === x[0] ? ' selected' : '') + '>' + esc(x[1]) + ' (' + x[2] + ')</option>';
-          }).join('') + '</select></label></div></div>' +
-          (view === 'time' ? timeHtml(list.filter(function(x){ return filter === 'all' || x.group === filter; }), dir, email, me, things) : graphHtml()) +
-          timelineHtml(list.filter(function(x){ return filter === 'all' || x.group === filter; }), dir, email, me, shown);
+          select('View', 'cx-view', [['graph', 'Graph'], ['time', 'Over time']], view) +
+          select('Show', 'cx-show', [['1', 'People and things'], ['0', 'People']], things ? '1' : '0') + '</div>' +
+          '<div class="cx-ctl-row"><span class="cx-pair"><span class="cx-bar-label">Kinds</span><span class="view-toggle" role="group" aria-label="Kinds">' +
+          GROUPS.map(function(x){ return '<button type="button" class="view-btn" data-kind="' + x[0] + '" aria-pressed="' + !!on[x[0]] + '">' + esc(x[1]) + (counts[x[0]] ? ' ' + counts[x[0]] : '') + '</button>'; }).join('') +
+          '</span></span></div></div>' +
+          (view === 'time' ? timeHtml(list.filter(function(x){ return on[x.group]; }), dir, email, me, things) : graphHtml()) +
+          timelineHtml(list.filter(function(x){ return on[x.group]; }), dir, email, me, shown);
       }
       bindHover(root);
-      root.addEventListener('change', function(e){ if (e.target.classList.contains('cx-kinds')) { filter = e.target.value; draw(); } });
+      root.addEventListener('change', function(e){
+        if (e.target.classList.contains('cx-view')) { view = e.target.value; draw(); }
+        if (e.target.classList.contains('cx-show')) { things = e.target.value === '1'; draw(); }
+      });
       root.addEventListener('click', function(e){
-        var v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]');
-        if (v) { view = v.getAttribute('data-view'); draw(); return; }
-        if (t) { things = t.getAttribute('data-things') === '1'; draw(); return; }
+        var k = e.target.closest('[data-kind]');
+        if (k) { on[k.getAttribute('data-kind')] = !on[k.getAttribute('data-kind')]; draw(); return; }
         if (e.target.closest('.cx-more')) { shown += 50; draw(); return; }
         var n = e.target.closest('.cx-node');
         if (!n || n.getAttribute('data-id') === email) return;

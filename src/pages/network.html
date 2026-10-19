@@ -15,15 +15,17 @@ nav: "network.html"
 <main>
   <div class="cx-controls">
     <div class="cx-ctl-row">
-      <span class="cx-pair"><span class="cx-bar-label">View</span><span class="view-toggle" role="group" aria-label="View" id="nwView"></span></span>
-      <span class="cx-pair nw-graph-only"><span class="cx-bar-label">Show</span><span class="view-toggle" role="group" aria-label="Show" id="nwThings"></span></span>
+      <label class="cx-pair"><span class="cx-bar-label">View</span><select class="cx-field" id="nwView"></select></label>
+      <label class="cx-pair nw-graph-only"><span class="cx-bar-label">Show</span><select class="cx-field" id="nwThings"></select></label>
+      <label class="cx-pair nw-graph-only"><span class="cx-bar-label">Since</span><select class="cx-field" id="nwSince"></select></label>
+      <input class="cx-field nw-graph-only" type="search" id="nwFind" placeholder="Find someone or something" aria-label="Find someone or something" list="nwPeople">
+      <datalist id="nwPeople"></datalist>
     </div>
     <div class="cx-ctl-row nw-graph-only">
-      <label class="cx-pair"><span class="cx-bar-label">Kinds</span><select class="cx-field" id="nwKinds"></select></label>
-      <label class="cx-pair"><span class="cx-bar-label">Since</span><select class="cx-field" id="nwSince"></select></label>
-      <label class="cx-pair"><span class="cx-bar-label">Who</span><select class="cx-field" id="nwGroup"></select></label>
-      <input class="cx-field" type="search" id="nwFind" placeholder="Find someone or something" aria-label="Find someone or something" list="nwPeople">
-      <datalist id="nwPeople"></datalist>
+      <span class="cx-pair"><span class="cx-bar-label">Kinds</span><span class="view-toggle" role="group" aria-label="Kinds" id="nwKinds"></span></span>
+    </div>
+    <div class="cx-ctl-row nw-graph-only">
+      <span class="cx-pair"><span class="cx-bar-label">Who</span><span class="view-toggle" role="group" aria-label="Who" id="nwGroup"></span></span>
     </div>
   </div>
   <p class="proj-msg" id="nwMsg">Loading&hellip;</p>
