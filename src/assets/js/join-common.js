@@ -12,6 +12,12 @@ window.BoldJoin = (function(){
   ];
   // These roles have no end date.
   var NO_END = ['PI', 'Alumni', 'Collaborator'];
+  // How someone likes to receive feedback (functions/index.js JOIN_FEEDBACK, firestore.rules).
+  var FEEDBACK = [
+    ['direct', 'Direct', 'Be blunt: tell me plainly what’s wrong.'],
+    ['balanced', 'Balanced', 'Be frank, with context and what works.'],
+    ['gentle', 'Gentle', 'Start with what works, and go easy on the rest.'],
+  ];
 
   // The choices on offer → cb({ roles, pillars }).
   function options(db, cb){
@@ -40,6 +46,10 @@ window.BoldJoin = (function(){
         return '<label class="jn-check"><input type="checkbox" value="' + esc(p) + '"' + (pillars.indexOf(p) !== -1 ? ' checked' : '') + '> ' + esc(p) + '</label>';
       }).join('') + '</fieldset>' +
       t('jn-based', 'Primarily based in (for events and socials)', v.basedIn, 'e.g. London', 120) +
+      t('jn-pronouns', 'Pronouns (optional)', v.pronouns, 'e.g. she/her, they/them', 40) +
+      '<fieldset class="jn-feedback"><legend>How you like to receive feedback</legend>' + FEEDBACK.map(function(f){
+        return '<label class="jn-check"><input type="radio" name="jn-feedback" value="' + f[0] + '"' + (v.feedback === f[0] ? ' checked' : '') + '> <strong>' + f[1] + '</strong>: ' + esc(f[2]) + '</label>';
+      }).join('') + '</fieldset>' +
       '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
         t('jn-end', 'End date (not needed for PIs, alumni and collaborators)', v.endDate, '', 10, 'date') + '</div>' +
       '<label class="jn-check"><input type="checkbox" class="jn-list"' + (v.listOnWebsite ? ' checked' : '') + '> List me on the BOLD website</label>';
@@ -51,6 +61,7 @@ window.BoldJoin = (function(){
     var out = {
       links: v('.jn-links'), institution: v('.jn-institution'), role: v('.jn-role'), contact: v('.jn-contact'),
       interests: v('.jn-interests'), basedIn: v('.jn-based'), startDate: v('.jn-start'), endDate: v('.jn-end'),
+      pronouns: v('.jn-pronouns'), feedback: (el.querySelector('.jn-feedback input:checked') || {}).value || '',
       listOnWebsite: !!(el.querySelector('.jn-list') || {}).checked,
       pillars: Array.prototype.map.call(el.querySelectorAll('.jn-pillars input:checked'), function(i){ return i.value; }),
     };
@@ -73,6 +84,7 @@ window.BoldJoin = (function(){
 
   // The details as a list of facts, for reading.
   function factsHtml(d){
+    var fb = FEEDBACK.filter(function(f){ return f[0] === d.feedback; })[0];
     var row = function(k, v){ return v ? '<div class="fact"><dt>' + k + '</dt><dd>' + v + '</dd></div>' : ''; };
     var links = String(d.links || '').split(/[\s,;]+/).filter(Boolean).map(function(u){
       var href = /^https?:\/\//.test(u) ? u : 'https://' + u;
@@ -81,9 +93,11 @@ window.BoldJoin = (function(){
     return '<dl class="facts">' +
       row('Role', esc(d.role || '')) + row('Institution', esc(d.institution || '')) + row('Point of contact', esc(d.contact || '')) +
       row('Interests', esc(d.interests || '')) + row('Pillars', (d.pillars || []).map(esc).join('<br>')) +
+      row('Pronouns', esc(d.pronouns || '')) +
+      row('Feedback', fb ? '<strong>' + fb[1] + '</strong>: ' + esc(fb[2]) : '') +
       row('Based in', esc(d.basedIn || '')) + row('Dates', esc(d.startDate && d.endDate ? d.startDate + ' – ' + d.endDate : d.startDate ? 'From ' + d.startDate : d.endDate ? 'Until ' + d.endDate : '')) +
       row('Links', links) + row('On the website', d.listOnWebsite ? 'Yes' : 'No') + '</dl>';
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
 })();

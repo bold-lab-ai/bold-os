@@ -3529,7 +3529,9 @@ const JOIN_PILLARS = [
   'Human-Centric Learning and Discovery (incl. Human-AI Coordination, MARL, Co-Scientist)',
   'Robust Adaptation and Learning incl. in Embodied Envs (RL, Open-Ended Learning, Robotics)',
 ];
-const JOIN_TEXT = { name: 120, email: 200, links: 500, institution: 120, role: 60, contact: 200, interests: 300, basedIn: 120, note: 1000 };
+const JOIN_TEXT = { name: 120, email: 200, links: 500, institution: 120, role: 60, contact: 200, interests: 300, basedIn: 120, pronouns: 40, note: 1000 };
+// How someone likes to receive feedback (join-common.js FEEDBACK, firestore.rules); optional.
+const JOIN_FEEDBACK = ['direct', 'balanced', 'gentle'];
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 const WELCOME_SUBJECT = 'Welcome to BOLD';
 const WELCOME_BODY = [
@@ -3568,6 +3570,7 @@ function normalizeJoinRequest(d, roles, pillars){
   const chosen = Array.isArray(d.pillars) ? d.pillars.map(String) : [];
   out.pillars = (pillars || []).filter((p) => chosen.indexOf(p) !== -1);
   out.listOnWebsite = d.listOnWebsite === true;
+  out.feedback = JOIN_FEEDBACK.indexOf(d.feedback) !== -1 ? d.feedback : '';
   out.startDate = String(d.startDate || '');
   out.endDate = String(d.endDate || '');
   if (out.startDate && !ISO_DAY.test(out.startDate)) return { error: 'Give a valid start date.' };
@@ -3699,7 +3702,7 @@ exports.decideJoinRequest = onCall(
       if (d.accept) {
         // Their record in BOLD.OS: what they told us. They keep it up to date on their profile.
         const m = db.collection('members').doc(q.email);
-        const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'startDate', 'endDate'];
+        const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate'];
         const rec = {};
         keep.forEach((k) => { if (q[k] !== undefined) rec[k] = q[k]; });
         tx.set(m, Object.assign(rec, { requestId: d.id, approvedBy: email, approvedAt: Date.now() }), { merge: true });
