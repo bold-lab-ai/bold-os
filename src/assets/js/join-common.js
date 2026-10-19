@@ -16,7 +16,7 @@ window.BoldJoin = (function(){
   // (`category`: on the People page, or approving their request), else by role: PIs
   // BOLD-exec, PhD students BOLD-internal, Staff BOLD-staff, everyone else PAN-BOLD (functions/index.js
   // groupOf, kept in sync by hand).
-  var CATEGORIES = [['exec', 'BOLD-exec'], ['internal', 'BOLD-internal'], ['associate', 'BOLD-associate'], ['staff', 'BOLD-staff'], ['pan', 'PAN-BOLD']];
+  var CATEGORIES = [['exec', 'BOLD-exec'], ['staff', 'BOLD-staff'], ['internal', 'BOLD-internal'], ['associate', 'BOLD-associate'], ['pan', 'PAN-BOLD']];
   function categoryLabel(key){ var c = CATEGORIES.filter(function(x){ return x[0] === key; })[0]; return c ? c[1] : 'PAN-BOLD'; }
   function groupOf(m){
     m = m || {};

@@ -4149,12 +4149,24 @@ exports.retryWelcomeEmails = onSchedule(
 // students BOLD-internal, Staff BOLD-staff, everyone else PAN-BOLD (groupOf; BoldJoin.groupOf on the
 // pages, kept in sync by hand). A member asks for another group on their profile
 // (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
-// requests. Each group but PAN-BOLD may have a Slack channel (settings/groups.channels, set there):
-// whoever comes into a group is invited to it (onMemberGroup), and setting a channel
-// invites the group's members (onGroupChannels). Nobody is removed from a channel.
-const GROUPS = ['exec', 'internal', 'associate', 'staff', 'pan'];
+// requests. Each group but PAN-BOLD may have a Slack channel (settings/groups.channels, set there).
+// The groups are ranked (GROUPS, highest first) and each is in the channels of those below
+// it too: BOLD-exec in BOLD-staff's, BOLD-internal's and BOLD-associate's; BOLD-internal
+// in BOLD-associate's, not BOLD-staff's. Whoever comes into a group is invited to its
+// channels (onMemberGroup), and setting a channel invites everyone meant to be in it
+// (onGroupChannels; settings/groupsInvited, server only, is what has been invited, so a
+// change to the ranking reaches the channels already set). Nobody is removed from a channel.
+const GROUPS = ['exec', 'staff', 'internal', 'associate', 'pan'];
 const GROUP_LABELS = { exec: 'BOLD-exec', internal: 'BOLD-internal', associate: 'BOLD-associate', staff: 'BOLD-staff', pan: 'PAN-BOLD' };
 const CHANNEL_GROUPS = GROUPS.filter(function(g){ return g !== 'pan'; });
+// Bump when the ranking changes: every channel is then filled again.
+const GROUP_RANKING_VERSION = 2;
+
+// Pure: group → the groups whose channels its members are in (its own and those below).
+function channelGroupsFor(g){
+  const i = GROUPS.indexOf(g);
+  return i < 0 ? [] : CHANNEL_GROUPS.filter(function(h){ return GROUPS.indexOf(h) >= i; });
+}
 
 // Pure: a member record → its group.
 function groupOf(m){
@@ -4187,28 +4199,38 @@ exports.onMemberGroup = onDocumentWritten(
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
     const g = groupOf(after);
-    if (CHANNEL_GROUPS.indexOf(g) < 0 || (before && groupOf(before) === g)) return;
+    const wanted = channelGroupsFor(g);
+    if (!wanted.length || (before && groupOf(before) === g)) return;
     const set = (await db.collection('settings').doc('groups').get()).data() || {};
-    const name = groupChannelName((set.channels || {})[g]);
-    if (name) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
+    for (const h of wanted){
+      const name = groupChannelName((set.channels || {})[h]);
+      if (name) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
+    }
   }
 );
 
 exports.onGroupChannels = onDocumentWritten(
   { document: 'settings/groups', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 540 },
   async function(event){
-    const before = (event.data.before.exists && event.data.before.data().channels) || {};
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
+    const doneRef = db.collection('settings').doc('groupsInvited');
+    const done = (await doneRef.get()).data() || {};
+    const before = done.version === GROUP_RANKING_VERSION ? (done.channels || {}) : {};
     const channels = after.channels || {};
     const changed = CHANNEL_GROUPS.filter(function(g){ return groupChannelName(channels[g]) && groupChannelName(channels[g]) !== groupChannelName(before[g]); });
     if (!changed.length) return;
     const members = (await db.collection('members').get()).docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); });
     const errors = Object.assign({}, after.channelErrors || {});
     for (const g of changed){
-      const err = await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), members.filter(function(m){ return groupOf(m) === g; }).map(function(m){ return m.email; }), groupChannelName(channels[g]));
+      const inIt = members.filter(function(m){ return channelGroupsFor(groupOf(m)).indexOf(g) >= 0; }).map(function(m){ return m.email; });
+      const err = await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), inIt, groupChannelName(channels[g]));
       if (err) errors[g] = err; else delete errors[g];
     }
+    const invited = {};
+    // A channel that failed isn't done: saving the settings again retries it.
+    CHANNEL_GROUPS.forEach(function(g){ if (groupChannelName(channels[g]) && !errors[g]) invited[g] = groupChannelName(channels[g]); });
+    await doneRef.set({ channels: invited, version: GROUP_RANKING_VERSION, at: Date.now() });
     await event.data.after.ref.set({ channelErrors: errors }, { merge: true });
   }
 );
@@ -4696,5 +4718,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
 };
