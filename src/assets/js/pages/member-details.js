@@ -90,7 +90,14 @@
     var p = BoldJoin.problem(d);
     if (p) { err.textContent = p; err.hidden = false; return; }
     t.disabled = true;
+    // Who invited them goes through setMyInviter (they can't write it, and it asks them to confirm).
+    var inviter = d.inviterEmail, was = String((rec && rec.invitedBy && rec.invitedBy.email) || '');
+    delete d.inviterEmail;
     db.collection('members').doc(me.email).set(Object.assign(d, { name: (rec && rec.name) || me.name || me.email, email: me.email, updatedAt: Date.now() }), { merge: true })
+      .then(function(){
+        if (inviter === undefined || inviter === was) return;
+        return firebase.app().functions('europe-west2').httpsCallable('setMyInviter')({ email: inviter });
+      })
       .then(function(){ editing = false; render(); })
       .catch(function(e2){
         console.error('[BOLD Profile] saving your details failed', e2);

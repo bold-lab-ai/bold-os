@@ -4047,14 +4047,58 @@ exports.joinInviters = onCall(async (request) => {
   return { people };
 });
 
-// Whoever an applicant named as inviting them confirms it or says they didn't, on the
-// Requests page. data: { id, confirm: bool } → { ok }. Saying they didn't DMs the PIs and
-// admins. Copied to the member's record if they're approved already.
+// A member says who invited them to the BOLD Slack, on their profile (members/{email}
+// .invitedBy, which they can't write themselves): someone on the roster, or nobody
+// (email ''). Whoever they name gets a DM to confirm it on the Requests page (Invited by
+// you; confirmJoinInvite with { member }). data: { email } → { invitedBy }.
+exports.setMyInviter = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const to = String((request.data || {}).email || '').trim().toLowerCase();
+    const ref = db.collection('members').doc(email);
+    const m = await ref.get();
+    if (!m.exists) throw new HttpsError('failed-precondition', 'Save your details first.');
+    const cur = m.data().invitedBy || null;
+    if (!to) { if (cur) await ref.update({ invitedBy: FieldValue.delete() }); return { invitedBy: null }; }
+    if (to === email) throw new HttpsError('invalid-argument', 'Choose who invited you.');
+    if (cur && cur.email === to) return { invitedBy: cur };
+    const p = await db.collection('people').where('email', '==', to).limit(1).get();
+    if (p.empty) throw new HttpsError('not-found', 'Choose someone on BOLD.OS.');
+    const who = p.docs[0];
+    const invitedBy = { id: who.id, name: String(who.data().name || to), email: to, status: 'pending', askedAt: Date.now(), via: 'profile' };
+    await ref.update({ invitedBy });
+    const name = m.data().name || email;
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: [to], headline: '👋 ' + slackText(name) + ' says you invited them to the BOLD Slack. ' +
+      linkedTitle('Confirm it, or say you didn’t', joinPageUrl() + '#invited') + '.' });
+    return { invitedBy };
+  }
+);
+
+// Whoever an applicant (or a member, on their profile) named as inviting them confirms it
+// or says they didn't, on the Requests page. data: { id, confirm: bool } for a request to
+// join, { member: email, confirm } for a member → { ok }. Saying they didn't DMs the PIs
+// and admins. A request's answer is copied to the member's record if they're approved already.
 exports.confirmJoinInvite = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
     const d = request.data || {};
+    if (d.member){
+      const mref = db.collection('members').doc(String(d.member).toLowerCase());
+      const mstatus = d.confirm ? 'confirmed' : 'denied';
+      const m = await db.runTransaction(async (tx) => {
+        const x = (await tx.get(mref)).data();
+        if (!x || !x.invitedBy || x.invitedBy.email !== email) throw new HttpsError('not-found', 'No such member.');
+        tx.update(mref, { 'invitedBy.status': mstatus, 'invitedBy.at': Date.now() });
+        return x;
+      });
+      if (!d.confirm && m.invitedBy.status !== 'denied'){
+        const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+        await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline: '⚠️ ' + slackText(m.invitedBy.name) + ' says they didn’t invite ' + slackText(m.name || mref.id) + ' to the BOLD Slack (they said so on their profile).' });
+      }
+      return { ok: true };
+    }
     if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
     const ref = db.collection('joinRequests').doc(d.id);
     const status = d.confirm ? 'confirmed' : 'denied';
@@ -4758,10 +4802,12 @@ async function interactionsFor(path, d, lookup){
   if (n === 2 && top === 'joinRequests'){
     const href = SITE_URL + 'join-requests.html#r=' + seg[1], title = 'Joining BOLD';
     add('asked', d.email, '', d.at, title, href);
-    if (d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, d.email, d.invitedBy.at || d.at, title, href);
+    // Once they're a member, their record says who invited them (it may change there).
+    if (d.status !== 'approved' && d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, d.email, d.invitedBy.at || d.at, title, href);
     if (d.status === 'approved') add('approved', d.decidedBy, d.email, d.decidedAt, title, href);
   } else if (n === 2 && top === 'members'){
     add('contact', d.contactEmail, seg[1], d.approvedAt || d.updatedAt, 'Point of contact', SITE_URL + 'people.html');
+    if (d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, seg[1], d.invitedBy.at || d.approvedAt, 'Joining BOLD', SITE_URL + 'people.html');
   } else if (n === 2 && top === 'studies'){
     const title = (d.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision';
     (d.people || []).forEach(function(p){ add('supervises', p.email, seg[1], d.createdAt || d.updatedAt, title, SITE_URL + 'calendar.html'); });

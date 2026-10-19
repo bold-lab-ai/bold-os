@@ -56,6 +56,16 @@ window.BoldJoin = (function(){
       '</select></label>';
   }
 
+  // Who invited them to the BOLD Slack, on the profile: a choice from the roster, with
+  // whether they've confirmed it.
+  function inviterHtml(v, people){
+    var cur = String((v.invitedBy && v.invitedBy.email) || '').toLowerCase(), st = v.invitedBy && v.invitedBy.status;
+    var note = !cur ? '' : st === 'confirmed' ? ' (they confirmed it)' : st === 'denied' ? ' (they say they didn’t)' : ' (waiting for them to confirm)';
+    return '<label>Who invited you to the BOLD Slack? (we ask them to confirm)' + esc(note) + '<select class="jn-inviter-pick"><option value="">Choose a person…</option>' +
+      people.map(function(p){ return '<option value="' + esc(p.email) + '"' + (p.email === cur ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
+      '</select></label>';
+  }
+
   // The fields, filled from v. opts: { withIdentity: name and email too, people: the roster for the point of contact }.
   function fieldsHtml(v, opt, o){
     v = v || {}; o = o || {};
@@ -75,6 +85,8 @@ window.BoldJoin = (function(){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';
       }).join('') + (v.role && opt.roles.indexOf(v.role) === -1 ? '<option selected>' + esc(v.role) + '</option>' : '') + '</select></label>' +
       contactHtml(v, o.people) +
+      // The profile: who invited them, from the roster (setMyInviter saves it and asks them to confirm).
+      (o.people && !o.withIdentity ? inviterHtml(v, o.people) : '') +
       // join.html only: who invited them to the Slack, picked from the roster as they type (join.js).
       (o.withIdentity ? '<label>Who invited you to the BOLD Slack? (optional; we ask them to confirm)' +
         '<input type="text" class="jn-inviter" maxlength="120" placeholder="Start typing their name" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"></label>' +
@@ -112,6 +124,8 @@ window.BoldJoin = (function(){
     }
     if (el.querySelector('.jn-name')) { out.name = v('.jn-name'); out.email = v('.jn-email').toLowerCase(); }
     if (el.querySelector('.jn-inviter')) { out.invitedBy = v('.jn-inviter-id'); out.inviterTyped = v('.jn-inviter'); }
+    // Not part of the record: member-details.js sends it to setMyInviter.
+    if (el.querySelector('.jn-inviter-pick')) out.inviterEmail = el.querySelector('.jn-inviter-pick').value;
     return out;
   }
 

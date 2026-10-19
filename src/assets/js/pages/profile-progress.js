@@ -1,6 +1,6 @@
 // profile.html's completeness bar, under the name: how much of the profile is filled
 // in, and links to what's left. Counts everything on it: name, email and photo (from
-// Slack), their details and group (members/{email}), their studies if they're a PhD or
+// Slack), their details and group (members/{email}; who invited them, except for PIs), their studies if they're a PhD or
 // Master student (studies/{email}: working title, who supervises them, the meeting and
 // the Slack channel), and their linked GitHub and Google accounts (profile.js says when
 // those change: bold:accounts). A link to something in Your details or Studies opens
@@ -27,10 +27,13 @@
       ['Name', !!u.displayName, ''], ['Email', !!u.email, ''], ['Slack photo', !!u.photoURL, ''],
       ['Group', !!member, 'details'], ['Pronouns', has('pronouns'), 'details'],
       ['Role', has('role'), 'details'], ['Institution', has('institution'), 'details'], ['Point of contact', has('contact'), 'details'],
+      // Not for PIs: nobody invited them.
+      m.role === 'PI' ? null : ['Who invited you', !!(m.invitedBy && m.invitedBy.email), 'details'],
       ['Research interests', has('interests'), 'details'], ['Research pillars', !!(m.pillars || []).length, 'details'],
       ['Based in', has('basedIn'), 'details'], ['Links', has('links'), 'details'], ['Feedback preference', has('feedback'), 'details'], ['Booking link', has('bookingUrl'), 'details'],
       ['Start date', has('startDate'), 'details'],
     ];
+    out = out.filter(Boolean);
     if (BoldJoin.NO_END.indexOf(m.role) === -1) out.push(['End date', has('endDate'), 'details']);
     if (STUDY_ROLES.indexOf(m.role) !== -1 || studies) {
       out.push(['Working title', !!String(s.title || '').trim(), 'studies'], ['Supervisors', !!(s.people || []).length, 'studies'],

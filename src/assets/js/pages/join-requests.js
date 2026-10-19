@@ -6,7 +6,8 @@
 // Slack channel (settings/groups: whoever is in the group is added to it).
 // Only PIs and admins can read any of it (firestore.rules), except "Invited by you":
 // anyone an applicant named as inviting them to the Slack confirms it, or says they
-// didn't (confirmJoinInvite; #i=<id> from their DM).
+// didn't (confirmJoinInvite; #i=<id> from their DM), and so do members who named them on
+// their profile (setMyInviter; #invited).
 (function(){
   var esc = BOLD.escapeHtml;
   var main = document.getElementById('joinRequests');
@@ -15,7 +16,7 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, form = null, unsubs = [], busy = {}, editing = false;
-  var groupReqs = [], groups = {}, invited = [];
+  var groupReqs = [], groups = {}, invited = [], invitedMembers = [];
 
   var SUBJECT = 'Welcome to BOLD';
   var BODY = ['Hi {name},', '', 'Welcome to BOLD! Your request to join has been approved. Here are your next steps:', '',
@@ -92,17 +93,26 @@
       '<div class="event-controls">' + (st !== 'confirmed' ? '<button type="button" class="btn-text jr-i-yes" data-iid="' + esc(r.id) + '"' + off + '>Yes, I invited them</button>' : '') +
         (st !== 'denied' ? '<button type="button" class="btn-text danger jr-i-no" data-iid="' + esc(r.id) + '"' + off + '>I didn’t</button>' : '') + '</div></li>';
   }
+  // A member who named you on their profile (setMyInviter): the same, by their email.
+  function invitedMemberHtml(m){
+    var st = (m.invitedBy || {}).status, key = 'm:' + m.email, off = busy[key] ? ' disabled' : '';
+    return '<li><span class="proj-title">' + esc(m.name || m.email) + '</span>' +
+      '<span class="proj-meta">' + esc([m.role, m.institution].filter(Boolean).join(', ')) + ' · said so on their profile</span>' +
+      '<p class="proj-meta">' + (st === 'confirmed' ? 'You confirmed you invited them.' : st === 'denied' ? 'You said you didn’t invite them.' : 'They say you invited them to the BOLD Slack.') + '</p>' +
+      '<div class="event-controls">' + (st !== 'confirmed' ? '<button type="button" class="btn-text jr-i-yes" data-mid="' + esc(m.email) + '"' + off + '>Yes, I invited them</button>' : '') +
+        (st !== 'denied' ? '<button type="button" class="btn-text danger jr-i-no" data-mid="' + esc(m.email) + '"' + off + '>I didn’t</button>' : '') + '</div></li>';
+  }
   function invitedSection(){
-    if (!invited.length) return '';
-    var waiting = invited.filter(function(r){ return (r.invitedBy || {}).status === 'pending'; }).length;
+    if (!invited.length && !invitedMembers.length) return '';
+    var waiting = invited.concat(invitedMembers).filter(function(r){ return (r.invitedBy || {}).status === 'pending'; }).length;
     return '<section class="block" id="invited"><div class="block-head"><h2>Invited by you<span class="proj-count">' + waiting + ' to confirm</span></h2></div>' +
-      '<ul class="proj-list">' + invited.map(invitedHtml).join('') + '</ul></section>';
+      '<ul class="proj-list">' + invited.map(invitedHtml).join('') + invitedMembers.map(invitedMemberHtml).join('') + '</ul></section>';
   }
 
   function render(){
     if (!me) return;
     if (staff === false) {
-      main.innerHTML = invitedSection() + (invited.length ? '' : '<p class="proj-msg">Only PIs and admins review these requests.</p>');
+      main.innerHTML = invitedSection() + (invited.length || invitedMembers.length ? '' : '<p class="proj-msg">Only PIs and admins review these requests.</p>');
       jump();
       return;
     }
@@ -128,7 +138,7 @@
     jump();
   }
   function jump(){
-    var m = /#([rgi])=([A-Za-z0-9]+)/.exec(location.hash), el = m && document.getElementById(m[1] + '-' + m[2]);
+    var m = /#([rgi])=([A-Za-z0-9]+)/.exec(location.hash), el = m ? document.getElementById(m[1] + '-' + m[2]) : location.hash === '#invited' ? document.getElementById('invited') : null;
     if (el && !render.jumped) { render.jumped = true; el.scrollIntoView({ block: 'start' }); }
   }
 
@@ -162,15 +172,15 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
-    var iid = t.getAttribute('data-iid');
-    if (iid) {
-      var yes = t.classList.contains('jr-i-yes');
+    var iid = t.getAttribute('data-iid'), mid = t.getAttribute('data-mid');
+    if (iid || mid) {
+      var yes = t.classList.contains('jr-i-yes'), key = iid || 'm:' + mid;
       if (!yes && !window.confirm('Say you didn’t invite them? The PIs and admins are told.')) return;
-      busy[iid] = true; render();
-      fn('confirmJoinInvite')({ id: iid, confirm: yes }).catch(function(err){
+      busy[key] = true; render();
+      fn('confirmJoinInvite')(iid ? { id: iid, confirm: yes } : { member: mid, confirm: yes }).catch(function(err){
         console.error('[BOLD Join] confirming the invitation failed', err);
         window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
-      }).then(function(){ delete busy[iid]; render(); });
+      }).then(function(){ delete busy[key]; render(); });
       return;
     }
     var gid = t.getAttribute('data-gid');
@@ -211,7 +221,7 @@
   BOLD.onUser(function(user){
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user ? { email: (user.email || '').toLowerCase() } : null;
-    staff = null; requests = null; invited = [];
+    staff = null; requests = null; invited = []; invitedMembers = [];
     if (!user) return;
     render();
     // Requests that name you as inviting them (readable by you: firestore.rules).
@@ -221,6 +231,13 @@
         .sort(function(a, b){ return b.at - a.at; });
       render();
     }, function(err){ console.error('[BOLD Join] loading your invitations failed', err); }));
+    // Members who named you on their profile (those from a request to join are listed above).
+    unsubs.push(db.collection('members').where('invitedBy.email', '==', me.email).onSnapshot(function(snap){
+      invitedMembers = snap.docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); })
+        .filter(function(m){ return (m.invitedBy || {}).via === 'profile'; })
+        .sort(function(a, b){ return (b.invitedBy.askedAt || 0) - (a.invitedBy.askedAt || 0); });
+      render();
+    }, function(err){ console.error('[BOLD Join] loading members you invited failed', err); }));
     fn('getMyAccess')().then(function(r){
       staff = !!(r.data && r.data.fullWrite);
       if (!staff) { render(); return; }
