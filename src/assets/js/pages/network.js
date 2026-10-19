@@ -3,7 +3,7 @@
 // working together, talking, on the site) and groups of Who is BOLD (and outside BOLD),
 // each on or off, both people's groups on; since when; and with or without things
 // (projects and papers, events, guides, skills). Find someone selects them. Clicking a person or thing selects it: its lines
-// stay lit (a double click opens its page), and its
+// stay lit (a double click opens its page in a new tab), and its
 // busiest connections are listed below, each with its two latest
 // interactions; clicking a line (or All) lists every interaction behind it. PIs and admins
 // can rebuild every interaction from the documents they come from (rebuildInteractions).
@@ -101,7 +101,7 @@
       if (view === 'lineage') { var h = n.getAttribute('data-href'); if (h) location.href = h; return; }
       var id = n.getAttribute('data-id'), now = e.timeStamp; // when clicked, not when handled (redraws are slow)
       // A double click opens its page (each click redraws, so the browser's dblclick never fires).
-      if (lastClick.id === id && now - lastClick.at < 500) { var h2 = C.hrefOf(dir, id, me, g); if (h2) { location.href = h2; return; } }
+      if (lastClick.id === id && now - lastClick.at < 500) { var h2 = C.hrefOf(dir, id, me, g); if (h2) { window.open(h2, '_blank', 'noopener'); return; } }
       lastClick = { id: id, at: now };
       selected = selected === id ? '' : id; draw();
     }
