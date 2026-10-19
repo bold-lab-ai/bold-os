@@ -525,14 +525,18 @@ a.mast-auth-name:hover{text-decoration:underline;}
 /* Two steps away: present but quiet until someone points at them. */
 .cx-svg.is-ego .cx-edge.is-far{opacity:.13;}
 .cx-node.is-far{opacity:.5;}
-.cx-node.is-far circle{stroke-width:1.2;}
+.cx-node.is-far .cx-mark{stroke-width:1.2;}
 .cx-edge.cx-talking{stroke-dasharray:5 3.5;}
 .cx-node{cursor:pointer; transition:opacity .15s;}
-.cx-node circle{fill:var(--paper); stroke:currentColor; stroke-width:1.6; transition:fill .15s;}
+.cx-node .cx-mark{fill:var(--paper); stroke:currentColor; stroke-width:1.6; transition:fill .15s;}
+.cx-node.is-thing{color:var(--ink-soft);}
+.cx-node.is-thing .cx-mark{stroke-width:1.2;}
+.cx-label.is-thing-label{font-family:var(--sans); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; fill:var(--ink-soft);}
+.cx-edge.cx-site{stroke-dasharray:0.1 2.2;}
 .cx-node.pp-pan, .cx-node.is-outside{color:var(--muted);}
-.cx-node.is-outside circle{stroke-dasharray:2 2;}
-.cx-node.is-centre circle, .cx-node.is-selected circle{fill:var(--ink); stroke:var(--ink);}
-.cx-node:hover circle, .cx-node:focus-visible circle{fill:currentColor;}
+.cx-node.is-outside .cx-mark{stroke-dasharray:2 2;}
+.cx-node.is-centre .cx-mark, .cx-node.is-selected .cx-mark{fill:var(--ink); stroke:var(--ink);}
+.cx-node:hover .cx-mark, .cx-node:focus-visible .cx-mark{fill:currentColor;}
 .cx-node:focus{outline:none;}
 .cx-label{font-family:var(--serif); font-size:13.5px; fill:var(--ink); paint-order:stroke; stroke:var(--paper); stroke-width:4px; stroke-linejoin:round; pointer-events:none;}
 .cx-node.is-centre .cx-label{font-weight:700; font-size:16px;}
@@ -548,8 +552,25 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-key{display:inline-flex; align-items:center; gap:7px;}
 .cx-sample{width:26px; height:8px; overflow:visible;}
 .cx-sample .cx-edge{opacity:.75; stroke-width:1.4;}
-.cx-key svg[viewBox="0 0 12 12"]{width:12px; height:12px;}
+.cx-icon{width:13px; height:13px; overflow:visible;}
+.cx-icon .cx-mark{fill:var(--paper); stroke:var(--ink-soft); stroke-width:1.2;}
 .cx-ring{fill:var(--paper); stroke:#256b60; stroke-width:1.6;}
+.cx-controls{display:flex; flex-wrap:wrap; gap:0 4px;}
+/* Over time (Connections): a row per person or thing, a mark per interaction. */
+.cx-time .cx-tick{stroke:var(--line); stroke-width:1;}
+.cx-time .cx-axis{font-family:var(--sans); font-size:10px; letter-spacing:.08em; text-transform:uppercase; fill:var(--muted);}
+.cx-time .cx-span{stroke:var(--ink); stroke-width:1; opacity:.35;}
+.cx-dot{stroke:var(--ink); stroke-width:1.2; fill:var(--ink);}
+.cx-dot.cx-joining{fill:var(--paper); stroke-dasharray:1 1.6;}
+.cx-dot.cx-talking{fill:var(--paper);}
+.cx-dot.cx-site{fill:var(--muted); stroke:none;}
+.cx-trow .cx-label{font-size:13px;}
+.cx-trow.is-self .cx-mark{fill:var(--ink); stroke:var(--ink);}
+.cx-trow:hover .cx-span{opacity:.8;}
+/* Lineage (Network): elbows from whoever brought someone in. */
+.cx-scroll{overflow-x:auto;}
+.cx-lineage .cx-elbow{opacity:.45; stroke-width:1;}
+.cx-how{font-family:var(--sans); font-size:10px; letter-spacing:.08em; text-transform:uppercase; fill:var(--muted);}
 .cx-timeline{list-style:none; margin:0; padding:0;}
 .cx-row{display:flex; align-items:baseline; gap:14px; padding:9px 0; border-bottom:1px solid var(--line);}
 .cx-when{flex:0 0 92px; font-family:var(--sans); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
@@ -559,4 +580,5 @@ a.mast-auth-name:hover{text-decoration:underline;}
 @media (max-width:600px){ .cx-row{flex-wrap:wrap; gap:2px 10px;} .cx-when{flex-basis:auto;} .cx-what{flex-basis:100%;} }
 .nw-controls{display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; margin:0 0 14px;}
 .nw-controls select, .nw-controls input{font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:5px 8px; max-width:100%;}
+.nw-controls[hidden], .view-toggle[hidden]{display:none;}
 .nw-admin{margin-top:24px; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;}

@@ -9,15 +9,19 @@ nav: "network.html"
 ---
 <div class="hero">
   <h1>Network</h1>
-  <p class="hero-note">Everyone on BOLD.OS and who they've interacted with: joining, working together and talking. Click someone to see their connections.</p>
+  <p class="hero-note">Everyone on BOLD.OS, who they've interacted with and on what, and who brought whom into BOLD. Click someone to see their connections.</p>
 </div>
 
 <main>
   <div class="nw-controls">
+    <div class="view-toggle" role="group" aria-label="View" id="nwView"></div>
+    <div class="view-toggle nw-graph-only" role="group" aria-label="With" id="nwThings"></div>
+  </div>
+  <div class="nw-controls nw-graph-only">
     <div class="view-toggle" role="group" aria-label="Kinds" id="nwKinds"></div>
     <div class="view-toggle" role="group" aria-label="Since" id="nwSince"></div>
     <select id="nwGroup" aria-label="Group"></select>
-    <input type="search" id="nwFind" placeholder="Find someone" aria-label="Find someone" list="nwPeople">
+    <input type="search" id="nwFind" placeholder="Find someone or something" aria-label="Find someone or something" list="nwPeople">
     <datalist id="nwPeople"></datalist>
   </div>
   <p class="proj-msg" id="nwMsg">Loading&hellip;</p>

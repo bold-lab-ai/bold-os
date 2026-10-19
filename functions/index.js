@@ -1153,7 +1153,7 @@ function onTagged(document){
     by = by.toLowerCase();
     const who = by ? await personFor(by) : null;
     const emails = await emailsForSlackIds(ids);
-    try { await recordTags(path, by, emails, Date.now(), place); } catch (err){ logger.warn('Recording tags failed', { path, error: String(err && err.message || err) }); }
+    try { await recordTags(path, by, emails, Date.now(), place, after); } catch (err){ logger.warn('Recording tags failed', { path, error: String(err && err.message || err) }); }
     for (const id of ids) {
       if (!emails[id] || emails[id] === by) continue;
       const excerpt = tagExcerpt(after, id), msg = /^boards\/[^/]+\/cards\//.test(path) ? tagMessageId(after, id) : '';
@@ -4719,7 +4719,8 @@ exports.checkVenueCalls = onSchedule(
 );
 
 // ---------- Interactions: who did what with whom, for Connections and Network ----------
-// interactions/{id}: { kind, group, from, to, at, title, href, source }. `from` and `to`
+// interactions/{id}: { kind, group, from, to, at, title, href, thing, source }; `thing`
+// is what it happened on ('project:<id>', 'guide:<slug>', …; thingOf), '' if nothing. `from` and `to`
 // are lowercase emails; `to` is '' for what someone did on the site on their own. Each
 // is derived from a document (`source`, its path) by interactionsFor, and replaced
 // whenever that document changes (onInteractionSource); rebuildInteractions derives
@@ -4743,13 +4744,14 @@ const lowerEmail = (v) => String((v && typeof v === 'object' ? v.email : v) || '
 async function interactionsFor(path, d, lookup){
   const seg = path.split('/'), out = [];
   if (!d) return out;
+  const thing = thingOf(path, d);
   const add = function(kind, from, to, at, title, href, key){
     from = lowerEmail(from); to = lowerEmail(to);
     if (!from || from === to) return;
-    out.push({ kind, from, to, at: Number(at) || 0, title: String(title || ''), href: String(href || ''), key: String(key || '') });
+    out.push({ kind, from, to, at: Number(at) || 0, title: String(title || ''), href: String(href || ''), key: String(key || ''), thing });
   };
   const tags = function(from, text, at, title, href, key){
-    taggedIds(text).forEach(function(id){ if (lowerEmail(from)) out.push({ kind: 'tagged', from: lowerEmail(from), toSlack: id, at: Number(at) || 0, title, href, key: (key || '') + id }); });
+    taggedIds(text).forEach(function(id){ if (lowerEmail(from)) out.push({ kind: 'tagged', from: lowerEmail(from), toSlack: id, at: Number(at) || 0, title, href, key: (key || '') + id, thing }); });
   };
   const top = seg[0], n = seg.length;
 
@@ -4821,6 +4823,18 @@ async function interactionsFor(path, d, lookup){
   return out;
 }
 
+// Pure: the thing an interaction at `path` happened on, as '<type>:<id>' (a project or
+// paper, an event, session or talk, a guide or the BOLDiquette, a skill), or '' for
+// those between people only (joining, supervision, introductions, letters). Every card of
+// a project is the project.
+function thingOf(path, d){
+  const seg = path.split('/'), id = seg[1] || '';
+  if (seg[0] === 'boards' && seg[2] === 'cards' && seg[3]) return 'project:' + ((seg.length === 4 && d && d.projectId) || seg[3]);
+  if (seg[0] === 'projects') return 'project:' + ((seg.length === 2 && d && d.projectId) || id);
+  const types = { projectWorkspaces: 'project', guides: 'guide', handbook: 'handbook', skills: 'skill', events: 'event', collabWeekSessions: 'session', collabWeekTalks: 'talk' };
+  return types[seg[0]] && id ? types[seg[0]] + ':' + id : '';
+}
+
 // Whether interactionsFor reads documents at `path`.
 function isInteractionSource(path){
   const seg = path.split('/');
@@ -4844,7 +4858,7 @@ async function interactionRecords(path, data, slackEmails){
   list.forEach(function(x){
     const to = x.toSlack ? slackEmails[x.toSlack] : x.to;
     if (x.toSlack && (!to || to === x.from)) return;
-    const rec = { kind: x.kind, group: INTERACTION_GROUPS[x.kind], from: x.from, to: to || '', at: x.at, title: x.title, href: x.href, source: path };
+    const rec = { kind: x.kind, group: INTERACTION_GROUPS[x.kind], from: x.from, to: to || '', at: x.at, title: x.title, href: x.href, thing: x.thing || '', source: path };
     out[interactionId(path, Object.assign({}, x, { to: rec.to }))] = rec;
   });
   return out;
@@ -4879,13 +4893,13 @@ exports.onInteractionSource = onInteractionSource('{c1}/{d1}');
 exports.onInteractionSourceNested = onInteractionSource('{c1}/{d1}/{c2}/{d2}');
 
 // Tags the documents above don't cover (onTagged): added as they happen, kept.
-async function recordTags(path, by, emails, at, place){
+async function recordTags(path, by, emails, at, place, data){
   if (isInteractionSource(path) || !by) return;
   const source = path + '#tags', batch = db.batch();
   Object.keys(emails).forEach(function(id){
     const to = emails[id];
     if (!to || to === by) return;
-    const rec = { kind: 'tagged', group: 'talking', from: by, to, at, title: place.title, href: place.url, source };
+    const rec = { kind: 'tagged', group: 'talking', from: by, to, at, title: place.title, href: place.url, thing: thingOf(path, data), source };
     batch.set(db.collection('interactions').doc(interactionId(source, rec)), rec);
   });
   await batch.commit();
@@ -4946,5 +4960,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
 };
