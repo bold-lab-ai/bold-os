@@ -1559,7 +1559,8 @@ exports.notifyReviewsOut = onSchedule(
 
 // ---------- 6. Slack App Home + reviewer assignment ----------
 // One HTTP endpoint doing double duty as both Slack's Events API Request
-// URL (app_home_opened, plus the one-time url_verification handshake) and
+// URL (app_home_opened, team_join and user_change for the people roster, plus the
+// one-time url_verification handshake) and
 // its Interactivity Request URL (the reviewer-picker's block_actions) —
 // deliberately combined rather than two functions, since Slack config
 // treats them as separate URLs but nothing stops them being the same one,
@@ -1672,9 +1673,34 @@ exports.slackEvents = onRequest(
       res.status(200).send('');
       return;
     }
+    // Someone joins the Slack, or changes their name or email, or is deactivated: just
+    // their entry in the people roster (the daily syncPeople catches anything missed).
+    if (body.type === 'event_callback' && body.event && (body.event.type === 'team_join' || body.event.type === 'user_change')){
+      try {
+        await upsertPerson(body.event.user);
+      } catch (err){
+        logger.error('upsertPerson threw', { error: String(err) });
+      }
+      res.status(200).send('');
+      return;
+    }
     res.status(200).send('');
   }
 );
+
+// One Slack user (users.list's shape, as team_join and user_change send it) → their
+// people/{slackId}: written if they have an email, removed once deactivated.
+async function upsertPerson(u){
+  if (!u || !u.id || u.is_bot || u.id === 'USLACKBOT') return;
+  const ref = db.collection('people').doc(u.id);
+  if (u.deleted) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); return; }
+  if (!u.profile || !u.profile.email) { logger.warn('upsertPerson: no email (users:read.email?)', { slackId: u.id }); return; }
+  const p = { slackId: u.id, email: u.profile.email, name: u.profile.real_name || u.real_name || u.name || u.profile.email };
+  const was = (await ref.get()).data();
+  if (was && was.name === p.name && was.email === p.email) return;
+  await ref.set(p, { merge: true });
+  logger.info('upsertPerson: ' + (was ? 'updated' : 'added'), { slackId: u.id });
+}
 
 // ---------- Profile page: the caller's own Slack profile fields ----------
 // profile.html (2026-09-19) shows institution / role / supervisor /
