@@ -78,14 +78,15 @@ service cloud.firestore {
       allow read: if isLabMember();
       allow create, update: if isLabMember() && email().lower() == memberEmail
         && request.resource.data.email == memberEmail
-        && request.resource.data.keys().hasOnly(['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'updatedAt', 'requestId', 'approvedBy', 'approvedAt'])
+        && request.resource.data.keys().hasOnly(['name', 'email', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'updatedAt', 'requestId', 'approvedBy', 'approvedAt'])
         && (resource == null
           ? !('approvedBy' in request.resource.data) && !('requestId' in request.resource.data) && !('approvedAt' in request.resource.data)
-          : request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'updatedAt']))
+          : request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'updatedAt']))
         && request.resource.data.name is string && request.resource.data.name.size() <= 120
         && request.resource.data.get('links', '').size() <= 500 && request.resource.data.get('interests', '').size() <= 300
         && request.resource.data.get('pillars', []) is list && request.resource.data.get('pillars', []).size() <= 20
         && request.resource.data.get('pronouns', '') is string && request.resource.data.get('pronouns', '').size() <= 40
+        && request.resource.data.get('contactEmail', '') is string && request.resource.data.get('contactEmail', '').size() <= 200
         && request.resource.data.get('feedback', '') in ['', 'direct', 'balanced', 'gentle'];
       allow delete: if false;
     }

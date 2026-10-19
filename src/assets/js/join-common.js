@@ -26,7 +26,25 @@ window.BoldJoin = (function(){
       .catch(function(err){ console.error('[BOLD Join] reading the form’s choices failed', err); done(null); });
   }
 
-  // The fields, filled from v. opts: { withIdentity: name and email too }.
+  // The point of contact: a choice from the people on BOLD.OS (the `people` roster, o.people,
+  // [{ name, email }]) when the page can read it, else typed (join.html: applicants aren't
+  // signed in). A typed one from before stays on offer until another is chosen.
+  function contactHtml(v, people){
+    var label = 'BOLD supervisor, mentor or point of contact';
+    if (!people) return '<label>' + label + '<input type="text" class="jn-contact" maxlength="200" value="' + esc(v.contact || '') + '" placeholder="Who connects you to BOLD?"></label>';
+    var cur = String(v.contactEmail || '').toLowerCase();
+    if (!cur && v.contact) {
+      var named = people.filter(function(p){ return p.name.toLowerCase() === String(v.contact).trim().toLowerCase(); })[0];
+      if (named) cur = named.email;
+    }
+    var known = people.some(function(p){ return p.email === cur; });
+    return '<label>' + label + '<select class="jn-contact-pick"><option value="">Choose a person…</option>' +
+      (!known && v.contact ? '<option value="__typed__" selected>' + esc(v.contact) + '</option>' : '') +
+      people.map(function(p){ return '<option value="' + esc(p.email) + '"' + (p.email === cur ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
+      '</select></label>';
+  }
+
+  // The fields, filled from v. opts: { withIdentity: name and email too, people: the roster for the point of contact }.
   function fieldsHtml(v, opt, o){
     v = v || {}; o = o || {};
     var t = function(cls, label, val, ph, max, type){
@@ -44,7 +62,7 @@ window.BoldJoin = (function(){
       '<label>Role at BOLD<select class="jn-role"><option value="">Choose…</option>' + opt.roles.map(function(r){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';
       }).join('') + (v.role && opt.roles.indexOf(v.role) === -1 ? '<option selected>' + esc(v.role) + '</option>' : '') + '</select></label>' +
-      t('jn-contact', 'BOLD supervisor, mentor or point of contact', v.contact, 'Who connects you to BOLD?', 200) +
+      contactHtml(v, o.people) +
       '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
         t('jn-end', 'End date (not needed for PIs, adjuncts, alumni and collaborators)', v.endDate, '', 10, 'date') + '</div>' +
       '<label class="jn-check"><input type="checkbox" class="jn-list"' + (v.listOnWebsite ? ' checked' : '') + '> List me on the BOLD website</label>') +
@@ -69,6 +87,12 @@ window.BoldJoin = (function(){
       listOnWebsite: !!(el.querySelector('.jn-list') || {}).checked,
       pillars: Array.prototype.map.call(el.querySelectorAll('.jn-pillars input:checked'), function(i){ return i.value; }),
     };
+    var pick = el.querySelector('.jn-contact-pick');
+    if (pick) {
+      var o = pick.options[pick.selectedIndex];
+      out.contact = pick.value ? o.textContent.trim() : '';
+      if (pick.value !== '__typed__') out.contactEmail = pick.value;
+    }
     if (el.querySelector('.jn-name')) { out.name = v('.jn-name'); out.email = v('.jn-email').toLowerCase(); }
     return out;
   }

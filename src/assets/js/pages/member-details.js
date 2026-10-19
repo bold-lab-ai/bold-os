@@ -25,10 +25,22 @@
     return out;
   }
 
+  // The people on BOLD.OS, to choose the point of contact from.
+  var people = null;
+  function loadPeople(){
+    if (people) return;
+    db.collection('people').get().then(function(s){
+      people = s.docs.map(function(d){ var x = d.data(); return { name: x.name || x.email, email: String(x.email || '').toLowerCase() }; })
+        .filter(function(p){ return p.email && p.email !== me.email; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+      render();
+    }).catch(function(err){ console.error('[BOLD Profile] loading the people failed', err); people = []; render(); });
+  }
+
   function render(){
     if (!me || rec === undefined || !opt) return;
+    if (editing && !people) { box.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
     if (editing) {
-      box.innerHTML = '<div class="event-form join-form">' + BoldJoin.fieldsHtml(rec || fromSlack(), opt) +
+      box.innerHTML = '<div class="event-form join-form">' + BoldJoin.fieldsHtml(rec || fromSlack(), opt, { people: people }) +
         '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save md-save">Save</button><button type="button" class="md-cancel">Cancel</button></div></div>';
       return;
     }
@@ -41,7 +53,7 @@
   box.addEventListener('click', function(e){
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
-    if (t.classList.contains('md-edit')) { editing = true; render(); return; }
+    if (t.classList.contains('md-edit')) { editing = true; loadPeople(); render(); return; }
     if (t.classList.contains('md-cancel')) { editing = false; render(); return; }
     if (!t.classList.contains('md-save')) return;
     var d = BoldJoin.read(box), err = box.querySelector('.ev-error');
