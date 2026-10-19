@@ -184,7 +184,9 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .cm-card.is-sheet{position:fixed; left:12px; right:12px; bottom:12px; top:auto !important; width:auto; max-height:70vh; overflow:auto;}
 .cm-close{position:absolute; top:4px; right:8px; background:none; border:none; font-size:18px; line-height:1; color:var(--muted); cursor:pointer;}
 .cm-resolve{position:absolute; top:7px; right:34px; font-size:13px;}
-.cm-card.has-resolve .cm-quote{margin-right:84px;}
+.cm-card.has-resolve .cm-quote, .cm-card.has-resolve .cm-lost{margin-right:84px;}
+/* the note about edited text takes the line beside Resolve; the quote below can use the full width */
+.cm-card.has-resolve .cm-lost + .cm-quote{margin-right:0;}
 .cm-quote{margin:0 18px 10px 0; padding-left:8px; border-left:2px solid rgba(200,150,30,.55); color:var(--ink-soft); font-family:var(--serif); font-size:14px;}
 .cm-lost{margin:0 0 8px; color:var(--muted); font-style:italic;}
 .cm-comment{margin:0 0 10px; padding-bottom:8px; border-bottom:1px solid var(--line);}
