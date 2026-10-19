@@ -2180,12 +2180,14 @@ function nowHmLondon(){
 }
 
 // Pure: the project's members, lowercase and once each: whoever registered it,
-// its authors, then whoever joined.
+// its authors, then whoever joined. An address pasted with its brackets
+// ("<a@b.org>") is cleaned; anything that still isn't an address is left out, since
+// Drive and Calendar refuse it and would stop everyone after it being added.
 function projectMembers(card, joined){
   const out = [];
   [card.submittedBy && card.submittedBy.email].concat(card.authorEmails || [], joined || []).forEach(function(e){
-    const v = String(e || '').trim().toLowerCase();
-    if (v && v.indexOf('@') > 0 && out.indexOf(v) < 0) out.push(v);
+    const v = String(e || '').trim().toLowerCase().replace(/^[<\s]+|[>\s,;]+$/g, '');
+    if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(v) && out.indexOf(v) < 0) out.push(v);
   });
   return out;
 }
