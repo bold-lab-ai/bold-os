@@ -15,10 +15,13 @@ permalink: "profile.html"
 
 <main>
 
-  <section class="block" id="details-block">
-    <div class="block-head">
-      <h2>Your details</h2>
-    </div>
+  <nav class="guide-tabs profile-tabs" id="profileTabs" aria-label="Profile">
+    <a class="guide-tab" href="#details">Your details</a>
+    <a class="guide-tab" href="#projects">Projects</a>
+    <a class="guide-tab" href="#linked-accounts">Linked accounts</a>
+  </nav>
+
+  <section class="profile-panel" id="details">
     <dl class="facts">
       <div class="fact"><dt>Name</dt><dd id="factName"></dd></div>
       <div class="fact"><dt>Email</dt><dd id="factEmail"></dd></div>
@@ -26,12 +29,7 @@ permalink: "profile.html"
     <div id="memberDetails"><p class="proj-msg">Loading&hellip;</p></div>
   </section>
 
-  <nav class="guide-tabs profile-tabs" id="profileTabs" aria-label="Profile">
-    <a class="guide-tab" href="#projects">Projects</a>
-    <a class="guide-tab" href="#linked-accounts">Linked accounts</a>
-  </nav>
-
-  <section class="profile-panel" id="projects">
+  <section class="profile-panel" id="projects" hidden>
     <p class="proj-msg" id="projMsg">Loading&hellip;</p>
     <div id="projGroups" hidden>
       <div class="proj-group"><h3>Owner<span class="proj-count" id="cntOwner"></span></h3><ul class="proj-list" id="projOwner"></ul></div>
