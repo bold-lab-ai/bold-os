@@ -13,7 +13,7 @@
 // since changed shows at the top of its part, marked so. Resolved threads don't show.
 //
 // BoldComments.create({ ref, root, fullWrite: () => bool, onChange })
-// → { start(user), stop(), decorate(), click(event) → true if it handled it, ready(), show(id) }.
+// → { start(user), stop(), decorate(), click(event) → true if it handled it, ready(), show(id), openCount() }.
 // A link to a comment (#c=<id>, as Slack sends; pages/guide.js) opens its thread and marks it.
 window.BoldComments = (function(){
   var esc = BOLD.escapeHtml;
@@ -368,7 +368,8 @@ window.BoldComments = (function(){
     }
 
     return { start: start, stop: stop, decorate: decorate, click: click, resolvedItems: resolvedItems, proposalThreadHtml: proposalThreadHtml,
-      ready: function(){ return loaded; }, show: show };
+      ready: function(){ return loaded; }, show: show,
+      openCount: function(){ return comments.filter(function(c){ return !c.parent && !c.resolved; }).length; } };
   }
 
   return { create: create };

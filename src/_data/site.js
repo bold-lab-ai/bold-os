@@ -46,6 +46,5 @@ export default {
       { label: 'Recommendation letters', href: 'letters.html' },
       { label: 'Introductions', href: 'introductions.html' },
     ] },
-    { label: 'Comments', href: 'comments.html', links: [] },
   ],
 };

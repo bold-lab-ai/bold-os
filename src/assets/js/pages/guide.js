@@ -437,7 +437,10 @@
     else hero += '<h1>' + esc(doc().title) + '</h1>' + (doc().description ? '<p class="hero-note">' + esc(doc().description) + '</p>' : '') +
       '<div class="event-controls"><button type="button" class="btn-text gd-about">' + 'Suggest a change' + '</button>' +
       (DELETABLE ? '<button type="button" class="btn-text danger gd-delete"' + off + '>Delete guide</button>' : '') +
-      (proposals.length ? '<a class="btn-text gd-pending" href="#proposals">' + proposals.length + ' proposed change' + (proposals.length === 1 ? '' : 's') + '</a>' : '') + '</div>';
+      (proposals.length ? '<a class="btn-text gd-pending" href="#proposals">' + proposals.length + ' proposed change' + (proposals.length === 1 ? '' : 's') + '</a>' : '') +
+      // Its open comment threads, listed on the Comments page.
+      (comments && comments.openCount() ? '<a class="btn-text gd-pending" href="comments.html?on=' + encodeURIComponent(COLLECTION + '/' + slug) + '">' +
+        comments.openCount() + ' comment' + (comments.openCount() === 1 ? '' : 's') + '</a>' : '') + '</div>';
     hero += '</div>';
     var adding = form && form.kind === 'add';
     body.innerHTML = hero + '<main>' +

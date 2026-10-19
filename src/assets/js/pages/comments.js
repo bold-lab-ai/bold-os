@@ -4,6 +4,7 @@
 // checklist points' feedback, cards' `discussion` and `checklist[].comments`).
 // Each links to the thread itself (#c= on a guide, &msg= on the board).
 // Filters: open, involving me (I wrote in it or am tagged), resolved, all.
+// comments.html?on=<collection>/<slug> shows one page's threads (its header links here).
 (function(){
   var esc = BOLD.escapeHtml;
   var root = document.getElementById('comments');
@@ -12,6 +13,7 @@
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var FILTERS = [['open', 'Open'], ['me', 'Involving me'], ['resolved', 'Resolved'], ['all', 'All']];
   var threads = [], loaded = false, failed = false, show = 'open', shown = PAGE, me = null, mySlackId = '';
+  var on = new URLSearchParams(location.search).get('on') || '';
 
   function day(ms){ var d = new Date(ms); return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear(); }
   function short(t, n){ t = String(t || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n) + '…' : t; }
@@ -25,7 +27,7 @@
       var c = byId[d.ref.path], page = d.ref.parent.parent, col = page.parent.id;
       if (col !== 'guides' && col !== 'handbook') return;
       var rootId = c.parent || c.id, key = page.path + '/' + rootId;
-      var t = out[key] = out[key] || { key: key, msgs: [], where: col === 'guides' ? 'How to' : 'BOLDiquette',
+      var t = out[key] = out[key] || { key: key, page: page.path, msgs: [], where: col === 'guides' ? 'How to' : 'BOLDiquette',
         title: titles[page.path] || page.id,
         href: (col === 'guides' ? BOLD.guideHref(page.id) : page.id === 'boldiquette' ? 'boldiquette.html' : 'index.html') + '#c=' + encodeURIComponent(rootId) };
       var msg = { by: c.by ? (c.by.name || c.by.email) : 'Someone', email: c.by ? String(c.by.email || '').toLowerCase() : '', text: c.text, at: c.at || 0 };
@@ -90,6 +92,7 @@
   }
   function filtered(){
     return threads.filter(function(t){
+      if (on && t.page !== on) return false;
       return show === 'all' || (show === 'open' && !t.resolved) || (show === 'resolved' && t.resolved) || (show === 'me' && involvesMe(t));
     });
   }
@@ -111,6 +114,16 @@
     if (!loaded) { root.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
     if (failed) { root.innerHTML = '<p class="proj-msg">Couldn’t load the comments. Try reloading the page.</p>'; return; }
     var list = filtered();
+    // One page's comments: named in the header, with the way back to it.
+    var one = on && threads.filter(function(t){ return t.page === on; })[0];
+    if (on) {
+      var back = document.getElementById('cmBack'), seg = on.split('/');
+      var href = seg[0] === 'guides' ? BOLD.guideHref(seg[1]) : seg[1] === 'boldiquette' ? 'boldiquette.html' : 'index.html';
+      var title = one ? one.title : seg[1];
+      back.hidden = false; back.href = href; back.textContent = '← ' + title;
+      document.getElementById('cmTitle').textContent = 'Comments on ' + title;
+      document.getElementById('cmNote').innerHTML = 'Its comment threads. <a href="comments.html">All comments</a>';
+    }
     root.innerHTML = '<section class="block"><p class="cm-filters">' + FILTERS.map(function(f){
         return '<button type="button" class="btn-text cm-filter' + (show === f[0] ? ' is-current' : '') + '" data-show="' + f[0] + '" aria-pressed="' + (show === f[0]) + '">' + f[1] + '</button>';
       }).join('') + '</p>' +
