@@ -152,9 +152,9 @@
     }
     if (t.classList.contains('st-pause')) {
       var act = t.getAttribute('data-action');
-      if (act === 'pause' && !window.confirm('Pause your meeting? Google Calendar tells everyone it’s cancelled; resuming sends a new invitation, with a new Meet link.')) return;
+      if (act === 'pause' && !window.confirm('Pause your meeting? Its upcoming dates come off everyone’s Google Calendar until it’s resumed; the invitation and Meet link stay the same.')) return;
       busy = true; msg = ''; render();
-      call({ action: act }).then(function(){ msg = act === 'pause' ? 'Paused.' : 'Resumed: Google Calendar sends everyone the invitation.'; })
+      call({ action: act }).then(function(){ msg = act === 'pause' ? 'Paused.' : 'Resumed: its dates are back in everyone’s Google Calendar.'; })
         .catch(function(err){ console.error('[BOLD Studies] ' + act + ' failed', err); msg = (err && err.message) || 'That didn’t work — try again.'; })
         .then(function(){ busy = false; render(); });
       return;

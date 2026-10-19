@@ -2171,8 +2171,12 @@ function firstMeetingTimes(meeting, todayIso, nowHm){
   return { start: local(start), end: local(end) };
 }
 
-function meetingRecurrence(m){
-  return ['RRULE:FREQ=WEEKLY' + (m.every > 1 ? ';INTERVAL=' + m.every : '') + ';BYDAY=' + m.day];
+// `pausedAt` (ms): a paused meeting's series ends then (UNTIL), so its upcoming dates
+// leave everyone's calendar while the event, its invitation and Meet link stay; resuming
+// takes UNTIL off again.
+function meetingRecurrence(m, pausedAt){
+  const until = pausedAt ? ';UNTIL=' + new Date(pausedAt).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '') : '';
+  return ['RRULE:FREQ=WEEKLY' + (m.every > 1 ? ';INTERVAL=' + m.every : '') + ';BYDAY=' + m.day + until];
 }
 
 function nowHmLondon(){
@@ -2300,12 +2304,12 @@ function eventDescription(ws){
   return lines.join('<br>');
 }
 
-function eventTimes(meeting){
+function eventTimes(meeting, pausedAt){
   const t = firstMeetingTimes(meeting, todayIsoLondon(), nowHmLondon());
   return {
     start: { dateTime: t.start, timeZone: PROJECT_TZ },
     end: { dateTime: t.end, timeZone: PROJECT_TZ },
-    recurrence: meetingRecurrence(meeting)
+    recurrence: meetingRecurrence(meeting, pausedAt)
   };
 }
 
@@ -2550,10 +2554,10 @@ async function syncWorkspace(id, changes){
       }
 
       // The meeting: Google emails the guests an invitation, or a change, or a cancellation.
-      // A completed project's meeting is cancelled, and so is a paused one; the time is
-      // kept, so it comes back (a new series, with a new Meet link) if the project is
-      // reopened or the meeting resumed.
-      const wantEvent = !!ws.meeting && ws.group !== 'completed' && !ws.pausedAt;
+      // A completed project's meeting is cancelled; the time is kept, so it comes back
+      // if the project is reopened. A paused one keeps its event, its series ended
+      // (meetingRecurrence); one paused before it was made waits to be resumed.
+      const wantEvent = !!ws.meeting && ws.group !== 'completed' && !(ws.pausedAt && !ws.eventId);
       const attendees = function(existing){
         // Keeps each guest's reply; adds new members; drops who left.
         const kept = (existing || []).filter(function(a){ return a.organizer || a.self || addrs.indexOf(String(a.email).toLowerCase()) >= 0; });
@@ -2575,9 +2579,9 @@ async function syncWorkspace(id, changes){
       } else if (!wantEvent && ws.eventId){
         await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
         patch.eventId = FieldValue.delete(); patch.eventLink = FieldValue.delete();
-        patch.meetUrl = FieldValue.delete(); patch.eventMeeting = FieldValue.delete();
+        patch.meetUrl = FieldValue.delete(); patch.eventMeeting = FieldValue.delete(); patch.eventPausedAt = FieldValue.delete();
         await save();
-        ['eventId', 'eventLink', 'meetUrl', 'eventMeeting'].forEach(function(k){ delete ws[k]; });
+        ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt'].forEach(function(k){ delete ws[k]; });
       } else if (ws.eventId){
         const ev = await googleFetch('GET', CAL + '/' + ws.eventId);
         const change = {};
@@ -2586,10 +2590,11 @@ async function syncWorkspace(id, changes){
         if (ev.summary !== ws.title) change.summary = ws.title;
         const desc = eventDescription(ws);
         if (ev.description !== desc) change.description = desc;
-        if (JSON.stringify(ws.eventMeeting) !== JSON.stringify(ws.meeting)) Object.assign(change, eventTimes(ws.meeting));
+        if (JSON.stringify(ws.eventMeeting) !== JSON.stringify(ws.meeting)) Object.assign(change, eventTimes(ws.meeting, ws.pausedAt));
+        else if ((ws.pausedAt || 0) !== (ws.eventPausedAt || 0)) change.recurrence = meetingRecurrence(ws.meeting, ws.pausedAt);
         if (Object.keys(change).length){
           await googleFetch('PATCH', CAL + '/' + ws.eventId + '?sendUpdates=all', change);
-          patch.eventMeeting = ws.meeting; await save();
+          patch.eventMeeting = ws.meeting; patch.eventPausedAt = ws.pausedAt || FieldValue.delete(); await save();
         }
       }
       patch.error = FieldValue.delete();
@@ -2736,8 +2741,8 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 //   editors only; once made, it stays.
 // - 'complete' / 'reopen': marks the project completed (its meeting is cancelled) or
 //   not; editors only.
-// - 'pause' / 'resume': pauses its meeting (cancelled in Google Calendar, the time kept)
-//   or brings it back; editors only. Completion by acceptance at a venue needs neither.
+// - 'pause' / 'resume': pauses its meeting (its upcoming dates come off Google Calendar;
+//   the same event, invitation and Meet link stay) or brings it back; editors only. Completion by acceptance at a venue needs neither.
 // - 'submit': submits the project to another venue ({ venue, card }: a card the page
 //   built); editors only; → { cardId, boardId }.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
@@ -3201,8 +3206,9 @@ async function syncStudyMeeting(email){
         return !kept.some(function(a){ return String(a.email).toLowerCase() === m; });
       }).map(function(m){ return { email: m }; }));
     };
-    // A paused meeting is cancelled in Google Calendar; resuming makes a new series.
-    const want = !!s.meeting && !s.pausedAt;
+    // A paused meeting keeps its event, its series ended (meetingRecurrence); one paused
+    // before it was made waits to be resumed.
+    const want = !!s.meeting && !(s.pausedAt && !s.eventId);
     if (want && !s.eventId){
       const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
         summary, description, attendees: attendees([]), guestsCanModify: false,
@@ -3211,7 +3217,7 @@ async function syncStudyMeeting(email){
       Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: ev.hangoutLink || '', eventMeeting: s.meeting });
     } else if (!want && s.eventId){
       await googleFetch('DELETE', CAL + '/' + s.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
-      ['eventId', 'eventLink', 'meetUrl', 'eventMeeting'].forEach(function(k){ patch[k] = FieldValue.delete(); });
+      ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt'].forEach(function(k){ patch[k] = FieldValue.delete(); });
     } else if (s.eventId){
       const ev = await googleFetch('GET', CAL + '/' + s.eventId);
       const change = {};
@@ -3219,10 +3225,11 @@ async function syncStudyMeeting(email){
       if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
       if (ev.summary !== summary) change.summary = summary;
       if (ev.description !== description) change.description = description;
-      if (JSON.stringify(s.eventMeeting) !== JSON.stringify(s.meeting)) Object.assign(change, eventTimes(s.meeting));
+      if (JSON.stringify(s.eventMeeting) !== JSON.stringify(s.meeting)) Object.assign(change, eventTimes(s.meeting, s.pausedAt));
+      else if ((s.pausedAt || 0) !== (s.eventPausedAt || 0)) change.recurrence = meetingRecurrence(s.meeting, s.pausedAt);
       if (Object.keys(change).length){
         await googleFetch('PATCH', CAL + '/' + s.eventId + '?sendUpdates=all', change);
-        patch.eventMeeting = s.meeting;
+        patch.eventMeeting = s.meeting; patch.eventPausedAt = s.pausedAt || FieldValue.delete();
       }
     }
     patch.error = FieldValue.delete();
@@ -3240,8 +3247,8 @@ async function syncStudyMeeting(email){
 // - 'retry': tries the Slack channel and the Calendar event again.
 // - 'channel': { name } (or none: the default) → { name, prefixed, exists }, for the form's hint.
 // - 'pause' / 'resume': { student } (the caller's own when none): pauses the meeting
-//   (cancelled in Google Calendar, the time kept) or brings it back; the student or
-//   anyone involved in their studies.
+//   (its upcoming dates come off Google Calendar; the same event, invitation and Meet
+//   link stay) or brings it back; the student or anyone involved in their studies.
 // → the studies (studiesView).
 exports.studies = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },

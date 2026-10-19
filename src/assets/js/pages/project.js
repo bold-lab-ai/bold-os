@@ -455,7 +455,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // Join, Leave, Set up / Try again.
   function workspaceAction(action){
     if (wsBusy) return;
-    if (action === 'pause' && !window.confirm('Pause the meeting? Google Calendar tells its guests it\u2019s cancelled; resuming sends them a new invitation, with a new Meet link.')) return;
+    if (action === 'pause' && !window.confirm('Pause the meeting? Its upcoming dates come off everyone\u2019s Google Calendar until it\u2019s resumed; the invitation and Meet link stay the same.')) return;
     wsBusy = true; wsMsg = '';
     render();
     callWorkspace({ action: action }).then(function(r){

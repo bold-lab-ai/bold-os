@@ -87,7 +87,7 @@
     var html = '<button type="button" class="cal-pop-close" aria-label="Close">&times;</button>' +
       '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + '</div>' +
       titleHtml(m, 'proj-title') + '<span class="proj-meta">' + meta.join(' \u00b7 ') + '</span>';
-    if (m.mine) html += '<p class="cal-pop-note">' + (m.paused ? 'Paused: not in Google Calendar until it’s resumed.' : '') +
+    if (m.mine) html += '<p class="cal-pop-note">' + (m.paused ? 'Paused: its upcoming dates are off Google Calendar until it’s resumed.' : '') +
       ' <button type="button" class="btn-text cal-pause" data-action="' + (m.paused ? 'resume' : 'pause') + '"' + (busy[keyOf(m)] ? ' disabled' : '') + '>' + (m.paused ? 'Resume' : 'Pause the meeting') + '</button></p>';
     if (m.kind === 'project') html += '<div class="cal-pop-act">' + joinHtml(m.w) + '</div>';
     else if (isMe(m.id)) html += '<p class="cal-pop-note">Your supervision meeting. <a href="profile.html#studies">Edit it</a>.</p>';
@@ -281,7 +281,7 @@
 
   // Pause or resume a meeting: projectWorkspace for a project, studies for a student's.
   function pauseOrResume(m, action){
-    if (action === 'pause' && !window.confirm('Pause “' + m.title + '”? Google Calendar tells its guests it’s cancelled; resuming sends them a new invitation, with a new Meet link.')) return;
+    if (action === 'pause' && !window.confirm('Pause “' + m.title + '”? Its upcoming dates come off everyone’s Google Calendar until it’s resumed; the invitation and Meet link stay the same.')) return;
     var k = keyOf(m), fns = firebase.app().functions('europe-west2'), call;
     busy[k] = true; msgs[k] = ''; render();
     try {
@@ -289,7 +289,7 @@
         : fns.httpsCallable('studies')({ action: action, student: m.id });
     } catch (err){ call = Promise.reject(err); }
     call.then(function(){
-      busy[k] = false; msgs[k] = action === 'pause' ? 'Paused.' : 'Resumed: Google Calendar sends everyone the invitation.'; render();
+      busy[k] = false; msgs[k] = action === 'pause' ? 'Paused.' : 'Resumed: its dates are back in everyone’s Google Calendar.'; render();
     }).catch(function(err){
       console.error('[BOLD Lab] ' + action + ' failed', err);
       busy[k] = false; msgs[k] = esc((err && err.message) || 'That didn’t work — try again.'); render();
