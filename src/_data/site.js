@@ -32,12 +32,12 @@ export default {
       { label: 'Internal review board', href: 'audit-board.html' },
     ] },
     { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true },
-    { label: 'Projects', href: 'projects.html', links: [
-      { label: 'All projects', href: 'projects.html' },
-    ] },
     { label: 'People', href: 'people.html', links: [
       { label: 'Members', href: 'people.html' },
       { label: 'Requests', href: 'join-requests.html' },
+    ] },
+    { label: 'Projects', href: 'projects.html', links: [
+      { label: 'All projects', href: 'projects.html' },
     ] },
     // Its sub-pages are the released events (Firestore), filled in by bold.js.
     { label: 'Events', href: 'events.html', links: [], events: true, separatorAfter: true },
