@@ -449,10 +449,10 @@
       // specific card is available costs one small duplicate read, once,
       // on this one initial load — accepted for keeping openVenue()
       // itself unchanged rather than growing a special no-fetch variant.
-      var cardId = dl.cardId;
+      var cardId = dl.cardId, msgId = dl.msgId;
       loadCurrentBoardCards().then(function(){
         var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
-        if (card) openCard(cardId);
+        if (card) { openCard(cardId); if (msgId) showMessage(card, msgId); }
         else showToast('That paper couldn’t be found — it may have been removed.', 'error');
       });
     }

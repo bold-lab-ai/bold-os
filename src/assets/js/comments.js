@@ -13,7 +13,8 @@
 // since changed shows at the top of its part, marked so. Resolved threads don't show.
 //
 // BoldComments.create({ ref, root, fullWrite: () => bool, onChange })
-// → { start(user), stop(), decorate(), click(event) → true if it handled it }.
+// → { start(user), stop(), decorate(), click(event) → true if it handled it, ready(), show(id) }.
+// A link to a comment (#c=<id>, as Slack sends; pages/guide.js) opens its thread and marks it.
 window.BoldComments = (function(){
   var esc = BOLD.escapeHtml;
   var CONTEXT = 32, MAX_QUOTE = 500, MAX_TEXT = 2000;
@@ -65,6 +66,7 @@ window.BoldComments = (function(){
     var busy = false, error = '';
     var editing = null, editError = '';  // the comment being edited, by its author
     var btn = null;           // the floating "Comment" button
+    var target = null;        // the comment a link named (#c=), marked
 
     function changed(){ opts.onChange(); }
     function threads(){ return comments.filter(function(c){ return !c.parent && !c.resolved && !c.proposalId; }); }
@@ -192,7 +194,7 @@ window.BoldComments = (function(){
     function commentHtml(c){
       if (editing === c.id) return '<div class="cm-comment"><p class="cm-meta">' + metaHtml(c) + '</p>' + editBoxHtml(c) + '</div>';
       var can = mine(c) || opts.fullWrite();
-      return '<div class="cm-comment"><p class="cm-meta">' + metaHtml(c) + '</p>' +
+      return '<div class="cm-comment' + (c.id === target ? ' is-target' : '') + '" data-cid="' + esc(c.id) + '"><p class="cm-meta">' + metaHtml(c) + '</p>' +
         '<p class="cm-text">' + BoldMarkdown.plain(c.text) + '</p>' +
         (can ? '<p class="cm-actions">' + editButton(c) +
           '<button type="button" class="btn-text danger cm-delete" data-id="' + esc(c.id) + '">Delete</button></p>' : '') + '</div>';
@@ -227,7 +229,7 @@ window.BoldComments = (function(){
       var key = 'p:' + pid;
       return '<div class="cm-discussion">' + list.map(function(c){
           if (editing === c.id) return '<div class="cm-comment"><p class="cm-meta">' + metaHtml(c) + '</p>' + editBoxHtml(c) + '</div>';
-          return '<div class="cm-comment"><p class="cm-meta">' + metaHtml(c) +
+          return '<div class="cm-comment' + (c.id === target ? ' is-target' : '') + '" data-cid="' + esc(c.id) + '"><p class="cm-meta">' + metaHtml(c) +
             (mine(c) ? ' ' + editButton(c) : '') +
             (mine(c) || opts.fullWrite() ? ' <button type="button" class="btn-text danger cm-delete" data-id="' + esc(c.id) + '">Delete</button>' : '') + '</p>' +
             '<p class="cm-text">' + BoldMarkdown.plain(c.text) + '</p></div>';
@@ -342,6 +344,16 @@ window.BoldComments = (function(){
       return true;
     }
 
+    // Opens the thread comment id is in → where it is ({ partId, proposalId, resolved }), or null.
+    function show(id){
+      var c = byId(id);
+      if (!c) return null;
+      var root = (c.parent && byId(c.parent)) || c;
+      target = id;
+      if (!root.proposalId && !root.resolved) { open = root.id; error = ''; }
+      return { partId: root.partId || '', proposalId: root.proposalId || null, resolved: !!root.resolved };
+    }
+
     // Resolved threads, for the page's history (history.js extras): newest first there.
     function resolvedItems(){
       return comments.filter(function(c){ return !c.parent && c.resolved; }).map(function(c){
@@ -355,7 +367,8 @@ window.BoldComments = (function(){
       });
     }
 
-    return { start: start, stop: stop, decorate: decorate, click: click, resolvedItems: resolvedItems, proposalThreadHtml: proposalThreadHtml };
+    return { start: start, stop: stop, decorate: decorate, click: click, resolvedItems: resolvedItems, proposalThreadHtml: proposalThreadHtml,
+      ready: function(){ return loaded; }, show: show };
   }
 
   return { create: create };

@@ -235,6 +235,14 @@ service cloud.firestore {
     match /{path=**}/presentations/{id} {
       allow read: if isLabMember();
     }
+    // Every comment thread on one page (comments.html, collectionGroup): the guides'
+    // and the BOLDiquette's comments and the board's cards, both already the lab's to read.
+    match /{path=**}/comments/{id} {
+      allow read: if isLabMember();
+    }
+    match /{path=**}/cards/{id} {
+      allow read: if isLabMember();
+    }
 
     match /projectWorkspaces/{cardId} {
       allow read: if isLabMember();

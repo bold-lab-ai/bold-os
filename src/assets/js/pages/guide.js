@@ -109,10 +109,16 @@
     var t = currentTab();
     return t === null ? parts() : parts().filter(function(p){ return (p.section || '') === t; });
   }
-  // The section a #hash names: a section's slug, or one of its parts' id.
+  // A comment a #hash names (#c=<id>, as Slack sends), or ''.
+  function commentFor(hash){ var m = /^#?c=(.+)$/.exec(String(hash || '')); return m ? decodeURIComponent(m[1]) : ''; }
+  // The section a #hash names: a section's slug, one of its parts' id, or a comment's part.
   function tabFor(hash){
     var h = decodeURIComponent(String(hash || '').replace(/^#/, ''));
     if (!h) return null;
+    if (commentFor(hash)) {
+      var at = comments && comments.show(commentFor(hash)), cp = at && !at.proposalId && part(at.partId);
+      return cp ? (cp.section || '') : null;
+    }
     var byName = sections().filter(function(v){ return G.slugify(v) === h; })[0];
     if (byName !== undefined) return byName;
     var p = parts().filter(function(q){ return anchor(q) === h; })[0];
@@ -952,13 +958,23 @@
   var jumped = !location.hash, proposalsLoaded = false;
   function refresh(){
     if (form) return;
-    var ready = !jumped && x && (proposalsLoaded || location.hash !== '#proposals');
+    var ready = !jumped && x && (proposalsLoaded || location.hash !== '#proposals') &&
+      (!commentFor(location.hash) || (comments && comments.ready() && proposalsLoaded));
     if (ready) tab = tabFor(location.hash);
     render();
     if (ready) { jumped = true; goTo(location.hash); }
   }
   // Shows what #hash names: a part (scrolled to) or a section's tab.
   function goTo(hash){
+    var cid = commentFor(hash);
+    if (cid) {
+      var at = comments && comments.show(cid), p = at && !at.proposalId ? part(at.partId) : null;
+      if (p && folded[p.id]) { folded[p.id] = false; saveFolded(); }
+      render();
+      var el = body.querySelector('.cm-comment[data-cid="' + CSS.escape(cid) + '"]') || (p && document.getElementById(anchor(p))) || (at && at.proposalId && document.getElementById('proposals'));
+      if (el) el.scrollIntoView({ block: 'center' });
+      return;
+    }
     var id = decodeURIComponent(String(hash).replace(/^#/, ''));
     var fp = parts().filter(function(q){ return anchor(q) === id; })[0];
     if (fp && folded[fp.id]) { folded[fp.id] = false; saveFolded(); render(); }

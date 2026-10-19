@@ -1,5 +1,6 @@
-/* Recommendation letters (letters.html, pages/letters.js) and introductions
-   (introductions.html, pages/introductions.js), which share it. */
+/* Recommendation letters (letters.html, pages/letters.js), introductions
+   (introductions.html, pages/introductions.js) and comments (comments.html,
+   pages/comments.js), which share it. */
 :root{--success-text:#256b60; --danger-text:#b42318; --neutral-text:#4b5563;}
 .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
@@ -80,3 +81,12 @@ section.block:first-of-type{margin-top:20px;}
 #intros .lt-text{display:block; margin-top:4px;}
 .in-reply{display:block; width:100%; max-width:520px; box-sizing:border-box; margin-top:14px; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 #intros .in-reply + .event-controls{margin-top:8px;}
+
+/* Comments: the filters, and what a thread is on. */
+.cm-filters{display:flex; flex-wrap:wrap; gap:6px 18px; margin:0 0 14px; font-family:var(--sans); font-size:14px;}
+.cm-filter{color:var(--muted);}
+.cm-filter.is-current{color:var(--ink); text-decoration-color:currentColor;}
+.cm-on{display:block; margin-top:8px; font-size:14px; font-style:italic; color:var(--muted); overflow-wrap:anywhere;}
+#comments .lt-text{display:block; margin-top:6px;}
+#comments .lt-meta .lt-status{margin-left:6px;}
+.cm-more{margin-top:20px;}

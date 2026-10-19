@@ -438,6 +438,8 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
   if (!before) return events; // brand-new card — nothing to notify about yet
   var url = cardUrl(boardId, cardId);
   var linked = linkedTitle(title, url);
+  // A comment's message links to the comment itself (audit-board: &msg= opens and marks it).
+  var linkedMsg = function(id){ return linkedTitle(title, url + '&msg=' + encodeURIComponent(id || '')); };
   var submitterEmail = after.submittedBy && after.submittedBy.email;
   var rvBefore = before.reviewers || {};
   var rvAfter = after.reviewers || {};
@@ -519,7 +521,7 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       events.push({
         emails: stakeholders,
         excludeEmail: afterMsg.authorEmail, comment: true,
-        headline: '💬 ' + (afterMsg.author || 'Someone') + ' commented on ' + linked + ': “' + newBody + '”'
+        headline: '💬 ' + (afterMsg.author || 'Someone') + ' commented on ' + linkedMsg(afterMsg.id) + ': “' + newBody + '”'
       });
       return;
     }
@@ -531,7 +533,7 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       events.push({
         emails: participants,
         excludeEmail: reply.authorEmail, comment: true,
-        headline: '💬 ' + (reply.author || 'Someone') + ' replied on ' + linked + ': “' + replyBody + '”'
+        headline: '💬 ' + (reply.author || 'Someone') + ' replied on ' + linkedMsg(reply.id) + ': “' + replyBody + '”'
       });
     });
   });
@@ -559,7 +561,7 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       events.push({
         emails: recipients,
         excludeEmail: msg.authorEmail, comment: true,
-        headline: '💬 ' + posterName + ' commented on ' + linked + ': “' + body + '”'
+        headline: '💬 ' + posterName + ' commented on ' + linkedMsg(msg.id) + ': “' + body + '”'
       });
     });
   });
@@ -1104,6 +1106,14 @@ function tagExcerpt(data, id){
   return t.length > 200 ? t.slice(0, 200) + '…' : t;
 }
 
+// On a board card, the comment (discussion or checklist point) that tags id, for its link (&msg=), or ''. Pure.
+function tagMessageId(data, id){
+  const d = data || {};
+  const all = [].concat.apply(flattenMessages(d.discussion), (d.checklist || []).map((it) => flattenMessages(it.comments)));
+  const m = all.filter((x) => String(x.body || '').indexOf('](' + id + ')') !== -1).pop();
+  return m && m.id ? String(m.id) : '';
+}
+
 // Any document anywhere, written by anyone: whoever it newly tags gets a DM.
 // Who wrote it: the signed-in person, or the document's updatedBy (a function's write).
 function onTagged(document){
@@ -1123,8 +1133,8 @@ function onTagged(document){
     const emails = await emailsForSlackIds(ids);
     for (const id of ids) {
       if (!emails[id] || emails[id] === by) continue;
-      const excerpt = tagExcerpt(after, id);
-      const text = '🏷️ ' + (who ? slackText(who.name || who.email) + ' tagged you' : 'You were tagged') + ' in ' + linkedTitle(slackText(place.title), place.url) +
+      const excerpt = tagExcerpt(after, id), msg = /^boards\/[^/]+\/cards\//.test(path) ? tagMessageId(after, id) : '';
+      const text = '🏷️ ' + (who ? slackText(who.name || who.email) + ' tagged you' : 'You were tagged') + ' in ' + linkedTitle(slackText(place.title), place.url + (msg ? '&msg=' + encodeURIComponent(msg) : '')) +
         (excerpt ? ': “' + slackText(excerpt) + '”' : '.');
       const sent = await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text);
       logger.info('Tag DM', { path, to: id, by, sent, authType: event.authType, authId: event.authId });
@@ -1240,7 +1250,9 @@ function commentDigest(items, name, url){
   // A tag (@[Name](SlackId), mentions.js) as plain @Name.
   const untag = (t) => String(t || '').replace(TAG, '@$1');
   items = items.map((it) => Object.assign({}, it, { text: untag(it.text), quote: untag(it.quote) }));
-  const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.taggedYou ? ' tagged you' : '') + (it.proposalId ? ' on a proposed change' : it.parent ? ' replied' : ' on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
+  // Each comment links to itself (#c=, pages/guide.js opens its thread).
+  const at = (it, label) => '<' + url + '#c=' + encodeURIComponent(it.id) + '|' + label.replace(/\|/g, '¦') + '>';
+  const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.taggedYou ? ' tagged you' : '') + ' ' + at(it, it.proposalId ? 'on a proposed change' : it.parent ? 'replied' : 'on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
     ': ' + slackText(it.text.length > 140 ? it.text.slice(0, 140) + '…' : it.text);
   return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), url) + '\n' +
     items.slice(0, 5).map(line).join('\n') + (n > 5 ? '\n…and ' + (n - 5) + ' more.' : '');
@@ -3849,7 +3861,9 @@ exports.letterRequest = onCall(
         acknowledgedAt: null, open: true, at: now, updatedAt: now,
       }));
       await tell(writerEmail, '✉️ ' + slackText(myName) + ' asked you for a recommendation letter: ' +
-        linkedTitle(slackText(n.request.purpose), letterUrl(ref.id)) + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.');
+        linkedTitle(slackText(n.request.purpose), letterUrl(ref.id)) + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.\n' +
+        '💡 To draft it, copy the prompt under "For your agent" on the request into Claude Code: it uses the <' +
+        SITE_URL + 'skill.html?skill=bold-recommendation-letter|bold-recommendation-letter> skill.');
       return { id: ref.id };
     }
 
@@ -4118,5 +4132,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
 };

@@ -31,6 +31,18 @@
     pushNavState();
   }
 
+  // A comment a link names (&msg=, as Slack sends): its checklist point's
+  // thread opened, and scrolled to and marked.
+  function showMessage(card, msgId){
+    var has = function(list){ return (list || []).some(function(m){ return m.id === msgId || (m.replies || []).some(function(r){ return r.id === msgId; }); }); };
+    var item = (card.checklist || []).filter(function(it){ return has(it.comments); })[0];
+    if (item) { state.detailTab = 'review'; state.checklistCommentOpenId = item.id; renderAll(); }
+    var el = document.querySelector('.disc-msg[data-msg="' + CSS.escape(msgId) + '"]');
+    if (!el) return;
+    el.classList.add('is-target');
+    el.scrollIntoView({ block: 'center' });
+  }
+
   function backToBoard(){
     state.view = 'venue';
     state.currentCardId = null;
@@ -259,7 +271,7 @@
   }
 
   function discussionMessageHtml(msg, isReply){
-    return '<div class="disc-msg' + (isReply ? ' disc-reply' : '') + '">' +
+    return '<div class="disc-msg' + (isReply ? ' disc-reply' : '') + '" data-msg="' + escapeHtml(msg.id || '') + '">' +
       '<div class="disc-meta"><span class="disc-author">' + escapeHtml(msg.author) + '</span><span class="disc-time">' + formatTimestamp(msg.timestamp) + '</span></div>' +
       '<div class="disc-body">' + escapeHtml(msg.body) + '</div>' +
     '</div>';

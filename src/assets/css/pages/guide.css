@@ -187,6 +187,7 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 .cm-quote{margin:0 18px 10px 0; padding-left:8px; border-left:2px solid rgba(200,150,30,.55); color:var(--ink-soft); font-family:var(--serif); font-size:14px;}
 .cm-lost{margin:0 0 8px; color:var(--muted); font-style:italic;}
 .cm-comment{margin:0 0 10px; padding-bottom:8px; border-bottom:1px solid var(--line);}
+.cm-comment.is-target{background:var(--wash); box-shadow:0 0 0 6px var(--wash);}
 .cm-meta{margin:0 0 2px; color:var(--muted);}
 .cm-meta strong{color:var(--ink); font-weight:600;}
 .cm-text{margin:0; white-space:pre-wrap; font-size:14px; line-height:1.45;}
