@@ -566,12 +566,10 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-controls{display:flex; flex-direction:column; gap:10px; margin:4px 0 18px;}
 .cx-ctl-row{display:flex; flex-wrap:wrap; align-items:center; gap:10px 26px;}
 .cx-ctl-row > .cx-pair:first-child .cx-bar-label{min-width:44px;}
-/* Chips: choices that add up, each on or off, with a box that fills when on. */
+/* Chips: choices that add up, each on (shaded, in ink) or off (plain, grey). */
 .cx-chips{display:inline-flex; flex-wrap:wrap; gap:6px;}
-.cx-chip{display:inline-flex; align-items:center; gap:7px; font-family:var(--sans); font-size:13px; color:var(--muted); background:none; border:1px solid var(--line); border-radius:var(--radius); padding:4px 10px 4px 8px; cursor:pointer;}
-.cx-chip::before{content:''; width:9px; height:9px; border:1px solid currentColor; border-radius:1px; box-sizing:border-box;}
+.cx-chip{display:inline-flex; align-items:center; gap:7px; font-family:var(--sans); font-size:13px; color:var(--muted); background:none; border:1px solid var(--line); border-radius:var(--radius); padding:4px 10px; cursor:pointer;}
 .cx-chip[aria-pressed="true"]{color:var(--ink); background:var(--wash); border-color:rgba(26,43,74,.28);}
-.cx-chip[aria-pressed="true"]::before{background:currentColor;}
 .cx-chip:hover{color:var(--accent); border-color:var(--accent);}
 .cx-chip:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
 .cx-chip-n{color:var(--muted); font-size:12px;}
