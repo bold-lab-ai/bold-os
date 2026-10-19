@@ -121,7 +121,11 @@
 
   // The GitHub row of the linked accounts: the account and its bold-lab-ai
   // membership, with the button to link or unlink it.
+  // The completeness bar (profile-progress.js) counts linked accounts: tell it when they change.
+  function accountsChanged(){ document.dispatchEvent(new Event('bold:accounts')); }
+
   function renderGithub(link){
+    accountsChanged();
     var box = el('githubBody');
     var off = ghBusy ? ' disabled' : '';
     var err = ghError ? '<span class="gh-error">' + escapeHtml(ghError) + '</span>' : '';
@@ -180,6 +184,7 @@
     'auth/cancelled-popup-request': '',
   };
   function renderGoogle(link){
+    accountsChanged();
     var box = el('googleBody');
     var off = gBusy ? ' disabled' : '';
     var err = gError ? '<span class="gh-error">' + escapeHtml(gError) + '</span>' : '';

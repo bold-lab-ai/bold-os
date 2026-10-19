@@ -36,7 +36,7 @@
     return (studies ? '<dl class="facts">' +
         row('Degree', esc(s.degree || m.role || '')) + (dates ? row('Dates', esc(dates)) : '') +
         row('Working title', esc(s.title || '') || '—') +
-        row('People involved', people || '—') + row('Meeting', meeting || 'None') + '</dl>'
+        row('People involved', people || '—') + row('Meeting', meeting || 'Not set yet') + '</dl>'
       : '<p class="proj-msg">Add who supervises your studies and set a recurring meeting with them.</p>') +
       (msg ? '<p class="proj-msg">' + esc(msg) + '</p>' : '') +
       '<div class="event-controls"><button type="button" class="btn-text st-edit">' + (studies ? 'Edit your studies' : 'Add your studies') + '</button></div>';
@@ -57,8 +57,7 @@
           '<button type="button" class="btn-text st-add-new">Add</button><button type="button" class="btn-text st-add-cancel">Cancel</button></div>'
         : '<div class="st-add"><select class="st-pick" aria-label="Add a person"><option value="">' + (roster ? 'Add a person…' : 'Loading…') + '</option>' + options +
           '<option value="__new__">+ Someone not on Slack…</option></select></div>') +
-      '<label class="jn-check st-meeting-check"><input type="checkbox" class="st-has-meeting"' + (e.hasMeeting ? ' checked' : '') + '> A recurring meeting with them (London time)</label>' +
-      (e.hasMeeting ? meetingEntryHtml(e.meeting) : '') +
+      '<label class="st-meeting-label">Your recurring meeting with them (London time)</label>' + meetingEntryHtml(e.meeting) +
       '<p class="ev-error"' + (e.error ? '' : ' hidden') + '>' + esc(e.error || '') + '</p>' +
       '<div class="event-form-actions"><button type="button" class="ev-save st-save"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save') + '</button>' +
         '<button type="button" class="st-cancel"' + (busy ? ' disabled' : '') + '>Cancel</button></div></div>';
@@ -69,7 +68,7 @@
     if (!editing) return;
     var t = box.querySelector('.st-title');
     if (t) editing.title = t.value;
-    if (editing.hasMeeting && document.getElementById('pmDay')) {
+    if (document.getElementById('pmDay')) {
       editing.meeting = { day: document.getElementById('pmDay').value, time: document.getElementById('pmTime').value,
         minutes: Number(document.getElementById('pmMinutes').value), every: Number(document.getElementById('pmEvery').value) };
     }
@@ -86,17 +85,15 @@
 
   function save(){
     keep();
-    var e = editing, meeting = null;
-    if (e.hasMeeting) {
-      meeting = readMeetingEntry();
-      if (meeting.error) { e.error = meeting.error; render(); return; }
-      if (!e.people.length) { e.error = 'Add who the meeting is with.'; render(); return; }
-    }
+    var e = editing;
+    if (!e.people.length) { e.error = 'Add who supervises your studies.'; render(); return; }
+    var meeting = readMeetingEntry();
+    if (meeting.error) { e.error = meeting.error; render(); return; }
     busy = true; e.error = ''; render();
     call({ action: 'save', title: e.title.trim(), people: e.people, meeting: meeting }).then(function(r){
       busy = false; editing = null;
       var s = r.data || {};
-      msg = s.meeting && !s.error ? 'Saved. Google Calendar sends everyone the invitation.' : 'Saved.';
+      msg = !s.error ? 'Saved. Google Calendar sends everyone the invitation.' : 'Saved.';
       render();
     }).catch(function(err){
       console.error('[BOLD Studies] saving failed', err);
@@ -110,7 +107,7 @@
     if (t.classList.contains('st-edit')) {
       var s = studies || {};
       msg = '';
-      editing = { title: s.title || '', people: (s.people || []).slice(), hasMeeting: !!s.meeting, meeting: s.meeting || null, adding: false, error: '' };
+      editing = { title: s.title || '', people: (s.people || []).slice(), meeting: s.meeting || null, adding: false, error: '' };
       loadRoster(); render(); return;
     }
     if (t.classList.contains('st-retry')) {
@@ -143,7 +140,7 @@
         if (p) editing.people.push({ name: p.name, email: p.email });
       }
       render();
-    } else if (t.classList.contains('st-has-meeting')) { editing.hasMeeting = t.checked; render(); }
+    }
   });
 
   BOLD.onUser(function(user){

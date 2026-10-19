@@ -131,5 +131,5 @@ window.BoldJoin = (function(){
       group('Working with you', row('Feedback', fb ? '<strong>' + fb[1] + '</strong>: ' + esc(fb[2]) : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
 })();

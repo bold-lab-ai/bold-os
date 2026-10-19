@@ -3075,7 +3075,7 @@ exports.linkGoogle = onCall(
 const STUDY_ROLES = ['PhD student', 'Master student'];
 
 // Pure: what a page sends → { title, people: [{ name, email }], meeting } or { error }.
-// `me` (lowercase) can't be one of the people; meeting: normalizeMeeting's, or null.
+// At least one person, and the meeting (normalizeMeeting's); `me` (lowercase) can't be one of the people.
 function normalizeStudies(d, me){
   d = d && typeof d === 'object' ? d : {};
   const title = String(d.title || '').trim();
@@ -3087,13 +3087,10 @@ function normalizeStudies(d, me){
     if (email === me || people.some(function(x){ return x.email === email; })) continue;
     people.push({ name: String(p.name || '').trim().slice(0, 120) || email, email });
   }
+  if (!people.length) return { error: 'Add who supervises your studies.' };
   if (people.length > 10) return { error: 'Up to 10 people.' };
-  let meeting = null;
-  if (d.meeting){
-    meeting = normalizeMeeting(d.meeting);
-    if (meeting.error) return { error: meeting.error };
-    if (!people.length) return { error: 'Add who the meeting is with.' };
-  }
+  const meeting = normalizeMeeting(d.meeting);
+  if (meeting.error) return { error: meeting.error };
   return { title, people, meeting };
 }
 
@@ -3152,7 +3149,7 @@ async function syncStudyMeeting(email){
 }
 
 // The profile's Studies tab, for the caller's own studies:
-// - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } | null };
+// - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } }, both required;
 //   only PhD and Master students (their members record's role), or whoever already has studies.
 // - 'retry': tries the Calendar event again.
 // → the studies (studiesView).
