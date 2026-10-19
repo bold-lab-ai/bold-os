@@ -1,0 +1,18 @@
+---
+title: "People | BOLD Lab"
+description: "Who is in BOLD."
+sdk: ["firestore"]
+css: "profile"
+scripts: ["join-common.js", "pages/people.js"]
+permalink: "people.html"
+nav: "people.html"
+---
+<div class="hero">
+  <h1>People</h1>
+  <p class="hero-note">Everyone in BOLD, from the details on their profile. Yours are on <a href="profile.html">your profile</a>.</p>
+</div>
+
+<main>
+  <div class="pp-filter"><input type="search" id="ppSearch" placeholder="Search by name, institution or interest" aria-label="Search people" autocomplete="off"></div>
+  <div id="people"><p class="proj-msg">Loading&hellip;</p></div>
+</main>

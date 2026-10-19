@@ -1,7 +1,7 @@
 // Search results (search.html?q=&in=), from the masthead's box (search-box.js).
 // Everything the signed-in person can read, loaded here and searched in the page:
 // the BOLDiquette's and the guides' parts, skills, events with their sessions and
-// talks, projects (getAllProjects), papers on the review board, and comments. A
+// talks, projects (getAllProjects), people (members), papers on the review board, and comments. A
 // result has every word of the query; title matches first. The sections down the
 // side (BoldSearch.SCOPES) show how many results each has and pick one.
 (function(){
@@ -84,6 +84,12 @@
           return item(p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner].join(' '),
             'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : ''));
         });
+      });
+    },
+    people: function(){
+      return db.collection('members').get().then(function(s){
+        return s.docs.map(function(d){ var x = d.data();
+          return item(x.name || x.email, [x.role, x.institution].filter(Boolean).join(' · ') || 'Member', [x.interests, x.basedIn, x.pronouns, x.contact].join(' '), 'people.html'); });
       });
     },
     board: function(){

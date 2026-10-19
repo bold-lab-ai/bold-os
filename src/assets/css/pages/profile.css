@@ -99,3 +99,6 @@ fieldset.md-group:first-child{margin-top:0;}
 .pf-bar > span{display:block; height:100%; background:var(--accent); border-radius:3px; transition:width .3s;}
 .pf-text{margin:8px 0 0; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
 .st-channel-hint{margin:-4px 0 10px; font-family:var(--sans); font-size:13px; color:var(--muted); min-height:1em;}
+/* People (people.js): the search box above the groups. */
+.pp-filter{max-width:var(--article-max); margin-top:16px;}
+.pp-filter input{width:100%; font-family:var(--sans); font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
