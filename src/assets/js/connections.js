@@ -323,6 +323,23 @@ window.BoldConnections = (function(){
       return '<div class="cx-bar-row"' + (r[2] || '') + '><span class="cx-bar-label">' + esc(r[0]) + '</span><div class="cx-bar-items">' + r[1] + '</div></div>';
     }).join('') + '</div>';
   }
+  // Controls, all in view. One choice (view, show, since): a strip of joined buttons, one
+  // pressed. Choices that add up (kinds, groups): chips, each on or off on its own.
+  function seg(label, attr, opts, cur){
+    return '<span class="view-toggle cx-seg" role="group" aria-label="' + esc(label) + '">' + opts.map(function(x){
+      return '<button type="button" class="view-btn" ' + attr + '="' + x[0] + '" aria-pressed="' + (String(cur) === String(x[0])) + '">' + esc(x[1]) + '</button>';
+    }).join('') + '</span>';
+  }
+  function chips(label, attr, opts, isOn, iconOf){
+    return '<span class="cx-chips" role="group" aria-label="' + esc(label) + '">' + opts.map(function(x){
+      return '<button type="button" class="cx-chip' + (iconOf ? ' has-icon' : '') + '" ' + attr + '="' + x[0] + '" aria-pressed="' + !!isOn(x[0]) + '">' +
+        (iconOf ? iconOf(x[0]) : '') + '<span>' + esc(x[1]) + '</span>' + (x[2] !== undefined ? '<span class="cx-chip-n">' + x[2] + '</span>' : '') + '</button>';
+    }).join('') + '</span>';
+  }
+  function pair(label, html, cls){ return '<span class="cx-pair' + (cls ? ' ' + cls : '') + '"><span class="cx-bar-label">' + esc(label) + '</span>' + html + '</span>'; }
+  // A group's ring, for the Who chips.
+  function groupRing(k){ return icon('<circle class="cx-ring' + (k === 'outside' ? ' is-outside' : '') + '" r="4.2"></circle>', k === 'outside' ? 'is-outside' : 'pp-' + k); }
+
   function key(icon, text){ return '<span class="cx-key">' + icon + '<span>' + text + '</span></span>'; }
   function icon(inner, cls){ return '<svg class="cx-icon' + (cls ? ' ' + cls : '') + '" viewBox="-7 -7 14 14" aria-hidden="true">' + inner + '</svg>'; }
   // People's rings: each group in Who is BOLD, and people outside BOLD.
@@ -331,11 +348,12 @@ window.BoldConnections = (function(){
       key(icon('<circle class="cx-ring is-outside" r="4.2"></circle>', 'is-outside'), 'Outside BOLD') +
       '<a class="cx-key-link" href="boldiquette.html#who-is-bold">Who is BOLD</a>'];
   }
-  function legendHtml(things){
+  // noGroups: the page shows the groups already (Network's Who chips).
+  function legendHtml(things, noGroups){
     return bar([
       ['Lines', GROUPS.slice(0, things ? 4 : 3).map(function(x){ return key(sample(x[0]), esc(x[1])); }).join('')],
       things ? ['Things', ['project', 'event', 'guide', 'skill'].map(function(t){ return key(icon(shape(t, 4), 'is-thing'), esc(THINGS[t][1])); }).join('')] : null,
-      groupsRow(),
+      noGroups ? null : groupsRow(),
     ], 'cx-legend');
   }
 
@@ -516,29 +534,19 @@ window.BoldConnections = (function(){
       function draw(){
         var counts = {};
         list.forEach(function(x){ counts[x.group] = (counts[x.group] || 0) + 1; });
-        // One choice: a dropdown; choices that add up (kinds): buttons, each on or off.
-        var select = function(label, cls, opts, cur){
-          return '<label class="cx-pair"><span class="cx-bar-label">' + label + '</span><select class="cx-field ' + cls + '">' + opts.map(function(x){
-            return '<option value="' + x[0] + '"' + (String(cur) === String(x[0]) ? ' selected' : '') + '>' + esc(x[1]) + '</option>';
-          }).join('') + '</select></label>';
-        };
         root.innerHTML = '<div class="cx-controls"><div class="cx-ctl-row">' +
-          select('View', 'cx-view', [['graph', 'Graph'], ['time', 'Over time']], view) +
-          select('Show', 'cx-show', [['1', 'People and things'], ['0', 'People']], things ? '1' : '0') + '</div>' +
-          '<div class="cx-ctl-row"><span class="cx-pair"><span class="cx-bar-label">Kinds</span><span class="view-toggle" role="group" aria-label="Kinds">' +
-          GROUPS.map(function(x){ return '<button type="button" class="view-btn" data-kind="' + x[0] + '" aria-pressed="' + !!on[x[0]] + '">' + esc(x[1]) + (counts[x[0]] ? ' ' + counts[x[0]] : '') + '</button>'; }).join('') +
-          '</span></span></div></div>' +
+          pair('View', seg('View', 'data-view', [['graph', 'Graph'], ['time', 'Over time']], view)) +
+          pair('Show', seg('Show', 'data-things', [['1', 'People and things'], ['0', 'People only']], things ? '1' : '0')) + '</div>' +
+          '<div class="cx-ctl-row">' + pair('Kinds', chips('Kinds', 'data-kind', GROUPS.map(function(x){ return [x[0], x[1], counts[x[0]] || 0]; }), function(k){ return on[k]; })) + '</div></div>' +
           (view === 'time' ? timeHtml(list.filter(function(x){ return on[x.group]; }), dir, email, me, things) : graphHtml()) +
           timelineHtml(list.filter(function(x){ return on[x.group]; }), dir, email, me, shown);
       }
       bindHover(root);
-      root.addEventListener('change', function(e){
-        if (e.target.classList.contains('cx-view')) { view = e.target.value; draw(); }
-        if (e.target.classList.contains('cx-show')) { things = e.target.value === '1'; draw(); }
-      });
       root.addEventListener('click', function(e){
-        var k = e.target.closest('[data-kind]');
+        var k = e.target.closest('[data-kind]'), v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]');
         if (k) { on[k.getAttribute('data-kind')] = !on[k.getAttribute('data-kind')]; draw(); return; }
+        if (v) { view = v.getAttribute('data-view'); draw(); return; }
+        if (t) { things = t.getAttribute('data-things') === '1'; draw(); return; }
         if (e.target.closest('.cx-more')) { shown += 50; draw(); return; }
         var line = e.target.closest('.cx-hit');
         if (line) { var key = line.getAttribute('data-a') + ' ' + line.getAttribute('data-b'); why = why === key ? '' : key; draw(); return; }
@@ -556,5 +564,5 @@ window.BoldConnections = (function(){
   }
 
   return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, graphOf: graphOf, concentric: concentric, svg: svg, legendHtml: legendHtml, bindHover: bindHover,
-    lineageHtml: lineageHtml, bar: bar, reasons: reasons, reasonsHtml: reasonsHtml, rowHtml: rowHtml, edgeOf: edgeOf, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
+    lineageHtml: lineageHtml, bar: bar, seg: seg, chips: chips, pair: pair, groupRing: groupRing, reasons: reasons, reasonsHtml: reasonsHtml, rowHtml: rowHtml, edgeOf: edgeOf, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
 })();

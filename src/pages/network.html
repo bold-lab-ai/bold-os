@@ -13,21 +13,8 @@ nav: "network.html"
 </div>
 
 <main>
-  <div class="cx-controls">
-    <div class="cx-ctl-row">
-      <label class="cx-pair"><span class="cx-bar-label">View</span><select class="cx-field" id="nwView"></select></label>
-      <label class="cx-pair nw-graph-only"><span class="cx-bar-label">Show</span><select class="cx-field" id="nwThings"></select></label>
-      <label class="cx-pair nw-graph-only"><span class="cx-bar-label">Since</span><select class="cx-field" id="nwSince"></select></label>
-      <input class="cx-field nw-graph-only" type="search" id="nwFind" placeholder="Find someone or something" aria-label="Find someone or something" list="nwPeople">
-      <datalist id="nwPeople"></datalist>
-    </div>
-    <div class="cx-ctl-row nw-graph-only">
-      <span class="cx-pair"><span class="cx-bar-label">Kinds</span><span class="view-toggle" role="group" aria-label="Kinds" id="nwKinds"></span></span>
-    </div>
-    <div class="cx-ctl-row nw-graph-only">
-      <span class="cx-pair"><span class="cx-bar-label">Who</span><span class="view-toggle" role="group" aria-label="Who" id="nwGroup"></span></span>
-    </div>
-  </div>
+  <div class="cx-controls" id="nwControls"></div>
+  <datalist id="nwPeople"></datalist>
   <p class="proj-msg" id="nwMsg">Loading&hellip;</p>
   <div class="cx-graph" id="nwGraph" hidden></div>
   <div id="nwLegend"></div>

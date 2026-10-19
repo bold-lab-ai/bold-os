@@ -16,21 +16,19 @@
   // Kinds and groups add up: each is on or off, all on to start (people outside BOLD: 'outside').
   var kinds = { joining: true, working: true, talking: true, site: true }, groups = { outside: true };
   BoldJoin.CATEGORIES.forEach(function(c){ groups[c[0]] = true; });
-  var SINCE = [['all', 'All time'], ['365', 'Past year'], ['90', 'Past 3 months']];
+  var SINCE = [['all', 'All time'], ['365', 'Year'], ['90', '3 months']], find = '';
   var W = 1000, H = 680;
 
-  function toggle(attr, opts, isOn){
-    return opts.map(function(x){ return '<button type="button" class="view-btn" ' + attr + '="' + x[0] + '" aria-pressed="' + !!isOn(x[0]) + '">' + esc(x[1]) + '</button>'; }).join('');
-  }
+  // View, Show and Since: one choice each; Kinds and Who: each on or off (connections.js).
   function controls(){
-    // One choice: a dropdown; choices that add up (kinds, groups): buttons, each on or off.
-    var opts = function(list, cur){ return list.map(function(x){ return '<option value="' + x[0] + '"' + (String(cur) === String(x[0]) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join(''); };
-    el('nwView').innerHTML = opts([['graph', 'Graph'], ['lineage', 'Lineage']], view);
-    el('nwThings').innerHTML = opts([['1', 'People and things'], ['0', 'People']], things ? '1' : '0');
-    el('nwSince').innerHTML = opts(SINCE, since);
-    el('nwKinds').innerHTML = toggle('data-kind', C.GROUPS, function(k){ return kinds[k]; });
-    el('nwGroup').innerHTML = toggle('data-group', BoldJoin.CATEGORIES.concat([['outside', 'Outside BOLD']]), function(k){ return groups[k]; });
-    Array.prototype.forEach.call(document.querySelectorAll('.nw-graph-only'), function(x){ x.hidden = view !== 'graph'; });
+    var graphOnly = view === 'graph';
+    el('nwControls').innerHTML = '<div class="cx-ctl-row">' +
+      C.pair('View', C.seg('View', 'data-view', [['graph', 'Graph'], ['lineage', 'Lineage']], view)) +
+      (graphOnly ? C.pair('Show', C.seg('Show', 'data-things', [['1', 'People and things'], ['0', 'People only']], things ? '1' : '0')) +
+        C.pair('Since', C.seg('Since', 'data-since', SINCE, since)) : '') + '</div>' +
+      (graphOnly ? '<div class="cx-ctl-row">' + C.pair('Kinds', C.chips('Kinds', 'data-kind', C.GROUPS, function(k){ return kinds[k]; })) + '</div>' +
+        '<div class="cx-ctl-row">' + C.pair('Who', C.chips('Who', 'data-group', BoldJoin.CATEGORIES.concat([['outside', 'Outside BOLD']]), function(k){ return groups[k]; }, C.groupRing)) + '</div>' +
+        '<div class="cx-ctl-row">' + C.pair('Find', '<input class="cx-field cx-find" type="search" id="nwFind" placeholder="Someone or something" aria-label="Find someone or something" list="nwPeople" value="' + esc(find) + '">') + '</div>' : '');
   }
 
   function build(){
@@ -72,7 +70,7 @@
     var chosen = why && C.edgeOf(g, why.split(' ')[0], why.split(' ')[1]);
     if (!chosen) why = '';
     if (g.nodes.length) graph.innerHTML = C.svg(g, W, H, { dir: dir, me: me, labels: 'big', selected: selected, selectedEdge: why });
-    el('nwLegend').innerHTML = g.nodes.length ? C.legendHtml(things) : '';
+    el('nwLegend').innerHTML = g.nodes.length ? C.legendHtml(things, true) : '';
     el('nwPerson').innerHTML = (chosen ? C.reasonsHtml(chosen, g, dir, me) : '') + personHtml();
   }
 
@@ -86,8 +84,11 @@
   }
 
   document.addEventListener('click', function(e){
-    var k = e.target.closest('[data-kind]'), gr = e.target.closest('[data-group]'), n = e.target.closest('.cx-node');
-    if (k) { kinds[k.getAttribute('data-kind')] = !kinds[k.getAttribute('data-kind')]; controls(); build(); }
+    var k = e.target.closest('[data-kind]'), gr = e.target.closest('[data-group]'), v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]'), sn = e.target.closest('[data-since]'), n = e.target.closest('.cx-node');
+    if (v) { view = v.getAttribute('data-view'); controls(); build(); }
+    else if (t) { things = t.getAttribute('data-things') === '1'; controls(); build(); }
+    else if (sn) { since = sn.getAttribute('data-since'); controls(); build(); }
+    else if (k) { kinds[k.getAttribute('data-kind')] = !kinds[k.getAttribute('data-kind')]; controls(); build(); }
     else if (gr) { groups[gr.getAttribute('data-group')] = !groups[gr.getAttribute('data-group')]; controls(); build(); }
     else if (e.target.closest('.cx-hit') && graph.contains(e.target)) {
       var line = e.target.closest('.cx-hit'), key = line.getAttribute('data-a') + ' ' + line.getAttribute('data-b');
@@ -107,11 +108,11 @@
     if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); n.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
   });
   C.bindHover(graph);
-  el('nwView').addEventListener('change', function(){ view = this.value; controls(); build(); });
-  el('nwThings').addEventListener('change', function(){ things = this.value === '1'; build(); });
-  el('nwSince').addEventListener('change', function(){ since = this.value; build(); });
-  el('nwFind').addEventListener('change', function(){
-    var q = this.value.trim().toLowerCase();
+  // Find (it's redrawn with the controls, so listened for on the page).
+  document.addEventListener('change', function(e){
+    if (e.target.id !== 'nwFind') return;
+    find = e.target.value;
+    var q = find.trim().toLowerCase();
     var name = function(v){ return C.nameOf(dir, v.id, g).toLowerCase(); };
     var hit = g.nodes.filter(function(v){ return name(v) === q; })[0] || g.nodes.filter(function(v){ return name(v).indexOf(q) >= 0; })[0];
     if (hit) { selected = hit.id; draw(); }
