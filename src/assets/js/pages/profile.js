@@ -350,12 +350,23 @@
 
   /* ---------- tabs ---------- */
   // Your details, Studies (PhD and Master students; pages/studies.js shows its tab),
-  // Projects and Linked accounts, one shown at a time; the #hash names it.
-  var TABS = ['details', 'studies', 'projects', 'linked-accounts'];
+  // Projects, Connections (connections.js, drawn the first time it's shown) and Linked
+  // accounts, one shown at a time; the #hash names it.
+  var TABS = ['details', 'studies', 'projects', 'connections', 'linked-accounts'];
+  var connectionsFor = '', connectionsUser = null;
+  function drawConnections(){
+    // connections.js loads after this script.
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', drawConnections); return; }
+    var u = connectionsUser;
+    if (!u || !u.email || !window.BoldConnections || connectionsFor === u.email) return;
+    connectionsFor = u.email;
+    BoldConnections.mountPerson(el('connectionsBody'), u.email, u.email);
+  }
   function showTab(){
     var want = String(location.hash || '').replace(/^#/, '');
     if (TABS.indexOf(want) === -1) want = TABS[0];
     TABS.forEach(function(id){ el(id).hidden = id !== want; });
+    if (want === 'connections') drawConnections();
     Array.prototype.forEach.call(document.querySelectorAll('#profileTabs .guide-tab'), function(a){
       var on = a.getAttribute('href') === '#' + want;
       a.classList.toggle('is-current', on);
@@ -367,4 +378,5 @@
 
   // Last, so everything above is defined if the user is already known.
   BOLD.onUser(renderProfile);
+  BOLD.onUser(function(u){ connectionsUser = u; if (!el('connections').hidden) drawConnections(); });
 })();

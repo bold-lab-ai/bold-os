@@ -1095,7 +1095,7 @@ function newTags(before, after){
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
 const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
-  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook'];
+  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions'];
 function tagPlace(path, data){
   const seg = path.split('/');
   if (TAG_SILENT.indexOf(seg[0]) !== -1 || seg.indexOf('versions') !== -1) return null;
@@ -1153,6 +1153,7 @@ function onTagged(document){
     by = by.toLowerCase();
     const who = by ? await personFor(by) : null;
     const emails = await emailsForSlackIds(ids);
+    try { await recordTags(path, by, emails, Date.now(), place); } catch (err){ logger.warn('Recording tags failed', { path, error: String(err && err.message || err) }); }
     for (const id of ids) {
       if (!emails[id] || emails[id] === by) continue;
       const excerpt = tagExcerpt(after, id), msg = /^boards\/[^/]+\/cards\//.test(path) ? tagMessageId(after, id) : '';
@@ -1720,6 +1721,7 @@ function profileFieldsFromSlack(profile){
 exports.getMyAccess = onCall(
   async (request) => {
     const email = signedInEmail(request);
+    try { await recordSignUp(request.auth.uid, email.toLowerCase()); } catch (err){ logger.warn('Recording a first sign-in failed', { error: String(err && err.message || err) }); }
     const [pis, admins] = await Promise.all([rolesEmails('pis'), rolesEmails('admins')]);
     return { fullWrite: pis.indexOf(email) !== -1 || admins.indexOf(email) !== -1 };
   }
@@ -4716,6 +4718,224 @@ exports.checkVenueCalls = onSchedule(
   }
 );
 
+// ---------- Interactions: who did what with whom, for Connections and Network ----------
+// interactions/{id}: { kind, group, from, to, at, title, href, source }. `from` and `to`
+// are lowercase emails; `to` is '' for what someone did on the site on their own. Each
+// is derived from a document (`source`, its path) by interactionsFor, and replaced
+// whenever that document changes (onInteractionSource); rebuildInteractions derives
+// them all again. Tags outside the documents read here are added as they happen
+// (onTagged, source '<path>#tags'), and first sign-ins by getMyAccess (source
+// 'auth/<uid>'). The lab reads them; nobody writes them but the server.
+const INTERACTION_GROUPS = {
+  asked: 'joining', invited: 'joining', approved: 'joining', contact: 'joining', supervises: 'joining', 'signed-up': 'joining',
+  coauthor: 'working', project: 'working', reviewed: 'working', meeting: 'working', introduced: 'working', letter: 'working',
+  tagged: 'talking', replied: 'talking', decided: 'talking',
+  registered: 'site', added: 'site', edited: 'site', proposed: 'site', commented: 'site', read: 'site',
+};
+const INTERACTION_TOP = ['joinRequests', 'members', 'studies', 'projects', 'projectWorkspaces', 'studyRequests', 'introRequests', 'letterRequests',
+  'skills', 'guides', 'events', 'collabWeekSessions'];
+
+const lowerEmail = (v) => String((v && typeof v === 'object' ? v.email : v) || '').trim().toLowerCase();
+
+// Pure, but for `lookup(path)` → that document's data or null (a comment's parent, a
+// proposal). A document at `path` → [{ kind, from, to?, toSlack?, at, title, href, key? }]:
+// toSlack is a tagged Slack id, made an email by the caller.
+async function interactionsFor(path, d, lookup){
+  const seg = path.split('/'), out = [];
+  if (!d) return out;
+  const add = function(kind, from, to, at, title, href, key){
+    from = lowerEmail(from); to = lowerEmail(to);
+    if (!from || from === to) return;
+    out.push({ kind, from, to, at: Number(at) || 0, title: String(title || ''), href: String(href || ''), key: String(key || '') });
+  };
+  const tags = function(from, text, at, title, href, key){
+    taggedIds(text).forEach(function(id){ if (lowerEmail(from)) out.push({ kind: 'tagged', from: lowerEmail(from), toSlack: id, at: Number(at) || 0, title, href, key: (key || '') + id }); });
+  };
+  const top = seg[0], n = seg.length;
+
+  if (n === 2 && top === 'joinRequests'){
+    const href = SITE_URL + 'join-requests.html#r=' + seg[1], title = 'Joining BOLD';
+    add('asked', d.email, '', d.at, title, href);
+    if (d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, d.email, d.invitedBy.at || d.at, title, href);
+    if (d.status === 'approved') add('approved', d.decidedBy, d.email, d.decidedAt, title, href);
+  } else if (n === 2 && top === 'members'){
+    add('contact', d.contactEmail, seg[1], d.approvedAt || d.updatedAt, 'Point of contact', SITE_URL + 'people.html');
+  } else if (n === 2 && top === 'studies'){
+    const title = (d.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision';
+    (d.people || []).forEach(function(p){ add('supervises', p.email, seg[1], d.createdAt || d.updatedAt, title, SITE_URL + 'calendar.html'); });
+  } else if ((n === 2 && top === 'projects') || (n === 4 && top === 'boards' && seg[2] === 'cards')){
+    const href = n === 2 ? projectPageUrl(seg[1]) : cardUrl(seg[1], seg[3]), title = d.title || 'A paper';
+    const people = [];
+    [d.submittedBy && d.submittedBy.email].concat(d.authorEmails || []).forEach(function(e){ e = lowerEmail(e); if (e && people.indexOf(e) < 0) people.push(e); });
+    add('registered', d.submittedBy, '', d.createdAt, title, href);
+    people.forEach(function(a, i){ people.slice(i + 1).forEach(function(b){ add('coauthor', a < b ? a : b, a < b ? b : a, d.createdAt, title, href); }); });
+    ['junior', 'senior'].forEach(function(role){
+      const r = d.reviewers && d.reviewers[role];
+      if (r) people.forEach(function(a){ add('reviewed', r, a, d.updatedAt || d.createdAt, title, href, role); });
+    });
+    const threads = [].concat(d.discussion || [], [].concat.apply([], (d.checklist || []).map(function(it){ return it.comments || []; })));
+    threads.forEach(function(m){
+      add('commented', m.authorEmail, '', m.timestamp, title, href, m.id);
+      tags(m.authorEmail, m.body, m.timestamp, title, href, m.id);
+      (m.replies || []).forEach(function(r){
+        add('commented', r.authorEmail, '', r.timestamp, title, href, r.id);
+        add('replied', r.authorEmail, m.authorEmail, r.timestamp, title, href, r.id);
+        tags(r.authorEmail, r.body, r.timestamp, title, href, r.id);
+      });
+    });
+  } else if (n === 2 && top === 'projectWorkspaces'){
+    const href = projectPageUrl(d.cardId || seg[1], d.boardId), joined = (d.joined || []).map(lowerEmail);
+    (d.members || []).map(lowerEmail).forEach(function(m){
+      joined.forEach(function(j){ if (j !== m && !(joined.indexOf(m) >= 0 && m < j)) add('project', j, m, d.createdAt, d.title || 'A project', href); });
+    });
+  } else if (n === 2 && top === 'studyRequests'){
+    if (d.status === 'approved') add('meeting', d.email, d.student, d.decidedAt || d.at, (d.studentName || 'Their') + ' supervision meeting', SITE_URL + 'calendar.html');
+  } else if (n === 2 && top === 'introRequests'){
+    if (d.status === 'accepted' || d.status === 'done') add('introduced', d.offererEmail, d.requesterEmail, d.updatedAt || d.at, 'An introduction at ' + (d.org || 'an organisation'), introUrl(seg[1]));
+  } else if (n === 2 && top === 'letterRequests'){
+    add('letter', d.requesterEmail, d.writerEmail, d.at, 'A recommendation letter', letterUrl(seg[1]));
+  } else if (n === 2 && ['skills', 'guides', 'events', 'collabWeekSessions'].indexOf(top) >= 0){
+    const href = top === 'skills' ? SITE_URL + 'skill.html?skill=' + encodeURIComponent(seg[1]) : top === 'guides' ? guideUrl(seg[1])
+      : top === 'events' ? SITE_URL + 'event.html?event=' + encodeURIComponent(seg[1]) : SITE_URL + 'session.html?session=' + encodeURIComponent(seg[1]);
+    add('added', d.createdBy, '', d.createdAt, d.title || d.name || seg[1], href);
+  } else if (n === 4 && (top === 'guides' || top === 'handbook' || top === 'skills')){
+    const page = top === 'guides' ? guideUrl(seg[1]) : top === 'handbook' ? handbookUrl(seg[1]) : SITE_URL + 'skill.html?skill=' + encodeURIComponent(seg[1]);
+    const parent = await lookup(top + '/' + seg[1]);
+    const title = (parent && (parent.title || parent.name)) || seg[1];
+    if (seg[2] === 'versions'){
+      add('edited', d.updatedBy, '', d.at || d.updatedAt, title, page);
+    } else if (seg[2] === 'readers' && top !== 'skills'){
+      add('read', d.email, '', d.readAt || d.at, title, page);
+    } else if (seg[2] === 'comments' && top !== 'skills'){
+      const href = page + '#c=' + encodeURIComponent(seg[3]);
+      add('commented', d.by, '', d.at, title, href);
+      tags(d.by && d.by.email, d.text, d.at, title, href);
+      const to = d.parent ? await lookup(top + '/' + seg[1] + '/comments/' + d.parent) : d.proposalId ? await lookup(top + '/' + seg[1] + '/proposals/' + d.proposalId) : null;
+      if (to) add('replied', d.by, to.by, d.at, title, href);
+    } else if (seg[2] === 'proposals' && top !== 'skills'){
+      add('proposed', d.by, '', d.at, title, page);
+      if ((d.status === 'accepted' || d.status === 'declined') && d.decidedBy) add('decided', d.decidedBy, d.by, d.decidedAt, title, page);
+      tags(d.by && d.by.email, [d.after, d.note].concat((d.changes || []).map(function(c){ return c.after; })), d.at, title, page);
+    }
+  }
+  return out;
+}
+
+// Whether interactionsFor reads documents at `path`.
+function isInteractionSource(path){
+  const seg = path.split('/');
+  if (seg.length === 2) return INTERACTION_TOP.indexOf(seg[0]) >= 0;
+  if (seg.length === 4 && seg[0] === 'boards' && seg[2] === 'cards') return true;
+  return seg.length === 4 && ['guides', 'handbook', 'skills'].indexOf(seg[0]) >= 0 && ['versions', 'readers', 'comments', 'proposals'].indexOf(seg[2]) >= 0;
+}
+
+function interactionId(source, x){
+  return crypto.createHash('sha1').update([source, x.kind, x.from, x.to, x.at, x.key || ''].join('|')).digest('hex').slice(0, 28);
+}
+
+// The interactions of `path` (data: the document, or null if it's gone), made emails
+// of tagged Slack ids, as { id: record }.
+async function interactionRecords(path, data, slackEmails){
+  const list = await interactionsFor(path, data, async function(p){ const s = await db.doc(p).get(); return s.exists ? s.data() : null; });
+  const ids = list.filter(function(x){ return x.toSlack && !(x.toSlack in slackEmails); }).map(function(x){ return x.toSlack; });
+  Object.assign(slackEmails, await emailsForSlackIds(ids));
+  ids.forEach(function(id){ if (!(id in slackEmails)) slackEmails[id] = ''; });
+  const out = {};
+  list.forEach(function(x){
+    const to = x.toSlack ? slackEmails[x.toSlack] : x.to;
+    if (x.toSlack && (!to || to === x.from)) return;
+    const rec = { kind: x.kind, group: INTERACTION_GROUPS[x.kind], from: x.from, to: to || '', at: x.at, title: x.title, href: x.href, source: path };
+    out[interactionId(path, Object.assign({}, x, { to: rec.to }))] = rec;
+  });
+  return out;
+}
+
+// Writes `want` ({ id: record }) in place of `have` ({ id: record }): sets what's new or
+// changed, deletes the rest.
+async function replaceInteractions(have, want){
+  const col = db.collection('interactions');
+  let batch = db.batch(), n = 0;
+  const step = async function(){ if (++n >= 400){ await batch.commit(); batch = db.batch(); n = 0; } };
+  for (const id of Object.keys(have)) if (!want[id]) { batch.delete(col.doc(id)); await step(); }
+  for (const id of Object.keys(want)) if (stableJson(have[id] || null) !== stableJson(want[id])) { batch.set(col.doc(id), want[id]); await step(); }
+  if (n) await batch.commit();
+}
+
+async function syncInteractions(path, data){
+  const have = {};
+  (await db.collection('interactions').where('source', '==', path).get()).docs.forEach(function(s){ have[s.id] = s.data(); });
+  await replaceInteractions(have, await interactionRecords(path, data, {}));
+}
+
+function onInteractionSource(document){
+  return onDocumentWritten({ document }, async function(event){
+    const path = (event.data.after.exists ? event.data.after : event.data.before).ref.path;
+    if (!isInteractionSource(path)) return;
+    try { await syncInteractions(path, event.data.after.exists ? event.data.after.data() : null); }
+    catch (err){ logger.error('Recording interactions failed', { path, error: String(err && err.message || err) }); }
+  });
+}
+exports.onInteractionSource = onInteractionSource('{c1}/{d1}');
+exports.onInteractionSourceNested = onInteractionSource('{c1}/{d1}/{c2}/{d2}');
+
+// Tags the documents above don't cover (onTagged): added as they happen, kept.
+async function recordTags(path, by, emails, at, place){
+  if (isInteractionSource(path) || !by) return;
+  const source = path + '#tags', batch = db.batch();
+  Object.keys(emails).forEach(function(id){
+    const to = emails[id];
+    if (!to || to === by) return;
+    const rec = { kind: 'tagged', group: 'talking', from: by, to, at, title: place.title, href: place.url, source };
+    batch.set(db.collection('interactions').doc(interactionId(source, rec)), rec);
+  });
+  await batch.commit();
+}
+
+// Someone's first sign-in (their Firebase account's creation), once.
+const signUpsSeen = new Set();
+async function recordSignUp(uid, email){
+  if (!uid || !email || signUpsSeen.has(uid)) return;
+  signUpsSeen.add(uid);
+  const source = 'auth/' + uid, rec = { kind: 'signed-up', group: 'joining', from: email, to: '', at: 0, title: 'BOLD.OS', href: SITE_URL, source };
+  const ref = db.collection('interactions').doc(crypto.createHash('sha1').update(source).digest('hex').slice(0, 28));
+  if ((await ref.get()).exists) return;
+  const u = await admin.auth().getUser(uid);
+  rec.at = Date.parse(u.metadata.creationTime) || Date.now();
+  await ref.set(rec);
+}
+
+// Derives every interaction again, from every document they come from (PIs and admins;
+// Network → Rebuild). Tags recorded as they happened and sign-ins are kept.
+exports.rebuildInteractions = onCall(
+  { timeoutSeconds: 540, memory: '1GiB' },
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    const docs = [];
+    for (const c of INTERACTION_TOP) (await db.collection(c).get()).docs.forEach(function(s){ docs.push(s); });
+    for (const g of ['cards', 'versions', 'readers', 'comments', 'proposals'])
+      (await db.collectionGroup(g).get()).docs.forEach(function(s){ if (isInteractionSource(s.ref.path)) docs.push(s); });
+    const want = {}, slackEmails = {};
+    for (const s of docs) Object.assign(want, await interactionRecords(s.ref.path, s.data(), slackEmails));
+    const have = {};
+    (await db.collection('interactions').get()).docs.forEach(function(s){
+      const src = String(s.data().source || '');
+      if (src.indexOf('auth/') === 0 || /#tags$/.test(src)) return;
+      have[s.id] = s.data();
+    });
+    await replaceInteractions(have, want);
+    // First sign-ins, from Firebase Auth.
+    try {
+      let page;
+      do {
+        page = await admin.auth().listUsers(1000, page && page.pageToken);
+        for (const u of page.users) if (u.email) await recordSignUp(u.uid, String(u.email).toLowerCase());
+      } while (page.pageToken);
+    } catch (err){ logger.warn('Listing first sign-ins failed', { error: String(err && err.message || err) }); }
+    return { count: Object.keys(want).length, sources: docs.length };
+  }
+);
+
 exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
@@ -4726,5 +4946,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource
 };

@@ -1,0 +1,31 @@
+---
+title: "Network | BOLD Lab"
+description: "Who has worked, talked and come to BOLD with whom."
+sdk: ["firestore", "functions"]
+css: "profile"
+scripts: ["join-common.js", "connections.js", "pages/network.js"]
+permalink: "network.html"
+nav: "network.html"
+---
+<div class="hero">
+  <h1>Network</h1>
+  <p class="hero-note">Everyone on BOLD.OS and who they've interacted with: joining, working together and talking. Click someone to see their connections.</p>
+</div>
+
+<main>
+  <div class="nw-controls">
+    <div class="view-toggle" role="group" aria-label="Kinds" id="nwKinds"></div>
+    <div class="view-toggle" role="group" aria-label="Since" id="nwSince"></div>
+    <select id="nwGroup" aria-label="Group"></select>
+    <input type="search" id="nwFind" placeholder="Find someone" aria-label="Find someone" list="nwPeople">
+    <datalist id="nwPeople"></datalist>
+  </div>
+  <p class="proj-msg" id="nwMsg">Loading&hellip;</p>
+  <div class="cx-graph" id="nwGraph" hidden></div>
+  <div id="nwLegend"></div>
+  <div id="nwPerson"></div>
+  <div class="nw-admin" id="nwAdmin" hidden>
+    <button type="button" class="btn-text" id="nwRebuild">Rebuild from everything on BOLD.OS</button>
+    <span class="proj-meta" id="nwRebuildMsg" role="status"></span>
+  </div>
+</main>

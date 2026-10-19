@@ -34,6 +34,7 @@ export default {
     { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true },
     { label: 'People', href: 'people.html', links: [
       { label: 'Members', href: 'people.html' },
+      { label: 'Network', href: 'network.html' },
       { label: 'Requests', href: 'join-requests.html' },
     ] },
     { label: 'Projects', href: 'projects.html', links: [

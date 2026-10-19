@@ -142,6 +142,12 @@ service cloud.firestore {
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['channels', 'updatedAt', 'updatedBy'])
         && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'staff']);
     }
+    // Who did what with whom (functions/index.js "Interactions"): the lab reads them, for
+    // Connections on a profile and the Network page; only the server writes them.
+    match /interactions/{id} {
+      allow read: if isLabMember();
+      allow write: if false;
+    }
     // Requests to be in another group: theirs to read, and the PIs' and admins'; all writes
     // through groupRequest.
     match /groupRequests/{id} {

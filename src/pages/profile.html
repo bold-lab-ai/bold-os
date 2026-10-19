@@ -3,7 +3,7 @@ title: "Profile | BOLD Lab"
 description: "Your BOLD Lab profile."
 sdk: ["functions"]
 css: "profile"
-scripts: ["pages/profile.js", "join-common.js", "pages/member-details.js", "project-fields.js", "pages/studies.js", "pages/profile-progress.js"]
+scripts: ["pages/profile.js", "join-common.js", "pages/member-details.js", "project-fields.js", "pages/studies.js", "pages/profile-progress.js", "connections.js"]
 permalink: "profile.html"
 ---
 <div class="hero">
@@ -20,6 +20,7 @@ permalink: "profile.html"
     <a class="guide-tab" href="#details">Your details</a>
     <a class="guide-tab" href="#studies" id="studiesTab" hidden>Studies</a>
     <a class="guide-tab" href="#projects">Projects</a>
+    <a class="guide-tab" href="#connections">Connections</a>
     <a class="guide-tab" href="#linked-accounts">Linked accounts</a>
   </nav>
 
@@ -38,6 +39,11 @@ permalink: "profile.html"
       <div class="proj-group"><h3>Author<span class="proj-count" id="cntAuthor"></span></h3><ul class="proj-list" id="projAuthor"></ul></div>
       <div class="proj-group"><h3>Reviewer<span class="proj-count" id="cntReviewer"></span></h3><ul class="proj-list" id="projReviewer"></ul></div>
     </div>
+  </section>
+
+  <section class="profile-panel" id="connections" hidden>
+    <p class="hero-note">Who you've interacted with on BOLD.OS, and how you came to BOLD. <a href="network.html">See everyone</a>.</p>
+    <div id="connectionsBody"></div>
   </section>
 
   <section class="profile-panel" id="linked-accounts" hidden>

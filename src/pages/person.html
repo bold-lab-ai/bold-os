@@ -3,7 +3,7 @@ title: "Person | BOLD Lab"
 description: "A member of BOLD."
 sdk: ["firestore"]
 css: "profile"
-scripts: ["join-common.js", "project-fields.js", "pages/person.js"]
+scripts: ["join-common.js", "project-fields.js", "connections.js", "pages/person.js"]
 permalink: "person.html"
 nav: "people.html"
 ---
@@ -16,5 +16,14 @@ nav: "people.html"
 </div>
 
 <main>
-  <div id="person"><p class="proj-msg">Loading&hellip;</p></div>
+  <nav class="guide-tabs profile-tabs" id="personTabs" aria-label="Person">
+    <a class="guide-tab" href="#details">Details</a>
+    <a class="guide-tab" href="#connections">Connections</a>
+  </nav>
+  <section class="profile-panel" id="details">
+    <div id="person"><p class="proj-msg">Loading&hellip;</p></div>
+  </section>
+  <section class="profile-panel" id="connections" hidden>
+    <div id="connectionsBody"></div>
+  </section>
 </main>

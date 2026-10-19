@@ -6,6 +6,8 @@
 // Buttons: Message me on Slack (slack://user, a DM in the app) and Book time with me
 // (their `bookingUrl`; without one, Find a time in Google Calendar: a new event in your
 // own calendar with their email as a guest).
+// Two tabs, named by the #hash: Details and Connections (connections.js, drawn the
+// first time it's shown).
 (function(){
   var esc = BOLD.escapeHtml;
   var root = document.getElementById('person');
@@ -32,6 +34,24 @@
     }).join('') + '</ul></div>';
   }
 
+  var personEmail = '', viewer = '', drawn = false;
+  function showTab(){
+    var want = location.hash === '#connections' ? 'connections' : 'details';
+    document.getElementById('details').hidden = want !== 'details';
+    document.getElementById('connections').hidden = want !== 'connections';
+    Array.prototype.forEach.call(document.querySelectorAll('#personTabs .guide-tab'), function(a){
+      var on = a.getAttribute('href') === '#' + want;
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    if (want === 'connections' && personEmail && !drawn) {
+      drawn = true;
+      BoldConnections.mountPerson(document.getElementById('connectionsBody'), personEmail, viewer);
+    }
+  }
+  window.addEventListener('hashchange', showTab);
+  showTab();
+
   BOLD.onUser(function(user){
     if (!user) return;
     if (!id) { root.innerHTML = '<p class="proj-msg">No one chosen. <a href="people.html">See everyone</a>.</p>'; return; }
@@ -39,7 +59,8 @@
       if (!p.exists || !p.data().email) { root.innerHTML = '<p class="proj-msg">That person isn’t on BOLD.OS. <a href="people.html">See everyone</a>.</p>'; return; }
       var person = p.data(), email = String(person.email).toLowerCase();
       // Your own page is your profile.
-      if (email === String(user.email || '').toLowerCase()) { location.replace('profile.html'); return; }
+      if (email === String(user.email || '').toLowerCase()) { location.replace('profile.html' + location.hash); return; }
+      personEmail = email; viewer = String(user.email || '').toLowerCase(); showTab();
       document.getElementById('personName').textContent = person.name || email;
       document.title = (person.name || 'Person') + ' | BOLD Lab';
       return Promise.all([
