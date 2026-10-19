@@ -326,6 +326,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       meetingEntryHtml(m) + (m ? '<button class="btn-text danger" type="button" id="meetingRemove">Remove the meeting</button>' : ''), 'meetingSave');
     html += row('Slides', ws && ws.deckUrl ? openLink(ws.deckUrl) : state + retry);
     html += row('Meeting notes', ws && ws.notesUrl ? openLink(ws.notesUrl) : failed ? missing() : state);
+    // Set up part way (shared with some members, say): the error and Try again stay.
+    if (failed && ws.deckUrl && !setting) html += row('Setting up', '<span class="detail-muted">' + esc(ws.error) + '</span>' + retry);
     return html;
   }
 
