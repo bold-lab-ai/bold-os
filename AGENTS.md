@@ -45,7 +45,7 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
 
 ## How pages are built
 
-- **Front matter:** `title`, `description`, `css` (a file in `assets/css/pages/`), `scripts` (files in `assets/js/`), `sdk` (extra Firebase SDKs, e.g. `["firestore", "functions"]`), `permalink` (keep URLs flat: `events.html`), `nav` (the sidebar link to highlight), `public` (no sign-in gate).
+- **Front matter:** `title`, `description`, `css` (a file in `assets/css/pages/`), `scripts` (files in `assets/js/`), `sdk` (extra Firebase SDKs, e.g. `["firestore", "functions"]`), `permalink` (keep URLs flat: `events.html`), `nav` (the sidebar link to highlight), `public` (no sign-in gate), `bare` (no masthead, sidebar or footer: pages for people outside the lab, like `join.html`).
 - **JavaScript:** plain classic scripts, each wrapped in an IIFE; no framework, no bundler. Never initialise Firebase yourself: use `BOLD.getApp()`, `BOLD.getAuth()`, `BOLD.onUser(fn)` from `bold.js`. Put any user-provided text through `BOLD.escapeHtml` before it goes into HTML.
 - **External scripts:** only the pinned Firebase compat SDK (version in `site.js`), Google Fonts and KaTeX on the board. Ask before adding another.
 - **One page per kind of content**, chosen by a query parameter: `event.html?event=`, `session.html?session=`, `talk.html?talk=`, `skill.html?skill=`, `guide.html?guide=`. **Never break a URL**: Slack messages and bookmarks link to them. When one moves, leave a redirect page (see `src/pages/events/old-session-talk-urls.njk`).

@@ -22,11 +22,11 @@
 {% if emulatorWarning %}
 <div id="emulatorWarning" class="emulator-warning" hidden>&#9888; FIRESTORE EMULATOR MODE &mdash; this is NOT real data. Never commit FIRESTORE_USE_EMULATOR as true.</div>
 {% endif %}
-{% include "partials/masthead.njk" %}
+{% if not bare %}{% include "partials/masthead.njk" %}{% endif %}
 {% if not public %}{% include "partials/gate.njk" %}{% endif %}
 {% include "partials/shell-open.njk" %}
 {{ content | safe }}
-{% if not noFooter %}{% include "partials/footer.njk" %}{% endif %}
+{% if not noFooter and not bare %}{% include "partials/footer.njk" %}{% endif %}
 {% include "partials/shell-close.njk" %}
 <script src="assets/js/search-box.js?v={{ build.stamp }}"></script>
 {% for script in scripts %}<script src="assets/js/{{ script }}?v={{ build.stamp }}"></script>
