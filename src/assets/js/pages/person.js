@@ -3,6 +3,8 @@
 // studies if they have any (studies/{email}) and their planned and ongoing projects
 // (projectWorkspaces they're a member of). Read-only: each person edits their own on
 // profile.html. The Slack id (the `people` roster) keeps email addresses out of links.
+// Buttons: Message me on Slack (slack://user, a DM in the app) and Book time with me
+// (their `bookingUrl`; greyed out until they add one).
 (function(){
   var esc = BOLD.escapeHtml;
   var root = document.getElementById('person');
@@ -45,6 +47,13 @@
         db.collection('projectWorkspaces').where('members', 'array-contains', email).get(),
       ]).then(function(r){
         var m = r[0].exists ? r[0].data() : null, s = r[1].exists ? r[1].data() : null;
+        // Message them (a DM in the Slack app) and book time (their booking link, if they gave one).
+        var booking = m && /^https:\/\/\S+$/.test(m.bookingUrl || '') ? m.bookingUrl : '';
+        var actions = document.getElementById('personActions');
+        actions.innerHTML = '<a class="btn-box is-primary" href="slack://user?team=' + BOLD.SLACK_TEAM + '&amp;id=' + encodeURIComponent(id) + '">Message me on Slack</a>' +
+          (booking ? '<a class="btn-box" href="' + esc(booking) + '" target="_blank" rel="noopener">Book time with me</a>'
+            : '<button type="button" class="btn-box" disabled title="' + esc((person.name || 'They').split(' ')[0]) + ' hasn’t added a booking link to their profile yet">Book time with me</button>');
+        actions.hidden = false;
         var projects = r[2].docs.map(function(d){ return d.data(); }).filter(function(w){ return w.group !== 'completed'; })
           .sort(function(a, b){ return String(a.title).localeCompare(String(b.title)); });
         root.innerHTML = (m ? BoldJoin.factsHtml(m, { other: true, name: person.name || m.name, email: email, group: BoldJoin.groupBadge(BoldJoin.groupOf(m)) })

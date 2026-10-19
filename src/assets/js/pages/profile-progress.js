@@ -28,7 +28,7 @@
       ['Group', !!member, 'details'], ['Pronouns', has('pronouns'), 'details'],
       ['Role', has('role'), 'details'], ['Institution', has('institution'), 'details'], ['Point of contact', has('contact'), 'details'],
       ['Research interests', has('interests'), 'details'], ['Research pillars', !!(m.pillars || []).length, 'details'],
-      ['Based in', has('basedIn'), 'details'], ['Links', has('links'), 'details'], ['Feedback preference', has('feedback'), 'details'],
+      ['Based in', has('basedIn'), 'details'], ['Links', has('links'), 'details'], ['Feedback preference', has('feedback'), 'details'], ['Booking link', has('bookingUrl'), 'details'],
       ['Start date', has('startDate'), 'details'],
     ];
     if (BoldJoin.NO_END.indexOf(m.role) === -1) out.push(['End date', has('endDate'), 'details']);

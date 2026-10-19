@@ -84,6 +84,7 @@ window.BoldJoin = (function(){
         return '<label class="jn-check"><input type="checkbox" value="' + esc(p) + '"' + (pillars.indexOf(p) !== -1 ? ' checked' : '') + '> ' + esc(p) + '</label>';
       }).join('') + '</fieldset>') +
     group('Working with you',
+      (o.withIdentity ? '' : t('jn-booking', 'Booking link, for “Book time with me” (a Google Calendar booking page, Calendly…)', v.bookingUrl, 'https://calendar.app.google/…', 300, 'url')) +
       '<fieldset class="jn-feedback"><legend>How you like to receive feedback</legend>' + FEEDBACK.map(function(f){
         return '<label class="jn-check"><input type="radio" name="jn-feedback" value="' + f[0] + '"' + (v.feedback === f[0] ? ' checked' : '') + '> <span><strong>' + f[1] + '</strong>: ' + esc(f[2]) + '</span></label>';
       }).join('') + '</fieldset>');
@@ -95,7 +96,7 @@ window.BoldJoin = (function(){
     var out = {
       links: v('.jn-links'), institution: v('.jn-institution'), role: v('.jn-role'), contact: v('.jn-contact'),
       interests: v('.jn-interests'), basedIn: v('.jn-based'), startDate: v('.jn-start'), endDate: v('.jn-end'),
-      pronouns: v('.jn-pronouns'), feedback: (el.querySelector('.jn-feedback input:checked') || {}).value || '',
+      pronouns: v('.jn-pronouns'), bookingUrl: v('.jn-booking'), feedback: (el.querySelector('.jn-feedback input:checked') || {}).value || '',
       listOnWebsite: !!(el.querySelector('.jn-list') || {}).checked,
       pillars: Array.prototype.map.call(el.querySelectorAll('.jn-pillars input:checked'), function(i){ return i.value; }),
     };
@@ -119,6 +120,7 @@ window.BoldJoin = (function(){
     if (!d.interests) return 'Give your main research interests.';
     if (!d.endDate && NO_END.indexOf(d.role) === -1) return 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).';
     if (d.startDate && d.endDate && d.endDate < d.startDate) return 'The end date is before the start date.';
+    if (d.bookingUrl && !/^https:\/\/\S+$/.test(d.bookingUrl)) return 'The booking link starts with https://';
     return '';
   }
 
@@ -141,7 +143,8 @@ window.BoldJoin = (function(){
         row('Dates', esc(d.startDate && d.endDate ? d.startDate + ' – ' + d.endDate : d.startDate ? 'From ' + d.startDate : d.endDate ? 'Until ' + d.endDate : '')) +
         (d.role !== undefined ? row('On the website', d.listOnWebsite ? 'Yes' : 'No') : '')) +
       group('Research', row('Interests', esc(d.interests || '')) + row('Pillars', (d.pillars || []).map(esc).join('<br>'))) +
-      group(o.other ? 'Working with them' : 'Working with you', row('Feedback', fb ? '<strong>' + fb[1] + '</strong>: ' + esc(fb[2]) : ''));
+      group(o.other ? 'Working with them' : 'Working with you', row('Feedback', fb ? '<strong>' + fb[1] + '</strong>: ' + esc(fb[2]) : '') +
+        row('Booking link', /^https:\/\/\S+$/.test(d.bookingUrl || '') ? '<a href="' + esc(d.bookingUrl) + '" target="_blank" rel="noopener">' + esc(d.bookingUrl.replace(/^https:\/\//, '')) + '</a>' : ''));
   }
 
   return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };

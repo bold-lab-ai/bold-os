@@ -124,3 +124,5 @@ button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
 .back-link:hover{color:var(--accent);}
 #person .md-group:first-child{margin-top:24px;}
+.pp-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;}
+a.btn-box{text-decoration:none; display:inline-block;}
