@@ -133,6 +133,20 @@ service cloud.firestore {
         && request.resource.data.roles is list && request.resource.data.roles.size() <= 30
         && request.resource.data.pillars is list && request.resource.data.pillars.size() <= 20;
     }
+    // Each group's Slack channel (functions/index.js "Groups"): the lab reads it; PIs and
+    // admins set it on Join requests. channelErrors is the server's.
+    match /settings/groups {
+      allow read: if isLabMember();
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['channels', 'updatedAt', 'updatedBy'])
+        && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'pan']);
+    }
+    // Requests to be in another group: theirs to read, and the PIs' and admins'; all writes
+    // through groupRequest.
+    match /groupRequests/{id} {
+      allow read: if hasFullWrite() || (isLabMember() && resource.data.email == email().lower());
+      allow write: if false;
+    }
+
     match /settings/joinInvite {
       allow read: if hasFullWrite();
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['slackInviteUrl', 'slackInviteExpires', 'subject', 'body', 'updatedAt', 'updatedBy'])

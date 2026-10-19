@@ -1,7 +1,9 @@
 // join-requests.html: the PIs and admins approve or decline requests to join
-// BOLD (decideJoinRequest), see whether each welcome email went (sendWelcomeEmail
+// BOLD (decideJoinRequest) and members' requests to be in another group of Who is BOLD
+// (groupRequests, groupRequest), see whether each welcome email went (sendWelcomeEmail
 // sends one again), and edit the Slack invite link, the email's text
-// (settings/joinInvite) and the join form's choices (settings/joinForm).
+// (settings/joinInvite), the join form's choices (settings/joinForm) and each group's
+// Slack channel (settings/groups: whoever is in the group is added to it).
 // Only PIs and admins can read any of it (firestore.rules).
 (function(){
   var esc = BOLD.escapeHtml;
@@ -11,6 +13,7 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, form = null, unsubs = [], busy = {}, editing = false;
+  var groupReqs = [], groups = {};
 
   var SUBJECT = 'Welcome to BOLD';
   var BODY = ['Hi {name},', '', 'Welcome to BOLD! Your request to join has been approved. Here are your next steps:', '',
@@ -36,6 +39,19 @@
       '</div></li>';
   }
 
+  // A member asking to be in another group.
+  function groupReqHtml(r){
+    var open = r.status === 'open';
+    return '<li id="g-' + esc(r.id) + '"><span class="proj-title">' + esc(r.name) + '</span>' +
+      '<span class="proj-meta">' + esc(r.email) + ' · asked ' + when(r.at) + '</span>' +
+      '<p class="jr-move">' + BoldJoin.groupBadge(r.from) + ' → ' + BoldJoin.groupBadge(r.to) + '</p>' +
+      (r.note ? '<p class="lt-text">' + esc(r.note) + '</p>' : '') +
+      (open ? '<div class="event-controls"><button type="button" class="btn-text jr-g-approve" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Approve</button>' +
+          '<button type="button" class="btn-text danger jr-g-decline" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Decline</button></div>'
+        : '<p class="proj-meta">' + (r.status === 'withdrawn' ? 'Withdrawn' : (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + esc(r.decidedByName || r.decidedBy || '')) + ', ' + when(r.decidedAt) + '</p>') +
+      '</li>';
+  }
+
   function settingsHtml(){
     var inv = invite || {}, f = form || {};
     return '<section class="block" id="settings"><div class="block-head"><h2>Settings</h2></div>' +
@@ -44,6 +60,12 @@
       '<label>The invite link expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label>' +
       '<label>Welcome email subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
       '<label>Welcome email ({name}: their first name, {slackInvite}: the link above, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label>' +
+      '<fieldset class="jn-pillars"><legend>Slack channel for each group (everyone in it is added; <a href="boldiquette.html#who-is-bold">Who is BOLD</a>)</legend>' +
+        BoldJoin.CATEGORIES.map(function(c){
+          var err = (groups.channelErrors || {})[c[0]];
+          return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="80" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel (none: nobody is added)"></label>' +
+            (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
+        }).join('') + '</fieldset>' +
       '<label>Roles on the join form, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
       '<label>Research pillars on the join form, one per line<textarea class="jr-pillars no-tags" rows="4">' + esc((f.pillars || BoldJoin.PILLARS).join('\n')) + '</textarea></label>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div></div></section>';
@@ -61,21 +83,27 @@
 
   function render(){
     if (!me) return;
-    if (staff === false) { main.innerHTML = '<p class="proj-msg">Only PIs and admins review requests to join.</p>'; return; }
+    if (staff === false) { main.innerHTML = '<p class="proj-msg">Only PIs and admins review these requests.</p>'; return; }
     if (staff === null || requests === null) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
     if (editing) return; // don't redraw over settings being changed
     var open = requests.filter(function(r){ return r.status === 'open'; });
     var done = requests.filter(function(r){ return r.status !== 'open'; });
+    var gOpen = groupReqs.filter(function(r){ return r.status === 'open'; });
+    var gDone = groupReqs.filter(function(r){ return r.status !== 'open'; });
+    var list = function(items, html, none){ return items.length ? '<ul class="proj-list">' + items.map(html).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>'; };
+    // Joining BOLD and changing group, apart; each waiting, then decided.
     main.innerHTML =
       inviteNotice() +
-      '<section class="block"><div class="block-head"><h2>Waiting<span class="proj-count">' + open.length + '</span></h2></div>' +
-        (open.length ? '<ul class="proj-list">' + open.map(requestHtml).join('') + '</ul>' : '<p class="proj-msg">No requests waiting.</p>') + '</section>' +
-      '<section class="block"><div class="block-head"><h2>Decided</h2></div>' +
-        (done.length ? '<ul class="proj-list">' + done.map(requestHtml).join('') + '</ul>' : '<p class="proj-msg">None yet.</p>') + '</section>' +
+      '<section class="block"><div class="block-head"><h2>Joining BOLD<span class="proj-count">' + open.length + ' waiting</span></h2></div>' +
+        list(open, requestHtml, 'No requests waiting.') +
+        (done.length ? '<div class="proj-group"><h3>Decided</h3>' + list(done, requestHtml, '') + '</div>' : '') + '</section>' +
+      '<section class="block" id="groups"><div class="block-head"><h2>Changing group<span class="proj-count">' + gOpen.length + ' waiting</span></h2></div>' +
+        list(gOpen, groupReqHtml, 'No requests waiting.') +
+        (gDone.length ? '<div class="proj-group"><h3>Decided</h3>' + list(gDone, groupReqHtml, '') + '</div>' : '') + '</section>' +
       settingsHtml();
     var s = main.querySelector('.jr-settings');
     s.addEventListener('input', function(){ editing = true; });
-    var m = /#r=([A-Za-z0-9]+)/.exec(location.hash), el = m && document.getElementById('r-' + m[1]);
+    var m = /#([rg])=([A-Za-z0-9]+)/.exec(location.hash), el = m && document.getElementById(m[1] + '-' + m[2]);
     if (el && !render.jumped) { render.jumped = true; el.scrollIntoView({ block: 'start' }); }
   }
 
@@ -88,11 +116,15 @@
     if (url && !/^https:\/\/\S+$/.test(url)) { err.textContent = 'The invite link starts with https://'; err.hidden = false; return; }
     var roles = lines(v('.jr-roles')), pillars = lines(v('.jr-pillars'));
     if (!roles.length) { err.textContent = 'Give at least one role.'; err.hidden = false; return; }
+    var channels = {};
+    Array.prototype.forEach.call(s.querySelectorAll('.jr-chan'), function(i){ var v = i.value.trim().replace(/^#/, '').toLowerCase(); if (v) channels[i.getAttribute('data-group')] = v; });
+    if (Object.keys(channels).some(function(k){ return !/^[a-z0-9_-]{1,80}$/.test(channels[k]); })) { err.textContent = 'Slack channel names use letters, numbers, hyphens and underscores.'; err.hidden = false; return; }
     var stamp = { updatedAt: Date.now(), updatedBy: me.email };
     btn.disabled = true; err.hidden = true;
     Promise.all([
       db.collection('settings').doc('joinInvite').set(Object.assign({ slackInviteUrl: url, slackInviteExpires: v('.jr-expires'), subject: v('.jr-subject').trim() || SUBJECT, body: v('.jr-body') || BODY }, stamp)),
       db.collection('settings').doc('joinForm').set(Object.assign({ roles: roles, pillars: pillars }, stamp)),
+      db.collection('settings').doc('groups').set(Object.assign({ channels: channels }, stamp)),
     ]).then(function(){
       editing = false; btn.disabled = false; btn.textContent = 'Saved'; setTimeout(function(){ btn.textContent = 'Save settings'; }, 1500);
     }).catch(function(e){
@@ -105,6 +137,19 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
+    var gid = t.getAttribute('data-gid');
+    if (gid) {
+      var g = groupReqs.filter(function(q){ return q.id === gid; })[0];
+      if (!g) return;
+      var accept = t.classList.contains('jr-g-approve');
+      if (!window.confirm((accept ? 'Move ' + g.name + ' to ' : 'Decline ' + g.name + '’s request for ') + BoldJoin.categoryLabel(g.to) + '? They’re told on Slack.')) return;
+      busy[gid] = true; t.disabled = true;
+      fn('groupRequest')({ action: 'decide', id: gid, accept: accept }).catch(function(err){
+        console.error('[BOLD Join] deciding the group request failed', err);
+        window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
+      }).then(function(){ delete busy[gid]; render(); });
+      return;
+    }
     var id = t.getAttribute('data-id');
     var r = requests && requests.filter(function(q){ return q.id === id; })[0];
     if (!r) return;
@@ -139,6 +184,10 @@
       }, function(err){ console.error('[BOLD Join] loading requests failed', err); }));
       unsubs.push(db.collection('settings').doc('joinInvite').onSnapshot(function(s){ invite = s.exists ? s.data() : {}; render(); }, function(){}));
       unsubs.push(db.collection('settings').doc('joinForm').onSnapshot(function(s){ form = s.exists ? s.data() : {}; render(); }, function(){}));
+      unsubs.push(db.collection('groupRequests').orderBy('at', 'desc').limit(200).onSnapshot(function(snap){
+        groupReqs = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); render();
+      }, function(err){ console.error('[BOLD Join] loading group requests failed', err); }));
+      unsubs.push(db.collection('settings').doc('groups').onSnapshot(function(s){ groups = s.exists ? s.data() : {}; render(); }, function(){}));
     }).catch(function(err){ console.error('[BOLD Join] checking access failed', err); staff = false; render(); });
   });
 })();

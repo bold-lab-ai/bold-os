@@ -3950,6 +3950,133 @@ exports.retryWelcomeEmails = onSchedule(
   }
 );
 
+// ---------- Groups: the BOLDiquette's Who is BOLD ----------
+// Every member is in one group: the one a PI or admin set (members' `category`, on the
+// People page, or by approving a request), else by role: PIs are BOLD-exec, PhD
+// students BOLD-internal, everyone else PAN-BOLD (groupOf; BoldJoin.groupOf on the
+// pages, kept in sync by hand). A member asks for another group on their profile
+// (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
+// requests. Each group may have a Slack channel (settings/groups.channels, set there):
+// whoever comes into a group is invited to it (onMemberGroup), and setting a channel
+// invites the group's members (onGroupChannels). Nobody is removed from a channel.
+const GROUPS = ['exec', 'internal', 'associate', 'pan'];
+const GROUP_LABELS = { exec: 'BOLD-exec', internal: 'BOLD-internal', associate: 'BOLD-associate', pan: 'PAN-BOLD' };
+
+// Pure: a member record → its group.
+function groupOf(m){
+  m = m || {};
+  if (GROUPS.indexOf(m.category) >= 0) return m.category;
+  return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : 'pan';
+}
+
+function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, '').toLowerCase(); }
+
+// Invites each of `emails` to group channel `name`; → the first error, or ''.
+async function inviteToGroupChannel(token, emails, name){
+  let error = '';
+  for (const e of emails){
+    if (!(await slackIdForEmail(e))) continue;   // not on Slack (yet)
+    try { await inviteToProjectChannel(token, e, name); }
+    catch (err){
+      logger.warn('Adding someone to a group channel failed', { channel: name, error: String(err.message) });
+      error = error || err.message;
+      if (/can.t see|can.t manage/.test(err.message)) break;   // same for everyone after
+    }
+  }
+  return error;
+}
+
+exports.onMemberGroup = onDocumentWritten(
+  { document: 'members/{email}', secrets: [SLACK_BOT_TOKEN] },
+  async function(event){
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;
+    const g = groupOf(after);
+    if (before && groupOf(before) === g) return;
+    const set = (await db.collection('settings').doc('groups').get()).data() || {};
+    const name = groupChannelName((set.channels || {})[g]);
+    if (name) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
+  }
+);
+
+exports.onGroupChannels = onDocumentWritten(
+  { document: 'settings/groups', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 540 },
+  async function(event){
+    const before = (event.data.before.exists && event.data.before.data().channels) || {};
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;
+    const channels = after.channels || {};
+    const changed = GROUPS.filter(function(g){ return groupChannelName(channels[g]) && groupChannelName(channels[g]) !== groupChannelName(before[g]); });
+    if (!changed.length) return;
+    const members = (await db.collection('members').get()).docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); });
+    const errors = Object.assign({}, after.channelErrors || {});
+    for (const g of changed){
+      const err = await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), members.filter(function(m){ return groupOf(m) === g; }).map(function(m){ return m.email; }), groupChannelName(channels[g]));
+      if (err) errors[g] = err; else delete errors[g];
+    }
+    await event.data.after.ref.set({ channelErrors: errors }, { merge: true });
+  }
+);
+
+// A member's request to be in another group, and the PIs' and admins' decision:
+// - 'request': { to, note } → { id }; one open request at a time; DMs the PIs and admins.
+// - 'withdraw': { id }: their own open request.
+// - 'decide': { id, accept }: PIs and admins; accepting sets their group. DMs them.
+exports.groupRequest = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    const col = db.collection('groupRequests');
+    const token = SLACK_BOT_TOKEN.value();
+    if (d.action === 'request'){
+      const m = await db.collection('members').doc(email).get();
+      if (!m.exists) throw new HttpsError('failed-precondition', 'Add your details first.');
+      const to = String(d.to || '');
+      if (GROUPS.indexOf(to) < 0) throw new HttpsError('invalid-argument', 'Choose a group.');
+      const from = groupOf(m.data());
+      if (to === from) throw new HttpsError('invalid-argument', 'You’re already in ' + GROUP_LABELS[to] + '.');
+      const open = await col.where('email', '==', email).where('status', '==', 'open').limit(1).get();
+      if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
+      const name = m.data().name || request.auth.token.name || email;
+      const note = String(d.note || '').trim().slice(0, 1000);
+      const ref = await col.add({ email, name, from, to, note, status: 'open', at: Date.now() });
+      const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+      await sendEvent(token, { emails: staff, headline: '🏷️ ' + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to] +
+        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id) + '.' });
+      return { id: ref.id };
+    }
+    const id = String(d.id || '');
+    if (!validSlug(id)) throw new HttpsError('invalid-argument', 'No request given.');
+    const ref = col.doc(id);
+    if (d.action === 'withdraw'){
+      await db.runTransaction(async function(tx){
+        const r = (await tx.get(ref)).data();
+        if (!r || r.email !== email) throw new HttpsError('not-found', 'That request isn’t there.');
+        if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+        tx.update(ref, { status: 'withdrawn', decidedAt: Date.now() });
+      });
+      return { ok: true };
+    }
+    if (d.action !== 'decide') throw new HttpsError('invalid-argument', 'Unknown action.');
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins decide.');
+    const accept = !!d.accept;
+    const r = await db.runTransaction(async function(tx){
+      const r = (await tx.get(ref)).data();
+      if (!r) throw new HttpsError('not-found', 'That request isn’t there.');
+      if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+      tx.update(ref, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: request.auth.token.name || email, decidedAt: Date.now() });
+      if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now() });
+      return r;
+    });
+    await sendEvent(token, { emails: [r.email], headline: accept
+      ? '🏷️ You’re now ' + GROUP_LABELS[r.to] + ' (' + linkedTitle('Who is BOLD', SITE_URL + 'boldiquette.html#who-is-bold') + ').'
+      : '🏷️ Your request to move to ' + GROUP_LABELS[r.to] + ' was declined. Ask a PI if you’d like to know more.' });
+    return { ok: true };
+  }
+);
+
 // Slack invite links expire (30 days at most). settings/joinInvite.slackInviteExpires
 // (YYYY-MM-DD, set with the link on join-requests.html): three days before, and once it
 // has passed, the PIs and admins get a DM to add a new one; welcome emails wait meanwhile
@@ -4375,5 +4502,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
 };

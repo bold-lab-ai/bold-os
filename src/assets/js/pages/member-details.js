@@ -10,6 +10,24 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var me = null, rec = undefined, opt = null, editing = false, unsub = null;
+  // Their group (Who is BOLD) and a request for another (groupRequest in functions/index.js).
+  var groupReq = null, asking = false, gBusy = false, gError = '', unsubReq = null;
+  function when(t){ return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
+  function groupHtml(){
+    var g = BoldJoin.groupOf(rec);
+    var html = BoldJoin.groupBadge(g) + ' <a class="acct-handle" href="boldiquette.html#who-is-bold">What’s this?</a>';
+    if (groupReq) return html + '<span class="st-links">You asked for ' + BoldJoin.groupBadge(groupReq.to) + ' on ' + when(groupReq.at) + ': a PI or admin will decide. ' +
+      '<button type="button" class="btn-text md-g-withdraw"' + (gBusy ? ' disabled' : '') + '>Withdraw</button></span>';
+    if (!asking) return html + ' <button type="button" class="btn-text md-g-ask">Ask for another group</button>';
+    return html + '<div class="md-g-form">' + BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== g; }).map(function(c){
+        return '<label class="jn-check"><input type="radio" name="md-g-to" value="' + c[0] + '"> ' + BoldJoin.groupBadge(c[0]) + '</label>';
+      }).join('') +
+      '<textarea class="md-g-note no-tags" rows="2" maxlength="1000" placeholder="Why (optional): who you work with, what you do in BOLD"></textarea>' +
+      (gError ? '<p class="st-error">' + esc(gError) + '</p>' : '') +
+      '<div class="event-form-actions"><button type="button" class="ev-save md-g-send"' + (gBusy ? ' disabled' : '') + '>Send to the PIs</button><button type="button" class="md-g-cancel">Cancel</button></div></div>';
+  }
+  function callGroup(data){ return firebase.app().functions('europe-west2').httpsCallable('groupRequest')(data); }
+
   // A Slack field (by its label) and the record's field that says the same.
   var SLACK_SAME = [[/institution|affiliation|university|organi[sz]ation/i, 'institution'], [/role|position|title/i, 'role'],
     [/supervisor|advisor|adviser|contact/i, 'contact'], [/interest/i, 'interests'], [/start/i, 'startDate'], [/end/i, 'endDate'],
@@ -45,7 +63,7 @@
       return;
     }
     var who = { name: me.name, email: me.email };
-    box.innerHTML = rec ? BoldJoin.factsHtml(rec, who) + '<div class="event-controls"><button type="button" class="btn-text md-edit">Edit your details</button></div>' :
+    box.innerHTML = rec ? BoldJoin.factsHtml(rec, Object.assign({ group: groupHtml() }, who)) + '<div class="event-controls"><button type="button" class="btn-text md-edit">Edit your details</button></div>' :
       BoldJoin.factsHtml({}, who) + '<p class="proj-msg">Add your role, institution, research interests and dates, so the lab knows who you are.</p>' +
       '<div class="event-controls"><button type="button" class="btn-text md-edit">Add your details</button></div>';
   }
@@ -54,6 +72,18 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('md-edit')) { editing = true; loadPeople(); render(); return; }
+    if (t.classList.contains('md-g-ask')) { asking = true; gError = ''; render(); return; }
+    if (t.classList.contains('md-g-cancel')) { asking = false; render(); return; }
+    if (t.classList.contains('md-g-send') || t.classList.contains('md-g-withdraw')) {
+      var send = t.classList.contains('md-g-send'), to = (box.querySelector('input[name="md-g-to"]:checked') || {}).value;
+      if (send && !to) { gError = 'Choose a group.'; render(); return; }
+      var note = send ? box.querySelector('.md-g-note').value : '';
+      gBusy = true; gError = ''; render();
+      callGroup(send ? { action: 'request', to: to, note: note } : { action: 'withdraw', id: groupReq.id }).then(function(){ asking = false; })
+        .catch(function(err){ console.error('[BOLD Profile] the group request failed', err); gError = (err && err.message) || 'Couldn’t send it — try again.'; })
+        .then(function(){ gBusy = false; render(); });
+      return;
+    }
     if (t.classList.contains('md-cancel')) { editing = false; render(); return; }
     if (!t.classList.contains('md-save')) return;
     var d = BoldJoin.read(box), err = box.querySelector('.ev-error');
@@ -72,8 +102,12 @@
   BOLD.onUser(function(user){
     if (unsub) { unsub(); unsub = null; }
     me = user && user.email ? { email: user.email.toLowerCase(), name: user.displayName || '' } : null;
-    rec = undefined; editing = false;
+    rec = undefined; editing = false; groupReq = null; asking = false;
+    if (unsubReq) { unsubReq(); unsubReq = null; }
     if (!me) return;
+    unsubReq = db.collection('groupRequests').where('email', '==', me.email).where('status', '==', 'open').onSnapshot(function(s){
+      groupReq = s.empty ? null : Object.assign({ id: s.docs[0].id }, s.docs[0].data()); render();
+    }, function(e){ console.error('[BOLD Profile] loading your group request failed', e); });
     unsub = db.collection('members').doc(me.email).onSnapshot(function(s){
       rec = s.exists ? s.data() : null;
       render();

@@ -19,7 +19,7 @@
   function personHtml(m){
     var meta = [m.institution, m.basedIn, m.contact ? 'with ' + m.contact : ''].filter(Boolean).map(esc).join(' · ');
     var l = links(m.links);
-    var cat = m.category || 'pan';
+    var cat = BoldJoin.groupOf(m);
     var badge = function(c, attrs){ return '<span class="type-badge pp-' + c + '"' + (attrs || '') + '>' + esc(BoldJoin.categoryLabel(c)) + '</span>'; };
     // PIs and admins: the badge opens the four, and choosing one sets it.
     var tag = !staff ? badge(cat)
@@ -37,7 +37,7 @@
     if (!members) return;
     var q = search.value.trim().toLowerCase();
     var shown = members.filter(function(m){
-      return !q || [m.name, m.institution, m.interests, m.basedIn, m.role, BoldJoin.categoryLabel(m.category)].join(' ').toLowerCase().indexOf(q) !== -1;
+      return !q || [m.name, m.institution, m.interests, m.basedIn, m.role, BoldJoin.categoryLabel(BoldJoin.groupOf(m))].join(' ').toLowerCase().indexOf(q) !== -1;
     });
     if (!members.length) { root.innerHTML = '<p class="proj-msg">Nobody has added their details yet.</p>'; return; }
     if (!shown.length) { root.innerHTML = '<p class="proj-msg">Nobody matches.</p>'; return; }
@@ -60,7 +60,7 @@
     var email = pick.getAttribute('data-email'), cat = pick.getAttribute('data-cat');
     picking = '';
     var m = members.filter(function(x){ return x.email === email; })[0];
-    if (m && (m.category || 'pan') === cat) { render(); return; }
+    if (m && BoldJoin.groupOf(m) === cat) { render(); return; }
     if (m) m.category = cat;
     render();
     db.collection('members').doc(email).update({ category: cat, categoryBy: me, categoryAt: Date.now() })

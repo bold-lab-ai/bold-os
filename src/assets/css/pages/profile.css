@@ -114,3 +114,9 @@ button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);
 .pp-choices{display:inline-flex; flex-wrap:wrap; gap:4px; vertical-align:2px;}
 .pp-choices .type-badge{margin-left:0; opacity:.55;}
 .pp-choices .type-badge.is-current, .pp-choices .type-badge:hover{opacity:1;}
+/* Asking for another group, on the profile (member-details.js). */
+.md-g-form{margin:8px 0 4px; max-width:520px;}
+.md-g-form .jn-check{display:flex; gap:8px; align-items:center; margin-bottom:6px; font-family:var(--sans); font-size:14px;}
+.md-g-form textarea{width:100%; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); margin:4px 0 8px;}
+.facts dd .type-badge{vertical-align:2px;}
+.jr-move{margin:6px 0 0; display:flex; gap:6px; align-items:center; font-family:var(--sans); font-size:13px; color:var(--muted);}

@@ -12,10 +12,18 @@ window.BoldJoin = (function(){
   ];
   // These roles have no end date.
   var NO_END = ['PI', 'Adjunct', 'Alumni', 'Collaborator'];
-  // The BOLDiquette's groups (Who is BOLD), set by PIs and admins on the People page
-  // (members' `category`, firestore.rules); anyone not yet set is PAN-BOLD.
+  // The BOLDiquette's groups (Who is BOLD). A member's is the one a PI or admin set
+  // (`category`: on the People page, or approving their request), else by role: PIs
+  // BOLD-exec, PhD students BOLD-internal, everyone else PAN-BOLD (functions/index.js
+  // groupOf, kept in sync by hand).
   var CATEGORIES = [['exec', 'BOLD-exec'], ['internal', 'BOLD-internal'], ['associate', 'BOLD-associate'], ['pan', 'PAN-BOLD']];
   function categoryLabel(key){ var c = CATEGORIES.filter(function(x){ return x[0] === key; })[0]; return c ? c[1] : 'PAN-BOLD'; }
+  function groupOf(m){
+    m = m || {};
+    if (CATEGORIES.some(function(c){ return c[0] === m.category; })) return m.category;
+    return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : 'pan';
+  }
+  function groupBadge(g){ return '<span class="type-badge pp-' + g + '">' + esc(categoryLabel(g)) + '</span>'; }
   // How someone likes to receive feedback (functions/index.js JOIN_FEEDBACK, firestore.rules).
   var FEEDBACK = [
     ['direct', 'Direct', 'Be blunt: tell me plainly what’s wrong.'],
@@ -115,7 +123,7 @@ window.BoldJoin = (function(){
   }
 
   // The details as lists of facts, for reading, in the form's groups. o: { name, email }
-  // to show first (the profile's own sign-in), else d's.
+  // to show first (the profile's own sign-in), else d's; group: the Group row's html.
   function factsHtml(d, o){
     o = o || {};
     var fb = FEEDBACK.filter(function(f){ return f[0] === d.feedback; })[0];
@@ -128,12 +136,12 @@ window.BoldJoin = (function(){
     return group('About you', row('Name', esc(o.name || d.name || '')) + row('Email', esc(o.email || d.email || '')) +
         row('Pronouns', esc(d.pronouns || '')) + row('Institution', esc(d.institution || '')) +
         row('Based in', esc(d.basedIn || '')) + row('Links', links)) +
-      group('At BOLD', row('Group', d.category ? '<a href="boldiquette.html#who-is-bold">' + esc(categoryLabel(d.category)) + '</a>' : '') + row('Role', esc(d.role || '')) + row('Point of contact', esc(d.contact || '')) +
+      group('At BOLD', row('Group', o.group || '') + row('Role', esc(d.role || '')) + row('Point of contact', esc(d.contact || '')) +
         row('Dates', esc(d.startDate && d.endDate ? d.startDate + ' – ' + d.endDate : d.startDate ? 'From ' + d.startDate : d.endDate ? 'Until ' + d.endDate : '')) +
         (d.role !== undefined ? row('On the website', d.listOnWebsite ? 'Yes' : 'No') : '')) +
       group('Research', row('Interests', esc(d.interests || '')) + row('Pillars', (d.pillars || []).map(esc).join('<br>'))) +
       group('Working with you', row('Feedback', fb ? '<strong>' + fb[1] + '</strong>: ' + esc(fb[2]) : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
 })();
