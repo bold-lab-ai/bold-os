@@ -36,10 +36,13 @@ window.BoldConnections = (function(){
   function groupIndex(g){ for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i][0] === g) return i; return 9; }
 
   // Everyone's names, Slack ids and groups → { email: { name, id, group, member } }.
+  // member: in BOLD, i.e. on the BOLD Slack (the roster) or with a record; someone on the
+  // Slack who hasn't saved their details is PAN-BOLD, as everywhere else (groupOf). Only
+  // those on neither (a paper's co-author from elsewhere, say) are outside BOLD.
   function directory(){
     return Promise.all([db().collection('people').get(), db().collection('members').get()]).then(function(r){
       var out = {};
-      r[0].docs.forEach(function(d){ var p = d.data(), e = lower(p.email); if (e) out[e] = { name: p.name || e, id: d.id, group: 'pan' }; });
+      r[0].docs.forEach(function(d){ var p = d.data(), e = lower(p.email); if (e) out[e] = { name: p.name || e, id: d.id, group: 'pan', member: true }; });
       r[1].docs.forEach(function(d){
         var m = d.data(), e = lower(d.id);
         out[e] = Object.assign(out[e] || { id: '' }, { name: (out[e] && out[e].name) || m.name || e, group: BoldJoin.groupOf(m), member: true });
