@@ -422,12 +422,17 @@ window.BoldConnections = (function(){
   }
 
   // Lineage: who brought whom into BOLD (LINEAGE: whoever invited them, else their point
-  // of contact, else a supervisor, else who approved them), as a tree from those nobody
+  // of contact, else a supervisor, else who approved them; never for PIs, BOLD-exec, who
+  // are always at the top), as a tree from those nobody
   // brought in, the biggest family first. → SVG, or '' if nothing's known.
   function lineageHtml(all, dir, me){
     var parent = {};
     LINEAGE.forEach(function(k){
-      all.forEach(function(x){ if (x.kind === k[0] && x.to && x.from !== x.to && !parent[x.to]) parent[x.to] = { from: x.from, how: k[1] }; });
+      all.forEach(function(x){
+        // PIs (BOLD-exec) run BOLD: nobody brought them in, whoever their point of contact is.
+        if (dir[x.to] && dir[x.to].member && dir[x.to].group === 'exec') return;
+        if (x.kind === k[0] && x.to && x.from !== x.to && !parent[x.to]) parent[x.to] = { from: x.from, how: k[1] };
+      });
     });
     // No loops: drop a parent that would make someone their own ancestor.
     Object.keys(parent).forEach(function(c){
