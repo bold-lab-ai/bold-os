@@ -285,11 +285,27 @@ window.BoldConnections = (function(){
   function sample(group){
     return '<svg class="cx-sample cx-' + group + '" viewBox="0 0 26 6" aria-hidden="true"><path class="cx-edge cx-' + group + '" d="M1 3H25"></path></svg>';
   }
+  // Labelled rows (a label in small capitals, then what it's about), for the controls
+  // and the legends alike. rows: [[label, html, extra attributes?]].
+  function bar(rows, cls){
+    return '<div class="cx-bar' + (cls ? ' ' + cls : '') + '">' + rows.filter(Boolean).map(function(r){
+      return '<div class="cx-bar-row"' + (r[2] || '') + '><span class="cx-bar-label">' + esc(r[0]) + '</span><div class="cx-bar-items">' + r[1] + '</div></div>';
+    }).join('') + '</div>';
+  }
+  function key(icon, text){ return '<span class="cx-key">' + icon + '<span>' + text + '</span></span>'; }
+  function icon(inner, cls){ return '<svg class="cx-icon' + (cls ? ' ' + cls : '') + '" viewBox="-7 -7 14 14" aria-hidden="true">' + inner + '</svg>'; }
+  // People's rings: each group in Who is BOLD, and people outside BOLD.
+  function groupsRow(){
+    return ['Groups', BoldJoin.CATEGORIES.map(function(c){ return key(icon('<circle class="cx-ring" r="4.2"></circle>', 'pp-' + c[0]), esc(c[1])); }).join('') +
+      key(icon('<circle class="cx-ring is-outside" r="4.2"></circle>', 'is-outside'), 'Outside BOLD') +
+      '<a class="cx-key-link" href="boldiquette.html#who-is-bold">Who is BOLD</a>'];
+  }
   function legendHtml(things){
-    var icon = function(inner){ return '<svg class="cx-icon" viewBox="-7 -7 14 14" aria-hidden="true">' + inner + '</svg>'; };
-    return '<div class="cx-legend">' + GROUPS.slice(0, things ? 4 : 3).map(function(x){ return '<span class="cx-key">' + sample(x[0]) + esc(x[1]) + '</span>'; }).join('') +
-      '<span class="cx-key">' + icon('<circle class="cx-ring" r="4.2"></circle>') + '<span>A person, ringed in their group in <a href="boldiquette.html#who-is-bold">Who is BOLD</a></span></span>' +
-      (things ? ['project', 'event', 'guide', 'skill'].map(function(t){ return '<span class="cx-key is-thing">' + icon(shape(t, 4)) + esc(THINGS[t][1]) + '</span>'; }).join('') : '') + '</div>';
+    return bar([
+      ['Lines', GROUPS.slice(0, things ? 4 : 3).map(function(x){ return key(sample(x[0]), esc(x[1])); }).join('')],
+      things ? ['Things', ['project', 'event', 'guide', 'skill'].map(function(t){ return key(icon(shape(t, 4), 'is-thing'), esc(THINGS[t][1])); }).join('')] : null,
+      groupsRow(),
+    ], 'cx-legend');
   }
 
   function sentence(x, dir, me){
@@ -366,7 +382,11 @@ window.BoldConnections = (function(){
         }).join('') + '<title>' + esc(name) + '</title></g>';
     });
     return '<div class="cx-graph">' + html + '</svg></div>' +
-      '<div class="cx-legend">' + GROUPS.map(function(x){ return '<span class="cx-key"><svg class="cx-icon" viewBox="-7 -7 14 14" aria-hidden="true"><circle class="cx-dot cx-' + x[0] + '" r="3.2"></circle></svg>' + esc(x[1]) + '</span>'; }).join('') + '</div>' +
+      bar([
+        ['Marks', GROUPS.map(function(x){ return key(icon('<circle class="cx-dot cx-' + x[0] + '" r="3.2"></circle>'), esc(x[1])); }).join('')],
+        things ? ['Things', ['project', 'event', 'guide', 'skill'].map(function(t){ return key(icon(shape(t, 4), 'is-thing'), esc(THINGS[t][1])); }).join('')] : null,
+        groupsRow(),
+      ], 'cx-legend') +
       (extra > 0 ? '<p class="proj-meta">And ' + extra + ' more, in the list below.</p>' : '');
   }
 
@@ -458,14 +478,15 @@ window.BoldConnections = (function(){
         var counts = {};
         list.forEach(function(x){ counts[x.group] = (counts[x.group] || 0) + 1; });
         var toggle = function(label, attr, opts, cur){
-          return '<div class="view-toggle cx-filter" role="group" aria-label="' + label + '">' + opts.map(function(x){
+          return '<div class="view-toggle" role="group" aria-label="' + label + '">' + opts.map(function(x){
             return '<button type="button" class="view-btn" ' + attr + '="' + x[0] + '" aria-pressed="' + (String(cur) === String(x[0])) + '">' + esc(x[1]) + '</button>';
           }).join('') + '</div>';
         };
-        root.innerHTML = '<div class="cx-controls">' +
-          toggle('View', 'data-view', [['graph', 'Graph'], ['time', 'Over time']], view) +
-          toggle('Show', 'data-cx', [['all', 'All']].concat(GROUPS.map(function(x){ return [x[0], x[1] + (counts[x[0]] ? ' · ' + counts[x[0]] : '')]; })), filter) +
-          toggle('With', 'data-things', [['1', 'People and things'], ['0', 'People']], things ? '1' : '0') + '</div>' +
+        root.innerHTML = bar([
+          ['View', toggle('View', 'data-view', [['graph', 'Graph'], ['time', 'Over time']], view)],
+          ['Show', toggle('Show', 'data-things', [['1', 'People and things'], ['0', 'People']], things ? '1' : '0')],
+          ['Kinds', toggle('Kinds', 'data-cx', [['all', 'All']].concat(GROUPS.map(function(x){ return [x[0], x[1] + (counts[x[0]] ? ' ' + counts[x[0]] : '')]; })), filter)],
+        ], 'cx-controls') +
           (view === 'time' ? timeHtml(list.filter(function(x){ return filter === 'all' || x.group === filter; }), dir, email, me, things) : graphHtml()) +
           timelineHtml(list.filter(function(x){ return filter === 'all' || x.group === filter; }), dir, email, me, shown);
       }
@@ -489,5 +510,5 @@ window.BoldConnections = (function(){
   }
 
   return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, graphOf: graphOf, concentric: concentric, svg: svg, legendHtml: legendHtml, bindHover: bindHover,
-    lineageHtml: lineageHtml, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
+    lineageHtml: lineageHtml, bar: bar, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
 })();

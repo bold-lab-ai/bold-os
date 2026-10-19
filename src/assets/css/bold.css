@@ -514,7 +514,6 @@ a.mast-auth-name:hover{text-decoration:underline;}
 /* ---------- connections: who did what with whom (connections.js) ----------
    Ink on paper: hairlines and rings in navy, people ringed in their group's colour
    (.pp-*), names in the reading face; the kind of a line is its pattern, not a colour. */
-.cx-filter{display:inline-flex; flex-wrap:wrap; margin:6px 10px 14px 0; vertical-align:top;}
 .cx-graph{border-top:1px solid var(--line); border-bottom:1px solid var(--line); background:
   radial-gradient(circle, rgba(26,43,74,.07) 1px, transparent 1.2px) 0 0/22px 22px;}
 .cx-svg{display:block; width:100%; height:auto; overflow:visible;}
@@ -547,15 +546,25 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-svg.has-selected .cx-edge.is-lit, .cx-svg.is-hover .cx-edge.is-hot{opacity:.85;}
 .cx-svg.has-selected .cx-node:not(.is-lit), .cx-svg.is-hover .cx-node:not(.is-hot){opacity:.28;}
 .cx-svg.is-hover .cx-node.is-hot{opacity:1;}
-.cx-legend{display:flex; flex-wrap:wrap; gap:6px 22px; margin:10px 0 26px; font-family:var(--sans); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
-.cx-legend a{color:inherit;}
+/* Controls and legends: labelled rows, the label in small capitals in a column of its own. */
+.cx-bar{display:grid; grid-template-columns:max-content 1fr; gap:8px 18px; align-items:center;}
+.cx-bar-row{display:contents;}
+.cx-bar-label{font-family:var(--sans); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted);}
+.cx-bar-items{display:flex; flex-wrap:wrap; align-items:center; gap:8px 18px; min-width:0;}
+.cx-controls{margin:4px 0 18px;}
+.cx-field{font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:5px 8px; max-width:100%;}
+.cx-legend{margin:12px 0 28px; padding-bottom:14px; border-bottom:1px solid var(--line); gap:6px 18px;}
+.cx-legend .cx-bar-items{gap:4px 18px; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}
 .cx-key{display:inline-flex; align-items:center; gap:7px;}
+.cx-key-link{font-family:var(--sans); font-size:13px;}
+@media (max-width:600px){ .cx-bar{grid-template-columns:1fr; gap:4px;} .cx-bar-label{margin-top:6px;} }
 .cx-sample{width:26px; height:8px; overflow:visible;}
 .cx-sample .cx-edge{opacity:.75; stroke-width:1.4;}
 .cx-icon{width:13px; height:13px; overflow:visible;}
 .cx-icon .cx-mark{fill:var(--paper); stroke:var(--ink-soft); stroke-width:1.2;}
-.cx-ring{fill:var(--paper); stroke:#256b60; stroke-width:1.6;}
-.cx-controls{display:flex; flex-wrap:wrap; gap:0 4px;}
+.cx-ring{fill:var(--paper); stroke:currentColor; stroke-width:1.6;}
+.cx-icon.pp-pan, .cx-icon.is-outside{color:var(--muted);}
+.cx-ring.is-outside{stroke-dasharray:2 2;}
 /* Over time (Connections): a row per person or thing, a mark per interaction. */
 .cx-time .cx-tick{stroke:var(--line); stroke-width:1;}
 .cx-time .cx-axis{font-family:var(--sans); font-size:10px; letter-spacing:.08em; text-transform:uppercase; fill:var(--muted);}
@@ -578,7 +587,5 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-what{flex:1 1 auto; min-width:0; overflow-wrap:anywhere;}
 .cx-more{margin-top:12px;}
 @media (max-width:600px){ .cx-row{flex-wrap:wrap; gap:2px 10px;} .cx-when{flex-basis:auto;} .cx-what{flex-basis:100%;} }
-.nw-controls{display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; margin:0 0 14px;}
-.nw-controls select, .nw-controls input{font-family:var(--sans); font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:5px 8px; max-width:100%;}
-.nw-controls[hidden], .view-toggle[hidden]{display:none;}
+.cx-bar-row[hidden], .view-toggle[hidden]{display:none;}
 .nw-admin{margin-top:24px; display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center;}

@@ -13,16 +13,16 @@ nav: "network.html"
 </div>
 
 <main>
-  <div class="nw-controls">
-    <div class="view-toggle" role="group" aria-label="View" id="nwView"></div>
-    <div class="view-toggle nw-graph-only" role="group" aria-label="With" id="nwThings"></div>
-  </div>
-  <div class="nw-controls nw-graph-only">
-    <div class="view-toggle" role="group" aria-label="Kinds" id="nwKinds"></div>
-    <div class="view-toggle" role="group" aria-label="Since" id="nwSince"></div>
-    <select id="nwGroup" aria-label="Group"></select>
-    <input type="search" id="nwFind" placeholder="Find someone or something" aria-label="Find someone or something" list="nwPeople">
-    <datalist id="nwPeople"></datalist>
+  <div class="cx-bar cx-controls">
+    <div class="cx-bar-row"><span class="cx-bar-label">View</span><div class="cx-bar-items"><div class="view-toggle" role="group" aria-label="View" id="nwView"></div></div></div>
+    <div class="cx-bar-row nw-graph-only"><span class="cx-bar-label">Show</span><div class="cx-bar-items"><div class="view-toggle" role="group" aria-label="Show" id="nwThings"></div></div></div>
+    <div class="cx-bar-row nw-graph-only"><span class="cx-bar-label">Kinds</span><div class="cx-bar-items"><div class="view-toggle" role="group" aria-label="Kinds" id="nwKinds"></div></div></div>
+    <div class="cx-bar-row nw-graph-only"><span class="cx-bar-label">Since</span><div class="cx-bar-items"><div class="view-toggle" role="group" aria-label="Since" id="nwSince"></div></div></div>
+    <div class="cx-bar-row nw-graph-only"><span class="cx-bar-label">Who</span><div class="cx-bar-items">
+      <select class="cx-field" id="nwGroup" aria-label="Group"></select>
+      <input class="cx-field" type="search" id="nwFind" placeholder="Find someone or something" aria-label="Find someone or something" list="nwPeople">
+      <datalist id="nwPeople"></datalist>
+    </div></div>
   </div>
   <p class="proj-msg" id="nwMsg">Loading&hellip;</p>
   <div class="cx-graph" id="nwGraph" hidden></div>
