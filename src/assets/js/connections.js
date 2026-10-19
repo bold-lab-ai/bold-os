@@ -23,7 +23,12 @@ window.BoldConnections = (function(){
     tagged: '{a} tagged {b} in {t}', replied: '{a} replied to {b} on {t}', decided: '{a} decided {bs} proposed change to {t}',
     registered: '{a} registered {t}', added: '{a} added {t}', edited: '{a} edited {t}', proposed: '{a} proposed a change to {t}',
     commented: '{a} commented on {t}', read: '{a} read {t}',
+    // Between two things ({u}: the other one).
+    presented: '{t} was presented at {u}', 'part-of': '{t} is part of {u}',
   };
+  // Lines between two things (a project and where it was presented, a session and its
+  // event): no one's doing, so not a kind to filter; drawn with things only.
+  var RELATED = ['related', 'Related'];
   var JOINING_FIRST = ['asked', 'signed-up', 'invited', 'contact', 'approved', 'supervises'];
   // Things: their shape and what they're called.
   var THINGS = { project: ['square', 'Projects and papers'], event: ['diamond', 'Events'], session: ['diamond', 'Events'], talk: ['diamond', 'Events'],
@@ -92,7 +97,9 @@ window.BoldConnections = (function(){
       e.n++; e.groups[x.group] = (e.groups[x.group] || 0) + 1; e.items.push(x);
       node(a); node(b);
     };
+    var rel = [];
     list.forEach(function(x){
+      if (x.thing2) { rel.push(x); return; }
       if (things && x.thing) {
         var id = 'thing:' + x.thing, v = node(id);
         v.thing = true; v.type = x.thing.split(':')[0];
@@ -101,6 +108,11 @@ window.BoldConnections = (function(){
         edge(x.from, id, x);
         if (x.to) edge(x.to, id, x);
       } else if (x.to) edge(x.from, x.to, x);
+    });
+    // Two things linked, when both are on the graph already.
+    if (things) rel.forEach(function(x){
+      var a = 'thing:' + x.thing, b = 'thing:' + x.thing2;
+      if (nodes[a] && nodes[b]) edge(a, b, x);
     });
     var out = Object.keys(edges).map(function(k){
       var e = edges[k];
@@ -272,7 +284,7 @@ window.BoldConnections = (function(){
     }).join('\n') + (list.length > 6 ? '\n… and ' + (list.length - 6) + ' more: click the line to see them all' : '');
   }
   function rowHtml(x, dir, me){
-    return '<li class="cx-row"><span class="cx-when">' + day(x.at) + '</span><span class="cx-kind" title="' + esc(GROUPS[groupIndex(x.group)] ? GROUPS[groupIndex(x.group)][1] : '') + '">' + sample(x.group) + '</span><span class="cx-what">' + sentence(x, dir, me) + '</span></li>';
+    return '<li class="cx-row"><span class="cx-when">' + day(x.at) + '</span><span class="cx-kind" title="' + esc(GROUPS[groupIndex(x.group)] ? GROUPS[groupIndex(x.group)][1] : x.group === 'related' ? RELATED[1] : '') + '">' + sample(x.group) + '</span><span class="cx-what">' + sentence(x, dir, me) + '</span></li>';
   }
   function linkTo(dir, id, me, g){ var h = hrefOf(dir, id, me, g), n = id === me ? 'You' : nameOf(dir, id, g); return h && id !== me ? '<a href="' + esc(h) + '">' + esc(n) + '</a>' : esc(n); }
   function reasonsHtml(e, g, dir, me){
@@ -350,7 +362,7 @@ window.BoldConnections = (function(){
   }
   function legendHtml(things){
     return bar([
-      ['Lines', GROUPS.slice(0, things ? 4 : 3).map(function(x){ return key(sample(x[0]), esc(x[1])); }).join('')],
+      ['Lines', GROUPS.slice(0, things ? 4 : 3).concat(things ? [RELATED] : []).map(function(x){ return key(sample(x[0]), esc(x[1])); }).join('')],
       things ? ['Things', ['project', 'event', 'guide', 'skill'].map(function(t){ return key(icon(shape(t, 4), 'is-thing'), esc(THINGS[t][1])); }).join('')] : null,
       groupsRow(),
     ], 'cx-legend');
@@ -362,8 +374,9 @@ window.BoldConnections = (function(){
       return h && e !== me ? '<a href="' + esc(h) + '">' + esc(n) + '</a>' : esc(n);
     };
     var t = x.href ? '<a href="' + esc(x.href) + '">' + esc(x.title) + '</a>' : esc(x.title);
+    var u = x.href2 ? '<a href="' + esc(x.href2) + '">' + esc(x.title2) + '</a>' : esc(x.title2 || '');
     var whose = function(e){ return e === me ? 'your' : who(e) + '’s'; };
-    var s = (SAYS[x.kind] || '{a}: {t}').replace('{a}', who(x.from)).replace('{bs}', whose(x.to)).replace('{b}', who(x.to)).replace('{t}', t);
+    var s = (SAYS[x.kind] || '{a}: {t}').replace('{a}', who(x.from)).replace('{bs}', whose(x.to)).replace('{b}', who(x.to)).replace('{t}', t).replace('{u}', u);
     return s.charAt(0) === 'y' ? 'Y' + s.slice(1) : s;
   }
   function day(ms){ return ms ? new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }

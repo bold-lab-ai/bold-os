@@ -2824,6 +2824,63 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 //   weren't yet → { projects: [{ id, title, cardId, boardId }] }.
 // - 'venues': no project; the approved venues → { venues: [{ id, label, deadline }] }.
 // → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
+// A presentation's file (slides, a poster, a PDF) uploaded into the lab's Drive, in the
+// projects' folder: a project's presentation (project: its workspace id; its members
+// and PIs/admins) or a talk on an event's programme (talk: its slug; whoever can edit
+// it, talkRole). { project | talk, name, type, size } → { url }: a
+// resumable upload session the browser sends the file to itself (so no size limit here),
+// made for the page's origin so Drive lets it in. { project, file } → { url }: once it's
+// there, anyone with the link can view it, and its link goes in the slides field.
+const PRESENTATION_MAX = 300 * 1024 * 1024;
+const UPLOAD_ORIGINS = [new URL(SITE_URL).origin, 'http://localhost:8137', 'http://127.0.0.1:8137'];
+exports.presentationFile = onCall(
+  { secrets: [GOOGLE_OAUTH] },
+  async (request) => {
+    const email = callerEmail(request), data = request.data || {};
+    // owner: what the file is for ('project:<id>' or 'talk:<slug>'), and its title.
+    let owner, title;
+    if (data.talk){
+      const talk = await findTalk(String(data.talk));
+      if (!talk) throw new HttpsError('not-found', 'No such talk.');
+      if (!(await talkRole(email, talk, talk.doc))) throw new HttpsError('permission-denied', 'Only the talk’s speakers, its session’s leads and PIs/admins can add its files.');
+      owner = 'talk:' + talk.slug; title = talk.doc.title || '';
+    } else {
+      const project = String(data.project || '');
+      if (!validSlug(project)) throw new HttpsError('invalid-argument', 'No project given.');
+      const ws = (await db.collection('projectWorkspaces').doc(project).get()).data();
+      if (!ws) throw new HttpsError('not-found', 'That project isn’t set up yet.');
+      if ((ws.members || []).map(lowerEmail).indexOf(email) < 0 && !(await isFullWrite(email)))
+        throw new HttpsError('permission-denied', 'Only the project’s members can add its files.');
+      owner = 'project:' + project; title = ws.title || '';
+    }
+    if (data.file){
+      const id = String(data.file);
+      if (!/^[A-Za-z0-9_-]{10,100}$/.test(id)) throw new HttpsError('invalid-argument', 'No file given.');
+      const f = await googleFetch('GET', DRIVE + '/' + id + '?fields=id,webViewLink,appProperties');
+      if (!f || !f.appProperties || f.appProperties.boldFor !== owner) throw new HttpsError('permission-denied', 'That file isn’t for this.');
+      await googleFetch('POST', DRIVE + '/' + id + '/permissions', { type: 'anyone', role: 'reader' });
+      logger.info('presentationFile: uploaded', { for: owner, file: id, by: email });
+      return { url: f.webViewLink };
+    }
+    const name = String(data.name || '').replace(/[\u0000-\u001f]/g, '').slice(0, 200), size = Number(data.size) || 0;
+    const type = /^[\w.+-]+\/[\w.+-]+$/.test(String(data.type || '')) ? String(data.type) : 'application/octet-stream';
+    if (!name) throw new HttpsError('invalid-argument', 'The file has no name.');
+    if (!size || size > PRESENTATION_MAX) throw new HttpsError('invalid-argument', 'Files up to 300 MB.');
+    const origin = String((request.rawRequest && request.rawRequest.headers.origin) || '');
+    const headers = { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': type, 'X-Upload-Content-Length': String(size) };
+    if (UPLOAD_ORIGINS.indexOf(origin) >= 0) headers.Origin = origin;
+    const meta = { name: (title ? title + ' — ' : '') + name, parents: [await projectFolderId()], appProperties: { boldFor: owner } };
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id', { method: 'POST', headers, body: JSON.stringify(meta) });
+    const url = res.headers.get('location');
+    if (!res.ok || !url){
+      logger.warn('presentationFile: Drive refused the upload', { status: res.status, body: (await res.text()).slice(0, 300) });
+      throw new HttpsError('unavailable', 'Google Drive didn’t take the file — try again.');
+    }
+    return { url };
+  }
+);
+
 exports.projectWorkspace = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540 },
   async (request) => {
@@ -4806,6 +4863,8 @@ const INTERACTION_GROUPS = {
   coauthor: 'working', project: 'working', reviewed: 'working', meeting: 'working', introduced: 'working', letter: 'working',
   tagged: 'talking', replied: 'talking', decided: 'talking',
   registered: 'site', added: 'site', edited: 'site', proposed: 'site', commented: 'site', read: 'site',
+  // Between two things, no one's doing: thing → thing2.
+  presented: 'related', 'part-of': 'related',
 };
 const INTERACTION_TOP = ['joinRequests', 'members', 'studies', 'projects', 'projectWorkspaces', 'studyRequests', 'introRequests', 'letterRequests',
   'skills', 'guides', 'events', 'collabWeekSessions'];
@@ -4826,6 +4885,12 @@ async function interactionsFor(path, d, lookup){
   };
   const tags = function(from, text, at, title, href, key){
     taggedIds(text).forEach(function(id){ if (lowerEmail(from)) out.push({ kind: 'tagged', from: lowerEmail(from), toSlack: id, at: Number(at) || 0, title, href, key: (key || '') + id, thing }); });
+  };
+  // Two things linked (kind: presented, part-of): `thing` (or this document's) → the event `slug`.
+  const related = async function(kind, at, title, href, slug, from, key){
+    const ev = await lookup('events/' + slug);
+    out.push({ kind, from: '', to: '', at: Number(at) || 0, title: String(title || ''), href: String(href || ''), key: String(key || ''), thing: from || thing,
+      thing2: 'event:' + slug, title2: String((ev && ev.title) || slug), href2: eventUrl(slug, ev) });
   };
   const top = seg[0], n = seg.length;
 
@@ -4876,6 +4941,17 @@ async function interactionsFor(path, d, lookup){
     const href = top === 'skills' ? SITE_URL + 'skill.html?skill=' + encodeURIComponent(seg[1]) : top === 'guides' ? guideUrl(seg[1])
       : top === 'events' ? eventUrl(seg[1], d) : SITE_URL + 'session.html?session=' + encodeURIComponent(seg[1]);
     add('added', d.createdBy, '', d.createdAt, d.title || d.name || seg[1], href);
+    // A session belongs to its event.
+    if (top === 'collabWeekSessions' && d.eventSlug) await related('part-of', d.createdAt || d.updatedAt, d.title || seg[1], href, d.eventSlug);
+  } else if (n === 4 && top === 'projectWorkspaces' && seg[2] === 'presentations'){
+    // A project presented at one of the site's events (its talk or session folded into it).
+    const o = d.occasion || {};
+    if (o.kind === 'event' && o.id){
+      const ws = (await lookup('projectWorkspaces/' + seg[1])) || {}, cardId = ws.cardId || seg[1];
+      const card = ws.boardId ? await lookup('boards/' + ws.boardId + '/cards/' + cardId) : null;
+      const project = 'project:' + ((card && card.projectId) || cardId);
+      await related('presented', Date.parse(d.date) || d.createdAt || d.at, (card && card.title) || ws.title || d.title || 'A project', projectPageUrl(cardId, ws.boardId), o.id, project, seg[3]);
+    }
   } else if (n === 4 && (top === 'guides' || top === 'handbook' || top === 'skills')){
     const page = top === 'guides' ? guideUrl(seg[1]) : top === 'handbook' ? handbookUrl(seg[1]) : SITE_URL + 'skill.html?skill=' + encodeURIComponent(seg[1]);
     const parent = await lookup(top + '/' + seg[1]);
@@ -4916,6 +4992,7 @@ function isInteractionSource(path){
   const seg = path.split('/');
   if (seg.length === 2) return INTERACTION_TOP.indexOf(seg[0]) >= 0;
   if (seg.length === 4 && seg[0] === 'boards' && seg[2] === 'cards') return true;
+  if (seg.length === 4 && seg[0] === 'projectWorkspaces' && seg[2] === 'presentations') return true;
   return seg.length === 4 && ['guides', 'handbook', 'skills'].indexOf(seg[0]) >= 0 && ['versions', 'readers', 'comments', 'proposals'].indexOf(seg[2]) >= 0;
 }
 
@@ -4935,6 +5012,7 @@ async function interactionRecords(path, data, slackEmails){
     const to = x.toSlack ? slackEmails[x.toSlack] : x.to;
     if (x.toSlack && (!to || to === x.from)) return;
     const rec = { kind: x.kind, group: INTERACTION_GROUPS[x.kind], from: x.from, to: to || '', at: x.at, title: x.title, href: x.href, thing: x.thing || '', source: path };
+    if (x.thing2) Object.assign(rec, { thing2: x.thing2, title2: x.title2, href2: x.href2 });
     out[interactionId(path, Object.assign({}, x, { to: rec.to }))] = rec;
   });
   return out;
@@ -5003,7 +5081,7 @@ exports.rebuildInteractions = onCall(
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
     const docs = [];
     for (const c of INTERACTION_TOP) (await db.collection(c).get()).docs.forEach(function(s){ docs.push(s); });
-    for (const g of ['cards', 'versions', 'readers', 'comments', 'proposals'])
+    for (const g of ['cards', 'versions', 'readers', 'comments', 'proposals', 'presentations'])
       (await db.collectionGroup(g).get()).docs.forEach(function(s){ if (isInteractionSource(s.ref.path)) docs.push(s); });
     const want = {}, slackEmails = {};
     for (const s of docs) Object.assign(want, await interactionRecords(s.ref.path, s.data(), slackEmails));

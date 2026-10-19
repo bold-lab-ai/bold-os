@@ -542,6 +542,8 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-node.is-thing .cx-mark{stroke-width:1.2;}
 .cx-label.is-thing-label{font-family:var(--sans); font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; fill:var(--ink-soft);}
 .cx-edge.cx-site{stroke-dasharray:0.1 2.2;}
+/* Between two things (a project and its event, a session and its event): dash and dot. */
+.cx-edge.cx-related{stroke-dasharray:7 3 0.1 3;}
 .cx-node.pp-pan, .cx-node.is-outside{color:var(--muted);}
 .cx-node.is-outside .cx-mark{stroke-dasharray:2 2;}
 .cx-node.is-centre .cx-mark, .cx-node.is-selected .cx-mark{fill:var(--ink); stroke:var(--ink);}

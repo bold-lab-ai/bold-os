@@ -36,7 +36,8 @@
     if (view === 'lineage') { drawLineage(); return; }
     var from = since === 'all' ? 0 : Date.now() - Number(since) * 86400000;
     var inGroup = function(e){ return !e || C.isThing(e) || !!groups[dir[e] && dir[e].member ? dir[e].group : 'outside']; };
-    var list = all.filter(function(x){ return kinds[x.group] && x.at >= from && (x.to || (things && x.thing)) && inGroup(x.from) && inGroup(x.to); });
+    // Lines between two things come with things, whatever the kinds and since.
+    var list = all.filter(function(x){ return x.thing2 ? things : kinds[x.group] && x.at >= from && (x.to || (things && x.thing)) && inGroup(x.from) && inGroup(x.to); });
     g = C.graphOf(list, things);
     // Narrow screens: a taller box, so the graph isn't squeezed into a strip.
     if (graph.parentNode.clientWidth < 600) { W = 600; H = 760; } else { W = 1000; H = 760; }
@@ -54,7 +55,7 @@
     return '<div class="md-group"><h3>' + link(selected) + '</h3>' +
       '<ul class="cx-timeline">' + links.slice(0, 12).map(function(e){
         var other = e.a === selected ? e.b : e.a;
-        var parts = C.GROUPS.filter(function(x){ return e.groups[x[0]]; }).map(function(x){ return e.groups[x[0]] + ' ' + x[1].toLowerCase(); }).join(', ');
+        var parts = C.GROUPS.concat([['related', 'Related']]).filter(function(x){ return e.groups[x[0]]; }).map(function(x){ return e.groups[x[0]] + ' ' + x[1].toLowerCase(); }).join(', ');
         // Why: the two latest interactions behind the line.
         var latest = C.reasons(e).slice(0, 2).map(function(x){ return '<span class="cx-reason">' + C.rowHtml(x, dir, me).replace(/^<li class="cx-row">|<\/li>$/g, '') + '</span>'; }).join('');
         return '<li class="cx-row cx-link-row"><span class="cx-what">' + link(other) + ' <span class="proj-meta">' + esc(parts) + '</span>' +

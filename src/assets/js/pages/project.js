@@ -648,6 +648,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       el('talkTitle').value = t.title; el('talkType').value = t.type || ''; el('talkPresenter').value = t.speakers; el('talkSlides').value = t.slidesUrl;
     }
     TALK_OWN.forEach(function(id){ el(id).disabled = !!t; });
+    var up = document.querySelector('.talk-form .pu-btn');
+    if (up) up.disabled = !!t;
     var note = el('talkFromTalk');
     if (note) {
       note.hidden = !t;
@@ -670,7 +672,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         return '<option value="' + x[0] + '"' + (x[0] === t.type ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>') +
       row('Presenter', input('talkPresenter', 'text', t.presenter)) +
       row('Date', input('talkDate', 'date', t.date)) +
-      row('Slides', input('talkSlides', 'url', t.slidesUrl, 'https://\u2026')) +
+      row('Slides', input('talkSlides', 'url', t.slidesUrl, 'https://\u2026') +
+        BoldPresentationUpload.html('detail-hint')) +
       row('Recording', input('talkRecording', 'url', t.recordingUrl, 'https://\u2026 (optional)')) +
       '</dl>' + saveCancelHtml('talkSave');
   }
@@ -830,6 +833,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       if (el('submitSave')) el('submitSave').addEventListener('click', submitToVenue);
     } else if (editing.indexOf('talk:') === 0) {
       el('talkSave').addEventListener('click', saveTalk);
+      BoldPresentationUpload.wire(document.querySelector('.talk-form .pu-line'), { input: el('talkSlides'),
+        args: function(){ return { project: wsKey }; }, busy: function(on){ el('talkSave').disabled = on; } });
       loadOccasions();
       // Choosing an event sets the date to its first day; a session or a talk on its
       // programme fills in more (fillFromTalk). Only fields not typed in here.
