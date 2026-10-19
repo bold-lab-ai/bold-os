@@ -526,6 +526,16 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-node.is-far{opacity:.5;}
 .cx-node.is-far .cx-mark{stroke-width:1.2;}
 .cx-edge.cx-talking{stroke-dasharray:5 3.5;}
+.cx-hit{fill:none; stroke:transparent; stroke-width:12; cursor:pointer; pointer-events:stroke;}
+.cx-edge.is-chosen{opacity:.95 !important; stroke-width:2.6;}
+.cx-why h3{display:flex; align-items:baseline; justify-content:space-between; gap:12px;}
+.cx-why-close{font-size:13px;}
+.cx-link-row .cx-what{display:block;}
+.cx-reasons{display:block; margin-top:4px;}
+.cx-reason{display:flex; gap:10px; align-items:baseline; font-size:15px; padding:2px 0;}
+.cx-reason .cx-when{flex-basis:84px;}
+.cx-reason .cx-kind{flex-basis:26px;}
+.cx-all{font-size:13px; margin-top:2px;}
 .cx-node{cursor:pointer; transition:opacity .15s;}
 .cx-node .cx-mark{fill:var(--paper); stroke:currentColor; stroke-width:1.6; transition:fill .15s;}
 .cx-node.is-thing{color:var(--ink-soft);}

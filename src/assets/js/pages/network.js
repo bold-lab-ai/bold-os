@@ -3,14 +3,15 @@
 // working together, talking, on the site) and groups of Who is BOLD (and outside BOLD),
 // each on or off, both people's groups on; since when; and with or without things
 // (projects and papers, events, guides, skills). Find someone selects them. Clicking a person or thing selects it: its lines
-// stay lit and its busiest connections are listed below. PIs and admins can rebuild every
-// interaction from the documents they come from (rebuildInteractions).
+// stay lit and its busiest connections are listed below, each with its two latest
+// interactions; clicking a line (or All) lists every interaction behind it. PIs and admins
+// can rebuild every interaction from the documents they come from (rebuildInteractions).
 (function(){
   var esc = BOLD.escapeHtml, C = window.BoldConnections;
   var graph = document.getElementById('nwGraph');
   if (!graph || !BOLD.getAuth() || !C || !window.BoldJoin) return;
   var el = function(id){ return document.getElementById(id); };
-  var all = null, dir = null, me = '', g = null, selected = '';
+  var all = null, dir = null, me = '', g = null, selected = '', why = '';
   var view = 'graph', since = 'all', things = true;
   // Kinds and groups add up: each is on or off, all on to start (people outside BOLD: 'outside').
   var kinds = { joining: true, working: true, talking: true, site: true }, groups = { outside: true };
@@ -55,7 +56,10 @@
       '<ul class="cx-timeline">' + links.slice(0, 12).map(function(e){
         var other = e.a === selected ? e.b : e.a;
         var parts = C.GROUPS.filter(function(x){ return e.groups[x[0]]; }).map(function(x){ return e.groups[x[0]] + ' ' + x[1].toLowerCase(); }).join(', ');
-        return '<li class="cx-row"><span class="cx-what">' + link(other) + ' <span class="proj-meta">' + esc(parts) + '</span></span></li>';
+        // Why: the two latest interactions behind the line.
+        var latest = C.reasons(e).slice(0, 2).map(function(x){ return '<span class="cx-reason">' + C.rowHtml(x, dir, me).replace(/^<li class="cx-row">|<\/li>$/g, '') + '</span>'; }).join('');
+        return '<li class="cx-row cx-link-row"><span class="cx-what">' + link(other) + ' <span class="proj-meta">' + esc(parts) + '</span>' +
+          '<span class="cx-reasons">' + latest + (e.n > 2 ? '<button type="button" class="btn-text cx-all" data-a="' + esc(e.a) + '" data-b="' + esc(e.b) + '">All ' + e.n + '</button>' : '') + '</span></span></li>';
       }).join('') + '</ul>' +
       (links.length > 12 ? '<p class="proj-meta">And ' + (links.length - 12) + ' more' + (h && !C.isThing(selected) ? ' on <a href="' + esc(h) + '">their Connections</a>' : '') + '.</p>' : '') + '</div>';
   }
@@ -65,9 +69,11 @@
     var n = g.edges.reduce(function(s, e){ return s + e.n; }, 0);
     el('nwMsg').textContent = g.nodes.length ? people + ' people' + (stuff ? ' · ' + stuff + ' things' : '') + ' · ' + n + ' link' + (n === 1 ? '' : 's') : 'No interactions for these filters.';
     graph.hidden = !g.nodes.length;
-    if (g.nodes.length) graph.innerHTML = C.svg(g, W, H, { dir: dir, me: me, labels: 'big', selected: selected });
+    var chosen = why && C.edgeOf(g, why.split(' ')[0], why.split(' ')[1]);
+    if (!chosen) why = '';
+    if (g.nodes.length) graph.innerHTML = C.svg(g, W, H, { dir: dir, me: me, labels: 'big', selected: selected, selectedEdge: why });
     el('nwLegend').innerHTML = g.nodes.length ? C.legendHtml(things) : '';
-    el('nwPerson').innerHTML = personHtml();
+    el('nwPerson').innerHTML = (chosen ? C.reasonsHtml(chosen, g, dir, me) : '') + personHtml();
   }
 
   function drawLineage(){
@@ -83,12 +89,18 @@
     var k = e.target.closest('[data-kind]'), gr = e.target.closest('[data-group]'), n = e.target.closest('.cx-node');
     if (k) { kinds[k.getAttribute('data-kind')] = !kinds[k.getAttribute('data-kind')]; controls(); build(); }
     else if (gr) { groups[gr.getAttribute('data-group')] = !groups[gr.getAttribute('data-group')]; controls(); build(); }
+    else if (e.target.closest('.cx-hit') && graph.contains(e.target)) {
+      var line = e.target.closest('.cx-hit'), key = line.getAttribute('data-a') + ' ' + line.getAttribute('data-b');
+      why = why === key ? '' : key; draw();
+    }
+    else if (e.target.closest('.cx-all')) { var b2 = e.target.closest('.cx-all'); why = b2.getAttribute('data-a') + ' ' + b2.getAttribute('data-b'); draw(); el('nwPerson').scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+    else if (e.target.closest('.cx-why-close')) { why = ''; draw(); }
     else if (n && graph.contains(n)) {
       if (view === 'lineage') { var h = n.getAttribute('data-href'); if (h) location.href = h; return; }
       var id = n.getAttribute('data-id'); selected = selected === id ? '' : id; draw();
     }
     // An empty part of the graph: nothing selected.
-    else if (selected && view === 'graph' && graph.contains(e.target)) { selected = ''; draw(); }
+    else if ((selected || why) && view === 'graph' && graph.contains(e.target)) { selected = ''; why = ''; draw(); }
   });
   graph.addEventListener('keydown', function(e){
     var n = e.target.closest && e.target.closest('.cx-node');

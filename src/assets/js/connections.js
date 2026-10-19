@@ -85,8 +85,8 @@ window.BoldConnections = (function(){
       var k = a + ' ' + b, once = k + ' ' + x.kind + ' ' + x.at;
       if (seen[once]) return;
       seen[once] = 1;
-      var e = edges[k] || (edges[k] = { a: a, b: b, n: 0, groups: {} });
-      e.n++; e.groups[x.group] = (e.groups[x.group] || 0) + 1;
+      var e = edges[k] || (edges[k] = { a: a, b: b, n: 0, groups: {}, items: [] });
+      e.n++; e.groups[x.group] = (e.groups[x.group] || 0) + 1; e.items.push(x);
       node(a); node(b);
     };
     list.forEach(function(x){
@@ -239,9 +239,11 @@ window.BoldConnections = (function(){
     return '<svg class="cx-svg' + (opts.centre ? ' is-ego' : '') + (sel ? ' has-selected' : '') + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="Who has interacted with whom, and on what">' +
       '<g class="cx-edges">' + g.edges.map(function(e){
         var p = byId[e.a], q = byId[e.b], lit = sel && (e.a === sel || e.b === sel);
-        var parts = GROUPS.filter(function(x){ return e.groups[x[0]]; }).map(function(x){ return e.groups[x[0]] + ' ' + x[1].toLowerCase(); }).join(', ');
-        return '<path class="cx-edge cx-' + e.main + (lit ? ' is-lit' : '') + (e.far ? ' is-far' : '') + '" data-a="' + esc(e.a) + '" data-b="' + esc(e.b) + '" d="' + curve(p, q, (seed(e.a + e.b) - 0.5) * 0.3) +
-          '" stroke-width="' + (0.8 + Math.min(2.6, Math.log(e.n) * 0.9)).toFixed(2) + '"><title>' + esc(label(e.a) + ' and ' + label(e.b) + ': ' + parts) + '</title></path>';
+        var d = curve(p, q, (seed(e.a + e.b) - 0.5) * 0.3), on = (opts.selectedEdge && opts.selectedEdge === e.a + ' ' + e.b) ? ' is-chosen' : '';
+        return '<path class="cx-edge cx-' + e.main + (lit ? ' is-lit' : '') + (e.far ? ' is-far' : '') + on + '" data-a="' + esc(e.a) + '" data-b="' + esc(e.b) + '" d="' + d +
+          '" stroke-width="' + (0.8 + Math.min(2.6, Math.log(e.n) * 0.9)).toFixed(2) + '"></path>' +
+          // A wider, invisible copy to point at: its tooltip says why the two are joined.
+          '<path class="cx-hit" data-a="' + esc(e.a) + '" data-b="' + esc(e.b) + '" d="' + d + '"><title>' + esc(reasonsText(e, g, dir, opts.me)) + '</title></path>';
       }).join('') + '</g>' +
       '<g class="cx-nodes">' + g.nodes.map(function(v){
         var cls = 'cx-node ' + nodeClass(dir, v) + (v.id === opts.centre ? ' is-centre' : '') + (near[v.id] ? ' is-lit' : '') + (v.id === sel ? ' is-selected' : '') + (v.far ? ' is-far' : '');
@@ -257,9 +259,38 @@ window.BoldConnections = (function(){
       }).join('') + '</g></svg>';
   }
 
-  // Hovering (or focusing) a node lights its lines and what's at their other end.
+  // Why two are joined, newest first: as plain text (a line's tooltip; the latest 6) and
+  // as rows (the panel a click on a line opens).
+  function reasons(e){ return e.items.slice().sort(function(p, q){ return q.at - p.at; }); }
+  function reasonsText(e, g, dir, me){
+    var list = reasons(e);
+    return nameOf(dir, e.a, g) + ' and ' + nameOf(dir, e.b, g) + '\n' + list.slice(0, 6).map(function(x){
+      return day(x.at) + ' · ' + sentence(x, dir, me).replace(/<[^>]+>/g, '');
+    }).join('\n') + (list.length > 6 ? '\n… and ' + (list.length - 6) + ' more: click the line to see them all' : '');
+  }
+  function rowHtml(x, dir, me){
+    return '<li class="cx-row"><span class="cx-when">' + day(x.at) + '</span><span class="cx-kind" title="' + esc(GROUPS[groupIndex(x.group)] ? GROUPS[groupIndex(x.group)][1] : '') + '">' + sample(x.group) + '</span><span class="cx-what">' + sentence(x, dir, me) + '</span></li>';
+  }
+  function linkTo(dir, id, me, g){ var h = hrefOf(dir, id, me, g), n = id === me ? 'You' : nameOf(dir, id, g); return h && id !== me ? '<a href="' + esc(h) + '">' + esc(n) + '</a>' : esc(n); }
+  function reasonsHtml(e, g, dir, me){
+    return '<div class="md-group cx-why"><h3><span>' + linkTo(dir, e.a, me, g) + ' and ' + linkTo(dir, e.b, me, g) + '</span>' +
+      '<button type="button" class="btn-text cx-why-close" aria-label="Close">Close</button></h3><ul class="cx-timeline">' + reasons(e).map(function(x){ return rowHtml(x, dir, me); }).join('') + '</ul></div>';
+  }
+  function edgeOf(g, a, b){ return g.edges.filter(function(e){ return e.a === a && e.b === b; })[0]; }
+
+  // Hovering (or focusing) a node lights its lines and what's at their other end;
+  // hovering a line lights it and its two ends.
   function bindHover(root){
     var on = function(e){
+      var line = e.target.closest && e.target.closest('.cx-hit');
+      if (line) {
+        var sv = line.closest('.cx-svg'), a = line.getAttribute('data-a'), b = line.getAttribute('data-b');
+        sv.classList.add('is-hover');
+        var edge = sv.querySelector('.cx-edge[data-a="' + CSS.escape(a) + '"][data-b="' + CSS.escape(b) + '"]');
+        if (edge) edge.classList.add('is-hot');
+        [a, b].forEach(function(x){ var m = sv.querySelector('.cx-node[data-id="' + CSS.escape(x) + '"]'); if (m) m.classList.add('is-hot'); });
+        return;
+      }
       var n = e.target.closest && e.target.closest('.cx-node'), s = n && n.closest('.cx-svg');
       if (!s) return;
       var id = n.getAttribute('data-id');
@@ -326,7 +357,7 @@ window.BoldConnections = (function(){
     var start = list.filter(function(x){ return JOINING_FIRST.indexOf(x.kind) >= 0 && (x.to === person || (x.from === person && !x.to)); })
       .sort(function(a, b){ return a.at - b.at; });
     var rest = list.filter(function(x){ return start.indexOf(x) < 0; });
-    var row = function(x){ return '<li class="cx-row"><span class="cx-when">' + day(x.at) + '</span><span class="cx-kind" title="' + esc(GROUPS[groupIndex(x.group)] ? GROUPS[groupIndex(x.group)][1] : '') + '">' + sample(x.group) + '</span><span class="cx-what">' + sentence(x, dir, me) + '</span></li>'; };
+    var row = function(x){ return rowHtml(x, dir, me); };
     return (start.length ? '<div class="md-group"><h3>Coming to BOLD</h3><ul class="cx-timeline">' + start.map(row).join('') + '</ul></div>' : '') +
       '<div class="md-group"><h3>Since</h3>' + (rest.length ? '<ul class="cx-timeline">' + rest.slice(0, shown).map(row).join('') + '</ul>' +
         (rest.length > shown ? '<button type="button" class="btn-text cx-more">Show more (' + (rest.length - shown) + ')</button>' : '') : '<p class="proj-msg">Nothing yet.</p>') + '</div>';
@@ -439,7 +470,7 @@ window.BoldConnections = (function(){
     email = lower(email); me = lower(me);
     root.innerHTML = '<p class="proj-msg">Loading&hellip;</p>';
     // steps: 2, or 1 if everyone's interactions couldn't be loaded.
-    var shown = 30, on = { joining: true, working: true, talking: true, site: true }, steps = 2, everyone = null, view = 'graph', things = true, g = null;
+    var shown = 30, why = '', on = { joining: true, working: true, talking: true, site: true }, steps = 2, everyone = null, view = 'graph', things = true, g = null;
     Promise.all([loadFor(email), directory()]).then(function(r){
       var list = r[0], dir = r[1];
       function graphHtml(){
@@ -472,7 +503,10 @@ window.BoldConnections = (function(){
         if (!g.nodes.length) { g.nodes.push({ id: email }); g.byId[email] = g.nodes[0]; }
         var w = 760, h = Math.max(380, Math.min(steps === 2 ? 720 : 620, 300 + g.nodes.length * 8));
         radial(g, w, h, email);
-        return '<div class="cx-graph">' + svg(g, w, h, { dir: dir, me: me, centre: email, labels: 'all' }) + '</div>' + legendHtml(things);
+        var chosen = why && edgeOf(g, why.split(' ')[0], why.split(' ')[1]);
+        if (!chosen) why = '';
+        return '<div class="cx-graph">' + svg(g, w, h, { dir: dir, me: me, centre: email, labels: 'all', selectedEdge: why }) + '</div>' + legendHtml(things) +
+          (chosen ? reasonsHtml(chosen, g, dir, me) : '');
       }
       function draw(){
         var counts = {};
@@ -501,6 +535,9 @@ window.BoldConnections = (function(){
         var k = e.target.closest('[data-kind]');
         if (k) { on[k.getAttribute('data-kind')] = !on[k.getAttribute('data-kind')]; draw(); return; }
         if (e.target.closest('.cx-more')) { shown += 50; draw(); return; }
+        var line = e.target.closest('.cx-hit');
+        if (line) { var key = line.getAttribute('data-a') + ' ' + line.getAttribute('data-b'); why = why === key ? '' : key; draw(); return; }
+        if (e.target.closest('.cx-why-close')) { why = ''; draw(); return; }
         var n = e.target.closest('.cx-node');
         if (!n || n.getAttribute('data-id') === email) return;
         var h = n.getAttribute('data-href') || hrefOf(dir, n.getAttribute('data-id'), me, g);
@@ -514,5 +551,5 @@ window.BoldConnections = (function(){
   }
 
   return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, graphOf: graphOf, concentric: concentric, svg: svg, legendHtml: legendHtml, bindHover: bindHover,
-    lineageHtml: lineageHtml, bar: bar, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
+    lineageHtml: lineageHtml, bar: bar, reasons: reasons, reasonsHtml: reasonsHtml, rowHtml: rowHtml, edgeOf: edgeOf, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
 })();
