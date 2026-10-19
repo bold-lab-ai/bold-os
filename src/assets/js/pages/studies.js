@@ -60,7 +60,7 @@
       .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('');
     return '<div class="event-form join-form">' +
       '<label>Working title<input type="text" class="st-title" maxlength="200" value="' + esc(e.title) + '" placeholder="Your thesis or project, as it stands"></label>' +
-      '<label>People involved in your studies, supervisors first</label>' +
+      '<label>People involved in your studies, supervisors first: they’re invited to the meeting and added to the Slack channel</label>' +
       (e.people.length ? '<ul class="st-people">' + e.people.map(function(p, i){
         return '<li>' + esc(p.name) + '<span class="st-email">' + esc(p.email) + '</span><button type="button" class="btn-text danger st-remove" data-i="' + i + '">Remove</button></li>';
       }).join('') + '</ul>' : '') +
@@ -69,8 +69,8 @@
           '<button type="button" class="btn-text st-add-new">Add</button><button type="button" class="btn-text st-add-cancel">Cancel</button></div>'
         : '<div class="st-add"><select class="st-pick" aria-label="Add a person"><option value="">' + (roster ? 'Add a person…' : 'Loading…') + '</option>' + options +
           '<option value="__new__">+ Someone not on Slack…</option></select></div>') +
-      '<label class="st-meeting-label">Your recurring meeting with them (London time)</label>' + meetingEntryHtml(e.meeting) +
-      (e.channelFixed ? '' : '<label>Slack channel with them (private; ' + SUPERVISION_PREFIX + ' is added if missing)<input type="text" class="st-channel" maxlength="80" value="' + esc(e.channel) + '"></label>' +
+      '<label class="st-meeting-label">Your recurring meeting (London time): Google Calendar invites you and everyone above</label>' + meetingEntryHtml(e.meeting) +
+      (e.channelFixed ? '' : '<label>Slack channel with you and everyone above (private; ' + SUPERVISION_PREFIX + ' is added if missing)<input type="text" class="st-channel" maxlength="80" value="' + esc(e.channel) + '"></label>' +
         '<p class="field-hint st-channel-hint">' + esc(channelCheck.name === e.channel ? channelCheck.text : '') + '</p>') +
       '<p class="ev-error"' + (e.error ? '' : ' hidden') + '>' + esc(e.error || '') + '</p>' +
       '<div class="event-form-actions"><button type="button" class="ev-save st-save"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save') + '</button>' +
