@@ -13,16 +13,18 @@ nav: "network.html"
 </div>
 
 <main>
-  <div class="cx-bar cx-controls">
-    <div class="cx-bar-row"><span class="cx-bar-label">View</span><div class="cx-bar-items"><div class="view-toggle" role="group" aria-label="View" id="nwView"></div></div></div>
-    <div class="cx-bar-row nw-graph-only"><span class="cx-bar-label">Show</span><div class="cx-bar-items"><div class="view-toggle" role="group" aria-label="Show" id="nwThings"></div></div></div>
-    <div class="cx-bar-row nw-graph-only"><span class="cx-bar-label">Kinds</span><div class="cx-bar-items"><div class="view-toggle" role="group" aria-label="Kinds" id="nwKinds"></div></div></div>
-    <div class="cx-bar-row nw-graph-only"><span class="cx-bar-label">Since</span><div class="cx-bar-items"><div class="view-toggle" role="group" aria-label="Since" id="nwSince"></div></div></div>
-    <div class="cx-bar-row nw-graph-only"><span class="cx-bar-label">Who</span><div class="cx-bar-items">
-      <select class="cx-field" id="nwGroup" aria-label="Group"></select>
+  <div class="cx-controls">
+    <div class="cx-ctl-row">
+      <span class="cx-pair"><span class="cx-bar-label">View</span><span class="view-toggle" role="group" aria-label="View" id="nwView"></span></span>
+      <span class="cx-pair nw-graph-only"><span class="cx-bar-label">Show</span><span class="view-toggle" role="group" aria-label="Show" id="nwThings"></span></span>
+    </div>
+    <div class="cx-ctl-row nw-graph-only">
+      <label class="cx-pair"><span class="cx-bar-label">Kinds</span><select class="cx-field" id="nwKinds"></select></label>
+      <label class="cx-pair"><span class="cx-bar-label">Since</span><select class="cx-field" id="nwSince"></select></label>
+      <label class="cx-pair"><span class="cx-bar-label">Who</span><select class="cx-field" id="nwGroup"></select></label>
       <input class="cx-field" type="search" id="nwFind" placeholder="Find someone or something" aria-label="Find someone or something" list="nwPeople">
       <datalist id="nwPeople"></datalist>
-    </div></div>
+    </div>
   </div>
   <p class="proj-msg" id="nwMsg">Loading&hellip;</p>
   <div class="cx-graph" id="nwGraph" hidden></div>

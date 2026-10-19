@@ -1,5 +1,5 @@
 // Network (network.html, under People): everyone's interactions (connections.js), as a
-// Graph or as a Lineage (who brought whom into BOLD). Graph filters: kinds (joining,
+// Graph or as a Lineage (who brought whom into BOLD). Graph filters: kind (all, joining,
 // working together, talking, on the site), since when, a group of Who is BOLD (both
 // people in it), and with or without things (projects and papers, events, guides,
 // skills); Find someone selects them. Clicking a person or thing selects it: its lines
@@ -11,7 +11,7 @@
   if (!graph || !BOLD.getAuth() || !C || !window.BoldJoin) return;
   var el = function(id){ return document.getElementById(id); };
   var all = null, dir = null, me = '', g = null, selected = '';
-  var view = 'graph', kinds = { joining: true, working: true, talking: true, site: false }, since = 'all', group = '', things = true;
+  var view = 'graph', kind = 'all', since = 'all', group = '', things = true;
   var SINCE = [['all', 'All time'], ['365', 'Past year'], ['90', 'Past 3 months']];
   var W = 1000, H = 680;
 
@@ -20,8 +20,9 @@
   }
   function controls(){
     el('nwView').innerHTML = toggle('data-view', [['graph', 'Graph'], ['lineage', 'Lineage']], function(k){ return view === k; });
-    el('nwKinds').innerHTML = toggle('data-kind', C.GROUPS, function(k){ return kinds[k]; });
-    el('nwSince').innerHTML = toggle('data-since', SINCE, function(k){ return since === k; });
+    var opts = function(list, cur){ return list.map(function(x){ return '<option value="' + x[0] + '"' + (cur === x[0] ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join(''); };
+    el('nwKinds').innerHTML = opts([['all', 'All kinds']].concat(C.GROUPS), kind);
+    el('nwSince').innerHTML = opts(SINCE, since);
     el('nwThings').innerHTML = toggle('data-things', [['1', 'People and things'], ['0', 'People']], function(k){ return (k === '1') === things; });
     el('nwGroup').innerHTML = '<option value="">Every group</option>' + BoldJoin.CATEGORIES.map(function(c){
       return '<option value="' + c[0] + '"' + (group === c[0] ? ' selected' : '') + '>' + esc(c[1]) + '</option>';
@@ -33,7 +34,7 @@
     if (view === 'lineage') { drawLineage(); return; }
     var from = since === 'all' ? 0 : Date.now() - Number(since) * 86400000;
     var inGroup = function(e){ return !e || C.isThing(e) || !group || (dir[e] && dir[e].member && dir[e].group === group); };
-    var list = all.filter(function(x){ return kinds[x.group] && x.at >= from && (x.to || (things && x.thing)) && inGroup(x.from) && inGroup(x.to); });
+    var list = all.filter(function(x){ return (kind === 'all' || x.group === kind) && x.at >= from && (x.to || (things && x.thing)) && inGroup(x.from) && inGroup(x.to); });
     g = C.graphOf(list, things);
     // Narrow screens: a taller box, so the graph isn't squeezed into a strip.
     if (graph.parentNode.clientWidth < 600) { W = 600; H = 760; } else { W = 1000; H = 760; }
@@ -77,10 +78,8 @@
   }
 
   document.addEventListener('click', function(e){
-    var v = e.target.closest('[data-view]'), k = e.target.closest('[data-kind]'), s = e.target.closest('[data-since]'), t = e.target.closest('[data-things]'), n = e.target.closest('.cx-node');
+    var v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]'), n = e.target.closest('.cx-node');
     if (v) { view = v.getAttribute('data-view'); controls(); build(); }
-    else if (k) { kinds[k.getAttribute('data-kind')] = !kinds[k.getAttribute('data-kind')]; controls(); build(); }
-    else if (s) { since = s.getAttribute('data-since'); controls(); build(); }
     else if (t) { things = t.getAttribute('data-things') === '1'; controls(); build(); }
     else if (n && graph.contains(n)) {
       if (view === 'lineage') { var h = n.getAttribute('data-href'); if (h) location.href = h; return; }
@@ -95,6 +94,8 @@
   });
   C.bindHover(graph);
   el('nwGroup').addEventListener('change', function(){ group = this.value; build(); });
+  el('nwKinds').addEventListener('change', function(){ kind = this.value; build(); });
+  el('nwSince').addEventListener('change', function(){ since = this.value; build(); });
   el('nwFind').addEventListener('change', function(){
     var q = this.value.trim().toLowerCase();
     var name = function(v){ return C.nameOf(dir, v.id, g).toLowerCase(); };

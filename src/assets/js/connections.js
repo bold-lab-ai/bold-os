@@ -482,18 +482,21 @@ window.BoldConnections = (function(){
             return '<button type="button" class="view-btn" ' + attr + '="' + x[0] + '" aria-pressed="' + (String(cur) === String(x[0])) + '">' + esc(x[1]) + '</button>';
           }).join('') + '</div>';
         };
-        root.innerHTML = bar([
-          ['View', toggle('View', 'data-view', [['graph', 'Graph'], ['time', 'Over time']], view)],
-          ['Show', toggle('Show', 'data-things', [['1', 'People and things'], ['0', 'People']], things ? '1' : '0')],
-          ['Kinds', toggle('Kinds', 'data-cx', [['all', 'All']].concat(GROUPS.map(function(x){ return [x[0], x[1] + (counts[x[0]] ? ' ' + counts[x[0]] : '')]; })), filter)],
-        ], 'cx-controls') +
+        var pair = function(label, html){ return '<span class="cx-pair"><span class="cx-bar-label">' + label + '</span>' + html + '</span>'; };
+        root.innerHTML = '<div class="cx-controls"><div class="cx-ctl-row">' +
+          pair('View', toggle('View', 'data-view', [['graph', 'Graph'], ['time', 'Over time']], view)) +
+          pair('Show', toggle('Show', 'data-things', [['1', 'People and things'], ['0', 'People']], things ? '1' : '0')) + '</div>' +
+          '<div class="cx-ctl-row"><label class="cx-pair"><span class="cx-bar-label">Kinds</span><select class="cx-field cx-kinds">' +
+          [['all', 'All kinds', list.length]].concat(GROUPS.map(function(x){ return [x[0], x[1], counts[x[0]] || 0]; })).map(function(x){
+            return '<option value="' + x[0] + '"' + (filter === x[0] ? ' selected' : '') + '>' + esc(x[1]) + ' (' + x[2] + ')</option>';
+          }).join('') + '</select></label></div></div>' +
           (view === 'time' ? timeHtml(list.filter(function(x){ return filter === 'all' || x.group === filter; }), dir, email, me, things) : graphHtml()) +
           timelineHtml(list.filter(function(x){ return filter === 'all' || x.group === filter; }), dir, email, me, shown);
       }
       bindHover(root);
+      root.addEventListener('change', function(e){ if (e.target.classList.contains('cx-kinds')) { filter = e.target.value; draw(); } });
       root.addEventListener('click', function(e){
-        var b = e.target.closest('[data-cx]'), v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]');
-        if (b) { filter = b.getAttribute('data-cx'); draw(); return; }
+        var v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]');
         if (v) { view = v.getAttribute('data-view'); draw(); return; }
         if (t) { things = t.getAttribute('data-things') === '1'; draw(); return; }
         if (e.target.closest('.cx-more')) { shown += 50; draw(); return; }
