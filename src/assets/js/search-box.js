@@ -32,7 +32,12 @@ window.BoldSearch = (function(){
   function mountAll(){
     var boxes = document.querySelectorAll('[data-search-box]');
     Array.prototype.forEach.call(boxes, mount);
-    BOLD.onUser(function(user){ Array.prototype.forEach.call(boxes, function(b){ b.hidden = !user; }); });
+    var show = function(on){ Array.prototype.forEach.call(boxes, function(b){ b.hidden = !on; }); };
+    // Shown at once from the last sign-in (as the masthead's name is); auth decides.
+    var hint = null;
+    try { hint = BOLD.authHint && BOLD.authHint(); } catch (e){}
+    show(!!hint);
+    BOLD.onUser(function(user){ show(!!user); });
     // "/" anywhere but in a text box focuses the first one on show.
     document.addEventListener('keydown', function(e){
       if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
