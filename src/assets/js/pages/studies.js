@@ -101,7 +101,8 @@
     if (c) editing.channel = c.value.trim();
     if (document.getElementById('pmDay')) {
       editing.meeting = { day: document.getElementById('pmDay').value, time: document.getElementById('pmTime').value,
-        minutes: Number(document.getElementById('pmMinutes').value), every: Number(document.getElementById('pmEvery').value) };
+        minutes: Number(document.getElementById('pmMinutes').value), every: Number(document.getElementById('pmEvery').value),
+        until: document.getElementById('pmUntil').value };
     }
   }
 

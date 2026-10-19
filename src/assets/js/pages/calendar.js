@@ -125,8 +125,10 @@
       });
       html += '</ul>';
     }
+    var today = iso(new Date());
     MEETING_DAYS.forEach(function(d){
-      var day = ms.filter(function(m){ return m.meeting.day === d[0]; })
+      // Ones whose end date has passed are over.
+      var day = ms.filter(function(m){ return m.meeting.day === d[0] && !(m.meeting.until && m.meeting.until < today); })
         .sort(function(a, b){ return a.meeting.time.localeCompare(b.meeting.time) || a.title.localeCompare(b.title); });
       if (!day.length) return;
       html += '<h2 class="meet-day">' + d[1] + 's</h2><ul class="proj-list">';
@@ -202,7 +204,8 @@
     html += '<div class="week-body" style="height:' + (hours.length * HOUR) + 'px">' +
       '<div class="week-hours">' + hours.map(function(h){ return '<span style="top:' + ((h - from) * HOUR) + 'px">' + pad(h) + ':00</span>'; }).join('') + '</div>';
     cols.forEach(function(i){
-      var day = ms.filter(function(m){ return m.meeting.day === MEETING_DAYS[i][0]; })
+      // Not after its end date.
+      var day = ms.filter(function(m){ return m.meeting.day === MEETING_DAYS[i][0] && !(m.meeting.until && m.meeting.until < iso(dates[i])); })
         .map(function(m){ var s = minutes(m.meeting.time); return { m: m, s: s, e: s + m.meeting.minutes }; })
         .sort(function(a, b){ return a.s - b.s || a.e - b.e; });
       // Side by side: each meeting takes the first lane free at its start; a group of

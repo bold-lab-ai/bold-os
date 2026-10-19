@@ -2155,7 +2155,16 @@ function normalizeMeeting(m){
   if (!(minutes >= 15 && minutes <= 240 && minutes % 15 === 0)) return { error: 'Choose how long it lasts.' };
   const every = Number(m.every);
   if ([1, 2, 3, 4].indexOf(every) < 0) return { error: 'Choose how often it runs.' };
-  return { day, time, minutes, every };
+  // Until when it runs (YYYY-MM-DD, the last day it may fall on), or for good.
+  const until = String(m.until || '');
+  if (until && !(/^\d{4}-\d{2}-\d{2}$/.test(until) && !isNaN(Date.parse(until)))) return { error: 'Give a valid end date.' };
+  if (until && until < todayIsoLondon()) return { error: 'The end date has passed.' };
+  return until ? { day, time, minutes, every, until } : { day, time, minutes, every };
+}
+
+// Pure: whether two meetings fall at the same times (an end date aside).
+function sameMeetingTimes(a, b){
+  return !!a && !!b && a.day === b.day && a.time === b.time && a.minutes === b.minutes && a.every === b.every;
 }
 
 // Pure: the first meeting, as local times in London ('2026-10-19T14:00:00'),
@@ -2174,8 +2183,10 @@ function firstMeetingTimes(meeting, todayIso, nowHm){
 // `pausedAt` (ms): a paused meeting's series ends then (UNTIL), so its upcoming dates
 // leave everyone's calendar while the event, its invitation and Meet link stay; resuming
 // takes UNTIL off again.
+// A meeting with an end date (`until`) ends the series that day, or when paused if sooner.
 function meetingRecurrence(m, pausedAt){
-  const until = pausedAt ? ';UNTIL=' + new Date(pausedAt).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '') : '';
+  const ends = [pausedAt || 0, m.until ? Date.parse(m.until + 'T23:59:59Z') : 0].filter(Boolean);
+  const until = ends.length ? ';UNTIL=' + new Date(Math.min.apply(null, ends)).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '') : '';
   return ['RRULE:FREQ=WEEKLY' + (m.every > 1 ? ';INTERVAL=' + m.every : '') + ';BYDAY=' + m.day + until];
 }
 
@@ -2590,8 +2601,9 @@ async function syncWorkspace(id, changes){
         if (ev.summary !== ws.title) change.summary = ws.title;
         const desc = eventDescription(ws);
         if (ev.description !== desc) change.description = desc;
-        if (JSON.stringify(ws.eventMeeting) !== JSON.stringify(ws.meeting)) Object.assign(change, eventTimes(ws.meeting, ws.pausedAt));
-        else if ((ws.pausedAt || 0) !== (ws.eventPausedAt || 0)) change.recurrence = meetingRecurrence(ws.meeting, ws.pausedAt);
+        // A new time moves the series; a new end date or a pause only changes how long it runs.
+        if (!sameMeetingTimes(ws.eventMeeting, ws.meeting)) Object.assign(change, eventTimes(ws.meeting, ws.pausedAt));
+        else if ((ws.eventMeeting.until || '') !== (ws.meeting.until || '') || (ws.pausedAt || 0) !== (ws.eventPausedAt || 0)) change.recurrence = meetingRecurrence(ws.meeting, ws.pausedAt);
         if (Object.keys(change).length){
           await googleFetch('PATCH', CAL + '/' + ws.eventId + '?sendUpdates=all', change);
           patch.eventMeeting = ws.meeting; patch.eventPausedAt = ws.pausedAt || FieldValue.delete(); await save();
@@ -3225,8 +3237,8 @@ async function syncStudyMeeting(email){
       if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
       if (ev.summary !== summary) change.summary = summary;
       if (ev.description !== description) change.description = description;
-      if (JSON.stringify(s.eventMeeting) !== JSON.stringify(s.meeting)) Object.assign(change, eventTimes(s.meeting, s.pausedAt));
-      else if ((s.pausedAt || 0) !== (s.eventPausedAt || 0)) change.recurrence = meetingRecurrence(s.meeting, s.pausedAt);
+      if (!sameMeetingTimes(s.eventMeeting, s.meeting)) Object.assign(change, eventTimes(s.meeting, s.pausedAt));
+      else if ((s.eventMeeting.until || '') !== (s.meeting.until || '') || (s.pausedAt || 0) !== (s.eventPausedAt || 0)) change.recurrence = meetingRecurrence(s.meeting, s.pausedAt);
       if (Object.keys(change).length){
         await googleFetch('PATCH', CAL + '/' + s.eventId + '?sendUpdates=all', change);
         patch.eventMeeting = s.meeting; patch.eventPausedAt = s.pausedAt || FieldValue.delete();
