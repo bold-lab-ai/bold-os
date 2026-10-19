@@ -67,8 +67,6 @@
 
   function renderIdentity(name, email){
     el('profileName').textContent = name || email || 'Profile';
-    el('factName').textContent = name || '\u2014';
-    el('factEmail').textContent = email || '\u2014';
   }
 
   /* ---------- GitHub ---------- */

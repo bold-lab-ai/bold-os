@@ -32,8 +32,9 @@
         '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save md-save">Save</button><button type="button" class="md-cancel">Cancel</button></div></div>';
       return;
     }
-    box.innerHTML = rec ? BoldJoin.factsHtml(rec) + '<div class="event-controls"><button type="button" class="btn-text md-edit">Edit your details</button></div>' :
-      '<p class="proj-msg">Add your role, institution, research interests and dates, so the lab knows who you are.</p>' +
+    var who = { name: me.name, email: me.email };
+    box.innerHTML = rec ? BoldJoin.factsHtml(rec, who) + '<div class="event-controls"><button type="button" class="btn-text md-edit">Edit your details</button></div>' :
+      BoldJoin.factsHtml({}, who) + '<p class="proj-msg">Add your role, institution, research interests and dates, so the lab knows who you are.</p>' +
       '<div class="event-controls"><button type="button" class="btn-text md-edit">Add your details</button></div>';
   }
 

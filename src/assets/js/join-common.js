@@ -33,26 +33,30 @@ window.BoldJoin = (function(){
       return '<label>' + label + '<input type="' + (type || 'text') + '" class="' + cls + '" maxlength="' + max + '" value="' + esc(val || '') + '"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + '></label>';
     };
     var pillars = v.pillars || [];
-    return (o.withIdentity ? t('jn-name', 'Full name', v.name, '', 120) +
+    var group = function(title, body){ return '<fieldset class="md-group"><legend>' + title + '</legend>' + body + '</fieldset>'; };
+    return group('About you', (o.withIdentity ? t('jn-name', 'Full name', v.name, '', 120) +
         t('jn-email', 'Email address (for Slack; Gmail preferred, for Google Calendar)', v.email, 'you@gmail.com', 200, 'email') : '') +
-      t('jn-links', 'Links (website, X, Google Scholar)', v.links, 'https://…', 500) +
+      t('jn-pronouns', 'Pronouns (optional)', v.pronouns, 'e.g. she/her, they/them', 40) +
       t('jn-institution', 'Home institution', v.institution, 'e.g. UCL, Oxford, Imperial', 120) +
+      t('jn-based', 'Primarily based in (for events and socials)', v.basedIn, 'e.g. London', 120) +
+      t('jn-links', 'Links (website, X, Google Scholar)', v.links, 'https://…', 500)) +
+    group('At BOLD',
       '<label>Role at BOLD<select class="jn-role"><option value="">Choose…</option>' + opt.roles.map(function(r){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';
       }).join('') + (v.role && opt.roles.indexOf(v.role) === -1 ? '<option selected>' + esc(v.role) + '</option>' : '') + '</select></label>' +
       t('jn-contact', 'BOLD supervisor, mentor or point of contact', v.contact, 'Who connects you to BOLD?', 200) +
+      '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
+        t('jn-end', 'End date (not needed for PIs, adjuncts, alumni and collaborators)', v.endDate, '', 10, 'date') + '</div>' +
+      '<label class="jn-check"><input type="checkbox" class="jn-list"' + (v.listOnWebsite ? ' checked' : '') + '> List me on the BOLD website</label>') +
+    group('Research',
       t('jn-interests', 'Main research interests (up to 5 keywords)', v.interests, 'e.g. reinforcement learning, world models', 300) +
       '<fieldset class="jn-pillars"><legend>Closest BOLD research pillars</legend>' + opt.pillars.map(function(p){
         return '<label class="jn-check"><input type="checkbox" value="' + esc(p) + '"' + (pillars.indexOf(p) !== -1 ? ' checked' : '') + '> ' + esc(p) + '</label>';
-      }).join('') + '</fieldset>' +
-      t('jn-based', 'Primarily based in (for events and socials)', v.basedIn, 'e.g. London', 120) +
-      t('jn-pronouns', 'Pronouns (optional)', v.pronouns, 'e.g. she/her, they/them', 40) +
+      }).join('') + '</fieldset>') +
+    group('Working with you',
       '<fieldset class="jn-feedback"><legend>How you like to receive feedback</legend>' + FEEDBACK.map(function(f){
-        return '<label class="jn-check"><input type="radio" name="jn-feedback" value="' + f[0] + '"' + (v.feedback === f[0] ? ' checked' : '') + '> <strong>' + f[1] + '</strong>: ' + esc(f[2]) + '</label>';
-      }).join('') + '</fieldset>' +
-      '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
-        t('jn-end', 'End date (not needed for PIs, adjuncts, alumni and collaborators)', v.endDate, '', 10, 'date') + '</div>' +
-      '<label class="jn-check"><input type="checkbox" class="jn-list"' + (v.listOnWebsite ? ' checked' : '') + '> List me on the BOLD website</label>';
+        return '<label class="jn-check"><input type="radio" name="jn-feedback" value="' + f[0] + '"' + (v.feedback === f[0] ? ' checked' : '') + '> <span><strong>' + f[1] + '</strong>: ' + esc(f[2]) + '</span></label>';
+      }).join('') + '</fieldset>');
   }
 
   // What the fields in el say.
@@ -82,21 +86,25 @@ window.BoldJoin = (function(){
     return '';
   }
 
-  // The details as a list of facts, for reading.
-  function factsHtml(d){
+  // The details as lists of facts, for reading, in the form's groups. o: { name, email }
+  // to show first (the profile's own sign-in), else d's.
+  function factsHtml(d, o){
+    o = o || {};
     var fb = FEEDBACK.filter(function(f){ return f[0] === d.feedback; })[0];
     var row = function(k, v){ return v ? '<div class="fact"><dt>' + k + '</dt><dd>' + v + '</dd></div>' : ''; };
+    var group = function(title, rows){ return rows ? '<div class="md-group"><h3>' + title + '</h3><dl class="facts">' + rows + '</dl></div>' : ''; };
     var links = String(d.links || '').split(/[\s,;]+/).filter(Boolean).map(function(u){
       var href = /^https?:\/\//.test(u) ? u : 'https://' + u;
       return /^https?:\/\/[^\s<>"]+$/.test(href) ? '<a href="' + esc(href) + '" target="_blank" rel="noopener">' + esc(u) + '</a>' : esc(u);
     }).join(' · ');
-    return '<dl class="facts">' +
-      row('Role', esc(d.role || '')) + row('Institution', esc(d.institution || '')) + row('Point of contact', esc(d.contact || '')) +
-      row('Interests', esc(d.interests || '')) + row('Pillars', (d.pillars || []).map(esc).join('<br>')) +
-      row('Pronouns', esc(d.pronouns || '')) +
-      row('Feedback', fb ? '<strong>' + fb[1] + '</strong>: ' + esc(fb[2]) : '') +
-      row('Based in', esc(d.basedIn || '')) + row('Dates', esc(d.startDate && d.endDate ? d.startDate + ' – ' + d.endDate : d.startDate ? 'From ' + d.startDate : d.endDate ? 'Until ' + d.endDate : '')) +
-      row('Links', links) + row('On the website', d.listOnWebsite ? 'Yes' : 'No') + '</dl>';
+    return group('About you', row('Name', esc(o.name || d.name || '')) + row('Email', esc(o.email || d.email || '')) +
+        row('Pronouns', esc(d.pronouns || '')) + row('Institution', esc(d.institution || '')) +
+        row('Based in', esc(d.basedIn || '')) + row('Links', links)) +
+      group('At BOLD', row('Role', esc(d.role || '')) + row('Point of contact', esc(d.contact || '')) +
+        row('Dates', esc(d.startDate && d.endDate ? d.startDate + ' – ' + d.endDate : d.startDate ? 'From ' + d.startDate : d.endDate ? 'Until ' + d.endDate : '')) +
+        (d.role !== undefined ? row('On the website', d.listOnWebsite ? 'Yes' : 'No') : '')) +
+      group('Research', row('Interests', esc(d.interests || '')) + row('Pillars', (d.pillars || []).map(esc).join('<br>'))) +
+      group('Working with you', row('Feedback', fb ? '<strong>' + fb[1] + '</strong>: ' + esc(fb[2]) : ''));
   }
 
   return { ROLES: ROLES, PILLARS: PILLARS, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
