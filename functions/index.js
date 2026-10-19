@@ -3699,10 +3699,11 @@ function normalizeJoinRequest(d, roles, pillars){
 }
 
 // Pure: the welcome email for request r → { subject, body } or { error } (what's missing).
-function welcomeEmail(r, settings){
+function welcomeEmail(r, settings, todayIso){
   const s = settings || {};
   const invite = String(s.slackInviteUrl || '').trim();
   if (!invite) return { error: 'No Slack invite link yet: add it on the join requests page.' };
+  if (s.slackInviteExpires && s.slackInviteExpires < (todayIso || todayIsoLondon())) return { error: 'The Slack invite link expired on ' + s.slackInviteExpires + ': add a new one on the join requests page.' };
   const fill = (t) => String(t).replace(/\{name\}/g, (r.name || '').split(' ')[0] || r.name || '')
     .replace(/\{fullName\}/g, r.name || '').replace(/\{slackInvite\}/g, invite).replace(/\{site\}/g, SITE_URL);
   return { subject: fill(s.subject || WELCOME_SUBJECT), body: fill(s.body || WELCOME_BODY) };
@@ -3857,6 +3858,38 @@ exports.retryWelcomeEmails = onSchedule(
       if (w.tries > 48 && Date.now() - (w.at || 0) < 86400000) continue;
       await sendWelcome(doc.id);
     }
+  }
+);
+
+// Slack invite links expire (30 days at most). settings/joinInvite.slackInviteExpires
+// (YYYY-MM-DD, set with the link on join-requests.html): three days before, and once it
+// has passed, the PIs and admins get a DM to add a new one; welcome emails wait meanwhile
+// (welcomeEmail). `reminded` (server only) keeps each DM to once per link and stage.
+// Pure: → 'soon' | 'expired' | '' for an expiry date, today.
+function inviteReminderStage(expires, todayIso){
+  if (!expires) return '';
+  if (expires < todayIso) return 'expired';
+  const days = (Date.parse(expires + 'T00:00:00Z') - Date.parse(todayIso + 'T00:00:00Z')) / 86400000;
+  return days <= 3 ? 'soon' : '';
+}
+
+exports.remindJoinInvite = onSchedule(
+  { schedule: '0 9 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  async function(){
+    const ref = db.collection('settings').doc('joinInvite');
+    const snap = await ref.get();
+    const inv = snap.exists ? snap.data() : {};
+    const stage = inviteReminderStage(inv.slackInviteExpires || '', todayIsoLondon());
+    if (!stage || !inv.slackInviteUrl) return;
+    const key = stage + ':' + inv.slackInviteExpires + ':' + inv.slackInviteUrl;
+    if (inv.reminded === key) return;
+    const headline = (stage === 'expired'
+      ? '⚠️ The Slack invite link in the welcome email expired on ' + inv.slackInviteExpires + ': welcome emails wait until there’s a new one. '
+      : '⏳ The Slack invite link in the welcome email expires on ' + inv.slackInviteExpires + '. ') +
+      'In Slack: Invite people → Copy invite link (the longest expiry), then ' + linkedTitle('add it under Settings', joinPageUrl() + '#settings') + ' with its new expiry date.';
+    const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline });
+    await ref.set({ reminded: key }, { merge: true });
   }
 );
 
@@ -4253,5 +4286,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
 };

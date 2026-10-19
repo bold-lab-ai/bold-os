@@ -91,9 +91,9 @@ Building a feature (a page that reads and writes its own data, say a rota) needs
 
 The ML Conference Cycle guide and the Internal Review Board implement BOLDiquette § ML Conference Cycle; the How to guides carry § Research Project Lifecycle and the How to ML docs BOLDiquette links to. Where the site differs from BOLDiquette, record it in `docs/DIFF.md` and its rendered copy `src/pages/ml-cycle/diff.html` (kept in sync by hand), never on the pages themselves.
 
-## Waiting on the lab's Google account
+## The lab's Google account
 
-Project meetings, slides and notes, students' meetings with their supervisors, and joining BOLD (sign-up, approval, the welcome email) are built but wait for the lab's Google account. `docs/GOOGLE-ACCOUNT.md` lists everything that depends on it and the steps to ship it all; keep it current when you add anything else that needs the account.
+Project meetings, slides and notes, students' meetings with their supervisors and the welcome email to new members go through the lab's Gmail account (`GOOGLE_OAUTH`; `docs/REFERENCE.md` under "Project workspaces" says how to reconnect it). It owns every file and meeting it makes. A new function that uses it lists `GOOGLE_OAUTH` in its `secrets`.
 
 ## More detail
 

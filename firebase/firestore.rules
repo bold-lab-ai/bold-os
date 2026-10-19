@@ -128,8 +128,9 @@ service cloud.firestore {
     }
     match /settings/joinInvite {
       allow read: if hasFullWrite();
-      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['slackInviteUrl', 'subject', 'body', 'updatedAt', 'updatedBy'])
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['slackInviteUrl', 'slackInviteExpires', 'subject', 'body', 'updatedAt', 'updatedBy'])
         && request.resource.data.get('slackInviteUrl', '').size() <= 300
+        && request.resource.data.get('slackInviteExpires', '') is string && request.resource.data.get('slackInviteExpires', '').size() <= 10
         && request.resource.data.get('subject', '').size() <= 200 && request.resource.data.get('body', '').size() <= 5000;
     }
 

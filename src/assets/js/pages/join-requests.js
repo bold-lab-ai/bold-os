@@ -41,11 +41,22 @@
     return '<section class="block" id="settings"><div class="block-head"><h2>Settings</h2></div>' +
       '<div class="event-form join-form jr-settings">' +
       '<label>Slack invite link (in Slack: Invite people → Copy invite link; replace it when it expires)<input type="url" class="jr-invite" maxlength="300" value="' + esc(inv.slackInviteUrl || '') + '" placeholder="https://join.slack.com/t/…"></label>' +
+      '<label>The invite link expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label>' +
       '<label>Welcome email subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
       '<label>Welcome email ({name}: their first name, {slackInvite}: the link above, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label>' +
       '<label>Roles on the join form, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
       '<label>Research pillars on the join form, one per line<textarea class="jr-pillars no-tags" rows="4">' + esc((f.pillars || BoldJoin.PILLARS).join('\n')) + '</textarea></label>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div></div></section>';
+  }
+
+  // No invite link, or one expired or about to: welcome emails wait, or will.
+  function inviteNotice(){
+    var inv = invite || {}, exp = inv.slackInviteExpires || '';
+    var today = new Date().toISOString().slice(0, 10), soon = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    var msg = !inv.slackInviteUrl ? 'There’s no Slack invite link yet: welcome emails wait until you add one under Settings.'
+      : exp && exp < today ? 'The Slack invite link expired on ' + when(Date.parse(exp)) + ': welcome emails wait until you add a new one under Settings.'
+      : exp && exp <= soon ? 'The Slack invite link expires on ' + when(Date.parse(exp)) + ': add a new one under Settings.' : '';
+    return msg ? '<p class="jn-notice">' + esc(msg).replace('under Settings', 'under <a href="#settings">Settings</a>') + '</p>' : '';
   }
 
   function render(){
@@ -56,7 +67,7 @@
     var open = requests.filter(function(r){ return r.status === 'open'; });
     var done = requests.filter(function(r){ return r.status !== 'open'; });
     main.innerHTML =
-      (invite && invite.slackInviteUrl ? '' : '<p class="jn-notice">There’s no Slack invite link yet: welcome emails wait until you add one under Settings.</p>') +
+      inviteNotice() +
       '<section class="block"><div class="block-head"><h2>Waiting<span class="proj-count">' + open.length + '</span></h2></div>' +
         (open.length ? '<ul class="proj-list">' + open.map(requestHtml).join('') + '</ul>' : '<p class="proj-msg">No requests waiting.</p>') + '</section>' +
       '<section class="block"><div class="block-head"><h2>Decided</h2></div>' +
@@ -80,7 +91,7 @@
     var stamp = { updatedAt: Date.now(), updatedBy: me.email };
     btn.disabled = true; err.hidden = true;
     Promise.all([
-      db.collection('settings').doc('joinInvite').set(Object.assign({ slackInviteUrl: url, subject: v('.jr-subject').trim() || SUBJECT, body: v('.jr-body') || BODY }, stamp)),
+      db.collection('settings').doc('joinInvite').set(Object.assign({ slackInviteUrl: url, slackInviteExpires: v('.jr-expires'), subject: v('.jr-subject').trim() || SUBJECT, body: v('.jr-body') || BODY }, stamp)),
       db.collection('settings').doc('joinForm').set(Object.assign({ roles: roles, pillars: pillars }, stamp)),
     ]).then(function(){
       editing = false; btn.disabled = false; btn.textContent = 'Saved'; setTimeout(function(){ btn.textContent = 'Save settings'; }, 1500);
