@@ -8,6 +8,8 @@
 // anyone an applicant named as inviting them to the Slack confirms it, or says they
 // didn't (confirmJoinInvite; #i=<id> from their DM), and so do members who named them on
 // their profile (setMyInviter; #invited).
+// Tabs, by #hash: #signup, #invited, #groups, #settings (#r=, #g=, #i= open their
+// request's tab). A request's answers are behind Details; names link to person.html.
 (function(){
   var esc = BOLD.escapeHtml;
   var main = document.getElementById('joinRequests');
@@ -16,7 +18,7 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, form = null, unsubs = [], busy = {}, editing = false;
-  var groupReqs = [], groups = {}, invited = [], invitedMembers = [];
+  var groupReqs = [], groups = {}, invited = [], invitedMembers = [], shown = {}, slackIds = {};
 
   var SUBJECT = 'Welcome to BOLD';
   var BODY = ['Hi {name},', '', 'Welcome to BOLD! Your request to join has been approved. Here are your next steps:', '',
@@ -25,17 +27,25 @@
     '4. Read the BOLDiquette: {site}boldiquette.html', '5. Add your projects, if you have any: {site}projects-register.html', '',
     'See you on Slack,', 'The BOLD team'].join('\n');
 
+  // Someone's name, linked to their page once they're on the BOLD Slack (the people roster).
+  function who(name, email, cls){
+    var id = slackIds[String(email || '').toLowerCase()], c = cls ? ' class="' + cls + '"' : '';
+    return id ? '<a' + c + ' href="person.html?id=' + encodeURIComponent(id) + '">' + esc(name || email) + '</a>' : '<span' + c + '>' + esc(name || email) + '</span>';
+  }
+  // Details, collapsed: key is what's shown (shown[key]).
+  function moreBtn(key){ return '<button type="button" class="btn-text jr-more" data-more="' + esc(key) + '" aria-expanded="' + !!shown[key] + '">' + (shown[key] ? 'Hide details' : 'Details') + '</button>'; }
   function when(t){ return t ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
 
   function requestHtml(r){
     var open = r.status === 'open';
     var w = r.welcome || {};
-    var status = open ? '' : '<p class="proj-meta">' + (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + esc(r.decidedByName || r.decidedBy || '') + ', ' + when(r.decidedAt) +
+    var status = open ? '' : '<p class="proj-meta">' + (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + who(r.decidedByName || r.decidedBy || '', r.decidedBy) + ', ' + when(r.decidedAt) +
       (r.status === 'approved' ? ' · Welcome email: ' + (w.status === 'sent' ? 'sent ' + when(w.at) : 'not sent yet' + (w.error ? ' (' + esc(w.error) + ')' : '')) : '') + '</p>';
-    return '<li id="r-' + esc(r.id) + '"><span class="proj-title">' + esc(r.name) + '</span>' +
-      '<span class="proj-meta">' + esc(r.email) + ' · asked ' + when(r.at) + '</span>' + status +
-      BoldJoin.factsHtml(r) +
-      '<div class="event-controls">' + (open ?
+    return '<li id="r-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
+      '<span class="proj-meta">' + esc([r.email, r.role, r.institution].filter(Boolean).join(' · ')) + ' · asked ' + when(r.at) + '</span>' + status +
+      // Their answers, collapsed: a request is long.
+      (shown[r.id] ? BoldJoin.factsHtml(r, { other: true }) : '') +
+      '<div class="event-controls">' + moreBtn(r.id) + (open ?
         '<button type="button" class="btn-text jr-approve" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Approve</button>' +
         '<button type="button" class="btn-text danger jr-decline" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Decline</button>' :
         r.status === 'approved' && w.status !== 'sent' ? '<button type="button" class="btn-text jr-resend" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Send the welcome email</button>' : '') +
@@ -45,32 +55,32 @@
   // A member asking to be in another group.
   function groupReqHtml(r){
     var open = r.status === 'open';
-    return '<li id="g-' + esc(r.id) + '"><span class="proj-title">' + esc(r.name) + '</span>' +
+    return '<li id="g-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
       '<span class="proj-meta">' + esc(r.email) + ' · asked ' + when(r.at) + '</span>' +
       '<p class="jr-move">' + BoldJoin.groupBadge(r.from) + ' → ' + BoldJoin.groupBadge(r.to) + '</p>' +
-      (r.note ? '<p class="lt-text">' + esc(r.note) + '</p>' : '') +
-      (open ? '<div class="event-controls"><button type="button" class="btn-text jr-g-approve" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Approve</button>' +
-          '<button type="button" class="btn-text danger jr-g-decline" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Decline</button></div>'
-        : '<p class="proj-meta">' + (r.status === 'withdrawn' ? 'Withdrawn' : (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + esc(r.decidedByName || r.decidedBy || '')) + ', ' + when(r.decidedAt) + '</p>') +
-      '</li>';
+      (r.note && shown['g:' + r.id] ? '<p class="lt-text">' + esc(r.note) + '</p>' : '') +
+      (open ? '' : '<p class="proj-meta">' + (r.status === 'withdrawn' ? 'Withdrawn' : (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + who(r.decidedByName || r.decidedBy || '', r.decidedBy)) + ', ' + when(r.decidedAt) + '</p>') +
+      '<div class="event-controls">' + (r.note ? moreBtn('g:' + r.id) : '') + (open ? '<button type="button" class="btn-text jr-g-approve" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Approve</button>' +
+          '<button type="button" class="btn-text danger jr-g-decline" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Decline</button>' : '') + '</div></li>';
   }
 
   function settingsHtml(){
     var inv = invite || {}, f = form || {};
-    return '<section class="block" id="settings"><div class="block-head"><h2>Settings</h2></div>' +
+    var group = function(title){ return '<fieldset class="md-group"><legend>' + title + '</legend>'; };
+    return '<section class="profile-panel" id="settings">' +
       '<div class="event-form join-form jr-settings">' +
-      '<label>Slack invite link (in Slack: Invite people → Copy invite link; replace it when it expires)<input type="url" class="jr-invite" maxlength="300" value="' + esc(inv.slackInviteUrl || '') + '" placeholder="https://join.slack.com/t/…"></label>' +
-      '<label>The invite link expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label>' +
-      '<label>Welcome email subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
-      '<label>Welcome email ({name}: their first name, {slackInvite}: the link above, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label>' +
-      '<fieldset class="jn-pillars"><legend>Slack channel for each group (everyone in it and in the groups above is added; <a href="boldiquette.html#who-is-bold">Who is BOLD</a>)</legend>' +
+      group('Slack invite') + '<label>Link (in Slack: Invite people → Copy invite link; replace it when it expires)<input type="url" class="jr-invite" maxlength="300" value="' + esc(inv.slackInviteUrl || '') + '" placeholder="https://join.slack.com/t/…"></label>' +
+      '<label>Expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label>' +
+      '</fieldset>' + group('Welcome email') + '<label>Subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
+      '<label>Text ({name}: their first name, {slackInvite}: the link above, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label>' +
+      '</fieldset>' + group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channel (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>).</p>' +
         BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== 'pan'; }).map(function(c){
           var err = (groups.channelErrors || {})[c[0]];
           return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="80" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel (none: nobody is added)"></label>' +
             (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
-        }).join('') + '</fieldset>' +
-      '<label>Roles on the join form, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
-      '<label>Research pillars on the join form, one per line<textarea class="jr-pillars no-tags" rows="4">' + esc((f.pillars || BoldJoin.PILLARS).join('\n')) + '</textarea></label>' +
+        }).join('') + '</fieldset>' + group('Join form') +
+      '<label>Roles, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
+      '<label>Research pillars, one per line<textarea class="jr-pillars no-tags" rows="4">' + esc((f.pillars || BoldJoin.PILLARS).join('\n')) + '</textarea></label></fieldset>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div></div></section>';
   }
 
@@ -81,31 +91,33 @@
     var msg = !inv.slackInviteUrl ? 'There’s no Slack invite link yet: welcome emails wait until you add one under Settings.'
       : exp && exp < today ? 'The Slack invite link expired on ' + when(Date.parse(exp)) + ': welcome emails wait until you add a new one under Settings.'
       : exp && exp <= soon ? 'The Slack invite link expires on ' + when(Date.parse(exp)) + ': add a new one under Settings.' : '';
-    return msg ? '<p class="jn-notice">' + esc(msg).replace('under Settings', 'under <a href="#settings">Settings</a>') + '</p>' : '';
+    return msg ? '<p class="jn-notice" id="jrNotice">' + esc(msg).replace('under Settings', 'under <a href="#settings">Settings</a>') + '</p>' : '';
   }
 
   // A request that names you as inviting them: confirm it, or say you didn't.
   function invitedHtml(r){
     var st = (r.invitedBy || {}).status, off = busy[r.id] ? ' disabled' : '';
-    return '<li id="i-' + esc(r.id) + '"><span class="proj-title">' + esc(r.name) + '</span>' +
+    return '<li id="i-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
       '<span class="proj-meta">' + esc(r.email) + ' · ' + esc([r.role, r.institution].filter(Boolean).join(', ')) + ' · asked ' + when(r.at) + '</span>' +
       '<p class="proj-meta">' + (st === 'confirmed' ? 'You confirmed you invited them.' : st === 'denied' ? 'You said you didn’t invite them.' : 'They say you invited them to the BOLD Slack.') + '</p>' +
-      '<div class="event-controls">' + (st !== 'confirmed' ? '<button type="button" class="btn-text jr-i-yes" data-iid="' + esc(r.id) + '"' + off + '>Yes, I invited them</button>' : '') +
+      (shown['i:' + r.id] ? BoldJoin.factsHtml(r, { other: true }) : '') +
+      '<div class="event-controls">' + moreBtn('i:' + r.id) + (st !== 'confirmed' ? '<button type="button" class="btn-text jr-i-yes" data-iid="' + esc(r.id) + '"' + off + '>Yes, I invited them</button>' : '') +
         (st !== 'denied' ? '<button type="button" class="btn-text danger jr-i-no" data-iid="' + esc(r.id) + '"' + off + '>I didn’t</button>' : '') + '</div></li>';
   }
   // A member who named you on their profile (setMyInviter): the same, by their email.
   function invitedMemberHtml(m){
     var st = (m.invitedBy || {}).status, key = 'm:' + m.email, off = busy[key] ? ' disabled' : '';
-    return '<li><span class="proj-title">' + esc(m.name || m.email) + '</span>' +
+    return '<li>' + who(m.name, m.email, 'proj-title') +
       '<span class="proj-meta">' + esc([m.role, m.institution].filter(Boolean).join(', ')) + ' · said so on their profile</span>' +
       '<p class="proj-meta">' + (st === 'confirmed' ? 'You confirmed you invited them.' : st === 'denied' ? 'You said you didn’t invite them.' : 'They say you invited them to the BOLD Slack.') + '</p>' +
       '<div class="event-controls">' + (st !== 'confirmed' ? '<button type="button" class="btn-text jr-i-yes" data-mid="' + esc(m.email) + '"' + off + '>Yes, I invited them</button>' : '') +
         (st !== 'denied' ? '<button type="button" class="btn-text danger jr-i-no" data-mid="' + esc(m.email) + '"' + off + '>I didn’t</button>' : '') + '</div></li>';
   }
-  function invitedSection(){
+  // Without tabs (not a PI or admin), it keeps its heading.
+  function invitedSection(tabbed){
     if (!invited.length && !invitedMembers.length) return '';
     var waiting = invited.concat(invitedMembers).filter(function(r){ return (r.invitedBy || {}).status === 'pending'; }).length;
-    return '<section class="block" id="invited"><div class="block-head"><h2>Invited by you<span class="proj-count">' + waiting + ' to confirm</span></h2></div>' +
+    return '<section class="' + (tabbed ? 'profile-panel' : 'block') + '" id="invited">' + (tabbed ? '' : '<div class="block-head"><h2>Invited by you<span class="proj-count">' + waiting + ' to confirm</span></h2></div>') +
       '<ul class="proj-list">' + invited.map(invitedHtml).join('') + invitedMembers.map(invitedMemberHtml).join('') + '</ul></section>';
   }
 
@@ -123,22 +135,54 @@
     var gOpen = groupReqs.filter(function(r){ return r.status === 'open'; });
     var gDone = groupReqs.filter(function(r){ return r.status !== 'open'; });
     var list = function(items, html, none){ return items.length ? '<ul class="proj-list">' + items.map(html).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>'; };
-    // Joining BOLD and changing group, apart; each waiting, then decided.
+    var waiting = invited.concat(invitedMembers).filter(function(r){ return (r.invitedBy || {}).status === 'pending'; }).length;
+    var n = function(k){ return k ? ' (' + k + ')' : ''; };
+    // Four tabs, named by the #hash: joining BOLD, invited by you, changing group, settings.
     main.innerHTML =
-      inviteNotice() + invitedSection() +
-      '<section class="block"><div class="block-head"><h2>Joining BOLD<span class="proj-count">' + open.length + ' waiting</span></h2></div>' +
+      '<nav class="guide-tabs profile-tabs" id="jrTabs" aria-label="Requests">' +
+        '<a class="guide-tab" href="#signup">Sign up' + n(open.length) + '</a>' +
+        '<a class="guide-tab" href="#invited">Invited by you' + n(waiting) + '</a>' +
+        '<a class="guide-tab" href="#groups">Groups' + n(gOpen.length) + '</a>' +
+        '<a class="guide-tab" href="#settings">Settings</a></nav>' +
+      inviteNotice() +
+      '<section class="profile-panel" id="signup">' +
         list(open, requestHtml, 'No requests waiting.') +
         (done.length ? '<div class="proj-group"><h3>Decided</h3>' + list(done, requestHtml, '') + '</div>' : '') + '</section>' +
-      '<section class="block" id="groups"><div class="block-head"><h2>Changing group<span class="proj-count">' + gOpen.length + ' waiting</span></h2></div>' +
+      (invitedSection(true) || '<section class="profile-panel" id="invited"><p class="proj-msg">Nobody says you invited them.</p></section>') +
+      '<section class="profile-panel" id="groups">' +
         list(gOpen, groupReqHtml, 'No requests waiting.') +
         (gDone.length ? '<div class="proj-group"><h3>Decided</h3>' + list(gDone, groupReqHtml, '') + '</div>' : '') + '</section>' +
       settingsHtml();
     var s = main.querySelector('.jr-settings');
     s.addEventListener('input', function(){ editing = true; });
+    showTab();
     jump();
   }
+  // The tab a #hash names: links to one request (#r=, #g=, #i=) open its tab.
+  function tabOf(h){
+    var m = /^#([rgi])=/.exec(h);
+    if (m) return { r: 'signup', g: 'groups', i: 'invited' }[m[1]];
+    return ['#signup', '#invited', '#groups', '#settings'].indexOf(h) >= 0 ? h.slice(1) : '';
+  }
+  function showTab(){
+    var tabs = document.getElementById('jrTabs');
+    if (!tabs) return;
+    var want = tabOf(location.hash) || 'signup';
+    var note = document.getElementById('jrNotice');
+    if (note) note.hidden = want !== 'signup' && want !== 'settings';
+    ['signup', 'invited', 'groups', 'settings'].forEach(function(t){ var x = document.getElementById(t); if (x) x.hidden = t !== want; });
+    Array.prototype.forEach.call(tabs.querySelectorAll('.guide-tab'), function(a){
+      var on = a.getAttribute('href') === '#' + want;
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+  window.addEventListener('hashchange', showTab);
   function jump(){
-    var m = /#([rgi])=([A-Za-z0-9]+)/.exec(location.hash), el = m ? document.getElementById(m[1] + '-' + m[2]) : location.hash === '#invited' ? document.getElementById('invited') : null;
+    var m = /#([rgi])=([A-Za-z0-9]+)/.exec(location.hash);
+    var key = m && (m[1] === 'r' ? m[2] : m[1] + ':' + m[2]);
+    if (key && !shown[key] && !render.jumped) { shown[key] = true; render(); return; }
+    var el = m ? document.getElementById(m[1] + '-' + m[2]) : null;
     if (el && !render.jumped) { render.jumped = true; el.scrollIntoView({ block: 'start' }); }
   }
 
@@ -172,6 +216,7 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
+    if (t.classList.contains('jr-more')) { var mo = t.getAttribute('data-more'); shown[mo] = !shown[mo]; render(); return; }
     var iid = t.getAttribute('data-iid'), mid = t.getAttribute('data-mid');
     if (iid || mid) {
       var yes = t.classList.contains('jr-i-yes'), key = iid || 'm:' + mid;
@@ -222,6 +267,10 @@
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user ? { email: (user.email || '').toLowerCase() } : null;
     staff = null; requests = null; invited = []; invitedMembers = [];
+    db.collection('people').get().then(function(ps){
+      ps.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });
+      render();
+    }).catch(function(){});
     if (!user) return;
     render();
     // Requests that name you as inviting them (readable by you: firestore.rules).

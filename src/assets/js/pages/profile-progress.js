@@ -4,7 +4,8 @@
 // Master student (studies/{email}: working title, who supervises them, the meeting and
 // the Slack channel), and their linked GitHub and Google accounts (profile.js says when
 // those change: bold:accounts). A link to something in Your details or Studies opens
-// that tab's form; the photo is changed in Slack.
+// that tab's form; the photo is changed in Slack. "Profile complete." shows on the
+// visit it's complete, then not on the next ones (remembered in this browser).
 (function(){
   var esc = BOLD.escapeHtml;
   var box = document.getElementById('pfProgress');
@@ -12,7 +13,8 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var STUDY_ROLES = ['PhD student', 'Master student'];
-  var me = null, member, studies, unsubs = [];
+  var me = null, member, studies, unsubs = [], doneBefore = false;
+  var store = function(k, v){ try { if (v === undefined) return localStorage.getItem(k); if (v) localStorage.setItem(k, '1'); else localStorage.removeItem(k); } catch (e){ return null; } };
 
   function linked(id){
     var u = BOLD.getAuth().currentUser;
@@ -47,7 +49,9 @@
     if (!me || member === undefined || studies === undefined) return;
     var all = items(), left = all.filter(function(i){ return !i[1]; });
     var pct = Math.round(100 * (all.length - left.length) / all.length);
-    box.hidden = false;
+    store('pfDone:' + me.email, !left.length);
+    box.hidden = !left.length && doneBefore;
+    if (box.hidden) return;
     box.innerHTML = '<div class="pf-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '" aria-label="Profile complete">' +
         '<span style="width:' + pct + '%"></span></div>' +
       '<p class="pf-text">' + (left.length ? 'Profile ' + pct + '% complete. Still to add: ' + left.map(function(i){
@@ -75,6 +79,7 @@
     me = user && user.email ? { email: user.email.toLowerCase() } : null;
     member = undefined; studies = undefined;
     if (!me) { box.hidden = true; return; }
+    doneBefore = !!store('pfDone:' + me.email);
     unsubs.push(db.collection('members').doc(me.email).onSnapshot(function(s){ member = s.exists ? s.data() : null; render(); },
       function(){ member = null; render(); }));
     unsubs.push(db.collection('studies').doc(me.email).onSnapshot(function(s){ studies = s.exists ? s.data() : null; render(); },
