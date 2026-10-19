@@ -30,8 +30,6 @@ section.block:first-of-type{margin-top:28px;}
 .profile-photo{width:72px; height:72px; border-radius:50%; object-fit:cover; flex:none; background:var(--wash);}
 .profile-photo[hidden]{display:none;}
 .facts{margin:0;}
-.facts--slack{margin-top:0;}
-.facts--slack[hidden]{display:none;}
 .fact{display:flex; gap:24px; padding:3px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
 .fact dt{flex:0 0 150px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); padding-top:5px;}
 .fact dd{margin:0; font-size:16px; color:var(--ink); overflow-wrap:anywhere;}

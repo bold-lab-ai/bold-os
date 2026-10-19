@@ -56,20 +56,13 @@
   }
 
   // Institution, role, supervisor, research interests, start date, ... —
-  // the caller's own Slack custom profile fields (getMyProfile). Silent on
-  // failure: the page is complete without them.
+  // the caller's own Slack custom profile fields (getMyProfile), handed to
+  // member-details.js, which shows them with "Your details" (BOLD.slackFields,
+  // event bold:slackfields). Silent on failure: the page is complete without them.
   function renderSlackFacts(data){
     renderSlackAccount(data.slack);
-    var box = el('slackFacts');
-    var fields = data.fields || [];
-    box.innerHTML = '';
-    fields.forEach(function(f){
-      var row = document.createElement('div'); row.className = 'fact';
-      var dt = document.createElement('dt'); dt.textContent = f.label;
-      var dd = document.createElement('dd'); dd.textContent = f.value;
-      row.appendChild(dt); row.appendChild(dd); box.appendChild(row);
-    });
-    box.hidden = !fields.length;
+    BOLD.slackFields = data.fields || [];
+    document.dispatchEvent(new Event('bold:slackfields'));
   }
 
   function renderIdentity(name, email){
@@ -282,7 +275,7 @@
     showGithub(user);
     showGoogle(user);
     if (user) renderSlackAccount(null);
-    if (!user) { cacheClear(); el('slackFacts').hidden = true; return; }
+    if (!user) { cacheClear(); BOLD.slackFields = []; return; }
     renderIdentity(user.displayName || '', user.email);
     showPhoto(user.photoURL);
     if (user.photoURL) cachePut('photo', user.photoURL); else cacheClearKey('photo');
