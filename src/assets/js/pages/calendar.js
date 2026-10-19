@@ -39,13 +39,13 @@
     if (all || shown('project')) (data.project || []).forEach(function(w){
       if (!w.meeting || !(w.eventId || w.pausedAt) || w.group === 'completed') return;
       out.push({ kind: 'project', id: w.cardId, title: w.title || 'Untitled', href: projectUrl(w), meeting: w.meeting,
-        mine: (w.members || []).some(isMe), paused: !!w.pausedAt, meetUrl: w.meetUrl, people: (w.members || []).length, w: w });
+        mine: (w.members || []).some(isMe), paused: !!w.pausedAt, start: w.eventStart || '', meetUrl: w.meetUrl, people: (w.members || []).length, w: w });
     });
     if (all || shown('study')) (data.study || []).forEach(function(s){
       if (!s.meeting || !(s.eventId || s.pausedAt)) return;
       var mine = isMe(s.email) || (s.people || []).some(function(p){ return isMe(p.email); });
       var id = slackIds[s.email];
-      out.push({ kind: 'study', id: s.email, meeting: s.meeting, mine: mine, paused: !!s.pausedAt, meetUrl: s.meetUrl, people: (s.people || []).length + 1,
+      out.push({ kind: 'study', id: s.email, meeting: s.meeting, mine: mine, paused: !!s.pausedAt, start: s.eventStart || '', meetUrl: s.meetUrl, people: (s.people || []).length + 1,
         first: String(s.name || s.email).split(' ')[0],
         title: (s.name || s.email) + ' · ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision',
         href: isMe(s.email) ? 'profile.html#studies' : id ? 'person.html?id=' + encodeURIComponent(id) : '' });
@@ -159,7 +159,8 @@
   // A dated week, Monday first: a column per day (Saturday and Sunday only when used),
   // the events of each day across the top, an hour per row below, each meeting a block
   // from its start to its end; meetings that overlap sit side by side. A block opens
-  // its page; yours are filled in. Meetings every N weeks show every week.
+  // its page; yours are filled in. A meeting every N weeks shows in the weeks N apart
+  // from its first date (`eventStart`), and every week if that isn't known.
   var HOUR = 48; // px
   var DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -170,6 +171,11 @@
     var d = new Date(); d.setHours(12, 0, 0, 0);
     d.setDate(d.getDate() - (d.getDay() + 6) % 7 + offset * 7);
     return d;
+  }
+  function inWeek(m, day){
+    if (!m.start) return true;
+    var weeks = Math.round((Date.parse(day) - Date.parse(m.start)) / (7 * 86400000));
+    return day >= m.start && weeks % (m.meeting.every || 1) === 0;
   }
   function weekHtml(ms, evs){
     var start = monday(weekOffset), dates = [];
@@ -204,8 +210,8 @@
     html += '<div class="week-body" style="height:' + (hours.length * HOUR) + 'px">' +
       '<div class="week-hours">' + hours.map(function(h){ return '<span style="top:' + ((h - from) * HOUR) + 'px">' + pad(h) + ':00</span>'; }).join('') + '</div>';
     cols.forEach(function(i){
-      // Not after its end date.
-      var day = ms.filter(function(m){ return m.meeting.day === MEETING_DAYS[i][0] && !(m.meeting.until && m.meeting.until < iso(dates[i])); })
+      // Not before its first date or after its end date, and only in its weeks.
+      var day = ms.filter(function(m){ return m.meeting.day === MEETING_DAYS[i][0] && !(m.meeting.until && m.meeting.until < iso(dates[i])) && inWeek(m, iso(dates[i])); })
         .map(function(m){ var s = minutes(m.meeting.time); return { m: m, s: s, e: s + m.meeting.minutes }; })
         .sort(function(a, b){ return a.s - b.s || a.e - b.e; });
       // Side by side: each meeting takes the first lane free at its start; a group of

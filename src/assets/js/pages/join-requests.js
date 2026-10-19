@@ -191,7 +191,10 @@
     if (!r) return;
     var job;
     if (t.classList.contains('jr-approve')) {
-      if (!window.confirm('Approve ' + r.name + '? They’ll get the welcome email.')) return;
+      var inv = r.invitedBy || {};
+      var unconfirmed = !inv.name ? '' : inv.status === 'denied' ? '\n\n' + inv.name + ' says they didn’t invite them.'
+        : inv.status !== 'confirmed' ? '\n\n' + inv.name + ' hasn’t confirmed inviting them yet.' : '';
+      if (!window.confirm('Approve ' + r.name + '? They’ll get the welcome email.' + unconfirmed)) return;
       job = fn('decideJoinRequest')({ id: id, accept: true });
     } else if (t.classList.contains('jr-decline')) {
       if (!window.confirm('Decline ' + r.name + '’s request? They aren’t told.')) return;
