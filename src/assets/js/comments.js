@@ -26,6 +26,41 @@ window.BoldComments = (function(){
     while ((n = w.nextNode())) { nodes.push({ node: n, start: text.length }); text += n.nodeValue; }
     return { text: text, nodes: nodes };
   }
+  // Where in el's text the comment is → { start, end, changed } or null: the quote itself
+  // (the occurrence whose context matches best); else, if the text was edited since,
+  // the stretch between its old context (the text just before and after it); else the
+  // longest run of its words still there (half the quote at least). `changed`: not
+  // the quote as it was.
+  function find(map, c){
+    var q = String(c.quote || '');
+    if (!q) return null;
+    var at = locate(map, c);
+    if (at !== -1) return { start: at, end: at + q.length, changed: false };
+    var t = map.text, pre = String(c.prefix || '').slice(-16), suf = String(c.suffix || '').slice(0, 16);
+    if (pre.length >= 6 && suf.length >= 6) {
+      var a = t.indexOf(pre), b = a === -1 ? -1 : t.indexOf(suf, a + pre.length);
+      if (a !== -1 && t.indexOf(pre, a + 1) === -1 && b !== -1) {
+        var s = a + pre.length, len = b - s;
+        if (len > 0 && len <= q.length * 3 + 40 && len >= q.length / 3) return trim(t, s, b);
+      }
+    }
+    var words = q.split(/(\s+)/), best = null;
+    for (var i = 0; i < words.length; i += 2) {
+      for (var j = words.length; j > i; j -= 2) {
+        var piece = words.slice(i, j).join('').trim();
+        if (piece.length < Math.max(8, q.length / 2) || (best && piece.length <= best.end - best.start)) break;
+        var k = t.indexOf(piece);
+        if (k !== -1) { best = { start: k, end: k + piece.length, changed: true }; break; }
+      }
+    }
+    return best;
+  }
+  // The stretch from s to e without the spaces at its ends.
+  function trim(t, s, e){
+    while (s < e && /\s/.test(t[s])) s++;
+    while (e > s && /\s/.test(t[e - 1])) e--;
+    return e > s ? { start: s, end: e, changed: true } : null;
+  }
   // Where in el's text the quote is: the occurrence whose context matches best, or -1.
   function locate(map, c){
     var best = -1, score = -1, from = 0, at;
@@ -61,6 +96,7 @@ window.BoldComments = (function(){
     var db = opts.ref.firestore, col = opts.ref.collection('comments');
     var me = null, unsub = null, comments = [], loaded = false;
     var open = null;          // the thread open: a comment id, or 'new'
+    var moved = {};           // threads found on text edited since (find): their card says so
     var pending = null;       // a new comment's anchor: { partId, quote, prefix, suffix }
     var drafts = {};          // what's typed, by thread ('new' too), across re-renders
     var busy = false, error = '';
@@ -138,8 +174,9 @@ window.BoldComments = (function(){
         here.forEach(function(c){
           var marks = [];
           if (text) {
-            var map = textMap(text), at = locate(map, c);
-            if (at !== -1) marks = wrap(map, at, at + c.quote.length, c.id);
+            var map = textMap(text), at = find(map, c);
+            if (at) marks = wrap(map, at.start, at.end, c.id);
+            moved[c.id] = !!(at && at.changed);
           }
           if (!marks.length) { lost.push(c); return; }
           if (c.id === open) marks.forEach(function(m){ m.classList.add('is-open'); });
@@ -211,8 +248,8 @@ window.BoldComments = (function(){
       if (resolvable) el.classList.add('has-resolve');
       el.innerHTML = '<button type="button" class="cm-close" aria-label="Close">×</button>' +
         (resolvable ? '<button type="button" class="btn-text cm-resolve" data-id="' + esc(id) + '" title="Close the thread; it stays in the history">Resolve</button>' : '') +
-        (row.lost ? '<p class="cm-lost">The text this was on has since changed.</p>' : '') +
-        '<blockquote class="cm-quote">' + esc(c.quote.length > 160 ? c.quote.slice(0, 160) + '…' : c.quote) + '</blockquote>' +
+        (row.lost ? '<p class="cm-lost">The text this was on has since changed.</p>' : moved[id] ? '<p class="cm-lost">The text has been edited since; the comment was on:</p>' : '') +
+        '<blockquote class="cm-quote">' + esc(String(c.quote || '').length > 160 ? c.quote.slice(0, 160) + '…' : String(c.quote || '')) + '</blockquote>' +
         (id === 'new' ? '' : commentHtml(c) + replies(id).map(function(r){ return commentHtml(r); }).join('')) +
         '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
         (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
@@ -362,7 +399,7 @@ window.BoldComments = (function(){
           // A proposed change's discussion closes with it (resolvedWith: accepted, declined, withdrawn).
           head: c.resolvedWith ? 'Comment closed: its change was ' + esc(c.resolvedWith) + (c.resolvedWith !== 'withdrawn' && (c.resolvedByName || c.resolvedBy) ? ' by ' + esc(c.resolvedByName || c.resolvedBy) : '')
             : 'Comment resolved by ' + esc(c.resolvedByName || c.resolvedBy || 'someone'),
-          msg: c.proposalId ? 'On a proposed change' : '“' + esc(c.quote.length > 80 ? c.quote.slice(0, 80) + '…' : c.quote) + '”',
+          msg: c.proposalId || !c.quote ? 'On a proposed change' : '“' + esc(c.quote.length > 80 ? c.quote.slice(0, 80) + '…' : c.quote) + '”',
           body: '<div class="cm-history">' + all.map(function(r){
             return '<p class="cm-meta"><strong>' + esc(r.by ? (r.by.name || r.by.email) : 'Someone') + '</strong> ' + esc(when(r.at)) + '</p><p class="cm-text">' + BoldMarkdown.plain(r.text) + '</p>';
           }).join('') + '</div>' };
