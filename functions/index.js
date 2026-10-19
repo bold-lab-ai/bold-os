@@ -3076,6 +3076,77 @@ exports.linkGoogle = onCall(
 // The profile's Studies tab shows it to students (STUDY_ROLES, their members record).
 const STUDY_ROLES = ['PhD student', 'Master student'];
 
+// The student's Slack channel with the people involved: "supervision-<their name>",
+// private, made by the bot when they first save their studies (a name that doesn't
+// start with the prefix gets it, as a project's "proj-"). One that already exists is
+// used, not made again; everyone on Slack among them is invited, and whoever is added
+// later. Hand-kept in sync with pages/studies.js (SUPERVISION_PREFIX, its hint).
+const SUPERVISION_PREFIX = 'supervision-';
+
+// Pure: whatever was typed → { name, prefixed } (no '#', lowercase, starting with the
+// prefix) or { error }.
+function normalizeSupervisionChannel(input){
+  let name = String(input || '').trim().replace(/^#/, '').toLowerCase().replace(/\s+/g, '-');
+  if (!name) return { error: 'Enter a channel name.' };
+  if (!/^[a-z0-9_-]+$/.test(name)) return { error: 'Use letters, numbers, hyphens and underscores only.' };
+  const prefixed = name.indexOf(SUPERVISION_PREFIX) !== 0;
+  if (prefixed) name = SUPERVISION_PREFIX + name;
+  if (name === SUPERVISION_PREFIX) return { error: 'Add a name after ' + SUPERVISION_PREFIX + '.' };
+  if (name.length > 80) return { error: 'Slack channel names can be at most 80 characters.' };
+  return { name, prefixed };
+}
+
+// Pure: a person's name → their default channel, "supervision-ada-lovelace".
+function supervisionChannelFor(name){
+  const slug = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80 - SUPERVISION_PREFIX.length).replace(/-+$/, '');
+  return slug ? SUPERVISION_PREFIX + slug : '';
+}
+
+// Makes studies/{email}'s channel if it isn't there, and invites whoever of the student
+// and the people involved is on Slack and not invited yet (`channelInvited`). Records
+// `channelError` instead of throwing.
+async function syncStudyChannel(email){
+  const ref = db.collection('studies').doc(email);
+  const s = (await ref.get()).data();
+  if (!s || !s.channel) return;
+  const token = SLACK_BOT_TOKEN.value();
+  const patch = {};
+  try {
+    let id = s.channelId || await slackChannelId(token, s.channel);
+    if (!id){
+      const created = await slackFetch(token, 'conversations.create', { name: s.channel, is_private: true });
+      channelNamesCache = null;
+      if (!created.ok){
+        const auth = await slackAuthInfo(token);
+        if (created.error === 'name_taken') throw new HttpsError('failed-precondition', '#' + s.channel + ' already exists but the bot can’t see it' + (auth && auth.bot ? ': invite @' + auth.bot + ' to it, then Try again.' : '.'));
+        throw slackChannelError(created.error, created);
+      }
+      id = created.channel.id;
+    }
+    if (id !== s.channelId){ patch.channelId = id; patch.channelUrl = await slackChannelUrl(token, id); }
+    const invited = (s.channelInvited || []).slice();
+    for (const e of [email].concat((s.people || []).map(function(p){ return p.email; }))){
+      if (invited.indexOf(e) >= 0) continue;
+      const uid = await slackIdForEmail(e);
+      if (!uid) continue;
+      let res = await slackFetch(token, 'conversations.invite', { channel: id, users: uid });
+      if (!res.ok && res.error === 'not_in_channel'){
+        await slackFetch(token, 'conversations.join', { channel: id });
+        res = await slackFetch(token, 'conversations.invite', { channel: id, users: uid });
+      }
+      if (!res.ok && res.error !== 'already_in_channel') throw slackChannelError(res.error, res);
+      invited.push(e);
+    }
+    patch.channelInvited = invited;
+    patch.channelError = FieldValue.delete();
+  } catch (err){
+    logger.error('Setting up a supervision channel failed', { error: String(err && err.message || err) });
+    patch.channelError = err instanceof HttpsError ? err.message : 'Couldn’t set up the Slack channel.';
+  }
+  await ref.set(patch, { merge: true });
+}
+
 // Pure: what a page sends → { title, people: [{ name, email }], meeting } or { error }.
 // At least one person, and the meeting (normalizeMeeting's); `me` (lowercase) can't be one of the people.
 function normalizeStudies(d, me){
@@ -3098,7 +3169,7 @@ function normalizeStudies(d, me){
 
 function studiesView(s){
   const out = {};
-  ['degree', 'title', 'people', 'meeting', 'eventLink', 'meetUrl', 'error', 'updatedAt'].forEach(function(k){ if (s[k] !== undefined) out[k] = s[k]; });
+  ['degree', 'title', 'people', 'meeting', 'eventLink', 'meetUrl', 'error', 'channel', 'channelUrl', 'channelError', 'updatedAt'].forEach(function(k){ if (s[k] !== undefined) out[k] = s[k]; });
   return out;
 }
 
@@ -3153,30 +3224,48 @@ async function syncStudyMeeting(email){
 // The profile's Studies tab, for the caller's own studies:
 // - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } }, both required;
 //   only PhD and Master students (their members record's role), or whoever already has studies.
-// - 'retry': tries the Calendar event again.
+// - 'retry': tries the Slack channel and the Calendar event again.
+// - 'channel': { name } (or none: the default) → { name, prefixed, exists }, for the form's hint.
 // → the studies (studiesView).
 exports.studies = onCall(
-  { secrets: [GOOGLE_OAUTH], timeoutSeconds: 120 },
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
     const data = request.data || {};
     const ref = db.collection('studies').doc(email);
     const [prev, member] = await Promise.all([ref.get(), db.collection('members').doc(email).get()]);
     const role = member.exists ? member.data().role : '';
+    const myName = (member.exists && member.data().name) || request.auth.token.name || email;
+    if (data.action === 'channel'){
+      // The form's live check: the name it would use, and whether it's there already.
+      const n = data.name ? normalizeSupervisionChannel(data.name) : { name: supervisionChannelFor(myName), prefixed: false };
+      if (n.error) throw new HttpsError('invalid-argument', n.error);
+      if (!n.name) throw new HttpsError('invalid-argument', 'Enter a channel name.');
+      return { name: n.name, prefixed: n.prefixed, exists: !!(await slackChannelId(SLACK_BOT_TOKEN.value(), n.name)) };
+    }
     if (data.action === 'retry'){
       if (!prev.exists) throw new HttpsError('not-found', 'Save your studies first.');
+      await syncStudyChannel(email);
       return studiesView(await syncStudyMeeting(email));
     }
     if (data.action !== 'save') throw new HttpsError('invalid-argument', 'Unknown action.');
     if (STUDY_ROLES.indexOf(role) < 0 && !prev.exists) throw new HttpsError('permission-denied', 'Studies are for PhD and Master students: set your role in Your details first.');
     const n = normalizeStudies(data, email);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
+    // The channel: named once, when it's first made; after that it stays.
+    let channel = prev.exists && prev.data().channelId ? prev.data().channel : '';
+    if (!channel){
+      const c = data.channel ? normalizeSupervisionChannel(data.channel) : { name: supervisionChannelFor(myName) };
+      if (c.error) throw new HttpsError('invalid-argument', c.error);
+      channel = c.name;
+    }
     await ref.set({
-      email, name: (member.exists && member.data().name) || request.auth.token.name || email,
+      email, name: myName,
       degree: STUDY_ROLES.indexOf(role) >= 0 ? role : (prev.exists && prev.data().degree) || '',
-      title: n.title, people: n.people, meeting: n.meeting,
+      title: n.title, people: n.people, meeting: n.meeting, channel,
       everyone: [email].concat(n.people.map(function(p){ return p.email; })), updatedAt: Date.now()
     }, { merge: true });
+    await syncStudyChannel(email);
     return studiesView(await syncStudyMeeting(email));
   }
 );
@@ -4286,5 +4375,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage
 };

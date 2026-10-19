@@ -98,3 +98,4 @@ fieldset.md-group:first-child{margin-top:0;}
 .pf-bar{height:6px; background:var(--line); border-radius:3px; overflow:hidden;}
 .pf-bar > span{display:block; height:100%; background:var(--accent); border-radius:3px; transition:width .3s;}
 .pf-text{margin:8px 0 0; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+.st-channel-hint{margin:-4px 0 10px; font-family:var(--sans); font-size:13px; color:var(--muted); min-height:1em;}
