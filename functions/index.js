@@ -4146,20 +4146,21 @@ exports.retryWelcomeEmails = onSchedule(
 // ---------- Groups: the BOLDiquette's Who is BOLD ----------
 // Every member is in one group: the one a PI or admin set (members' `category`, on the
 // People page, or by approving a request), else by role: PIs are BOLD-exec, PhD
-// students BOLD-internal, everyone else PAN-BOLD (groupOf; BoldJoin.groupOf on the
+// students BOLD-internal, Staff BOLD-staff, everyone else PAN-BOLD (groupOf; BoldJoin.groupOf on the
 // pages, kept in sync by hand). A member asks for another group on their profile
 // (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
-// requests. Each group may have a Slack channel (settings/groups.channels, set there):
+// requests. Each group but PAN-BOLD may have a Slack channel (settings/groups.channels, set there):
 // whoever comes into a group is invited to it (onMemberGroup), and setting a channel
 // invites the group's members (onGroupChannels). Nobody is removed from a channel.
-const GROUPS = ['exec', 'internal', 'associate', 'pan'];
-const GROUP_LABELS = { exec: 'BOLD-exec', internal: 'BOLD-internal', associate: 'BOLD-associate', pan: 'PAN-BOLD' };
+const GROUPS = ['exec', 'internal', 'associate', 'staff', 'pan'];
+const GROUP_LABELS = { exec: 'BOLD-exec', internal: 'BOLD-internal', associate: 'BOLD-associate', staff: 'BOLD-staff', pan: 'PAN-BOLD' };
+const CHANNEL_GROUPS = GROUPS.filter(function(g){ return g !== 'pan'; });
 
 // Pure: a member record → its group.
 function groupOf(m){
   m = m || {};
   if (GROUPS.indexOf(m.category) >= 0) return m.category;
-  return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : 'pan';
+  return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : m.role === 'Staff' ? 'staff' : 'pan';
 }
 
 function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, '').toLowerCase(); }
@@ -4186,7 +4187,7 @@ exports.onMemberGroup = onDocumentWritten(
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
     const g = groupOf(after);
-    if (before && groupOf(before) === g) return;
+    if (CHANNEL_GROUPS.indexOf(g) < 0 || (before && groupOf(before) === g)) return;
     const set = (await db.collection('settings').doc('groups').get()).data() || {};
     const name = groupChannelName((set.channels || {})[g]);
     if (name) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
@@ -4200,7 +4201,7 @@ exports.onGroupChannels = onDocumentWritten(
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
     const channels = after.channels || {};
-    const changed = GROUPS.filter(function(g){ return groupChannelName(channels[g]) && groupChannelName(channels[g]) !== groupChannelName(before[g]); });
+    const changed = CHANNEL_GROUPS.filter(function(g){ return groupChannelName(channels[g]) && groupChannelName(channels[g]) !== groupChannelName(before[g]); });
     if (!changed.length) return;
     const members = (await db.collection('members').get()).docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); });
     const errors = Object.assign({}, after.channelErrors || {});

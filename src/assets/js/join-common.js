@@ -14,14 +14,14 @@ window.BoldJoin = (function(){
   var NO_END = ['PI', 'Adjunct', 'Alumni', 'Collaborator'];
   // The BOLDiquette's groups (Who is BOLD). A member's is the one a PI or admin set
   // (`category`: on the People page, or approving their request), else by role: PIs
-  // BOLD-exec, PhD students BOLD-internal, everyone else PAN-BOLD (functions/index.js
+  // BOLD-exec, PhD students BOLD-internal, Staff BOLD-staff, everyone else PAN-BOLD (functions/index.js
   // groupOf, kept in sync by hand).
-  var CATEGORIES = [['exec', 'BOLD-exec'], ['internal', 'BOLD-internal'], ['associate', 'BOLD-associate'], ['pan', 'PAN-BOLD']];
+  var CATEGORIES = [['exec', 'BOLD-exec'], ['internal', 'BOLD-internal'], ['associate', 'BOLD-associate'], ['staff', 'BOLD-staff'], ['pan', 'PAN-BOLD']];
   function categoryLabel(key){ var c = CATEGORIES.filter(function(x){ return x[0] === key; })[0]; return c ? c[1] : 'PAN-BOLD'; }
   function groupOf(m){
     m = m || {};
     if (CATEGORIES.some(function(c){ return c[0] === m.category; })) return m.category;
-    return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : 'pan';
+    return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : m.role === 'Staff' ? 'staff' : 'pan';
   }
   function groupBadge(g){ return '<span class="type-badge pp-' + g + '">' + esc(categoryLabel(g)) + '</span>'; }
   // How someone likes to receive feedback (functions/index.js JOIN_FEEDBACK, firestore.rules).

@@ -63,7 +63,7 @@
       '<label>Welcome email subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
       '<label>Welcome email ({name}: their first name, {slackInvite}: the link above, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label>' +
       '<fieldset class="jn-pillars"><legend>Slack channel for each group (everyone in it is added; <a href="boldiquette.html#who-is-bold">Who is BOLD</a>)</legend>' +
-        BoldJoin.CATEGORIES.map(function(c){
+        BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== 'pan'; }).map(function(c){
           var err = (groups.channelErrors || {})[c[0]];
           return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="80" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel (none: nobody is added)"></label>' +
             (err ? '<p class="st-error">' + esc(err) + '</p>' : '');

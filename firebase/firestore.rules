@@ -95,7 +95,7 @@ service cloud.firestore {
       // on the People page, never by the member.
       allow update: if hasFullWrite()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['category', 'categoryBy', 'categoryAt'])
-        && request.resource.data.category in ['exec', 'internal', 'associate', 'pan']
+        && request.resource.data.category in ['exec', 'internal', 'associate', 'staff', 'pan']
         && request.resource.data.categoryBy == email();
       allow delete: if false;
     }
@@ -140,7 +140,7 @@ service cloud.firestore {
     match /settings/groups {
       allow read: if isLabMember();
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['channels', 'updatedAt', 'updatedBy'])
-        && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'pan']);
+        && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'staff']);
     }
     // Requests to be in another group: theirs to read, and the PIs' and admins'; all writes
     // through groupRequest.

@@ -21,7 +21,7 @@
     var l = links(m.links);
     var cat = BoldJoin.groupOf(m);
     var badge = function(c, attrs){ return '<span class="type-badge pp-' + c + '"' + (attrs || '') + '>' + esc(BoldJoin.categoryLabel(c)) + '</span>'; };
-    // PIs and admins: the badge opens the four, and choosing one sets it.
+    // PIs and admins: the badge opens the groups, and choosing one sets it.
     var tag = !staff ? badge(cat)
       : picking === m.email ? '<span class="pp-choices">' + BoldJoin.CATEGORIES.map(function(c){
           return '<button type="button" class="type-badge pp-' + c[0] + ' pp-choose' + (c[0] === cat ? ' is-current' : '') + '" data-email="' + esc(m.email) + '" data-cat="' + c[0] + '">' + esc(c[1]) + '</button>';
