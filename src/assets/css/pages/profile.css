@@ -102,3 +102,8 @@ fieldset.md-group:first-child{margin-top:0;}
 /* People (people.js): the search box above the groups. */
 .pp-filter{max-width:var(--article-max); margin-top:16px;}
 .pp-filter input{width:100%; font-family:var(--sans); font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+/* A person's group (Who is BOLD), as a badge; PIs and admins get a choice instead. */
+.pp-badge{margin-left:6px; vertical-align:2px;}
+.pp-exec{color:var(--accent);}
+.pp-internal{color:var(--success-text);}
+.pp-cat{margin-left:6px; font-family:var(--sans); font-size:12px; padding:2px 4px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); vertical-align:2px;}
