@@ -6,7 +6,6 @@
       <div class="masthead-sub">Internal</div>
     </div>
   </div>
-  <div class="masthead-right">{% if not public %}<div class="mast-search" id="mastSearch"></div>{% endif %}<div id="authRegion"></div></div>
+  <div class="masthead-right"><div class="mast-search" data-search-box hidden></div><div id="authRegion"></div></div>
 </div>
-<script>BOLD.mountMasthead();</script>{% if not public %}
-<script src="assets/js/search-box.js?v={{ build.stamp }}"></script>{% endif %}
+<script>BOLD.mountMasthead();</script>

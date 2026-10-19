@@ -1,4 +1,5 @@
-// The search box in the masthead (every signed-in page; partials/masthead.njk),
+// The search box: in the masthead (partials/masthead.njk) and under the title on the
+// home page, any [data-search-box], shown to whoever is signed in (base.njk loads it),
 // GitHub-style: typing offers to search the section you're in, everywhere, or
 // another section (BoldSearch.SCOPES); Enter or Tab, or a click, opens search.html?q=&in=.
 // "in:<scope>" in the text picks the section too. "/" focuses the box.
@@ -6,7 +7,7 @@ window.BoldSearch = (function(){
   var esc = BOLD.escapeHtml;
   // Where one can search: key, label, and the pages that belong to it.
   var SCOPES = [
-    { key: 'boldiquette', label: 'BOLDiquette', pages: /^(boldiquette|index)\.html$/ },
+    { key: 'boldiquette', label: 'BOLDiquette', pages: /^boldiquette\.html$/ },
     { key: 'guides', label: 'How to', pages: /^(guides?|get-started)\.html$/ },
     { key: 'skills', label: 'Skills', pages: /^skills?\.html$/ },
     { key: 'events', label: 'Events', pages: /^(events?|session|talk|event-collaboration-week.*)\.html$/ },
@@ -28,9 +29,22 @@ window.BoldSearch = (function(){
   }
   function href(q, key){ return 'search.html?q=' + encodeURIComponent(q) + (key ? '&in=' + key : ''); }
 
-  function mount(){
-    var box = document.getElementById('mastSearch');
-    if (!box) return;
+  function mountAll(){
+    var boxes = document.querySelectorAll('[data-search-box]');
+    Array.prototype.forEach.call(boxes, mount);
+    BOLD.onUser(function(user){ Array.prototype.forEach.call(boxes, function(b){ b.hidden = !user; }); });
+    // "/" anywhere but in a text box focuses the first one on show.
+    document.addEventListener('keydown', function(e){
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      var t = e.target, tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+      var input = Array.prototype.map.call(boxes, function(b){ return b.querySelector('.ms-input'); })
+        .filter(function(i){ return i && i.offsetParent; }).pop();
+      if (input) { e.preventDefault(); input.focus(); }
+    });
+  }
+
+  function mount(box){
     var cur = here();
     box.innerHTML = '<form class="ms-form" action="search.html" role="search">' +
       '<input class="ms-input" name="q" type="search" placeholder="Search' + (cur ? ' ' + esc(cur.label) : '') + '" aria-label="Search BOLD.OS" autocomplete="off" spellcheck="false">' +
@@ -80,15 +94,8 @@ window.BoldSearch = (function(){
       var li = e.target.closest('.ms-row');
       if (li) { e.preventDefault(); go(rows[+li.getAttribute('data-i')]); }
     });
-    // "/" anywhere but in a text box focuses it.
-    document.addEventListener('keydown', function(e){
-      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
-      var t = e.target, tag = t && t.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
-      e.preventDefault(); input.focus();
-    });
   }
 
-  return { SCOPES: SCOPES, scope: scope, parse: parse, href: href, mount: mount };
+  return { SCOPES: SCOPES, scope: scope, parse: parse, href: href, mountAll: mountAll };
 })();
-BoldSearch.mount();
+BoldSearch.mountAll();
