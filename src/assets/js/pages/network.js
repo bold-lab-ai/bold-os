@@ -36,8 +36,8 @@
     var list = all.filter(function(x){ return kinds[x.group] && x.at >= from && (x.to || (things && x.thing)) && inGroup(x.from) && inGroup(x.to); });
     g = C.graphOf(list, things);
     // Narrow screens: a taller box, so the graph isn't squeezed into a strip.
-    if (graph.parentNode.clientWidth < 600) { W = 600; H = 820; } else { W = 1000; H = 680; }
-    C.layout(g, W, H);
+    if (graph.parentNode.clientWidth < 600) { W = 600; H = 760; } else { W = 1000; H = 760; }
+    C.concentric(g, W, H);
     if (selected && !g.byId[selected]) selected = '';
     el('nwPeople').innerHTML = g.nodes.map(function(v){ return '<option value="' + esc(C.nameOf(dir, v.id, g)) + '">'; }).join('');
     draw();

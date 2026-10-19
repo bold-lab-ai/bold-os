@@ -4,7 +4,8 @@
 //   interacted on (projects and papers, events, guides and the BOLDiquette, skills: small
 //   shapes), joined by hairlines patterned by kind. On a profile (Connections) the person is
 //   at the middle, what they've interacted with around them and what's two steps away
-//   faded on an outer ring; on the Network page, everyone, by a small force layout.
+//   faded on an outer ring; on the Network page, everyone on concentric rings, the most
+//   connected at the middle.
 // - Over time (Connections): a row for each person or thing, from the first interaction to
 //   the last, a mark for each.
 // - Lineage (Network): who brought whom into BOLD, as a tree.
@@ -110,41 +111,52 @@ window.BoldConnections = (function(){
   // A stable pseudo-random number in [0, 1) for a string, so a graph lays out the same each time.
   function seed(s){ var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return ((h >>> 0) % 100000) / 100000; }
 
-  // Places g's nodes (x, y) in a w × h box: they push each other apart, lines pull the
-  // nodes they join together (the more interactions, the harder) and a little gravity
-  // keeps everyone in view.
-  function layout(g, w, h){
-    var n = g.nodes.length, byId = g.byId;
+  // Whole-lab layout: concentric rings, the most connected at the middle and each ring out
+  // less connected than the last (outer rings hold more, as they're longer). Within a ring,
+  // each node sits towards what it's linked to further in, so neighbours stay near; a few
+  // sweeps in and out settle the order.
+  function concentric(g, w, h){
+    var n = g.nodes.length, byId = g.byId, deg = {}, adj = {};
     if (!n) return;
-    var k = Math.sqrt(w * h / n) * 0.7, cx = w / 2, cy = h / 2, deg = {};
-    g.edges.forEach(function(e){ deg[e.a] = (deg[e.a] || 0) + 1; deg[e.b] = (deg[e.b] || 0) + 1; });
-    g.nodes.forEach(function(v){
-      var a = seed(v.id) * Math.PI * 2, r = (0.05 + 0.3 * seed(v.id + '.')) * Math.min(w, h);
-      v.x = cx + Math.cos(a) * r; v.y = cy + Math.sin(a) * r; v.angle = undefined; v.mass = Math.sqrt(1 + (deg[v.id] || 0));
+    g.edges.forEach(function(e){
+      deg[e.a] = (deg[e.a] || 0) + e.n; deg[e.b] = (deg[e.b] || 0) + e.n;
+      (adj[e.a] = adj[e.a] || []).push([e.b, e.n]); (adj[e.b] = adj[e.b] || []).push([e.a, e.n]);
     });
-    var temp = Math.min(w, h) / 6;
-    for (var it = 0; it < 400; it++) {
-      g.nodes.forEach(function(v){ v.dx = 0; v.dy = 0; });
-      for (var i = 0; i < n; i++) for (var j = i + 1; j < n; j++) {
-        var p = g.nodes[i], q = g.nodes[j], dx = p.x - q.x, dy = p.y - q.y, d2 = dx * dx + dy * dy || 0.01;
-        // Busy nodes (a paper many worked on) push harder, so they spread their people out
-        // instead of pulling everyone into one knot.
-        var f = k * k / d2 * p.mass * q.mass * 0.5;
-        p.dx += dx * f; p.dy += dy * f; q.dx -= dx * f; q.dy -= dy * f;
-      }
-      g.edges.forEach(function(e){
-        var p = byId[e.a], q = byId[e.b], dx = p.x - q.x, dy = p.y - q.y, d = Math.sqrt(dx * dx + dy * dy) || 0.01;
-        var f = d / k * (1 + Math.log(e.n) * 0.5) / Math.min(p.mass, q.mass);
-        p.dx -= dx * f; p.dy -= dy * f; q.dx += dx * f; q.dy += dy * f;
+    var order = g.nodes.slice().sort(function(p, q){ return (deg[q.id] || 0) - (deg[p.id] || 0) || (p.id < q.id ? -1 : 1); });
+    var cx = w / 2, cy = h / 2, R = Math.min(w, h) / 2 - 40, sx = w / Math.min(w, h) * 0.94;
+    var m = Math.max(1, Math.min(6, Math.round(Math.sqrt(n) / 1.4))), rings = [[order[0]]], rest = order.slice(1);
+    var total = m * (m + 1) / 2;
+    for (var i = 1; i <= m; i++) {
+      var take = i === m ? rest.length : Math.max(1, Math.round((n - 1) * i / total));
+      rings.push(rest.splice(0, take));
+    }
+    rings = rings.filter(function(r){ return r.length; });
+    var place = function(v, a, ring){ v.angle = a; v.ring = ring; var r = R * ring / (rings.length - 1 || 1); v.x = cx + Math.cos(a) * r * sx; v.y = cy + Math.sin(a) * r; };
+    place(rings[0][0], 0, 0); rings[0][0].angle = undefined;
+    rings.forEach(function(ring, k){ if (k) ring.forEach(function(v, i){ place(v, -Math.PI / 2 + i * 2 * Math.PI / ring.length, k); }); });
+    // The direction a node's links pull it: the weighted mean of where they are.
+    var pull = function(v, inner){
+      var x = 0, y = 0;
+      (adj[v.id] || []).forEach(function(l){
+        var o = byId[l[0]];
+        if (o.angle === undefined || (inner && o.ring >= v.ring)) return;
+        x += Math.cos(o.angle) * l[1]; y += Math.sin(o.angle) * l[1];
       });
-      g.nodes.forEach(function(v){
-        // Gravity, stretched to the box's shape, so loose nodes stay near the middle.
-        v.dx += (cx - v.x) * 0.035 * h / w; v.dy += (cy - v.y) * 0.035;
-        var d = Math.sqrt(v.dx * v.dx + v.dy * v.dy) || 1, s = Math.min(d, temp) / d;
-        v.x = Math.max(30, Math.min(w - 30, v.x + v.dx * s));
-        v.y = Math.max(20, Math.min(h - 20, v.y + v.dy * s));
+      return x || y ? Math.atan2(y, x) : v.angle;
+    };
+    for (var sweep = 0; sweep < 6; sweep++) {
+      var seq = sweep % 2 ? rings.slice(1).reverse() : rings.slice(1);
+      seq.forEach(function(ring){
+        var k = ring[0].ring, want = ring.map(function(v){ return { v: v, a: pull(v, sweep === 0) }; }).sort(function(p, q){ return p.a - q.a; });
+        // Evenly spaced, in the order they pull, turned to sit as near their pull as can be.
+        var step = 2 * Math.PI / ring.length, off = 0;
+        if (want.length) {
+          var sx2 = 0, sy2 = 0;
+          want.forEach(function(o, i){ var d = o.a - i * step; sx2 += Math.cos(d); sy2 += Math.sin(d); });
+          off = Math.atan2(sy2, sx2);
+        }
+        want.forEach(function(o, i){ place(o.v, off + i * step, k); });
       });
-      temp = Math.max(1, temp * 0.985);
     }
   }
 
@@ -476,6 +488,6 @@ window.BoldConnections = (function(){
     });
   }
 
-  return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, graphOf: graphOf, layout: layout, svg: svg, legendHtml: legendHtml, bindHover: bindHover,
+  return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, graphOf: graphOf, concentric: concentric, svg: svg, legendHtml: legendHtml, bindHover: bindHover,
     lineageHtml: lineageHtml, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
 })();
