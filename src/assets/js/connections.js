@@ -323,16 +323,16 @@ window.BoldConnections = (function(){
       return '<div class="cx-bar-row"' + (r[2] || '') + '><span class="cx-bar-label">' + esc(r[0]) + '</span><div class="cx-bar-items">' + r[1] + '</div></div>';
     }).join('') + '</div>';
   }
-  // Controls, all in view. One choice (view, show, since): a strip of joined buttons, one
-  // pressed. Choices that add up (kinds, groups): chips, each on or off on its own.
+  // Controls, all in view, all strips of joined buttons. One choice (view, show, since):
+  // one pressed. Choices that add up (kinds, groups): each pressed or not on its own.
   function seg(label, attr, opts, cur){
     return '<span class="view-toggle cx-seg" role="group" aria-label="' + esc(label) + '">' + opts.map(function(x){
       return '<button type="button" class="view-btn" ' + attr + '="' + x[0] + '" aria-pressed="' + (String(cur) === String(x[0])) + '">' + esc(x[1]) + '</button>';
     }).join('') + '</span>';
   }
   function chips(label, attr, opts, isOn){
-    return '<span class="cx-chips" role="group" aria-label="' + esc(label) + '">' + opts.map(function(x){
-      return '<button type="button" class="cx-chip" ' + attr + '="' + x[0] + '" aria-pressed="' + !!isOn(x[0]) + '">' +
+    return '<span class="view-toggle cx-seg cx-multi" role="group" aria-label="' + esc(label) + '">' + opts.map(function(x){
+      return '<button type="button" class="view-btn" ' + attr + '="' + x[0] + '" aria-pressed="' + !!isOn(x[0]) + '">' +
         '<span>' + esc(x[1]) + '</span>' + (x[2] !== undefined ? '<span class="cx-chip-n">' + x[2] + '</span>' : '') + '</button>';
     }).join('') + '</span>';
   }
