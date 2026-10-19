@@ -1,8 +1,10 @@
 // Connects the lab's Google account to the functions: run it, sign in as that
 // account in the browser, and it prints the GOOGLE_OAUTH secret to store:
 //
-//   node functions/tools/google-token.js <client id> <client secret> | \
-//     npx firebase functions:secrets:set GOOGLE_OAUTH --data-file - --project bold-d7ff2
+//   (umask 077; node functions/tools/google-token.js <client id> <client secret> > ~/.bold-oauth.json) && \
+//     npx firebase functions:secrets:set GOOGLE_OAUTH --data-file ~/.bold-oauth.json --project bold-d7ff2; rm -f ~/.bold-oauth.json
+//
+// (Not piped: the CLI reads stdin at once and fails with EAGAIN while this waits for the sign-in.)
 //
 // The client is an OAuth client of type "Desktop app" in the bold-d7ff2 Google
 // Cloud project (docs/REFERENCE.md, "Project workspaces"). Nothing is written to disk.

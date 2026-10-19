@@ -19,8 +19,8 @@ Everything here is built and deployed but does nothing until the lab has a Googl
 3. **Credentials**: create an OAuth client of type **Desktop app**.
 4. **The secret** (an admin runs it, signing in as the lab's account in the browser):
    ```
-   node functions/tools/google-token.js <client id> <client secret> | \
-     npx firebase functions:secrets:set GOOGLE_OAUTH --data-file - --project bold-d7ff2
+   (umask 077; node functions/tools/google-token.js <client id> <client secret> > ~/.bold-oauth.json) && \
+     npx firebase functions:secrets:set GOOGLE_OAUTH --data-file ~/.bold-oauth.json --project bold-d7ff2; rm -f ~/.bold-oauth.json
    ```
 5. **Redeploy every function that uses it**, so they read the new secret:
    ```
