@@ -86,6 +86,8 @@
       if (view === 'lineage') { var h = n.getAttribute('data-href'); if (h) location.href = h; return; }
       var id = n.getAttribute('data-id'); selected = selected === id ? '' : id; draw();
     }
+    // An empty part of the graph: nothing selected.
+    else if (selected && view === 'graph' && graph.contains(e.target)) { selected = ''; draw(); }
   });
   graph.addEventListener('keydown', function(e){
     var n = e.target.closest && e.target.closest('.cx-node');
