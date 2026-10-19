@@ -18,6 +18,47 @@
       '<label class="jn-trap" aria-hidden="true">Website<input type="text" class="jn-website" tabindex="-1" autocomplete="off"></label>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save">Ask to join</button></div></div>';
     box.querySelector('.ev-save').addEventListener('click', send);
+    wireInviter();
+  }
+
+  // Who invited them: names from the Slack roster as they type (joinInviters); choosing
+  // one keeps its Slack id. Typing again clears the choice.
+  function wireInviter(){
+    var input = box.querySelector('.jn-inviter'), id = box.querySelector('.jn-inviter-id'), list = box.querySelector('.jn-inviter-list');
+    if (!input) return;
+    var seq = 0, timer = null, active = -1;
+    function hide(){ list.hidden = true; input.setAttribute('aria-expanded', 'false'); active = -1; }
+    function choose(li){ input.value = li.getAttribute('data-name'); id.value = li.getAttribute('data-id'); hide(); }
+    input.addEventListener('input', function(){
+      id.value = ''; clearTimeout(timer);
+      var q = input.value.trim(), mine = ++seq;
+      if (q.length < 2) { hide(); return; }
+      timer = setTimeout(function(){
+        firebase.app().functions('europe-west2').httpsCallable('joinInviters')({ q: q }).then(function(r){
+          if (mine !== seq) return;
+          var people = (r.data && r.data.people) || [];
+          list.innerHTML = people.length ? people.map(function(p){
+            return '<li role="option" data-id="' + esc(p.id) + '" data-name="' + esc(p.name) + '">' + esc(p.name) + '</li>';
+          }).join('') : '<li class="jn-none">No one by that name on the BOLD Slack</li>';
+          list.hidden = false; input.setAttribute('aria-expanded', 'true'); active = -1;
+        }).catch(function(err){ console.error('[BOLD Join] finding people failed', err); });
+      }, 250);
+    });
+    list.addEventListener('mousedown', function(e){
+      var li = e.target.closest('li[data-id]');
+      if (li) { e.preventDefault(); choose(li); }
+    });
+    input.addEventListener('keydown', function(e){
+      var items = list.querySelectorAll('li[data-id]');
+      if (list.hidden || !items.length) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        active = (active + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+        Array.prototype.forEach.call(items, function(li, i){ li.classList.toggle('active', i === active); });
+      } else if (e.key === 'Enter') { e.preventDefault(); choose(items[Math.max(active, 0)]); }
+      else if (e.key === 'Escape') hide();
+    });
+    input.addEventListener('blur', function(){ setTimeout(hide, 150); });
   }
 
   function showError(msg){ var e = box.querySelector('.ev-error'); e.textContent = msg; e.hidden = !msg; }
@@ -27,6 +68,7 @@
     d.website = form.querySelector('.jn-website').value;
     var p = BoldJoin.problem(d);
     if (p) { showError(p); return; }
+    delete d.inviterTyped;
     var btn = box.querySelector('.ev-save');
     btn.disabled = true; showError('');
     firebase.app().functions('europe-west2').httpsCallable('requestToJoin')(d).then(function(){

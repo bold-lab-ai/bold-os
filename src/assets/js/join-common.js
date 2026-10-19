@@ -75,6 +75,10 @@ window.BoldJoin = (function(){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';
       }).join('') + (v.role && opt.roles.indexOf(v.role) === -1 ? '<option selected>' + esc(v.role) + '</option>' : '') + '</select></label>' +
       contactHtml(v, o.people) +
+      // join.html only: who invited them to the Slack, picked from the roster as they type (join.js).
+      (o.withIdentity ? '<label>Who invited you to the BOLD Slack? (optional; we ask them to confirm)' +
+        '<input type="text" class="jn-inviter" maxlength="120" placeholder="Start typing their name" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"></label>' +
+        '<input type="hidden" class="jn-inviter-id"><ul class="jn-inviter-list" role="listbox" hidden></ul>' : '') +
       '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
         t('jn-end', 'End date (not needed for PIs, adjuncts, alumni and collaborators)', v.endDate, '', 10, 'date') + '</div>' +
       '<label class="jn-check"><input type="checkbox" class="jn-list"' + (v.listOnWebsite ? ' checked' : '') + '> List me on the BOLD website</label>') +
@@ -107,6 +111,7 @@ window.BoldJoin = (function(){
       if (pick.value !== '__typed__') out.contactEmail = pick.value;
     }
     if (el.querySelector('.jn-name')) { out.name = v('.jn-name'); out.email = v('.jn-email').toLowerCase(); }
+    if (el.querySelector('.jn-inviter')) { out.invitedBy = v('.jn-inviter-id'); out.inviterTyped = v('.jn-inviter'); }
     return out;
   }
 
@@ -117,6 +122,7 @@ window.BoldJoin = (function(){
     if (!d.institution) return 'Give your home institution.';
     if (!d.role) return 'Choose your role at BOLD.';
     if (!d.contact) return 'Say who your BOLD point of contact is.';
+    if (d.inviterTyped && !d.invitedBy) return 'Choose who invited you from the list, or leave it empty.';
     if (!d.interests) return 'Give your main research interests.';
     if (!d.endDate && NO_END.indexOf(d.role) === -1) return 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).';
     if (d.startDate && d.endDate && d.endDate < d.startDate) return 'The end date is before the start date.';
@@ -140,6 +146,8 @@ window.BoldJoin = (function(){
         row('Pronouns', esc(d.pronouns || '')) + row('Institution', esc(d.institution || '')) +
         row('Based in', esc(d.basedIn || '')) + row('Links', links)) +
       group('At BOLD', row('Group', o.group || '') + row('Role', esc(d.role || '')) + row('Point of contact', esc(d.contact || '')) +
+        row('Invited by', d.invitedBy && d.invitedBy.name ? esc(d.invitedBy.name) + ' <span class="acct-handle">' +
+          ({ confirmed: 'confirmed', denied: 'says they didn’t' }[d.invitedBy.status] || 'not confirmed yet') + '</span>' : '') +
         row('Dates', esc(d.startDate && d.endDate ? d.startDate + ' – ' + d.endDate : d.startDate ? 'From ' + d.startDate : d.endDate ? 'Until ' + d.endDate : '')) +
         (d.role !== undefined ? row('On the website', d.listOnWebsite ? 'Yes' : 'No') : '')) +
       group('Research', row('Interests', esc(d.interests || '')) + row('Pillars', (d.pillars || []).map(esc).join('<br>'))) +

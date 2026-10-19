@@ -3981,6 +3981,13 @@ exports.requestToJoin = onCall(
     const n = normalizeJoinRequest(d, set.roles, set.pillars);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
     const r = n.request;
+    // Who invited them (optional): someone on the Slack roster, asked to confirm (onJoinRequested).
+    if (d.invitedBy){
+      const id = String(d.invitedBy);
+      const p = /^[A-Z0-9]{2,20}$/.test(id) ? await db.collection('people').doc(id).get() : null;
+      if (!p || !p.exists) throw new HttpsError('invalid-argument', 'Choose who invited you from the list, or leave it empty.');
+      r.invitedBy = { id, name: p.data().name || '', email: String(p.data().email || '').toLowerCase(), status: 'pending' };
+    }
     const open = await db.collection('joinRequests').where('email', '==', r.email).where('status', '==', 'open').limit(1).get();
     if (!open.empty) throw new HttpsError('already-exists', 'There’s already a request for this email address, waiting for a PI. You’ll hear by email.');
     const recent = await db.collection('joinRequests').where('at', '>', Date.now() - 3600000).count().get();
@@ -3992,16 +3999,65 @@ exports.requestToJoin = onCall(
 
 const joinPageUrl = () => SITE_URL + 'join-requests.html';
 
+// Pure: a name folded for matching ("Zoë Lee" → "zoe lee").
+function foldName(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
+
+// The join form's "Who invited you": up to 6 people on the Slack roster whose name has a
+// word starting with what was typed (2 letters at least). No sign-in (applicants aren't
+// on Slack yet), so it gives names and Slack ids only. data: { q } → { people: [{ id, name }] }.
+exports.joinInviters = onCall(async (request) => {
+  const q = foldName((request.data || {}).q).slice(0, 60);
+  if (q.length < 2) return { people: [] };
+  const snap = await db.collection('people').get();
+  const people = snap.docs.map(function(d){ return { id: d.id, name: String(d.data().name || '') }; })
+    .filter(function(p){ const n = foldName(p.name); return p.name && (n.indexOf(q) === 0 || n.indexOf(' ' + q) >= 0); })
+    .sort(function(a, b){ return a.name.localeCompare(b.name); }).slice(0, 6);
+  return { people };
+});
+
+// Whoever an applicant named as inviting them confirms it or says they didn't, on the
+// Requests page. data: { id, confirm: bool } → { ok }. Saying they didn't DMs the PIs and
+// admins. Copied to the member's record if they're approved already.
+exports.confirmJoinInvite = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('joinRequests').doc(d.id);
+    const status = d.confirm ? 'confirmed' : 'denied';
+    const r = await db.runTransaction(async (tx) => {
+      const q = (await tx.get(ref)).data();
+      if (!q || !q.invitedBy || q.invitedBy.email !== email) throw new HttpsError('not-found', 'No such request.');
+      tx.update(ref, { 'invitedBy.status': status, 'invitedBy.at': Date.now() });
+      return q;
+    });
+    if (r.status === 'approved'){
+      const m = db.collection('members').doc(r.email);
+      if ((await m.get()).exists) await m.set({ invitedBy: Object.assign({}, r.invitedBy, { status, at: Date.now() }) }, { merge: true });
+    }
+    if (!d.confirm && r.invitedBy.status !== 'denied'){
+      const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+      await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline: '⚠️ ' + slackText(r.invitedBy.name) + ' says they didn’t invite ' + slackText(r.name) + ' (' + slackText(r.email) + '). ' +
+        linkedTitle('See the request', joinPageUrl() + '#r=' + d.id) + '.' });
+    }
+    return { ok: true };
+  }
+);
+
 exports.onJoinRequested = onDocumentCreated(
   { document: 'joinRequests/{id}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
     const r = event.data && event.data.data();
     if (!r || r.status !== 'open') return;
     const headline = '👋 ' + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ') asked to join BOLD' +
-      (r.contact ? ', with ' + slackText(r.contact) + ' as their point of contact' : '') + '. ' +
+      (r.contact ? ', with ' + slackText(r.contact) + ' as their point of contact' : '') +
+      (r.invitedBy ? ', invited by ' + slackText(r.invitedBy.name) + ' (asked to confirm)' : '') + '. ' +
       linkedTitle('Approve or decline', joinPageUrl() + '#r=' + event.params.id) + '.';
     const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
     await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline });
+    if (r.invitedBy) await dmBySlackId(SLACK_BOT_TOKEN.value(), r.invitedBy.id, '👋 ' + slackText(r.name) + ' (' + slackText(r.email) + ') asked to join BOLD and says you invited them to the Slack. ' +
+      linkedTitle('Confirm, or say you didn’t', joinPageUrl() + '#i=' + event.params.id) + '.');
   }
 );
 
@@ -4025,7 +4081,7 @@ exports.decideJoinRequest = onCall(
       if (d.accept) {
         // Their record in BOLD.OS: what they told us. They keep it up to date on their profile.
         const m = db.collection('members').doc(q.email);
-        const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate'];
+        const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'invitedBy'];
         const rec = {};
         keep.forEach((k) => { if (q[k] !== undefined) rec[k] = q[k]; });
         tx.set(m, Object.assign(rec, { requestId: d.id, approvedBy: email, approvedAt: Date.now() }), { merge: true });

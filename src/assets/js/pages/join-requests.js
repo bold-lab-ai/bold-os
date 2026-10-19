@@ -4,7 +4,9 @@
 // sends one again), and edit the Slack invite link, the email's text
 // (settings/joinInvite), the join form's choices (settings/joinForm) and each group's
 // Slack channel (settings/groups: whoever is in the group is added to it).
-// Only PIs and admins can read any of it (firestore.rules).
+// Only PIs and admins can read any of it (firestore.rules), except "Invited by you":
+// anyone an applicant named as inviting them to the Slack confirms it, or says they
+// didn't (confirmJoinInvite; #i=<id> from their DM).
 (function(){
   var esc = BOLD.escapeHtml;
   var main = document.getElementById('joinRequests');
@@ -13,7 +15,7 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, form = null, unsubs = [], busy = {}, editing = false;
-  var groupReqs = [], groups = {};
+  var groupReqs = [], groups = {}, invited = [];
 
   var SUBJECT = 'Welcome to BOLD';
   var BODY = ['Hi {name},', '', 'Welcome to BOLD! Your request to join has been approved. Here are your next steps:', '',
@@ -81,9 +83,29 @@
     return msg ? '<p class="jn-notice">' + esc(msg).replace('under Settings', 'under <a href="#settings">Settings</a>') + '</p>' : '';
   }
 
+  // A request that names you as inviting them: confirm it, or say you didn't.
+  function invitedHtml(r){
+    var st = (r.invitedBy || {}).status, off = busy[r.id] ? ' disabled' : '';
+    return '<li id="i-' + esc(r.id) + '"><span class="proj-title">' + esc(r.name) + '</span>' +
+      '<span class="proj-meta">' + esc(r.email) + ' · ' + esc([r.role, r.institution].filter(Boolean).join(', ')) + ' · asked ' + when(r.at) + '</span>' +
+      '<p class="proj-meta">' + (st === 'confirmed' ? 'You confirmed you invited them.' : st === 'denied' ? 'You said you didn’t invite them.' : 'They say you invited them to the BOLD Slack.') + '</p>' +
+      '<div class="event-controls">' + (st !== 'confirmed' ? '<button type="button" class="btn-text jr-i-yes" data-iid="' + esc(r.id) + '"' + off + '>Yes, I invited them</button>' : '') +
+        (st !== 'denied' ? '<button type="button" class="btn-text danger jr-i-no" data-iid="' + esc(r.id) + '"' + off + '>I didn’t</button>' : '') + '</div></li>';
+  }
+  function invitedSection(){
+    if (!invited.length) return '';
+    var waiting = invited.filter(function(r){ return (r.invitedBy || {}).status === 'pending'; }).length;
+    return '<section class="block" id="invited"><div class="block-head"><h2>Invited by you<span class="proj-count">' + waiting + ' to confirm</span></h2></div>' +
+      '<ul class="proj-list">' + invited.map(invitedHtml).join('') + '</ul></section>';
+  }
+
   function render(){
     if (!me) return;
-    if (staff === false) { main.innerHTML = '<p class="proj-msg">Only PIs and admins review these requests.</p>'; return; }
+    if (staff === false) {
+      main.innerHTML = invitedSection() + (invited.length ? '' : '<p class="proj-msg">Only PIs and admins review these requests.</p>');
+      jump();
+      return;
+    }
     if (staff === null || requests === null) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
     if (editing) return; // don't redraw over settings being changed
     var open = requests.filter(function(r){ return r.status === 'open'; });
@@ -93,7 +115,7 @@
     var list = function(items, html, none){ return items.length ? '<ul class="proj-list">' + items.map(html).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>'; };
     // Joining BOLD and changing group, apart; each waiting, then decided.
     main.innerHTML =
-      inviteNotice() +
+      inviteNotice() + invitedSection() +
       '<section class="block"><div class="block-head"><h2>Joining BOLD<span class="proj-count">' + open.length + ' waiting</span></h2></div>' +
         list(open, requestHtml, 'No requests waiting.') +
         (done.length ? '<div class="proj-group"><h3>Decided</h3>' + list(done, requestHtml, '') + '</div>' : '') + '</section>' +
@@ -103,7 +125,10 @@
       settingsHtml();
     var s = main.querySelector('.jr-settings');
     s.addEventListener('input', function(){ editing = true; });
-    var m = /#([rg])=([A-Za-z0-9]+)/.exec(location.hash), el = m && document.getElementById(m[1] + '-' + m[2]);
+    jump();
+  }
+  function jump(){
+    var m = /#([rgi])=([A-Za-z0-9]+)/.exec(location.hash), el = m && document.getElementById(m[1] + '-' + m[2]);
     if (el && !render.jumped) { render.jumped = true; el.scrollIntoView({ block: 'start' }); }
   }
 
@@ -137,6 +162,17 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
+    var iid = t.getAttribute('data-iid');
+    if (iid) {
+      var yes = t.classList.contains('jr-i-yes');
+      if (!yes && !window.confirm('Say you didn’t invite them? The PIs and admins are told.')) return;
+      busy[iid] = true; render();
+      fn('confirmJoinInvite')({ id: iid, confirm: yes }).catch(function(err){
+        console.error('[BOLD Join] confirming the invitation failed', err);
+        window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
+      }).then(function(){ delete busy[iid]; render(); });
+      return;
+    }
     var gid = t.getAttribute('data-gid');
     if (gid) {
       var g = groupReqs.filter(function(q){ return q.id === gid; })[0];
@@ -172,9 +208,16 @@
   BOLD.onUser(function(user){
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user ? { email: (user.email || '').toLowerCase() } : null;
-    staff = null; requests = null;
+    staff = null; requests = null; invited = [];
     if (!user) return;
     render();
+    // Requests that name you as inviting them (readable by you: firestore.rules).
+    unsubs.push(db.collection('joinRequests').where('invitedBy.email', '==', me.email).onSnapshot(function(snap){
+      invited = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
+        .filter(function(r){ return r.status === 'open' || (r.invitedBy || {}).status === 'pending'; })
+        .sort(function(a, b){ return b.at - a.at; });
+      render();
+    }, function(err){ console.error('[BOLD Join] loading your invitations failed', err); }));
     fn('getMyAccess')().then(function(r){
       staff = !!(r.data && r.data.fullWrite);
       if (!staff) { render(); return; }
