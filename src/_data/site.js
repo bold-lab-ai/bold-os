@@ -31,11 +31,7 @@ export default {
       { label: 'Guide', href: 'how-to-submit-a-paper.html' },
       { label: 'Internal review board', href: 'audit-board.html' },
     ] },
-    { label: 'Calendar', href: 'calendar.html', links: [] },
-    { label: 'Agents', href: 'agents.html', links: [
-      { label: 'Activity', href: 'agents.html' },
-      { label: 'Tools', href: 'tools.html' },
-    ], separatorAfter: true },
+    { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true },
     { label: 'People', href: 'people.html', links: [
       { label: 'Members', href: 'people.html' },
       { label: 'Network', href: 'network.html' },
@@ -45,7 +41,11 @@ export default {
       { label: 'All projects', href: 'projects.html' },
     ] },
     // Its sub-pages are the released events (Firestore), filled in by bold.js.
-    { label: 'Events', href: 'events.html', links: [], events: true, separatorAfter: true },
+    { label: 'Events', href: 'events.html', links: [], events: true },
+    { label: 'Agents', href: 'agents.html', links: [
+      { label: 'Activity', href: 'agents.html' },
+      { label: 'Tools', href: 'tools.html' },
+    ], separatorAfter: true },
     // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.
     { label: 'How to', href: 'guides.html', links: [], guides: true },
     // Its sub-pages are the skills (Firestore), filled in by bold.js.
