@@ -1,10 +1,12 @@
 // A skill's page (skill.html?skill=<name>) — one skills/{name} doc (see
 // skills-common.js): its title and description, how to install it, and the
-// files in it (SKILL.md first), each shown on click. PIs/admins
-// edit it in place — description, SKILL.md's instructions, and the files: add
-// one empty or from the computer, rename, change or remove it — or delete the
-// skill; those buttons are always shown, greyed out for everyone else. #edit
-// opens the form. skill.html?new is the same form for a new skill ("+ Add a
+// files in it (SKILL.md first), each shown on click. Anyone proposes a change to
+// it, as to a guide — description, SKILL.md's instructions, and the files: add
+// one empty or from the computer, rename, change or remove it — saved as a
+// proposal (skills/{name}/proposals, kind 'skill': { before, after }) under
+// Proposed changes, with what it changes, until another PI or admin accepts or
+// declines it (decideProposal); whoever proposed it can edit or withdraw it. PIs
+// and admins delete the skill (greyed out for everyone else). #edit opens the form. skill.html?new is the same form for a new skill ("+ Add a
 // skill" on the skills page), with its name. Either form can import a whole
 // skill's folder (skill-import.js), which fills everything in. The page's
 // sections: the description (hero), Install (the Claude Code command), Content
@@ -25,6 +27,8 @@
   var MAX_SIZE = 900000;
 
   var x = null, loaded = false, editing = isNew || location.hash === '#edit', fullWrite = false, me = null, open = 'SKILL.md';
+  // Open proposed changes; the one being edited (yours), if any; whose changes are shown; a notice.
+  var proposals = [], editingQ = null, shownQ = {}, notice = '', busyQ = {};
   var BACK = '<a class="back-link" href="skills.html">&larr; All skills</a>';
   var CONTENT = ['title', 'description', 'body', 'files'];
   var historyWrap = document.getElementById('skillHistoryWrap'), histPanel = null;
@@ -41,9 +45,54 @@
   }
 
   function controls(){
-    var off = fullWrite ? '' : ' disabled title="' + S.NOT_PI + '"';
-    return '<div class="event-controls"><button type="button" class="btn-text sk-edit"' + off + '>Edit</button>' +
+    var off = fullWrite ? '' : ' disabled title="Only PIs and admins can delete a skill"';
+    return '<div class="event-controls"><button type="button" class="btn-text sk-edit">Propose a change</button>' +
       '<button type="button" class="btn-text danger sk-delete"' + off + '>Delete</button></div>';
+  }
+
+  // ---------- proposed changes ----------
+  var FIELDS = { title: 'Title', description: 'Description', body: 'Instructions (SKILL.md)', files: 'File' };
+  function content(d){ var o = {}; CONTENT.forEach(function(k){ o[k] = d[k] !== undefined ? d[k] : (k === 'files' ? [] : ''); }); return o; }
+  function mine(q){ return !!(me && q.by && String(q.by.email).toLowerCase() === me.email.toLowerCase()); }
+  function proposalsHtml(){
+    if (!proposals.length && !notice) return '';
+    return '<section class="block" id="proposals"><div class="block-head"><h2>Proposed changes</h2></div>' +
+      (notice ? '<p class="event-form-hint sk-notice">' + esc(notice) + '</p>' : '') +
+      '<ul class="sk-proposals">' + proposals.map(function(q){
+        var own = mine(q), b = busyQ[q.id] ? ' disabled' : '';
+        var stale = JSON.stringify(content(q.before || {})) !== JSON.stringify(content(x));
+        var decide = !fullWrite ? ' disabled title="Only PIs and admins accept or decline"' : own ? ' disabled title="Another PI or admin reviews your own change"' : '';
+        return '<li class="sk-proposal" id="q-' + esc(q.id) + '"><p class="sk-p-head"><strong>' + esc((q.by && q.by.name) || 'Someone') + '</strong> · ' + BoldHistory.when(q.editedAt || q.at) + (q.editedAt ? ' (edited)' : '') + '</p>' +
+          (q.note ? '<p class="sk-p-note">' + esc(q.note) + '</p>' : '') +
+          (stale ? '<p class="event-form-hint">The skill has changed since this was proposed: accepting it replaces those changes with these.</p>' : '') +
+          (shownQ[q.id] ? '<div class="sk-p-changes">' + BoldHistory.changesHtml(content(q.before || {}), content(Object.assign({}, q.before, q.after)), FIELDS) + '</div>' : '') +
+          '<div class="event-controls"><button type="button" class="btn-text sk-q-show" data-id="' + esc(q.id) + '">' + (shownQ[q.id] ? 'Hide changes' : 'Show changes') + '</button>' +
+            '<button type="button" class="btn-text sk-q-accept" data-id="' + esc(q.id) + '"' + (decide || b) + '>Accept</button>' +
+            '<button type="button" class="btn-text danger sk-q-decline" data-id="' + esc(q.id) + '"' + (decide || b) + '>Decline</button>' +
+            (own ? '<button type="button" class="btn-text sk-q-edit" data-id="' + esc(q.id) + '"' + b + '>Edit</button><button type="button" class="btn-text danger sk-q-withdraw" data-id="' + esc(q.id) + '"' + b + '>Withdraw</button>' : '') +
+          '</div></li>';
+      }).join('') + '</ul></section>';
+  }
+  function proposalAction(t){
+    var id = t.getAttribute('data-id'), q = proposals.filter(function(p){ return p.id === id; })[0];
+    if (!q) return;
+    if (t.classList.contains('sk-q-show')) { shownQ[id] = !shownQ[id]; render(); return; }
+    if (t.classList.contains('sk-q-edit')) { editingQ = q; editing = true; render(); return; }
+    var job;
+    if (t.classList.contains('sk-q-withdraw')) {
+      if (!window.confirm('Withdraw your proposed change?')) return;
+      job = ref.collection('proposals').doc(id).delete();
+    } else {
+      var accept = t.classList.contains('sk-q-accept');
+      if (!window.confirm((accept ? 'Accept' : 'Decline') + ' ' + ((q.by && q.by.name) || 'this') + '’s change to the skill?')) return;
+      // editedAt: the version decided on, in case it's edited meanwhile.
+      job = firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: 'skills', slug: name, id: id, accept: accept, editedAt: q.editedAt || 0 });
+    }
+    busyQ[id] = true; render();
+    job.catch(function(err){
+      console.error('[BOLD Skills] that failed', err);
+      window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'That didn’t work — try again.');
+    }).then(function(){ delete busyQ[id]; render(); });
   }
 
   // The Claude Code command, ready to copy.
@@ -72,6 +121,10 @@
   }
 
   function formHtml(){
+    // An existing skill's form proposes a change: from the skill, or from your proposal being edited.
+    var x0 = x;
+    x = editingQ ? Object.assign({}, x, editingQ.after) : x;
+    try {
     return '<div class="event-form skill-form">' +
       '<div class="sk-import"><span>Have the skill already?</span>' +
         '<label class="btn-text">Import a folder<input type="file" class="sk-import-folder" webkitdirectory hidden></label>' +
@@ -83,9 +136,12 @@
       '<div class="sk-file-add"><button type="button" class="btn-text sk-add-empty">+ Add a file</button>' +
         '<label class="btn-text sk-add-upload">+ Add from your computer<input type="file" multiple hidden></label></div>' +
       '<p class="event-form-hint">Text files only (Markdown, HTML, code, …), under about 900 KB in all. Adding a SKILL.md fills in the description and instructions above.</p>' +
-      '<label>What changed (optional)<input type="text" class="sk-note" maxlength="300" placeholder="' + (isNew ? 'Added the skill' : 'e.g. Clearer figure rules') + '"></label>' +
+      (isNew ? '<label>What changed (optional)<input type="text" class="sk-note" maxlength="300" placeholder="Added the skill"></label>'
+        : '<label>What you changed and why, for whoever reviews it<input type="text" class="sk-note" maxlength="300" value="' + esc(editingQ ? editingQ.note || '' : '') + '" placeholder="e.g. Clearer figure rules"></label>' +
+          '<p class="event-form-hint">It’s saved as a proposed change until ' + (fullWrite ? 'another' : 'a') + ' PI or admin accepts it.</p>') +
       '<p class="ev-error" hidden></p>' +
-      '<div class="event-form-actions"><button type="button" class="ev-save">' + (isNew ? 'Add skill' : 'Save') + '</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
+      '<div class="event-form-actions"><button type="button" class="ev-save">' + (isNew ? 'Add skill' : editingQ ? 'Update proposed change' : 'Propose change') + '</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
+    } finally { x = x0; }
   }
 
   // SKILL.md's text → { description, body }: the front matter's description
@@ -187,7 +243,7 @@
 
     form.querySelector('.ev-cancel').addEventListener('click', function(){
       if (isNew) { location.href = 'skills.html'; return; }
-      editing = false; history.replaceState(null, '', location.pathname + location.search); render(); });
+      editing = false; editingQ = null; history.replaceState(null, '', location.pathname + location.search); render(); });
     form.querySelector('.ev-save').addEventListener('click', function(){
       var r = S.readMeta(form, isNew);
       if (r.error) { S.showError(form, r.error); return; }
@@ -213,14 +269,24 @@
         }).catch(failed);
         return;
       }
-      ref.update(fields).then(function(){
-        editing = false; history.replaceState(null, '', location.pathname + location.search); render();
+      // A change to an existing skill is a proposal (rules: only its content, and who proposes it).
+      var note = fields.changeNote;
+      if (!note) { S.showError(form, 'Say what you changed and why, for whoever reviews it.'); save.disabled = false; return; }
+      var after = content(fields), q = editingQ;
+      if (JSON.stringify(after) === JSON.stringify(content(q ? Object.assign({}, x, q.after) : x))) { editing = false; editingQ = null; render(); return; }
+      var job = q
+        ? ref.collection('proposals').doc(q.id).set({ kind: 'skill', before: q.before, after: after, note: note, by: q.by, at: q.at, status: 'open', editedAt: Date.now() })
+        : ref.collection('proposals').add({ kind: 'skill', before: content(x), after: after, note: note, by: { email: me.email, name: me.name }, at: Date.now(), status: 'open' });
+      job.then(function(){
+        editing = false; editingQ = null; notice = 'Thanks — your change is under Proposed changes until ' + (fullWrite ? 'another' : 'a') + ' PI or admin reviews it.';
+        history.replaceState(null, '', location.pathname + location.search); render();
+        var el = document.getElementById('proposals'); if (el) el.scrollIntoView({ block: 'start' });
       }).catch(failed);
     });
   }
 
   function drawHistory(){
-    var on = !!x && !isNew && !(editing && fullWrite);
+    var on = !!x && !isNew && !editing;
     historyWrap.hidden = !on;
     if (!on || histPanel) return;
     histPanel = BoldHistory.mount(document.getElementById('skillHistory'), {
@@ -253,14 +319,16 @@
     document.title = (x.title || x.name) + ' | BOLD Lab';
     var head = '<div class="hero">' + BACK + '<div><span class="eyebrow">Skill</span></div><h1>' + esc(x.title || x.name) + '</h1>' +
       '<p class="skill-name"><code>' + esc(x.name) + '</code></p>';
-    if (editing && fullWrite) {
+    if (editing) {
       body.innerHTML = head + '</div><main>' + formHtml() + '</main>';
       bindForm();
       return;
     }
     body.innerHTML = head + '<p class="hero-note">' + esc(x.description || '') + '</p>' + controls() + '</div>' +
-      '<main>' + installHtml() + filesHtml() + '</main>';
-    body.querySelector('.sk-edit').addEventListener('click', function(){ if (fullWrite) { editing = true; render(); } });
+      '<main>' + proposalsHtml() + installHtml() + filesHtml() + '</main>';
+    body.querySelector('.sk-edit').addEventListener('click', function(){ editingQ = null; notice = ''; editing = true; render(); });
+    var qs = body.querySelector('.sk-proposals');
+    if (qs) qs.addEventListener('click', function(e){ var t = e.target.closest('button'); if (t && !t.disabled) proposalAction(t); });
     body.querySelector('.sk-delete').addEventListener('click', function(){
       if (!fullWrite || !window.confirm('Delete the skill “' + (x.title || x.name) + '” for good? Anyone who installed it keeps their copy.')) return;
       // Stamp who's deleting it first: the history credits the last updatedBy.
@@ -287,7 +355,7 @@
     });
   }
 
-  var unsubscribe = null, signIns = 0;
+  var unsubscribe = null, unsubQ = null, signIns = 0;
   if (isNew) {
     x = { name: '', title: '', description: '', body: '', files: [] };
     BOLD.onUser(function(user){
@@ -301,14 +369,19 @@
   BOLD.onUser(function(user){
     var mine = ++signIns;
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-    me = user ? { email: user.email || '' } : null;
+    me = user ? { email: user.email || '', name: user.displayName || user.email || '' } : null;
     fullWrite = false;
     if (!user) return;
+    if (unsubQ) { unsubQ(); unsubQ = null; }
+    unsubQ = ref.collection('proposals').where('status', '==', 'open').onSnapshot(function(snap){
+      proposals = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return a.at - b.at; });
+      if (!(editing && body.querySelector('.skill-form'))) render();
+    }, function(err){ console.error('[BOLD Skills] loading proposed changes failed', err); });
     S.access(function(ok){ if (mine === signIns) { fullWrite = ok; render(); } });
     unsubscribe = ref.onSnapshot(function(snap){
       loaded = true;
       // Don't redraw over a form being filled in.
-      var wasEditing = editing && fullWrite && body.querySelector('.skill-form');
+      var wasEditing = editing && body.querySelector('.skill-form');
       x = snap.exists ? Object.assign({}, snap.data(), { name: name }) : null;
       if (!wasEditing) render();
     }, function(err){

@@ -165,7 +165,42 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
+  // A skill's proposed change (kind 'skill', as pages/skill.js makes it): its title,
+  // description, instructions and files after the change, from what's given.
+  const SKILL_CONTENT = ['title', 'description', 'body', 'files'];
+  async function skillProposals(who, a, name){
+    const snap = await db.collection('skills').doc(name).get();
+    if (!snap.exists) throw httpError(404, 'No skill called ' + name + '.');
+    const cur = {}, col = 'skills/' + name + '/proposals';
+    SKILL_CONTENT.forEach((k) => { const v = snap.data()[k]; cur[k] = v !== undefined ? v : (k === 'files' ? [] : ''); });
+    if (a.action === 'propose') {
+      const note = need(a.note, 'a note: what you changed and why, for whoever reviews it');
+      const after = JSON.parse(JSON.stringify(cur));
+      ['title', 'description', 'body'].forEach((k) => { if (a[k] !== undefined) after[k] = String(a[k]); });
+      if (Array.isArray(a.files)) after.files = a.files.map((f) => ({ path: need(f.path, 'each file’s path'), content: String(f.content || '') }));
+      (a.set_files || []).forEach((f) => {
+        const path = need(f.path, 'each file’s path');
+        if (path === 'SKILL.md' || path.split('/').some((x) => !x || x === '.' || x === '..')) throw httpError(400, 'Not a file path: ' + path);
+        after.files = after.files.filter((x) => x.path !== path).concat([{ path, content: String(f.content || '') }]);
+      });
+      (a.remove_files || []).forEach((path) => { after.files = after.files.filter((x) => x.path !== path); });
+      if (JSON.stringify(after) === JSON.stringify(cur)) throw httpError(400, 'That changes nothing.');
+      const id = await asUser(who, 'create', col, { kind: 'skill', before: cur, after, note, by: { email: who.email, name: nameOfMe(who) }, at: Date.now(), status: 'open' });
+      return { id, url: url('skill.html?skill=' + encodeURIComponent(name) + '#proposals'), note: 'It waits under Proposed changes until a PI or admin (not you) accepts or declines it.' };
+    }
+    const pid = need(a.proposal_id, 'the proposal_id');
+    if (a.action === 'withdraw') { await asUser(who, 'delete', col + '/' + pid); return { ok: true }; }
+    if (a.action === 'accept' || a.action === 'decline') {
+      const q = await db.collection('skills').doc(name).collection('proposals').doc(pid).get();
+      if (!q.exists) throw httpError(404, 'No such proposal.');
+      return act(who, 'decideProposal', { collection: 'skills', slug: name, id: pid, accept: a.action === 'accept', editedAt: q.data().editedAt || 0 });
+    }
+    throw httpError(400, 'Unknown action.');
+  }
+
   async function proposals(who, a){
+    const sk = /^skill:([a-z0-9-]{1,64})$/.exec(String(a.page || ''));
+    if (sk) return skillProposals(who, a, sk[1]);
     const pg = await pageOf(a.page), col = pg.col + '/' + pg.slug + '/proposals';
     if (a.action === 'propose') {
       const note = need(a.note, 'a note: what you changed and why, for whoever reviews it');
@@ -451,14 +486,7 @@ module.exports = function(ctx){
         if (s.exists) throw httpError(409, 'There’s already a skill called ' + name + '.');
         await asUser(who, 'create', 'skills', Object.assign({ name, title: a.title || name, description: need(a.description, 'a description'), body: need(a.body, 'its SKILL.md body'), files: [], createdAt: now, createdBy: who.email }, stamp), name);
         return { url: url('skill.html?skill=' + encodeURIComponent(name)) };
-      case 'update': {
-        if (!s.exists) throw httpError(404, 'No skill called ' + name + '.');
-        const patch = {};
-        ['title', 'description', 'body'].forEach((k) => { if (a[k] !== undefined) patch[k] = String(a[k]); });
-        // name and updatedBy are what the rules check; the history credits updatedBy.
-        await asUser(who, 'update', 'skills/' + name, Object.assign(patch, stamp, { name }));
-        return { ok: true };
-      }
+      case 'update': throw httpError(400, 'A change to a skill is proposed: use proposals with page "skill:' + name + '".');
       case 'delete': if (!s.exists) throw httpError(404, 'No skill called ' + name + '.'); await asUser(who, 'delete', 'skills/' + name); return { ok: true };
     }
     throw httpError(400, 'Unknown action.');
@@ -490,9 +518,13 @@ module.exports = function(ctx){
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
         quote: str('add: words from the part, exactly as written.'), text: str('The comment (Markdown, @Name to tag).'), comment_id: str('reply, edit, resolve, delete.'), proposal_id: str('on_proposal.') }, ['action', 'page']) },
     { name: 'proposals', run: proposals,
-      description: 'Propose a change to the BOLDiquette or a guide (every change is a proposal; a PI or admin other than you accepts it): propose (kind add, edit or remove a part, with a note on why), withdraw your own, or, for PIs and admins, accept or decline someone else’s.',
-      inputSchema: S({ action: ACTIONS(['propose', 'withdraw', 'accept', 'decline']), page: str('"boldiquette" or a guide’s slug.'), kind: ACTIONS(['add', 'edit', 'remove']),
-        part_id: str('edit, remove: the part.'), title: str('The part’s title.'), body: str('The part’s text (Markdown).'), section: str('Its section (tab).'), note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline.') }, ['action', 'page']) },
+      description: 'Propose a change to the BOLDiquette, a guide or a skill (every change is a proposal; a PI or admin other than you accepts it): propose (with a note on why), withdraw your own, or, for PIs and admins, accept or decline someone else’s. For the BOLDiquette or a guide: kind add, edit or remove a part (read_page). For a skill (page "skill:<name>", get_skill): its new title, description or body (SKILL.md’s instructions), and its files (set_files, remove_files, or all of them in files).',
+      inputSchema: S({ action: ACTIONS(['propose', 'withdraw', 'accept', 'decline']), page: str('"boldiquette", a guide’s slug, or "skill:<name>".'), kind: ACTIONS(['add', 'edit', 'remove']),
+        part_id: str('edit, remove: the part.'), title: str('The part’s title, or the skill’s.'), body: str('The part’s text (Markdown), or the skill’s instructions.'), section: str('Its section (tab).'),
+        description: str('A skill’s description.'), files: { type: 'array', description: 'A skill: all its files (besides SKILL.md).', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
+        set_files: { type: 'array', description: 'A skill: files to add or replace.', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
+        remove_files: { type: 'array', items: { type: 'string' }, description: 'A skill: paths to remove.' },
+        note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
       description: 'Projects, as on the Projects page and a project’s page: register a new one (with its Slack channel, created if new), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
       inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
@@ -530,8 +562,8 @@ module.exports = function(ctx){
       description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them, or set someone’s group.',
       inputSchema: S({ action: ACTIONS(['list', 'approve_join', 'decline_join', 'approve_group', 'decline_group', 'set_group']), request_id: str(''), member: str('set_group: their name'), group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']) }) },
     { name: 'skills', run: skills,
-      description: 'PIs and admins: the lab’s Claude skills: add one, update its title, description or SKILL.md body, or delete it. Each change is kept in its history.',
-      inputSchema: S({ action: ACTIONS(['add', 'update', 'delete']), name: str('The skill’s name.'), title: str(''), description: str(''), body: str('SKILL.md body'), change_note: str('What changed') }, ['action', 'name']) },
+      description: 'PIs and admins: add a new Claude skill, or delete one. Changing a skill is a proposal, by anyone (proposals, page "skill:<name>").',
+      inputSchema: S({ action: ACTIONS(['add', 'delete']), name: str('The skill’s name.'), title: str(''), description: str(''), body: str('SKILL.md body'), change_note: str('What changed') }, ['action', 'name']) },
   ];
   WRITE.forEach((t) => { t.write = true; if (t.name === 'comments' || t.name === 'events' || t.name === 'skills' || t.name === 'projects' || t.name === 'presentations') t.destructive = true; });
   return { READ, WRITE, asUser, toFields };

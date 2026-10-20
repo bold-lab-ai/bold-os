@@ -55,3 +55,12 @@ section.block:first-of-type{margin-top:12px;}
     }
 
 .skill-history{padding-top:0;}
+
+/* Proposed changes (pages/skill.js): each with who, why, and what it changes. */
+.sk-proposals{list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
+.sk-proposal{padding:14px 0; border-bottom:1px solid var(--line);}
+.sk-p-head{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
+.sk-p-head strong{color:var(--ink); font-weight:600;}
+.sk-p-note{margin:6px 0 0;}
+.sk-p-changes{margin-top:10px;}
+.sk-notice{margin:0 0 10px;}

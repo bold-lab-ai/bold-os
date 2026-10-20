@@ -915,8 +915,8 @@ exports.onVenueProposed = onDocumentCreated(
 );
 
 // ---------- Suggested changes to a guide or the BOLDiquette ----------
-// Everyone, PIs and admins too, changes a guide (guides/{slug}) or the
-// BOLDiquette (handbook/{slug}) by proposing it (…/proposals/{id}, see
+// Everyone, PIs and admins too, changes a guide (guides/{slug}), the
+// BOLDiquette (handbook/{slug}) or a skill (skills/{name}, kind 'skill') by proposing it (…/proposals/{id}, see
 // pages/guide.js); another PI or admin accepts or declines it on the page
 // (decideProposal). Tell them all, but whoever proposed it, when one arrives,
 // with a link to it.
@@ -932,6 +932,7 @@ function slackText(s){
 function proposalSummary(q){
   const title = (side) => '“' + slackText((side && side.title) || '') + '”';
   if (q.kind === 'about') return 'a change to the title and description';
+  if (q.kind === 'skill') return 'a change to the skill';
   if (q.kind === 'add') return 'a new part, ' + title(q.after);
   if (q.kind === 'remove') return 'removing the part ' + title(q.before);
   if (q.kind === 'move' && q.after && q.after.tab) return 'moving the tab ' + title(q.after);
@@ -1044,6 +1045,10 @@ const guideUrl = (slug) => SITE_URL + (GUIDE_PAGES[slug] || 'guide.html?guide=' 
 const handbookUrl = (slug) => SITE_URL + (slug === 'boldiquette' ? 'boldiquette.html' : 'index.html');
 exports.onGuideProposed = onProposed('guides', guideUrl);
 exports.onHandbookProposed = onProposed('handbook', handbookUrl);
+// A skill has its page; its changes are proposed there too (pages/skill.js).
+const skillUrl = (name) => SITE_URL + 'skill.html?skill=' + encodeURIComponent(name);
+exports.onSkillProposed = onProposed('skills', skillUrl);
+exports.onSkillProposalDecided = onProposalDecided('skills', skillUrl);
 exports.onGuideProposalDecided = onProposalDecided('guides', guideUrl);
 exports.onHandbookProposalDecided = onProposalDecided('handbook', handbookUrl);
 
@@ -1241,6 +1246,7 @@ exports.onGuideCommented = onCommented('guides');
 exports.onHandbookCommented = onCommented('handbook');
 exports.onGuideProposalTagged = onProposalTagged('guides', guideUrl);
 exports.onHandbookProposalTagged = onProposalTagged('handbook', handbookUrl);
+exports.onSkillProposalTagged = onProposalTagged('skills', skillUrl);
 
 // Whether a queue is ready to send: quiet long enough, or waited long enough. Pure.
 function commentQueueDue(q, now){
@@ -1329,7 +1335,7 @@ exports.flushCommentQueue = onSchedule(
 // change accepts or declines it here.
 // data: { collection: 'guides' | 'handbook', slug, id, accept: bool } → { status }.
 
-const REVIEWED = ['guides', 'handbook'];
+const REVIEWED = ['guides', 'handbook', 'skills'];
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q){
@@ -1345,6 +1351,13 @@ function appliedProposal(doc, q){
       cur = Object.assign({}, cur, r);
       Object.assign(out, r);
     });
+    return out;
+  }
+  // A skill (skills/{name}): its title, description, instructions and files, as proposed.
+  if (q.kind === 'skill') {
+    const a = q.after || {}, out = {};
+    ['title', 'description', 'body'].forEach((k) => { if (typeof a[k] === 'string') out[k] = a[k]; });
+    if (Array.isArray(a.files)) out.files = a.files.filter((f) => f && typeof f.path === 'string').map((f) => ({ path: f.path, content: String(f.content || '') }));
     return out;
   }
   const parts = (doc.parts || []).map((p) => Object.assign({}, p));
