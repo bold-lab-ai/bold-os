@@ -24,7 +24,7 @@ const crypto = require('crypto');
 module.exports = function(deps){
   const { db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite,
     allProjectsFromCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
-    SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl } = deps;
+    SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl, skillMd } = deps;
 
   const TOKENS_PER_PERSON = 5, RATE_PER_MINUTE = 60, LOG_DAYS = 90;
   const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -605,10 +605,14 @@ module.exports = function(deps){
     };
   }
 
+  let docsModule = null;
+  const documents = () => docsModule || (docsModule = require('./api-resources')({ lab, url, httpError, isFullWrite, skillMd,
+    tools: { listProjects, getProject, getPerson, calendar, myItems } }));
+
   // ---------- MCP (Streamable HTTP, stateless) ----------
   const MCP_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
   const INSTRUCTIONS = 'BOLD.OS is the BOLD lab’s operating system: its handbook (the BOLDiquette), how-to guides, skills, events, research projects, people and calendar. ' +
-    'These tools work as the person whose token this is, and see what they see on the site. Start with search for anything; use list_projects/get_project, find_people/get_person and calendar for structured answers, and my_items for the person’s own things. Every result has a url to the page on the site. ' +
+    'Its skills are prompts, and every document is a resource (bold://boldiquette, bold://guide/{slug}, bold://skill/{name}, bold://event/{slug}, bold://project/{id}, bold://person/{slack_id}, bold://calendar, bold://me). These tools work as the person whose token this is, and see what they see on the site. Start with search for anything; use list_projects/get_project, find_people/get_person and calendar for structured answers, and my_items for the person’s own things. Every result has a url to the page on the site. ' +
     'Tools that act (comments, proposals, projects, presentations, introductions, letters, supervision, profile, and for PIs and admins events, requests and skills) work as on the site, under its rules, and often send Slack messages to other people in the person’s name: confirm with the person before each one. Use read_page for part ids, and my_items for request ids.';
   async function mcp(who, msg){
     const reply = (result) => ({ jsonrpc: '2.0', id: msg.id, result });
@@ -620,7 +624,7 @@ module.exports = function(deps){
       case 'initialize':
         return reply({
           protocolVersion: MCP_VERSIONS.indexOf(p.protocolVersion) !== -1 ? p.protocolVersion : MCP_VERSIONS[0],
-          capabilities: { tools: { listChanged: false } },
+          capabilities: { tools: { listChanged: false }, prompts: { listChanged: false }, resources: { listChanged: false, subscribe: false } },
           serverInfo: { name: 'bold-os', title: 'BOLD.OS', version: '1.0.0' },
           instructions: INSTRUCTIONS,
         });
@@ -641,8 +645,18 @@ module.exports = function(deps){
           return reply({ content: [{ type: 'text', text: err.status ? err.message : 'That failed on BOLD.OS’s side — try again.' }], isError: true });
         }
       }
-      case 'resources/list': return reply({ resources: [] });
-      case 'prompts/list': return reply({ prompts: [] });
+      // The skills as prompts, every document as a resource (functions/api-resources.js).
+      case 'prompts/list': case 'prompts/get': case 'resources/list': case 'resources/templates/list': case 'resources/read': {
+        const R = documents();
+        try {
+          if (msg.method === 'prompts/get' || msg.method === 'resources/read') log(who, msg.method, p);
+          return reply(await ({ 'prompts/list': R.listPrompts, 'prompts/get': R.getPrompt, 'resources/list': R.listResources,
+            'resources/templates/list': R.listTemplates, 'resources/read': R.readResource })[msg.method](who, p));
+        } catch (err) {
+          if (!err.status) { logger.error('boldApi ' + msg.method + ' failed', { error: String(err.stack || err) }); return fail(-32603, 'That failed on BOLD.OS’s side — try again.'); }
+          return fail(err.status === 404 ? (msg.method === 'resources/read' ? -32002 : -32602) : -32602, err.message);
+        }
+      }
       default: return fail(-32601, 'Method not found: ' + msg.method);
     }
   }
@@ -652,7 +666,7 @@ module.exports = function(deps){
   const boldApi = onRequest({ cors: true, memory: '512MiB', timeoutSeconds: 300, secrets }, async (req, res) => {
     const path = req.path.replace(/\/+$/, '') || '/';
     if (path === '/' && req.method === 'GET') {
-      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', read: TOOLS.filter((t) => !t.write).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
+      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', mcp_also: 'prompts (the skills) and resources (every document, bold://…)', read: TOOLS.filter((t) => !t.write).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
     }
     if (path === '/mcp' && req.method !== 'POST') return res.status(405).set('Allow', 'POST').json({ error: 'POST JSON-RPC to /mcp.' });
     let who;

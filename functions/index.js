@@ -5188,7 +5188,7 @@ const agentApi = require('./api')({ db, admin, onRequest, onCall, HttpsError, lo
   // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
   tellStaff: async (text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: text }),
   tellPerson: (email, text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: [email], headline: text }),
-  slackText, linkedTitle, joinPageUrl,
+  slackText, linkedTitle, joinPageUrl, skillMd,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
     confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest }) });
