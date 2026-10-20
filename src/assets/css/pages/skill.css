@@ -64,3 +64,11 @@ section.block:first-of-type{margin-top:12px;}
 .sk-p-note{margin:6px 0 0;}
 .sk-p-changes{margin-top:10px;}
 .sk-notice{margin:0 0 10px;}
+/* A tool's page (pages/tool.js) shares the skill page's look. */
+.tl-check{display:flex; gap:8px; align-items:flex-start; font-family:var(--sans); font-size:14px;}
+.tl-check input{margin-top:3px;}
+.mx-reasons{margin:6px 0 0; padding-left:18px; font-family:var(--sans); font-size:14px;}
+.tl-inputs{list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
+.tl-inputs li{padding:8px 0; border-bottom:1px solid var(--line); font-family:var(--sans); font-size:14px;}
+.tl-type{color:var(--muted); margin-left:6px;}
+.tl-desc{display:block; color:var(--ink-soft); margin-top:2px;}

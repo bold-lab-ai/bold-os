@@ -933,6 +933,9 @@ function proposalSummary(q){
   const title = (side) => '“' + slackText((side && side.title) || '') + '”';
   if (q.kind === 'about') return 'a change to the title and description';
   if (q.kind === 'skill') return 'a change to the skill';
+  if (q.kind === 'tool') return 'a change to the tool';
+  if (q.kind === 'new') return 'adding it';
+  if (q.kind === 'delete') return 'removing it';
   if (q.kind === 'add') return 'a new part, ' + title(q.after);
   if (q.kind === 'remove') return 'removing the part ' + title(q.before);
   if (q.kind === 'move' && q.after && q.after.tab) return 'moving the tab ' + title(q.after);
@@ -1021,10 +1024,13 @@ function onProposalDecided(collection, pageUrl){
       const before = event.data.before.exists ? event.data.before.data() : null;
       const after = event.data.after.exists ? event.data.after.data() : null;
       const doc = await db.collection(collection).doc(event.params.slug).get();
-      // Deleted with its guide: nothing to tell.
-      if (!doc.exists) return;
+      // Deleted with its guide: nothing to tell (but a proposed new skill or tool has no
+      // document yet, and an accepted removal has just deleted it).
+      const kind = ((after || before) || {}).kind;
+      if (!doc.exists && kind !== 'new' && kind !== 'delete') return;
       await resolveProposalComments(collection, event.params.slug, event.params.id, before, after);
-      const out = proposalOutcome(before, after, doc.data().title || event.params.slug, pageUrl(event.params.slug));
+      const title = (doc.exists && doc.data().title) || ((before && before.after) || {}).title || event.params.slug;
+      const out = proposalOutcome(before, after, title, pageUrl(event.params.slug));
       if (!out) return;
       const token = SLACK_BOT_TOKEN.value();
       const proposer = before.by && before.by.email ? String(before.by.email).toLowerCase() : '';
@@ -1049,6 +1055,10 @@ exports.onHandbookProposed = onProposed('handbook', handbookUrl);
 const skillUrl = (name) => SITE_URL + 'skill.html?skill=' + encodeURIComponent(name);
 exports.onSkillProposed = onProposed('skills', skillUrl);
 exports.onSkillProposalDecided = onProposalDecided('skills', skillUrl);
+// The tools the lab adds for agents (tool.html; functions/api-tools.js).
+const toolUrl = (name) => SITE_URL + 'tool.html?tool=' + encodeURIComponent(name);
+exports.onToolProposed = onProposed('agentTools', toolUrl);
+exports.onToolProposalDecided = onProposalDecided('agentTools', toolUrl);
 exports.onGuideProposalDecided = onProposalDecided('guides', guideUrl);
 exports.onHandbookProposalDecided = onProposalDecided('handbook', handbookUrl);
 
@@ -1187,10 +1197,10 @@ function onProposalTagged(collection, pageUrl){
       const ids = proposalNewTags(prev, q);
       if (!ids.length) return;
       const doc = await db.collection(collection).doc(event.params.slug).get();
-      if (!doc.exists) return;
+      if (!doc.exists && q.kind !== 'new') return;
       const by = String((q.by && q.by.email) || '').toLowerCase();
       const text = '🏷️ ' + slackText((q.by && (q.by.name || q.by.email)) || 'Someone') + ' tagged you in a suggested change to ' +
-        linkedTitle(slackText(doc.data().title || event.params.slug), pageUrl(event.params.slug) + '#proposals') + ': ' + proposalSummary(q) + '.';
+        linkedTitle(slackText((doc.exists && doc.data().title) || (q.after || {}).title || event.params.slug), pageUrl(event.params.slug) + '#proposals') + ': ' + proposalSummary(q) + '.';
       const emails = await emailsForSlackIds(ids);
       for (const id of ids) if (emails[id] && emails[id] !== by) await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text);
     }
@@ -1247,6 +1257,7 @@ exports.onHandbookCommented = onCommented('handbook');
 exports.onGuideProposalTagged = onProposalTagged('guides', guideUrl);
 exports.onHandbookProposalTagged = onProposalTagged('handbook', handbookUrl);
 exports.onSkillProposalTagged = onProposalTagged('skills', skillUrl);
+exports.onToolProposalTagged = onProposalTagged('agentTools', toolUrl);
 
 // Whether a queue is ready to send: quiet long enough, or waited long enough. Pure.
 function commentQueueDue(q, now){
@@ -1335,7 +1346,7 @@ exports.flushCommentQueue = onSchedule(
 // change accepts or declines it here.
 // data: { collection: 'guides' | 'handbook', slug, id, accept: bool } → { status }.
 
-const REVIEWED = ['guides', 'handbook', 'skills'];
+const REVIEWED = ['guides', 'handbook', 'skills', 'agentTools'];
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q){
@@ -1354,6 +1365,16 @@ function appliedProposal(doc, q){
     return out;
   }
   // A skill (skills/{name}): its title, description, instructions and files, as proposed.
+  // A new skill or tool: the whole of it, as proposed (decideProposal makes the document).
+  if (q.kind === 'new') return Object.assign({}, q.after || {});
+  // A tool (agentTools/{name}): its title, description, inputs, whether it acts, and code.
+  if (q.kind === 'tool') {
+    const a = q.after || {}, out = {};
+    ['title', 'description', 'code'].forEach((k) => { if (typeof a[k] === 'string') out[k] = a[k]; });
+    if (typeof a.acting === 'boolean') out.acting = a.acting;
+    if (a.input && typeof a.input === 'object') out.input = a.input;
+    return out;
+  }
   if (q.kind === 'skill') {
     const a = q.after || {}, out = {};
     ['title', 'description', 'body'].forEach((k) => { if (typeof a[k] === 'string') out[k] = a[k]; });
@@ -1396,7 +1417,7 @@ exports.decideProposal = onCall(
   async (request) => {
     const email = signedInEmail(request).toLowerCase();
     const data = request.data || {};
-    if (REVIEWED.indexOf(data.collection) === -1 || !/^[a-z0-9-]{1,60}$/.test(String(data.slug || '')) || !/^[A-Za-z0-9]{1,40}$/.test(String(data.id || ''))) {
+    if (REVIEWED.indexOf(data.collection) === -1 || !/^[a-z0-9_-]{1,64}$/.test(String(data.slug || '')) || !/^[A-Za-z0-9]{1,40}$/.test(String(data.id || ''))) {
       throw new HttpsError('invalid-argument', 'No such proposal.');
     }
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
@@ -1405,8 +1426,11 @@ exports.decideProposal = onCall(
     const qRef = ref.collection('proposals').doc(data.id);
     return db.runTransaction(async (tx) => {
       const [snap, qSnap] = await Promise.all([tx.get(ref), tx.get(qRef)]);
-      if (!snap.exists || !qSnap.exists) throw new HttpsError('not-found', 'No such proposal.');
+      if (!qSnap.exists) throw new HttpsError('not-found', 'No such proposal.');
       const q = qSnap.data();
+      // A new skill or tool has no document yet; anything else needs one.
+      const creating = q.kind === 'new' && (data.collection === 'skills' || data.collection === 'agentTools');
+      if (creating ? snap.exists : !snap.exists) throw new HttpsError(creating ? 'already-exists' : 'not-found', creating ? 'It exists already: propose a change to it instead.' : 'No such proposal.');
       if (q.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been decided.');
       const by = q.by && q.by.email ? String(q.by.email).toLowerCase() : '';
       if (by === email) throw new HttpsError('permission-denied', 'Another PI or admin reviews your own change.');
@@ -1417,10 +1441,21 @@ exports.decideProposal = onCall(
       const now = Date.now();
       if (data.accept) {
         const who = (q.by && (q.by.name || q.by.email)) || '';
-        tx.update(ref, Object.assign(appliedProposal(snap.data(), q), {
-          changeNote: String(q.note || ('Proposed by ' + who)).slice(0, 300),
-          updatedAt: now, updatedBy: email, proposedBy: by,
-        }));
+        const stamp = { changeNote: String(q.note || ('Proposed by ' + who)).slice(0, 300), updatedAt: now, updatedBy: email, proposedBy: by };
+        if (q.kind === 'delete') {
+          // Its history credits whoever accepted it, then it goes.
+          tx.update(ref, stamp);
+          tx.delete(ref);
+        } else {
+          let fields = appliedProposal(snap.exists ? snap.data() : {}, q);
+          // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
+          if (data.collection === 'agentTools') {
+            try { fields = agentApi.checkTool(data.slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }
+            catch (err) { throw new HttpsError('failed-precondition', 'It can’t be accepted as it is: ' + err.message); }
+          }
+          if (creating) tx.set(ref, Object.assign(fields, { name: data.slug, createdAt: now, createdBy: by }, stamp));
+          else tx.update(ref, Object.assign(fields, stamp));
+        }
       }
       const status = data.accept ? 'accepted' : 'declined';
       tx.update(qRef, { status, decidedBy: email, decidedByName: name, decidedAt: now });
@@ -3961,7 +3996,7 @@ exports.skillPackage = onRequest(
 // Each version is also listed in brief in changelog/{version id} (changelog.html):
 // { at, by, note, kind, proposedBy, collection, docId, title }; clients only read it.
 
-const TRACKED = ['skills', 'guides', 'handbook'];
+const TRACKED = ['skills', 'guides', 'handbook', 'agentTools'];
 const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy'];
 
 function stableJson(v){
@@ -5201,12 +5236,18 @@ const agentApi = require('./api')({ db, admin, onRequest, onCall, HttpsError, lo
   // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
   tellStaff: async (text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: text }),
   tellPerson: (email, text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: [email], headline: text }),
-  slackText, linkedTitle, joinPageUrl, skillMd,
+  slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
     confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
+// Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
+exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
+// Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.
+const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
+  tellStaff: async (text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: text }) }).reviewMcpChange;
 
 exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,

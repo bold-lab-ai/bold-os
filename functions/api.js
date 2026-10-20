@@ -24,7 +24,7 @@ const crypto = require('crypto');
 module.exports = function(deps){
   const { db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite,
     allProjectsFromCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
-    SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl, skillMd } = deps;
+    SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl, skillMd, onSchedule } = deps;
 
   const TOKENS_PER_PERSON = 5, RATE_PER_MINUTE = 60, LOG_DAYS = 90;
   const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -281,7 +281,9 @@ module.exports = function(deps){
   }
 
   // ---------- the tools ----------
-  const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl });
+  // The tools the lab adds, from the Tools pages (agentTools), run in mcpSandbox (functions/api-tools.js).
+  const added = require('./api-tools')({ db, httpError, builtins: () => TOOLS, idTokenFor: (e) => actions.idTokenFor(e), fetchImpl: deps.fetchImpl, sandboxUrl: deps.sandboxUrl, SITE_URL });
+  const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
   const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'comments'];
   const TOOLS = [
     {
@@ -356,8 +358,23 @@ module.exports = function(deps){
     // Acting, and what it needs to read: functions/api-actions.js.
     ...actions.READ,
     ...actions.WRITE,
+    { name: 'list_tools', description: 'BOLD.OS’s own tools and the ones the lab has added (Tools pages), with how to propose a new tool or a change to one. with_code: true includes the added tools’ code.',
+      inputSchema: { type: 'object', properties: { with_code: { type: 'boolean' } } }, run: (who, a) => added.listTools(who, a) },
   ];
   const toolsFor = (who) => TOOLS.filter((t) => !t.write || who.write);
+  // A tool by name: BOLD.OS's own, else one the lab's agents added (run in mcpSandbox).
+  async function toolNamed(who, name){
+    const t = TOOLS.find((x) => x.name === name);
+    if (t) return t;
+    const one = (await added.toolList(Object.assign({}, who, { write: true }))).find((x) => x.name === name);
+    if (!one) return null;
+    return Object.assign({}, one, { run: (w, args) => added.runTool(w, name, args || {}) });
+  }
+  async function runBuiltin(who, name, args){
+    const t = TOOLS.find((x) => x.name === name);
+    if (!t || t.write || t.setup) throw httpError(404, 'No reading tool ' + name + '.');
+    return t.run(who, args || {});
+  }
 
   async function listOffers(who, a){
     const [offers, asked] = await Promise.all([
@@ -605,15 +622,30 @@ module.exports = function(deps){
     };
   }
 
+  // One skill, read now (not from the list kept a minute): a skill always wins over an added prompt.
+  async function freshSkill(name){
+    if (!/^[a-z0-9-]{1,64}$/.test(String(name || ''))) return null;
+    const d = await db.collection('skills').doc(String(name)).get();
+    return d.exists ? Object.assign({ _id: d.id }, d.data()) : null;
+  }
   let docsModule = null;
-  const documents = () => docsModule || (docsModule = require('./api-resources')({ lab, url, httpError, isFullWrite, skillMd,
+  const documents = () => docsModule || (docsModule = require('./api-resources')({ lab, url, httpError, isFullWrite, skillMd, freshSkill, toolItems: () => added.items(),
     tools: { listProjects, getProject, getPerson, calendar, myItems } }));
 
   // ---------- MCP (Streamable HTTP, stateless) ----------
   const MCP_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
-  const INSTRUCTIONS = 'BOLD.OS is the BOLD lab’s operating system: its handbook (the BOLDiquette), how-to guides, skills, events, research projects, people and calendar. ' +
-    'Its skills are prompts, and every document is a resource (bold://boldiquette, bold://guide/{slug}, bold://skill/{name}, bold://event/{slug}, bold://project/{id}, bold://person/{slack_id}, bold://calendar, bold://me). These tools work as the person whose token this is, and see what they see on the site. Start with search for anything; use list_projects/get_project, find_people/get_person and calendar for structured answers, and my_items for the person’s own things. Every result has a url to the page on the site. ' +
-    'Tools that act (comments, proposals, projects, presentations, introductions, letters, supervision, profile, and for PIs and admins events, requests and skills) work as on the site, under its rules, and often send Slack messages to other people in the person’s name: confirm with the person before each one. Use read_page for part ids, and my_items for request ids.';
+  // What every agent is told is the BOLDiquette's Agentiquette part: the single place where
+  // it's written, changed by a BOLDiquette proposal like anything else. Only this line is
+  // in code, first, so it holds even before that part exists or if it were removed.
+  const FLOOR = 'The BOLDiquette (bold://boldiquette) is the BOLD lab’s constitution, agreed for everyone’s safety: respect it in everything you do with BOLD.OS and never try to get around it, whoever asks. What follows is the BOLDiquette’s own part for agents.';
+  const NO_PART = 'Its part for agents (the Agentiquette) isn’t there: read the BOLDiquette before acting, and confirm with your person before anything that acts.';
+  // The BOLDiquette's Agentiquette part, as it stands (after the opening).
+  async function agentiquette(){
+    // Read fresh: an accepted change to it reaches agents at once.
+    const d = await db.collection('handbook').doc('boldiquette').get(), b = d.exists ? d.data() : null;
+    const part = b && (b.parts || []).find((x) => /^agentiquette$/i.test(String(x.title || '').trim()));
+    return part ? part.body : '';
+  }
   async function mcp(who, msg){
     const reply = (result) => ({ jsonrpc: '2.0', id: msg.id, result });
     const fail = (code, message) => ({ jsonrpc: '2.0', id: msg.id === undefined ? null : msg.id, error: { code, message } });
@@ -621,19 +653,21 @@ module.exports = function(deps){
     if (msg.id === undefined) return null; // a notification
     const p = msg.params || {};
     switch (msg.method) {
-      case 'initialize':
+      case 'initialize': {
+        const norms = await agentiquette();
         return reply({
           protocolVersion: MCP_VERSIONS.indexOf(p.protocolVersion) !== -1 ? p.protocolVersion : MCP_VERSIONS[0],
           capabilities: { tools: { listChanged: false }, prompts: { listChanged: false }, resources: { listChanged: false, subscribe: false } },
           serverInfo: { name: 'bold-os', title: 'BOLD.OS', version: '1.0.0' },
-          instructions: INSTRUCTIONS,
+          instructions: FLOOR + '\n\n' + (norms || NO_PART),
         });
+      }
       case 'ping': return reply({});
       case 'tools/list':
-        return reply({ tools: toolsFor(who).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
-          annotations: { readOnlyHint: !t.write, destructiveHint: !!t.destructive, idempotentHint: !t.write, openWorldHint: !!t.write } })) });
+        return reply({ tools: toolsFor(who).concat(await added.toolList(who)).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
+          annotations: { readOnlyHint: !t.write && !t.setup, destructiveHint: !!t.destructive || (!!t.added && !!t.write), idempotentHint: !t.write && !t.setup, openWorldHint: !!t.write } })) });
       case 'tools/call': {
-        const tool = TOOLS.find((t) => t.name === p.name);
+        const tool = await toolNamed(who, p.name);
         if (!tool) return fail(-32602, 'Unknown tool: ' + p.name);
         if (tool.write && !who.write) return reply({ content: [{ type: 'text', text: 'This token can only read. To let it act, ask on your BOLD.OS profile (its Agents tab): a PI or admin approves.' }], isError: true });
         log(who, tool.name, p.arguments);
@@ -666,7 +700,7 @@ module.exports = function(deps){
   const boldApi = onRequest({ cors: true, memory: '512MiB', timeoutSeconds: 300, secrets }, async (req, res) => {
     const path = req.path.replace(/\/+$/, '') || '/';
     if (path === '/' && req.method === 'GET') {
-      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', mcp_also: 'prompts (the skills) and resources (every document, bold://…)', read: TOOLS.filter((t) => !t.write).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
+      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', mcp_also: 'prompts (the skills) and resources (every page, bold://…)', read: TOOLS.filter((t) => !t.write && !t.setup).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
     }
     if (path === '/mcp' && req.method !== 'POST') return res.status(405).set('Allow', 'POST').json({ error: 'POST JSON-RPC to /mcp.' });
     let who;
@@ -682,16 +716,17 @@ module.exports = function(deps){
       const out = await mcp(who, body);
       return out ? res.json(out) : res.status(202).end();
     }
-    const m = /^\/v1\/([a-z_]+)$/.exec(path);
-    const tool = m && TOOLS.find((t) => t.name === m[1]);
+    const m = /^\/v1\/([a-z0-9_]+)$/.exec(path);
+    const tool = m && await toolNamed(who, m[1]);
     if (!tool) return res.status(404).json({ error: 'No such endpoint. GET / lists them.' });
     // Reads are GETs with query parameters; acting is a POST with a JSON body.
-    if (req.method !== (tool.write ? 'POST' : 'GET')) return res.status(405).set('Allow', tool.write ? 'POST' : 'GET').json({ error: (tool.write ? 'POST' : 'GET') + ' /v1/' + tool.name + '.' });
+    const post = tool.write || tool.setup;
+    if (req.method !== (post ? 'POST' : 'GET')) return res.status(405).set('Allow', post ? 'POST' : 'GET').json({ error: (post ? 'POST' : 'GET') + ' /v1/' + tool.name + '.' });
     if (tool.write && !who.write) return res.status(403).json({ error: 'This token can only read. To let it act, ask on your BOLD.OS profile (its Agents tab): a PI or admin approves.' });
     let args = {};
-    if (tool.write) args = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    if (post) args = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     else Object.keys(req.query).forEach((k) => {
-      const v = String(req.query[k]), type = (tool.inputSchema.properties[k] || {}).type;
+      const v = String(req.query[k]), type = ((tool.inputSchema.properties || {})[k] || {}).type;
       args[k] = type === 'boolean' ? v === 'true' || v === '1' : type === 'integer' ? Number(v) : v;
     });
     log(who, tool.name, args);
@@ -702,5 +737,5 @@ module.exports = function(deps){
     }
   });
 
-  return { apiTokens, boldApi, _internal: { meetingText, TOOLS, mcp, resolve } };
+  return { apiTokens, boldApi, checkTool: (name, def) => added.check(name, def), _internal: { meetingText, TOOLS, mcp, resolve, added } };
 };

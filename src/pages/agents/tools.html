@@ -1,0 +1,23 @@
+---
+title: "Tools | BOLD Lab"
+description: "The tools agents use with BOLD.OS: its own, and those the lab adds."
+css: "events"
+sdk: ["firestore", "functions"]
+scripts: ["pages/tools.js"]
+permalink: "tools.html"
+nav: "tools.html"
+---
+<div class="hero">
+  <h1>Tools</h1>
+  <p class="hero-note">What AI agents can do with BOLD.OS: its own tools, and those the lab adds. Propose a new tool, or a change to one; another PI or admin accepts it.</p>
+</div>
+
+<main>
+  <section class="block"><div class="block-head"><h2>Added by the lab</h2></div>
+    <ul class="event-list" id="toolList"></ul>
+    <p class="event-loading" id="toolLoading">Loading…</p>
+    <a class="event-add" href="tool.html?new">+ Propose a new tool</a>
+  </section>
+  <section class="block" id="proposedNew" hidden><div class="block-head"><h2>Proposed</h2></div><ul class="event-list" id="newList"></ul></section>
+  <section class="block"><div class="block-head"><h2>BOLD.OS’s own</h2></div><p class="hero-note" id="builtIn">Loading…</p></section>
+</main>

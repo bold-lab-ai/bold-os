@@ -32,7 +32,10 @@ export default {
       { label: 'Internal review board', href: 'audit-board.html' },
     ] },
     { label: 'Calendar', href: 'calendar.html', links: [] },
-    { label: 'Agents', href: 'agents.html', links: [], separatorAfter: true },
+    { label: 'Agents', href: 'agents.html', links: [
+      { label: 'Activity', href: 'agents.html' },
+      { label: 'Tools', href: 'tools.html' },
+    ], separatorAfter: true },
     { label: 'People', href: 'people.html', links: [
       { label: 'Members', href: 'people.html' },
       { label: 'Network', href: 'network.html' },

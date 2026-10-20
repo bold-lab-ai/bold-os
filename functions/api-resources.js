@@ -7,7 +7,7 @@
 // open any one by its id without listing. The server is stateless, so it doesn't
 // notify of changes (listChanged and subscribe are false): an agent lists again.
 module.exports = function(ctx){
-  const { lab, url, httpError, isFullWrite, skillMd, tools } = ctx;
+  const { lab, url, httpError, isFullWrite, skillMd, tools, freshSkill, toolItems } = ctx;
   const PAGE = 200;
 
   // ---------- prompts: the skills ----------
@@ -18,7 +18,8 @@ module.exports = function(ctx){
     })) };
   }
   async function getPrompt(who, p){
-    const s = (await lab.skills()).find((x) => x._id === p.name);
+    // Read fresh if it's newer than the list kept for a minute.
+    const s = (await lab.skills()).find((x) => x._id === p.name) || (freshSkill && await freshSkill(p.name));
     if (!s) throw httpError(404, 'No skill called ' + p.name + '.');
     const files = (s.files || []).filter((f) => f && f.path);
     const request = String((p.arguments || {}).request || '').trim();
@@ -79,6 +80,9 @@ module.exports = function(ctx){
         if (!f) throw httpError(404, 'No file ' + rest.join('/') + ' in ' + name + '.');
         return String(f.content || '');
       } },
+    { template: 'bold://tool/{name}', name: 'tool', title: 'A tool the lab added', description: 'One of the tools on the Tools pages: its description, inputs and code.', json: true,
+      list: async () => { const t = toolItems ? await toolItems() : {}; return Object.keys(t).map((n) => ({ uri: 'bold://tool/' + n, name: 'tool-' + n, title: t[n].title || n, description: t[n].description || '', mimeType: 'application/json' })); },
+      read: async (id) => { const t = toolItems ? (await toolItems())[id] : null; if (!t) throw httpError(404, 'No tool ' + id + '.'); return { name: id, title: t.title || id, description: t.description, acting: !!t.acting, input: t.input || {}, code: t.code, url: url('tool.html?tool=' + encodeURIComponent(id)) }; } },
     { template: 'bold://event/{slug}', name: 'event', title: 'An event', description: 'One of the lab’s events, with its programme.',
       list: async (who) => { const full = await isFullWrite(who.email); return (await lab.events()).filter((e) => e.hidden === false || full).map((e) => ({ uri: 'bold://event/' + e._id, name: 'event-' + e._id, title: e.title, description: [e.startDate, e.place].filter(Boolean).join(' · '), mimeType: 'text/markdown' })); },
       read: async (id, who) => {

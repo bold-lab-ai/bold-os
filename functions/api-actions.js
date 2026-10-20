@@ -45,7 +45,7 @@ function toFields(o){
 }
 
 module.exports = function(ctx){
-  const { db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl } = ctx;
+  const { db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl, checkTool } = ctx;
   const doFetch = fetchImpl || fetch;
 
   // ---------- writing as the person, under the rules ----------
@@ -170,7 +170,7 @@ module.exports = function(ctx){
   const SKILL_CONTENT = ['title', 'description', 'body', 'files'];
   async function skillProposals(who, a, name){
     const snap = await db.collection('skills').doc(name).get();
-    if (!snap.exists) throw httpError(404, 'No skill called ' + name + '.');
+    if (!snap.exists) return newSkill(who, a, name);
     const cur = {}, col = 'skills/' + name + '/proposals';
     SKILL_CONTENT.forEach((k) => { const v = snap.data()[k]; cur[k] = v !== undefined ? v : (k === 'files' ? [] : ''); });
     if (a.action === 'propose') {
@@ -198,9 +198,59 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
+  // A new skill (no skill by that name yet): its title, description, instructions and files.
+  async function newSkill(who, a, name){
+    const col = 'skills/' + name + '/proposals';
+    if (a.action !== 'propose') return decideOrWithdraw(who, a, 'skills', name, col);
+    if (/anthropic|claude/.test(name)) throw httpError(400, 'Claude doesn’t accept “anthropic” or “claude” in a skill’s name.');
+    const note = need(a.note, 'a note: what the skill is for and why it’s needed');
+    const after = { title: need(a.title, 'its title'), description: need(a.description, 'its description (what it does and when to use it)'), body: need(a.body, 'its instructions (SKILL.md)'),
+      files: (a.files || a.set_files || []).map((f) => ({ path: need(f.path, 'each file’s path'), content: String(f.content || '') })) };
+    if (after.description.length > 1024) throw httpError(400, 'A skill’s description is at most 1024 characters.');
+    const id = await asUser(who, 'create', col, { kind: 'new', before: null, after, note, by: { email: who.email, name: nameOfMe(who) }, at: Date.now(), status: 'open' });
+    return { id, url: url('skill.html?skill=' + encodeURIComponent(name)), note: 'A new skill waits for a PI or admin (not you) to accept it; once accepted, every agent gets it as a prompt.' };
+  }
+
+  // A tool on the Tools pages (agentTools/{name}): a new one, a change, or removing it.
+  async function toolProposals(who, a, name){
+    const col = 'agentTools/' + name + '/proposals';
+    if (a.action !== 'propose') return decideOrWithdraw(who, a, 'agentTools', name, col);
+    const note = need(a.note, 'a note: what it changes and why, for whoever reviews it');
+    const snap = await db.collection('agentTools').doc(name).get(), cur = snap.exists ? snap.data() : null;
+    const by = { email: who.email, name: nameOfMe(who) }, at = Date.now();
+    if (a.remove === true) {
+      if (!cur) throw httpError(404, 'There’s no tool called ' + name + '.');
+      return { id: await asUser(who, 'create', col, { kind: 'delete', before: null, after: null, note, by, at, status: 'open' }), url: url('tool.html?tool=' + encodeURIComponent(name) + '#proposals') };
+    }
+    const proposed = {};
+    ['title', 'description', 'code'].forEach((k) => { if (a[k] !== undefined) proposed[k] = String(a[k]); });
+    if (a.acting !== undefined) proposed.acting = a.acting === true;
+    if (a.input !== undefined) proposed.input = a.input;
+    // Checked as it would be accepted: name, inputs, code that compiles.
+    const checked = checkTool(name, Object.assign({}, cur || {}, proposed));
+    const after = {};
+    Object.keys(checked).forEach((k) => { if (!cur || JSON.stringify(cur[k]) !== JSON.stringify(checked[k])) after[k] = checked[k]; });
+    if (cur && !Object.keys(after).length) throw httpError(400, 'That changes nothing.');
+    const id = await asUser(who, 'create', col, { kind: cur ? 'tool' : 'new', before: null, after: cur ? after : checked, note, by, at, status: 'open' });
+    return { id, url: url('tool.html?tool=' + encodeURIComponent(name) + '#proposals'),
+      note: 'It waits on the tool’s page until a PI or admin (not you) accepts it; Claude reviews it meanwhile. Once accepted, every agent gets it.' };
+  }
+  async function decideOrWithdraw(who, a, collection, name, col){
+    const pid = need(a.proposal_id, 'the proposal_id');
+    if (a.action === 'withdraw') { await asUser(who, 'delete', col + '/' + pid); return { ok: true }; }
+    if (a.action === 'accept' || a.action === 'decline') {
+      const q = await db.collection(collection).doc(name).collection('proposals').doc(pid).get();
+      if (!q.exists) throw httpError(404, 'No such proposal.');
+      return act(who, 'decideProposal', { collection, slug: name, id: pid, accept: a.action === 'accept', editedAt: q.data().editedAt || 0 });
+    }
+    throw httpError(400, 'Unknown action.');
+  }
+
   async function proposals(who, a){
     const sk = /^skill:([a-z0-9-]{1,64})$/.exec(String(a.page || ''));
     if (sk) return skillProposals(who, a, sk[1]);
+    const tl = /^tool:([a-z][a-z0-9_]{2,40})$/.exec(String(a.page || ''));
+    if (tl) return toolProposals(who, a, tl[1]);
     const pg = await pageOf(a.page), col = pg.col + '/' + pg.slug + '/proposals';
     if (a.action === 'propose') {
       const note = need(a.note, 'a note: what you changed and why, for whoever reviews it');
@@ -518,12 +568,18 @@ module.exports = function(ctx){
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
         quote: str('add: words from the part, exactly as written.'), text: str('The comment (Markdown, @Name to tag).'), comment_id: str('reply, edit, resolve, delete.'), proposal_id: str('on_proposal.') }, ['action', 'page']) },
     { name: 'proposals', run: proposals,
-      description: 'Propose a change to the BOLDiquette, a guide or a skill (every change is a proposal; a PI or admin other than you accepts it): propose (with a note on why), withdraw your own, or, for PIs and admins, accept or decline someone else’s. For the BOLDiquette or a guide: kind add, edit or remove a part (read_page). For a skill (page "skill:<name>", get_skill): its new title, description or body (SKILL.md’s instructions), and its files (set_files, remove_files, or all of them in files).',
+      description: 'Propose a change to the BOLDiquette, a guide, a skill or a tool: this is how BOLD.OS, and the MCP with it, improves itself (every change is a proposal; a PI or admin other than you accepts it). Actions: propose (with a note on why), withdraw your own, or, for PIs and admins, accept or decline someone else’s. ' +
+        'For the BOLDiquette or a guide: kind add, edit or remove a part (read_page). For a skill (page "skill:<name>", get_skill): its new title, description or body (SKILL.md’s instructions), and its files (set_files, remove_files, or all of them in files); a new name proposes a new skill. ' +
+        'For a tool (page "tool:<name>", list_tools): its title, description, acting, input and code; a new name proposes a new tool; remove: true proposes removing it.',
       inputSchema: S({ action: ACTIONS(['propose', 'withdraw', 'accept', 'decline']), page: str('"boldiquette", a guide’s slug, or "skill:<name>".'), kind: ACTIONS(['add', 'edit', 'remove']),
         part_id: str('edit, remove: the part.'), title: str('The part’s title, or the skill’s.'), body: str('The part’s text (Markdown), or the skill’s instructions.'), section: str('Its section (tab).'),
         description: str('A skill’s description.'), files: { type: 'array', description: 'A skill: all its files (besides SKILL.md).', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
         set_files: { type: 'array', description: 'A skill: files to add or replace.', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
         remove_files: { type: 'array', items: { type: 'string' }, description: 'A skill: paths to remove.' },
+        acting: { type: 'boolean', description: 'A tool: whether it writes or calls the site’s functions.' },
+        input: { type: 'object', description: 'A tool: its inputs, { name: { type, description, required } }.' },
+        code: str('A tool: the body of an async function (input, bold) returning JSON.'),
+        remove: { type: 'boolean', description: 'A tool: propose removing it.' },
         note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
       description: 'Projects, as on the Projects page and a project’s page: register a new one (with its Slack channel, created if new), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
@@ -566,6 +622,6 @@ module.exports = function(ctx){
       inputSchema: S({ action: ACTIONS(['add', 'delete']), name: str('The skill’s name.'), title: str(''), description: str(''), body: str('SKILL.md body'), change_note: str('What changed') }, ['action', 'name']) },
   ];
   WRITE.forEach((t) => { t.write = true; if (t.name === 'comments' || t.name === 'events' || t.name === 'skills' || t.name === 'projects' || t.name === 'presentations') t.destructive = true; });
-  return { READ, WRITE, asUser, toFields };
+  return { READ, WRITE, asUser, toFields, idTokenFor };
 };
 module.exports.toFields = toFields;

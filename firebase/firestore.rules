@@ -275,6 +275,11 @@ service cloud.firestore {
     match /{path=**}/presentations/{id} {
       allow read: if isLabMember();
     }
+    // Every proposal on one page (tools.html lists the proposed new tools; collectionGroup):
+    // each is already the lab's to read where it is.
+    match /{path=**}/proposals/{id} {
+      allow read: if isLabMember();
+    }
     // Every comment thread on one page (comments.html, collectionGroup): the guides'
     // and the BOLDiquette's comments and the board's cards, both already the lab's to read.
     match /{path=**}/comments/{id} {
@@ -396,17 +401,50 @@ service cloud.firestore {
       }
       match /proposals/{id} {
         allow read: if isLabMember();
+        // kind 'new': a new skill (this one doesn't exist yet), made when accepted.
         allow create: if isLabMember() && request.resource.data.by.email == email()
-          && request.resource.data.status == 'open' && request.resource.data.kind == 'skill'
+          && request.resource.data.status == 'open' && request.resource.data.kind in ['skill', 'new']
           && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status'])
           && request.resource.data.after is map && request.resource.data.after.keys().hasOnly(['title', 'description', 'body', 'files']);
         // Edited by whoever proposed it, while it's open; who, when and its status stay.
         allow update: if isLabMember() && resource.data.by.email == email() && resource.data.status == 'open'
           && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
-          && request.resource.data.editedAt is number && request.resource.data.kind == 'skill'
+          && request.resource.data.editedAt is number && request.resource.data.kind == resource.data.kind
           && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status', 'editedAt'])
           && request.resource.data.after is map && request.resource.data.after.keys().hasOnly(['title', 'description', 'body', 'files']);
         // Withdrawn by whoever proposed it, while it's open.
+        allow delete: if isLabMember() && resource.data.by.email == email() && resource.data.status == 'open';
+      }
+    }
+
+    // The tools the lab adds for agents (agentTools/{name}; functions/api-tools.js, the
+    // Tools pages). Read by the lab; written only when a proposal is accepted
+    // (decideProposal), or by a PI or admin restoring an earlier version. A proposal
+    // (proposals/{id}, kind 'new' | 'tool' | 'delete': { after: { title, description,
+    // acting, input, code } }) is made by anyone, edited or withdrawn by them while
+    // open; `review` is the reviewer's (functions/reviewer.js), which they can't touch.
+    match /agentTools/{name} {
+      allow read: if isLabMember();
+      allow update: if hasFullWrite() && request.resource.data.name == name && request.resource.data.updatedBy == email();
+      allow create, delete: if false;
+      match /versions/{version} {
+        allow read: if isLabMember();
+        allow write: if false;
+      }
+      match /proposals/{id} {
+        allow read: if isLabMember();
+        allow create: if isLabMember() && request.resource.data.by.email == email()
+          && request.resource.data.status == 'open' && request.resource.data.kind in ['new', 'tool', 'delete']
+          && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status'])
+          && (request.resource.data.kind == 'delete' || (request.resource.data.after is map
+            && request.resource.data.after.keys().hasOnly(['title', 'description', 'acting', 'input', 'code'])));
+        allow update: if isLabMember() && resource.data.by.email == email() && resource.data.status == 'open'
+          && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
+          && request.resource.data.editedAt is number && request.resource.data.kind == resource.data.kind
+          && request.resource.data.get('review', null) == resource.data.get('review', null)
+          && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status', 'editedAt', 'review'])
+          && (request.resource.data.kind == 'delete' || (request.resource.data.after is map
+            && request.resource.data.after.keys().hasOnly(['title', 'description', 'acting', 'input', 'code'])));
         allow delete: if isLabMember() && resource.data.by.email == email() && resource.data.status == 'open';
       }
     }
