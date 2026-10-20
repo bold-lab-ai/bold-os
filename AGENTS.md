@@ -54,7 +54,7 @@ There is no Auth emulator (Slack sign-in can't run in it). Test rules by calling
 - **Tagging people:** any textarea offers `@` tags, shown as @Name everywhere and DMed to whoever is tagged by `onTagged`, for any collection. Give a box `.no-tags` when its text leaves BOLD.OS (an abstract, a SKILL.md); add a new collection to `tagPlace` (its link) or `TAG_SILENT` in `functions/index.js`.
 - **Comments:** a new kind of comment thread belongs on `comments.html` (`pages/comments.js`), and every Slack message about a comment links to the comment itself, not just its page (`#c=` on a guide, `&msg=` on the board).
 - **Search:** a new kind of content gets a section in `BoldSearch.SCOPES` (`search-box.js`) and a loader in `LOAD` (`pages/search.js`), and the same in the agents' `search` tool (`functions/api.js`).
-- **Agents:** `functions/api.js` lets people's AI agents read BOLD.OS as them (MCP and JSON, personal tokens from their profile). Anything it returns must match what that person sees on the site: keep new tools read-only and behind the same checks as the pages, and never return email addresses.
+- **Agents:** `functions/api.js` lets people's AI agents read BOLD.OS as them, and act as them with tokens made to (MCP and JSON, personal tokens from their profile; activity on `agents.html`). Anything it returns must match what that person sees on the site, and never include email addresses. A new acting tool goes through the page's own callable (`act`), never its own writes, and is marked `write`.
 - **Copy boxes:** any text offered for copying uses `BOLD.copyBoxHtml(text)`: a code box with the clipboard icon inside it. Never a text "Copy" button.
 - **Page copy is terse:** one or two sentences of description, no commentary about the process or the code.
 

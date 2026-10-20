@@ -1,6 +1,7 @@
 // The profile's Agents row (Linked accounts): personal tokens that let an AI agent
 // read BOLD.OS as you, through MCP or the JSON API (boldApi and apiTokens in
-// functions/api.js). A new token is shown once, with how to add it to Claude Code.
+// functions/api.js); with Can also act, also act as you (join projects, ask for
+// introductions and letters). A new token is shown once, with how to add it to Claude Code.
 (function(){
   var box = document.getElementById('agentsBody');
   if (!box || !BOLD.getAuth()) return;
@@ -13,19 +14,20 @@
   function render(){
     if (tokens === null) { box.innerHTML = '<span class="proj-msg">Loading&hellip;</span>'; return; }
     var off = busy ? ' disabled' : '';
-    box.innerHTML = '<span class="gh-line">Let an AI agent read BOLD.OS as you, through MCP: search, projects, people, the calendar and your own requests. Read-only.</span>' +
+    box.innerHTML = '<span class="gh-line">Let an AI agent read BOLD.OS as you, through MCP: search, projects, people, the calendar and your own requests. <a href="agents.html">What your tokens did</a>.</span>' +
       (fresh ? '<div class="api-fresh"><p class="acct-note">Your token for <strong>' + esc(fresh.label) + '</strong>, shown only now:</p>' + BOLD.copyBoxHtml(fresh.token) +
         '<p class="acct-note">To add it to Claude Code:</p>' +
         BOLD.copyBoxHtml('claude mcp add --transport http bold-os ' + API + '/mcp --header "Authorization: Bearer ' + fresh.token + '"') +
         '<p class="acct-note">Other agents: MCP at <code>' + esc(API) + '/mcp</code>, or JSON at <code>' + esc(API) + '/v1/&lt;tool&gt;</code>, with the header <code>Authorization: Bearer &lt;token&gt;</code>.</p></div>' : '') +
       (tokens.length ? '<ul class="api-tokens">' + tokens.map(function(t){
         return '<li><span class="acct-text"><span>' + esc(t.label) + ' <code>' + esc(t.prefix) + '…</code></span>' +
-          '<span class="acct-handle">Made ' + when(t.createdAt) + ' · ' + (t.lastUsedAt ? 'last used ' + when(t.lastUsedAt) : 'not used yet') + '</span></span>' +
+          '<span class="acct-handle">' + (t.write ? 'Reads and acts' : 'Reads') + ' · made ' + when(t.createdAt) + ' · ' + (t.lastUsedAt ? 'last used ' + when(t.lastUsedAt) : 'not used yet') + '</span></span>' +
           '<button type="button" class="btn-text danger api-revoke" data-id="' + esc(t.id) + '"' + off + '>Revoke</button></li>';
       }).join('') + '</ul>' : '') +
       (error ? '<span class="gh-error">' + esc(error) + '</span>' : '') +
       '<span class="api-new"><input type="text" class="api-label" maxlength="60" placeholder="Name it, e.g. Claude Code on my laptop" aria-label="Token name"' + off + '>' +
-      '<button type="button" class="btn-box is-primary api-create"' + off + '>New token</button></span>';
+      '<button type="button" class="btn-box is-primary api-create"' + off + '>New token</button>' +
+      '<label class="api-write"><input type="checkbox" class="api-can-act"' + off + '> Can also act for me: join projects, ask for and answer introductions, ask for letters and to join supervision meetings. People get Slack messages from you.</label></span>';
   }
   function load(){
     call({ action: 'list' }).then(function(d){ tokens = d.tokens || []; render(); })
@@ -35,12 +37,12 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('api-create')) {
-      var label = box.querySelector('.api-label').value.trim();
+      var label = box.querySelector('.api-label').value.trim(), write = box.querySelector('.api-can-act').checked;
       if (!label) { error = 'Name it first, after the agent that will use it.'; render(); return; }
       busy = true; error = ''; render();
-      call({ action: 'create', label: label }).then(function(d){
+      call({ action: 'create', label: label, write: write }).then(function(d){
         fresh = { label: d.label, token: d.token };
-        tokens.unshift({ id: d.id, label: d.label, prefix: d.prefix, createdAt: d.createdAt, lastUsedAt: 0 });
+        tokens.unshift({ id: d.id, label: d.label, prefix: d.prefix, write: d.write, createdAt: d.createdAt, lastUsedAt: 0 });
       }).catch(function(err){
         console.error('[BOLD Agents] making a token failed', err);
         error = err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t make a token — try again.';

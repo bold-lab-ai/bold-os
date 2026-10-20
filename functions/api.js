@@ -1,7 +1,10 @@
 // ---------- BOLD.OS for agents: personal tokens, a read-only API and MCP ----------
 // Anyone in the BOLD Slack makes personal tokens on their profile (Linked accounts →
 // Agents; apiTokens below). A token acts as its owner and reads what they can read on
-// the site: everything lab-wide, plus their own letters and introductions. Read-only.
+// the site: everything lab-wide, plus their own letters and introductions. A token made
+// with "Can also act" (`write`) may also act: join and leave projects, ask for and answer
+// introductions, ask to join a supervision meeting, ask for a letter, each through the
+// page's own callable (act), so the same checks and Slack messages apply.
 //
 // boldApi (one HTTPS function) answers two ways, from the same tools (TOOLS):
 //   POST /mcp            MCP (Streamable HTTP, stateless, JSON responses): for agents
@@ -20,7 +23,7 @@ const crypto = require('crypto');
 
 module.exports = function(deps){
   const { db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite,
-    allProjectsFromCards, groupOf, SITE_URL } = deps;
+    allProjectsFromCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables } = deps;
 
   const TOKENS_PER_PERSON = 5, RATE_PER_MINUTE = 60, LOG_DAYS = 90;
   const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -28,13 +31,15 @@ module.exports = function(deps){
 
   // ---------- tokens (the profile's Agents row) ----------
   // data: { action: 'list' } → { tokens: [{ id, label, prefix, createdAt, lastUsedAt }] }
-  //       { action: 'create', label } → { token, id, … }: the token, once
+  //       { action: 'create', label, write } → { token, id, … }: the token, once;
+//                                     `write`: it may also act (WRITE tools), not just read
   //       { action: 'revoke', id }    its owner, or a PI or admin
+//       { action: 'activity', all } → { tokens, log }: yours (all: everyone's, PIs and admins)
   const apiTokens = onCall(async (request) => {
     const email = callerEmail(request);
     const d = request.data || {};
     const mine = async () => (await db.collection('apiTokens').where('email', '==', email).get()).docs;
-    const view = (doc) => { const x = doc.data(); return { id: doc.id, label: x.label || '', prefix: x.prefix, createdAt: x.createdAt || 0, lastUsedAt: x.lastUsedAt || 0 }; };
+    const view = (doc) => { const x = doc.data(); return { id: doc.id, label: x.label || '', prefix: x.prefix, write: !!x.write, createdAt: x.createdAt || 0, lastUsedAt: x.lastUsedAt || 0 }; };
     if (d.action === 'list') return { tokens: (await mine()).map(view).sort((a, b) => b.createdAt - a.createdAt) };
     if (d.action === 'create') {
       const label = String(d.label || '').trim().slice(0, 60);
@@ -43,8 +48,9 @@ module.exports = function(deps){
       const person = await personByEmail(email);
       const token = 'bold_' + crypto.randomBytes(32).toString('base64url');
       const now = Date.now(), id = sha(token);
-      await db.collection('apiTokens').doc(id).set({ email, name: (person && person.name) || '', label, prefix: token.slice(0, 12), createdAt: now, lastUsedAt: 0, minute: 0, count: 0 });
-      return { token, id, label, prefix: token.slice(0, 12), createdAt: now, lastUsedAt: 0 };
+      const write = d.write === true;
+      await db.collection('apiTokens').doc(id).set({ email, name: (person && person.name) || '', label, write, prefix: token.slice(0, 12), createdAt: now, lastUsedAt: 0, minute: 0, count: 0 });
+      return { token, id, label, write, prefix: token.slice(0, 12), createdAt: now, lastUsedAt: 0 };
     }
     if (d.action === 'revoke') {
       const id = String(d.id || '');
@@ -55,8 +61,27 @@ module.exports = function(deps){
       await ref.delete();
       return { ok: true };
     }
+    if (d.action === 'activity') {
+      // agents.html: your tokens and what they did; with `all`, everyone's (PIs and admins).
+      const all = d.all === true;
+      if (all && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see everyone’s.');
+      const [tokenDocs, logDocs] = await Promise.all([
+        all ? db.collection('apiTokens').get().then((x) => x.docs) : mine(),
+        (all ? db.collection('apiLog').orderBy('at', 'desc').limit(LOG_SHOWN) : db.collection('apiLog').where('email', '==', email)).get().then((x) => x.docs),
+      ]);
+      const name = await nameOf();
+      const labels = {};
+      tokenDocs.forEach((t) => { labels[t.data().prefix] = t.data().label; });
+      return {
+        all,
+        tokens: tokenDocs.map((t) => Object.assign(view(t), { owner: name(t.data().email) })).sort((a, b) => (b.lastUsedAt || b.createdAt) - (a.lastUsedAt || a.createdAt)),
+        log: logDocs.map((x) => x.data()).sort((a, b) => b.at - a.at).slice(0, LOG_SHOWN)
+          .map((x) => ({ at: x.at, who: name(x.email), token: labels[x.token] || x.token + '… (revoked)', tool: x.tool, args: x.args === '{}' ? '' : x.args })),
+      };
+    }
     throw new HttpsError('invalid-argument', 'Unknown action.');
   });
+  const LOG_SHOWN = 300;
 
   async function personByEmail(email){
     const snap = await db.collection('people').where('email', '==', email).limit(1).get();
@@ -85,7 +110,7 @@ module.exports = function(deps){
     if (!t) throw httpError(401, 'That token isn’t valid: it may have been revoked.');
     if (t.limited) throw httpError(429, 'At most ' + RATE_PER_MINUTE + ' requests a minute: wait a moment.');
     if (!(await personByEmail(t.email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
-    return { email: t.email, prefix: t.prefix };
+    return { email: t.email, prefix: t.prefix, name: t.name || '', write: !!t.write };
   }
   function httpError(status, message){ const e = new Error(message); e.status = status; return e; }
 
@@ -165,6 +190,37 @@ module.exports = function(deps){
   }
   function isHidden(ev, full){ return ev.hidden !== false && !full; }
 
+  // ---------- acting: through the site's own callables, as the token's owner ----------
+  // The same function the page calls (same checks, same Slack messages), with the
+  // caller's identity as a Slack sign-in would give it.
+  const CODE_STATUS = { 'invalid-argument': 400, 'failed-precondition': 409, 'already-exists': 409, 'not-found': 404, 'permission-denied': 403, 'resource-exhausted': 429, 'unauthenticated': 401 };
+  async function act(who, fn, data){
+    const auth = { uid: 'api:' + who.prefix, token: { email: who.email, name: who.name, firebase: { identities: { [SIGN_IN_PROVIDER]: ['api'] }, sign_in_provider: SIGN_IN_PROVIDER } } };
+    try { return (await callables()[fn].run({ auth, data, rawRequest: null })) || {}; }
+    catch (err) {
+      if (err && CODE_STATUS[err.code]) throw httpError(CODE_STATUS[err.code], err.message);
+      throw err;
+    }
+  }
+  // A name (or part of one) → one email from `pool` ([{ email, name }]), or a 409 listing the matches.
+  function resolve(pool, name, what){
+    const ws = words(name);
+    if (!ws.length) throw httpError(400, 'Say who: ' + what + '.');
+    const exact = pool.filter((x) => fold(x.name) === fold(name));
+    const some = exact.length ? exact : pool.filter((x) => matches(x.name, ws));
+    const emails = Array.from(new Set(some.map((x) => String(x.email).toLowerCase())));
+    if (!emails.length) throw httpError(404, 'Nobody called “' + name + '” among ' + what + '.');
+    if (emails.length > 1) throw httpError(409, 'More than one ' + what + ' matches “' + name + '”: ' + Array.from(new Set(some.map((x) => x.name))).slice(0, 10).join(', ') + '. Give the full name.');
+    return emails[0];
+  }
+  async function cardOf(id){
+    if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(id || ''))) throw httpError(400, 'Give a project id, from list_projects.');
+    const [cards, unassigned] = await Promise.all([lab.cards(), lab.unassigned()]);
+    const hit = cards.find((c) => c.id === id) || unassigned.map((u) => ({ boardId: null, id: u.id, data: u.data })).find((c) => c.id === id);
+    if (!hit) throw httpError(404, 'No project with that id.');
+    return hit;
+  }
+
   // ---------- the tools ----------
   const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'comments'];
   const TOOLS = [
@@ -231,7 +287,103 @@ module.exports = function(deps){
       inputSchema: { type: 'object', properties: {} },
       run: myItems,
     },
+    {
+      name: 'list_introduction_offers',
+      description: 'Offers of introductions (Service desk → Introductions): people in BOLD who can introduce you to someone at a company or institution. Each has an id for ask_for_introduction.',
+      inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Words in the organisation, area or who offers.' } } },
+      run: listOffers,
+    },
+    // Acting (tokens made with "Can also act"): each through the page's own function.
+    {
+      name: 'join_project', write: true,
+      description: 'Join a project, as its Join project button does: you are added to its meeting, Slack channel, slides and notes.',
+      inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'The project id, from list_projects.' } }, required: ['id'] },
+      run: async (who, a) => { const c = await cardOf(a.id); await act(who, 'projectWorkspace', { action: 'join', id: c.id, board: c.boardId }); return { joined: true, project: c.data.title }; },
+    },
+    {
+      name: 'leave_project', write: true,
+      description: 'Leave a project you joined (its registrant and authors stay on it).',
+      inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'The project id.' } }, required: ['id'] },
+      run: async (who, a) => { const c = await cardOf(a.id); await act(who, 'projectWorkspace', { action: 'leave', id: c.id, board: c.boardId }); return { left: true, project: c.data.title }; },
+    },
+    {
+      name: 'ask_for_introduction', write: true,
+      description: 'Ask for an introduction on an offer (from list_introduction_offers). Whoever offered it gets a Slack message with what you wrote.',
+      inputSchema: { type: 'object', properties: {
+        offer_id: { type: 'string' },
+        why: { type: 'string', description: 'What you would like, and why: who you would like to meet there, what about, and a line on you.' },
+      }, required: ['offer_id', 'why'] },
+      run: async (who, a) => act(who, 'introRequest', { action: 'create', offerId: a.offer_id, why: a.why }),
+    },
+    {
+      name: 'answer_introduction', write: true,
+      description: 'Answer a request for an introduction someone asked of you (ids in my_items): accept (“I’ll introduce you”), decline, or done once you have introduced them. They get a Slack message.',
+      inputSchema: { type: 'object', properties: {
+        id: { type: 'string' }, answer: { type: 'string', enum: ['accept', 'decline', 'done'] },
+        note: { type: 'string', description: 'An optional note for them (accept and decline).' },
+      }, required: ['id', 'answer'] },
+      run: async (who, a) => act(who, 'introRequest', { action: a.answer, id: a.id, reply: a.note || '' }),
+    },
+    {
+      name: 'withdraw_introduction_request', write: true, destructive: true,
+      description: 'Withdraw a request for an introduction you made (ids in my_items). It is deleted, and whoever offered is told.',
+      inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+      run: async (who, a) => act(who, 'introRequest', { action: 'withdraw', id: a.id }),
+    },
+    {
+      name: 'ask_to_join_supervision', write: true,
+      description: 'Ask a PhD or Master student to join their recurring supervision meeting. They approve or decline on their profile, and get a Slack message.',
+      inputSchema: { type: 'object', properties: {
+        student: { type: 'string', description: 'The student’s name.' }, note: { type: 'string', description: 'Why you would like to join (optional).' },
+      }, required: ['student'] },
+      run: async (who, a) => {
+        const pool = (await lab.studies()).map((s) => ({ email: s._id, name: s.name || '' }));
+        return act(who, 'studyRequest', { action: 'request', student: resolve(pool, a.student, 'the students with supervision meetings'), note: a.note || '' });
+      },
+    },
+    {
+      name: 'ask_for_letter', write: true,
+      description: 'Ask someone in BOLD for a recommendation letter (Service desk → Recommendation letters). They get a Slack message and see the request on BOLD.OS; only the two of you can read it.',
+      inputSchema: { type: 'object', properties: {
+        referee: { type: 'string', description: 'Their name.' },
+        purpose: { type: 'string', description: 'What the letter is for, e.g. "PhD applications, Fall 2027".' },
+        cv: { type: 'string', description: 'A link to your CV (https://…).' },
+        how_worked: { type: 'string', description: 'How you have worked together, and what you did yourself.' },
+        statement: { type: 'string', description: 'A link to your cover letter or statement (optional).' },
+        best: { type: 'string', description: 'What they could best speak to (optional).' },
+        extra: { type: 'string', description: 'Anything else (optional).' },
+        recipients: { type: 'array', description: 'Where the letter goes.', items: { type: 'object', properties: {
+          name: { type: 'string' }, url: { type: 'string', description: 'Where to submit it (optional).' }, deadline: { type: 'string', description: 'YYYY-MM-DD (optional).' },
+          sent_by: { type: 'string', enum: ['writer', 'requester'], description: 'Who submits it (default: the writer).' },
+        }, required: ['name'] } },
+      }, required: ['referee', 'purpose', 'cv', 'how_worked', 'recipients'] },
+      run: async (who, a) => {
+        const pool = (await lab.people()).map((p) => ({ email: p.email, name: p.name || '' }));
+        return act(who, 'letterRequest', {
+          action: 'create', writerEmail: resolve(pool, a.referee, 'people in BOLD'), purpose: a.purpose, cv: a.cv, howWorked: a.how_worked,
+          statement: a.statement || '', best: a.best || '', extra: a.extra || '',
+          recipients: (a.recipients || []).map((r) => ({ name: r.name, url: r.url || '', deadline: r.deadline || '', sentBy: r.sent_by === 'requester' ? 'requester' : 'writer' })),
+        });
+      },
+    },
   ];
+  const toolsFor = (who) => TOOLS.filter((t) => !t.write || who.write);
+
+  async function listOffers(who, a){
+    const [offers, asked] = await Promise.all([
+      db.collection('introOffers').get().then((s) => s.docs.map((d) => Object.assign({ id: d.id }, d.data()))),
+      db.collection('introRequests').where('requesterEmail', '==', who.email).get().then((s) => s.docs.map((d) => Object.assign({ id: d.id }, d.data()))),
+    ]);
+    const ws = words(a.query);
+    const rows = offers.filter((o) => !ws.length || matches([o.org, o.area, o.by && o.by.name].join(' '), ws))
+      .sort((x, y) => fold(x.org).localeCompare(fold(y.org)))
+      .map((o) => {
+        const mine = asked.find((q) => q.offerId === o.id && (q.status === 'asked' || q.status === 'accepted'));
+        return { id: o.id, organisation: o.org, area: o.area || '', offered_by: o.by && o.by.name || '', yours: String(o.by && o.by.email || '').toLowerCase() === who.email,
+          you_asked: mine ? { id: mine.id, status: mine.status } : null, url: url('introductions.html') };
+      });
+    return { total: rows.length, offers: rows };
+  }
 
   async function search(who, a){
     const ws = words(a.query);
@@ -446,11 +598,11 @@ module.exports = function(deps){
     ]);
     const letter = (x, asWriter) => ({
       with: asWriter ? x.requesterName || name(x.requesterEmail) : x.writerName || name(x.writerEmail),
-      purpose: x.purpose || '', open: x.open !== false,
+      id: x.id, purpose: x.purpose || '', open: x.open !== false,
       recipients: (x.recipients || []).map((r) => ({ name: r.name || '', deadline: r.deadline || '', submitted: !!r.submittedAt })),
       url: url('letters.html#l=' + x.id),
     });
-    const intro = (x, asOfferer) => ({ organisation: x.org, with: asOfferer ? x.requesterName : x.offererName, status: x.status, url: url('introductions.html#i=' + x.id) });
+    const intro = (x, asOfferer) => ({ id: x.id, organisation: x.org, with: asOfferer ? x.requesterName : x.offererName, status: x.status, url: url('introductions.html#i=' + x.id) });
     return {
       you: { name: me.name, profile: me.profile, group: me.group || '' },
       projects: me.projects, studies: me.studies,
@@ -462,7 +614,8 @@ module.exports = function(deps){
   // ---------- MCP (Streamable HTTP, stateless) ----------
   const MCP_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
   const INSTRUCTIONS = 'BOLD.OS is the BOLD lab’s operating system: its handbook (the BOLDiquette), how-to guides, skills, events, research projects, people and calendar. ' +
-    'These tools read it as the person whose token this is, and see what they see on the site. Start with search for anything; use list_projects/get_project, find_people/get_person and calendar for structured answers, and my_items for the person’s own things. Every result has a url to the page on the site.';
+    'These tools work as the person whose token this is, and see what they see on the site. Start with search for anything; use list_projects/get_project, find_people/get_person and calendar for structured answers, and my_items for the person’s own things. Every result has a url to the page on the site. ' +
+    'Tools that act (join a project, ask for an introduction or a letter) send Slack messages to other people in the person’s name: confirm with the person before using them.';
   async function mcp(who, msg){
     const reply = (result) => ({ jsonrpc: '2.0', id: msg.id, result });
     const fail = (code, message) => ({ jsonrpc: '2.0', id: msg.id === undefined ? null : msg.id, error: { code, message } });
@@ -479,10 +632,12 @@ module.exports = function(deps){
         });
       case 'ping': return reply({});
       case 'tools/list':
-        return reply({ tools: TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, annotations: { readOnlyHint: true, openWorldHint: false } })) });
+        return reply({ tools: toolsFor(who).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
+          annotations: { readOnlyHint: !t.write, destructiveHint: !!t.destructive, idempotentHint: !t.write, openWorldHint: !!t.write } })) });
       case 'tools/call': {
         const tool = TOOLS.find((t) => t.name === p.name);
         if (!tool) return fail(-32602, 'Unknown tool: ' + p.name);
+        if (tool.write && !who.write) return reply({ content: [{ type: 'text', text: 'This token can only read. To act, make a token with “Can also act” on your BOLD.OS profile.' }], isError: true });
         log(who, tool.name, p.arguments);
         try {
           const out = await tool.run(who, p.arguments || {});
@@ -499,10 +654,11 @@ module.exports = function(deps){
   }
 
   // ---------- the HTTPS function ----------
-  const boldApi = onRequest({ cors: true, memory: '512MiB', timeoutSeconds: 60 }, async (req, res) => {
+  // The secrets are those of the callables the write tools go through.
+  const boldApi = onRequest({ cors: true, memory: '512MiB', timeoutSeconds: 300, secrets }, async (req, res) => {
     const path = req.path.replace(/\/+$/, '') || '/';
     if (path === '/' && req.method === 'GET') {
-      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', tools: TOOLS.map((t) => '/v1/' + t.name), auth: 'Authorization: Bearer <token from your BOLD.OS profile, Linked accounts>' });
+      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', read: TOOLS.filter((t) => !t.write).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from your BOLD.OS profile, Linked accounts>' });
     }
     if (path === '/mcp' && req.method !== 'POST') return res.status(405).set('Allow', 'POST').json({ error: 'POST JSON-RPC to /mcp.' });
     let who;
@@ -520,9 +676,13 @@ module.exports = function(deps){
     }
     const m = /^\/v1\/([a-z_]+)$/.exec(path);
     const tool = m && TOOLS.find((t) => t.name === m[1]);
-    if (!tool || req.method !== 'GET') return res.status(404).json({ error: 'No such endpoint. GET / lists them.' });
-    const args = {};
-    Object.keys(req.query).forEach((k) => {
+    if (!tool) return res.status(404).json({ error: 'No such endpoint. GET / lists them.' });
+    // Reads are GETs with query parameters; acting is a POST with a JSON body.
+    if (req.method !== (tool.write ? 'POST' : 'GET')) return res.status(405).set('Allow', tool.write ? 'POST' : 'GET').json({ error: (tool.write ? 'POST' : 'GET') + ' /v1/' + tool.name + '.' });
+    if (tool.write && !who.write) return res.status(403).json({ error: 'This token can only read. To act, make a token with “Can also act” on your BOLD.OS profile.' });
+    let args = {};
+    if (tool.write) args = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
+    else Object.keys(req.query).forEach((k) => {
       const v = String(req.query[k]), type = (tool.inputSchema.properties[k] || {}).type;
       args[k] = type === 'boolean' ? v === 'true' || v === '1' : type === 'integer' ? Number(v) : v;
     });
@@ -534,5 +694,5 @@ module.exports = function(deps){
     }
   });
 
-  return { apiTokens, boldApi, _internal: { meetingText, TOOLS, mcp } };
+  return { apiTokens, boldApi, _internal: { meetingText, TOOLS, mcp, resolve } };
 };

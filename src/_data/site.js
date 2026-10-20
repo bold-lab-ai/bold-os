@@ -36,6 +36,7 @@ export default {
       { label: 'Members', href: 'people.html' },
       { label: 'Network', href: 'network.html' },
       { label: 'Requests', href: 'join-requests.html' },
+      { label: 'Agents', href: 'agents.html' },
     ] },
     { label: 'Projects', href: 'projects.html', links: [
       { label: 'All projects', href: 'projects.html' },

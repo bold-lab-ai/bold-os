@@ -77,7 +77,9 @@ section.block:first-of-type{margin-top:28px;}
 .api-fresh{margin:10px 0 4px;}
 .api-fresh .acct-note{display:block; margin:10px 0 6px;}
 .api-new{display:flex; flex-wrap:wrap; gap:10px; margin:12px 0 8px;}
-.api-new input{flex:1 1 220px; min-width:0;}
+.api-new input[type=text]{flex:1 1 220px; min-width:0;}
+.api-write{flex:1 0 100%; display:flex; gap:8px; align-items:flex-start; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+.api-write input{margin-top:3px;}
 .profile-panel{max-width:var(--article-max); margin-top:16px;}
 @media (max-width:820px){
   .hero{padding:44px var(--gutter) 8px;}

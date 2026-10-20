@@ -5183,7 +5183,9 @@ exports.rebuildInteractions = onCall(
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
-const agentApi = require('./api')({ db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, groupOf, SITE_URL });
+const agentApi = require('./api')({ db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, groupOf, SITE_URL,
+  SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP],
+  callables: () => ({ projectWorkspace: exports.projectWorkspace, introRequest: exports.introRequest, studyRequest: exports.studyRequest, letterRequest: exports.letterRequest }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
 
