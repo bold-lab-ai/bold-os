@@ -2057,13 +2057,20 @@ async function slackChannelId(token, name){
 }
 
 // The workspace's team id (for a link that opens a channel in Slack's web client)
-// and the bot's own name (for telling people whom to invite), from auth.test.
+// and the bot's own name (for telling people whom to invite), from auth.test and its profile.
 let slackAuthCache = null;
 async function slackAuthInfo(token){
   if (!slackAuthCache){
     const auth = await slackFetch(token, 'auth.test', {});
     if (!auth.ok) return null;
-    slackAuthCache = { teamId: auth.team_id, bot: auth.user, url: auth.url || '' };
+    // auth.test gives the bot's original username (mlconferencecycle); people know it by
+    // the name it shows in Slack now (BOLD OS), its profile's.
+    let me = null;
+    if (auth.user_id) try {
+      me = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: auth.user_id }), { headers: { 'Authorization': 'Bearer ' + token } })).json();
+    } catch (e){ me = null; }
+    const p = (me && me.ok && me.user && me.user.profile) || {};
+    slackAuthCache = { teamId: auth.team_id, bot: p.display_name || p.real_name || auth.user, url: auth.url || '' };
   }
   return slackAuthCache;
 }
