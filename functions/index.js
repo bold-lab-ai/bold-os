@@ -5181,6 +5181,12 @@ exports.rebuildInteractions = onCall(
   }
 );
 
+// BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
+// endpoint (boldApi), in functions/api.js.
+const agentApi = require('./api')({ db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, groupOf, SITE_URL });
+exports.apiTokens = agentApi.apiTokens;
+exports.boldApi = agentApi.boldApi;
+
 exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
