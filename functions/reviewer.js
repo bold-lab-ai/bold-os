@@ -99,7 +99,7 @@ module.exports = function({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SL
     // A decline is told as any decision is (onToolProposalDecided); a concern, to the PIs and admins.
     if (r.verdict === 'concern' && !blocked) {
       const page = linkedTitle(slackText(name), SITE_URL + 'tool.html?tool=' + encodeURIComponent(name) + '#proposals');
-      await Promise.resolve(tellStaff('⚠️ The reviewer has a concern about ' + slackText((q.by && q.by.name) || 'someone') + '’s proposed tool ' + page + ': ' + slackText(r.summary)))
+      await Promise.resolve(tellStaff('⚠️ The reviewer has a concern about ' + slackText((q.by && q.by.name) || 'someone') + '’s proposed tool ' + page + ': ' + slackText(r.summary), q.by && q.by.email))
         .catch((err) => logger.warn('Telling failed', { error: String(err.message) }));
     }
   });

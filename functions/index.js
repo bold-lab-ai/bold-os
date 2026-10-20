@@ -5229,12 +5229,19 @@ exports.rebuildInteractions = onCall(
   }
 );
 
+// A DM to each PI and admin, once each, but not to `except` (whoever caused it).
+async function tellStaff(text, except){
+  const skip = String(except || '').toLowerCase();
+  const emails = Array.from(new Set((await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase()))).filter((e) => e !== skip);
+  if (emails.length) await sendEvent(SLACK_BOT_TOKEN.value(), { emails, headline: text });
+}
+
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
 const agentApi = require('./api')({ db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, groupOf, SITE_URL,
   SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], SLACK_BOT_TOKEN,
   // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
-  tellStaff: async (text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: text }),
+  tellStaff,
   tellPerson: (email, text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: [email], headline: text }),
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
@@ -5247,7 +5254,7 @@ exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
-  tellStaff: async (text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: text }) }).reviewMcpChange;
+  tellStaff }).reviewMcpChange;
 
 exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
