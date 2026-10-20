@@ -1,6 +1,6 @@
 // ---------- BOLD.OS for agents: personal tokens, a read-only API and MCP ----------
-// Anyone in the BOLD Slack makes personal tokens on their profile (Linked accounts →
-// Agents; apiTokens below). A token acts as its owner and reads what they can read on
+// Anyone in the BOLD Slack makes personal tokens on their profile (its Agents tab;
+// apiTokens below). A token acts as its owner and reads what they can read on
 // the site: everything lab-wide, plus their own letters and introductions. A token made
 // with "Can also act" (`write`) may also act: join and leave projects, ask for and answer
 // introductions, ask to join a supervision meeting, ask for a letter, each through the
@@ -155,7 +155,7 @@ module.exports = function(deps){
   // The token in the request → its owner's email, or an error with an HTTP status.
   async function authorize(req){
     const m = /^Bearer\s+(bold_[A-Za-z0-9_-]{20,})\s*$/.exec(req.get('authorization') || '');
-    if (!m) throw httpError(401, 'Send your BOLD.OS token: Authorization: Bearer bold_…  Make one on your profile, under Linked accounts.');
+    if (!m) throw httpError(401, 'Send your BOLD.OS token: Authorization: Bearer bold_…  Make one on your BOLD.OS profile, in its Agents tab.');
     const ref = db.collection('apiTokens').doc(sha(m[1]));
     const minute = Math.floor(Date.now() / 60000);
     const t = await db.runTransaction(async (tx) => {
@@ -631,7 +631,7 @@ module.exports = function(deps){
       case 'tools/call': {
         const tool = TOOLS.find((t) => t.name === p.name);
         if (!tool) return fail(-32602, 'Unknown tool: ' + p.name);
-        if (tool.write && !who.write) return reply({ content: [{ type: 'text', text: 'This token can only read. To let it act, ask on your BOLD.OS profile (Linked accounts → Agents): a PI or admin approves.' }], isError: true });
+        if (tool.write && !who.write) return reply({ content: [{ type: 'text', text: 'This token can only read. To let it act, ask on your BOLD.OS profile (its Agents tab): a PI or admin approves.' }], isError: true });
         log(who, tool.name, p.arguments);
         try {
           const out = await tool.run(who, p.arguments || {});
@@ -652,7 +652,7 @@ module.exports = function(deps){
   const boldApi = onRequest({ cors: true, memory: '512MiB', timeoutSeconds: 300, secrets }, async (req, res) => {
     const path = req.path.replace(/\/+$/, '') || '/';
     if (path === '/' && req.method === 'GET') {
-      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', read: TOOLS.filter((t) => !t.write).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from your BOLD.OS profile, Linked accounts>' });
+      return res.json({ name: 'BOLD.OS API', mcp: '/mcp', read: TOOLS.filter((t) => !t.write).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
     }
     if (path === '/mcp' && req.method !== 'POST') return res.status(405).set('Allow', 'POST').json({ error: 'POST JSON-RPC to /mcp.' });
     let who;
@@ -673,7 +673,7 @@ module.exports = function(deps){
     if (!tool) return res.status(404).json({ error: 'No such endpoint. GET / lists them.' });
     // Reads are GETs with query parameters; acting is a POST with a JSON body.
     if (req.method !== (tool.write ? 'POST' : 'GET')) return res.status(405).set('Allow', tool.write ? 'POST' : 'GET').json({ error: (tool.write ? 'POST' : 'GET') + ' /v1/' + tool.name + '.' });
-    if (tool.write && !who.write) return res.status(403).json({ error: 'This token can only read. To let it act, ask on your BOLD.OS profile (Linked accounts → Agents): a PI or admin approves.' });
+    if (tool.write && !who.write) return res.status(403).json({ error: 'This token can only read. To let it act, ask on your BOLD.OS profile (its Agents tab): a PI or admin approves.' });
     let args = {};
     if (tool.write) args = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     else Object.keys(req.query).forEach((k) => {

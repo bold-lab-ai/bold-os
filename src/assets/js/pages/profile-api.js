@@ -1,4 +1,4 @@
-// The profile's Agents row (Linked accounts): personal tokens that let an AI agent
+// The profile's Agents tab: personal tokens that let an AI agent
 // read BOLD.OS as you, through MCP or the JSON API (boldApi and apiTokens in
 // functions/api.js); a token acts as you too only once a PI or admin approves (Ask to
 // act, decided on the Requests page). A new token is shown once, with how to add it to Claude Code.
@@ -18,7 +18,7 @@
   function render(){
     if (tokens === null) { box.innerHTML = '<span class="proj-msg">Loading&hellip;</span>'; return; }
     var off = busy ? ' disabled' : '';
-    box.innerHTML = '<span class="gh-line">Let an AI agent read BOLD.OS as you, through MCP: search, projects, people, the calendar and your own requests. <a href="agents.html">What your tokens did</a>.</span>' +
+    box.innerHTML = '<p class="hero-note">Let an AI agent use BOLD.OS as you, through MCP: it reads what you can read, and acts for you once a PI or admin approves. <a href="agents.html">What your tokens did</a>.</p>' +
       (fresh ? '<div class="api-fresh"><p class="acct-note">Your token for <strong>' + esc(fresh.label) + '</strong>, shown only now:</p>' + BOLD.copyBoxHtml(fresh.token) +
         '<p class="acct-note">To add it to Claude Code:</p>' +
         BOLD.copyBoxHtml('claude mcp add --transport http bold-os ' + API + '/mcp --header "Authorization: Bearer ' + fresh.token + '"') +

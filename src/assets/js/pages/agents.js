@@ -31,7 +31,7 @@
           ' · ' + (t.lastUsedAt ? 'last used ' + when(t.lastUsedAt, true) : 'not used yet') + '</span>' +
           '<div class="event-controls">' + (t.write ? '<button type="button" class="btn-text ag-stop" data-id="' + esc(t.id) + '"' + off + '>Stop acting</button>' : '') +
           '<button type="button" class="btn-text danger ag-revoke" data-id="' + esc(t.id) + '"' + off + '>Revoke</button></div></li>';
-      }).join('') + '</ul>' : '<p class="proj-msg">' + (all ? 'Nobody has a token yet.' : 'You have no tokens. Make one on <a href="profile.html#linked-accounts">your profile</a>.') + '</p>') + '</section>' +
+      }).join('') + '</ul>' : '<p class="proj-msg">' + (all ? 'Nobody has a token yet.' : 'You have no tokens. Make one on <a href="profile.html#agents">your profile</a>.') + '</p>') + '</section>' +
       '<section class="block"><div class="block-head"><h2>What they did</h2></div>' +
       (data.log.length ? '<ul class="ag-log">' + data.log.map(function(x){
         return '<li><span class="ag-when">' + when(x.at, true) + '</span><span class="ag-what"><strong>' + esc(x.tool) + '</strong>' +
