@@ -1851,10 +1851,29 @@ function projectsFromDashboard(sections){
   };
 }
 
+// The profile's Projects tab: the board's papers (gatherDashboard), plus projects not
+// on a venue yet (top-level `projects`, by who registered them and their authors),
+// plus `member`: the other projects they're a member of (projectWorkspaces.members).
 exports.getMyProjects = onCall(
   async (request) => {
     const email = signedInEmail(request);
-    return projectsFromDashboard(await gatherDashboard(email, PROFILE_PROJECTS_CAP));
+    const [sections, ownSnap, authSnap, wsSnap] = await Promise.all([
+      gatherDashboard(email, PROFILE_PROJECTS_CAP),
+      db.collection('projects').where('submittedBy.email', '==', email).get(),
+      db.collection('projects').where('authorEmails', 'array-contains', email).get(),
+      db.collection('projectWorkspaces').where('members', 'array-contains', email).get(),
+    ]);
+    const out = projectsFromDashboard(sections);
+    const loose = (d) => ({ boardId: null, boardLabel: 'No venue yet', cardId: d.id, title: d.data().title || 'Untitled', badges: badgesForCard(d.data()) });
+    out.owner = out.owner.concat(ownSnap.docs.map(loose));
+    out.author = out.author.concat(authSnap.docs.map(loose));
+    const listed = new Set(out.owner.concat(out.author).map((i) => i.cardId));
+    const GROUP = { planned: 'Planned', ongoing: 'Ongoing', completed: 'Completed' };
+    out.member = wsSnap.docs.map((d) => d.data()).filter((w) => w.cardId && !listed.has(w.cardId) &&
+      !(w.venues || []).some((v) => listed.has(v.cardId)))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      .map((w) => ({ boardId: w.boardId || null, boardLabel: GROUP[w.group] || '', cardId: w.cardId, title: w.title || 'Untitled', badges: [] }));
+    return out;
   }
 );
 

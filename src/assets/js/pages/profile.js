@@ -290,11 +290,13 @@
     });
   }
 
-  function renderProject(p){
+  function renderProject(p, member){
     var li = document.createElement('li');
     var a = document.createElement('a');
     a.className = 'proj-title';
-    a.href = 'audit-board.html#board=' + encodeURIComponent(p.boardId) + '&card=' + encodeURIComponent(p.cardId);
+    // A paper on a venue opens on the board; a project with no venue (or one you're only a member of), its project page.
+    a.href = p.boardId && !member ? 'audit-board.html#board=' + encodeURIComponent(p.boardId) + '&card=' + encodeURIComponent(p.cardId)
+      : 'project.html#id=' + encodeURIComponent(p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '');
     a.textContent = p.title;
     var meta = document.createElement('span');
     meta.className = 'proj-meta';
@@ -314,10 +316,10 @@
     return li;
   }
 
-  // The caller's papers on the Internal Review Board, by relationship
-  // (getMyProjects).
+  // The caller's projects, by relationship (getMyProjects): papers on the Internal
+  // Review Board and projects with no venue yet; Member, the others they're in.
   function renderProjects(data){
-    [['projOwner', data.owner, 'cntOwner'], ['projAuthor', data.author, 'cntAuthor'], ['projReviewer', data.reviewer, 'cntReviewer']].forEach(function(g){
+    [['projOwner', data.owner, 'cntOwner'], ['projAuthor', data.author, 'cntAuthor'], ['projMember', data.member, 'cntMember'], ['projReviewer', data.reviewer, 'cntReviewer']].forEach(function(g){
       var ul = el(g[0]); ul.innerHTML = '';
       var items = g[1] || [];
       el(g[2]).textContent = items.length || '';
@@ -326,7 +328,7 @@
         li.innerHTML = '<p class="proj-empty">None</p>';
         ul.appendChild(li);
       }
-      items.forEach(function(p){ ul.appendChild(renderProject(p)); });
+      items.forEach(function(p){ ul.appendChild(renderProject(p, g[0] === 'projMember')); });
     });
     el('projMsg').hidden = true;
     el('projGroups').hidden = false;
