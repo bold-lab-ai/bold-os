@@ -217,7 +217,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var PANELS = {
     // What the project is.
     overview: function(){
-      var html = '<dl class="detail-grid">' + simpleRow('title');
+      var html = '<dl class="detail-grid">';
       html += '<dt>Authors</dt><dd>' + (editing === 'authors'
         ? '<div id="authorsWrap"></div>' +
           '<button class="btn-text" type="button" id="authorsAdd">+ Add author</button>' +
@@ -267,7 +267,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   };
 
   function render(){
-    var html = '<div class="detail-head"><h2>' + esc(card.title) + '</h2>';
+    // The title, edited in place (Edit beside it).
+    var html = '<div class="detail-head">' + (editing === 'title'
+      ? '<div class="detail-title-edit"><input type="text" id="fieldInput" maxlength="300" value="' + esc(card.title || '') + '" aria-label="Title">' + saveCancelHtml('fieldSave') + '</div>'
+      : '<h2>' + esc(card.title) + editButton('title') + '</h2>');
     html += '<div class="detail-badges">';
     if (STAGE_LABELS[card.status]) html += '<span class="badge badge-stage">' + STAGE_LABELS[card.status] + '</span>';
     if (OUTCOME_LABELS[card.outcome] && !(card.outcome === 'accepted' && card.status === 'conference')) {
