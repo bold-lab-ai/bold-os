@@ -122,6 +122,18 @@
         { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" },
         { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION_GROUP" }
       ]
+    },
+    // Agents' access log (functions/api.js): each entry is deleted 90 days on, by
+    // a TTL policy on expireAt (2026-10-20). Its default indexes stay.
+    {
+      "collectionGroup": "apiLog",
+      "fieldPath": "expireAt",
+      "ttl": true,
+      "indexes": [
+        { "order": "ASCENDING", "queryScope": "COLLECTION" },
+        { "order": "DESCENDING", "queryScope": "COLLECTION" },
+        { "arrayConfig": "CONTAINS", "queryScope": "COLLECTION" }
+      ]
     }
   ]
 }

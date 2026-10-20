@@ -140,12 +140,17 @@ module.exports = function(deps){
     return DAYS[m.day] + 's, ' + m.time + '–' + pad(Math.floor(end / 60) % 24) + ':' + pad(end % 60) + ' London time' +
       (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + (m.until ? ', until ' + m.until : '');
   }
+  // Email → name: the roster, members' own names, else how a project lists them (an
+  // author, or whoever registered it), for people not on Slack.
   async function nameOf(){
-    const people = await lab.people(), members = await lab.members();
+    const [people, members, cards, unassigned] = await Promise.all([lab.people(), lab.members(), lab.cards(), lab.unassigned()]);
     const by = {};
+    cards.concat(unassigned).forEach((c) => [c.data.submittedBy].concat(c.data.authors || []).forEach((a) => {
+      if (a && a.email && a.name) by[String(a.email).toLowerCase()] = { name: a.name };
+    }));
     people.forEach((p) => { if (p.email) by[String(p.email).toLowerCase()] = { name: p.name, slackId: p.slackId || p._id }; });
     members.forEach((m) => { const e = String(m.email || m._id).toLowerCase(); by[e] = Object.assign({}, by[e], { name: m.name || (by[e] && by[e].name) }); });
-    return (email) => { const x = by[String(email || '').toLowerCase()]; return (x && x.name) || 'someone outside the roster'; };
+    return (email) => { const x = by[String(email || '').toLowerCase()]; return (x && x.name) || 'someone not on BOLD.OS'; };
   }
   async function profileUrlOf(){
     const people = await lab.people(), by = {};
