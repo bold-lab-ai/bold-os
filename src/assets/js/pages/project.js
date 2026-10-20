@@ -164,6 +164,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // The rows edited as a single field: label, the card field, how it shows, and its checks.
   var openLink = function(url){ return '<a href="' + esc(url) + '" target="_blank" rel="noopener">Open</a>'; };
   var SIMPLE = {
+    title: { label: 'Title', field: 'title', type: 'text', required: true, placeholder: 'The project\u2019s title', view: esc },
     overleaf: { label: 'Overleaf', field: 'overleafLink', type: 'url', required: true, check: function(v){ return overleafLinkIssue(v); },
       placeholder: 'https://www.overleaf.com/project/\u2026 \u2014 must allow edit access, not just view', view: link },
     pitch: { label: 'Pitch deck', field: 'pitchLink', type: 'url', placeholder: 'https://\u2026', view: openLink },
@@ -216,7 +217,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var PANELS = {
     // What the project is.
     overview: function(){
-      var html = '<dl class="detail-grid">';
+      var html = '<dl class="detail-grid">' + simpleRow('title');
       html += '<dt>Authors</dt><dd>' + (editing === 'authors'
         ? '<div id="authorsWrap"></div>' +
           '<button class="btn-text" type="button" id="authorsAdd">+ Add author</button>' +
@@ -250,8 +251,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     // Who's on it and how they meet.
     team: function(){
       return '<dl class="detail-grid">' + row('People', membersHtml()) +
-        editableRow('slack', 'Slack channel', card.slackChannel ? esc(card.slackChannel) : missing(),
-          card.slackChannel ? ' id="slackChannel"' : '', channelEntryHtml(card.slackChannel), 'slackSave') +
+        editableRow('slack', 'Slack channel', card.slackChannel ? '<span id="slackChannel">' + esc(card.slackChannel) + '</span>' : missing(),
+          '', channelEntryHtml(card.slackChannel), 'slackSave') +
         workspaceRows() + '</dl>';
     },
     // Talks about the project; the pitch deck is the card's own (the board uses it).
@@ -275,9 +276,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     if (ws && ws.completedAt) html += '<span class="badge">Completed</span>';
     // Marking it completed (or reopening it): its meeting is cancelled (or comes back).
     var done = !!(ws && ws.completedAt);
-    html += '<button class="btn-text detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
+    // Join (or Leave, for whoever joined rather than registered or wrote it).
+    html += joinButton();
+    html += '<button class="btn-box detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
       (done ? 'Reopen project' : 'Mark as completed') + '</button>';
-    html += '<button class="btn-text danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
+    html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
     html += '</div></div>';
     html += '<div class="tabs" role="tablist" aria-label="Project">' + TABS.map(function(t){
       var on = t[0] === tab;
@@ -421,7 +424,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     });
   }
 
-  // Whoever registered it, its authors and whoever joined; Join or Leave for the viewer.
+  // Whoever registered it, its authors and whoever joined.
   function memberEmails(){
     if (ws && ws.members) return ws.members;
     return [card.submittedBy && card.submittedBy.email].concat(card.authorEmails || []).filter(function(e, i, all){ return e && all.indexOf(e) === i; });
@@ -429,12 +432,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function membersHtml(){
     var list = memberEmails();
     var names = list.map(function(e){ var p = personByEmail(e); return esc(p && p.name || e); }).join(', ');
-    var mine = list.some(isMe);
-    var joined = ws && (ws.joined || []).some(isMe);
-    var btn = !mine ? '<button class="btn-text detail-inline-edit" type="button" data-ws="join"' + (wsBusy ? ' disabled' : '') + '>Join the project</button>'
-      : joined ? '<button class="btn-text detail-inline-edit" type="button" data-ws="leave"' + (wsBusy ? ' disabled' : '') + '>Leave</button>'
-      : '';
-    return (names || missing()) + btn + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '');
+    return (names || missing()) + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '');
+  }
+  function joinButton(){
+    var mine = memberEmails().some(isMe), joined = ws && (ws.joined || []).some(isMe);
+    var off = wsBusy || !wsLoaded ? ' disabled' : '';
+    return !mine ? '<button class="btn-box is-primary detail-remove" type="button" data-ws="join"' + off + '>Join project</button>'
+      : joined ? '<button class="btn-box detail-remove" type="button" data-ws="leave"' + off + '>Leave project</button>' : '';
   }
 
   function callWorkspace(args){
@@ -866,7 +870,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         if (window.confirm('Remove the meeting? Its guests are told it\u2019s cancelled.')) saveMeeting(true);
       });
     } else if (editing === 'slack') {
-      channelField = wireChannelField('save');
+      channelField = wireChannelField('save', card.slackChannel || '', { id: projectId, board: boardId || null });
       channelField.refresh();
       el('slackSave').addEventListener('click', saveSlack);
     } else {

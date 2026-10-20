@@ -100,13 +100,19 @@ function channelEntryHtml(value){
 // Says what will happen to the typed name in Slack, live: what it's saved as, whether
 // the channel exists. ensure(name) does it for real (creates it if needed, invites you)
 // and resolves with the projectChannel result; refresh() redraws the live status.
-function wireChannelField(verb){
+// With `from` (a project's page changing its channel, `project`: { id, board }), a
+// new name that doesn't exist renames the old channel in Slack instead.
+function wireChannelField(verb, from, project){
   verb = verb || 'submit';
   var channelInput = document.getElementById('pfChannel'), statusBox = document.getElementById('channelStatus');
   var callChannel = null;
   try {
     var httpsCallable = firebase.app().functions('europe-west2').httpsCallable('projectChannel');
-    callChannel = function(name, mode){ return httpsCallable({ name: name, mode: mode }).then(function(r){ return r.data; }); };
+    callChannel = function(name, mode){
+      var args = { name: name, mode: mode };
+      if (mode === 'rename') { args.from = from; args.project = project; }
+      return httpsCallable(args).then(function(r){ return r.data; });
+    };
   } catch (e){}
 
   function statusLine(cls, text){
@@ -136,8 +142,10 @@ function wireChannelField(verb){
       if (!callChannel) return renderStatus(lines);
       callChannel(n.name, 'check').then(function(r){
         if (seq !== checkSeq) return;
+        var old = from && normalizeProjectChannel(from);
         renderStatus(lines.concat([r.exists
           ? ['ok', name + ' already exists — nothing to do.']
+          : old && !old.error && old.name !== n.name ? ['new', '#' + old.name + ' will be renamed ' + name + ' in Slack: same channel, same people.']
           // Not found means it doesn't exist, or it's a private channel the bot isn't in
           // (that's caught on save as name taken, and left alone) — say both.
           : ['new', name + ' wasn’t found. If it doesn’t exist, it will be created as a private channel and you’ll be invited when you submit. If it’s an existing private channel, invite ' + (r.bot || 'the BOLD Slack app') + ' to it so the project page can link to it.']]));
@@ -164,7 +172,7 @@ function wireChannelField(verb){
       // Set up the Slack channel first (creates and invites if it doesn't exist),
       // so a project is never saved against a channel that couldn't be made.
       renderStatus([['pending', 'Setting up #' + name + '…']]);
-      return callChannel ? callChannel(name, 'ensure') : Promise.reject(new Error('functions unavailable'));
+      return callChannel ? callChannel(name, from ? 'rename' : 'ensure') : Promise.reject(new Error('functions unavailable'));
     }
   };
 }

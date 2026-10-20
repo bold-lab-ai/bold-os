@@ -27,8 +27,11 @@
   letter-spacing:-0.005em; max-width:var(--article-max); text-wrap:balance;
 }
 .detail-remove{margin-left:auto;}
+/* Join or Leave comes first, so the button after it sits beside it. */
+.detail-remove + .detail-remove{margin-left:0;}
 .detail-badges .btn-text + .btn-text{margin-left:14px;}
 .detail .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
+.detail .btn-box.danger:hover:not(:disabled){color:var(--danger-text); border-color:var(--danger-text);}
 .detail-venue{font-family:var(--sans); font-size:14px; color:var(--muted); margin:10px 0 0;}
 .detail-venue a{color:inherit;}
 .detail-badges{display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:0 0 100%; order:3; margin-top:2px;}

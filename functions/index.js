@@ -2115,6 +2115,11 @@ function slackChannelError(code, json){
 // { name, prefixed, exists, created, invited, url }. Registering a project
 // calls 'ensure'; the form calls 'check' as you type, and a project's page
 // calls it to link its channel.
+// mode 'rename' { from, project: { id, board } }: a project's page changing its
+// channel. The new name existing already, it's just linked; otherwise the project's
+// old channel (`from`, which must be the project's) is renamed in Slack (the bot
+// can only rename channels it's in, such as those it created), and with no old
+// channel to rename, it's created as for 'ensure'. Only who can edit the project.
 exports.projectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -2130,7 +2135,29 @@ exports.projectChannel = onCall(
       const auth = await slackAuthInfo(token);
       if (auth && auth.bot) out.bot = '@' + auth.bot;
     }
-    if (out.exists || data.mode !== 'ensure') return out;
+    if (data.mode === 'rename' && !out.exists){
+      const p = data.project || {};
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(p.id || '')) || (p.board && !/^[A-Za-z0-9_-]{1,80}$/.test(String(p.board)))) throw new HttpsError('invalid-argument', 'No such project.');
+      const cardSnap = await cardRefFor(String(p.id), p.board ? String(p.board) : null).get();
+      if (!cardSnap.exists) throw new HttpsError('not-found', 'No such project.');
+      const card = cardSnap.data();
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only whoever registered the project, its authors, or a PI or admin can change its channel.');
+      const old = normalizeProjectChannel(data.from), current = normalizeProjectChannel(card.slackChannel);
+      if (old.error || current.error || old.name !== current.name) throw new HttpsError('failed-precondition', 'The project\u2019s channel has changed: reload the page.');
+      const oldId = await slackChannelId(token, old.name);
+      if (oldId){
+        const renamed = await slackFetch(token, 'conversations.rename', { channel: oldId, name: n.name });
+        channelNamesCache = null;
+        if (!renamed.ok){
+          const auth = await slackAuthInfo(token);
+          logger.warn('Renaming a project channel failed', { from: old.name, to: n.name, error: renamed.error });
+          throw new HttpsError('failed-precondition', 'Slack wouldn\u2019t let ' + (auth && auth.bot ? '@' + auth.bot : 'the BOLD Slack app') +
+            ' rename #' + old.name + ' (' + renamed.error + '). Rename it in Slack, then save the new name here.');
+        }
+        return Object.assign(out, { exists: true, renamed: true, url: await slackChannelUrl(token, oldId) });
+      }
+    }
+    if (out.exists || (data.mode !== 'ensure' && data.mode !== 'rename')) return out;
 
     const created = await slackFetch(token, 'conversations.create', { name: n.name, is_private: true });
     channelNamesCache = null;

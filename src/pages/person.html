@@ -18,10 +18,18 @@ nav: "people.html"
 <main>
   <nav class="guide-tabs profile-tabs" id="personTabs" aria-label="Person">
     <a class="guide-tab" href="#details">Details</a>
+    <a class="guide-tab" href="#studies" hidden>Studies</a>
+    <a class="guide-tab" href="#projects">Projects</a>
     <a class="guide-tab" href="#connections">Connections</a>
   </nav>
   <section class="profile-panel" id="details">
     <div id="person"><p class="proj-msg">Loading&hellip;</p></div>
+  </section>
+  <section class="profile-panel" id="studies" hidden>
+    <div id="personStudies"></div>
+  </section>
+  <section class="profile-panel" id="projects" hidden>
+    <div id="personProjects"><p class="proj-msg">Loading&hellip;</p></div>
   </section>
   <section class="profile-panel" id="connections" hidden>
     <div id="connectionsBody"></div>
