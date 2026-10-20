@@ -1,7 +1,7 @@
 // The profile's Agents row (Linked accounts): personal tokens that let an AI agent
 // read BOLD.OS as you, through MCP or the JSON API (boldApi and apiTokens in
-// functions/api.js); with Can also act, also act as you (join projects, ask for
-// introductions and letters). A new token is shown once, with how to add it to Claude Code.
+// functions/api.js); a token acts as you too only once a PI or admin approves (Ask to
+// act, decided on the Requests page). A new token is shown once, with how to add it to Claude Code.
 (function(){
   var box = document.getElementById('agentsBody');
   if (!box || !BOLD.getAuth()) return;
@@ -11,6 +11,10 @@
   var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('apiTokens')(data).then(function(r){ return r.data; }); };
   function when(t){ return t ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
 
+  function scope(t){
+    return t.write ? 'Reads and acts' : t.act === 'open' ? 'Reads · asked to act, waiting for a PI or admin' : t.act === 'declined' ? 'Reads · acting declined' : 'Reads';
+  }
+  var ASK = 'Asking lets it act for you once a PI or admin approves: join projects, ask for introductions and letters, comment, propose changes and more. People get Slack messages from you.';
   function render(){
     if (tokens === null) { box.innerHTML = '<span class="proj-msg">Loading&hellip;</span>'; return; }
     var off = busy ? ' disabled' : '';
@@ -21,13 +25,15 @@
         '<p class="acct-note">Other agents: MCP at <code>' + esc(API) + '/mcp</code>, or JSON at <code>' + esc(API) + '/v1/&lt;tool&gt;</code>, with the header <code>Authorization: Bearer &lt;token&gt;</code>.</p></div>' : '') +
       (tokens.length ? '<ul class="api-tokens">' + tokens.map(function(t){
         return '<li><span class="acct-text"><span>' + esc(t.label) + ' <code>' + esc(t.prefix) + '…</code></span>' +
-          '<span class="acct-handle">' + (t.write ? 'Reads and acts' : 'Reads') + ' · made ' + when(t.createdAt) + ' · ' + (t.lastUsedAt ? 'last used ' + when(t.lastUsedAt) : 'not used yet') + '</span></span>' +
-          '<button type="button" class="btn-text danger api-revoke" data-id="' + esc(t.id) + '"' + off + '>Revoke</button></li>';
+          '<span class="acct-handle">' + scope(t) + ' · made ' + when(t.createdAt) + ' · ' + (t.lastUsedAt ? 'last used ' + when(t.lastUsedAt) : 'not used yet') + '</span></span>' +
+          '<span class="api-btns">' + (t.write ? '<button type="button" class="btn-text api-stop" data-id="' + esc(t.id) + '"' + off + '>Stop acting</button>'
+            : t.act !== 'open' ? '<button type="button" class="btn-text api-ask" data-id="' + esc(t.id) + '"' + off + '>Ask to act</button>' : '') +
+          '<button type="button" class="btn-text danger api-revoke" data-id="' + esc(t.id) + '"' + off + '>Revoke</button></span></li>';
       }).join('') + '</ul>' : '') +
       (error ? '<span class="gh-error">' + esc(error) + '</span>' : '') +
       '<span class="api-new"><input type="text" class="api-label" maxlength="60" placeholder="Name it, e.g. Claude Code on my laptop" aria-label="Token name"' + off + '>' +
       '<button type="button" class="btn-box is-primary api-create"' + off + '>New token</button>' +
-      '<label class="api-write"><input type="checkbox" class="api-can-act"' + off + '> Can also act for me: join projects, ask for and answer introductions, ask for letters and to join supervision meetings. People get Slack messages from you.</label></span>';
+      '<label class="api-write"><input type="checkbox" class="api-can-act"' + off + '> Also ask to let it act for me. ' + ASK + '</label></span>';
   }
   function load(){
     call({ action: 'list' }).then(function(d){ tokens = d.tokens || []; render(); })
@@ -40,12 +46,20 @@
       var label = box.querySelector('.api-label').value.trim(), write = box.querySelector('.api-can-act').checked;
       if (!label) { error = 'Name it first, after the agent that will use it.'; render(); return; }
       busy = true; error = ''; render();
-      call({ action: 'create', label: label, write: write }).then(function(d){
+      call({ action: 'create', label: label, askAct: write }).then(function(d){
         fresh = { label: d.label, token: d.token };
-        tokens.unshift({ id: d.id, label: d.label, prefix: d.prefix, write: d.write, createdAt: d.createdAt, lastUsedAt: 0 });
+        tokens.unshift({ id: d.id, label: d.label, prefix: d.prefix, write: d.write, act: d.act, createdAt: d.createdAt, lastUsedAt: 0 });
       }).catch(function(err){
         console.error('[BOLD Agents] making a token failed', err);
         error = err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t make a token — try again.';
+      }).then(function(){ busy = false; render(); });
+    } else if (t.classList.contains('api-ask') || t.classList.contains('api-stop')) {
+      var ask = t.classList.contains('api-ask');
+      if (!window.confirm(ask ? ASK + ' Ask?' : 'Stop it acting for you? It still reads.')) return;
+      busy = true; error = ''; render();
+      call({ action: ask ? 'askAct' : 'stopAct', id: t.getAttribute('data-id') }).then(load).catch(function(err){
+        console.error('[BOLD Agents] that failed', err);
+        error = err && err.message && err.code !== 'functions/internal' ? err.message : 'That didn’t work — try again.';
       }).then(function(){ busy = false; render(); });
     } else if (t.classList.contains('api-revoke')) {
       if (!window.confirm('Revoke this token? Whatever uses it stops working at once.')) return;

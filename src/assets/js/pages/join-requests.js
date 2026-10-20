@@ -8,7 +8,9 @@
 // anyone an applicant named as inviting them to the Slack confirms it, or says they
 // didn't (confirmJoinInvite; #i=<id> from their DM), and so do members who named them on
 // their profile (setMyInviter; #invited).
-// Tabs, by #hash: #signup, #invited, #groups, #settings (#r=, #g=, #i= open their
+// and requests to let an agent act for someone (apiTokens 'actRequests'/'decideAct' in
+// functions/api.js; the Agents tab).
+// Tabs, by #hash: #signup, #invited, #groups, #agents, #settings (#r=, #g=, #i= open their
 // request's tab). A request's answers are behind Details; names link to person.html.
 (function(){
   var esc = BOLD.escapeHtml;
@@ -18,7 +20,7 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, form = null, unsubs = [], busy = {}, editing = false;
-  var groupReqs = [], groups = {}, invited = [], invitedMembers = [], shown = {}, slackIds = {};
+  var groupReqs = [], groups = {}, invited = [], invitedMembers = [], shown = {}, slackIds = {}, actReqs = [];
 
   var SUBJECT = 'Welcome to BOLD';
   var BODY = ['Hi {name},', '', 'Welcome to BOLD! Your request to join has been approved. Here are your next steps:', '',
@@ -62,6 +64,22 @@
       (open ? '' : '<p class="proj-meta">' + (r.status === 'withdrawn' ? 'Withdrawn' : (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + who(r.decidedByName || r.decidedBy || '', r.decidedBy)) + ', ' + when(r.decidedAt) + '</p>') +
       '<div class="event-controls">' + (r.note ? moreBtn('g:' + r.id) : '') + (open ? '<button type="button" class="btn-text jr-g-approve" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Approve</button>' +
           '<button type="button" class="btn-text danger jr-g-decline" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Decline</button>' : '') + '</div></li>';
+  }
+
+  // A request to let someone's agent act for them (a token of theirs, functions/api.js).
+  function actReqHtml(r){
+    var open = r.status === 'open', off = busy['a:' + r.id] ? ' disabled' : '';
+    return '<li>' + who(r.owner, r.email, 'proj-title') +
+      '<span class="proj-meta">Token “' + esc(r.label) + '” <code>' + esc(r.prefix) + '…</code> · asked ' + when(r.at) + (r.lastUsedAt ? ' · last used ' + when(r.lastUsedAt) : '') + '</span>' +
+      (r.note ? '<p class="lt-text">' + esc(r.note) + '</p>' : '') +
+      (open ? '' : '<p class="proj-meta">' + ({ approved: 'Approved', declined: 'Declined', stopped: 'Stopped' }[r.status] || r.status) + (r.decidedByName ? ' by ' + esc(r.decidedByName) : '') + ', ' + when(r.decidedAt) + '</p>') +
+      '<div class="event-controls">' + (open ? '<button type="button" class="btn-text jr-a-approve" data-aid="' + esc(r.id) + '"' + off + '>Approve</button>' +
+        '<button type="button" class="btn-text danger jr-a-decline" data-aid="' + esc(r.id) + '"' + off + '>Decline</button>'
+        : r.status === 'approved' ? '<button type="button" class="btn-text danger jr-a-stop" data-aid="' + esc(r.id) + '"' + off + '>Stop acting</button>' : '') + '</div></li>';
+  }
+  function loadActReqs(){
+    return fn('apiTokens')({ action: 'actRequests' }).then(function(r){ actReqs = (r.data && r.data.requests) || []; render(); })
+      .catch(function(err){ console.error('[BOLD Join] loading agent requests failed', err); });
   }
 
   function settingsHtml(){
@@ -134,15 +152,18 @@
     var done = requests.filter(function(r){ return r.status !== 'open'; });
     var gOpen = groupReqs.filter(function(r){ return r.status === 'open'; });
     var gDone = groupReqs.filter(function(r){ return r.status !== 'open'; });
+    var aOpen = actReqs.filter(function(r){ return r.status === 'open'; });
+    var aDone = actReqs.filter(function(r){ return r.status !== 'open'; });
     var list = function(items, html, none){ return items.length ? '<ul class="proj-list">' + items.map(html).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>'; };
     var waiting = invited.concat(invitedMembers).filter(function(r){ return (r.invitedBy || {}).status === 'pending'; }).length;
     var n = function(k){ return k ? ' (' + k + ')' : ''; };
-    // Four tabs, named by the #hash: joining BOLD, invited by you, changing group, settings.
+    // Five tabs, named by the #hash: joining BOLD, invited by you, changing group, agents acting, settings.
     main.innerHTML =
       '<nav class="guide-tabs profile-tabs" id="jrTabs" aria-label="Requests">' +
         '<a class="guide-tab" href="#signup">Sign up' + n(open.length) + '</a>' +
         '<a class="guide-tab" href="#invited">Invited by you' + n(waiting) + '</a>' +
         '<a class="guide-tab" href="#groups">Groups' + n(gOpen.length) + '</a>' +
+        '<a class="guide-tab" href="#agents">Agents' + n(aOpen.length) + '</a>' +
         '<a class="guide-tab" href="#settings">Settings</a></nav>' +
       inviteNotice() +
       '<section class="profile-panel" id="signup">' +
@@ -152,6 +173,9 @@
       '<section class="profile-panel" id="groups">' +
         list(gOpen, groupReqHtml, 'No requests waiting.') +
         (gDone.length ? '<div class="proj-group"><h3>Decided</h3>' + list(gDone, groupReqHtml, '') + '</div>' : '') + '</section>' +
+      '<section class="profile-panel" id="agents"><p class="hero-note">Requests to let an agent act for someone, in their name: join projects, ask for introductions and letters, comment, propose changes and more. <a href="agents.html#everyone">What agents did</a>.</p>' +
+        list(aOpen, actReqHtml, 'No requests waiting.') +
+        (aDone.length ? '<div class="proj-group"><h3>Decided</h3>' + list(aDone, actReqHtml, '') + '</div>' : '') + '</section>' +
       settingsHtml();
     var s = main.querySelector('.jr-settings');
     s.addEventListener('input', function(){ editing = true; });
@@ -162,7 +186,7 @@
   function tabOf(h){
     var m = /^#([rgi])=/.exec(h);
     if (m) return { r: 'signup', g: 'groups', i: 'invited' }[m[1]];
-    return ['#signup', '#invited', '#groups', '#settings'].indexOf(h) >= 0 ? h.slice(1) : '';
+    return ['#signup', '#invited', '#groups', '#agents', '#settings'].indexOf(h) >= 0 ? h.slice(1) : '';
   }
   function showTab(){
     var tabs = document.getElementById('jrTabs');
@@ -170,7 +194,7 @@
     var want = tabOf(location.hash) || 'signup';
     var note = document.getElementById('jrNotice');
     if (note) note.hidden = want !== 'signup' && want !== 'settings';
-    ['signup', 'invited', 'groups', 'settings'].forEach(function(t){ var x = document.getElementById(t); if (x) x.hidden = t !== want; });
+    ['signup', 'invited', 'groups', 'agents', 'settings'].forEach(function(t){ var x = document.getElementById(t); if (x) x.hidden = t !== want; });
     Array.prototype.forEach.call(tabs.querySelectorAll('.guide-tab'), function(a){
       var on = a.getAttribute('href') === '#' + want;
       a.classList.toggle('is-current', on);
@@ -226,6 +250,20 @@
         console.error('[BOLD Join] confirming the invitation failed', err);
         window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
       }).then(function(){ delete busy[key]; render(); });
+      return;
+    }
+    var aid = t.getAttribute('data-aid');
+    if (aid) {
+      var a = actReqs.filter(function(q){ return q.id === aid; })[0];
+      if (!a) return;
+      var stop = t.classList.contains('jr-a-stop'), yes = t.classList.contains('jr-a-approve');
+      if (!window.confirm(stop ? 'Stop ' + a.owner + '’s agent acting for them? It still reads.'
+        : yes ? 'Let ' + a.owner + '’s agent act for them? They’re told on Slack.' : 'Decline ' + a.owner + '’s request? They’re told on Slack.')) return;
+      busy['a:' + aid] = true; t.disabled = true;
+      fn('apiTokens')(stop ? { action: 'stopAct', id: aid } : { action: 'decideAct', id: aid, accept: yes }).catch(function(err){
+        console.error('[BOLD Join] deciding the agent request failed', err);
+        window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
+      }).then(function(){ delete busy['a:' + aid]; return loadActReqs(); });
       return;
     }
     var gid = t.getAttribute('data-gid');
@@ -300,6 +338,7 @@
         groupReqs = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); render();
       }, function(err){ console.error('[BOLD Join] loading group requests failed', err); }));
       unsubs.push(db.collection('settings').doc('groups').onSnapshot(function(s){ groups = s.exists ? s.data() : {}; render(); }, function(){}));
+      loadActReqs();
     }).catch(function(err){ console.error('[BOLD Join] checking access failed', err); staff = false; render(); });
   });
 })();

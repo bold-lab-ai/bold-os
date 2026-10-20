@@ -23,23 +23,42 @@ const crypto = require('crypto');
 
 module.exports = function(deps){
   const { db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite,
-    allProjectsFromCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables } = deps;
+    allProjectsFromCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
+    SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl } = deps;
 
   const TOKENS_PER_PERSON = 5, RATE_PER_MINUTE = 60, LOG_DAYS = 90;
   const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
   const GROUP_LABEL = { exec: 'BOLD-exec', staff: 'BOLD-staff', internal: 'BOLD-internal', associate: 'BOLD-associate', pan: 'PAN-BOLD' };
 
   // ---------- tokens (the profile's Agents row) ----------
-  // data: { action: 'list' } → { tokens: [{ id, label, prefix, createdAt, lastUsedAt }] }
-  //       { action: 'create', label, write } → { token, id, … }: the token, once;
-//                                     `write`: it may also act (WRITE tools), not just read
-  //       { action: 'revoke', id }    its owner, or a PI or admin
-//       { action: 'activity', all } → { tokens, log }: yours (all: everyone's, PIs and admins)
-  const apiTokens = onCall(async (request) => {
+  // A token reads; it acts too only once a PI or admin approves (actRequest on the
+  // token: { status: open | approved | declined | stopped, note, at, decidedBy,
+  // decidedByName, decidedAt }), from the Requests page's Agents tab.
+  // data: { action: 'list' } → { tokens: [{ id, label, prefix, write, act, createdAt, lastUsedAt }] }
+  //       { action: 'create', label, askAct, note } → { token, id, … }: the token, once;
+  //                                       `askAct`: also asks for it to act
+  //       { action: 'revoke', id }        its owner, or a PI or admin
+  //       { action: 'askAct', id, note }  its owner, for a token that only reads
+  //       { action: 'stopAct', id }       its owner, or a PI or admin: back to reading only
+  //       { action: 'actRequests' }       PIs and admins → { requests }
+  //       { action: 'decideAct', id, accept }   PIs and admins
+  //       { action: 'activity', all }     → { tokens, log }: yours (all: everyone's, PIs and admins)
+  const apiTokens = onCall({ secrets: [SLACK_BOT_TOKEN] }, async (request) => {
     const email = callerEmail(request);
     const d = request.data || {};
     const mine = async () => (await db.collection('apiTokens').where('email', '==', email).get()).docs;
-    const view = (doc) => { const x = doc.data(); return { id: doc.id, label: x.label || '', prefix: x.prefix, write: !!x.write, createdAt: x.createdAt || 0, lastUsedAt: x.lastUsedAt || 0 }; };
+    const view = (doc) => { const x = doc.data(); return { id: doc.id, label: x.label || '', prefix: x.prefix, write: !!x.write, act: (x.actRequest && x.actRequest.status) || '', createdAt: x.createdAt || 0, lastUsedAt: x.lastUsedAt || 0 }; };
+    const myName = async () => ((await personByEmail(email)) || {}).name || email;
+    const askAct = async (ref, label, note) => {
+      const n = String(note || '').trim().slice(0, 1000);
+      await ref.update({ actRequest: { status: 'open', note: n, at: Date.now() } });
+      await Promise.resolve(tellStaff('🤖 ' + slackText(await myName()) + ' asks to let their agent act for them (token “' + slackText(label) + '”)' +
+        (n ? ': “' + slackText(n.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#agents') + '.')).catch((err) => logger.warn('Telling the PIs failed', { error: String(err.message) }));
+    };
+    const tokenRef = (id) => {
+      if (!/^[0-9a-f]{64}$/.test(String(id || ''))) throw new HttpsError('invalid-argument', 'No such token.');
+      return db.collection('apiTokens').doc(String(id));
+    };
     if (d.action === 'list') return { tokens: (await mine()).map(view).sort((a, b) => b.createdAt - a.createdAt) };
     if (d.action === 'create') {
       const label = String(d.label || '').trim().slice(0, 60);
@@ -48,9 +67,49 @@ module.exports = function(deps){
       const person = await personByEmail(email);
       const token = 'bold_' + crypto.randomBytes(32).toString('base64url');
       const now = Date.now(), id = sha(token);
-      const write = d.write === true;
-      await db.collection('apiTokens').doc(id).set({ email, name: (person && person.name) || '', label, write, prefix: token.slice(0, 12), createdAt: now, lastUsedAt: 0, minute: 0, count: 0 });
-      return { token, id, label, write, prefix: token.slice(0, 12), createdAt: now, lastUsedAt: 0 };
+      // Never acting from the start: asking to is a request (askAct).
+      await db.collection('apiTokens').doc(id).set({ email, name: (person && person.name) || '', label, write: false, prefix: token.slice(0, 12), createdAt: now, lastUsedAt: 0, minute: 0, count: 0 });
+      if (d.askAct === true) await askAct(db.collection('apiTokens').doc(id), label, d.note);
+      return { token, id, label, write: false, act: d.askAct === true ? 'open' : '', prefix: token.slice(0, 12), createdAt: now, lastUsedAt: 0 };
+    }
+    if (d.action === 'askAct') {
+      const ref = tokenRef(d.id), x = (await ref.get()).data();
+      if (!x || x.email !== email) throw new HttpsError('not-found', 'No such token.');
+      if (x.write) throw new HttpsError('failed-precondition', 'It acts already.');
+      if (x.actRequest && x.actRequest.status === 'open') throw new HttpsError('already-exists', 'You’ve asked already: a PI or admin will decide.');
+      await askAct(ref, x.label, d.note);
+      return { ok: true };
+    }
+    if (d.action === 'stopAct') {
+      const ref = tokenRef(d.id), x = (await ref.get()).data();
+      if (!x) throw new HttpsError('not-found', 'No such token.');
+      if (x.email !== email && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'That’s not your token.');
+      await ref.update({ write: false, actRequest: Object.assign({}, x.actRequest, { status: 'stopped', decidedBy: email, decidedByName: await myName(), decidedAt: Date.now() }) });
+      return { ok: true };
+    }
+    if (d.action === 'actRequests' || d.action === 'decideAct') {
+      if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins decide.');
+      if (d.action === 'actRequests') {
+        const snap = await db.collection('apiTokens').get(), name = await nameOf();
+        return { requests: snap.docs.filter((t) => t.data().actRequest).map((t) => {
+          const x = t.data(), r = x.actRequest;
+          return { id: t.id, owner: name(x.email), email: x.email, label: x.label, prefix: x.prefix, note: r.note || '', status: r.status, at: r.at || 0,
+            decidedByName: r.decidedByName || '', decidedAt: r.decidedAt || 0, lastUsedAt: x.lastUsedAt || 0 };
+        }).sort((a, b) => (b.status === 'open') - (a.status === 'open') || b.at - a.at) };
+      }
+      const ref = tokenRef(d.id), accept = d.accept === true, decider = await myName();
+      const x = await db.runTransaction(async (tx) => {
+        const x = (await tx.get(ref)).data();
+        if (!x || !x.actRequest) throw new HttpsError('not-found', 'That request isn’t there: the token may have been revoked.');
+        if (x.actRequest.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+        if (x.email === email) throw new HttpsError('permission-denied', 'Another PI or admin decides your own.');
+        tx.update(ref, { write: accept, actRequest: Object.assign({}, x.actRequest, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: decider, decidedAt: Date.now() }) });
+        return x;
+      });
+      await Promise.resolve(tellPerson(x.email, accept
+        ? '🤖 Your agent can now act for you (token “' + slackText(x.label) + '”), in your name. ' + linkedTitle('See what it does', SITE_URL + 'agents.html') + '.'
+        : '🤖 Your request to let your agent act for you (token “' + slackText(x.label) + '”) was declined. It still reads. Ask a PI if you’d like to know more.')).catch((err) => logger.warn('Telling them failed', { error: String(err.message) }));
+      return { ok: true };
     }
     if (d.action === 'revoke') {
       const id = String(d.id || '');
@@ -222,6 +281,7 @@ module.exports = function(deps){
   }
 
   // ---------- the tools ----------
+  const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl });
   const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'comments'];
   const TOOLS = [
     {
@@ -283,7 +343,7 @@ module.exports = function(deps){
     },
     {
       name: 'my_items',
-      description: 'Your own things on BOLD.OS: the projects you are on, your studies, recommendation letters you asked for or were asked to write, and introductions you asked for or were asked to make, with their status.',
+      description: 'Your own things on BOLD.OS, with their ids: the projects you are on, your studies, recommendation letters you asked for or write, introductions (asked, asked of you, your offers), requests to join supervision meetings, and an open request to change group.',
       inputSchema: { type: 'object', properties: {} },
       run: myItems,
     },
@@ -293,79 +353,9 @@ module.exports = function(deps){
       inputSchema: { type: 'object', properties: { query: { type: 'string', description: 'Words in the organisation, area or who offers.' } } },
       run: listOffers,
     },
-    // Acting (tokens made with "Can also act"): each through the page's own function.
-    {
-      name: 'join_project', write: true,
-      description: 'Join a project, as its Join project button does: you are added to its meeting, Slack channel, slides and notes.',
-      inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'The project id, from list_projects.' } }, required: ['id'] },
-      run: async (who, a) => { const c = await cardOf(a.id); await act(who, 'projectWorkspace', { action: 'join', id: c.id, board: c.boardId }); return { joined: true, project: c.data.title }; },
-    },
-    {
-      name: 'leave_project', write: true,
-      description: 'Leave a project you joined (its registrant and authors stay on it).',
-      inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'The project id.' } }, required: ['id'] },
-      run: async (who, a) => { const c = await cardOf(a.id); await act(who, 'projectWorkspace', { action: 'leave', id: c.id, board: c.boardId }); return { left: true, project: c.data.title }; },
-    },
-    {
-      name: 'ask_for_introduction', write: true,
-      description: 'Ask for an introduction on an offer (from list_introduction_offers). Whoever offered it gets a Slack message with what you wrote.',
-      inputSchema: { type: 'object', properties: {
-        offer_id: { type: 'string' },
-        why: { type: 'string', description: 'What you would like, and why: who you would like to meet there, what about, and a line on you.' },
-      }, required: ['offer_id', 'why'] },
-      run: async (who, a) => act(who, 'introRequest', { action: 'create', offerId: a.offer_id, why: a.why }),
-    },
-    {
-      name: 'answer_introduction', write: true,
-      description: 'Answer a request for an introduction someone asked of you (ids in my_items): accept (“I’ll introduce you”), decline, or done once you have introduced them. They get a Slack message.',
-      inputSchema: { type: 'object', properties: {
-        id: { type: 'string' }, answer: { type: 'string', enum: ['accept', 'decline', 'done'] },
-        note: { type: 'string', description: 'An optional note for them (accept and decline).' },
-      }, required: ['id', 'answer'] },
-      run: async (who, a) => act(who, 'introRequest', { action: a.answer, id: a.id, reply: a.note || '' }),
-    },
-    {
-      name: 'withdraw_introduction_request', write: true, destructive: true,
-      description: 'Withdraw a request for an introduction you made (ids in my_items). It is deleted, and whoever offered is told.',
-      inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
-      run: async (who, a) => act(who, 'introRequest', { action: 'withdraw', id: a.id }),
-    },
-    {
-      name: 'ask_to_join_supervision', write: true,
-      description: 'Ask a PhD or Master student to join their recurring supervision meeting. They approve or decline on their profile, and get a Slack message.',
-      inputSchema: { type: 'object', properties: {
-        student: { type: 'string', description: 'The student’s name.' }, note: { type: 'string', description: 'Why you would like to join (optional).' },
-      }, required: ['student'] },
-      run: async (who, a) => {
-        const pool = (await lab.studies()).map((s) => ({ email: s._id, name: s.name || '' }));
-        return act(who, 'studyRequest', { action: 'request', student: resolve(pool, a.student, 'the students with supervision meetings'), note: a.note || '' });
-      },
-    },
-    {
-      name: 'ask_for_letter', write: true,
-      description: 'Ask someone in BOLD for a recommendation letter (Service desk → Recommendation letters). They get a Slack message and see the request on BOLD.OS; only the two of you can read it.',
-      inputSchema: { type: 'object', properties: {
-        referee: { type: 'string', description: 'Their name.' },
-        purpose: { type: 'string', description: 'What the letter is for, e.g. "PhD applications, Fall 2027".' },
-        cv: { type: 'string', description: 'A link to your CV (https://…).' },
-        how_worked: { type: 'string', description: 'How you have worked together, and what you did yourself.' },
-        statement: { type: 'string', description: 'A link to your cover letter or statement (optional).' },
-        best: { type: 'string', description: 'What they could best speak to (optional).' },
-        extra: { type: 'string', description: 'Anything else (optional).' },
-        recipients: { type: 'array', description: 'Where the letter goes.', items: { type: 'object', properties: {
-          name: { type: 'string' }, url: { type: 'string', description: 'Where to submit it (optional).' }, deadline: { type: 'string', description: 'YYYY-MM-DD (optional).' },
-          sent_by: { type: 'string', enum: ['writer', 'requester'], description: 'Who submits it (default: the writer).' },
-        }, required: ['name'] } },
-      }, required: ['referee', 'purpose', 'cv', 'how_worked', 'recipients'] },
-      run: async (who, a) => {
-        const pool = (await lab.people()).map((p) => ({ email: p.email, name: p.name || '' }));
-        return act(who, 'letterRequest', {
-          action: 'create', writerEmail: resolve(pool, a.referee, 'people in BOLD'), purpose: a.purpose, cv: a.cv, howWorked: a.how_worked,
-          statement: a.statement || '', best: a.best || '', extra: a.extra || '',
-          recipients: (a.recipients || []).map((r) => ({ name: r.name, url: r.url || '', deadline: r.deadline || '', sentBy: r.sent_by === 'requester' ? 'requester' : 'writer' })),
-        });
-      },
-    },
+    // Acting, and what it needs to read: functions/api-actions.js.
+    ...actions.READ,
+    ...actions.WRITE,
   ];
   const toolsFor = (who) => TOOLS.filter((t) => !t.write || who.write);
 
@@ -592,10 +582,11 @@ module.exports = function(deps){
   async function myItems(who){
     const e = who.email;
     const q = (col, field) => db.collection(col).where(field, '==', e).get().then((s) => s.docs.map((d) => Object.assign({ id: d.id }, d.data())));
-    const [lettersAsked, lettersToWrite, introsAsked, introsOfMe, me, name] = await Promise.all([
+    const [lettersAsked, lettersToWrite, introsAsked, introsOfMe, me, name, studyAsked, studyOfMe, offers, groupReqs] = await Promise.all([
       q('letterRequests', 'requesterEmail'), q('letterRequests', 'writerEmail'), q('introRequests', 'requesterEmail'), q('introRequests', 'offererEmail'),
-      getPerson(who, { _email: e }), nameOf(),
+      getPerson(who, { _email: e }), nameOf(), q('studyRequests', 'email'), q('studyRequests', 'student'), q('introOffers', 'by.email'), q('groupRequests', 'email'),
     ]);
+    const study = (x, asStudent) => ({ id: x.id, with: asStudent ? x.name : x.studentName, note: x.note || '', status: x.status });
     const letter = (x, asWriter) => ({
       with: asWriter ? x.requesterName || name(x.requesterEmail) : x.writerName || name(x.writerEmail),
       id: x.id, purpose: x.purpose || '', open: x.open !== false,
@@ -607,7 +598,10 @@ module.exports = function(deps){
       you: { name: me.name, profile: me.profile, group: me.group || '' },
       projects: me.projects, studies: me.studies,
       letters: { you_asked: lettersAsked.map((x) => letter(x, false)), you_write: lettersToWrite.map((x) => letter(x, true)) },
-      introductions: { you_asked: introsAsked.map((x) => intro(x, false)), asked_of_you: introsOfMe.map((x) => intro(x, true)) },
+      introductions: { you_asked: introsAsked.map((x) => intro(x, false)), asked_of_you: introsOfMe.map((x) => intro(x, true)),
+        your_offers: offers.map((x) => ({ id: x.id, organisation: x.org, area: x.area || '' })) },
+      supervision_requests: { you_asked: studyAsked.map((x) => study(x, false)), asked_of_you: studyOfMe.map((x) => study(x, true)) },
+      group_request: groupReqs.filter((x) => x.status === 'open').map((x) => ({ id: x.id, from: x.from, to: x.to }))[0] || null,
     };
   }
 
@@ -615,7 +609,7 @@ module.exports = function(deps){
   const MCP_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
   const INSTRUCTIONS = 'BOLD.OS is the BOLD lab’s operating system: its handbook (the BOLDiquette), how-to guides, skills, events, research projects, people and calendar. ' +
     'These tools work as the person whose token this is, and see what they see on the site. Start with search for anything; use list_projects/get_project, find_people/get_person and calendar for structured answers, and my_items for the person’s own things. Every result has a url to the page on the site. ' +
-    'Tools that act (join a project, ask for an introduction or a letter) send Slack messages to other people in the person’s name: confirm with the person before using them.';
+    'Tools that act (comments, proposals, projects, presentations, introductions, letters, supervision, profile, and for PIs and admins events, requests and skills) work as on the site, under its rules, and often send Slack messages to other people in the person’s name: confirm with the person before each one. Use read_page for part ids, and my_items for request ids.';
   async function mcp(who, msg){
     const reply = (result) => ({ jsonrpc: '2.0', id: msg.id, result });
     const fail = (code, message) => ({ jsonrpc: '2.0', id: msg.id === undefined ? null : msg.id, error: { code, message } });
@@ -637,7 +631,7 @@ module.exports = function(deps){
       case 'tools/call': {
         const tool = TOOLS.find((t) => t.name === p.name);
         if (!tool) return fail(-32602, 'Unknown tool: ' + p.name);
-        if (tool.write && !who.write) return reply({ content: [{ type: 'text', text: 'This token can only read. To act, make a token with “Can also act” on your BOLD.OS profile.' }], isError: true });
+        if (tool.write && !who.write) return reply({ content: [{ type: 'text', text: 'This token can only read. To let it act, ask on your BOLD.OS profile (Linked accounts → Agents): a PI or admin approves.' }], isError: true });
         log(who, tool.name, p.arguments);
         try {
           const out = await tool.run(who, p.arguments || {});
@@ -679,7 +673,7 @@ module.exports = function(deps){
     if (!tool) return res.status(404).json({ error: 'No such endpoint. GET / lists them.' });
     // Reads are GETs with query parameters; acting is a POST with a JSON body.
     if (req.method !== (tool.write ? 'POST' : 'GET')) return res.status(405).set('Allow', tool.write ? 'POST' : 'GET').json({ error: (tool.write ? 'POST' : 'GET') + ' /v1/' + tool.name + '.' });
-    if (tool.write && !who.write) return res.status(403).json({ error: 'This token can only read. To act, make a token with “Can also act” on your BOLD.OS profile.' });
+    if (tool.write && !who.write) return res.status(403).json({ error: 'This token can only read. To let it act, ask on your BOLD.OS profile (Linked accounts → Agents): a PI or admin approves.' });
     let args = {};
     if (tool.write) args = req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {};
     else Object.keys(req.query).forEach((k) => {

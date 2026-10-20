@@ -74,6 +74,7 @@ section.block:first-of-type{margin-top:28px;}
 .api-tokens{list-style:none; margin:10px 0 0; padding:0;}
 .api-tokens li{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-top:1px solid var(--line);}
 .api-tokens code, .api-fresh code{font-size:13px;}
+.api-btns{display:flex; gap:14px; flex:0 0 auto;}
 .api-fresh{margin:10px 0 4px;}
 .api-fresh .acct-note{display:block; margin:10px 0 6px;}
 .api-new{display:flex; flex-wrap:wrap; gap:10px; margin:12px 0 8px;}

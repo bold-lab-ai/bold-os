@@ -5184,8 +5184,14 @@ exports.rebuildInteractions = onCall(
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
 const agentApi = require('./api')({ db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, groupOf, SITE_URL,
-  SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP],
-  callables: () => ({ projectWorkspace: exports.projectWorkspace, introRequest: exports.introRequest, studyRequest: exports.studyRequest, letterRequest: exports.letterRequest }) });
+  SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], SLACK_BOT_TOKEN,
+  // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
+  tellStaff: async (text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: text }),
+  tellPerson: (email, text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: [email], headline: text }),
+  slackText, linkedTitle, joinPageUrl,
+  callables: () => ({ projectWorkspace: exports.projectWorkspace, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
+    letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
+    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
 

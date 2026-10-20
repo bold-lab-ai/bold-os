@@ -9,6 +9,9 @@
     "rules": "firebase/storage.rules"
   },
   "functions": {
-    "source": "functions"
+    "source": "functions",
+    "predeploy": [
+      "cp \"$PROJECT_DIR/src/assets/js/card-model.js\" \"$RESOURCE_DIR/card-model.js\""
+    ]
   }
 }
