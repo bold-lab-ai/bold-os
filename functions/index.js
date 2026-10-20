@@ -4722,6 +4722,8 @@ const INTRO_OPEN = ['asked', 'accepted'];
 //   create { offerId, why }        anyone but the offer's author
 //   withdraw { id }                the requester, while it's open (deletes it)
 //   accept | decline { id, reply? }, done { id }   whoever made the offer
+//   withdrawOffer { offerId }      whoever made it, or a PI or admin: deletes the
+//                                  offer and closes its open requests (declined)
 exports.introRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -4731,6 +4733,28 @@ exports.introRequest = onCall(
     const me = await personFor(email);
     const myName = (me && me.name) || request.auth.token.name || email;
     const tell = (to, text) => dmByEmail(token, to, text);
+
+    if (d.action === 'withdrawOffer') {
+      const offerId = String(d.offerId || '');
+      if (!/^[A-Za-z0-9]{1,40}$/.test(offerId)) throw new HttpsError('invalid-argument', 'No such offer.');
+      const offerRef = db.collection('introOffers').doc(offerId);
+      const offerSnap = await offerRef.get();
+      if (!offerSnap.exists) throw new HttpsError('not-found', 'That offer has been removed.');
+      const o = offerSnap.data(), mine = String((o.by && o.by.email) || '').toLowerCase() === email;
+      if (!mine && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only whoever made the offer can withdraw it.');
+      const open = (await db.collection('introRequests').where('offerId', '==', offerId).get()).docs
+        .filter((x) => INTRO_OPEN.indexOf(x.data().status) !== -1);
+      const batch = db.batch(), now = Date.now();
+      open.forEach((x) => batch.update(x.ref, { status: 'declined', reply: 'The offer was withdrawn.', updatedAt: now }));
+      batch.delete(offerRef);
+      await batch.commit();
+      const by = slackText(String((o.by && o.by.name) || 'Whoever offered it'));
+      for (const x of open) {
+        await tell(x.data().requesterEmail, '↩️ ' + by + ' withdrew their offer of introductions at ' + linkedTitle(slackText(o.org), introUrl(x.id)) +
+          ', so your request is closed.');
+      }
+      return { closed: open.length };
+    }
 
     if (d.action === 'create') {
       const offerId = String(d.offerId || '');

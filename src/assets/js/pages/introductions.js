@@ -1,7 +1,8 @@
 // introductions.html: introductions (functions/index.js "Service desk: introductions").
 // Anyone offers to introduce people to someone at an organisation they know
 // (introOffers, written here under the rules; no names); anyone else asks on an
-// offer, and whoever made it answers. Requests (introRequests, the two people's
+// offer, and whoever made it answers (or withdraws the offer, closing what's open on
+// it, through introRequest). Requests (introRequests, the two people's
 // alone) change only through introRequest, which tells the other on Slack.
 (function(){
   var esc = BOLD.escapeHtml;
@@ -46,7 +47,7 @@
     var b = busy[o.id] ? ' disabled' : '';
     var controls = mine
       ? '<button type="button" class="btn-text in-edit" data-id="' + esc(o.id) + '"' + b + '>Edit</button>' +
-        '<button type="button" class="btn-text danger in-remove" data-id="' + esc(o.id) + '"' + b + '>Remove</button>'
+        '<button type="button" class="btn-text danger in-remove" data-id="' + esc(o.id) + '"' + b + '>Withdraw</button>'
       : (asked
         ? '<a class="btn-text" href="#i=' + esc(asked.id) + '">You’ve asked · ' + esc(STATUS[asked.status]) + '</a>'
         : '<button type="button" class="btn-text in-ask" data-id="' + esc(o.id) + '"' + b + '>Ask for an introduction</button>') +
@@ -176,11 +177,8 @@
     if (t.classList.contains('in-ask')) { openForm('a:' + id); return; }
     if (t.classList.contains('in-remove')) {
       var o = offers.filter(function(x){ return x.id === id; })[0];
-      if (!o || !window.confirm('Remove the offer for ' + o.org + '? Requests already made on it stay.')) return;
-      busy[id] = true; t.disabled = true;
-      db.collection('introOffers').doc(id).delete().catch(function(err){
-        console.error('[BOLD Intros] removing failed', err); window.alert('Couldn’t remove it — try again.');
-      }).then(function(){ delete busy[id]; render(); });
+      if (!o || !window.confirm((o.by && o.by.email === me.email ? 'Withdraw your' : 'Remove the') + ' offer for ' + o.org + '? Requests still open on it are closed, and whoever asked is told on Slack.')) return;
+      act(id, { action: 'withdrawOffer', offerId: id }, t);
       return;
     }
     var q = (byMe || []).concat(ofMe || []).filter(function(x){ return x.id === id; })[0];
