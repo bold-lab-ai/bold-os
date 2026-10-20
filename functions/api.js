@@ -8,7 +8,7 @@
 //
 // boldApi (one HTTPS function) answers two ways, from the same tools (TOOLS):
 //   POST /mcp            MCP (Streamable HTTP, stateless, JSON responses): for agents
-//                        (Claude Code: claude mcp add --transport http bold-os <url>/mcp
+//                        (Claude Code: claude mcp add --scope user --transport http bold-os <url>/mcp
 //                        --header "Authorization: Bearer <token>").
 //   GET  /v1/<tool>?…    the same tools as JSON, arguments as query parameters.
 // Both need `Authorization: Bearer <token>`.
