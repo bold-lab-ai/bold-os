@@ -45,11 +45,11 @@ export default {
     { label: 'Agents', href: 'agents.html', links: [
       { label: 'Activity', href: 'agents.html' },
       { label: 'Tools', href: 'tools.html' },
-    ], separatorAfter: true },
-    // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.
-    { label: 'How to', href: 'guides.html', links: [], guides: true },
+    ] },
     // Its sub-pages are the skills (Firestore), filled in by bold.js.
     { label: 'Skills', href: 'skills.html', links: [], skills: true, separatorAfter: true },
+    // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.
+    { label: 'How to', href: 'guides.html', links: [], guides: true },
     { label: 'Service desk', href: 'service-desk.html', links: [
       { label: 'Get started at BOLD', href: 'get-started.html' },
       { label: 'Recommendation letters', href: 'letters.html' },
