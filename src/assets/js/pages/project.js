@@ -197,7 +197,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
-  var TABS = [['overview', 'Overview'], ['presentations', 'Presentations'], ['paper', 'Paper']];
+  var TABS = [['overview', 'Overview'], ['presentations', 'Presentations'], ['paper', 'Papers']];
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
   // The Team tab's people and channel are on Overview now, its meeting, slides and notes on Presentations.
   if (tab === 'team') tab = 'overview';
