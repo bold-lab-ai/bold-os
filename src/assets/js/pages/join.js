@@ -69,6 +69,10 @@
     var p = BoldJoin.problem(d);
     if (p) { showError(p); return; }
     delete d.inviterTyped;
+    BOLD.confirmAction({ title: 'Send your request?', go: 'Send', effects: ['Send the PIs and admins a Slack message with your request',
+      d.inviterEmail ? 'Ask whoever you named as inviting you to confirm it, on Slack' : ''].filter(Boolean) }).then(function(ok){ if (ok) sendRequest(d); });
+  }
+  function sendRequest(d){
     var btn = box.querySelector('.ev-save');
     btn.disabled = true; showError('');
     firebase.app().functions('europe-west2').httpsCallable('requestToJoin')(d).then(function(){

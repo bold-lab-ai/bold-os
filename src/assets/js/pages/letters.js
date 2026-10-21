@@ -312,7 +312,12 @@
     var id = f.getAttribute('data-id'), d = readForm(f), err = f.querySelector('.ev-error');
     var p = problem(d, !id);
     if (p) { err.textContent = p; err.hidden = false; return; }
-    if (!id && d.recipients.some(function(r){ return r.deadline && r.deadline < today(); }) && !window.confirm('A deadline has passed already. Ask anyway?')) return;
+    if (id) return send(f, btn, id, d, err);
+    var late = d.recipients.some(function(r){ return r.deadline && r.deadline < today(); });
+    BOLD.confirmAction({ title: late ? 'A deadline has passed already. Ask anyway?' : 'Ask ' + newForm.writer.name + ' for the letter?', go: 'Ask',
+      effects: ['Send ' + newForm.writer.name + ' a Slack message from BOLD.OS with your request'] }).then(function(ok){ if (ok) send(f, btn, id, d, err); });
+  }
+  function send(f, btn, id, d, err){
     btn.disabled = true; err.hidden = true;
     var data = Object.assign(d, id ? { action: 'update', id: id } : { action: 'create', writerEmail: newForm.writer.email });
     call(data).then(function(){ closeForm(); }).catch(function(e){

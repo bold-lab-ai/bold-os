@@ -244,26 +244,19 @@
     var iid = t.getAttribute('data-iid'), mid = t.getAttribute('data-mid');
     if (iid || mid) {
       var yes = t.classList.contains('jr-i-yes'), key = iid || 'm:' + mid;
-      if (!yes && !window.confirm('Say you didn’t invite them? The PIs and admins are told.')) return;
-      busy[key] = true; render();
-      fn('confirmJoinInvite')(iid ? { id: iid, confirm: yes } : { member: mid, confirm: yes }).catch(function(err){
-        console.error('[BOLD Join] confirming the invitation failed', err);
-        window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
-      }).then(function(){ delete busy[key]; render(); });
+      (yes ? Promise.resolve(true) : BOLD.confirmAction({ title: 'Say you didn’t invite them?', go: 'Say so', effects: ['Tell the PIs and admins on Slack'] })).then(function(ok){
+        if (ok) confirmInvite(key, iid, mid, yes);
+      });
       return;
     }
     var aid = t.getAttribute('data-aid');
     if (aid) {
       var a = actReqs.filter(function(q){ return q.id === aid; })[0];
       if (!a) return;
-      var stop = t.classList.contains('jr-a-stop'), yes = t.classList.contains('jr-a-approve');
-      if (!window.confirm(stop ? 'Stop ' + a.owner + '’s agent acting for them? It still reads.'
-        : yes ? 'Let ' + a.owner + '’s agent act for them? They’re told on Slack.' : 'Decline ' + a.owner + '’s request? They’re told on Slack.')) return;
-      busy['a:' + aid] = true; t.disabled = true;
-      fn('apiTokens')(stop ? { action: 'stopAct', id: aid } : { action: 'decideAct', id: aid, accept: yes }).catch(function(err){
-        console.error('[BOLD Join] deciding the agent request failed', err);
-        window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
-      }).then(function(){ delete busy['a:' + aid]; return loadActReqs(); });
+      var stop = t.classList.contains('jr-a-stop'), ayes = t.classList.contains('jr-a-approve');
+      BOLD.confirmAction(stop ? { title: 'Stop ' + a.owner + '’s agent acting for them?', go: 'Stop', effects: ['It still reads'] }
+        : ayes ? { title: 'Let ' + a.owner + '’s agent act for them?', go: 'Approve', effects: ['Tell ' + a.owner + ' on Slack', 'Let their agent act in their name: people get Slack messages from them'] }
+        : { title: 'Decline ' + a.owner + '’s request?', go: 'Decline', effects: ['Tell ' + a.owner + ' on Slack'] }).then(function(ok){ if (ok) decideAct(t, aid, stop, ayes); });
       return;
     }
     var gid = t.getAttribute('data-gid');
@@ -271,35 +264,58 @@
       var g = groupReqs.filter(function(q){ return q.id === gid; })[0];
       if (!g) return;
       var accept = t.classList.contains('jr-g-approve');
-      if (!window.confirm((accept ? 'Move ' + g.name + ' to ' : 'Decline ' + g.name + '’s request for ') + BoldJoin.categoryLabel(g.to) + '? They’re told on Slack.')) return;
-      busy[gid] = true; t.disabled = true;
-      fn('groupRequest')({ action: 'decide', id: gid, accept: accept }).catch(function(err){
-        console.error('[BOLD Join] deciding the group request failed', err);
-        window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
-      }).then(function(){ delete busy[gid]; render(); });
+      BOLD.confirmAction({ title: (accept ? 'Move ' + g.name + ' to ' : 'Decline ' + g.name + '’s request for ') + BoldJoin.categoryLabel(g.to) + '?', go: accept ? 'Move' : 'Decline',
+        effects: ['Tell ' + g.name + ' on Slack'].concat(accept ? ['Add them to the Slack channels of ' + BoldJoin.categoryLabel(g.to) + ', if it has any'] : []) })
+        .then(function(ok){ if (ok) decideGroup(t, gid, accept); });
       return;
     }
+    rest(t);
+  });
+  function confirmInvite(key, iid, mid, yes){
+    busy[key] = true; render();
+    fn('confirmJoinInvite')(iid ? { id: iid, confirm: yes } : { member: mid, confirm: yes }).catch(function(err){
+      console.error('[BOLD Join] confirming the invitation failed', err);
+      window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
+    }).then(function(){ delete busy[key]; render(); });
+  }
+  function decideAct(t, aid, stop, yes){
+    busy['a:' + aid] = true; t.disabled = true;
+    fn('apiTokens')(stop ? { action: 'stopAct', id: aid } : { action: 'decideAct', id: aid, accept: yes }).catch(function(err){
+      console.error('[BOLD Join] deciding the agent request failed', err);
+      window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
+    }).then(function(){ delete busy['a:' + aid]; return loadActReqs(); });
+  }
+  function decideGroup(t, gid, accept){
+    busy[gid] = true; t.disabled = true;
+    fn('groupRequest')({ action: 'decide', id: gid, accept: accept }).catch(function(err){
+      console.error('[BOLD Join] deciding the group request failed', err);
+      window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
+    }).then(function(){ delete busy[gid]; render(); });
+  }
+  function rest(t){
     var id = t.getAttribute('data-id');
     var r = requests && requests.filter(function(q){ return q.id === id; })[0];
     if (!r) return;
-    var job;
+    var run = function(job){
+      busy[id] = true; t.disabled = true;
+      job().catch(function(err){
+        console.error('[BOLD Join] that failed', err);
+        window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
+      }).then(function(){ delete busy[id]; render(); });
+    };
     if (t.classList.contains('jr-approve')) {
       var inv = r.invitedBy || {};
-      var unconfirmed = !inv.name ? '' : inv.status === 'denied' ? '\n\n' + inv.name + ' says they didn’t invite them.'
-        : inv.status !== 'confirmed' ? '\n\n' + inv.name + ' hasn’t confirmed inviting them yet.' : '';
-      if (!window.confirm('Approve ' + r.name + '? They’ll get the welcome email.' + unconfirmed)) return;
-      job = fn('decideJoinRequest')({ id: id, accept: true });
+      var unconfirmed = !inv.name ? '' : inv.status === 'denied' ? inv.name + ' says they didn’t invite them.'
+        : inv.status !== 'confirmed' ? inv.name + ' hasn’t confirmed inviting them yet.' : '';
+      BOLD.confirmAction({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack'] })
+        .then(function(ok){ if (ok) run(function(){ return fn('decideJoinRequest')({ id: id, accept: true }); }); });
     } else if (t.classList.contains('jr-decline')) {
-      if (!window.confirm('Decline ' + r.name + '’s request? They aren’t told.')) return;
-      job = fn('decideJoinRequest')({ id: id, accept: false });
-    } else if (t.classList.contains('jr-resend')) job = fn('sendWelcomeEmail')({ id: id });
-    if (!job) return;
-    busy[id] = true; t.disabled = true;
-    job.catch(function(err){
-      console.error('[BOLD Join] that failed', err);
-      window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
-    }).then(function(){ delete busy[id]; render(); });
-  });
+      if (window.confirm('Decline ' + r.name + '’s request? They aren’t told.')) run(function(){ return fn('decideJoinRequest')({ id: id, accept: false }); });
+    } else if (t.classList.contains('jr-resend')) {
+      BOLD.confirmAction({ title: 'Send the welcome email again?', go: 'Send', effects: ['Email ' + r.name + ' the welcome again'] })
+        .then(function(ok){ if (ok) run(function(){ return fn('sendWelcomeEmail')({ id: id }); }); });
+    }
+  }
 
   BOLD.onUser(function(user){
     unsubs.forEach(function(u){ u(); }); unsubs = [];

@@ -290,7 +290,12 @@
 
   // Pause or resume a meeting: projectWorkspace for a project, studies for a student's.
   function pauseOrResume(m, action){
-    if (action === 'pause' && !window.confirm('Pause “' + m.title + '”? Its upcoming dates come off everyone’s Google Calendar until it’s resumed; the invitation and Meet link stay the same.')) return;
+    BOLD.confirmAction(action === 'pause'
+      ? { title: 'Pause “' + m.title + '”?', go: 'Pause', effects: ['Take its upcoming dates off everyone’s Google Calendar until it’s resumed (the invitation and Meet link stay the same)'] }
+      : { title: 'Resume “' + m.title + '”?', go: 'Resume', effects: ['Put its upcoming dates back on everyone’s Google Calendar'] })
+      .then(function(ok){ if (ok) sendPause(m, action); });
+  }
+  function sendPause(m, action){
     var k = keyOf(m), fns = firebase.app().functions('europe-west2'), call;
     busy[k] = true; msgs[k] = ''; render();
     try {
@@ -308,6 +313,11 @@
   function askOrWithdraw(m, ask){
     var note = el('calPop').querySelector('.cal-ask-note');
     var text = note ? note.value : '';
+    if (!ask) return sendAsk(m, ask, text);
+    BOLD.confirmAction({ title: 'Ask to join ' + m.first + '’s meeting?', go: 'Ask', effects: ['Send ' + m.first + ' a Slack message from BOLD.OS asking them to approve it'] })
+      .then(function(ok){ if (ok) sendAsk(m, ask, text); });
+  }
+  function sendAsk(m, ask, text){
     busy[m.id] = true; msgs[m.id] = ''; render();
     var call;
     try { call = firebase.app().functions('europe-west2').httpsCallable('studyRequest')(ask ? { action: 'request', student: m.id, note: text } : { action: 'withdraw', id: asked[m.id] }); }
@@ -331,6 +341,13 @@
     var id = btn.getAttribute('data-id'), action = btn.getAttribute('data-action');
     var w = (data.project || []).filter(function(x){ return x.cardId === id; })[0];
     if (!w) return;
+    var join = action === 'join';
+    BOLD.confirmAction({ title: (join ? 'Join “' : 'Leave “') + (w.title || 'this project') + '”?', go: join ? 'Join' : 'Leave', effects: join
+      ? [w.slackChannel ? 'Invite you to ' + w.slackChannel + ' on Slack' : '', 'Add you to its meeting on Google Calendar (Google emails you the invitation)', 'Share its slides and notes on Google Drive with you'].filter(Boolean)
+      : ['Take you off its meeting on Google Calendar', 'Stop sharing its slides and notes with you'] })
+      .then(function(ok){ if (ok) sendJoin(id, action, w); });
+  }
+  function sendJoin(id, action, w){
     busy[id] = true; msgs[id] = ''; render();
     var call;
     try { call = firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')({ action: action, id: id, board: w.boardId || null }); }

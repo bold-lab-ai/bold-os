@@ -78,10 +78,15 @@
       var send = t.classList.contains('md-g-send'), to = (box.querySelector('input[name="md-g-to"]:checked') || {}).value;
       if (send && !to) { gError = 'Choose a group.'; render(); return; }
       var note = send ? box.querySelector('.md-g-note').value : '';
-      gBusy = true; gError = ''; render();
-      callGroup(send ? { action: 'request', to: to, note: note } : { action: 'withdraw', id: groupReq.id }).then(function(){ asking = false; })
-        .catch(function(err){ console.error('[BOLD Profile] the group request failed', err); gError = (err && err.message) || 'Couldn’t send it — try again.'; })
-        .then(function(){ gBusy = false; render(); });
+      var go = function(){
+        gBusy = true; gError = ''; render();
+        callGroup(send ? { action: 'request', to: to, note: note } : { action: 'withdraw', id: groupReq.id }).then(function(){ asking = false; })
+          .catch(function(err){ console.error('[BOLD Profile] the group request failed', err); gError = (err && err.message) || 'Couldn’t send it — try again.'; })
+          .then(function(){ gBusy = false; render(); });
+      };
+      if (!send) { go(); return; }
+      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: ['Send the PIs and admins a Slack message asking to approve it'] })
+        .then(function(ok){ if (ok) go(); });
       return;
     }
     if (t.classList.contains('md-cancel')) { editing = false; render(); return; }
@@ -89,10 +94,14 @@
     var d = BoldJoin.read(box), err = box.querySelector('.ev-error');
     var p = BoldJoin.problem(d);
     if (p) { err.textContent = p; err.hidden = false; return; }
-    t.disabled = true;
     // Who invited them goes through setMyInviter (they can't write it, and it asks them to confirm).
     var inviter = d.inviterEmail, was = String((rec && rec.invitedBy && rec.invitedBy.email) || '');
     delete d.inviterEmail;
+    (inviter && inviter !== was ? BOLD.confirmAction({ title: 'Save your details?', go: 'Save', effects: ['Send whoever you named as inviting you a Slack message asking them to confirm it'] }) : Promise.resolve(true))
+      .then(function(ok){ if (ok) saveDetails(t, d, inviter, was, err); });
+  });
+  function saveDetails(t, d, inviter, was, err){
+    t.disabled = true;
     db.collection('members').doc(me.email).set(Object.assign(d, { name: (rec && rec.name) || me.name || me.email, email: me.email, updatedAt: Date.now() }), { merge: true })
       .then(function(){
         if (inviter === undefined || inviter === was) return;
@@ -103,7 +112,7 @@
         console.error('[BOLD Profile] saving your details failed', e2);
         err.textContent = 'Couldn’t save — try again.'; err.hidden = false; t.disabled = false;
       });
-  });
+  }
 
   BoldJoin.options(db, function(o){ opt = o; render(); });
   BOLD.onUser(function(user){

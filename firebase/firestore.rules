@@ -527,6 +527,15 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // A person's settings (bold.js): skipConfirm, whether to skip the confirmation
+    // before actions that reach outside BOLD.OS. Theirs alone, keyed by their uid.
+    match /prefs/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create, update: if isSignedIn() && request.auth.uid == userId
+        && request.resource.data.keys().hasOnly(['skipConfirm', 'at'])
+        && request.resource.data.skipConfirm is bool && request.resource.data.at is number;
+    }
+
     // A person's read points (read-point.js): which version of a document they
     // last marked as read. Theirs alone, keyed by their Firebase Auth uid.
     match /readPoints/{userId}/docs/{key} {

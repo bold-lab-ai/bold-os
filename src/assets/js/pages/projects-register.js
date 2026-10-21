@@ -41,8 +41,17 @@
     if (repo.error) return showError(repo.error);
     keywordField.addTyped();
     errorBox.hidden = true;
-    submitBtn.disabled = true;
+    BOLD.confirmAction({ title: 'Register \u201c' + title + '\u201d?', go: 'Register', effects: channelField.effects(channel.name).concat([
+      'Announce it in #active-projects on Slack',
+      meeting ? 'Make its meeting on Google Calendar, ' + meetingText(meeting) + ', with a Meet link (Google emails you the invitation)' : '',
+      'Make its slides and notes on Google Drive',
+      repo && repo.template ? 'Make its GitHub repository in bold-lab-ai, from the ' + repo.template + ' template' : ''].filter(Boolean)) }).then(function(ok){
+      if (ok) register(title, abstractText, channel, meeting, repo);
+    });
+  });
 
+  function register(title, abstractText, channel, meeting, repo){
+    submitBtn.disabled = true;
     var ensure = channelField.ensure(channel.name);
     ensure.then(function(r){
       // A project is a card (card-model.js) \u2014 the same one "+ Register paper" makes.
@@ -71,5 +80,5 @@
           ? err.message
           : 'Could not register the project \u2014 try again.');
     });
-  });
+  }
 })();

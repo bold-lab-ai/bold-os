@@ -121,6 +121,13 @@
     if (!e.people.length) { e.error = 'Add who supervises your studies.'; render(); return; }
     var meeting = readMeetingEntry();
     if (meeting.error) { e.error = meeting.error; render(); return; }
+    var names = e.people.map(function(p){ return p.name; }).join(', ');
+    BOLD.confirmAction({ title: 'Save your studies?', go: 'Save', effects: [
+      'Set the meeting on Google Calendar, ' + meetingText(meeting) + ': Google emails ' + names + ' the invitation or the change',
+      e.channelFixed ? 'Add anyone new to its Slack channel' : 'Make or use the Slack channel #' + (e.channel || '').replace(/^#/, '') + ' and add ' + names + ' to it'] })
+      .then(function(ok){ if (ok) sendSave(e, meeting); });
+  }
+  function sendSave(e, meeting){
     busy = true; e.error = ''; render();
     call({ action: 'save', title: e.title.trim(), people: e.people, meeting: meeting, channel: e.channelFixed ? '' : e.channel }).then(function(r){
       busy = false; editing = null;
@@ -144,20 +151,17 @@
       loadRoster(); render(); if (!editing.channelFixed) checkChannel(); return;
     }
     if (t.classList.contains('st-decide')) {
-      var id = t.getAttribute('data-id'), a = asks.filter(function(x){ return x.id === id; })[0];
-      deciding[id] = true; if (a) a.error = ''; render();
-      firebase.app().functions('europe-west2').httpsCallable('studyRequest')({ action: 'decide', id: id, accept: !!t.getAttribute('data-accept') })
-        .catch(function(err){ console.error('[BOLD Studies] deciding failed', err); if (a) a.error = (err && err.message) || 'That didn’t work — try again.'; })
-        .then(function(){ deciding[id] = false; render(); });
+      var id = t.getAttribute('data-id'), a = asks.filter(function(x){ return x.id === id; })[0], yes = !!t.getAttribute('data-accept');
+      var who = (a && (a.name || a.requesterName)) || 'them';
+      BOLD.confirmAction(yes ? { title: 'Approve ' + who + '?', go: 'Approve', effects: ['Add ' + who + ' to your meeting on Google Calendar (Google emails them the invitation) and to your Slack channel', 'Tell them on Slack'] }
+        : { title: 'Decline?', go: 'Decline', effects: ['Tell ' + who + ' on Slack'] }).then(function(ok){ if (ok) decide(id, a, yes); });
       return;
     }
     if (t.classList.contains('st-pause')) {
       var act = t.getAttribute('data-action');
-      if (act === 'pause' && !window.confirm('Pause your meeting? Its upcoming dates come off everyone’s Google Calendar until it’s resumed; the invitation and Meet link stay the same.')) return;
-      busy = true; msg = ''; render();
-      call({ action: act }).then(function(){ msg = act === 'pause' ? 'Paused.' : 'Resumed: its dates are back in everyone’s Google Calendar.'; })
-        .catch(function(err){ console.error('[BOLD Studies] ' + act + ' failed', err); msg = (err && err.message) || 'That didn’t work — try again.'; })
-        .then(function(){ busy = false; render(); });
+      BOLD.confirmAction(act === 'pause'
+        ? { title: 'Pause your meeting?', go: 'Pause', effects: ['Take its upcoming dates off everyone’s Google Calendar until it’s resumed (the invitation and Meet link stay the same)'] }
+        : { title: 'Resume your meeting?', go: 'Resume', effects: ['Put its upcoming dates back on everyone’s Google Calendar'] }).then(function(ok){ if (ok) pause(act); });
       return;
     }
     if (t.classList.contains('st-retry')) {
@@ -166,6 +170,21 @@
         .then(function(){ busy = false; render(); });
       return;
     }
+    rest(t);
+  });
+  function decide(id, a, yes){
+    deciding[id] = true; if (a) a.error = ''; render();
+    firebase.app().functions('europe-west2').httpsCallable('studyRequest')({ action: 'decide', id: id, accept: yes })
+      .catch(function(err){ console.error('[BOLD Studies] deciding failed', err); if (a) a.error = (err && err.message) || 'That didn’t work — try again.'; })
+      .then(function(){ deciding[id] = false; render(); });
+  }
+  function pause(act){
+    busy = true; msg = ''; render();
+    call({ action: act }).then(function(){ msg = act === 'pause' ? 'Paused.' : 'Resumed: its dates are back in everyone’s Google Calendar.'; })
+      .catch(function(err){ console.error('[BOLD Studies] ' + act + ' failed', err); msg = (err && err.message) || 'That didn’t work — try again.'; })
+      .then(function(){ busy = false; render(); });
+  }
+  function rest(t){
     if (!editing) return;
     keep();
     if (t.classList.contains('st-cancel')) { editing = null; render(); return; }
@@ -178,7 +197,7 @@
       if (email !== me.email && !editing.people.some(function(p){ return p.email === email; })) editing.people.push({ name: name || email, email: email });
       editing.adding = false; editing.error = ''; render();
     }
-  });
+  }
   // Says what saving would do with the channel: make it, or use the one already there.
   function checkChannel(){
     if (!editing || editing.channelFixed) return;

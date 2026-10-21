@@ -146,6 +146,11 @@
   function ask(f, btn){
     var why = f.querySelector('.in-why').value.trim();
     if (!why) { fail(f, 'Say what you’d like and why.'); return; }
+    var o = (offers || []).filter(function(x){ return x.id === btn.getAttribute('data-id'); })[0] || {}, who = (o.by && o.by.name) || 'whoever offered';
+    BOLD.confirmAction({ title: 'Ask for an introduction' + (o.org ? ' at ' + o.org : '') + '?', go: 'Ask',
+      effects: ['Send ' + who + ' a Slack message from BOLD.OS with your request'] }).then(function(ok){ if (ok) sendAsk(f, btn, why); });
+  }
+  function sendAsk(f, btn, why){
     btn.disabled = true;
     call({ action: 'create', offerId: btn.getAttribute('data-id'), why: why }).then(function(r){
       editing = null; location.hash = 'i=' + r.data.id; render();

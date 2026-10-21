@@ -125,7 +125,12 @@
     var msg = document.createElement('span');
     msg.className = 'join-msg';
     msg.setAttribute('role', 'status');
-    join.addEventListener('click', function(){ joinProject(p, join, msg); });
+    join.addEventListener('click', function(){
+      BOLD.confirmAction({ title: 'Join \u201c' + (p.title || 'this project') + '\u201d?', go: 'Join', effects: [
+        p.slackChannel ? 'Invite you to ' + p.slackChannel + ' on Slack' : '',
+        'Add you to its meeting on Google Calendar, if it has one (Google emails you the invitation)',
+        'Share its slides and notes on Google Drive with you'].filter(Boolean) }).then(function(ok){ if (ok) joinProject(p, join, msg); });
+    });
     wrap.appendChild(msg);
     li.appendChild(wrap);
     return li;

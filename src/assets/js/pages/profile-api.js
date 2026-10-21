@@ -45,23 +45,33 @@
     if (t.classList.contains('api-create')) {
       var label = box.querySelector('.api-label').value.trim(), write = box.querySelector('.api-can-act').checked;
       if (!label) { error = 'Name it first, after the agent that will use it.'; render(); return; }
-      busy = true; error = ''; render();
-      call({ action: 'create', label: label, askAct: write }).then(function(d){
-        fresh = { label: d.label, token: d.token };
-        tokens.unshift({ id: d.id, label: d.label, prefix: d.prefix, write: d.write, act: d.act, createdAt: d.createdAt, lastUsedAt: 0 });
-      }).catch(function(err){
-        console.error('[BOLD Agents] making a token failed', err);
-        error = err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t make a token — try again.';
-      }).then(function(){ busy = false; render(); });
+      (write ? BOLD.confirmAction({ title: 'Make the token and ask to let it act?', go: 'Make it', effects: ['Send the PIs and admins a Slack message asking to approve it'] }) : Promise.resolve(true))
+        .then(function(ok){ if (ok) create(label, write); });
     } else if (t.classList.contains('api-ask') || t.classList.contains('api-stop')) {
       var ask = t.classList.contains('api-ask');
-      if (!window.confirm(ask ? ASK + ' Ask?' : 'Stop it acting for you? It still reads.')) return;
-      busy = true; error = ''; render();
-      call({ action: ask ? 'askAct' : 'stopAct', id: t.getAttribute('data-id') }).then(load).catch(function(err){
-        console.error('[BOLD Agents] that failed', err);
-        error = err && err.message && err.code !== 'functions/internal' ? err.message : 'That didn’t work — try again.';
-      }).then(function(){ busy = false; render(); });
-    } else if (t.classList.contains('api-revoke')) {
+      (ask ? BOLD.confirmAction({ title: 'Ask to let it act for you?', go: 'Ask', effects: [ASK, 'Send the PIs and admins a Slack message asking to approve it'] })
+        : Promise.resolve(window.confirm('Stop it acting for you? It still reads.'))).then(function(ok){ if (ok) askOrStop(t, ask); });
+    } else rest(t);
+  });
+  function create(label, write){
+    busy = true; error = ''; render();
+    call({ action: 'create', label: label, askAct: write }).then(function(d){
+      fresh = { label: d.label, token: d.token };
+      tokens.unshift({ id: d.id, label: d.label, prefix: d.prefix, write: d.write, act: d.act, createdAt: d.createdAt, lastUsedAt: 0 });
+    }).catch(function(err){
+      console.error('[BOLD Agents] making a token failed', err);
+      error = err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t make a token — try again.';
+    }).then(function(){ busy = false; render(); });
+  }
+  function askOrStop(t, ask){
+    busy = true; error = ''; render();
+    call({ action: ask ? 'askAct' : 'stopAct', id: t.getAttribute('data-id') }).then(load).catch(function(err){
+      console.error('[BOLD Agents] that failed', err);
+      error = err && err.message && err.code !== 'functions/internal' ? err.message : 'That didn’t work — try again.';
+    }).then(function(){ busy = false; render(); });
+  }
+  function rest(t){
+    if (t.classList.contains('api-revoke')) {
       if (!window.confirm('Revoke this token? Whatever uses it stops working at once.')) return;
       var id = t.getAttribute('data-id');
       busy = true; error = ''; render();
@@ -71,7 +81,7 @@
       }).catch(function(err){ console.error('[BOLD Agents] revoking failed', err); error = 'Couldn’t revoke it — try again.'; })
         .then(function(){ busy = false; render(); });
     }
-  });
+  }
   box.addEventListener('keydown', function(e){
     if (e.key === 'Enter' && e.target.classList.contains('api-label')) { e.preventDefault(); box.querySelector('.api-create').click(); }
   });

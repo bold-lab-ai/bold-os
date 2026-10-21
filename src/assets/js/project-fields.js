@@ -126,7 +126,7 @@ function wireChannelField(verb, from, project){
   }
 
   // What the typed name becomes, and what happens to it in Slack.
-  var checkSeq = 0, checkTimer = null;
+  var checkSeq = 0, checkTimer = null, checked = {};
   function updateChannelStatus(){
     clearTimeout(checkTimer);
     var seq = ++checkSeq;
@@ -141,6 +141,7 @@ function wireChannelField(verb, from, project){
     checkTimer = setTimeout(function(){
       if (!callChannel) return renderStatus(lines);
       callChannel(n.name, 'check').then(function(r){
+        checked[n.name] = !!r.exists;
         if (seq !== checkSeq) return;
         var old = from && normalizeProjectChannel(from);
         renderStatus(lines.concat([r.exists
@@ -168,6 +169,15 @@ function wireChannelField(verb, from, project){
 
   return {
     refresh: updateChannelStatus,
+    // What saving `name` does in Slack, for BOLD.confirmAction: nothing for a channel
+    // that exists; else the old one renamed, or a new private one made.
+    effects: function(name){
+      if (checked[name]) return [];
+      var old = from && normalizeProjectChannel(from), sure = checked[name] === false ? '' : ' (if it doesn’t exist yet)';
+      if (old && !old.error && old.name === name) return [];
+      return old && !old.error ? ['Rename #' + old.name + ' to #' + name + ' in Slack' + sure + ': same channel, same people']
+        : ['Create the private Slack channel #' + name + sure + ' and invite you'];
+    },
     ensure: function(name){
       // Set up the Slack channel first (creates and invites if it doesn't exist),
       // so a project is never saved against a channel that couldn't be made.

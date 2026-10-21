@@ -416,6 +416,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function saveRepo(){
     var fail = failer(), repo = readRepoEntry();
     if (repo.error) return fail(repo.error);
+    BOLD.confirmAction({ title: 'Make the repository?', go: 'Make it', effects: [
+      'Make the project\u2019s GitHub repository in bold-lab-ai, from the ' + repo.template + ' template'] }).then(function(ok){ if (ok) sendRepo(repo, fail); });
+  }
+  function sendRepo(repo, fail){
     el('repoSave').disabled = true;
     callWorkspace({ action: 'repo', repo: repo }).then(function(r){
       if (r.data && r.data.repoError) { el('repoSave').disabled = false; return fail(r.data.repoError); }
@@ -460,9 +464,30 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   // Join, Leave, Set up / Try again.
+  // What each of them does outside BOLD.OS, for BOLD.confirmAction.
+  var WS_CONFIRM = {
+    join: function(){ return { title: 'Join \u201c' + card.title + '\u201d?', go: 'Join', effects: [
+      card.slackChannel ? 'Invite you to ' + card.slackChannel + ' on Slack' : '',
+      ws && ws.meeting ? 'Add you to its meeting on Google Calendar (Google emails you the invitation)' : '',
+      'Share its slides and notes on Google Drive with you'].filter(Boolean) }; },
+    leave: function(){ return { title: 'Leave \u201c' + card.title + '\u201d?', go: 'Leave', effects: [
+      ws && ws.meeting ? 'Take you off its meeting on Google Calendar' : '', 'Stop sharing its slides and notes with you'].filter(Boolean) }; },
+    setUp: function(){ return { title: 'Set up the project?', go: 'Set up', effects: [
+      ws && ws.meeting ? 'Make its meeting on Google Calendar, with a Meet link (Google emails its members the invitation)' : '',
+      'Make its slides and notes on Google Drive, shared with its members',
+      ws && ws.repo && !ws.repoName ? 'Make its GitHub repository' : ''].filter(Boolean) }; },
+    pause: function(){ return { title: 'Pause the meeting?', go: 'Pause', effects: [
+      'Take its upcoming dates off everyone\u2019s Google Calendar until it\u2019s resumed (the invitation and Meet link stay the same)'] }; },
+    resume: function(){ return { title: 'Resume the meeting?', go: 'Resume', effects: ['Put its upcoming dates back on everyone\u2019s Google Calendar'] }; },
+  };
+
   function workspaceAction(action){
     if (wsBusy) return;
-    if (action === 'pause' && !window.confirm('Pause the meeting? Its upcoming dates come off everyone\u2019s Google Calendar until it\u2019s resumed; the invitation and Meet link stay the same.')) return;
+    if (!WS_CONFIRM[action]) return runWorkspaceAction(action);
+    BOLD.confirmAction(WS_CONFIRM[action]()).then(function(ok){ if (ok) runWorkspaceAction(action); });
+  }
+  function runWorkspaceAction(action){
+    if (wsBusy) return;
     wsBusy = true; wsMsg = '';
     render();
     callWorkspace({ action: action }).then(function(r){
@@ -487,6 +512,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       meeting = readMeetingEntry();
       if (meeting.error) return fail(meeting.error);
     }
+    BOLD.confirmAction(remove ? { title: 'Remove the meeting?', go: 'Remove', effects: ['Cancel it on Google Calendar: Google tells its guests'] }
+      : { title: ws && ws.meeting ? 'Change the meeting?' : 'Add a meeting?', go: 'Save', effects: [ws && ws.meeting
+        ? 'Change it on Google Calendar to ' + meetingText(meeting) + ': Google emails its guests the change'
+        : 'Make it on Google Calendar, ' + meetingText(meeting) + ', with a Meet link: Google emails the project\u2019s members the invitation'] }).then(function(ok){
+      if (ok) sendMeeting(meeting, fail);
+    });
+  }
+  function sendMeeting(meeting, fail){
     el('meetingSave').disabled = true;
     callWorkspace({ action: 'meeting', meeting: meeting }).then(function(){
       editing = false; render();
@@ -869,9 +902,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       el('repoSave').addEventListener('click', saveRepo);
     } else if (editing === 'meeting') {
       el('meetingSave').addEventListener('click', function(){ saveMeeting(false); });
-      if (el('meetingRemove')) el('meetingRemove').addEventListener('click', function(){
-        if (window.confirm('Remove the meeting? Its guests are told it\u2019s cancelled.')) saveMeeting(true);
-      });
+      if (el('meetingRemove')) el('meetingRemove').addEventListener('click', function(){ saveMeeting(true); });
     } else if (editing === 'slack') {
       channelField = wireChannelField('save', card.slackChannel || '', { id: projectId, board: boardId || null });
       channelField.refresh();
@@ -905,8 +936,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   function completeProject(){
-    var reopen = !!(ws && ws.completedAt);
-    if (!reopen && !window.confirm('Mark "' + card.title + '" as completed? Its meeting is cancelled, and everyone on it is told.')) return;
+    var reopen = !!(ws && ws.completedAt), meeting = ws && ws.meeting;
+    if (reopen && !meeting) return sendComplete(true);
+    BOLD.confirmAction(reopen
+      ? { title: 'Reopen \u201c' + card.title + '\u201d?', go: 'Reopen', effects: meeting ? ['Put its meeting back on Google Calendar: Google emails its guests'] : [] }
+      : { title: 'Mark \u201c' + card.title + '\u201d as completed?', go: 'Mark completed', effects: meeting ? ['Cancel its meeting on Google Calendar: Google tells everyone on it'] : [] })
+      .then(function(ok){ if (ok) sendComplete(reopen); });
+  }
+  function sendComplete(reopen){
     wsBusy = true; render();
     callWorkspace({ action: reopen ? 'reopen' : 'complete' }).then(function(){
       wsBusy = false;
@@ -983,6 +1020,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function saveSlack(){
     var fail = failer(), n = normalizeProjectChannel(el('pfChannel').value), btn = el('slackSave');
     if (n.error) return fail(n.error);
+    var effects = channelField.effects(n.name);
+    (effects.length ? BOLD.confirmAction({ title: 'Change the Slack channel?', go: 'Save', effects: effects }) : Promise.resolve(true)).then(function(ok){
+      if (ok) sendSlack(n, btn, fail);
+    });
+  }
+  function sendSlack(n, btn, fail){
     btn.disabled = true;
     channelField.ensure(n.name).then(function(r){
       slack = { name: '#' + r.name, url: r.url || '' };

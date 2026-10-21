@@ -238,21 +238,46 @@
     }
   });
 
+  // Whether to confirm before actions that reach outside BOLD.OS (BOLD.confirmAction).
+  BOLD.onUser(function(user){
+    var box = el('confirmSetting'), input = el('confirmAsk');
+    box.hidden = !user;
+    if (!user) return;
+    BOLD.getSkipConfirm().then(function(skip){ input.checked = !skip; });
+  });
+  el('confirmAsk').addEventListener('change', function(e){
+    var input = e.target;
+    BOLD.setSkipConfirm(!input.checked).catch(function(err){
+      console.error('[BOLD Lab] saving the setting failed', err);
+      input.checked = !input.checked;
+    });
+  });
+
   el('githubBody').addEventListener('click', function(e){
     var t = e.target.closest('button');
     var user = BOLD.getAuth() && BOLD.getAuth().currentUser;
     if (!t || t.disabled || !user) return;
     ghError = '';
     if (t.classList.contains('gh-link')) {
-      ghBusy = true; renderGithub(null);
-      // After a popup (localhost) the account is linked here; live, the page goes to GitHub and back.
-      BOLD.link(new firebase.auth.GithubAuthProvider()).then(function(){ loadGithub(); }).catch(function(err){
-        // Linked already (the page didn't know): just check it.
-        if (err && err.code === 'auth/provider-already-linked') { loadGithub(); return; }
-        console.error('[BOLD Lab] linking GitHub failed', err);
-        ghBusy = false; ghError = ghMessage(err); renderGithub(null);
-      });
-    } else if (t.classList.contains('gh-retry')) {
+      BOLD.confirmAction({ title: 'Link your GitHub account?', go: 'Link', effects: ['Invite it to the bold-lab-ai organisation on GitHub (GitHub emails you the invitation)'] })
+        .then(function(ok){ if (ok) linkGithub(); });
+      return;
+    }
+    rest(t);
+  });
+  function linkGithub(){
+    ghBusy = true; renderGithub(null);
+    // After a popup (localhost) the account is linked here; live, the page goes to GitHub and back.
+    BOLD.link(new firebase.auth.GithubAuthProvider()).then(function(){ loadGithub(); }).catch(function(err){
+      // Linked already (the page didn't know): just check it.
+      if (err && err.code === 'auth/provider-already-linked') { loadGithub(); return; }
+      console.error('[BOLD Lab] linking GitHub failed', err);
+    ghBusy = false; ghError = ghMessage(err); renderGithub(null);
+    });
+  }
+  function rest(t){
+    var user = BOLD.getAuth() && BOLD.getAuth().currentUser;
+    if (t.classList.contains('gh-retry')) {
       loadGithub();
     } else if (t.classList.contains('gh-unlink')) {
       if (!window.confirm('Unlink your GitHub account? You stay in bold-lab-ai on GitHub.')) return;
@@ -262,7 +287,7 @@
         ghError = 'Couldn’t unlink GitHub — try again.'; loadGithub();
       });
     }
-  });
+  }
 
   // Back from linking GitHub by redirect: say why it failed, if it did (other
   // round-trip errors are sign-in's, which bold.js reports).

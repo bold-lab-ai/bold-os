@@ -128,6 +128,60 @@
     }).catch(function(err){ console.error('[BOLD Lab] copying failed', err); });
   });
 
+  // Before anything that reaches outside BOLD.OS (Slack, Google Calendar and Drive,
+  // GitHub, email, messages to people): what will happen, then Go ahead or Cancel.
+  // o: { title, effects: [text], go }. Resolves true to go ahead. "Don't ask me again"
+  // skips it for good for this person: prefs/{uid} { skipConfirm }, turned back on
+  // from their profile (BOLD.setSkipConfirm); kept in this browser too, to answer at once.
+  var skipConfirm = null;
+  function skipKey(){ var u = auth && auth.currentUser; return u ? 'boldSkipConfirm:' + u.uid : ''; }
+  function loadSkip(){
+    var u = auth && auth.currentUser;
+    if (!u) { skipConfirm = null; return Promise.resolve(false); }
+    try { var c = localStorage.getItem(skipKey()); if (c !== null) skipConfirm = c === '1'; } catch (e){}
+    if (!firebase.firestore) return Promise.resolve(!!skipConfirm);
+    return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).get().then(function(d){
+      skipConfirm = !!(d.exists && d.data().skipConfirm);
+      try { localStorage.setItem(skipKey(), skipConfirm ? '1' : '0'); } catch (e){}
+      return skipConfirm;
+    }).catch(function(){ return !!skipConfirm; });
+  }
+  BOLD.getSkipConfirm = function(){ return skipConfirm !== null ? Promise.resolve(skipConfirm) : loadSkip(); };
+  BOLD.setSkipConfirm = function(on){
+    var u = auth && auth.currentUser;
+    if (!u) return Promise.reject(new Error('Sign in first.'));
+    skipConfirm = !!on;
+    try { localStorage.setItem(skipKey(), on ? '1' : '0'); } catch (e){}
+    return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).set({ skipConfirm: !!on, at: Date.now() });
+  };
+  BOLD.confirmAction = function(o){
+    return BOLD.getSkipConfirm().then(function(skip){
+      if (skip) return true;
+      return new Promise(function(resolve){
+        var d = document.createElement('dialog');
+        d.className = 'confirm-dialog';
+        d.innerHTML = '<h2>' + esc(o.title || 'Go ahead?') + '</h2>' +
+          ((o.effects || []).length ? '<p>This will:</p><ul>' + o.effects.map(function(e){ return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>' : '') +
+          (auth && auth.currentUser ? '<label class="confirm-skip"><input type="checkbox"> Don’t ask me again (you can turn it back on in your profile)</label>' : '') +
+          '<div class="confirm-actions"><button class="btn-box" type="button" data-no>Cancel</button>' +
+          '<button class="btn-box is-primary" type="button" data-yes>' + esc(o.go || 'Go ahead') + '</button></div>';
+        document.body.appendChild(d);
+        var done = function(yes){
+          var skip = d.querySelector('.confirm-skip input');
+          if (yes && skip && skip.checked){
+            BOLD.setSkipConfirm(true).catch(function(err){ console.error('[BOLD Lab] saving the setting failed', err); });
+          }
+          d.close(); d.remove(); resolve(yes);
+        };
+        d.querySelector('[data-yes]').addEventListener('click', function(){ done(true); });
+        d.querySelector('[data-no]').addEventListener('click', function(){ done(false); });
+        d.addEventListener('cancel', function(e){ e.preventDefault(); done(false); });
+        d.showModal();
+        d.querySelector('[data-yes]').focus();
+      });
+    });
+  };
+
   var hint = null;
   try { hint = JSON.parse(localStorage.getItem('boldAuthHint') || 'null'); } catch (e){}
   // Signed in last visit: lets page CSS keep "sign in" panels out of the first paint.
@@ -151,7 +205,7 @@
       if (BOLD.useAuthEmulator) auth.useEmulator('http://localhost:9099');
     } catch (e){ auth = null; return null; }
     auth.onAuthStateChanged(function(user){
-      current = user; authReady = true;
+      current = user; authReady = true; skipConfirm = null;
       try {
         if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
         else localStorage.removeItem('boldAuthHint');
