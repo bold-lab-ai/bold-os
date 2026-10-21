@@ -2521,7 +2521,7 @@ function projectGroupForCards(cards, completed){
 function workspaceView(ws){
   const out = {};
   ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
-    'deckUrl', 'notesUrl', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
+    'deckUrl', 'notesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   return out;
 }
 
@@ -2699,17 +2699,20 @@ async function syncWorkspace(id, changes){
     // Kept even if Google or GitHub fails below, so trying again picks them up.
     if (meeting !== undefined) patch.meeting = meeting;
     if (repo !== undefined) patch.repo = repo;
+    // Slides and notes: left out if whoever registered it chose so; Set up makes them.
+    if (changes.docs !== undefined) patch.noDocs = changes.docs === false;
+    if (changes.skipped) patch.skipped = changes.skipped;
     await save();
 
     try {
       // Slides, then notes (which link the slides): saved as each is made, so a
       // failure part way never makes the same file twice.
-      const folder = (!ws.deckId || !ws.notesId) ? await projectFolderId() : null;
-      if (!ws.deckId){
+      const folder = !ws.noDocs && (!ws.deckId || !ws.notesId) ? await projectFolderId() : null;
+      if (!ws.noDocs && !ws.deckId){
         const f = await createDeck(ws.title, folder);
         patch.deckId = f.id; patch.deckUrl = f.webViewLink; await save();
       }
-      if (!ws.notesId){
+      if (!ws.noDocs && !ws.notesId){
         const f = await createNotes(ws.title, folder, { page: projectPageUrl(ws.cardId, ws.boardId), deck: ws.deckUrl });
         patch.notesId = f.id; patch.notesUrl = f.webViewLink; await save();
       }
@@ -2717,7 +2720,7 @@ async function syncWorkspace(id, changes){
       const addrs = await googleAddressesFor(ws.members);
       // Files: shared with every member, unshared from whoever left.
       const shared = ws.shared || [];
-      for (const e of addrs.filter(function(m){ return shared.indexOf(m) < 0; })){
+      for (const e of addrs.filter(function(m){ return ws.deckId && ws.notesId && shared.indexOf(m) < 0; })){
         await shareFile(ws.deckId, e); await shareFile(ws.notesId, e);
         patch.shared = (ws.shared || []).concat(e); await save();
       }
@@ -2860,7 +2863,8 @@ function onProjectCard(document){
       if (pid !== id) { await syncWorkspace(pid); return; }
       const m = after.setUpMeeting ? normalizeMeeting(after.setUpMeeting) : null;
       const r = after.setUpRepo ? normalizeRepo(after.setUpRepo) : null;
-      await syncWorkspace(pid, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined });
+      await syncWorkspace(pid, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined, docs: after.setUpDocs === false ? false : undefined,
+        skipped: Array.isArray(after.setUpSkipped) ? after.setUpSkipped.filter(function(k){ return ['channel', 'announce', 'meeting', 'docs', 'repo'].indexOf(k) >= 0; }) : undefined });
       return;
     }
     const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails, d.status, d.outcome]); };
@@ -2893,16 +2897,21 @@ exports.onProjectRegistered = onDocumentCreated(
   { document: 'projects/{cardId}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
     const card = event.data && event.data.data();
-    if (!card) return;
-    const token = SLACK_BOT_TOKEN.value();
-    const channel = await slackChannelId(token, ACTIVE_PROJECTS_CHANNEL);
-    if (!channel){ logger.warn('#' + ACTIVE_PROJECTS_CHANNEL + ' not found: the bot can’t see it'); return; }
-    const posted = await slackFetch(token, 'chat.postMessage', {
-      channel, text: projectAnnouncement(card, projectPageUrl(event.params.cardId)), unfurl_links: false,
-    });
-    if (!posted.ok) logger.warn('Announcing a new project failed', { error: posted.error });
+    // announce: false, whoever registered it chose not to (its workspace's `skipped`
+    // says so, and its page offers to announce it later: projectWorkspace 'announce').
+    if (!card || card.announce === false) return;
+    await announceProject(card, event.params.cardId).catch(function(err){ logger.warn('Announcing a new project failed', { error: String(err.message) }); });
   }
 );
+async function announceProject(card, cardId){
+  const token = SLACK_BOT_TOKEN.value();
+  const channel = await slackChannelId(token, ACTIVE_PROJECTS_CHANNEL);
+  if (!channel) throw new Error('The BOLD.OS app can’t see #' + ACTIVE_PROJECTS_CHANNEL + ': invite it to the channel.');
+  const posted = await slackFetch(token, 'chat.postMessage', {
+    channel, text: projectAnnouncement(card, projectPageUrl(cardId)), unfurl_links: false,
+  });
+  if (!posted.ok) throw new Error('Slack said ' + posted.error + '.');
+}
 
 exports.onProjectWritten = onProjectCard('projects/{cardId}');
 exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
@@ -2920,6 +2929,12 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 //   the same event, invitation and Meet link stay) or brings it back; editors only. Completion by acceptance at a venue needs neither.
 // - 'submit': submits the project to another venue ({ venue, card }: a card the page
 //   built); editors only; → { cardId, boardId }.
+// - 'announce': announces it in #all-active-projects, if that was skipped when it was
+//   registered (its workspace's `skipped`); editors only.
+// - 'slack': invites the caller to its Slack channel, if they skipped it when joining
+//   (`slackSkipped`).
+// Whatever was skipped when it was registered is in the workspace's `skipped`
+// ('channel', 'announce', 'meeting', 'docs', 'repo'); the page offers each again.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
 // - 'mine': no project; the caller's planned and ongoing projects, set up if they
 //   weren't yet → { projects: [{ id, title, cardId, boardId }] }.
@@ -3032,7 +3047,8 @@ exports.projectWorkspace = onCall(
 
     if (data.action === 'setUp' || data.action === 'meeting' || data.action === 'repo'){
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can do this.');
-      const changes = {};
+      // Set up makes whatever's missing, the slides and notes too.
+      const changes = data.action === 'setUp' ? { docs: true } : {};
       if (data.action === 'meeting'){
         changes.meeting = data.meeting === null ? null : normalizeMeeting(data.meeting);
         if (changes.meeting && changes.meeting.error) throw new HttpsError('invalid-argument', changes.meeting.error);
@@ -3075,7 +3091,7 @@ exports.projectWorkspace = onCall(
       const c = data.card && typeof data.card === 'object' ? Object.assign({}, data.card) : null;
       if (!c || typeof c.title !== 'string' || !c.title.trim()) throw new HttpsError('invalid-argument', 'The new card has no title.');
       const cardId = /^card-[a-z0-9-]{1,60}$/.test(String(c.id || '')) ? c.id : 'card-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
-      ['id', 'setUpMeeting', 'setUpRepo'].forEach(function(k){ delete c[k]; });
+      ['id', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
       const now = Date.now();
       await db.collection('boards').doc(venue).collection('cards').doc(cardId).set(Object.assign(c, {
         projectId: pid, status: 'register', outcome: '', createdAt: now, updatedAt: now,
@@ -3091,16 +3107,32 @@ exports.projectWorkspace = onCall(
       if (!joining && projectMembers(card, []).indexOf(email) >= 0) {
         throw new HttpsError('failed-precondition', 'Its submitter and authors stay on the project — remove yourself from the authors first.');
       }
+      const noSlack = joining && data.slack === false && !!card.slackChannel;
       await wsRef.set({ joined: joining
         ? FieldValue.arrayUnion(email)
-        : FieldValue.arrayRemove(email) }, { merge: true });
+        : FieldValue.arrayRemove(email), slackSkipped: noSlack ? FieldValue.arrayUnion(email) : FieldValue.arrayRemove(email) }, { merge: true });
       const out = workspaceView(await syncWorkspace(pid));
-      if (joining && card.slackChannel){
+      // data.slack === false: not invited to the channel (they chose so).
+      if (joining && card.slackChannel && data.slack !== false){
         const n = normalizeProjectChannel(card.slackChannel);
         try { out.slack = await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, n.name); }
         catch (err){ out.slack = { error: err.message || 'Couldn’t add you to the Slack channel.' }; }
       }
       return out;
+    }
+    if (data.action === 'slack'){
+      if (!card.slackChannel) throw new HttpsError('failed-precondition', 'It has no Slack channel yet.');
+      const out = await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, normalizeProjectChannel(card.slackChannel).name);
+      await wsRef.set({ slackSkipped: FieldValue.arrayRemove(email) }, { merge: true });
+      return out;
+    }
+
+    if (data.action === 'announce'){
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
+      try { await announceProject(card, id); }
+      catch (err){ throw new HttpsError('failed-precondition', err.message); }
+      await wsRef.set({ skipped: FieldValue.arrayRemove('announce') }, { merge: true });
+      return { ok: true };
     }
     throw new HttpsError('invalid-argument', 'Unknown action.');
   }

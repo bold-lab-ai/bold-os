@@ -41,27 +41,33 @@
     if (repo.error) return showError(repo.error);
     keywordField.addTyped();
     errorBox.hidden = true;
-    BOLD.confirmAction({ title: 'Register \u201c' + title + '\u201d?', go: 'Register', effects: channelField.effects(channel.name).concat([
-      'Announce it in #active-projects on Slack',
-      meeting ? 'Make its meeting on Google Calendar, ' + meetingText(meeting) + ', with a Meet link (Google emails you the invitation)' : '',
-      'Make its slides and notes on Google Drive',
-      repo && repo.template ? 'Make its GitHub repository in bold-lab-ai, from the ' + repo.template + ' template' : ''].filter(Boolean)) }).then(function(ok){
-      if (ok) register(title, abstractText, channel, meeting, repo);
+    // Each can be left out, and done later from the project's page (its workspace's `skipped`).
+    var channelEffects = channelField.effects(channel.name);
+    BOLD.confirmAction({ title: 'Register \u201c' + title + '\u201d?', go: 'Register', effects: channelEffects.map(function(t){ return { key: 'channel', text: t }; }).concat([
+      { key: 'announce', text: 'Announce it in #all-active-projects on Slack' },
+      { key: 'meeting', text: 'Make its meeting on Google Calendar, ' + meetingText(meeting) + ', with a Meet link (Google emails you the invitation)' },
+      { key: 'docs', text: 'Make its slides and notes on Google Drive' },
+      repo && repo.template ? { key: 'repo', text: 'Make its GitHub repository in bold-lab-ai, from the ' + repo.template + ' template' } : null].filter(Boolean)) }).then(function(ok){
+      if (ok) register(title, abstractText, channel, meeting, repo, ok.skip || {}, channelEffects.length > 0);
     });
   });
 
-  function register(title, abstractText, channel, meeting, repo){
+  function register(title, abstractText, channel, meeting, repo, skip, makesChannel){
     submitBtn.disabled = true;
-    var ensure = channelField.ensure(channel.name);
+    var ensure = skip.channel && makesChannel ? Promise.resolve(null) : channelField.ensure(channel.name);
     ensure.then(function(r){
       // A project is a card (card-model.js) \u2014 the same one "+ Register paper" makes.
       // It's kept in `projects` until a venue is set (Projects page).
       var card = makeRegisteredCard({ name: me.displayName, email: me.email }, {
-        title: title, abstractText: abstractText, keywords: keywordField.get(), slackChannel: '#' + r.name
+        title: title, abstractText: abstractText, keywords: keywordField.get(), slackChannel: r ? '#' + r.name : ''
       });
-      // The server sets up the meeting, slides, notes and repository from these (onProjectWritten).
-      card.setUpMeeting = meeting;
-      card.setUpRepo = repo;
+      // The server sets up the meeting, slides, notes and repository from these (onProjectWritten),
+      // leaving out what was unticked, and records it.
+      card.setUpMeeting = skip.meeting ? null : meeting;
+      card.setUpRepo = skip.repo ? null : repo;
+      card.setUpDocs = !skip.docs;
+      card.announce = !skip.announce;
+      card.setUpSkipped = Object.keys(skip);
       var id = card.id; delete card.id; // the id is the document's, as in the board's saveBoard()
       var ref = db.collection('projects').doc(id);
       return ref.set(card);

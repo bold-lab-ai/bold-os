@@ -130,7 +130,9 @@
 
   // Before anything that reaches outside BOLD.OS (Slack, Google Calendar and Drive,
   // GitHub, email, messages to people): what will happen, then Go ahead or Cancel.
-  // o: { title, effects: [text], go }. Resolves true to go ahead. "Don't ask me again"
+  // o: { title, effects: [text or { text, key }], go }. An effect with a key is optional:
+  // it has a tick box, ticked, and unticking it skips it. Resolves false, or to go ahead
+  // { skip: { key: true } } for what was unticked. "Don't ask me again"
   // skips it for good for this person: prefs/{uid} { skipConfirm }, turned back on
   // from their profile (BOLD.setSkipConfirm); kept in this browser too, to answer at once.
   var skipConfirm = null;
@@ -156,12 +158,14 @@
   };
   BOLD.confirmAction = function(o){
     return BOLD.getSkipConfirm().then(function(skip){
-      if (skip) return true;
+      if (skip) return { skip: {} };
       return new Promise(function(resolve){
         var d = document.createElement('dialog');
         d.className = 'confirm-dialog';
         d.innerHTML = '<h2>' + esc(o.title || 'Go ahead?') + '</h2>' +
-          ((o.effects || []).length ? '<p>This will:</p><ul>' + o.effects.map(function(e){ return '<li>' + esc(e) + '</li>'; }).join('') + '</ul>' : '') +
+          ((o.effects || []).length ? '<p>This will:</p><ul>' + o.effects.map(function(e){
+            return e.key ? '<li class="confirm-opt"><label><input type="checkbox" checked data-key="' + esc(e.key) + '"> ' + esc(e.text) + '</label></li>' : '<li>' + esc(e.text || e) + '</li>';
+          }).join('') + '</ul>' : '') +
           (auth && auth.currentUser ? '<label class="confirm-skip"><input type="checkbox"> Don’t ask me again (you can turn it back on in your profile)</label>' : '') +
           '<div class="confirm-actions"><button class="btn-box" type="button" data-no>Cancel</button>' +
           '<button class="btn-box is-primary" type="button" data-yes>' + esc(o.go || 'Go ahead') + '</button></div>';
@@ -171,7 +175,9 @@
           if (yes && skip && skip.checked){
             BOLD.setSkipConfirm(true).catch(function(err){ console.error('[BOLD Lab] saving the setting failed', err); });
           }
-          d.close(); d.remove(); resolve(yes);
+          var skipped = {};
+          Array.prototype.forEach.call(d.querySelectorAll('[data-key]'), function(c){ if (!c.checked) skipped[c.getAttribute('data-key')] = true; });
+          d.close(); d.remove(); resolve(yes ? { skip: skipped } : false);
         };
         d.querySelector('[data-yes]').addEventListener('click', function(){ done(true); });
         d.querySelector('[data-no]').addEventListener('click', function(){ done(false); });

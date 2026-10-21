@@ -251,7 +251,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     // Who's on it and how they meet.
     team: function(){
       return '<dl class="detail-grid">' + row('People', membersHtml()) +
-        editableRow('slack', 'Slack channel', card.slackChannel ? '<span id="slackChannel">' + esc(card.slackChannel) + '</span>' : missing(),
+        editableRow('slack', 'Slack channel', card.slackChannel ? '<span id="slackChannel">' + esc(card.slackChannel) + '</span>' +
+            (ws && me && (ws.slackSkipped || []).indexOf(me.email.toLowerCase()) >= 0 ? ' <span class="detail-muted">\u00b7 you skipped joining it</span>' + wsButton('slack', 'Join it') : '')
+          : missing() + skipped('channel'),
           '', channelEntryHtml(card.slackChannel), 'slackSave') +
         workspaceRows() + '</dl>';
     },
@@ -311,6 +313,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     });
   }
 
+  // Left out when it was registered (projectWorkspace's `skipped`), until it's done.
+  function skipped(key){
+    return ws && (ws.skipped || []).indexOf(key) >= 0 ? ' <span class="detail-muted">\u00b7 skipped when it was registered</span>' : '';
+  }
+  function wsButton(action, label){
+    return ' <button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (wsBusy || !wsLoaded ? ' disabled' : '') + '>' + label + '</button>';
+  }
+
   // The workspace's rows: meeting, slides, notes.
   function workspaceRows(){
     var setting = ws && ws.syncing, failed = ws && ws.error;
@@ -332,13 +342,15 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : m ? esc(meetingText(m)) + pauseBtn('pause') +
         (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>' : '') +
         (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')
-      : wsLoaded && !setting ? missing() : state;
+      : wsLoaded && !setting ? missing() + skipped('meeting') : state;
     var html = editableRow('meeting', 'Meeting', meeting, '',
       meetingEntryHtml(m) + (m ? '<button class="btn-text danger" type="button" id="meetingRemove">Remove the meeting</button>' : ''), 'meetingSave');
-    html += row('Slides', ws && ws.deckUrl ? openLink(ws.deckUrl) : state + retry);
+    html += row('Slides', ws && ws.deckUrl ? openLink(ws.deckUrl) : state + (ws && ws.noDocs ? skipped('docs') : '') + retry);
     html += row('Meeting notes', ws && ws.notesUrl ? openLink(ws.notesUrl) : failed ? missing() : state);
     // Set up part way (shared with some members, say): the error and Try again stay.
     if (failed && ws.deckUrl && !setting) html += row('Setting up', '<span class="detail-muted">' + esc(ws.error) + '</span>' + retry);
+    if (ws && (ws.skipped || []).indexOf('announce') >= 0) html += row('Announcement', '<span class="detail-muted">Not announced in #all-active-projects</span>' + skipped('announce') +
+      (canEdit() ? wsButton('announce', 'Announce') : ''));
     return html;
   }
 
@@ -405,7 +417,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : !wsLoaded ? '<span class="detail-muted">Loading\u2026</span>'
       : ws && ws.repoError ? '<span class="detail-muted">' + esc(ws.repoError) + '</span>'
       : ws && ws.repo && ws.syncing ? '<span class="detail-muted">Setting up\u2026</span>'
-      : missing();
+      : missing() + skipped('repo');
     var retry = ws && ws.repoError && ws.repo && !linked
       ? ' <button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Try again</button>' : '';
     // Once made, it stays.
@@ -467,7 +479,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // What each of them does outside BOLD.OS, for BOLD.confirmAction.
   var WS_CONFIRM = {
     join: function(){ return { title: 'Join \u201c' + card.title + '\u201d?', go: 'Join', effects: [
-      card.slackChannel ? 'Invite you to ' + card.slackChannel + ' on Slack' : '',
+      card.slackChannel ? { key: 'slack', text: 'Invite you to ' + card.slackChannel + ' on Slack' } : '',
       ws && ws.meeting ? 'Add you to its meeting on Google Calendar (Google emails you the invitation)' : '',
       'Share its slides and notes on Google Drive with you'].filter(Boolean) }; },
     leave: function(){ return { title: 'Leave \u201c' + card.title + '\u201d?', go: 'Leave', effects: [
@@ -479,20 +491,24 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     pause: function(){ return { title: 'Pause the meeting?', go: 'Pause', effects: [
       'Take its upcoming dates off everyone\u2019s Google Calendar until it\u2019s resumed (the invitation and Meet link stay the same)'] }; },
     resume: function(){ return { title: 'Resume the meeting?', go: 'Resume', effects: ['Put its upcoming dates back on everyone\u2019s Google Calendar'] }; },
+    announce: function(){ return { title: 'Announce \u201c' + card.title + '\u201d?', go: 'Announce', effects: ['Post it in #all-active-projects on Slack'] }; },
+    slack: function(){ return { title: 'Join ' + card.slackChannel + '?', go: 'Join', effects: ['Invite you to ' + card.slackChannel + ' on Slack'] }; },
   };
 
   function workspaceAction(action){
     if (wsBusy) return;
-    if (!WS_CONFIRM[action]) return runWorkspaceAction(action);
-    BOLD.confirmAction(WS_CONFIRM[action]()).then(function(ok){ if (ok) runWorkspaceAction(action); });
+    if (!WS_CONFIRM[action]) return runWorkspaceAction(action, {});
+    BOLD.confirmAction(WS_CONFIRM[action]()).then(function(ok){ if (ok) runWorkspaceAction(action, ok.skip || {}); });
   }
-  function runWorkspaceAction(action){
+  function runWorkspaceAction(action, skip){
     if (wsBusy) return;
     wsBusy = true; wsMsg = '';
     render();
-    callWorkspace({ action: action }).then(function(r){
+    callWorkspace({ action: action, slack: action === 'join' && skip.slack ? false : undefined }).then(function(r){
       var d = r.data || {};
       wsBusy = false;
+      if (action === 'slack') wsMsg = d.url ? 'You\u2019re in <a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(card.slackChannel) + '</a>.' : '';
+      if (action === 'announce') wsMsg = 'Announced in #all-active-projects.';
       if (action === 'join' && d.slack) {
         wsMsg = d.slack.error ? esc(d.slack.error)
           : 'You\u2019re invited to the meeting' + (d.slack.url ? ' and in <a href="' + esc(d.slack.url) + '" target="_blank" rel="noopener">' + esc(card.slackChannel) + '</a>' : '') + '.';

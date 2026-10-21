@@ -127,23 +127,23 @@
     msg.setAttribute('role', 'status');
     join.addEventListener('click', function(){
       BOLD.confirmAction({ title: 'Join \u201c' + (p.title || 'this project') + '\u201d?', go: 'Join', effects: [
-        p.slackChannel ? 'Invite you to ' + p.slackChannel + ' on Slack' : '',
+        p.slackChannel ? { key: 'slack', text: 'Invite you to ' + p.slackChannel + ' on Slack' } : '',
         'Add you to its meeting on Google Calendar, if it has one (Google emails you the invitation)',
-        'Share its slides and notes on Google Drive with you'].filter(Boolean) }).then(function(ok){ if (ok) joinProject(p, join, msg); });
+        'Share its slides and notes on Google Drive with you'].filter(Boolean) }).then(function(ok){ if (ok) joinProject(p, join, msg, !!ok.skip.slack); });
     });
     wrap.appendChild(msg);
     li.appendChild(wrap);
     return li;
   }
 
-  function joinProject(p, btn, msg){
+  function joinProject(p, btn, msg, noSlack){
     btn.disabled = true;
     btn.textContent = 'Joining…';
     msg.textContent = '';
     var call;
     try {
       call = firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')(
-        { action: 'join', id: p.projectId || p.cardId, board: p.boardId || null });
+        { action: 'join', id: p.projectId || p.cardId, board: p.boardId || null, slack: noSlack ? false : undefined });
     } catch (e) { call = Promise.reject(e); }
     call.then(function(res){
       var slack = (res.data || {}).slack || {};
