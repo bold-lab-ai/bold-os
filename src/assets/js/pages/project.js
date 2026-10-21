@@ -197,13 +197,15 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
-  var TABS = [['overview', 'Overview'], ['team', 'Team'], ['presentations', 'Presentations'], ['paper', 'Paper']];
+  var TABS = [['overview', 'Overview'], ['presentations', 'Presentations'], ['paper', 'Paper']];
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
+  // The Team tab's people and channel are on Overview now, its meeting, slides and notes on Presentations.
+  if (tab === 'team') tab = 'overview';
   if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
   // &join=1, the link in a project's #all-active-projects announcement: join it
-  // once it's loaded, on the Team tab (maybeJoin).
+  // once it's loaded, on the Overview tab (maybeJoin).
   var joinRequested = /[#&]join=1(&|$)/.test(location.hash);
-  if (joinRequested) tab = 'team';
+  if (joinRequested) tab = 'overview';
 
   function setTab(name, focus){
     if (name === tab) return;
@@ -227,6 +229,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         : (card.authors && card.authors.length
             ? card.authors.map(function(a){ return esc(a.name || a.email || '?'); }).join(', ')
             : missing()) + editButton('authors')) + '</dd>';
+      html += peopleRows();
       html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
         '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
       html += row('Submitted by', card.submittedBy && card.submittedBy.name
@@ -248,18 +251,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       }
       return html;
     },
-    // Who's on it and how they meet.
-    team: function(){
-      return '<dl class="detail-grid">' + row('People', membersHtml()) +
-        editableRow('slack', 'Slack channel', card.slackChannel ? '<span id="slackChannel">' + esc(card.slackChannel) + '</span>' +
-            (ws && me && (ws.slackSkipped || []).indexOf(me.email.toLowerCase()) >= 0 ? ' <span class="detail-muted">\u00b7 you skipped joining it</span>' + wsButton('slack', 'Join it') : '')
-          : missing() + skipped('channel'),
-          '', channelEntryHtml(card.slackChannel), 'slackSave') +
-        workspaceRows() + '</dl>';
-    },
-    // Talks about the project; the pitch deck is the card's own (the board uses it).
+    // Its meeting, slides and notes; talks about the project; the pitch deck is the card's own (the board uses it).
     presentations: function(){
-      return '<dl class="detail-grid">' + simpleRow('pitch') + '</dl>' + presentationsHtml();
+      return '<dl class="detail-grid">' + workspaceRows() + simpleRow('pitch') + '</dl>' + presentationsHtml();
     },
     // The write-up and its submission.
     paper: function(){
@@ -349,8 +343,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     html += row('Meeting notes', ws && ws.notesUrl ? openLink(ws.notesUrl) : failed ? missing() : state);
     // Set up part way (shared with some members, say): the error and Try again stay.
     if (failed && ws.deckUrl && !setting) html += row('Setting up', '<span class="detail-muted">' + esc(ws.error) + '</span>' + retry);
-    if (ws && (ws.skipped || []).indexOf('announce') >= 0) html += row('Announcement', '<span class="detail-muted">Not announced in #all-active-projects</span>' + skipped('announce') +
-      (canEdit() ? wsButton('announce', 'Announce') : ''));
     return html;
   }
 
@@ -447,6 +439,16 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function memberEmails(){
     if (ws && ws.members) return ws.members;
     return [card.submittedBy && card.submittedBy.email].concat(card.authorEmails || []).filter(function(e, i, all){ return e && all.indexOf(e) === i; });
+  }
+  // Overview's: who's on it, its Slack channel, and its announcement if that was skipped.
+  function peopleRows(){
+    return row('People', membersHtml()) +
+      editableRow('slack', 'Slack channel', card.slackChannel ? '<span id="slackChannel">' + esc(card.slackChannel) + '</span>' +
+          (ws && me && (ws.slackSkipped || []).indexOf(me.email.toLowerCase()) >= 0 ? ' <span class="detail-muted">\u00b7 you skipped joining it</span>' + wsButton('slack', 'Join it') : '')
+        : missing() + skipped('channel'),
+        '', channelEntryHtml(card.slackChannel), 'slackSave') +
+      (ws && (ws.skipped || []).indexOf('announce') >= 0 ? row('Announcement', '<span class="detail-muted">Not announced in #all-active-projects</span>' + skipped('announce') +
+        (canEdit() ? wsButton('announce', 'Announce') : '')) : '');
   }
   function membersHtml(){
     var list = memberEmails();
