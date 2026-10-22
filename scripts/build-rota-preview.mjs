@@ -81,7 +81,7 @@ const previewCollection = name => {
 window.previewFirebase = {
   firestore: () => ({ collection: previewCollection }),
   app: () => ({ functions: () => ({ httpsCallable: name => () => name === 'groupRotaAccess'
-    ? Promise.resolve({ data: { slackId: '', registered: false, eligible: false, admin: false, swaps: [], reason: 'Changes are unavailable in the local preview' } })
+    ? Promise.resolve({ data: { slackId: '', registered: false, eligible: false, admin: false, preview: true, swaps: [], reason: 'Changes are unavailable in the local preview' } })
     : Promise.reject(new Error('Local preview only — changes are not saved.')) }) }),
 };
 document.addEventListener('click', event => {
@@ -128,7 +128,9 @@ if (page.includes('firebasejs/') || page.includes('window.BOLD_CONFIG') || page.
 let rotaScript = await readFile('src/assets/js/pages/group-meetings.js', 'utf8');
 rotaScript = rotaScript.replace('firebase.firestore(', 'previewFirebase.firestore(').replace('firebase.app()', 'previewFirebase.app()');
 rotaScript = rotaScript.replace("return slug ? 'https://bold-lab.ai/profile-assets/' + slug + '.webp' : '';", "return ''; // The local preview never loads remote profile photos.");
-if (rotaScript.includes('firebase.firestore(') || rotaScript.includes('firebase.app()')) throw new Error('Could not isolate the rota script from production data.');
+rotaScript = rotaScript.replace('access && !access.eligible ? \'<p class="rota-alert">', 'access && !access.preview && !access.eligible ? \'<p class="rota-alert">');
+rotaScript = rotaScript.replace('Eligibility has not been confirmed', 'Changes are unavailable in the local preview');
+if (rotaScript.includes('firebase.firestore(') || rotaScript.includes('firebase.app()') || rotaScript.includes('var notice = access && !access.eligible')) throw new Error('Could not isolate the rota script from production data and access checks.');
 await writeFile('_site/assets/js/pages/group-meetings-preview.js', rotaScript);
 await writeFile('_site/group-meetings-preview.html', page);
 console.log(`Created local preview from ${docs.groupMeetings.length} meetings, ${docs.groupRotaSlots.length} slots, ${docs.people.length} members and ${docs.changelog.length} changes.`);
