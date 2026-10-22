@@ -1,7 +1,7 @@
 // Network (network.html, under People): everyone's interactions (connections.js), as a
 // Graph or as a Lineage (who brought whom into BOLD). Graph filters: kinds (joining,
 // working together, talking, on the site) and groups of Who is BOLD (and outside BOLD),
-// each on or off, both people's groups on; since when; and with or without things
+// each on or off, both people's groups on; since which day (a slider from 1 August 2026); and with or without things
 // (projects and papers, events, guides, skills). Find someone selects them. Clicking a person or thing selects it: its lines
 // stay lit (a double click opens its page in a new tab), and its
 // busiest connections are listed below, each with its two latest
@@ -13,20 +13,24 @@
   if (!graph || !BOLD.getAuth() || !C || !window.BoldJoin) return;
   var el = function(id){ return document.getElementById(id); };
   var all = null, dir = null, me = '', g = null, selected = '', why = '';
-  var view = 'graph', since = 'all', things = true;
+  var view = 'graph', since = 0, things = true; // since: days after START (0: everything)
   // Kinds and groups add up: each is on or off, all on to start (people outside BOLD: 'outside').
   var kinds = { joining: true, working: true, talking: true, site: true }, groups = { outside: true };
   BoldJoin.CATEGORIES.forEach(function(c){ groups[c[0]] = true; });
-  var SINCE = [['all', 'All time'], ['365', 'Year'], ['90', '3 months']], find = '';
+  var START = new Date(2026, 7, 1), DAY = 86400000, find = '';
+  var days = function(){ return Math.max(0, Math.round((new Date().setHours(0, 0, 0, 0) - START) / DAY)); };
+  var dayOf = function(n){ var d = new Date(START); d.setDate(d.getDate() + n); return d; };
+  var dayText = function(n){ return dayOf(n).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }); };
   var W = 1000, H = 680, lastClick = {};
 
-  // View, Show and Since: one choice each; Kinds and Who: each on or off (connections.js).
+  // View and Show: one choice each; Since: a slider by day; Kinds and Who: each on or off (connections.js).
   function controls(){
     var graphOnly = view === 'graph';
     el('nwControls').innerHTML = '<div class="cx-ctl-row">' +
       C.pair('View', C.seg('View', 'data-view', [['graph', 'Graph'], ['lineage', 'Lineage']], view)) +
       (graphOnly ? C.pair('Show', C.seg('Show', 'data-things', [['1', 'People and things'], ['0', 'People only']], things ? '1' : '0')) +
-        C.pair('Since', C.seg('Since', 'data-since', SINCE, since)) : '') + '</div>' +
+        C.pair('Since', '<input type="range" class="cx-since" id="nwSince" min="0" max="' + days() + '" step="1" value="' + Math.min(since, days()) + '" aria-label="Since">' +
+          '<output class="cx-since-day" id="nwSinceDay" for="nwSince">' + dayText(Math.min(since, days())) + '</output>') : '') + '</div>' +
       (graphOnly ? '<div class="cx-ctl-row">' + C.pair('Kinds', C.chips('Kinds', 'data-kind', C.GROUPS, function(k){ return kinds[k]; })) + '</div>' +
         '<div class="cx-ctl-row">' + C.pair('Who', C.chips('Who', 'data-group', BoldJoin.CATEGORIES.concat([['outside', 'Outside BOLD']]), function(k){ return groups[k]; })) + '</div>' +
         '<div class="cx-ctl-row">' + C.pair('Find', '<input class="cx-field cx-find" type="search" id="nwFind" placeholder="Someone or something" aria-label="Find someone or something" list="nwPeople" value="' + esc(find) + '">') + '</div>' : '');
@@ -34,7 +38,7 @@
 
   function build(){
     if (view === 'lineage') { drawLineage(); return; }
-    var from = since === 'all' ? 0 : Date.now() - Number(since) * 86400000;
+    var from = since ? dayOf(since).getTime() : 0;
     var inGroup = function(e){ return !e || C.isThing(e) || !!groups[dir[e] && dir[e].member ? dir[e].group : 'outside']; };
     // Lines between two things come with things, whatever the kinds and since.
     var list = all.filter(function(x){ return x.thing2 ? things : kinds[x.group] && x.at >= from && (x.to || (things && x.thing)) && inGroup(x.from) && inGroup(x.to); });
@@ -86,10 +90,9 @@
   }
 
   document.addEventListener('click', function(e){
-    var k = e.target.closest('[data-kind]'), gr = e.target.closest('[data-group]'), v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]'), sn = e.target.closest('[data-since]'), n = e.target.closest('.cx-node');
+    var k = e.target.closest('[data-kind]'), gr = e.target.closest('[data-group]'), v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]'), n = e.target.closest('.cx-node');
     if (v) { view = v.getAttribute('data-view'); controls(); build(); }
     else if (t) { things = t.getAttribute('data-things') === '1'; controls(); build(); }
-    else if (sn) { since = sn.getAttribute('data-since'); controls(); build(); }
     else if (k) { kinds[k.getAttribute('data-kind')] = !kinds[k.getAttribute('data-kind')]; controls(); build(); }
     else if (gr) { groups[gr.getAttribute('data-group')] = !groups[gr.getAttribute('data-group')]; controls(); build(); }
     else if (e.target.closest('.cx-hit') && graph.contains(e.target)) {
@@ -114,6 +117,14 @@
     if (n && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); n.dispatchEvent(new MouseEvent('click', { bubbles: true })); }
   });
   C.bindHover(graph);
+  // Since: the day shows as the slider moves; the graph is rebuilt once a frame at most.
+  var pending = false;
+  document.addEventListener('input', function(e){
+    if (e.target.id !== 'nwSince') return;
+    since = Number(e.target.value);
+    el('nwSinceDay').textContent = dayText(since);
+    if (!pending && all) { pending = true; requestAnimationFrame(function(){ pending = false; build(); }); }
+  });
   // Find (it's redrawn with the controls, so listened for on the page).
   document.addEventListener('change', function(e){
     if (e.target.id !== 'nwFind') return;

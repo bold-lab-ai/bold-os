@@ -570,6 +570,8 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-ctl-row > .cx-pair:first-child .cx-bar-label{min-width:44px;}
 .cx-chip-n{color:var(--muted); font-size:12px; margin-left:6px;}
 .cx-find{width:280px; max-width:100%;}
+.cx-since{width:280px; max-width:100%; accent-color:var(--accent);}
+.cx-since-day{font-family:var(--sans); font-size:13px; color:var(--ink-soft); min-width:92px;}
 .cx-ctl-row[hidden], .cx-pair[hidden]{display:none;}
 .cx-pair{display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px 10px; min-width:0; max-width:100%;}
 .cx-pair .view-toggle{flex-wrap:wrap;}
