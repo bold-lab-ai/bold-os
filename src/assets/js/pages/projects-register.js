@@ -45,7 +45,7 @@
     var channelEffects = channelField.effects(channel.name);
     BOLD.confirmAction({ title: 'Register \u201c' + title + '\u201d?', go: 'Register', effects: channelEffects.map(function(t){ return { key: 'channel', text: t }; }).concat([
       { key: 'announce', text: 'Announce it in #all-active-projects on Slack' },
-      { key: 'meeting', text: 'Make its meeting on Google Calendar, ' + meetingText(meeting) + ', with a Meet link (Google emails you the invitation)' },
+      { key: 'meeting', text: 'Make its meeting on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ' (Google emails you the invitation)' },
       { key: 'docs', text: 'Make its slides and notes on Google Drive' },
       repo && repo.template ? { key: 'repo', text: 'Make its GitHub repository in bold-lab-ai, from the ' + repo.template + ' template' } : null].filter(Boolean)) }).then(function(ok){
       if (ok) register(title, abstractText, channel, meeting, repo, ok.skip || {}, channelEffects.length > 0);

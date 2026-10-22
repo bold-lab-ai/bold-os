@@ -54,7 +54,7 @@
     var meeting = s.meeting && s.pausedAt ? esc(meetingText(s.meeting)) + ' <span class="acct-handle">· paused</span>' + pause
       : s.meeting ? esc(meetingText(s.meeting)) + pause +
         (s.eventLink || s.meetUrl ? '<span class="st-links">' + [s.eventLink ? '<a href="' + esc(s.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '',
-          s.meetUrl ? '<a href="' + esc(s.meetUrl) + '" target="_blank" rel="noopener">Meet</a>' : ''].filter(Boolean).join(' · ') + '</span>' : '') +
+          s.meetUrl ? '<a href="' + esc(s.meetUrl) + '" target="_blank" rel="noopener">' + (s.meeting.link ? 'Own link' : 'Meet') + '</a>' : ''].filter(Boolean).join(' · ') + '</span>' : '') +
         (s.error ? '<span class="st-error">' + esc(s.error) + ' <button type="button" class="btn-text st-retry"' + (busy ? ' disabled' : '') + '>Try again</button></span>' : '')
       : '';
     var channel = s.channel ? (s.channelUrl ? '<a href="' + esc(s.channelUrl) + '" target="_blank" rel="noopener">#' + esc(s.channel) + '</a>' : '#' + esc(s.channel)) +
@@ -102,7 +102,7 @@
     if (document.getElementById('pmDay')) {
       editing.meeting = { day: document.getElementById('pmDay').value, time: document.getElementById('pmTime').value,
         minutes: Number(document.getElementById('pmMinutes').value), every: Number(document.getElementById('pmEvery').value),
-        until: document.getElementById('pmUntil').value };
+        until: document.getElementById('pmUntil').value, link: document.getElementById('pmLink').value.trim() };
     }
   }
 
@@ -123,7 +123,7 @@
     if (meeting.error) { e.error = meeting.error; render(); return; }
     var names = e.people.map(function(p){ return p.name; }).join(', ');
     BOLD.confirmAction({ title: 'Save your studies?', go: 'Save', effects: [
-      'Set the meeting on Google Calendar, ' + meetingText(meeting) + ': Google emails ' + names + ' the invitation or the change',
+      'Set the meeting on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ': Google emails ' + names + ' the invitation or the change',
       e.channelFixed ? 'Add anyone new to its Slack channel' : 'Make or use the Slack channel #' + (e.channel || '').replace(/^#/, '') + ' and add ' + names + ' to it'] })
       .then(function(ok){ if (ok) sendSave(e, meeting); });
   }

@@ -189,7 +189,9 @@ function wireChannelField(verb, from, project){
 
 // The project's recurring meeting (projectWorkspace in functions/index.js): weekday,
 // time in London, length, how often and until when (optional: the last day it may fall
-// on). Fixed ids #pmDay, #pmTime, #pmMinutes, #pmEvery, #pmUntil.
+// on), and its link (optional: an existing Meet, Zoom or Teams link instead of a new
+// Google Meet; the invitation still comes from BOLD.OS, with that link). Fixed ids
+// #pmDay, #pmTime, #pmMinutes, #pmEvery, #pmUntil, #pmLink.
 var MEETING_DAYS = [['MO', 'Monday'], ['TU', 'Tuesday'], ['WE', 'Wednesday'], ['TH', 'Thursday'], ['FR', 'Friday'], ['SA', 'Saturday'], ['SU', 'Sunday']];
 var MEETING_MINUTES = [30, 45, 60, 90, 120];
 
@@ -202,15 +204,19 @@ function meetingEntryHtml(m){
       '<select id="pmMinutes" aria-label="Length">' + MEETING_MINUTES.map(function(n){ return opt(n, n < 60 ? n + ' min' : (n / 60) + ' h', m.minutes); }).join('') + '</select>' +
       '<select id="pmEvery" aria-label="How often">' + [1, 2, 3, 4].map(function(n){ return opt(n, n === 1 ? 'Every week' : 'Every ' + n + ' weeks', m.every); }).join('') + '</select>' +
       '<label class="meeting-until">Until (optional) <input type="date" id="pmUntil" aria-label="Until (leave empty for no end)" value="' + BOLD.escapeHtml(m.until || '') + '"></label>' +
+      '<label class="meeting-link">Own link (optional) <input type="url" id="pmLink" maxlength="500" placeholder="Empty: a new Google Meet" aria-label="Your own meeting link (leave empty for a new Google Meet)" value="' + BOLD.escapeHtml(m.link || '') + '"></label>' +
     '</div>';
 }
 
-// → { day, time, minutes, every, until? } or { error }.
+// → { day, time, minutes, every, until?, link? } or { error }.
 function readMeetingEntry(){
   var v = function(id){ return document.getElementById(id).value; };
   if (!/^\d\d:\d\d$/.test(v('pmTime'))) return { error: 'Choose a time for the meeting.' };
   var m = { day: v('pmDay'), time: v('pmTime'), minutes: Number(v('pmMinutes')), every: Number(v('pmEvery')) };
   if (v('pmUntil')) m.until = v('pmUntil');
+  var link = v('pmLink').trim();
+  if (link && !/^https:\/\/[^\s"<>]+$/.test(link)) return { error: 'Give a meeting link starting with https://' };
+  if (link) m.link = link;
   return m;
 }
 
@@ -224,6 +230,10 @@ function meetingText(m){
   var until = u ? ', until ' + Number(u[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][u[2] - 1] + ' ' + u[1] : '';
   return (day ? day[1] + 's' : m.day) + ', ' + m.time + '\u2013' + end + (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + until;
 }
+
+// How the meeting is joined: its own link, or the Google Meet BOLD.OS made.
+function meetLabel(m){ return m && m.link ? 'Own link' : 'Google Meet'; }
+function meetVia(m){ return m && m.link ? 'with your own link' : 'with a Meet link'; }
 
 // The project's GitHub repository (projectWorkspace in functions/index.js): made from
 // one of bold-lab-ai's template repositories, never empty: the template has the

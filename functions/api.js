@@ -222,7 +222,7 @@ module.exports = function(deps){
     const [h, mi] = m.time.split(':').map(Number), end = h * 60 + mi + (m.minutes || 60);
     const pad = (n) => String(n).padStart(2, '0');
     return DAYS[m.day] + 's, ' + m.time + '–' + pad(Math.floor(end / 60) % 24) + ':' + pad(end % 60) + ' London time' +
-      (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + (m.until ? ', until ' + m.until : '');
+      (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + (m.until ? ', until ' + m.until : '') + (m.link ? ', on its own link' : '');
   }
   // Email → name: the roster, members' own names, else how a project lists them (an
   // author, or whoever registered it), for people not on Slack.

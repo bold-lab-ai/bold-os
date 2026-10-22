@@ -2298,8 +2298,9 @@ const { FieldValue } = require('firebase-admin/firestore');
 const PROJECT_TZ = 'Europe/London';
 const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
 
-// Pure: a meeting as sent by a page → { day, time, minutes, every } or { error }.
-// day: 'MO'…'SU'; time: 'HH:MM' in London; minutes: 15–240 in 15s; every: 1–4 weeks.
+// Pure: a meeting as sent by a page → { day, time, minutes, every, until?, link? } or { error }.
+// day: 'MO'…'SU'; time: 'HH:MM' in London; minutes: 15–240 in 15s; every: 1–4 weeks;
+// link: an existing meeting link (https) used instead of a new Google Meet.
 function normalizeMeeting(m){
   if (!m || typeof m !== 'object') return { error: 'Choose a day and time for the meeting.' };
   const day = String(m.day || '').toUpperCase();
@@ -2314,7 +2315,23 @@ function normalizeMeeting(m){
   const until = String(m.until || '');
   if (until && !(/^\d{4}-\d{2}-\d{2}$/.test(until) && !isNaN(Date.parse(until)))) return { error: 'Give a valid end date.' };
   if (until && until < todayIsoLondon()) return { error: 'The end date has passed.' };
-  return until ? { day, time, minutes, every, until } : { day, time, minutes, every };
+  const link = String(m.link || '').trim();
+  if (link && !(link.length <= 500 && /^https:\/\/[^\s"<>]+$/.test(link))) return { error: 'Give a meeting link starting with https://' };
+  const out = { day, time, minutes, every };
+  if (until) out.until = until;
+  if (link) out.link = link;
+  return out;
+}
+
+// Pure: how a new event is joined: the meeting's own link (as its location), or a new Google Meet.
+function eventConference(meeting, requestId){
+  return meeting.link ? { location: meeting.link } : { conferenceData: { createRequest: { requestId, conferenceSolutionKey: { type: 'hangoutsMeet' } } } };
+}
+// Pure: what brings an existing event's link in line with the meeting (switching to its
+// own link drops the Google Meet; dropping it makes one), or null.
+function conferenceChange(ev, meeting, requestId){
+  if (meeting.link) return ev.location !== meeting.link || ev.hangoutLink ? { location: meeting.link, conferenceData: null } : null;
+  return ev.hangoutLink ? null : Object.assign({ location: '' }, eventConference(meeting, requestId));
 }
 
 // Pure: whether two meetings fall at the same times (an end date aside).
@@ -2467,6 +2484,7 @@ function eventDescription(ws){
   if (ws.deckUrl) lines.push('<a href="' + ws.deckUrl + '">Slides</a>');
   if (ws.notesUrl) lines.push('<a href="' + ws.notesUrl + '">Meeting notes</a>');
   if (ws.slackChannel) lines.push('Slack: ' + ws.slackChannel);
+  if (ws.meeting && ws.meeting.link) lines.unshift('Join: <a href="' + ws.meeting.link + '">' + ws.meeting.link + '</a>');
   return lines.join('<br>');
 }
 
@@ -2746,10 +2764,9 @@ async function syncWorkspace(id, changes){
           summary: ws.title,
           description: eventDescription(ws),
           attendees: attendees([]),
-          guestsCanModify: false,
-          conferenceData: { createRequest: { requestId: 'bold-' + id + '-' + Date.now(), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
-        }, eventTimes(ws.meeting)));
-        patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ev.hangoutLink || '';
+          guestsCanModify: false
+        }, eventConference(ws.meeting, 'bold-' + id + '-' + Date.now()), eventTimes(ws.meeting)));
+        patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ws.meeting.link || ev.hangoutLink || '';
         patch.eventMeeting = ws.meeting; patch.eventStart = seriesStart(ev);
         await save();
       } else if (!wantEvent && ws.eventId){
@@ -2770,10 +2787,14 @@ async function syncWorkspace(id, changes){
         // A new time moves the series; a new end date or a pause only changes how long it runs.
         if (!sameMeetingTimes(ws.eventMeeting, ws.meeting)) Object.assign(change, eventTimes(ws.meeting, ws.pausedAt));
         else if ((ws.eventMeeting.until || '') !== (ws.meeting.until || '') || (ws.pausedAt || 0) !== (ws.eventPausedAt || 0)) change.recurrence = meetingRecurrence(ws.meeting, ws.pausedAt);
+        Object.assign(change, conferenceChange(ev, ws.meeting, 'bold-' + id + '-' + Date.now()));
+        let now = ev;
         if (Object.keys(change).length){
-          const done = await googleFetch('PATCH', CAL + '/' + ws.eventId + '?sendUpdates=all', change);
-          patch.eventMeeting = ws.meeting; patch.eventPausedAt = ws.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(done || ev); await save();
+          now = await googleFetch('PATCH', CAL + '/' + ws.eventId + '?conferenceDataVersion=1&sendUpdates=all', change) || ev;
+          patch.eventMeeting = ws.meeting; patch.eventPausedAt = ws.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now); await save();
         } else if (!ws.eventStart && seriesStart(ev)){ patch.eventStart = seriesStart(ev); await save(); }
+        const url = ws.meeting.link || now.hangoutLink || '';
+        if (url !== (ws.meetUrl || '')){ patch.meetUrl = url; await save(); }
       }
       patch.error = FieldValue.delete();
     } catch (err){
@@ -3463,7 +3484,8 @@ async function syncStudyMeeting(email){
   try {
     const addrs = await googleAddressesFor([email].concat((s.people || []).map(function(p){ return p.email; })));
     const summary = (s.name || email) + ' — ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting';
-    const description = (s.title ? s.title + '<br>' : '') + 'Set on <a href="' + SITE_URL + 'profile.html#studies">BOLD.OS</a> by ' + (s.name || email) + '.';
+    const description = (s.meeting && s.meeting.link ? 'Join: <a href="' + s.meeting.link + '">' + s.meeting.link + '</a><br>' : '') +
+      (s.title ? s.title + '<br>' : '') + 'Set on <a href="' + SITE_URL + 'profile.html#studies">BOLD.OS</a> by ' + (s.name || email) + '.';
     const attendees = function(existing){
       const kept = (existing || []).filter(function(a){ return a.organizer || a.self || addrs.indexOf(String(a.email).toLowerCase()) >= 0; });
       return kept.concat(addrs.filter(function(m){
@@ -3475,10 +3497,9 @@ async function syncStudyMeeting(email){
     const want = !!s.meeting && !(s.pausedAt && !s.eventId);
     if (want && !s.eventId){
       const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
-        summary, description, attendees: attendees([]), guestsCanModify: false,
-        conferenceData: { createRequest: { requestId: 'bold-study-' + crypto.randomBytes(6).toString('hex'), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
-      }, eventTimes(s.meeting)));
-      Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: ev.hangoutLink || '', eventMeeting: s.meeting, eventStart: seriesStart(ev) });
+        summary, description, attendees: attendees([]), guestsCanModify: false
+      }, eventConference(s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')), eventTimes(s.meeting)));
+      Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: s.meeting.link || ev.hangoutLink || '', eventMeeting: s.meeting, eventStart: seriesStart(ev) });
     } else if (!want && s.eventId){
       await googleFetch('DELETE', CAL + '/' + s.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
       ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ patch[k] = FieldValue.delete(); });
@@ -3491,10 +3512,14 @@ async function syncStudyMeeting(email){
       if (ev.description !== description) change.description = description;
       if (!sameMeetingTimes(s.eventMeeting, s.meeting)) Object.assign(change, eventTimes(s.meeting, s.pausedAt));
       else if ((s.eventMeeting.until || '') !== (s.meeting.until || '') || (s.pausedAt || 0) !== (s.eventPausedAt || 0)) change.recurrence = meetingRecurrence(s.meeting, s.pausedAt);
+      Object.assign(change, conferenceChange(ev, s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')));
+      let now = ev;
       if (Object.keys(change).length){
-        const done = await googleFetch('PATCH', CAL + '/' + s.eventId + '?sendUpdates=all', change);
-        patch.eventMeeting = s.meeting; patch.eventPausedAt = s.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(done || ev);
+        now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=all', change) || ev;
+        patch.eventMeeting = s.meeting; patch.eventPausedAt = s.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now);
       } else if (!s.eventStart && seriesStart(ev)) patch.eventStart = seriesStart(ev);
+      const url = s.meeting.link || now.hangoutLink || '';
+      if (url !== (s.meetUrl || '')) patch.meetUrl = url;
     }
     patch.error = FieldValue.delete();
   } catch (err){

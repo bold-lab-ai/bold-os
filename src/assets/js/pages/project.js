@@ -334,7 +334,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var meeting = m && ws.pausedAt && ws.group !== 'completed' ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 paused</span>' + pauseBtn('resume')
       : m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 ' + (ws.group === 'completed' ? 'ended with the project' : 'not set up yet') + '</span>'
       : m ? esc(meetingText(m)) + pauseBtn('pause') +
-        (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>' : '') +
+        (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m) + '</a>' : '') +
         (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')
       : wsLoaded && !setting ? missing() + skipped('meeting') : state;
     var html = editableRow('meeting', 'Meeting', meeting, '',
@@ -533,7 +533,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     BOLD.confirmAction(remove ? { title: 'Remove the meeting?', go: 'Remove', effects: ['Cancel it on Google Calendar: Google tells its guests'] }
       : { title: ws && ws.meeting ? 'Change the meeting?' : 'Add a meeting?', go: 'Save', effects: [ws && ws.meeting
         ? 'Change it on Google Calendar to ' + meetingText(meeting) + ': Google emails its guests the change'
-        : 'Make it on Google Calendar, ' + meetingText(meeting) + ', with a Meet link: Google emails the project\u2019s members the invitation'] }).then(function(ok){
+        : 'Make it on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ': Google emails the project\u2019s members the invitation'] }).then(function(ok){
       if (ok) sendMeeting(meeting, fail);
     });
   }

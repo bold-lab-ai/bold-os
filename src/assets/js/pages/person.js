@@ -23,7 +23,7 @@
     return '<dl class="facts">' +
       row('Degree', esc(s.degree || '')) + row('Working title', esc(s.title || '')) +
       row('People involved', (s.people || []).map(function(p){ return esc(p.name); }).join(', ')) +
-      row('Meeting', s.meeting ? esc(meetingText(s.meeting)) : '') + '</dl>';
+      row('Meeting', s.meeting ? esc(meetingText(s.meeting)) + (s.meeting.link ? ' <span class="acct-handle">· own link</span>' : '') : '') + '</dl>';
   }
 
   // Planned, Ongoing and Completed, as on the profile's Projects tab.
