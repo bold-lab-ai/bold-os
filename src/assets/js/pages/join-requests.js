@@ -94,7 +94,7 @@
       '</fieldset>' + group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channels (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>). Several are separated by commas.</p>' +
         BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== 'pan'; }).map(function(c){
           var err = (groups.channelErrors || {})[c[0]];
-          return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="400" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel (none: nobody is added)"></label>' +
+          return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="400" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel, #another (none: nobody is added)"></label>' +
             (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
         }).join('') + '</fieldset>' + group('Join form') +
       '<label>Roles, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
