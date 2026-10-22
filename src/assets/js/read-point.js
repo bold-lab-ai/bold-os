@@ -206,7 +206,7 @@ window.BoldReadPoint = (function(){
       return true;
     }
 
-    return { start: start, stop: stop, html: html, readersHtml: readersHtml, click: click };
+    return { start: start, stop: stop, html: html, inner: innerHtml, readersHtml: readersHtml, click: click };
   }
 
   return { create: create };

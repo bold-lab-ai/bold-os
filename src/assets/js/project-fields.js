@@ -100,13 +100,19 @@ function channelEntryHtml(value){
 // Says what will happen to the typed name in Slack, live: what it's saved as, whether
 // the channel exists. ensure(name) does it for real (creates it if needed, invites you)
 // and resolves with the projectChannel result; refresh() redraws the live status.
-function wireChannelField(verb){
+// With `from` (a project's page changing its channel, `project`: { id, board }), a
+// new name that doesn't exist renames the old channel in Slack instead.
+function wireChannelField(verb, from, project){
   verb = verb || 'submit';
   var channelInput = document.getElementById('pfChannel'), statusBox = document.getElementById('channelStatus');
   var callChannel = null;
   try {
     var httpsCallable = firebase.app().functions('europe-west2').httpsCallable('projectChannel');
-    callChannel = function(name, mode){ return httpsCallable({ name: name, mode: mode }).then(function(r){ return r.data; }); };
+    callChannel = function(name, mode){
+      var args = { name: name, mode: mode };
+      if (mode === 'rename') { args.from = from; args.project = project; }
+      return httpsCallable(args).then(function(r){ return r.data; });
+    };
   } catch (e){}
 
   function statusLine(cls, text){
@@ -120,7 +126,7 @@ function wireChannelField(verb){
   }
 
   // What the typed name becomes, and what happens to it in Slack.
-  var checkSeq = 0, checkTimer = null;
+  var checkSeq = 0, checkTimer = null, checked = {};
   function updateChannelStatus(){
     clearTimeout(checkTimer);
     var seq = ++checkSeq;
@@ -135,9 +141,12 @@ function wireChannelField(verb){
     checkTimer = setTimeout(function(){
       if (!callChannel) return renderStatus(lines);
       callChannel(n.name, 'check').then(function(r){
+        checked[n.name] = !!r.exists;
         if (seq !== checkSeq) return;
+        var old = from && normalizeProjectChannel(from);
         renderStatus(lines.concat([r.exists
           ? ['ok', name + ' already exists — nothing to do.']
+          : old && !old.error && old.name !== n.name ? ['new', '#' + old.name + ' will be renamed ' + name + ' in Slack: same channel, same people.']
           // Not found means it doesn't exist, or it's a private channel the bot isn't in
           // (that's caught on save as name taken, and left alone) — say both.
           : ['new', name + ' wasn’t found. If it doesn’t exist, it will be created as a private channel and you’ll be invited when you submit. If it’s an existing private channel, invite ' + (r.bot || 'the BOLD Slack app') + ' to it so the project page can link to it.']]));
@@ -160,17 +169,27 @@ function wireChannelField(verb){
 
   return {
     refresh: updateChannelStatus,
+    // What saving `name` does in Slack, for BOLD.confirmAction: nothing for a channel
+    // that exists; else the old one renamed, or a new private one made.
+    effects: function(name){
+      if (checked[name]) return [];
+      var old = from && normalizeProjectChannel(from), sure = checked[name] === false ? '' : ' (if it doesn’t exist yet)';
+      if (old && !old.error && old.name === name) return [];
+      return old && !old.error ? ['Rename #' + old.name + ' to #' + name + ' in Slack' + sure + ': same channel, same people']
+        : ['Create the private Slack channel #' + name + sure + ' and invite you'];
+    },
     ensure: function(name){
       // Set up the Slack channel first (creates and invites if it doesn't exist),
       // so a project is never saved against a channel that couldn't be made.
       renderStatus([['pending', 'Setting up #' + name + '…']]);
-      return callChannel ? callChannel(name, 'ensure') : Promise.reject(new Error('functions unavailable'));
+      return callChannel ? callChannel(name, from ? 'rename' : 'ensure') : Promise.reject(new Error('functions unavailable'));
     }
   };
 }
 
 // The project's recurring meeting (projectWorkspace in functions/index.js): weekday,
-// time in London, length and how often. Fixed ids #pmDay, #pmTime, #pmMinutes, #pmEvery.
+// time in London, length, how often and until when (optional: the last day it may fall
+// on). Fixed ids #pmDay, #pmTime, #pmMinutes, #pmEvery, #pmUntil.
 var MEETING_DAYS = [['MO', 'Monday'], ['TU', 'Tuesday'], ['WE', 'Wednesday'], ['TH', 'Thursday'], ['FR', 'Friday'], ['SA', 'Saturday'], ['SU', 'Sunday']];
 var MEETING_MINUTES = [30, 45, 60, 90, 120];
 
@@ -182,23 +201,28 @@ function meetingEntryHtml(m){
       '<input type="time" id="pmTime" step="900" aria-label="Time" value="' + BOLD.escapeHtml(m.time || '') + '">' +
       '<select id="pmMinutes" aria-label="Length">' + MEETING_MINUTES.map(function(n){ return opt(n, n < 60 ? n + ' min' : (n / 60) + ' h', m.minutes); }).join('') + '</select>' +
       '<select id="pmEvery" aria-label="How often">' + [1, 2, 3, 4].map(function(n){ return opt(n, n === 1 ? 'Every week' : 'Every ' + n + ' weeks', m.every); }).join('') + '</select>' +
+      '<label class="meeting-until">Until (optional) <input type="date" id="pmUntil" aria-label="Until (leave empty for no end)" value="' + BOLD.escapeHtml(m.until || '') + '"></label>' +
     '</div>';
 }
 
-// → { day, time, minutes, every } or { error }.
+// → { day, time, minutes, every, until? } or { error }.
 function readMeetingEntry(){
   var v = function(id){ return document.getElementById(id).value; };
   if (!/^\d\d:\d\d$/.test(v('pmTime'))) return { error: 'Choose a time for the meeting.' };
-  return { day: v('pmDay'), time: v('pmTime'), minutes: Number(v('pmMinutes')), every: Number(v('pmEvery')) };
+  var m = { day: v('pmDay'), time: v('pmTime'), minutes: Number(v('pmMinutes')), every: Number(v('pmEvery')) };
+  if (v('pmUntil')) m.until = v('pmUntil');
+  return m;
 }
 
-// "Mondays, 14:00–15:00, every 2 weeks"
+// "Mondays, 14:00–15:00, every 2 weeks, until 18 Dec 2026"
 function meetingText(m){
   var day = MEETING_DAYS.filter(function(d){ return d[0] === m.day; })[0];
   var start = m.time.split(':').map(Number), endMin = start[0] * 60 + start[1] + m.minutes;
   var pad = function(n){ return (n < 10 ? '0' : '') + n; };
   var end = pad(Math.floor(endMin / 60) % 24) + ':' + pad(endMin % 60);
-  return (day ? day[1] + 's' : m.day) + ', ' + m.time + '\u2013' + end + (m.every > 1 ? ', every ' + m.every + ' weeks' : '');
+  var u = /^(\d{4})-(\d{2})-(\d{2})$/.exec(m.until || '');
+  var until = u ? ', until ' + Number(u[3]) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][u[2] - 1] + ' ' + u[1] : '';
+  return (day ? day[1] + 's' : m.day) + ', ' + m.time + '\u2013' + end + (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + until;
 }
 
 // The project's GitHub repository (projectWorkspace in functions/index.js): made from

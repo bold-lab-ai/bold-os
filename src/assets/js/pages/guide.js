@@ -6,7 +6,7 @@
 // all proposals, listed under "Proposed changes" until a PI/admin other than
 // whoever proposed it accepts it (decideProposal applies it, crediting both;
 // firestore.rules allow no other write) or declines it. Whoever proposed one
-// can withdraw it while it's open. PIs/admins add and delete guides
+// can edit it (it becomes their draft again) or withdraw it while it's open. PIs/admins add and delete guides
 // (guide.html?new is the form for a new one).
 // Parts may carry a `section`: then the page has one tab per section, showing
 // that section's parts (#<section-slug> or a part's #id opens its tab). The same page serves other documents edited this way (BOLDiquette:
@@ -30,6 +30,8 @@
   var DELETABLE = cfg.deletable !== 'false';
   var isNew = !cfg.slug && params.has('new');
   var slug = cfg.slug || params.get('guide') || '';
+  // A guide with a page of its own (BOLD.GUIDE_PAGES) is read there.
+  if (!cfg.slug && BOLD.GUIDE_PAGES[slug]) { location.replace(BOLD.GUIDE_PAGES[slug] + location.hash); return; }
   var ref = !isNew && G.SLUG.test(slug) ? db.collection(COLLECTION).doc(slug) : null;
   var MAX_SIZE = 900000;
 
@@ -59,17 +61,27 @@
   function saveFolded(){ try { localStorage.setItem(foldKey(), JSON.stringify(Object.keys(folded).filter(function(k){ return folded[k]; }))); } catch (e){} }
 
   // Your draft: changes staged before proposing them together (one "batch"
-  // proposal). Kept in this browser only, per guide and person.
-  var draft = [], draftOpen = false, draftNote = '', draftBusy = false, draftError = '';
+  // proposal). Kept in this browser only, per guide and person. Editing a
+  // proposed change of yours (draftEditing: its id) makes it your draft again;
+  // proposing it then updates that proposal, its discussion kept.
+  var draft = [], draftOpen = false, draftNote = '', draftBusy = false, draftError = '', draftEditing = null;
   function draftKey(){ return me && ref ? 'bold-draft:' + COLLECTION + '/' + slug + ':' + me.email : null; }
   function loadDraft(){
-    draft = [];
-    try { var raw = draftKey() && localStorage.getItem(draftKey()); if (raw) draft = JSON.parse(raw) || []; } catch (e){ draft = []; }
-    if (!Array.isArray(draft)) draft = [];
+    draft = []; draftNote = ''; draftEditing = null;
+    try {
+      var raw = draftKey() && localStorage.getItem(draftKey()), v = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(v)) draft = v;
+      else if (v && Array.isArray(v.changes)) { draft = v.changes; draftNote = v.note || ''; draftEditing = v.editing || null; }
+    } catch (e){ draft = []; }
   }
   function saveDraft(){
-    try { if (draftKey()) { if (draft.length) localStorage.setItem(draftKey(), JSON.stringify(draft)); else localStorage.removeItem(draftKey()); } } catch (e){}
+    try {
+      if (!draftKey()) return;
+      if (draft.length || draftEditing) localStorage.setItem(draftKey(), JSON.stringify({ changes: draft, note: draftNote, editing: draftEditing }));
+      else localStorage.removeItem(draftKey());
+    } catch (e){}
   }
+  function clearDraft(){ draft = []; draftNote = ''; draftEditing = null; draftOpen = false; saveDraft(); }
   // The guide as shown: as it is, with the proposal on show applied, or with your draft.
   function doc(){
     if (!x) return x;
@@ -97,10 +109,16 @@
     var t = currentTab();
     return t === null ? parts() : parts().filter(function(p){ return (p.section || '') === t; });
   }
-  // The section a #hash names: a section's slug, or one of its parts' id.
+  // A comment a #hash names (#c=<id>, as Slack sends), or ''.
+  function commentFor(hash){ var m = /^#?c=(.+)$/.exec(String(hash || '')); return m ? decodeURIComponent(m[1]) : ''; }
+  // The section a #hash names: a section's slug, one of its parts' id, or a comment's part.
   function tabFor(hash){
     var h = decodeURIComponent(String(hash || '').replace(/^#/, ''));
     if (!h) return null;
+    if (commentFor(hash)) {
+      var at = comments && comments.show(commentFor(hash)), cp = at && !at.proposalId && part(at.partId);
+      return cp ? (cp.section || '') : null;
+    }
     var byName = sections().filter(function(v){ return G.slugify(v) === h; })[0];
     if (byName !== undefined) return byName;
     var p = parts().filter(function(q){ return anchor(q) === h; })[0];
@@ -212,7 +230,7 @@
       '<div class="guide-tabs gd-modes" role="tablist">' +
         '<button type="button" class="guide-tab gd-mode is-current" data-mode="write" role="tab" aria-selected="true">Write</button>' +
         '<button type="button" class="guide-tab gd-mode" data-mode="preview" role="tab" aria-selected="false">Preview</button></div>' +
-      '<textarea class="gd-body md-mentions" rows="16" aria-label="Text">' + esc(p.body) + '</textarea>' +
+      '<textarea class="gd-body" rows="16" aria-label="Text">' + esc(p.body) + '</textarea>' +
       '<div class="guide-text gd-preview-box" hidden></div>' +
       '<p class="event-form-hint">Markdown: **bold**, *italic*, [a link](https://…), lines starting with - or 1. for lists, a blank line between paragraphs, @ to tag someone.</p>' +
       noteHtml(isAdd ? 'e.g. Added a part on posters' : 'e.g. Clearer advice on ablations') +
@@ -355,7 +373,9 @@
       mine ? ' disabled title="Another PI or admin reviews your change"' : '';
     return '<li class="gd-proposal" data-id="' + esc(q.id) + '">' +
       '<p class="gd-proposal-head"><span class="hist-when">' + BoldHistory.when(q.at) + '</span>' +
-        '<span>' + what + ' · proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') + '</span></p>' +
+        '<span>' + what + ' · proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') +
+          (q.editedAt ? ' · edited ' + esc(BoldHistory.when(q.editedAt)) : '') + '</span></p>' +
+      (draftEditing === q.id ? '<p class="gd-proposal-note"><em>You’re editing it: see your draft at the top.</em></p>' : '') +
       (q.note ? '<p class="gd-proposal-note">' + esc(q.note) + '</p>' : '') +
       (stale ? '<p class="gd-proposal-stale">' + (q.kind !== 'about' && !cur ? 'That part has since been removed.' : 'This has changed since it was proposed; accepting replaces the current text.') + '</p>' : '') +
       (q.kind === 'batch' ? '<ol class="gd-batch">' + (q.changes || []).map(function(c){
@@ -366,8 +386,20 @@
         '<button type="button" class="btn-text gd-view">View as proposed</button>' +
         '<button type="button" class="btn-text gd-accept"' + off + (q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && q.kind !== 'batch' && !cur ? ' disabled' : '') + '>Accept</button>' +
         '<button type="button" class="btn-text danger gd-decline"' + off + '>Decline</button>' +
+        // A restore stays as it is: withdraw it and restore another version instead.
+        (mine && q.kind !== 'restore' ? '<button type="button" class="btn-text gd-revise">' + (draftEditing === q.id ? 'Editing' : 'Edit') + '</button>' : '') +
         (mine ? '<button type="button" class="btn-text gd-withdraw">Withdraw</button>' : '') +
       '</div>' + (comments ? comments.proposalThreadHtml(q.id) : '') + '</li>';
+  }
+
+  // The box under the title: what changed since you last read it (read-point.js),
+  // the proposed changes open, and the open comment threads (on the Comments page).
+  function statusHtml(){
+    var n = proposals.length, c = comments ? comments.openCount() : 0, bits = [];
+    if (n) bits.push('<a href="#proposals">' + n + ' proposed change' + (n === 1 ? '' : 's') + '</a>');
+    if (c) bits.push('<a href="comments.html?on=' + encodeURIComponent(COLLECTION + '/' + slug) + '">' + c + ' open comment' + (c === 1 ? '' : 's') + '</a>');
+    var inner = (readPoint ? readPoint.inner(x) : '') + (bits.length ? '<p class="rp-line rp-activity">' + bits.join(' · ') + '</p>' : '');
+    return inner ? '<aside class="read-point" aria-label="What’s new">' + inner + '</aside>' : '';
   }
 
   function proposalsHtml(){
@@ -378,7 +410,8 @@
 
   // Applied by the server, which checks who decides it.
   function decide(q, accept){
-    return firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: COLLECTION, slug: slug, id: q.id, accept: accept });
+    // editedAt: the version decided on, in case it's edited meanwhile.
+    return firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: COLLECTION, slug: slug, id: q.id, accept: accept, editedAt: q.editedAt || 0 });
   }
 
   // Proposes a change. change: { kind, partId, before, after, note } → Promise.
@@ -413,14 +446,13 @@
     if (form && form.kind === 'about') hero += aboutFormHtml();
     else hero += '<h1>' + esc(doc().title) + '</h1>' + (doc().description ? '<p class="hero-note">' + esc(doc().description) + '</p>' : '') +
       '<div class="event-controls"><button type="button" class="btn-text gd-about">' + 'Suggest a change' + '</button>' +
-      (DELETABLE ? '<button type="button" class="btn-text danger gd-delete"' + off + '>Delete guide</button>' : '') +
-      (proposals.length ? '<a class="btn-text gd-pending" href="#proposals">' + proposals.length + ' proposed change' + (proposals.length === 1 ? '' : 's') + '</a>' : '') + '</div>';
+      (DELETABLE ? '<button type="button" class="btn-text danger gd-delete"' + off + '>Delete guide</button>' : '') + '</div>';
     hero += '</div>';
     var adding = form && form.kind === 'add';
     body.innerHTML = hero + '<main>' +
       (notice ? '<p class="gd-notice">' + esc(notice) + '</p>' : '') +
       draftHtml() +
-      (readPoint ? readPoint.html(x) : '') +
+      statusHtml() +
       tabsHtml() +
       // The contents sit beside the parts and stay on screen (above them on narrow screens).
       '<div class="guide-layout"><div class="guide-main">' +
@@ -431,7 +463,7 @@
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
     var dn = body.querySelector('.gd-draft-note');
-    if (dn) dn.addEventListener('input', function(){ draftNote = dn.value; });
+    if (dn) dn.addEventListener('input', function(){ draftNote = dn.value; saveDraft(); });
     watchContents();
     if (comments && !form) comments.decorate();
   }
@@ -446,35 +478,59 @@
     return KIND[c.kind] + ' “' + esc((c.after || c.before || {}).title || '') + '”';
   }
   function draftHtml(){
-    if (!draft.length) return '';
+    if (!draft.length && !draftEditing) return '';
     var n = draft.length + (draft.length === 1 ? ' change' : ' changes');
+    var head = draftEditing ? '<strong>Editing your proposed change:</strong> ' + n + '. Others see it as proposed until you update it.' :
+      '<strong>Your draft:</strong> ' + n + ', not proposed yet. It shows here only for you.';
     return '<aside class="gd-draft" aria-label="Your draft">' +
-      '<p class="gd-draft-head"><span><strong>Your draft:</strong> ' + n + ', not proposed yet. It shows here only for you.</span>' +
-        '<span class="gd-draft-actions"><button type="button" class="btn-text gd-draft-toggle">' + (draftOpen ? 'Hide' : 'Review') + '</button>' +
-        '<button type="button" class="btn-text danger gd-draft-discard">Discard</button></span></p>' +
-      (draftOpen ? '<ol class="gd-draft-list">' + draft.map(function(c, i){
+      '<p class="gd-draft-head"><span>' + head + '</span>' +
+        '<span class="gd-draft-actions">' + (draft.length ? '<button type="button" class="btn-text gd-draft-toggle">' + (draftOpen ? 'Hide' : 'Review') + '</button>' : '') +
+        '<button type="button" class="btn-text danger gd-draft-discard">' + (draftEditing ? 'Cancel editing' : 'Discard') + '</button></span></p>' +
+      (draftOpen && draft.length ? '<ol class="gd-draft-list">' + draft.map(function(c, i){
         return '<li><span>' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + '</span>' +
           '<button type="button" class="btn-text gd-draft-drop" data-i="' + i + '">Remove</button>' +
           BoldHistory.changesHtml(sideText(c.kind, c.before), sideText(c.kind, c.after), {}) + '</li>';
       }).join('') + '</ol>' : '') +
-      '<div class="event-form gd-draft-form"><label>What you changed and why<input type="text" class="gd-draft-note" maxlength="300" value="' + esc(draftNote) + '" placeholder="e.g. Brought the setup section up to date"></label>' +
+      (draft.length ? '<div class="event-form gd-draft-form"><label>What you changed and why<input type="text" class="gd-draft-note" maxlength="300" value="' + esc(draftNote) + '" placeholder="e.g. Brought the setup section up to date"></label>' +
         (draftError ? '<p class="ev-error">' + esc(draftError) + '</p>' : '') +
-        '<div class="event-form-actions"><button type="button" class="ev-save gd-draft-propose"' + (draftBusy ? ' disabled' : '') + '>Propose ' + (draft.length === 1 ? 'it' : 'all ' + draft.length) + '</button></div></div>' +
+        '<div class="event-form-actions"><button type="button" class="ev-save gd-draft-propose"' + (draftBusy ? ' disabled' : '') + '>' +
+          (draftEditing ? 'Update proposed change' : 'Propose ' + (draft.length === 1 ? 'it' : 'all ' + draft.length)) + '</button></div></div>' :
+        '<p class="gd-draft-empty">No changes left. To drop the proposal, withdraw it under “Proposed changes”.</p>') +
       '</aside>';
   }
+  // A change as a proposal stores it (a draft's changes keep their own notes).
+  function asProposal(){
+    var note = draftNote.trim();
+    return draft.length === 1 ? Object.assign({}, draft[0], { note: note }) :
+      { kind: 'batch', partId: '', before: null, after: null, changes: draft, note: note };
+  }
   function proposeDraft(){
-    if (draftBusy) return;
+    if (draftBusy || !draft.length) return;
     draftNote = (body.querySelector('.gd-draft-note') || {}).value || draftNote;
     if (!draftNote.trim()) { draftError = 'Say what you changed and why, for whoever reviews it.'; render(); return; }
     draftBusy = true; draftError = ''; render();
-    var change = draft.length === 1 ? Object.assign({}, draft[0], { note: draftNote.trim() }) :
-      { kind: 'batch', partId: '', before: null, after: null, changes: draft, note: draftNote.trim() };
-    submit(change).then(function(){
-      draft = []; saveDraft(); draftBusy = false; draftNote = ''; draftOpen = false; render();
+    var q = draftEditing && proposals.filter(function(p){ return p.id === draftEditing; })[0];
+    // The proposal as it is now, its proposer, time and status kept: firestore.rules allow nothing else.
+    var job = q ? ref.collection('proposals').doc(q.id).set(Object.assign(asProposal(), { by: q.by, at: q.at, status: 'open', editedAt: Date.now() }))
+        .then(function(){ notice = 'Your proposed change is updated.'; }) :
+      submit(asProposal());
+    job.then(function(){
+      clearDraft(); draftBusy = false; render();
     }).catch(function(err){
       console.error('[BOLD Guides] proposing the draft failed', err);
-      draftBusy = false; draftError = 'Couldn’t propose it — try again.'; render();
+      draftBusy = false; draftError = 'Couldn’t ' + (q ? 'update' : 'propose') + ' it — try again.'; render();
     });
+  }
+  // Makes your proposed change q your draft, to change it.
+  function editProposal(q){
+    if (draftEditing === q.id) { draftOpen = true; render(); body.scrollIntoView({ block: 'start' }); return; }
+    if (draft.length && !window.confirm('Editing it replaces your ' + (draftEditing ? 'edits to your other proposed change' : 'draft of ' + draft.length + (draft.length === 1 ? ' change' : ' changes')) + '. Go on?')) return;
+    var strip = function(c){ return { kind: c.kind, partId: c.partId || '', before: c.before === undefined ? null : c.before, after: c.after === undefined ? null : c.after, note: c.note || '' }; };
+    draft = q.kind === 'batch' ? (q.changes || []).map(strip) : [Object.assign(strip(q), { note: '' })];
+    draftNote = q.note || ''; draftEditing = q.id; draftOpen = true; draftError = ''; notice = '';
+    viewing = null; form = null;
+    saveDraft(); render();
+    body.scrollIntoView({ block: 'start' });
   }
   // Moves the current tab left (-1) or right (1): all its parts as a block, into your draft.
   function moveTab(by){
@@ -585,6 +641,24 @@
   });
   body.addEventListener('dragend', function(){ dragged = null; draggedPart = null; clearDrop(); });
 
+  // Adds a change to your draft. Editing or removing a part the draft last added or
+  // edited changes that instead, so the draft holds one change per part.
+  function stage(c){
+    var i = -1;
+    draft.forEach(function(d, j){ if (c.partId && d.partId === c.partId) i = j; });
+    var last = i === -1 ? null : draft[i];
+    if (last && c.kind === 'edit' && (last.kind === 'edit' || last.kind === 'add')) {
+      last.after = Object.assign({}, last.after, c.after);
+      if (c.note) last.note = c.note;
+      var same = last.kind === 'edit' && last.before && last.after.title === last.before.title && last.after.body === last.before.body &&
+        (last.after.section === undefined || last.after.section === (last.before.section || ''));
+      if (same) draft.splice(i, 1);
+    } else if (last && c.kind === 'remove' && last.kind === 'add') { dropFromDraft(i); return; }
+    else if (last && c.kind === 'remove' && last.kind === 'edit') { draft[i] = Object.assign({}, c, { before: last.before }); }
+    else draft.push(c);
+    saveDraft();
+  }
+
   // Removing a change also removes later ones on the part it added.
   function dropFromDraft(i){
     var c = draft[i];
@@ -685,7 +759,7 @@
     function run(change){
       if (new Blob([JSON.stringify(x.parts || []) + JSON.stringify(draft) + JSON.stringify(change)]).size > MAX_SIZE) { showError(el, 'That’s too much text for one guide.'); return; }
       if (staging) {
-        draft.push(change); saveDraft(); notice = '';
+        stage(change); notice = '';
         closeForm();
         return;
       }
@@ -808,7 +882,8 @@
     if (t.classList.contains('gd-draft-propose')) { proposeDraft(); return; }
     if (t.classList.contains('gd-draft-drop')) { dropFromDraft(Number(t.getAttribute('data-i'))); return; }
     if (t.classList.contains('gd-draft-discard')) {
-      if (window.confirm('Discard your draft of ' + draft.length + (draft.length === 1 ? ' change' : ' changes') + '?')) { draft = []; saveDraft(); draftNote = ''; render(); }
+      if (draftEditing ? window.confirm('Stop editing? Your proposed change stays as it was.') :
+        window.confirm('Discard your draft of ' + draft.length + (draft.length === 1 ? ' change' : ' changes') + '?')) { clearDraft(); render(); }
       return;
     }
     var id = t.getAttribute('data-id');
@@ -841,6 +916,7 @@
       var q = li && proposals.filter(function(p){ return p.id === li.getAttribute('data-id'); })[0];
       if (!q) return;
       if (t.classList.contains('gd-view')) { view(q.id); return; }
+      if (t.classList.contains('gd-revise')) { editProposal(q); return; }
       var job = null;
       if (t.classList.contains('gd-accept') && fullWrite) job = decide(q, true);
       else if (t.classList.contains('gd-decline') && fullWrite && window.confirm('Decline this proposed change?')) job = decide(q, false);
@@ -849,7 +925,7 @@
         t.disabled = true;
         job.catch(function(err){
           console.error('[BOLD Guides] updating a proposal failed', err);
-          window.alert('Couldn’t do that — try again.');
+          window.alert(err && err.code === 'functions/failed-precondition' && err.message ? err.message : 'Couldn’t do that — try again.');
           t.disabled = false;
         });
       }
@@ -891,13 +967,23 @@
   var jumped = !location.hash, proposalsLoaded = false;
   function refresh(){
     if (form) return;
-    var ready = !jumped && x && (proposalsLoaded || location.hash !== '#proposals');
+    var ready = !jumped && x && (proposalsLoaded || location.hash !== '#proposals') &&
+      (!commentFor(location.hash) || (comments && comments.ready() && proposalsLoaded));
     if (ready) tab = tabFor(location.hash);
     render();
     if (ready) { jumped = true; goTo(location.hash); }
   }
   // Shows what #hash names: a part (scrolled to) or a section's tab.
   function goTo(hash){
+    var cid = commentFor(hash);
+    if (cid) {
+      var at = comments && comments.show(cid), p = at && !at.proposalId ? part(at.partId) : null;
+      if (p && folded[p.id]) { folded[p.id] = false; saveFolded(); }
+      render();
+      var el = body.querySelector('.cm-comment[data-cid="' + CSS.escape(cid) + '"]') || (p && document.getElementById(anchor(p))) || (at && at.proposalId && document.getElementById('proposals'));
+      if (el) el.scrollIntoView({ block: 'center' });
+      return;
+    }
     var id = decodeURIComponent(String(hash).replace(/^#/, ''));
     var fp = parts().filter(function(q){ return anchor(q) === id; })[0];
     if (fp && folded[fp.id]) { folded[fp.id] = false; saveFolded(); render(); }
@@ -946,6 +1032,11 @@
       proposals = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
         .sort(function(a, b){ return a.at - b.at; });
       proposalsLoaded = true;
+      // Decided or withdrawn while you were editing it: your edits stay, as a draft.
+      if (draftEditing && !proposals.some(function(q){ return q.id === draftEditing; })) {
+        draftEditing = null; saveDraft();
+        notice = 'The proposed change you were editing is no longer open. Your edits are kept as a draft.';
+      }
       refresh();
     }, function(err){ console.error('[BOLD Guides] loading proposed changes failed', err); }));
   });

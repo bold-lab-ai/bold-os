@@ -96,3 +96,9 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 }
 .home-hero h1 strong{font-weight:700; color:var(--accent);}
 #homeGuestNote{margin-top:28px;}
+/* The search box under the title (search-box.js), larger than the masthead's. */
+.home-hero:has(.home-search:not([hidden])){width:100%; box-sizing:border-box;}
+.home-search{position:relative; width:min(520px, 100%); margin:26px auto 0; text-align:left;}
+.home-search .ms-input, .home-search .ms-input:focus{width:100%; box-sizing:border-box; font-size:16px; padding:10px 34px 10px 14px;}
+.home-search .ms-key{right:12px;}
+.home-search .ms-menu{left:0; right:0; width:auto;}

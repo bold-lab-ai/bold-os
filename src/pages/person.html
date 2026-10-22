@@ -1,0 +1,37 @@
+---
+title: "Person | BOLD Lab"
+description: "A member of BOLD."
+sdk: ["firestore"]
+css: "profile"
+scripts: ["join-common.js", "project-fields.js", "connections.js", "pages/person.js"]
+permalink: "person.html"
+nav: "people.html"
+---
+<div class="hero">
+  <a class="back-link" href="people.html">← People</a>
+  <div class="profile-head">
+    <h1 id="personName">Person</h1>
+  </div>
+  <div class="pp-actions" id="personActions" hidden></div>
+</div>
+
+<main>
+  <nav class="guide-tabs profile-tabs" id="personTabs" aria-label="Person">
+    <a class="guide-tab" href="#details">Details</a>
+    <a class="guide-tab" href="#studies" hidden>Studies</a>
+    <a class="guide-tab" href="#projects">Projects</a>
+    <a class="guide-tab" href="#connections">Connections</a>
+  </nav>
+  <section class="profile-panel" id="details">
+    <div id="person"><p class="proj-msg">Loading&hellip;</p></div>
+  </section>
+  <section class="profile-panel" id="studies" hidden>
+    <div id="personStudies"></div>
+  </section>
+  <section class="profile-panel" id="projects" hidden>
+    <div id="personProjects"><p class="proj-msg">Loading&hellip;</p></div>
+  </section>
+  <section class="profile-panel" id="connections" hidden>
+    <div id="connectionsBody"></div>
+  </section>
+</main>

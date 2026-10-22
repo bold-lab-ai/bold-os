@@ -1,23 +1,10 @@
 ---
-title: "Project Meetings | BOLD Lab"
-description: "Every project's recurring meeting."
-sdk: ["firestore", "functions"]
-css: "projects"
-nav: "project-meetings.html"
-scripts: ["project-fields.js", "pages/project-meetings.js"]
 permalink: "project-meetings.html"
+layout: false
+eleventyExcludeFromCollections: true
 ---
-<div class="hero">
-  <h1>Project meetings</h1>
-</div>
-
-<main>
-  <div class="actions">
-    <div class="view-toggle" role="group" aria-label="View">
-      <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
-      <button type="button" class="view-btn" data-view="week" aria-pressed="false">Week</button>
-    </div>
-  </div>
-  <p class="proj-msg" id="meetMsg">Loading&hellip;</p>
-  <div id="meetings" hidden></div>
-</main>
+<!DOCTYPE html>
+{# Before 2026-10-19 the project meetings had their own page; now they're on the Calendar. #}
+<html lang="en"><head><meta charset="UTF-8"><title>Moved</title>
+<script>location.replace('calendar.html' + location.hash);</script>
+</head><body><p><a href="calendar.html">This page has moved.</a></p></body></html>

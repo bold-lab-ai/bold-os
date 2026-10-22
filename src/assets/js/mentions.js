@@ -1,7 +1,9 @@
-// Tagging people: in any textarea with class "md-mentions", typing @ and the start of
-// a name lists the lab's people (the `people` roster); picking one writes
-// @[Name](SlackId), which markdown.js shows as @Name, linking to their Slack profile.
-// Nobody is notified. One list for the whole page, on whichever box is being typed in.
+// Tagging people: in any textarea (but those in .no-tags: text that leaves BOLD.OS,
+// such as an abstract or a SKILL.md), typing @ and the start of a name lists the
+// lab's people (the `people` roster); picking one writes @[Name](SlackId), which
+// bold.js shows as @Name, linking to their Slack profile. Loaded on every signed-in
+// page (base.njk). Whoever is tagged gets a Slack DM (functions/index.js, "Tagging
+// people"). One list for the whole page, on whichever box is being typed in.
 (function(){
   var people = null, loading = null;
   var box = null, list = [], at = 0, field = null, start = -1;
@@ -83,10 +85,10 @@
     ta.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  function isField(el){ return el && el.tagName === 'TEXTAREA' && el.classList.contains('md-mentions'); }
+  function isField(el){ return el && el.tagName === 'TEXTAREA' && !el.closest('.no-tags'); }
   document.addEventListener('input', function(e){ if (isField(e.target)) { if (field !== e.target) at = 0; show(e.target); } });
   document.addEventListener('keydown', function(e){
-    if (!box || e.target !== field) return;
+    if (!box || e.target !== field || e.metaKey || e.ctrlKey) return;
     if (e.key === 'ArrowDown') { at = (at + 1) % list.length; show(field); e.preventDefault(); }
     else if (e.key === 'ArrowUp') { at = (at + list.length - 1) % list.length; show(field); e.preventDefault(); }
     else if (e.key === 'Enter' || e.key === 'Tab') { pick(at); e.preventDefault(); }

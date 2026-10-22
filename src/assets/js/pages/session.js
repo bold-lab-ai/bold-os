@@ -449,7 +449,8 @@
       html += '<div class="edit-field' + (f.wide ? ' edit-field--wide' : '') + '"><label for="t_' + f.key + '">' + esc(f.label) + '</label>' +
         (f.area ? '<textarea id="t_' + f.key + '" rows="' + f.area + '">' + esc(v) + '</textarea>'
           : '<input type="text" id="t_' + f.key + '" value="' + esc(v) + '" placeholder="' + esc(f.placeholder || '') + '">') +
-        (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
+        (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') +
+        (f.key === 'presentationUrl' ? BoldPresentationUpload.html('edit-hint') : '') + '</div>';
       if (f.key === 'presentationUrl') html += links.fieldHtml();
     });
     return html + '</div><div class="field-error" id="editError" hidden></div>' +
@@ -680,6 +681,8 @@
     if (soloTalk()) {
       if (el('soloSpeakers')) CollabWeekSpeakers.mount(el('soloSpeakers'), soloSpeakerRows, people);
       el('editSave').addEventListener('click', saveSolo);
+      BoldPresentationUpload.wire(document.querySelector('.edit-form .pu-line'), { input: el('t_presentationUrl'),
+        args: function(){ return { talk: soloTalk().slug }; }, busy: function(on){ el('editSave').disabled = on; } });
       el('editCancel').addEventListener('click', function(){ editing = false; render(); });
       return;
     }

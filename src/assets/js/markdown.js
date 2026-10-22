@@ -6,19 +6,29 @@
 // |---| row under it, then | rows. @[Name](SlackId), a tagged person (mentions.js),
 // shows as @Name, linking to their Slack profile.
 // BoldMarkdown.render(text) → HTML; BoldMarkdown.plain(text) → plain text, escaped,
-// with its tags as links (comments).
+// with its tags and web addresses as links (comments).
 window.BoldMarkdown = (function(){
   var esc = BOLD.escapeHtml;
 
   // A tag, with its link to the person's profile in the Slack app (Slack's own
   // slack://user link: it opens their profile; nobody is notified).
-  var MENTION = /@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g;
   function mentions(escaped){
-    return escaped.replace(MENTION, function(all, name, id){
+    return escaped.replace(BOLD.TAG, function(all, name, id){
       return '<a class="md-mention" href="slack://user?team=' + BOLD.SLACK_TEAM + '&amp;id=' + id + '" title="Open in Slack">@' + name + '</a>';
     });
   }
-  function plain(text){ return mentions(esc(text)); }
+  // Plain text (comments): escaped, its tags as links, and its http(s) addresses as
+  // links (without a sentence's closing punctuation).
+  function plain(text){
+    var parts = String(text == null ? '' : text).split(/(https?:\/\/[^\s<>"']+)/), out = '', carry = '';
+    parts.forEach(function(p, i){
+      if (i % 2 === 0) { out += mentions(esc(carry + p)); carry = ''; return; }
+      var tail = /[.,;:!?)\]]+$/.exec(p), u = tail ? p.slice(0, -tail[0].length) : p;
+      out += '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u) + '</a>';
+      carry = tail ? tail[0] : '';
+    });
+    return out + (carry ? esc(carry) : '');
+  }
 
   function safeUrl(u){
     u = u.trim();

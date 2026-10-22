@@ -139,7 +139,7 @@
       if (idx === -1) return;
       params[decodeURIComponent(pair.slice(0, idx))] = decodeURIComponent(pair.slice(idx + 1));
     });
-    return params.board ? { boardId: params.board, cardId: params.card || null } : null;
+    return params.board ? { boardId: params.board, cardId: params.card || null, msgId: params.msg || null } : null;
   }
 
   // Real, bookmarkable/shareable URL as of 2026-09-12 — history.pushState's

@@ -164,6 +164,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // The rows edited as a single field: label, the card field, how it shows, and its checks.
   var openLink = function(url){ return '<a href="' + esc(url) + '" target="_blank" rel="noopener">Open</a>'; };
   var SIMPLE = {
+    title: { label: 'Title', field: 'title', type: 'text', required: true, placeholder: 'The project\u2019s title', view: esc },
     overleaf: { label: 'Overleaf', field: 'overleafLink', type: 'url', required: true, check: function(v){ return overleafLinkIssue(v); },
       placeholder: 'https://www.overleaf.com/project/\u2026 \u2014 must allow edit access, not just view', view: link },
     pitch: { label: 'Pitch deck', field: 'pitchLink', type: 'url', placeholder: 'https://\u2026', view: openLink },
@@ -196,13 +197,15 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
-  var TABS = [['overview', 'Overview'], ['team', 'Team'], ['presentations', 'Presentations'], ['paper', 'Paper']];
+  var TABS = [['overview', 'Overview'], ['presentations', 'Presentations'], ['paper', 'Papers']];
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
+  // The Team tab's people and channel are on Overview now, its meeting, slides and notes on Presentations.
+  if (tab === 'team') tab = 'overview';
   if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
   // &join=1, the link in a project's #all-active-projects announcement: join it
-  // once it's loaded, on the Team tab (maybeJoin).
+  // once it's loaded, on the Overview tab (maybeJoin).
   var joinRequested = /[#&]join=1(&|$)/.test(location.hash);
-  if (joinRequested) tab = 'team';
+  if (joinRequested) tab = 'overview';
 
   function setTab(name, focus){
     if (name === tab) return;
@@ -226,6 +229,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         : (card.authors && card.authors.length
             ? card.authors.map(function(a){ return esc(a.name || a.email || '?'); }).join(', ')
             : missing()) + editButton('authors')) + '</dd>';
+      html += peopleRows();
       html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
         '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
       html += row('Submitted by', card.submittedBy && card.submittedBy.name
@@ -247,16 +251,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       }
       return html;
     },
-    // Who's on it and how they meet.
-    team: function(){
-      return '<dl class="detail-grid">' + row('People', membersHtml()) +
-        editableRow('slack', 'Slack channel', card.slackChannel ? esc(card.slackChannel) : missing(),
-          card.slackChannel ? ' id="slackChannel"' : '', channelEntryHtml(card.slackChannel), 'slackSave') +
-        workspaceRows() + '</dl>';
-    },
-    // Talks about the project; the pitch deck is the card's own (the board uses it).
+    // Its meeting, slides and notes; talks about the project; the pitch deck is the card's own (the board uses it).
     presentations: function(){
-      return '<dl class="detail-grid">' + simpleRow('pitch') + '</dl>' + presentationsHtml();
+      return '<dl class="detail-grid">' + workspaceRows() + simpleRow('pitch') + '</dl>' + presentationsHtml();
     },
     // The write-up and its submission.
     paper: function(){
@@ -266,7 +263,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   };
 
   function render(){
-    var html = '<div class="detail-head"><h2>' + esc(card.title) + '</h2>';
+    // The title, edited in place (Edit beside it).
+    var html = '<div class="detail-head">' + (editing === 'title'
+      ? '<div class="detail-title-edit"><input type="text" id="fieldInput" maxlength="300" value="' + esc(card.title || '') + '" aria-label="Title">' + saveCancelHtml('fieldSave') + '</div>'
+      : '<h2>' + esc(card.title) + editButton('title') + '</h2>');
     html += '<div class="detail-badges">';
     if (STAGE_LABELS[card.status]) html += '<span class="badge badge-stage">' + STAGE_LABELS[card.status] + '</span>';
     if (OUTCOME_LABELS[card.outcome] && !(card.outcome === 'accepted' && card.status === 'conference')) {
@@ -275,9 +275,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     if (ws && ws.completedAt) html += '<span class="badge">Completed</span>';
     // Marking it completed (or reopening it): its meeting is cancelled (or comes back).
     var done = !!(ws && ws.completedAt);
-    html += '<button class="btn-text detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
+    // Join (or Leave, for whoever joined rather than registered or wrote it).
+    html += joinButton();
+    html += '<button class="btn-box detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
       (done ? 'Reopen project' : 'Mark as completed') + '</button>';
-    html += '<button class="btn-text danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
+    html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
     html += '</div></div>';
     html += '<div class="tabs" role="tablist" aria-label="Project">' + TABS.map(function(t){
       var on = t[0] === tab;
@@ -305,6 +307,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     });
   }
 
+  // Left out when it was registered (projectWorkspace's `skipped`), until it's done.
+  function skipped(key){
+    return ws && (ws.skipped || []).indexOf(key) >= 0 ? ' <span class="detail-muted">\u00b7 skipped when it was registered</span>' : '';
+  }
+  function wsButton(action, label){
+    return ' <button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (wsBusy || !wsLoaded ? ' disabled' : '') + '>' + label + '</button>';
+  }
+
   // The workspace's rows: meeting, slides, notes.
   function workspaceRows(){
     var setting = ws && ws.syncing, failed = ws && ws.error;
@@ -317,15 +327,22 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : '';
     var m = ws && ws.meeting;
     // Chosen but not in Google Calendar yet (the lab's Google account isn't connected, say).
-    var meeting = m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 ' + (ws.group === 'completed' ? 'ended with the project' : 'not set up yet') + '</span>'
-      : m ? esc(meetingText(m)) +
+    // Pausing cancels it in Google Calendar and keeps the time; resuming sends a new invitation.
+    var pauseBtn = function(action){
+      return ' <button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (action === 'pause' ? 'Pause' : 'Resume') + '</button>';
+    };
+    var meeting = m && ws.pausedAt && ws.group !== 'completed' ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 paused</span>' + pauseBtn('resume')
+      : m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 ' + (ws.group === 'completed' ? 'ended with the project' : 'not set up yet') + '</span>'
+      : m ? esc(meetingText(m)) + pauseBtn('pause') +
         (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>' : '') +
         (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')
-      : wsLoaded && !setting ? missing() : state;
+      : wsLoaded && !setting ? missing() + skipped('meeting') : state;
     var html = editableRow('meeting', 'Meeting', meeting, '',
       meetingEntryHtml(m) + (m ? '<button class="btn-text danger" type="button" id="meetingRemove">Remove the meeting</button>' : ''), 'meetingSave');
-    html += row('Slides', ws && ws.deckUrl ? openLink(ws.deckUrl) : state + retry);
+    html += row('Slides', ws && ws.deckUrl ? openLink(ws.deckUrl) : state + (ws && ws.noDocs ? skipped('docs') : '') + retry);
     html += row('Meeting notes', ws && ws.notesUrl ? openLink(ws.notesUrl) : failed ? missing() : state);
+    // Set up part way (shared with some members, say): the error and Try again stay.
+    if (failed && ws.deckUrl && !setting) html += row('Setting up', '<span class="detail-muted">' + esc(ws.error) + '</span>' + retry);
     return html;
   }
 
@@ -392,7 +409,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : !wsLoaded ? '<span class="detail-muted">Loading\u2026</span>'
       : ws && ws.repoError ? '<span class="detail-muted">' + esc(ws.repoError) + '</span>'
       : ws && ws.repo && ws.syncing ? '<span class="detail-muted">Setting up\u2026</span>'
-      : missing();
+      : missing() + skipped('repo');
     var retry = ws && ws.repoError && ws.repo && !linked
       ? ' <button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Try again</button>' : '';
     // Once made, it stays.
@@ -403,6 +420,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function saveRepo(){
     var fail = failer(), repo = readRepoEntry();
     if (repo.error) return fail(repo.error);
+    BOLD.confirmAction({ title: 'Make the repository?', go: 'Make it', effects: [
+      'Make the project\u2019s GitHub repository in bold-lab-ai, from the ' + repo.template + ' template'] }).then(function(ok){ if (ok) sendRepo(repo, fail); });
+  }
+  function sendRepo(repo, fail){
     el('repoSave').disabled = true;
     callWorkspace({ action: 'repo', repo: repo }).then(function(r){
       if (r.data && r.data.repoError) { el('repoSave').disabled = false; return fail(r.data.repoError); }
@@ -414,20 +435,31 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     });
   }
 
-  // Whoever registered it, its authors and whoever joined; Join or Leave for the viewer.
+  // Whoever registered it, its authors and whoever joined.
   function memberEmails(){
     if (ws && ws.members) return ws.members;
     return [card.submittedBy && card.submittedBy.email].concat(card.authorEmails || []).filter(function(e, i, all){ return e && all.indexOf(e) === i; });
   }
+  // Overview's: who's on it, its Slack channel, and its announcement if that was skipped.
+  function peopleRows(){
+    return row('People', membersHtml()) +
+      editableRow('slack', 'Slack channel', card.slackChannel ? '<span id="slackChannel">' + esc(card.slackChannel) + '</span>' +
+          (ws && me && (ws.slackSkipped || []).indexOf(me.email.toLowerCase()) >= 0 ? ' <span class="detail-muted">\u00b7 you skipped joining it</span>' + wsButton('slack', 'Join it') : '')
+        : missing() + skipped('channel'),
+        '', channelEntryHtml(card.slackChannel), 'slackSave') +
+      (ws && (ws.skipped || []).indexOf('announce') >= 0 ? row('Announcement', '<span class="detail-muted">Not announced in #all-active-projects</span>' + skipped('announce') +
+        (canEdit() ? wsButton('announce', 'Announce') : '')) : '');
+  }
   function membersHtml(){
     var list = memberEmails();
     var names = list.map(function(e){ var p = personByEmail(e); return esc(p && p.name || e); }).join(', ');
-    var mine = list.some(isMe);
-    var joined = ws && (ws.joined || []).some(isMe);
-    var btn = !mine ? '<button class="btn-text detail-inline-edit" type="button" data-ws="join"' + (wsBusy ? ' disabled' : '') + '>Join the project</button>'
-      : joined ? '<button class="btn-text detail-inline-edit" type="button" data-ws="leave"' + (wsBusy ? ' disabled' : '') + '>Leave</button>'
-      : '';
-    return (names || missing()) + btn + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '');
+    return (names || missing()) + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '');
+  }
+  function joinButton(){
+    var mine = memberEmails().some(isMe), joined = ws && (ws.joined || []).some(isMe);
+    var off = wsBusy || !wsLoaded ? ' disabled' : '';
+    return !mine ? '<button class="btn-box is-primary detail-remove" type="button" data-ws="join"' + off + '>Join project</button>'
+      : joined ? '<button class="btn-box detail-remove" type="button" data-ws="leave"' + off + '>Leave project</button>' : '';
   }
 
   function callWorkspace(args){
@@ -446,13 +478,39 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   // Join, Leave, Set up / Try again.
+  // What each of them does outside BOLD.OS, for BOLD.confirmAction.
+  var WS_CONFIRM = {
+    join: function(){ return { title: 'Join \u201c' + card.title + '\u201d?', go: 'Join', effects: [
+      card.slackChannel ? { key: 'slack', text: 'Invite you to ' + card.slackChannel + ' on Slack' } : '',
+      ws && ws.meeting ? 'Add you to its meeting on Google Calendar (Google emails you the invitation)' : '',
+      'Share its slides and notes on Google Drive with you'].filter(Boolean) }; },
+    leave: function(){ return { title: 'Leave \u201c' + card.title + '\u201d?', go: 'Leave', effects: [
+      ws && ws.meeting ? 'Take you off its meeting on Google Calendar' : '', 'Stop sharing its slides and notes with you'].filter(Boolean) }; },
+    setUp: function(){ return { title: 'Set up the project?', go: 'Set up', effects: [
+      ws && ws.meeting ? 'Make its meeting on Google Calendar, with a Meet link (Google emails its members the invitation)' : '',
+      'Make its slides and notes on Google Drive, shared with its members',
+      ws && ws.repo && !ws.repoName ? 'Make its GitHub repository' : ''].filter(Boolean) }; },
+    pause: function(){ return { title: 'Pause the meeting?', go: 'Pause', effects: [
+      'Take its upcoming dates off everyone\u2019s Google Calendar until it\u2019s resumed (the invitation and Meet link stay the same)'] }; },
+    resume: function(){ return { title: 'Resume the meeting?', go: 'Resume', effects: ['Put its upcoming dates back on everyone\u2019s Google Calendar'] }; },
+    announce: function(){ return { title: 'Announce \u201c' + card.title + '\u201d?', go: 'Announce', effects: ['Post it in #all-active-projects on Slack'] }; },
+    slack: function(){ return { title: 'Join ' + card.slackChannel + '?', go: 'Join', effects: ['Invite you to ' + card.slackChannel + ' on Slack'] }; },
+  };
+
   function workspaceAction(action){
+    if (wsBusy) return;
+    if (!WS_CONFIRM[action]) return runWorkspaceAction(action, {});
+    BOLD.confirmAction(WS_CONFIRM[action]()).then(function(ok){ if (ok) runWorkspaceAction(action, ok.skip || {}); });
+  }
+  function runWorkspaceAction(action, skip){
     if (wsBusy) return;
     wsBusy = true; wsMsg = '';
     render();
-    callWorkspace({ action: action }).then(function(r){
+    callWorkspace({ action: action, slack: action === 'join' && skip.slack ? false : undefined }).then(function(r){
       var d = r.data || {};
       wsBusy = false;
+      if (action === 'slack') wsMsg = d.url ? 'You\u2019re in <a href="' + esc(d.url) + '" target="_blank" rel="noopener">' + esc(card.slackChannel) + '</a>.' : '';
+      if (action === 'announce') wsMsg = 'Announced in #all-active-projects.';
       if (action === 'join' && d.slack) {
         wsMsg = d.slack.error ? esc(d.slack.error)
           : 'You\u2019re invited to the meeting' + (d.slack.url ? ' and in <a href="' + esc(d.slack.url) + '" target="_blank" rel="noopener">' + esc(card.slackChannel) + '</a>' : '') + '.';
@@ -472,6 +530,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       meeting = readMeetingEntry();
       if (meeting.error) return fail(meeting.error);
     }
+    BOLD.confirmAction(remove ? { title: 'Remove the meeting?', go: 'Remove', effects: ['Cancel it on Google Calendar: Google tells its guests'] }
+      : { title: ws && ws.meeting ? 'Change the meeting?' : 'Add a meeting?', go: 'Save', effects: [ws && ws.meeting
+        ? 'Change it on Google Calendar to ' + meetingText(meeting) + ': Google emails its guests the change'
+        : 'Make it on Google Calendar, ' + meetingText(meeting) + ', with a Meet link: Google emails the project\u2019s members the invitation'] }).then(function(ok){
+      if (ok) sendMeeting(meeting, fail);
+    });
+  }
+  function sendMeeting(meeting, fail){
     el('meetingSave').disabled = true;
     callWorkspace({ action: 'meeting', meeting: meeting }).then(function(){
       editing = false; render();
@@ -640,6 +706,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       el('talkTitle').value = t.title; el('talkType').value = t.type || ''; el('talkPresenter').value = t.speakers; el('talkSlides').value = t.slidesUrl;
     }
     TALK_OWN.forEach(function(id){ el(id).disabled = !!t; });
+    var up = document.querySelector('.talk-form .pu-btn');
+    if (up) up.disabled = !!t;
     var note = el('talkFromTalk');
     if (note) {
       note.hidden = !t;
@@ -662,7 +730,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         return '<option value="' + x[0] + '"' + (x[0] === t.type ? ' selected' : '') + '>' + x[1] + '</option>'; }).join('') + '</select>') +
       row('Presenter', input('talkPresenter', 'text', t.presenter)) +
       row('Date', input('talkDate', 'date', t.date)) +
-      row('Slides', input('talkSlides', 'url', t.slidesUrl, 'https://\u2026')) +
+      row('Slides', input('talkSlides', 'url', t.slidesUrl, 'https://\u2026') +
+        BoldPresentationUpload.html('detail-hint')) +
       row('Recording', input('talkRecording', 'url', t.recordingUrl, 'https://\u2026 (optional)')) +
       '</dl>' + saveCancelHtml('talkSave');
   }
@@ -838,6 +907,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       if (el('submitSave')) el('submitSave').addEventListener('click', submitToVenue);
     } else if (editing.indexOf('talk:') === 0) {
       el('talkSave').addEventListener('click', saveTalk);
+      BoldPresentationUpload.wire(document.querySelector('.talk-form .pu-line'), { input: el('talkSlides'),
+        args: function(){ return { project: wsKey }; }, busy: function(on){ el('talkSave').disabled = on; } });
       loadOccasions();
       // Choosing an event sets the date to its first day; a session or a talk on its
       // programme fills in more (fillFromTalk). Only fields not typed in here.
@@ -865,11 +936,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       el('repoSave').addEventListener('click', saveRepo);
     } else if (editing === 'meeting') {
       el('meetingSave').addEventListener('click', function(){ saveMeeting(false); });
-      if (el('meetingRemove')) el('meetingRemove').addEventListener('click', function(){
-        if (window.confirm('Remove the meeting? Its guests are told it\u2019s cancelled.')) saveMeeting(true);
-      });
+      if (el('meetingRemove')) el('meetingRemove').addEventListener('click', function(){ saveMeeting(true); });
     } else if (editing === 'slack') {
-      channelField = wireChannelField('save');
+      channelField = wireChannelField('save', card.slackChannel || '', { id: projectId, board: boardId || null });
       channelField.refresh();
       el('slackSave').addEventListener('click', saveSlack);
     } else {
@@ -901,8 +970,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   function completeProject(){
-    var reopen = !!(ws && ws.completedAt);
-    if (!reopen && !window.confirm('Mark "' + card.title + '" as completed? Its meeting is cancelled, and everyone on it is told.')) return;
+    var reopen = !!(ws && ws.completedAt), meeting = ws && ws.meeting;
+    if (reopen && !meeting) return sendComplete(true);
+    BOLD.confirmAction(reopen
+      ? { title: 'Reopen \u201c' + card.title + '\u201d?', go: 'Reopen', effects: meeting ? ['Put its meeting back on Google Calendar: Google emails its guests'] : [] }
+      : { title: 'Mark \u201c' + card.title + '\u201d as completed?', go: 'Mark completed', effects: meeting ? ['Cancel its meeting on Google Calendar: Google tells everyone on it'] : [] })
+      .then(function(ok){ if (ok) sendComplete(reopen); });
+  }
+  function sendComplete(reopen){
     wsBusy = true; render();
     callWorkspace({ action: reopen ? 'reopen' : 'complete' }).then(function(){
       wsBusy = false;
@@ -979,6 +1054,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function saveSlack(){
     var fail = failer(), n = normalizeProjectChannel(el('pfChannel').value), btn = el('slackSave');
     if (n.error) return fail(n.error);
+    var effects = channelField.effects(n.name);
+    (effects.length ? BOLD.confirmAction({ title: 'Change the Slack channel?', go: 'Save', effects: effects }) : Promise.resolve(true)).then(function(ok){
+      if (ok) sendSlack(n, btn, fail);
+    });
+  }
+  function sendSlack(n, btn, fail){
     btn.disabled = true;
     channelField.ensure(n.name).then(function(r){
       slack = { name: '#' + r.name, url: r.url || '' };

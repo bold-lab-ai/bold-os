@@ -1,0 +1,21 @@
+/* Search results (search.html, pages/search.js): where to search down the side, results beside it. */
+.hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
+.hero h1{font-size:clamp(28px, 4.5vw, 40px); line-height:1.15; overflow-wrap:anywhere;}
+.sr-layout{max-width:var(--content-max); margin:0 auto; padding:18px var(--gutter) 24px; display:grid; grid-template-columns:200px minmax(0, 1fr); gap:32px; align-items:start;}
+.sr-scopes{display:flex; flex-direction:column; gap:2px; position:sticky; top:16px;}
+.sr-scope{display:flex; justify-content:space-between; gap:10px; padding:6px 10px; border-radius:var(--radius); font-family:var(--sans); font-size:14px; color:var(--ink-soft); text-decoration:none;}
+.sr-scope:hover{background:var(--wash);}
+.sr-scope.is-current{background:var(--wash); color:var(--ink); font-weight:600;}
+.sr-count{color:var(--muted); font-weight:400; font-variant-numeric:tabular-nums;}
+.sr-results{max-width:var(--article-max); min-width:0;}
+.sr-list{list-style:none; margin:0; padding:0; border-top:1px solid var(--line);}
+.sr-item{padding:14px 0; border-bottom:1px solid var(--line);}
+.sr-title{font-size:19px; font-weight:500;}
+.sr-where{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.sr-text{margin:6px 0 0; font-size:15px; color:var(--ink-soft); overflow-wrap:anywhere;}
+.sr-item mark{background:rgba(214,170,60,.28); color:inherit; padding:0 1px;}
+@media (max-width:820px){
+  .sr-layout{grid-template-columns:1fr; gap:14px;}
+  .sr-scopes{position:static; flex-direction:row; flex-wrap:wrap;}
+  .sr-scope{padding:4px 8px;}
+}

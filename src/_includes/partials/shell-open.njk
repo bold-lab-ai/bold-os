@@ -1,6 +1,7 @@
 {%- set current = nav or (page.url | replace('/', '')) -%}
 <div class="shell" id="shell"{% if public %} data-public{% endif %}{% if not public %} hidden{% endif %}>
 <script>BOLD.mountShell();</script>
+{%- if not bare %}
 <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation"></button>
 <nav class="sidebar" id="sidebar" aria-label="Site navigation"{% if hiddenChrome %} hidden{% endif %}>
   <div class="sidebar-inner">
@@ -19,8 +20,12 @@
         <a class="nav-link nav-sub{% if link.active %} active{% endif %}" href="{{ link.href }}">{{ link.label }}</a>
 {%- endfor %}
       </div>
+{%- if group.separatorAfter %}
+      <hr class="nav-sep">
+{%- endif %}
 {%- endfor %}
     </div>
   </div>
 </nav>
+{%- endif %}
 <div class="shell-main">

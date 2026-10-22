@@ -1,23 +1,23 @@
 #!/usr/bin/env node
-// Build a local, read-only preview from the published old rota. Nothing here
-// connects to BOLD.OS Firebase or sends a write to the source rota.
+// Build a local, read-only preview from a saved rota snapshot or a local export.
+// No network calls, Firebase SDK, or production writes.
 import { readFile, writeFile } from 'node:fs/promises';
 
-const sourceUrl = 'https://bold-lab-meeting-rota.theo-wolf296647.chatgpt.site/api/rota';
 const sourcePath = process.argv[2];
-const source = sourcePath
-  ? JSON.parse(await readFile(sourcePath, 'utf8'))
-  : await (async () => {
-      const response = await fetch(sourceUrl);
-      if (!response.ok) throw new Error(`Rota download failed: HTTP ${response.status}`);
-      return response.json();
-    })();
-
+let docs;
+if (!sourcePath) {
+  const previous = await readFile('_site/group-meetings-preview.html', 'utf8').catch(() => {
+    throw new Error('No local preview snapshot. Pass the path to a saved rota export.');
+  });
+  const match = previous.match(/const data = (.*);\n/);
+  if (!match) throw new Error('Could not read the local preview snapshot.');
+  docs = JSON.parse(match[1]);
+} else {
+const source = JSON.parse(await readFile(sourcePath, 'utf8'));
 if (!source.scheduleId || !Array.isArray(source.meetings) || !Array.isArray(source.members) || !Array.isArray(source.changes)) {
-  throw new Error('The source rota did not return the expected meeting, member and change lists.');
+  throw new Error('The saved rota export does not contain the expected meeting, member and change lists.');
 }
-
-const docs = {
+docs = {
   groupMeetings: [], groupRotaSlots: [], groupRotaMembers: [], people: [],
   groupMeetingSeasons: [], projectWorkspaces: [], changelog: [],
 };
@@ -57,27 +57,31 @@ for (const change of source.changes) {
     date: change.meetingDate, slotNumber: change.slotNumber,
   }]);
 }
+}
 
 const inlineJson = JSON.stringify(docs).replace(/</g, '\\u003c');
-const snapshotDate = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 const mock = `const data = ${inlineJson};\n` + String.raw`
 const docs = items => ({ docs: items.map(([id, data]) => ({ id, data: () => data })), empty: !items.length });
+const previewUser = { displayName: 'Sam' };
 window.BOLD = {
-  getAuth: () => true, getApp: () => ({}),
+  getAuth: () => true, getApp: () => ({}), authHint: () => previewUser,
   escapeHtml: value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]),
-  onUser: callback => setTimeout(() => callback({ email: 'preview@example.test' }), 0),
-  mountMasthead: () => { document.getElementById('authRegion').textContent = 'Local preview · source rota snapshot'; },
-  mountShell: () => { document.getElementById('shell').hidden = false; document.getElementById('pageGate').hidden = true; },
+  onUser: callback => setTimeout(() => callback(previewUser), 0),
+  mountMasthead: () => { document.getElementById('authRegion').textContent = 'Sam · Local signed-in preview'; },
+  mountShell: () => {
+    document.getElementById('shell').hidden = false;
+    document.getElementById('pageGate').hidden = true;
+  },
 };
 const previewCollection = name => {
   const query = { get: () => Promise.resolve(docs(data[name] || [])), where: () => query,
     orderBy: () => query, startAfter: () => query, limit: () => query };
   return query;
 };
-window.firebase = {
+window.previewFirebase = {
   firestore: () => ({ collection: previewCollection }),
   app: () => ({ functions: () => ({ httpsCallable: name => () => name === 'groupRotaAccess'
-    ? Promise.resolve({ data: { slackId: 'preview-ola-kalisz', registered: true, eligible: true, admin: false, swaps: [] } })
+    ? Promise.resolve({ data: { slackId: '', registered: false, eligible: false, admin: false, swaps: [], reason: 'Changes are unavailable in the local preview' } })
     : Promise.reject(new Error('Local preview only — changes are not saved.')) }) }),
 };
 document.addEventListener('click', event => {
@@ -111,10 +115,17 @@ document.addEventListener('DOMContentLoaded', () => {
 const pagePath = '_site/group-meetings.html';
 let page = await readFile(pagePath, 'utf8');
 page = page.replace(/<script src="https:\/\/www\.gstatic\.com\/firebasejs\/[^\"]+"><\/script>\n/g, '');
+page = page.replace(/<link[^>]+href="https:\/\/fonts\.[^\"]+"[^>]*>\n/g, '');
 page = page.replace(/<script>window\.BOLD_CONFIG = [^<]+<\/script>\n/, '');
 page = page.replace(/<script src="assets\/js\/bold\.js[^\"]*"><\/script>\n/, '');
+page = page.replace(/<script src="assets\/js\/mentions\.js[^\"]*"><\/script>\n/, '');
+page = page.replace(/assets\/js\/pages\/group-meetings\.js\?v=/, 'assets/js/pages/group-meetings-preview.js?v=');
 page = page.replace('</head>', `<script>\n${mock}\n</script>\n</head>`);
-if (page.includes('firebase-app-compat.js') || page.includes('window.BOLD_CONFIG')) throw new Error('Could not isolate the preview from production Firebase.');
-page = page.replace('Local preview · source rota snapshot', `Local preview · source rota snapshot (${snapshotDate})`);
+if (page.includes('firebasejs/') || page.includes('window.BOLD_CONFIG') || page.includes('fonts.googleapis.com') || page.includes('fonts.gstatic.com')) throw new Error('Could not isolate the preview from external services.');
+let rotaScript = await readFile('src/assets/js/pages/group-meetings.js', 'utf8');
+rotaScript = rotaScript.replace('firebase.firestore(', 'previewFirebase.firestore(').replace('firebase.app()', 'previewFirebase.app()');
+rotaScript = rotaScript.replace("return slug ? 'https://bold-lab.ai/profile-assets/' + slug + '.webp' : '';", "return ''; // The local preview never loads remote profile photos.");
+if (rotaScript.includes('firebase.firestore(') || rotaScript.includes('firebase.app()')) throw new Error('Could not isolate the rota script from production data.');
+await writeFile('_site/assets/js/pages/group-meetings-preview.js', rotaScript);
 await writeFile('_site/group-meetings-preview.html', page);
 console.log(`Created local preview from ${docs.groupMeetings.length} meetings, ${docs.groupRotaSlots.length} slots, ${docs.people.length} members and ${docs.changelog.length} changes.`);

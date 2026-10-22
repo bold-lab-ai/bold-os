@@ -56,26 +56,17 @@
   }
 
   // Institution, role, supervisor, research interests, start date, ... —
-  // the caller's own Slack custom profile fields (getMyProfile). Silent on
-  // failure: the page is complete without them.
+  // the caller's own Slack custom profile fields (getMyProfile), handed to
+  // member-details.js, which shows them with "Your details" (BOLD.slackFields,
+  // event bold:slackfields). Silent on failure: the page is complete without them.
   function renderSlackFacts(data){
     renderSlackAccount(data.slack);
-    var box = el('slackFacts');
-    var fields = data.fields || [];
-    box.innerHTML = '';
-    fields.forEach(function(f){
-      var row = document.createElement('div'); row.className = 'fact';
-      var dt = document.createElement('dt'); dt.textContent = f.label;
-      var dd = document.createElement('dd'); dd.textContent = f.value;
-      row.appendChild(dt); row.appendChild(dd); box.appendChild(row);
-    });
-    box.hidden = !fields.length;
+    BOLD.slackFields = data.fields || [];
+    document.dispatchEvent(new Event('bold:slackfields'));
   }
 
   function renderIdentity(name, email){
     el('profileName').textContent = name || email || 'Profile';
-    el('factName').textContent = name || '\u2014';
-    el('factEmail').textContent = email || '\u2014';
   }
 
   /* ---------- GitHub ---------- */
@@ -130,7 +121,11 @@
 
   // The GitHub row of the linked accounts: the account and its bold-lab-ai
   // membership, with the button to link or unlink it.
+  // The completeness bar (profile-progress.js) counts linked accounts: tell it when they change.
+  function accountsChanged(){ document.dispatchEvent(new Event('bold:accounts')); }
+
   function renderGithub(link){
+    accountsChanged();
     var box = el('githubBody');
     var off = ghBusy ? ' disabled' : '';
     var err = ghError ? '<span class="gh-error">' + escapeHtml(ghError) + '</span>' : '';
@@ -189,6 +184,7 @@
     'auth/cancelled-popup-request': '',
   };
   function renderGoogle(link){
+    accountsChanged();
     var box = el('googleBody');
     var off = gBusy ? ' disabled' : '';
     var err = gError ? '<span class="gh-error">' + escapeHtml(gError) + '</span>' : '';
@@ -242,21 +238,46 @@
     }
   });
 
+  // Whether to confirm before actions that reach outside BOLD.OS (BOLD.confirmAction).
+  BOLD.onUser(function(user){
+    var box = el('confirmSetting'), input = el('confirmAsk');
+    box.hidden = !user;
+    if (!user) return;
+    BOLD.getSkipConfirm().then(function(skip){ input.checked = !skip; });
+  });
+  el('confirmAsk').addEventListener('change', function(e){
+    var input = e.target;
+    BOLD.setSkipConfirm(!input.checked).catch(function(err){
+      console.error('[BOLD Lab] saving the setting failed', err);
+      input.checked = !input.checked;
+    });
+  });
+
   el('githubBody').addEventListener('click', function(e){
     var t = e.target.closest('button');
     var user = BOLD.getAuth() && BOLD.getAuth().currentUser;
     if (!t || t.disabled || !user) return;
     ghError = '';
     if (t.classList.contains('gh-link')) {
-      ghBusy = true; renderGithub(null);
-      // After a popup (localhost) the account is linked here; live, the page goes to GitHub and back.
-      BOLD.link(new firebase.auth.GithubAuthProvider()).then(function(){ loadGithub(); }).catch(function(err){
-        // Linked already (the page didn't know): just check it.
-        if (err && err.code === 'auth/provider-already-linked') { loadGithub(); return; }
-        console.error('[BOLD Lab] linking GitHub failed', err);
-        ghBusy = false; ghError = ghMessage(err); renderGithub(null);
-      });
-    } else if (t.classList.contains('gh-retry')) {
+      BOLD.confirmAction({ title: 'Link your GitHub account?', go: 'Link', effects: ['Invite it to the bold-lab-ai organisation on GitHub (GitHub emails you the invitation)'] })
+        .then(function(ok){ if (ok) linkGithub(); });
+      return;
+    }
+    rest(t);
+  });
+  function linkGithub(){
+    ghBusy = true; renderGithub(null);
+    // After a popup (localhost) the account is linked here; live, the page goes to GitHub and back.
+    BOLD.link(new firebase.auth.GithubAuthProvider()).then(function(){ loadGithub(); }).catch(function(err){
+      // Linked already (the page didn't know): just check it.
+      if (err && err.code === 'auth/provider-already-linked') { loadGithub(); return; }
+      console.error('[BOLD Lab] linking GitHub failed', err);
+    ghBusy = false; ghError = ghMessage(err); renderGithub(null);
+    });
+  }
+  function rest(t){
+    var user = BOLD.getAuth() && BOLD.getAuth().currentUser;
+    if (t.classList.contains('gh-retry')) {
       loadGithub();
     } else if (t.classList.contains('gh-unlink')) {
       if (!window.confirm('Unlink your GitHub account? You stay in bold-lab-ai on GitHub.')) return;
@@ -266,7 +287,7 @@
         ghError = 'Couldn’t unlink GitHub — try again.'; loadGithub();
       });
     }
-  });
+  }
 
   // Back from linking GitHub by redirect: say why it failed, if it did (other
   // round-trip errors are sign-in's, which bold.js reports).
@@ -282,7 +303,7 @@
     showGithub(user);
     showGoogle(user);
     if (user) renderSlackAccount(null);
-    if (!user) { cacheClear(); el('slackFacts').hidden = true; return; }
+    if (!user) { cacheClear(); BOLD.slackFields = []; return; }
     renderIdentity(user.displayName || '', user.email);
     showPhoto(user.photoURL);
     if (user.photoURL) cachePut('photo', user.photoURL); else cacheClearKey('photo');
@@ -294,11 +315,13 @@
     });
   }
 
-  function renderProject(p){
+  function renderProject(p, member){
     var li = document.createElement('li');
     var a = document.createElement('a');
     a.className = 'proj-title';
-    a.href = 'audit-board.html#board=' + encodeURIComponent(p.boardId) + '&card=' + encodeURIComponent(p.cardId);
+    // A paper on a venue opens on the board; a project with no venue (or one you're only a member of), its project page.
+    a.href = p.boardId && !member ? 'audit-board.html#board=' + encodeURIComponent(p.boardId) + '&card=' + encodeURIComponent(p.cardId)
+      : 'project.html#id=' + encodeURIComponent(p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '');
     a.textContent = p.title;
     var meta = document.createElement('span');
     meta.className = 'proj-meta';
@@ -318,10 +341,10 @@
     return li;
   }
 
-  // The caller's papers on the Internal Review Board, by relationship
-  // (getMyProjects).
+  // The caller's projects, by relationship (getMyProjects): papers on the Internal
+  // Review Board and projects with no venue yet; Member, the others they're in.
   function renderProjects(data){
-    [['projOwner', data.owner, 'cntOwner'], ['projAuthor', data.author, 'cntAuthor'], ['projReviewer', data.reviewer, 'cntReviewer']].forEach(function(g){
+    [['projOwner', data.owner, 'cntOwner'], ['projAuthor', data.author, 'cntAuthor'], ['projMember', data.member, 'cntMember'], ['projReviewer', data.reviewer, 'cntReviewer']].forEach(function(g){
       var ul = el(g[0]); ul.innerHTML = '';
       var items = g[1] || [];
       el(g[2]).textContent = items.length || '';
@@ -330,7 +353,7 @@
         li.innerHTML = '<p class="proj-empty">None</p>';
         ul.appendChild(li);
       }
-      items.forEach(function(p){ ul.appendChild(renderProject(p)); });
+      items.forEach(function(p){ ul.appendChild(renderProject(p, g[0] === 'projMember')); });
     });
     el('projMsg').hidden = true;
     el('projGroups').hidden = false;
@@ -353,12 +376,24 @@
   } catch (e){}
 
   /* ---------- tabs ---------- */
-  // Projects and Linked accounts, one shown at a time; the #hash names it.
-  var TABS = ['projects', 'linked-accounts'];
+  // Your details, Studies (PhD and Master students; pages/studies.js shows its tab),
+  // Projects, Connections (connections.js, drawn the first time it's shown), Linked
+  // accounts and Agents (pages/profile-api.js), one shown at a time; the #hash names it.
+  var TABS = ['details', 'studies', 'projects', 'connections', 'linked-accounts', 'agents'];
+  var connectionsFor = '', connectionsUser = null;
+  function drawConnections(){
+    // connections.js loads after this script.
+    if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', drawConnections); return; }
+    var u = connectionsUser;
+    if (!u || !u.email || !window.BoldConnections || connectionsFor === u.email) return;
+    connectionsFor = u.email;
+    BoldConnections.mountPerson(el('connectionsBody'), u.email, u.email);
+  }
   function showTab(){
     var want = String(location.hash || '').replace(/^#/, '');
     if (TABS.indexOf(want) === -1) want = TABS[0];
     TABS.forEach(function(id){ el(id).hidden = id !== want; });
+    if (want === 'connections') drawConnections();
     Array.prototype.forEach.call(document.querySelectorAll('#profileTabs .guide-tab'), function(a){
       var on = a.getAttribute('href') === '#' + want;
       a.classList.toggle('is-current', on);
@@ -370,4 +405,5 @@
 
   // Last, so everything above is defined if the user is already known.
   BOLD.onUser(renderProfile);
+  BOLD.onUser(function(u){ connectionsUser = u; if (!el('connections').hidden) drawConnections(); });
 })();

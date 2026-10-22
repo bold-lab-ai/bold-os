@@ -110,6 +110,9 @@
     if (links) links.load(user);
     unsubscribe = ref.onSnapshot(function(doc){
       x = doc.exists ? doc.data() : null;
+      // An event with its own page (Collaboration Week, the Festival) reached at
+      // event.html?event=<slug>, e.g. from the Network or a tag: go there.
+      if (x && x.page && !body.getAttribute('data-event') && /^[a-z0-9-]+\.html$/.test(x.page)) { location.replace(x.page + location.hash); return; }
       loaded = true;
       if (!editing) render();
       drawSchedule();

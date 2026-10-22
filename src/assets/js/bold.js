@@ -42,8 +42,50 @@
   var ICON_COPY = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
   var ICON_DONE = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
   // Icons for .icon-btn buttons: edit, and move up and down.
-  // The lab's Slack workspace, for links into the Slack app (markdown.js tags).
+  // Guides with a page of their own elsewhere (guides/{slug} → its page): edited
+  // like any guide, but not listed under How to. guide.html?guide=<slug> goes there.
+  BOLD.GUIDE_PAGES = { 'get-started-at-bold': 'get-started.html' };
+  BOLD.guideHref = function(slug){ return BOLD.GUIDE_PAGES[slug] || 'guide.html?guide=' + encodeURIComponent(slug); };
+
+  // The lab's Slack workspace, for links into the Slack app (tags).
   BOLD.SLACK_TEAM = 'T0B7DUVFEM8';
+
+  // Tags: @[Name](SlackId) in any text people write (mentions.js) reads as @Name,
+  // linking to their profile in the Slack app (Slack's slack://user link). Pages
+  // show text as it's stored; this turns the tags in it into links wherever it
+  // appears, except in boxes being edited, code and .no-tags.
+  BOLD.TAG = /@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g;
+  BOLD.tagHtml = function(name, id){
+    return '<a class="md-mention" href="slack://user?team=' + BOLD.SLACK_TEAM + '&amp;id=' + id + '" title="Open in Slack">@' + BOLD.escapeHtml(name) + '</a>';
+  };
+  var TAG_SKIP = 'textarea, input, script, style, pre, code, [contenteditable], .no-tags';
+  function showTags(node){
+    var texts = [];
+    if (node.nodeType === 3) texts.push(node);
+    else if (node.nodeType === 1) {
+      var walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+      while (walk.nextNode()) texts.push(walk.currentNode);
+    }
+    texts.forEach(function(t){
+      var v = t.nodeValue;
+      if (v.indexOf('](U') === -1 || !t.parentNode || !t.parentElement || t.parentElement.closest(TAG_SKIP)) return;
+      var html = BOLD.escapeHtml(v).replace(BOLD.TAG, function(all, name, id){ return BOLD.tagHtml(name.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'"), id); });
+      var span = document.createElement('span');
+      span.innerHTML = html;
+      var frag = document.createDocumentFragment();
+      while (span.firstChild) frag.appendChild(span.firstChild);
+      t.parentNode.replaceChild(frag, t);
+    });
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    showTags(document.body);
+    new MutationObserver(function(list){
+      list.forEach(function(m){
+        if (m.type === 'characterData') showTags(m.target);
+        else Array.prototype.forEach.call(m.addedNodes, showTags);
+      });
+    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+  });
   BOLD.ICON_PENCIL = '<svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true"><path fill="currentColor" d="M11.6 1.6a1.5 1.5 0 0 1 2.1 0l.7.7a1.5 1.5 0 0 1 0 2.1L5.6 13.2l-3.5.9.9-3.5 8.6-9zM10.9 3.7l1.4 1.4 1.1-1.1-1.4-1.4-1.1 1.1z"/></svg>';
   BOLD.ICON_UP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg>';
   BOLD.ICON_DOWN = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg>';
@@ -86,6 +128,66 @@
     }).catch(function(err){ console.error('[BOLD Lab] copying failed', err); });
   });
 
+  // Before anything that reaches outside BOLD.OS (Slack, Google Calendar and Drive,
+  // GitHub, email, messages to people): what will happen, then Go ahead or Cancel.
+  // o: { title, effects: [text or { text, key }], go }. An effect with a key is optional:
+  // it has a tick box, ticked, and unticking it skips it. Resolves false, or to go ahead
+  // { skip: { key: true } } for what was unticked. "Don't ask me again"
+  // skips it for good for this person: prefs/{uid} { skipConfirm }, turned back on
+  // from their profile (BOLD.setSkipConfirm); kept in this browser too, to answer at once.
+  var skipConfirm = null;
+  function skipKey(){ var u = auth && auth.currentUser; return u ? 'boldSkipConfirm:' + u.uid : ''; }
+  function loadSkip(){
+    var u = auth && auth.currentUser;
+    if (!u) { skipConfirm = null; return Promise.resolve(false); }
+    try { var c = localStorage.getItem(skipKey()); if (c !== null) skipConfirm = c === '1'; } catch (e){}
+    if (!firebase.firestore) return Promise.resolve(!!skipConfirm);
+    return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).get().then(function(d){
+      skipConfirm = !!(d.exists && d.data().skipConfirm);
+      try { localStorage.setItem(skipKey(), skipConfirm ? '1' : '0'); } catch (e){}
+      return skipConfirm;
+    }).catch(function(){ return !!skipConfirm; });
+  }
+  BOLD.getSkipConfirm = function(){ return skipConfirm !== null ? Promise.resolve(skipConfirm) : loadSkip(); };
+  BOLD.setSkipConfirm = function(on){
+    var u = auth && auth.currentUser;
+    if (!u) return Promise.reject(new Error('Sign in first.'));
+    skipConfirm = !!on;
+    try { localStorage.setItem(skipKey(), on ? '1' : '0'); } catch (e){}
+    return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).set({ skipConfirm: !!on, at: Date.now() });
+  };
+  BOLD.confirmAction = function(o){
+    return BOLD.getSkipConfirm().then(function(skip){
+      if (skip) return { skip: {} };
+      return new Promise(function(resolve){
+        var d = document.createElement('dialog');
+        d.className = 'confirm-dialog';
+        d.innerHTML = '<h2>' + esc(o.title || 'Go ahead?') + '</h2>' +
+          ((o.effects || []).length ? '<p>This will:</p><ul>' + o.effects.map(function(e){
+            return e.key ? '<li class="confirm-opt"><label><input type="checkbox" checked data-key="' + esc(e.key) + '"> ' + esc(e.text) + '</label></li>' : '<li>' + esc(e.text || e) + '</li>';
+          }).join('') + '</ul>' : '') +
+          (auth && auth.currentUser ? '<label class="confirm-skip"><input type="checkbox"> Don’t ask me again (you can turn it back on in your profile)</label>' : '') +
+          '<div class="confirm-actions"><button class="btn-box" type="button" data-no>Cancel</button>' +
+          '<button class="btn-box is-primary" type="button" data-yes>' + esc(o.go || 'Go ahead') + '</button></div>';
+        document.body.appendChild(d);
+        var done = function(yes){
+          var skip = d.querySelector('.confirm-skip input');
+          if (yes && skip && skip.checked){
+            BOLD.setSkipConfirm(true).catch(function(err){ console.error('[BOLD Lab] saving the setting failed', err); });
+          }
+          var skipped = {};
+          Array.prototype.forEach.call(d.querySelectorAll('[data-key]'), function(c){ if (!c.checked) skipped[c.getAttribute('data-key')] = true; });
+          d.close(); d.remove(); resolve(yes ? { skip: skipped } : false);
+        };
+        d.querySelector('[data-yes]').addEventListener('click', function(){ done(true); });
+        d.querySelector('[data-no]').addEventListener('click', function(){ done(false); });
+        d.addEventListener('cancel', function(e){ e.preventDefault(); done(false); });
+        d.showModal();
+        d.querySelector('[data-yes]').focus();
+      });
+    });
+  };
+
   var hint = null;
   try { hint = JSON.parse(localStorage.getItem('boldAuthHint') || 'null'); } catch (e){}
   // Signed in last visit: lets page CSS keep "sign in" panels out of the first paint.
@@ -109,7 +211,7 @@
       if (BOLD.useAuthEmulator) auth.useEmulator('http://localhost:9099');
     } catch (e){ auth = null; return null; }
     auth.onAuthStateChanged(function(user){
-      current = user; authReady = true;
+      current = user; authReady = true; skipConfirm = null;
       try {
         if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
         else localStorage.removeItem('boldAuthHint');
@@ -292,7 +394,7 @@
   function guidesNav(){
     firestoreNav('guides', 'boldNavGuides', function(db){
       return db.collection('guides').get().then(function(snap){
-        return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug; })
+        return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug && !BOLD.GUIDE_PAGES[x.slug]; })
           .map(function(x){ return { title: x.title || x.slug, href: 'guide.html?guide=' + encodeURIComponent(x.slug) }; })
           .sort(function(a, b){ return a.title.localeCompare(b.title); });
       });

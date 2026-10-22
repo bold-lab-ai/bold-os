@@ -23,23 +23,37 @@ export default {
     '&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap',
 
   // Sidebar. `href` is the page a group's label opens; `links` are its sub-pages.
+  // separatorAfter: a hairline under the group.
   nav: [
     // Its sub-pages are BOLDiquette's sections (Firestore), filled in by bold.js.
     { label: 'BOLDiquette', href: 'boldiquette.html', links: [], handbook: true },
-    { label: 'Projects', href: 'projects.html', links: [
-      { label: 'All projects', href: 'projects.html' },
-      { label: 'Meetings', href: 'project-meetings.html' },
-    ] },
-    { label: 'Group meetings', href: 'group-meetings.html', links: [] },
-    // Its sub-pages are the released events (Firestore), filled in by bold.js.
-    { label: 'Events', href: 'events.html', links: [], events: true },
     { label: 'ML Conference Cycle', href: 'how-to-submit-a-paper.html', links: [
       { label: 'Guide', href: 'how-to-submit-a-paper.html' },
       { label: 'Internal review board', href: 'audit-board.html' },
     ] },
+    { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true },
+    { label: 'Group meetings', href: 'group-meetings.html', links: [] },
+    { label: 'People', href: 'people.html', links: [
+      { label: 'Members', href: 'people.html' },
+      { label: 'Network', href: 'network.html' },
+      { label: 'Requests', href: 'join-requests.html' },
+    ] },
+    { label: 'Projects', href: 'projects.html', links: [
+      { label: 'All projects', href: 'projects.html' },
+    ] },
+    // Its sub-pages are the released events (Firestore), filled in by bold.js.
+    { label: 'Events', href: 'events.html', links: [], events: true },
+    { label: 'Agents', href: 'agents.html', links: [
+      { label: 'Activity', href: 'agents.html' },
+      { label: 'Tools', href: 'tools.html' },
+      { label: 'Skills', href: 'skills.html' },
+    ], separatorAfter: true },
     // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.
     { label: 'How to', href: 'guides.html', links: [], guides: true },
-    // Its sub-pages are the skills (Firestore), filled in by bold.js.
-    { label: 'Skills', href: 'skills.html', links: [], skills: true },
+    { label: 'Service desk', href: 'service-desk.html', links: [
+      { label: 'Get started at BOLD', href: 'get-started.html' },
+      { label: 'Recommendation letters', href: 'letters.html' },
+      { label: 'Introductions', href: 'introductions.html' },
+    ] },
   ],
 };

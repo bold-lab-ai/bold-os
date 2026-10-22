@@ -23,7 +23,8 @@
   function pageOf(e){
     if (e.kind === 'deleted') return '';
     if (e.collection === 'skills') return 'skill.html?skill=' + encodeURIComponent(e.docId);
-    if (e.collection === 'guides') return 'guide.html?guide=' + encodeURIComponent(e.docId);
+    if (e.collection === 'agentTools') return 'tool.html?tool=' + encodeURIComponent(e.docId);
+    if (e.collection === 'guides') return BOLD.guideHref(e.docId);
     if (e.collection === 'handbook' && e.docId === 'boldiquette') return 'boldiquette.html';
     if (e.collection === 'groupRotaSlots' && e.date && e.slotNumber) return 'group-meetings.html?date=' + encodeURIComponent(e.date) + '&slot=' + encodeURIComponent(e.slotNumber);
     return '';

@@ -13,7 +13,8 @@
 // since changed shows at the top of its part, marked so. Resolved threads don't show.
 //
 // BoldComments.create({ ref, root, fullWrite: () => bool, onChange })
-// → { start(user), stop(), decorate(), click(event) → true if it handled it }.
+// → { start(user), stop(), decorate(), click(event) → true if it handled it, ready(), show(id), openCount() }.
+// A link to a comment (#c=<id>, as Slack sends; pages/guide.js) opens its thread and marks it.
 window.BoldComments = (function(){
   var esc = BOLD.escapeHtml;
   var CONTEXT = 32, MAX_QUOTE = 500, MAX_TEXT = 2000;
@@ -24,6 +25,41 @@ window.BoldComments = (function(){
     var nodes = [], text = '', w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT), n;
     while ((n = w.nextNode())) { nodes.push({ node: n, start: text.length }); text += n.nodeValue; }
     return { text: text, nodes: nodes };
+  }
+  // Where in el's text the comment is → { start, end, changed } or null: the quote itself
+  // (the occurrence whose context matches best); else, if the text was edited since,
+  // the stretch between its old context (the text just before and after it); else the
+  // longest run of its words still there (half the quote at least). `changed`: not
+  // the quote as it was.
+  function find(map, c){
+    var q = String(c.quote || '');
+    if (!q) return null;
+    var at = locate(map, c);
+    if (at !== -1) return { start: at, end: at + q.length, changed: false };
+    var t = map.text, pre = String(c.prefix || '').slice(-16), suf = String(c.suffix || '').slice(0, 16);
+    if (pre.length >= 6 && suf.length >= 6) {
+      var a = t.indexOf(pre), b = a === -1 ? -1 : t.indexOf(suf, a + pre.length);
+      if (a !== -1 && t.indexOf(pre, a + 1) === -1 && b !== -1) {
+        var s = a + pre.length, len = b - s;
+        if (len > 0 && len <= q.length * 3 + 40 && len >= q.length / 3) return trim(t, s, b);
+      }
+    }
+    var words = q.split(/(\s+)/), best = null;
+    for (var i = 0; i < words.length; i += 2) {
+      for (var j = words.length; j > i; j -= 2) {
+        var piece = words.slice(i, j).join('').trim();
+        if (piece.length < Math.max(8, q.length / 2) || (best && piece.length <= best.end - best.start)) break;
+        var k = t.indexOf(piece);
+        if (k !== -1) { best = { start: k, end: k + piece.length, changed: true }; break; }
+      }
+    }
+    return best;
+  }
+  // The stretch from s to e without the spaces at its ends.
+  function trim(t, s, e){
+    while (s < e && /\s/.test(t[s])) s++;
+    while (e > s && /\s/.test(t[e - 1])) e--;
+    return e > s ? { start: s, end: e, changed: true } : null;
   }
   // Where in el's text the quote is: the occurrence whose context matches best, or -1.
   function locate(map, c){
@@ -60,10 +96,13 @@ window.BoldComments = (function(){
     var db = opts.ref.firestore, col = opts.ref.collection('comments');
     var me = null, unsub = null, comments = [], loaded = false;
     var open = null;          // the thread open: a comment id, or 'new'
+    var moved = {};           // threads found on text edited since (find): their card says so
     var pending = null;       // a new comment's anchor: { partId, quote, prefix, suffix }
     var drafts = {};          // what's typed, by thread ('new' too), across re-renders
     var busy = false, error = '';
+    var editing = null, editError = '';  // the comment being edited, by its author
     var btn = null;           // the floating "Comment" button
+    var target = null;        // the comment a link named (#c=), marked
 
     function changed(){ opts.onChange(); }
     function threads(){ return comments.filter(function(c){ return !c.parent && !c.resolved && !c.proposalId; }); }
@@ -135,8 +174,9 @@ window.BoldComments = (function(){
         here.forEach(function(c){
           var marks = [];
           if (text) {
-            var map = textMap(text), at = locate(map, c);
-            if (at !== -1) marks = wrap(map, at, at + c.quote.length, c.id);
+            var map = textMap(text), at = find(map, c);
+            if (at) marks = wrap(map, at.start, at.end, c.id);
+            moved[c.id] = !!(at && at.changed);
           }
           if (!marks.length) { lost.push(c); return; }
           if (c.id === open) marks.forEach(function(m){ m.classList.add('is-open'); });
@@ -176,11 +216,24 @@ window.BoldComments = (function(){
     }
 
     function when(ms){ return BoldHistory.when(ms); }
-    function commentHtml(c, isRoot){
+    // A comment's author edits its text in place (editing: its id; drafts['e:' + id]).
+    function metaHtml(c){
+      return '<strong>' + esc(c.by ? (c.by.name || c.by.email) : 'Someone') + '</strong> ' + esc(when(c.at)) + (c.editedAt ? ' · edited' : '');
+    }
+    function editBoxHtml(c){
+      var key = 'e:' + c.id;
+      return '<textarea rows="3" maxlength="' + MAX_TEXT + '" data-key="' + esc(key) + '">' + esc(key in drafts ? drafts[key] : c.text) + '</textarea>' +
+        (editError ? '<p class="ev-error">' + esc(editError) + '</p>' : '') +
+        '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-e-save" data-id="' + esc(c.id) + '"' + (busy ? ' disabled' : '') + '>Save</button>' +
+        '<button type="button" class="btn-text cm-e-cancel" data-id="' + esc(c.id) + '">Cancel</button></div>';
+    }
+    function editButton(c){ return mine(c) ? '<button type="button" class="btn-text cm-edit" data-id="' + esc(c.id) + '">Edit</button>' : ''; }
+    function commentHtml(c){
+      if (editing === c.id) return '<div class="cm-comment"><p class="cm-meta">' + metaHtml(c) + '</p>' + editBoxHtml(c) + '</div>';
       var can = mine(c) || opts.fullWrite();
-      return '<div class="cm-comment"><p class="cm-meta"><strong>' + esc(c.by ? (c.by.name || c.by.email) : 'Someone') + '</strong> ' + esc(when(c.at)) + '</p>' +
+      return '<div class="cm-comment' + (c.id === target ? ' is-target' : '') + '" data-cid="' + esc(c.id) + '"><p class="cm-meta">' + metaHtml(c) + '</p>' +
         '<p class="cm-text">' + BoldMarkdown.plain(c.text) + '</p>' +
-        (can ? '<p class="cm-actions">' + (isRoot ? '<button type="button" class="btn-text cm-resolve" data-id="' + esc(c.id) + '">Resolve</button>' : '') +
+        (can ? '<p class="cm-actions">' + editButton(c) +
           '<button type="button" class="btn-text danger cm-delete" data-id="' + esc(c.id) + '">Delete</button></p>' : '') + '</div>';
     }
     // The open thread (or the new comment), beside the icon.
@@ -190,17 +243,20 @@ window.BoldComments = (function(){
       var c = id === 'new' ? pending : byId(id);
       var others = row.ids.filter(function(x){ return x !== id; });
       var key = id;
+      // Resolving closes the whole thread: at its top, beside ×.
+      var resolvable = id !== 'new' && (mine(c) || opts.fullWrite());
+      if (resolvable) el.classList.add('has-resolve');
       el.innerHTML = '<button type="button" class="cm-close" aria-label="Close">×</button>' +
-        (row.lost ? '<p class="cm-lost">The text this was on has since changed.</p>' : '') +
-        '<blockquote class="cm-quote">' + esc(c.quote.length > 160 ? c.quote.slice(0, 160) + '…' : c.quote) + '</blockquote>' +
-        (id === 'new' ? '' : commentHtml(c, true) + replies(id).map(function(r){ return commentHtml(r, false); }).join('')) +
-        '<textarea class="md-mentions" rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
+        (resolvable ? '<button type="button" class="btn-text cm-resolve" data-id="' + esc(id) + '" title="Close the thread; it stays in the history">Resolve</button>' : '') +
+        (row.lost ? '<p class="cm-lost">The text this was on has since changed.</p>' : moved[id] ? '<p class="cm-lost">The text has been edited since; the comment was on:</p>' : '') +
+        '<blockquote class="cm-quote">' + esc(String(c.quote || '').length > 160 ? c.quote.slice(0, 160) + '…' : String(c.quote || '')) + '</blockquote>' +
+        (id === 'new' ? '' : commentHtml(c) + replies(id).map(function(r){ return commentHtml(r); }).join('')) +
+        '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
         (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
         '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-send"' + (busy ? ' disabled' : '') + '>' + (id === 'new' ? 'Comment' : 'Reply') + '</button>' +
           '<button type="button" class="btn-text cm-cancel">Cancel</button></div>' +
         (others.length ? '<p class="cm-more">' + others.length + ' more on this line: ' + others.map(function(o, i){
           return '<button type="button" class="btn-text cm-switch" data-id="' + esc(o) + '">' + (i + 1) + '</button>'; }).join(' ') + '</p>' : '');
-      el.querySelector('textarea').addEventListener('input', function(e){ drafts[key] = e.target.value; });
       return el;
     }
 
@@ -209,11 +265,13 @@ window.BoldComments = (function(){
       var list = comments.filter(function(c){ return c.proposalId === pid; }).sort(function(a, b){ return a.at - b.at; });
       var key = 'p:' + pid;
       return '<div class="cm-discussion">' + list.map(function(c){
-          return '<div class="cm-comment"><p class="cm-meta"><strong>' + esc(c.by ? (c.by.name || c.by.email) : 'Someone') + '</strong> ' + esc(when(c.at)) +
+          if (editing === c.id) return '<div class="cm-comment"><p class="cm-meta">' + metaHtml(c) + '</p>' + editBoxHtml(c) + '</div>';
+          return '<div class="cm-comment' + (c.id === target ? ' is-target' : '') + '" data-cid="' + esc(c.id) + '"><p class="cm-meta">' + metaHtml(c) +
+            (mine(c) ? ' ' + editButton(c) : '') +
             (mine(c) || opts.fullWrite() ? ' <button type="button" class="btn-text danger cm-delete" data-id="' + esc(c.id) + '">Delete</button>' : '') + '</p>' +
             '<p class="cm-text">' + BoldMarkdown.plain(c.text) + '</p></div>';
         }).join('') +
-        (boxOpen[key] ? '<textarea class="md-mentions" rows="3" maxlength="' + MAX_TEXT + '" placeholder="Your comment" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
+        (boxOpen[key] ? '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="Your comment" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
           (error && open === key ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
           '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-p-send" data-pid="' + esc(pid) + '"' + (busy ? ' disabled' : '') + '>Comment</button>' +
           '<button type="button" class="btn-text cm-p-cancel" data-pid="' + esc(pid) + '">Cancel</button></div>' :
@@ -255,6 +313,31 @@ window.BoldComments = (function(){
         busy = false; error = 'Couldn’t save it — try again.'; changed();
       });
     }
+    function saveEdit(id){
+      var key = 'e:' + id, c = byId(id), text = (key in drafts ? drafts[key] : c ? c.text : '').trim();
+      if (!c) return;
+      if (!text) { editError = 'Write something first.'; changed(); return; }
+      if (text === c.text) { editing = null; delete drafts[key]; changed(); return; }
+      busy = true; editError = ''; changed();
+      col.doc(id).update({ text: text, editedAt: Date.now() }).then(function(){
+        busy = false; editing = null; delete drafts[key]; changed();
+      }).catch(function(err){
+        console.error('[BOLD Comments] saving the edit failed', err);
+        busy = false; editError = 'Couldn’t save it — try again.'; changed();
+      });
+    }
+    // Cmd/Ctrl+Enter in a comment box sends it (or saves the edit).
+    opts.root.addEventListener('keydown', function(e){
+      if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || busy) return;
+      var k = e.target.tagName === 'TEXTAREA' && e.target.getAttribute('data-key');
+      if (!k) return;
+      e.preventDefault();
+      drafts[k] = e.target.value;
+      if (k.indexOf('e:') === 0) saveEdit(k.slice(2));
+      else if (k.indexOf('p:') === 0) sendOnProposal(k.slice(2));
+      else if (k === open) send();
+    });
+
     function resolve(id){
       col.doc(id).update({ resolved: true, resolvedBy: me.email, resolvedByName: me.name, resolvedAt: Date.now() }).then(function(){ if (open === id) open = null; changed(); })
         .catch(function(err){ console.error('[BOLD Comments] resolving failed', err); error = 'Couldn’t resolve it — try again.'; changed(); });
@@ -270,9 +353,17 @@ window.BoldComments = (function(){
     }
 
     function click(e){
-      var t = e.target.closest('.cm-icon, .cm-mark, .cm-close, .cm-cancel, .cm-send, .cm-resolve, .cm-delete, .cm-switch, .cm-p-open, .cm-p-send, .cm-p-cancel');
+      var t = e.target.closest('.cm-icon, .cm-mark, .cm-close, .cm-cancel, .cm-send, .cm-resolve, .cm-delete, .cm-switch, .cm-p-open, .cm-p-send, .cm-p-cancel, .cm-edit, .cm-e-save, .cm-e-cancel');
       if (!t) return false;
       var pid = t.getAttribute('data-pid');
+      if (t.classList.contains('cm-edit')) {
+        editing = t.getAttribute('data-id'); delete drafts['e:' + editing]; editError = ''; changed();
+        var box = opts.root.querySelector('textarea[data-key="e:' + editing + '"]');
+        if (box) { box.focus(); box.setSelectionRange(box.value.length, box.value.length); }
+        return true;
+      }
+      if (t.classList.contains('cm-e-save')) { saveEdit(t.getAttribute('data-id')); return true; }
+      if (t.classList.contains('cm-e-cancel')) { delete drafts['e:' + editing]; editing = null; editError = ''; changed(); return true; }
       if (t.classList.contains('cm-p-open')) {
         boxOpen['p:' + pid] = true; error = ''; changed();
         var ta = opts.root.querySelector('textarea[data-key="p:' + pid + '"]'); if (ta) ta.focus();
@@ -290,20 +381,34 @@ window.BoldComments = (function(){
       return true;
     }
 
+    // Opens the thread comment id is in → where it is ({ partId, proposalId, resolved }), or null.
+    function show(id){
+      var c = byId(id);
+      if (!c) return null;
+      var root = (c.parent && byId(c.parent)) || c;
+      target = id;
+      if (!root.proposalId && !root.resolved) { open = root.id; error = ''; }
+      return { partId: root.partId || '', proposalId: root.proposalId || null, resolved: !!root.resolved };
+    }
+
     // Resolved threads, for the page's history (history.js extras): newest first there.
     function resolvedItems(){
       return comments.filter(function(c){ return !c.parent && c.resolved; }).map(function(c){
         var all = [c].concat(replies(c.id));
         return { id: c.id, at: c.resolvedAt || c.at,
-          head: 'Comment resolved by ' + esc(c.resolvedByName || c.resolvedBy || 'someone'),
-          msg: '“' + esc(c.quote.length > 80 ? c.quote.slice(0, 80) + '…' : c.quote) + '”',
+          // A proposed change's discussion closes with it (resolvedWith: accepted, declined, withdrawn).
+          head: c.resolvedWith ? 'Comment closed: its change was ' + esc(c.resolvedWith) + (c.resolvedWith !== 'withdrawn' && (c.resolvedByName || c.resolvedBy) ? ' by ' + esc(c.resolvedByName || c.resolvedBy) : '')
+            : 'Comment resolved by ' + esc(c.resolvedByName || c.resolvedBy || 'someone'),
+          msg: c.proposalId || !c.quote ? 'On a proposed change' : '“' + esc(c.quote.length > 80 ? c.quote.slice(0, 80) + '…' : c.quote) + '”',
           body: '<div class="cm-history">' + all.map(function(r){
             return '<p class="cm-meta"><strong>' + esc(r.by ? (r.by.name || r.by.email) : 'Someone') + '</strong> ' + esc(when(r.at)) + '</p><p class="cm-text">' + BoldMarkdown.plain(r.text) + '</p>';
           }).join('') + '</div>' };
       });
     }
 
-    return { start: start, stop: stop, decorate: decorate, click: click, resolvedItems: resolvedItems, proposalThreadHtml: proposalThreadHtml };
+    return { start: start, stop: stop, decorate: decorate, click: click, resolvedItems: resolvedItems, proposalThreadHtml: proposalThreadHtml,
+      ready: function(){ return loaded; }, show: show,
+      openCount: function(){ return comments.filter(function(c){ return !c.parent && !c.resolved; }).length; } };
   }
 
   return { create: create };

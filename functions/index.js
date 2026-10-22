@@ -27,7 +27,7 @@
 // Slack workspace — see scratchpad test scripts referenced in the
 // changelog.
 
-const { onDocumentCreated, onDocumentWritten, onDocumentWrittenWithAuthContext } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentWrittenWithAuthContext } = require('firebase-functions/v2/firestore');
 const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { beforeUserCreated, HttpsError: IdentityHttpsError } = require('firebase-functions/v2/identity');
@@ -438,6 +438,8 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
   if (!before) return events; // brand-new card — nothing to notify about yet
   var url = cardUrl(boardId, cardId);
   var linked = linkedTitle(title, url);
+  // A comment's message links to the comment itself (audit-board: &msg= opens and marks it).
+  var linkedMsg = function(id){ return linkedTitle(title, url + '&msg=' + encodeURIComponent(id || '')); };
   var submitterEmail = after.submittedBy && after.submittedBy.email;
   var rvBefore = before.reviewers || {};
   var rvAfter = after.reviewers || {};
@@ -518,8 +520,8 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       var newBody = (afterMsg.body || '').slice(0, 140);
       events.push({
         emails: stakeholders,
-        excludeEmail: afterMsg.authorEmail,
-        headline: '💬 ' + (afterMsg.author || 'Someone') + ' commented on ' + linked + ': “' + newBody + '”'
+        excludeEmail: afterMsg.authorEmail, comment: true,
+        headline: '💬 ' + (afterMsg.author || 'Someone') + ' commented on ' + linkedMsg(afterMsg.id) + ': “' + newBody + '”'
       });
       return;
     }
@@ -530,8 +532,8 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       var replyBody = (reply.body || '').slice(0, 140);
       events.push({
         emails: participants,
-        excludeEmail: reply.authorEmail,
-        headline: '💬 ' + (reply.author || 'Someone') + ' replied on ' + linked + ': “' + replyBody + '”'
+        excludeEmail: reply.authorEmail, comment: true,
+        headline: '💬 ' + (reply.author || 'Someone') + ' replied on ' + linkedMsg(reply.id) + ': “' + replyBody + '”'
       });
     });
   });
@@ -558,8 +560,8 @@ function cardEventsToNotify(before, after, title, boardId, cardId){
       var body = (msg.body || '').slice(0, 140);
       events.push({
         emails: recipients,
-        excludeEmail: msg.authorEmail,
-        headline: '💬 ' + posterName + ' commented on ' + linked + ': “' + body + '”'
+        excludeEmail: msg.authorEmail, comment: true,
+        headline: '💬 ' + posterName + ' commented on ' + linkedMsg(msg.id) + ': “' + body + '”'
       });
     });
   });
@@ -652,7 +654,8 @@ async function slackFetch(token, method, body){
       'Authorization': 'Bearer ' + token,
       'Content-Type': 'application/json; charset=utf-8'
     },
-    body: JSON.stringify(body)
+    // A tag (@[Name](SlackId), "Tagging people") reads as plain @Name in Slack.
+    body: JSON.stringify(body).replace(TAG, '@$1')
   });
   const json = await res.json();
   if (!json.ok) logger.warn('Slack API call failed', { method, error: json.error });
@@ -913,8 +916,8 @@ exports.onVenueProposed = onDocumentCreated(
 );
 
 // ---------- Suggested changes to a guide or the BOLDiquette ----------
-// Everyone, PIs and admins too, changes a guide (guides/{slug}) or the
-// BOLDiquette (handbook/{slug}) by proposing it (…/proposals/{id}, see
+// Everyone, PIs and admins too, changes a guide (guides/{slug}), the
+// BOLDiquette (handbook/{slug}) or a skill (skills/{name}, kind 'skill') by proposing it (…/proposals/{id}, see
 // pages/guide.js); another PI or admin accepts or declines it on the page
 // (decideProposal). Tell them all, but whoever proposed it, when one arrives,
 // with a link to it.
@@ -930,6 +933,10 @@ function slackText(s){
 function proposalSummary(q){
   const title = (side) => '“' + slackText((side && side.title) || '') + '”';
   if (q.kind === 'about') return 'a change to the title and description';
+  if (q.kind === 'skill') return 'a change to the skill';
+  if (q.kind === 'tool') return 'a change to the tool';
+  if (q.kind === 'new') return 'adding it';
+  if (q.kind === 'delete') return 'removing it';
   if (q.kind === 'add') return 'a new part, ' + title(q.after);
   if (q.kind === 'remove') return 'removing the part ' + title(q.before);
   if (q.kind === 'move' && q.after && q.after.tab) return 'moving the tab ' + title(q.after);
@@ -967,7 +974,7 @@ function onProposed(collection, pageUrl){
   );
 }
 
-// What became of a proposal, once it's no longer open: accepted or declined
+// What became of a proposal: edited by whoever proposed it, accepted or declined
 // (decideProposal), or withdrawn (deleted while open). Whoever proposed it
 // hears it was decided; the PIs and admins, but whoever decided it, hear
 // either, so a "needs a decision" message isn't left standing.
@@ -977,6 +984,10 @@ function proposalOutcome(before, after, name, url){
   const who = (before.by && (before.by.name || before.by.email)) || 'Someone';
   const what = proposalSummary(before) + ' in ' + linkedTitle(slackText(name), url);
   if (!after) return { others: '↩️ ' + slackText(who) + ' withdrew ' + what + '. Nothing to decide.' };
+  // Edited by whoever proposed it (pages/guide.js): the reviewers hear what it is now.
+  if (after.status === 'open' && after.editedAt && after.editedAt !== before.editedAt) {
+    return { others: '✏️ ' + slackText(who) + ' edited their suggestion: it’s now ' + proposalSummary(after) + ' in ' + linkedTitle(slackText(name), url) + '.' };
+  }
   if (after.status !== 'accepted' && after.status !== 'declined') return null;
   const decider = slackText(after.decidedByName || after.decidedBy || 'A PI or admin');
   const icon = after.status === 'accepted' ? '✅ ' : '✖️ ';
@@ -986,6 +997,27 @@ function proposalOutcome(before, after, name, url){
   };
 }
 
+// Pure: what closes a proposal's discussion → { resolvedWith, resolvedBy, resolvedByName }
+// once it's accepted, declined or withdrawn (deleted while open), else null.
+function proposalClosed(before, after){
+  if (!before || before.status !== 'open') return null;
+  if (!after) return { resolvedWith: 'withdrawn', resolvedBy: String((before.by && before.by.email) || ''), resolvedByName: String((before.by && before.by.name) || '') };
+  if (after.status !== 'accepted' && after.status !== 'declined') return null;
+  return { resolvedWith: after.status, resolvedBy: String(after.decidedBy || ''), resolvedByName: String(after.decidedByName || '') };
+}
+
+// Its comments are resolved with it, so they leave the open threads (comments.html).
+async function resolveProposalComments(collection, slug, id, before, after){
+  const closed = proposalClosed(before, after);
+  if (!closed) return;
+  const snap = await db.collection(collection).doc(slug).collection('comments').where('proposalId', '==', id).get();
+  const open = snap.docs.filter(function(d){ return !d.data().resolved; });
+  if (!open.length) return;
+  const batch = db.batch();
+  open.forEach(function(d){ batch.update(d.ref, Object.assign({ resolved: true, resolvedAt: Date.now() }, closed)); });
+  await batch.commit();
+}
+
 function onProposalDecided(collection, pageUrl){
   return onDocumentWritten(
     { document: collection + '/{slug}/proposals/{id}', secrets: [SLACK_BOT_TOKEN] },
@@ -993,9 +1025,13 @@ function onProposalDecided(collection, pageUrl){
       const before = event.data.before.exists ? event.data.before.data() : null;
       const after = event.data.after.exists ? event.data.after.data() : null;
       const doc = await db.collection(collection).doc(event.params.slug).get();
-      // Deleted with its guide: nothing to tell.
-      if (!doc.exists) return;
-      const out = proposalOutcome(before, after, doc.data().title || event.params.slug, pageUrl(event.params.slug));
+      // Deleted with its guide: nothing to tell (but a proposed new skill or tool has no
+      // document yet, and an accepted removal has just deleted it).
+      const kind = ((after || before) || {}).kind;
+      if (!doc.exists && kind !== 'new' && kind !== 'delete') return;
+      await resolveProposalComments(collection, event.params.slug, event.params.id, before, after);
+      const title = (doc.exists && doc.data().title) || ((before && before.after) || {}).title || event.params.slug;
+      const out = proposalOutcome(before, after, title, pageUrl(event.params.slug));
       if (!out) return;
       const token = SLACK_BOT_TOKEN.value();
       const proposer = before.by && before.by.email ? String(before.by.email).toLowerCase() : '';
@@ -1009,13 +1045,168 @@ function onProposalDecided(collection, pageUrl){
   );
 }
 
-const guideUrl = (slug) => SITE_URL + 'guide.html?guide=' + encodeURIComponent(slug);
+// A guide with a page of its own (bold.js BOLD.GUIDE_PAGES) links there.
+const GUIDE_PAGES = { 'get-started-at-bold': 'get-started.html' };
+const guideUrl = (slug) => SITE_URL + (GUIDE_PAGES[slug] || 'guide.html?guide=' + encodeURIComponent(slug));
 // The BOLDiquette is the one handbook document; it has its own page.
 const handbookUrl = (slug) => SITE_URL + (slug === 'boldiquette' ? 'boldiquette.html' : 'index.html');
 exports.onGuideProposed = onProposed('guides', guideUrl);
 exports.onHandbookProposed = onProposed('handbook', handbookUrl);
+// A skill has its page; its changes are proposed there too (pages/skill.js).
+const skillUrl = (name) => SITE_URL + 'skill.html?skill=' + encodeURIComponent(name);
+exports.onSkillProposed = onProposed('skills', skillUrl);
+exports.onSkillProposalDecided = onProposalDecided('skills', skillUrl);
+// The tools the lab adds for agents (tool.html; functions/api-tools.js).
+const toolUrl = (name) => SITE_URL + 'tool.html?tool=' + encodeURIComponent(name);
+exports.onToolProposed = onProposed('agentTools', toolUrl);
+exports.onToolProposalDecided = onProposalDecided('agentTools', toolUrl);
 exports.onGuideProposalDecided = onProposalDecided('guides', guideUrl);
 exports.onHandbookProposalDecided = onProposalDecided('handbook', handbookUrl);
+
+// ---------- Tagging people ----------
+// A tag is @[Name](SlackId) in any text (mentions.js). Whoever is newly tagged in
+// any document gets a DM (onTagged), except: in a guide's or the BOLDiquette's
+// comment, with that page's comment digest (below); in a proposed change, at once,
+// for the tags it adds (onProposalTagged); accepting it tells nobody again.
+const TAG = /@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g;
+
+// The Slack ids tagged anywhere in value (a string, or any data holding strings). Pure.
+function taggedIds(value){
+  const out = [];
+  const walk = (v) => {
+    if (typeof v === 'string') { for (const m of v.matchAll(TAG)) if (out.indexOf(m[2]) === -1) out.push(m[2]); }
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') Object.keys(v).forEach((k) => walk(v[k]));
+  };
+  walk(value);
+  return out;
+}
+
+// Who a proposal tags that wasn't tagged already: in the text it proposes (and
+// its note), not in the text it replaces, nor in what it proposed before an edit
+// (prev). Pure.
+function proposalNewTags(prev, q){
+  const sides = (x, side) => !x ? [] : [x[side]].concat((x.changes || []).map((c) => c[side]));
+  const old = taggedIds(sides(q, 'before')).concat(taggedIds(prev && sides(prev, 'after').concat([prev.note])));
+  return taggedIds(sides(q, 'after').concat([q.note])).filter((id) => old.indexOf(id) === -1);
+}
+
+// { Slack id: email } for those ids that are on the roster.
+async function emailsForSlackIds(ids){
+  const out = {};
+  for (const id of Array.from(new Set(ids))) {
+    const email = await emailForSlackId(id);
+    if (email) out[id] = String(email).toLowerCase();
+  }
+  return out;
+}
+
+// The Slack ids tagged in after and not in before. Pure.
+function newTags(before, after){
+  const old = taggedIds(before);
+  return taggedIds(after).filter((id) => old.indexOf(id) === -1);
+}
+
+// Where a tag is: { title, url } for a document's path, or null where tags tell
+// nobody here: bookkeeping and private collections, and guides and the
+// BOLDiquette (their comments and proposed changes tell, above). Pure.
+const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
+  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions'];
+// An event's page: its own (d.page: Collaboration Week, the Festival) or event.html.
+function eventUrl(slug, d){
+  return SITE_URL + (d && /^[a-z0-9-]+\.html$/.test(d.page || '') ? d.page : 'event.html?event=' + encodeURIComponent(slug));
+}
+function tagPlace(path, data){
+  const seg = path.split('/');
+  if (TAG_SILENT.indexOf(seg[0]) !== -1 || seg.indexOf('versions') !== -1) return null;
+  const d = data || {}, id = seg[1], q = encodeURIComponent(id);
+  const named = (fallback) => String(d.title || d.label || d.name || fallback);
+  if (seg[0] === 'boards' && seg[2] === 'cards' && seg.length === 4) return { title: named('a paper'), url: cardUrl(id, seg[3]) };
+  if (seg.length > 2) return { title: named(seg[2]), url: SITE_URL };
+  if (seg[0] === 'boards') return { title: named(id), url: venueUrl(id) };
+  if (seg[0] === 'events') return { title: named(id), url: eventUrl(id, d) };
+  if (seg[0] === 'collabWeekSessions') return { title: named(id), url: SITE_URL + 'session.html?session=' + q };
+  if (seg[0] === 'collabWeekTalks') return { title: named(id), url: SITE_URL + 'talk.html?talk=' + q };
+  if (seg[0] === 'collabWeekProposals') return { title: named('a session proposal'), url: SITE_URL + 'event-collaboration-week.html' };
+  if (seg[0] === 'skills') return { title: named(id), url: SITE_URL + 'skill.html?skill=' + q };
+  if (seg[0] === 'projects') return { title: named('a project'), url: projectPageUrl(id) };
+  if (seg[0] === 'introOffers') return { title: 'an introduction offer at ' + String(d.org || 'an organisation'), url: introUrl() };
+  return { title: named(seg[0]), url: SITE_URL };
+}
+
+// The first text in data that tags id, as plain text, shortened. Pure.
+function tagExcerpt(data, id){
+  let found = '';
+  const walk = (v) => {
+    if (found) return;
+    if (typeof v === 'string') { if (v.indexOf('](' + id + ')') !== -1) found = v; }
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === 'object') Object.keys(v).forEach((k) => walk(v[k]));
+  };
+  walk(data);
+  const t = found.replace(TAG, '@$1').replace(/\s+/g, ' ').trim();
+  return t.length > 200 ? t.slice(0, 200) + '…' : t;
+}
+
+// On a board card, the comment (discussion or checklist point) that tags id, for its link (&msg=), or ''. Pure.
+function tagMessageId(data, id){
+  const d = data || {};
+  const all = [].concat.apply(flattenMessages(d.discussion), (d.checklist || []).map((it) => flattenMessages(it.comments)));
+  const m = all.filter((x) => String(x.body || '').indexOf('](' + id + ')') !== -1).pop();
+  return m && m.id ? String(m.id) : '';
+}
+
+// Any document anywhere, written by anyone: whoever it newly tags gets a DM.
+// Who wrote it: the signed-in person, or the document's updatedBy (a function's write).
+function onTagged(document){
+  return onDocumentWrittenWithAuthContext({ document, secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;
+    const path = event.data.after.ref.path;
+    const place = tagPlace(path, after);
+    const ids = place ? newTags(before, after) : [];
+    if (!ids.length) return;
+    let by = '';
+    try { if (event.authType === 'app_user' && event.authId) by = String((await admin.auth().getUser(event.authId)).email || ''); } catch (e) { /* who is a nicety */ }
+    if (!by) by = typeof after.updatedBy === 'string' ? after.updatedBy : String((after.updatedBy && after.updatedBy.email) || '');
+    by = by.toLowerCase();
+    const who = by ? await personFor(by) : null;
+    const emails = await emailsForSlackIds(ids);
+    try { await recordTags(path, by, emails, Date.now(), place, after); } catch (err){ logger.warn('Recording tags failed', { path, error: String(err && err.message || err) }); }
+    for (const id of ids) {
+      if (!emails[id] || emails[id] === by) continue;
+      const excerpt = tagExcerpt(after, id), msg = /^boards\/[^/]+\/cards\//.test(path) ? tagMessageId(after, id) : '';
+      const text = '🏷️ ' + (who ? slackText(who.name || who.email) + ' tagged you' : 'You were tagged') + ' in ' + linkedTitle(slackText(place.title), place.url + (msg ? '&msg=' + encodeURIComponent(msg) : '')) +
+        (excerpt ? ': “' + slackText(excerpt) + '”' : '.');
+      const sent = await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text);
+      logger.info('Tag DM', { path, to: id, by, sent, authType: event.authType, authId: event.authId });
+    }
+  });
+}
+// Every document at the top level and one collection down.
+exports.onTagged = onTagged('{c1}/{d1}');
+exports.onTaggedNested = onTagged('{c1}/{d1}/{c2}/{d2}');
+
+function onProposalTagged(collection, pageUrl){
+  return onDocumentWritten(
+    { document: collection + '/{slug}/proposals/{id}', secrets: [SLACK_BOT_TOKEN] },
+    async function(event){
+      const prev = event.data.before.exists ? event.data.before.data() : null;
+      const q = event.data.after.exists ? event.data.after.data() : null;
+      if (!q || q.status !== 'open') return;
+      const ids = proposalNewTags(prev, q);
+      if (!ids.length) return;
+      const doc = await db.collection(collection).doc(event.params.slug).get();
+      if (!doc.exists && q.kind !== 'new') return;
+      const by = String((q.by && q.by.email) || '').toLowerCase();
+      const text = '🏷️ ' + slackText((q.by && (q.by.name || q.by.email)) || 'Someone') + ' tagged you in a suggested change to ' +
+        linkedTitle(slackText((doc.exists && doc.data().title) || (q.after || {}).title || event.params.slug), pageUrl(event.params.slug) + '#proposals') + ': ' + proposalSummary(q) + '.';
+      const emails = await emailsForSlackIds(ids);
+      for (const id of ids) if (emails[id] && emails[id] !== by) await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text);
+    }
+  );
+}
 
 // ---------- Comments on a guide or the BOLDiquette, in Slack, batched ----------
 // A comment (<collection>/{slug}/comments/{id}, comments.js) joins its page's queue
@@ -1032,7 +1223,7 @@ function onCommented(collection){
     if (!c) return;
     const ref = db.collection('commentQueue').doc(collection + '__' + event.params.slug);
     const item = { id: event.params.id, partId: String(c.partId || ''), parent: c.parent || null, proposalId: c.proposalId || null, quote: String(c.quote || '').slice(0, 200),
-      text: String(c.text || '').slice(0, 300), by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: c.at || Date.now() };
+      text: String(c.text || '').slice(0, 300), tagged: taggedIds(c.text), by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: c.at || Date.now() };
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       const q = snap.exists ? snap.data() : { collection, slug: event.params.slug, items: [], firstAt: Date.now() };
@@ -1042,8 +1233,32 @@ function onCommented(collection){
     });
   });
 }
+// An edited comment (comments.js): whoever it newly tags joins the queue, and only they hear of it.
+function onCommentEdited(collection){
+  return onDocumentUpdated({ document: collection + '/{slug}/comments/{id}' }, async function(event){
+    const before = event.data.before.data(), c = event.data.after.data();
+    const tagged = newTags(before.text, c.text);
+    if (!tagged.length) return;
+    const ref = db.collection('commentQueue').doc(collection + '__' + event.params.slug);
+    const item = { id: event.params.id, partId: String(c.partId || ''), parent: c.parent || null, proposalId: c.proposalId || null, quote: String(c.quote || '').slice(0, 200),
+      text: String(c.text || '').slice(0, 300), tagged, tagsOnly: true, by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: Date.now() };
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const q = snap.exists ? snap.data() : { collection, slug: event.params.slug, items: [], firstAt: Date.now() };
+      q.items = (q.items || []).concat([item]).slice(-200);
+      q.lastAt = Date.now();
+      tx.set(ref, q);
+    });
+  });
+}
+exports.onGuideCommentEdited = onCommentEdited('guides');
+exports.onHandbookCommentEdited = onCommentEdited('handbook');
 exports.onGuideCommented = onCommented('guides');
 exports.onHandbookCommented = onCommented('handbook');
+exports.onGuideProposalTagged = onProposalTagged('guides', guideUrl);
+exports.onHandbookProposalTagged = onProposalTagged('handbook', handbookUrl);
+exports.onSkillProposalTagged = onProposalTagged('skills', skillUrl);
+exports.onToolProposalTagged = onProposalTagged('agentTools', toolUrl);
 
 // Whether a queue is ready to send: quiet long enough, or waited long enough. Pure.
 function commentQueueDue(q, now){
@@ -1051,18 +1266,25 @@ function commentQueueDue(q, now){
 }
 
 // Who hears of which comments → { email: [items] }. threads: { rootId: [emails in it] },
-// and 'p:<proposal id>': [whoever proposed it and has commented on it]. Pure.
-function commentRecipients(items, staff, threads){
+// and 'p:<proposal id>': [whoever proposed it and has commented on it]. tagEmails:
+// { Slack id: email }; whoever a comment tags hears of it too (taggedYou). Pure.
+function commentRecipients(items, staff, threads, tagEmails){
   const out = {};
-  const add = (email, it) => {
+  const add = (email, it, tagged) => {
     if (!email || email === it.by.email) return;
-    (out[email] = out[email] || []).push(it);
+    const mine = out[email] = out[email] || [];
+    const had = mine.filter((x) => x.id === it.id)[0];
+    if (had) { if (tagged) had.taggedYou = true; return; }
+    mine.push(Object.assign({}, it, tagged ? { taggedYou: true } : {}));
   };
   items.forEach((it) => {
     // On a proposed change: whoever proposed it and whoever's in its discussion.
-    if (it.proposalId) { (threads['p:' + it.proposalId] || []).forEach((e) => add(e, it)); return; }
-    if (!it.parent) staff.forEach((e) => add(e, it));
+    // An edit that tags someone new: only they hear of it.
+    if (it.tagsOnly) {}
+    else if (it.proposalId) (threads['p:' + it.proposalId] || []).forEach((e) => add(e, it));
+    else if (!it.parent) staff.forEach((e) => add(e, it));
     else (threads[it.parent] || []).forEach((e) => add(e, it));
+    (it.tagged || []).forEach((id) => add((tagEmails || {})[id], it, true));
   });
   return out;
 }
@@ -1070,10 +1292,12 @@ function commentRecipients(items, staff, threads){
 // One person's message. Pure.
 function commentDigest(items, name, url){
   const n = items.length;
-  // A tag (@[Name](SlackId), mentions.js) as plain @Name: tagging notifies nobody.
-  const untag = (t) => String(t || '').replace(/@\[([^\]]+)\]\((U[A-Z0-9]+)\)/g, '@$1');
+  // A tag (@[Name](SlackId), mentions.js) as plain @Name.
+  const untag = (t) => String(t || '').replace(TAG, '@$1');
   items = items.map((it) => Object.assign({}, it, { text: untag(it.text), quote: untag(it.quote) }));
-  const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.proposalId ? ' on a proposed change' : it.parent ? ' replied' : ' on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
+  // Each comment links to itself (#c=, pages/guide.js opens its thread).
+  const at = (it, label) => '<' + url + '#c=' + encodeURIComponent(it.id) + '|' + label.replace(/\|/g, '¦') + '>';
+  const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.taggedYou ? ' tagged you' : '') + ' ' + at(it, it.proposalId ? 'on a proposed change' : it.parent ? 'replied' : 'on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
     ': ' + slackText(it.text.length > 140 ? it.text.slice(0, 140) + '…' : it.text);
   return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), url) + '\n' +
     items.slice(0, 5).map(line).join('\n') + (n > 5 ? '\n…and ' + (n - 5) + ' more.' : '');
@@ -1108,7 +1332,8 @@ exports.flushCommentQueue = onSchedule(
       const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase());
       const url = (taken.collection === 'guides' ? guideUrl : handbookUrl)(taken.slug);
       const name = pageSnap.data().title || taken.slug;
-      const byPerson = commentRecipients(taken.items, Array.from(new Set(staff)), threads);
+      const byPerson = commentRecipients(taken.items, Array.from(new Set(staff)), threads,
+        await emailsForSlackIds([].concat.apply([], taken.items.map((it) => it.tagged || []))));
       const token = SLACK_BOT_TOKEN.value();
       await Promise.all(Object.keys(byPerson).map((email) => dmByEmail(token, email, commentDigest(byPerson[email], name, url))));
     }
@@ -1122,7 +1347,7 @@ exports.flushCommentQueue = onSchedule(
 // change accepts or declines it here.
 // data: { collection: 'guides' | 'handbook', slug, id, accept: bool } → { status }.
 
-const REVIEWED = ['guides', 'handbook'];
+const REVIEWED = ['guides', 'handbook', 'skills', 'agentTools'];
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q){
@@ -1138,6 +1363,23 @@ function appliedProposal(doc, q){
       cur = Object.assign({}, cur, r);
       Object.assign(out, r);
     });
+    return out;
+  }
+  // A skill (skills/{name}): its title, description, instructions and files, as proposed.
+  // A new skill or tool: the whole of it, as proposed (decideProposal makes the document).
+  if (q.kind === 'new') return Object.assign({}, q.after || {});
+  // A tool (agentTools/{name}): its title, description, inputs, whether it acts, and code.
+  if (q.kind === 'tool') {
+    const a = q.after || {}, out = {};
+    ['title', 'description', 'code'].forEach((k) => { if (typeof a[k] === 'string') out[k] = a[k]; });
+    if (typeof a.acting === 'boolean') out.acting = a.acting;
+    if (a.input && typeof a.input === 'object') out.input = a.input;
+    return out;
+  }
+  if (q.kind === 'skill') {
+    const a = q.after || {}, out = {};
+    ['title', 'description', 'body'].forEach((k) => { if (typeof a[k] === 'string') out[k] = a[k]; });
+    if (Array.isArray(a.files)) out.files = a.files.filter((f) => f && typeof f.path === 'string').map((f) => ({ path: f.path, content: String(f.content || '') }));
     return out;
   }
   const parts = (doc.parts || []).map((p) => Object.assign({}, p));
@@ -1176,7 +1418,7 @@ exports.decideProposal = onCall(
   async (request) => {
     const email = signedInEmail(request).toLowerCase();
     const data = request.data || {};
-    if (REVIEWED.indexOf(data.collection) === -1 || !/^[a-z0-9-]{1,60}$/.test(String(data.slug || '')) || !/^[A-Za-z0-9]{1,40}$/.test(String(data.id || ''))) {
+    if (REVIEWED.indexOf(data.collection) === -1 || !/^[a-z0-9_-]{1,64}$/.test(String(data.slug || '')) || !/^[A-Za-z0-9]{1,40}$/.test(String(data.id || ''))) {
       throw new HttpsError('invalid-argument', 'No such proposal.');
     }
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
@@ -1185,18 +1427,36 @@ exports.decideProposal = onCall(
     const qRef = ref.collection('proposals').doc(data.id);
     return db.runTransaction(async (tx) => {
       const [snap, qSnap] = await Promise.all([tx.get(ref), tx.get(qRef)]);
-      if (!snap.exists || !qSnap.exists) throw new HttpsError('not-found', 'No such proposal.');
+      if (!qSnap.exists) throw new HttpsError('not-found', 'No such proposal.');
       const q = qSnap.data();
+      // A new skill or tool has no document yet; anything else needs one.
+      const creating = q.kind === 'new' && (data.collection === 'skills' || data.collection === 'agentTools');
+      if (creating ? snap.exists : !snap.exists) throw new HttpsError(creating ? 'already-exists' : 'not-found', creating ? 'It exists already: propose a change to it instead.' : 'No such proposal.');
       if (q.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been decided.');
       const by = q.by && q.by.email ? String(q.by.email).toLowerCase() : '';
       if (by === email) throw new HttpsError('permission-denied', 'Another PI or admin reviews your own change.');
+      // Edited since the page showed it: look at it again first.
+      if (typeof data.editedAt === 'number' && (q.editedAt || 0) !== data.editedAt) {
+        throw new HttpsError('failed-precondition', 'It has just been edited. Have a look at it again.');
+      }
       const now = Date.now();
       if (data.accept) {
         const who = (q.by && (q.by.name || q.by.email)) || '';
-        tx.update(ref, Object.assign(appliedProposal(snap.data(), q), {
-          changeNote: String(q.note || ('Proposed by ' + who)).slice(0, 300),
-          updatedAt: now, updatedBy: email, proposedBy: by,
-        }));
+        const stamp = { changeNote: String(q.note || ('Proposed by ' + who)).slice(0, 300), updatedAt: now, updatedBy: email, proposedBy: by };
+        if (q.kind === 'delete') {
+          // Its history credits whoever accepted it, then it goes.
+          tx.update(ref, stamp);
+          tx.delete(ref);
+        } else {
+          let fields = appliedProposal(snap.exists ? snap.data() : {}, q);
+          // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
+          if (data.collection === 'agentTools') {
+            try { fields = agentApi.checkTool(data.slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }
+            catch (err) { throw new HttpsError('failed-precondition', 'It can’t be accepted as it is: ' + err.message); }
+          }
+          if (creating) tx.set(ref, Object.assign(fields, { name: data.slug, createdAt: now, createdBy: by }, stamp));
+          else tx.update(ref, Object.assign(fields, stamp));
+        }
       }
       const status = data.accept ? 'accepted' : 'declined';
       tx.update(qRef, { status, decidedBy: email, decidedByName: name, decidedAt: now });
@@ -1247,8 +1507,11 @@ exports.onCardWritten = onDocumentWritten(
     const token = SLACK_BOT_TOKEN.value();
     const title = after.title || 'a paper';
     const events = cardEventsToNotify(before, after, title, event.params.boardId, event.params.cardId);
+    // Whoever this write tags hears of it from onTagged instead: not twice.
+    const tagged = Object.values(await emailsForSlackIds(newTags(before, after)));
     for (let i = 0; i < events.length; i++){
-      await sendEvent(token, events[i]);
+      const e = events[i];
+      await sendEvent(token, e.comment ? Object.assign({}, e, { emails: e.emails.filter((x) => tagged.indexOf(String(x || '').toLowerCase()) === -1) }) : e);
     }
 
     // Refresh anyone whose Home tab dashboard is now stale because
@@ -1349,7 +1612,8 @@ exports.notifyReviewsOut = onSchedule(
 
 // ---------- 6. Slack App Home + reviewer assignment ----------
 // One HTTP endpoint doing double duty as both Slack's Events API Request
-// URL (app_home_opened, plus the one-time url_verification handshake) and
+// URL (app_home_opened, team_join and user_change for the people roster, plus the
+// one-time url_verification handshake) and
 // its Interactivity Request URL (the reviewer-picker's block_actions) —
 // deliberately combined rather than two functions, since Slack config
 // treats them as separate URLs but nothing stops them being the same one,
@@ -1468,9 +1732,34 @@ exports.slackEvents = onRequest(
       res.status(200).send('');
       return;
     }
+    // Someone joins the Slack, or changes their name or email, or is deactivated: just
+    // their entry in the people roster (the daily syncPeople catches anything missed).
+    if (body.type === 'event_callback' && body.event && (body.event.type === 'team_join' || body.event.type === 'user_change')){
+      try {
+        await upsertPerson(body.event.user);
+      } catch (err){
+        logger.error('upsertPerson threw', { error: String(err) });
+      }
+      res.status(200).send('');
+      return;
+    }
     res.status(200).send('');
   }
 );
+
+// One Slack user (users.list's shape, as team_join and user_change send it) → their
+// people/{slackId}: written if they have an email, removed once deactivated.
+async function upsertPerson(u){
+  if (!u || !u.id || u.is_bot || u.id === 'USLACKBOT') return;
+  const ref = db.collection('people').doc(u.id);
+  if (u.deleted) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); return; }
+  if (!u.profile || !u.profile.email) { logger.warn('upsertPerson: no email (users:read.email?)', { slackId: u.id }); return; }
+  const p = { slackId: u.id, email: u.profile.email, name: u.profile.real_name || u.real_name || u.name || u.profile.email };
+  const was = (await ref.get()).data();
+  if (was && was.name === p.name && was.email === p.email) return;
+  await ref.set(p, { merge: true });
+  logger.info('upsertPerson: ' + (was ? 'updated' : 'added'), { slackId: u.id });
+}
 
 // ---------- Profile page: the caller's own Slack profile fields ----------
 // profile.html (2026-09-19) shows institution / role / supervisor /
@@ -1517,6 +1806,7 @@ function profileFieldsFromSlack(profile){
 exports.getMyAccess = onCall(
   async (request) => {
     const email = signedInEmail(request);
+    try { await recordSignUp(request.auth.uid, email.toLowerCase()); } catch (err){ logger.warn('Recording a first sign-in failed', { error: String(err && err.message || err) }); }
     const [pis, admins] = await Promise.all([rolesEmails('pis'), rolesEmails('admins')]);
     return { fullWrite: pis.indexOf(email) !== -1 || admins.indexOf(email) !== -1 };
   }
@@ -1616,10 +1906,29 @@ function projectsFromDashboard(sections){
   };
 }
 
+// The profile's Projects tab: the board's papers (gatherDashboard), plus projects not
+// on a venue yet (top-level `projects`, by who registered them and their authors),
+// plus `member`: the other projects they're a member of (projectWorkspaces.members).
 exports.getMyProjects = onCall(
   async (request) => {
     const email = signedInEmail(request);
-    return projectsFromDashboard(await gatherDashboard(email, PROFILE_PROJECTS_CAP));
+    const [sections, ownSnap, authSnap, wsSnap] = await Promise.all([
+      gatherDashboard(email, PROFILE_PROJECTS_CAP),
+      db.collection('projects').where('submittedBy.email', '==', email).get(),
+      db.collection('projects').where('authorEmails', 'array-contains', email).get(),
+      db.collection('projectWorkspaces').where('members', 'array-contains', email).get(),
+    ]);
+    const out = projectsFromDashboard(sections);
+    const loose = (d) => ({ boardId: null, boardLabel: 'No venue yet', cardId: d.id, title: d.data().title || 'Untitled', badges: badgesForCard(d.data()) });
+    out.owner = out.owner.concat(ownSnap.docs.map(loose));
+    out.author = out.author.concat(authSnap.docs.map(loose));
+    const listed = new Set(out.owner.concat(out.author).map((i) => i.cardId));
+    const GROUP = { planned: 'Planned', ongoing: 'Ongoing', completed: 'Completed' };
+    out.member = wsSnap.docs.map((d) => d.data()).filter((w) => w.cardId && !listed.has(w.cardId) &&
+      !(w.venues || []).some((v) => listed.has(v.cardId)))
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      .map((w) => ({ boardId: w.boardId || null, boardLabel: GROUP[w.group] || '', cardId: w.cardId, title: w.title || 'Untitled', badges: [] }));
+    return out;
   }
 );
 
@@ -1822,13 +2131,20 @@ async function slackChannelId(token, name){
 }
 
 // The workspace's team id (for a link that opens a channel in Slack's web client)
-// and the bot's own name (for telling people whom to invite), from auth.test.
+// and the bot's own name (for telling people whom to invite), from auth.test and its profile.
 let slackAuthCache = null;
 async function slackAuthInfo(token){
   if (!slackAuthCache){
     const auth = await slackFetch(token, 'auth.test', {});
     if (!auth.ok) return null;
-    slackAuthCache = { teamId: auth.team_id, bot: auth.user, url: auth.url || '' };
+    // auth.test gives the bot's original username (mlconferencecycle); people know it by
+    // the name it shows in Slack now (BOLD OS), its profile's.
+    let me = null;
+    if (auth.user_id) try {
+      me = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: auth.user_id }), { headers: { 'Authorization': 'Bearer ' + token } })).json();
+    } catch (e){ me = null; }
+    const p = (me && me.ok && me.user && me.user.profile) || {};
+    slackAuthCache = { teamId: auth.team_id, bot: p.display_name || p.real_name || auth.user, url: auth.url || '' };
   }
   return slackAuthCache;
 }
@@ -1854,6 +2170,11 @@ function slackChannelError(code, json){
 // { name, prefixed, exists, created, invited, url }. Registering a project
 // calls 'ensure'; the form calls 'check' as you type, and a project's page
 // calls it to link its channel.
+// mode 'rename' { from, project: { id, board } }: a project's page changing its
+// channel. The new name existing already, it's just linked; otherwise the project's
+// old channel (`from`, which must be the project's) is renamed in Slack (the bot
+// can only rename channels it's in, such as those it created), and with no old
+// channel to rename, it's created as for 'ensure'. Only who can edit the project.
 exports.projectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -1869,7 +2190,29 @@ exports.projectChannel = onCall(
       const auth = await slackAuthInfo(token);
       if (auth && auth.bot) out.bot = '@' + auth.bot;
     }
-    if (out.exists || data.mode !== 'ensure') return out;
+    if (data.mode === 'rename' && !out.exists){
+      const p = data.project || {};
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(p.id || '')) || (p.board && !/^[A-Za-z0-9_-]{1,80}$/.test(String(p.board)))) throw new HttpsError('invalid-argument', 'No such project.');
+      const cardSnap = await cardRefFor(String(p.id), p.board ? String(p.board) : null).get();
+      if (!cardSnap.exists) throw new HttpsError('not-found', 'No such project.');
+      const card = cardSnap.data();
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only whoever registered the project, its authors, or a PI or admin can change its channel.');
+      const old = normalizeProjectChannel(data.from), current = normalizeProjectChannel(card.slackChannel);
+      if (old.error || current.error || old.name !== current.name) throw new HttpsError('failed-precondition', 'The project\u2019s channel has changed: reload the page.');
+      const oldId = await slackChannelId(token, old.name);
+      if (oldId){
+        const renamed = await slackFetch(token, 'conversations.rename', { channel: oldId, name: n.name });
+        channelNamesCache = null;
+        if (!renamed.ok){
+          const auth = await slackAuthInfo(token);
+          logger.warn('Renaming a project channel failed', { from: old.name, to: n.name, error: renamed.error });
+          throw new HttpsError('failed-precondition', 'Slack wouldn\u2019t let ' + (auth && auth.bot ? '@' + auth.bot : 'the BOLD Slack app') +
+            ' rename #' + old.name + ' (' + renamed.error + '). Rename it in Slack, then save the new name here.');
+        }
+        return Object.assign(out, { exists: true, renamed: true, url: await slackChannelUrl(token, oldId) });
+      }
+    }
+    if (out.exists || (data.mode !== 'ensure' && data.mode !== 'rename')) return out;
 
     const created = await slackFetch(token, 'conversations.create', { name: n.name, is_private: true });
     channelNamesCache = null;
@@ -1955,7 +2298,7 @@ exports.joinProjectChannel = onCall(
 // ones, changes the meeting, and joins or leaves (projectWorkspace).
 //
 // GOOGLE_OAUTH: JSON { client_id, client_secret, refresh_token } for the lab's
-// Google account, with the scopes calendar.events and drive.file
+// Google account, with the scopes calendar.events, drive.file and gmail.send
 // (functions/tools/google-token.js makes it).
 const GOOGLE_OAUTH = defineSecret('GOOGLE_OAUTH');
 const { FieldValue } = require('firebase-admin/firestore');
@@ -1974,7 +2317,16 @@ function normalizeMeeting(m){
   if (!(minutes >= 15 && minutes <= 240 && minutes % 15 === 0)) return { error: 'Choose how long it lasts.' };
   const every = Number(m.every);
   if ([1, 2, 3, 4].indexOf(every) < 0) return { error: 'Choose how often it runs.' };
-  return { day, time, minutes, every };
+  // Until when it runs (YYYY-MM-DD, the last day it may fall on), or for good.
+  const until = String(m.until || '');
+  if (until && !(/^\d{4}-\d{2}-\d{2}$/.test(until) && !isNaN(Date.parse(until)))) return { error: 'Give a valid end date.' };
+  if (until && until < todayIsoLondon()) return { error: 'The end date has passed.' };
+  return until ? { day, time, minutes, every, until } : { day, time, minutes, every };
+}
+
+// Pure: whether two meetings fall at the same times (an end date aside).
+function sameMeetingTimes(a, b){
+  return !!a && !!b && a.day === b.day && a.time === b.time && a.minutes === b.minutes && a.every === b.every;
 }
 
 // Pure: the first meeting, as local times in London ('2026-10-19T14:00:00'),
@@ -1990,8 +2342,14 @@ function firstMeetingTimes(meeting, todayIso, nowHm){
   return { start: local(start), end: local(end) };
 }
 
-function meetingRecurrence(m){
-  return ['RRULE:FREQ=WEEKLY' + (m.every > 1 ? ';INTERVAL=' + m.every : '') + ';BYDAY=' + m.day];
+// `pausedAt` (ms): a paused meeting's series ends then (UNTIL), so its upcoming dates
+// leave everyone's calendar while the event, its invitation and Meet link stay; resuming
+// takes UNTIL off again.
+// A meeting with an end date (`until`) ends the series that day, or when paused if sooner.
+function meetingRecurrence(m, pausedAt){
+  const ends = [pausedAt || 0, m.until ? Date.parse(m.until + 'T23:59:59Z') : 0].filter(Boolean);
+  const until = ends.length ? ';UNTIL=' + new Date(Math.min.apply(null, ends)).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '') : '';
+  return ['RRULE:FREQ=WEEKLY' + (m.every > 1 ? ';INTERVAL=' + m.every : '') + ';BYDAY=' + m.day + until];
 }
 
 function nowHmLondon(){
@@ -1999,12 +2357,14 @@ function nowHmLondon(){
 }
 
 // Pure: the project's members, lowercase and once each: whoever registered it,
-// its authors, then whoever joined.
+// its authors, then whoever joined. An address pasted with its brackets
+// ("<a@b.org>") is cleaned; anything that still isn't an address is left out, since
+// Drive and Calendar refuse it and would stop everyone after it being added.
 function projectMembers(card, joined){
   const out = [];
   [card.submittedBy && card.submittedBy.email].concat(card.authorEmails || [], joined || []).forEach(function(e){
-    const v = String(e || '').trim().toLowerCase();
-    if (v && v.indexOf('@') > 0 && out.indexOf(v) < 0) out.push(v);
+    const v = String(e || '').trim().toLowerCase().replace(/^[<\s]+|[>\s,;]+$/g, '');
+    if (/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(v) && out.indexOf(v) < 0) out.push(v);
   });
   return out;
 }
@@ -2117,12 +2477,19 @@ function eventDescription(ws){
   return lines.join('<br>');
 }
 
-function eventTimes(meeting){
+// Pure: a Calendar event → the day its series starts (YYYY-MM-DD, London), or ''. A
+// meeting every N weeks falls on the weeks N apart from it (calendar.html places it so).
+function seriesStart(ev){
+  const t = ev && ev.start && (ev.start.dateTime || ev.start.date);
+  return t ? String(t).slice(0, 10) : '';
+}
+
+function eventTimes(meeting, pausedAt){
   const t = firstMeetingTimes(meeting, todayIsoLondon(), nowHmLondon());
   return {
     start: { dateTime: t.start, timeZone: PROJECT_TZ },
     end: { dateTime: t.end, timeZone: PROJECT_TZ },
-    recurrence: meetingRecurrence(meeting)
+    recurrence: meetingRecurrence(meeting, pausedAt)
   };
 }
 
@@ -2160,8 +2527,8 @@ function projectGroupForCards(cards, completed){
 // What a page reads: the workspace, as stored.
 function workspaceView(ws){
   const out = {};
-  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
-    'deckUrl', 'notesUrl', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
+  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
+    'deckUrl', 'notesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   return out;
 }
 
@@ -2339,17 +2706,20 @@ async function syncWorkspace(id, changes){
     // Kept even if Google or GitHub fails below, so trying again picks them up.
     if (meeting !== undefined) patch.meeting = meeting;
     if (repo !== undefined) patch.repo = repo;
+    // Slides and notes: left out if whoever registered it chose so; Set up makes them.
+    if (changes.docs !== undefined) patch.noDocs = changes.docs === false;
+    if (changes.skipped) patch.skipped = changes.skipped;
     await save();
 
     try {
       // Slides, then notes (which link the slides): saved as each is made, so a
       // failure part way never makes the same file twice.
-      const folder = (!ws.deckId || !ws.notesId) ? await projectFolderId() : null;
-      if (!ws.deckId){
+      const folder = !ws.noDocs && (!ws.deckId || !ws.notesId) ? await projectFolderId() : null;
+      if (!ws.noDocs && !ws.deckId){
         const f = await createDeck(ws.title, folder);
         patch.deckId = f.id; patch.deckUrl = f.webViewLink; await save();
       }
-      if (!ws.notesId){
+      if (!ws.noDocs && !ws.notesId){
         const f = await createNotes(ws.title, folder, { page: projectPageUrl(ws.cardId, ws.boardId), deck: ws.deckUrl });
         patch.notesId = f.id; patch.notesUrl = f.webViewLink; await save();
       }
@@ -2357,7 +2727,7 @@ async function syncWorkspace(id, changes){
       const addrs = await googleAddressesFor(ws.members);
       // Files: shared with every member, unshared from whoever left.
       const shared = ws.shared || [];
-      for (const e of addrs.filter(function(m){ return shared.indexOf(m) < 0; })){
+      for (const e of addrs.filter(function(m){ return ws.deckId && ws.notesId && shared.indexOf(m) < 0; })){
         await shareFile(ws.deckId, e); await shareFile(ws.notesId, e);
         patch.shared = (ws.shared || []).concat(e); await save();
       }
@@ -2368,8 +2738,9 @@ async function syncWorkspace(id, changes){
 
       // The meeting: Google emails the guests an invitation, or a change, or a cancellation.
       // A completed project's meeting is cancelled; the time is kept, so it comes back
-      // if the project is reopened.
-      const wantEvent = !!ws.meeting && ws.group !== 'completed';
+      // if the project is reopened. A paused one keeps its event, its series ended
+      // (meetingRecurrence); one paused before it was made waits to be resumed.
+      const wantEvent = !!ws.meeting && ws.group !== 'completed' && !(ws.pausedAt && !ws.eventId);
       const attendees = function(existing){
         // Keeps each guest's reply; adds new members; drops who left.
         const kept = (existing || []).filter(function(a){ return a.organizer || a.self || addrs.indexOf(String(a.email).toLowerCase()) >= 0; });
@@ -2386,14 +2757,15 @@ async function syncWorkspace(id, changes){
           conferenceData: { createRequest: { requestId: 'bold-' + id + '-' + Date.now(), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
         }, eventTimes(ws.meeting)));
         patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ev.hangoutLink || '';
-        patch.eventMeeting = ws.meeting;
+        patch.eventMeeting = ws.meeting; patch.eventStart = seriesStart(ev);
         await save();
       } else if (!wantEvent && ws.eventId){
         await googleFetch('DELETE', CAL + '/' + ws.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
         patch.eventId = FieldValue.delete(); patch.eventLink = FieldValue.delete();
-        patch.meetUrl = FieldValue.delete(); patch.eventMeeting = FieldValue.delete();
+        patch.meetUrl = FieldValue.delete(); patch.eventMeeting = FieldValue.delete(); patch.eventPausedAt = FieldValue.delete();
+        patch.eventStart = FieldValue.delete();
         await save();
-        ['eventId', 'eventLink', 'meetUrl', 'eventMeeting'].forEach(function(k){ delete ws[k]; });
+        ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ delete ws[k]; });
       } else if (ws.eventId){
         const ev = await googleFetch('GET', CAL + '/' + ws.eventId);
         const change = {};
@@ -2402,11 +2774,13 @@ async function syncWorkspace(id, changes){
         if (ev.summary !== ws.title) change.summary = ws.title;
         const desc = eventDescription(ws);
         if (ev.description !== desc) change.description = desc;
-        if (JSON.stringify(ws.eventMeeting) !== JSON.stringify(ws.meeting)) Object.assign(change, eventTimes(ws.meeting));
+        // A new time moves the series; a new end date or a pause only changes how long it runs.
+        if (!sameMeetingTimes(ws.eventMeeting, ws.meeting)) Object.assign(change, eventTimes(ws.meeting, ws.pausedAt));
+        else if ((ws.eventMeeting.until || '') !== (ws.meeting.until || '') || (ws.pausedAt || 0) !== (ws.eventPausedAt || 0)) change.recurrence = meetingRecurrence(ws.meeting, ws.pausedAt);
         if (Object.keys(change).length){
-          await googleFetch('PATCH', CAL + '/' + ws.eventId + '?sendUpdates=all', change);
-          patch.eventMeeting = ws.meeting; await save();
-        }
+          const done = await googleFetch('PATCH', CAL + '/' + ws.eventId + '?sendUpdates=all', change);
+          patch.eventMeeting = ws.meeting; patch.eventPausedAt = ws.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(done || ev); await save();
+        } else if (!ws.eventStart && seriesStart(ev)){ patch.eventStart = seriesStart(ev); await save(); }
       }
       patch.error = FieldValue.delete();
     } catch (err){
@@ -2496,7 +2870,8 @@ function onProjectCard(document){
       if (pid !== id) { await syncWorkspace(pid); return; }
       const m = after.setUpMeeting ? normalizeMeeting(after.setUpMeeting) : null;
       const r = after.setUpRepo ? normalizeRepo(after.setUpRepo) : null;
-      await syncWorkspace(pid, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined });
+      await syncWorkspace(pid, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined, docs: after.setUpDocs === false ? false : undefined,
+        skipped: Array.isArray(after.setUpSkipped) ? after.setUpSkipped.filter(function(k){ return ['channel', 'announce', 'meeting', 'docs', 'repo'].indexOf(k) >= 0; }) : undefined });
       return;
     }
     const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails, d.status, d.outcome]); };
@@ -2529,16 +2904,21 @@ exports.onProjectRegistered = onDocumentCreated(
   { document: 'projects/{cardId}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
     const card = event.data && event.data.data();
-    if (!card) return;
-    const token = SLACK_BOT_TOKEN.value();
-    const channel = await slackChannelId(token, ACTIVE_PROJECTS_CHANNEL);
-    if (!channel){ logger.warn('#' + ACTIVE_PROJECTS_CHANNEL + ' not found: the bot can’t see it'); return; }
-    const posted = await slackFetch(token, 'chat.postMessage', {
-      channel, text: projectAnnouncement(card, projectPageUrl(event.params.cardId)), unfurl_links: false,
-    });
-    if (!posted.ok) logger.warn('Announcing a new project failed', { error: posted.error });
+    // announce: false, whoever registered it chose not to (its workspace's `skipped`
+    // says so, and its page offers to announce it later: projectWorkspace 'announce').
+    if (!card || card.announce === false) return;
+    await announceProject(card, event.params.cardId).catch(function(err){ logger.warn('Announcing a new project failed', { error: String(err.message) }); });
   }
 );
+async function announceProject(card, cardId){
+  const token = SLACK_BOT_TOKEN.value();
+  const channel = await slackChannelId(token, ACTIVE_PROJECTS_CHANNEL);
+  if (!channel) throw new Error('The BOLD.OS app can’t see #' + ACTIVE_PROJECTS_CHANNEL + ': invite it to the channel.');
+  const posted = await slackFetch(token, 'chat.postMessage', {
+    channel, text: projectAnnouncement(card, projectPageUrl(cardId)), unfurl_links: false,
+  });
+  if (!posted.ok) throw new Error('Slack said ' + posted.error + '.');
+}
 
 exports.onProjectWritten = onProjectCard('projects/{cardId}');
 exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
@@ -2551,14 +2931,79 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'repo': makes its repository from a template ({ mode: 'template', template });
 //   editors only; once made, it stays.
 // - 'complete' / 'reopen': marks the project completed (its meeting is cancelled) or
-//   not; editors only. Completion by acceptance at a venue needs neither.
+//   not; editors only.
+// - 'pause' / 'resume': pauses its meeting (its upcoming dates come off Google Calendar;
+//   the same event, invitation and Meet link stay) or brings it back; editors only. Completion by acceptance at a venue needs neither.
 // - 'submit': submits the project to another venue ({ venue, card }: a card the page
 //   built); editors only; → { cardId, boardId }.
+// - 'announce': announces it in #all-active-projects, if that was skipped when it was
+//   registered (its workspace's `skipped`); editors only.
+// - 'slack': invites the caller to its Slack channel, if they skipped it when joining
+//   (`slackSkipped`).
+// Whatever was skipped when it was registered is in the workspace's `skipped`
+// ('channel', 'announce', 'meeting', 'docs', 'repo'); the page offers each again.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
 // - 'mine': no project; the caller's planned and ongoing projects, set up if they
 //   weren't yet → { projects: [{ id, title, cardId, boardId }] }.
 // - 'venues': no project; the approved venues → { venues: [{ id, label, deadline }] }.
 // → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
+// A presentation's file (slides, a poster, a PDF) uploaded into the lab's Drive, in the
+// projects' folder: a project's presentation (project: its workspace id; its members
+// and PIs/admins) or a talk on an event's programme (talk: its slug; whoever can edit
+// it, talkRole). { project | talk, name, type, size } → { url }: a
+// resumable upload session the browser sends the file to itself (so no size limit here),
+// made for the page's origin so Drive lets it in. { project, file } → { url }: once it's
+// there, anyone with the link can view it, and its link goes in the slides field.
+const PRESENTATION_MAX = 300 * 1024 * 1024;
+const UPLOAD_ORIGINS = [new URL(SITE_URL).origin, 'http://localhost:8137', 'http://127.0.0.1:8137'];
+exports.presentationFile = onCall(
+  { secrets: [GOOGLE_OAUTH] },
+  async (request) => {
+    const email = callerEmail(request), data = request.data || {};
+    // owner: what the file is for ('project:<id>' or 'talk:<slug>'), and its title.
+    let owner, title;
+    if (data.talk){
+      const talk = await findTalk(String(data.talk));
+      if (!talk) throw new HttpsError('not-found', 'No such talk.');
+      if (!(await talkRole(email, talk, talk.doc))) throw new HttpsError('permission-denied', 'Only the talk’s speakers, its session’s leads and PIs/admins can add its files.');
+      owner = 'talk:' + talk.slug; title = talk.doc.title || '';
+    } else {
+      const project = String(data.project || '');
+      if (!validSlug(project)) throw new HttpsError('invalid-argument', 'No project given.');
+      const ws = (await db.collection('projectWorkspaces').doc(project).get()).data();
+      if (!ws) throw new HttpsError('not-found', 'That project isn’t set up yet.');
+      if ((ws.members || []).map(lowerEmail).indexOf(email) < 0 && !(await isFullWrite(email)))
+        throw new HttpsError('permission-denied', 'Only the project’s members can add its files.');
+      owner = 'project:' + project; title = ws.title || '';
+    }
+    if (data.file){
+      const id = String(data.file);
+      if (!/^[A-Za-z0-9_-]{10,100}$/.test(id)) throw new HttpsError('invalid-argument', 'No file given.');
+      const f = await googleFetch('GET', DRIVE + '/' + id + '?fields=id,webViewLink,appProperties');
+      if (!f || !f.appProperties || f.appProperties.boldFor !== owner) throw new HttpsError('permission-denied', 'That file isn’t for this.');
+      await googleFetch('POST', DRIVE + '/' + id + '/permissions', { type: 'anyone', role: 'reader' });
+      logger.info('presentationFile: uploaded', { for: owner, file: id, by: email });
+      return { url: f.webViewLink };
+    }
+    const name = String(data.name || '').replace(/[\u0000-\u001f]/g, '').slice(0, 200), size = Number(data.size) || 0;
+    const type = /^[\w.+-]+\/[\w.+-]+$/.test(String(data.type || '')) ? String(data.type) : 'application/octet-stream';
+    if (!name) throw new HttpsError('invalid-argument', 'The file has no name.');
+    if (!size || size > PRESENTATION_MAX) throw new HttpsError('invalid-argument', 'Files up to 300 MB.');
+    const origin = String((request.rawRequest && request.rawRequest.headers.origin) || '');
+    const headers = { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json; charset=UTF-8',
+      'X-Upload-Content-Type': type, 'X-Upload-Content-Length': String(size) };
+    if (UPLOAD_ORIGINS.indexOf(origin) >= 0) headers.Origin = origin;
+    const meta = { name: (title ? title + ' — ' : '') + name, parents: [await projectFolderId()], appProperties: { boldFor: owner } };
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id', { method: 'POST', headers, body: JSON.stringify(meta) });
+    const url = res.headers.get('location');
+    if (!res.ok || !url){
+      logger.warn('presentationFile: Drive refused the upload', { status: res.status, body: (await res.text()).slice(0, 300) });
+      throw new HttpsError('unavailable', 'Google Drive didn’t take the file — try again.');
+    }
+    return { url };
+  }
+);
+
 exports.projectWorkspace = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540 },
   async (request) => {
@@ -2609,7 +3054,8 @@ exports.projectWorkspace = onCall(
 
     if (data.action === 'setUp' || data.action === 'meeting' || data.action === 'repo'){
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can do this.');
-      const changes = {};
+      // Set up makes whatever's missing, the slides and notes too.
+      const changes = data.action === 'setUp' ? { docs: true } : {};
       if (data.action === 'meeting'){
         changes.meeting = data.meeting === null ? null : normalizeMeeting(data.meeting);
         if (changes.meeting && changes.meeting.error) throw new HttpsError('invalid-argument', changes.meeting.error);
@@ -2621,6 +3067,14 @@ exports.projectWorkspace = onCall(
         if (ws.repoName) throw new HttpsError('failed-precondition', 'It already has ' + GITHUB_ORG + '/' + ws.repoName + '.');
       }
       return workspaceView(await syncWorkspace(pid, changes));
+    }
+
+    if (data.action === 'pause' || data.action === 'resume'){
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
+      await wsRef.set(data.action === 'pause'
+        ? { pausedAt: Date.now(), pausedBy: email }
+        : { pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() }, { merge: true });
+      return workspaceView(await syncWorkspace(pid));
     }
 
     if (data.action === 'complete' || data.action === 'reopen'){
@@ -2644,7 +3098,7 @@ exports.projectWorkspace = onCall(
       const c = data.card && typeof data.card === 'object' ? Object.assign({}, data.card) : null;
       if (!c || typeof c.title !== 'string' || !c.title.trim()) throw new HttpsError('invalid-argument', 'The new card has no title.');
       const cardId = /^card-[a-z0-9-]{1,60}$/.test(String(c.id || '')) ? c.id : 'card-' + Date.now() + '-' + crypto.randomBytes(3).toString('hex');
-      ['id', 'setUpMeeting', 'setUpRepo'].forEach(function(k){ delete c[k]; });
+      ['id', 'setUpMeeting', 'setUpRepo', 'setUpDocs', 'setUpSkipped', 'announce'].forEach(function(k){ delete c[k]; });
       const now = Date.now();
       await db.collection('boards').doc(venue).collection('cards').doc(cardId).set(Object.assign(c, {
         projectId: pid, status: 'register', outcome: '', createdAt: now, updatedAt: now,
@@ -2660,16 +3114,32 @@ exports.projectWorkspace = onCall(
       if (!joining && projectMembers(card, []).indexOf(email) >= 0) {
         throw new HttpsError('failed-precondition', 'Its submitter and authors stay on the project — remove yourself from the authors first.');
       }
+      const noSlack = joining && data.slack === false && !!card.slackChannel;
       await wsRef.set({ joined: joining
         ? FieldValue.arrayUnion(email)
-        : FieldValue.arrayRemove(email) }, { merge: true });
+        : FieldValue.arrayRemove(email), slackSkipped: noSlack ? FieldValue.arrayUnion(email) : FieldValue.arrayRemove(email) }, { merge: true });
       const out = workspaceView(await syncWorkspace(pid));
-      if (joining && card.slackChannel){
+      // data.slack === false: not invited to the channel (they chose so).
+      if (joining && card.slackChannel && data.slack !== false){
         const n = normalizeProjectChannel(card.slackChannel);
         try { out.slack = await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, n.name); }
         catch (err){ out.slack = { error: err.message || 'Couldn’t add you to the Slack channel.' }; }
       }
       return out;
+    }
+    if (data.action === 'slack'){
+      if (!card.slackChannel) throw new HttpsError('failed-precondition', 'It has no Slack channel yet.');
+      const out = await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, normalizeProjectChannel(card.slackChannel).name);
+      await wsRef.set({ slackSkipped: FieldValue.arrayRemove(email) }, { merge: true });
+      return out;
+    }
+
+    if (data.action === 'announce'){
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
+      try { await announceProject(card, id); }
+      catch (err){ throw new HttpsError('failed-precondition', err.message); }
+      await wsRef.set({ skipped: FieldValue.arrayRemove('announce') }, { merge: true });
+      return { ok: true };
     }
     throw new HttpsError('invalid-argument', 'Unknown action.');
   }
@@ -2877,8 +3347,300 @@ exports.linkGoogle = onCall(
       // Their projects: invitations and files move to the new address.
       const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
       for (const d of mine.docs) await syncWorkspace(d.id);
+      // And the study meetings they're in.
+      const studies = await db.collection('studies').where('everyone', 'array-contains', email).get();
+      for (const d of studies.docs) await syncStudyMeeting(d.id);
     }
     return { link: google ? { google } : null };
+  }
+);
+
+// ---------- Studies: a PhD or Master student's details and supervision meeting ----------
+// studies/{email}: the student's working title, the people involved in their studies
+// (supervisors first) and their recurring meeting with them, a Google Calendar event
+// with a Meet link owned by the lab's Google account, every one of them a guest (as a
+// project's meeting, syncWorkspace). Only `studies` writes it; the lab reads it.
+// The profile's Studies tab shows it to students (STUDY_ROLES, their members record).
+const STUDY_ROLES = ['PhD student', 'Master student'];
+
+// The student's Slack channel with the people involved: "supervision-<their name>",
+// private, made by the bot when they first save their studies (a name that doesn't
+// start with the prefix gets it, as a project's "proj-"). One that already exists is
+// used, not made again; everyone on Slack among them is invited, and whoever is added
+// later. Hand-kept in sync with pages/studies.js (SUPERVISION_PREFIX, its hint).
+const SUPERVISION_PREFIX = 'supervision-';
+
+// Pure: whatever was typed → { name, prefixed } (no '#', lowercase, starting with the
+// prefix) or { error }.
+function normalizeSupervisionChannel(input){
+  let name = String(input || '').trim().replace(/^#/, '').toLowerCase().replace(/\s+/g, '-');
+  if (!name) return { error: 'Enter a channel name.' };
+  if (!/^[a-z0-9_-]+$/.test(name)) return { error: 'Use letters, numbers, hyphens and underscores only.' };
+  const prefixed = name.indexOf(SUPERVISION_PREFIX) !== 0;
+  if (prefixed) name = SUPERVISION_PREFIX + name;
+  if (name === SUPERVISION_PREFIX) return { error: 'Add a name after ' + SUPERVISION_PREFIX + '.' };
+  if (name.length > 80) return { error: 'Slack channel names can be at most 80 characters.' };
+  return { name, prefixed };
+}
+
+// Pure: a person's name → their default channel, "supervision-ada-lovelace".
+function supervisionChannelFor(name){
+  const slug = String(name || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80 - SUPERVISION_PREFIX.length).replace(/-+$/, '');
+  return slug ? SUPERVISION_PREFIX + slug : '';
+}
+
+// Makes studies/{email}'s channel if it isn't there, and invites whoever of the student
+// and the people involved is on Slack and not invited yet (`channelInvited`). Records
+// `channelError` instead of throwing.
+async function syncStudyChannel(email){
+  const ref = db.collection('studies').doc(email);
+  const s = (await ref.get()).data();
+  if (!s || !s.channel) return;
+  const token = SLACK_BOT_TOKEN.value();
+  const patch = {};
+  try {
+    let id = s.channelId || await slackChannelId(token, s.channel);
+    if (!id){
+      const created = await slackFetch(token, 'conversations.create', { name: s.channel, is_private: true });
+      channelNamesCache = null;
+      if (!created.ok){
+        const auth = await slackAuthInfo(token);
+        if (created.error === 'name_taken') throw new HttpsError('failed-precondition', '#' + s.channel + ' already exists but the bot can’t see it' + (auth && auth.bot ? ': invite @' + auth.bot + ' to it, then Try again.' : '.'));
+        throw slackChannelError(created.error, created);
+      }
+      id = created.channel.id;
+    }
+    if (id !== s.channelId){ patch.channelId = id; patch.channelUrl = await slackChannelUrl(token, id); }
+    const invited = (s.channelInvited || []).slice();
+    for (const e of [email].concat((s.people || []).map(function(p){ return p.email; }))){
+      if (invited.indexOf(e) >= 0) continue;
+      const uid = await slackIdForEmail(e);
+      if (!uid) continue;
+      let res = await slackFetch(token, 'conversations.invite', { channel: id, users: uid });
+      if (!res.ok && res.error === 'not_in_channel'){
+        await slackFetch(token, 'conversations.join', { channel: id });
+        res = await slackFetch(token, 'conversations.invite', { channel: id, users: uid });
+      }
+      if (!res.ok && res.error !== 'already_in_channel') throw slackChannelError(res.error, res);
+      invited.push(e);
+    }
+    patch.channelInvited = invited;
+    patch.channelError = FieldValue.delete();
+  } catch (err){
+    logger.error('Setting up a supervision channel failed', { error: String(err && err.message || err) });
+    patch.channelError = err instanceof HttpsError ? err.message : 'Couldn’t set up the Slack channel.';
+  }
+  await ref.set(patch, { merge: true });
+}
+
+// Pure: what a page sends → { title, people: [{ name, email }], meeting } or { error }.
+// At least one person, and the meeting (normalizeMeeting's); `me` (lowercase) can't be one of the people.
+function normalizeStudies(d, me){
+  d = d && typeof d === 'object' ? d : {};
+  const title = String(d.title || '').trim();
+  if (title.length > 200) return { error: 'Keep the title under 200 characters.' };
+  const people = [];
+  for (const p of Array.isArray(d.people) ? d.people : []){
+    const email = String(p && p.email || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'Give a valid email for everyone.' };
+    if (email === me || people.some(function(x){ return x.email === email; })) continue;
+    people.push({ name: String(p.name || '').trim().slice(0, 120) || email, email });
+  }
+  if (!people.length) return { error: 'Add who supervises your studies.' };
+  if (people.length > 10) return { error: 'Up to 10 people.' };
+  const meeting = normalizeMeeting(d.meeting);
+  if (meeting.error) return { error: meeting.error };
+  return { title, people, meeting };
+}
+
+function studiesView(s){
+  const out = {};
+  ['degree', 'title', 'people', 'meeting', 'pausedAt', 'eventLink', 'meetUrl', 'error', 'channel', 'channelUrl', 'channelError', 'updatedAt'].forEach(function(k){ if (s[k] !== undefined) out[k] = s[k]; });
+  return out;
+}
+
+// Brings studies/{email}'s Calendar event in line with its meeting and people. Records
+// an error on it instead of throwing, so the profile can show it and offer to try again.
+async function syncStudyMeeting(email){
+  const ref = db.collection('studies').doc(email);
+  const s = (await ref.get()).data();
+  if (!s) return null;
+  const patch = {};
+  try {
+    const addrs = await googleAddressesFor([email].concat((s.people || []).map(function(p){ return p.email; })));
+    const summary = (s.name || email) + ' — ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting';
+    const description = (s.title ? s.title + '<br>' : '') + 'Set on <a href="' + SITE_URL + 'profile.html#studies">BOLD.OS</a> by ' + (s.name || email) + '.';
+    const attendees = function(existing){
+      const kept = (existing || []).filter(function(a){ return a.organizer || a.self || addrs.indexOf(String(a.email).toLowerCase()) >= 0; });
+      return kept.concat(addrs.filter(function(m){
+        return !kept.some(function(a){ return String(a.email).toLowerCase() === m; });
+      }).map(function(m){ return { email: m }; }));
+    };
+    // A paused meeting keeps its event, its series ended (meetingRecurrence); one paused
+    // before it was made waits to be resumed.
+    const want = !!s.meeting && !(s.pausedAt && !s.eventId);
+    if (want && !s.eventId){
+      const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
+        summary, description, attendees: attendees([]), guestsCanModify: false,
+        conferenceData: { createRequest: { requestId: 'bold-study-' + crypto.randomBytes(6).toString('hex'), conferenceSolutionKey: { type: 'hangoutsMeet' } } }
+      }, eventTimes(s.meeting)));
+      Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: ev.hangoutLink || '', eventMeeting: s.meeting, eventStart: seriesStart(ev) });
+    } else if (!want && s.eventId){
+      await googleFetch('DELETE', CAL + '/' + s.eventId + '?sendUpdates=all').catch(function(err){ if (err.status !== 410 && err.status !== 404) throw err; });
+      ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ patch[k] = FieldValue.delete(); });
+    } else if (s.eventId){
+      const ev = await googleFetch('GET', CAL + '/' + s.eventId);
+      const change = {};
+      const want = attendees(ev.attendees);
+      if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
+      if (ev.summary !== summary) change.summary = summary;
+      if (ev.description !== description) change.description = description;
+      if (!sameMeetingTimes(s.eventMeeting, s.meeting)) Object.assign(change, eventTimes(s.meeting, s.pausedAt));
+      else if ((s.eventMeeting.until || '') !== (s.meeting.until || '') || (s.pausedAt || 0) !== (s.eventPausedAt || 0)) change.recurrence = meetingRecurrence(s.meeting, s.pausedAt);
+      if (Object.keys(change).length){
+        const done = await googleFetch('PATCH', CAL + '/' + s.eventId + '?sendUpdates=all', change);
+        patch.eventMeeting = s.meeting; patch.eventPausedAt = s.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(done || ev);
+      } else if (!s.eventStart && seriesStart(ev)) patch.eventStart = seriesStart(ev);
+    }
+    patch.error = FieldValue.delete();
+  } catch (err){
+    logger.error('Setting up a study meeting failed', { error: String(err && err.message || err) });
+    patch.error = err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting in Google Calendar.';
+  }
+  await ref.set(patch, { merge: true });
+  return (await ref.get()).data();
+}
+
+// The profile's Studies tab, for the caller's own studies:
+// - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } }, both required;
+//   only PhD and Master students (their members record's role), or whoever already has studies.
+// - 'retry': tries the Slack channel and the Calendar event again.
+// - 'channel': { name } (or none: the default) → { name, prefixed, exists }, for the form's hint.
+// - 'pause' / 'resume': { student } (the caller's own when none): pauses the meeting
+//   (its upcoming dates come off Google Calendar; the same event, invitation and Meet
+//   link stay) or brings it back; the student or anyone involved in their studies.
+// → the studies (studiesView).
+exports.studies = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },
+  async (request) => {
+    const email = callerEmail(request);
+    const data = request.data || {};
+    if (data.action === 'pause' || data.action === 'resume'){
+      const student = String(data.student || email).trim().toLowerCase();
+      const sref = db.collection('studies').doc(student);
+      const s = (await sref.get()).data();
+      if (!s || !s.meeting) throw new HttpsError('not-found', 'There’s no meeting to ' + data.action + '.');
+      if ((s.everyone || [student]).indexOf(email) < 0) throw new HttpsError('permission-denied', 'Only the student and the people involved in their studies can do this.');
+      await sref.set(data.action === 'pause' ? { pausedAt: Date.now(), pausedBy: email } : { pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() }, { merge: true });
+      return studiesView(await syncStudyMeeting(student));
+    }
+    const ref = db.collection('studies').doc(email);
+    const [prev, member] = await Promise.all([ref.get(), db.collection('members').doc(email).get()]);
+    const role = member.exists ? member.data().role : '';
+    const myName = (member.exists && member.data().name) || request.auth.token.name || email;
+    if (data.action === 'channel'){
+      // The form's live check: the name it would use, and whether it's there already.
+      const n = data.name ? normalizeSupervisionChannel(data.name) : { name: supervisionChannelFor(myName), prefixed: false };
+      if (n.error) throw new HttpsError('invalid-argument', n.error);
+      if (!n.name) throw new HttpsError('invalid-argument', 'Enter a channel name.');
+      return { name: n.name, prefixed: n.prefixed, exists: !!(await slackChannelId(SLACK_BOT_TOKEN.value(), n.name)) };
+    }
+    if (data.action === 'retry'){
+      if (!prev.exists) throw new HttpsError('not-found', 'Save your studies first.');
+      await syncStudyChannel(email);
+      return studiesView(await syncStudyMeeting(email));
+    }
+    if (data.action !== 'save') throw new HttpsError('invalid-argument', 'Unknown action.');
+    if (STUDY_ROLES.indexOf(role) < 0 && !prev.exists) throw new HttpsError('permission-denied', 'Studies are for PhD and Master students: set your role in Your details first.');
+    const n = normalizeStudies(data, email);
+    if (n.error) throw new HttpsError('invalid-argument', n.error);
+    // The channel: named once, when it's first made; after that it stays.
+    let channel = prev.exists && prev.data().channelId ? prev.data().channel : '';
+    if (!channel){
+      const c = data.channel ? normalizeSupervisionChannel(data.channel) : { name: supervisionChannelFor(myName) };
+      if (c.error) throw new HttpsError('invalid-argument', c.error);
+      channel = c.name;
+    }
+    await ref.set({
+      email, name: myName,
+      degree: STUDY_ROLES.indexOf(role) >= 0 ? role : (prev.exists && prev.data().degree) || '',
+      title: n.title, people: n.people, meeting: n.meeting, channel,
+      everyone: [email].concat(n.people.map(function(p){ return p.email; })), updatedAt: Date.now()
+    }, { merge: true });
+    await syncStudyChannel(email);
+    return studiesView(await syncStudyMeeting(email));
+  }
+);
+
+// A lab member's request to be among the people involved in a student's studies, from
+// the Calendar, and the student's decision (on their Studies tab). studyRequests/{id}:
+// { student, studentName, email, name, note, status: open|approved|declined|withdrawn, at };
+// read by the two of them, written only here.
+// - 'request': { student, note } → { id }; one open request per student; DMs the student.
+// - 'withdraw': { id }: whoever asked, while it's open.
+// - 'decide': { id, accept }: the student; accepting adds them to the people involved
+//   (the meeting's guests, the Slack channel). DMs whoever asked.
+exports.studyRequest = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    const col = db.collection('studyRequests');
+    const token = SLACK_BOT_TOKEN.value();
+    if (d.action === 'request'){
+      const student = String(d.student || '').trim().toLowerCase();
+      if (!student || student === email) throw new HttpsError('invalid-argument', 'Choose someone else’s studies.');
+      const s = (await db.collection('studies').doc(student).get()).data();
+      if (!s) throw new HttpsError('not-found', 'Those studies aren’t there.');
+      if ((s.everyone || []).indexOf(email) >= 0) throw new HttpsError('already-exists', 'You’re already in their meeting.');
+      const open = await col.where('email', '==', email).where('student', '==', student).where('status', '==', 'open').limit(1).get();
+      if (!open.empty) throw new HttpsError('already-exists', 'You’ve already asked.');
+      const m = await db.collection('members').doc(email).get();
+      const name = (m.exists && m.data().name) || request.auth.token.name || email;
+      const note = String(d.note || '').trim().slice(0, 1000);
+      const ref = await col.add({ student, studentName: s.name || student, email, name, note, status: 'open', at: Date.now() });
+      await sendEvent(token, { emails: [student], headline: '🎓 ' + slackText(name) + ' asks to join your supervision meeting' +
+        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', SITE_URL + 'profile.html#studies') + '.' });
+      return { id: ref.id };
+    }
+    const id = String(d.id || '');
+    if (!validSlug(id)) throw new HttpsError('invalid-argument', 'No request given.');
+    const ref = col.doc(id);
+    if (d.action === 'withdraw'){
+      await db.runTransaction(async function(tx){
+        const r = (await tx.get(ref)).data();
+        if (!r || r.email !== email) throw new HttpsError('not-found', 'That request isn’t there.');
+        if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+        tx.update(ref, { status: 'withdrawn', decidedAt: Date.now() });
+      });
+      return { ok: true };
+    }
+    if (d.action !== 'decide') throw new HttpsError('invalid-argument', 'Unknown action.');
+    const accept = !!d.accept;
+    const sref = db.collection('studies').doc(email);
+    const r = await db.runTransaction(async function(tx){
+      const [rs, ss] = await Promise.all([tx.get(ref), tx.get(sref)]);
+      const r = rs.data();
+      if (!r || r.student !== email) throw new HttpsError('not-found', 'That request isn’t there.');
+      if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+      tx.update(ref, { status: accept ? 'approved' : 'declined', decidedAt: Date.now() });
+      if (accept){
+        const s = ss.data() || {};
+        const people = (s.people || []).slice();
+        if (!people.some(function(p){ return p.email === r.email; })){
+          if (people.length >= 10) throw new HttpsError('failed-precondition', 'Up to 10 people: remove someone first.');
+          people.push({ name: r.name || r.email, email: r.email });
+        }
+        tx.update(sref, { people, everyone: [email].concat(people.map(function(p){ return p.email; })), updatedAt: Date.now() });
+      }
+      return r;
+    });
+    if (accept){ await syncStudyChannel(email); await syncStudyMeeting(email); }
+    await sendEvent(token, { emails: [r.email], headline: accept
+      ? '🎓 ' + slackText(r.studentName) + ' added you to their supervision meeting: Google Calendar sends the invitation.'
+      : '🎓 ' + slackText(r.studentName) + ' declined your request to join their supervision meeting.' });
+    return { ok: true };
   }
 );
 
@@ -3273,7 +4035,7 @@ exports.skillPackage = onRequest(
 // Each version is also listed in brief in changelog/{version id} (changelog.html):
 // { at, by, note, kind, proposedBy, collection, docId, title }; clients only read it.
 
-const TRACKED = ['skills', 'guides', 'handbook', 'groupRotaSlots'];
+const TRACKED = ['skills', 'guides', 'handbook', 'agentTools', 'groupRotaSlots'];
 const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy', 'pendingActionId'];
 
 function stableJson(v){
@@ -3342,17 +4104,1226 @@ const groupRota = require('./group-rota')({
   slackFetch, botToken: SLACK_BOT_TOKEN, logger
 });
 Object.keys(groupRota).filter(k => k !== 'slackAction' && k !== 'slackCommand' && k !== '_internal').forEach(k => { exports[k] = groupRota[k]; });
+// ---------- Joining BOLD: requests, approval, the welcome email ----------
+// Anyone can ask to join on join.html (requestToJoin; no sign-in, since they
+// aren't in the Slack yet). The PIs and admins are told in Slack and decide on
+// join-requests.html (decideJoinRequest). Approving keeps what they told us as
+// their member record (members/{email}, which they can edit on their profile)
+// and sends them the welcome email from the lab's Google account (Gmail,
+// GOOGLE_OAUTH with gmail.send): join the Slack with the workspace's invite
+// link, complete the profile, link accounts, read the BOLDiquette, add projects.
+// The invite link and the email's text are settings/joinInvite, edited on
+// join-requests.html; the form's choices are settings/joinForm. An email that
+// can't be sent yet (no Google account or invite link) waits and is retried
+// hourly (retryWelcomeEmails), or from the page.
+
+const JOIN_ROLES = ['PhD student', 'Master student', 'Postdoc', 'Visitor', 'Collaborator', 'Adjunct', 'PI', 'Alumni', 'Staff', 'Other'];
+const JOIN_NO_END = ['PI', 'Adjunct', 'Alumni', 'Collaborator'];
+// BOLD's research pillars, as the Google Form had them; settings/joinForm replaces them.
+const JOIN_PILLARS = [
+  'Core Algorithmic Innovation Questioning the Foundations of the Field',
+  'Human-Centric Learning and Discovery (incl. Human-AI Coordination, MARL, Co-Scientist)',
+  'Robust Adaptation and Learning incl. in Embodied Envs (RL, Open-Ended Learning, Robotics)',
+];
+const JOIN_TEXT = { name: 120, email: 200, links: 500, institution: 120, role: 60, contact: 200, interests: 300, basedIn: 120, pronouns: 40, note: 1000 };
+// How someone likes to receive feedback (join-common.js FEEDBACK, firestore.rules); optional.
+const JOIN_FEEDBACK = ['direct', 'balanced', 'gentle'];
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const WELCOME_SUBJECT = 'Welcome to BOLD';
+const WELCOME_BODY = [
+  'Hi {name},',
+  '',
+  'Welcome to BOLD! Your request to join has been approved. Here are your next steps:',
+  '',
+  '1. Join the BOLD Slack: {slackInvite}',
+  '   You sign in to BOLD.OS with your Slack account, using this email address.',
+  '2. Complete your profile: {site}profile.html',
+  '3. Link your accounts (GitHub and Google): {site}profile.html#linked-accounts',
+  '4. Read the BOLDiquette: {site}boldiquette.html',
+  '5. Add your projects, if you have any: {site}projects-register.html',
+  '',
+  'See you on Slack,',
+  'The BOLD team',
+].join('\n');
+
+// Pure: what join.html sent → { request } or { error }. `roles` and `pillars`
+// are the choices on offer (settings/joinForm).
+function normalizeJoinRequest(d, roles, pillars){
+  d = d && typeof d === 'object' ? d : {};
+  const out = {};
+  for (const k of Object.keys(JOIN_TEXT)) {
+    const v = String(d[k] == null ? '' : d[k]).trim();
+    if (v.length > JOIN_TEXT[k]) return { error: 'That’s too long: ' + k + '.' };
+    out[k] = v;
+  }
+  out.email = out.email.toLowerCase();
+  if (!out.name) return { error: 'Give your full name.' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(out.email)) return { error: 'Give a valid email address.' };
+  if (!out.institution) return { error: 'Give your home institution.' };
+  if ((roles || JOIN_ROLES).indexOf(out.role) === -1) return { error: 'Choose your role at BOLD.' };
+  if (!out.contact) return { error: 'Say who your BOLD point of contact is.' };
+  if (!out.interests) return { error: 'Give your main research interests.' };
+  const chosen = Array.isArray(d.pillars) ? d.pillars.map(String) : [];
+  out.pillars = (pillars || []).filter((p) => chosen.indexOf(p) !== -1);
+  out.listOnWebsite = d.listOnWebsite === true;
+  out.feedback = JOIN_FEEDBACK.indexOf(d.feedback) !== -1 ? d.feedback : '';
+  out.startDate = String(d.startDate || '');
+  out.endDate = String(d.endDate || '');
+  if (out.startDate && !ISO_DAY.test(out.startDate)) return { error: 'Give a valid start date.' };
+  if (out.endDate && !ISO_DAY.test(out.endDate)) return { error: 'Give a valid end date.' };
+  if (!out.endDate && JOIN_NO_END.indexOf(out.role) === -1) return { error: 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).' };
+  if (out.startDate && out.endDate && out.endDate < out.startDate) return { error: 'The end date is before the start date.' };
+  return { request: out };
+}
+
+// Pure: the welcome email for request r → { subject, body } or { error } (what's missing).
+function welcomeEmail(r, settings, todayIso){
+  const s = settings || {};
+  const invite = String(s.slackInviteUrl || '').trim();
+  if (!invite) return { error: 'No Slack invite link yet: add it on the join requests page.' };
+  if (s.slackInviteExpires && s.slackInviteExpires < (todayIso || todayIsoLondon())) return { error: 'The Slack invite link expired on ' + s.slackInviteExpires + ': add a new one on the join requests page.' };
+  const fill = (t) => String(t).replace(/\{name\}/g, (r.name || '').split(' ')[0] || r.name || '')
+    .replace(/\{fullName\}/g, r.name || '').replace(/\{slackInvite\}/g, invite).replace(/\{site\}/g, SITE_URL);
+  return { subject: fill(s.subject || WELCOME_SUBJECT), body: fill(s.body || WELCOME_BODY) };
+}
+
+// Pure: a plain-text UTF-8 email as Gmail's API takes it (base64url of the MIME message).
+function mimeMessage(to, subject, body){
+  const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
+  const msg = [
+    // Gmail sends it from the lab's account; no From needed.
+    'To: ' + to,
+    'Subject: =?UTF-8?B?' + b64(subject) + '?=',
+    'MIME-Version: 1.0',
+    'Content-Type: text/plain; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    b64(body).replace(/.{76}/g, '$&\r\n'),
+  ].join('\r\n');
+  return Buffer.from(msg, 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function joinSettings(){
+  const [form, invite] = await Promise.all([db.collection('settings').doc('joinForm').get(), db.collection('settings').doc('joinInvite').get()]);
+  const f = form.exists ? form.data() : {};
+  return {
+    roles: Array.isArray(f.roles) && f.roles.length ? f.roles : JOIN_ROLES,
+    pillars: Array.isArray(f.pillars) && f.pillars.length ? f.pillars : JOIN_PILLARS,
+    invite: invite.exists ? invite.data() : {},
+  };
+}
+
+// Sends request id's welcome email, if it's due; records how it went on the request. → { status, error? }
+async function sendWelcome(id){
+  const ref = db.collection('joinRequests').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) return { status: 'missing' };
+  const r = snap.data();
+  if (r.status !== 'approved' || (r.welcome && r.welcome.status === 'sent')) return { status: (r.welcome && r.welcome.status) || r.status };
+  const tries = ((r.welcome && r.welcome.tries) || 0) + 1;
+  const mail = welcomeEmail(r, (await joinSettings()).invite);
+  let error = mail.error || '';
+  if (!error) {
+    try {
+      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ raw: mimeMessage(r.email, mail.subject, mail.body) }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        logger.error('sendWelcome: Gmail refused', { id, status: res.status, error: j.error && j.error.message });
+        error = res.status === 403 ? 'The lab’s Google account can’t send email yet (gmail.send): reconnect it.' : 'Gmail refused it (' + res.status + ').';
+      }
+    } catch (e) {
+      error = e instanceof HttpsError ? e.message : 'Couldn’t reach Gmail.';
+      if (!(e instanceof HttpsError)) logger.error('sendWelcome threw', { id, error: String(e) });
+    }
+  }
+  const welcome = error ? { status: 'waiting', error, tries, at: Date.now() } : { status: 'sent', tries, at: Date.now() };
+  await ref.update({ welcome });
+  return welcome;
+}
+
+exports.requestToJoin = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const d = request.data || {};
+    // A field people don't see: filled in, it's a bot. Say nothing different.
+    if (d.website) return { ok: true };
+    const set = await joinSettings();
+    const n = normalizeJoinRequest(d, set.roles, set.pillars);
+    if (n.error) throw new HttpsError('invalid-argument', n.error);
+    const r = n.request;
+    // Who invited them (optional): someone on the Slack roster, asked to confirm (onJoinRequested).
+    if (d.invitedBy){
+      const id = String(d.invitedBy);
+      const p = /^[A-Z0-9]{2,20}$/.test(id) ? await db.collection('people').doc(id).get() : null;
+      if (!p || !p.exists) throw new HttpsError('invalid-argument', 'Choose who invited you from the list, or leave it empty.');
+      r.invitedBy = { id, name: p.data().name || '', email: String(p.data().email || '').toLowerCase(), status: 'pending' };
+    }
+    const open = await db.collection('joinRequests').where('email', '==', r.email).where('status', '==', 'open').limit(1).get();
+    if (!open.empty) throw new HttpsError('already-exists', 'There’s already a request for this email address, waiting for a PI. You’ll hear by email.');
+    const recent = await db.collection('joinRequests').where('at', '>', Date.now() - 3600000).count().get();
+    if (recent.data().count >= 30) throw new HttpsError('resource-exhausted', 'Too many requests right now: try again in an hour.');
+    await db.collection('joinRequests').add(Object.assign(r, { status: 'open', at: Date.now() }));
+    return { ok: true };
+  }
+);
+
+const joinPageUrl = () => SITE_URL + 'join-requests.html';
+
+// Pure: a name folded for matching ("Zoë Lee" → "zoe lee").
+function foldName(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
+
+// The join form's "Who invited you": up to 6 people on the Slack roster whose name has a
+// word starting with what was typed (2 letters at least). No sign-in (applicants aren't
+// on Slack yet), so it gives names and Slack ids only. data: { q } → { people: [{ id, name }] }.
+exports.joinInviters = onCall(async (request) => {
+  const q = foldName((request.data || {}).q).slice(0, 60);
+  if (q.length < 2) return { people: [] };
+  const snap = await db.collection('people').get();
+  const people = snap.docs.map(function(d){ return { id: d.id, name: String(d.data().name || '') }; })
+    .filter(function(p){ const n = foldName(p.name); return p.name && (n.indexOf(q) === 0 || n.indexOf(' ' + q) >= 0); })
+    .sort(function(a, b){ return a.name.localeCompare(b.name); }).slice(0, 6);
+  return { people };
+});
+
+// A member says who invited them to the BOLD Slack, on their profile (members/{email}
+// .invitedBy, which they can't write themselves): someone on the roster, or nobody
+// (email ''). Whoever they name gets a DM to confirm it on the Requests page (Invited by
+// you; confirmJoinInvite with { member }). data: { email } → { invitedBy }.
+exports.setMyInviter = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const to = String((request.data || {}).email || '').trim().toLowerCase();
+    const ref = db.collection('members').doc(email);
+    const m = await ref.get();
+    if (!m.exists) throw new HttpsError('failed-precondition', 'Save your details first.');
+    const cur = m.data().invitedBy || null;
+    if (!to) { if (cur) await ref.update({ invitedBy: FieldValue.delete() }); return { invitedBy: null }; }
+    if (to === email) throw new HttpsError('invalid-argument', 'Choose who invited you.');
+    if (cur && cur.email === to) return { invitedBy: cur };
+    const p = await db.collection('people').where('email', '==', to).limit(1).get();
+    if (p.empty) throw new HttpsError('not-found', 'Choose someone on BOLD.OS.');
+    const who = p.docs[0];
+    const invitedBy = { id: who.id, name: String(who.data().name || to), email: to, status: 'pending', askedAt: Date.now(), via: 'profile' };
+    await ref.update({ invitedBy });
+    const name = m.data().name || email;
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: [to], headline: '👋 ' + slackText(name) + ' says you invited them to the BOLD Slack. ' +
+      linkedTitle('Confirm it, or say you didn’t', joinPageUrl() + '#invited') + '.' });
+    return { invitedBy };
+  }
+);
+
+// Whoever an applicant (or a member, on their profile) named as inviting them confirms it
+// or says they didn't, on the Requests page. data: { id, confirm: bool } for a request to
+// join, { member: email, confirm } for a member → { ok }. Saying they didn't DMs the PIs
+// and admins. A request's answer is copied to the member's record if they're approved already.
+exports.confirmJoinInvite = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    if (d.member){
+      const mref = db.collection('members').doc(String(d.member).toLowerCase());
+      const mstatus = d.confirm ? 'confirmed' : 'denied';
+      const m = await db.runTransaction(async (tx) => {
+        const x = (await tx.get(mref)).data();
+        if (!x || !x.invitedBy || x.invitedBy.email !== email) throw new HttpsError('not-found', 'No such member.');
+        tx.update(mref, { 'invitedBy.status': mstatus, 'invitedBy.at': Date.now() });
+        return x;
+      });
+      if (!d.confirm && m.invitedBy.status !== 'denied'){
+        const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+        await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline: '⚠️ ' + slackText(m.invitedBy.name) + ' says they didn’t invite ' + slackText(m.name || mref.id) + ' to the BOLD Slack (they said so on their profile).' });
+      }
+      return { ok: true };
+    }
+    if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('joinRequests').doc(d.id);
+    const status = d.confirm ? 'confirmed' : 'denied';
+    const r = await db.runTransaction(async (tx) => {
+      const q = (await tx.get(ref)).data();
+      if (!q || !q.invitedBy || q.invitedBy.email !== email) throw new HttpsError('not-found', 'No such request.');
+      tx.update(ref, { 'invitedBy.status': status, 'invitedBy.at': Date.now() });
+      return q;
+    });
+    if (r.status === 'approved'){
+      const m = db.collection('members').doc(r.email);
+      if ((await m.get()).exists) await m.set({ invitedBy: Object.assign({}, r.invitedBy, { status, at: Date.now() }) }, { merge: true });
+    }
+    if (!d.confirm && r.invitedBy.status !== 'denied'){
+      const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+      await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline: '⚠️ ' + slackText(r.invitedBy.name) + ' says they didn’t invite ' + slackText(r.name) + ' (' + slackText(r.email) + '). ' +
+        linkedTitle('See the request', joinPageUrl() + '#r=' + d.id) + '.' });
+    }
+    return { ok: true };
+  }
+);
+
+exports.onJoinRequested = onDocumentCreated(
+  { document: 'joinRequests/{id}', secrets: [SLACK_BOT_TOKEN] },
+  async function(event){
+    const r = event.data && event.data.data();
+    if (!r || r.status !== 'open') return;
+    const headline = '👋 ' + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ') asked to join BOLD' +
+      (r.contact ? ', with ' + slackText(r.contact) + ' as their point of contact' : '') +
+      (r.invitedBy ? ', invited by ' + slackText(r.invitedBy.name) + ' (asked to confirm)' : '') + '. ' +
+      linkedTitle('Approve or decline', joinPageUrl() + '#r=' + event.params.id) + '.';
+    const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline });
+    if (r.invitedBy) await dmBySlackId(SLACK_BOT_TOKEN.value(), r.invitedBy.id, '👋 ' + slackText(r.name) + ' (' + slackText(r.email) + ') asked to join BOLD and says you invited them to the Slack. ' +
+      linkedTitle('Confirm, or say you didn’t', joinPageUrl() + '#i=' + event.params.id) + '.');
+  }
+);
+
+// data: { id, accept: bool } → { status, welcome? }. PIs and admins only.
+exports.decideJoinRequest = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    const d = request.data || {};
+    if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('joinRequests').doc(d.id);
+    const name = request.auth.token.name || '';
+    const r = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError('not-found', 'No such request.');
+      const q = snap.data();
+      if (q.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been ' + q.status + '.');
+      const status = d.accept ? 'approved' : 'declined';
+      tx.update(ref, { status, decidedBy: email, decidedByName: name, decidedAt: Date.now() });
+      if (d.accept) {
+        // Their record in BOLD.OS: what they told us. They keep it up to date on their profile.
+        const m = db.collection('members').doc(q.email);
+        const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'invitedBy'];
+        const rec = {};
+        keep.forEach((k) => { if (q[k] !== undefined) rec[k] = q[k]; });
+        tx.set(m, Object.assign(rec, { requestId: d.id, approvedBy: email, approvedAt: Date.now() }), { merge: true });
+      }
+      return Object.assign({}, q, { status });
+    });
+    const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase()).filter((e) => e !== email);
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff,
+      headline: (r.status === 'approved' ? '✅ ' : '✖️ ') + slackText(name || email) + ' ' + r.status + ' ' + slackText(r.name) + '’s request to join BOLD.' });
+    if (r.status !== 'approved') return { status: r.status };
+    return { status: r.status, welcome: await sendWelcome(d.id) };
+  }
+);
+
+// data: { id } → the welcome email's new state. Sends it again if it hasn't gone.
+exports.sendWelcomeEmail = onCall(
+  { secrets: [GOOGLE_OAUTH] },
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    const id = String((request.data || {}).id || '');
+    if (!/^[A-Za-z0-9]{1,40}$/.test(id)) throw new HttpsError('invalid-argument', 'No such request.');
+    return sendWelcome(id);
+  }
+);
+
+exports.retryWelcomeEmails = onSchedule(
+  { schedule: '15 * * * *', timeZone: 'Europe/London', secrets: [GOOGLE_OAUTH] },
+  async function(){
+    const snap = await db.collection('joinRequests').where('welcome.status', '==', 'waiting').get();
+    for (const doc of snap.docs) {
+      const w = doc.data().welcome || {};
+      // Hourly for two days, then daily.
+      if (w.tries > 48 && Date.now() - (w.at || 0) < 86400000) continue;
+      await sendWelcome(doc.id);
+    }
+  }
+);
+
+// ---------- Groups: the BOLDiquette's Who is BOLD ----------
+// Every member is in one group: the one a PI or admin set (members' `category`, on the
+// People page, or by approving a request), else by role: PIs are BOLD-exec, PhD
+// students BOLD-internal, Staff BOLD-staff, everyone else PAN-BOLD (groupOf; BoldJoin.groupOf on the
+// pages, kept in sync by hand). A member asks for another group on their profile
+// (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
+// requests. Each group but PAN-BOLD may have Slack channels (settings/groups.channels, set there:
+// one or more names, separated by commas, as "bold-internal, all-active-projects").
+// The groups are ranked (GROUPS, highest first) and each is in the channels of those below
+// it too: BOLD-exec in BOLD-staff's, BOLD-internal's and BOLD-associate's; BOLD-internal
+// in BOLD-associate's, not BOLD-staff's. Whoever comes into a group is invited to its
+// channels (onMemberGroup), and setting a channel invites everyone meant to be in it
+// (onGroupChannels; settings/groupsInvited, server only, is what has been invited, so a
+// change to the ranking reaches the channels already set). Nobody is removed from a channel.
+const GROUPS = ['exec', 'staff', 'internal', 'associate', 'pan'];
+const GROUP_LABELS = { exec: 'BOLD-exec', internal: 'BOLD-internal', associate: 'BOLD-associate', staff: 'BOLD-staff', pan: 'PAN-BOLD' };
+const CHANNEL_GROUPS = GROUPS.filter(function(g){ return g !== 'pan'; });
+// Bump when the ranking changes: every channel is then filled again.
+const GROUP_RANKING_VERSION = 2;
+
+// Pure: group → the groups whose channels its members are in (its own and those below).
+function channelGroupsFor(g){
+  const i = GROUPS.indexOf(g);
+  return i < 0 ? [] : CHANNEL_GROUPS.filter(function(h){ return GROUPS.indexOf(h) >= i; });
+}
+
+// Pure: a member record → its group.
+function groupOf(m){
+  m = m || {};
+  if (GROUPS.indexOf(m.category) >= 0) return m.category;
+  return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : m.role === 'Staff' ? 'staff' : 'pan';
+}
+
+function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, '').toLowerCase(); }
+// A group's channels, as saved ("#a, b c") → ['a', 'b', 'c'].
+function groupChannelNames(raw){ return String(raw || '').split(/[\s,]+/).map(groupChannelName).filter(Boolean); }
+
+// Invites each of `emails` to group channel `name`; → the first error, or ''.
+async function inviteToGroupChannel(token, emails, name){
+  let error = '';
+  for (const e of emails){
+    if (!(await slackIdForEmail(e))) continue;   // not on Slack (yet)
+    try { await inviteToProjectChannel(token, e, name); }
+    catch (err){
+      logger.warn('Adding someone to a group channel failed', { channel: name, error: String(err.message) });
+      error = error || err.message;
+      if (/can.t see|can.t manage/.test(err.message)) break;   // same for everyone after
+    }
+  }
+  return error;
+}
+
+exports.onMemberGroup = onDocumentWritten(
+  { document: 'members/{email}', secrets: [SLACK_BOT_TOKEN] },
+  async function(event){
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;
+    const g = groupOf(after);
+    const wanted = channelGroupsFor(g);
+    if (!wanted.length || (before && groupOf(before) === g)) return;
+    const set = (await db.collection('settings').doc('groups').get()).data() || {};
+    for (const h of wanted){
+      for (const name of groupChannelNames((set.channels || {})[h])) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
+    }
+  }
+);
+
+exports.onGroupChannels = onDocumentWritten(
+  { document: 'settings/groups', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 540 },
+  async function(event){
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after) return;
+    const doneRef = db.collection('settings').doc('groupsInvited');
+    const done = (await doneRef.get()).data() || {};
+    const before = done.version === GROUP_RANKING_VERSION ? (done.channels || {}) : {};
+    const channels = after.channels || {};
+    // Each group's channels not yet filled: new ones, or all of them after the ranking changed.
+    const fresh = function(g){ const had = groupChannelNames(before[g]); return groupChannelNames(channels[g]).filter(function(n){ return had.indexOf(n) < 0; }); };
+    const changed = CHANNEL_GROUPS.filter(function(g){ return fresh(g).length; });
+    if (!changed.length) return;
+    const members = (await db.collection('members').get()).docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); });
+    const errors = Object.assign({}, after.channelErrors || {});
+    for (const g of changed){
+      const inIt = members.filter(function(m){ return channelGroupsFor(groupOf(m)).indexOf(g) >= 0; }).map(function(m){ return m.email; });
+      let err = '';
+      for (const name of fresh(g)) err = (await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), inIt, name)) || err;
+      if (err) errors[g] = err; else delete errors[g];
+    }
+    const invited = {};
+    // A channel that failed isn't done: saving the settings again retries it.
+    CHANNEL_GROUPS.forEach(function(g){ if (groupChannelNames(channels[g]).length && !errors[g]) invited[g] = groupChannelNames(channels[g]).join(', '); });
+    await doneRef.set({ channels: invited, version: GROUP_RANKING_VERSION, at: Date.now() });
+    await event.data.after.ref.set({ channelErrors: errors }, { merge: true });
+  }
+);
+
+// A member's request to be in another group, and the PIs' and admins' decision:
+// - 'request': { to, note } → { id }; one open request at a time; DMs the PIs and admins.
+// - 'withdraw': { id }: their own open request.
+// - 'decide': { id, accept }: PIs and admins; accepting sets their group. DMs them.
+exports.groupRequest = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    const col = db.collection('groupRequests');
+    const token = SLACK_BOT_TOKEN.value();
+    if (d.action === 'request'){
+      const m = await db.collection('members').doc(email).get();
+      if (!m.exists) throw new HttpsError('failed-precondition', 'Add your details first.');
+      const to = String(d.to || '');
+      if (GROUPS.indexOf(to) < 0) throw new HttpsError('invalid-argument', 'Choose a group.');
+      const from = groupOf(m.data());
+      if (to === from) throw new HttpsError('invalid-argument', 'You’re already in ' + GROUP_LABELS[to] + '.');
+      const open = await col.where('email', '==', email).where('status', '==', 'open').limit(1).get();
+      if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
+      const name = m.data().name || request.auth.token.name || email;
+      const note = String(d.note || '').trim().slice(0, 1000);
+      const ref = await col.add({ email, name, from, to, note, status: 'open', at: Date.now() });
+      const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+      await sendEvent(token, { emails: staff, headline: '🏷️ ' + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to] +
+        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id) + '.' });
+      return { id: ref.id };
+    }
+    const id = String(d.id || '');
+    if (!validSlug(id)) throw new HttpsError('invalid-argument', 'No request given.');
+    const ref = col.doc(id);
+    if (d.action === 'withdraw'){
+      await db.runTransaction(async function(tx){
+        const r = (await tx.get(ref)).data();
+        if (!r || r.email !== email) throw new HttpsError('not-found', 'That request isn’t there.');
+        if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+        tx.update(ref, { status: 'withdrawn', decidedAt: Date.now() });
+      });
+      return { ok: true };
+    }
+    if (d.action !== 'decide') throw new HttpsError('invalid-argument', 'Unknown action.');
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins decide.');
+    const accept = !!d.accept;
+    const r = await db.runTransaction(async function(tx){
+      const r = (await tx.get(ref)).data();
+      if (!r) throw new HttpsError('not-found', 'That request isn’t there.');
+      if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+      tx.update(ref, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: request.auth.token.name || email, decidedAt: Date.now() });
+      if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now() });
+      return r;
+    });
+    await sendEvent(token, { emails: [r.email], headline: accept
+      ? '🏷️ You’re now ' + GROUP_LABELS[r.to] + ' (' + linkedTitle('Who is BOLD', SITE_URL + 'boldiquette.html#who-is-bold') + ').'
+      : '🏷️ Your request to move to ' + GROUP_LABELS[r.to] + ' was declined. Ask a PI if you’d like to know more.' });
+    return { ok: true };
+  }
+);
+
+// Slack invite links expire (30 days at most). settings/joinInvite.slackInviteExpires
+// (YYYY-MM-DD, set with the link on join-requests.html): three days before, and once it
+// has passed, the PIs and admins get a DM to add a new one; welcome emails wait meanwhile
+// (welcomeEmail). `reminded` (server only) keeps each DM to once per link and stage.
+// Pure: → 'soon' | 'expired' | '' for an expiry date, today.
+function inviteReminderStage(expires, todayIso){
+  if (!expires) return '';
+  if (expires < todayIso) return 'expired';
+  const days = (Date.parse(expires + 'T00:00:00Z') - Date.parse(todayIso + 'T00:00:00Z')) / 86400000;
+  return days <= 3 ? 'soon' : '';
+}
+
+exports.remindJoinInvite = onSchedule(
+  { schedule: '0 9 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  async function(){
+    const ref = db.collection('settings').doc('joinInvite');
+    const snap = await ref.get();
+    const inv = snap.exists ? snap.data() : {};
+    const stage = inviteReminderStage(inv.slackInviteExpires || '', todayIsoLondon());
+    if (!stage || !inv.slackInviteUrl) return;
+    const key = stage + ':' + inv.slackInviteExpires + ':' + inv.slackInviteUrl;
+    if (inv.reminded === key) return;
+    const headline = (stage === 'expired'
+      ? '⚠️ The Slack invite link in the welcome email expired on ' + inv.slackInviteExpires + ': welcome emails wait until there’s a new one. '
+      : '⏳ The Slack invite link in the welcome email expires on ' + inv.slackInviteExpires + '. ') +
+      'In Slack: Invite people → Copy invite link (the longest expiry), then ' + linkedTitle('add it under Settings', joinPageUrl() + '#settings') + ' with its new expiry date.';
+    const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline });
+    await ref.set({ reminded: key }, { merge: true });
+  }
+);
 
 // Exported for the standalone unit test only (see scratchpad) — not part
 // of the public Cloud Functions surface, harmless to export alongside it.
+// ---------- Service desk: recommendation letters ----------
+//
+// Anyone in the lab asks anyone in the lab for a recommendation letter
+// (letters.html). letterRequests/{id}: { requesterEmail, requesterName,
+// writerEmail, writerName, purpose, cv, statement, howWorked, best, extra,
+// recipients: [{ id, name, url,
+// deadline, sentBy: 'writer' | 'requester', submittedAt, letterUrl, reminded }],
+// acknowledgedAt, open, at, updatedAt }. Only the two of them read it; every
+// write goes through letterRequest, which DMs the other one on Slack. The letter
+// itself stays out of BOLD.OS: the writer marks each recipient submitted, and
+// shares the letter (letterUrl) only where the requester has to send it on.
+// remindLetterWriters nudges the writer before each deadline. Writers are
+// BOLD.OS users: accounts that have signed in with Slack (letterWriters).
+
+// The materials are a set list: a link to their CV, optionally a link to a cover
+// letter or research statement, and "About your work with me": how they worked
+// with the writer and what they did themselves and, optionally, a moment or two
+// at their best and anything else relevant.
+const LETTER_TEXT = { purpose: 300, cv: 1000, statement: 1000, howWorked: 6000, best: 3000, extra: 3000 };
+const LETTER_REMIND_DAYS = [7, 2];
+const letterUrl = (id) => SITE_URL + 'letters.html#l=' + id;
+
+// Pure: what letters.html sent → { request } (the fields the requester sets) or { error }.
+// `was`: the recipients so far, whose ids, submissions and reminders are kept.
+function normalizeLetterRequest(d, was){
+  d = d && typeof d === 'object' ? d : {};
+  const out = {};
+  for (const k of Object.keys(LETTER_TEXT)) {
+    const v = String(d[k] == null ? '' : d[k]).trim();
+    if (v.length > LETTER_TEXT[k]) return { error: 'That’s too long: ' + k + '.' };
+    out[k] = v;
+  }
+  if (!out.purpose) return { error: 'Say what the letter is for.' };
+  if (!/^https?:\/\/\S+$/.test(out.cv)) return { error: 'Give a link to your CV, starting with https://.' };
+  if (!out.howWorked) return { error: 'Say how you’ve worked together and what you did yourself.' };
+  if (out.statement && !/^https?:\/\/\S+$/.test(out.statement)) return { error: 'The cover letter or statement link starts with https://.' };
+  const list = Array.isArray(d.recipients) ? d.recipients : [];
+  if (!list.length) return { error: 'Add where the letter goes.' };
+  if (list.length > 20) return { error: 'Twenty recipients at most.' };
+  const old = {};
+  (was || []).forEach((r) => { old[r.id] = r; });
+  const seen = {};
+  const recipients = [];
+  for (const raw of list) {
+    const r = raw && typeof raw === 'object' ? raw : {};
+    const name = String(r.name || '').trim(), url = String(r.url || '').trim(), deadline = String(r.deadline || '');
+    if (!name) return { error: 'Give each recipient a name.' };
+    if (name.length > 200 || url.length > 500) return { error: 'That’s too long: ' + name.slice(0, 40) + '.' };
+    if (url && !/^https?:\/\/\S+$/.test(url)) return { error: 'A link starts with https://: ' + name + '.' };
+    // The deadline is optional; one without gets no reminders.
+    if (deadline && !ISO_DAY.test(deadline)) return { error: 'Give a valid deadline for ' + name + '.' };
+    const sentBy = r.sentBy === 'requester' ? 'requester' : 'writer';
+    const prev = r.id && old[r.id];
+    if (prev && prev.submittedAt && (prev.sentBy !== sentBy)) return { error: 'The letter for ' + prev.name + ' is already in: who sends it can’t change.' };
+    const id = prev ? prev.id : crypto.randomBytes(6).toString('hex');
+    if (seen[id]) return { error: 'A recipient appears twice.' };
+    seen[id] = true;
+    recipients.push({
+      id, name, url, deadline, sentBy,
+      submittedAt: prev ? prev.submittedAt || null : null,
+      letterUrl: prev && sentBy === 'requester' ? prev.letterUrl || '' : '',
+      // A moved deadline gets its reminders again.
+      reminded: prev && prev.deadline === deadline ? prev.reminded || [] : [],
+    });
+  }
+  out.recipients = recipients;
+  return { request: out };
+}
+
+const letterOpen = (recipients) => recipients.some((r) => !r.submittedAt);
+
+// Pure: the reminders due today → [{ id, recipientId, days }]. `requests`: [{ id, recipients }].
+function letterRemindersDue(requests, today){
+  const day = (s) => Date.parse(s + 'T00:00:00Z') / 86400000;
+  const out = [];
+  requests.forEach((q) => (q.recipients || []).forEach((r) => {
+    if (r.submittedAt || !r.deadline) return;
+    const left = day(r.deadline) - day(today);
+    // The nearest reminder not sent yet, once it's due (a missed day still sends it).
+    const due = LETTER_REMIND_DAYS.filter((n) => left <= n && left >= 0 && (r.reminded || []).indexOf(n) === -1);
+    if (due.length) out.push({ id: q.id, recipientId: r.id, days: Math.min.apply(null, due), left });
+  }));
+  return out;
+}
+
+function letterDeadlines(recipients){
+  return recipients.map((r) => slackText(r.name) + ' (' + (r.deadline || 'no deadline') + ')').join(', ');
+}
+
+// data: { action, … } → { id? }. Actions:
+//   create { writerEmail, purpose, links, notes, recipients }   anyone, for themselves
+//   update { id, purpose, links, notes, recipients }              the requester
+//   withdraw { id }                                               the requester (deletes it)
+//   acknowledge { id }                                            the writer
+//   submit { id, recipientId, letterUrl? }, unsubmit { id, recipientId }   the writer
+exports.letterRequest = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    const token = SLACK_BOT_TOKEN.value();
+    const myName = request.auth.token.name || email;
+    const tell = (to, text) => dmByEmail(token, to, text);
+
+    if (d.action === 'create') {
+      const writerEmail = String(d.writerEmail || '').trim().toLowerCase();
+      if (!writerEmail) throw new HttpsError('invalid-argument', 'Choose your referee.');
+      if (writerEmail === email) throw new HttpsError('invalid-argument', 'Choose someone else as your referee.');
+      const writer = (await letterWriters()).filter((w) => w.email === writerEmail)[0];
+      if (!writer) throw new HttpsError('invalid-argument', 'They haven’t signed in to BOLD.OS yet.');
+      const n = normalizeLetterRequest(d, []);
+      if (n.error) throw new HttpsError('invalid-argument', n.error);
+      const open = await db.collection('letterRequests').where('requesterEmail', '==', email).where('open', '==', true).count().get();
+      if (open.data().count >= 50) throw new HttpsError('resource-exhausted', 'You have fifty requests open: withdraw some first.');
+      const now = Date.now();
+      const ref = await db.collection('letterRequests').add(Object.assign(n.request, {
+        requesterEmail: email, requesterName: myName, writerEmail, writerName: writer.name,
+        acknowledgedAt: null, open: true, at: now, updatedAt: now,
+      }));
+      await tell(writerEmail, '✉️ ' + slackText(myName) + ' asked you for a recommendation letter: ' +
+        linkedTitle(slackText(n.request.purpose), letterUrl(ref.id)) + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.\n' +
+        '💡 To draft it, copy the prompt under "For your agent" on the request into Claude Code: it uses the <' +
+        SITE_URL + 'skill.html?skill=bold-recommendation-letter|bold-recommendation-letter> skill.');
+      return { id: ref.id };
+    }
+
+    const id = String(d.id || '');
+    if (!/^[A-Za-z0-9]{1,40}$/.test(id)) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('letterRequests').doc(id);
+    const mine = (q) => {
+      const isRequester = q.requesterEmail === email, isWriter = q.writerEmail === email;
+      if (['update', 'withdraw'].indexOf(d.action) !== -1 && !isRequester) throw new HttpsError('permission-denied', 'Only the applicant can do this.');
+      if (['acknowledge', 'submit', 'unsubmit'].indexOf(d.action) !== -1 && !isWriter) throw new HttpsError('permission-denied', 'Only the referee can do this.');
+    };
+    let note = null;
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError('not-found', 'No such request: it may have been withdrawn.');
+      const q = snap.data();
+      mine(q);
+      const title = linkedTitle(slackText(q.purpose), letterUrl(id));
+      if (d.action === 'update') {
+        const n = normalizeLetterRequest(d, q.recipients);
+        if (n.error) throw new HttpsError('invalid-argument', n.error);
+        tx.update(ref, Object.assign(n.request, { open: letterOpen(n.request.recipients), updatedAt: Date.now() }));
+        note = { to: q.writerEmail, text: '✏️ ' + slackText(q.requesterName) + ' updated their letter request: ' +
+          linkedTitle(slackText(n.request.purpose), letterUrl(id)) + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.' };
+      } else if (d.action === 'withdraw') {
+        tx.delete(ref);
+        if (q.open) note = { to: q.writerEmail, text: '↩️ ' + slackText(q.requesterName) + ' withdrew their request for a letter: *' + slackText(q.purpose) + '*. Nothing more to do.' };
+      } else if (d.action === 'acknowledge') {
+        if (q.acknowledgedAt) return;
+        tx.update(ref, { acknowledgedAt: Date.now() });
+        note = { to: q.requesterEmail, text: '👍 ' + slackText(q.writerName) + ' got your request for a letter: ' + title + '.' };
+      } else if (d.action === 'submit' || d.action === 'unsubmit') {
+        const recipients = (q.recipients || []).map((r) => Object.assign({}, r));
+        const r = recipients.filter((x) => x.id === d.recipientId)[0];
+        if (!r) throw new HttpsError('not-found', 'No such recipient.');
+        if (d.action === 'submit') {
+          const link = String(d.letterUrl || '').trim();
+          if (r.sentBy === 'requester') {
+            if (!/^https?:\/\/\S+$/.test(link) || link.length > 1000) throw new HttpsError('invalid-argument', 'Give a link to the letter, starting with https://, for them to send.');
+            r.letterUrl = link;
+          }
+          r.submittedAt = Date.now();
+          note = { to: q.requesterEmail, text: r.sentBy === 'requester'
+            ? '📎 ' + slackText(q.writerName) + ' shared your letter for ' + slackText(r.name) + ', for you to send' + (r.deadline ? ' by ' + r.deadline : '') + ': ' + title + '.'
+            : '✅ ' + slackText(q.writerName) + ' submitted your letter to ' + slackText(r.name) + ': ' + title + '.' };
+        } else {
+          r.submittedAt = null;
+          r.letterUrl = '';
+        }
+        tx.update(ref, { recipients, open: letterOpen(recipients), acknowledgedAt: q.acknowledgedAt || Date.now(), updatedAt: Date.now() });
+      } else {
+        throw new HttpsError('invalid-argument', 'Unknown action.');
+      }
+    });
+    if (note) await tell(note.to, note.text);
+    return { id };
+  }
+);
+
+// Everyone who can write a letter: the BOLD.OS users (Slack accounts, not
+// disabled) → [{ name, email }], named as on the Slack roster.
+async function letterWriters(){
+  const users = [];
+  let page;
+  do {
+    page = await admin.auth().listUsers(1000, page && page.pageToken);
+    users.push(...page.users);
+  } while (page.pageToken);
+  const roster = {};
+  (await db.collection('people').get()).docs.forEach((doc) => { const p = doc.data(); if (p.email) roster[p.email.toLowerCase()] = p.name; });
+  return users
+    .filter((u) => u.email && !u.disabled && u.providerData.some((p) => p.providerId === SIGN_IN_PROVIDER))
+    .map((u) => { const email = u.email.toLowerCase(); return { email, name: roster[email] || u.displayName || email }; })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// → { writers: [{ name, email }] }, for the "Who writes it" list.
+exports.letterWriters = onCall(async (request) => {
+  callerEmail(request);
+  return { writers: await letterWriters() };
+});
+
+exports.remindLetterWriters = onSchedule(
+  { schedule: '0 9 * * *', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  async function(){
+    const snap = await db.collection('letterRequests').where('open', '==', true).get();
+    const byId = {};
+    snap.docs.forEach((doc) => { byId[doc.id] = doc.data(); });
+    const due = letterRemindersDue(snap.docs.map((doc) => ({ id: doc.id, recipients: doc.data().recipients })), todayIsoLondon());
+    for (const x of due) {
+      const q = byId[x.id];
+      const r = q.recipients.filter((y) => y.id === x.recipientId)[0];
+      const when = x.left === 0 ? 'today' : x.left === 1 ? 'tomorrow' : 'in ' + x.left + ' days';
+      const sent = await dmByEmail(SLACK_BOT_TOKEN.value(), q.writerEmail, '⏰ ' + slackText(q.requesterName) + '’s letter for ' + slackText(r.name) +
+        ' is due ' + when + ' (' + r.deadline + '): ' + linkedTitle(slackText(q.purpose), letterUrl(x.id)) + '.');
+      if (!sent) continue;
+      // Marks every reminder up to this one sent, so a missed one doesn't follow.
+      await db.runTransaction(async (tx) => {
+        const s = await tx.get(db.collection('letterRequests').doc(x.id));
+        if (!s.exists) return;
+        const recipients = s.data().recipients.map((y) => y.id !== x.recipientId ? y
+          : Object.assign({}, y, { reminded: Array.from(new Set((y.reminded || []).concat(LETTER_REMIND_DAYS.filter((n) => n >= x.days)))) }));
+        tx.update(s.ref, { recipients });
+      });
+    }
+  }
+);
+
+// ---------- Service desk: introductions ----------
+// introductions.html. Anyone offers to introduce people to someone at an
+// organisation they know (introOffers/{id}: { org, area, by: { email, name }, at,
+// updatedAt }; written by its author under the rules; no names of whoever they'd
+// introduce). Anyone else asks on an offer (introRequests/{id}: { offerId, org,
+// area, requesterEmail, requesterName, offererEmail, offererName, why, status:
+// asked | accepted | declined | done, reply, at, updatedAt }); only the two of
+// them read it, and every write goes through introRequest, which DMs the other.
+const INTRO_WHY_MAX = 2000, INTRO_REPLY_MAX = 1000;
+const introUrl = (id) => SITE_URL + 'introductions.html' + (id ? '#i=' + id : '');
+const INTRO_OPEN = ['asked', 'accepted'];
+
+// data: { action, … } → { id }. Actions:
+//   create { offerId, why }        anyone but the offer's author
+//   withdraw { id }                the requester, while it's open (deletes it)
+//   accept | decline { id, reply? }, done { id }   whoever made the offer
+//   withdrawOffer { offerId }      whoever made it, or a PI or admin: deletes the
+//                                  offer and closes its open requests (declined)
+exports.introRequest = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = callerEmail(request);
+    const d = request.data || {};
+    const token = SLACK_BOT_TOKEN.value();
+    const me = await personFor(email);
+    const myName = (me && me.name) || request.auth.token.name || email;
+    const tell = (to, text) => dmByEmail(token, to, text);
+
+    if (d.action === 'withdrawOffer') {
+      const offerId = String(d.offerId || '');
+      if (!/^[A-Za-z0-9]{1,40}$/.test(offerId)) throw new HttpsError('invalid-argument', 'No such offer.');
+      const offerRef = db.collection('introOffers').doc(offerId);
+      const offerSnap = await offerRef.get();
+      if (!offerSnap.exists) throw new HttpsError('not-found', 'That offer has been removed.');
+      const o = offerSnap.data(), mine = String((o.by && o.by.email) || '').toLowerCase() === email;
+      if (!mine && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only whoever made the offer can withdraw it.');
+      const open = (await db.collection('introRequests').where('offerId', '==', offerId).get()).docs
+        .filter((x) => INTRO_OPEN.indexOf(x.data().status) !== -1);
+      const batch = db.batch(), now = Date.now();
+      open.forEach((x) => batch.update(x.ref, { status: 'declined', reply: 'The offer was withdrawn.', updatedAt: now }));
+      batch.delete(offerRef);
+      await batch.commit();
+      const by = slackText(String((o.by && o.by.name) || 'Whoever offered it'));
+      for (const x of open) {
+        await tell(x.data().requesterEmail, '↩️ ' + by + ' withdrew their offer of introductions at ' + linkedTitle(slackText(o.org), introUrl(x.id)) +
+          ', so your request is closed.');
+      }
+      return { closed: open.length };
+    }
+
+    if (d.action === 'create') {
+      const offerId = String(d.offerId || '');
+      if (!/^[A-Za-z0-9]{1,40}$/.test(offerId)) throw new HttpsError('invalid-argument', 'No such offer.');
+      const why = String(d.why || '').trim();
+      if (!why) throw new HttpsError('invalid-argument', 'Say what you’d like and why.');
+      if (why.length > INTRO_WHY_MAX) throw new HttpsError('invalid-argument', 'That’s too long.');
+      const offerSnap = await db.collection('introOffers').doc(offerId).get();
+      if (!offerSnap.exists) throw new HttpsError('not-found', 'That offer has been removed.');
+      const o = offerSnap.data(), offererEmail = String((o.by && o.by.email) || '').toLowerCase();
+      if (offererEmail === email) throw new HttpsError('invalid-argument', 'That’s your own offer.');
+      const mine = (await db.collection('introRequests').where('requesterEmail', '==', email).get()).docs.map((x) => x.data());
+      if (mine.some((q) => q.offerId === offerId && INTRO_OPEN.indexOf(q.status) !== -1)) throw new HttpsError('already-exists', 'You’ve asked on this offer already.');
+      if (mine.filter((q) => INTRO_OPEN.indexOf(q.status) !== -1).length >= 50) throw new HttpsError('resource-exhausted', 'You have fifty requests open: withdraw some first.');
+      const now = Date.now();
+      const ref = await db.collection('introRequests').add({
+        offerId, org: String(o.org || ''), area: String(o.area || ''), requesterEmail: email, requesterName: myName,
+        offererEmail, offererName: String((o.by && o.by.name) || offererEmail), why, status: 'asked', reply: '', at: now, updatedAt: now,
+      });
+      await tell(offererEmail, '🤝 ' + slackText(myName) + ' asked you for an introduction at ' + linkedTitle(slackText(o.org), introUrl(ref.id)) +
+        ': “' + slackText(why.length > 300 ? why.slice(0, 300) + '…' : why) + '”');
+      return { id: ref.id };
+    }
+
+    const id = String(d.id || '');
+    if (!/^[A-Za-z0-9]{1,40}$/.test(id)) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('introRequests').doc(id);
+    let note = null;
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists) throw new HttpsError('not-found', 'No such request: it may have been withdrawn.');
+      const q = snap.data();
+      const title = linkedTitle(slackText(q.org), introUrl(id));
+      if (d.action === 'withdraw') {
+        if (q.requesterEmail !== email) throw new HttpsError('permission-denied', 'Only whoever asked can withdraw it.');
+        tx.delete(ref);
+        if (INTRO_OPEN.indexOf(q.status) !== -1) note = { to: q.offererEmail, text: '↩️ ' + slackText(q.requesterName) + ' withdrew their request for an introduction at *' + slackText(q.org) + '*. Nothing more to do.' };
+        return;
+      }
+      if (['accept', 'decline', 'done'].indexOf(d.action) === -1) throw new HttpsError('invalid-argument', 'Unknown action.');
+      if (q.offererEmail !== email) throw new HttpsError('permission-denied', 'Only whoever made the offer can do this.');
+      const reply = String(d.reply || '').trim();
+      if (reply.length > INTRO_REPLY_MAX) throw new HttpsError('invalid-argument', 'That note is too long.');
+      const said = reply ? ': “' + slackText(reply) + '”' : '.';
+      if (d.action === 'accept') {
+        if (q.status !== 'asked') throw new HttpsError('failed-precondition', 'You’ve answered this one already.');
+        tx.update(ref, { status: 'accepted', reply, updatedAt: Date.now() });
+        note = { to: q.requesterEmail, text: '🤝 ' + slackText(q.offererName) + ' will introduce you at ' + title + said };
+      } else if (d.action === 'decline') {
+        if (INTRO_OPEN.indexOf(q.status) === -1) throw new HttpsError('failed-precondition', 'This one is closed already.');
+        tx.update(ref, { status: 'declined', reply, updatedAt: Date.now() });
+        note = { to: q.requesterEmail, text: '✖️ ' + slackText(q.offererName) + ' can’t introduce you at ' + title + ' this time' + said };
+      } else {
+        if (q.status !== 'accepted') throw new HttpsError('failed-precondition', 'Say you’ll do it first.');
+        tx.update(ref, { status: 'done', updatedAt: Date.now() });
+        note = { to: q.requesterEmail, text: '✅ ' + slackText(q.offererName) + ' has introduced you at ' + title + '.' };
+      }
+    });
+    if (note) await tell(note.to, note.text);
+    return { id };
+  }
+);
+
+// ---------- Calls for papers on OpenReview ----------
+
+// When each venue's next call is looked for, as months of the year: from
+// `start`, for `months` months. Its submission invitation appears on OpenReview
+// months before submissions open (ICLR in Jun–Jul, ICML in Sep–Oct, NeurIPS in
+// Feb, 2024–2027), so each window is that, with a month or two either side.
+// `offset` takes the year the window starts in to the edition's year.
+const CALL_VENUES = [
+  { name: 'ICLR', group: 'ICLR.cc', start: 5, months: 5, offset: 1 },
+  { name: 'ICML', group: 'ICML.cc', start: 8, months: 6, offset: 1 },
+  { name: 'NeurIPS', group: 'NeurIPS.cc', start: 1, months: 5, offset: 0 },
+];
+const OPENREVIEW_API = 'https://api2.openreview.net';
+
+// The venues to look for on iso (YYYY-MM-DD) → [{ name, group, year }]: each
+// venue whose window it's in, with the edition that window is for.
+function venueCallsToCheck(iso){
+  const y = Number(iso.slice(0, 4)), m = Number(iso.slice(5, 7));
+  return CALL_VENUES.filter((v) => (m - v.start + 12) % 12 < v.months)
+    .map((v) => ({ name: v.name, group: v.group, year: (m < v.start ? y - 1 : y) + v.offset }));
+}
+
+// The edition's submission invitation, or null if it isn't on OpenReview yet.
+// `expired=true` finds it after its deadline too (without it, a 400).
+async function openReviewSubmission(group, year){
+  const id = group + '/' + year + '/Conference/-/Submission';
+  const res = await fetch(OPENREVIEW_API + '/invitations?expired=true&id=' + encodeURIComponent(id));
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('OpenReview answered ' + res.status + ' for ' + id);
+  const json = await res.json();
+  return (json.invitations || [])[0] || null;
+}
+
+// The DM for a call found.
+function venueCallMessage(name, year, group, inv){
+  const day = (ms) => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/London' });
+  const when = [inv.cdate && 'submissions open ' + day(inv.cdate), inv.duedate && 'deadline ' + day(inv.duedate)].filter(Boolean).join(', ');
+  return '📣 ' + linkedTitle(name + ' ' + year, 'https://openreview.net/group?id=' + encodeURIComponent(group + '/' + year + '/Conference')) +
+    ' is on OpenReview' + (when ? ': ' + when : '') + '.';
+}
+
+// Mondays 09:00 London: looks for each venue's next call, in its window, and
+// DMs the PIs and admins once when it appears (venueCalls/{name}-{year},
+// server only).
+exports.checkVenueCalls = onSchedule(
+  { schedule: '0 9 * * 1', timeZone: 'Europe/London', secrets: [SLACK_BOT_TOKEN] },
+  async function(){
+    for (const v of venueCallsToCheck(todayIsoLondon())) {
+      const ref = db.collection('venueCalls').doc(v.name + '-' + v.year);
+      if ((await ref.get()).exists) continue;
+      let inv;
+      try { inv = await openReviewSubmission(v.group, v.year); }
+      catch (err) { logger.warn('checkVenueCalls: OpenReview failed', { venue: v.name, year: v.year, error: String(err) }); continue; }
+      if (!inv) continue;
+      const text = venueCallMessage(v.name, v.year, v.group, inv);
+      const to = Array.from(new Set((await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => e.toLowerCase())));
+      for (const email of to) await dmByEmail(SLACK_BOT_TOKEN.value(), email, text);
+      await ref.set({ venue: v.name, year: v.year, cdate: inv.cdate || null, duedate: inv.duedate || null, notified: to, at: FieldValue.serverTimestamp() });
+    }
+  }
+);
+
+// ---------- Interactions: who did what with whom, for Connections and Network ----------
+// interactions/{id}: { kind, group, from, to, at, title, href, thing, source }; `thing`
+// is what it happened on ('project:<id>', 'guide:<slug>', …; thingOf), '' if nothing. `from` and `to`
+// are lowercase emails; `to` is '' for what someone did on the site on their own. Each
+// is derived from a document (`source`, its path) by interactionsFor, and replaced
+// whenever that document changes (onInteractionSource); rebuildInteractions derives
+// them all again. Tags outside the documents read here are added as they happen
+// (onTagged, source '<path>#tags'), and first sign-ins by getMyAccess (source
+// 'auth/<uid>'). The lab reads them; nobody writes them but the server.
+const INTERACTION_GROUPS = {
+  asked: 'joining', invited: 'joining', approved: 'joining', contact: 'joining', supervises: 'joining', 'signed-up': 'joining',
+  coauthor: 'working', project: 'working', reviewed: 'working', meeting: 'working', introduced: 'working', letter: 'working',
+  tagged: 'talking', replied: 'talking', decided: 'talking',
+  registered: 'site', added: 'site', edited: 'site', proposed: 'site', commented: 'site', read: 'site',
+  // Between two things, no one's doing: thing → thing2.
+  presented: 'related', 'part-of': 'related',
+};
+const INTERACTION_TOP = ['joinRequests', 'members', 'studies', 'projects', 'projectWorkspaces', 'studyRequests', 'introRequests', 'letterRequests',
+  'skills', 'guides', 'events', 'collabWeekSessions'];
+
+const lowerEmail = (v) => String((v && typeof v === 'object' ? v.email : v) || '').trim().toLowerCase();
+
+// Pure, but for `lookup(path)` → that document's data or null (a comment's parent, a
+// proposal). A document at `path` → [{ kind, from, to?, toSlack?, at, title, href, key? }]:
+// toSlack is a tagged Slack id, made an email by the caller.
+async function interactionsFor(path, d, lookup){
+  const seg = path.split('/'), out = [];
+  if (!d) return out;
+  const thing = thingOf(path, d);
+  const add = function(kind, from, to, at, title, href, key){
+    from = lowerEmail(from); to = lowerEmail(to);
+    if (!from || from === to) return;
+    out.push({ kind, from, to, at: Number(at) || 0, title: String(title || ''), href: String(href || ''), key: String(key || ''), thing });
+  };
+  const tags = function(from, text, at, title, href, key){
+    taggedIds(text).forEach(function(id){ if (lowerEmail(from)) out.push({ kind: 'tagged', from: lowerEmail(from), toSlack: id, at: Number(at) || 0, title, href, key: (key || '') + id, thing }); });
+  };
+  // Two things linked (kind: presented, part-of): `thing` (or this document's) → the event `slug`.
+  const related = async function(kind, at, title, href, slug, from, key){
+    const ev = await lookup('events/' + slug);
+    out.push({ kind, from: '', to: '', at: Number(at) || 0, title: String(title || ''), href: String(href || ''), key: String(key || ''), thing: from || thing,
+      thing2: 'event:' + slug, title2: String((ev && ev.title) || slug), href2: eventUrl(slug, ev) });
+  };
+  const top = seg[0], n = seg.length;
+
+  if (n === 2 && top === 'joinRequests'){
+    const href = SITE_URL + 'join-requests.html#r=' + seg[1], title = 'Joining BOLD';
+    add('asked', d.email, '', d.at, title, href);
+    // Once they're a member, their record says who invited them (it may change there).
+    if (d.status !== 'approved' && d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, d.email, d.invitedBy.at || d.at, title, href);
+    if (d.status === 'approved') add('approved', d.decidedBy, d.email, d.decidedAt, title, href);
+  } else if (n === 2 && top === 'members'){
+    add('contact', d.contactEmail, seg[1], d.approvedAt || d.updatedAt, 'Point of contact', SITE_URL + 'people.html');
+    if (d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, seg[1], d.invitedBy.at || d.approvedAt, 'Joining BOLD', SITE_URL + 'people.html');
+  } else if (n === 2 && top === 'studies'){
+    const title = (d.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision';
+    (d.people || []).forEach(function(p){ add('supervises', p.email, seg[1], d.createdAt || d.updatedAt, title, SITE_URL + 'calendar.html'); });
+  } else if ((n === 2 && top === 'projects') || (n === 4 && top === 'boards' && seg[2] === 'cards')){
+    const href = n === 2 ? projectPageUrl(seg[1]) : cardUrl(seg[1], seg[3]), title = d.title || 'A paper';
+    const people = [];
+    [d.submittedBy && d.submittedBy.email].concat(d.authorEmails || []).forEach(function(e){ e = lowerEmail(e); if (e && people.indexOf(e) < 0) people.push(e); });
+    add('registered', d.submittedBy, '', d.createdAt, title, href);
+    people.forEach(function(a, i){ people.slice(i + 1).forEach(function(b){ add('coauthor', a < b ? a : b, a < b ? b : a, d.createdAt, title, href); }); });
+    ['junior', 'senior'].forEach(function(role){
+      const r = d.reviewers && d.reviewers[role];
+      if (r) people.forEach(function(a){ add('reviewed', r, a, d.updatedAt || d.createdAt, title, href, role); });
+    });
+    const threads = [].concat(d.discussion || [], [].concat.apply([], (d.checklist || []).map(function(it){ return it.comments || []; })));
+    threads.forEach(function(m){
+      add('commented', m.authorEmail, '', m.timestamp, title, href, m.id);
+      tags(m.authorEmail, m.body, m.timestamp, title, href, m.id);
+      (m.replies || []).forEach(function(r){
+        add('commented', r.authorEmail, '', r.timestamp, title, href, r.id);
+        add('replied', r.authorEmail, m.authorEmail, r.timestamp, title, href, r.id);
+        tags(r.authorEmail, r.body, r.timestamp, title, href, r.id);
+      });
+    });
+  } else if (n === 2 && top === 'projectWorkspaces'){
+    const href = projectPageUrl(d.cardId || seg[1], d.boardId), joined = (d.joined || []).map(lowerEmail);
+    (d.members || []).map(lowerEmail).forEach(function(m){
+      joined.forEach(function(j){ if (j !== m && !(joined.indexOf(m) >= 0 && m < j)) add('project', j, m, d.createdAt, d.title || 'A project', href); });
+    });
+  } else if (n === 2 && top === 'studyRequests'){
+    if (d.status === 'approved') add('meeting', d.email, d.student, d.decidedAt || d.at, (d.studentName || 'Their') + ' supervision meeting', SITE_URL + 'calendar.html');
+  } else if (n === 2 && top === 'introRequests'){
+    if (d.status === 'accepted' || d.status === 'done') add('introduced', d.offererEmail, d.requesterEmail, d.updatedAt || d.at, 'An introduction at ' + (d.org || 'an organisation'), introUrl(seg[1]));
+  } else if (n === 2 && top === 'letterRequests'){
+    add('letter', d.requesterEmail, d.writerEmail, d.at, 'A recommendation letter', letterUrl(seg[1]));
+  } else if (n === 2 && ['skills', 'guides', 'events', 'collabWeekSessions'].indexOf(top) >= 0){
+    const href = top === 'skills' ? SITE_URL + 'skill.html?skill=' + encodeURIComponent(seg[1]) : top === 'guides' ? guideUrl(seg[1])
+      : top === 'events' ? eventUrl(seg[1], d) : SITE_URL + 'session.html?session=' + encodeURIComponent(seg[1]);
+    add('added', d.createdBy, '', d.createdAt, d.title || d.name || seg[1], href);
+    // A session belongs to its event.
+    if (top === 'collabWeekSessions' && d.eventSlug) await related('part-of', d.createdAt || d.updatedAt, d.title || seg[1], href, d.eventSlug);
+  } else if (n === 4 && top === 'projectWorkspaces' && seg[2] === 'presentations'){
+    // A project presented at one of the site's events (its talk or session folded into it).
+    const o = d.occasion || {};
+    if (o.kind === 'event' && o.id){
+      const ws = (await lookup('projectWorkspaces/' + seg[1])) || {}, cardId = ws.cardId || seg[1];
+      const card = ws.boardId ? await lookup('boards/' + ws.boardId + '/cards/' + cardId) : null;
+      const project = 'project:' + ((card && card.projectId) || cardId);
+      await related('presented', Date.parse(d.date) || d.createdAt || d.at, (card && card.title) || ws.title || d.title || 'A project', projectPageUrl(cardId, ws.boardId), o.id, project, seg[3]);
+    }
+  } else if (n === 4 && (top === 'guides' || top === 'handbook' || top === 'skills')){
+    const page = top === 'guides' ? guideUrl(seg[1]) : top === 'handbook' ? handbookUrl(seg[1]) : SITE_URL + 'skill.html?skill=' + encodeURIComponent(seg[1]);
+    const parent = await lookup(top + '/' + seg[1]);
+    const title = (parent && (parent.title || parent.name)) || seg[1];
+    if (seg[2] === 'versions'){
+      add('edited', d.updatedBy, '', d.at || d.updatedAt, title, page);
+    } else if (seg[2] === 'readers' && top !== 'skills'){
+      add('read', d.email, '', d.readAt || d.at, title, page);
+    } else if (seg[2] === 'comments' && top !== 'skills'){
+      const href = page + '#c=' + encodeURIComponent(seg[3]);
+      add('commented', d.by, '', d.at, title, href);
+      tags(d.by && d.by.email, d.text, d.at, title, href);
+      const to = d.parent ? await lookup(top + '/' + seg[1] + '/comments/' + d.parent) : d.proposalId ? await lookup(top + '/' + seg[1] + '/proposals/' + d.proposalId) : null;
+      if (to) add('replied', d.by, to.by, d.at, title, href);
+    } else if (seg[2] === 'proposals' && top !== 'skills'){
+      add('proposed', d.by, '', d.at, title, page);
+      if ((d.status === 'accepted' || d.status === 'declined') && d.decidedBy) add('decided', d.decidedBy, d.by, d.decidedAt, title, page);
+      tags(d.by && d.by.email, [d.after, d.note].concat((d.changes || []).map(function(c){ return c.after; })), d.at, title, page);
+    }
+  }
+  return out;
+}
+
+// Pure: the thing an interaction at `path` happened on, as '<type>:<id>' (a project or
+// paper, an event, session or talk, a guide or the BOLDiquette, a skill), or '' for
+// those between people only (joining, supervision, introductions, letters). Every card of
+// a project is the project.
+function thingOf(path, d){
+  const seg = path.split('/'), id = seg[1] || '';
+  if (seg[0] === 'boards' && seg[2] === 'cards' && seg[3]) return 'project:' + ((seg.length === 4 && d && d.projectId) || seg[3]);
+  if (seg[0] === 'projects') return 'project:' + ((seg.length === 2 && d && d.projectId) || id);
+  const types = { projectWorkspaces: 'project', guides: 'guide', handbook: 'handbook', skills: 'skill', events: 'event', collabWeekSessions: 'session', collabWeekTalks: 'talk' };
+  return types[seg[0]] && id ? types[seg[0]] + ':' + id : '';
+}
+
+// Whether interactionsFor reads documents at `path`.
+function isInteractionSource(path){
+  const seg = path.split('/');
+  if (seg.length === 2) return INTERACTION_TOP.indexOf(seg[0]) >= 0;
+  if (seg.length === 4 && seg[0] === 'boards' && seg[2] === 'cards') return true;
+  if (seg.length === 4 && seg[0] === 'projectWorkspaces' && seg[2] === 'presentations') return true;
+  return seg.length === 4 && ['guides', 'handbook', 'skills'].indexOf(seg[0]) >= 0 && ['versions', 'readers', 'comments', 'proposals'].indexOf(seg[2]) >= 0;
+}
+
+function interactionId(source, x){
+  return crypto.createHash('sha1').update([source, x.kind, x.from, x.to, x.at, x.key || ''].join('|')).digest('hex').slice(0, 28);
+}
+
+// The interactions of `path` (data: the document, or null if it's gone), made emails
+// of tagged Slack ids, as { id: record }.
+async function interactionRecords(path, data, slackEmails){
+  const list = await interactionsFor(path, data, async function(p){ const s = await db.doc(p).get(); return s.exists ? s.data() : null; });
+  const ids = list.filter(function(x){ return x.toSlack && !(x.toSlack in slackEmails); }).map(function(x){ return x.toSlack; });
+  Object.assign(slackEmails, await emailsForSlackIds(ids));
+  ids.forEach(function(id){ if (!(id in slackEmails)) slackEmails[id] = ''; });
+  const out = {};
+  list.forEach(function(x){
+    const to = x.toSlack ? slackEmails[x.toSlack] : x.to;
+    if (x.toSlack && (!to || to === x.from)) return;
+    const rec = { kind: x.kind, group: INTERACTION_GROUPS[x.kind], from: x.from, to: to || '', at: x.at, title: x.title, href: x.href, thing: x.thing || '', source: path };
+    if (x.thing2) Object.assign(rec, { thing2: x.thing2, title2: x.title2, href2: x.href2 });
+    out[interactionId(path, Object.assign({}, x, { to: rec.to }))] = rec;
+  });
+  return out;
+}
+
+// Writes `want` ({ id: record }) in place of `have` ({ id: record }): sets what's new or
+// changed, deletes the rest.
+async function replaceInteractions(have, want){
+  const col = db.collection('interactions');
+  let batch = db.batch(), n = 0;
+  const step = async function(){ if (++n >= 400){ await batch.commit(); batch = db.batch(); n = 0; } };
+  for (const id of Object.keys(have)) if (!want[id]) { batch.delete(col.doc(id)); await step(); }
+  for (const id of Object.keys(want)) if (stableJson(have[id] || null) !== stableJson(want[id])) { batch.set(col.doc(id), want[id]); await step(); }
+  if (n) await batch.commit();
+}
+
+async function syncInteractions(path, data){
+  const have = {};
+  (await db.collection('interactions').where('source', '==', path).get()).docs.forEach(function(s){ have[s.id] = s.data(); });
+  await replaceInteractions(have, await interactionRecords(path, data, {}));
+}
+
+function onInteractionSource(document){
+  return onDocumentWritten({ document }, async function(event){
+    const path = (event.data.after.exists ? event.data.after : event.data.before).ref.path;
+    if (!isInteractionSource(path)) return;
+    try { await syncInteractions(path, event.data.after.exists ? event.data.after.data() : null); }
+    catch (err){ logger.error('Recording interactions failed', { path, error: String(err && err.message || err) }); }
+  });
+}
+exports.onInteractionSource = onInteractionSource('{c1}/{d1}');
+exports.onInteractionSourceNested = onInteractionSource('{c1}/{d1}/{c2}/{d2}');
+
+// Tags the documents above don't cover (onTagged): added as they happen, kept.
+async function recordTags(path, by, emails, at, place, data){
+  if (isInteractionSource(path) || !by) return;
+  const source = path + '#tags', batch = db.batch();
+  Object.keys(emails).forEach(function(id){
+    const to = emails[id];
+    if (!to || to === by) return;
+    const rec = { kind: 'tagged', group: 'talking', from: by, to, at, title: place.title, href: place.url, thing: thingOf(path, data), source };
+    batch.set(db.collection('interactions').doc(interactionId(source, rec)), rec);
+  });
+  await batch.commit();
+}
+
+// Someone's first sign-in (their Firebase account's creation), once.
+const signUpsSeen = new Set();
+async function recordSignUp(uid, email){
+  if (!uid || !email || signUpsSeen.has(uid)) return;
+  signUpsSeen.add(uid);
+  const source = 'auth/' + uid, rec = { kind: 'signed-up', group: 'joining', from: email, to: '', at: 0, title: 'BOLD.OS', href: SITE_URL, source };
+  const ref = db.collection('interactions').doc(crypto.createHash('sha1').update(source).digest('hex').slice(0, 28));
+  if ((await ref.get()).exists) return;
+  const u = await admin.auth().getUser(uid);
+  rec.at = Date.parse(u.metadata.creationTime) || Date.now();
+  await ref.set(rec);
+}
+
+// Derives every interaction again, from every document they come from (PIs and admins;
+// Network → Rebuild). Tags recorded as they happened and sign-ins are kept.
+exports.rebuildInteractions = onCall(
+  { timeoutSeconds: 540, memory: '1GiB' },
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    const docs = [];
+    for (const c of INTERACTION_TOP) (await db.collection(c).get()).docs.forEach(function(s){ docs.push(s); });
+    for (const g of ['cards', 'versions', 'readers', 'comments', 'proposals', 'presentations'])
+      (await db.collectionGroup(g).get()).docs.forEach(function(s){ if (isInteractionSource(s.ref.path)) docs.push(s); });
+    const want = {}, slackEmails = {};
+    for (const s of docs) Object.assign(want, await interactionRecords(s.ref.path, s.data(), slackEmails));
+    const have = {};
+    (await db.collection('interactions').get()).docs.forEach(function(s){
+      const src = String(s.data().source || '');
+      if (src.indexOf('auth/') === 0 || /#tags$/.test(src)) return;
+      have[s.id] = s.data();
+    });
+    await replaceInteractions(have, want);
+    // First sign-ins, from Firebase Auth.
+    try {
+      let page;
+      do {
+        page = await admin.auth().listUsers(1000, page && page.pageToken);
+        for (const u of page.users) if (u.email) await recordSignUp(u.uid, String(u.email).toLowerCase());
+      } while (page.pageToken);
+    } catch (err){ logger.warn('Listing first sign-ins failed', { error: String(err && err.message || err) }); }
+    return { count: Object.keys(want).length, sources: docs.length };
+  }
+);
+
+// A DM to each PI and admin, once each, but not to `except` (whoever caused it).
+async function tellStaff(text, except){
+  const skip = String(except || '').toLowerCase();
+  const emails = Array.from(new Set((await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase()))).filter((e) => e !== skip);
+  if (emails.length) await sendEvent(SLACK_BOT_TOKEN.value(), { emails, headline: text });
+}
+
+// BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
+// endpoint (boldApi), in functions/api.js.
+const agentApi = require('./api')({ db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, groupOf, SITE_URL,
+  SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], SLACK_BOT_TOKEN,
+  // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
+  tellStaff,
+  tellPerson: (email, text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: [email], headline: text }),
+  slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
+  callables: () => ({ projectWorkspace: exports.projectWorkspace, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
+    letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
+    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest }) });
+exports.apiTokens = agentApi.apiTokens;
+exports.boldApi = agentApi.boldApi;
+// Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
+exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
+// Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.
+const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
+  tellStaff }).reviewMcpChange;
+
 exports._internal = {
   projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
-  projectIdOf, projectGroupForCards
+  projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
 };

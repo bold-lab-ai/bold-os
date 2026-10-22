@@ -138,7 +138,8 @@
           : f.input === 'area'
           ? '<textarea id="' + id + '" rows="' + f.rows + '">' + esc(v) + '</textarea>'
           : '<input type="' + f.input + '" id="' + id + '" value="' + esc(v) + '"' + (f.input === 'number' ? ' min="1" step="1"' : '') + ' placeholder="' + esc(f.placeholder || '') + '">') +
-        (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') + '</div>';
+        (f.hint ? '<p class="edit-hint">' + esc(f.hint) + '</p>' : '') +
+        (f.key === 'presentationUrl' ? BoldPresentationUpload.html('edit-hint') : '') + '</div>';
       if (f.key === 'duration') html += speakersHtml();
       if (f.key === 'presentationUrl') html += links.fieldHtml();
     });
@@ -160,6 +161,8 @@
     }
     if (canSetPresenters) CollabWeekSpeakers.mount(el('talkSpeakers'), speakerRows, people);
     el('editSave').addEventListener('click', save);
+    BoldPresentationUpload.wire(document.querySelector('.edit-form .pu-line'), { input: el('f_presentationUrl'),
+      args: function(){ return { talk: slug }; }, busy: function(on){ el('editSave').disabled = on; } });
     el('editCancel').addEventListener('click', function(){ editing = false; error = ''; render(); });
   }
 
