@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Build a local, read-only preview from a saved rota snapshot or a local export.
 // No network calls, Firebase SDK, or production writes.
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 
 const sourcePath = process.argv[2];
 let docs;
@@ -60,7 +60,9 @@ for (const change of source.changes) {
 }
 
 const inlineJson = JSON.stringify(docs).replace(/</g, '\\u003c');
-const mock = `const data = ${inlineJson};\n` + String.raw`
+const photoFiles = await readdir('_site/assets/img/rota-profiles').catch(() => []);
+const localPhotos = photoFiles.filter(file => /^[a-z0-9-]+\.webp$/.test(file)).map(file => file.slice(0, -5));
+const mock = `const data = ${inlineJson};\nconst localPhotos = new Set(${JSON.stringify(localPhotos)});\n` + String.raw`
 const docs = items => ({ docs: items.map(([id, data]) => ({ id, data: () => data })), empty: !items.length });
 const previewUser = { displayName: 'Sam' };
 window.BOLD = {
@@ -127,7 +129,7 @@ page = page.replace('</head>', `<script>\n${mock}\n</script>\n</head>`);
 if (page.includes('firebasejs/') || page.includes('window.BOLD_CONFIG') || page.includes('fonts.googleapis.com') || page.includes('fonts.gstatic.com')) throw new Error('Could not isolate the preview from external services.');
 let rotaScript = await readFile('src/assets/js/pages/group-meetings.js', 'utf8');
 rotaScript = rotaScript.replace('firebase.firestore(', 'previewFirebase.firestore(').replace('firebase.app()', 'previewFirebase.app()');
-rotaScript = rotaScript.replace("return slug ? 'https://bold-lab.ai/profile-assets/' + slug + '.webp' : '';", "return ''; // The local preview never loads remote profile photos.");
+rotaScript = rotaScript.replace("return slug ? 'https://bold-lab.ai/profile-assets/' + slug + '.webp' : '';", "return localPhotos.has(slug) ? 'assets/img/rota-profiles/' + slug + '.webp' : '';");
 rotaScript = rotaScript.replace('access && !access.eligible ? \'<p class="rota-alert">', 'access && !access.preview && !access.eligible ? \'<p class="rota-alert">');
 rotaScript = rotaScript.replace('Eligibility has not been confirmed', 'Changes are unavailable in the local preview');
 if (rotaScript.includes('firebase.firestore(') || rotaScript.includes('firebase.app()') || rotaScript.includes('var notice = access && !access.eligible')) throw new Error('Could not isolate the rota script from production data and access checks.');
