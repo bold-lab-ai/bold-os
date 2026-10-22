@@ -26,6 +26,8 @@ section.block:first-of-type{margin-top:12px;}
   transition:opacity .12s;
 }
 .event-list li:last-child .event-card{border-bottom:1px solid var(--line);}
+/* Under tabs (skills.html), the tab bar's rule is the list's first one. */
+.guide-tabs ~ .block .event-list > li:first-child .event-card{border-top:none;}
 .event-card:hover{opacity:.68;}
 .event-top{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;}
 .eyebrow{

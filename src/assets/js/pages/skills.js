@@ -1,8 +1,8 @@
 // Skills page — every skill is a skills/{name} doc (see skills-common.js),
 // listed by title. "+ Add a skill" is always shown, greyed out for anyone but a
 // PI/admin; it opens the skill editor for a new skill (skill.html?new). Proposed
-// new skills (skills/{name}/proposals, kind 'new', e.g. from an agent) are listed
-// under Proposed, each linking to its page, which shows the proposal until it's decided.
+// new skills (skills/{name}/proposals, kind 'new', e.g. from an agent) are on the
+// Proposed tab (#proposed), each linking to its page, which shows the proposal until it's decided.
 (function(){
   var esc = BOLD.escapeHtml;
   var S = window.BoldSkills;
@@ -31,6 +31,19 @@
 
   addBtn.addEventListener('click', function(){ if (fullWrite) location.href = 'skill.html?new'; });
 
+  // Two tabs, named by the #hash: the skills, and the new ones proposed.
+  function showTab(){
+    var want = location.hash === '#proposed' ? 'proposed' : 'skills';
+    ['skills', 'proposed'].forEach(function(t){ document.getElementById(t).hidden = t !== want; });
+    Array.prototype.forEach.call(document.querySelectorAll('#skillTabs .guide-tab'), function(a){
+      var on = a.getAttribute('href') === '#' + want;
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+  window.addEventListener('hashchange', showTab);
+  showTab();
+
   var unsubscribe = null, signIns = 0;
   BOLD.onUser(function(user){
     var mine = ++signIns;
@@ -50,7 +63,8 @@
     db.collectionGroup('proposals').get().then(function(snap){
       if (mine !== signIns) return;
       var fresh = snap.docs.filter(function(d){ var q = d.data(); return d.ref.parent.parent && d.ref.parent.parent.parent.id === 'skills' && q.kind === 'new' && q.status === 'open'; });
-      document.getElementById('proposedNew').hidden = !fresh.length;
+      document.getElementById('newCount').textContent = fresh.length ? ' (' + fresh.length + ')' : '';
+      document.getElementById('newNone').hidden = !!fresh.length;
       document.getElementById('newList').innerHTML = fresh.map(function(d){
         var q = d.data(), name = d.ref.parent.parent.id;
         return '<li>' + cardHtml({ name: name, title: (q.after && q.after.title) || name, description: (q.after && q.after.description) || '' },

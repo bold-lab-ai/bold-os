@@ -13,11 +13,19 @@ permalink: "skills.html"
 
 <main>
 
-  <section class="block">
+  <nav class="guide-tabs" id="skillTabs" aria-label="Skills">
+    <a class="guide-tab is-current" href="#skills" aria-current="page">Skills</a>
+    <a class="guide-tab" href="#proposed">Proposed<span id="newCount"></span></a>
+  </nav>
+
+  <section class="block" id="skills">
     <ul class="event-list" id="skillList"></ul>
     <p class="event-loading" id="skillLoading">Loading…</p>
     <button type="button" class="event-add" id="skillAdd" disabled title="Only PIs and admins can add and change skills">+ Add a skill</button>
   </section>
-  <section class="block" id="proposedNew" hidden><div class="block-head"><h2>Proposed</h2></div><ul class="event-list" id="newList"></ul></section>
+  <section class="block" id="proposed" hidden>
+    <ul class="event-list" id="newList"></ul>
+    <p class="event-loading" id="newNone" hidden>No new skills proposed.</p>
+  </section>
 
 </main>
