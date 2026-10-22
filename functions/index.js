@@ -956,10 +956,14 @@ function onProposed(collection, pageUrl){
       const q = event.data && event.data.data();
       if (!q || q.status !== 'open') return;
       const doc = await db.collection(collection).doc(event.params.slug).get();
-      const name = (doc.exists && doc.data().title) || event.params.slug;
+      // A new skill or tool has no document yet: its proposal carries the title.
+      const name = (doc.exists && doc.data().title) || (q.after && q.after.title) || event.params.slug;
       const who = (q.by && (q.by.name || q.by.email)) || 'Someone';
-      const headline = '🔔 ' + slackText(who) + ' suggested ' + proposalSummary(q) + ' in ' +
-        linkedTitle(slackText(name), pageUrl(event.params.slug) + '#proposals') +
+      const link = linkedTitle(slackText(name), pageUrl(event.params.slug) + '#proposals');
+      const what = q.kind === 'new' && !doc.exists
+        ? ' proposed a new ' + (collection === 'agentTools' ? 'tool' : 'skill') + ', ' + link
+        : ' suggested ' + proposalSummary(q) + ' in ' + link;
+      const headline = '🔔 ' + slackText(who) + what +
         (q.note ? ': “' + slackText(String(q.note).slice(0, 300)) + '”' : '') +
         '. It needs a PI or admin to accept or decline it.';
       const pis = await rolesEmails('pis');
