@@ -64,7 +64,7 @@ const mock = `const data = ${inlineJson};\n` + String.raw`
 const docs = items => ({ docs: items.map(([id, data]) => ({ id, data: () => data })), empty: !items.length });
 const previewUser = { displayName: 'Sam' };
 window.BOLD = {
-  getAuth: () => true, getApp: () => ({}), authHint: () => previewUser,
+  getAuth: () => true, getApp: () => ({}), authHint: () => null,
   escapeHtml: value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]),
   onUser: callback => setTimeout(() => callback(previewUser), 0),
   mountMasthead: () => { document.getElementById('authRegion').textContent = 'Sam · Local signed-in preview'; },
@@ -91,6 +91,8 @@ document.addEventListener('click', event => {
   if (url.origin === location.origin && url.pathname.endsWith('/group-meetings.html')) {
     event.preventDefault();
     location.href = 'group-meetings-preview.html' + url.search + url.hash;
+  } else if (url.origin !== location.origin || !url.pathname.endsWith('/group-meetings-preview.html')) {
+    event.preventDefault();
   }
 });
 document.addEventListener('DOMContentLoaded', () => {
@@ -118,6 +120,7 @@ page = page.replace(/<script src="https:\/\/www\.gstatic\.com\/firebasejs\/[^\"]
 page = page.replace(/<link[^>]+href="https:\/\/fonts\.[^\"]+"[^>]*>\n/g, '');
 page = page.replace(/<script>window\.BOLD_CONFIG = [^<]+<\/script>\n/, '');
 page = page.replace(/<script src="assets\/js\/bold\.js[^\"]*"><\/script>\n/, '');
+page = page.replace(/<script src="assets\/js\/search-box\.js[^\"]*"><\/script>\n/, '');
 page = page.replace(/<script src="assets\/js\/mentions\.js[^\"]*"><\/script>\n/, '');
 page = page.replace(/assets\/js\/pages\/group-meetings\.js\?v=/, 'assets/js/pages/group-meetings-preview.js?v=');
 page = page.replace('</head>', `<script>\n${mock}\n</script>\n</head>`);
