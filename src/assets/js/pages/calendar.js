@@ -161,7 +161,9 @@
   // from its start to its end; meetings that overlap sit side by side. A block opens
   // its page; yours are filled in. A meeting every N weeks shows in the weeks N apart
   // from its first date (`eventStart`), and every week if that isn't known.
-  var HOUR = 48; // px
+  // 09:00–18:00 always shows at full height; earlier or later meetings stretch the
+  // day only a little, squashed into a shaded band at the top or bottom.
+  var HOUR = 48, EDGE = 12, CORE_FROM = 9, CORE_TO = 18; // px per hour, inside and outside the core
   var DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var pad = function(n){ return (n < 10 ? '0' : '') + n; };
@@ -184,10 +186,19 @@
     var cols = MEETING_DAYS.map(function(d, i){ return i; }).filter(function(i){
       return i < 5 || ms.some(function(m){ return m.meeting.day === MEETING_DAYS[i][0]; }) || onDay(i).length;
     });
-    var from = Math.min.apply(null, ms.map(function(m){ return Math.floor(minutes(m.meeting.time) / 60); }).concat([9]));
-    var to = Math.min(24, Math.max.apply(null, ms.map(function(m){ return Math.ceil((minutes(m.meeting.time) + m.meeting.minutes) / 60); }).concat([18])));
+    var from = Math.min.apply(null, ms.map(function(m){ return Math.floor(minutes(m.meeting.time) / 60); }).concat([CORE_FROM]));
+    var to = Math.min(24, Math.max.apply(null, ms.map(function(m){ return Math.ceil((minutes(m.meeting.time) + m.meeting.minutes) / 60); }).concat([CORE_TO])));
+    // Where a minute of the day sits: squashed before and after the core hours.
+    var y = function(min){
+      var h = Math.min(Math.max(min / 60, from), to);
+      return (Math.min(h, CORE_FROM) - from) * EDGE + (Math.min(Math.max(h, CORE_FROM), CORE_TO) - CORE_FROM) * HOUR + Math.max(h - CORE_TO, 0) * EDGE;
+    };
     var hours = [];
-    for (var h = from; h < to; h++) hours.push(h);
+    for (var h = CORE_FROM; h < CORE_TO; h++) hours.push(h);
+    if (from < CORE_FROM) hours.unshift(from);
+    if (to > CORE_TO) hours.push(CORE_TO);
+    var squash = (from < CORE_FROM ? '<span class="week-squash" style="top:0;height:' + y(CORE_FROM * 60) + 'px"></span>' : '') +
+      (to > CORE_TO ? '<span class="week-squash" style="top:' + y(CORE_TO * 60) + 'px;height:' + (y(to * 60) - y(CORE_TO * 60)) + 'px"></span>' : '');
     var today = iso(new Date());
     var last = dates[6];
     var range = start.getDate() + (start.getMonth() !== last.getMonth() ? ' ' + MONTHS[start.getMonth()] : '') +
@@ -207,8 +218,8 @@
         }).join('') + '</span>';
       }).join('') + '</div>';
     }
-    html += '<div class="week-body" style="height:' + (hours.length * HOUR) + 'px">' +
-      '<div class="week-hours">' + hours.map(function(h){ return '<span style="top:' + ((h - from) * HOUR) + 'px">' + pad(h) + ':00</span>'; }).join('') + '</div>';
+    html += '<div class="week-body" style="height:' + y(to * 60) + 'px">' +
+      '<div class="week-hours">' + hours.map(function(h){ return '<span style="top:' + y(h * 60) + 'px">' + pad(h) + ':00</span>'; }).join('') + '</div>';
     cols.forEach(function(i){
       // Not before its first date or after its end date, and only in its weeks.
       var day = ms.filter(function(m){ return m.meeting.day === MEETING_DAYS[i][0] && !(m.meeting.until && m.meeting.until < iso(dates[i])) && inWeek(m, iso(dates[i])); })
@@ -223,12 +234,12 @@
         if (lane < 0) { lane = cur.lanes.length; cur.lanes.push(0); }
         cur.lanes[lane] = b.e; b.lane = lane; cur.items.push(b); cur.end = Math.max(cur.end, b.e);
       });
-      html += '<div class="week-day">' + hours.map(function(h){ return '<span class="week-line" style="top:' + ((h - from) * HOUR) + 'px"></span>'; }).join('');
+      html += '<div class="week-day">' + squash + hours.map(function(h){ return '<span class="week-line" style="top:' + y(h * 60) + 'px"></span>'; }).join('');
       groups.forEach(function(g){
         g.items.forEach(function(b){
           var m = b.m, n = g.lanes.length, tag = m.href ? 'a' : 'span';
           html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (m.paused ? ' is-paused' : '') + '" data-key="' + esc(keyOf(m)) + '"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
-            ' style="top:' + ((b.s - from * 60) / 60 * HOUR) + 'px;height:' + Math.max(18, (b.e - b.s) / 60 * HOUR - 2) + 'px;' +
+            ' style="top:' + y(b.s) + 'px;height:' + Math.max(18, y(b.e) - y(b.s) - 2) + 'px;' +
             'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.paused ? ' · Paused' : '')) + '">' +
             '<span class="week-time">' + esc(m.meeting.time) + '</span> ' + esc(m.title) + (m.w ? ' ' + groupBadge(m.w) : '') + '</' + tag + '>';
         });
