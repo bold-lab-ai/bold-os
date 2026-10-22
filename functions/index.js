@@ -4424,7 +4424,8 @@ exports.retryWelcomeEmails = onSchedule(
 // pages, kept in sync by hand). A member asks for another group on their profile
 // (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
 // requests. Each group but PAN-BOLD may have Slack channels (settings/groups.channels, set there:
-// one or more names, separated by commas, as "bold-internal, all-active-projects").
+// one or more names, separated by commas, as "bold-internal, all-active-projects"), and each
+// role on the join form may have some too (settings/groups.roleChannels, by role: "PhD student").
 // The groups are ranked (GROUPS, highest first) and each is in the channels of those below
 // it too: BOLD-exec in BOLD-staff's, BOLD-internal's and BOLD-associate's; BOLD-internal
 // in BOLD-associate's, not BOLD-staff's. Whoever comes into a group is invited to its
@@ -4476,15 +4477,17 @@ exports.onMemberGroup = onDocumentWritten(
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
     const g = groupOf(after);
-    const wanted = channelGroupsFor(g);
-    if (!wanted.length || (before && groupOf(before) === g)) return;
+    const wanted = before && groupOf(before) === g ? [] : channelGroupsFor(g);
+    // A new role: its channels too (settings/groups.roleChannels).
+    const role = String(after.role || ''), newRole = role && (!before || before.role !== role);
+    if (!wanted.length && !newRole) return;
     const set = (await db.collection('settings').doc('groups').get()).data() || {};
-    for (const h of wanted){
-      for (const name of groupChannelNames((set.channels || {})[h])) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
-    }
+    const names = [];
+    wanted.forEach(function(h){ groupChannelNames((set.channels || {})[h]).forEach(function(n){ if (names.indexOf(n) < 0) names.push(n); }); });
+    if (newRole) groupChannelNames((set.roleChannels || {})[role]).forEach(function(n){ if (names.indexOf(n) < 0) names.push(n); });
+    for (const name of names) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
   }
 );
-
 exports.onGroupChannels = onDocumentWritten(
   { document: 'settings/groups', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 540 },
   async function(event){
@@ -4493,24 +4496,36 @@ exports.onGroupChannels = onDocumentWritten(
     const doneRef = db.collection('settings').doc('groupsInvited');
     const done = (await doneRef.get()).data() || {};
     const before = done.version === GROUP_RANKING_VERSION ? (done.channels || {}) : {};
-    const channels = after.channels || {};
-    // Each group's channels not yet filled: new ones, or all of them after the ranking changed.
-    const fresh = function(g){ const had = groupChannelNames(before[g]); return groupChannelNames(channels[g]).filter(function(n){ return had.indexOf(n) < 0; }); };
-    const changed = CHANNEL_GROUPS.filter(function(g){ return fresh(g).length; });
-    if (!changed.length) return;
+    const beforeRoles = done.roles || {};
+    const channels = after.channels || {}, roleChannels = after.roleChannels || {};
+    // Each group's (and role's) channels not yet filled: new ones, or all of them after the ranking changed.
+    const freshIn = function(now, had){ const old = groupChannelNames(had); return groupChannelNames(now).filter(function(n){ return old.indexOf(n) < 0; }); };
+    const changed = CHANNEL_GROUPS.filter(function(g){ return freshIn(channels[g], before[g]).length; });
+    const changedRoles = Object.keys(roleChannels).filter(function(r){ return freshIn(roleChannels[r], beforeRoles[r]).length; });
+    if (!changed.length && !changedRoles.length) return;
     const members = (await db.collection('members').get()).docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); });
-    const errors = Object.assign({}, after.channelErrors || {});
-    for (const g of changed){
-      const inIt = members.filter(function(m){ return channelGroupsFor(groupOf(m)).indexOf(g) >= 0; }).map(function(m){ return m.email; });
+    const errors = Object.assign({}, after.channelErrors || {}), roleErrors = Object.assign({}, after.roleChannelErrors || {});
+    const fill = async function(emails, names){
       let err = '';
-      for (const name of fresh(g)) err = (await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), inIt, name)) || err;
+      for (const name of names) err = (await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), emails, name)) || err;
+      return err;
+    };
+    for (const g of changed){
+      const err = await fill(members.filter(function(m){ return channelGroupsFor(groupOf(m)).indexOf(g) >= 0; }).map(function(m){ return m.email; }), freshIn(channels[g], before[g]));
       if (err) errors[g] = err; else delete errors[g];
     }
-    const invited = {};
+    for (const r of changedRoles){
+      const err = await fill(members.filter(function(m){ return m.role === r; }).map(function(m){ return m.email; }), freshIn(roleChannels[r], beforeRoles[r]));
+      if (err) roleErrors[r] = err; else delete roleErrors[r];
+    }
+    Object.keys(roleErrors).forEach(function(r){ if (!groupChannelNames(roleChannels[r]).length) delete roleErrors[r]; });
     // A channel that failed isn't done: saving the settings again retries it.
+    const invited = {}, invitedRoles = {};
     CHANNEL_GROUPS.forEach(function(g){ if (groupChannelNames(channels[g]).length && !errors[g]) invited[g] = groupChannelNames(channels[g]).join(', '); });
-    await doneRef.set({ channels: invited, version: GROUP_RANKING_VERSION, at: Date.now() });
-    await event.data.after.ref.set({ channelErrors: errors }, { merge: true });
+    Object.keys(roleChannels).forEach(function(r){ if (groupChannelNames(roleChannels[r]).length && !roleErrors[r]) invitedRoles[r] = groupChannelNames(roleChannels[r]).join(', '); });
+    await doneRef.set({ channels: invited, roles: invitedRoles, version: GROUP_RANKING_VERSION, at: Date.now() });
+    // Replaced whole (a merge would keep errors that are fixed).
+    await event.data.after.ref.update({ channelErrors: errors, roleChannelErrors: roleErrors });
   }
 );
 

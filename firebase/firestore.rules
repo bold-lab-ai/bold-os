@@ -135,12 +135,14 @@ service cloud.firestore {
         && request.resource.data.roles is list && request.resource.data.roles.size() <= 30
         && request.resource.data.pillars is list && request.resource.data.pillars.size() <= 20;
     }
-    // Each group's Slack channel (functions/index.js "Groups"): the lab reads it; PIs and
-    // admins set it on Join requests. channelErrors is the server's.
+    // Each group's Slack channels, and each role's (roleChannels) (functions/index.js "Groups"):
+    // the lab reads them; PIs and admins set them on Join requests. channelErrors and
+    // roleChannelErrors are the server's.
     match /settings/groups {
       allow read: if isLabMember();
-      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['channels', 'updatedAt', 'updatedBy'])
-        && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'staff']);
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['channels', 'roleChannels', 'updatedAt', 'updatedBy'])
+        && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'staff'])
+        && request.resource.data.get('roleChannels', {}) is map && request.resource.data.get('roleChannels', {}).size() <= 30;
     }
     // Who did what with whom (functions/index.js "Interactions"): the lab reads them, for
     // Connections on a profile and the Network page; only the server writes them.

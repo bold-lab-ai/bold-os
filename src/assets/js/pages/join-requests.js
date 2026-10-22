@@ -96,6 +96,11 @@
           var err = (groups.channelErrors || {})[c[0]];
           return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="400" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel, #another (none: nobody is added)"></label>' +
             (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
+        }).join('') + '</fieldset>' + group('Slack channels by role') + '<p class="proj-meta">Everyone with a role (on their details) is added to its channels. The roles are the join form’s, below.</p>' +
+        (f.roles || BoldJoin.ROLES).map(function(r){
+          var err = (groups.roleChannelErrors || {})[r];
+          return '<label>' + esc(r) + '<input type="text" class="jr-rchan" data-role="' + esc(r) + '" maxlength="400" value="' + esc(((groups.roleChannels || {})[r]) || '') + '" placeholder="#channel, #another (none: nobody is added)"></label>' +
+            (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
         }).join('') + '</fieldset>' + group('Join form') +
       '<label>Roles, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
       '<label>Research pillars, one per line<textarea class="jr-pillars no-tags" rows="4">' + esc((f.pillars || BoldJoin.PILLARS).join('\n')) + '</textarea></label></fieldset>' +
@@ -225,7 +230,13 @@
       var v = i.value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
       if (v.length) channels[i.getAttribute('data-group')] = v.join(', ');
     });
-    if (Object.keys(channels).some(function(k){ return channels[k].split(', ').some(function(n){ return !/^[a-z0-9_-]{1,80}$/.test(n); }); })) { err.textContent = 'Slack channel names use letters, numbers, hyphens and underscores.'; err.hidden = false; return; }
+    var roleChannels = {};
+    Array.prototype.forEach.call(s.querySelectorAll('.jr-rchan'), function(i){
+      var v = i.value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
+      if (v.length) roleChannels[i.getAttribute('data-role')] = v.join(', ');
+    });
+    var badName = function(m){ return Object.keys(m).some(function(k){ return m[k].split(', ').some(function(n){ return !/^[a-z0-9_-]{1,80}$/.test(n); }); }); };
+    if (badName(channels) || badName(roleChannels)) { err.textContent = 'Slack channel names use letters, numbers, hyphens and underscores.'; err.hidden = false; return; }
     // Channels added to a group: everyone meant to be in them is invited (onGroupChannels).
     var had = (groups && groups.channels) || {};
     var added = [];
@@ -233,17 +244,22 @@
       var before = String(had[g] || '').split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); });
       channels[g].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) added.push('Invite everyone in ' + BoldJoin.categoryLabel(g) + ' and the groups above it to #' + n + ' on Slack'); });
     });
+    var hadRoles = (groups && groups.roleChannels) || {};
+    Object.keys(roleChannels).forEach(function(r){
+      var before = String(hadRoles[r] || '').split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); });
+      roleChannels[r].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) added.push('Invite everyone whose role is ' + r + ' to #' + n + ' on Slack'); });
+    });
     (added.length ? BOLD.confirmAction({ title: 'Save the settings?', go: 'Save', effects: added }) : Promise.resolve(true)).then(function(ok){
-      if (ok) writeSettings(btn, err, url, v, roles, pillars, channels);
+      if (ok) writeSettings(btn, err, url, v, roles, pillars, channels, roleChannels);
     });
   }
-  function writeSettings(btn, err, url, v, roles, pillars, channels){
+  function writeSettings(btn, err, url, v, roles, pillars, channels, roleChannels){
     var stamp = { updatedAt: Date.now(), updatedBy: me.email };
     btn.disabled = true; err.hidden = true;
     Promise.all([
       db.collection('settings').doc('joinInvite').set(Object.assign({ slackInviteUrl: url, slackInviteExpires: v('.jr-expires'), subject: v('.jr-subject').trim() || SUBJECT, body: v('.jr-body') || BODY }, stamp)),
       db.collection('settings').doc('joinForm').set(Object.assign({ roles: roles, pillars: pillars }, stamp)),
-      db.collection('settings').doc('groups').set(Object.assign({ channels: channels }, stamp)),
+      db.collection('settings').doc('groups').set(Object.assign({ channels: channels, roleChannels: roleChannels }, stamp)),
     ]).then(function(){
       editing = false; btn.disabled = false; btn.textContent = 'Saved'; setTimeout(function(){ btn.textContent = 'Save settings'; }, 1500);
     }).catch(function(e){
