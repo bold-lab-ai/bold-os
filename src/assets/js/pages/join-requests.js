@@ -91,10 +91,10 @@
       '<label>Expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label>' +
       '</fieldset>' + group('Welcome email') + '<label>Subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
       '<label>Text ({name}: their first name, {slackInvite}: the link above, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label>' +
-      '</fieldset>' + group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channel (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>).</p>' +
+      '</fieldset>' + group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channels (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>). Several are separated by commas.</p>' +
         BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== 'pan'; }).map(function(c){
           var err = (groups.channelErrors || {})[c[0]];
-          return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="80" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel (none: nobody is added)"></label>' +
+          return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="400" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel (none: nobody is added)"></label>' +
             (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
         }).join('') + '</fieldset>' + group('Join form') +
       '<label>Roles, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
@@ -220,8 +220,24 @@
     var roles = lines(v('.jr-roles')), pillars = lines(v('.jr-pillars'));
     if (!roles.length) { err.textContent = 'Give at least one role.'; err.hidden = false; return; }
     var channels = {};
-    Array.prototype.forEach.call(s.querySelectorAll('.jr-chan'), function(i){ var v = i.value.trim().replace(/^#/, '').toLowerCase(); if (v) channels[i.getAttribute('data-group')] = v; });
-    if (Object.keys(channels).some(function(k){ return !/^[a-z0-9_-]{1,80}$/.test(channels[k]); })) { err.textContent = 'Slack channel names use letters, numbers, hyphens and underscores.'; err.hidden = false; return; }
+    // One or more names, kept as "a, b".
+    Array.prototype.forEach.call(s.querySelectorAll('.jr-chan'), function(i){
+      var v = i.value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
+      if (v.length) channels[i.getAttribute('data-group')] = v.join(', ');
+    });
+    if (Object.keys(channels).some(function(k){ return channels[k].split(', ').some(function(n){ return !/^[a-z0-9_-]{1,80}$/.test(n); }); })) { err.textContent = 'Slack channel names use letters, numbers, hyphens and underscores.'; err.hidden = false; return; }
+    // Channels added to a group: everyone meant to be in them is invited (onGroupChannels).
+    var had = (groups && groups.channels) || {};
+    var added = [];
+    Object.keys(channels).forEach(function(g){
+      var before = String(had[g] || '').split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); });
+      channels[g].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) added.push('Invite everyone in ' + BoldJoin.categoryLabel(g) + ' and the groups above it to #' + n + ' on Slack'); });
+    });
+    (added.length ? BOLD.confirmAction({ title: 'Save the settings?', go: 'Save', effects: added }) : Promise.resolve(true)).then(function(ok){
+      if (ok) writeSettings(btn, err, url, v, roles, pillars, channels);
+    });
+  }
+  function writeSettings(btn, err, url, v, roles, pillars, channels){
     var stamp = { updatedAt: Date.now(), updatedBy: me.email };
     btn.disabled = true; err.hidden = true;
     Promise.all([

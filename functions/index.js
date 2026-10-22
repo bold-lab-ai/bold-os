@@ -4423,7 +4423,8 @@ exports.retryWelcomeEmails = onSchedule(
 // students BOLD-internal, Staff BOLD-staff, everyone else PAN-BOLD (groupOf; BoldJoin.groupOf on the
 // pages, kept in sync by hand). A member asks for another group on their profile
 // (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
-// requests. Each group but PAN-BOLD may have a Slack channel (settings/groups.channels, set there).
+// requests. Each group but PAN-BOLD may have Slack channels (settings/groups.channels, set there:
+// one or more names, separated by commas, as "bold-internal, all-active-projects").
 // The groups are ranked (GROUPS, highest first) and each is in the channels of those below
 // it too: BOLD-exec in BOLD-staff's, BOLD-internal's and BOLD-associate's; BOLD-internal
 // in BOLD-associate's, not BOLD-staff's. Whoever comes into a group is invited to its
@@ -4450,6 +4451,8 @@ function groupOf(m){
 }
 
 function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, '').toLowerCase(); }
+// A group's channels, as saved ("#a, b c") → ['a', 'b', 'c'].
+function groupChannelNames(raw){ return String(raw || '').split(/[\s,]+/).map(groupChannelName).filter(Boolean); }
 
 // Invites each of `emails` to group channel `name`; → the first error, or ''.
 async function inviteToGroupChannel(token, emails, name){
@@ -4477,8 +4480,7 @@ exports.onMemberGroup = onDocumentWritten(
     if (!wanted.length || (before && groupOf(before) === g)) return;
     const set = (await db.collection('settings').doc('groups').get()).data() || {};
     for (const h of wanted){
-      const name = groupChannelName((set.channels || {})[h]);
-      if (name) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
+      for (const name of groupChannelNames((set.channels || {})[h])) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
     }
   }
 );
@@ -4492,18 +4494,21 @@ exports.onGroupChannels = onDocumentWritten(
     const done = (await doneRef.get()).data() || {};
     const before = done.version === GROUP_RANKING_VERSION ? (done.channels || {}) : {};
     const channels = after.channels || {};
-    const changed = CHANNEL_GROUPS.filter(function(g){ return groupChannelName(channels[g]) && groupChannelName(channels[g]) !== groupChannelName(before[g]); });
+    // Each group's channels not yet filled: new ones, or all of them after the ranking changed.
+    const fresh = function(g){ const had = groupChannelNames(before[g]); return groupChannelNames(channels[g]).filter(function(n){ return had.indexOf(n) < 0; }); };
+    const changed = CHANNEL_GROUPS.filter(function(g){ return fresh(g).length; });
     if (!changed.length) return;
     const members = (await db.collection('members').get()).docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); });
     const errors = Object.assign({}, after.channelErrors || {});
     for (const g of changed){
       const inIt = members.filter(function(m){ return channelGroupsFor(groupOf(m)).indexOf(g) >= 0; }).map(function(m){ return m.email; });
-      const err = await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), inIt, groupChannelName(channels[g]));
+      let err = '';
+      for (const name of fresh(g)) err = (await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), inIt, name)) || err;
       if (err) errors[g] = err; else delete errors[g];
     }
     const invited = {};
     // A channel that failed isn't done: saving the settings again retries it.
-    CHANNEL_GROUPS.forEach(function(g){ if (groupChannelName(channels[g]) && !errors[g]) invited[g] = groupChannelName(channels[g]); });
+    CHANNEL_GROUPS.forEach(function(g){ if (groupChannelNames(channels[g]).length && !errors[g]) invited[g] = groupChannelNames(channels[g]).join(', '); });
     await doneRef.set({ channels: invited, version: GROUP_RANKING_VERSION, at: Date.now() });
     await event.data.after.ref.set({ channelErrors: errors }, { merge: true });
   }
