@@ -96,7 +96,7 @@
     });
     state.cards = next;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
@@ -342,7 +342,7 @@
     var prev = state.cards;
     state.cards = next;
     renderBoard();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderBoard();
@@ -381,7 +381,7 @@
     state.cards = next;
     state.discussionReplyOpenId = null;
     renderBoard();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderBoard();
@@ -437,7 +437,7 @@
     state.cards = next;
     state.checklistReplyOpenId = null;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
@@ -480,7 +480,7 @@
     state.cards = next;
     state.checklistReplyOpenId = null;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
@@ -489,8 +489,18 @@
     });
   }
 
+  // Typing in the abstract stage's fields starts an edit: the card as it was
+  // then is what saving compares with (formChange in storage.js).
+  if (els.boardRegion) ['input', 'change'].forEach(function(type){
+    els.boardRegion.addEventListener(type, function(e){
+      if (state.view === 'card' && state.currentCardId && e.target.closest && e.target.closest('#stageAbstractFields')) startEditing('stage', state.currentCardId);
+    });
+  });
+
   function renderCardDetail(){
     var card = getCurrentCard();
+    // Redrawn, its fields show what's saved now: an edit starts again from here.
+    if (card) delete state.editingFrom['stage:' + card.id];
     var board = getCurrentBoard();
     if (!card){
       els.boardRegion.innerHTML = '<div class="detail"><a href="#" class="detail-back" id="detailBack">&larr; Back to board</a><p class="board-empty">This paper is no longer on the board.</p></div>';
@@ -897,7 +907,7 @@
       }
     }
 
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
@@ -943,7 +953,7 @@
     var prev = state.cards;
     state.cards = next;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
@@ -971,7 +981,7 @@
     var next = state.cards.map(function(c){ return c.id === card.id ? Object.assign({}, c, { submissionLink: value, updatedAt: Date.now() }) : c; });
     state.cards = next;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
@@ -1026,7 +1036,7 @@
     state.cards = next;
     state.detailEditing = null;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();

@@ -289,6 +289,7 @@
   }
 
   var state = {
+    editingFrom: {}, // 'form:card id' → the card when someone started editing its form (formChange)
     view: 'list', // 'list' | 'venue' | 'card'
     boards: [],
     currentBoardId: null,

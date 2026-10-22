@@ -5,13 +5,8 @@
   // caller elsewhere in this file is unchanged. `boards/{id}` holds venue
   // metadata only; each card is its own document in `boards/{id}/cards/{cardId}`,
   // so two people editing different cards on the same board never contend.
-  //
-  // Not yet done (deliberately deferred — see docs/FIREBASE.md "Phase 1b"):
-  // checklist items, comments, discussion, and history still live embedded
-  // on the card document, same shape as the old localStorage blob, so
-  // `saveBoard(id, {cards})` still upserts every card in the array on every
-  // call rather than writing just the one field that changed. Correct, safe,
-  // not yet write-optimized — that split is the next increment, not this one.
+  // Checklist items, comments and the discussion live embedded on the card
+  // document; saveBoard merges them with whatever else changed meanwhile.
 
   function cardsCol(boardId){ return db.collection('boards').doc(boardId).collection('cards'); }
 
@@ -162,36 +157,103 @@
       .catch(function(err){ logError('loadBoard', err); return { cards: [] }; });
   }
 
-  // Called with the full cards array every time (see note above) — upsert
-  // only cards that actually changed, then delete any card doc no longer
-  // present in the array. Same reasoning as saveBoardsIndex: re-.set()-ing
-  // an untouched card re-triggers its own per-card authorization check
-  // (only its submitter/reviewers/a PI can touch it), which can fail and
-  // take the whole batch down even though that card was never meant to
-  // change — e.g. registering a new paper on a board that already has
-  // someone else's card would otherwise fail purely because of the
-  // unrelated card, not the new one.
-  function saveBoard(id, data){
-    var cards = (data && Array.isArray(data.cards)) ? data.cards : [];
-    return cardsCol(id).get()
-      .then(function(snap){
-        var existing = {}; snap.forEach(function(doc){ existing[doc.id] = doc.data(); });
-        var keepIds = cards.map(function(c){ return c.id; });
-        var batch = db.batch();
-        var touched = false;
-        cards.forEach(function(c){
-          var cardData = Object.assign({}, c); delete cardData.id;
-          if (existing.hasOwnProperty(c.id) && stableStringify(existing[c.id]) === stableStringify(cardData)) return;
-          batch.set(cardsCol(id).doc(c.id), cardData);
-          touched = true;
+  // Saves a change to a board's cards: `data.cards` is the list after the change,
+  // `base` the list it was made from. Only the cards that differ between the two
+  // are written, each merged with what's in Firestore now (merge3), in one
+  // transaction: so a change from someone else that this tab hadn't seen yet
+  // (a paper registered, a field edited, a comment posted) is kept, not
+  // overwritten or deleted. A card is deleted only when it's in `base` and not in
+  // `data.cards`, i.e. when this change removed it. Re-writing an untouched card
+  // would also re-run its own Security Rules check and could fail the whole
+  // save for a card nobody meant to change. → Promise<bool>.
+  function saveBoard(id, data, base){
+    var strip = function(list){ var o = {}; (list || []).forEach(function(c){ var d = Object.assign({}, c); delete d.id; o[c.id] = d; }); return o; };
+    var mine = strip(data && data.cards), was = strip(base);
+    var changed = Object.keys(Object.assign({}, mine, was)).filter(function(k){ return stableStringify(mine[k]) !== stableStringify(was[k]); });
+    if (!changed.length) return Promise.resolve(true);
+    return db.runTransaction(function(tx){
+      return Promise.all(changed.map(function(k){ return tx.get(cardsCol(id).doc(k)); })).then(function(snaps){
+        snaps.forEach(function(snap, i){
+          var k = changed[i], ref = cardsCol(id).doc(k);
+          if (!was[k]) { tx.set(ref, mine[k]); return; }
+          if (!mine[k]) { if (snap.exists) tx.delete(ref); return; }
+          if (!snap.exists) { var gone = new Error('The paper was removed meanwhile.'); gone.code = 'gone'; throw gone; }
+          var merged = merge3(was[k], mine[k], snap.data());
+          if (stableStringify(merged) !== stableStringify(snap.data())) tx.set(ref, merged);
         });
-        Object.keys(existing).forEach(function(cid){
-          if (keepIds.indexOf(cid) === -1) { batch.delete(cardsCol(id).doc(cid)); touched = true; }
-        });
-        if (!touched) return true;
-        return batch.commit().then(function(){ return true; });
-      })
+      });
+    }).then(function(){ return true; })
       .catch(function(err){ logError('saveBoard', err); lastWriteErrorCode = err && err.code; return false; });
+  }
+
+  // Pure: a three-way merge of one value. `base` is what this tab started from,
+  // `mine` what it changed it to, `theirs` what's saved now. Whoever changed it
+  // wins; when both did, objects merge key by key and lists of things with ids
+  // (comments, replies, checklist items) merge item by item: both sides'
+  // additions kept, either side's removals honoured. Otherwise, mine wins.
+  function merge3(base, mine, theirs){
+    var same = function(a, b){ return stableStringify(a) === stableStringify(b); };
+    if (same(mine, base)) return theirs;
+    if (same(theirs, base) || theirs === undefined || base === undefined) return mine;
+    var isObj = function(x){ return x !== null && typeof x === 'object' && !Array.isArray(x); };
+    var withIds = function(x){ return Array.isArray(x) && x.every(function(v){ return isObj(v) && v.id !== undefined; }); };
+    if (withIds(base) && withIds(mine) && withIds(theirs)){
+      var find = function(list, id){ return list.filter(function(v){ return v.id === id; })[0]; };
+      var out = [];
+      theirs.forEach(function(t){
+        var b = find(base, t.id), m = find(mine, t.id);
+        if (!b) out.push(t);                       // they added it
+        else if (m) out.push(merge3(b, m, t));     // both still have it
+        else if (!same(t, b)) out.push(t);          // I removed it, but they changed it: kept
+      });
+      mine.forEach(function(m){ if (!find(base, m.id) && !find(theirs, m.id)) out.push(m); }); // I added it
+      return out;
+    }
+    if (isObj(base) && isObj(mine) && isObj(theirs)){
+      var o = {};
+      Object.keys(Object.assign({}, base, mine, theirs)).forEach(function(k){
+        var v = merge3(base[k], mine[k], theirs[k]);
+        if (v !== undefined) o[k] = v;
+      });
+      return o;
+    }
+    return mine;
+  }
+
+  // Forms that save several fields at once (Edit, the abstract stage's fields):
+  // the card as it was when someone started editing it (startEditing), so saving
+  // writes only the fields they changed, not the rest as they were back then.
+  var FIELD_WORDS = { title: 'the title', authors: 'the authors', overleafLink: 'the Overleaf link', abstractText: 'the abstract',
+    correspondingAuthorEmail: 'the corresponding author', computeEstimate: 'the compute estimate', pitchLink: 'the pitch link',
+    submissionLink: 'the submission link', arxivLink: 'the arXiv link', rebuttalDeadline: 'the rebuttal deadline',
+    rebuttalDocLink: 'the rebuttal document', cameraReadyLink: 'the camera-ready link', reviewNotes: 'the review notes',
+    outcome: 'the outcome', reviewers: 'the reviewers' };
+  // `form` names the form ('edit', 'stage'): each keeps its own starting point.
+  function startEditing(form, cardId, again){
+    var card = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    if (!card || (state.editingFrom[form + ':' + cardId] && !again)) return;
+    state.editingFrom[form + ':' + cardId] = JSON.parse(JSON.stringify(card));
+  }
+  // → { prev, next, base, mine } for saveBoard (next: the board to show now), or
+  // null when someone else changed one of the same fields meanwhile and this
+  // person chose to keep theirs.
+  function formChange(form, cardId, updates){
+    var live = state.cards.filter(function(c){ return c.id === cardId; })[0];
+    var from = state.editingFrom[form + ':' + cardId] || live;
+    var blank = function(v){ return v === undefined || v === null || v === ''; };
+    var same = function(a, b){ return (blank(a) && blank(b)) || stableStringify(a) === stableStringify(b); };
+    var changed = {};
+    Object.keys(updates).forEach(function(k){ if (k === 'updatedAt' || !same(updates[k], from[k])) changed[k] = updates[k]; });
+    var clash = Object.keys(changed).filter(function(k){ return k !== 'updatedAt' && !same(live[k], from[k]) && !same(changed[k], live[k]); });
+    if (clash.length){
+      var words = clash.map(function(k){ return FIELD_WORDS[k]; }).filter(Boolean);
+      if (!words.length) words = ['some of these fields'];
+      if (!window.confirm('Someone else changed ' + words.join(', ') + ' since you started editing. Save yours over theirs?')) return null;
+    }
+    delete state.editingFrom[form + ':' + cardId];
+    var prev = state.cards;
+    var swap = function(card){ return prev.map(function(c){ return c.id === cardId ? card : c; }); };
+    return { prev: prev, next: swap(Object.assign({}, live, changed)), base: swap(from), mine: swap(Object.assign({}, from, changed)) };
   }
 
   function deleteBoardData(id){
@@ -218,10 +280,10 @@
   // never has two saves racing each other where this would matter.
   var lastWriteErrorCode = null;
   function saveErrorMessage(fallback){
-    var wasPermissionDenied = lastWriteErrorCode === 'permission-denied';
+    var code = lastWriteErrorCode;
     lastWriteErrorCode = null;
-    return wasPermissionDenied
-      ? 'You don’t have permission to do that — check with a PI or lab admin.'
+    return code === 'permission-denied' ? 'You don’t have permission to do that — check with a PI or lab admin.'
+      : code === 'gone' ? 'Someone removed this paper meanwhile.'
       : fallback;
   }
 

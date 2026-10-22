@@ -184,6 +184,7 @@
       settingsHtml();
     var s = main.querySelector('.jr-settings');
     s.addEventListener('input', function(){ editing = true; });
+    if (!editing) { var drawn = readSettings(); settingsFrom = drawn.error ? null : drawn; }
     showTab();
     jump();
   }
@@ -217,26 +218,41 @@
 
   function lines(t){ return t.split('\n').map(function(l){ return l.trim(); }).filter(Boolean); }
 
-  function saveSettings(btn){
-    var s = main.querySelector('.jr-settings'), err = s.querySelector('.ev-error');
+  // What the settings form says, as saved: { invite, form, groups } (each a settings
+  // document's fields), or { error }.
+  function readSettings(){
+    var s = main.querySelector('.jr-settings');
     var v = function(c){ return s.querySelector(c).value; };
     var url = v('.jr-invite').trim();
-    if (url && !/^https:\/\/\S+$/.test(url)) { err.textContent = 'The invite link starts with https://'; err.hidden = false; return; }
+    if (url && !/^https:\/\/\S+$/.test(url)) return { error: 'The invite link starts with https://' };
     var roles = lines(v('.jr-roles')), pillars = lines(v('.jr-pillars'));
-    if (!roles.length) { err.textContent = 'Give at least one role.'; err.hidden = false; return; }
-    var channels = {};
-    // One or more names, kept as "a, b".
-    Array.prototype.forEach.call(s.querySelectorAll('.jr-chan'), function(i){
-      var v = i.value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
-      if (v.length) channels[i.getAttribute('data-group')] = v.join(', ');
-    });
-    var roleChannels = {};
-    Array.prototype.forEach.call(s.querySelectorAll('.jr-rchan'), function(i){
-      var v = i.value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
-      if (v.length) roleChannels[i.getAttribute('data-role')] = v.join(', ');
-    });
+    if (!roles.length) return { error: 'Give at least one role.' };
+    // One or more names each, kept as "a, b".
+    var names = function(sel, attr){
+      var m = {};
+      Array.prototype.forEach.call(s.querySelectorAll(sel), function(i){
+        var v = i.value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
+        if (v.length) m[i.getAttribute(attr)] = v.join(', ');
+      });
+      return m;
+    };
+    var channels = names('.jr-chan', 'data-group'), roleChannels = names('.jr-rchan', 'data-role');
     var badName = function(m){ return Object.keys(m).some(function(k){ return m[k].split(', ').some(function(n){ return !/^[a-z0-9_-]{1,80}$/.test(n); }); }); };
-    if (badName(channels) || badName(roleChannels)) { err.textContent = 'Slack channel names use letters, numbers, hyphens and underscores.'; err.hidden = false; return; }
+    if (badName(channels) || badName(roleChannels)) return { error: 'Slack channel names use letters, numbers, hyphens and underscores.' };
+    return {
+      invite: { slackInviteUrl: url, slackInviteExpires: v('.jr-expires'), subject: v('.jr-subject').trim() || SUBJECT, body: v('.jr-body') || BODY },
+      form: { roles: roles, pillars: pillars },
+      groups: { channels: channels, roleChannels: roleChannels }
+    };
+  }
+  // What the form showed when it was drawn: saving writes only what was changed since.
+  var settingsFrom = null;
+
+  function saveSettings(btn){
+    var err = main.querySelector('.jr-settings .ev-error');
+    var mine = readSettings();
+    if (mine.error) { err.textContent = mine.error; err.hidden = false; return; }
+    var channels = mine.groups.channels, roleChannels = mine.groups.roleChannels;
     // Channels added to a group: everyone meant to be in them is invited (onGroupChannels).
     var had = (groups && groups.channels) || {};
     var added = [];
@@ -250,18 +266,43 @@
       roleChannels[r].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) added.push('Invite everyone whose role is ' + r + ' to #' + n + ' on Slack'); });
     });
     (added.length ? BOLD.confirmAction({ title: 'Save the settings?', go: 'Save', effects: added }) : Promise.resolve(true)).then(function(ok){
-      if (ok) writeSettings(btn, err, url, v, roles, pillars, channels, roleChannels);
+      if (ok) writeSettings(btn, err, mine);
     });
   }
-  function writeSettings(btn, err, url, v, roles, pillars, channels, roleChannels){
-    var stamp = { updatedAt: Date.now(), updatedBy: me.email };
+  // Each settings document is written only if something in it was changed, and then
+  // only the fields (and, in a map, the entries) that were: the rest is kept as saved
+  // now, so two people saving different settings at once both keep theirs.
+  var SETTINGS_DOCS = { invite: 'joinInvite', form: 'joinForm', groups: 'groups' };
+  function writeSettings(btn, err, mine){
+    var from = settingsFrom || mine;
+    var same = function(a, b){ return JSON.stringify(a) === JSON.stringify(b); };
+    var isMap = function(x){ return x && typeof x === 'object' && !Array.isArray(x); };
+    var merge = function(base, mineV, theirs){
+      if (same(mineV, base)) return theirs;
+      if (isMap(mineV) && isMap(base) && isMap(theirs)){
+        var o = {};
+        Object.keys(Object.assign({}, base, mineV, theirs)).forEach(function(k){ var x = merge(base[k], mineV[k], theirs[k]); if (x !== undefined) o[k] = x; });
+        return o;
+      }
+      return mineV;
+    };
+    var keys = Object.keys(SETTINGS_DOCS).filter(function(k){ return !same(mine[k], from[k]); });
     btn.disabled = true; err.hidden = true;
-    Promise.all([
-      db.collection('settings').doc('joinInvite').set(Object.assign({ slackInviteUrl: url, slackInviteExpires: v('.jr-expires'), subject: v('.jr-subject').trim() || SUBJECT, body: v('.jr-body') || BODY }, stamp)),
-      db.collection('settings').doc('joinForm').set(Object.assign({ roles: roles, pillars: pillars }, stamp)),
-      db.collection('settings').doc('groups').set(Object.assign({ channels: channels, roleChannels: roleChannels }, stamp)),
-    ]).then(function(){
+    db.runTransaction(function(tx){
+      var refs = keys.map(function(k){ return db.collection('settings').doc(SETTINGS_DOCS[k]); });
+      return Promise.all(refs.map(function(r){ return tx.get(r); })).then(function(snaps){
+        snaps.forEach(function(snap, i){
+          var k = keys[i], now = snap.exists ? snap.data() : {}, out = {};
+          Object.keys(mine[k]).forEach(function(f){
+            var x = merge(from[k][f], mine[k][f], now[f] === undefined ? from[k][f] : now[f]);
+            if (x !== undefined) out[f] = x;
+          });
+          tx.set(refs[i], Object.assign(out, { updatedAt: Date.now(), updatedBy: me.email }));
+        });
+      });
+    }).then(function(){
       editing = false; btn.disabled = false; btn.textContent = 'Saved'; setTimeout(function(){ btn.textContent = 'Save settings'; }, 1500);
+      render();
     }).catch(function(e){
       console.error('[BOLD Join] saving the settings failed', e);
       err.textContent = 'Couldn’t save — try again.'; err.hidden = false; btn.disabled = false;

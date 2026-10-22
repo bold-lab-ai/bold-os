@@ -288,10 +288,13 @@
     patch.reviewers = { junior: junior, senior: senior };
     if (prevReviewers.junior !== junior) patch.jrReviewState = 'in_review';
     if (prevReviewers.senior !== senior) patch.srReviewState = 'in_review';
-    var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, patch) : c; });
-    state.cards = next;
+    // Only what they changed; asks first if someone else changed it too meanwhile.
+    var change = formChange('stage', cardId, patch);
+    if (!change) return;
+    prev = change.prev;
+    state.cards = change.next;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: change.mine }, change.base).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
@@ -373,7 +376,7 @@
     var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, { rebuttalDocLink: value, updatedAt: Date.now() }) : c; });
     state.cards = next;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
