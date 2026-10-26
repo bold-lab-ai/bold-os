@@ -197,9 +197,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
-  var TABS = [['overview', 'Overview'], ['presentations', 'Presentations'], ['paper', 'Papers']];
+  // The second tab is named for what it holds (the project's meeting, slides and notes, and
+  // its talks); its hash stays #presentations, so links keep working.
+  var TABS = [['overview', 'Overview'], ['presentations', 'Meetings & talks'], ['paper', 'Papers']];
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
-  // The Team tab's people and channel are on Overview now, its meeting, slides and notes on Presentations.
+  // The Team tab's people and channel are on Overview now, its meeting, slides and notes on Meetings & talks.
   if (tab === 'team') tab = 'overview';
   if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
   // &join=1, the link in a project's #all-active-projects announcement: join it

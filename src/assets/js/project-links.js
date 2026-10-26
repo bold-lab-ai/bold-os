@@ -172,7 +172,7 @@ window.BoldProjectLinks = (function(){
         (error ? '<span class="bpl-note bpl-error">' + esc(error) + '</span>' : '') + '</dd>';
     }
     // A Projects tab: each project, its presentations here (title, linking to it on the
-    // project's Presentations tab, &pres=; who, where in the programme, when, slides and
+    // project's Meetings & talks tab, &pres=; who, where in the programme, when, slides and
     // recording), then adding one.
     var TYPES = { 'research-talk': 'Research talk', pitch: 'Pitch', keynote: 'Keynote' };
     function panelHtml(){
