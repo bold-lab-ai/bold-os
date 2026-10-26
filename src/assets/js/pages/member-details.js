@@ -44,13 +44,13 @@
     return out;
   }
 
-  // The people on BOLD.OS, to choose the point of contact from.
+  // Who can be the point of contact: those who can invite (as on the join form), from
+  // joinInviters, since not every group can read the roster.
   var people = null;
   function loadPeople(){
     if (people) return;
-    db.collection('people').get().then(function(s){
-      people = s.docs.map(function(d){ var x = d.data(); return { name: x.name || x.email, email: String(x.email || '').toLowerCase() }; })
-        .filter(function(p){ return p.email && p.email !== me.email; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+    firebase.app().functions('europe-west2').httpsCallable('joinInviters')({ all: true }).then(function(r){
+      people = ((r.data && r.data.people) || []).map(function(p){ return { name: p.name, email: String(p.email || '').toLowerCase() }; });
       render();
     }).catch(function(err){ console.error('[BOLD Profile] loading the people failed', err); people = []; render(); });
   }

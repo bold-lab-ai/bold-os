@@ -4377,7 +4377,17 @@ async function joinInviterEmails(){
 // (joinInviterEmails) whose name has a word starting with what was typed (2 letters at
 // least). No sign-in (applicants aren't on Slack yet), so it gives names and Slack ids
 // only. data: { q } → { people: [{ id, name }] }.
+// The profile's point of contact (data: { all: true }, signed in): every one of them, with
+// their email (what members/{email}.contactEmail holds), since PAN-BOLD can't read `people`.
 exports.joinInviters = onCall(async (request) => {
+  if ((request.data || {}).all === true){
+    const email = callerEmail(request);
+    await access.requireAccess(email, 'profile', 'view');   // Who can see what
+    const [snap, can] = await Promise.all([db.collection('people').get(), joinInviterEmails()]);
+    return { people: snap.docs.map(function(d){ return { name: String(d.data().name || ''), email: String(d.data().email || '').toLowerCase() }; })
+      .filter(function(p){ return p.name && p.email && p.email !== email && can.has(p.email); })
+      .sort(function(a, b){ return a.name.localeCompare(b.name); }) };
+  }
   const q = foldName((request.data || {}).q).slice(0, 60);
   if (q.length < 2) return { people: [] };
   const [snap, can] = await Promise.all([db.collection('people').get(), joinInviterEmails()]);
