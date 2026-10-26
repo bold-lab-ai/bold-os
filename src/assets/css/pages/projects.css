@@ -156,6 +156,11 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .week-block.cal-study.is-mine:hover{background:#1b4f47;}
 .week-key.is-outline{background:none; border:1px solid var(--accent); border-left-width:3px; margin-left:10px;}
 .week-key.is-outline.cal-study{border-color:#256b60;}
+.type-badge.cal-series{color:#8a5a12;}
+.week-block.cal-series{color:#8a5a12; border-color:#8a5a12;}
+.week-block.cal-series.is-mine{background:#8a5a12; color:#fff;}
+.week-block.cal-series.is-mine:hover{background:#6c460d;}
+.week-key.is-outline.cal-series{border-color:#8a5a12;}
 .cal-nav{display:flex; align-items:center; gap:0; margin-top:24px; font-family:var(--sans);}
 .cal-nav .view-btn{border:1px solid var(--line);}
 .cal-nav .view-btn + .view-btn{border-left:none;}

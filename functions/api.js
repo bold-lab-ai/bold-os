@@ -202,6 +202,7 @@ module.exports = function(deps){
     sessions: () => cached('sessions', async () => docs(await db.collection('collabWeekSessions').get())),
     talks: () => cached('talks', async () => docs(await db.collection('collabWeekTalks').get())),
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
+    series: () => cached('series', async () => docs(await db.collection('eventSeries').get())),
     skills: () => cached('skills', async () => docs(await db.collection('skills').get())),
     guides: () => cached('guides', async () => docs(await db.collection('guides').get())),
     handbook: () => cached('handbook', async () => docs(await db.collection('handbook').get())),
@@ -254,7 +255,8 @@ module.exports = function(deps){
   // Apple Calendar or Outlook, which can't sign in. It holds what its owner can see on the
   // Calendar, as they can see it whenever it's fetched (events, if they can view Events;
   // project and supervision meetings, if they can view Projects), without the meetings
-  // they're in: those are already in their calendar, as invitations. It stops working
+  // they're in: those are already in their calendar, as invitations; and the released lab
+  // meetings (eventSeries) they aren't invited to, if they can view Events. It stops working
   // when they leave the BOLD Slack or make a new link.
   // calendarFeeds/{email} { token, createdAt, lastUsedAt }; server only (firestore.rules' deny-all).
   // data: { action: 'get' } → { url }: theirs, made the first time
@@ -287,6 +289,11 @@ module.exports = function(deps){
       events = (await lab.events()).filter((e) => !isHidden(e, full)).map((e) => ({
         id: e._id, title: e.title, start: e.startDate, end: e.endDate, place: e.place || '', description: plain(e.description),
         url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
+      // Lab meetings (eventSeries): the released ones they aren't invited to.
+      (await lab.series()).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {
+        meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, start: x.eventStart, pausedAt: x.pausedAt,
+          description: plain(x.description), url: url('series.html?series=' + encodeURIComponent(x._id)) });
+      });
     }
     if (seeMeetings) {
       const [workspaces, studies, name] = await Promise.all([lab.workspaces(), lab.studies(), nameOf()]);
@@ -391,7 +398,7 @@ module.exports = function(deps){
     },
     {
       name: 'calendar',
-      description: 'What is on, as on the Calendar: the lab’s events between two dates (with their schedule of sessions), and the recurring project and supervision meetings.',
+      description: 'What is on, as on the Calendar: the lab’s events between two dates (with their schedule of sessions), and the recurring project, supervision and lab meetings.',
       inputSchema: { type: 'object', properties: {
         from: { type: 'string', description: 'YYYY-MM-DD (default: today).' },
         to: { type: 'string', description: 'YYYY-MM-DD (default: 60 days after from).' },
@@ -660,6 +667,12 @@ module.exports = function(deps){
       out.supervision_meetings = studies.filter((s) => s.meeting && (s.eventId || s.pausedAt))
         .map((s) => ({ student: s.name || name(s._id), title: s.title || '', when: meetingText(s.meeting), paused: !!s.pausedAt,
           you_are_in_it: (s.everyone || []).some((e) => String(e).toLowerCase() === who.email) }));
+      if (await access.can(who.email, 'events', 'view')) {
+        out.lab_meetings = (await lab.series()).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt))
+          .map((x) => ({ id: x._id, title: x.title, when: meetingText(x.meeting), paused: !!x.pausedAt,
+            invited: x.invite && x.invite.mode === 'group' ? (GROUP_LABEL[x.invite.group] || 'everyone in BOLD') + ' and above' : 'whoever joins',
+            you_are_invited: (x.guests || []).indexOf(who.email) >= 0, url: url('series.html?series=' + encodeURIComponent(x._id)) }));
+      }
     }
     return out;
   }

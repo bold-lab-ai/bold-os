@@ -5389,11 +5389,17 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
-    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest }) });
+    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, eventSeries: exports.eventSeries }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
 // Subscribing to the Calendar: one private .ics link a person (calendar.html; served by boldApi).
 exports.calendarFeed = agentApi.calendarFeed;
+// Recurring lab meetings (series.html, Events): functions/series.js.
+const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
+  googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
+  normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto });
+exports.eventSeries = labSeries.eventSeries;
+exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.

@@ -429,6 +429,14 @@ service cloud.firestore {
       allow delete: if hasFullWrite() || (may('events', 'edit') && addedByMe(resource.data));
     }
 
+    // Recurring lab meetings (eventSeries/{id}; functions/series.js), written only by the
+    // eventSeries function: the released ones for whoever can view Events, a hidden one
+    // for PIs and admins and its organisers.
+    match /eventSeries/{id} {
+      allow read: if may('events', 'view') && (resource.data.hidden == false || hasFullWrite() || email().lower() in resource.data.get('organisers', []));
+      allow write: if false;
+    }
+
     // Claude skills (skills/{name}; see skillPackage in functions/index.js).
     // Public anyway — anyone can download one — so any lab member reads them;
     // only PIs/admins add or delete them (and restore an earlier version). A change

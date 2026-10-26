@@ -4,7 +4,9 @@
   // - events: the released events/{slug} (events-common.js), by their dates;
   // - project meetings: projectWorkspaces (see projectWorkspace in functions/index.js)
   //   in Google Calendar (an eventId), of projects that aren't completed, with Join and Leave;
-  // - supervision meetings: studies/{email} (see exports.studies) in Google Calendar.
+  // - supervision meetings: studies/{email} (see exports.studies) in Google Calendar;
+  // - lab meetings: the released recurring meetings, eventSeries (functions/series.js; series.html),
+  //   joined from their card when they're opt-in.
   // A Week grid (a dated week, events across the top; the default) or a List
   // (upcoming events, then the meetings by weekday), filtered by kind; both choices kept in localStorage.
   // Clicking a meeting opens a card to join it: a project's at once (projectWorkspace
@@ -18,12 +20,12 @@
   var E = window.BoldEvents;
   var db = null, me = null, busy = {}, msgs = {}, unsubs = [], slackIds = {};
   var asked = {}, pop = null; // asked: student email → my open request's id; pop: the open card { key, x, y }
-  var data = { project: null, study: null, event: null };
+  var data = { project: null, study: null, event: null, series: null };
   var VIEW_KEY = 'boldCalendar:view', KIND_KEY = 'boldCalendar:kind', view = 'week', kind = 'all';
   var weekOffset = 0;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
 
-  var KIND_LABELS = { event: 'Event', project: 'Project', study: 'Supervision' };
+  var KIND_LABELS = { event: 'Event', project: 'Project', study: 'Supervision', series: 'Lab meeting' };
   var GROUP_LABELS = { planned: 'Planned', ongoing: 'Ongoing' };
   function kindBadge(k){ return '<span class="type-badge cal-' + k + '">' + KIND_LABELS[k] + '</span>'; }
   // The Projects page's badge: Ongoing in the accent, Planned plain.
@@ -49,6 +51,11 @@
         first: String(s.name || s.email).split(' ')[0],
         title: (s.name || s.email) + ' · ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision',
         href: isMe(s.email) ? 'profile.html#studies' : id ? 'person.html?id=' + encodeURIComponent(id) : '' });
+    });
+    if (all || shown('series')) (data.series || []).forEach(function(x){
+      if (!x.meeting || !(x.eventId || x.pausedAt)) return;
+      out.push({ kind: 'series', id: x.id, title: x.title, href: 'series.html?series=' + encodeURIComponent(x.id), meeting: x.meeting,
+        mine: (x.guests || []).some(isMe), paused: !!x.pausedAt, start: x.eventStart || '', meetUrl: x.meetUrl, people: (x.guests || []).length, x: x });
     });
     return out;
   }
@@ -92,6 +99,10 @@
     if (m.mine) html += '<p class="cal-pop-note">' + (m.paused ? 'Paused: its upcoming dates are off Google Calendar until it’s resumed.' : '') +
       ' <button type="button" class="btn-text cal-pause" data-action="' + (m.paused ? 'resume' : 'pause') + '"' + (busy[keyOf(m)] ? ' disabled' : '') + '>' + (m.paused ? 'Resume' : 'Pause the meeting') + '</button></p>';
     if (m.kind === 'project') html += '<div class="cal-pop-act">' + joinHtml(m.w) + '</div>';
+    else if (m.kind === 'series') html += m.x.invite && m.x.invite.mode === 'join'
+      ? '<div class="cal-pop-act"><button type="button" class="join-btn cal-series" data-action="' + ((m.x.joined || []).some(isMe) ? 'leave' : 'join') + '"' + (busy[keyOf(m)] ? ' disabled' : '') + '>' +
+        ((m.x.joined || []).some(isMe) ? 'Leave' : 'Join') + '</button></div>'
+      : '<p class="cal-pop-note">' + (m.mine ? 'You’re invited.' : 'Invited: its group and its organisers.') + '</p>';
     else if (isMe(m.id)) html += '<p class="cal-pop-note">Your supervision meeting. <a href="profile.html#studies">Edit it</a>.</p>';
     else if (m.mine) html += '<p class="cal-pop-note">You’re in this meeting.</p>';
     else if (asked[m.id]) html += '<p class="cal-pop-note">You asked to join. <button type="button" class="btn-text cal-withdraw"' + (busy[m.id] ? ' disabled' : '') + '>Withdraw</button></p>';
@@ -154,7 +165,7 @@
         html += '<li' + (m.paused ? ' class="is-paused"' : '') + '><div class="proj-main">' + titleHtml(m, 'proj-title') +
           '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
           '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + ownBadge(m) + '</div></div>' +
-          (m.kind === 'project' ? joinHtml(m.w) : m.mine ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">' + (asked[m.id] ? 'Asked' : 'Ask to join') + '</button></div>') + '</li>';
+          (m.kind === 'project' ? joinHtml(m.w) : m.kind === 'series' ? (m.mine || !(m.x.invite && m.x.invite.mode === 'join') ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">Join</button></div>') : m.mine ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">' + (asked[m.id] ? 'Asked' : 'Ask to join') + '</button></div>') + '</li>';
       });
       html += '</ul>';
     });
@@ -263,7 +274,7 @@
     });
     html += '</div></div>' +
       '<p class="week-note"><span class="week-key"></span> Yours' +
-      (shown('project') && shown('study') ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision' : '') +
+      (kind === 'all' ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision <span class="week-key is-outline cal-series"></span> Lab meetings' : '') +
       (ms.some(function(m){ return m.paused; }) ? ' <span class="week-key is-outline is-paused"></span> Paused' : '') + '</p>';
     return html;
   }
@@ -304,6 +315,8 @@
     if (e.target.closest('.cal-pop-close')) { closePop(); return; }
     var m = pop && meetings(true).filter(function(x){ return keyOf(x) === pop.key; })[0];
     if (m && e.target.closest('.cal-ask, .cal-withdraw')) { askOrWithdraw(m, !!e.target.closest('.cal-ask')); return; }
+    var sj = e.target.closest('.cal-series');
+    if (m && sj && !sj.disabled) { joinSeries(m, sj.getAttribute('data-action')); return; }
     var pz = e.target.closest('.cal-pause');
     if (m && pz && !pz.disabled) { pauseOrResume(m, pz.getAttribute('data-action')); return; }
     onJoin(e);
@@ -343,6 +356,19 @@
   el('calSubPanel').addEventListener('click', function(e){
     if (e.target.closest('.cal-sub-reset')) feed('reset');
   });
+
+  // Join or leave an opt-in lab meeting (eventSeries).
+  function joinSeries(m, action){
+    BOLD.confirmAction({ title: (action === 'join' ? 'Join ' : 'Leave ') + m.title + '?', go: action === 'join' ? 'Join' : 'Leave',
+      effects: [action === 'join' ? 'Google Calendar sends you the invitation' : 'Take you off its Google Calendar invitation'] }).then(function(ok){
+      if (!ok) return;
+      var k = keyOf(m);
+      busy[k] = true; msgs[k] = ''; renderPop();
+      firebase.app().functions('europe-west2').httpsCallable('eventSeries')({ action: action, id: m.id }).then(function(){
+        busy[k] = false; msgs[k] = action === 'join' ? 'Joined: the invitation is on its way.' : 'Left.'; render();
+      }).catch(function(err){ busy[k] = false; msgs[k] = esc((err && err.message) || 'Couldn’t do that — try again.'); render(); });
+    });
+  }
 
   // Pause or resume a meeting: projectWorkspace for a project, studies for a student's.
   function pauseOrResume(m, action){
@@ -446,6 +472,7 @@
     watch('study', db.collection('studies'), function(d){ return Object.assign({ email: d.id }, d.data()); });
     // Everyone but PIs/admins may only query the released ones (firestore.rules); hidden ones stay off here for all.
     watch('event', db.collection('events').where('hidden', '==', false), function(d){ return d.data(); });
+    watch('series', db.collection('eventSeries').where('hidden', '==', false), function(d){ return d.data(); });
     // My open requests to join a student's meeting.
     unsubs.push(db.collection('studyRequests').where('email', '==', String(user.email || '').toLowerCase()).where('status', '==', 'open').onSnapshot(function(snap){
       asked = {};

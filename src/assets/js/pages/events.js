@@ -3,6 +3,9 @@
 // e.g. Collaboration Week) links there; the rest to event.html?event=<slug>. "+ Add an event" is always shown,
 // greyed out for anyone but a PI/admin. A new event starts hidden — only
 // PIs/admins see it, marked "Hidden" — until it's released from its page.
+// Above them, the recurring meetings (eventSeries; series.html): the released ones, and
+// the hidden ones a PI or admin, or their organisers, see; "+ Add a recurring meeting"
+// opens series.html?new, for Events' Edit level.
 (function(){
   var esc = BOLD.escapeHtml;
   var E = window.BoldEvents;
@@ -69,6 +72,45 @@
   }
   addBtn.addEventListener('click', function(){ if (canAdd()) openForm(); });
 
+  // ---------- recurring meetings ----------
+  var seriesList = document.getElementById('seriesList'), seriesAdd = document.getElementById('seriesAdd'), series = [];
+  function seriesHtml(x){
+    return '<a class="event-card' + (x.hidden ? ' is-hidden' : '') + '" href="series.html?series=' + encodeURIComponent(x.id) + '">' +
+      '<div class="event-top"><span class="eyebrow eyebrow--upcoming">' + (x.pausedAt ? 'Paused' : 'Recurring') + '</span>' +
+      (x.hidden ? '<span class="eyebrow eyebrow--hidden">Hidden</span>' : '') + '</div>' +
+      '<h3>' + esc(x.title) + '</h3>' +
+      '<p class="event-when">' + esc(meetingText(x.meeting)) + '</p>' +
+      (x.description ? '<p>' + esc(x.description.split(/\n\s*\n/)[0]) + '</p>' : '') +
+      '<span class="event-cta">See details &rarr;</span></a>';
+  }
+  function renderSeries(){
+    seriesList.innerHTML = series.map(function(x){ return '<li>' + seriesHtml(x) + '</li>'; }).join('');
+    var can = canAdd();
+    seriesAdd.classList.toggle('is-off', !can);
+    seriesAdd.title = can ? '' : BOLD.cannotReason('events', 'edit');
+    seriesAdd.setAttribute('aria-disabled', String(!can));
+  }
+  seriesAdd.addEventListener('click', function(e){ if (!canAdd()) e.preventDefault(); });
+  var seriesUnsub = null;
+  function watchSeries(ok){
+    if (seriesUnsub) { seriesUnsub(); seriesUnsub = null; }
+    series = []; renderSeries();
+    if (!me) return;
+    var col = db.collection('eventSeries');
+    var queries = ok ? [col] : [col.where('hidden', '==', false), col.where('organisers', 'array-contains', me.email.toLowerCase())];
+    var got = queries.map(function(){ return []; }), unsubs = queries.map(function(query, i){
+      return query.onSnapshot(function(snap){
+        got[i] = snap.docs.map(function(d){ return d.data(); });
+        var seen = {};
+        series = [].concat.apply([], got).filter(function(x){ if (seen[x.id]) return false; seen[x.id] = 1; return true; })
+          .sort(function(a, b){ return a.title.localeCompare(b.title); });
+        renderSeries();
+      }, function(err){ console.error('[BOLD Events] loading the recurring meetings failed', err); });
+    });
+    seriesUnsub = function(){ unsubs.forEach(function(u){ u(); }); };
+  }
+  BOLD.onAccess(function(){ renderSeries(); });
+
   var unsubscribe = null, signIns = 0;
   BOLD.onUser(function(user){
     var mine = ++signIns;
@@ -83,6 +125,7 @@
       if (mine !== signIns) return;
       fullWrite = ok;
       render();
+      watchSeries(ok);
       // …and the ones they added, released or not.
       var queries = ok ? [db.collection('events')] : [db.collection('events').where('hidden', '==', false), db.collection('events').where('createdBy', '==', me.email)];
       var got = queries.map(function(){ return []; }), unsubs = queries.map(function(query, i){

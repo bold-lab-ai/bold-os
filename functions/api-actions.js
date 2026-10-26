@@ -452,6 +452,28 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
+  // Recurring lab meetings (eventSeries; functions/series.js), through its callable.
+  async function labMeetings(who, a){
+    const full = await isFullWrite(who.email);
+    const pool = (await lab.series()).filter((x) => x.hidden === false || full || (x.organisers || []).indexOf(who.email) >= 0)
+      .map((x) => ({ id: x._id, name: x.title }));
+    const meeting = () => ({ day: String(a.day || '').toUpperCase(), time: a.time, minutes: Number(a.minutes || 60), every: Number(a.every || 1),
+      until: a.until || '', link: a.link || '' });
+    const invite = () => a.invite && a.invite !== 'join' ? { mode: 'group', group: a.invite } : { mode: 'join' };
+    if (a.action === 'add') return act(who, 'eventSeries', { action: 'save', title: need(a.title, 'a title'), description: a.description || '', meeting: meeting(), invite: invite(), organisers: [] });
+    const id = pool.find((x) => x.id === a.meeting) ? a.meeting : (pool.find((x) => fold(x.name) === fold(a.meeting)) || {}).id;
+    if (!id) throw httpError(404, 'No recurring meeting “' + (a.meeting || '') + '”.');
+    if (a.action === 'update') {
+      const s = (await lab.series()).find((x) => x._id === id);
+      const m = Object.assign({}, s.meeting, a.day ? { day: String(a.day).toUpperCase() } : {}, a.time ? { time: a.time } : {}, a.minutes ? { minutes: Number(a.minutes) } : {},
+        a.every ? { every: Number(a.every) } : {}, a.until !== undefined ? { until: a.until } : {}, a.link !== undefined ? { link: a.link } : {});
+      return act(who, 'eventSeries', { action: 'save', id, title: a.title || s.title, description: a.description !== undefined ? a.description : s.description,
+        meeting: m, invite: a.invite ? invite() : s.invite, organisers: s.organisers });
+    }
+    if (['join', 'leave', 'pause', 'resume', 'release', 'hide', 'delete'].indexOf(a.action) >= 0) return act(who, 'eventSeries', { action: a.action, id });
+    throw httpError(400, 'Unknown action.');
+  }
+
   // ---------- you ----------
   const PROFILE = { role: 'role', institution: 'institution', interests: 'interests', pillars: 'pillars', based_in: 'basedIn', pronouns: 'pronouns',
     links: 'links', contact: 'contact', contact_email: 'contactEmail', booking_url: 'bookingUrl', feedback: 'feedback', start_date: 'startDate', end_date: 'endDate', list_on_website: 'listOnWebsite' };
@@ -619,6 +641,12 @@ module.exports = function(ctx){
     { name: 'supervision', run: supervision,
       description: 'Supervision meetings (PhD and Master students’): ask a student to join theirs, withdraw your request; as the student, approve or decline someone’s request. The other gets a Slack message.',
       inputSchema: S({ action: ACTIONS(['ask_to_join', 'withdraw', 'approve', 'decline']), student: str('ask_to_join: their name'), note: str(''), request_id: str('my_items') }) },
+    { name: 'lab_meetings', run: labMeetings,
+      description: 'Recurring lab meetings (Events; series.html), such as a weekly reading group: add one (it starts hidden, and nobody is invited, until a PI or admin releases it), change, pause, resume or delete one you organise; join or leave one that is opt-in. PIs and admins release and hide them. Google Calendar sends the invitations.',
+      inputSchema: S({ action: ACTIONS(['add', 'update', 'join', 'leave', 'pause', 'resume', 'release', 'hide', 'delete']), meeting: str('Its name or id (all but add).'),
+        title: str(''), description: str(''), day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM, London time'), minutes: { type: 'integer', description: '15–240, in 15s (default 60)' },
+        every: { type: 'integer', description: 'Every N weeks, 1–4 (default 1)' }, until: str('YYYY-MM-DD, optional last day'), link: str('Its own meeting link (https), instead of a new Google Meet'),
+        invite: ACTIONS(['join', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
     { name: 'profile', run: profile,
       description: 'Your profile and place in BOLD: update your details, ask to move to another group (Who is BOLD), withdraw that request, say who invited you to the BOLD Slack, and confirm (or deny) that you invited someone who says you did.',
       inputSchema: S(Object.assign({ action: ACTIONS(['update', 'ask_group', 'withdraw_group_request', 'set_inviter', 'confirm_invite', 'deny_invite']) },
@@ -634,7 +662,7 @@ module.exports = function(ctx){
       description: 'PIs and admins: add a new Claude skill, or delete one. Changing a skill is a proposal, by anyone (proposals, page "skill:<name>").',
       inputSchema: S({ action: ACTIONS(['add', 'delete']), name: str('The skill’s name.'), title: str(''), description: str(''), body: str('SKILL.md body'), change_note: str('What changed') }, ['action', 'name']) },
   ];
-  WRITE.forEach((t) => { t.write = true; if (t.name === 'comments' || t.name === 'events' || t.name === 'skills' || t.name === 'projects' || t.name === 'presentations') t.destructive = true; });
+  WRITE.forEach((t) => { t.write = true; if (t.name === 'comments' || t.name === 'events' || t.name === 'lab_meetings' || t.name === 'lab_meetings' || t.name === 'skills' || t.name === 'projects' || t.name === 'presentations') t.destructive = true; });
   return { READ, WRITE, asUser, toFields, idTokenFor };
 };
 module.exports.toFields = toFields;
