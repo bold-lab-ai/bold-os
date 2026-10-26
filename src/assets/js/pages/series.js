@@ -68,8 +68,8 @@
     if (isNew) { body.innerHTML = BACK + '<h1>New event series</h1><p class="hero-note">' + esc(msg || 'Loading…') + '</p>'; return; }
     if (!loaded) return;
     if (!s) {
-      document.title = 'Meeting not found | BOLD Lab';
-      body.innerHTML = BACK + '<h1>Meeting not found</h1><p class="hero-note">It may have been deleted, or not be released yet.</p>';
+      document.title = 'Event series not found | BOLD Lab';
+      body.innerHTML = BACK + '<h1>Event series not found</h1><p class="hero-note">It may have been deleted, or not be released yet.</p>';
       return;
     }
     document.title = s.title + ' | BOLD Lab';
@@ -367,7 +367,7 @@
       if (s) watchEditions();
       if (!editing) render();
     }, function(err){
-      console.error('[BOLD Series] loading the meeting failed', err);
+      console.error('[BOLD Series] loading the event series failed', err);
       loaded = true; s = null; render();
     });
   });
