@@ -1,6 +1,7 @@
 // Events page, laid out as People is: a search, then groups with their counts —
-// Recurring (eventSeries; series.html), Coming up and Past (events/{slug}; see
-// events-common.js). An event with its own page (`page`, e.g. Collaboration Week) links
+// Recurring (eventSeries; series.html), each with its next occurrence (or its last), and
+// the one-off events, Coming up and Past (events/{slug} with no series; see
+// events-common.js). A series' occurrences show only under it. An event with its own page (`page`, e.g. Collaboration Week) links
 // there; the rest to event.html?event=<slug>, a recurring one to series.html?series=<id>.
 // A hidden one (still being planned) shows only to PIs/admins and whoever added or
 // organises it, marked Hidden, until a PI or admin releases it.
@@ -33,8 +34,14 @@
       esc(E.when(x.startDate, x.endDate)) + (x.place ? ' · ' + esc(x.place) : ''), x.hidden ? badge('Hidden') : '');
   }
   function seriesRow(x){
-    return row(x.page || 'series.html?series=' + encodeURIComponent(x.id), x.title,
-      esc(x.kind === 'editions' ? cadenceText(x.cadence) : meetingText(x.meeting) + ' · London time'),
+    var meta = x.kind === 'editions' ? cadenceText(x.cadence) : meetingText(x.meeting) + ' · London time';
+    if (x.kind === 'editions') {
+      var eds = events.filter(function(e){ return e.series === x.id; }).sort(function(a, b){ return a.startDate < b.startDate ? -1 : 1; });
+      var next = eds.filter(function(e){ return !E.isPast(e); })[0], last = eds[eds.length - 1];
+      if (next) meta += ' · next: ' + E.when(next.startDate, next.endDate) + (next.place ? ', ' + next.place : '');
+      else if (last) meta += ' · last: ' + E.when(last.startDate, last.endDate);
+    }
+    return row(x.page || 'series.html?series=' + encodeURIComponent(x.id), x.title, esc(meta),
       (x.hidden ? badge('Hidden') : '') + (x.pausedAt ? badge('Paused') : ''));
   }
   function group(label, rows){
@@ -47,7 +54,10 @@
     if (events === null) return;
     var q = search.value.trim().toLowerCase();
     var hit = function(x){ return !q || [x.title, x.place, x.description].join(' ').toLowerCase().indexOf(q) !== -1; };
-    var evs = events.filter(hit), ss = series.filter(hit);
+    // A series' occurrences are under it; an occurrence whose series this person can't see stays listed.
+    var known = {};
+    series.forEach(function(x){ known[x.id] = 1; });
+    var evs = events.filter(function(x){ return !(x.series && known[x.series]); }).filter(hit), ss = series.filter(hit);
     var coming = evs.filter(function(x){ return !E.isPast(x); }).sort(function(a, b){ return a.startDate < b.startDate ? -1 : 1; });
     var past = evs.filter(function(x){ return E.isPast(x); }).sort(function(a, b){ return a.startDate < b.startDate ? 1 : -1; });
     var html = group('Recurring', ss.map(seriesRow)) + group('Coming up', coming.map(eventRow)) + group('Past', past.map(eventRow));
