@@ -1,6 +1,6 @@
 // join-requests.html: whoever an applicant names as inviting them approves or declines
-// their request to join BOLD (decideJoinRequest; "Invited by you", #i=<id> from their DM),
-// as PIs and admins can any; and the PIs and admins decide members' requests to be in another group of Who is BOLD
+// their request to join BOLD (decideJoinRequest; "Invited by you", #i=<id> from their DM);
+// PIs and admins see them all but decide only one without an inviter; and the PIs and admins decide members' requests to be in another group of Who is BOLD
 // (groupRequests, groupRequest), see whether each welcome email went (sendWelcomeEmail
 // sends one again), and edit the Slack invite link, the email's text
 // (settings/joinInvite), the join form's choices (settings/joinForm) and each group's
@@ -40,16 +40,20 @@
 
   function requestHtml(r){
     var open = r.status === 'open';
+    // Only whoever invited them decides it (decideJoinRequest); PIs and admins only one without an inviter.
+    var inv = r.invitedBy && r.invitedBy.email ? r.invitedBy : null, mine = !inv || (me && inv.email === me.email);
+    var off = busy[r.id] ? ' disabled' : mine ? '' : ' disabled title="' + esc('Only ' + (inv.name || inv.email) + ', who invited them, decides this') + '"';
     var w = r.welcome || {};
     var status = open ? '' : '<p class="proj-meta">' + (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + who(r.decidedByName || r.decidedBy || '', r.decidedBy) + ', ' + when(r.decidedAt) +
       (r.status === 'approved' ? ' · Welcome email: ' + (w.status === 'sent' ? 'sent ' + when(w.at) : 'not sent yet' + (w.error ? ' (' + esc(w.error) + ')' : '')) : '') + '</p>';
     return '<li id="r-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
       '<span class="proj-meta">' + esc([r.email, r.role, r.institution].filter(Boolean).join(' · ')) + ' · asked ' + when(r.at) + '</span>' + status +
+      (open && inv && !mine ? '<p class="proj-meta">Invited by ' + who(inv.name, inv.email) + ', who decides it</p>' : '') +
       // Their answers, collapsed: a request is long.
       (shown[r.id] ? BoldJoin.factsHtml(r, { other: true }) : '') +
       '<div class="event-controls">' + moreBtn(r.id) + (open ?
-        '<button type="button" class="btn-text jr-approve" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Approve</button>' +
-        '<button type="button" class="btn-text danger jr-decline" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Decline</button>' :
+        '<button type="button" class="btn-text jr-approve" data-id="' + esc(r.id) + '"' + off + '>Approve</button>' +
+        '<button type="button" class="btn-text danger jr-decline" data-id="' + esc(r.id) + '"' + off + '>Decline</button>' :
         r.status === 'approved' && w.status !== 'sent' ? '<button type="button" class="btn-text jr-resend" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Send the welcome email</button>' : '') +
       '</div></li>';
   }

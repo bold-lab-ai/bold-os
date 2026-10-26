@@ -4494,7 +4494,7 @@ exports.onJoinRequested = onDocumentCreated(
 );
 
 // data: { id, accept: bool } → { status, welcome? }. Whoever they named as inviting them
-// (at Requests' Edit level); PIs and admins can decide any.
+// (at Requests' Edit level); PIs and admins only one without an inviter (from before it was required).
 exports.decideJoinRequest = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
   async (request) => {
@@ -4510,8 +4510,9 @@ exports.decideJoinRequest = onCall(
       const snap = await tx.get(ref);
       if (!snap.exists) throw new HttpsError('not-found', 'No such request.');
       const q = snap.data();
-      const inviter = !!(q.invitedBy && q.invitedBy.email === email);
-      if (!full && !inviter) throw new HttpsError('permission-denied', 'Only whoever invited them decides this.');
+      // Only whoever invited them decides it; PIs and admins only one without an inviter (from before it was required).
+      const inviter = !!(q.invitedBy && q.invitedBy.email === email), noInviter = !(q.invitedBy && q.invitedBy.email);
+      if (!inviter && !(full && noInviter)) throw new HttpsError('permission-denied', 'Only whoever invited them decides this.');
       if (q.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been ' + q.status + '.');
       const m = db.collection('members').doc(q.email);
       const had = d.accept ? await tx.get(m) : null;

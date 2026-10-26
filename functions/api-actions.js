@@ -656,7 +656,7 @@ module.exports = function(ctx){
       description: 'The lab’s events: add one (it starts hidden, until a PI or admin releases it), update or delete one you added (PIs and admins: any), release or hide one (PIs and admins).',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str('') }) },
     { name: 'requests', run: requests,
-      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them, or set someone’s group.',
+      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody), or set someone’s group.',
       inputSchema: S({ action: ACTIONS(['list', 'approve_join', 'decline_join', 'approve_group', 'decline_group', 'set_group']), request_id: str(''), member: str('set_group: their name'), group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']) }) },
     { name: 'skills', run: skills,
       description: 'PIs and admins: add a new Claude skill, or delete one. Changing a skill is a proposal, by anyone (proposals, page "skill:<name>").',
