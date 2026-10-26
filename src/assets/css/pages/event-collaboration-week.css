@@ -52,10 +52,6 @@ html.auth-hint #proposalsSignedOut{display:none;}
   .hero{padding:44px var(--gutter) 8px;}
 }
 
-/* the Festival's provenance line */
-.page-source{font-family:var(--sans); font-size:12.5px; color:var(--muted); margin-top:18px;}
-.page-source a{color:var(--muted);}
-.page-source a:hover{color:var(--accent);}
 /* Projects tab: each project presented, with its presentations (project-links.js panelHtml) */
 .bpl-panel{list-style:none; margin:0; padding:0;}
 .bpl-panel > li{padding:14px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
