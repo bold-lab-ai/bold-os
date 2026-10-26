@@ -699,3 +699,5 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .ed-tools{margin-left:auto; display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px;}
 .ed-hidden{font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--danger-text);}
 .ed-form{margin-top:14px;}
+.ed-plan{font-family:var(--sans); font-size:15px; line-height:1; width:22px; height:22px; padding:0; border:1px solid var(--line); background:var(--surface); color:var(--accent); cursor:pointer; align-self:center;}
+.ed-plan:hover{border-color:var(--accent);}

@@ -4,10 +4,10 @@
 // else the next coming up, else the latest (data-event is the first, for before it loads);
 // this runs before pages/event.js, which draws it. On event.html it's ?event=<slug>, and
 // pages/event.js mounts this once it knows the event's series (SeriesEditions.mount).
-// #editionSwitch, above the header: the occurrences (1st, 2nd…, by month), and for its
-// organisers, PIs and admins (eventSeries, functions/series.js): + Schedule the next (a
-// hidden occurrence, released as any event), Edit the series (series.html?series=<id>&edit),
-// and for PIs and admins Release while the series is hidden.
+// #editionSwitch, above the header: the occurrences (1st, 2nd…, by month), then for its
+// organisers, PIs and admins (eventSeries, functions/series.js) a "+" to add one by hand
+// (its dates; a hidden occurrence, released as any event), and for PIs and admins Release
+// while the series is hidden.
 // Anything marked data-edition="<slug>" shows only on that occurrence.
 window.SeriesEditions = (function(){
   var esc = BOLD.escapeHtml;
@@ -38,20 +38,18 @@ window.SeriesEditions = (function(){
       var links = editions.map(function(e, i){
         var label = ordinal(i + 1) + ' · ' + MONTHS[+e.startDate.slice(5, 7) - 1] + ' ' + e.startDate.slice(0, 4);
         return '<a href="' + esc(href(e)) + '"' + (e.slug === slug ? ' class="is-current" aria-current="page"' : '') + '>' + esc(label) + (e.hidden ? ' · hidden' : '') + '</a>';
-      }).join('');
-      var tools = canChange() ? '<span class="ed-tools">' +
-          (s.hidden ? '<span class="ed-hidden">Series hidden</span>' + (BOLD.isFullWrite() ? '<button type="button" class="btn-text ed-release">Release</button>' : '') : '') +
-          '<button type="button" class="btn-text ed-plan">+ Schedule the next</button>' +
-          '<a class="btn-text" href="series.html?series=' + encodeURIComponent(id) + '&amp;edit&amp;back=' + encodeURIComponent(page + location.search) + '">Edit the series</a></span>' : '';
-      var form = planning ? '<div class="event-form ed-form"><p class="event-form-head">The next ' + esc(s.title) + '</p>' +
+      }).join('') + (canChange() && !planning ? '<button type="button" class="ed-plan" title="Add an occurrence" aria-label="Add an occurrence">+</button>' : '');
+      var tools = canChange() && s.hidden ? '<span class="ed-tools"><span class="ed-hidden">Series hidden</span>' +
+          (BOLD.isFullWrite() ? '<button type="button" class="btn-text ed-release">Release</button>' : '') + '</span>' : '';
+      var form = planning ? '<div class="event-form ed-form"><p class="event-form-head">A new occurrence of ' + esc(s.title) + '</p>' +
           '<div class="ev-row"><label>Starts<input type="date" class="ed-start" value="' + esc(planning.start) + '"></label>' +
           '<label>Ends<input type="date" class="ed-end" value="' + esc(planning.end) + '"></label></div>' +
           '<p class="event-form-hint">It starts hidden, with the place and description of the last one; you build its programme here, and a PI or admin releases it.</p>' +
           '<p class="ev-error"' + (planning.error ? '' : ' hidden') + '>' + esc(planning.error || '') + '</p>' +
-          '<div class="event-form-actions"><button type="button" class="ev-save ed-go"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Scheduling…' : 'Schedule it') + '</button>' +
+          '<div class="event-form-actions"><button type="button" class="ev-save ed-go"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Adding…' : 'Add it') + '</button>' +
           '<button type="button" class="ed-cancel">Cancel</button></div></div>' : '';
       nav.innerHTML = '<div class="ed-row">' + links + tools + '</div>' + form;
-      nav.hidden = !editions.length && !tools;
+      nav.hidden = !editions.length && !canChange();
     }
 
     function openPlanning(){

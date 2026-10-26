@@ -247,9 +247,9 @@ module.exports = function series(deps){
         const start = String(d.startDate || ''), end = String(d.endDate || d.startDate || '');
         if (!isoDay.test(start) || !isoDay.test(end) || end < start) throw new HttpsError('invalid-argument', 'Give its first and last day, the last on or after the first.');
         const editions = await editionsOf(id), last = editions[editions.length - 1] || {};
-        const slug = id + '-' + start.slice(0, 7);
+        const slug = id + '-' + start;
         const eref = db.collection('events').doc(slug);
-        if ((await eref.get()).exists) throw new HttpsError('already-exists', 'There’s an edition that month already.');
+        if ((await eref.get()).exists) throw new HttpsError('already-exists', 'There’s one starting that day already.');
         const now = Date.now();
         // A series with its own page (`page`, set in code: the Festival's, Collaboration week's) shows it there.
         await eref.set(Object.assign({ slug, series: id, hidden: true, title: s.title, startDate: start, endDate: end, place: last.place || '',
