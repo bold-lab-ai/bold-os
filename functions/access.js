@@ -1,7 +1,8 @@
 'use strict';
 
 // Who can see what (BOLDiquette › People › Who can see what): for each page, the lowest
-// group of Who is BOLD that can view it, edit on it and propose changes on it. The table
+// group of Who is BOLD that can see it and that can change it. Whether a change takes effect
+// at once or is a proposal someone reviews is the page's (REVIEWED), not the table's. The table
 // is a part of the BOLDiquette (ACCESS_PART); accepting a change to it (decideProposal)
 // parses it here and saves the result in settings/access, which the rules
 // (firebase/firestore.rules need()), the functions (requireAccess) and the pages
@@ -27,7 +28,11 @@ const PAGES = [
   ['search', 'Search'],
   ['changelog', 'Changes'],
 ];
-const WHAT = ['view', 'edit', 'propose'];
+const WHAT = ['view', 'change'];
+// Pages where every change is a proposal (and commenting is part of it): changing them is proposing.
+const REVIEWED = ['boldiquette', 'guides', 'skills', 'tools'];
+// edit / propose (callers, older tables) → change.
+const whatOf = (what) => what === 'view' ? 'view' : 'change';
 
 // Each group can do everything the groups below it can. `everyone` includes people who
 // aren't signed in; `none` is nobody (the page has no such action).
@@ -38,16 +43,18 @@ function rank(level){ const i = LEVELS.indexOf(level); return i < 0 ? LEVELS.ind
 
 // The starting table (BOLDiquette text and settings/access agree on it).
 const DEFAULT_PAGES = {
-  boldiquette: { view: 'everyone', edit: 'none', propose: 'internal' },
-  projects: { view: 'associate', edit: 'associate', propose: 'associate' },
-  profile: { view: 'pan', edit: 'pan', propose: 'none' },
+  boldiquette: { view: 'everyone', change: 'internal' },
+  projects: { view: 'associate', change: 'associate' },
+  profile: { view: 'pan', change: 'pan' },
 };
-PAGES.forEach(([key]) => { if (!DEFAULT_PAGES[key]) DEFAULT_PAGES[key] = { view: 'internal', edit: 'internal', propose: 'internal' }; });
+PAGES.forEach(([key]) => { if (!DEFAULT_PAGES[key]) DEFAULT_PAGES[key] = { view: 'internal', change: 'internal' }; });
 
 const norm = (s) => String(s || '').replace(/[*_`]/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim().toLowerCase();
 
-// Pure: the table's Markdown → { <page>: { view, edit, propose } }, or throws an Error
-// saying which row is wrong. Rows: | Page | View | Edit | Propose |; other text is ignored.
+// Pure: the table's Markdown → { <page>: { view, change } }, or throws an Error saying
+// which row is wrong. Rows: | Page | See | Change |; other text is ignored. A row as the
+// table first was (| Page | View | Edit | Propose |) reads as See, and Change from Propose on
+// a REVIEWED page and from Edit elsewhere.
 function parseAccessTable(body){
   const byName = {}; PAGES.forEach(([key, name]) => { byName[norm(name)] = key; });
   const byLevel = {}; LEVELS.forEach((l) => { byLevel[norm(LEVEL_NAMES[l])] = l; });
@@ -61,13 +68,13 @@ function parseAccessTable(body){
     const key = byName[norm(cells[0])];
     if (!key) throw new Error('“' + cells[0] + '” isn’t a page (the pages: ' + PAGES.map((p) => p[1]).join(', ') + ').');
     if (out[key]) throw new Error(cells[0] + ' is in the table twice.');
-    if (cells.length < 4) throw new Error(cells[0] + ' needs View, Edit and Propose.');
-    out[key] = {};
-    WHAT.forEach((w, i) => {
-      const level = byLevel[norm(cells[i + 1])];
-      if (!level) throw new Error(cells[0] + ': “' + cells[i + 1] + '” isn’t a group (' + LEVELS.map((l) => LEVEL_NAMES[l]).join(', ') + ').');
-      out[key][w] = level;
+    if (cells.length < 3) throw new Error(cells[0] + ' needs See and Change.');
+    const levels = cells.slice(1, cells.length >= 4 ? 4 : 3).map((c) => {
+      const level = byLevel[norm(c)];
+      if (!level) throw new Error(cells[0] + ': “' + c + '” isn’t a group (' + LEVELS.map((l) => LEVEL_NAMES[l]).join(', ') + ').');
+      return level;
     });
+    out[key] = { view: levels[0], change: levels.length === 3 ? levels[REVIEWED.indexOf(key) >= 0 ? 2 : 1] : levels[1] };
   });
   if (!Object.keys(out).length) throw new Error('The table has no pages.');
   if (out.profile && rank(out.profile.view) > rank('pan')) throw new Error('Your profile must stay open to PAN-BOLD: it’s where people ask for another group.');
@@ -79,7 +86,7 @@ function parseAccessTable(body){
 // Pure: the table as Markdown, for the BOLDiquette (the starting text).
 function accessTableMarkdown(pages){
   pages = pages || DEFAULT_PAGES;
-  return '| Page | View | Edit | Propose |\n|---|---|---|---|\n' +
+  return '| Page | See | Change |\n|---|---|---|\n' +
     PAGES.map(([key, name]) => '| ' + name + ' | ' + WHAT.map((w) => LEVEL_NAMES[(pages[key] || {})[w] || DEFAULT_LEVEL]).join(' | ') + ' |').join('\n');
 }
 
@@ -100,15 +107,20 @@ module.exports = function access({ db, groupOf, isFullWrite, HttpsError }){
     return groupOf(snap.exists ? snap.data() : null);
   }
   // Whether `email` (null: not signed in) may `what` on `page`.
+  // A table's level for `what` (view | change; edit and propose are change).
+  async function levelOf(page, what){
+    const p = (await table())[page] || {}, w = whatOf(what);
+    return p[w] || (w === 'change' && (REVIEWED.indexOf(page) >= 0 ? p.propose : p.edit)) || DEFAULT_LEVEL;
+  }
   async function can(email, page, what){
-    const level = ((await table())[page] || {})[what] || DEFAULT_LEVEL;
+    const level = await levelOf(page, what);
     if (level === 'none') return false;
     return rank(await groupFor(email)) >= rank(level);
   }
   // Throws permission-denied unless they may.
   async function requireAccess(email, page, what){
     if (await can(email, page, what)) return;
-    const level = ((await table())[page] || {})[what] || DEFAULT_LEVEL;
+    const level = await levelOf(page, what);
     const name = (PAGES.filter((p) => p[0] === page)[0] || [page, page])[1];
     throw new HttpsError('permission-denied', level === 'none' ? 'Nobody can do this on ' + name + '.'
       : name + ' is for ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can see what).');
@@ -126,4 +138,4 @@ module.exports = function access({ db, groupOf, isFullWrite, HttpsError }){
   }
   return { table, groupFor, can, requireAccess, checkTableChange, forget(){ cache = null; } };
 };
-Object.assign(module.exports, { ACCESS_PART, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, parseAccessTable, accessTableMarkdown, rank });
+Object.assign(module.exports, { ACCESS_PART, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, parseAccessTable, accessTableMarkdown, rank });

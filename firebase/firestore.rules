@@ -49,9 +49,9 @@ service cloud.firestore {
     function isLabMember()  { return isSignedIn(); }
 
     // Who can see what (BOLDiquette › People › Who can see what; functions/access.js):
-    // for each page, the lowest group of Who is BOLD that may view it, edit on it and
-    // propose changes on it, in settings/access (written only by decideProposal, from the
-    // BOLDiquette's table). A group is a member's `category` (only PIs and admins set it);
+    // for each page, the lowest group of Who is BOLD that may see it ('view') and change it
+    // ('change': directly, or by proposing and commenting where changes are reviewed), in
+    // settings/access (written only by decideProposal, from the BOLDiquette's table). A group is a member's `category` (only PIs and admins set it);
     // without one, PAN-BOLD; not signed in, everyone's level only. PIs and admins count as
     // BOLD-exec. A page missing from the table is BOLD-internal. may() is on top of each
     // rule's own conditions, which still apply.
@@ -105,7 +105,7 @@ service cloud.firestore {
     match /members/{memberEmail} {
       // Your own always (your profile); others' with People, or on a project's page.
       allow read: if isSignedIn() && (email().lower() == memberEmail || may('people', 'view') || may('projects', 'view'));
-      allow create, update: if may('profile', 'edit') && email().lower() == memberEmail
+      allow create, update: if may('profile', 'change') && email().lower() == memberEmail
         && request.resource.data.email == memberEmail
         && request.resource.data.keys().hasOnly(['name', 'email', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'bookingUrl', 'startDate', 'endDate', 'updatedAt', 'requestId', 'approvedBy', 'approvedAt', 'category', 'categoryBy', 'categoryAt', 'invitedBy'])
         && (resource == null
@@ -138,17 +138,17 @@ service cloud.firestore {
     // the two people only, every write through introRequest.
     match /introOffers/{id} {
       allow read: if may('service-desk', 'view');
-      allow create: if may('service-desk', 'edit') && request.resource.data.keys().hasOnly(['org', 'area', 'by', 'at', 'updatedAt'])
+      allow create: if may('service-desk', 'change') && request.resource.data.keys().hasOnly(['org', 'area', 'by', 'at', 'updatedAt'])
         && request.resource.data.by.email == email().lower() && request.resource.data.by.name is string
         && request.resource.data.org is string && request.resource.data.org.size() > 0 && request.resource.data.org.size() <= 120
         && request.resource.data.area is string && request.resource.data.area.size() <= 300
         && request.resource.data.at is number && request.resource.data.updatedAt is number;
-      allow update: if may('service-desk', 'edit') && resource.data.by.email == email().lower()
+      allow update: if may('service-desk', 'change') && resource.data.by.email == email().lower()
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['org', 'area', 'updatedAt'])
         && request.resource.data.org is string && request.resource.data.org.size() > 0 && request.resource.data.org.size() <= 120
         && request.resource.data.area is string && request.resource.data.area.size() <= 300
         && request.resource.data.updatedAt is number;
-      allow delete: if may('service-desk', 'edit') && (resource.data.by.email == email().lower() || hasFullWrite());
+      allow delete: if may('service-desk', 'change') && (resource.data.by.email == email().lower() || hasFullWrite());
     }
     match /introRequests/{id} {
       allow read: if may('service-desk', 'view') && (resource.data.requesterEmail == email().lower() || resource.data.offererEmail == email().lower());
@@ -231,7 +231,7 @@ service cloud.firestore {
       // create first (see onCreateBoard) and only falls back to this on
       // a permission-denied, so this branch is never the first attempt
       // for someone who could've just created it outright.
-      allow create: if may('ml-cycle', 'edit') && (
+      allow create: if may('ml-cycle', 'change') && (
         hasFullWrite() ||
         (request.resource.data.status == 'pending' && request.resource.data.proposedBy.email == email())
       );
@@ -247,7 +247,7 @@ service cloud.firestore {
         allow read: if may('ml-cycle', 'view') || may('projects', 'view');
         // Only the server (projectWorkspace 'submit') files a card under another
         // card's project (`projectId`); nobody changes it afterwards.
-        allow create: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && request.resource.data.get('projectId', cardId) == cardId;
+        allow create: if (may('ml-cycle', 'change') || may('projects', 'change')) && request.resource.data.get('projectId', cardId) == cardId;
         // A card can be changed only by whoever created it, a reviewer
         // assigned to it, or a PI/admin — same base condition as before.
         //
@@ -261,7 +261,7 @@ service cloud.firestore {
         // equality rather than diffing individual keys — simpler, and
         // sufficient since the client only ever rewrites that map as a
         // whole (onSetReviewer).
-        allow update: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && (
+        allow update: if (may('ml-cycle', 'change') || may('projects', 'change')) && (
           email() == resource.data.submittedBy.email ||
           email() in resource.data.get('authorEmails', []) ||
           email() == resource.data.reviewers.junior ||
@@ -272,7 +272,7 @@ service cloud.firestore {
           email() == resource.data.submittedBy.email ||
           hasFullWrite()
         ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
-        allow delete: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && (
+        allow delete: if (may('ml-cycle', 'change') || may('projects', 'change')) && (
           email() == resource.data.submittedBy.email ||
           email() == resource.data.reviewers.junior ||
           email() == resource.data.reviewers.senior ||
@@ -290,14 +290,14 @@ service cloud.firestore {
     // submitter or a PI/admin.
     match /projects/{projectId} {
       allow read: if may('projects', 'view');
-      allow create: if may('projects', 'edit') && request.resource.data.submittedBy.email == email() &&
+      allow create: if may('projects', 'change') && request.resource.data.submittedBy.email == email() &&
         request.resource.data.get('projectId', projectId) == projectId;
-      allow update: if may('projects', 'edit') && (
+      allow update: if may('projects', 'change') && (
         email() == resource.data.submittedBy.email ||
         email() in resource.data.get('authorEmails', []) ||
         hasFullWrite()
       ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
-      allow delete: if may('projects', 'edit') && (
+      allow delete: if may('projects', 'change') && (
         email() == resource.data.submittedBy.email || hasFullWrite()
       );
     }
@@ -362,11 +362,11 @@ service cloud.firestore {
       }
       match /presentations/{id} {
         allow read: if may('projects', 'view');
-        allow create: if may('projects', 'edit') && (isProjectMember() || hasFullWrite()) &&
+        allow create: if may('projects', 'change') && (isProjectMember() || hasFullWrite()) &&
           request.resource.data.by.email == email() && validPresentation(request.resource.data);
-        allow update: if may('projects', 'edit') && (isProjectMember() || hasFullWrite()) &&
+        allow update: if may('projects', 'change') && (isProjectMember() || hasFullWrite()) &&
           request.resource.data.by == resource.data.by && validPresentation(request.resource.data);
-        allow delete: if may('projects', 'edit') && (isProjectMember() || hasFullWrite() || resource.data.by.email == email());
+        allow delete: if may('projects', 'change') && (isProjectMember() || hasFullWrite() || resource.data.by.email == email());
       }
     }
 
@@ -381,8 +381,8 @@ service cloud.firestore {
     // themselves or a PI/admin can edit or withdraw it afterward.
     match /collabWeekProposals/{proposalId} {
       allow read: if may('events', 'view');
-      allow create: if may('events', 'edit') && request.resource.data.email == email();
-      allow update, delete: if may('events', 'edit') && (
+      allow create: if may('events', 'change') && request.resource.data.email == email();
+      allow update, delete: if may('events', 'change') && (
         email() == resource.data.email || hasFullWrite()
       );
     }
@@ -399,7 +399,7 @@ service cloud.firestore {
       allow read: if may('events', 'view');
       allow create, delete: if hasFullWrite();
       allow update: if hasFullWrite() || (
-        may('events', 'edit') && email().lower() in resource.data.leadEmails &&
+        may('events', 'change') && email().lower() in resource.data.leadEmails &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['leads', 'leadEmails', 'slug', 'added', 'removed', 'day', 'date', 'time', 'locationSlug', 'type', 'eventSlug'])
       );
     }
@@ -442,18 +442,18 @@ service cloud.firestore {
       match /proposals/{id} {
         allow read: if may('skills', 'view');
         // kind 'new': a new skill (this one doesn't exist yet), made when accepted.
-        allow create: if may('skills', 'propose') && request.resource.data.by.email == email()
+        allow create: if may('skills', 'change') && request.resource.data.by.email == email()
           && request.resource.data.status == 'open' && request.resource.data.kind in ['skill', 'new']
           && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status'])
           && request.resource.data.after is map && request.resource.data.after.keys().hasOnly(['title', 'description', 'body', 'files']);
         // Edited by whoever proposed it, while it's open; who, when and its status stay.
-        allow update: if may('skills', 'propose') && resource.data.by.email == email() && resource.data.status == 'open'
+        allow update: if may('skills', 'change') && resource.data.by.email == email() && resource.data.status == 'open'
           && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
           && request.resource.data.editedAt is number && request.resource.data.kind == resource.data.kind
           && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status', 'editedAt'])
           && request.resource.data.after is map && request.resource.data.after.keys().hasOnly(['title', 'description', 'body', 'files']);
         // Withdrawn by whoever proposed it, while it's open.
-        allow delete: if may('skills', 'propose') && resource.data.by.email == email() && resource.data.status == 'open';
+        allow delete: if may('skills', 'change') && resource.data.by.email == email() && resource.data.status == 'open';
       }
     }
 
@@ -473,19 +473,19 @@ service cloud.firestore {
       }
       match /proposals/{id} {
         allow read: if may('tools', 'view');
-        allow create: if may('tools', 'propose') && request.resource.data.by.email == email()
+        allow create: if may('tools', 'change') && request.resource.data.by.email == email()
           && request.resource.data.status == 'open' && request.resource.data.kind in ['new', 'tool', 'delete']
           && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status'])
           && (request.resource.data.kind == 'delete' || (request.resource.data.after is map
             && request.resource.data.after.keys().hasOnly(['title', 'description', 'acting', 'input', 'code'])));
-        allow update: if may('tools', 'propose') && resource.data.by.email == email() && resource.data.status == 'open'
+        allow update: if may('tools', 'change') && resource.data.by.email == email() && resource.data.status == 'open'
           && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
           && request.resource.data.editedAt is number && request.resource.data.kind == resource.data.kind
           && request.resource.data.get('review', null) == resource.data.get('review', null)
           && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status', 'editedAt', 'review'])
           && (request.resource.data.kind == 'delete' || (request.resource.data.after is map
             && request.resource.data.after.keys().hasOnly(['title', 'description', 'acting', 'input', 'code'])));
-        allow delete: if may('tools', 'propose') && resource.data.by.email == email() && resource.data.status == 'open';
+        allow delete: if may('tools', 'change') && resource.data.by.email == email() && resource.data.status == 'open';
       }
     }
 
@@ -514,7 +514,7 @@ service cloud.firestore {
       // deletes it; whoever started a thread can delete its replies with it.
       match /comments/{id} {
         allow read: if may('guides', 'view');
-        allow create: if may('guides', 'propose') && request.resource.data.by.email == email()
+        allow create: if may('guides', 'change') && request.resource.data.by.email == email()
           && request.resource.data.keys().hasOnly(['partId', 'quote', 'prefix', 'suffix', 'text', 'by', 'at', 'parent', 'proposalId'])
           && request.resource.data.partId is string && request.resource.data.at is number
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
@@ -524,20 +524,20 @@ service cloud.firestore {
             : 'proposalId' in request.resource.data
             ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/guides/$(slug)/proposals/$(request.resource.data.proposalId))
             : request.resource.data.quote is string && request.resource.data.quote.size() > 0 && request.resource.data.quote.size() <= 500);
-        allow update: if may('guides', 'propose') && (
+        allow update: if may('guides', 'change') && (
           (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
             && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
             && (!('editedAt' in request.resource.data) || request.resource.data.editedAt is number))
           || ((resource.data.by.email == email() || hasFullWrite())
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedByName', 'resolvedAt'])
             && request.resource.data.resolvedBy == email()));
-        allow delete: if may('guides', 'propose') && (resource.data.by.email == email() || hasFullWrite()
+        allow delete: if may('guides', 'change') && (resource.data.by.email == email() || hasFullWrite()
           || ('parent' in resource.data && resource.data.parent is string
             && get(/databases/$(database)/documents/guides/$(slug)/comments/$(resource.data.parent)).data.by.email == email()));
       }
       match /proposals/{id} {
         allow read: if may('guides', 'view');
-        allow create: if may('guides', 'propose') && request.resource.data.by.email == email()
+        allow create: if may('guides', 'change') && request.resource.data.by.email == email()
           && request.resource.data.status == 'open'
           && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch']
           && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes'])
@@ -547,7 +547,7 @@ service cloud.firestore {
             : !('changes' in request.resource.data));
         // Edited by whoever proposed it, while it's open: its changes and note, as when
         // proposed; who, when and its status stay as they were.
-        allow update: if may('guides', 'propose') && resource.data.by.email == email() && resource.data.status == 'open'
+        allow update: if may('guides', 'change') && resource.data.by.email == email() && resource.data.status == 'open'
           && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
           && request.resource.data.editedAt is number
           && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'batch']
@@ -556,7 +556,7 @@ service cloud.firestore {
             ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
             : !('changes' in request.resource.data));
         // Withdrawn by whoever proposed it while it's open, or with its guide.
-        allow delete: if hasFullWrite() || (may('guides', 'propose') && resource.data.by.email == email() && resource.data.status == 'open');
+        allow delete: if hasFullWrite() || (may('guides', 'change') && resource.data.by.email == email() && resource.data.status == 'open');
       }
     }
 
@@ -612,7 +612,7 @@ service cloud.firestore {
       // deletes it; whoever started a thread can delete its replies with it.
       match /comments/{id} {
         allow read: if may('boldiquette', 'view');
-        allow create: if may('boldiquette', 'propose') && request.resource.data.by.email == email()
+        allow create: if may('boldiquette', 'change') && request.resource.data.by.email == email()
           && request.resource.data.keys().hasOnly(['partId', 'quote', 'prefix', 'suffix', 'text', 'by', 'at', 'parent', 'proposalId'])
           && request.resource.data.partId is string && request.resource.data.at is number
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
@@ -622,7 +622,7 @@ service cloud.firestore {
             : 'proposalId' in request.resource.data
             ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/handbook/$(slug)/proposals/$(request.resource.data.proposalId))
             : request.resource.data.quote is string && request.resource.data.quote.size() > 0 && request.resource.data.quote.size() <= 500);
-        allow update: if may('boldiquette', 'propose') && (
+        allow update: if may('boldiquette', 'change') && (
           (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
             && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
             && (!('editedAt' in request.resource.data) || request.resource.data.editedAt is number))
@@ -637,7 +637,7 @@ service cloud.firestore {
       // a batch (which rules can't look into) is refused when accepted (decideProposal).
       match /proposals/{id} {
         allow read: if may('boldiquette', 'view');
-        allow create: if may('boldiquette', 'propose') && request.resource.data.by.email == email()
+        allow create: if may('boldiquette', 'change') && request.resource.data.by.email == email()
           && (request.resource.data.get('partId', '') != 'access' || hasFullWrite())
           && request.resource.data.status == 'open'
           && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch']
@@ -648,7 +648,7 @@ service cloud.firestore {
             : !('changes' in request.resource.data));
         // Edited by whoever proposed it, while it's open: its changes and note, as when
         // proposed; who, when and its status stay as they were.
-        allow update: if may('boldiquette', 'propose') && resource.data.by.email == email() && resource.data.status == 'open'
+        allow update: if may('boldiquette', 'change') && resource.data.by.email == email() && resource.data.status == 'open'
           && (request.resource.data.get('partId', '') != 'access' || hasFullWrite())
           && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
           && request.resource.data.editedAt is number
