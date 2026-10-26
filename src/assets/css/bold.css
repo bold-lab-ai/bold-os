@@ -318,6 +318,9 @@ a.mast-auth-name:hover{text-decoration:underline;}
 
 /* Add/edit form for an event added on the site (events-common.js) — the events page and event.html. */
 .event-form{padding:14px 16px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); max-width:560px; font-family:var(--sans); font-size:13px;}
+.event-form-head{margin:0 0 10px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink);}
+.event-form-hint{margin:2px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.btn-text:disabled, .btn-text.is-off{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
 .event-form label{display:block; margin-bottom:10px; color:var(--muted);}
 .event-form input, .event-form textarea{
   display:block; width:100%; margin-top:4px; font-family:var(--sans); font-size:14px; color:var(--ink);

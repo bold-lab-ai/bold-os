@@ -1,31 +1,21 @@
 ---
 area: "events"
-title: "BOLD Events | BOLD Lab"
-description: "Where BOLD gathers — talks, workshops, and the people building the ecosystem. BOLD Festival, BOLD Collaboration Week, and what's next."
-css: "events"
+title: "Events | BOLD Lab"
+description: "Where BOLD gathers: the recurring events, and what's on."
+css: "profile"
 sdk: ["firestore", "functions"]
 scripts: ["project-fields.js", "events-common.js", "pages/events.js"]
 permalink: "events.html"
 ---
 <div class="hero">
-  <h1>BOLD Events</h1>
-  <p class="hero-note">Where BOLD gathers — talks, workshops, and the people building the UK's fundamental-AI ecosystem.</p>
+  <h1>Events</h1>
+  <p class="hero-note">Where BOLD gathers: what recurs, what's coming up and what's been. Each is on the <a href="calendar.html">Calendar</a> too.</p>
+  <p class="hero-actions"><button type="button" class="btn-text ev-add-btn" id="eventAdd" disabled>+ Add an event</button>
+    <a class="btn-text series-add" href="series.html?new">+ Add a recurring event</a></p>
 </div>
 
 <main>
-
-  <section class="block" id="seriesBlock">
-    <div class="block-head"><h2>Recurring</h2></div>
-    <ul class="event-list" id="seriesList"></ul>
-    <a class="event-add series-add" href="series.html?new">+ Add a recurring event</a>
-  </section>
-
-  <section class="block">
-    <div class="block-head"><h2>Events</h2></div>
-    <ul class="event-list" id="eventList"></ul>
-    <p class="event-loading" id="eventLoading">Loading…</p>
-    <button type="button" class="event-add" id="eventAdd" disabled title="Only PIs and admins can add and change events">+ Add an event</button>
-  </section>
-
+  <div class="pp-filter"><input type="search" id="evSearch" placeholder="Search by name, place or description" aria-label="Search events" autocomplete="off"></div>
+  <div id="evForm"></div>
+  <div id="eventList"><p class="proj-msg">Loading&hellip;</p></div>
 </main>
-

@@ -46,12 +46,12 @@
   }
   function editionUrl(e){ return e.page || 'event.html?event=' + encodeURIComponent(e.slug); }
   var BACK = '<a class="back-link" href="events.html">&larr; All events</a>';
-  var INVITE = [['join', 'Whoever joins'], ['group:everyone', 'Everyone in BOLD'], ['group:associate', 'BOLD-associate and above'],
-    ['group:internal', 'BOLD-internal and above'], ['group:staff', 'BOLD-staff and above'], ['group:exec', 'BOLD-exec']];
+  var INVITE = [['group:exec', 'BOLD-exec'], ['group:staff', 'BOLD-staff and above'], ['group:internal', 'BOLD-internal and above'],
+    ['group:associate', 'BOLD-associate and above'], ['group:everyone', 'Everyone in BOLD'], ['join', 'Whoever joins']];
 
   function call(data){ return firebase.app().functions('europe-west2').httpsCallable('eventSeries')(data); }
   function inviteKey(inv){ return inv && inv.mode === 'group' ? 'group:' + inv.group : 'join'; }
-  function inviteText(inv){ return (INVITE.filter(function(o){ return o[0] === inviteKey(inv); })[0] || INVITE[0])[1]; }
+  function inviteText(inv){ return (INVITE.filter(function(o){ return o[0] === inviteKey(inv); })[0] || INVITE[INVITE.length - 1])[1]; }
   function nameOf(e){ return names[e] || String(e).split('@')[0]; }
   function isOrganiser(){ return !!(s && me && (s.organisers || []).indexOf(me.email.toLowerCase()) >= 0); }
   function canChange(){ return full || isOrganiser(); }
