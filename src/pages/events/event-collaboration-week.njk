@@ -1,20 +1,22 @@
 ---
 area: "events"
-title: "BOLD Collaboration Week | BOLD Lab"
-description: "5–10 October 2026, Oxford — five days for BOLD Associates to engage more deeply with BOLD, in person."
+title: "Collaboration week | BOLD Lab"
+description: "Collaboration week: five days, every three months, for BOLD Associates to engage more deeply with BOLD, in person."
 sdk: ["firestore", "functions"]
 css: "event-collaboration-week"
-scripts: ["events-common.js", "event-schedule.js", "event-sessions.js", "project-links.js", "event-proposals.js", "pages/event.js", "pages/event-collaboration-week.js"]
+nav: "events.html"
+scripts: ["events-common.js", "event-schedule.js", "event-sessions.js", "project-links.js", "event-proposals.js", "series-editions.js", "pages/event.js", "pages/event-series-page.js"]
 permalink: "event-collaboration-week.html"
 ---
-{# The header (title, dates, place, description) is events/collaboration-week in Firestore — see pages/event.js. #}
-<div class="hero" id="eventBody" data-event="collaboration-week">
-  <a class="back-link" href="events.html">&larr; All events</a>
+{# The series' own page (eventSeries/collaboration-week): one occurrence at a time (series-editions.js), its header from Firestore (pages/event.js). #}
+<nav class="ed-switch" id="editionSwitch" aria-label="Occurrences" hidden></nav>
+<div class="hero" id="eventBody" data-series="collaboration-week" data-event="collaboration-week">
+  <a class="back-link" href="events.html">&larr; Event series</a>
   <p class="hero-when">Loading…</p>
 </div>
 
 <main>
-  <div class="tabs" role="tablist" aria-label="BOLD Collaboration Week">
+  <div class="tabs" role="tablist" aria-label="Collaboration week">
     <button class="tab" type="button" id="tabBtnSchedule" data-tab="schedule" role="tab" aria-controls="panelSchedule">Schedule</button>
     <button class="tab" type="button" id="tabBtnProposals" data-tab="proposals" role="tab" aria-controls="panelProposals">Proposals</button>
   </div>
@@ -31,6 +33,7 @@ permalink: "event-collaboration-week.html"
     </div>
 
     <div id="proposalsSignedIn" hidden>
+      <p><a id="proposeLink" href="event-collaboration-week-propose.html">Propose a workshop, pitch or talk &rarr;</a></p>
       <div id="proposalsList"></div>
     </div>
   </div>

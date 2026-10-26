@@ -33,7 +33,7 @@
       esc(E.when(x.startDate, x.endDate)) + (x.place ? ' · ' + esc(x.place) : ''), x.hidden ? badge('Hidden') : '');
   }
   function seriesRow(x){
-    return row('series.html?series=' + encodeURIComponent(x.id), x.title,
+    return row(x.page || 'series.html?series=' + encodeURIComponent(x.id), x.title,
       esc(x.kind === 'editions' ? cadenceText(x.cadence) : meetingText(x.meeting) + ' · London time'),
       (x.hidden ? badge('Hidden') : '') + (x.pausedAt ? badge('Paused') : ''));
   }

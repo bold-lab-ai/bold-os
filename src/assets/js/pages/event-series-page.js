@@ -1,3 +1,5 @@
+// A series' own page with tabs, Schedule and Proposals (the Festival's, Collaboration
+// week's): the tabs, and the shown edition's proposals (event-proposals.js).
 // Tabs — independent of Firebase, so switching between Schedule and
 // Proposals works even if Firebase fails to load. Neither panel is
 // hidden in the raw HTML (progressive enhancement: no-JS visitors see
@@ -37,7 +39,11 @@
     els.signedOut.innerHTML = '<p>Could not connect &mdash; reload, or check back shortly.</p>';
     return;
   }
-  var proposals = EventProposals.mount(els.list, 'collaboration-week');
+  // The edition shown (series-editions.js may have chosen it from ?edition=).
+  var slug = document.getElementById('eventBody').getAttribute('data-event');
+  var propose = document.getElementById('proposeLink');
+  if (propose) propose.href = 'event-collaboration-week-propose.html?event=' + encodeURIComponent(slug);
+  var proposals = EventProposals.mount(els.list, slug);
 
   els.signInBtn.addEventListener('click', BOLD.signIn);
   // Signed in last visit: skip the "sign in" panel while Firebase Auth

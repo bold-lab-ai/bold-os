@@ -42,7 +42,7 @@ export default {
       { label: 'All projects', href: 'projects.html' },
     ] },
     // Its sub-pages are the released events (Firestore), filled in by bold.js.
-    { label: 'Events', href: 'events.html', links: [], events: true, area: 'events' },
+    { label: 'Event series', href: 'events.html', links: [], events: true, area: 'events' },
     { label: 'Agents', href: 'agents.html', area: 'agents', links: [
       { label: 'Activity', href: 'agents.html' },
       { label: 'Tools', href: 'tools.html', area: 'tools' },

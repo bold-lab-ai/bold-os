@@ -667,15 +667,19 @@
     });
   }
 
-  // The released events (events/{slug}, hidden == false — see events-common.js),
-  // newest first: an event with its own page links there, the rest to
-  // event.html?event=<slug>.
+  // The released event series (eventSeries, hidden == false; series.html), by title, each
+  // to its own page; then the released one-off events (events/{slug} with no series),
+  // newest first: an event with its own page links there, the rest to event.html?event=<slug>.
   function eventsNav(){
     firestoreNav('events', 'boldNavEvents', 'events', function(db){
-      return db.collection('events').where('hidden', '==', false).get().then(function(snap){
-        return snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title; })
+      return Promise.all([db.collection('eventSeries').where('hidden', '==', false).get(), db.collection('events').where('hidden', '==', false).get()]).then(function(r){
+        var series = r[0].docs.map(function(d){ return d.data(); }).filter(function(x){ return x.id && x.title; })
+          .sort(function(a, b){ return a.title.localeCompare(b.title); })
+          .map(function(x){ return { title: x.title, href: x.page || 'series.html?series=' + encodeURIComponent(x.id) }; });
+        var once = r[1].docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title && !e.series; })
           .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; })
           .map(function(e){ return { title: e.title, href: e.page || 'event.html?event=' + encodeURIComponent(e.slug) }; });
+        return series.concat(once);
       });
     });
   }

@@ -45,7 +45,8 @@
     if (editions.some(function(e){ return (e.endDate || e.startDate) >= today; })) return '';
     return addPeriod(editions[editions.length - 1].startDate, s.cadence);
   }
-  function editionUrl(e){ return e.page || 'event.html?event=' + encodeURIComponent(e.slug); }
+  // On its series' own page (`page`, the Festival's…) if it has one.
+  function editionUrl(e){ return s && s.page ? s.page + '?edition=' + encodeURIComponent(e.slug) : 'event.html?event=' + encodeURIComponent(e.slug); }
   var BACK = '<a class="back-link" href="events.html">&larr; All events</a>';
   var INVITE = [['group:exec', 'BOLD-exec'], ['group:staff', 'BOLD-staff and above'], ['group:internal', 'BOLD-internal and above'],
     ['group:associate', 'BOLD-associate and above'], ['group:everyone', 'Everyone in BOLD'], ['join', 'Whoever joins']];
@@ -127,7 +128,8 @@
     return (s.hidden ? '<p class="event-hidden-note">Hidden — only PIs, admins and its organisers see it, until a PI or admin releases it.</p>' : '') +
       '<div><span class="eyebrow">Recurring event</span></div>' +
       '<h1>' + esc(s.title) + '</h1>' +
-      '<p class="hero-when">' + esc(cadenceText(s.cadence)) + (s.proposals ? ' · takes proposals' : '') + '</p>' +
+      '<p class="hero-when">' + esc(cadenceText(s.cadence)) + (s.proposals ? ' · takes proposals' : '') +
+        (s.page ? ' · <a href="' + esc(s.page) + '">its page</a>' : '') + '</p>' +
       paragraphs(s.description) +
       '<dl class="sr-facts"><div class="fact"><dt>Organisers</dt><dd>' + (s.organisers || []).map(function(e){ return esc(nameOf(e)); }).join(', ') + '</dd></div></dl>' +
       '<h2 class="sr-head">Coming up</h2>' +
@@ -173,7 +175,7 @@
     var oftens = s ? OFTEN : [['once', 'Once']].concat(OFTEN);   // a recurring one stays recurring
     var head = '<h1>' + (s ? 'Edit ' + esc(s.title) : 'New event') + '</h1>' +
       '<div class="event-form sr-form">' +
-        '<label>Title<input type="text" class="sr-title" maxlength="120" value="' + esc(e.title) + '" placeholder="' + (once ? 'BOLD Festival' : 'Hamming Sessions') + '"></label>' +
+        '<label>Title<input type="text" class="sr-title" maxlength="120" value="' + esc(e.title) + '" placeholder="' + (once ? 'Festival' : 'Hamming Sessions') + '"></label>' +
         '<label>What it’s for<textarea class="sr-desc" rows="5" maxlength="5000">' + esc(e.description) + '</textarea></label>' +
         '<label>How often<select class="sr-often">' + oftens.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.often ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
     if (once) return head +

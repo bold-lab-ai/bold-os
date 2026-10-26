@@ -178,7 +178,7 @@ module.exports = function series(deps){
   // What the page gets: the series, without anyone's addresses but the caller's own place in it.
   function view(s, me, full){
     const out = {};
-    ['id', 'kind', 'title', 'description', 'meeting', 'invite', 'cadence', 'proposals', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
+    ['id', 'kind', 'title', 'description', 'meeting', 'invite', 'cadence', 'proposals', 'page', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
     const organiser = (s.organisers || []).indexOf(me) >= 0;
     out.organiser = organiser; out.canChange = organiser || full; out.full = full;
     out.joined = (s.joined || []).indexOf(me) >= 0;
@@ -251,8 +251,10 @@ module.exports = function series(deps){
         const eref = db.collection('events').doc(slug);
         if ((await eref.get()).exists) throw new HttpsError('already-exists', 'There’s an edition that month already.');
         const now = Date.now();
-        await eref.set({ slug, series: id, hidden: true, title: s.title, startDate: start, endDate: end, place: last.place || '',
-          description: s.description || last.description || '', createdAt: now, createdBy: email, updatedAt: now, updatedBy: email });
+        // A series with its own page (`page`, set in code: the Festival's, Collaboration week's) shows it there.
+        await eref.set(Object.assign({ slug, series: id, hidden: true, title: s.title, startDate: start, endDate: end, place: last.place || '',
+          description: s.description || last.description || '', createdAt: now, createdBy: email, updatedAt: now, updatedBy: email },
+          /^[a-z0-9-]+\.html$/.test(s.page || '') ? { page: s.page + '?edition=' + slug } : {}));
         await ref.set({ nudgedFor: FieldValue.delete() }, { merge: true });
         return { slug };
       }

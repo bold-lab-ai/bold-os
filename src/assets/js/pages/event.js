@@ -44,7 +44,7 @@
     proposals.update(me);
   }
   function seriesLine(){
-    if (!series) return '';
+    if (!series || body.getAttribute('data-series')) return '';   // its series' own page has the switcher
     var cad = series.cadence || { every: 1, unit: 'month' };
     var c = cad.unit === 'month' && cad.every === 12 ? 'every year' : 'every ' + (cad.every > 1 ? cad.every + ' ' + cad.unit + 's' : cad.unit);
     return '<p class="event-series">An edition of <a href="series.html?series=' + encodeURIComponent(series.id) + '">' + esc(series.title) + '</a>, ' + c + ' · <a href="series.html?series=' + encodeURIComponent(series.id) + '">all editions</a></p>';
@@ -147,7 +147,10 @@
       x = doc.exists ? doc.data() : null;
       // An event with its own page (Collaboration Week, the Festival) reached at
       // event.html?event=<slug>, e.g. from the Network or a tag: go there.
-      if (x && x.page && !body.getAttribute('data-event') && /^[a-z0-9-]+\.html$/.test(x.page)) { location.replace(x.page + location.hash); return; }
+      // An edition of a series with its own page: that page, on this edition.
+      if (x && x.page && !body.getAttribute('data-event') && /^[a-z0-9-]+\.html(\?edition=[a-z0-9-]+)?$/.test(x.page)) {
+        location.replace(x.page.split('?')[0] + '?edition=' + encodeURIComponent(slug) + location.hash); return;
+      }
       loaded = true;
       loadSeries();
       if (!editing) render();

@@ -43,18 +43,22 @@
   // proposal's eventSlug; editing one keeps its own.
   var eventSlug = 'collaboration-week';
   try { eventSlug = new URLSearchParams(location.search).get('event') || eventSlug; } catch (e){}
-  function eventPage(){ return eventSlug === 'collaboration-week' ? 'event-collaboration-week.html#proposals' : 'event.html?event=' + encodeURIComponent(eventSlug) + '#eventProposals'; }
+  // Where its proposals are listed: its series' own page on that edition (`page`), else event.html.
+  var eventDoc = null;
+  function eventPage(){
+    var p = eventDoc && eventDoc.page ? eventDoc.page.split('?')[0] : eventSlug === 'collaboration-week' ? 'event-collaboration-week.html' : '';
+    return p ? p + '?edition=' + encodeURIComponent(eventSlug) + '#proposals' : 'event.html?event=' + encodeURIComponent(eventSlug) + '#eventProposals';
+  }
   function showEvent(){
-    var page = eventPage();
-    document.getElementById('allProposals').href = page;
-    if (eventSlug === 'collaboration-week') return;
+    document.getElementById('allProposals').href = eventPage();
     db.collection('events').doc(eventSlug).get().then(function(doc){
       if (!doc.exists) return;
-      var x = doc.data(), when = window.BoldEvents ? BoldEvents.when(x.startDate, x.endDate) : '';
+      eventDoc = doc.data();
+      var x = eventDoc, page = eventPage(), when = window.BoldEvents ? BoldEvents.when(x.startDate, x.endDate) : '';
+      document.getElementById('allProposals').href = page;
       var back = document.getElementById('backLink');
       back.href = page.replace(/#.*/, ''); back.innerHTML = '&larr; ' + BOLD.escapeHtml(x.title);
       if (!editId) {
-        els.heroTitle.textContent = 'Propose a session';
         els.heroNote.innerHTML = 'A workshop, project pitch, or talk for ' + BOLD.escapeHtml(x.title) + (when ? ' (' + BOLD.escapeHtml(when) + ')' : '') +
           '. See what’s already been proposed on <a href="' + page + '">its page</a>.';
       }
