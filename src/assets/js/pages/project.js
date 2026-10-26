@@ -283,7 +283,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     // Join (or Leave, for whoever joined rather than registered or wrote it).
     html += joinButton();
     // Ongoing (being worked on) or back to planned, before it's on a venue's board (then it's in submission).
-    if (!done && !(ws && ws.boardId)) {
+    // A weekly meeting makes it ongoing anyway.
+    if (!done && !(ws && (ws.boardId || ws.meeting))) {
       html += '<button class="btn-box detail-remove" type="button" id="startProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
         (ws && ws.startedAt ? 'Back to planned' : 'Mark as ongoing') + '</button>';
     }

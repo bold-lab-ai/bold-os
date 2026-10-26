@@ -1961,8 +1961,8 @@ exports.getMyProjects = onCall(
 // accepted at a venue (the last column, or the outcome Accepted), or marked
 // completed on its project page (`completed`: its workspace's completedAt);
 // In submission (`submission`) = on a venue's board (`onBoard`), with no outcome yet;
-// Ongoing = being worked on: marked so on its project page (`started`: its
-// workspace's startedAt), or rejected or withdrawn at a venue (the project goes on);
+// Ongoing = being worked on: marked so on its project page, or with a weekly meeting
+// (`started`: workspaceStarted), or rejected or withdrawn at a venue (the project goes on);
 // Planned = the rest.
 function projectGroupForCard(card, completed, onBoard, started){
   if (completed || card.status === 'conference' || card.outcome === 'accepted') return 'completed';
@@ -1976,8 +1976,8 @@ function projectGroupForCard(card, completed, onBoard, started){
 // projects registered without a venue yet (top-level `projects` collection).
 // Both are cards in the same shape (src/assets/js/card-model.js); the only
 // difference is that an unassigned one has no board, so no boardId/link.
-// `completedIds` / `startedIds`: projects marked completed / ongoing on their project page
-// (workspaces' completedAt / startedAt).
+// `completedIds` / `startedIds`: projects marked completed on their project page
+// (workspaces' completedAt) / being worked on (workspaceStarted).
 function allProjectsFromCards(boards, cards, unassigned, completedIds, startedIds){
   const done = new Set(completedIds || []), started = new Set(startedIds || []);
   const labels = {};
@@ -2045,19 +2045,18 @@ exports.getAllProjects = onCall(
   async (request) => {
     const email = signedInEmail(request);
     await access.requireAccess(email, 'projects', 'view');   // Who can see what
-    const [boardsSnap, cardsSnap, unassignedSnap, doneSnap, startedSnap] = await Promise.all([
+    const [boardsSnap, cardsSnap, unassignedSnap, wsSnap] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
       db.collection('projects').get(),
-      db.collection('projectWorkspaces').where('completedAt', '>', 0).get(),
-      db.collection('projectWorkspaces').where('startedAt', '>', 0).get()
+      db.collection('projectWorkspaces').get()
     ]);
     const groups = allProjectsFromCards(
       boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
       cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
       unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; }),
-      doneSnap.docs.map(function(d){ return d.id; }),
-      startedSnap.docs.map(function(d){ return d.id; })
+      wsSnap.docs.filter(function(d){ return d.data().completedAt > 0; }).map(function(d){ return d.id; }),
+      wsSnap.docs.filter(function(d){ return workspaceStarted(d.data()); }).map(function(d){ return d.id; })
     );
     const items = groups.ongoing.concat(groups.submission, groups.completed, groups.planned);
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
@@ -2569,6 +2568,9 @@ async function projectCards(pid){
   return out.sort(function(a, b){ return (a.data.createdAt || 0) - (b.data.createdAt || 0); });
 }
 
+// Pure: whether a workspace counts as being worked on: marked ongoing, or it has a weekly meeting.
+function workspaceStarted(ws){ return !!(ws && (ws.startedAt || ws.meeting)); }
+
 // Pure: a project's group from its cards ([{ data, boardId }], oldest first): completed
 // if marked so or accepted at any venue; otherwise its latest card's.
 function projectGroupForCards(cards, completed, started){
@@ -2749,7 +2751,7 @@ async function syncWorkspace(id, changes){
     patch.again = FieldValue.delete();
     patch.title = card.title || 'Untitled project';
     // Planned, ongoing, in submission or completed, as on the Projects page (the meetings page leaves out completed ones).
-    patch.group = projectGroupForCards(cards, !!ws.completedAt, !!ws.startedAt);
+    patch.group = projectGroupForCards(cards, !!ws.completedAt, workspaceStarted({ startedAt: ws.startedAt, meeting: meeting !== undefined ? meeting : ws.meeting }));
     patch.slackChannel = card.slackChannel || '';
     const everyone = [];
     cards.forEach(function(c){ projectMembers(c.data, []).forEach(function(e){ if (everyone.indexOf(e) < 0) everyone.push(e); }); });
@@ -2989,7 +2991,7 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'complete' / 'reopen': marks the project completed (its meeting is cancelled) or
 //   not; editors only.
 // - 'start' / 'plan': marks the project ongoing (being worked on) or back to planned;
-//   editors only. On a venue's board it's in submission either way.
+//   editors only. On a venue's board it's in submission either way; with a weekly meeting, ongoing.
 // - 'pause' / 'resume': pauses its meeting (its upcoming dates come off Google Calendar;
 //   the same event, invitation and Meet link stay) or brings it back; editors only. Completion by acceptance at a venue needs neither.
 // - 'submit': submits the project to another venue ({ venue, card }: a card the page
@@ -3086,7 +3088,7 @@ exports.projectWorkspace = onCall(
         boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
         venueCards, ownCards,
         Object.keys(ws).filter(function(id){ return ws[id].completedAt; }),
-        Object.keys(ws).filter(function(id){ return ws[id].startedAt; }));
+        Object.keys(ws).filter(function(id){ return workspaceStarted(ws[id]); }));
       const named = {};
       venueCards.concat(ownCards).forEach(function(c){
         if (projectMembers(c.data, []).indexOf(email) >= 0) named[projectIdOf(c.data, c.id)] = true;
@@ -5435,7 +5437,7 @@ async function tellStaff(text, except){
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
-const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, projectGroupForCards, groupOf, SITE_URL,
+const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, projectGroupForCards, workspaceStarted, groupOf, SITE_URL,
   SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], SLACK_BOT_TOKEN,
   // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
   tellStaff,
@@ -5473,6 +5475,6 @@ exports._internal = {
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
-  projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
+  projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
   normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, roleGroup, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
 };

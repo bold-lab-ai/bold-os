@@ -23,7 +23,7 @@ const crypto = require('crypto');
 
 module.exports = function(deps){
   const { db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite,
-    allProjectsFromCards, projectGroupForCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
+    allProjectsFromCards, projectGroupForCards, workspaceStarted, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
     SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl, skillMd, onSchedule, access } = deps;
 
   const TOKENS_PER_PERSON = 5, RATE_PER_MINUTE = 60, LOG_DAYS = 90;
@@ -246,7 +246,7 @@ module.exports = function(deps){
     const [boards, cards, unassigned, workspaces] = await Promise.all([lab.boards(), lab.cards(), lab.unassigned(), lab.workspaces()]);
     return allProjectsFromCards(
       boards.map((b) => ({ id: b._id, label: b.label, status: b.status || 'approved' })), cards, unassigned,
-      workspaces.filter((w) => w.completedAt > 0).map((w) => w._id), workspaces.filter((w) => w.startedAt > 0).map((w) => w._id));
+      workspaces.filter((w) => w.completedAt > 0).map((w) => w._id), workspaces.filter(workspaceStarted).map((w) => w._id));
   }
   function isHidden(ev, full){ return ev.hidden !== false && !full; }
 
@@ -581,7 +581,7 @@ module.exports = function(deps){
       .map((t) => ({ title: t.title, type: t.type, date: t.date || '', presenter: t.presenter && (t.presenter.name || name(t.presenter.email)), slides: t.slidesUrl || '', recording: t.recordingUrl || '' }));
     return {
       id: pid, title: card.title || 'Untitled', url: url(projectHref(mine[mine.length - 1].id, mine[mine.length - 1].boardId)),
-      group: projectGroupForCards(mine, !!w.completedAt, !!w.startedAt),
+      group: projectGroupForCards(mine, !!w.completedAt, workspaceStarted(w)),
       stage: card.status || '', outcome: card.outcome || '',
       venues: mine.map((c) => ({ venue: c.boardId ? labels[c.boardId] : 'No venue yet', stage: c.data.status || '', outcome: c.data.outcome || '' })),
       abstract: card.abstractText || '', keywords: card.keywords || [],
