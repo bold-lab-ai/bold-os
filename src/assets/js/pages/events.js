@@ -79,9 +79,13 @@
       '<div class="event-top"><span class="eyebrow eyebrow--upcoming">' + (x.pausedAt ? 'Paused' : 'Recurring') + '</span>' +
       (x.hidden ? '<span class="eyebrow eyebrow--hidden">Hidden</span>' : '') + '</div>' +
       '<h3>' + esc(x.title) + '</h3>' +
-      '<p class="event-when">' + esc(x.kind === 'editions' ? (x.cadence && x.cadence.every === 12 ? 'Every year' : x.cadence && x.cadence.every > 1 ? 'Every ' + x.cadence.every + ' months' : 'Every month') : meetingText(x.meeting)) + '</p>' +
+      '<p class="event-when">' + esc(x.kind === 'editions' ? cadenceText(x.cadence) : meetingText(x.meeting)) + '</p>' +
       (x.description ? '<p>' + esc(x.description.split(/\n\s*\n/)[0]) + '</p>' : '') +
       '<span class="event-cta">See details &rarr;</span></a>';
+  }
+  function cadenceText(c){
+    c = c || { every: 1, unit: 'month' };
+    return c.unit === 'month' && c.every === 12 ? 'Every year' : 'Every ' + (c.every > 1 ? c.every + ' ' + c.unit + 's' : c.unit);
   }
   function renderSeries(){
     seriesList.innerHTML = series.map(function(x){ return '<li>' + seriesHtml(x) + '</li>'; }).join('');

@@ -1,10 +1,11 @@
 'use strict';
 
-// Recurring events (series.html; Events). How often decides which of two kinds:
-// - 'meeting' (Hamming Sessions, the group meeting…): a weekly slot with its Google
-//   Calendar series, below;
-// - 'editions' (the Festival, Collaboration Week…): an event every N months
-//   (`cadence: { every, unit: 'month' }`), each edition an events/{slug} doc with
+// Recurring events (series.html; Events): one thing to the lab, with an optional recurring
+// Google Calendar invite, which makes it one of two kinds:
+// - 'meeting', with the invite (Hamming Sessions, the group meeting…): a set day and time
+//   every 1–4 weeks, its dates the Google Calendar series' (below);
+// - 'editions', without (the Festival, Collaboration Week…): every N weeks or months
+//   (`cadence: { every, unit: 'week' | 'month' }`), each edition an events/{slug} doc with
 //   `series: <id>`, made by 'nextEdition' (hidden, until a PI or admin releases it, as
 //   any event). The series' organisers edit its editions (firestore.rules); seriesNudges
 //   tells the PIs, admins and organisers when the next one is due and not scheduled.
@@ -40,7 +41,7 @@ module.exports = function series(deps){
   const lower = (e) => String(e || '').trim().toLowerCase();
 
   // Pure: what a page sends → { kind, title, description, organisers, and meeting and
-  // invite ('meeting') or cadence and proposals ('editions') } or { error }.
+  // invite ('meeting': with the invite) or cadence and proposals ('editions') } or { error }.
   function normalizeSeries(d, me){
     d = d && typeof d === 'object' ? d : {};
     const kind = d.kind === 'editions' ? 'editions' : 'meeting';
@@ -51,9 +52,10 @@ module.exports = function series(deps){
     if (description.length > 5000) return { error: 'Keep the description under 5000 characters.' };
     const out = { kind, title, description };
     if (kind === 'editions') {
-      const every = Number(d.cadence && d.cadence.every);
-      if (!(every >= 1 && every <= 24 && every % 1 === 0)) return { error: 'Choose how often it happens: every 1 to 24 months.' };
-      Object.assign(out, { cadence: { every, unit: 'month' }, proposals: d.proposals === true });
+      const unit = d.cadence && d.cadence.unit === 'week' ? 'week' : 'month', every = Number(d.cadence && d.cadence.every);
+      const max = unit === 'week' ? 4 : 24;
+      if (!(every >= 1 && every <= max && every % 1 === 0)) return { error: 'Choose how often it happens: every 1 to ' + max + ' ' + unit + 's.' };
+      Object.assign(out, { cadence: { every, unit }, proposals: d.proposals === true });
     } else {
       const meeting = normalizeMeeting(d.meeting);
       if (meeting.error) return { error: meeting.error };
@@ -86,12 +88,19 @@ module.exports = function series(deps){
     return (await db.collection('events').where('series', '==', id).get()).docs.map((d) => d.data())
       .filter((e) => isoDay.test(e.startDate || '')).sort((a, b) => a.startDate.localeCompare(b.startDate));
   }
+  // Pure: 'YYYY-MM-DD' plus a cadence's period.
+  function addPeriod(iso, c){
+    if (c.unit !== 'week') return addMonths(iso, c.every);
+    const t = new Date(iso + 'T00:00:00Z');
+    t.setUTCDate(t.getUTCDate() + 7 * c.every);
+    return t.toISOString().slice(0, 10);
+  }
   // Pure: when the next edition is due (the last one's start plus the cadence), or ''
   // if one is coming up already.
   function nextDue(s, editions, today){
     if (!s.cadence || !editions.length) return '';
     if (editions.some((e) => (e.endDate || e.startDate) >= today)) return '';
-    return addMonths(editions[editions.length - 1].startDate, s.cadence.every);
+    return addPeriod(editions[editions.length - 1].startDate, s.cadence);
   }
 
   // Everyone `invite` asks for, lowercase: the group and above, or whoever joined; and the organisers.
@@ -113,14 +122,16 @@ module.exports = function series(deps){
   async function syncSeries(id){
     const ref = db.collection('eventSeries').doc(id);
     const s = (await ref.get()).data();
-    if (!s || s.kind === 'editions') return s || null;
+    if (!s) return null;
+    // Without an invite there's no Calendar series, unless it just lost its invite.
+    if (s.kind === 'editions' && !s.eventId) return s;
     const patch = {};
     try {
-      const want = !s.hidden && !!s.meeting && !(s.pausedAt && !s.eventId);
+      const want = s.kind !== 'editions' && !s.hidden && !!s.meeting && !(s.pausedAt && !s.eventId);
       const guests = want ? await inviteesOf(s) : [];
       const addrs = await googleAddressesFor(guests);
       const summary = s.title;
-      const description = (s.meeting.link ? 'Join: <a href="' + s.meeting.link + '">' + s.meeting.link + '</a><br>' : '') +
+      const description = (s.meeting && s.meeting.link ? 'Join: <a href="' + s.meeting.link + '">' + s.meeting.link + '</a><br>' : '') +
         (s.description ? s.description.replace(/</g, '&lt;').replace(/\n/g, '<br>') + '<br><br>' : '') +
         'On <a href="' + seriesUrl(id) + '">BOLD.OS</a>.';
       const attendees = (existing) => {
@@ -216,11 +227,14 @@ module.exports = function series(deps){
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins change it.');
         const n = normalizeSeries(d, null);
         if (n.error) throw new HttpsError('invalid-argument', n.error);
-        if (n.kind !== (s.kind || 'meeting')) throw new HttpsError('invalid-argument', 'One every few weeks stays one, and one every few months stays one: make a new one instead.');
         if (!n.organisers.length) throw new HttpsError('invalid-argument', 'Keep at least one organiser.');
-        if (n.kind === 'meeting' && !s.hidden && !full && JSON.stringify(n.invite) !== JSON.stringify(s.invite))
+        // Adding, removing or changing the invite of a released one changes who Google invites.
+        if (!s.hidden && !full && JSON.stringify(n.kind === 'meeting' ? n.invite : null) !== JSON.stringify((s.kind || 'meeting') === 'meeting' ? s.invite : null))
           throw new HttpsError('permission-denied', 'Once it’s released, only PIs and admins change who is invited.');
-        await ref.set(Object.assign(n, stamp), { merge: true });
+        // What the other kind had goes (the invite's Calendar series is cancelled by syncSeries).
+        const drop = n.kind === 'meeting' ? { cadence: FieldValue.delete(), proposals: FieldValue.delete() }
+          : { meeting: FieldValue.delete(), invite: FieldValue.delete(), pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() };
+        await ref.set(Object.assign(drop, n, stamp), { merge: true });
         break;
       }
       case 'release': case 'hide':
@@ -228,7 +242,7 @@ module.exports = function series(deps){
         await ref.set(Object.assign({ hidden: d.action === 'hide' }, stamp), { merge: true });
         break;
       case 'nextEdition': {
-        if (s.kind !== 'editions') throw new HttpsError('invalid-argument', 'Only a recurring event has editions.');
+        if (s.kind !== 'editions') throw new HttpsError('invalid-argument', 'One with a Google Calendar invite takes its dates from the invite.');
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins schedule its editions.');
         const start = String(d.startDate || ''), end = String(d.endDate || d.startDate || '');
         if (!isoDay.test(start) || !isoDay.test(end) || end < start) throw new HttpsError('invalid-argument', 'Give its first and last day, the last on or after the first.');
@@ -243,12 +257,12 @@ module.exports = function series(deps){
         return { slug };
       }
       case 'pause': case 'resume':
-        if (s.kind === 'editions') throw new HttpsError('invalid-argument', 'A recurring event isn’t paused: schedule its next edition, or don’t.');
+        if (s.kind === 'editions') throw new HttpsError('invalid-argument', 'Only one with a Google Calendar invite is paused.');
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins pause it.');
         await ref.set(Object.assign(d.action === 'pause' ? { pausedAt: Date.now(), pausedBy: email } : { pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() }, stamp), { merge: true });
         break;
       case 'join': case 'leave':
-        if (s.kind === 'editions') throw new HttpsError('invalid-argument', 'A recurring event isn’t joined.');
+        if (s.kind === 'editions') throw new HttpsError('invalid-argument', 'Only one with a Google Calendar invite is joined.');
         if (s.hidden) throw new HttpsError('failed-precondition', 'It isn’t released yet.');
         if (!s.invite || s.invite.mode !== 'join') throw new HttpsError('failed-precondition', 'Everyone in its group is invited already.');
         await ref.update({ joined: d.action === 'join' ? FieldValue.arrayUnion(email) : FieldValue.arrayRemove(email) });
@@ -301,5 +315,5 @@ module.exports = function series(deps){
     }
   });
 
-  return { eventSeries, onMemberGroupChanged, seriesNudges, _internal: { normalizeSeries, inviteesOf, addMonths, nextDue } };
+  return { eventSeries, onMemberGroupChanged, seriesNudges, _internal: { normalizeSeries, inviteesOf, addMonths, addPeriod, nextDue } };
 };

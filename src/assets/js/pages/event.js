@@ -45,7 +45,8 @@
   }
   function seriesLine(){
     if (!series) return '';
-    var c = series.cadence && series.cadence.every > 1 ? 'every ' + series.cadence.every + ' months' : 'every month';
+    var cad = series.cadence || { every: 1, unit: 'month' };
+    var c = cad.unit === 'month' && cad.every === 12 ? 'every year' : 'every ' + (cad.every > 1 ? cad.every + ' ' + cad.unit + 's' : cad.unit);
     return '<p class="event-series">An edition of <a href="series.html?series=' + encodeURIComponent(series.id) + '">' + esc(series.title) + '</a>, ' + c + ' · <a href="series.html?series=' + encodeURIComponent(series.id) + '">all editions</a></p>';
   }
   // The projects that presented at the event, and adding it to one (project-links.js).
