@@ -194,6 +194,7 @@
       '<div class="ev-row"><label>Starts<input type="date" class="sr-start1" value="' + esc(e.start || '') + '"></label>' +
       '<label>Ends<input type="date" class="sr-end1" value="' + esc(e.end || '') + '"></label></div>' +
       '<label>Place<input type="text" class="sr-place" maxlength="200" value="' + esc(e.place || '') + '"></label>' +
+      E.inviteSelectHtml('sr-invite-group', e.inviteGroup) +
       '<p class="event-form-hint">' + (full ? 'It stays hidden — only PIs and admins see it — until you release it from its page.'
         : 'It stays hidden — only you, PIs and admins see it — until a PI or admin releases it.') + '</p>' + onceEnd();
     return head +
@@ -297,7 +298,7 @@
     var slug = stem + '-' + Math.random().toString(16).slice(2, 8), now = Date.now();
     busy = true; e.error = ''; render();
     db.collection('events').doc(slug).set({ slug: slug, hidden: true, title: title, startDate: e.start, endDate: end, place: e.place.trim(),
-      description: e.description.trim(), createdAt: now, createdBy: me.email, updatedAt: now, updatedBy: me.email }).then(function(){
+      description: e.description.trim(), inviteGroup: e.inviteGroup || 'none', createdAt: now, createdBy: me.email, updatedAt: now, updatedBy: me.email }).then(function(){
       location.replace('event.html?event=' + encodeURIComponent(slug));
     }).catch(function(err){
       console.error('[BOLD Series] adding an event failed', err);

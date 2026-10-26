@@ -294,8 +294,8 @@ module.exports = function series(deps){
     return { series: view(await syncSeries(id), email, full) };
   });
 
-  // An occurrence's Google Calendar invitation: an all-day event over its days, inviting
-  // its group and the series' organisers, once it's released and until it's over; changed
+  // An occurrence's (or a one-off event's) Google Calendar invitation: an all-day event over
+  // its days, inviting its group and its series' organisers, once it's released and until it's over; changed
   // with it; cancelled when it's hidden, deleted, or invites nobody. eventInvites/{slug}
   // { eventId, synced (what the event has), guests, error }; only this writes it.
   function plusDay(iso){ const t = new Date(iso + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + 1); return t.toISOString().slice(0, 10); }

@@ -94,8 +94,8 @@
     }
     document.title = x.title + ' | BOLD Lab';
     if (editing) {
-      // An occurrence of a series: who Google invites (theirs while hidden; then PIs' and admins').
-      var inviteField = x.series ? E.inviteSelectHtml('ev-invite', x.inviteGroup, x.hidden || fullWrite ? '' : 'Once it’s released, only PIs and admins change who is invited') : '';
+      // Who Google invites (theirs while hidden; then PIs' and admins'), on any event but a built-in page's.
+      var inviteField = !x.page || x.series ? E.inviteSelectHtml('ev-invite', x.inviteGroup, x.hidden || fullWrite ? '' : 'Once it’s released, only PIs and admins change who is invited') : '';
       body.innerHTML = BACK + '<div class="event-form">' + E.formHtml(x).replace('<p class="ev-error" hidden></p>', inviteField + '<p class="ev-error" hidden></p>') +
         '<div class="event-form-actions"><button type="button" class="ev-save">Save</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
       var form = body.querySelector('.event-form');
@@ -123,7 +123,7 @@
       '<div><span class="eyebrow">' + (past ? 'Past' : 'Upcoming') + '</span></div>' +
       '<h1>' + esc(x.title) + '</h1>' +
       '<p class="hero-when">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' &middot; ' + esc(x.place) : '') + '</p>' +
-      (x.series && x.inviteGroup && x.inviteGroup !== 'none' ? '<p class="event-series">Google Calendar ' + (x.hidden ? 'will invite ' : 'invites ') + esc(E.inviteText(x.inviteGroup)) + (x.hidden ? ', once it’s released' : '') + '.</p>' : '') +
+      (x.inviteGroup && x.inviteGroup !== 'none' ? '<p class="event-series">Google Calendar ' + (x.hidden ? 'will invite ' : 'invites ') + esc(E.inviteText(x.inviteGroup)) + (x.hidden ? ', once it’s released' : '') + '.</p>' : '') +
       seriesLine() +
       paragraphs(x.description) +
       controls() + (links && !projectsEl ? links.lineHtml() : '');

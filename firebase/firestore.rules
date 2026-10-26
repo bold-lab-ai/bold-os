@@ -436,7 +436,8 @@ service cloud.firestore {
       function mine(d) { return addedByMe(d) || organisesIt(d); }
       allow read: if may('events', 'view') && (resource.data.hidden == false || hasFullWrite() || mine(resource.data));
       allow create: if hasFullWrite() || (may('events', 'edit') && request.resource.data.hidden == true && addedByMe(request.resource.data)
-        && request.resource.data.get('series', '') == '');
+        && request.resource.data.get('series', '') == ''
+        && request.resource.data.get('inviteGroup', 'none') in ['none', 'everyone', 'associate', 'internal', 'staff', 'exec']);
       allow update: if hasFullWrite() || (may('events', 'edit') && mine(resource.data)
         && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '')
         && request.resource.data.get('series', '') == resource.data.get('series', '')
