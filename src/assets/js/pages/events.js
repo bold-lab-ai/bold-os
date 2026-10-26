@@ -4,14 +4,12 @@
 // there; the rest to event.html?event=<slug>, a recurring one to series.html?series=<id>.
 // A hidden one (still being planned) shows only to PIs/admins and whoever added or
 // organises it, marked Hidden, until a PI or admin releases it.
-// "+ Add an event" and "+ Add a recurring event" are for Events' Edit level (BOLDiquette ›
-// Who can see what): always shown, greyed out for everyone else.
+// "+ Add an event" (series.html?new: once, or recurring) is for Events' Edit level
+// (BOLDiquette › Who can see what): always shown, greyed out for everyone else.
 (function(){
   var esc = BOLD.escapeHtml;
   var E = window.BoldEvents;
   var root = document.getElementById('eventList');
-  var addBtn = document.getElementById('eventAdd');
-  var formBox = document.getElementById('evForm');
   var search = document.getElementById('evSearch');
   var seriesAdds = Array.prototype.slice.call(document.querySelectorAll('.series-add'));
   if (!root || !BOLD.getAuth()) return;
@@ -45,7 +43,6 @@
 
   function render(){
     var can = canAdd(), why = can ? '' : BOLD.cannotReason('events', 'edit');
-    addBtn.disabled = !can; addBtn.title = why;
     seriesAdds.forEach(function(a){ a.classList.toggle('is-off', !can); a.title = why; a.setAttribute('aria-disabled', String(!can)); });
     if (events === null) return;
     var q = search.value.trim().toLowerCase();
@@ -59,34 +56,6 @@
   search.addEventListener('input', render);
   BOLD.onAccess(function(){ render(); });
 
-  function openForm(){
-    if (formBox.querySelector('.event-form')) return;
-    formBox.innerHTML = '<div class="event-form"><p class="event-form-head">New event</p>' + E.formHtml({}) +
-      '<p class="event-form-hint">' + (fullWrite ? 'It stays hidden — only PIs and admins see it — until you release it from its page.'
-        : 'It stays hidden — only you, PIs and admins see it — until a PI or admin releases it.') + '</p>' +
-      '<div class="event-form-actions"><button type="button" class="ev-save">Add event</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
-    var form = formBox.querySelector('.event-form');
-    var close = function(){ formBox.innerHTML = ''; };
-    form.querySelector('.ev-title').focus();
-    form.querySelector('.ev-cancel').addEventListener('click', close);
-    form.querySelector('.ev-save').addEventListener('click', function(){
-      var r = E.read(form);
-      if (r.error) { E.showError(form, r.error); return; }
-      var stem = r.fields.title.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
-        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'event';
-      var slug = stem + '-' + Math.random().toString(16).slice(2, 8);
-      var now = Date.now();
-      var save = form.querySelector('.ev-save');
-      save.disabled = true;
-      db.collection('events').doc(slug).set(Object.assign({ slug: slug, hidden: true }, r.fields,
-        { createdAt: now, createdBy: me.email, updatedAt: now, updatedBy: me.email })).then(close).catch(function(err){
-        console.error('[BOLD Events] adding an event failed', err);
-        E.showError(form, 'Couldn’t add the event — try again.');
-        save.disabled = false;
-      });
-    });
-  }
-  addBtn.addEventListener('click', function(){ if (canAdd()) openForm(); });
   seriesAdds.forEach(function(a){ a.addEventListener('click', function(e){ if (!canAdd()) e.preventDefault(); }); });
 
   // Several queries as one list, by key: the rules let everyone else query only the released

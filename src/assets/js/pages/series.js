@@ -1,6 +1,7 @@
 (function(){
   // A recurring event (eventSeries/{id}; functions/series.js): series.html?series=<id>,
-  // or series.html?new to add one. It may have a recurring Google Calendar invite, at a
+  // or series.html?new to add any event: Once makes a plain event (events/{slug}, hidden until
+  // released, as from any event's page); anything more often, a recurring one. It may have a recurring Google Calendar invite, at a
   // set day and time every 1–4 weeks, with its invitations (kind 'meeting'); without one,
   // each time (edition) is scheduled with its own dates (kind 'editions'). Read live from Firestore; every change goes through the
   // eventSeries callable, which keeps its Google Calendar event in line.
@@ -63,7 +64,7 @@
 
   function render(){
     if (editing) { body.innerHTML = BACK + formHtml(); return; }
-    if (isNew) { body.innerHTML = BACK + '<h1>New recurring event</h1><p class="hero-note">' + esc(msg || 'Loading…') + '</p>'; return; }
+    if (isNew) { body.innerHTML = BACK + '<h1>New event</h1><p class="hero-note">' + esc(msg || 'Loading…') + '</p>'; return; }
     if (!loaded) return;
     if (!s) {
       document.title = 'Meeting not found | BOLD Lab';
@@ -157,17 +158,31 @@
     }).catch(function(err){ busy = false; planning.error = (err && err.message) || 'Couldn’t schedule it — try again.'; render(); });
   }
 
+  // The end of the form when it's a one-off event: no invite, proposals or organisers.
+  function onceEnd(){
+    return '<p class="ev-error"' + (editing.error ? '' : ' hidden') + '>' + esc(editing.error || '') + '</p>' +
+      '<div class="event-form-actions"><button type="button" class="ev-save sr-save"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Adding…' : 'Add') + '</button>' +
+        '<button type="button" class="sr-cancel"' + (busy ? ' disabled' : '') + '>Cancel</button></div></div>';
+  }
   function formHtml(){
     var e = editing;
     var opts = (roster || []).filter(function(p){ return e.organisers.indexOf(p.email) < 0; })
       .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('');
     // Once released, only PIs and admins change who Google invites: adding or removing the invite too.
-    var lockInvite = !!(s && !s.hidden && !full), weekly = e.often.charAt(0) === 'w', invite = weekly && e.hasInvite, ed = !invite;
-    return '<h1>' + (s ? 'Edit ' + esc(s.title) : 'New recurring event') + '</h1>' +
+    var lockInvite = !!(s && !s.hidden && !full), once = e.often === 'once', weekly = e.often.charAt(0) === 'w', invite = weekly && e.hasInvite, ed = !invite;
+    var oftens = s ? OFTEN : [['once', 'Once']].concat(OFTEN);   // a recurring one stays recurring
+    var head = '<h1>' + (s ? 'Edit ' + esc(s.title) : 'New event') + '</h1>' +
       '<div class="event-form sr-form">' +
-        '<label>Title<input type="text" class="sr-title" maxlength="120" value="' + esc(e.title) + '" placeholder="Hamming Sessions"></label>' +
+        '<label>Title<input type="text" class="sr-title" maxlength="120" value="' + esc(e.title) + '" placeholder="' + (once ? 'BOLD Festival' : 'Hamming Sessions') + '"></label>' +
         '<label>What it’s for<textarea class="sr-desc" rows="5" maxlength="5000">' + esc(e.description) + '</textarea></label>' +
-        '<label>How often<select class="sr-often">' + OFTEN.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.often ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+        '<label>How often<select class="sr-often">' + oftens.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.often ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
+    if (once) return head +
+      '<div class="ev-row"><label>Starts<input type="date" class="sr-start1" value="' + esc(e.start || '') + '"></label>' +
+      '<label>Ends<input type="date" class="sr-end1" value="' + esc(e.end || '') + '"></label></div>' +
+      '<label>Place<input type="text" class="sr-place" maxlength="200" value="' + esc(e.place || '') + '"></label>' +
+      '<p class="event-form-hint">' + (full ? 'It stays hidden — only PIs and admins see it — until you release it from its page.'
+        : 'It stays hidden — only you, PIs and admins see it — until a PI or admin releases it.') + '</p>' + onceEnd();
+    return head +
         '<label class="sr-check"' + (weekly && !lockInvite ? '' : ' title="' + (lockInvite ? 'Once it’s released, only PIs and admins change who is invited' : 'A recurring invite needs a set day every 1–4 weeks') + '"') + '>' +
           '<input type="checkbox" class="sr-has-invite"' + (invite ? ' checked' : '') + (weekly && !lockInvite ? '' : ' disabled') + '> A recurring Google Calendar invite, at a set day and time</label>' +
         (ed ? '<p class="event-form-hint">Each time is scheduled on its own, with its dates, place and programme.</p>' +
@@ -197,6 +212,7 @@
     if (q('.sr-often')) editing.often = q('.sr-often').value;
     if (q('.sr-has-invite') && !q('.sr-has-invite').disabled) editing.hasInvite = q('.sr-has-invite').checked;
     if (q('.sr-proposals')) editing.proposals = q('.sr-proposals').checked;
+    if (q('.sr-start1')) { editing.start = q('.sr-start1').value; editing.end = q('.sr-end1').value; editing.place = q('.sr-place').value; }
     if (document.getElementById('pmDay')) {
       editing.meeting = { day: document.getElementById('pmDay').value, time: document.getElementById('pmTime').value,
         minutes: Number(document.getElementById('pmMinutes').value), every: Number(document.getElementById('pmEvery').value),
@@ -207,7 +223,7 @@
   function startEditing(){
     editing = s ? { often: isEditions(s) ? oftenKey(s.cadence) : 'w' + ((s.meeting || {}).every || 1), hasInvite: !isEditions(s), title: s.title, description: s.description || '',
         meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, organisers: (s.organisers || []).slice(), error: '' }
-      : { often: 'w1', hasInvite: false, title: '', description: '', meeting: null, invite: 'join', proposals: false, organisers: [me.email.toLowerCase()], error: '' };
+      : { often: 'once', start: '', end: '', place: '', hasInvite: false, title: '', description: '', meeting: null, invite: 'join', proposals: false, organisers: [me.email.toLowerCase()], error: '' };
     loadRoster(); render();
   }
 
@@ -224,6 +240,7 @@
   function save(){
     keep();
     var e = editing;
+    if (e.often === 'once') { saveOnce(e); return; }
     var weekly = e.often.charAt(0) === 'w', ed = !(weekly && e.hasInvite), every = Number(e.often.slice(1));
     var meeting = ed ? null : readMeetingEntry();
     if (meeting && !meeting.error) meeting.every = every;
@@ -247,6 +264,24 @@
     BOLD.confirmAction({ title: 'Save it?', go: 'Save', effects: [ed ? 'Cancel its Google Calendar invite: Google emails everyone invited the cancellation'
       : isEditions(s) ? 'Make its Google Calendar invite: Google emails everyone invited' : 'Change it on Google Calendar: Google emails everyone invited the change'] })
       .then(function(ok){ if (ok) send(); });
+  }
+
+  // A one-off event: events/{slug}, as the events page made them (hidden; firestore.rules).
+  function saveOnce(e){
+    var title = e.title.trim(), end = e.end || e.start;
+    if (!title) { e.error = 'Give it a title.'; render(); return; }
+    if (!e.start) { e.error = 'Set when it starts.'; render(); return; }
+    if (end < e.start) { e.error = 'It has to end on or after the day it starts.'; render(); return; }
+    var stem = title.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'event';
+    var slug = stem + '-' + Math.random().toString(16).slice(2, 8), now = Date.now();
+    busy = true; e.error = ''; render();
+    db.collection('events').doc(slug).set({ slug: slug, hidden: true, title: title, startDate: e.start, endDate: end, place: e.place.trim(),
+      description: e.description.trim(), createdAt: now, createdBy: me.email, updatedAt: now, updatedBy: me.email }).then(function(){
+      location.replace('event.html?event=' + encodeURIComponent(slug));
+    }).catch(function(err){
+      console.error('[BOLD Series] adding an event failed', err);
+      busy = false; e.error = 'Couldn’t add the event — try again.'; render();
+    });
   }
 
   var EFFECTS = {

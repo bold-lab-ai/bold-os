@@ -153,5 +153,4 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .jn-inviter-list li.active, .jn-inviter-list li[data-id]:hover{background:var(--wash);}
 .jn-inviter-list li.jn-none{color:var(--muted); cursor:default;}
 /* Events (events.html), laid out as People */
-#evForm .event-form{margin-top:16px;}
 .proj-list .badge{margin-left:6px; vertical-align:2px;}
