@@ -4304,17 +4304,20 @@ exports.requestToJoin = onCall(
     const d = request.data || {};
     // A field people don't see: filled in, it's a bot. Say nothing different.
     if (d.website) return { ok: true };
-    const set = await joinSettings();
-    const n = normalizeJoinRequest(d, set.roles, set.pillars);
-    if (n.error) throw new HttpsError('invalid-argument', n.error);
-    const r = n.request;
-    // Who invited them (required): someone on the Slack roster who can decide requests
-    // (joinInviterEmails); they approve or decline it (onJoinRequested, decideJoinRequest).
+    // Their point of contact, who invited them (required): someone on the Slack roster who
+    // can decide requests (joinInviterEmails); they approve or decline it (onJoinRequested,
+    // decideJoinRequest). It's both `contact` (with contactEmail) and `invitedBy`.
     const id = String(d.invitedBy || '');
     const p = /^[A-Z0-9]{2,20}$/.test(id) ? await db.collection('people').doc(id).get() : null;
     const inviterEmail = p && p.exists ? String(p.data().email || '').toLowerCase() : '';
-    if (!inviterEmail || !(await joinInviterEmails()).has(inviterEmail)) throw new HttpsError('invalid-argument', 'Choose who invited you from the list.');
-    r.invitedBy = { id, name: p.data().name || '', email: inviterEmail, status: 'pending' };
+    if (!inviterEmail || !(await joinInviterEmails()).has(inviterEmail)) throw new HttpsError('invalid-argument', 'Choose your point of contact from the list.');
+    const inviterName = String(p.data().name || inviterEmail);
+    const set = await joinSettings();
+    const n = normalizeJoinRequest(Object.assign({}, d, { contact: inviterName }), set.roles, set.pillars);
+    if (n.error) throw new HttpsError('invalid-argument', n.error);
+    const r = n.request;
+    r.contactEmail = inviterEmail;
+    r.invitedBy = { id, name: inviterName, email: inviterEmail, status: 'pending' };
     const open = await db.collection('joinRequests').where('email', '==', r.email).where('status', '==', 'open').limit(1).get();
     if (!open.empty) throw new HttpsError('already-exists', 'There’s already a request for this email address, waiting for a PI. You’ll hear by email.');
     const recent = await db.collection('joinRequests').where('at', '>', Date.now() - 3600000).count().get();
@@ -4487,7 +4490,7 @@ exports.decideJoinRequest = onCall(
         // Their record in BOLD.OS: what they told us. They keep it up to date on their profile.
         // Their group, unless a PI or admin already set one: what their role suggests, but
         // never above the group of whoever approves it (a PI or admin raises it on People).
-        const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'invitedBy'];
+        const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'invitedBy'];
         const rec = {};
         keep.forEach((k) => { if (q[k] !== undefined) rec[k] = q[k]; });
         if (!(had.exists && GROUPS.indexOf(had.data().category) >= 0)) Object.assign(rec, { category: cappedGroup(roleGroup(q.role), deciderGroup), categoryBy: email, categoryAt: Date.now() });

@@ -89,11 +89,12 @@ window.BoldJoin = (function(){
       '<label>Role at BOLD<select class="jn-role"><option value="">Choose…</option>' + opt.roles.map(function(r){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';
       }).join('') + (v.role && opt.roles.indexOf(v.role) === -1 ? '<option selected>' + esc(v.role) + '</option>' : '') + '</select></label>' +
-      contactHtml(v, o.people) +
+      (o.withIdentity ? '' : contactHtml(v, o.people)) +
       // The profile: who invited them, from the roster (setMyInviter saves it and asks them to confirm).
       (o.people && !o.withIdentity ? inviterHtml(v, o.people) : '') +
-      // join.html only: who invited them, picked from the roster as they type (join.js); they decide the request.
-      (o.withIdentity ? '<label>Who invited you? (they approve your request)' +
+      // join.html only: their point of contact, who invited them, picked from the roster as they
+      // type (join.js); they decide the request.
+      (o.withIdentity ? '<label>BOLD supervisor, mentor or point of contact (they invited you, and approve your request)' +
         '<input type="text" class="jn-inviter" maxlength="120" placeholder="Start typing their name" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"></label>' +
         '<input type="hidden" class="jn-inviter-id"><ul class="jn-inviter-list" role="listbox" hidden></ul>' : '') +
       '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
@@ -128,7 +129,8 @@ window.BoldJoin = (function(){
       if (pick.value !== '__typed__') out.contactEmail = pick.value;
     }
     if (el.querySelector('.jn-name')) { out.name = v('.jn-name'); out.email = v('.jn-email').toLowerCase(); }
-    if (el.querySelector('.jn-inviter')) { out.invitedBy = v('.jn-inviter-id'); out.inviterTyped = v('.jn-inviter'); }
+    // join.html: the point of contact is who invited them.
+    if (el.querySelector('.jn-inviter')) { out.invitedBy = v('.jn-inviter-id'); out.inviterTyped = v('.jn-inviter'); out.contact = out.invitedBy ? out.inviterTyped : ''; }
     // Not part of the record: member-details.js sends it to setMyInviter.
     if (el.querySelector('.jn-inviter-pick')) out.inviterEmail = el.querySelector('.jn-inviter-pick').value;
     return out;
@@ -140,8 +142,8 @@ window.BoldJoin = (function(){
     if (d.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return 'Give a valid email address.';
     if (!d.institution) return 'Give your home institution.';
     if (!d.role) return 'Choose your role at BOLD.';
+    if (d.invitedBy !== undefined && !d.invitedBy) return 'Choose your point of contact from the list.';
     if (!d.contact) return 'Say who your BOLD point of contact is.';
-    if (d.invitedBy !== undefined && !d.invitedBy) return 'Choose who invited you from the list.';
     if (!d.interests) return 'Give your main research interests.';
     if (!d.endDate && NO_END.indexOf(d.role) === -1) return 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).';
     if (d.startDate && d.endDate && d.endDate < d.startDate) return 'The end date is before the start date.';
@@ -165,7 +167,8 @@ window.BoldJoin = (function(){
         row('Pronouns', esc(d.pronouns || '')) + row('Institution', esc(d.institution || '')) +
         row('Based in', esc(d.basedIn || '')) + row('Links', links)) +
       group('At BOLD', row('Group', o.group || '') + row('Role', esc(d.role || '')) + row('Point of contact', esc(d.contact || '')) +
-        row('Invited by', d.invitedBy && d.invitedBy.name ? esc(d.invitedBy.name) + ' <span class="acct-handle">' +
+        // Since 2026-10-26 the point of contact is who invited them: one row, then.
+        row('Invited by', d.invitedBy && d.invitedBy.name && !(d.contactEmail && d.contactEmail === d.invitedBy.email) ? esc(d.invitedBy.name) + ' <span class="acct-handle">' +
           ({ confirmed: 'confirmed', denied: 'says they didn’t' }[d.invitedBy.status] || 'not confirmed yet') + '</span>' : '') +
         row('Dates', esc(d.startDate && d.endDate ? d.startDate + ' – ' + d.endDate : d.startDate ? 'From ' + d.startDate : d.endDate ? 'Until ' + d.endDate : '')) +
         (d.role !== undefined ? row('On the website', d.listOnWebsite ? 'Yes' : 'No') : '')) +

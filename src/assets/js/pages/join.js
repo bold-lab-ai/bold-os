@@ -10,7 +10,7 @@
 
   function render(v){
     if (sent) {
-      box.innerHTML = '<p class="jn-notice">Thanks, ' + esc(sent) + '. Your request is with whoever invited you; you’ll hear by email.</p>';
+      box.innerHTML = '<p class="jn-notice">Thanks, ' + esc(sent) + '. Your request is with your point of contact; you’ll hear by email.</p>';
       return;
     }
     box.innerHTML = '<div class="event-form join-form">' + BoldJoin.fieldsHtml(v, opt, { withIdentity: true }) +
@@ -21,7 +21,7 @@
     wireInviter();
   }
 
-  // Who invited them: names from the Slack roster, of those who can invite, as they type (joinInviters); choosing
+  // Their point of contact, who invited them: names from the Slack roster, of those who can invite, as they type (joinInviters); choosing
   // one keeps its Slack id. Typing again clears the choice.
   function wireInviter(){
     var input = box.querySelector('.jn-inviter'), id = box.querySelector('.jn-inviter-id'), list = box.querySelector('.jn-inviter-list');
@@ -67,9 +67,10 @@
     var form = box.querySelector('.join-form'), d = BoldJoin.read(form);
     d.website = form.querySelector('.jn-website').value;
     var p = BoldJoin.problem(d);
-    if (p) { showError(p); return; }
+    showError(p);
+    if (p) return;
     delete d.inviterTyped;
-    BOLD.confirmAction({ title: 'Send your request?', go: 'Send', effects: ['Send whoever invited you a Slack message, to approve or decline it'] }).then(function(ok){ if (ok) sendRequest(d); });
+    BOLD.confirmAction({ title: 'Send your request?', go: 'Send', effects: ['Send your point of contact a Slack message, to approve or decline it'] }).then(function(ok){ if (ok) sendRequest(d); });
   }
   function sendRequest(d){
     var btn = box.querySelector('.ev-save');
