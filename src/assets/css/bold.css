@@ -263,15 +263,47 @@ footer{
 a.mast-auth-name{text-decoration:none;}
 a.mast-auth-name:hover{text-decoration:underline;}
 .mast-auth-email{font-weight:400; color:var(--muted);}
-/* Who can see this page (bold.js), under the name; PIs and admins change it there. */
+/* Who can see this page (bold.js): a chip under the name, opening its ladder (each
+   group can do what the groups below it can); PIs and admins propose a change there. */
 .mast-who{display:flex; flex-direction:column; align-items:flex-end; gap:2px; position:relative;}
-.mast-access{font-family:var(--sans); font-size:12px; color:var(--muted); display:flex; gap:6px; align-items:baseline; flex-wrap:wrap; justify-content:flex-end;}
-.mast-access .btn-text{font-size:12px;}
-.mast-access-form{position:absolute; top:100%; right:0; z-index:40; margin-top:6px; width:min(320px, calc(100vw - 32px)); background:var(--paper); border:1px solid var(--rule); padding:12px; display:flex; flex-direction:column; gap:8px; font-family:var(--sans); font-size:13px; color:var(--ink); box-shadow:0 6px 20px rgba(0,0,0,.08);}
-.mast-access-form label{display:flex; justify-content:space-between; align-items:center; gap:8px;}
-.mast-access-form textarea{width:100%; min-height:56px; font:inherit;}
-.mast-access-form .ev-error{color:var(--danger, #a33);}
-.mast-access-actions{display:flex; gap:12px; justify-content:flex-end; align-items:center;}
+.mast-access{font-family:var(--sans); font-size:12px; color:var(--muted);}
+.ac-chip{display:inline-flex; align-items:center; gap:5px; font:inherit; color:var(--ink-soft); background:none; border:1px solid var(--line); border-radius:999px; padding:1px 9px 1px 7px; cursor:pointer;}
+.ac-chip:hover, .ac-chip[aria-expanded="true"]{border-color:var(--ink-soft); color:var(--ink);}
+.ac-chip svg{flex:none;}
+.ac-waiting{color:var(--ink); font-weight:600;}
+.ac-caret{color:var(--muted);}
+.ac-panel{position:absolute; top:100%; right:0; z-index:40; margin-top:6px; width:min(560px, calc(100vw - 32px)); background:var(--surface); border:1px solid var(--line); padding:14px 16px; display:flex; flex-direction:column; gap:10px; font-size:13px; color:var(--ink); box-shadow:0 8px 24px rgba(26,43,74,.10); text-align:left;}
+.ac-title{font-family:var(--serif); font-size:18px; font-weight:600;}
+.ac-ladder{display:flex; flex-direction:column; gap:2px;}
+.ac-row{display:grid; grid-template-columns:118px repeat(7, 1fr); align-items:center;}
+.ac-head span{font-size:11px; color:var(--muted); text-align:center; letter-spacing:.02em;}
+.ac-what{color:var(--ink-soft);}
+.ac-cell{height:28px; background:none; border:0; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center; position:relative;}
+.ac-cell:disabled{cursor:default;}
+.ac-cell.is-on::before{content:''; position:absolute; left:0; right:0; top:50%; height:4px; margin-top:-2px; background:rgba(26,43,74,.18);}
+.ac-cell.is-pick::before{left:50%;}
+.ac-cell.is-on[data-level="exec"]::before{right:50%;}
+.ac-cell.is-pick[data-level="exec"]::before, .ac-cell[data-level="none"]::before{display:none;}
+.ac-dot{width:12px; height:12px; border-radius:50%; border:1.5px solid var(--line); background:var(--surface); position:relative;}
+.ac-cell.is-on .ac-dot{border-color:var(--ink); background:var(--ink);}
+.ac-cell:not(:disabled):hover .ac-dot{border-color:var(--ink);}
+.ac-cell:disabled:not(.is-on) .ac-dot{opacity:.45;}
+.ac-cell.is-ghost:not(.is-on) .ac-dot{border:1.5px dashed var(--ink); opacity:1;}
+.ac-cell:focus-visible{outline:2px solid var(--ink); outline-offset:-2px;}
+.ac-sentence{margin:0; font-family:var(--serif); font-size:15px;}
+.ac-note{margin:0; color:var(--muted);}
+.ac-why{display:flex; flex-direction:column; gap:4px; color:var(--ink-soft);}
+.ac-why textarea{width:100%; font:inherit; box-sizing:border-box;}
+.ac-panel .ev-error{margin:0;}
+.ac-actions{display:flex; gap:14px; justify-content:flex-end; align-items:center;}
+@media (max-width:560px){
+  .ac-panel{position:fixed; left:0; right:0; bottom:0; top:auto; width:auto; margin:0; max-height:80vh; overflow:auto; border-width:1px 0 0; padding:16px;}
+  .ac-row{grid-template-columns:repeat(7, 1fr);}
+  .ac-row > :first-child{grid-column:1 / -1;}
+  .ac-head > :first-child{display:none;}
+  .ac-what{margin-top:6px;}
+  .ac-head span{font-size:10px;}
+}
 .btn-text{
   font-family:var(--sans); font-weight:400; font-size:12.5px;
   color:var(--accent); background:none; border:none; padding:0; cursor:pointer;

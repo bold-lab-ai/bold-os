@@ -370,109 +370,199 @@
   }
   BOLD.isFullWrite = function(){ return !!(access && access.fullWrite); };
 
-  // ---------- this page's levels, under the name (masthead) ----------
-  // Its row of the BOLDiquette's Who can see what; PIs and admins propose a change to it
-  // there, as a proposal on the BOLDiquette that another PI or admin accepts.
+  // ---------- who can see this page: a chip under the name, and its panel ----------
+  // The chip says who can see the page; it opens the page's row of the BOLDiquette's Who
+  // can see what as a ladder (each group can do what the groups below it can): for each
+  // action, the lowest group allowed. Everyone can open it; PIs and admins propose a change
+  // there, as a proposal on the BOLDiquette that another PI or admin accepts, and the chip
+  // says while one waits.
   // The pages, as the table names them (functions/access.js PAGES, kept in sync by hand).
   var AREA_NAMES = { boldiquette: 'BOLDiquette', projects: 'Projects', profile: 'Your profile', calendar: 'Calendar', 'ml-cycle': 'ML Conference Cycle',
     people: 'People', requests: 'Requests', events: 'Events', agents: 'Agents', tools: 'Tools', skills: 'Skills', guides: 'How to',
     'service-desk': 'Service desk', search: 'Search', changelog: 'Changes' };
-  var WHAT = ['view', 'edit', 'propose'], WHAT_NAMES = { view: 'View', edit: 'Edit', propose: 'Propose' };
+  var WHAT = ['view', 'edit', 'propose'];
+  var WHAT_ROW = { view: 'See it', edit: 'Edit on it', propose: 'Suggest changes' };
+  var WHAT_VERB = { view: 'see', edit: 'edit', propose: 'suggest changes' };
+  var LADDER = ['everyone', 'pan', 'associate', 'internal', 'staff', 'exec', 'none'];
+  var LADDER_HEAD = { everyone: 'Everyone', pan: 'PAN-BOLD', associate: 'Associate', internal: 'Internal', staff: 'Staff', exec: 'Exec', none: 'Nobody' };
   var ACCESS_INTRO = 'What each group can see, edit and propose on BOLD.OS: each group can do everything the groups below it can, and — is nobody. Only PIs and admins change this table, and who is in which group.';
-  var accessForm = null;   // { view, edit, propose, note, busy, error, done }
+  var ICON_EYE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8z"/><circle cx="8" cy="8" r="2"/></svg>';
+  var panel = null;      // open: { lv: {view, edit, propose}, note, busy, error, done }
+  var waiting = null;    // this page's row in an open proposal: { id, lv } | null
+  var waitingUnsub = null;
   function pageArea(){ var sh = document.getElementById('shell'); return sh && sh.getAttribute('data-area'); }
-  function accessRow(name, lv){ return '| ' + name + ' | ' + WHAT.map(function(w){ return LEVEL_NAMES[lv[w]] === 'nobody' ? '—' : LEVEL_NAMES[lv[w]]; }).join(' | ') + ' |'; }
+  function currentLevels(area){ var lv = {}; WHAT.forEach(function(w){ lv[w] = levelFor(area, w); }); return lv; }
+  function sameLevels(a, b){ return WHAT.every(function(w){ return a[w] === b[w]; }); }
+  function groupName(l){ return l === 'everyone' ? 'Everyone' : l === 'none' ? 'Nobody' : LEVEL_NAMES[l]; }
+  function who(l){ return l === 'everyone' ? 'Everyone' : l === 'none' ? 'Nobody' : l === 'exec' ? 'BOLD-exec' : LEVEL_NAMES[l] + ' and above'; }
+  // One sentence for the ladder: "BOLD-internal and above can see, edit and suggest changes."
+  function sentence(lv){
+    var by = {};
+    WHAT.forEach(function(w){ (by[lv[w]] = by[lv[w]] || []).push(WHAT_VERB[w]); });
+    return LADDER.filter(function(l){ return by[l]; }).map(function(l, i){
+      var v = by[l], verbs = v.length > 1 ? v.slice(0, -1).join(', ') + ' and ' + v[v.length - 1] : v[0];
+      var s = l === 'none' ? 'Nobody can ' + verbs.replace(' and ', ' or ') + ' here directly' : who(l) + ' can ' + verbs;
+      // Group names keep their capitals; "Everyone" and "Nobody" don't, mid-sentence.
+      return i && (l === 'none' || l === 'everyone') ? s.charAt(0).toLowerCase() + s.slice(1) : s;
+    }).join('; ') + '.';
+  }
+  // Pure: a table cell or row ↔ levels, as functions/access.js reads them.
+  var norm = function(c){ return String(c || '').replace(/[*_`]/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim().toLowerCase(); };
+  function levelOfCell(c){
+    c = norm(c);
+    if (c === '' || c === '-' || c === '—' || c === '–') return 'none';
+    return LADDER.filter(function(l){ return norm(groupName(l)) === c; })[0] || null;
+  }
+  function rowOf(body, area){
+    var out = null;
+    String(body || '').split('\n').forEach(function(l){
+      if (out || !/^\s*\|/.test(l)) return;
+      var cells = l.trim().replace(/^\||\|$/g, '').split('|');
+      if (norm(cells[0]) !== norm(AREA_NAMES[area])) return;
+      var lv = {}; WHAT.forEach(function(w, i){ lv[w] = levelOfCell(cells[i + 1]); });
+      if (WHAT.every(function(w){ return lv[w]; })) out = lv;
+    });
+    return out;
+  }
+  function accessRow(area, lv){ return '| ' + AREA_NAMES[area] + ' | ' + WHAT.map(function(w){ return lv[w] === 'none' ? '—' : groupName(lv[w]); }).join(' | ') + ' |'; }
   // The part's new body: this page's row replaced (or added), the rest as it is.
   function accessBody(body, area, lv){
-    var name = AREA_NAMES[area], row = accessRow(name, lv);
-    var norm = function(c){ return String(c || '').replace(/[*_`]/g, '').trim().toLowerCase(); };
     if (!body) {
       var pages = Object.assign({}, access.pages); pages[area] = lv;
       return ACCESS_INTRO + '\n\n| Page | View | Edit | Propose |\n|---|---|---|---|\n' + Object.keys(AREA_NAMES).map(function(k){
-        return accessRow(AREA_NAMES[k], pages[k] || { view: 'internal', edit: 'internal', propose: 'internal' });
+        return accessRow(k, pages[k] || { view: 'internal', edit: 'internal', propose: 'internal' });
       }).join('\n');
     }
     var lines = body.split('\n'), last = -1, done = false;
     lines = lines.map(function(l, i){
       if (!/^\s*\|/.test(l)) return l;
       last = i;
-      if (norm(l.trim().replace(/^\|/, '').split('|')[0]) === norm(name)) { done = true; return row; }
+      if (norm(l.trim().replace(/^\|/, '').split('|')[0]) === norm(AREA_NAMES[area])) { done = true; return accessRow(area, lv); }
       return l;
     });
-    if (!done) { if (last === -1) lines.push('', '| Page | View | Edit | Propose |', '|---|---|---|---|', row); else lines.splice(last + 1, 0, row); }
+    if (!done) { if (last === -1) lines.push('', '| Page | View | Edit | Propose |', '|---|---|---|---|', accessRow(area, lv)); else lines.splice(last + 1, 0, accessRow(area, lv)); }
     return lines.join('\n');
   }
-  function drawAccessLine(){
+  // An open proposal changing this page's row (the newest), for the chip and the panel.
+  function watchWaiting(){
+    if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
+    waiting = null;
+    var area = pageArea();
+    if (!area || !access || !access.e || !firebase.firestore || !BOLD.can('boldiquette', 'view')) return;
+    waitingUnsub = firebase.firestore(BOLD.getApp()).collection('handbook').doc('boldiquette').collection('proposals')
+      .where('status', '==', 'open').onSnapshot(function(snap){
+        var cur = currentLevels(area);
+        waiting = null;
+        snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return b.at - a.at; }).some(function(q){
+          var changes = q.kind === 'batch' ? (q.changes || []) : [q];
+          return changes.some(function(c){
+            var lv = c.partId === 'access' && c.after && rowOf(c.after.body, area);
+            if (lv && !sameLevels(lv, cur)) { waiting = { id: q.id, lv: lv }; return true; }
+            return false;
+          });
+        });
+        drawAccess();
+      }, function(){ waiting = null; drawAccess(); });
+  }
+  function ladderHtml(lv, ghost, editable){
+    var head = '<div class="ac-row ac-head"><span></span>' + LADDER.map(function(l){ return '<span>' + esc(LADDER_HEAD[l]) + '</span>'; }).join('') + '</div>';
+    return '<div class="ac-ladder" role="group" aria-label="Who can see this page">' + head + WHAT.map(function(w){
+      var at = LADDER.indexOf(lv[w]), ghostAt = ghost ? LADDER.indexOf(ghost[w]) : -1, floor = w === 'view' ? 0 : LADDER.indexOf(lv.view);
+      return '<div class="ac-row" role="radiogroup" aria-label="' + esc(WHAT_ROW[w]) + '"><span class="ac-what">' + esc(WHAT_ROW[w]) + '</span>' + LADDER.map(function(l, i){
+        var on = lv[w] === 'none' ? l === 'none' : (l !== 'none' && i >= at);
+        var low = w !== 'view' && l !== 'none' && lv.view !== 'none' && i < floor;
+        var cls = 'ac-cell' + (on ? ' is-on' : '') + (i === at ? ' is-pick' : '') + (ghost && (ghost[w] === 'none' ? l === 'none' : l !== 'none' && i >= ghostAt) ? ' is-ghost' : '');
+        var tip = low ? 'Can’t be lower than who can see it' : who(l) + ' can ' + WHAT_VERB[w];
+        return '<button type="button" class="' + cls + '" role="radio" aria-checked="' + (i === at) + '" data-what="' + w + '" data-level="' + l + '" title="' + esc(tip) + '"' +
+          (editable && !low ? '' : ' disabled') + '><span class="ac-dot"></span></button>';
+      }).join('') + '</div>';
+    }).join('') + '</div>';
+  }
+  function drawAccess(){
     var el = document.getElementById('mastAccess'), area = pageArea();
     if (!el) return;
-    if (!area || !access || !access.e) { el.hidden = true; el.innerHTML = ''; return; }
-    var lv = {}; WHAT.forEach(function(w){ lv[w] = levelFor(area, w); });
-    var can = access.fullWrite;
-    var short = function(l){ return l === 'none' ? '—' : l === 'everyone' ? 'Everyone' : LEVEL_NAMES[l] + '+'; };
-    var html = '<span title="Who can see what (BOLDiquette)">' + WHAT.map(function(w){ return esc(WHAT_NAMES[w]) + ': ' + esc(short(lv[w])); }).join(' · ') + '</span>' +
-      '<button type="button" class="btn-text mast-access-change"' + (can ? '' : ' disabled title="Only PIs and admins change who can see what"') + '>Change</button>';
-    var f = accessForm;
-    if (f && can) {
-      var opts = function(w){
-        return '<select data-what="' + w + '">' + LEVELS.map(function(l){
-          return '<option value="' + l + '"' + (f[w] === l ? ' selected' : '') + '>' + esc(l === 'none' ? '— (nobody)' : LEVEL_NAMES[l]) + '</option>';
-        }).join('') + '</select>';
-      };
-      html += f.done
-        ? '<div class="mast-access-form"><p>Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposals">the BOLDiquette</a>.</p>' +
-          '<div class="mast-access-actions"><button type="button" class="btn-text mast-access-close">Close</button></div></div>'
-        : '<div class="mast-access-form"><strong>' + esc(AREA_NAMES[area] || area) + '</strong>' +
-          WHAT.map(function(w){ return '<label>' + WHAT_NAMES[w] + ' ' + opts(w) + '</label>'; }).join('') +
-          '<label style="flex-direction:column;align-items:stretch">Why<textarea class="mast-access-note" maxlength="1000">' + esc(f.note || '') + '</textarea></label>' +
-          '<p class="ev-error"' + (f.error ? '' : ' hidden') + '>' + esc(f.error || '') + '</p>' +
-          '<div class="mast-access-actions"><button type="button" class="btn-text mast-access-close">Cancel</button>' +
-          '<button type="button" class="ev-save mast-access-propose"' + (f.busy ? ' disabled' : '') + '>Propose</button></div></div>';
+    if (!area || !AREA_NAMES[area] || !access || !access.e) { el.hidden = true; el.innerHTML = ''; return; }
+    var cur = currentLevels(area);
+    var html = '<button type="button" class="ac-chip" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="Who can see this page">' + ICON_EYE +
+      '<span>' + esc(groupName(cur.view)) + '</span>' + (waiting ? '<span class="ac-waiting">· 1 change waiting</span>' : '') + '<svg class="ac-caret" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button>';
+    if (panel) {
+      var can = !!access.fullWrite, lv = panel.lv, changed = !sameLevels(lv, cur);
+      html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">Who can see ' + esc(AREA_NAMES[area]) + '</div>';
+      if (panel.done) html += '<p class="ac-sentence">Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposals">the BOLDiquette</a>.</p>' +
+        '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
+      else {
+        html += ladderHtml(lv, waiting && !changed ? waiting.lv : null, can) +
+          '<p class="ac-sentence">' + esc(sentence(lv)) + '</p>' +
+          (waiting && !changed ? '<p class="ac-note">Waiting: ' + esc(sentence(waiting.lv)) + ' <a href="boldiquette.html#proposals">See it on the BOLDiquette</a>.</p>' : '');
+        if (!can) html += '<p class="ac-note">Only PIs and admins change this.</p><div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
+        else html += (changed ? '<label class="ac-why">Why?<textarea class="ac-note-input" maxlength="1000" rows="2">' + esc(panel.note || '') + '</textarea></label>' : '') +
+          '<p class="ev-error"' + (panel.error ? '' : ' hidden') + '>' + esc(panel.error || '') + '</p>' +
+          '<div class="ac-actions"><button type="button" class="btn-text ac-close">' + (changed ? 'Cancel' : 'Close') + '</button>' +
+          '<button type="button" class="btn-box is-primary ac-propose"' + (!changed || panel.busy ? ' disabled' : '') + (changed ? '' : ' title="Change a row first"') + '>Propose change</button></div>';
+      }
+      html += '</div>';
     }
     el.innerHTML = html;
     el.hidden = false;
   }
   function proposeAccess(){
-    var area = pageArea(), f = accessForm, u = auth && auth.currentUser;
-    if (!f.note.trim()) { f.error = 'Say why, for whoever reviews it.'; drawAccessLine(); return; }
-    var lv = { view: f.view, edit: f.edit, propose: f.propose };
-    if (WHAT.every(function(w){ return lv[w] === levelFor(area, w); })) { f.error = 'Nothing changed.'; drawAccessLine(); return; }
-    f.busy = true; f.error = ''; drawAccessLine();
+    var area = pageArea(), u = auth && auth.currentUser;
+    if (!String(panel.note || '').trim()) { panel.error = 'Say why, for whoever reviews it.'; drawAccess(); return; }
+    var lv = Object.assign({}, panel.lv);
+    panel.busy = true; panel.error = ''; drawAccess();
     var ref = firebase.firestore(BOLD.getApp()).collection('handbook').doc('boldiquette');
     ref.get().then(function(snap){
       var p = ((snap.exists && snap.data().parts) || []).filter(function(x){ return x.id === 'access'; })[0];
-      var after = { title: 'Who can see what', body: accessBody(p && p.body, area, lv) };
+      var body = accessBody(p && p.body, area, lv);
       var change = p
-        ? { kind: 'edit', partId: 'access', before: { title: p.title, body: p.body }, after: { title: p.title, body: after.body } }
-        : { kind: 'add', partId: 'access', before: null, after: Object.assign(after, { section: 'People' }) };
+        ? { kind: 'edit', partId: 'access', before: { title: p.title, body: p.body }, after: { title: p.title, body: body } }
+        : { kind: 'add', partId: 'access', before: null, after: { title: 'Who can see what', body: body, section: 'People' } };
       return ref.collection('proposals').add(Object.assign(change, {
-        note: f.note.trim(), by: { email: u.email || '', name: u.displayName || '' }, at: Date.now(), status: 'open',
+        note: String(panel.note).trim(), by: { email: u.email || '', name: u.displayName || '' }, at: Date.now(), status: 'open',
       }));
-    }).then(function(){ f.busy = false; f.done = true; drawAccessLine(); }, function(err){
+    }).then(function(){ panel.busy = false; panel.done = true; drawAccess(); }, function(err){
       console.error('[BOLD Lab] proposing who can see what failed', err);
-      f.busy = false; f.error = 'Couldn’t propose it — try again.'; drawAccessLine();
+      panel.busy = false; panel.error = 'Couldn’t propose it — try again.'; drawAccess();
     });
+  }
+  function setLevel(w, l){
+    var lv = panel.lv;
+    lv[w] = l;
+    // Nobody can edit or suggest on a page they can't see: those follow See up.
+    if (w === 'view' && l !== 'none') ['edit', 'propose'].forEach(function(x){
+      if (lv[x] !== 'none' && LADDER.indexOf(lv[x]) < LADDER.indexOf(l)) lv[x] = l;
+    });
+    if (w === 'view' && l === 'none') { lv.edit = 'none'; lv.propose = 'none'; }
   }
   document.addEventListener('click', function(e){
     var box = document.getElementById('mastAccess');
-    if (!box || !box.contains(e.target)) return;
+    if (!box) return;
+    if (!box.contains(e.target)) {
+      if (panel && !panel.busy && !(panel.note && !panel.done)) { panel = null; drawAccess(); }
+      return;
+    }
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
-    var area = pageArea();
-    if (t.classList.contains('mast-access-change')) {
-      accessForm = accessForm ? null : { view: levelFor(area, 'view'), edit: levelFor(area, 'edit'), propose: levelFor(area, 'propose'), note: '' };
-    } else if (t.classList.contains('mast-access-close')) accessForm = null;
-    else if (t.classList.contains('mast-access-propose')) { proposeAccess(); return; }
-    drawAccessLine();
+    if (t.classList.contains('ac-chip')) panel = panel ? null : { lv: currentLevels(pageArea()), note: '' };
+    else if (t.classList.contains('ac-close')) panel = null;
+    else if (t.classList.contains('ac-cell')) setLevel(t.getAttribute('data-what'), t.getAttribute('data-level'));
+    else if (t.classList.contains('ac-propose')) { proposeAccess(); return; }
+    drawAccess();
+    var again = panel && box.querySelector('.ac-cell[data-what="' + t.getAttribute('data-what') + '"][data-level="' + t.getAttribute('data-level') + '"]');
+    if (again) again.focus();
   });
-  document.addEventListener('change', function(e){
-    var s = e.target.closest && e.target.closest('#mastAccess select[data-what]');
-    if (s && accessForm) accessForm[s.getAttribute('data-what')] = s.value;
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && panel && !panel.busy) { panel = null; drawAccess(); var c = document.querySelector('#mastAccess .ac-chip'); if (c) c.focus(); }
   });
   document.addEventListener('input', function(e){
-    if (e.target.classList && e.target.classList.contains('mast-access-note') && accessForm) accessForm.note = e.target.value;
+    if (e.target.classList && e.target.classList.contains('ac-note-input') && panel) panel.note = e.target.value;
   });
-  BOLD.onAccess(function(){ if (!accessForm || accessForm.done) drawAccessLine(); });
-  document.addEventListener('DOMContentLoaded', drawAccessLine);
+  var watchedFor = null;
+  BOLD.onAccess(function(a){
+    if (watchedFor !== a.e + '|' + JSON.stringify(a.pages)) { watchedFor = a.e + '|' + JSON.stringify(a.pages); watchWaiting(); }
+    if (!panel || panel.done) drawAccess();
+  });
+  document.addEventListener('DOMContentLoaded', drawAccess);
 
   /* ---------- shell: sidebar state + gating ---------- */
 
