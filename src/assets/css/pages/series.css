@@ -36,3 +36,5 @@
 .sr-plan{margin-top:12px; max-width:560px;}
 .event-form label.sr-check{color:var(--ink); cursor:pointer;}
 .event-form .sr-check input{display:inline-block; width:auto; margin:0 6px 0 0; vertical-align:-2px;}
+/* a tick box's own hint, under it, apart from what follows */
+.sr-form .sr-check-hint{margin:-6px 0 16px 22px;}

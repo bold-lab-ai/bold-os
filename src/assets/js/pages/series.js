@@ -199,7 +199,7 @@
     return head +
         '<label class="sr-check"' + (weekly && !lockInvite ? '' : ' title="' + (lockInvite ? 'Once it’s released, only PIs and admins change who is invited' : 'A recurring invite needs a set day every 1–4 weeks') + '"') + '>' +
           '<input type="checkbox" class="sr-has-invite"' + (invite ? ' checked' : '') + (weekly && !lockInvite ? '' : ' disabled') + '> A recurring Google Calendar invite, at a set day and time</label>' +
-        (ed ? '<p class="event-form-hint">Each time is scheduled on its own, with its dates, place and programme.</p>' +
+        (ed ? '<p class="event-form-hint sr-check-hint">Without it, each occurrence is added by hand, with its own dates, place and programme.</p>' +
             '<label class="sr-check"><input type="checkbox" class="sr-proposals"' + (e.proposals ? ' checked' : '') + '> It takes proposals (workshops, pitches, talks)</label>' +
             E.inviteSelectHtml('sr-invite-group', e.inviteGroup) +
             '<p class="event-form-hint">To each occurrence, once a PI or admin releases it; each can choose its own.</p>'
