@@ -19,6 +19,8 @@
 .sr-form{margin-top:8px;}
 .sr-form .meeting-entry{display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 12px;}
 .sr-form .meeting-entry select, .sr-form .meeting-entry input{display:inline-block; width:auto; min-width:0; flex:1 1 120px; margin-top:0;}
+/* how often is chosen above, for both kinds */
+.sr-form #pmEvery{display:none;}
 .sr-orgs{list-style:none; margin:4px 0 8px; padding:0;}
 .sr-orgs li{display:flex; align-items:baseline; gap:12px; padding:4px 0; border-bottom:1px solid rgba(26,43,74,0.08); color:var(--ink);}
 .sr-orgs li span{flex:1 1 auto;}

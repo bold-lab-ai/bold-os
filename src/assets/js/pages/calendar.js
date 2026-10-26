@@ -5,8 +5,8 @@
   // - project meetings: projectWorkspaces (see projectWorkspace in functions/index.js)
   //   in Google Calendar (an eventId), of projects that aren't completed, with Join and Leave;
   // - supervision meetings: studies/{email} (see exports.studies) in Google Calendar;
-  // - lab meetings: the released recurring meetings, eventSeries (functions/series.js; series.html),
-  //   joined from their card when they're opt-in.
+  // - recurring events every few weeks: the released ones (eventSeries of kind 'meeting';
+  //   functions/series.js, series.html), joined from their card when they're opt-in.
   // A Week grid (a dated week, events across the top; the default) or a List
   // (upcoming events, then the meetings by weekday), filtered by kind; both choices kept in localStorage.
   // Clicking a meeting opens a card to join it: a project's at once (projectWorkspace
@@ -25,7 +25,7 @@
   var weekOffset = 0;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
 
-  var KIND_LABELS = { event: 'Event', project: 'Project', study: 'Supervision', series: 'Lab meeting' };
+  var KIND_LABELS = { event: 'Event', project: 'Project', study: 'Supervision', series: 'Recurring' };
   var GROUP_LABELS = { planned: 'Planned', ongoing: 'Ongoing' };
   function kindBadge(k){ return '<span class="type-badge cal-' + k + '">' + KIND_LABELS[k] + '</span>'; }
   // The Projects page's badge: Ongoing in the accent, Planned plain.
@@ -274,7 +274,7 @@
     });
     html += '</div></div>' +
       '<p class="week-note"><span class="week-key"></span> Yours' +
-      (kind === 'all' ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision <span class="week-key is-outline cal-series"></span> Lab meetings' : '') +
+      (kind === 'all' ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision <span class="week-key is-outline cal-series"></span> Recurring' : '') +
       (ms.some(function(m){ return m.paused; }) ? ' <span class="week-key is-outline is-paused"></span> Paused' : '') + '</p>';
     return html;
   }
@@ -357,7 +357,7 @@
     if (e.target.closest('.cal-sub-reset')) feed('reset');
   });
 
-  // Join or leave an opt-in lab meeting (eventSeries).
+  // Join or leave an opt-in recurring event (eventSeries).
   function joinSeries(m, action){
     BOLD.confirmAction({ title: (action === 'join' ? 'Join ' : 'Leave ') + m.title + '?', go: action === 'join' ? 'Join' : 'Leave',
       effects: [action === 'join' ? 'Google Calendar sends you the invitation' : 'Take you off its Google Calendar invitation'] }).then(function(ok){

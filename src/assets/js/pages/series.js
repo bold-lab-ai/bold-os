@@ -1,6 +1,8 @@
 (function(){
-  // A recurring lab meeting (eventSeries/{id}; functions/series.js): series.html?series=<id>,
-  // or series.html?new to add one. Read live from Firestore; every change goes through the
+  // A recurring event (eventSeries/{id}; functions/series.js): series.html?series=<id>,
+  // or series.html?new to add one. How often it happens decides how: every 1–4 weeks, the
+  // same day and time each time, on Google Calendar with its invitations (kind 'meeting');
+  // every month or more, each edition scheduled with its own dates (kind 'editions'). Read live from Firestore; every change goes through the
   // eventSeries callable, which keeps its Google Calendar event in line.
   // - Everyone who can view Events: when it is, who's invited, its organisers; Join or
   //   Leave one that's opt-in; its Meet link once invited.
@@ -20,10 +22,11 @@
   var s = null, loaded = false, me = null, full = false, editing = null, busy = false, msg = '', roster = null, names = {};
   var editions = null, editionsUnsub = null, planning = null;   // planning: { start, end, error } for the next edition
   var E = window.BoldEvents;
-  var CADENCES = [1, 2, 3, 4, 6, 12];
+  var OFTEN = [['w1', 'Every week'], ['w2', 'Every 2 weeks'], ['w3', 'Every 3 weeks'], ['w4', 'Every 4 weeks'],
+    ['m1', 'Every month'], ['m2', 'Every 2 months'], ['m3', 'Every 3 months'], ['m4', 'Every 4 months'], ['m6', 'Every 6 months'], ['m12', 'Every year']];
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
   function isEditions(x){ return !!x && x.kind === 'editions'; }
-  function cadenceText(c){ return c && c.every > 1 ? 'Every ' + c.every + ' months' : 'Every month'; }
+  function cadenceText(c){ var o = OFTEN.filter(function(x){ return x[0] === 'm' + ((c && c.every) || 1); })[0]; return o ? o[1] : 'Every ' + c.every + ' months'; }
   function addMonths(iso, n){
     var p = iso.split('-').map(Number), t = new Date(Date.UTC(p[0], p[1] - 1 + n, 1));
     var last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
@@ -58,7 +61,7 @@
 
   function render(){
     if (editing) { body.innerHTML = BACK + formHtml(); return; }
-    if (isNew) { body.innerHTML = BACK + '<h1>New recurring meeting</h1><p class="hero-note">' + esc(msg || 'Loading…') + '</p>'; return; }
+    if (isNew) { body.innerHTML = BACK + '<h1>New recurring event</h1><p class="hero-note">' + esc(msg || 'Loading…') + '</p>'; return; }
     if (!loaded) return;
     if (!s) {
       document.title = 'Meeting not found | BOLD Lab';
@@ -80,7 +83,7 @@
     var link = invited() && s.meetUrl ? '<a href="' + esc(s.meetUrl) + '" target="_blank" rel="noopener">' + (s.meeting.link ? 'Own link' : 'Google Meet') + '</a>' : '';
     body.innerHTML = BACK +
       (s.hidden ? '<p class="event-hidden-note">Hidden — only PIs, admins and its organisers see it, and nobody is invited, until a PI or admin releases it.</p>' : '') +
-      '<div><span class="eyebrow">Recurring meeting' + (s.pausedAt ? ' · paused' : '') + '</span></div>' +
+      '<div><span class="eyebrow">Recurring event' + (s.pausedAt ? ' · paused' : '') + '</span></div>' +
       '<h1>' + esc(s.title) + '</h1>' +
       '<p class="hero-when">' + esc(meetingText(s.meeting)) + ' · London time' + (link ? ' · ' + link : '') + '</p>' +
       paragraphs(s.description) +
@@ -94,7 +97,7 @@
       '<div class="event-controls">' +
         '<button type="button" class="btn-text sr-edit"' + off(canChange(), NOT_ORG) + '>Edit</button>' +
         '<button type="button" class="btn-text sr-act" data-action="' + (s.pausedAt ? 'resume' : 'pause') + '"' + off(canChange() && !s.hidden, s.hidden ? 'Not released yet' : NOT_ORG) + '>' + (s.pausedAt ? 'Resume' : 'Pause') + '</button>' +
-        '<button type="button" class="btn-text sr-act" data-action="' + (s.hidden ? 'release' : 'hide') + '"' + off(full, 'Only PIs and admins release and hide recurring meetings') + '>' + (s.hidden ? 'Release' : 'Hide') + '</button>' +
+        '<button type="button" class="btn-text sr-act" data-action="' + (s.hidden ? 'release' : 'hide') + '"' + off(full, 'Only PIs and admins release and hide recurring events') + '>' + (s.hidden ? 'Release' : 'Hide') + '</button>' +
         '<button type="button" class="btn-text danger sr-act" data-action="delete"' + off(canChange(), NOT_ORG) + '>Delete</button>' +
       '</div>';
   }
@@ -156,16 +159,17 @@
     var e = editing;
     var opts = (roster || []).filter(function(p){ return e.organisers.indexOf(p.email) < 0; })
       .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('');
-    var lockInvite = !!(s && !s.hidden && !full), ed = e.kind === 'editions';
-    return '<h1>' + (s ? 'Edit ' + esc(s.title) : ed ? 'New recurring event' : 'New recurring meeting') + '</h1>' +
+    var lockInvite = !!(s && !s.hidden && !full), ed = e.often.charAt(0) === 'm';
+    // Once made, a weekly one stays weekly and a monthly one monthly (the server's rule).
+    var oftens = s ? OFTEN.filter(function(o){ return o[0].charAt(0) === (isEditions(s) ? 'm' : 'w'); }) : OFTEN;
+    return '<h1>' + (s ? 'Edit ' + esc(s.title) : 'New recurring event') + '</h1>' +
       '<div class="event-form sr-form">' +
-        (s ? '' : '<label>What it is<select class="sr-kind"><option value="meeting"' + (ed ? '' : ' selected') + '>A meeting every week or few weeks (Google Calendar invites)</option>' +
-          '<option value="editions"' + (ed ? ' selected' : '') + '>An event every few months, each edition with its own dates and programme</option></select></label>') +
-        '<label>Title<input type="text" class="sr-title" maxlength="120" value="' + esc(e.title) + '" placeholder="' + (ed ? 'BOLD Collaboration Week' : 'Hamming Sessions') + '"></label>' +
+        '<label>Title<input type="text" class="sr-title" maxlength="120" value="' + esc(e.title) + '" placeholder="Hamming Sessions"></label>' +
         '<label>What it’s for<textarea class="sr-desc" rows="5" maxlength="5000">' + esc(e.description) + '</textarea></label>' +
-        (ed ? '<label>How often<select class="sr-cadence">' + CADENCES.map(function(n){ return '<option value="' + n + '"' + (n === e.cadence ? ' selected' : '') + '>' + cadenceText({ every: n }) + '</option>'; }).join('') + '</select></label>' +
-            '<label class="sr-check"><input type="checkbox" class="sr-proposals"' + (e.proposals ? ' checked' : '') + '> Its editions take proposals (workshops, pitches, talks)</label>'
-          : '<label>When (London time)</label>' + meetingEntryHtml(e.meeting) +
+        '<label>How often<select class="sr-often">' + oftens.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.often ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+        (ed ? '<p class="event-form-hint">Each time is scheduled on its own, with its dates, place and programme.</p>' +
+            '<label class="sr-check"><input type="checkbox" class="sr-proposals"' + (e.proposals ? ' checked' : '') + '> It takes proposals (workshops, pitches, talks)</label>'
+          : '<label>When (London time): the same day and time each time, on Google Calendar</label>' + meetingEntryHtml(e.meeting) +
             '<label>Who’s invited<select class="sr-invite"' + (lockInvite ? ' disabled title="Once it’s released, only PIs and admins change this"' : '') + '>' +
               INVITE.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.invite ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>') +
         '<label>Organisers: they change it, and are always invited</label>' +
@@ -187,8 +191,7 @@
     if (q('.sr-title')) editing.title = q('.sr-title').value;
     if (q('.sr-desc')) editing.description = q('.sr-desc').value;
     if (q('.sr-invite')) editing.invite = q('.sr-invite').value;
-    if (q('.sr-kind')) editing.kind = q('.sr-kind').value;
-    if (q('.sr-cadence')) editing.cadence = Number(q('.sr-cadence').value);
+    if (q('.sr-often')) editing.often = q('.sr-often').value;
     if (q('.sr-proposals')) editing.proposals = q('.sr-proposals').checked;
     if (document.getElementById('pmDay')) {
       editing.meeting = { day: document.getElementById('pmDay').value, time: document.getElementById('pmTime').value,
@@ -198,10 +201,9 @@
   }
 
   function startEditing(){
-    editing = s ? { kind: s.kind || 'meeting', title: s.title, description: s.description || '', meeting: s.meeting, invite: inviteKey(s.invite),
-        cadence: (s.cadence || {}).every || 3, proposals: !!s.proposals, organisers: (s.organisers || []).slice(), error: '' }
-      : { kind: params.get('kind') === 'editions' ? 'editions' : 'meeting', title: '', description: '', meeting: null, invite: 'join', cadence: 3, proposals: false,
-        organisers: [me.email.toLowerCase()], error: '' };
+    editing = s ? { often: isEditions(s) ? 'm' + ((s.cadence || {}).every || 3) : 'w' + ((s.meeting || {}).every || 1), title: s.title, description: s.description || '',
+        meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, organisers: (s.organisers || []).slice(), error: '' }
+      : { often: 'w1', title: '', description: '', meeting: null, invite: 'join', proposals: false, organisers: [me.email.toLowerCase()], error: '' };
     loadRoster(); render();
   }
 
@@ -218,13 +220,14 @@
   function save(){
     keep();
     var e = editing;
-    var ed = e.kind === 'editions';
+    var ed = e.often.charAt(0) === 'm', every = Number(e.often.slice(1));
     var meeting = ed ? null : readMeetingEntry();
+    if (meeting && !meeting.error) meeting.every = every;
     if (!e.title.trim()) { e.error = 'Give it a title.'; render(); return; }
     if (meeting && meeting.error) { e.error = meeting.error; render(); return; }
     var inv = e.invite.indexOf('group:') === 0 ? { mode: 'group', group: e.invite.slice(6) } : { mode: 'join' };
-    var payload = { action: 'save', id: s ? s.id : undefined, kind: e.kind, title: e.title.trim(), description: e.description.trim(), organisers: e.organisers };
-    if (ed) { payload.cadence = { every: e.cadence }; payload.proposals = e.proposals; } else { payload.meeting = meeting; payload.invite = inv; }
+    var payload = { action: 'save', id: s ? s.id : undefined, kind: ed ? 'editions' : 'meeting', title: e.title.trim(), description: e.description.trim(), organisers: e.organisers };
+    if (ed) { payload.cadence = { every: every }; payload.proposals = e.proposals; } else { payload.meeting = meeting; payload.invite = inv; }
     var send = function(){
       busy = true; e.error = ''; render();
       call(payload).then(function(r){
@@ -279,7 +282,7 @@
   });
   body.addEventListener('change', function(ev){
     if (!editing) return;
-    if (ev.target.classList.contains('sr-kind')) { keep(); render(); return; }
+    if (ev.target.classList.contains('sr-often')) { keep(); render(); return; }
     if (!ev.target.classList.contains('sr-pick') || !ev.target.value) return;
     keep(); editing.organisers.push(ev.target.value); render();
   });

@@ -452,7 +452,7 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
-  // Recurring lab meetings (eventSeries; functions/series.js), through its callable.
+  // Recurring events every few weeks (eventSeries of kind 'meeting'; functions/series.js), through its callable.
   async function labMeetings(who, a){
     const full = await isFullWrite(who.email);
     const pool = (await lab.series()).filter((x) => x.kind !== 'editions' && (x.hidden === false || full || (x.organisers || []).indexOf(who.email) >= 0))
@@ -462,7 +462,7 @@ module.exports = function(ctx){
     const invite = () => a.invite && a.invite !== 'join' ? { mode: 'group', group: a.invite } : { mode: 'join' };
     if (a.action === 'add') return act(who, 'eventSeries', { action: 'save', title: need(a.title, 'a title'), description: a.description || '', meeting: meeting(), invite: invite(), organisers: [] });
     const id = pool.find((x) => x.id === a.meeting) ? a.meeting : (pool.find((x) => fold(x.name) === fold(a.meeting)) || {}).id;
-    if (!id) throw httpError(404, 'No recurring meeting “' + (a.meeting || '') + '”.');
+    if (!id) throw httpError(404, 'No recurring event “' + (a.meeting || '') + '”.');
     if (a.action === 'update') {
       const s = (await lab.series()).find((x) => x._id === id);
       const m = Object.assign({}, s.meeting, a.day ? { day: String(a.day).toUpperCase() } : {}, a.time ? { time: a.time } : {}, a.minutes ? { minutes: Number(a.minutes) } : {},
@@ -642,7 +642,7 @@ module.exports = function(ctx){
       description: 'Supervision meetings (PhD and Master students’): ask a student to join theirs, withdraw your request; as the student, approve or decline someone’s request. The other gets a Slack message.',
       inputSchema: S({ action: ACTIONS(['ask_to_join', 'withdraw', 'approve', 'decline']), student: str('ask_to_join: their name'), note: str(''), request_id: str('my_items') }) },
     { name: 'lab_meetings', run: labMeetings,
-      description: 'Recurring lab meetings (Events; series.html), such as a weekly reading group: add one (it starts hidden, and nobody is invited, until a PI or admin releases it), change, pause, resume or delete one you organise; join or leave one that is opt-in. PIs and admins release and hide them. Google Calendar sends the invitations.',
+      description: 'Recurring events that meet every 1–4 weeks at a set time (Events; series.html), such as a weekly reading group: add one (it starts hidden, and nobody is invited, until a PI or admin releases it), change, pause, resume or delete one you organise; join or leave one that is opt-in. PIs and admins release and hide them. Google Calendar sends the invitations.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'join', 'leave', 'pause', 'resume', 'release', 'hide', 'delete']), meeting: str('Its name or id (all but add).'),
         title: str(''), description: str(''), day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM, London time'), minutes: { type: 'integer', description: '15–240, in 15s (default 60)' },
         every: { type: 'integer', description: 'Every N weeks, 1–4 (default 1)' }, until: str('YYYY-MM-DD, optional last day'), link: str('Its own meeting link (https), instead of a new Google Meet'),

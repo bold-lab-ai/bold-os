@@ -3,8 +3,8 @@
 // e.g. Collaboration Week) links there; the rest to event.html?event=<slug>. "+ Add an event" is always shown,
 // greyed out for anyone but a PI/admin. A new event starts hidden — only
 // PIs/admins see it, marked "Hidden" — until it's released from its page.
-// Above them, the recurring meetings (eventSeries; series.html): the released ones, and
-// the hidden ones a PI or admin, or their organisers, see; "+ Add a recurring meeting"
+// Above them, the recurring events (eventSeries; series.html): the released ones, and
+// the hidden ones a PI or admin, or their organisers, see; "+ Add a recurring event"
 // opens series.html?new, for Events' Edit level.
 (function(){
   var esc = BOLD.escapeHtml;
@@ -72,14 +72,14 @@
   }
   addBtn.addEventListener('click', function(){ if (canAdd()) openForm(); });
 
-  // ---------- recurring meetings ----------
+  // ---------- recurring events ----------
   var seriesList = document.getElementById('seriesList'), seriesAdds = Array.prototype.slice.call(document.querySelectorAll('.series-add')), series = [];
   function seriesHtml(x){
     return '<a class="event-card' + (x.hidden ? ' is-hidden' : '') + '" href="series.html?series=' + encodeURIComponent(x.id) + '">' +
-      '<div class="event-top"><span class="eyebrow eyebrow--upcoming">' + (x.pausedAt ? 'Paused' : x.kind === 'editions' ? 'Recurring event' : 'Recurring meeting') + '</span>' +
+      '<div class="event-top"><span class="eyebrow eyebrow--upcoming">' + (x.pausedAt ? 'Paused' : 'Recurring') + '</span>' +
       (x.hidden ? '<span class="eyebrow eyebrow--hidden">Hidden</span>' : '') + '</div>' +
       '<h3>' + esc(x.title) + '</h3>' +
-      '<p class="event-when">' + esc(x.kind === 'editions' ? (x.cadence && x.cadence.every > 1 ? 'Every ' + x.cadence.every + ' months' : 'Every month') : meetingText(x.meeting)) + '</p>' +
+      '<p class="event-when">' + esc(x.kind === 'editions' ? (x.cadence && x.cadence.every === 12 ? 'Every year' : x.cadence && x.cadence.every > 1 ? 'Every ' + x.cadence.every + ' months' : 'Every month') : meetingText(x.meeting)) + '</p>' +
       (x.description ? '<p>' + esc(x.description.split(/\n\s*\n/)[0]) + '</p>' : '') +
       '<span class="event-cta">See details &rarr;</span></a>';
   }
@@ -107,7 +107,7 @@
         series = [].concat.apply([], got).filter(function(x){ if (seen[x.id]) return false; seen[x.id] = 1; return true; })
           .sort(function(a, b){ return a.title.localeCompare(b.title); });
         renderSeries();
-      }, function(err){ console.error('[BOLD Events] loading the recurring meetings failed', err); });
+      }, function(err){ console.error('[BOLD Events] loading the recurring events failed', err); });
     });
     seriesUnsub = function(){ unsubs.forEach(function(u){ u(); }); };
   }

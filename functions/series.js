@@ -1,6 +1,6 @@
 'use strict';
 
-// Recurring lab meetings and events (series.html; Events). Two kinds:
+// Recurring events (series.html; Events). How often decides which of two kinds:
 // - 'meeting' (Hamming Sessions, the group meeting…): a weekly slot with its Google
 //   Calendar series, below;
 // - 'editions' (the Festival, Collaboration Week…): an event every N months
@@ -157,7 +157,7 @@ module.exports = function series(deps){
       }
       patch.error = FieldValue.delete();
     } catch (err) {
-      logger.error('Setting up a recurring meeting failed', { id, error: String(err && err.message || err) });
+      logger.error('Setting up a recurring event failed', { id, error: String(err && err.message || err) });
       patch.error = err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting in Google Calendar.';
     }
     await ref.set(patch, { merge: true });
@@ -197,18 +197,18 @@ module.exports = function series(deps){
       await db.collection('eventSeries').doc(id).set(Object.assign({ id, hidden: true, joined: [], createdBy: email, createdAt: now, updatedAt: now, updatedBy: email }, n));
       if (!full) {
         const who = ((await db.collection('people').where('email', '==', email).limit(1).get()).docs[0] || { data: () => ({}) }).data().name || email.split('@')[0];
-        await Promise.resolve(tellStaff('🔔 ' + slackText(who) + ' added a recurring meeting, ' + linkedTitle(n.title, seriesUrl(id)) +
+        await Promise.resolve(tellStaff('🔔 ' + slackText(who) + ' added a recurring event, ' + linkedTitle(n.title, seriesUrl(id)) +
           (n.kind === 'editions' ? '. It stays hidden until a PI or admin releases it.' : '. It stays hidden, and nobody is invited, until a PI or admin releases it.'), email)).catch((err) => logger.warn('Telling the PIs failed', { error: String(err.message) }));
       }
       return { series: view((await db.collection('eventSeries').doc(id).get()).data(), email, full) };
     }
     const id = String(d.id || '');
-    if (!/^[a-z0-9-]{1,80}$/.test(id)) throw new HttpsError('invalid-argument', 'No such meeting.');
+    if (!/^[a-z0-9-]{1,80}$/.test(id)) throw new HttpsError('invalid-argument', 'No such recurring event.');
     const ref = db.collection('eventSeries').doc(id);
     const snap = await ref.get();
     const s = snap.exists ? snap.data() : null;
     const organiser = !!s && (s.organisers || []).indexOf(email) >= 0;
-    if (!s || (s.hidden && !full && !organiser)) throw new HttpsError('not-found', 'No such meeting.');
+    if (!s || (s.hidden && !full && !organiser)) throw new HttpsError('not-found', 'No such recurring event.');
     const change = organiser || full;
     const stamp = { updatedAt: Date.now(), updatedBy: email };
     switch (d.action) {
@@ -216,7 +216,7 @@ module.exports = function series(deps){
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins change it.');
         const n = normalizeSeries(d, null);
         if (n.error) throw new HttpsError('invalid-argument', n.error);
-        if (n.kind !== (s.kind || 'meeting')) throw new HttpsError('invalid-argument', 'A recurring meeting stays one, and a recurring event stays one.');
+        if (n.kind !== (s.kind || 'meeting')) throw new HttpsError('invalid-argument', 'One every few weeks stays one, and one every few months stays one: make a new one instead.');
         if (!n.organisers.length) throw new HttpsError('invalid-argument', 'Keep at least one organiser.');
         if (n.kind === 'meeting' && !s.hidden && !full && JSON.stringify(n.invite) !== JSON.stringify(s.invite))
           throw new HttpsError('permission-denied', 'Once it’s released, only PIs and admins change who is invited.');
@@ -224,7 +224,7 @@ module.exports = function series(deps){
         break;
       }
       case 'release': case 'hide':
-        if (!full) throw new HttpsError('permission-denied', 'Only PIs and admins release and hide recurring meetings.');
+        if (!full) throw new HttpsError('permission-denied', 'Only PIs and admins release and hide recurring events.');
         await ref.set(Object.assign({ hidden: d.action === 'hide' }, stamp), { merge: true });
         break;
       case 'nextEdition': {
