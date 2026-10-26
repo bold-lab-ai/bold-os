@@ -73,24 +73,26 @@
   addBtn.addEventListener('click', function(){ if (canAdd()) openForm(); });
 
   // ---------- recurring meetings ----------
-  var seriesList = document.getElementById('seriesList'), seriesAdd = document.getElementById('seriesAdd'), series = [];
+  var seriesList = document.getElementById('seriesList'), seriesAdds = Array.prototype.slice.call(document.querySelectorAll('.series-add')), series = [];
   function seriesHtml(x){
     return '<a class="event-card' + (x.hidden ? ' is-hidden' : '') + '" href="series.html?series=' + encodeURIComponent(x.id) + '">' +
-      '<div class="event-top"><span class="eyebrow eyebrow--upcoming">' + (x.pausedAt ? 'Paused' : 'Recurring') + '</span>' +
+      '<div class="event-top"><span class="eyebrow eyebrow--upcoming">' + (x.pausedAt ? 'Paused' : x.kind === 'editions' ? 'Recurring event' : 'Recurring meeting') + '</span>' +
       (x.hidden ? '<span class="eyebrow eyebrow--hidden">Hidden</span>' : '') + '</div>' +
       '<h3>' + esc(x.title) + '</h3>' +
-      '<p class="event-when">' + esc(meetingText(x.meeting)) + '</p>' +
+      '<p class="event-when">' + esc(x.kind === 'editions' ? (x.cadence && x.cadence.every > 1 ? 'Every ' + x.cadence.every + ' months' : 'Every month') : meetingText(x.meeting)) + '</p>' +
       (x.description ? '<p>' + esc(x.description.split(/\n\s*\n/)[0]) + '</p>' : '') +
       '<span class="event-cta">See details &rarr;</span></a>';
   }
   function renderSeries(){
     seriesList.innerHTML = series.map(function(x){ return '<li>' + seriesHtml(x) + '</li>'; }).join('');
     var can = canAdd();
-    seriesAdd.classList.toggle('is-off', !can);
-    seriesAdd.title = can ? '' : BOLD.cannotReason('events', 'edit');
-    seriesAdd.setAttribute('aria-disabled', String(!can));
+    seriesAdds.forEach(function(a){
+      a.classList.toggle('is-off', !can);
+      a.title = can ? '' : BOLD.cannotReason('events', 'edit');
+      a.setAttribute('aria-disabled', String(!can));
+    });
   }
-  seriesAdd.addEventListener('click', function(e){ if (!canAdd()) e.preventDefault(); });
+  seriesAdds.forEach(function(a){ a.addEventListener('click', function(e){ if (!canAdd()) e.preventDefault(); }); });
   var seriesUnsub = null;
   function watchSeries(ok){
     if (seriesUnsub) { seriesUnsub(); seriesUnsub = null; }

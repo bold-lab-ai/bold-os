@@ -349,6 +349,7 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .event-controls .btn-text:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
 .event-controls .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
 .event-hidden-note{margin:0 0 16px; font-family:var(--sans); font-size:13px; color:var(--danger-text);}
+.event-series{margin:8px 0 0; font-family:var(--sans); font-size:14px; color:var(--muted);}
 
 /* ---------- an event's days and time slots (event-schedule.js) ---------- */
 .day-card{border-top:1px solid var(--line); padding:22px 0; scroll-margin-top:12px;}
@@ -670,3 +671,17 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .confirm-dialog li.confirm-opt{list-style:none; margin-left:-20px;}
 .confirm-dialog li.confirm-opt label{display:flex; gap:6px; align-items:flex-start;}
 .confirm-dialog li.confirm-opt input{margin-top:3px;}
+/* Proposals for an event (event-proposals.js): Collaboration Week, and any edition of a recurring event that takes them. */
+.proposal-card{border-top:1px solid var(--line); padding:18px 0;}
+.proposal-top{display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+.proposal-title{font-size:18px; font-weight:600; color:var(--ink);}
+.proposal-type{
+  flex:0 0 auto; font-family:var(--sans); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em;
+  color:var(--muted); border:1px solid var(--line); padding:2px 8px;
+}
+.proposal-meta{margin-top:8px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.proposal-meta strong{color:var(--ink-soft); font-weight:600;}
+.proposal-note{margin-top:8px; font-family:var(--sans); font-size:14px; color:var(--ink-soft); white-space:pre-wrap; overflow-wrap:break-word;}
+.proposal-actions{margin-top:10px; display:flex; align-items:center; gap:14px; font-family:var(--sans); font-size:13px;}
+.proposal-actions .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
+.proposal-empty{font-size:16px; color:var(--muted); margin-top:14px;}

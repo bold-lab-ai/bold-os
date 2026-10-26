@@ -38,6 +38,30 @@
 
   var currentUser = null;
 
+  // Which edition it's for: ?event=<slug> (an edition of a recurring event that takes
+  // proposals; its page lists them), else the first Collaboration Week. Stored as the
+  // proposal's eventSlug; editing one keeps its own.
+  var eventSlug = 'collaboration-week';
+  try { eventSlug = new URLSearchParams(location.search).get('event') || eventSlug; } catch (e){}
+  function eventPage(){ return eventSlug === 'collaboration-week' ? 'event-collaboration-week.html#proposals' : 'event.html?event=' + encodeURIComponent(eventSlug) + '#eventProposals'; }
+  function showEvent(){
+    var page = eventPage();
+    document.getElementById('allProposals').href = page;
+    if (eventSlug === 'collaboration-week') return;
+    db.collection('events').doc(eventSlug).get().then(function(doc){
+      if (!doc.exists) return;
+      var x = doc.data(), when = window.BoldEvents ? BoldEvents.when(x.startDate, x.endDate) : '';
+      var back = document.getElementById('backLink');
+      back.href = page.replace(/#.*/, ''); back.innerHTML = '&larr; ' + BOLD.escapeHtml(x.title);
+      if (!editId) {
+        els.heroTitle.textContent = 'Propose a session';
+        els.heroNote.innerHTML = 'A workshop, project pitch, or talk for ' + BOLD.escapeHtml(x.title) + (when ? ' (' + BOLD.escapeHtml(when) + ')' : '') +
+          '. See what’s already been proposed on <a href="' + page + '">its page</a>.';
+      }
+      document.title = (editId ? 'Edit your proposal' : 'Propose a session') + ' | BOLD Lab';
+    }).catch(function(){});
+  }
+
   // ?edit=<proposalId> turns this page into an editor for that proposal
   // (only its proposer gets past loadForEdit — Firestore enforces the same).
   var editId = null;
@@ -83,7 +107,7 @@
 
   function enterEditMode(){
     els.heroTitle.textContent = 'Edit your proposal';
-    els.heroNote.innerHTML = 'Changes show on the <a href="event-collaboration-week.html#proposals">Proposals tab</a> straight away.';
+    els.heroNote.innerHTML = 'Changes show on the <a href="' + eventPage() + '">event’s page</a> straight away.';
     els.submitBtn.textContent = 'Save changes';
     els.proposeAnotherBtn.hidden = true;
     els.editLink.hidden = true;
@@ -104,6 +128,7 @@
         els.deleteBtn.hidden = true;
         return;
       }
+      if (doc.data().eventSlug && doc.data().eventSlug !== eventSlug) { eventSlug = doc.data().eventSlug; enterEditMode(); showEvent(); }
       setForm(doc.data());
       els.form.hidden = false;
     }).catch(function(err){
@@ -153,6 +178,7 @@
     } else {
       fields.name = currentUser.name || currentUser.email;
       fields.email = currentUser.email;
+      fields.eventSlug = eventSlug;
       fields.createdAt = Date.now();
       write = col.add(fields);
     }
@@ -185,7 +211,7 @@
     if (!window.confirm('Delete this proposal? This can’t be undone.')) return;
     els.deleteBtn.disabled = true;
     db.collection('collabWeekProposals').doc(editId).delete().then(function(){
-      location.href = 'event-collaboration-week.html#proposals';
+      location.href = eventPage();
     }).catch(function(err){
       console.error('[Propose a Workshop] delete failed', err);
       els.error.textContent = 'Could not delete your proposal — try again.';
@@ -230,6 +256,7 @@
   BOLD.onUser(function(user){
     currentUser = user ? { email: user.email, name: user.displayName } : null;
     renderAuth();
+    if (currentUser) showEvent();
     if (currentUser && editId && !editLoaded) loadForEdit();
   });
 })();

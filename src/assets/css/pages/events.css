@@ -65,6 +65,7 @@ section.block:first-of-type{margin-top:12px;}
 }
 .event-add:disabled, .event-add.is-off{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
 a.event-add{display:inline-block; margin-top:18px;}
+a.event-add + a.event-add{margin-left:24px;}
 .event-form{margin-top:16px;}
 .event-form-head{margin:0 0 10px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink);}
 .event-form-hint{margin:2px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}

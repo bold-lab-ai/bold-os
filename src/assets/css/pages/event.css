@@ -10,3 +10,7 @@
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
 .hero-when{margin-top:10px; font-family:var(--sans); font-size:15px; color:var(--muted); font-variant-numeric:tabular-nums;}
 .hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
+/* an edition's proposals */
+.event-proposals{margin-top:48px;}
+.event-proposals h2{font-family:var(--sans); font-size:11px; font-weight:400; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);}
+.event-proposals > p{font-family:var(--sans); font-size:14px;}

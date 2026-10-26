@@ -455,7 +455,7 @@ module.exports = function(ctx){
   // Recurring lab meetings (eventSeries; functions/series.js), through its callable.
   async function labMeetings(who, a){
     const full = await isFullWrite(who.email);
-    const pool = (await lab.series()).filter((x) => x.hidden === false || full || (x.organisers || []).indexOf(who.email) >= 0)
+    const pool = (await lab.series()).filter((x) => x.kind !== 'editions' && (x.hidden === false || full || (x.organisers || []).indexOf(who.email) >= 0))
       .map((x) => ({ id: x._id, name: x.title }));
     const meeting = () => ({ day: String(a.day || '').toUpperCase(), time: a.time, minutes: Number(a.minutes || 60), every: Number(a.every || 1),
       until: a.until || '', link: a.link || '' });

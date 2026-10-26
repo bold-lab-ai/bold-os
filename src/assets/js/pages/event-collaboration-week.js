@@ -24,120 +24,22 @@
   activate(panels[initial] ? initial : 'schedule', false);
 })();
 
-// Proposals list — read-only here; submitting lives on its own page
-// (event-collaboration-week-propose.html) now.
+// Proposals list — read-only here (event-proposals.js); submitting lives on its own page
+// (event-collaboration-week-propose.html).
 (function(){
-  var escapeHtml = BOLD.escapeHtml;
-
   var els = {
     signedOut: document.getElementById('proposalsSignedOut'),
     signedIn: document.getElementById('proposalsSignedIn'),
     signInBtn: document.getElementById('signInBtn'),
     list: document.getElementById('proposalsList')
   };
-
-  // FIRESTORE_USE_EMULATOR must be false in anything committed — see
-  // audit-board.html's own comment on this flag for why (a real production
-  // incident the first time it shipped true). Project/config/auth: bold.js.
-  var FIRESTORE_USE_EMULATOR = false;
-
-  var db = null, auth = BOLD.getAuth();
-  try {
-    db = firebase.firestore(BOLD.getApp());
-    if (FIRESTORE_USE_EMULATOR) db.useEmulator('localhost', 8080);
-  } catch (e){ db = null; }
-
-  if (!db || !auth){
+  if (!BOLD.getAuth()){
     els.signedOut.innerHTML = '<p>Could not connect &mdash; reload, or check back shortly.</p>';
     return;
   }
-
-  var currentUser = null;
-  var NOT_PROPOSER = 'Only whoever proposed it can edit or delete a proposal';
-  var unsubscribeProposals = null;
-
-  function renderProposals(docs){
-    if (!docs.length){
-      els.list.innerHTML = '<p class="proposal-empty">Nothing proposed yet &mdash; be the first.</p>';
-      return;
-    }
-    els.list.innerHTML = docs.map(function(p){
-      return '<div class="proposal-card">' +
-        '<div class="proposal-top">' +
-          '<span class="proposal-title">' + escapeHtml(p.title || '(untitled)') + '</span>' +
-          '<span class="proposal-type">' + escapeHtml(p.contributionType || '') + '</span>' +
-        '</div>' +
-        '<div class="proposal-meta">' +
-          '<strong>' + escapeHtml(p.name || 'Someone') + '</strong>' +
-          (p.duration ? ' &middot; ' + escapeHtml(p.duration) : '') +
-          (p.timeLocation ? ' &middot; ' + escapeHtml(p.timeLocation) : '') +
-        '</div>' +
-        (p.chair ? '<div class="proposal-meta">Chair: ' + escapeHtml(p.chair) + '</div>' : '') +
-        (p.abstract ? '<div class="proposal-note">' + escapeHtml(p.abstract) + '</div>' : '') +
-        (p.overallDescription ? '<div class="proposal-note">' + escapeHtml(p.overallDescription) + '</div>' : '') +
-        // Always shown; greyed out, with the reason on hover, unless it's your own.
-        (currentUser && p.email === currentUser.email
-          ? '<div class="proposal-actions">' +
-              '<a href="event-collaboration-week-propose.html?edit=' + encodeURIComponent(p.id) + '">Edit</a>' +
-              '<button type="button" class="btn-text danger" data-delete-id="' + escapeHtml(p.id) + '">Delete</button>' +
-            '</div>'
-          : '<div class="proposal-actions">' +
-              '<button type="button" class="btn-text" disabled title="' + NOT_PROPOSER + '">Edit</button>' +
-              '<button type="button" class="btn-text danger" disabled title="' + NOT_PROPOSER + '">Delete</button>' +
-            '</div>') +
-      '</div>';
-    }).join('');
-  }
-
-  function deleteProposal(id, btn){
-    // Client-side gate is UX only — the Delete button is only enabled for
-    // p.email === currentUser.email above, and firestore.rules enforces
-    // the same (email() == resource.data.email || hasFullWrite()) as the
-    // actual security boundary.
-    if (!window.confirm('Delete this proposal? This can’t be undone.')) return;
-    btn.disabled = true;
-    db.collection('collabWeekProposals').doc(id).delete().catch(function(err){
-      console.error('[BOLD Collaboration Week] delete proposal failed', err);
-      window.alert('Could not delete the proposal — try again.');
-      btn.disabled = false;
-    });
-  }
-
-  function watchProposals(){
-    if (unsubscribeProposals) return;
-    unsubscribeProposals = db.collection('collabWeekProposals').orderBy('createdAt', 'desc').onSnapshot(function(snap){
-      var docs = [];
-      snap.forEach(function(doc){ var d = doc.data(); d.id = doc.id; docs.push(d); });
-      renderProposals(docs);
-    }, function(err){
-      console.error('[BOLD Collaboration Week] proposals listener failed', err);
-      els.list.innerHTML = '<p class="proposal-empty">Could not load proposals &mdash; reload, or check back shortly.</p>';
-    });
-  }
-
-  function stopWatchingProposals(){
-    if (unsubscribeProposals){ unsubscribeProposals(); unsubscribeProposals = null; }
-  }
-
-  function renderAuth(){
-    if (currentUser){
-      els.signedOut.hidden = true;
-      els.signedIn.hidden = false;
-      watchProposals();
-    } else {
-      els.signedOut.hidden = false;
-      document.documentElement.classList.remove('auth-hint');
-      els.signedIn.hidden = true;
-      stopWatchingProposals();
-    }
-  }
+  var proposals = EventProposals.mount(els.list, 'collaboration-week');
 
   els.signInBtn.addEventListener('click', BOLD.signIn);
-  els.list.addEventListener('click', function(e){
-    var btn = e.target.closest('[data-delete-id]');
-    if (!btn) return;
-    deleteProposal(btn.getAttribute('data-delete-id'), btn);
-  });
   // Signed in last visit: skip the "sign in" panel while Firebase Auth
   // resolves. BOLD.onUser below stays authoritative and swaps it
   // back if the session has expired.
@@ -149,7 +51,9 @@
     }
   } catch (e){}
   BOLD.onUser(function(user){
-    currentUser = user ? { email: user.email, name: user.displayName } : null;
-    renderAuth();
+    els.signedOut.hidden = !!user;
+    els.signedIn.hidden = !user;
+    if (!user) document.documentElement.classList.remove('auth-hint');
+    proposals.update(user);
   });
 })();

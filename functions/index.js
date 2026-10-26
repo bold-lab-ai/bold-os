@@ -5397,9 +5397,11 @@ exports.calendarFeed = agentApi.calendarFeed;
 // Recurring lab meetings (series.html, Events): functions/series.js.
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
   googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
-  normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto });
+  normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
+  onSchedule, tellPeople: (emails, text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
+exports.seriesNudges = labSeries.seriesNudges;
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.

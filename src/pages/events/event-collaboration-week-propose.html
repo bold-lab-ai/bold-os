@@ -5,11 +5,11 @@ description: "Propose a workshop, project pitch, or talk for BOLD Collaboration 
 sdk: ["firestore"]
 css: "event-collaboration-week-propose"
 nav: "event-collaboration-week.html"
-scripts: ["pages/event-collaboration-week-propose.js"]
+scripts: ["events-common.js", "pages/event-collaboration-week-propose.js"]
 permalink: "event-collaboration-week-propose.html"
 ---
 <div class="hero">
-  <a class="back-link" href="event-collaboration-week.html">&larr; BOLD Collaboration Week</a>
+  <a class="back-link" id="backLink" href="event-collaboration-week.html">&larr; BOLD Collaboration Week</a>
   <h1 id="heroTitle">Propose a Workshop</h1>
   <p class="hero-note note-lead" id="heroNote">A workshop, project pitch, or talk for BOLD Collaboration Week (5&ndash;10 Oct 2026). See what's already been proposed on the <a href="event-collaboration-week.html#proposals">Proposals tab</a>.</p>
 </div>
@@ -95,7 +95,7 @@ permalink: "event-collaboration-week-propose.html"
     <div class="success-box" id="proposalSuccess" hidden>
       <p id="successMsg">Thanks &mdash; your proposal is in.</p>
       <div class="links">
-        <a href="event-collaboration-week.html#proposals">See all proposals &rarr;</a>
+        <a id="allProposals" href="event-collaboration-week.html#proposals">See all proposals &rarr;</a>
         <a id="editLink" href="#">Edit this proposal</a>
         <button class="btn-text" type="button" id="proposeAnotherBtn">Propose another</button>
         <button class="btn-text" type="button" id="keepEditingBtn" hidden>Keep editing</button>

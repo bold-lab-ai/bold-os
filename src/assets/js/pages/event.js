@@ -23,6 +23,31 @@
   function drawSchedule(){ if (schedule && x) schedule.update(x, fullWrite, me); }
 
   var x = null, loaded = false, editing = false, fullWrite = false, me = null;
+  // The recurring event it's an edition of (eventSeries; series.html), if any.
+  var series = null, seriesFor = '';
+  function loadSeries(){
+    var id = (x && x.series) || '';
+    if (id === seriesFor) return;
+    seriesFor = id; series = null;
+    if (!id) return;
+    db.collection('eventSeries').doc(id).get().then(function(d){ if (seriesFor === id) { series = d.exists ? d.data() : null; showProposals(); if (!editing) render(); } }).catch(function(){});
+  }
+  // Its proposals, when its recurring event takes them.
+  var propsEl = document.getElementById('eventProposals'), proposals = null;
+  function showProposals(){
+    if (!propsEl) return;
+    var on = !!(series && series.proposals && x && !x.page);
+    propsEl.hidden = !on;
+    if (!on || proposals) return;
+    document.getElementById('eventPropose').href = 'event-collaboration-week-propose.html?event=' + encodeURIComponent(slug);
+    proposals = EventProposals.mount(document.getElementById('eventProposalsList'), slug);
+    proposals.update(me);
+  }
+  function seriesLine(){
+    if (!series) return '';
+    var c = series.cadence && series.cadence.every > 1 ? 'every ' + series.cadence.every + ' months' : 'every month';
+    return '<p class="event-series">An edition of <a href="series.html?series=' + encodeURIComponent(series.id) + '">' + esc(series.title) + '</a>, ' + c + ' · <a href="series.html?series=' + encodeURIComponent(series.id) + '">all editions</a></p>';
+  }
   // The projects that presented at the event, and adding it to one (project-links.js).
   var links = window.BoldProjectLinks ? BoldProjectLinks.create({
     field: 'id', slug: slug,
@@ -38,7 +63,10 @@
   }
 
   // Whoever added it edits and deletes it, if the table still lets them edit Events.
-  function mine(){ return !!(x && me && x.createdBy && x.createdBy === me.email && BOLD.can('events', 'edit')); }
+  function mine(){
+    var organises = !!(series && me && (series.organisers || []).indexOf(me.email.toLowerCase()) >= 0);
+    return !!(x && me && ((x.createdBy && x.createdBy === me.email) || organises) && BOLD.can('events', 'edit'));
+  }
   function canChange(){ return fullWrite || mine(); }
   function controls(){
     var off = canChange() ? '' : ' disabled title="' + E.NOT_PI + '"';
@@ -83,6 +111,7 @@
       '<div><span class="eyebrow">' + (past ? 'Past' : 'Upcoming') + '</span></div>' +
       '<h1>' + esc(x.title) + '</h1>' +
       '<p class="hero-when">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' &middot; ' + esc(x.place) : '') + '</p>' +
+      seriesLine() +
       paragraphs(x.description) +
       controls() + (links ? links.lineHtml() : '');
     body.querySelector('.ev-edit').addEventListener('click', function(){ if (canChange()) { editing = true; render(); } });
@@ -119,6 +148,7 @@
       // event.html?event=<slug>, e.g. from the Network or a tag: go there.
       if (x && x.page && !body.getAttribute('data-event') && /^[a-z0-9-]+\.html$/.test(x.page)) { location.replace(x.page + location.hash); return; }
       loaded = true;
+      loadSeries();
       if (!editing) render();
       drawSchedule();
     }, function(err){
