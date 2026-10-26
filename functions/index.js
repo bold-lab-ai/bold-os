@@ -3575,7 +3575,8 @@ async function syncStudyMeeting(email){
 
 // The profile's Studies tab, for the caller's own studies:
 // - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } or null (none:
-//   its event is cancelled) }, people required;
+//   its event is cancelled), channel, noChannel (no Slack channel, until one is made: they
+//   have one already, such as their project's) }, people required;
 //   only PhD and Master students (their members record's role), or whoever already has studies.
 // - 'retry': tries the Slack channel and the Calendar event again.
 // - 'channel': { name } (or none: the default) → { name, prefixed, exists }, for the form's hint.
@@ -3618,9 +3619,11 @@ exports.studies = onCall(
     if (STUDY_ROLES.indexOf(role) < 0 && !prev.exists) throw new HttpsError('permission-denied', 'Studies are for PhD and Master students: set your role in Your details first.');
     const n = normalizeStudies(data, email);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
-    // The channel: named once, when it's first made; after that it stays.
+    // The channel: named once, when it's first made; after that it stays. Until then they
+    // can have none.
     let channel = prev.exists && prev.data().channelId ? prev.data().channel : '';
-    if (!channel){
+    const noChannel = !channel && data.noChannel === true;
+    if (!channel && !noChannel){
       const c = data.channel ? normalizeSupervisionChannel(data.channel) : { name: supervisionChannelFor(myName) };
       if (c.error) throw new HttpsError('invalid-argument', c.error);
       channel = c.name;
@@ -3630,7 +3633,8 @@ exports.studies = onCall(
       degree: STUDY_ROLES.indexOf(role) >= 0 ? role : (prev.exists && prev.data().degree) || '',
       title: n.title, people: n.people, meeting: n.meeting, channel,
       everyone: [email].concat(n.people.map(function(p){ return p.email; })), updatedAt: Date.now()
-    }, n.meeting ? {} : { pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() }), { merge: true });
+    }, n.meeting ? {} : { pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() },
+    noChannel ? { channelError: FieldValue.delete(), channelInvited: FieldValue.delete() } : {}), { merge: true });
     await syncStudyChannel(email);
     return studiesView(await syncStudyMeeting(email));
   }
