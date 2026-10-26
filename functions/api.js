@@ -20,6 +20,15 @@
 // RATE_PER_MINUTE requests a minute. Every call is logged in apiLog { email, token
 // (prefix), tool, args, at, expireAt } (expireAt: for a Firestore TTL policy, 90 days).
 const crypto = require('crypto');
+// Search ranking, shared with the site: copied here at deploy (firebase.json's predeploy),
+// else the site's copy (run as a script: the repo's root package is an ES module).
+const rank = (function(){
+  const fs = require('fs'), path = require('path'), vm = require('vm');
+  const here = path.join(__dirname, 'search-rank.js'), src = path.join(__dirname, '..', 'src', 'assets', 'js', 'search-rank.js');
+  const ctx = { module: { exports: {} } };
+  vm.runInNewContext(fs.readFileSync(fs.existsSync(here) ? here : src, 'utf8'), ctx);
+  return ctx.module.exports;
+})();
 
 module.exports = function(deps){
   const { db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite,
@@ -351,7 +360,7 @@ module.exports = function(deps){
   const TOOLS = [
     {
       name: 'search',
-      description: 'Search BOLD.OS as its site search does: the BOLDiquette (the lab handbook), how-to guides, skills, events with their sessions and talks, projects, people, papers on the Internal Review Board, and comments. Every word must match; title matches rank first.',
+      description: 'Search BOLD.OS as its site search does: the BOLDiquette (the lab handbook), how-to guides, skills, events with their sessions and talks, projects, people, papers on the Internal Review Board, and comments. Every word must match, as a whole word or a word’s start (abbreviations such as RL and LLM included), unless nothing does; title matches rank first.',
       inputSchema: { type: 'object', properties: {
         query: { type: 'string', description: 'Words to look for.' },
         scope: { type: 'string', enum: SCOPES, description: 'Only this section (default: everywhere).' },
@@ -492,7 +501,7 @@ module.exports = function(deps){
       ts.forEach((x) => item('events', x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(x._id)));
     }));
     if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
-      item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
+      item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
     if (want('people')) jobs.push(Promise.all([lab.members(), profileUrlOf()]).then(([ms, profile]) => ms.forEach((x) => {
       const p = profile(x.email || x._id);
       item('people', x.name || 'A member', [x.role, x.institution].filter(Boolean).join(' · ') || 'Member', [x.interests, x.basedIn, x.pronouns].join(' '), p ? p.slice(SITE_URL.length) : 'people.html');
@@ -520,20 +529,14 @@ module.exports = function(deps){
       });
     }));
     await Promise.all(jobs);
-    const q = fold(a.query);
-    const scored = items.map((it) => {
-      const t = fold(it.title), all = t + ' ' + fold(it.where) + ' ' + fold(it.text);
-      if (!ws.every((w) => all.indexOf(w) !== -1)) return null;
-      const s = 1 + ws.reduce((n, w) => n + (t.indexOf(w) !== -1 ? 5 : 0) + Math.min(5, all.split(w).length - 1), 0) + (t === q ? 20 : 0);
-      return { s, it };
-    }).filter(Boolean).sort((x, y) => y.s - x.s);
-    const snippet = (text) => {
-      const low = fold(text), at = ws.map((w) => low.indexOf(w)).filter((i) => i !== -1).sort((x, y) => x - y)[0];
-      if (at === undefined) return text.length > 240 ? text.slice(0, 240) + '…' : text;
-      const from = Math.max(0, at - 80), to = Math.min(text.length, at + 200);
-      return (from ? '…' : '') + text.slice(from, to) + (to < text.length ? '…' : '');
-    };
-    return { total: scored.length, results: scored.slice(0, limit).map((h) => ({ scope: h.it.scope, title: h.it.title, where: h.it.where, snippet: snippet(h.it.text), url: h.it.url })) };
+    // As the site's search page ranks them (search-rank.js).
+    const query = rank.prepare(a.query);
+    let scored = rank.rank(items, query);
+    if (scored.some((h) => !h.partial)) scored = scored.filter((h) => !h.partial);
+    const snippet = (text) => rank.snippet(text, query, 280);
+    const partial = !!(scored[0] && scored[0].partial);
+    return Object.assign({ total: scored.length }, partial ? { note: 'Nothing has every word; these have most of them.' } : {},
+      { results: scored.slice(0, limit).map((h) => ({ scope: h.item.scope, title: h.item.title, where: h.item.where, snippet: snippet(h.item.text), url: h.item.url })) });
   }
 
   function projectRow(p, group, name){
@@ -555,7 +558,7 @@ module.exports = function(deps){
       g[group].forEach((p) => {
         const id = p.pid || p.projectId || p.cardId;
         if (kw && !(p.keywords || []).some((k) => fold(k) === kw)) return;
-        if (ws.length && !matches([p.title, p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).join(' ')].join(' '), ws)) return;
+        if (ws.length && !matches([p.title, p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), ws)) return;
         const team = (members[id] || []).map((e) => String(e).toLowerCase());
         if (a.mine && team.indexOf(who.email) === -1 && !(p.authors || []).some((x) => String(x.email).toLowerCase() === who.email)) return;
         rows.push(Object.assign(projectRow(p, group, name), { id, members: team.map(name) }));

@@ -11,7 +11,8 @@
   "functions": {
     "source": "functions",
     "predeploy": [
-      "cp \"$PROJECT_DIR/src/assets/js/card-model.js\" \"$RESOURCE_DIR/card-model.js\""
+      "cp \"$PROJECT_DIR/src/assets/js/card-model.js\" \"$RESOURCE_DIR/card-model.js\"",
+      "cp \"$PROJECT_DIR/src/assets/js/search-rank.js\" \"$RESOURCE_DIR/search-rank.js\""
     ]
   }
 }

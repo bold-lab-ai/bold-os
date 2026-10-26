@@ -1,13 +1,13 @@
 // Search results (search.html?q=&in=), from the masthead's box (search-box.js).
 // Everything the signed-in person can read, loaded here and searched in the page:
 // the BOLDiquette's and the guides' parts, skills, events with their sessions and
-// talks, projects (getAllProjects), people (members), papers on the review board, and comments. A
-// result has every word of the query; title matches first. The sections down the
-// side (BoldSearch.SCOPES) show how many results each has and pick one.
+// talks, projects (getAllProjects), people (members), papers on the review board, and comments,
+// ranked by search-rank.js (BoldSearchRank: whole words, title first; shared with the agents'
+// search). The sections down the side (BoldSearch.SCOPES) show how many results each has and pick one.
 (function(){
   var esc = BOLD.escapeHtml;
   var list = document.getElementById('srResults'), side = document.getElementById('srScopes');
-  if (!list || !BOLD.getAuth() || !window.BoldSearch) return;
+  if (!list || !BOLD.getAuth() || !window.BoldSearch || !window.BoldSearchRank) return;
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var params = new URLSearchParams(location.search);
@@ -81,20 +81,24 @@
       return firebase.app().functions('europe-west2').httpsCallable('getAllProjects')({}).then(function(r){
         var d = r.data || {};
         return [].concat(d.ongoing || [], d.submission || [], d.planned || [], d.completed || []).map(function(p){
-          return item(p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner].join(' '),
+          return item(p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map(function(a){ return a.name; }).filter(function(n){ return n !== p.owner; }).join(' ')].join(' '),
             'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : ''));
         });
       });
     },
     people: function(){
-      return db.collection('members').get().then(function(s){
-        return s.docs.map(function(d){ var x = d.data();
-          return item(x.name || x.email, [x.role, x.institution].filter(Boolean).join(' · ') || 'Member', [x.interests, x.basedIn, x.pronouns, x.contact].join(' '), 'people.html'); });
+      // Each member's own page, by their Slack id (people/{id}).
+      return Promise.all([db.collection('members').get(), db.collection('people').get().catch(function(){ return { docs: [] }; })]).then(function(r){
+        var ids = {};
+        r[1].docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) ids[e] = d.id; });
+        return r[0].docs.map(function(d){ var x = d.data(), id = ids[String(x.email || d.id).toLowerCase()];
+          return item(x.name || x.email, [x.role, x.institution].filter(Boolean).join(' · ') || 'Member', [x.interests, x.basedIn, x.pronouns, x.contact].join(' '),
+            id ? 'person.html?id=' + encodeURIComponent(id) : 'people.html'); });
       });
     },
     board: function(){
       return allCards().then(function(cs){
-        return cs.map(function(c){ return item(c.x.title, c.boardLabel, c.x.abstract, cardHref(c)); });
+        return cs.map(function(c){ return item(c.x.title, c.boardLabel, c.x.abstractText || c.x.abstract, cardHref(c)); });
       });
     },
     comments: function(){
@@ -122,34 +126,20 @@
   };
 
   // ---------- matching ----------
-  var terms = q.toLowerCase().split(/\s+/).filter(Boolean);
-  function score(it){
-    var t = it.title.toLowerCase(), all = t + ' ' + it.where.toLowerCase() + ' ' + it.text.toLowerCase();
-    if (!terms.every(function(w){ return all.indexOf(w) !== -1; })) return 0;
-    return 1 + terms.reduce(function(n, w){ return n + (t.indexOf(w) !== -1 ? 5 : 0) + Math.min(5, all.split(w).length - 1); }, 0) + (t === q.toLowerCase() ? 20 : 0);
+  var R = window.BoldSearchRank, query = R.prepare(q);
+  var ranked = {};   // by scope key, once loaded
+  function hits(key){
+    if (!ranked[key]) ranked[key] = done[key] ? R.rank(items[key] || [], query) : [];
+    return ranked[key];
   }
-  function hits(key){ return (items[key] || []).map(function(it){ return { it: it, s: score(it) }; }).filter(function(h){ return h.s; }); }
-  function mark(text){
-    var out = esc(text);
-    terms.forEach(function(w){
-      var e = esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      out = out.replace(new RegExp('(' + e + ')(?![^<]*>)', 'gi'), '<mark>$1</mark>');
-    });
-    return out;
-  }
-  // The text around the first match.
-  function snippet(text){
-    var low = text.toLowerCase(), at = terms.map(function(w){ return low.indexOf(w); }).filter(function(i){ return i !== -1; }).sort(function(a, b){ return a - b; })[0];
-    if (at === undefined) return text.length > 200 ? text.slice(0, 200) + '…' : text;
-    var from = Math.max(0, at - 70), to = Math.min(text.length, at + 160);
-    return (from ? '…' : '') + text.slice(from, to) + (to < text.length ? '…' : '');
-  }
+  function mark(text){ return R.highlight(text, query, esc, function(m){ return '<mark>' + m + '</mark>'; }); }
+  function snippet(text){ return R.snippet(text, query, 230); }
 
   // ---------- drawing ----------
   function render(){
     document.getElementById('srTitle').textContent = q ? 'Results for “' + q + '”' : 'Search';
     var keys = BoldSearch.SCOPES.map(function(s){ return s.key; });
-    var count = function(k){ return done[k] ? hits(k).length : null; };
+    var count = function(k){ return done[k] ? hits(k).filter(function(h){ return !h.partial; }).length : null; };
     var total = keys.every(function(k){ return done[k]; }) ? keys.reduce(function(n, k){ return n + count(k); }, 0) : null;
     side.innerHTML = [{ key: '', label: 'Everywhere' }].concat(BoldSearch.SCOPES).map(function(s){
       var n = s.key ? count(s.key) : total;
@@ -158,10 +148,14 @@
     }).join('');
     if (!q) { list.innerHTML = '<p class="proj-msg">Type in the search box at the top.</p>'; return; }
     var want = show ? [show] : keys, loading = want.some(function(k){ return !done[k]; });
-    var all = [].concat.apply([], want.map(function(k){ return hits(k).map(function(h){ h.key = k; return h; }); }))
-      .sort(function(a, b){ return b.s - a.s; });
+    // Every word matching comes first; then, if nothing does anywhere, the closest.
+    var all = [].concat.apply([], want.map(function(k){ return hits(k).map(function(h){ return { it: h.item, s: h.score, partial: h.partial, key: k }; }); }));
+    if (all.some(function(h){ return !h.partial; })) all = all.filter(function(h){ return !h.partial; });
+    all.sort(function(a, b){ return b.s - a.s; });
+    var partial = all.length && all[0].partial;
     var broke = want.filter(function(k){ return failed[k]; }).map(function(k){ return BoldSearch.scope(k).label; });
-    list.innerHTML = (all.length ? '<ul class="sr-list">' + all.slice(0, MAX).map(function(h){
+    list.innerHTML = (partial && !loading ? '<p class="proj-msg">Nothing has every word; these have most of them.</p>' : '') +
+      (all.length ? '<ul class="sr-list">' + all.slice(0, MAX).map(function(h){
         return '<li class="sr-item"><a class="sr-title" href="' + esc(h.it.href) + '">' + mark(h.it.title) + '</a>' +
           '<span class="sr-where">' + (show ? '' : esc(BoldSearch.scope(h.key).label) + ' · ') + mark(h.it.where) + '</span>' +
           (h.it.text ? '<p class="sr-text">' + mark(snippet(h.it.text)) + '</p>' : '') + '</li>';
@@ -177,8 +171,8 @@
     if (!user || started || !q) return;
     started = true;
     Object.keys(LOAD).forEach(function(k){
-      LOAD[k]().then(function(r){ items[k] = r; done[k] = true; render(); })
-        .catch(function(err){ console.error('[BOLD Search] searching ' + k + ' failed', err); items[k] = []; done[k] = true; failed[k] = true; render(); });
+      LOAD[k]().then(function(r){ items[k] = r; done[k] = true; ranked[k] = null; render(); })
+        .catch(function(err){ console.error('[BOLD Search] searching ' + k + ' failed', err); items[k] = []; done[k] = true; failed[k] = true; ranked[k] = null; render(); });
     });
   });
 })();
