@@ -33,7 +33,7 @@
     if (!isStudent()) { box.innerHTML = '<p class="proj-msg">For PhD and Master students: set your role in <a href="#details">Your details</a>.</p>'; return; }
     // Studies go through the Calendar (studies callable): below its level, say so rather than offer a form that can't save.
     if (!mayUse()) { box.innerHTML = '<p class="proj-msg">Your studies (supervisors, meeting and channel) are ' + esc(BOLD.cannotReason('calendar', 'view').replace(/^For /, 'for ')) +
-      ' Your group isn\u2019t set yet: ask a PI or admin, or ask for one in <a href="#details">Your details</a>.</p>'; return; }
+      (BOLD.myGroup() === 'pan' ? ' Your group isn\u2019t set yet: ask a PI or admin, or ask for one in <a href="#details">Your details</a>.</p>' : ' To use them, ask for another group in <a href="#details">Your details</a>.</p>'); return; }
     box.innerHTML = (editing ? '' : asksHtml()) + (editing ? formHtml() : factsHtml());
   }
   function mayUse(){ return BOLD.isFullWrite() || BOLD.can('calendar', 'view'); }
@@ -260,6 +260,6 @@
     unsubs.push(db.collection('studyRequests').where('student', '==', me.email).where('status', '==', 'open').onSnapshot(function(s){
       asks = s.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return a.at - b.at; });
       render();
-    }, function(e){ console.error('[BOLD Studies] loading the requests failed', e); }));
+    }, function(e){ if (e.code !== 'permission-denied') console.error('[BOLD Studies] loading the requests failed', e); }));   // below the Calendar's level: none to show
   });
 })();
