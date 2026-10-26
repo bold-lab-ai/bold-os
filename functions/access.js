@@ -54,19 +54,22 @@ PAGES.forEach(([key]) => { if (!DEFAULT_PAGES[key]) DEFAULT_PAGES[key] = { view:
 const norm = (s) => String(s || '').replace(/[*_`]/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim().toLowerCase();
 
 // Pure: the table's Markdown → { <page>: { view, edit } }, or throws an Error saying
-// which row is wrong. Rows: | Page | View | Edit |; other text is ignored. A row as the
-// table first was (| Page | View | Edit | Propose |) reads as View, and Edit from Propose on
-// a REVIEWED page and from Edit elsewhere.
+// which row is wrong. Read: the table headed | Page | View | Edit |; other text, and other
+// tables (the part also shows the groups' ranks and the role → group suggestions), are
+// ignored. A row as the table first was (| Page | View | Edit | Propose |) reads as View,
+// and Edit from Propose on a REVIEWED page and from Edit elsewhere.
 function parseAccessTable(body){
   const byName = {}; PAGES.forEach(([key, name]) => { byName[norm(name)] = key; });
   const byLevel = {}; LEVELS.forEach((l) => { byLevel[norm(LEVEL_NAMES[l])] = l; });
   byLevel['-'] = byLevel['–'] = byLevel[''] = 'none';
   const out = {};
+  let inTable = false;   // inside the table headed Page
   String(body || '').split('\n').forEach((line) => {
-    if (!/^\s*\|/.test(line)) return;
+    if (!/^\s*\|/.test(line)) { inTable = false; return; }
     const cells = line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
     if (cells.every((c) => /^:?-+:?$/.test(c))) return;   // the |---| line
-    if (norm(cells[0]) === 'page') return;                   // the header
+    if (norm(cells[0]) === 'page') { inTable = true; return; }   // its header
+    if (!inTable) return;
     const key = byName[norm(cells[0])];
     if (!key) throw new Error('“' + cells[0] + '” isn’t a page (the pages: ' + PAGES.map((p) => p[1]).join(', ') + ').');
     if (out[key]) throw new Error(cells[0] + ' is in the table twice.');
