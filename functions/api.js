@@ -42,7 +42,7 @@ module.exports = function(deps){
   //       { action: 'stopAct', id }       its owner, or a PI or admin: back to reading only
   //       { action: 'actRequests' }       PIs and admins → { requests }
   //       { action: 'decideAct', id, accept }   PIs and admins
-  //       { action: 'activity', all }     → { tokens, log }: yours (all: everyone's, PIs and admins)
+  //       { action: 'activity', all }     → { tokens, log }: yours (all: everyone's, at Agents' View level)
   const apiTokens = onCall({ secrets: [SLACK_BOT_TOKEN] }, async (request) => {
     const email = callerEmail(request);
     const d = request.data || {};
@@ -121,9 +121,9 @@ module.exports = function(deps){
       return { ok: true };
     }
     if (d.action === 'activity') {
-      // agents.html: your tokens and what they did; with `all`, everyone's (PIs and admins).
+      // agents.html: your tokens and what they did; with `all`, everyone's (whoever can view Agents).
       const all = d.all === true;
-      if (all && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see everyone’s.');
+      if (all) await access.requireAccess(email, 'agents', 'view');
       const [tokenDocs, logDocs] = await Promise.all([
         all ? db.collection('apiTokens').get().then((x) => x.docs) : mine(),
         (all ? db.collection('apiLog').orderBy('at', 'desc').limit(LOG_SHOWN) : db.collection('apiLog').where('email', '==', email)).get().then((x) => x.docs),
@@ -133,7 +133,7 @@ module.exports = function(deps){
       tokenDocs.forEach((t) => { labels[t.data().prefix] = t.data().label; });
       return {
         all,
-        tokens: tokenDocs.map((t) => Object.assign(view(t), { owner: name(t.data().email) })).sort((a, b) => (b.lastUsedAt || b.createdAt) - (a.lastUsedAt || a.createdAt)),
+        tokens: tokenDocs.map((t) => Object.assign(view(t), { owner: name(t.data().email), mine: t.data().email === email })).sort((a, b) => (b.lastUsedAt || b.createdAt) - (a.lastUsedAt || a.createdAt)),
         log: logDocs.map((x) => x.data()).sort((a, b) => b.at - a.at).slice(0, LOG_SHOWN)
           .map((x) => ({ at: x.at, who: name(x.email), token: labels[x.token] || x.token + '… (revoked)', tool: x.tool, args: x.args === '{}' ? '' : x.args })),
       };

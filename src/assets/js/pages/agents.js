@@ -1,7 +1,7 @@
 // agents.html: two tabs, Agents (#agents: personal API tokens, functions/api.js) and
-// Activity (#activity: their access log), both through apiTokens 'activity'. Yours; for
-// PIs and admins Everyone's by default, Yours on #agents-mine, #activity-mine (and the old
-// #mine), and they can revoke any token or stop it acting. The old #everyone is Activity. Letting a token act is decided on the
+// Activity (#activity: their access log), both through apiTokens 'activity'. Everyone's
+// by default, Yours on #agents-mine, #activity-mine (and the old #mine); the old #everyone
+// is Activity. You revoke or stop your own tokens; PIs and admins anyone's. Letting a token act is decided on the
 // Requests page (join-requests.js, Agents tab).
 (function(){
   var root = document.getElementById('agents');
@@ -9,15 +9,15 @@
   var esc = BOLD.escapeHtml;
   var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('apiTokens')(data).then(function(r){ return r.data; }); };
   var whoseBar = document.getElementById('agWhose');
-  var full = false, data = null, loaded = '', busy = false;
+  var full = false, canAll = false, data = null, loaded = '', busy = false;
   function when(t, time){
     if (!t) return '';
     var d = new Date(t);
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + (time ? ', ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
   }
   function tab(){ return /^#(activity|everyone)/.test(location.hash) ? 'activity' : 'agents'; }
-  function whose(){ return full && !/mine/.test(location.hash) ? 'everyone' : 'mine'; }
-  function hashFor(t, w){ return '#' + t + (full && w === 'mine' ? '-mine' : ''); }
+  function whose(){ return canAll && !/mine/.test(location.hash) ? 'everyone' : 'mine'; }
+  function hashFor(t, w){ return '#' + t + (canAll && w === 'mine' ? '-mine' : ''); }
 
   function render(){
     Array.prototype.forEach.call(document.querySelectorAll('#agTabs .guide-tab'), function(a){
@@ -26,7 +26,7 @@
       a.classList.toggle('is-current', on);
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
-    whoseBar.hidden = !full;
+    whoseBar.hidden = !canAll;
     whoseBar.innerHTML = [['everyone', 'Everyone’s'], ['mine', 'Yours']].map(function(w){
       return '<a href="' + hashFor(tab(), w[0]) + '"' + (w[0] === whose() ? ' class="is-current" aria-current="true"' : '') + '>' + w[1] + '</a>';
     }).join(' · ');
@@ -37,8 +37,8 @@
         return '<li class="lt-item"><span class="lt-title">' + esc(t.label) + (all ? ' <span class="ag-owner">· ' + esc(t.owner) + '</span>' : '') + '</span>' +
           '<span class="lt-meta"><code>' + esc(t.prefix) + '…</code> · ' + (t.write ? 'Reads and acts' : t.act === 'open' ? 'Reads · asked to act' : 'Reads') + ' · made ' + when(t.createdAt) +
           ' · ' + (t.lastUsedAt ? 'last used ' + when(t.lastUsedAt, true) : 'not used yet') + '</span>' +
-          '<div class="event-controls">' + (t.write ? '<button type="button" class="btn-text ag-stop" data-id="' + esc(t.id) + '"' + off + '>Stop acting</button>' : '') +
-          '<button type="button" class="btn-text danger ag-revoke" data-id="' + esc(t.id) + '"' + off + '>Revoke</button></div></li>';
+          (t.mine || full ? '<div class="event-controls">' + (t.write ? '<button type="button" class="btn-text ag-stop" data-id="' + esc(t.id) + '"' + off + '>Stop acting</button>' : '') +
+          '<button type="button" class="btn-text danger ag-revoke" data-id="' + esc(t.id) + '"' + off + '>Revoke</button></div>' : '') + '</li>';
       }).join('') + '</ul>' : '<p class="proj-msg">' + (all ? 'Nobody has a token yet.' : 'You have no tokens. Make one on <a href="profile.html#agents">your profile</a>.') + '</p>') :
       (data.log.length ? '<ul class="ag-log">' + data.log.map(function(x){
         return '<li><span class="ag-when">' + when(x.at, true) + '</span><span class="ag-what"><strong>' + esc(x.tool) + '</strong>' +
@@ -64,10 +64,10 @@
       console.error('[BOLD Agents] revoking failed', err); window.alert('That didn’t work — try again.');
     }).then(function(){ busy = false; loaded = ''; load(); });
   });
-  BOLD.onUser(function(user){
-    if (!user) return;
-    firebase.app().functions('europe-west2').httpsCallable('getMyAccess')({}).then(function(r){
-      full = !!(r.data && r.data.fullWrite);
-    }).catch(function(){}).then(load);
+  // Once access is known (and again as it changes: PIs and admins are known a moment later).
+  BOLD.onAccess(function(a){
+    if (!a.e) return;
+    full = BOLD.isFullWrite(); canAll = full || BOLD.can('agents', 'view');
+    load();
   });
 })();
