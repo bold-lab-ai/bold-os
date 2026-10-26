@@ -154,3 +154,4 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .jn-inviter-list li.jn-none{color:var(--muted); cursor:default;}
 /* Events (events.html), laid out as People */
 .proj-list .badge{margin-left:6px; vertical-align:2px;}
+.ev-series{margin-top:22px;}
