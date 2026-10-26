@@ -5377,6 +5377,8 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
     confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
+// Subscribing to the Calendar: one private .ics link a person (calendar.html; served by boldApi).
+exports.calendarFeed = agentApi.calendarFeed;
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.

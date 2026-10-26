@@ -191,3 +191,16 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .week-block.is-paused:hover{background:var(--wash);}
 .proj-list li.is-paused .proj-main{opacity:.55;}
 .week-key.is-outline.is-paused{border-color:var(--muted); border-style:dashed;}
+/* Subscribe: the private link to the Calendar for a calendar app (calendarFeed) */
+.cal-right{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+.cal-sub{border:1px solid var(--line);}
+.cal-sub[aria-expanded="true"]{border-color:var(--ink);}
+.cal-sub-panel{max-width:560px; margin:14px 0 0 auto; padding:14px 16px; border:1px solid var(--line); background:var(--surface); font-family:var(--sans); font-size:13px;}
+.cal-sub-panel[hidden]{display:none;}
+.cal-sub-panel p{margin:0 0 10px; color:var(--muted); line-height:1.5;}
+.cal-sub-btns{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;}
+.cal-sub-btns .btn-box{text-decoration:none;}
+.cal-sub-panel .copy-box{margin:0 0 10px;}
+.cal-sub-panel .copy-box code{word-break:break-all; white-space:pre-wrap;}
+@media (max-width:560px){ .cal-sub-panel{margin-left:0;} }
+.cal-sub-panel .muted{color:var(--muted);}

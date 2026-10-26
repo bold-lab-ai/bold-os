@@ -301,6 +301,36 @@
   });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && pop) closePop(); });
 
+  // Subscribe: your own link to the Calendar for a calendar app (calendarFeed in functions/api.js),
+  // made the first time it's opened; New link replaces it, and the old one stops working.
+  function subscribeHtml(url){
+    var webcal = url.replace(/^https:/, 'webcal:');
+    return '<p>Your own link: it stays up to date with what you see here, except your own meetings, which are already in your calendar. Keep it to yourself.</p>' +
+      '<div class="cal-sub-btns"><a class="btn-box is-primary" target="_blank" rel="noopener" href="' + esc('https://calendar.google.com/calendar/r?cid=' + encodeURIComponent(webcal)) + '">Google Calendar</a>' +
+      '<a class="btn-box" href="' + esc(webcal) + '">Apple Calendar or Outlook</a></div>' +
+      BOLD.copyBoxHtml(url) +
+      '<button type="button" class="btn-text cal-sub-reset">New link</button> <span class="muted">· the old one stops working</span>';
+  }
+  function feed(action){
+    var panel = el('calSubPanel');
+    panel.innerHTML = '<p>Loading&hellip;</p>';
+    firebase.app().functions('europe-west2').httpsCallable('calendarFeed')({ action: action }).then(function(r){
+      panel.innerHTML = subscribeHtml(r.data.url);
+    }).catch(function(err){
+      console.error('[BOLD Lab] the calendar link failed', err);
+      panel.innerHTML = '<p>' + esc(err && err.code === 'functions/permission-denied' ? err.message : 'Couldn’t get your link. Try again.') + '</p>';
+    });
+  }
+  el('calSub').addEventListener('click', function(){
+    var open = el('calSubPanel').hidden;
+    el('calSubPanel').hidden = !open;
+    el('calSub').setAttribute('aria-expanded', String(open));
+    if (open && !el('calSubPanel').querySelector('.copy-box')) feed('get');
+  });
+  el('calSubPanel').addEventListener('click', function(e){
+    if (e.target.closest('.cal-sub-reset')) feed('reset');
+  });
+
   // Pause or resume a meeting: projectWorkspace for a project, studies for a student's.
   function pauseOrResume(m, action){
     BOLD.confirmAction(action === 'pause'

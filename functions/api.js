@@ -249,6 +249,62 @@ module.exports = function(deps){
   }
   function isHidden(ev, full){ return ev.hidden !== false && !full; }
 
+  // ---------- subscribing to the Calendar (calendar.html's Subscribe) ----------
+  // One private link a person: GET /calendar/<token>.ics on boldApi, for Google Calendar,
+  // Apple Calendar or Outlook, which can't sign in. It holds what its owner can see on the
+  // Calendar, as they can see it whenever it's fetched (events, if they can view Events;
+  // project and supervision meetings, if they can view Projects), without the meetings
+  // they're in: those are already in their calendar, as invitations. It stops working
+  // when they leave the BOLD Slack or make a new link.
+  // calendarFeeds/{email} { token, createdAt, lastUsedAt }; server only (firestore.rules' deny-all).
+  // data: { action: 'get' } → { url }: theirs, made the first time
+  //       { action: 'reset' } → { url }: a new one; the old one stops working
+  const feedUrl = (token) => 'https://europe-west2-bold-d7ff2.cloudfunctions.net/boldApi/calendar/' + token + '.ics';
+  const calendarFeed = onCall(async (request) => {
+    const email = callerEmail(request);
+    await access.requireAccess(email, 'calendar', 'view');
+    const action = (request.data || {}).action;
+    if (action !== 'get' && action !== 'reset') throw new HttpsError('invalid-argument', 'Unknown action.');
+    const ref = db.collection('calendarFeeds').doc(email), snap = await ref.get();
+    if (action === 'get' && snap.exists && snap.data().token) return { url: feedUrl(snap.data().token) };
+    const token = 'cal_' + crypto.randomBytes(24).toString('base64url');
+    await ref.set({ token, createdAt: Date.now(), lastUsedAt: 0 });
+    return { url: feedUrl(token) };
+  });
+
+  async function calendarIcs(token){
+    if (!/^cal_[A-Za-z0-9_-]{32}$/.test(token)) throw httpError(404, 'No such calendar.');
+    const snap = await db.collection('calendarFeeds').where('token', '==', token).limit(1).get();
+    if (snap.empty) throw httpError(404, 'No such calendar: the link may have been replaced by a new one.');
+    const doc = snap.docs[0], email = doc.id;
+    if (!(await personByEmail(email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
+    if (!(await access.can(email, 'calendar', 'view'))) throw httpError(403, 'The Calendar isn’t open to your group.');
+    if (Date.now() - (doc.data().lastUsedAt || 0) > 3600000) doc.ref.update({ lastUsedAt: Date.now() }).catch(() => {});
+    const [seeEvents, seeMeetings, full] = await Promise.all([access.can(email, 'events', 'view'), access.can(email, 'projects', 'view'), isFullWrite(email)]);
+    const mine = (list) => (list || []).some((e) => String(e || '').toLowerCase() === email);
+    let events = [], meetings = [];
+    if (seeEvents) {
+      events = (await lab.events()).filter((e) => !isHidden(e, full)).map((e) => ({
+        id: e._id, title: e.title, start: e.startDate, end: e.endDate, place: e.place || '', description: plain(e.description),
+        url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
+    }
+    if (seeMeetings) {
+      const [workspaces, studies, name] = await Promise.all([lab.workspaces(), lab.studies(), nameOf()]);
+      // Ids without anyone's address in them.
+      const hid = (s) => crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 20);
+      workspaces.filter((w) => w.meeting && (w.eventId || w.pausedAt) && w.group !== 'completed' && !w.completedAt && !mine(w.members)).forEach((w) => {
+        meetings.push({ id: 'project-' + w._id, title: (w.title || 'Untitled') + ' · project meeting', meeting: w.meeting, start: w.eventStart, pausedAt: w.pausedAt,
+          description: Array.from(new Set((w.members || []).map(name))).join(', '), url: url(projectHref(w.cardId || w._id, w.boardId)) });
+      });
+      studies.filter((s) => s.meeting && (s.eventId || s.pausedAt) &&
+        !mine([s._id].concat(s.everyone || [], (s.people || []).map((p) => p.email)))).forEach((s) => {
+        meetings.push({ id: 'study-' + hid(s._id), title: (s.name || name(s._id)) + ' · ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision',
+          meeting: s.meeting, start: s.eventStart, pausedAt: s.pausedAt, description: s.title || '', url: url('calendar.html') });
+      });
+    }
+    return require('./calendar-ics').buildCalendar({ name: 'BOLD Lab', events, meetings });
+  }
+
   // ---------- acting: through the site's own callables, as the token's owner ----------
   // The same function the page calls (same checks, same Slack messages), with the
   // caller's identity as a Slack sign-in would give it.
@@ -719,6 +775,19 @@ module.exports = function(deps){
     if (path === '/' && req.method === 'GET') {
       return res.json({ name: 'BOLD.OS API', mcp: '/mcp', mcp_also: 'prompts (the skills) and resources (every page, bold://…)', read: TOOLS.filter((t) => !t.write && !t.setup).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
     }
+    // A Calendar subscription (calendarFeed): the link is the key, as calendar apps can't send one.
+    const cal = /^\/calendar\/([^/]+)\.ics$/.exec(path);
+    if (cal) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(405).set('Allow', 'GET').send('GET this link.');
+      try {
+        const ics = await calendarIcs(cal[1]);
+        return res.status(200).set('Content-Type', 'text/calendar; charset=utf-8').set('Cache-Control', 'private, max-age=300')
+          .set('Content-Disposition', 'inline; filename="bold-lab.ics"').send(ics);
+      } catch (err) {
+        if (!err.status) logger.error('calendar feed failed', { error: String(err.stack || err) });
+        return res.status(err.status || 500).type('text/plain').send(err.status ? err.message : 'Something went wrong.');
+      }
+    }
     if (path === '/mcp' && req.method !== 'POST') return res.status(405).set('Allow', 'POST').json({ error: 'POST JSON-RPC to /mcp.' });
     let who;
     try { who = await authorize(req); }
@@ -754,5 +823,5 @@ module.exports = function(deps){
     }
   });
 
-  return { apiTokens, boldApi, checkTool: (name, def) => added.check(name, def), _internal: { meetingText, TOOLS, mcp, resolve, added } };
+  return { apiTokens, boldApi, calendarFeed, checkTool: (name, def) => added.check(name, def), _internal: { meetingText, TOOLS, mcp, resolve, added } };
 };
