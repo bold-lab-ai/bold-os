@@ -347,16 +347,132 @@
       return LEVELS.indexOf(c) > 0 && c !== 'none' ? c : 'pan';
     }).catch(function(){ return 'pan'; });
     Promise.all([table, mine]).then(function(r){
-      setAccess({ e: user.email || '', group: r[1], pages: r[0] });
-      // PIs and admins count as BOLD-exec, which only the server knows.
-      if (r[1] !== 'exec' && firebase.functions) {
+      var known = access && access.e === (user.email || '') ? access : null;
+      setAccess({ e: user.email || '', group: known && known.fullWrite ? 'exec' : r[1], pages: r[0], fullWrite: !!(known && known.fullWrite) });
+      // PIs and admins count as BOLD-exec and change who can see what, which only the server knows.
+      withFunctions(function(){
         firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(x){
           var d = x.data || {};
-          if (d.group && d.group !== r[1]) setAccess({ e: user.email || '', group: d.group, pages: d.pages || r[0] });
+          setAccess({ e: user.email || '', group: d.group || r[1], pages: d.pages || r[0], fullWrite: !!d.fullWrite });
         }).catch(function(){});
-      }
+      });
     });
   }
+  // fn() once the Functions SDK is there: loaded (same pinned version) if the page hasn't it.
+  function withFunctions(fn){
+    if (firebase.functions) return fn();
+    var app = document.querySelector('script[src*="firebase-app-compat.js"]');
+    if (!app) return;
+    var el = document.createElement('script');
+    el.src = app.src.replace('firebase-app-compat.js', 'firebase-functions-compat.js');
+    el.onload = fn;
+    document.head.appendChild(el);
+  }
+  BOLD.isFullWrite = function(){ return !!(access && access.fullWrite); };
+
+  // ---------- this page's levels, under the name (masthead) ----------
+  // Its row of the BOLDiquette's Who can see what; PIs and admins propose a change to it
+  // there, as a proposal on the BOLDiquette that another PI or admin accepts.
+  // The pages, as the table names them (functions/access.js PAGES, kept in sync by hand).
+  var AREA_NAMES = { boldiquette: 'BOLDiquette', projects: 'Projects', profile: 'Your profile', calendar: 'Calendar', 'ml-cycle': 'ML Conference Cycle',
+    people: 'People', requests: 'Requests', events: 'Events', agents: 'Agents', tools: 'Tools', skills: 'Skills', guides: 'How to',
+    'service-desk': 'Service desk', search: 'Search', changelog: 'Changes' };
+  var WHAT = ['view', 'edit', 'propose'], WHAT_NAMES = { view: 'View', edit: 'Edit', propose: 'Propose' };
+  var ACCESS_INTRO = 'What each group can see, edit and propose on BOLD.OS: each group can do everything the groups below it can, and — is nobody. Only PIs and admins change this table, and who is in which group.';
+  var accessForm = null;   // { view, edit, propose, note, busy, error, done }
+  function pageArea(){ var sh = document.getElementById('shell'); return sh && sh.getAttribute('data-area'); }
+  function accessRow(name, lv){ return '| ' + name + ' | ' + WHAT.map(function(w){ return LEVEL_NAMES[lv[w]] === 'nobody' ? '—' : LEVEL_NAMES[lv[w]]; }).join(' | ') + ' |'; }
+  // The part's new body: this page's row replaced (or added), the rest as it is.
+  function accessBody(body, area, lv){
+    var name = AREA_NAMES[area], row = accessRow(name, lv);
+    var norm = function(c){ return String(c || '').replace(/[*_`]/g, '').trim().toLowerCase(); };
+    if (!body) {
+      var pages = Object.assign({}, access.pages); pages[area] = lv;
+      return ACCESS_INTRO + '\n\n| Page | View | Edit | Propose |\n|---|---|---|---|\n' + Object.keys(AREA_NAMES).map(function(k){
+        return accessRow(AREA_NAMES[k], pages[k] || { view: 'internal', edit: 'internal', propose: 'internal' });
+      }).join('\n');
+    }
+    var lines = body.split('\n'), last = -1, done = false;
+    lines = lines.map(function(l, i){
+      if (!/^\s*\|/.test(l)) return l;
+      last = i;
+      if (norm(l.trim().replace(/^\|/, '').split('|')[0]) === norm(name)) { done = true; return row; }
+      return l;
+    });
+    if (!done) { if (last === -1) lines.push('', '| Page | View | Edit | Propose |', '|---|---|---|---|', row); else lines.splice(last + 1, 0, row); }
+    return lines.join('\n');
+  }
+  function drawAccessLine(){
+    var el = document.getElementById('mastAccess'), area = pageArea();
+    if (!el) return;
+    if (!area || !access || !access.e) { el.hidden = true; el.innerHTML = ''; return; }
+    var lv = {}; WHAT.forEach(function(w){ lv[w] = levelFor(area, w); });
+    var can = access.fullWrite;
+    var short = function(l){ return l === 'none' ? '—' : l === 'everyone' ? 'Everyone' : LEVEL_NAMES[l] + '+'; };
+    var html = '<span title="Who can see what (BOLDiquette)">' + WHAT.map(function(w){ return esc(WHAT_NAMES[w]) + ': ' + esc(short(lv[w])); }).join(' · ') + '</span>' +
+      '<button type="button" class="btn-text mast-access-change"' + (can ? '' : ' disabled title="Only PIs and admins change who can see what"') + '>Change</button>';
+    var f = accessForm;
+    if (f && can) {
+      var opts = function(w){
+        return '<select data-what="' + w + '">' + LEVELS.map(function(l){
+          return '<option value="' + l + '"' + (f[w] === l ? ' selected' : '') + '>' + esc(l === 'none' ? '— (nobody)' : LEVEL_NAMES[l]) + '</option>';
+        }).join('') + '</select>';
+      };
+      html += f.done
+        ? '<div class="mast-access-form"><p>Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposals">the BOLDiquette</a>.</p>' +
+          '<div class="mast-access-actions"><button type="button" class="btn-text mast-access-close">Close</button></div></div>'
+        : '<div class="mast-access-form"><strong>' + esc(AREA_NAMES[area] || area) + '</strong>' +
+          WHAT.map(function(w){ return '<label>' + WHAT_NAMES[w] + ' ' + opts(w) + '</label>'; }).join('') +
+          '<label style="flex-direction:column;align-items:stretch">Why<textarea class="mast-access-note" maxlength="1000">' + esc(f.note || '') + '</textarea></label>' +
+          '<p class="ev-error"' + (f.error ? '' : ' hidden') + '>' + esc(f.error || '') + '</p>' +
+          '<div class="mast-access-actions"><button type="button" class="btn-text mast-access-close">Cancel</button>' +
+          '<button type="button" class="ev-save mast-access-propose"' + (f.busy ? ' disabled' : '') + '>Propose</button></div></div>';
+    }
+    el.innerHTML = html;
+    el.hidden = false;
+  }
+  function proposeAccess(){
+    var area = pageArea(), f = accessForm, u = auth && auth.currentUser;
+    if (!f.note.trim()) { f.error = 'Say why, for whoever reviews it.'; drawAccessLine(); return; }
+    var lv = { view: f.view, edit: f.edit, propose: f.propose };
+    if (WHAT.every(function(w){ return lv[w] === levelFor(area, w); })) { f.error = 'Nothing changed.'; drawAccessLine(); return; }
+    f.busy = true; f.error = ''; drawAccessLine();
+    var ref = firebase.firestore(BOLD.getApp()).collection('handbook').doc('boldiquette');
+    ref.get().then(function(snap){
+      var p = ((snap.exists && snap.data().parts) || []).filter(function(x){ return x.id === 'access'; })[0];
+      var after = { title: 'Who can see what', body: accessBody(p && p.body, area, lv) };
+      var change = p
+        ? { kind: 'edit', partId: 'access', before: { title: p.title, body: p.body }, after: { title: p.title, body: after.body } }
+        : { kind: 'add', partId: 'access', before: null, after: Object.assign(after, { section: 'People' }) };
+      return ref.collection('proposals').add(Object.assign(change, {
+        note: f.note.trim(), by: { email: u.email || '', name: u.displayName || '' }, at: Date.now(), status: 'open',
+      }));
+    }).then(function(){ f.busy = false; f.done = true; drawAccessLine(); }, function(err){
+      console.error('[BOLD Lab] proposing who can see what failed', err);
+      f.busy = false; f.error = 'Couldn’t propose it — try again.'; drawAccessLine();
+    });
+  }
+  document.addEventListener('click', function(e){
+    var box = document.getElementById('mastAccess');
+    if (!box || !box.contains(e.target)) return;
+    var t = e.target.closest('button');
+    if (!t || t.disabled) return;
+    var area = pageArea();
+    if (t.classList.contains('mast-access-change')) {
+      accessForm = accessForm ? null : { view: levelFor(area, 'view'), edit: levelFor(area, 'edit'), propose: levelFor(area, 'propose'), note: '' };
+    } else if (t.classList.contains('mast-access-close')) accessForm = null;
+    else if (t.classList.contains('mast-access-propose')) { proposeAccess(); return; }
+    drawAccessLine();
+  });
+  document.addEventListener('change', function(e){
+    var s = e.target.closest && e.target.closest('#mastAccess select[data-what]');
+    if (s && accessForm) accessForm[s.getAttribute('data-what')] = s.value;
+  });
+  document.addEventListener('input', function(e){
+    if (e.target.classList && e.target.classList.contains('mast-access-note') && accessForm) accessForm.note = e.target.value;
+  });
+  BOLD.onAccess(function(){ if (!accessForm || accessForm.done) drawAccessLine(); });
+  document.addEventListener('DOMContentLoaded', drawAccessLine);
 
   /* ---------- shell: sidebar state + gating ---------- */
 
