@@ -22,6 +22,11 @@ window.BoldJoin = (function(){
     return CATEGORIES.some(function(c){ return c[0] === m.category; }) ? m.category : 'pan';
   }
   // The group a role suggests when a request is approved (functions/index.js roleGroup).
+  // The lower of two groups (CATEGORIES runs from the top down), as functions/index.js cappedGroup.
+  function cappedGroup(g, cap){
+    var ids = CATEGORIES.map(function(c){ return c[0]; });
+    return ids.indexOf(cap) < 0 ? g : ids[Math.max(ids.indexOf(g), ids.indexOf(cap))];
+  }
   function roleGroup(role){ return role === 'PI' ? 'exec' : role === 'PhD student' || role === 'Master student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan'; }
   function groupBadge(g){ return '<span class="type-badge pp-' + g + '">' + esc(categoryLabel(g)) + '</span>'; }
   // How someone likes to receive feedback (functions/index.js JOIN_FEEDBACK, firestore.rules).
@@ -87,8 +92,8 @@ window.BoldJoin = (function(){
       contactHtml(v, o.people) +
       // The profile: who invited them, from the roster (setMyInviter saves it and asks them to confirm).
       (o.people && !o.withIdentity ? inviterHtml(v, o.people) : '') +
-      // join.html only: who invited them to the Slack, picked from the roster as they type (join.js).
-      (o.withIdentity ? '<label>Who invited you to the BOLD Slack? (optional; we ask them to confirm)' +
+      // join.html only: who invited them, picked from the roster as they type (join.js); they decide the request.
+      (o.withIdentity ? '<label>Who invited you? (they approve your request)' +
         '<input type="text" class="jn-inviter" maxlength="120" placeholder="Start typing their name" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"></label>' +
         '<input type="hidden" class="jn-inviter-id"><ul class="jn-inviter-list" role="listbox" hidden></ul>' : '') +
       '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
@@ -136,7 +141,7 @@ window.BoldJoin = (function(){
     if (!d.institution) return 'Give your home institution.';
     if (!d.role) return 'Choose your role at BOLD.';
     if (!d.contact) return 'Say who your BOLD point of contact is.';
-    if (d.inviterTyped && !d.invitedBy) return 'Choose who invited you from the list, or leave it empty.';
+    if (d.invitedBy !== undefined && !d.invitedBy) return 'Choose who invited you from the list.';
     if (!d.interests) return 'Give your main research interests.';
     if (!d.endDate && NO_END.indexOf(d.role) === -1) return 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).';
     if (d.startDate && d.endDate && d.endDate < d.startDate) return 'The end date is before the start date.';
@@ -169,5 +174,5 @@ window.BoldJoin = (function(){
         row('Booking link', /^https:\/\/\S+$/.test(d.bookingUrl || '') ? '<a href="' + esc(d.bookingUrl) + '" target="_blank" rel="noopener">' + esc(d.bookingUrl.replace(/^https:\/\//, '')) + '</a>' : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, roleGroup: roleGroup, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, roleGroup: roleGroup, cappedGroup: cappedGroup, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
 })();

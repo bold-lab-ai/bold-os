@@ -4308,13 +4308,13 @@ exports.requestToJoin = onCall(
     const n = normalizeJoinRequest(d, set.roles, set.pillars);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
     const r = n.request;
-    // Who invited them (optional): someone on the Slack roster, asked to confirm (onJoinRequested).
-    if (d.invitedBy){
-      const id = String(d.invitedBy);
-      const p = /^[A-Z0-9]{2,20}$/.test(id) ? await db.collection('people').doc(id).get() : null;
-      if (!p || !p.exists) throw new HttpsError('invalid-argument', 'Choose who invited you from the list, or leave it empty.');
-      r.invitedBy = { id, name: p.data().name || '', email: String(p.data().email || '').toLowerCase(), status: 'pending' };
-    }
+    // Who invited them (required): someone on the Slack roster who can decide requests
+    // (joinInviterEmails); they approve or decline it (onJoinRequested, decideJoinRequest).
+    const id = String(d.invitedBy || '');
+    const p = /^[A-Z0-9]{2,20}$/.test(id) ? await db.collection('people').doc(id).get() : null;
+    const inviterEmail = p && p.exists ? String(p.data().email || '').toLowerCase() : '';
+    if (!inviterEmail || !(await joinInviterEmails()).has(inviterEmail)) throw new HttpsError('invalid-argument', 'Choose who invited you from the list.');
+    r.invitedBy = { id, name: p.data().name || '', email: inviterEmail, status: 'pending' };
     const open = await db.collection('joinRequests').where('email', '==', r.email).where('status', '==', 'open').limit(1).get();
     if (!open.empty) throw new HttpsError('already-exists', 'There’s already a request for this email address, waiting for a PI. You’ll hear by email.');
     const recent = await db.collection('joinRequests').where('at', '>', Date.now() - 3600000).count().get();
@@ -4329,14 +4329,33 @@ const joinPageUrl = () => SITE_URL + 'join-requests.html';
 // Pure: a name folded for matching ("Zoë Lee" → "zoe lee").
 function foldName(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
 
-// The join form's "Who invited you": up to 6 people on the Slack roster whose name has a
-// word starting with what was typed (2 letters at least). No sign-in (applicants aren't
-// on Slack yet), so it gives names and Slack ids only. data: { q } → { people: [{ id, name }] }.
+// Who can invite someone to BOLD, and so decide their request to join: whoever is at the
+// Requests page's Edit level (BOLDiquette › Who can see what), PIs and admins included.
+// → a Set of emails, lowercase; kept a minute.
+let inviterCache = null, inviterAt = 0;
+async function joinInviterEmails(){
+  if (inviterCache && Date.now() - inviterAt < 60000) return inviterCache;
+  const level = ((await access.table()).requests || {}).edit || 'internal';
+  const out = new Set();
+  if (level !== 'none') {
+    const need = require('./access').rank(level);
+    (await db.collection('members').get()).docs.forEach((m) => { if (require('./access').rank(groupOf(m.data())) >= need) out.add(m.id.toLowerCase()); });
+    (await rolesEmails('pis')).concat(await rolesEmails('admins')).forEach((e) => out.add(String(e).toLowerCase()));
+  }
+  inviterCache = out; inviterAt = Date.now();
+  return out;
+}
+
+// The join form's "Who invited you": up to 6 people on the Slack roster who can invite
+// (joinInviterEmails) whose name has a word starting with what was typed (2 letters at
+// least). No sign-in (applicants aren't on Slack yet), so it gives names and Slack ids
+// only. data: { q } → { people: [{ id, name }] }.
 exports.joinInviters = onCall(async (request) => {
   const q = foldName((request.data || {}).q).slice(0, 60);
   if (q.length < 2) return { people: [] };
-  const snap = await db.collection('people').get();
-  const people = snap.docs.map(function(d){ return { id: d.id, name: String(d.data().name || '') }; })
+  const [snap, can] = await Promise.all([db.collection('people').get(), joinInviterEmails()]);
+  const people = snap.docs.filter((d) => can.has(String(d.data().email || '').toLowerCase()))
+    .map(function(d){ return { id: d.id, name: String(d.data().name || '') }; })
     .filter(function(p){ const n = foldName(p.name); return p.name && (n.indexOf(q) === 0 || n.indexOf(' ' + q) >= 0); })
     .sort(function(a, b){ return a.name.localeCompare(b.name); }).slice(0, 6);
   return { people };
@@ -4423,51 +4442,59 @@ exports.onJoinRequested = onDocumentCreated(
   async function(event){
     const r = event.data && event.data.data();
     if (!r || r.status !== 'open') return;
+    // Whoever invited them decides it; the PIs and admins only hear of one without an inviter (from before it was required).
+    if (r.invitedBy) {
+      await dmBySlackId(SLACK_BOT_TOKEN.value(), r.invitedBy.id, '👋 ' + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ', ' + slackText(r.email) + ') asked to join BOLD and says you invited them. ' +
+        linkedTitle('Approve or decline', joinPageUrl() + '#i=' + event.params.id) + '.');
+      return;
+    }
     const headline = '👋 ' + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ') asked to join BOLD' +
-      (r.contact ? ', with ' + slackText(r.contact) + ' as their point of contact' : '') +
-      (r.invitedBy ? ', invited by ' + slackText(r.invitedBy.name) + ' (asked to confirm)' : '') + '. ' +
+      (r.contact ? ', with ' + slackText(r.contact) + ' as their point of contact' : '') + '. ' +
       linkedTitle('Approve or decline', joinPageUrl() + '#r=' + event.params.id) + '.';
     const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
     await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline });
-    if (r.invitedBy) await dmBySlackId(SLACK_BOT_TOKEN.value(), r.invitedBy.id, '👋 ' + slackText(r.name) + ' (' + slackText(r.email) + ') asked to join BOLD and says you invited them to the Slack. ' +
-      linkedTitle('Confirm, or say you didn’t', joinPageUrl() + '#i=' + event.params.id) + '.');
   }
 );
 
-// data: { id, accept: bool } → { status, welcome? }. PIs and admins only.
+// data: { id, accept: bool } → { status, welcome? }. Whoever they named as inviting them
+// (at Requests' Edit level); PIs and admins can decide any.
 exports.decideJoinRequest = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
     await access.requireAccess(email, 'requests', 'edit');   // Who can see what
-    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    const full = await isFullWrite(email);
     const d = request.data || {};
     if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
     const ref = db.collection('joinRequests').doc(d.id);
     const name = request.auth.token.name || '';
+    const deciderGroup = await access.groupFor(email);
     const r = await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists) throw new HttpsError('not-found', 'No such request.');
       const q = snap.data();
+      const inviter = !!(q.invitedBy && q.invitedBy.email === email);
+      if (!full && !inviter) throw new HttpsError('permission-denied', 'Only whoever invited them decides this.');
       if (q.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been ' + q.status + '.');
       const m = db.collection('members').doc(q.email);
       const had = d.accept ? await tx.get(m) : null;
       const status = d.accept ? 'approved' : 'declined';
-      tx.update(ref, { status, decidedBy: email, decidedByName: name, decidedAt: Date.now() });
+      // Their inviter approving it confirms they invited them.
+      const confirmed = inviter && d.accept ? { invitedBy: Object.assign({}, q.invitedBy, { status: 'confirmed', at: Date.now() }) } : {};
+      tx.update(ref, Object.assign({ status, decidedBy: email, decidedByName: name, decidedAt: Date.now() }, confirmed));
+      Object.assign(q, confirmed);
       if (d.accept) {
         // Their record in BOLD.OS: what they told us. They keep it up to date on their profile.
-        // Their group, unless a PI or admin already set one: what their role suggests.
+        // Their group, unless a PI or admin already set one: what their role suggests, but
+        // never above the group of whoever approves it (a PI or admin raises it on People).
         const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'invitedBy'];
         const rec = {};
         keep.forEach((k) => { if (q[k] !== undefined) rec[k] = q[k]; });
-        if (!(had.exists && GROUPS.indexOf(had.data().category) >= 0)) Object.assign(rec, { category: roleGroup(q.role), categoryBy: email, categoryAt: Date.now() });
+        if (!(had.exists && GROUPS.indexOf(had.data().category) >= 0)) Object.assign(rec, { category: cappedGroup(roleGroup(q.role), deciderGroup), categoryBy: email, categoryAt: Date.now() });
         tx.set(m, Object.assign(rec, { requestId: d.id, approvedBy: email, approvedAt: Date.now() }), { merge: true });
       }
       return Object.assign({}, q, { status });
     });
-    const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase()).filter((e) => e !== email);
-    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff,
-      headline: (r.status === 'approved' ? '✅ ' : '✖️ ') + slackText(name || email) + ' ' + r.status + ' ' + slackText(r.name) + '’s request to join BOLD.' });
     if (r.status !== 'approved') return { status: r.status };
     return { status: r.status, welcome: await sendWelcome(d.id) };
   }
@@ -4533,6 +4560,8 @@ function groupOf(m){
   return GROUPS.indexOf(m.category) >= 0 ? m.category : 'pan';
 }
 // Pure: a role → the group it suggests, when a request is approved.
+// The lower of two groups (GROUPS runs from the top down).
+function cappedGroup(g, cap){ return GROUPS.indexOf(cap) < 0 ? g : GROUPS[Math.max(GROUPS.indexOf(g), GROUPS.indexOf(cap))]; }
 function roleGroup(role){
   return role === 'PI' ? 'exec' : role === 'PhD student' || role === 'Master student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan';
 }
@@ -5411,7 +5440,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts,
+  projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,

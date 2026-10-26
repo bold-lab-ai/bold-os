@@ -1,5 +1,5 @@
 // join.html: anyone, signed in or not, asks to join BOLD (requestToJoin, which
-// checks it again). The PIs and admins decide on join-requests.html.
+// checks it again). Whoever they name as inviting them decides, on join-requests.html.
 (function(){
   var esc = BOLD.escapeHtml;
   var box = document.getElementById('joinBody');
@@ -10,7 +10,7 @@
 
   function render(v){
     if (sent) {
-      box.innerHTML = '<p class="jn-notice">Thanks, ' + esc(sent) + '. Your request is with the BOLD PIs; you’ll hear by email.</p>';
+      box.innerHTML = '<p class="jn-notice">Thanks, ' + esc(sent) + '. Your request is with whoever invited you; you’ll hear by email.</p>';
       return;
     }
     box.innerHTML = '<div class="event-form join-form">' + BoldJoin.fieldsHtml(v, opt, { withIdentity: true }) +
@@ -21,7 +21,7 @@
     wireInviter();
   }
 
-  // Who invited them: names from the Slack roster as they type (joinInviters); choosing
+  // Who invited them: names from the Slack roster, of those who can invite, as they type (joinInviters); choosing
   // one keeps its Slack id. Typing again clears the choice.
   function wireInviter(){
     var input = box.querySelector('.jn-inviter'), id = box.querySelector('.jn-inviter-id'), list = box.querySelector('.jn-inviter-list');
@@ -39,7 +39,7 @@
           var people = (r.data && r.data.people) || [];
           list.innerHTML = people.length ? people.map(function(p){
             return '<li role="option" data-id="' + esc(p.id) + '" data-name="' + esc(p.name) + '">' + esc(p.name) + '</li>';
-          }).join('') : '<li class="jn-none">No one by that name on the BOLD Slack</li>';
+          }).join('') : '<li class="jn-none">No one by that name can invite you to BOLD</li>';
           list.hidden = false; input.setAttribute('aria-expanded', 'true'); active = -1;
         }).catch(function(err){ console.error('[BOLD Join] finding people failed', err); });
       }, 250);
@@ -69,8 +69,7 @@
     var p = BoldJoin.problem(d);
     if (p) { showError(p); return; }
     delete d.inviterTyped;
-    BOLD.confirmAction({ title: 'Send your request?', go: 'Send', effects: ['Send the PIs and admins a Slack message with your request',
-      d.inviterEmail ? 'Ask whoever you named as inviting you to confirm it, on Slack' : ''].filter(Boolean) }).then(function(ok){ if (ok) sendRequest(d); });
+    BOLD.confirmAction({ title: 'Send your request?', go: 'Send', effects: ['Send whoever invited you a Slack message, to approve or decline it'] }).then(function(ok){ if (ok) sendRequest(d); });
   }
   function sendRequest(d){
     var btn = box.querySelector('.ev-save');

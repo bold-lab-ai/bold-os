@@ -1,13 +1,13 @@
-// join-requests.html: the PIs and admins approve or decline requests to join
-// BOLD (decideJoinRequest) and members' requests to be in another group of Who is BOLD
+// join-requests.html: whoever an applicant names as inviting them approves or declines
+// their request to join BOLD (decideJoinRequest; "Invited by you", #i=<id> from their DM),
+// as PIs and admins can any; and the PIs and admins decide members' requests to be in another group of Who is BOLD
 // (groupRequests, groupRequest), see whether each welcome email went (sendWelcomeEmail
 // sends one again), and edit the Slack invite link, the email's text
 // (settings/joinInvite), the join form's choices (settings/joinForm) and each group's
 // Slack channel (settings/groups: whoever is in the group is added to it).
-// Only PIs and admins can read any of it (firestore.rules), except "Invited by you":
-// anyone an applicant named as inviting them to the Slack confirms it, or says they
-// didn't (confirmJoinInvite; #i=<id> from their DM), and so do members who named them on
-// their profile (setMyInviter; #invited).
+// Only PIs and admins can read any of it (firestore.rules), except "Invited by you": the
+// requests naming you, and members who named you on their profile (setMyInviter;
+// #invited), who you confirm or say you didn't invite (confirmJoinInvite).
 // and requests to let an agent act for someone (apiTokens 'actRequests'/'decideAct' in
 // functions/api.js; the Agents tab).
 // Tabs, by #hash: #signup, #invited, #groups, #agents, #settings (#r=, #g=, #i= open their
@@ -117,9 +117,16 @@
     return msg ? '<p class="jn-notice" id="jrNotice">' + esc(msg).replace('under Settings', 'under <a href="#settings">Settings</a>') + '</p>' : '';
   }
 
-  // A request that names you as inviting them: confirm it, or say you didn't.
+  // A request that names you as inviting them: approve or decline it while it's open
+  // (from before, one a PI or admin approved: confirm it, or say you didn't).
   function invitedHtml(r){
     var st = (r.invitedBy || {}).status, off = busy[r.id] ? ' disabled' : '';
+    if (r.status === 'open') return '<li id="i-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
+      '<span class="proj-meta">' + esc(r.email) + ' · ' + esc([r.role, r.institution].filter(Boolean).join(', ')) + ' · asked ' + when(r.at) + '</span>' +
+      '<p class="proj-meta">Asks to join BOLD, and says you invited them.</p>' +
+      (shown['i:' + r.id] ? BoldJoin.factsHtml(r, { other: true }) : '') +
+      '<div class="event-controls">' + moreBtn('i:' + r.id) + '<button type="button" class="btn-text jr-approve" data-id="' + esc(r.id) + '"' + off + '>Approve</button>' +
+        '<button type="button" class="btn-text danger jr-decline" data-id="' + esc(r.id) + '"' + off + '>Decline</button></div></li>';
     return '<li id="i-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
       '<span class="proj-meta">' + esc(r.email) + ' · ' + esc([r.role, r.institution].filter(Boolean).join(', ')) + ' · asked ' + when(r.at) + '</span>' +
       '<p class="proj-meta">' + (st === 'confirmed' ? 'You confirmed you invited them.' : st === 'denied' ? 'You said you didn’t invite them.' : 'They say you invited them to the BOLD Slack.') + '</p>' +
@@ -139,15 +146,19 @@
   // Without tabs (not a PI or admin), it keeps its heading.
   function invitedSection(tabbed){
     if (!invited.length && !invitedMembers.length) return '';
-    var waiting = invited.concat(invitedMembers).filter(function(r){ return (r.invitedBy || {}).status === 'pending'; }).length;
-    return '<section class="' + (tabbed ? 'profile-panel' : 'block') + '" id="invited">' + (tabbed ? '' : '<div class="block-head"><h2>Invited by you<span class="proj-count">' + waiting + ' to confirm</span></h2></div>') +
+    return '<section class="' + (tabbed ? 'profile-panel' : 'block') + '" id="invited">' + (tabbed ? '' : '<div class="block-head"><h2>Invited by you<span class="proj-count">' + invitedWaiting() + ' waiting</span></h2></div>') +
       '<ul class="proj-list">' + invited.map(invitedHtml).join('') + invitedMembers.map(invitedMemberHtml).join('') + '</ul></section>';
   }
 
+  // Requests naming you still open, and members still to confirm.
+  function invitedWaiting(){
+    return invited.filter(function(r){ return r.status === 'open' || (r.invitedBy || {}).status === 'pending'; }).length +
+      invitedMembers.filter(function(m){ return (m.invitedBy || {}).status === 'pending'; }).length;
+  }
   function render(){
     if (!me) return;
     if (staff === false) {
-      main.innerHTML = invitedSection() + (invited.length || invitedMembers.length ? '' : '<p class="proj-msg">Only PIs and admins review these requests.</p>');
+      main.innerHTML = invitedSection() + (invited.length || invitedMembers.length ? '' : '<p class="proj-msg">Nobody says you invited them.</p>');
       jump();
       return;
     }
@@ -160,7 +171,7 @@
     var aOpen = actReqs.filter(function(r){ return r.status === 'open'; });
     var aDone = actReqs.filter(function(r){ return r.status !== 'open'; });
     var list = function(items, html, none){ return items.length ? '<ul class="proj-list">' + items.map(html).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>'; };
-    var waiting = invited.concat(invitedMembers).filter(function(r){ return (r.invitedBy || {}).status === 'pending'; }).length;
+    var waiting = invitedWaiting();
     var n = function(k){ return k ? ' (' + k + ')' : ''; };
     // Five tabs, named by the #hash: joining BOLD, invited by you, changing group, agents acting, settings.
     main.innerHTML =
@@ -367,7 +378,7 @@
   }
   function rest(t){
     var id = t.getAttribute('data-id');
-    var r = requests && requests.filter(function(q){ return q.id === id; })[0];
+    var r = (requests || []).concat(invited).filter(function(q){ return q.id === id; })[0];
     if (!r) return;
     var run = function(job){
       busy[id] = true; t.disabled = true;
@@ -378,9 +389,10 @@
     };
     if (t.classList.contains('jr-approve')) {
       var inv = r.invitedBy || {};
-      var unconfirmed = !inv.name ? '' : inv.status === 'denied' ? inv.name + ' says they didn’t invite them.'
+      var group = BoldJoin.cappedGroup(BoldJoin.roleGroup(r.role), staff ? 'exec' : BOLD.myGroup());
+      var unconfirmed = !inv.name || inv.email === me.email ? '' : inv.status === 'denied' ? inv.name + ' says they didn’t invite them.'
         : inv.status !== 'confirmed' ? inv.name + ' hasn’t confirmed inviting them yet.' : '';
-      BOLD.confirmAction({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack', 'Put them in ' + BoldJoin.categoryLabel(BoldJoin.roleGroup(r.role)) + ' (change it on People)'] })
+      BOLD.confirmAction({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack', 'Put them in ' + BoldJoin.categoryLabel(group) + (staff ? ' (change it on People)' : ' (a PI or admin can change it)')] })
         .then(function(ok){ if (ok) run(function(){ return fn('decideJoinRequest')({ id: id, accept: true }); }); });
     } else if (t.classList.contains('jr-decline')) {
       if (window.confirm('Decline ' + r.name + '’s request? They aren’t told.')) run(function(){ return fn('decideJoinRequest')({ id: id, accept: false }); });
@@ -403,7 +415,7 @@
     // Requests that name you as inviting them (readable by you: firestore.rules).
     unsubs.push(db.collection('joinRequests').where('invitedBy.email', '==', me.email).onSnapshot(function(snap){
       invited = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
-        .filter(function(r){ return r.status === 'open' || (r.invitedBy || {}).status === 'pending'; })
+        .filter(function(r){ return r.status === 'open' || (r.status === 'approved' && (r.invitedBy || {}).status === 'pending'); })
         .sort(function(a, b){ return b.at - a.at; });
       render();
     }, function(err){ console.error('[BOLD Join] loading your invitations failed', err); }));
