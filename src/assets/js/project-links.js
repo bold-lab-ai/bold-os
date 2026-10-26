@@ -10,10 +10,11 @@
 // BoldProjectLinks.create({ field: 'talkSlug' | 'sessionSlug' | 'id', slug,
 //   occasion() → the occasion, prefill() → { title, presenter, date, slidesUrl },
 //   exact(occasion) → whether a presentation is of exactly this talk or session,
-//   onChange }) → { load(user), rowHtml(), lineHtml(), prepare(), fieldHtml(), apply() }.
+//   onChange }) → { load(user), rowHtml(), lineHtml(), panelHtml(), prepare(), fieldHtml(), apply() }.
 // A talk's and a session's page set the project in their edit form (fieldHtml when
 // it opens after prepare(), apply() when it's saved) and show it in rowHtml (a dt/dd
-// pair); an event's page, which members can't edit, adds from lineHtml.
+// pair); an event's page, which members can't edit, adds from lineHtml, or, on a
+// series' page with a Projects tab, panelHtml: each project with its presentations there.
 window.BoldProjectLinks = (function(){
   var esc = BOLD.escapeHtml;
   var seq = 0;
@@ -26,6 +27,7 @@ window.BoldProjectLinks = (function(){
     var key = 'bpl' + (++seq);
     var db = null, me = null, list = [], mine = null, open = false, busy = false, error = '', added = null;
     var exact = [];       // this talk's or session's own presentations: [{ projectId, ref }]
+    var given = {};       // project id → its presentations here
     var chosen = null;    // the edit form's Project, once changed
     function changed(){ opts.onChange(); }
 
@@ -33,17 +35,21 @@ window.BoldProjectLinks = (function(){
     function find(){
       return db.collectionGroup('presentations').where('occasion.' + opts.field, '==', opts.slug).get().then(function(snap){
         var ids = [];
-        exact = [];
+        exact = []; given = {};
         snap.docs.forEach(function(d){
           var o = d.data().occasion || {};
           if (o.kind !== 'event') return;   // occasion.id is also a venue's, for presentations at a venue
           var id = d.ref.parent.parent.id;
           if (opts.exact && opts.exact(o)) exact.push({ projectId: id, ref: d.ref });
           if (ids.indexOf(id) < 0) ids.push(id);
+          (given[id] = given[id] || []).push(d.data());
         });
         return Promise.all(ids.map(function(id){ return db.collection('projectWorkspaces').doc(id).get(); }));
       }).then(function(snaps){
-        list = snaps.filter(function(s){ return s.exists; }).map(function(s){ return { title: s.data().title || 'Untitled project', href: projectHref(s.id, s.data()) }; });
+        list = snaps.filter(function(s){ return s.exists; }).map(function(s){
+          return { title: s.data().title || 'Untitled project', href: projectHref(s.id, s.data()),
+            presentations: (given[s.id] || []).sort(function(a, b){ return (a.date || '') < (b.date || '') ? -1 : 1; }) };
+        }).sort(function(a, b){ return a.title.localeCompare(b.title); });
         changed();
       }).catch(function(err){ console.error('[BOLD Events] loading the projects presented here failed', err); });
     }
@@ -137,10 +143,12 @@ window.BoldProjectLinks = (function(){
     // The list, and adding: a button, then the viewer's projects to choose from.
     function inner(){
       var links = list.map(function(p){ return '<a href="' + esc(p.href) + '">' + esc(p.title) + '</a>'; }).join(', ');
-      var html = links;
-      if (!me) return html;
+      return me ? links + (links ? ' ' : '') + addHtml() : links;
+    }
+    function addHtml(){
+      var html = '';
       if (!open) {
-        html += (links ? ' ' : '') + '<button type="button" class="btn-text bpl-open" data-bpl="' + key + '">+ Add to a project</button>';
+        html += '<button type="button" class="btn-text bpl-open" data-bpl="' + key + '">+ Add to a project</button>';
       } else if (!mine) {
         html += '<span class="bpl-form detail-muted">Loading your projects…</span>';
       } else if (!mine.length) {
@@ -163,6 +171,24 @@ window.BoldProjectLinks = (function(){
         list.map(function(p){ return '<a href="' + esc(p.href) + '">' + esc(p.title) + '</a>'; }).join(', ') +
         (error ? '<span class="bpl-note bpl-error">' + esc(error) + '</span>' : '') + '</dd>';
     }
+    // A Projects tab: each project, its presentations here (title, who, where in the
+    // programme, when, slides and recording), then adding one.
+    var TYPES = { 'research-talk': 'Research talk', pitch: 'Pitch', keynote: 'Keynote' };
+    function panelHtml(){
+      var rows = list.map(function(p){
+        return '<li><a class="proj-title" href="' + esc(p.href) + '">' + esc(p.title) + '</a>' +
+          '<ul class="bpl-talks">' + p.presentations.map(function(t){
+            var o = t.occasion || {}, where = o.talkTitle && o.talkTitle !== t.title ? o.talkTitle : o.sessionTitle || '';
+            var meta = [t.presenter, where, t.date ? BoldEvents.when(t.date) : ''].filter(Boolean).map(esc);
+            if (t.slidesUrl) meta.push('<a href="' + esc(t.slidesUrl) + '" target="_blank" rel="noopener">Slides</a>');
+            if (t.recordingUrl) meta.push('<a href="' + esc(t.recordingUrl) + '" target="_blank" rel="noopener">Recording</a>');
+            return '<li>' + esc(t.title || 'Untitled') + (TYPES[t.type] ? ' <span class="badge">' + TYPES[t.type] + '</span>' : '') +
+              '<span class="proj-meta">' + meta.join(' · ') + '</span></li>';
+          }).join('') + '</ul></li>';
+      }).join('');
+      return (rows ? '<ul class="proj-list bpl-panel">' + rows + '</ul>' : '<p class="sched-empty">No project has been presented here yet.</p>') +
+        (me ? '<p class="bpl bpl-line">' + (list.length ? '' : '<span class="bpl-label">Presented a project here? </span>') + addHtml() + '</p>' : '');
+    }
     function lineHtml(){
       if (!me && !list.length) return '';
       return '<p class="bpl bpl-line"><span class="bpl-label">' + (list.length ? 'Projects presented here: ' : 'Presented a project here? ') + '</span>' + inner() + '</p>';
@@ -182,7 +208,7 @@ window.BoldProjectLinks = (function(){
       }
     });
 
-    return { load: load, rowHtml: rowHtml, lineHtml: lineHtml, prepare: prepare, fieldHtml: fieldHtml, apply: apply };
+    return { load: load, rowHtml: rowHtml, lineHtml: lineHtml, panelHtml: panelHtml, prepare: prepare, fieldHtml: fieldHtml, apply: apply };
   }
 
   return { create: create };

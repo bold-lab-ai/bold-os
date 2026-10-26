@@ -63,6 +63,7 @@
     onChange: function(){ if (!editing) render(); }
   }) : null;
   var BACK = '<a class="back-link" href="events.html">&larr; All events</a>';
+  var projectsEl = document.getElementById('eventProjects');
 
   function paragraphs(s){
     return String(s || '').split(/\n\s*\n/).map(function(p){ return p.trim(); }).filter(Boolean)
@@ -120,7 +121,9 @@
       '<p class="hero-when">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' &middot; ' + esc(x.place) : '') + '</p>' +
       seriesLine() +
       paragraphs(x.description) +
-      controls() + (links ? links.lineHtml() : '');
+      controls() + (links && !projectsEl ? links.lineHtml() : '');
+    // A series' page lists them in its Projects tab instead.
+    if (projectsEl && links) projectsEl.innerHTML = links.panelHtml();
     body.querySelector('.ev-edit').addEventListener('click', function(){ if (canChange()) { editing = true; render(); } });
     body.querySelector('.ev-visibility').addEventListener('click', function(){
       if (!fullWrite) return;

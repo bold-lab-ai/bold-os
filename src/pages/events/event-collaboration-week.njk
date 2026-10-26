@@ -19,11 +19,17 @@ permalink: "event-collaboration-week.html"
   <div class="tabs" role="tablist" aria-label="Collaboration week">
     <button class="tab" type="button" id="tabBtnSchedule" data-tab="schedule" role="tab" aria-controls="panelSchedule">Schedule</button>
     <button class="tab" type="button" id="tabBtnProposals" data-tab="proposals" role="tab" aria-controls="panelProposals">Proposals</button>
+    <button class="tab" type="button" id="tabBtnProjects" data-tab="projects" role="tab" aria-controls="panelProjects">Projects</button>
   </div>
 
   <div class="tab-panel" id="panelSchedule" role="tabpanel" aria-labelledby="tabBtnSchedule">
     {# Days, time slots and sessions: Firestore, drawn by event-sessions.js (from pages/event.js). #}
     <div class="schedule" id="eventSchedule"><p class="sched-empty">Loading…</p></div>
+  </div>
+
+  <div class="tab-panel" id="panelProjects" role="tabpanel" aria-labelledby="tabBtnProjects">
+    {# The projects presented at this occurrence, each with its presentations (project-links.js, from pages/event.js). #}
+    <div id="eventProjects"><p class="sched-empty">Loading…</p></div>
   </div>
 
   <div class="tab-panel" id="panelProposals" role="tabpanel" aria-labelledby="tabBtnProposals">

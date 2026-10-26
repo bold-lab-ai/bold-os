@@ -56,3 +56,13 @@ html.auth-hint #proposalsSignedOut{display:none;}
 .page-source{font-family:var(--sans); font-size:12.5px; color:var(--muted); margin-top:18px;}
 .page-source a{color:var(--muted);}
 .page-source a:hover{color:var(--accent);}
+/* Projects tab: each project presented, with its presentations (project-links.js panelHtml) */
+.bpl-panel{list-style:none; margin:0; padding:0;}
+.bpl-panel > li{padding:14px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+.bpl-panel .proj-title{font-size:18px; font-weight:500; color:var(--ink); text-decoration:none;}
+.bpl-panel .proj-title:hover{color:var(--accent);}
+.bpl-talks{list-style:none; margin:6px 0 0; padding:0 0 0 14px; border-left:2px solid var(--line);}
+.bpl-talks li{padding:4px 0; font-size:15px; color:var(--ink-soft);}
+.bpl-talks .proj-meta{display:block; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.bpl-talks .badge{font-family:var(--sans); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; border:1px solid currentColor; padding:1px 6px; margin-left:6px; color:var(--neutral-text); vertical-align:2px;}
+#panelProjects .bpl-line{margin-top:16px;}

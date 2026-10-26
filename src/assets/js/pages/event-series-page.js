@@ -1,5 +1,6 @@
-// A series' own page with tabs, Schedule and Proposals (the Festival's, Collaboration
-// week's): the tabs, and the shown edition's proposals (event-proposals.js).
+// A series' own page with tabs, Schedule (or Agenda), Projects and Proposals (the
+// Festival's, Collaboration week's): the tabs, and the shown edition's proposals
+// (event-proposals.js); pages/event.js fills Projects.
 // Tabs — independent of Firebase, so switching between Schedule and
 // Proposals works even if Firebase fails to load. Neither panel is
 // hidden in the raw HTML (progressive enhancement: no-JS visitors see
@@ -7,7 +8,7 @@
 // runs on load to pick a starting tab and hide the other.
 (function(){
   var buttons = Array.prototype.slice.call(document.querySelectorAll('.tab'));
-  var panels = { schedule: document.getElementById('panelSchedule'), proposals: document.getElementById('panelProposals') };
+  var panels = { schedule: document.getElementById('panelSchedule'), proposals: document.getElementById('panelProposals'), projects: document.getElementById('panelProjects') };
   function activate(name, pushHash){
     buttons.forEach(function(b){
       var on = b.getAttribute('data-tab') === name;
