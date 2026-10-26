@@ -80,7 +80,7 @@
     projects: function(){
       return firebase.app().functions('europe-west2').httpsCallable('getAllProjects')({}).then(function(r){
         var d = r.data || {};
-        return [].concat(d.ongoing || [], d.planned || [], d.completed || []).map(function(p){
+        return [].concat(d.ongoing || [], d.submission || [], d.planned || [], d.completed || []).map(function(p){
           return item(p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner].join(' '),
             'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : ''));
         });

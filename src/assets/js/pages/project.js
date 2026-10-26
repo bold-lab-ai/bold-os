@@ -277,10 +277,16 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       html += '<span class="badge">' + OUTCOME_LABELS[card.outcome] + '</span>';
     }
     if (ws && ws.completedAt) html += '<span class="badge">Completed</span>';
+    else if (ws && ws.group === 'ongoing' && !ws.boardId) html += '<span class="badge">Ongoing</span>';
     // Marking it completed (or reopening it): its meeting is cancelled (or comes back).
     var done = !!(ws && ws.completedAt);
     // Join (or Leave, for whoever joined rather than registered or wrote it).
     html += joinButton();
+    // Ongoing (being worked on) or back to planned, before it's on a venue's board (then it's in submission).
+    if (!done && !(ws && ws.boardId)) {
+      html += '<button class="btn-box detail-remove" type="button" id="startProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
+        (ws && ws.startedAt ? 'Back to planned' : 'Mark as ongoing') + '</button>';
+    }
     html += '<button class="btn-box detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
       (done ? 'Reopen project' : 'Mark as completed') + '</button>';
     html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
@@ -300,6 +306,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     wireAbstract();
     el('removeProject').addEventListener('click', removeProject);
     el('completeProject').addEventListener('click', completeProject);
+    if (el('startProject')) el('startProject').addEventListener('click', startProject);
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t, i, all){
       t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); });
       t.addEventListener('keydown', function(e){
@@ -966,6 +973,20 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       ? { title: 'Reopen \u201c' + card.title + '\u201d?', go: 'Reopen', effects: meeting ? ['Put its meeting back on Google Calendar: Google emails its guests'] : [] }
       : { title: 'Mark \u201c' + card.title + '\u201d as completed?', go: 'Mark completed', effects: meeting ? ['Cancel its meeting on Google Calendar: Google tells everyone on it'] : [] })
       .then(function(ok){ if (ok) sendComplete(reopen); });
+  }
+  function startProject(){
+    var back = !!(ws && ws.startedAt);
+    wsBusy = true; render();
+    callWorkspace({ action: back ? 'plan' : 'start' }).then(function(){
+      wsBusy = false;
+      // The Projects page's cached list still has it in its old tab.
+      try { localStorage.removeItem(CACHE_KEY + me.email.toLowerCase()); } catch (e){}
+      if (!editing) render();
+    }).catch(function(err){
+      console.error('[BOLD Lab] marking the project ' + (back ? 'planned' : 'ongoing') + ' failed', err);
+      wsBusy = false; render();
+      window.alert((err && err.message) || 'That didn\u2019t work \u2014 try again.');
+    });
   }
   function sendComplete(reopen){
     wsBusy = true; render();

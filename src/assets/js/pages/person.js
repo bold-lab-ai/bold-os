@@ -26,9 +26,9 @@
       row('Meeting', s.meeting ? esc(meetingText(s.meeting)) + (s.meeting.link ? ' <span class="acct-handle">· own link</span>' : '') : '') + '</dl>';
   }
 
-  // Planned, Ongoing and Completed, as on the profile's Projects tab.
+  // Ongoing, In submission, Planned and Completed, as on the Projects page.
   function projectsHtml(list){
-    return [['ongoing', 'Ongoing'], ['planned', 'Planned'], ['completed', 'Completed']].map(function(g){
+    return [['ongoing', 'Ongoing'], ['submission', 'In submission'], ['planned', 'Planned'], ['completed', 'Completed']].map(function(g){
       var items = list.filter(function(w){ return (w.group || 'ongoing') === g[0]; });
       return '<div class="proj-group"><h3>' + g[1] + '<span class="proj-count">' + (items.length || '') + '</span></h3><ul class="proj-list">' +
         (items.length ? items.map(function(w){

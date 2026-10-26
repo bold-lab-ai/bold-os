@@ -54,7 +54,7 @@ window.BoldProjectLinks = (function(){
       }).catch(function(err){ console.error('[BOLD Events] loading the projects presented here failed', err); });
     }
 
-    // The viewer's planned and ongoing projects, where they can add a presentation:
+    // The viewer's projects not yet completed, where they can add a presentation:
     // from the server, which sets up any registered before projects had workspaces.
     var mineLoading = false;
     function loadMine(){

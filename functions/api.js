@@ -23,7 +23,7 @@ const crypto = require('crypto');
 
 module.exports = function(deps){
   const { db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite,
-    allProjectsFromCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
+    allProjectsFromCards, projectGroupForCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
     SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl, skillMd, onSchedule, access } = deps;
 
   const TOKENS_PER_PERSON = 5, RATE_PER_MINUTE = 60, LOG_DAYS = 90;
@@ -246,7 +246,7 @@ module.exports = function(deps){
     const [boards, cards, unassigned, workspaces] = await Promise.all([lab.boards(), lab.cards(), lab.unassigned(), lab.workspaces()]);
     return allProjectsFromCards(
       boards.map((b) => ({ id: b._id, label: b.label, status: b.status || 'approved' })), cards, unassigned,
-      workspaces.filter((w) => w.completedAt > 0).map((w) => w._id));
+      workspaces.filter((w) => w.completedAt > 0).map((w) => w._id), workspaces.filter((w) => w.startedAt > 0).map((w) => w._id));
   }
   function isHidden(ev, full){ return ev.hidden !== false && !full; }
 
@@ -361,9 +361,9 @@ module.exports = function(deps){
     },
     {
       name: 'list_projects',
-      description: 'The lab’s research projects, as on the Projects page: planned, ongoing and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
+      description: 'The lab’s research projects, as on the Projects page: planned, ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
       inputSchema: { type: 'object', properties: {
-        group: { type: 'string', enum: ['planned', 'ongoing', 'completed'] },
+        group: { type: 'string', enum: ['planned', 'ongoing', 'submission', 'completed'] },
         keyword: { type: 'string', description: 'A project keyword, e.g. "reinforcement learning".' },
         query: { type: 'string', description: 'Words in the title, abstract, keywords or people.' },
         mine: { type: 'boolean', description: 'Only projects you are a member of.' },
@@ -491,7 +491,7 @@ module.exports = function(deps){
       ss.forEach((x) => item('events', x.title, 'Session', talk(x), 'session.html?session=' + encodeURIComponent(x._id)));
       ts.forEach((x) => item('events', x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(x._id)));
     }));
-    if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.ongoing, g.planned, g.completed).forEach((p) =>
+    if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
       item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
     if (want('people')) jobs.push(Promise.all([lab.members(), profileUrlOf()]).then(([ms, profile]) => ms.forEach((x) => {
       const p = profile(x.email || x._id);
@@ -550,7 +550,7 @@ module.exports = function(deps){
     workspaces.forEach((w) => { members[w._id] = w.members || []; });
     const ws = words(a.query), kw = fold(a.keyword);
     let rows = [];
-    ['ongoing', 'planned', 'completed'].forEach((group) => {
+    ['ongoing', 'submission', 'planned', 'completed'].forEach((group) => {
       if (a.group && a.group !== group) return;
       g[group].forEach((p) => {
         const id = p.pid || p.projectId || p.cardId;
@@ -579,10 +579,9 @@ module.exports = function(deps){
     const card = mine[mine.length - 1].data, w = workspaces.find((x) => x._id === pid) || {};
     const presentations = (await db.collection('projectWorkspaces').doc(pid).collection('presentations').get()).docs.map((d) => d.data())
       .map((t) => ({ title: t.title, type: t.type, date: t.date || '', presenter: t.presenter && (t.presenter.name || name(t.presenter.email)), slides: t.slidesUrl || '', recording: t.recordingUrl || '' }));
-    const completed = !!w.completedAt || card.status === 'conference' || card.outcome === 'accepted';
     return {
       id: pid, title: card.title || 'Untitled', url: url(projectHref(mine[mine.length - 1].id, mine[mine.length - 1].boardId)),
-      group: completed ? 'completed' : card.status === 'register' || card.status === 'pitch' ? 'planned' : 'ongoing',
+      group: projectGroupForCards(mine, !!w.completedAt, !!w.startedAt),
       stage: card.status || '', outcome: card.outcome || '',
       venues: mine.map((c) => ({ venue: c.boardId ? labels[c.boardId] : 'No venue yet', stage: c.data.status || '', outcome: c.data.outcome || '' })),
       abstract: card.abstractText || '', keywords: card.keywords || [],

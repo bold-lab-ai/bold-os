@@ -325,7 +325,7 @@ module.exports = function(ctx){
         return { ok: true, changed: Object.keys(patch).filter((k) => k !== 'updatedAt') };
       }
       case 'remove': await asUser(who, 'delete', cardPath(c)); return { ok: true };
-      case 'join': case 'leave': case 'complete': case 'reopen': case 'pause_meeting': case 'resume_meeting':
+      case 'join': case 'leave': case 'start': case 'plan': case 'complete': case 'reopen': case 'pause_meeting': case 'resume_meeting':
         await act(who, 'projectWorkspace', Object.assign({ action: a.action.replace('_meeting', '') }, ws));
         return { ok: true, project: c.data.title };
       case 'set_meeting': case 'remove_meeting':
@@ -617,8 +617,8 @@ module.exports = function(ctx){
         remove: { type: 'boolean', description: 'A tool: propose removing it.' },
         note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
-      description: 'Projects, as on the Projects page and a project’s page: register a new one (with its Slack channel, created if new), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
-      inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
+      description: 'Projects, as on the Projects page and a project’s page: register a new one (with its Slack channel, created if new), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to planned (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
+      inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
         id: str('The project id (list_projects), for all but register.'), title: str(''), abstract: str(''), keywords: { type: 'array', items: { type: 'string' } },
         slack_channel: str('register, update: "proj-…".'), overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },

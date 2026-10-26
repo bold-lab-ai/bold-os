@@ -1948,7 +1948,7 @@ exports.getMyProjects = onCall(
     out.owner = out.owner.concat(ownSnap.docs.map(loose));
     out.author = out.author.concat(authSnap.docs.map(loose));
     const listed = new Set(out.owner.concat(out.author).map((i) => i.cardId));
-    const GROUP = { planned: 'Planned', ongoing: 'Ongoing', completed: 'Completed' };
+    const GROUP = { planned: 'Planned', ongoing: 'Ongoing', submission: 'In submission', completed: 'Completed' };
     out.member = wsSnap.docs.map((d) => d.data()).filter((w) => w.cardId && !listed.has(w.cardId) &&
       !(w.venues || []).some((v) => listed.has(v.cardId)))
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
@@ -1957,15 +1957,17 @@ exports.getMyProjects = onCall(
   }
 );
 
-// Which of the Projects page's three groups a card belongs to. Completed =
+// Which of the Projects page's four groups a card belongs to. Completed =
 // accepted at a venue (the last column, or the outcome Accepted), or marked
 // completed on its project page (`completed`: its workspace's completedAt);
-// Planned = not yet drafted (Registered/Pitched); Ongoing = the rest, a rejected
-// or withdrawn paper included: the project goes on.
-function projectGroupForCard(card, completed){
+// In submission (`submission`) = on a venue's board (`onBoard`), with no outcome yet;
+// Ongoing = being worked on: marked so on its project page (`started`: its
+// workspace's startedAt), or rejected or withdrawn at a venue (the project goes on);
+// Planned = the rest.
+function projectGroupForCard(card, completed, onBoard, started){
   if (completed || card.status === 'conference' || card.outcome === 'accepted') return 'completed';
-  if (card.status === 'register' || card.status === 'pitch') return 'planned';
-  return 'ongoing';
+  if (onBoard && !card.outcome) return 'submission';
+  return onBoard || started ? 'ongoing' : 'planned';
 }
 
 // Pure: every card → the Projects page's three lists, most recently updated
@@ -1974,9 +1976,10 @@ function projectGroupForCard(card, completed){
 // projects registered without a venue yet (top-level `projects` collection).
 // Both are cards in the same shape (src/assets/js/card-model.js); the only
 // difference is that an unassigned one has no board, so no boardId/link.
-// `completedIds`: cards marked completed on their project page (workspaces' completedAt).
-function allProjectsFromCards(boards, cards, unassigned, completedIds){
-  const done = new Set(completedIds || []);
+// `completedIds` / `startedIds`: projects marked completed / ongoing on their project page
+// (workspaces' completedAt / startedAt).
+function allProjectsFromCards(boards, cards, unassigned, completedIds, startedIds){
+  const done = new Set(completedIds || []), started = new Set(startedIds || []);
   const labels = {};
   boards.forEach(function(b){ if (b.status !== 'pending') labels[b.id] = b.label || b.id; });
   const entries = [];
@@ -1994,7 +1997,7 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds){
   };
   cards.forEach(function(c){
     if (!(c.boardId in labels)) return;
-    entries.push({ pid: projectIdOf(c.data, c.id), d: c.data, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
+    entries.push({ pid: projectIdOf(c.data, c.id), d: c.data, boardId: c.boardId, item: Object.assign(base(c.id, c.data), { boardId: c.boardId, boardLabel: labels[c.boardId], cardId: c.id }) });
   });
   (unassigned || []).forEach(function(u){
     entries.push({ pid: projectIdOf(u.data, u.id), d: u.data, item: Object.assign(base(u.id, u.data), { projectId: u.id }) });
@@ -2007,9 +2010,9 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds){
     const last = list[list.length - 1];
     if (list.length > 1) last.item.earlier = list.length - 1;
     last.item.pid = pid;
-    return { group: projectGroupForCards(list.map(function(e){ return e.d; }), done.has(pid)), updatedAt: Math.max.apply(null, list.map(function(e){ return e.d.updatedAt || 0; })), item: last.item };
+    return { group: projectGroupForCards(list.map(function(e){ return { data: e.d, boardId: e.boardId || null }; }), done.has(pid), started.has(pid)), updatedAt: Math.max.apply(null, list.map(function(e){ return e.d.updatedAt || 0; })), item: last.item };
   });
-  const out = { ongoing: [], completed: [], planned: [] };
+  const out = { ongoing: [], submission: [], completed: [], planned: [] };
   rows
     .sort(function(a, b){ return b.updatedAt - a.updatedAt; })
     .forEach(function(r){ out[r.group].push(r.item); });
@@ -2042,19 +2045,21 @@ exports.getAllProjects = onCall(
   async (request) => {
     const email = signedInEmail(request);
     await access.requireAccess(email, 'projects', 'view');   // Who can see what
-    const [boardsSnap, cardsSnap, unassignedSnap, doneSnap] = await Promise.all([
+    const [boardsSnap, cardsSnap, unassignedSnap, doneSnap, startedSnap] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
       db.collection('projects').get(),
-      db.collection('projectWorkspaces').where('completedAt', '>', 0).get()
+      db.collection('projectWorkspaces').where('completedAt', '>', 0).get(),
+      db.collection('projectWorkspaces').where('startedAt', '>', 0).get()
     ]);
     const groups = allProjectsFromCards(
       boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
       cardsSnap.docs.map(function(d){ return { boardId: d.ref.parent.parent.id, id: d.id, data: d.data() }; }),
       unassignedSnap.docs.map(function(d){ return { id: d.id, data: d.data() }; }),
-      doneSnap.docs.map(function(d){ return d.id; })
+      doneSnap.docs.map(function(d){ return d.id; }),
+      startedSnap.docs.map(function(d){ return d.id; })
     );
-    const items = groups.ongoing.concat(groups.completed, groups.planned);
+    const items = groups.ongoing.concat(groups.submission, groups.completed, groups.planned);
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
     return groups;
@@ -2564,17 +2569,18 @@ async function projectCards(pid){
   return out.sort(function(a, b){ return (a.data.createdAt || 0) - (b.data.createdAt || 0); });
 }
 
-// Pure: a project's group from its cards (oldest first): completed if marked so or
-// accepted at any venue; otherwise its latest card's.
-function projectGroupForCards(cards, completed){
-  if (completed || cards.some(function(c){ return projectGroupForCard(c) === 'completed'; })) return 'completed';
-  return projectGroupForCard(cards[cards.length - 1]);
+// Pure: a project's group from its cards ([{ data, boardId }], oldest first): completed
+// if marked so or accepted at any venue; otherwise its latest card's.
+function projectGroupForCards(cards, completed, started){
+  if (completed || cards.some(function(c){ return projectGroupForCard(c.data) === 'completed'; })) return 'completed';
+  const last = cards[cards.length - 1];
+  return projectGroupForCard(last.data, false, !!last.boardId, started);
 }
 
 // What a page reads: the workspace, as stored.
 function workspaceView(ws){
   const out = {};
-  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
+  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'startedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
     'deckUrl', 'notesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   return out;
 }
@@ -2742,8 +2748,8 @@ async function syncWorkspace(id, changes){
     patch.pendingRepo = FieldValue.delete();
     patch.again = FieldValue.delete();
     patch.title = card.title || 'Untitled project';
-    // Planned, ongoing or completed, as on the Projects page (the meetings page leaves out completed ones).
-    patch.group = projectGroupForCards(cards.map(function(c){ return c.data; }), !!ws.completedAt);
+    // Planned, ongoing, in submission or completed, as on the Projects page (the meetings page leaves out completed ones).
+    patch.group = projectGroupForCards(cards, !!ws.completedAt, !!ws.startedAt);
     patch.slackChannel = card.slackChannel || '';
     const everyone = [];
     cards.forEach(function(c){ projectMembers(c.data, []).forEach(function(e){ if (everyone.indexOf(e) < 0) everyone.push(e); }); });
@@ -2982,6 +2988,8 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 //   editors only; once made, it stays.
 // - 'complete' / 'reopen': marks the project completed (its meeting is cancelled) or
 //   not; editors only.
+// - 'start' / 'plan': marks the project ongoing (being worked on) or back to planned;
+//   editors only. On a venue's board it's in submission either way.
 // - 'pause' / 'resume': pauses its meeting (its upcoming dates come off Google Calendar;
 //   the same event, invitation and Meet link stay) or brings it back; editors only. Completion by acceptance at a venue needs neither.
 // - 'submit': submits the project to another venue ({ venue, card }: a card the page
@@ -2993,7 +3001,7 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // Whatever was skipped when it was registered is in the workspace's `skipped`
 // ('channel', 'announce', 'meeting', 'docs', 'repo'); the page offers each again.
 // - 'templates': no project; the org's template repositories → { templates: [{ name, description }] }.
-// - 'mine': no project; the caller's planned and ongoing projects, set up if they
+// - 'mine': no project; the caller's projects not yet completed, set up if they
 //   weren't yet → { projects: [{ id, title, cardId, boardId }] }.
 // - 'venues': no project; the approved venues → { venues: [{ id, label, deadline }] }.
 // → the workspace (workspaceView), plus { slack: { status, url } | { error } } on 'join'.
@@ -3063,7 +3071,7 @@ exports.projectWorkspace = onCall(
     const data = request.data || {};
     if (data.action === 'templates') return { templates: await projectTemplates() };
     if (data.action === 'mine'){
-      // The caller's planned and ongoing projects: those whose cards name them (as
+      // The caller's projects not yet completed: those whose cards name them (as
       // submitter or author) or that they joined. Any registered before workspaces
       // existed is set up now, so it can take presentations (firestore.rules).
       const [boardsSnap, cardsSnap, unassignedSnap, wsSnap] = await Promise.all([
@@ -3077,12 +3085,13 @@ exports.projectWorkspace = onCall(
       const groups = allProjectsFromCards(
         boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
         venueCards, ownCards,
-        Object.keys(ws).filter(function(id){ return ws[id].completedAt; }));
+        Object.keys(ws).filter(function(id){ return ws[id].completedAt; }),
+        Object.keys(ws).filter(function(id){ return ws[id].startedAt; }));
       const named = {};
       venueCards.concat(ownCards).forEach(function(c){
         if (projectMembers(c.data, []).indexOf(email) >= 0) named[projectIdOf(c.data, c.id)] = true;
       });
-      const mine = groups.planned.concat(groups.ongoing).filter(function(i){
+      const mine = groups.planned.concat(groups.ongoing, groups.submission).filter(function(i){
         return named[i.pid] || (ws[i.pid] && (ws[i.pid].joined || []).indexOf(email) >= 0);
       });
       for (const i of mine) if (!ws[i.pid]) await syncWorkspace(i.pid);
@@ -3126,6 +3135,15 @@ exports.projectWorkspace = onCall(
       await wsRef.set(data.action === 'pause'
         ? { pausedAt: Date.now(), pausedBy: email }
         : { pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() }, { merge: true });
+      return workspaceView(await syncWorkspace(pid));
+    }
+
+    // Ongoing (being worked on) or back to planned; a project on a venue's board is in submission either way.
+    if (data.action === 'start' || data.action === 'plan'){
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
+      await wsRef.set(data.action === 'start'
+        ? { startedAt: Date.now(), startedBy: email }
+        : { startedAt: FieldValue.delete(), startedBy: FieldValue.delete() }, { merge: true });
       return workspaceView(await syncWorkspace(pid));
     }
 
@@ -5417,7 +5435,7 @@ async function tellStaff(text, except){
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
-const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, groupOf, SITE_URL,
+const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, projectGroupForCards, groupOf, SITE_URL,
   SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], SLACK_BOT_TOKEN,
   // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
   tellStaff,

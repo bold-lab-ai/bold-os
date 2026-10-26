@@ -168,9 +168,9 @@
   var filters = { q: '', author: '', keyword: '' };
   var autoTab = false;                                 // arrived with a filter: open a tab that has matches
 
-  // Older cached lists have no `authors`; refetch those.
+  // Older cached lists have no `authors`, or no `submission` group; refetch those.
   function hasAuthors(d){
-    return ['ongoing', 'completed', 'planned'].every(function(g){
+    return Array.isArray(d.submission) && ['ongoing', 'submission', 'completed', 'planned'].every(function(g){
       // …and lists from before projects spanned venues (no `pid`): refetch those too.
       return (d[g] || []).every(function(p){ return Array.isArray(p.authors) && p.pid; });
     });
@@ -202,7 +202,7 @@
   // Options for the two selects, from every project (not only the visible ones).
   function fillOptions(){
     var authors = {}, keywords = {};
-    ['ongoing', 'completed', 'planned'].forEach(function(g){
+    ['ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
       ((current && current[g]) || []).forEach(function(p){
         people(p).forEach(function(o){ authors[o.key] = o.name; });
         (p.keywords || []).forEach(function(k){ keywords[k] = (keywords[k] || 0) + 1; });
@@ -257,7 +257,7 @@
 
   function renderLists(){
     if (!current) return;
-    var groups = [['projOngoing', current.ongoing, 'cntOngoing', 'ongoing'], ['projCompleted', current.completed, 'cntCompleted', 'completed'], ['projPlanned', current.planned, 'cntPlanned', 'planned']];
+    var groups = [['projOngoing', current.ongoing, 'cntOngoing', 'ongoing'], ['projSubmission', current.submission, 'cntSubmission', 'submission'], ['projCompleted', current.completed, 'cntCompleted', 'completed'], ['projPlanned', current.planned, 'cntPlanned', 'planned']];
     var shown = {};
     groups.forEach(function(g){
       var ul = el(g[0]); ul.innerHTML = '';
@@ -277,7 +277,7 @@
       autoTab = false;
       var active = tabs.filter(function(t){ return t.classList.contains('active'); })[0];
       if (!active || !shown[active.getAttribute('data-tab')]) {
-        var first = ['ongoing', 'planned', 'completed'].filter(function(n){ return shown[n]; })[0];
+        var first = ['ongoing', 'submission', 'planned', 'completed'].filter(function(n){ return shown[n]; })[0];
         if (first) { setTab(first); syncHash(); }
       }
     }

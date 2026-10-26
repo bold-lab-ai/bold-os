@@ -26,10 +26,10 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
 
   var KIND_LABELS = { event: 'Event', project: 'Project', study: 'Supervision', series: 'Recurring' };
-  var GROUP_LABELS = { planned: 'Planned', ongoing: 'Ongoing' };
+  var GROUP_LABELS = { planned: 'Planned', ongoing: 'Ongoing', submission: 'In submission' };
   function kindBadge(k){ return '<span class="type-badge cal-' + k + '">' + KIND_LABELS[k] + '</span>'; }
-  // The Projects page's badge: Ongoing in the accent, Planned plain.
-  function groupBadge(w){ return GROUP_LABELS[w.group] ? '<span class="badge' + (w.group === 'ongoing' ? ' badge-stage' : '') + '">' + GROUP_LABELS[w.group] + '</span>' : ''; }
+  // The Projects page's badge: Ongoing and In submission in the accent, Planned plain.
+  function groupBadge(w){ return GROUP_LABELS[w.group] ? '<span class="badge' + (w.group !== 'planned' ? ' badge-stage' : '') + '">' + GROUP_LABELS[w.group] + '</span>' : ''; }
 
   function isMe(email){ return !!(me && me.email && String(email).toLowerCase() === me.email.toLowerCase()); }
   function shown(k){ return kind === 'all' || kind === k; }
