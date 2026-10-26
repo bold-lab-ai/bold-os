@@ -301,18 +301,89 @@
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
   };
 
+  /* ---------- who can see what ---------- */
+
+  // The BOLDiquette's Who can see what (settings/access, functions/access.js): for each
+  // page (area), the lowest group of Who is BOLD that may view it, edit on it and propose
+  // changes on it. The viewer's group is their members/{email} `category` (PAN-BOLD
+  // without one; getMyAccess, where the page has functions, also counts PIs and admins
+  // as BOLD-exec). The rules enforce it; this only decides what the page shows.
+  var LEVELS = ['everyone', 'pan', 'associate', 'internal', 'staff', 'exec', 'none'];
+  var LEVEL_NAMES = { everyone: 'Everyone', pan: 'PAN-BOLD', associate: 'BOLD-associate', internal: 'BOLD-internal', staff: 'BOLD-staff', exec: 'BOLD-exec', none: 'nobody' };
+  function rankOf(level){ var i = LEVELS.indexOf(level); return i < 0 ? 3 : i; }
+  var access = null, accessListeners = [];
+  // The last visit's, for the first paint (same person only).
+  try {
+    var seen = JSON.parse(localStorage.getItem('boldAccess') || 'null');
+    if (seen && hint && seen.e === hint.e) access = seen;
+  } catch (e){}
+  function setAccess(a){
+    access = a;
+    try { if (a.e) localStorage.setItem('boldAccess', JSON.stringify(a)); else localStorage.removeItem('boldAccess'); } catch (e){}
+    accessListeners.slice().forEach(function(fn){ fn(a); });
+  }
+  function levelFor(area, what){ return ((access && access.pages && access.pages[area]) || {})[what] || 'internal'; }
+  // Whether the viewer may view | edit | propose on `area` (a page key: projects, …).
+  BOLD.can = function(area, what){
+    if (!access) return false;
+    var level = levelFor(area, what || 'view');
+    return level !== 'none' && rankOf(access.group) >= rankOf(level);
+  };
+  // Why not, for a disabled control's tooltip.
+  BOLD.cannotReason = function(area, what){
+    var level = levelFor(area, what || 'view');
+    return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can see what).';
+  };
+  BOLD.myGroup = function(){ return access ? access.group : null; };
+  // fn(access) once known and on every change; replayed at once if known.
+  BOLD.onAccess = function(fn){ accessListeners.push(fn); if (access) fn(access); };
+  function loadAccess(user){
+    if (!firebase.firestore) return;
+    var db = firebase.firestore(BOLD.getApp());
+    var table = db.collection('settings').doc('access').get().then(function(s){ return (s.exists && s.data().pages) || {}; }).catch(function(){ return {}; });
+    if (!user) { table.then(function(pages){ setAccess({ e: '', group: 'everyone', pages: pages }); }); return; }
+    var mine = db.collection('members').doc(String(user.email || '').toLowerCase()).get().then(function(s){
+      var c = s.exists && s.data().category;
+      return LEVELS.indexOf(c) > 0 && c !== 'none' ? c : 'pan';
+    }).catch(function(){ return 'pan'; });
+    Promise.all([table, mine]).then(function(r){
+      setAccess({ e: user.email || '', group: r[1], pages: r[0] });
+      // PIs and admins count as BOLD-exec, which only the server knows.
+      if (r[1] !== 'exec' && firebase.functions) {
+        firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(x){
+          var d = x.data || {};
+          if (d.group && d.group !== r[1]) setAccess({ e: user.email || '', group: d.group, pages: d.pages || r[0] });
+        }).catch(function(){});
+      }
+    });
+  }
+
   /* ---------- shell: sidebar state + gating ---------- */
+
+  // The gate when signed in but the page is for groups above theirs.
+  function showLevelGate(gate, area){
+    if (!gate) return;
+    var level = levelFor(area, 'view');
+    gate.innerHTML = '<div class="gate-box"><h1>Not open to your group</h1>' +
+      '<p>This page is for ' + esc(LEVEL_NAMES[level]) + ' and above; you’re in ' + esc(LEVEL_NAMES[access.group] || 'PAN-BOLD') + '. ' +
+      '<a href="boldiquette.html#access">Who can see what</a>.</p>' +
+      '<a class="gate-signup-btn" href="profile.html">Ask for another group on your profile</a></div>';
+    gate.hidden = false;
+  }
 
   // Called right after the opening <div class="shell">.
   BOLD.mountShell = function(){
     var shell = document.getElementById('shell');
     // Saved sidebar state, applied before first paint so it doesn't animate in.
     try { if (localStorage.getItem('boldNavCollapsed') === '1') shell.classList.add('is-collapsed'); } catch (e){}
+    if (BOLD.getAuth()) BOLD.onUser(loadAccess);
     if (shell.hasAttribute('data-public')) return;
+    // The page's area in Who can see what (front matter `area`); without one, BOLD-internal's.
+    var area = shell.getAttribute('data-area') || 'internal';
 
-    // Gated page: hidden until signed in. A cached sign-in shows it at once
+    // Gated page: hidden until signed in and allowed. A cached sign-in shows it at once
     // instead of after Firebase Auth resolves; auth stays authoritative.
-    shell.hidden = !hint;
+    shell.hidden = !hint || !BOLD.can(area, 'view');
     if (!BOLD.getAuth()) {
       document.addEventListener('DOMContentLoaded', function(){
         var gate = document.getElementById('pageGate');
@@ -327,16 +398,34 @@
     BOLD.onUser(function(user){
       var gate = document.getElementById('pageGate');
       if (gate) gate.hidden = !!user;
-      shell.hidden = !user;
+      if (!user) shell.hidden = true;
+    });
+    BOLD.onAccess(function(a){
+      if (!a.e) return;   // signed out: the sign-in gate above
+      var ok = BOLD.can(area, 'view');
+      shell.hidden = !ok;
+      if (!ok) {
+        var show = function(){ showLevelGate(document.getElementById('pageGate'), area); };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+      }
     });
   };
+
+  // The sidebar shows only the pages the viewer may view ([data-area] on its groups and links).
+  function sidebarAccess(){
+    BOLD.onAccess(function(){
+      Array.prototype.forEach.call(document.querySelectorAll('#sidebar [data-area]'), function(el){
+        el.hidden = !BOLD.can(el.getAttribute('data-area'), 'view');
+      });
+    });
+  }
 
   /* ---------- sidebar: BOLDiquette's sections, the events, the skills and the guides ---------- */
 
   // A group's sub-links come from Firestore: [data-nav-<key>] is filled from
   // load() → [{ title, href }]. The last list seen paints first (localStorage
   // `cacheKey`); Firestore stays authoritative.
-  function firestoreNav(key, cacheKey, load){
+  function firestoreNav(key, cacheKey, area, load){
     var group = document.querySelector('[data-nav-' + key + ']');
     if (!group) return;
     var page = location.pathname.split('/').pop() || 'index.html';
@@ -357,8 +446,8 @@
       if (anyActive) label.classList.remove('active');
     }
     try { draw(JSON.parse(localStorage.getItem(cacheKey) || '[]')); } catch (e){}
-    BOLD.onUser(function(user){
-      if (!user || !firebase.firestore) return;
+    BOLD.onAccess(function(){
+      if (!BOLD.can(area, 'view') || !firebase.firestore) return;
       load(firebase.firestore(BOLD.getApp())).then(function(list){
         draw(list);
         try { localStorage.setItem(cacheKey, JSON.stringify(list)); } catch (e){}
@@ -370,7 +459,7 @@
   // newest first: an event with its own page links there, the rest to
   // event.html?event=<slug>.
   function eventsNav(){
-    firestoreNav('events', 'boldNavEvents', function(db){
+    firestoreNav('events', 'boldNavEvents', 'events', function(db){
       return db.collection('events').where('hidden', '==', false).get().then(function(snap){
         return snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title; })
           .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; })
@@ -381,7 +470,7 @@
 
   // The skills (skills/{name} — see skills-common.js), by title.
   function skillsNav(){
-    firestoreNav('skills', 'boldNavSkills', function(db){
+    firestoreNav('skills', 'boldNavSkills', 'skills', function(db){
       return db.collection('skills').get().then(function(snap){
         return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.name; })
           .map(function(x){ return { title: x.title || x.name, href: 'skill.html?skill=' + encodeURIComponent(x.name) }; })
@@ -392,7 +481,7 @@
 
   // The how-to guides (guides/{slug} — see guides-common.js), by title.
   function guidesNav(){
-    firestoreNav('guides', 'boldNavGuides', function(db){
+    firestoreNav('guides', 'boldNavGuides', 'guides', function(db){
       return db.collection('guides').get().then(function(snap){
         return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug && !BOLD.GUIDE_PAGES[x.slug]; })
           .map(function(x){ return { title: x.title || x.slug, href: 'guide.html?guide=' + encodeURIComponent(x.slug) }; })
@@ -404,7 +493,7 @@
   // BOLDiquette's sections (handbook/boldiquette — see pages/guide.js), in
   // order, each linking to its heading on the page.
   function handbookNav(){
-    firestoreNav('handbook', 'boldNavHandbook', function(db){
+    firestoreNav('handbook', 'boldNavHandbook', 'boldiquette', function(db){
       return db.collection('handbook').doc('boldiquette').get().then(function(snap){
         var out = [];
         ((snap.exists && snap.data().parts) || []).forEach(function(p){
@@ -424,7 +513,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) { handbookNav(); eventsNav(); skillsNav(); guidesNav(); }
+    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');

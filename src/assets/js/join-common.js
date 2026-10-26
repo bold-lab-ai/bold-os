@@ -13,16 +13,16 @@ window.BoldJoin = (function(){
   // These roles have no end date.
   var NO_END = ['PI', 'Adjunct', 'Alumni', 'Collaborator'];
   // The BOLDiquette's groups (Who is BOLD). A member's is the one a PI or admin set
-  // (`category`: on the People page, or approving their request), else by role: PIs
-  // BOLD-exec, PhD students BOLD-internal, Staff BOLD-staff, everyone else PAN-BOLD (functions/index.js
-  // groupOf, kept in sync by hand).
+  // (`category`: on the People page, or approving their request, from their role), else
+  // PAN-BOLD (functions/index.js groupOf, kept in sync by hand).
   var CATEGORIES = [['exec', 'BOLD-exec'], ['staff', 'BOLD-staff'], ['internal', 'BOLD-internal'], ['associate', 'BOLD-associate'], ['pan', 'PAN-BOLD']];
   function categoryLabel(key){ var c = CATEGORIES.filter(function(x){ return x[0] === key; })[0]; return c ? c[1] : 'PAN-BOLD'; }
   function groupOf(m){
     m = m || {};
-    if (CATEGORIES.some(function(c){ return c[0] === m.category; })) return m.category;
-    return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : m.role === 'Staff' ? 'staff' : 'pan';
+    return CATEGORIES.some(function(c){ return c[0] === m.category; }) ? m.category : 'pan';
   }
+  // The group a role suggests when a request is approved (functions/index.js roleGroup).
+  function roleGroup(role){ return role === 'PI' ? 'exec' : role === 'PhD student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan'; }
   function groupBadge(g){ return '<span class="type-badge pp-' + g + '">' + esc(categoryLabel(g)) + '</span>'; }
   // How someone likes to receive feedback (functions/index.js JOIN_FEEDBACK, firestore.rules).
   var FEEDBACK = [
@@ -169,5 +169,5 @@ window.BoldJoin = (function(){
         row('Booking link', /^https:\/\/\S+$/.test(d.bookingUrl || '') ? '<a href="' + esc(d.bookingUrl) + '" target="_blank" rel="noopener">' + esc(d.bookingUrl.replace(/^https:\/\//, '')) + '</a>' : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, roleGroup: roleGroup, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
 })();

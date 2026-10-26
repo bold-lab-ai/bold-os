@@ -380,7 +380,7 @@
       var inv = r.invitedBy || {};
       var unconfirmed = !inv.name ? '' : inv.status === 'denied' ? inv.name + ' says they didn’t invite them.'
         : inv.status !== 'confirmed' ? inv.name + ' hasn’t confirmed inviting them yet.' : '';
-      BOLD.confirmAction({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack'] })
+      BOLD.confirmAction({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack', 'Put them in ' + BoldJoin.categoryLabel(BoldJoin.roleGroup(r.role)) + ' (change it on People)'] })
         .then(function(ok){ if (ok) run(function(){ return fn('decideJoinRequest')({ id: id, accept: true }); }); });
     } else if (t.classList.contains('jr-decline')) {
       if (window.confirm('Decline ' + r.name + '’s request? They aren’t told.')) run(function(){ return fn('decideJoinRequest')({ id: id, accept: false }); });

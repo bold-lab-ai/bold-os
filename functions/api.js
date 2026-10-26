@@ -24,7 +24,7 @@ const crypto = require('crypto');
 module.exports = function(deps){
   const { db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite,
     allProjectsFromCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
-    SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl, skillMd, onSchedule } = deps;
+    SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl, skillMd, onSchedule, access } = deps;
 
   const TOKENS_PER_PERSON = 5, RATE_PER_MINUTE = 60, LOG_DAYS = 90;
   const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -361,14 +361,26 @@ module.exports = function(deps){
     { name: 'list_tools', description: 'BOLD.OS’s own tools and the ones the lab has added (Tools pages), with how to propose a new tool or a change to one. with_code: true includes the added tools’ code.',
       inputSchema: { type: 'object', properties: { with_code: { type: 'boolean' } } }, run: (who, a) => added.listTools(who, a) },
   ];
+  // Who can see what (functions/access.js): each reading tool reads one page, and answers
+  // only if its person may view that page. Acting goes through the rules and callables,
+  // which check it themselves.
+  const TOOL_PAGE = { search: 'search', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+    calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
+  const pageOfTool = (name, args) => name === 'read_page' ? (String((args || {}).page || '').trim().toLowerCase() === 'boldiquette' ? 'boldiquette' : 'guides') : TOOL_PAGE[name];
+  async function mayView(who, page){
+    if (!page || await access.can(who.email, page, 'view')) return;
+    const level = ((await access.table())[page] || {}).view || 'internal';
+    throw httpError(403, 'That page is for ' + (require('./access').LEVEL_NAMES[level] || level) + ' and above (BOLDiquette › Who can see what).');
+  }
   const toolsFor = (who) => TOOLS.filter((t) => !t.write || who.write);
   // A tool by name: BOLD.OS's own, else one the lab's agents added (run in mcpSandbox).
   async function toolNamed(who, name){
     const t = TOOLS.find((x) => x.name === name);
-    if (t) return t;
+    if (t) return Object.assign({}, t, { run: async (w, args) => { await mayView(w, pageOfTool(t.name, args)); return t.run(w, args); } });
     const one = (await added.toolList(Object.assign({}, who, { write: true }))).find((x) => x.name === name);
     if (!one) return null;
-    return Object.assign({}, one, { run: (w, args) => added.runTool(w, name, args || {}) });
+    // The lab's added tools come from the Tools page.
+    return Object.assign({}, one, { run: async (w, args) => { await mayView(w, 'tools'); return added.runTool(w, name, args || {}); } });
   }
   async function runBuiltin(who, name, args){
     const t = TOOLS.find((x) => x.name === name);
@@ -629,7 +641,8 @@ module.exports = function(deps){
     return d.exists ? Object.assign({ _id: d.id }, d.data()) : null;
   }
   let docsModule = null;
-  const documents = () => docsModule || (docsModule = require('./api-resources')({ lab, url, httpError, isFullWrite, skillMd, freshSkill, toolItems: () => added.items(),
+  const documents = () => docsModule || (docsModule = require('./api-resources')({ lab, url, httpError, isFullWrite, skillMd, freshSkill, mayView,
+    canView: (who, page) => access.can(who.email, page, 'view'), toolItems: () => added.items(),
     tools: { listProjects, getProject, getPerson, calendar, myItems } }));
 
   // ---------- MCP (Streamable HTTP, stateless) ----------
@@ -663,9 +676,13 @@ module.exports = function(deps){
         });
       }
       case 'ping': return reply({});
-      case 'tools/list':
-        return reply({ tools: toolsFor(who).concat(await added.toolList(who)).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
+      case 'tools/list': {
+        const views = {};
+        await Promise.all(Object.values(TOOL_PAGE).filter((v, i, a) => a.indexOf(v) === i).map(async (pg) => { views[pg] = await access.can(who.email, pg, 'view'); }));
+        views.tools = views.tools || await access.can(who.email, 'tools', 'view');
+        return reply({ tools: toolsFor(who).filter((t) => !TOOL_PAGE[t.name] || views[TOOL_PAGE[t.name]]).concat(views.tools ? await added.toolList(who) : []).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
           annotations: { readOnlyHint: !t.write && !t.setup, destructiveHint: !!t.destructive || (!!t.added && !!t.write), idempotentHint: !t.write && !t.setup, openWorldHint: !!t.write } })) });
+      }
       case 'tools/call': {
         const tool = await toolNamed(who, p.name);
         if (!tool) return fail(-32602, 'Unknown tool: ' + p.name);

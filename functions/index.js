@@ -1352,6 +1352,10 @@ exports.flushCommentQueue = onSchedule(
 
 const REVIEWED = ['guides', 'handbook', 'skills', 'agentTools'];
 
+// Who can see what (functions/access.js): the BOLDiquette's table of who can view, edit
+// and propose on each page, by group, saved in settings/access when a change to it is accepted.
+const access = require('./access')({ db, groupOf, isFullWrite, HttpsError });
+
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q){
   // Several changes proposed together (a draft): each in turn, on the result of the last.
@@ -1457,6 +1461,13 @@ exports.decideProposal = onCall(
             try { fields = agentApi.checkTool(data.slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }
             catch (err) { throw new HttpsError('failed-precondition', 'It can’t be accepted as it is: ' + err.message); }
           }
+          // The BOLDiquette's Who can see what: only PIs' and admins' changes, and only a table
+          // the site can read; the site then enforces it (settings/access).
+          if (data.collection === 'handbook' && data.slug === 'boldiquette') {
+            const before = snap.exists ? snap.data().parts : [];
+            const pages = await access.checkTableChange(before, fields.parts || before, by);
+            if (pages) tx.set(db.collection('settings').doc('access'), { pages, updatedAt: now, updatedBy: email, proposedBy: by });
+          }
           if (creating) tx.set(ref, Object.assign(fields, { name: data.slug, createdAt: now, createdBy: by }, stamp));
           else tx.update(ref, Object.assign(fields, stamp));
         }
@@ -1464,7 +1475,7 @@ exports.decideProposal = onCall(
       const status = data.accept ? 'accepted' : 'declined';
       tx.update(qRef, { status, decidedBy: email, decidedByName: name, decidedAt: now });
       return { status };
-    });
+    }).then((r) => { access.forget(); return r; });
   }
 );
 
@@ -1804,8 +1815,9 @@ exports.getMyAccess = onCall(
   async (request) => {
     const email = signedInEmail(request);
     try { await recordSignUp(request.auth.uid, email.toLowerCase()); } catch (err){ logger.warn('Recording a first sign-in failed', { error: String(err && err.message || err) }); }
-    const [pis, admins] = await Promise.all([rolesEmails('pis'), rolesEmails('admins')]);
-    return { fullWrite: pis.indexOf(email) !== -1 || admins.indexOf(email) !== -1 };
+    const [pis, admins, group, pages] = await Promise.all([rolesEmails('pis'), rolesEmails('admins'), access.groupFor(email), access.table()]);
+    // Their group and Who can see what, for the pages to show what's theirs (BOLD.can).
+    return { fullWrite: pis.indexOf(email) !== -1 || admins.indexOf(email) !== -1, group, pages };
   }
 );
 
@@ -1813,6 +1825,7 @@ exports.getMyProfile = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = signedInEmail(request);
+    await access.requireAccess(email, 'profile', 'view');   // Who can see what
     const slackId = await slackIdForEmail(email);
     if (!slackId) return { fields: [] };
     const url = 'https://slack.com/api/users.profile.get?' +
@@ -1909,6 +1922,7 @@ function projectsFromDashboard(sections){
 exports.getMyProjects = onCall(
   async (request) => {
     const email = signedInEmail(request);
+    await access.requireAccess(email, 'profile', 'view');   // Who can see what
     const [sections, ownSnap, authSnap, wsSnap] = await Promise.all([
       gatherDashboard(email, PROFILE_PROJECTS_CAP),
       db.collection('projects').where('submittedBy.email', '==', email).get(),
@@ -2013,6 +2027,7 @@ exports.getAllProjects = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = signedInEmail(request);
+    await access.requireAccess(email, 'projects', 'view');   // Who can see what
     const [boardsSnap, cardsSnap, unassignedSnap, doneSnap] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
@@ -2050,6 +2065,7 @@ function keywordCounts(cardDatas){
 exports.getProjectKeywords = onCall(
   async (request) => {
     const email = signedInEmail(request);
+    await access.requireAccess(email, 'projects', 'view');   // Who can see what
     const [cardsSnap, projectsSnap] = await Promise.all([
       db.collectionGroup('cards').get(),
       db.collection('projects').get()
@@ -2176,6 +2192,7 @@ exports.projectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = signedInEmail(request);
+    await access.requireAccess(email, 'projects', 'view');   // Who can see what
     const data = request.data || {};
     const n = normalizeProjectChannel(data.name);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
@@ -2273,6 +2290,7 @@ exports.joinProjectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = signedInEmail(request);
+    await access.requireAccess(email, 'projects', 'edit');   // Who can see what
     const n = normalizeProjectChannel((request.data || {}).channel);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
     if (!(await isRegisteredProjectChannel(n.name))) throw new HttpsError('not-found', 'No project uses that Slack channel.');
@@ -2978,6 +2996,7 @@ exports.presentationFile = onCall(
   { secrets: [GOOGLE_OAUTH] },
   async (request) => {
     const email = callerEmail(request), data = request.data || {};
+    await access.requireAccess(email, 'projects', 'edit');   // Who can see what
     // owner: what the file is for ('project:<id>' or 'talk:<slug>'), and its title.
     let owner, title;
     if (data.talk){
@@ -3026,6 +3045,7 @@ exports.projectWorkspace = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540 },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'projects', 'view');   // Who can see what
     const data = request.data || {};
     if (data.action === 'templates') return { templates: await projectTemplates() };
     if (data.action === 'mine'){
@@ -3193,6 +3213,7 @@ function joinView(d){
 exports.joinHackathonTeam = onCall(
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     const github = String((request.data || {}).username || '').trim().replace(/^@/, '');
     if (!GITHUB_USERNAME.test(github)) throw new HttpsError('invalid-argument', 'That isn’t a GitHub username.');
     const ref = db.collection('hackathonJoins').doc(email);
@@ -3208,6 +3229,7 @@ exports.joinHackathonTeam = onCall(
 exports.hackathonJoinRequests = onCall(
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'events', 'view');   // Who can see what
     const mine = (await db.collection('hackathonJoins').doc(email).get()).data();
     if (!(await isFullWrite(email))) return { mine: mine ? joinView(mine) : null, canApprove: false };
     const all = (await db.collection('hackathonJoins').get()).docs.map(d => joinView(d.data()));
@@ -3233,6 +3255,7 @@ exports.approveHackathonJoins = onCall(
   { secrets: [GITHUB_APP] },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can approve.');
     const wanted = Array.isArray((request.data || {}).emails) ? request.data.emails.map(e => String(e).toLowerCase()) : null;
     const snap = await db.collection('hackathonJoins').where('status', 'in', ['requested', 'failed']).get();
@@ -3311,6 +3334,7 @@ exports.linkGithub = onCall(
   { secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const ref = db.collection('githubLinks').doc(email);
     const user = await admin.auth().getUser(request.auth.uid);
     const gh = (user.providerData || []).find((p) => p.providerId === 'github.com');
@@ -3354,6 +3378,7 @@ exports.linkGoogle = onCall(
   { secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const user = await admin.auth().getUser(request.auth.uid);
     const g = (user.providerData || []).filter(function(p){ return p.providerId === 'google.com'; })[0];
     const google = g && g.email ? g.email.toLowerCase() : '';
@@ -3547,6 +3572,7 @@ exports.studies = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'calendar', 'view');   // Who can see what
     const data = request.data || {};
     if (data.action === 'pause' || data.action === 'resume'){
       const student = String(data.student || email).trim().toLowerCase();
@@ -3607,6 +3633,7 @@ exports.studyRequest = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'calendar', 'view');   // Who can see what
     const d = request.data || {};
     const col = db.collection('studyRequests');
     const token = SLACK_BOT_TOKEN.value();
@@ -3735,7 +3762,8 @@ exports.syncPeople = onSchedule(
 exports.refreshPeople = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
-    callerEmail(request);
+    const email = callerEmail(request);
+    await access.requireAccess(email, 'events', 'view');   // Who can see what
     const last = (await db.collection('meta').doc('peopleSync').get()).data();
     if (last && Date.now() - last.at < 60 * 1000) return last;
     try {
@@ -3835,6 +3863,7 @@ function talkTextFields(edits, allowed){
 exports.editTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     const data = request.data || {};
     const talk = await findTalk(data.slug);
     if (!talk) throw new HttpsError('not-found', 'No such talk.');
@@ -3894,6 +3923,7 @@ exports.editTalk = onCall(
 exports.deleteSession = onCall(
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can delete a session.');
     const slug = String((request.data || {}).slug || '');
     if (!slug || slug.indexOf('/') >= 0) throw new HttpsError('invalid-argument', 'No such session.');
@@ -3932,6 +3962,7 @@ exports.deleteSession = onCall(
 exports.createTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     const data = request.data || {};
     const sessionSlug = String(data.sessionSlug || '');
     if (!(await sessionDoc(sessionSlug))) throw new HttpsError('not-found', 'No such session.');
@@ -4304,6 +4335,7 @@ exports.setMyInviter = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const to = String((request.data || {}).email || '').trim().toLowerCase();
     const ref = db.collection('members').doc(email);
     const m = await ref.get();
@@ -4332,6 +4364,7 @@ exports.confirmJoinInvite = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const d = request.data || {};
     if (d.member){
       const mref = db.collection('members').doc(String(d.member).toLowerCase());
@@ -4391,6 +4424,7 @@ exports.decideJoinRequest = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'requests', 'edit');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
     const d = request.data || {};
     if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
@@ -4401,14 +4435,17 @@ exports.decideJoinRequest = onCall(
       if (!snap.exists) throw new HttpsError('not-found', 'No such request.');
       const q = snap.data();
       if (q.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been ' + q.status + '.');
+      const m = db.collection('members').doc(q.email);
+      const had = d.accept ? await tx.get(m) : null;
       const status = d.accept ? 'approved' : 'declined';
       tx.update(ref, { status, decidedBy: email, decidedByName: name, decidedAt: Date.now() });
       if (d.accept) {
         // Their record in BOLD.OS: what they told us. They keep it up to date on their profile.
-        const m = db.collection('members').doc(q.email);
+        // Their group, unless a PI or admin already set one: what their role suggests.
         const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'invitedBy'];
         const rec = {};
         keep.forEach((k) => { if (q[k] !== undefined) rec[k] = q[k]; });
+        if (!(had.exists && GROUPS.indexOf(had.data().category) >= 0)) Object.assign(rec, { category: roleGroup(q.role), categoryBy: email, categoryAt: Date.now() });
         tx.set(m, Object.assign(rec, { requestId: d.id, approvedBy: email, approvedAt: Date.now() }), { merge: true });
       }
       return Object.assign({}, q, { status });
@@ -4426,6 +4463,7 @@ exports.sendWelcomeEmail = onCall(
   { secrets: [GOOGLE_OAUTH] },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'requests', 'edit');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
     const id = String((request.data || {}).id || '');
     if (!/^[A-Za-z0-9]{1,40}$/.test(id)) throw new HttpsError('invalid-argument', 'No such request.');
@@ -4447,10 +4485,11 @@ exports.retryWelcomeEmails = onSchedule(
 );
 
 // ---------- Groups: the BOLDiquette's Who is BOLD ----------
-// Every member is in one group: the one a PI or admin set (members' `category`, on the
-// People page, or by approving a request), else by role: PIs are BOLD-exec, PhD
-// students BOLD-internal, Staff BOLD-staff, everyone else PAN-BOLD (groupOf; BoldJoin.groupOf on the
-// pages, kept in sync by hand). A member asks for another group on their profile
+// Every member is in one group, the one a PI or admin set (members' `category`, on the
+// People page, or by approving a request); without one, PAN-BOLD (groupOf; BoldJoin.groupOf
+// on the pages, kept in sync by hand). The group decides what they can see (settings/access),
+// so it never follows anything a member edits: approving a request sets it from their role
+// (roleGroup: PIs BOLD-exec, PhD students BOLD-internal, Staff BOLD-staff, else PAN-BOLD). A member asks for another group on their profile
 // (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
 // requests. Each group but PAN-BOLD may have Slack channels (settings/groups.channels, set there:
 // one or more names, separated by commas, as "bold-internal, all-active-projects"), and each
@@ -4476,8 +4515,11 @@ function channelGroupsFor(g){
 // Pure: a member record → its group.
 function groupOf(m){
   m = m || {};
-  if (GROUPS.indexOf(m.category) >= 0) return m.category;
-  return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : m.role === 'Staff' ? 'staff' : 'pan';
+  return GROUPS.indexOf(m.category) >= 0 ? m.category : 'pan';
+}
+// Pure: a role → the group it suggests, when a request is approved.
+function roleGroup(role){
+  return role === 'PI' ? 'exec' : role === 'PhD student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan';
 }
 
 function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, '').toLowerCase(); }
@@ -4566,6 +4608,7 @@ exports.groupRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const d = request.data || {};
     const col = db.collection('groupRequests');
     const token = SLACK_BOT_TOKEN.value();
@@ -4749,6 +4792,7 @@ exports.letterRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'service-desk', 'edit');   // Who can see what
     const d = request.data || {};
     const token = SLACK_BOT_TOKEN.value();
     const myName = request.auth.token.name || email;
@@ -4851,7 +4895,8 @@ async function letterWriters(){
 
 // → { writers: [{ name, email }] }, for the "Who writes it" list.
 exports.letterWriters = onCall(async (request) => {
-  callerEmail(request);
+  const email = callerEmail(request);
+  await access.requireAccess(email, 'service-desk', 'view');   // Who can see what
   return { writers: await letterWriters() };
 });
 
@@ -4903,6 +4948,7 @@ exports.introRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'service-desk', 'edit');   // Who can see what
     const d = request.data || {};
     const token = SLACK_BOT_TOKEN.value();
     const me = await personFor(email);
@@ -5284,6 +5330,7 @@ exports.rebuildInteractions = onCall(
   { timeoutSeconds: 540, memory: '1GiB' },
   async (request) => {
     const email = callerEmail(request);
+    await access.requireAccess(email, 'people', 'view');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
     const docs = [];
     for (const c of INTERACTION_TOP) (await db.collection(c).get()).docs.forEach(function(s){ docs.push(s); });
@@ -5319,7 +5366,7 @@ async function tellStaff(text, except){
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
 // endpoint (boldApi), in functions/api.js.
-const agentApi = require('./api')({ db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, groupOf, SITE_URL,
+const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite, allProjectsFromCards, groupOf, SITE_URL,
   SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], SLACK_BOT_TOKEN,
   // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
   tellStaff,
@@ -5347,5 +5394,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, roleGroup, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
 };

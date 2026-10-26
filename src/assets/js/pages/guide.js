@@ -34,6 +34,15 @@
   if (!cfg.slug && BOLD.GUIDE_PAGES[slug]) { location.replace(BOLD.GUIDE_PAGES[slug] + location.hash); return; }
   var ref = !isNew && G.SLUG.test(slug) ? db.collection(COLLECTION).doc(slug) : null;
   var MAX_SIZE = 900000;
+  // Its page in Who can see what (BOLD.can): the BOLDiquette or the How to guides.
+  var AREA = COLLECTION === 'handbook' ? 'boldiquette' : 'guides';
+  // Why `p` (a part; none: the page) can't be suggested a change by this viewer, or ''.
+  function proposeOff(p){
+    if (!me) return 'Sign in to suggest a change';
+    if (!BOLD.can(AREA, 'propose')) return BOLD.cannotReason(AREA, 'propose');
+    if (p && p.id === 'access' && COLLECTION === 'handbook' && !fullWrite) return 'Only PIs and admins change who can see what';
+    return '';
+  }
 
   var x = null, loaded = false, fullWrite = false, me = null;
   var proposals = [];
@@ -161,12 +170,13 @@
     var editing = form && form.kind === 'edit' && form.id === p.id;
     if (editing) return '<section class="guide-part" id="' + anchor(p) + '">' + partFormHtml(p) + '</section>';
     if (form && form.kind === 'move' && form.id === p.id) return '<section class="guide-part" id="' + anchor(p) + '">' + moveFormHtml(p) + '</section>';
+    var why = proposeOff(p);
     var icon = function(cls, label, svg, off){
-      return '<button type="button" class="icon-btn ' + cls + '" data-id="' + esc(p.id) + '" aria-label="' + label + '" title="' + label + '"' + (off ? ' disabled' : '') + '>' + svg + '</button>';
+      return '<button type="button" class="icon-btn ' + cls + '" data-id="' + esc(p.id) + '" aria-label="' + label + '" title="' + esc(why || label) + '"' + (off || why ? ' disabled' : '') + '>' + svg + '</button>';
     };
     var q = viewed(), fold = !!folded[p.id] && !q;
     // The grip drags it above or below another part, or onto a tab (into your draft).
-    var grip = '<span class="icon-btn gd-grip" draggable="true" data-id="' + esc(p.id) + '" role="img" aria-label="Drag to move it" title="Drag to move it">' + GRIP + '</span>';
+    var grip = why ? '' : '<span class="icon-btn gd-grip" draggable="true" data-id="' + esc(p.id) + '" role="img" aria-label="Drag to move it" title="Drag to move it">' + GRIP + '</span>';
     return '<section class="guide-part' + (q && changedIds(q).indexOf(p.id) !== -1 ? ' gd-proposed' : '') + (fold ? ' is-folded' : '') + '" id="' + anchor(p) + '" data-pid="' + esc(p.id) + '">' +
       // Its controls on the title's line, before it.
       '<div class="guide-part-head">' +
@@ -458,7 +468,7 @@
       '<div class="guide-layout"><div class="guide-main">' +
       (adding && form.newTab ? '<section class="guide-part">' + partFormHtml(null) + '</section>' : foldAllHtml() + shown().map(partHtml).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
-        '<button type="button" class="event-add gd-add">' + '+ Suggest a new part' + '</button>')) +
+        '<button type="button" class="event-add gd-add"' + (proposeOff() ? ' disabled title="' + esc(proposeOff()) + '"' : '') + '>' + '+ Suggest a new part' + '</button>')) +
       proposalsHtml() + (readPoint ? readPoint.readersHtml() : '') + '</div>' + contentsHtml() + '</div></main>';
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
@@ -858,8 +868,14 @@
     if (readPoint && readPoint.click(e)) return;
     if (comments && comments.click(e)) return;
     var t = e.target.closest('button');
-    if (!t || t.disabled || !x || !me) return;
+    if (!t || t.disabled || !x) return;
     if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
+    if (t.classList.contains('gd-fold') && !me) {
+      var ofid = t.getAttribute('data-id');
+      keepInPlace(ofid, function(){ folded[ofid] = !folded[ofid]; saveFolded(); render(); });
+      return;
+    }
+    if (!me) return;
     if (t.classList.contains('gd-fold')) {
       var fid = t.getAttribute('data-id');
       keepInPlace(fid, function(){ folded[fid] = !folded[fid]; saveFolded(); render(); });
@@ -952,6 +968,8 @@
   }
 
   var unsubs = [], signIns = 0;
+  // What the viewer may do here (Who can see what) can arrive after the page is drawn.
+  BOLD.onAccess(function(){ if (loaded && !form) render(); });
   if (isNew) {
     BOLD.onUser(function(user){
       var mine = ++signIns;
@@ -1018,7 +1036,16 @@
     fullWrite = false;
     if (readPoint) readPoint.start(user);
     if (comments) comments.start(user);
-    if (!user) return;
+    // Signed out, the BOLDiquette is still there to read (Who can see what), without
+    // its proposals.
+    if (!user) {
+      unsubs.push(ref.onSnapshot(function(snap){
+        loaded = true; proposalsLoaded = true;
+        x = snap.exists ? Object.assign({}, snap.data(), { slug: slug }) : null;
+        refresh();
+      }, function(err){ console.error('[BOLD Guides] loading the guide failed', err); loaded = true; x = null; render(); }));
+      return;
+    }
     G.access(function(ok){ if (mine === signIns) { fullWrite = ok; refresh(); } });
     unsubs.push(ref.onSnapshot(function(snap){
       loaded = true;
