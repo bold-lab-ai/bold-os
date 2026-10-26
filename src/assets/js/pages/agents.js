@@ -1,7 +1,7 @@
 // agents.html: two tabs, Agents (#agents: personal API tokens, functions/api.js) and
-// Activity (#activity: their access log), both through apiTokens 'activity'. Yours by
-// default; PIs and admins also see Everyone's (#agents-everyone, #activity-everyone; the
-// old #everyone is Everyone's activity) and can revoke any token or stop it acting. Letting a token act is decided on the
+// Activity (#activity: their access log), both through apiTokens 'activity'. Yours; for
+// PIs and admins Everyone's by default, Yours on #agents-mine, #activity-mine (and the old
+// #mine), and they can revoke any token or stop it acting. The old #everyone is Activity. Letting a token act is decided on the
 // Requests page (join-requests.js, Agents tab).
 (function(){
   var root = document.getElementById('agents');
@@ -16,8 +16,8 @@
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) + (time ? ', ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) : '');
   }
   function tab(){ return /^#(activity|everyone)/.test(location.hash) ? 'activity' : 'agents'; }
-  function whose(){ return full && /everyone/.test(location.hash) ? 'everyone' : 'mine'; }
-  function hashFor(t, w){ return '#' + t + (w === 'everyone' ? '-everyone' : ''); }
+  function whose(){ return full && !/mine/.test(location.hash) ? 'everyone' : 'mine'; }
+  function hashFor(t, w){ return '#' + t + (full && w === 'mine' ? '-mine' : ''); }
 
   function render(){
     Array.prototype.forEach.call(document.querySelectorAll('#agTabs .guide-tab'), function(a){
@@ -27,7 +27,7 @@
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     whoseBar.hidden = !full;
-    whoseBar.innerHTML = [['mine', 'Yours'], ['everyone', 'Everyone’s']].map(function(w){
+    whoseBar.innerHTML = [['everyone', 'Everyone’s'], ['mine', 'Yours']].map(function(w){
       return '<a href="' + hashFor(tab(), w[0]) + '"' + (w[0] === whose() ? ' class="is-current" aria-current="true"' : '') + '>' + w[1] + '</a>';
     }).join(' · ');
     if (!data) { root.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }

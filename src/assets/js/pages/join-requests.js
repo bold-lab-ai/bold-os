@@ -178,7 +178,7 @@
       '<section class="profile-panel" id="groups">' +
         list(gOpen, groupReqHtml, 'No requests waiting.') +
         (gDone.length ? '<div class="proj-group"><h3>Decided</h3>' + list(gDone, groupReqHtml, '') + '</div>' : '') + '</section>' +
-      '<section class="profile-panel" id="agents"><p class="hero-note">Requests to let an agent act for someone, in their name: join projects, ask for introductions and letters, comment, propose changes and more. <a href="agents.html#activity-everyone">What agents did</a>.</p>' +
+      '<section class="profile-panel" id="agents"><p class="hero-note">Requests to let an agent act for someone, in their name: join projects, ask for introductions and letters, comment, propose changes and more. <a href="agents.html#activity">What agents did</a>.</p>' +
         list(aOpen, actReqHtml, 'No requests waiting.') +
         (aDone.length ? '<div class="proj-group"><h3>Decided</h3>' + list(aDone, actReqHtml, '') + '</div>' : '') + '</section>' +
       settingsHtml();
