@@ -44,7 +44,8 @@ window.SeriesEditions = (function(){
       var form = planning ? '<div class="event-form ed-form"><p class="event-form-head">A new occurrence of ' + esc(s.title) + '</p>' +
           '<div class="ev-row"><label>Starts<input type="date" class="ed-start" value="' + esc(planning.start) + '"></label>' +
           '<label>Ends<input type="date" class="ed-end" value="' + esc(planning.end) + '"></label></div>' +
-          '<p class="event-form-hint">It starts hidden, with the place and description of the last one; you build its programme here, and a PI or admin releases it.</p>' +
+          BoldEvents.inviteSelectHtml('ed-invite', planning.inviteGroup) +
+          '<p class="event-form-hint">It starts hidden, with the place and description of the last one; you build its programme here, and a PI or admin releases it: then Google Calendar invites the group chosen.</p>' +
           '<p class="ev-error"' + (planning.error ? '' : ' hidden') + '>' + esc(planning.error || '') + '</p>' +
           '<div class="event-form-actions"><button type="button" class="ev-save ed-go"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Adding…' : 'Add it') + '</button>' +
           '<button type="button" class="ed-cancel">Cancel</button></div></div>' : '';
@@ -58,7 +59,7 @@ window.SeriesEditions = (function(){
       var today = new Date().toISOString().slice(0, 10);
       if (start < today) start = today;
       var length = last ? Math.round((Date.parse(last.endDate || last.startDate) - Date.parse(last.startDate)) / 86400000) : 0;
-      planning = { start: start, end: addDays(start, length), error: '' };
+      planning = { start: start, end: addDays(start, length), inviteGroup: s.inviteGroup || 'none', error: '' };
       draw();
     }
     nav.addEventListener('click', function(ev){
@@ -74,9 +75,10 @@ window.SeriesEditions = (function(){
       }
       if (t.classList.contains('ed-go')) {
         planning.start = nav.querySelector('.ed-start').value; planning.end = nav.querySelector('.ed-end').value || planning.start;
+        planning.inviteGroup = nav.querySelector('.ed-invite').value;
         if (!planning.start || planning.end < planning.start) { planning.error = 'Give its first and last day, the last on or after the first.'; draw(); return; }
         busy = true; planning.error = ''; draw();
-        call({ action: 'nextEdition', id: id, startDate: planning.start, endDate: planning.end }).then(function(r){
+        call({ action: 'nextEdition', id: id, startDate: planning.start, endDate: planning.end, inviteGroup: planning.inviteGroup }).then(function(r){
           location.href = href({ slug: r.data.slug });
         }).catch(function(err){ busy = false; planning.error = (err && err.message) || 'Couldn’t schedule it — try again.'; draw(); });
       }

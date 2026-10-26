@@ -50,6 +50,16 @@ window.BoldEvents = (function(){
     return error ? { error: error } : { fields: f };
   }
 
+  // Who gets a Google Calendar invitation to an occurrence of an event series
+  // (`inviteGroup`: functions/series.js syncOccurrence): a group and those above it, or nobody.
+  var INVITE_GROUPS = [['exec', 'BOLD-exec'], ['staff', 'BOLD-staff and above'], ['internal', 'BOLD-internal and above'],
+    ['associate', 'BOLD-associate and above'], ['everyone', 'Everyone in BOLD'], ['none', 'Nobody']];
+  function inviteText(g){ return (INVITE_GROUPS.filter(function(o){ return o[0] === g; })[0] || INVITE_GROUPS[5])[1]; }
+  function inviteSelectHtml(cls, value, why){
+    return '<label>Google Calendar invites<select class="' + cls + '"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' +
+      INVITE_GROUPS.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === (value || 'none') ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
+  }
+
   function showError(form, msg){
     var box = form.querySelector('.ev-error');
     box.textContent = msg; box.hidden = !msg;
@@ -62,5 +72,6 @@ window.BoldEvents = (function(){
     }).catch(function(err){ console.error('[BOLD Events] access check failed', err); cb(false); });
   }
 
-  return { when: when, isPast: isPast, formHtml: formHtml, read: read, showError: showError, access: access, NOT_PI: NOT_PI, NOT_PI_RELEASE: NOT_PI_RELEASE };
+  return { when: when, isPast: isPast, formHtml: formHtml, read: read, showError: showError, access: access, NOT_PI: NOT_PI, NOT_PI_RELEASE: NOT_PI_RELEASE,
+    inviteText: inviteText, inviteSelectHtml: inviteSelectHtml };
 })();

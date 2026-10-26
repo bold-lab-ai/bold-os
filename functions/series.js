@@ -10,6 +10,11 @@
 //   any event). The series' organisers edit its editions (firestore.rules); seriesNudges
 //   tells the PIs, admins and organisers when the next one is due and not scheduled.
 //   `proposals`: its editions take proposals (event-proposals.js).
+//   `inviteGroup` (one of INVITE_GROUPS, or 'none'): who gets a Google Calendar
+//   invitation to each occurrence by default; each occurrence has its own (`inviteGroup`
+//   on its events doc, from the series' when it's made, changed on its page). Sent once it's
+//   released, kept in line by onOccurrenceWritten (eventInvites/{slug}: the Calendar
+//   side, server only), never for one that's over.
 // eventSeries/{id} { id, kind, title, description, meeting (normalizeMeeting's: day, time,
 // minutes, every, until?, link?), invite: { mode: 'group', group } | { mode: 'join' },
 // joined: [emails], organisers: [emails], hidden, createdBy, createdAt, updatedAt,
@@ -55,7 +60,8 @@ module.exports = function series(deps){
       const unit = d.cadence && d.cadence.unit === 'week' ? 'week' : 'month', every = Number(d.cadence && d.cadence.every);
       const max = unit === 'week' ? 4 : 24;
       if (!(every >= 1 && every <= max && every % 1 === 0)) return { error: 'Choose how often it happens: every 1 to ' + max + ' ' + unit + 's.' };
-      Object.assign(out, { cadence: { every, unit }, proposals: d.proposals === true });
+      const inviteGroup = d.inviteGroup === 'none' || INVITE_GROUPS.indexOf(d.inviteGroup) >= 0 ? d.inviteGroup : 'internal';
+      Object.assign(out, { cadence: { every, unit }, proposals: d.proposals === true, inviteGroup });
     } else {
       const meeting = normalizeMeeting(d.meeting);
       if (meeting.error) return { error: meeting.error };
@@ -178,7 +184,7 @@ module.exports = function series(deps){
   // What the page gets: the series, without anyone's addresses but the caller's own place in it.
   function view(s, me, full){
     const out = {};
-    ['id', 'kind', 'title', 'description', 'meeting', 'invite', 'cadence', 'proposals', 'page', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
+    ['id', 'kind', 'title', 'description', 'meeting', 'invite', 'cadence', 'proposals', 'inviteGroup', 'page', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
     const organiser = (s.organisers || []).indexOf(me) >= 0;
     out.organiser = organiser; out.canChange = organiser || full; out.full = full;
     out.joined = (s.joined || []).indexOf(me) >= 0;
@@ -191,7 +197,7 @@ module.exports = function series(deps){
   // data: { action, id?, … }
   //   'save': { id? (none: a new one), title, description, meeting, invite, organisers }
   //   'release' | 'hide' | 'pause' | 'resume' | 'join' | 'leave' | 'delete' | 'retry': { id }
-  //   'nextEdition': { id, startDate, endDate } (an 'editions' series) → { slug }: a new hidden edition,
+  //   'nextEdition': { id, startDate, endDate, inviteGroup? (else the series') } (an 'editions' series) → { slug }: a new hidden edition,
   //     its title, place and description from the series and its last edition
   // → { series: view } ('delete': { ok }).
   const eventSeries = onCall({ secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN], timeoutSeconds: 120 }, async (request) => {
@@ -252,7 +258,8 @@ module.exports = function series(deps){
         if ((await eref.get()).exists) throw new HttpsError('already-exists', 'There’s one starting that day already.');
         const now = Date.now();
         // A series with its own page (`page`, set in code: the Festival's, Collaboration week's) shows it there.
-        await eref.set(Object.assign({ slug, series: id, hidden: true, title: s.title, startDate: start, endDate: end, place: last.place || '',
+        const inviteGroup = d.inviteGroup === 'none' || INVITE_GROUPS.indexOf(d.inviteGroup) >= 0 ? d.inviteGroup : (s.inviteGroup || 'none');
+        await eref.set(Object.assign({ slug, series: id, hidden: true, inviteGroup, title: s.title, startDate: start, endDate: end, place: last.place || '',
           description: s.description || last.description || '', createdAt: now, createdBy: email, updatedAt: now, updatedBy: email },
           /^[a-z0-9-]+\.html$/.test(s.page || '') ? { page: s.page + '?edition=' + slug } : {}));
         await ref.set({ nudgedFor: FieldValue.delete() }, { merge: true });
@@ -287,6 +294,60 @@ module.exports = function series(deps){
     return { series: view(await syncSeries(id), email, full) };
   });
 
+  // An occurrence's Google Calendar invitation: an all-day event over its days, inviting
+  // its group and the series' organisers, once it's released and until it's over; changed
+  // with it; cancelled when it's hidden, deleted, or invites nobody. eventInvites/{slug}
+  // { eventId, synced (what the event has), guests, error }; only this writes it.
+  function plusDay(iso){ const t = new Date(iso + 'T00:00:00Z'); t.setUTCDate(t.getUTCDate() + 1); return t.toISOString().slice(0, 10); }
+  async function syncOccurrence(slug){
+    const iref = db.collection('eventInvites').doc(slug);
+    const [esnap, isnap] = await Promise.all([db.collection('events').doc(slug).get(), iref.get()]);
+    const e = esnap.exists ? esnap.data() : null, inv = isnap.exists ? isnap.data() : {};
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+    const group = e && e.inviteGroup && e.inviteGroup !== 'none' ? e.inviteGroup : '';
+    const want = !!(e && !e.hidden && group && isoDay.test(e.startDate || '') && (e.endDate || e.startDate) >= today);
+    if (!want && !inv.eventId) return;
+    const patch = {};
+    try {
+      if (!want) {
+        // Over: left as it is in everyone's calendar; otherwise cancelled.
+        if (e && !e.hidden && group && (e.endDate || e.startDate) < today) return;
+        await googleFetch('DELETE', CAL + '/' + inv.eventId + '?sendUpdates=all').catch((err) => { if (err.status !== 410 && err.status !== 404) throw err; });
+        await iref.delete();
+        return;
+      }
+      const series = e.series ? (await db.collection('eventSeries').doc(e.series).get()).data() || {} : {};
+      const guests = await inviteesOf({ invite: { mode: 'group', group }, organisers: series.organisers || [] });
+      const addrs = await googleAddressesFor(guests);
+      const url = SITE_URL + (e.page ? e.page.split('?')[0] + (e.series ? '?edition=' + encodeURIComponent(slug) : '') : 'event.html?event=' + encodeURIComponent(slug));
+      const body = { summary: e.title, location: e.place || '', description: (e.description ? String(e.description).replace(/</g, '&lt;').slice(0, 2000) + '<br><br>' : '') + 'On <a href="' + url + '">BOLD.OS</a>.',
+        start: { date: e.startDate }, end: { date: plusDay(e.endDate || e.startDate) }, transparency: 'transparent', guestsCanSeeOtherGuests: false, guestsCanModify: false };
+      const synced = { title: body.summary, place: body.location, description: body.description, start: e.startDate, end: e.endDate || e.startDate, guests: addrs };
+      if (!inv.eventId) {
+        const ev = await googleFetch('POST', CAL + '?sendUpdates=all', Object.assign({ attendees: addrs.map((m) => ({ email: m })) }, body));
+        Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink || '' });
+      } else if (JSON.stringify(synced) !== JSON.stringify(inv.synced || null)) {
+        const ev = await googleFetch('GET', CAL + '/' + inv.eventId);
+        const kept = (ev.attendees || []).filter((a) => a.organizer || a.self || addrs.indexOf(lower(a.email)) >= 0);
+        const attendees = kept.concat(addrs.filter((m) => !kept.some((a) => lower(a.email) === m)).map((m) => ({ email: m })));
+        await googleFetch('PATCH', CAL + '/' + inv.eventId + '?sendUpdates=all', Object.assign({ attendees }, body));
+      } else return;
+      Object.assign(patch, { synced, guests, error: FieldValue.delete(), at: Date.now() });
+    } catch (err) {
+      logger.error('An occurrence’s invitation failed', { slug, error: String(err && err.message || err) });
+      patch.error = 'Couldn’t send the Google Calendar invitation.';
+    }
+    await iref.set(patch, { merge: true });
+  }
+  const onOccurrenceWritten = onDocumentWritten({ document: 'events/{slug}', secrets: [GOOGLE_OAUTH] }, async (event) => {
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    const pick = (x) => x ? JSON.stringify([x.hidden, x.inviteGroup, x.title, x.place, x.description, x.startDate, x.endDate]) : '';
+    if (pick(before) === pick(after)) return;
+    if (!((before && before.inviteGroup) || (after && after.inviteGroup))) return;
+    await syncOccurrence(event.params.slug);
+  });
+
   // A member joined BOLD or changed group: the released series inviting a group, again.
   const onMemberGroupChanged = onDocumentWritten({ document: 'members/{email}', secrets: [GOOGLE_OAUTH] }, async (event) => {
     const before = event.data.before.exists ? event.data.before.data() : null;
@@ -294,6 +355,13 @@ module.exports = function series(deps){
     if (before && after && groupOf(before) === groupOf(after)) return;
     const snap = await db.collection('eventSeries').where('invite.mode', '==', 'group').get();
     for (const doc of snap.docs) if (!doc.data().hidden) await syncSeries(doc.id);
+    // …and the released occurrences still to come that invite a group.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' }).format(new Date());
+    const occ = await db.collection('events').where('hidden', '==', false).get();
+    for (const doc of occ.docs) {
+      const e = doc.data();
+      if (e.inviteGroup && e.inviteGroup !== 'none' && (e.endDate || e.startDate || '') >= today) await syncOccurrence(doc.id);
+    }
   });
 
   // Every morning: a recurring event whose next edition is due within six weeks (or past
@@ -317,5 +385,5 @@ module.exports = function series(deps){
     }
   });
 
-  return { eventSeries, onMemberGroupChanged, seriesNudges, _internal: { normalizeSeries, inviteesOf, addMonths, addPeriod, nextDue } };
+  return { eventSeries, onMemberGroupChanged, onOccurrenceWritten, seriesNudges, _internal: { normalizeSeries, inviteesOf, addMonths, addPeriod, nextDue } };
 };

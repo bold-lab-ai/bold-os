@@ -5402,6 +5402,7 @@ const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsErro
 exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
+exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.

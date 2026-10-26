@@ -200,7 +200,9 @@
         '<label class="sr-check"' + (weekly && !lockInvite ? '' : ' title="' + (lockInvite ? 'Once it’s released, only PIs and admins change who is invited' : 'A recurring invite needs a set day every 1–4 weeks') + '"') + '>' +
           '<input type="checkbox" class="sr-has-invite"' + (invite ? ' checked' : '') + (weekly && !lockInvite ? '' : ' disabled') + '> A recurring Google Calendar invite, at a set day and time</label>' +
         (ed ? '<p class="event-form-hint">Each time is scheduled on its own, with its dates, place and programme.</p>' +
-            '<label class="sr-check"><input type="checkbox" class="sr-proposals"' + (e.proposals ? ' checked' : '') + '> It takes proposals (workshops, pitches, talks)</label>'
+            '<label class="sr-check"><input type="checkbox" class="sr-proposals"' + (e.proposals ? ' checked' : '') + '> It takes proposals (workshops, pitches, talks)</label>' +
+            E.inviteSelectHtml('sr-invite-group', e.inviteGroup) +
+            '<p class="event-form-hint">To each occurrence, once a PI or admin releases it; each can choose its own.</p>'
           : '<label>When (London time)</label>' + meetingEntryHtml(e.meeting) +
             '<label>Who’s invited<select class="sr-invite"' + (lockInvite ? ' disabled title="Once it’s released, only PIs and admins change this"' : '') + '>' +
               INVITE.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.invite ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>') +
@@ -229,6 +231,7 @@
     if (q('.sr-often')) editing.often = q('.sr-often').value;
     if (q('.sr-has-invite') && !q('.sr-has-invite').disabled) editing.hasInvite = q('.sr-has-invite').checked;
     if (q('.sr-proposals')) editing.proposals = q('.sr-proposals').checked;
+    if (q('.sr-invite-group')) editing.inviteGroup = q('.sr-invite-group').value;
     if (q('.sr-start1')) { editing.start = q('.sr-start1').value; editing.end = q('.sr-end1').value; editing.place = q('.sr-place').value; }
     if (document.getElementById('pmDay')) {
       editing.meeting = { day: document.getElementById('pmDay').value, time: document.getElementById('pmTime').value,
@@ -239,8 +242,8 @@
 
   function startEditing(){
     editing = s ? { often: isEditions(s) ? oftenKey(s.cadence) : 'w' + ((s.meeting || {}).every || 1), hasInvite: !isEditions(s), title: s.title, description: s.description || '',
-        meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, organisers: (s.organisers || []).slice(), error: '' }
-      : { often: 'once', start: '', end: '', place: '', hasInvite: false, title: '', description: '', meeting: null, invite: 'join', proposals: false, organisers: [me.email.toLowerCase()], error: '' };
+        meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, inviteGroup: s.inviteGroup || 'none', organisers: (s.organisers || []).slice(), error: '' }
+      : { often: 'once', start: '', end: '', place: '', hasInvite: false, title: '', description: '', meeting: null, invite: 'join', proposals: false, inviteGroup: 'internal', organisers: [me.email.toLowerCase()], error: '' };
     loadRoster(); render();
   }
 
@@ -265,7 +268,7 @@
     if (meeting && meeting.error) { e.error = meeting.error; render(); return; }
     var inv = e.invite.indexOf('group:') === 0 ? { mode: 'group', group: e.invite.slice(6) } : { mode: 'join' };
     var payload = { action: 'save', id: s ? s.id : undefined, kind: ed ? 'editions' : 'meeting', title: e.title.trim(), description: e.description.trim(), organisers: e.organisers };
-    if (ed) { payload.cadence = { every: every, unit: weekly ? 'week' : 'month' }; payload.proposals = e.proposals; } else { payload.meeting = meeting; payload.invite = inv; }
+    if (ed) { payload.cadence = { every: every, unit: weekly ? 'week' : 'month' }; payload.proposals = e.proposals; payload.inviteGroup = e.inviteGroup || 'none'; } else { payload.meeting = meeting; payload.invite = inv; }
     var send = function(){
       busy = true; e.error = ''; render();
       call(payload).then(function(r){

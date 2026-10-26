@@ -440,13 +440,22 @@ service cloud.firestore {
       allow update: if hasFullWrite() || (may('events', 'edit') && mine(resource.data)
         && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '')
         && request.resource.data.get('series', '') == resource.data.get('series', '')
-        && request.resource.data.hidden == resource.data.hidden);
+        && request.resource.data.hidden == resource.data.hidden
+        // Who Google invites: theirs to choose while it's hidden; once released, PIs' and admins'.
+        && (resource.data.hidden == true || request.resource.data.get('inviteGroup', '') == resource.data.get('inviteGroup', ''))
+        && request.resource.data.get('inviteGroup', 'none') in ['none', 'everyone', 'associate', 'internal', 'staff', 'exec']);
       allow delete: if hasFullWrite() || (may('events', 'edit') && mine(resource.data));
     }
 
     // Recurring lab meetings (eventSeries/{id}; functions/series.js), written only by the
     // eventSeries function: the released ones for whoever can view Events, a hidden one
     // for PIs and admins and its organisers.
+    // An occurrence's Google Calendar invitation (functions/series.js syncOccurrence): its page
+    // shows when it couldn't be sent. Only the server writes it.
+    match /eventInvites/{slug} {
+      allow read: if may('events', 'view');
+      allow write: if false;
+    }
     match /eventSeries/{id} {
       allow read: if may('events', 'view') && (resource.data.hidden == false || hasFullWrite() || email().lower() in resource.data.get('organisers', []));
       allow write: if false;

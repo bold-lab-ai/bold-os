@@ -94,7 +94,9 @@
     }
     document.title = x.title + ' | BOLD Lab';
     if (editing) {
-      body.innerHTML = BACK + '<div class="event-form">' + E.formHtml(x) +
+      // An occurrence of a series: who Google invites (theirs while hidden; then PIs' and admins').
+      var inviteField = x.series ? E.inviteSelectHtml('ev-invite', x.inviteGroup, x.hidden || fullWrite ? '' : 'Once it’s released, only PIs and admins change who is invited') : '';
+      body.innerHTML = BACK + '<div class="event-form">' + E.formHtml(x).replace('<p class="ev-error" hidden></p>', inviteField + '<p class="ev-error" hidden></p>') +
         '<div class="event-form-actions"><button type="button" class="ev-save">Save</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
       var form = body.querySelector('.event-form');
       form.querySelector('.ev-cancel').addEventListener('click', function(){ editing = false; render(); });
@@ -103,6 +105,8 @@
         if (r.error) { E.showError(form, r.error); return; }
         var save = form.querySelector('.ev-save');
         save.disabled = true;
+        var inv = form.querySelector('.ev-invite');
+        if (inv && !inv.disabled) r.fields.inviteGroup = inv.value;
         ref.update(Object.assign(r.fields, { updatedAt: Date.now(), updatedBy: me.email })).then(function(){
           editing = false; render();
         }).catch(function(err){
@@ -119,6 +123,7 @@
       '<div><span class="eyebrow">' + (past ? 'Past' : 'Upcoming') + '</span></div>' +
       '<h1>' + esc(x.title) + '</h1>' +
       '<p class="hero-when">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' &middot; ' + esc(x.place) : '') + '</p>' +
+      (x.series && x.inviteGroup && x.inviteGroup !== 'none' ? '<p class="event-series">Google Calendar ' + (x.hidden ? 'will invite ' : 'invites ') + esc(E.inviteText(x.inviteGroup)) + (x.hidden ? ', once it’s released' : '') + '.</p>' : '') +
       seriesLine() +
       paragraphs(x.description) +
       controls() + (links && !projectsEl ? links.lineHtml() : '');
