@@ -65,7 +65,7 @@
 
   function render(){
     if (editing) { body.innerHTML = BACK + formHtml(); return; }
-    if (isNew) { body.innerHTML = BACK + '<h1>New event</h1><p class="hero-note">' + esc(msg || 'Loading…') + '</p>'; return; }
+    if (isNew) { body.innerHTML = BACK + '<h1>New event series</h1><p class="hero-note">' + esc(msg || 'Loading…') + '</p>'; return; }
     if (!loaded) return;
     if (!s) {
       document.title = 'Meeting not found | BOLD Lab';
@@ -173,7 +173,7 @@
     // Once released, only PIs and admins change who Google invites: adding or removing the invite too.
     var lockInvite = !!(s && !s.hidden && !full), once = e.often === 'once', weekly = e.often.charAt(0) === 'w', invite = weekly && e.hasInvite, ed = !invite;
     var oftens = s ? OFTEN : [['once', 'Once']].concat(OFTEN);   // a recurring one stays recurring
-    var head = '<h1>' + (s ? 'Edit ' + esc(s.title) : 'New event') + '</h1>' +
+    var head = '<h1>' + (s ? 'Edit ' + esc(s.title) : 'New event series') + '</h1>' +
       '<div class="event-form sr-form">' +
         '<label>Title<input type="text" class="sr-title" maxlength="120" value="' + esc(e.title) + '" placeholder="' + (once ? 'Festival' : 'Hamming Sessions') + '"></label>' +
         '<label>What it’s for<textarea class="sr-desc" rows="5" maxlength="5000">' + esc(e.description) + '</textarea></label>' +

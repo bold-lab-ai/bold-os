@@ -4,7 +4,7 @@
 // there; the rest to event.html?event=<slug>, a recurring one to series.html?series=<id>.
 // A hidden one (still being planned) shows only to PIs/admins and whoever added or
 // organises it, marked Hidden, until a PI or admin releases it.
-// "+ Add an event" (series.html?new: once, or recurring) is for Events' Edit level
+// "+ Add a new event series" (series.html?new: once, or recurring) is for Events' Edit level
 // (BOLDiquette › Who can see what): always shown, greyed out for everyone else.
 (function(){
   var esc = BOLD.escapeHtml;
