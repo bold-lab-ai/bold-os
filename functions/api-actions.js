@@ -482,7 +482,7 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
-  // ---------- PIs and admins ----------
+  // ---------- PIs and admins (events: adding is the table's Edit; see firestore.rules) ----------
   async function events(who, a){
     const now = Date.now();
     if (a.action === 'add') {
@@ -490,9 +490,14 @@ module.exports = function(ctx){
       if (end < start) throw httpError(400, 'It has to end on or after the day it starts.');
       const slug = (fold(title).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'event') + '-' + Math.random().toString(16).slice(2, 8);
       await asUser(who, 'create', 'events', { slug, hidden: true, title, startDate: start, endDate: end, place: a.place || '', description: a.description || '', createdAt: now, createdBy: who.email, updatedAt: now, updatedBy: who.email }, slug);
-      return { slug, url: url('event.html?event=' + slug), note: 'It starts hidden: release it to show it to the lab.' };
+      return { slug, url: url('event.html?event=' + slug), note: (await isFullWrite(who.email)) ? 'It starts hidden: release it to show it to the lab.'
+        : 'It starts hidden: the PIs and admins are told, and one of them releases it.' };
     }
-    const e = (await lab.events()).find((x) => x._id === a.event || fold(x.title) === fold(a.event));
+    const full = await isFullWrite(who.email);
+    if ((a.action === 'release' || a.action === 'hide') && !full) throw httpError(403, 'Only PIs and admins release and hide events.');
+    // Hidden ones: a PI's or admin's, or the ones they added.
+    const e = (await lab.events()).filter((x) => x.hidden === false || full || x.createdBy === who.email)
+      .find((x) => x._id === a.event || fold(x.title) === fold(a.event));
     if (!e) throw httpError(404, 'No event “' + a.event + '”.');
     const stamp = { updatedAt: now, updatedBy: who.email };
     switch (a.action) {
@@ -620,7 +625,7 @@ module.exports = function(ctx){
         ...Object.keys(PROFILE).map((k) => ({ [k]: k === 'pillars' ? { type: 'array', items: { type: 'string' } } : k === 'list_on_website' ? { type: 'boolean' } : str('update') })),
         { group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']), note: str(''), request_id: str(''), inviter: str('set_inviter: their name ("" for nobody)'), member: str('confirm_invite, deny_invite: the member’s name') })) },
     { name: 'events', run: events,
-      description: 'PIs and admins: the lab’s events: add one (it starts hidden), update it, release or hide it, delete it.',
+      description: 'The lab’s events: add one (it starts hidden, until a PI or admin releases it), update or delete one you added (PIs and admins: any), release or hide one (PIs and admins).',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str('') }) },
     { name: 'requests', run: requests,
       description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them, or set someone’s group.',

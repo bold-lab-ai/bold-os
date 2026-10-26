@@ -892,6 +892,20 @@ async function sendEvent(token, event){
 // the moment a proposal exists, rather than relying on someone happening
 // to open the board and see "Pending your approval".
 
+// An event added by someone who isn't a PI or admin starts hidden: tell the PIs and
+// admins, who release it from its page (firestore.rules, events/{slug}).
+exports.onEventAdded = onDocumentCreated(
+  { document: 'events/{slug}', secrets: [SLACK_BOT_TOKEN] },
+  async function(event){
+    const data = event.data && event.data.data();
+    if (!data || data.hidden !== true || !data.createdBy || await isFullWrite(data.createdBy)) return;
+    const snap = await db.collection('people').where('email', '==', data.createdBy).limit(1).get();
+    const who = snap.empty ? data.createdBy.split('@')[0] : snap.docs[0].data().name;
+    await tellStaff('🔔 ' + slackText(who) + ' added an event, ' + linkedTitle(data.title || event.params.slug, SITE_URL + 'event.html?event=' + encodeURIComponent(event.params.slug)) +
+      '. It stays hidden until a PI or admin releases it from its page.', data.createdBy);
+  }
+);
+
 exports.onVenueProposed = onDocumentCreated(
   { document: 'boards/{boardId}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){

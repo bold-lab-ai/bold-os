@@ -29,16 +29,21 @@
 
   function render(){
     list.innerHTML = events.map(function(x){ return '<li>' + cardHtml(x) + '</li>'; }).join('');
-    addBtn.disabled = !fullWrite;
-    addBtn.title = fullWrite ? '' : E.NOT_PI;
+    var can = canAdd();
+    addBtn.disabled = !can;
+    addBtn.title = can ? '' : BOLD.cannotReason('events', 'edit');
   }
+
+  function canAdd(){ return fullWrite || BOLD.can('events', 'edit'); }
+  BOLD.onAccess(function(){ render(); });
 
   function openForm(){
     if (document.querySelector('.event-form')) return;
     var form = document.createElement('div');
     form.className = 'event-form';
     form.innerHTML = '<p class="event-form-head">New event</p>' + E.formHtml({}) +
-      '<p class="event-form-hint">It stays hidden — only PIs and admins see it — until you release it from its page.</p>' +
+      '<p class="event-form-hint">' + (fullWrite ? 'It stays hidden — only PIs and admins see it — until you release it from its page.'
+        : 'It stays hidden — only you, PIs and admins see it — until a PI or admin releases it.') + '</p>' +
       '<div class="event-form-actions"><button type="button" class="ev-save">Add event</button><button type="button" class="ev-cancel">Cancel</button></div>';
     addBtn.parentNode.insertBefore(form, addBtn);
     addBtn.hidden = true;
@@ -62,7 +67,7 @@
       });
     });
   }
-  addBtn.addEventListener('click', function(){ if (fullWrite) openForm(); });
+  addBtn.addEventListener('click', function(){ if (canAdd()) openForm(); });
 
   var unsubscribe = null, signIns = 0;
   BOLD.onUser(function(user){
@@ -78,13 +83,19 @@
       if (mine !== signIns) return;
       fullWrite = ok;
       render();
-      var query = ok ? db.collection('events') : db.collection('events').where('hidden', '==', false);
-      unsubscribe = query.onSnapshot(function(snap){
-        loading.hidden = true;
-        events = snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug && x.startDate; })
-          .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; });
-        render();
-      }, function(err){ console.error('[BOLD Events] loading events failed', err); });
+      // …and the ones they added, released or not.
+      var queries = ok ? [db.collection('events')] : [db.collection('events').where('hidden', '==', false), db.collection('events').where('createdBy', '==', me.email)];
+      var got = queries.map(function(){ return []; }), unsubs = queries.map(function(query, i){
+        return query.onSnapshot(function(snap){
+          loading.hidden = true;
+          got[i] = snap.docs.map(function(d){ return d.data(); });
+          var seen = {};
+          events = [].concat.apply([], got).filter(function(x){ if (!x.slug || !x.startDate || seen[x.slug]) return false; seen[x.slug] = 1; return true; })
+            .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; });
+          render();
+        }, function(err){ console.error('[BOLD Events] loading events failed', err); });
+      });
+      unsubscribe = function(){ unsubs.forEach(function(u){ u(); }); };
     });
   });
 })();

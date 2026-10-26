@@ -88,10 +88,10 @@ module.exports = function(ctx){
       list: async () => { const t = toolItems ? await toolItems() : {}; return Object.keys(t).map((n) => ({ uri: 'bold://tool/' + n, name: 'tool-' + n, title: t[n].title || n, description: t[n].description || '', mimeType: 'application/json' })); },
       read: async (id) => { const t = toolItems ? (await toolItems())[id] : null; if (!t) throw httpError(404, 'No tool ' + id + '.'); return { name: id, title: t.title || id, description: t.description, acting: !!t.acting, input: t.input || {}, code: t.code, url: url('tool.html?tool=' + encodeURIComponent(id)) }; } },
     { template: 'bold://event/{slug}', name: 'event', title: 'An event', description: 'One of the lab’s events, with its programme.',
-      list: async (who) => { const full = await isFullWrite(who.email); return (await lab.events()).filter((e) => e.hidden === false || full).map((e) => ({ uri: 'bold://event/' + e._id, name: 'event-' + e._id, title: e.title, description: [e.startDate, e.place].filter(Boolean).join(' · '), mimeType: 'text/markdown' })); },
+      list: async (who) => { const full = await isFullWrite(who.email); return (await lab.events()).filter((e) => e.hidden === false || full || e.createdBy === who.email).map((e) => ({ uri: 'bold://event/' + e._id, name: 'event-' + e._id, title: e.title, description: [e.startDate, e.place].filter(Boolean).join(' · '), mimeType: 'text/markdown' })); },
       read: async (id, who) => {
         const e = (await lab.events()).find((x) => x._id === id);
-        if (!e || (e.hidden !== false && !(await isFullWrite(who.email)))) throw httpError(404, 'No event ' + id + '.');
+        if (!e || (e.hidden !== false && e.createdBy !== who.email && !(await isFullWrite(who.email)))) throw httpError(404, 'No event ' + id + '.');
         const [ss, ts] = await Promise.all([lab.sessions(), lab.talks()]);
         return eventMd(e, ss.filter((s) => (s.eventSlug || 'collaboration-week') === e._id), ts);
       } },

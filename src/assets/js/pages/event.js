@@ -1,10 +1,10 @@
 // An event's header — title, dates, place, description — from events/{slug}
 // (see events-common.js): the whole of an event added from the events page
 // (event.html?event=<slug>), or the top of an event with its own page
-// (#eventBody's data-event, e.g. Collaboration Week). PIs/admins edit it in place,
-// release or hide it, or delete it for good; those buttons are always shown,
-// greyed out for everyone else. A hidden event can't be read by anyone else
-// (firestore.rules), so for them it's "not found" — as is one that was
+// (#eventBody's data-event, e.g. Collaboration Week). PIs/admins, and whoever added
+// it, edit it in place or delete it for good; PIs/admins release or hide it; those
+// buttons are always shown, greyed out for everyone else. A hidden event can't be read
+// by anyone else (firestore.rules), so for them it's "not found" — as is one that was
 // deleted, and then the rest of its page (<main>) is hidden too.
 (function(){
   var esc = BOLD.escapeHtml;
@@ -37,10 +37,14 @@
       .map(function(p){ return '<p class="hero-note">' + esc(p).replace(/\n/g, '<br>') + '</p>'; }).join('');
   }
 
+  // Whoever added it edits and deletes it, if the table still lets them edit Events.
+  function mine(){ return !!(x && me && x.createdBy && x.createdBy === me.email && BOLD.can('events', 'edit')); }
+  function canChange(){ return fullWrite || mine(); }
   function controls(){
-    var off = fullWrite ? '' : ' disabled title="' + E.NOT_PI + '"';
+    var off = canChange() ? '' : ' disabled title="' + E.NOT_PI + '"';
+    var offRelease = fullWrite ? '' : ' disabled title="' + E.NOT_PI_RELEASE + '"';
     return '<div class="event-controls"><button type="button" class="btn-text ev-edit"' + off + '>Edit</button>' +
-      '<button type="button" class="btn-text ev-visibility"' + off + '>' + (x.hidden ? 'Release' : 'Hide') + '</button>' +
+      '<button type="button" class="btn-text ev-visibility"' + offRelease + '>' + (x.hidden ? 'Release' : 'Hide') + '</button>' +
       '<button type="button" class="btn-text danger ev-delete"' + off + '>Delete</button></div>';
   }
 
@@ -75,13 +79,13 @@
     }
     var past = E.isPast(x);
     body.innerHTML = BACK +
-      (x.hidden ? '<p class="event-hidden-note">Hidden — only PIs and admins can see this event until it’s released.</p>' : '') +
+      (x.hidden ? '<p class="event-hidden-note">Hidden — only PIs and admins' + (mine() ? ', and you,' : '') + ' can see this event until a PI or admin releases it.</p>' : '') +
       '<div><span class="eyebrow">' + (past ? 'Past' : 'Upcoming') + '</span></div>' +
       '<h1>' + esc(x.title) + '</h1>' +
       '<p class="hero-when">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' &middot; ' + esc(x.place) : '') + '</p>' +
       paragraphs(x.description) +
       controls() + (links ? links.lineHtml() : '');
-    body.querySelector('.ev-edit').addEventListener('click', function(){ if (fullWrite) { editing = true; render(); } });
+    body.querySelector('.ev-edit').addEventListener('click', function(){ if (canChange()) { editing = true; render(); } });
     body.querySelector('.ev-visibility').addEventListener('click', function(){
       if (!fullWrite) return;
       if (!x.hidden && !window.confirm('Hide “' + x.title + '”? Only PIs and admins will see it until it’s released again.')) return;
@@ -91,7 +95,7 @@
       });
     });
     body.querySelector('.ev-delete').addEventListener('click', function(){
-      if (!fullWrite || !window.confirm('Delete “' + x.title + '” for good? This can’t be undone.')) return;
+      if (!canChange() || !window.confirm('Delete “' + x.title + '” for good? This can’t be undone.')) return;
       ref.delete().then(function(){ location.href = 'events.html'; }).catch(function(err){
         console.error('[BOLD Events] deleting the event failed', err);
         window.alert('Couldn’t delete the event — try again.');
@@ -107,6 +111,7 @@
     if (!user) { if (schedule) schedule.update(x, false, null); return; }
     if (!ref) { loaded = true; render(); return; }
     E.access(function(ok){ fullWrite = ok; render(); drawSchedule(); });
+    BOLD.onAccess(function(){ if (!editing) render(); });
     if (links) links.load(user);
     unsubscribe = ref.onSnapshot(function(doc){
       x = doc.exists ? doc.data() : null;
