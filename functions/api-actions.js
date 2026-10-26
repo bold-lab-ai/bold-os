@@ -260,7 +260,15 @@ module.exports = function(ctx){
       if (kind === 'add') {
         const after = { title: need(a.title, 'the part’s title'), body: need(a.body, 'the part’s text') };
         if (a.section) after.section = String(a.section).trim();
-        q = { kind, partId: Math.random().toString(36).slice(2, 10), before: null, after, note };
+        // Its id: one given (a part the site looks for by id, as the BOLDiquette's `access`), if
+        // it's free; else a new one.
+        let partId = Math.random().toString(36).slice(2, 10);
+        if (a.part_id) {
+          partId = String(a.part_id).trim();
+          if (!/^[a-z0-9-]{1,64}$/.test(partId)) throw httpError(400, 'A part’s id is lowercase letters, digits and dashes.');
+          if ((pg.data.parts || []).some((p) => p.id === partId)) throw httpError(400, 'There’s already a part “' + partId + '”: propose an edit to it instead.');
+        }
+        q = { kind, partId, before: null, after, note };
       } else if (kind === 'edit') {
         const p = partOf(pg, need(a.part_id, 'the part_id'));
         const after = { title: a.title !== undefined ? String(a.title).trim() : p.title, body: a.body !== undefined ? String(a.body) : p.body };
@@ -572,7 +580,7 @@ module.exports = function(ctx){
         'For the BOLDiquette or a guide: kind add, edit or remove a part (read_page). For a skill (page "skill:<name>", get_skill): its new title, description or body (SKILL.md’s instructions), and its files (set_files, remove_files, or all of them in files); a new name proposes a new skill. ' +
         'For a tool (page "tool:<name>", list_tools): its title, description, acting, input and code; a new name proposes a new tool; remove: true proposes removing it.',
       inputSchema: S({ action: ACTIONS(['propose', 'withdraw', 'accept', 'decline']), page: str('"boldiquette", a guide’s slug, or "skill:<name>".'), kind: ACTIONS(['add', 'edit', 'remove']),
-        part_id: str('edit, remove: the part.'), title: str('The part’s title, or the skill’s.'), body: str('The part’s text (Markdown), or the skill’s instructions.'), section: str('Its section (tab).'),
+        part_id: str('edit, remove: the part. add: optional, its id (else a new one).'), title: str('The part’s title, or the skill’s.'), body: str('The part’s text (Markdown), or the skill’s instructions.'), section: str('Its section (tab).'),
         description: str('A skill’s description.'), files: { type: 'array', description: 'A skill: all its files (besides SKILL.md).', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
         set_files: { type: 'array', description: 'A skill: files to add or replace.', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
         remove_files: { type: 'array', items: { type: 'string' }, description: 'A skill: paths to remove.' },
