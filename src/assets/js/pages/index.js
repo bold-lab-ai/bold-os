@@ -10,7 +10,7 @@
   // A signed-in visitor who hasn't clicked "BOLD.OS" within this long gets the
   // click simulated for them — once per page load, so it never re-opens menus
   // they've closed.
-  var AUTO_REVEAL_MS = 2000;
+  var AUTO_REVEAL_MS = 600;
   var autoRevealTimer = null;
   var autoRevealDone = false;
   function cancelAutoReveal(){
