@@ -3478,7 +3478,7 @@ async function syncStudyChannel(email){
 }
 
 // Pure: what a page sends → { title, people: [{ name, email }], meeting } or { error }.
-// At least one person, and the meeting (normalizeMeeting's); `me` (lowercase) can't be one of the people.
+// At least one person; the meeting is optional (normalizeMeeting's, or null); `me` (lowercase) can't be one of the people.
 function normalizeStudies(d, me){
   d = d && typeof d === 'object' ? d : {};
   const title = String(d.title || '').trim();
@@ -3492,8 +3492,8 @@ function normalizeStudies(d, me){
   }
   if (!people.length) return { error: 'Add who supervises your studies.' };
   if (people.length > 10) return { error: 'Up to 10 people.' };
-  const meeting = normalizeMeeting(d.meeting);
-  if (meeting.error) return { error: meeting.error };
+  const meeting = d.meeting == null ? null : normalizeMeeting(d.meeting);
+  if (meeting && meeting.error) return { error: meeting.error };
   return { title, people, meeting };
 }
 
@@ -3560,7 +3560,8 @@ async function syncStudyMeeting(email){
 }
 
 // The profile's Studies tab, for the caller's own studies:
-// - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } }, both required;
+// - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } or null (none:
+//   its event is cancelled) }, people required;
 //   only PhD and Master students (their members record's role), or whoever already has studies.
 // - 'retry': tries the Slack channel and the Calendar event again.
 // - 'channel': { name } (or none: the default) → { name, prefixed, exists }, for the form's hint.
@@ -3610,12 +3611,12 @@ exports.studies = onCall(
       if (c.error) throw new HttpsError('invalid-argument', c.error);
       channel = c.name;
     }
-    await ref.set({
+    await ref.set(Object.assign({
       email, name: myName,
       degree: STUDY_ROLES.indexOf(role) >= 0 ? role : (prev.exists && prev.data().degree) || '',
       title: n.title, people: n.people, meeting: n.meeting, channel,
       everyone: [email].concat(n.people.map(function(p){ return p.email; })), updatedAt: Date.now()
-    }, { merge: true });
+    }, n.meeting ? {} : { pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() }), { merge: true });
     await syncStudyChannel(email);
     return studiesView(await syncStudyMeeting(email));
   }

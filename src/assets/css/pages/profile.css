@@ -96,6 +96,8 @@ section.block:first-of-type{margin-top:28px;}
 .st-links{display:block; font-family:var(--sans); font-size:14px; margin-top:2px;}
 .st-error{display:block; font-family:var(--sans); font-size:14px; color:var(--danger-text); margin-top:2px;}
 .event-form label.st-meeting-label{margin:14px 0 0;}
+.event-form .st-meeting-toggle input{display:inline-block; width:auto; margin:0 6px 0 0; vertical-align:-2px;}
+.event-form label.st-meeting-toggle{color:var(--ink); cursor:pointer;}
 /* A member's details in groups (join-common.js): the Projects tab's small-caps headings. */
 .md-group{margin-top:28px;}
 .md-group:first-child{margin-top:8px;}
