@@ -1036,16 +1036,7 @@
     fullWrite = false;
     if (readPoint) readPoint.start(user);
     if (comments) comments.start(user);
-    // Signed out, the BOLDiquette is still there to read (Who can see what), without
-    // its proposals.
-    if (!user) {
-      unsubs.push(ref.onSnapshot(function(snap){
-        loaded = true; proposalsLoaded = true;
-        x = snap.exists ? Object.assign({}, snap.data(), { slug: slug }) : null;
-        refresh();
-      }, function(err){ console.error('[BOLD Guides] loading the guide failed', err); loaded = true; x = null; render(); }));
-      return;
-    }
+    if (!user) return;
     G.access(function(ok){ if (mine === signIns) { fullWrite = ok; refresh(); } });
     unsubs.push(ref.onSnapshot(function(snap){
       loaded = true;

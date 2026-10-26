@@ -276,7 +276,7 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .ac-panel{position:absolute; top:100%; right:0; z-index:40; margin-top:6px; width:min(560px, calc(100vw - 32px)); background:var(--surface); border:1px solid var(--line); padding:14px 16px; display:flex; flex-direction:column; gap:10px; font-size:13px; color:var(--ink); box-shadow:0 8px 24px rgba(26,43,74,.10); text-align:left;}
 .ac-title{font-family:var(--serif); font-size:18px; font-weight:600;}
 .ac-ladder{display:flex; flex-direction:column; gap:2px;}
-.ac-row{display:grid; grid-template-columns:118px repeat(7, 1fr); align-items:center;}
+.ac-row{display:grid; grid-template-columns:118px repeat(6, 1fr); align-items:center;}
 .ac-head span{font-size:11px; color:var(--muted); text-align:center; letter-spacing:.02em;}
 .ac-what{color:var(--ink-soft);}
 .ac-cell{height:28px; background:none; border:0; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center; position:relative;}
@@ -299,7 +299,7 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .ac-actions{display:flex; gap:14px; justify-content:flex-end; align-items:center;}
 @media (max-width:560px){
   .ac-panel{position:fixed; left:0; right:0; bottom:0; top:auto; width:auto; margin:0; max-height:80vh; overflow:auto; border-width:1px 0 0; padding:16px;}
-  .ac-row{grid-template-columns:repeat(7, 1fr);}
+  .ac-row{grid-template-columns:repeat(6, 1fr);}
   .ac-row > :first-child{grid-column:1 / -1;}
   .ac-head > :first-child{display:none;}
   .ac-what{margin-top:6px;}

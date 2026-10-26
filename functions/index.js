@@ -2290,7 +2290,7 @@ exports.joinProjectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = signedInEmail(request);
-    await access.requireAccess(email, 'projects', 'change');   // Who can see what
+    await access.requireAccess(email, 'projects', 'edit');   // Who can see what
     const n = normalizeProjectChannel((request.data || {}).channel);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
     if (!(await isRegisteredProjectChannel(n.name))) throw new HttpsError('not-found', 'No project uses that Slack channel.');
@@ -2996,7 +2996,7 @@ exports.presentationFile = onCall(
   { secrets: [GOOGLE_OAUTH] },
   async (request) => {
     const email = callerEmail(request), data = request.data || {};
-    await access.requireAccess(email, 'projects', 'change');   // Who can see what
+    await access.requireAccess(email, 'projects', 'edit');   // Who can see what
     // owner: what the file is for ('project:<id>' or 'talk:<slug>'), and its title.
     let owner, title;
     if (data.talk){
@@ -3213,7 +3213,7 @@ function joinView(d){
 exports.joinHackathonTeam = onCall(
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'events', 'change');   // Who can see what
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     const github = String((request.data || {}).username || '').trim().replace(/^@/, '');
     if (!GITHUB_USERNAME.test(github)) throw new HttpsError('invalid-argument', 'That isn’t a GitHub username.');
     const ref = db.collection('hackathonJoins').doc(email);
@@ -3255,7 +3255,7 @@ exports.approveHackathonJoins = onCall(
   { secrets: [GITHUB_APP] },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'events', 'change');   // Who can see what
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can approve.');
     const wanted = Array.isArray((request.data || {}).emails) ? request.data.emails.map(e => String(e).toLowerCase()) : null;
     const snap = await db.collection('hackathonJoins').where('status', 'in', ['requested', 'failed']).get();
@@ -3334,7 +3334,7 @@ exports.linkGithub = onCall(
   { secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'profile', 'change');   // Who can see what
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const ref = db.collection('githubLinks').doc(email);
     const user = await admin.auth().getUser(request.auth.uid);
     const gh = (user.providerData || []).find((p) => p.providerId === 'github.com');
@@ -3378,7 +3378,7 @@ exports.linkGoogle = onCall(
   { secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'profile', 'change');   // Who can see what
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const user = await admin.auth().getUser(request.auth.uid);
     const g = (user.providerData || []).filter(function(p){ return p.providerId === 'google.com'; })[0];
     const google = g && g.email ? g.email.toLowerCase() : '';
@@ -3863,7 +3863,7 @@ function talkTextFields(edits, allowed){
 exports.editTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'events', 'change');   // Who can see what
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     const data = request.data || {};
     const talk = await findTalk(data.slug);
     if (!talk) throw new HttpsError('not-found', 'No such talk.');
@@ -3923,7 +3923,7 @@ exports.editTalk = onCall(
 exports.deleteSession = onCall(
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'events', 'change');   // Who can see what
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can delete a session.');
     const slug = String((request.data || {}).slug || '');
     if (!slug || slug.indexOf('/') >= 0) throw new HttpsError('invalid-argument', 'No such session.');
@@ -3962,7 +3962,7 @@ exports.deleteSession = onCall(
 exports.createTalk = onCall(
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'events', 'change');   // Who can see what
+    await access.requireAccess(email, 'events', 'edit');   // Who can see what
     const data = request.data || {};
     const sessionSlug = String(data.sessionSlug || '');
     if (!(await sessionDoc(sessionSlug))) throw new HttpsError('not-found', 'No such session.');
@@ -4335,7 +4335,7 @@ exports.setMyInviter = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'profile', 'change');   // Who can see what
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const to = String((request.data || {}).email || '').trim().toLowerCase();
     const ref = db.collection('members').doc(email);
     const m = await ref.get();
@@ -4364,7 +4364,7 @@ exports.confirmJoinInvite = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'profile', 'change');   // Who can see what
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const d = request.data || {};
     if (d.member){
       const mref = db.collection('members').doc(String(d.member).toLowerCase());
@@ -4424,7 +4424,7 @@ exports.decideJoinRequest = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'requests', 'change');   // Who can see what
+    await access.requireAccess(email, 'requests', 'edit');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
     const d = request.data || {};
     if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
@@ -4463,7 +4463,7 @@ exports.sendWelcomeEmail = onCall(
   { secrets: [GOOGLE_OAUTH] },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'requests', 'change');   // Who can see what
+    await access.requireAccess(email, 'requests', 'edit');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
     const id = String((request.data || {}).id || '');
     if (!/^[A-Za-z0-9]{1,40}$/.test(id)) throw new HttpsError('invalid-argument', 'No such request.');
@@ -4608,7 +4608,7 @@ exports.groupRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'profile', 'change');   // Who can see what
+    await access.requireAccess(email, 'profile', 'edit');   // Who can see what
     const d = request.data || {};
     const col = db.collection('groupRequests');
     const token = SLACK_BOT_TOKEN.value();
@@ -4792,7 +4792,7 @@ exports.letterRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'service-desk', 'change');   // Who can see what
+    await access.requireAccess(email, 'service-desk', 'edit');   // Who can see what
     const d = request.data || {};
     const token = SLACK_BOT_TOKEN.value();
     const myName = request.auth.token.name || email;
@@ -4948,7 +4948,7 @@ exports.introRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'service-desk', 'change');   // Who can see what
+    await access.requireAccess(email, 'service-desk', 'edit');   // Who can see what
     const d = request.data || {};
     const token = SLACK_BOT_TOKEN.value();
     const me = await personFor(email);

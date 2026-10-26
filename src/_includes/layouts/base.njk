@@ -30,7 +30,7 @@
 {% include "partials/shell-close.njk" %}
 <script src="assets/js/search-box.js?v={{ build.stamp }}"></script>
 {% for script in scripts %}<script src="assets/js/{{ script }}?v={{ build.stamp }}"></script>
-{% endfor %}{% if not public or mentions %}<script src="assets/js/mentions.js?v={{ build.stamp }}"></script>
+{% endfor %}{% if not public %}<script src="assets/js/mentions.js?v={{ build.stamp }}"></script>
 {% endif %}
 </body>
 </html>
