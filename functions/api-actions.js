@@ -624,7 +624,7 @@ module.exports = function(ctx){
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'presentations', run: presentations,
-      description: 'A project’s presentations (its Meetings & talks tab): add, update or remove a talk about it, with where it was given (one of the site’s events, a venue, or a name) and its slides and recording links.',
+      description: 'A project’s presentations (its Meetings tab): add, update or remove a talk about it, with where it was given (one of the site’s events, a venue, or a name) and its slides and recording links.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'remove']), project_id: str('The project id.'), presentation_id: str('update, remove (get_project lists them).'),
         title: str(''), type: ACTIONS(['research-talk', 'pitch', 'keynote']), date: str('YYYY-MM-DD'), presenter: str('Who gave it (default: you).'),
         event: str('Where: one of the site’s events (name or slug).'), venue: str('Or: a venue on the board.'), where: str('Or: anywhere else, by name.'), slides: str('https://…'), recording: str('https://…') }, ['action', 'project_id']) },
