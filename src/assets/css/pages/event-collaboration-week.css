@@ -62,3 +62,7 @@ html.auth-hint #proposalsSignedOut{display:none;}
 .bpl-talks .proj-meta{display:block; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .bpl-talks .badge{font-family:var(--sans); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; border:1px solid currentColor; padding:1px 6px; margin-left:6px; color:var(--neutral-text); vertical-align:2px;}
 #panelProjects .bpl-line{margin-top:16px;}
+/* the call for proposals (pages/event-series-page.js) */
+.cfp{display:flex; flex-wrap:wrap; align-items:center; gap:10px 18px; margin:0 0 8px;}
+.cfp .cfp-state{margin:0; flex:1 1 100%; font-family:var(--sans); font-size:14px; color:var(--muted);}
+.cfp .btn-box{text-decoration:none;}

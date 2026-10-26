@@ -58,6 +58,12 @@
       document.getElementById('allProposals').href = page;
       var back = document.getElementById('backLink');
       back.href = page.replace(/#.*/, ''); back.innerHTML = '&larr; ' + BOLD.escapeHtml(x.title);
+      // A new one only while the call is open (firestore.rules holds to the same).
+      if (!editId && x.proposalsOpen !== true) {
+        els.form.hidden = true;
+        els.error.innerHTML = 'The call for proposals for ' + BOLD.escapeHtml(x.title) + ' is closed. <a href="' + page + '">Back to it</a>.';
+        els.error.hidden = false;
+      }
       if (!editId) {
         els.heroNote.innerHTML = 'A workshop, project pitch, or talk for ' + BOLD.escapeHtml(x.title) + (when ? ' (' + BOLD.escapeHtml(when) + ')' : '') +
           '. See what’s already been proposed on <a href="' + page + '">its page</a>.';

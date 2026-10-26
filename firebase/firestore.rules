@@ -380,12 +380,17 @@ service cloud.firestore {
     // (self-attributed — the email on the document must be their own,
     // same pattern as a pending board proposal above); only the proposer
     // themselves or a PI/admin can edit or withdraw it afterward.
+    // Each is for one occurrence (eventSlug), proposed only while its call is open
+    // (events/{slug}.proposalsOpen, opened and closed on its page by its organisers, PIs
+    // and admins), and stays with it.
     match /collabWeekProposals/{proposalId} {
       allow read: if may('events', 'view');
-      allow create: if may('events', 'edit') && request.resource.data.email == email();
-      allow update, delete: if may('events', 'edit') && (
-        email() == resource.data.email || hasFullWrite()
-      );
+      allow create: if may('events', 'edit') && request.resource.data.email == email()
+        && request.resource.data.eventSlug is string
+        && get(/databases/$(database)/documents/events/$(request.resource.data.eventSlug)).data.get('proposalsOpen', false) == true;
+      allow update: if may('events', 'edit') && (email() == resource.data.email || hasFullWrite())
+        && request.resource.data.get('eventSlug', '') == resource.data.get('eventSlug', '');
+      allow delete: if may('events', 'edit') && (email() == resource.data.email || hasFullWrite());
     }
 
     // Every event's sessions (Collaboration Week's, the Festival's…), keyed

@@ -361,6 +361,9 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .day-note{margin:5px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .slot{display:flex; gap:20px; padding:14px 0; border-bottom:1px solid var(--line); scroll-margin-top:12px;}
 .slots{border-top:1px solid var(--line); margin-top:14px;}
+/* One line between days (the next day's), and none under a tab bar, which has its own. */
+.slots .slot:last-child{border-bottom:none;}
+.tab-panel .schedule > .day-card:first-child{border-top:none; padding-top:4px;}
 .slot-time{flex:0 0 auto; width:96px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; padding-top:3px;}
 .slot-sessions{flex:1 1 auto; min-width:0; display:grid; grid-template-columns:1fr; gap:3px 20px;}
 .slot-sessions.is-parallel{grid-template-columns:repeat(auto-fit, minmax(190px, 1fr));}
