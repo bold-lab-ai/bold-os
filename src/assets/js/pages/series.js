@@ -20,6 +20,11 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var params = new URLSearchParams(location.search);
   var id = params.get('series') || '', isNew = params.has('new');
+  // An event series (no invite) is its page (its own, or event.html with its switcher:
+  // series-editions.js): here, only its form (&edit, back to &back after) or, before it has
+  // an occurrence, a way to schedule the first.
+  var editMode = params.has('edit'), backTo = params.get('back') || '', accessKnown = false;
+  if (!/^[a-z0-9-]+\.html(\?[a-z0-9=&%._-]*)?$/i.test(backTo)) backTo = '';
   var s = null, loaded = false, me = null, full = false, editing = null, busy = false, msg = '', roster = null, names = {};
   var editions = null, editionsUnsub = null, planning = null;   // planning: { start, end, error } for the next edition
   var E = window.BoldEvents;
@@ -73,6 +78,13 @@
       return;
     }
     document.title = s.title + ' | BOLD Lab';
+    if (isEditions(s)) {
+      if (editMode) { if (!accessKnown) return; if (canChange()) { startEditing(); return; } }
+      if (editions === null) return;
+      var today = new Date().toISOString().slice(0, 10), released = editions.filter(function(e){ return !e.hidden; });
+      var best = released.filter(function(e){ return (e.endDate || e.startDate) >= today; })[0] || released[released.length - 1] || editions[editions.length - 1];
+      if (best) { location.replace(s.page ? s.page + '?edition=' + encodeURIComponent(best.slug) : 'event.html?event=' + encodeURIComponent(best.slug)); return; }
+    }
     var off = function(ok, why){ return ok && !busy ? '' : ' disabled title="' + esc(ok ? '' : why) + '"'; };
     var NOT_ORG = 'Only its organisers, PIs and admins can do this';
     if (isEditions(s)) { body.innerHTML = BACK + editionsHtml(off, NOT_ORG); return; }
@@ -201,7 +213,10 @@
         '<p class="ev-error"' + (e.error ? '' : ' hidden') + '>' + esc(e.error || '') + '</p>' +
         '<div class="event-form-actions"><button type="button" class="ev-save sr-save"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : s ? 'Save' : 'Add') + '</button>' +
           '<button type="button" class="sr-cancel"' + (busy ? ' disabled' : '') + '>Cancel</button></div>' +
-      '</div>';
+      '</div>' +
+      (s && isEditions(s) ? '<div class="event-controls">' +
+        (full ? '<button type="button" class="btn-text sr-act" data-action="' + (s.hidden ? 'release' : 'hide') + '">' + (s.hidden ? 'Release the series' : 'Hide the series') + '</button>' : '') +
+        '<button type="button" class="btn-text danger sr-act" data-action="delete">Delete the series</button></div>' : '');
   }
 
   // What the form says now, kept across redraws.
@@ -257,6 +272,7 @@
         busy = false; editing = null;
         var out = r.data && r.data.series;
         if (!s && out) { location.replace('series.html?series=' + encodeURIComponent(out.id)); return; }
+        if (backTo) { location.href = backTo; return; }
         msg = 'Saved.'; render();
       }).catch(function(err){
         busy = false; e.error = (err && err.message) || 'Couldn’t save — try again.'; render();
@@ -316,7 +332,7 @@
     if (t.classList.contains('sr-edit')) { msg = ''; startEditing(); return; }
     if (t.classList.contains('sr-act')) { act(t.getAttribute('data-action')); return; }
     if (t.classList.contains('sr-save')) { save(); return; }
-    if (t.classList.contains('sr-cancel')) { if (!s) { location.href = 'events.html'; return; } editing = null; render(); return; }
+    if (t.classList.contains('sr-cancel')) { if (!s) { location.href = 'events.html'; return; } if (backTo) { location.href = backTo; return; } editing = null; editMode = false; render(); return; }
     if (t.classList.contains('sr-org-remove')) { keep(); editing.organisers.splice(+t.getAttribute('data-i'), 1); render(); return; }
     if (t.classList.contains('sr-plan-open')) { openPlanning(); return; }
     if (t.classList.contains('sr-plan-cancel')) { planning = null; render(); return; }
@@ -346,11 +362,11 @@
     me = user ? { email: user.email || '' } : null;
     if (!user) return;
     firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(r){
-      full = !!(r.data && r.data.fullWrite);
+      full = !!(r.data && r.data.fullWrite); accessKnown = true;
       if (editionsUnsub) { editionsUnsub(); editionsUnsub = null; }
       if (s) watchEditions();
       render();
-    }).catch(function(){});
+    }).catch(function(){ accessKnown = true; render(); });
     loadRoster();
     if (isNew) {
       BOLD.onAccess(function(){

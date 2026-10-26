@@ -30,7 +30,13 @@
     if (id === seriesFor) return;
     seriesFor = id; series = null;
     if (!id) return;
-    db.collection('eventSeries').doc(id).get().then(function(d){ if (seriesFor === id) { series = d.exists ? d.data() : null; showProposals(); if (!editing) render(); } }).catch(function(){});
+    db.collection('eventSeries').doc(id).get().then(function(d){
+      if (seriesFor !== id) return;
+      series = d.exists ? d.data() : null;
+      // On event.html, an occurrence of a series without a page of its own: the series' switcher.
+      if (series && !body.getAttribute('data-series') && window.SeriesEditions) SeriesEditions.mount(id, slug, false);
+      showProposals(); if (!editing) render();
+    }).catch(function(){});
   }
   // Its proposals, when its recurring event takes them.
   var propsEl = document.getElementById('eventProposals'), proposals = null;
@@ -44,7 +50,7 @@
     proposals.update(me);
   }
   function seriesLine(){
-    if (!series || body.getAttribute('data-series')) return '';   // its series' own page has the switcher
+    if (!series || document.getElementById('editionSwitch')) return '';   // the switcher says it
     var cad = series.cadence || { every: 1, unit: 'month' };
     var c = cad.unit === 'month' && cad.every === 12 ? 'every year' : 'every ' + (cad.every > 1 ? cad.every + ' ' + cad.unit + 's' : cad.unit);
     return '<p class="event-series">An edition of <a href="series.html?series=' + encodeURIComponent(series.id) + '">' + esc(series.title) + '</a>, ' + c + ' · <a href="series.html?series=' + encodeURIComponent(series.id) + '">all editions</a></p>';

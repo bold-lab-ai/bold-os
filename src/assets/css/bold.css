@@ -688,3 +688,14 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .proposal-actions{margin-top:10px; display:flex; align-items:center; gap:14px; font-family:var(--sans); font-size:13px;}
 .proposal-actions .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
 .proposal-empty{font-size:16px; color:var(--muted); margin-top:14px;}
+/* switching between a series' occurrences (series-editions.js) */
+.ed-switch{max-width:var(--content-max); margin:0 auto; padding:28px var(--gutter) 0; font-family:var(--sans); font-size:13px;}
+.ed-row{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px;}
+.ed-switch[hidden]{display:none;}
+.ed-row > a{color:var(--muted); text-decoration:none; padding-bottom:2px; border-bottom:2px solid transparent;}
+.ed-row > a:hover{color:var(--ink);}
+.ed-row > a.is-current{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
+.ed-switch:not([hidden]) + .hero{padding-top:28px;}
+.ed-tools{margin-left:auto; display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px;}
+.ed-hidden{font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--danger-text);}
+.ed-form{margin-top:14px;}
