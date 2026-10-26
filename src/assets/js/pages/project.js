@@ -205,6 +205,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // &join=1, the link in a project's #all-active-projects announcement: join it
   // once it's loaded, on the Overview tab (maybeJoin).
   var joinRequested = /[#&]join=1(&|$)/.test(location.hash);
+  // &pres=<id>: one presentation (from an event's Projects tab), scrolled to and marked once it's drawn.
+  var presWanted = (location.hash.match(/[#&]pres=([^&]+)/) || [])[1] || '';, presScrolled = false;
   if (joinRequested) tab = 'overview';
 
   function setTab(name, focus){
@@ -771,7 +773,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       var title = t.slidesUrl ? '<a href="' + esc(t.slidesUrl) + '" target="_blank" rel="noopener">' + esc(t.title) + '</a>' : esc(t.title);
       var when = new Date(t.date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
       var occasion = occasionHtml(t);
-      return '<li><div class="talk-when">' + esc(when) + (occasion ? ' \u00b7 ' + occasion : '') + (typeLabel(t.type) ? ' \u00b7 ' + typeLabel(t.type) : '') + '</div>' +
+      return '<li id="pres-' + esc(t.id) + '"' + (t.id === presWanted ? ' class="is-target"' : '') + '><div class="talk-when">' + esc(when) + (occasion ? ' \u00b7 ' + occasion : '') + (typeLabel(t.type) ? ' \u00b7 ' + typeLabel(t.type) : '') + '</div>' +
         '<div class="talk-title">' + title + (t.presenter ? ' <span class="detail-muted">\u2014 ' + esc(t.presenter) + '</span>' : '') + '</div>' +
         '<div class="talk-actions">' +
           (t.recordingUrl ? '<a href="' + esc(t.recordingUrl) + '" target="_blank" rel="noopener">Recording</a>' : '') +
@@ -827,7 +829,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       // An earlier venue's card: the project page is its latest one's.
       if (ws && ws.cardId && (ws.cardId !== projectId || (ws.boardId || null) !== (boardId || null))) {
         location.replace('project.html#id=' + encodeURIComponent(ws.cardId) + (ws.boardId ? '&board=' + encodeURIComponent(ws.boardId) : '') +
-          (tab !== 'overview' ? '&tab=' + tab : '') + (joinRequested ? '&join=1' : ''));
+          (tab !== 'overview' ? '&tab=' + tab : '') + (joinRequested ? '&join=1' : '') + (presWanted ? '&pres=' + presWanted : ''));
         location.reload();
         return;
       }
@@ -841,6 +843,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         .sort(function(a, b){ return (b.date || '').localeCompare(a.date || '') || (b.at || 0) - (a.at || 0); });
       loadLiveTalks();
       if (card && !editing) render();
+      var target = presWanted && document.getElementById('pres-' + presWanted);
+      if (target && !presScrolled) { presScrolled = true; target.scrollIntoView({ block: 'center' }); }
     }, function(err){ console.error('[BOLD Lab] loading the presentations failed', err); });
   }
 

@@ -42,7 +42,7 @@ window.BoldProjectLinks = (function(){
           var id = d.ref.parent.parent.id;
           if (opts.exact && opts.exact(o)) exact.push({ projectId: id, ref: d.ref });
           if (ids.indexOf(id) < 0) ids.push(id);
-          (given[id] = given[id] || []).push(d.data());
+          (given[id] = given[id] || []).push(Object.assign({ id: d.id }, d.data()));
         });
         return Promise.all(ids.map(function(id){ return db.collection('projectWorkspaces').doc(id).get(); }));
       }).then(function(snaps){
@@ -171,18 +171,19 @@ window.BoldProjectLinks = (function(){
         list.map(function(p){ return '<a href="' + esc(p.href) + '">' + esc(p.title) + '</a>'; }).join(', ') +
         (error ? '<span class="bpl-note bpl-error">' + esc(error) + '</span>' : '') + '</dd>';
     }
-    // A Projects tab: each project, its presentations here (title, who, where in the
-    // programme, when, slides and recording), then adding one.
+    // A Projects tab: each project, its presentations here (title, linking to it on the
+    // project's Presentations tab, &pres=; who, where in the programme, when, slides and
+    // recording), then adding one.
     var TYPES = { 'research-talk': 'Research talk', pitch: 'Pitch', keynote: 'Keynote' };
     function panelHtml(){
       var rows = list.map(function(p){
-        return '<li><a class="proj-title" href="' + esc(p.href) + '">' + esc(p.title) + '</a>' +
+        return '<li><span class="proj-title">' + esc(p.title) + '</span>' +
           '<ul class="bpl-talks">' + p.presentations.map(function(t){
             var o = t.occasion || {}, where = o.talkTitle && o.talkTitle !== t.title ? o.talkTitle : o.sessionTitle || '';
             var meta = [t.presenter, where, t.date ? BoldEvents.when(t.date) : ''].filter(Boolean).map(esc);
             if (t.slidesUrl) meta.push('<a href="' + esc(t.slidesUrl) + '" target="_blank" rel="noopener">Slides</a>');
             if (t.recordingUrl) meta.push('<a href="' + esc(t.recordingUrl) + '" target="_blank" rel="noopener">Recording</a>');
-            return '<li>' + esc(t.title || 'Untitled') + (TYPES[t.type] ? ' <span class="badge">' + TYPES[t.type] + '</span>' : '') +
+            return '<li><a href="' + esc(p.href + '&pres=' + encodeURIComponent(t.id)) + '">' + esc(t.title || 'Untitled') + '</a>' + (TYPES[t.type] ? ' <span class="badge">' + TYPES[t.type] + '</span>' : '') +
               '<span class="proj-meta">' + meta.join(' · ') + '</span></li>';
           }).join('') + '</ul></li>';
       }).join('');
