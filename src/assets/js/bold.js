@@ -370,7 +370,7 @@
   }
   BOLD.isFullWrite = function(){ return !!(access && access.fullWrite); };
 
-  // ---------- who can see this page: a chip under the name, and its panel ----------
+  // ---------- who can see this page: a chip at its top right, and its panel ----------
   // The chip says who can see the page; it opens the page's row of the BOLDiquette's Who
   // can see what as a ladder (each group can do what the groups below it can): for each
   // action, the lowest group allowed. Everyone can open it; PIs and admins propose a change
@@ -479,7 +479,7 @@
     }).join('') + '</div>';
   }
   function drawAccess(){
-    var el = document.getElementById('mastAccess'), area = pageArea();
+    var el = document.getElementById('pageAccess'), area = pageArea();
     if (!el) return;
     if (!area || !AREA_NAMES[area] || !access || !access.e) { el.hidden = true; el.innerHTML = ''; return; }
     var cur = currentLevels(area);
@@ -535,7 +535,7 @@
     if (w === 'view' && l === 'none') { lv.edit = 'none'; lv.propose = 'none'; }
   }
   document.addEventListener('click', function(e){
-    var box = document.getElementById('mastAccess');
+    var box = document.getElementById('pageAccess');
     if (!box) return;
     if (!box.contains(e.target)) {
       if (panel && !panel.busy && !(panel.note && !panel.done)) { panel = null; drawAccess(); }
@@ -552,7 +552,7 @@
     if (again) again.focus();
   });
   document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && panel && !panel.busy) { panel = null; drawAccess(); var c = document.querySelector('#mastAccess .ac-chip'); if (c) c.focus(); }
+    if (e.key === 'Escape' && panel && !panel.busy) { panel = null; drawAccess(); var c = document.querySelector('#pageAccess .ac-chip'); if (c) c.focus(); }
   });
   document.addEventListener('input', function(e){
     if (e.target.classList && e.target.classList.contains('ac-note-input') && panel) panel.note = e.target.value;
