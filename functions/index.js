@@ -4504,7 +4504,7 @@ exports.retryWelcomeEmails = onSchedule(
 // People page, or by approving a request); without one, PAN-BOLD (groupOf; BoldJoin.groupOf
 // on the pages, kept in sync by hand). The group decides what they can see (settings/access),
 // so it never follows anything a member edits: approving a request sets it from their role
-// (roleGroup: PIs BOLD-exec, PhD students BOLD-internal, Staff BOLD-staff, else PAN-BOLD). A member asks for another group on their profile
+// (roleGroup: PIs BOLD-exec, PhD and Master students BOLD-internal, Staff BOLD-staff, else PAN-BOLD). A member asks for another group on their profile
 // (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
 // requests. Each group but PAN-BOLD may have Slack channels (settings/groups.channels, set there:
 // one or more names, separated by commas, as "bold-internal, all-active-projects"), and each
@@ -4534,7 +4534,7 @@ function groupOf(m){
 }
 // Pure: a role → the group it suggests, when a request is approved.
 function roleGroup(role){
-  return role === 'PI' ? 'exec' : role === 'PhD student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan';
+  return role === 'PI' ? 'exec' : role === 'PhD student' || role === 'Master student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan';
 }
 
 function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, '').toLowerCase(); }

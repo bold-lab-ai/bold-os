@@ -22,7 +22,7 @@ window.BoldJoin = (function(){
     return CATEGORIES.some(function(c){ return c[0] === m.category; }) ? m.category : 'pan';
   }
   // The group a role suggests when a request is approved (functions/index.js roleGroup).
-  function roleGroup(role){ return role === 'PI' ? 'exec' : role === 'PhD student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan'; }
+  function roleGroup(role){ return role === 'PI' ? 'exec' : role === 'PhD student' || role === 'Master student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan'; }
   function groupBadge(g){ return '<span class="type-badge pp-' + g + '">' + esc(categoryLabel(g)) + '</span>'; }
   // How someone likes to receive feedback (functions/index.js JOIN_FEEDBACK, firestore.rules).
   var FEEDBACK = [
