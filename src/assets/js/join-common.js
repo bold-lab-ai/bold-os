@@ -43,11 +43,12 @@ window.BoldJoin = (function(){
       .catch(function(err){ console.error('[BOLD Join] reading the form’s choices failed', err); done(null); });
   }
 
-  // The point of contact: a choice from the people on BOLD.OS (the `people` roster, o.people,
-  // [{ name, email }]) when the page can read it, else typed (join.html: applicants aren't
-  // signed in). A typed one from before stays on offer until another is chosen.
+  // The point of contact, on the profile: who invited them too (since 2026-10-26), a choice
+  // from the people on BOLD.OS (the `people` roster, o.people, [{ name, email }]), with
+  // whether they've confirmed inviting them. A typed one from before stays on offer until
+  // another is chosen. (join.html has its own: join.js.)
   function contactHtml(v, people){
-    var label = 'BOLD supervisor, mentor or point of contact';
+    var label = 'BOLD supervisor, mentor or point of contact (they invited you; we ask them to confirm)';
     if (!people) return '<label>' + label + '<input type="text" class="jn-contact" maxlength="200" value="' + esc(v.contact || '') + '" placeholder="Who connects you to BOLD?"></label>';
     var cur = String(v.contactEmail || '').toLowerCase();
     if (!cur && v.contact) {
@@ -55,18 +56,10 @@ window.BoldJoin = (function(){
       if (named) cur = named.email;
     }
     var known = people.some(function(p){ return p.email === cur; });
-    return '<label>' + label + '<select class="jn-contact-pick"><option value="">Choose a person…</option>' +
+    var inv = v.invitedBy || {}, st = cur && inv.email === cur ? inv.status : '';
+    label += st === 'confirmed' ? ' · they confirmed it' : st === 'denied' ? ' · they say they didn’t' : st ? ' · waiting for them to confirm' : '';
+    return '<label>' + esc(label) + '<select class="jn-contact-pick"><option value="">Choose a person…</option>' +
       (!known && v.contact ? '<option value="__typed__" selected>' + esc(v.contact) + '</option>' : '') +
-      people.map(function(p){ return '<option value="' + esc(p.email) + '"' + (p.email === cur ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
-      '</select></label>';
-  }
-
-  // Who invited them to the BOLD Slack, on the profile: a choice from the roster, with
-  // whether they've confirmed it.
-  function inviterHtml(v, people){
-    var cur = String((v.invitedBy && v.invitedBy.email) || '').toLowerCase(), st = v.invitedBy && v.invitedBy.status;
-    var note = !cur ? '' : st === 'confirmed' ? ' (they confirmed it)' : st === 'denied' ? ' (they say they didn’t)' : ' (waiting for them to confirm)';
-    return '<label>Who invited you to the BOLD Slack? (we ask them to confirm)' + esc(note) + '<select class="jn-inviter-pick"><option value="">Choose a person…</option>' +
       people.map(function(p){ return '<option value="' + esc(p.email) + '"' + (p.email === cur ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
       '</select></label>';
   }
@@ -90,8 +83,6 @@ window.BoldJoin = (function(){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';
       }).join('') + (v.role && opt.roles.indexOf(v.role) === -1 ? '<option selected>' + esc(v.role) + '</option>' : '') + '</select></label>' +
       (o.withIdentity ? '' : contactHtml(v, o.people)) +
-      // The profile: who invited them, from the roster (setMyInviter saves it and asks them to confirm).
-      (o.people && !o.withIdentity ? inviterHtml(v, o.people) : '') +
       // join.html only: their point of contact, who invited them, picked from the roster as they
       // type (join.js); they decide the request.
       (o.withIdentity ? '<label>BOLD supervisor, mentor or point of contact (they invited you, and approve your request)' +
@@ -126,13 +117,12 @@ window.BoldJoin = (function(){
     if (pick) {
       var o = pick.options[pick.selectedIndex];
       out.contact = pick.value ? o.textContent.trim() : '';
-      if (pick.value !== '__typed__') out.contactEmail = pick.value;
+      if (pick.value !== '__typed__') out.contactEmail = out.inviterEmail = pick.value;
     }
     if (el.querySelector('.jn-name')) { out.name = v('.jn-name'); out.email = v('.jn-email').toLowerCase(); }
     // join.html: the point of contact is who invited them.
     if (el.querySelector('.jn-inviter')) { out.invitedBy = v('.jn-inviter-id'); out.inviterTyped = v('.jn-inviter'); out.contact = out.invitedBy ? out.inviterTyped : ''; }
-    // Not part of the record: member-details.js sends it to setMyInviter.
-    if (el.querySelector('.jn-inviter-pick')) out.inviterEmail = el.querySelector('.jn-inviter-pick').value;
+    // inviterEmail is not part of the record: member-details.js sends it to setMyInviter.
     return out;
   }
 

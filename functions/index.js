@@ -4387,7 +4387,7 @@ exports.setMyInviter = onCall(
     const invitedBy = { id: who.id, name: String(who.data().name || to), email: to, status: 'pending', askedAt: Date.now(), via: 'profile' };
     await ref.update({ invitedBy });
     const name = m.data().name || email;
-    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: [to], headline: '👋 ' + slackText(name) + ' says you invited them to the BOLD Slack. ' +
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: [to], headline: '👋 ' + slackText(name) + ' names you as their BOLD point of contact, who invited them. ' +
       linkedTitle('Confirm it, or say you didn’t', joinPageUrl() + '#invited') + '.' });
     return { invitedBy };
   }

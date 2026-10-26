@@ -5,6 +5,7 @@
 // fill the form the first time (SLACK_SAME), and aren't shown.
 (function(){
   var esc = BOLD.escapeHtml;
+  var shownContact = '';   // the point of contact the form opened with
   var box = document.getElementById('memberDetails');
   if (!box || !BOLD.getAuth()) return;
   var db;
@@ -60,6 +61,8 @@
     if (editing) {
       box.innerHTML = '<div class="event-form join-form">' + BoldJoin.fieldsHtml(rec || fromSlack(), opt, { people: people }) +
         '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save md-save">Save</button><button type="button" class="md-cancel">Cancel</button></div></div>';
+      var pick = box.querySelector('.jn-contact-pick');
+      shownContact = pick ? pick.value : '';
       return;
     }
     var who = { name: me.name, email: me.email };
@@ -94,10 +97,13 @@
     var d = BoldJoin.read(box), err = box.querySelector('.ev-error');
     var p = BoldJoin.problem(d);
     if (p) { err.textContent = p; err.hidden = false; return; }
-    // Who invited them goes through setMyInviter (they can't write it, and it asks them to confirm).
-    var inviter = d.inviterEmail, was = String((rec && rec.invitedBy && rec.invitedBy.email) || '');
+    // Their point of contact is who invited them: that goes through setMyInviter (they can't
+    // write it, and it asks them to confirm). A typed one from before leaves it as it is.
+    // Only when they change it: saving other details never asks anyone.
+    var was = String((rec && rec.invitedBy && rec.invitedBy.email) || '');
+    var inviter = d.inviterEmail !== undefined && d.inviterEmail !== shownContact ? d.inviterEmail : undefined;
     delete d.inviterEmail;
-    (inviter && inviter !== was ? BOLD.confirmAction({ title: 'Save your details?', go: 'Save', effects: ['Send whoever you named as inviting you a Slack message asking them to confirm it'] }) : Promise.resolve(true))
+    (inviter && inviter !== was ? BOLD.confirmAction({ title: 'Save your details?', go: 'Save', effects: ['Send your point of contact a Slack message asking them to confirm they invited you'] }) : Promise.resolve(true))
       .then(function(ok){ if (ok) saveDetails(t, d, inviter, was, err); });
   });
   function saveDetails(t, d, inviter, was, err){
