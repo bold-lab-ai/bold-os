@@ -171,7 +171,7 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .cal-chip:hover{background:#654780;}
 /* the card a meeting opens: join a project, ask to join a student's meeting */
 .cal-pop{
-  position:absolute; z-index:30; width:320px; max-width:calc(100vw - 24px); box-sizing:border-box; padding:14px 16px;
+  position:fixed; z-index:30; width:320px; max-width:calc(100vw - 24px); max-height:calc(100vh - 24px); overflow:auto; box-sizing:border-box; padding:14px 16px;
   background:var(--surface); border:1px solid var(--line); box-shadow:0 6px 24px rgba(26,43,74,0.14);
 }
 .cal-pop[hidden]{display:none;}

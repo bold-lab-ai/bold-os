@@ -103,15 +103,28 @@
     var note = box.querySelector('.cal-ask-note'), typed = note ? note.value : '';
     box.innerHTML = html; box.hidden = false;
     if (typed && box.querySelector('.cal-ask-note')) box.querySelector('.cal-ask-note').value = typed;
-    var w = box.offsetWidth, maxX = document.documentElement.clientWidth - w - 12;
-    box.style.left = Math.max(12, Math.min(pop.x, maxX)) + 'px';
-    box.style.top = pop.y + 'px';
+    placePop();
+  }
+  // In the window (position:fixed): under its meeting, or above it when there's no room
+  // below, and never past an edge. Found again by its key, as a redraw replaces the block.
+  function placePop(){
+    var box = el('calPop');
+    if (!pop || box.hidden) return;
+    var a = el('meetings').querySelector('[data-key="' + pop.key.replace(/["\\]/g, '\\$&') + '"]');
+    var r = a ? a.getBoundingClientRect() : pop.rect;
+    pop.rect = r;
+    var vw = document.documentElement.clientWidth, vh = window.innerHeight, w = box.offsetWidth, h = box.offsetHeight, gap = 6, pad = 12;
+    var top = r.bottom + gap;
+    if (top + h > vh - pad && r.top - gap - h >= pad) top = r.top - gap - h;
+    box.style.left = Math.max(pad, Math.min(r.left, vw - w - pad)) + 'px';
+    box.style.top = Math.max(pad, Math.min(top, vh - h - pad)) + 'px';
   }
   function openPop(key, anchor){
-    var r = anchor.getBoundingClientRect();
-    pop = { key: key, x: r.left + window.scrollX, y: r.bottom + window.scrollY + 6 };
+    pop = { key: key, rect: anchor.getBoundingClientRect() };
     renderPop();
   }
+  window.addEventListener('scroll', placePop, { passive: true });
+  window.addEventListener('resize', placePop);
   function closePop(){ pop = null; renderPop(); }
 
   function listHtml(ms, evs){
