@@ -206,7 +206,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // once it's loaded, on the Overview tab (maybeJoin).
   var joinRequested = /[#&]join=1(&|$)/.test(location.hash);
   // &pres=<id>: one presentation (from an event's Projects tab), scrolled to and marked once it's drawn.
-  var presWanted = (location.hash.match(/[#&]pres=([^&]+)/) || [])[1] || '';, presScrolled = false;
+  var presWanted = (location.hash.match(/[#&]pres=([^&]+)/) || [])[1] || '', presScrolled = false;
   if (joinRequested) tab = 'overview';
 
   function setTab(name, focus){
