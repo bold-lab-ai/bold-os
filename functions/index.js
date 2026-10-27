@@ -3275,20 +3275,27 @@ exports.projectWorkspace = onCall(
   }
 );
 
-// --- Work boards: a project's code and content work in one place (project page, Work tab) ---
+// --- Work boards: everything in the works, and everything waiting on someone (project page, Work tab) ---
 // The board's own cards are projectWorkspaces/{pid}/work/{id} (firestore.rules), read
-// live by the page; projectWork adds what's happening elsewhere, each placed in a
-// column: To do, In progress, In review, Done (the last 14 days).
+// live by the page; projectWork adds what's happening elsewhere. Every item says what
+// it's about, its type (code, content or a request), who it's from (`by`) and who's on
+// it (`on`, or `waiting` when it's waiting on someone not named, such as "a PI or
+// admin"), and sits in a column: To do, In progress, In review, Done (the last 14 days).
 // - GitHub, from the board's repositories: open issues (To do; In progress once
 //   someone has it), pull requests (a draft In progress, open In review, merged
 //   Done) and recently closed issues (Done). Needs the GitHub App's Issues and Pull
 //   requests: read.
-// - With `content` on: every proposed change to the BOLDiquette, guides, skills and
-//   tools, open (In review) or decided lately (Done), those the caller can see.
+// - With `content` on (BOLD OS's board): everything on BOLD.OS waiting on someone,
+//   each only for those who'd see it on its own page:
+//   - proposed changes to the BOLDiquette, guides, skills and tools (content);
+//   - requests (type request): to join BOLD, to change group, recommendation letters,
+//     introductions, joining a supervision meeting, letting an agent act, new venues.
+// People are named as on BOLD.OS: a GitHub login becomes the name of whoever linked it.
 // A card linking a pull request, an issue or a proposal shows as one (the page joins them).
 const WORK_DAYS = 14;
 const WORK_COLUMNS = ['todo', 'doing', 'review', 'done'];
 const workCache = new Map();   // pid → { at, items, errors } (the caller-independent part: GitHub)
+const PIS_ADMINS = 'a PI or admin';
 
 // Pure: an issue's or pull request's numbers it closes ("Closes #12", "fixes #3").
 function closesIssues(body){
@@ -3299,24 +3306,24 @@ function closesIssues(body){
 }
 
 // Pure: a GitHub issue or pull request → a board item. `who(login)` → a person.
-function githubWorkItem(repo, x, isPr, who, now){
+function githubWorkItem(repo, x, isPr, who){
   const since = function(t){ return t ? Date.parse(t) : 0; };
   const base = {
-    source: 'github', kind: isPr ? 'pr' : 'issue', ref: (GITHUB_ORG + '/' + repo + '#' + x.number).toLowerCase(), repo, number: x.number,
-    title: String(x.title || ''), url: x.html_url, labels: (x.labels || []).map(function(l){ return typeof l === 'string' ? l : l.name; }).filter(Boolean)
+    source: 'github', type: 'code', kind: isPr ? 'pr' : 'issue', ref: (GITHUB_ORG + '/' + repo + '#' + x.number).toLowerCase(), repo, number: x.number,
+    title: String(x.title || ''), url: x.html_url, by: who(x.user && x.user.login)
   };
   if (!isPr){
-    const assignees = (x.assignees || []).map(function(a){ return who(a.login, 'assignee'); });
-    // Whoever opened it shows only while nobody has it (and not on a card linking it).
-    const people = assignees.length ? assignees : [who(x.user && x.user.login, 'opener')];
-    if (x.state === 'closed') return Object.assign(base, { column: 'done', state: 'closed', since: since(x.closed_at), people });
-    return Object.assign(base, { column: assignees.length ? 'doing' : 'todo', state: 'open', since: since(x.created_at), people });
+    const on = (x.assignees || []).map(function(a){ return who(a.login); });
+    if (x.state === 'closed') return Object.assign(base, { column: 'done', state: 'closed', since: since(x.closed_at), on });
+    return Object.assign(base, { column: on.length ? 'doing' : 'todo', state: 'open', since: since(x.created_at), on });
   }
-  const people = [who(x.user && x.user.login, 'author')].concat((x.requested_reviewers || []).map(function(r){ return who(r.login, 'reviewer'); }));
   const closes = closesIssues(x.body).map(function(n){ return (GITHUB_ORG + '/' + repo + '#' + n).toLowerCase(); });
-  if (x.merged_at) return Object.assign(base, { column: 'done', state: 'merged', since: since(x.merged_at), people, closes });
-  if (x.state === 'closed') return Object.assign(base, { column: 'done', state: 'closed', since: since(x.closed_at), people, closes });
-  return Object.assign(base, { column: x.draft ? 'doing' : 'review', state: x.draft ? 'draft' : 'open', since: since(x.draft ? x.created_at : (x.ready_at || x.created_at)), people, closes });
+  if (x.merged_at) return Object.assign(base, { column: 'done', state: 'merged', since: since(x.merged_at), on: [], closes });
+  if (x.state === 'closed') return Object.assign(base, { column: 'done', state: 'closed', since: since(x.closed_at), on: [], closes });
+  if (x.draft) return Object.assign(base, { column: 'doing', state: 'draft', since: since(x.created_at), on: [base.by], closes });
+  // Open: whoever's asked to review it is on it.
+  const reviewers = (x.requested_reviewers || []).map(function(r){ return who(r.login); });
+  return Object.assign(base, { column: 'review', state: 'open', since: since(x.created_at), on: reviewers, waiting: reviewers.length ? '' : 'a reviewer', closes });
 }
 
 // One repository's items → { items } or { error }.
@@ -3333,11 +3340,11 @@ async function githubWork(repo, who){
     open.concat(closed).forEach(function(x){
       if (x.pull_request) return;   // pulls, below
       if (x.state === 'closed' && Date.parse(x.closed_at) < now - WORK_DAYS * 86400000) return;
-      items.push(githubWorkItem(repo, x, false, who, now));
+      items.push(githubWorkItem(repo, x, false, who));
     });
     pulls.forEach(function(x){
       if (x.state === 'closed' && Date.parse(x.closed_at) < now - WORK_DAYS * 86400000) return;
-      items.push(githubWorkItem(repo, x, true, who, now));
+      items.push(githubWorkItem(repo, x, true, who));
     });
     return { items };
   } catch (err){
@@ -3348,18 +3355,30 @@ async function githubWork(repo, who){
   }
 }
 
+// Names as on BOLD.OS: email → name, from members (then the Slack roster); a minute's cache.
+let workNamesCache = null;
+async function workNames(){
+  if (workNamesCache && workNamesCache.at > Date.now() - 60000) return workNamesCache.names;
+  const [members, people] = await Promise.all([db.collection('members').get(), db.collection('people').get()]);
+  const names = {};
+  people.docs.forEach(function(d){ const p = d.data(); if (p.email && p.name) names[String(p.email).toLowerCase()] = p.name; });
+  members.docs.forEach(function(d){ const m = d.data(); if (m.name) names[d.id.toLowerCase()] = m.name; });
+  workNamesCache = { at: Date.now(), names };
+  return names;
+}
+
 // Pure: a proposal's page: its collection and document → { page (Who can see what), title, url }.
 function proposalPlace(collection, slug, doc){
   const title = (doc && doc.title) || slug;
   if (collection === 'handbook') return { page: 'boldiquette', title: slug === 'boldiquette' ? 'BOLDiquette' : title, url: handbookUrl(slug) };
   if (collection === 'guides') return { page: access.guideArea(slug), title, url: guideUrl(slug) };
-  if (collection === 'skills') return { page: 'skills', title, url: skillUrl(slug) };
-  if (collection === 'agentTools') return { page: 'tools', title, url: toolUrl(slug) };
+  if (collection === 'skills') return { page: 'skills', title: 'Skill ' + title, url: skillUrl(slug) };
+  if (collection === 'agentTools') return { page: 'tools', title: 'Tool ' + title, url: toolUrl(slug) };
   return null;
 }
 
 // The site's proposed changes the caller can see: open, or decided in the last 14 days.
-async function contentWork(email){
+async function contentWork(email, person){
   const after = Date.now() - WORK_DAYS * 86400000;
   // All of them, filtered here: a few hundred at most, and no collection-group index needed.
   const docs = (await db.collectionGroup('proposals').get()).docs.filter(function(d){
@@ -3382,17 +3401,93 @@ async function contentWork(email){
     if (!(place.page in mayView)) mayView[place.page] = await access.can(email, place.page, 'view');
     if (!mayView[place.page]) continue;
     const q = d.data();
-    const by = { name: (q.by && q.by.name) || '', email: String((q.by && q.by.email) || '').toLowerCase(), role: 'author' };
     const what = proposalSummary(q).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-    const item = { source: 'content', kind: 'proposal', ref: d.ref.path, title: place.title + ': ' + what, place: place.title,
-      url: place.url + '#proposals', note: String(q.note || '').slice(0, 300), people: [by] };
-    if (q.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: q.editedAt || q.at || 0 });
-    else {
-      Object.assign(item, { column: 'done', state: q.status, since: q.decidedAt || 0 });
-      if (q.decidedBy) item.people.push({ name: q.decidedByName || '', email: String(q.decidedBy).toLowerCase(), role: 'decider' });
-    }
+    const item = { source: 'content', type: 'content', kind: 'proposal', ref: d.ref.path, title: place.title + ': ' + what,
+      url: place.url + '#proposals', by: person(q.by && q.by.email, q.by && q.by.name) };
+    if (q.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: q.editedAt || q.at || 0, on: [], waiting: PIS_ADMINS });
+    else Object.assign(item, { column: 'done', state: q.status, since: q.decidedAt || 0, on: q.decidedBy ? [person(q.decidedBy, q.decidedByName)] : [] });
     items.push(item);
   }
+  return items;
+}
+
+// Pure: a request → its column and when it got there: open → review (waiting on someone),
+// being worked on → doing, settled → done (or null once older than 14 days).
+function requestColumn(open, doing, settledAt, at, now){
+  if (open) return { column: doing ? 'doing' : 'review', since: at || 0 };
+  if ((settledAt || 0) < (now || Date.now()) - WORK_DAYS * 86400000) return null;
+  return { column: 'done', since: settledAt || 0 };
+}
+
+// Requests waiting on someone, those the caller sees on their own pages (firestore.rules):
+// to join (PIs and admins, and whoever was named as inviting them), to change group
+// (PIs and admins, and who asked), recommendation letters and introductions (the two
+// people), supervision meetings (who asked and the student), agents acting (PIs and
+// admins, and the token's owner), new venues (PIs and admins, and who proposed it).
+async function requestWork(email, full, person){
+  const now = Date.now(), items = [];
+  const add = function(o, col){ if (col) items.push(Object.assign({ source: 'request', type: 'request' }, o, col)); };
+  const q = function(c, field){ return db.collection(c).where(field, '==', email).get().then(function(s){ return s.docs; }); };
+  const all = function(c){ return db.collection(c).get().then(function(s){ return s.docs; }); };
+  const uniq = function(lists){ const seen = {}; return [].concat.apply([], lists).filter(function(d){ if (seen[d.ref.path]) return false; seen[d.ref.path] = true; return true; }); };
+  const [joins, groups, lettersA, lettersB, introsA, introsB, studyA, studyB, tokens, boards] = await Promise.all([
+    full ? all('joinRequests') : q('joinRequests', 'invitedBy.email'),
+    full ? all('groupRequests') : q('groupRequests', 'email'),
+    q('letterRequests', 'requesterEmail'), q('letterRequests', 'writerEmail'),
+    q('introRequests', 'requesterEmail'), q('introRequests', 'offererEmail'),
+    access.can(email, 'calendar', 'view').then(function(ok){ return ok ? q('studyRequests', 'email') : []; }),
+    access.can(email, 'calendar', 'view').then(function(ok){ return ok ? q('studyRequests', 'student') : []; }),
+    full ? all('apiTokens') : q('apiTokens', 'email'),
+    full ? all('boards') : Promise.resolve([])
+  ]);
+  joins.forEach(function(d){
+    const r = d.data(), inv = r.invitedBy && r.invitedBy.email;
+    add({ kind: 'join', ref: d.ref.path, title: 'Join BOLD: ' + (r.name || 'someone') + (r.role ? ' (' + r.role + ')' : ''), url: SITE_URL + 'join-requests.html#r=' + d.id,
+      by: { name: r.name || '' }, on: r.status === 'open' && inv ? [person(inv, r.invitedBy.name)] : r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [],
+      waiting: r.status === 'open' && !inv ? PIS_ADMINS : '', state: r.status },
+    requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
+  });
+  groups.forEach(function(d){
+    const r = d.data();
+    add({ kind: 'group', ref: d.ref.path, title: 'Change group: ' + (r.name || r.email) + ', ' + (GROUP_LABELS[r.from] || r.from || '?') + ' → ' + (GROUP_LABELS[r.to] || r.to || '?'),
+      url: SITE_URL + 'join-requests.html#g=' + d.id, by: person(r.email, r.name), on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [],
+      waiting: r.status === 'open' ? PIS_ADMINS : '', state: r.status },
+    requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
+  });
+  uniq([lettersA, lettersB]).forEach(function(d){
+    const r = d.data(), recips = r.recipients || [];
+    const done = r.open === false || (recips.length && recips.every(function(x){ return x.submittedAt; }));
+    const settled = r.open === false ? (r.updatedAt || 0) : Math.max.apply(null, [0].concat(recips.map(function(x){ return x.submittedAt || 0; })));
+    add({ kind: 'letter', ref: d.ref.path, title: 'Recommendation letter: ' + (r.purpose || ''), url: letterUrl(d.id),
+      by: person(r.requesterEmail, r.requesterName), on: [person(r.writerEmail, r.writerName)], state: done ? 'done' : r.acknowledgedAt ? 'writing' : 'asked' },
+    requestColumn(!done, !!r.acknowledgedAt, settled, r.acknowledgedAt || r.at, now));
+  });
+  uniq([introsA, introsB]).forEach(function(d){
+    const r = d.data();
+    add({ kind: 'introduction', ref: d.ref.path, title: 'Introduction: ' + (r.org || '') + (r.area ? ' (' + r.area + ')' : ''), url: SITE_URL + 'introductions.html#i=' + d.id,
+      by: person(r.requesterEmail, r.requesterName), on: [person(r.offererEmail, r.offererName)], state: r.status },
+    requestColumn(r.status === 'asked' || r.status === 'accepted', r.status === 'accepted', r.updatedAt, r.status === 'accepted' ? r.updatedAt : r.at, now));
+  });
+  uniq([studyA, studyB]).forEach(function(d){
+    const r = d.data();
+    add({ kind: 'supervision', ref: d.ref.path, title: 'Join ' + (r.studentName || r.student) + '’s supervision meetings', url: SITE_URL + 'profile.html#studies',
+      by: person(r.email, r.name), on: [person(r.student, r.studentName)], state: r.status },
+    requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
+  });
+  tokens.forEach(function(d){
+    const x = d.data(), r = x.actRequest;
+    if (!r) return;
+    add({ kind: 'agent', ref: d.ref.path, title: 'Let an agent act: ' + (x.label || 'a token'), url: SITE_URL + 'join-requests.html#agents',
+      by: person(x.email), on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [], waiting: r.status === 'open' ? PIS_ADMINS : '', state: r.status },
+    requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
+  });
+  boards.forEach(function(d){
+    const b = d.data();
+    if (b.status !== 'pending') return;
+    add({ kind: 'venue', ref: d.ref.path, title: 'New venue: ' + (b.label || d.id), url: SITE_URL + 'audit-board.html',
+      by: person(b.proposedBy && b.proposedBy.email, b.proposedBy && b.proposedBy.name), on: [], waiting: PIS_ADMINS, state: 'open' },
+    { column: 'review', since: b.createdAt || 0 });
+  });
   return items;
 }
 
@@ -3405,24 +3500,28 @@ exports.projectWork = onCall(
     if (!validSlug(pid)) throw new HttpsError('invalid-argument', 'No project given.');
     const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data();
     if (!ws || !ws.work || !ws.work.on) throw new HttpsError('failed-precondition', 'This project has no work board.');
+    const names = await workNames();
+    // A person as BOLD.OS names them: { name, email }.
+    const person = function(e, fallback){
+      e = String(e || '').toLowerCase();
+      return { name: names[e] || fallback || e.split('@')[0] || 'someone', email: e };
+    };
     // The repositories: the board's, or else the project's own.
     const repos = (ws.work.repos && ws.work.repos.length) ? ws.work.repos : ws.repoName ? [ws.repoName] : [];
     const fresh = !!(request.data || {}).fresh;
     let gh = workCache.get(pid);
     const key = JSON.stringify(repos);
     if (!gh || gh.key !== key || fresh || gh.at < Date.now() - 60000){
-      // GitHub logins → people, from who linked their GitHub (githubLinks).
+      // GitHub logins → people, from who linked their GitHub (githubLinks): named as on BOLD.OS.
       const links = await db.collection('githubLinks').get();
       const byLogin = {};
-      for (const d of links.docs){
+      links.docs.forEach(function(d){
         const g = d.data();
-        if (g.github && g.status !== 'failed') byLogin[String(g.github).toLowerCase()] = d.id;
-      }
-      const names = {};
-      for (const e of Object.values(byLogin)){ const p = await personFor(e); names[e] = (p && p.name) || ''; }
-      const who = function(login, role){
+        if (g.github && g.status !== 'failed') byLogin[String(g.github).toLowerCase()] = d.id.toLowerCase();
+      });
+      const who = function(login){
         const e = byLogin[String(login || '').toLowerCase()];
-        return e ? { name: names[e] || e, email: e, login: login || '', role } : { name: login || 'someone', login: login || '', role };
+        return e ? person(e) : { name: login || 'someone', login: login || '' };
       };
       const results = await Promise.all(repos.map(function(r){ return githubWork(r, who); }));
       gh = { key, at: Date.now(), items: [], errors: [] };
@@ -3431,11 +3530,20 @@ exports.projectWork = onCall(
     }
     let items = gh.items, errors = gh.errors.slice();
     if (ws.work.content){
-      try { items = items.concat(await contentWork(email)); }
-      catch (err){
-        logger.error('projectWork: reading the proposals failed', { pid, error: String(err && err.message || err) });
-        errors.push('The site’s proposed changes couldn’t load — try again.');
-      }
+      const full = await isFullWrite(email);
+      const [content, requests] = await Promise.all([
+        contentWork(email, person).catch(function(err){
+          logger.error('projectWork: reading the proposals failed', { pid, error: String(err && err.message || err) });
+          errors.push('The proposed changes couldn’t load — try again.');
+          return [];
+        }),
+        requestWork(email, full, person).catch(function(err){
+          logger.error('projectWork: reading the requests failed', { pid, error: String(err && err.message || err) });
+          errors.push('The requests couldn’t load — try again.');
+          return [];
+        })
+      ]);
+      items = items.concat(content, requests);
     }
     return { items, errors, repos, at: gh.at };
   }
@@ -5702,7 +5810,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
+  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,

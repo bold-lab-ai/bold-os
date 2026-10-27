@@ -301,11 +301,10 @@ module.exports = function(ctx){
     const ref = db.collection('projectWorkspaces').doc(pid).collection('work');
     if (a.action === 'list') {
       const [r, snap] = await Promise.all([act(who, 'projectWork', { project: pid }), ref.get()]);
-      const people = (list) => (list || []).map((p) => (p.name || p.login || '') + (p.role === 'reviewer' ? ' (reviewing)' : p.role === 'opener' ? ' (opened it)' : p.role === 'decider' ? ' (decided)' : ''));
       return {
-        cards: snap.docs.map((d) => { const x = d.data(); return { card_id: d.id, title: x.title, notes: x.notes || '', column: WORK_COLUMNS[x.column], assigned_to: (x.assignees || []).map((p) => p.name), links: (x.links || []).map((l) => l.url) }; }),
-        elsewhere: (r.items || []).map((x) => ({ kind: x.kind === 'pr' ? 'pull request' : x.kind === 'proposal' ? 'proposed change' : 'issue', title: x.title, url: x.url,
-          column: WORK_COLUMNS[x.column], state: x.state, people: people(x.people), since: x.since ? new Date(x.since).toISOString().slice(0, 10) : '' })),
+        cards: snap.docs.map((d) => { const x = d.data(); return { card_id: d.id, title: x.title, type: x.kind || '', notes: x.notes || '', column: WORK_COLUMNS[x.column], assigned_to: (x.assignees || []).map((p) => p.name), links: (x.links || []).map((l) => l.url) }; }),
+        elsewhere: (r.items || []).map((x) => ({ kind: x.kind === 'pr' ? 'pull request' : x.kind === 'proposal' ? 'proposed change' : x.kind, title: x.title, url: x.url,
+          type: x.type, column: WORK_COLUMNS[x.column], state: x.state, from: x.by ? x.by.name || x.by.login || '' : '', on_it: (x.on || []).map((p) => p.name || p.login), waiting_for: x.waiting || '', since: x.since ? new Date(x.since).toISOString().slice(0, 10) : '' })),
         problems: r.errors || [],
       };
     }
@@ -329,7 +328,7 @@ module.exports = function(ctx){
     });
     if (a.column !== undefined && !WORK_COLUMNS[a.column]) throw httpError(400, 'The column is one of todo, doing, review, done.');
     if (a.action === 'add') {
-      const d = { title: need(a.title, 'a title').slice(0, 200), notes: String(a.notes || '').slice(0, 4000), column: a.column || 'todo',
+      const d = { title: need(a.title, 'a title').slice(0, 200), notes: String(a.notes || '').slice(0, 4000), kind: a.type || '', column: a.column || 'todo',
         assignees: assignees || [], assigneeEmails: (assignees || []).map((x) => x.email), links: links || [],
         by: { email: who.email, name: nameOfMe(who) }, at: now, movedAt: now, updatedAt: now, updatedBy: who.email };
       const id = await asUser(who, 'create', col, d);
@@ -340,7 +339,7 @@ module.exports = function(ctx){
     if (!cur.exists) throw httpError(404, 'No card with that id on this board.');
     if (a.action === 'remove') { await asUser(who, 'delete', col + '/' + id); return { ok: true }; }
     const x = cur.data();
-    const next = { title: x.title, notes: x.notes || '', column: x.column, assignees: x.assignees || [], assigneeEmails: x.assigneeEmails || [], links: x.links || [],
+    const next = { title: x.title, notes: x.notes || '', kind: a.type !== undefined ? String(a.type) : x.kind || '', column: x.column, assignees: x.assignees || [], assigneeEmails: x.assigneeEmails || [], links: x.links || [],
       by: x.by, at: x.at, movedAt: x.movedAt || x.at, updatedAt: now, updatedBy: who.email };
     if (a.action === 'move') { next.column = need(a.column, 'the column'); next.movedAt = now; }
     else {
@@ -687,9 +686,9 @@ module.exports = function(ctx){
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'work', run: work,
-      description: 'A project’s work board (its Work tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s the proposed changes to the site), or add, update, move or remove a card. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it.',
+      description: 'A project’s work board (its Work tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it.',
       inputSchema: S({ action: ACTIONS(['list', 'add', 'update', 'move', 'remove']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove (list gives it).'),
-        title: str('add, update'), notes: str('add, update'), column: ACTIONS(['todo', 'doing', 'review', 'done']), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
+        title: str('add, update'), notes: str('add, update'), type: ACTIONS(['code', 'content', 'request', 'other']), column: ACTIONS(['todo', 'doing', 'review', 'done']), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
         links: { type: 'array', items: { type: 'string' }, description: 'add, update: https://… links: a GitHub pull request or issue, a proposal, anything.' } }, ['action', 'project_id']) },
     { name: 'presentations', run: presentations,
       description: 'A project’s presentations (its Meetings tab): add, update or remove a talk about it, with where it was given (one of the site’s events, a venue, or a name) and its slides and recording links.',

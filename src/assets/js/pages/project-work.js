@@ -1,10 +1,10 @@
-// A project's work board (project page, Work tab): its code and content work in one
-// place. Three kinds of items, each placed in To do, In progress, In review or Done:
-// - the board's own cards, projectWorkspaces/{pid}/work/{id} (firestore.rules),
-//   followed live;
-// - its repositories' issues and pull requests, and, on a board showing the site's
-//   content, the proposed changes to the BOLDiquette, guides, skills and tools, both
-//   from projectWork (functions/index.js).
+// A project's work board (project page, Work tab): everything in the works, and on BOLD
+// OS's board everything on BOLD.OS waiting on someone, in To do, In progress, In review
+// or Done. Each item shows only what's needed to scan it: its type (code, content or a
+// request), what it's about, who it's from, and who's on it (or what it waits for).
+// - the board's own cards, projectWorkspaces/{pid}/work/{id} (firestore.rules), live;
+// - from projectWork (functions/index.js): its repositories' issues and pull requests,
+//   and, on a board with `content`, the proposed changes and requests the viewer sees.
 // A card linking a pull request, an issue or a proposal shows as one, in the furthest
 // column of the card's and theirs; a pull request that closes an issue ("Closes #5")
 // takes it in. project.js mounts it (ProjectWork.start, then attach on each render);
@@ -23,6 +23,8 @@ var ProjectWork = (function(){
   var cards = [], cardsLoaded = false, unsub = null;
   var remote = { items: [], errors: [], at: 0, loading: false, loaded: false };
   var who = '';            // the person filter: an email or a GitHub login ('' all)
+  var type = '';           // the type filter: code, content, request ('' all)
+  var TYPES = [['code', 'Code'], ['content', 'Content'], ['request', 'Request'], ['other', 'Other']];
   var editing = null;      // a card's id, or 'new:<column>'; 'settings'
   var draftLinks = [];     // links in the open editor
   var busy = false, msg = '';
@@ -88,7 +90,7 @@ var ProjectWork = (function(){
     });
   }
 
-  // Everything on the board, joined: [{ key, kind, source, title, url, column, people, since, … }].
+  // Everything on the board, joined: [{ key, type, kind, source, title, url, column, by, on, waiting, since, … }].
   function items(){
     var byRef = {};
     remote.items.forEach(function(x){ byRef[x.ref] = x; });
@@ -102,69 +104,67 @@ var ProjectWork = (function(){
       linked.forEach(function(x){ taken[x.ref] = true; (x.closesItems || []).forEach(function(i){ taken[i.ref] = true; }); });
       var column = c.column, since = c.movedAt || c.at || 0;
       linked.forEach(function(x){ if (ORDER[x.column] > ORDER[column]) { column = x.column; since = x.since || since; } });
-      var people = (c.assignees || []).map(function(a){ return { name: a.name, email: String(a.email || '').toLowerCase(), role: 'assignee' }; });
-      linked.forEach(function(x){ people = people.concat((x.people || []).filter(function(p){ return p.role !== 'opener'; })); });
-      return { key: 'card:' + c.id, card: c, source: 'card', title: c.title, notes: c.notes, column: column, since: since,
-        people: dedupe(people), linked: linked, auto: column !== c.column };
+      var on = (c.assignees || []).map(function(a){ return { name: a.name, email: String(a.email || '').toLowerCase() }; });
+      linked.forEach(function(x){ on = on.concat(x.on || []); });
+      // Its type: chosen, or from what it links (a pull request or issue: code; a proposal: content).
+      var t = c.kind || (linked.some(function(x){ return x.type === 'code'; }) || (c.links || []).some(function(l){ return l.type === 'pr' || l.type === 'issue'; }) ? 'code'
+        : (c.links || []).some(function(l){ return l.type === 'proposal'; }) || linked.some(function(x){ return x.type === 'content'; }) ? 'content' : 'other');
+      var waiting = on.length ? '' : linked.map(function(x){ return x.waiting; }).filter(Boolean)[0] || '';
+      return { key: 'card:' + c.id, card: c, source: 'card', type: t, title: c.title, notes: c.notes, column: column, since: since,
+        by: c.by ? { name: c.by.name, email: String(c.by.email || '').toLowerCase() } : null, on: dedupe(on), waiting: waiting, linked: linked, auto: column !== c.column };
     });
     remote.items.forEach(function(x){
       if (taken[x.ref]) return;
-      out.push(Object.assign({ key: x.ref }, x, { people: dedupe(x.people || []), linked: x.closesItems || [] }));
+      out.push(Object.assign({ key: x.ref }, x, { on: dedupe(x.on || []), linked: x.closesItems || [] }));
     });
     return out.filter(function(x){ return x.column !== 'done' || !x.since || x.since >= Date.now() - DAYS * 86400000; });
   }
   function personKey(p){ return p.email || ('gh:' + String(p.login || p.name || '').toLowerCase()); }
   function dedupe(list){
     var seen = {};
-    return list.filter(function(p){ var k = personKey(p); if (!p || seen[k]) return false; seen[k] = true; return true; });
+    return list.filter(function(p){ if (!p) return false; var k = personKey(p); if (seen[k]) return false; seen[k] = true; return true; });
   }
 
   function days(t){ return t ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : 0; }
-  function age(x){
-    var n = days(x.since);
-    var when = n === 0 ? 'today' : n === 1 ? '1 day' : n + ' days';
-    if (x.column === 'review' && n >= SLOW) return '<strong>Waiting for review, ' + when + '</strong>';
-    return x.column === 'done' ? (n === 0 ? 'Done today' : 'Done ' + when + ' ago') : (n === 0 ? 'Since today' : when);
+  // Its reference, small: PR #23, Issue #5, the request's kind; nothing for a card.
+  var REQUEST_KINDS = { join: 'Joining', group: 'Group', letter: 'Letter', introduction: 'Introduction', supervision: 'Supervision', agent: 'Agent', venue: 'Venue' };
+  function refLabel(x){
+    var repo = (remote.repos || []).length > 1 && x.repo ? ' ' + x.repo : '';
+    if (x.kind === 'pr') return 'PR #' + x.number + (x.state === 'draft' ? ' draft' : '') + repo;
+    if (x.kind === 'issue') return 'Issue #' + x.number + repo;
+    if (x.kind === 'proposal') return 'Proposal' + (x.state && x.state !== 'open' ? ', ' + x.state : '');
+    if (x.source === 'request') return REQUEST_KINDS[x.kind] || 'Request';
+    return '';
   }
-  function sourceLabel(x){
-    if (x.source === 'card') return 'Card';
-    if (x.kind === 'proposal') return 'Proposed change' + (x.state && x.state !== 'open' ? ' · ' + x.state : '');
-    var repo = (remote.repos || []).length > 1 ? ' · ' + x.repo : '';
-    if (x.kind === 'pr') return 'Pull request #' + x.number + (x.state === 'draft' ? ' · draft' : x.state === 'closed' ? ' · closed' : '') + repo;
-    return 'Issue #' + x.number + repo;
+  function name(p){
+    if (!p) return '';
+    var n = esc(p.name || p.login || p.email || 'someone');
+    return personKey(p) === me() ? '<b class="is-me">' + n + '</b>' : n;
   }
-  function chips(people){
-    return people.length ? '<div class="wk-people">' + people.map(function(p){
-      var role = p.role === 'reviewer' ? ' (review)' : p.role === 'decider' ? ' (decided)' : p.role === 'opener' ? ' (opened it)' : '';
-      return '<span class="wk-chip' + (personKey(p) === me() ? ' is-me' : '') + '">' + esc(p.name || p.login || p.email) + role + '</span>';
-    }).join('') + '</div>' : '';
-  }
-  function linkedHtml(x){
-    // What it links, and the issues those pull requests close.
-    var list = [];
-    (x.linked || []).forEach(function(i){ if (i && list.indexOf(i) < 0) list.push(i); (i && i.closesItems || []).forEach(function(c){ if (list.indexOf(c) < 0) list.push(c); }); });
-    var extra = x.card ? (x.card.links || []).filter(function(l){ return l.type === 'url' || !(l.ref && list.some(function(i){ return i.ref === l.ref; })); }) : [];
-    if (!list.length && !extra.length) return '';
-    return '<ul class="wk-links">' + list.map(function(i){
-      return '<li><a href="' + esc(i.url) + '" target="_blank" rel="noopener">' + esc(sourceLabel(i)) + '</a> ' + esc(i.title) + '</li>';
-    }).concat(extra.map(function(l){
-      return '<li><a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(l.label || l.url) + '</a></li>';
-    })).join('') + '</ul>';
+  // From whom, and who's on it (or what it waits for); waiting long in review is flagged.
+  function whoHtml(x){
+    var from = x.by && (x.by.name || x.by.login || x.by.email) ? 'From ' + name(x.by) : '';
+    var verb = { accepted: 'Accepted by ', approved: 'Approved by ', declined: 'Declined by ' }[x.state] || '';
+    var on = x.on && x.on.length ? (x.column === 'done' ? verb : '') + x.on.map(name).join(', ') + (x.column === 'done' ? '' : ' on it')
+      : x.waiting && x.column !== 'done' ? 'Waiting for ' + esc(x.waiting) : '';
+    return [from, on].filter(Boolean).join(' \u00b7 ');
   }
   function itemHtml(x){
-    var title = x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>' : esc(x.title);
-    var html = '<li class="wk-item wk-' + x.source + '" data-key="' + esc(x.key) + '">' +
-      '<div class="wk-src">' + esc(sourceLabel(x)) + (x.auto ? ' · moved with its link' : '') + '</div>' +
+    var n = days(x.since), late = x.column === 'review' && n >= SLOW;
+    var t = TYPES.filter(function(y){ return y[0] === x.type; })[0] || TYPES[3];
+    var title = x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>'
+      : x.card ? '<button class="wk-open" type="button">' + esc(x.title) + '</button>' : esc(x.title);
+    var linked = (x.linked || []).map(function(i){ return '<a href="' + esc(i.url) + '" target="_blank" rel="noopener">' + esc(refLabel(i)) + '</a>'; }).join(' ');
+    var html = '<li class="wk-item" data-key="' + esc(x.key) + '"' + (x.notes ? ' title="' + esc(x.notes) + '"' : '') + '>' +
+      '<div class="wk-top"><span class="wk-type wk-type-' + t[0] + '">' + t[1] + '</span>' +
+        (refLabel(x) ? '<span class="wk-ref">' + esc(refLabel(x)) + '</span>' : '') + (linked ? '<span class="wk-ref">' + linked + '</span>' : '') +
+        (late ? '<span class="wk-late">' + n + ' days</span>' : '') + '</div>' +
       '<div class="wk-title">' + title + '</div>' +
-      (x.notes ? '<div class="wk-notes">' + esc(x.notes) + '</div>' : '') +
-      (x.note ? '<div class="wk-notes">' + esc(x.note) + '</div>' : '') +
-      linkedHtml(x) + chips(x.people) +
-      '<div class="wk-meta">' + age(x) + '</div>';
+      (whoHtml(x) ? '<div class="wk-who-line">' + whoHtml(x) + '</div>' : '');
     if (x.card) {
       var ok = canChange(x.card), why = ok ? '' : ' disabled title="' + esc(canAdd() ? NO_EDIT : BOLD.cannotReason('projects', 'edit')) + '"';
-      html += '<div class="wk-actions">' +
-        '<select class="wk-move" aria-label="Move to"' + why + '>' + COLUMNS.map(function(c){
-          return '<option value="' + c[0] + '"' + (c[0] === x.card.column ? ' selected' : '') + '>' + (c[0] === x.card.column ? c[1] : 'Move to ' + c[1]) + '</option>';
+      html += '<div class="wk-actions"><select class="wk-move" aria-label="Move to"' + why + '>' + COLUMNS.map(function(c){
+          return '<option value="' + c[0] + '"' + (c[0] === x.card.column ? ' selected' : '') + '>' + (c[0] === x.card.column ? 'Move\u2026' : c[1]) + '</option>';
         }).join('') + '</select>' +
         '<button class="btn-text wk-edit" type="button"' + why + '>Edit</button></div>';
     }
@@ -180,13 +180,15 @@ var ProjectWork = (function(){
     return '<form class="wk-editor" novalidate>' +
       '<label>Title<input type="text" class="wk-f-title" maxlength="200" value="' + esc(c ? c.title : '') + '" required></label>' +
       '<label>Notes<textarea class="wk-f-notes" maxlength="4000" rows="3">' + esc(c ? c.notes || '' : '') + '</textarea></label>' +
+      '<label>Type<select class="wk-f-kind"><option value="">From its links</option>' + TYPES.map(function(y){
+        return '<option value="' + y[0] + '"' + (c && c.kind === y[0] ? ' selected' : '') + '>' + y[1] + '</option>'; }).join('') + '</select></label>' +
       '<label>Who’s on it<select class="wk-f-who"><option value="">Nobody yet</option>' + people.map(function(e){
         var p = personByEmail(e);
         return '<option value="' + esc(e) + '"' + (e === cur ? ' selected' : '') + '>' + esc(p && p.name || e) + (e === me() ? ' (you)' : '') + '</option>';
       }).join('') + '</select></label>' +
       '<div class="wk-f-links"><span>Linked</span><ul class="wk-f-linklist"></ul>' +
         '<select class="wk-f-pick" aria-label="Link a pull request, issue or proposal"><option value="">Link a pull request, issue or proposed change…</option>' +
-          options.map(function(x){ return '<option value="' + esc(x.ref) + '">' + esc(sourceLabel(x) + ': ' + x.title).slice(0, 140) + '</option>'; }).join('') +
+          options.filter(function(x){ return x.source !== 'request'; }).map(function(x){ return '<option value="' + esc(x.ref) + '">' + esc((refLabel(x) + ': ' + x.title).slice(0, 140)) + '</option>'; }).join('') +
         '</select>' +
         '<div class="wk-f-urlrow"><input type="url" class="wk-f-url" placeholder="Or paste a link" aria-label="A link"><button class="btn-text wk-f-add" type="button">Add</button></div>' +
       '</div>' +
@@ -212,7 +214,7 @@ var ProjectWork = (function(){
         esc(ctx.ws() && ctx.ws().repoName ? ctx.ws().repoName + ' (the project’s)' : 'bold-lab-ai/…') + '"' + (edit ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' +
         '<span class="field-hint">In bold-lab-ai, separated by commas. Empty: the project’s own.</span></label>' +
       '<label class="wk-check"><input type="checkbox" class="wk-s-content"' + (w.content ? ' checked' : '') +
-        (ctx.fullWrite() ? '' : ' disabled title="Only PIs and admins can change this"') + '> Show the proposed changes to the BOLDiquette, guides, skills and tools</label>' +
+        (ctx.fullWrite() ? '' : ' disabled title="Only PIs and admins can change this"') + '> Show everything on BOLD.OS waiting on someone: proposed changes and requests (each only to whoever can see it)</label>' +
       '<div class="field-error wk-f-error" hidden></div>' +
       '<div class="stage-fields-actions"><button class="btn" type="submit"' + (edit || ctx.fullWrite() ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Save</button>' +
         '<button class="btn" type="button" data-wk="cancel">Cancel</button>' +
@@ -229,18 +231,18 @@ var ProjectWork = (function(){
   }
   function drawBoard(keepEditor){
     var all = items();
-    // Who's doing what: everyone with something in progress or in review.
+    // Who's doing what: everyone on something in progress or in review.
     var load = {};
     all.forEach(function(x){
       if (x.column !== 'doing' && x.column !== 'review') return;
-      x.people.forEach(function(p){
-        if (p.role === 'decider' || p.role === 'opener') return;
+      (x.on || []).forEach(function(p){
         var k = personKey(p);
         load[k] = load[k] || { p: p, doing: 0, review: 0 };
         load[k][x.column]++;
       });
     });
-    var shown = who ? all.filter(function(x){ return x.people.some(function(p){ return personKey(p) === who; }); }) : all;
+    var involves = function(x, k){ return personKey(x.by || {}) === k || (x.on || []).some(function(p){ return personKey(p) === k; }); };
+    var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type); });
     var strip = Object.keys(load).sort(function(a, b){ return (load[b].doing + load[b].review) - (load[a].doing + load[a].review); }).map(function(k){
       var l = load[k], parts = [];
       if (l.doing) parts.push(l.doing + ' in progress');
@@ -248,7 +250,11 @@ var ProjectWork = (function(){
       return '<button class="wk-who' + (who === k ? ' active' : '') + '" type="button" data-who="' + esc(k) + '">' + esc(l.p.name || l.p.login || l.p.email) +
         ' <span class="detail-muted">' + parts.join(', ') + '</span></button>';
     }).join('');
-    var head = '<div class="wk-head">' +
+    var types = '<div class="wk-filters wk-types">' + [['', 'All']].concat(TYPES).map(function(y){
+      var n = all.filter(function(x){ return !y[0] || x.type === y[0]; }).length;
+      return y[0] === 'other' && !n ? '' : '<button class="wk-who' + (type === y[0] ? ' active' : '') + '" type="button" data-type="' + y[0] + '">' + y[1] + ' <span class="detail-muted">' + n + '</span></button>';
+    }).join('') + '</div>';
+    var head = '<div class="wk-head">' + types +
       '<div class="wk-filters"><button class="wk-who' + (!who ? ' active' : '') + '" type="button" data-who="">Everyone</button>' +
         (me() ? '<button class="wk-who' + (who === me() ? ' active' : '') + '" type="button" data-who="' + esc(me()) + '">Mine</button>' : '') + strip + '</div>' +
       '<div class="wk-tools"><span class="detail-muted">' + (remote.loading ? 'Updating…' : remote.at ? 'Updated ' + new Date(remote.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '') + '</span>' +
@@ -293,6 +299,9 @@ var ProjectWork = (function(){
     Array.prototype.forEach.call(root.querySelectorAll('[data-who]'), function(b){
       b.addEventListener('click', function(){ who = b.getAttribute('data-who'); draw(); });
     });
+    Array.prototype.forEach.call(root.querySelectorAll('[data-type]'), function(b){
+      b.addEventListener('click', function(){ type = b.getAttribute('data-type'); draw(); });
+    });
     Array.prototype.forEach.call(root.querySelectorAll('.wk-add'), function(b){
       b.addEventListener('click', function(){ if (editing) return; editing = 'new:' + b.getAttribute('data-col'); draftLinks = []; draw(); focusTitle(); });
     });
@@ -305,7 +314,8 @@ var ProjectWork = (function(){
       if (key.indexOf('card:') !== 0) return;
       var c = cards.filter(function(x){ return 'card:' + x.id === key; })[0];
       if (!c) return;
-      var move = li.querySelector('.wk-move'), edit = li.querySelector('.wk-edit');
+      var move = li.querySelector('.wk-move'), edit = li.querySelector('.wk-edit'), open = li.querySelector('.wk-open');
+      if (open) open.addEventListener('click', function(){ if (edit && !edit.disabled) edit.click(); });
       if (move) move.addEventListener('change', function(){ moveCard(c, move.value); });
       if (edit) edit.addEventListener('click', function(){ if (editing) return; editing = c.id; draftLinks = (c.links || []).slice(); draw(); focusTitle(); });
     });
@@ -348,7 +358,7 @@ var ProjectWork = (function(){
       var x = remote.items.filter(function(i){ return i.ref === pick.value; })[0];
       pick.value = '';
       if (!x || draftLinks.some(function(l){ return l.ref === x.ref; })) return;
-      draftLinks.push({ type: x.kind, ref: x.ref, url: x.url, label: (sourceLabel(x) + ': ' + x.title).slice(0, 200) });
+      draftLinks.push({ type: x.kind, ref: x.ref, url: x.url, label: (refLabel(x) + ': ' + x.title).slice(0, 200) });
       drawLinks();
     });
     form.querySelector('.wk-f-add').addEventListener('click', function(){
@@ -357,7 +367,7 @@ var ProjectWork = (function(){
       error.hidden = true;
       var g = githubRef(v);
       var x = g && remote.items.filter(function(i){ return i.ref === g.ref; })[0];
-      draftLinks.push(g ? { type: g.type, ref: g.ref, url: g.url, label: x ? (sourceLabel(x) + ': ' + x.title).slice(0, 200) : g.ref }
+      draftLinks.push(g ? { type: g.type, ref: g.ref, url: g.url, label: x ? (refLabel(x) + ': ' + x.title).slice(0, 200) : g.ref }
         : { type: 'url', url: v.slice(0, 2000), label: v.slice(0, 200) });
       input.value = '';
       drawLinks();
@@ -376,7 +386,7 @@ var ProjectWork = (function(){
       var a = form.querySelector('.wk-f-who').value, p = a && personByEmail(a);
       var m = ctx.me(), now = Date.now();
       var data = {
-        title: title.slice(0, 200), notes: form.querySelector('.wk-f-notes').value.trim().slice(0, 4000),
+        title: title.slice(0, 200), notes: form.querySelector('.wk-f-notes').value.trim().slice(0, 4000), kind: form.querySelector('.wk-f-kind').value,
         assignees: a ? [{ email: a, name: (p && p.name) || (a === me() && m.displayName) || a }] : [], assigneeEmails: a ? [a] : [],
         links: draftLinks.slice(0, 10).map(function(l){ var o = { type: l.type, url: l.url, label: l.label || '' }; if (l.ref) o.ref = l.ref; return o; }),
         updatedAt: now, updatedBy: m.email
@@ -398,6 +408,7 @@ var ProjectWork = (function(){
     var m = ctx.me(), now = Date.now();
     var data = {};
     ['title', 'notes', 'assignees', 'assigneeEmails', 'links', 'by', 'at'].forEach(function(k){ data[k] = c[k]; });
+    data.kind = c.kind || '';
     cardsRef().doc(c.id).set(Object.assign(data, { notes: c.notes || '', column: column, movedAt: now, updatedAt: now, updatedBy: m.email }))
       .catch(function(err){ console.error('[BOLD Lab] moving a card failed', err); msg = 'Couldn’t move it — try again.'; draw(); });
   }

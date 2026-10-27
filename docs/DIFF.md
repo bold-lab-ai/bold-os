@@ -36,7 +36,7 @@ Every point where the site differs from BOLDiquette: the paper-submission toolin
 
 **Proposed BOLDiquette change:** covered by the same draft addition plus its "Addition to Post-submission" block.
 
-**Known limitation (not a BOLDiquette question):** status changes are a free-form dropdown, except the Approved gate (both checklist passes must be complete). Who may move a card / tick which pass is unenforced — see `TODO.md` Permissions.
+**Known limitation (not a BOLDiquette question):** status changes are a free-form dropdown, except the Approved gate (both checklist passes must be complete). Who may move a card / tick which pass is unenforced — a card on the BOLD OS project's Work tab.
 
 ## 3. Where the project is logged — DIVERGENCE
 
@@ -82,7 +82,7 @@ Every point where the site differs from BOLDiquette: the paper-submission toolin
 
 **BOLDiquette (On Acceptance):** *"Submit the form to add the paper to our website."*
 
-**Implementation:** the guide has no "On Acceptance" phase. Once BOLD OS is live the project (and its publications) already exist there, and an accepted publication is published to the website automatically — see `TODO.md`.
+**Implementation:** the guide has no "On Acceptance" phase. Once BOLD OS is live the project (and its publications) already exist there, and an accepted publication is published to the website automatically — a card on the BOLD OS project's Work tab.
 
 **Proposed BOLDiquette change:** replace the manual form step with "BOLD OS publishes the accepted publication automatically" once that exists; until then the manual step still applies and the guide is ahead of reality here.
 
