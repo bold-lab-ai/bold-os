@@ -738,10 +738,12 @@
       // wants ch-hint-deadlines — the "No deadline set" fallback inside
       // columnHintFor is plain text and should keep ch-hint's own layout.
       var isDeadlineHint = !!(board && board.rushMode && (status === 'register' || status === 'abstract' || status === 'paper') && rushColumnRealDeadline(status, board));
-      return { id: status, label: statusLabelFor(status, board), count: cardsForStatus.length,
+      // 20 at a time, with Load more (the shared board's BoldBoard.paged).
+      var page = BoldBoard.paged(board && board.id, status, cardsForStatus);
+      return { id: status, label: statusLabelFor(status, board), count: cardsForStatus.length, more: page.more,
         hint: isDeadlineHint ? null : columnHintFor(status, board),
         headExtra: isDeadlineHint ? '<div class="ch-hint ch-hint-deadlines">' + columnHintFor(status, board) + '</div>' : '',
-        body: cardsForStatus.map(function(c){ return renderCard(c, board); }).join(''),
+        body: page.items.map(function(c){ return renderCard(c, board); }).join(''),
         empty: searching && allForStatus.length > 0 ? 'No matches' : 'Nothing here' };
     });
     var orphanedAll = state.cards.filter(function(c){ return !STATUS_LABELS[c.status]; });
@@ -894,5 +896,6 @@
     });
 
     BoldBoard.equalizeHeads(els.boardRegion);
+    BoldBoard.onMore(els.boardRegion, function(){ var b = getCurrentBoard(); return b && b.id; }, renderBoard);
   }
 

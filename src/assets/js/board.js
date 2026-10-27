@@ -7,6 +7,11 @@
 //   BoldBoard.columnsHtml(columns) → the columns' HTML. columns: [{ id, label, count,
 //     hint (HTML under the label, optional), body (the cards' HTML), empty (shown
 //     when there are none), headExtra (HTML after the hint, optional) }].
+//   BoldBoard.paged(scope, columnId, list) → { items, more }: the first 20 of a column's
+//     cards (PAGE), and how many more there are; a column's `more` in columnsHtml
+//     shows "Load more" under its cards, which shows 20 more each time (BoldBoard.
+//     onMore(root, scope, redraw) wires it; scope may be a function of the column). `scope` keeps one board's columns apart from
+//     another's (the venue, the project).
 //   BoldBoard.equalizeHeads(root): every column head on the boards inside `root` as
 //     tall as the tallest, so the cards start on one line across the board; kept so
 //     when the window is resized. Call it after each redraw.
@@ -19,6 +24,27 @@
 var BoldBoard = (function(){
   var esc = function(s){ return BOLD.escapeHtml(s); };
   var COLUMN_MIN = 240;   // keep in step with .column's min-width in board.css
+  var PAGE = 20;          // cards shown per column, and how many more each "Load more" shows
+
+  // How many of each column's cards are shown: { '<scope>|<column>': n }, for this visit.
+  var shownCount = {};
+  function paged(scope, columnId, list){
+    var n = shownCount[scope + '|' + columnId] || PAGE;
+    return { items: list.slice(0, n), more: Math.max(0, list.length - n) };
+  }
+  function onMore(root, scope, redraw){
+    if (!root) return;
+    root.__boldBoardMore = { scope: scope, redraw: redraw };
+    if (root.__boldBoardMoreWired) return;
+    root.__boldBoardMoreWired = true;
+    root.addEventListener('click', function(e){
+      var b = e.target.closest('[data-board-more]');
+      if (!b || !root.contains(b)) return;
+      var o = root.__boldBoardMore, col = b.getAttribute('data-board-more'), k = (typeof o.scope === 'function' ? o.scope(col) : o.scope) + '|' + col;
+      shownCount[k] = (shownCount[k] || PAGE) + PAGE;
+      o.redraw();
+    });
+  }
 
   function columnsHtml(columns){
     // Wide enough for every column at its narrowest, scrolling sideways below that.
@@ -27,7 +53,8 @@ var BoldBoard = (function(){
       html += '<div class="column" data-col="' + esc(c.id) + '">' +
         '<div class="column-head"><div class="ch-top"><span>' + c.label + '</span><span class="count">' + (c.count == null ? '' : c.count) + '</span></div>' +
           (c.hint != null ? '<div class="ch-hint">' + c.hint + '</div>' : '') + (c.headExtra || '') + '</div>' +
-        '<div class="column-body">' + (c.body || '<div class="column-empty">' + (c.empty || 'Nothing here') + '</div>') + '</div>' +
+        '<div class="column-body">' + (c.body || '<div class="column-empty">' + (c.empty || 'Nothing here') + '</div>') +
+          (c.more ? '<button class="btn-text board-more" type="button" data-board-more="' + esc(c.id) + '">Load ' + Math.min(PAGE, c.more) + ' more <span class="board-more-left">(' + c.more + ' left)</span></button>' : '') + '</div>' +
       '</div>';
     });
     return html + '</div>';
@@ -144,5 +171,5 @@ var BoldBoard = (function(){
     window.addEventListener('keydown', function(e){ if (e.key === 'Escape') end(false); });
   }
 
-  return { columnsHtml: columnsHtml, equalizeHeads: equalizeHeads, drag: drag, COLUMN_MIN: COLUMN_MIN };
+  return { columnsHtml: columnsHtml, paged: paged, onMore: onMore, PAGE: PAGE, equalizeHeads: equalizeHeads, drag: drag, COLUMN_MIN: COLUMN_MIN };
 })();

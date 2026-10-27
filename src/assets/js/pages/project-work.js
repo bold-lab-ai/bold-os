@@ -13,7 +13,8 @@ var ProjectWork = (function(){
   var esc = BOLD.escapeHtml;
   var COLUMNS = [['todo', 'To do'], ['doing', 'In progress'], ['review', 'Waiting for review'], ['done', 'Done']];
   var ORDER = { todo: 0, doing: 1, review: 2, done: 3 };
-  var DAYS = 14, SLOW = 3;   // Done shows the last 14 days; "waiting" after 3 in review
+  var DAYS = 30, SLOW = 3;   // Done shows the last 30 days, then they're archived; "waiting" after 3 days
+  var archive = false;       // Done showing the archive (cards done more than 30 days ago) instead
   var NO_EDIT = 'Only whoever made it, whom it’s assigned to, the project’s people, PIs and admins can change it';
   var NOT_EDITOR = 'Only the project’s submitter, authors, PIs and admins can do this';
 
@@ -117,7 +118,8 @@ var ProjectWork = (function(){
       if (taken[x.ref]) return;
       out.push(Object.assign({ key: x.ref }, x, { on: dedupe(x.on || []), linked: x.closesItems || [] }));
     });
-    return out.filter(function(x){ return x.column !== 'done' || !x.since || x.since >= Date.now() - DAYS * 86400000; });
+    // Done more than 30 days ago: archived, shown only when Done shows the archive.
+    return out.filter(function(x){ var old = x.column === 'done' && x.since && x.since < Date.now() - DAYS * 86400000; return archive ? x.column !== 'done' || old : !old; });
   }
   function personKey(p){ return p.email || ('gh:' + String(p.login || p.name || '').toLowerCase()); }
   function dedupe(list){
@@ -266,12 +268,15 @@ var ProjectWork = (function(){
     var settings = editing === 'settings' ? '<div class="wk-settings-slot"></div>' : '';
     // The shared board (assets/js/board.js): the Internal Review Board's columns.
     var cols = '<div class="board-scroll">' + BoldBoard.columnsHtml(COLUMNS.map(function(c){
-      var list = shown.filter(function(x){ return x.column === c[0]; }).sort(function(a, b){ return (b.since || 0) - (a.since || 0); });
+      var all = shown.filter(function(x){ return x.column === c[0]; }).sort(function(a, b){ return (b.since || 0) - (a.since || 0); });
+      // 20 at a time (BoldBoard.paged); Load more shows the next 20.
+      var page = BoldBoard.paged(scopeOf(c[0]), c[0], all), list = page.items;
       var add = c[0] !== 'done' ? '<button class="btn-text wk-add" type="button" data-col="' + c[0] + '"' +
         (canAdd() ? '' : ' disabled title="' + esc(BOLD.cannotReason('projects', 'edit')) + '"') + '>+ Add a card</button>' : '';
       var newSlot = editing === 'new:' + c[0] ? '<div class="wk-new-slot"></div>' : '';
-      return { id: c[0], label: c[1], count: list.length,
-        hint: c[0] === 'done' ? 'The last ' + DAYS + ' days; before, the <a href="changelog.html">Changelog</a>' : '',
+      return { id: c[0], label: c[0] === 'done' && archive ? 'Done, archived' : c[1], count: all.length, more: page.more,
+        hint: c[0] === 'done' ? (archive ? 'Cards done more than ' + DAYS + ' days ago (the rest are on GitHub and the <a href="changelog.html">Changelog</a>). <button class="btn-text wk-archive" type="button">Back to the last ' + DAYS + ' days</button>'
+          : 'The last ' + DAYS + ' days. <button class="btn-text wk-archive" type="button">Archive</button>') : '',
         headExtra: add,
         body: newSlot + list.map(itemHtml).join(''),
         empty: !cardsLoaded || (remote.loading && !remote.loaded) ? 'Loading\u2026' : 'Nothing here' };
@@ -298,7 +303,12 @@ var ProjectWork = (function(){
     wire();
   }
 
+  // Load more's count per column: Done's archive counts apart from its last 30 days.
+  function scopeOf(column){ return pid + (archive && column === 'done' ? ':archive' : ''); }
   function wire(){
+    BoldBoard.onMore(root, scopeOf, draw);
+    var arch = el('.wk-archive');
+    if (arch) arch.addEventListener('click', function(){ archive = !archive; draw(); });
     // Heads the same height across the board, as on the Internal Review Board.
     BoldBoard.equalizeHeads(root);
     BoldBoard.drag(root, {

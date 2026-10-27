@@ -3280,7 +3280,7 @@ exports.projectWorkspace = onCall(
 // live by the page; projectWork adds what's happening elsewhere. Every item says what
 // it's about, its type (code, content or a request), who it's from (`by`) and who's on
 // it (`on`, or `waiting` when it's waiting on someone not named, such as "a PI or
-// admin"), and sits in a column: To do, In progress, Waiting for review, Done (the last 14 days).
+// admin"), and sits in a column: To do, In progress, Waiting for review, Done (the last 30 days).
 // - GitHub, from the board's repositories: open issues (To do; In progress once
 //   someone has it), pull requests (a draft In progress, open In review, merged
 //   Done) and recently closed issues (Done). Needs the GitHub App's Issues and Pull
@@ -3292,7 +3292,7 @@ exports.projectWorkspace = onCall(
 //     introductions, joining a supervision meeting, letting an agent act, new venues.
 // People are named as on BOLD.OS: a GitHub login becomes the name of whoever linked it.
 // A card linking a pull request, an issue or a proposal shows as one (the page joins them).
-const WORK_DAYS = 14;
+const WORK_DAYS = 30;   // Done: the last 30 days (older cards are archived on the page)
 const WORK_COLUMNS = ['todo', 'doing', 'review', 'done'];
 const workCache = new Map();   // pid → { at, items, errors } (the caller-independent part: GitHub)
 const PIS_ADMINS = 'a PI or admin';
@@ -3377,7 +3377,7 @@ function proposalPlace(collection, slug, doc){
   return null;
 }
 
-// The site's proposed changes the caller can see: open, or decided in the last 14 days.
+// The site's proposed changes the caller can see: open, or decided in the last 30 days.
 async function contentWork(email, person){
   const after = Date.now() - WORK_DAYS * 86400000;
   // All of them, filtered here: a few hundred at most, and no collection-group index needed.
@@ -3414,7 +3414,7 @@ async function contentWork(email, person){
 }
 
 // Pure: a request → its column and when it got there: open → review (waiting on someone),
-// being worked on → doing, settled → done (or null once older than 14 days).
+// being worked on → doing, settled → done (or null once older than 30 days).
 function requestColumn(open, doing, settledAt, at, now){
   if (open) return { column: doing ? 'doing' : 'review', since: at || 0 };
   if ((settledAt || 0) < (now || Date.now()) - WORK_DAYS * 86400000) return null;
