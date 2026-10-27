@@ -202,8 +202,12 @@
 .wk-title a:hover{text-decoration:underline;}
 .wk-open{font:inherit; color:inherit; background:none; border:0; padding:0; text-align:left; cursor:pointer;}
 .wk-open:hover{text-decoration:underline;}
-.wk-who-line{font-size:12px; color:var(--muted); margin-top:3px;}
+.wk-who-line{font-size:12.5px; color:var(--ink-soft); margin-top:3px; display:flex; align-items:baseline; gap:6px; flex-wrap:wrap;}
+.wk-who-line a{color:inherit;}
 .wk-who-line .is-me{color:var(--ink); font-weight:600;}
+/* What someone does on an item (From, Reviewer, Decides…), before their names. */
+.wk-tag{flex:none; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted);
+  border:1px solid var(--line); border-radius:var(--radius); padding:0 4px; line-height:1.5;}
 .wk-types{flex:0 0 100%;}
 .wk-actions{display:flex; gap:10px; align-items:center; margin-top:4px;}
 .wk-actions .wk-edit{flex:none; white-space:nowrap; font-size:12px;}

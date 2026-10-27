@@ -29,6 +29,7 @@ var ProjectWork = (function(){
   var editing = null;      // a card's id, or 'new:<column>'; 'settings'
   var draftLinks = [];     // links in the open editor
   var busy = false, msg = '';
+  var slackIds = {};       // email → Slack id, for links to people's pages (the people roster)
 
   function el(sel){ return root.querySelector(sel); }
   function me(){ var m = ctx.me(); return m && m.email ? m.email.toLowerCase() : ''; }
@@ -72,6 +73,10 @@ var ProjectWork = (function(){
       draw();
     });
     fetchRemote(false);
+    db.collection('people').get().then(function(snap){
+      snap.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });
+      draw();
+    }).catch(function(err){ console.error('[BOLD Lab] loading the roster failed', err); });
   }
   function stop(){ if (unsub) unsub(); unsub = null; pid = ''; }
   function attach(mount){ if (mount) { mount.appendChild(root); draw(); } }
@@ -105,7 +110,7 @@ var ProjectWork = (function(){
       linked.forEach(function(x){ taken[x.ref] = true; (x.closesItems || []).forEach(function(i){ taken[i.ref] = true; }); });
       var column = c.column, since = c.movedAt || c.at || 0;
       linked.forEach(function(x){ if (ORDER[x.column] > ORDER[column]) { column = x.column; since = x.since || since; } });
-      var on = (c.assignees || []).map(function(a){ return { name: a.name, email: String(a.email || '').toLowerCase() }; });
+      var on = (c.assignees || []).map(function(a){ return { name: a.name, email: String(a.email || '').toLowerCase(), role: 'Working on it' }; });
       linked.forEach(function(x){ on = on.concat(x.on || []); });
       // Its type: chosen, or from what it links (a pull request or issue: code; a proposal: content).
       var t = c.kind || (linked.some(function(x){ return x.type === 'code'; }) || (c.links || []).some(function(l){ return l.type === 'pr' || l.type === 'issue'; }) ? 'code'
@@ -138,18 +143,33 @@ var ProjectWork = (function(){
     if (x.source === 'request') return REQUEST_KINDS[x.kind] || 'Request';
     return '';
   }
+  // A person's name, linked to their page on BOLD.OS (person.html?id=<Slack id>), or to
+  // GitHub for someone who hasn't linked it; you in bold.
   function name(p){
     if (!p) return '';
-    var n = esc(p.name || p.login || p.email || 'someone');
-    return personKey(p) === me() ? '<b class="is-me">' + n + '</b>' : n;
+    var n = esc(p.name || p.login || p.email || 'someone'), id = p.id || slackIds[p.email || ''];
+    var cls = personKey(p) === me() ? ' class="is-me"' : '';
+    if (id) return '<a' + cls + ' href="person.html?id=' + encodeURIComponent(id) + '">' + n + '</a>';
+    if (p.login && !p.email) return '<a' + cls + ' href="https://github.com/' + encodeURIComponent(p.login) + '" target="_blank" rel="noopener">' + n + '</a>';
+    return cls ? '<b' + cls + '>' + n + '</b>' : n;
   }
-  // From whom, and who's on it (or what it waits for); waiting long in review is flagged.
+  function tag(t){ return '<span class="wk-tag">' + esc(t) + '</span>'; }
+  // Who it's from, then who's responsible, each after a tag saying what they do:
+  // From, Reviewer, Decides, Writes it, Working on it…; or what it waits for.
   function whoHtml(x){
-    var from = x.by && (x.by.name || x.by.login || x.by.email) ? 'From ' + name(x.by) : '';
-    var verb = { accepted: 'Accepted by ', approved: 'Approved by ', declined: 'Declined by ' }[x.state] || '';
-    var on = x.on && x.on.length ? (x.column === 'done' ? verb : '') + x.on.map(name).join(', ') + (x.column === 'done' ? '' : ' on it')
-      : x.waiting && x.column !== 'done' ? 'Waiting for ' + esc(x.waiting) : '';
-    return [from, on].filter(Boolean).join(' \u00b7 ');
+    var lines = [];
+    if (x.by && (x.by.name || x.by.login || x.by.email)) lines.push(tag('From') + name(x.by));
+    var roles = [], by = {};
+    (x.on || []).forEach(function(p){
+      var r = p.role || x.role || 'On it';
+      if (!by[r]) { by[r] = []; roles.push(r); }
+      by[r].push(p);
+    });
+    roles.forEach(function(r){ lines.push(tag(r) + by[r].map(name).join(', ')); });
+    if (!roles.length && x.waiting && x.column !== 'done') {
+      lines.push(tag(x.role || 'Waiting for') + (x.waiting === 'a reviewer' ? 'Nobody yet' : esc(x.waiting.charAt(0).toUpperCase() + x.waiting.slice(1))));
+    }
+    return lines.map(function(l){ return '<div class="wk-who-line">' + l + '</div>'; }).join('');
   }
   function itemHtml(x){
     var n = days(x.since), late = x.column === 'review' && n >= SLOW;
@@ -164,7 +184,7 @@ var ProjectWork = (function(){
         (refLabel(x) ? '<span class="wk-ref">' + esc(refLabel(x)) + '</span>' : '') + (linked ? '<span class="wk-ref">' + linked + '</span>' : '') +
         (late ? '<span class="wk-late">' + n + ' days</span>' : '') + '</div>' +
       '<div class="wk-title">' + title + '</div>' +
-      (whoHtml(x) ? '<div class="wk-who-line">' + whoHtml(x) + '</div>' : '');
+      whoHtml(x);
     if (x.card) {
       var ok = canChange(x.card);
       html += '<div class="wk-actions"><button class="btn-text wk-edit" type="button"' +

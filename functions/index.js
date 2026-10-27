@@ -3355,16 +3355,26 @@ async function githubWork(repo, who){
   }
 }
 
-// Names as on BOLD.OS: email → name, from members (then the Slack roster); a minute's cache.
+// Names as on BOLD.OS: email → { names: name (members, then the Slack roster), ids: Slack
+// id (their page, person.html?id=) }; a minute's cache.
 let workNamesCache = null;
 async function workNames(){
-  if (workNamesCache && workNamesCache.at > Date.now() - 60000) return workNamesCache.names;
+  if (workNamesCache && workNamesCache.at > Date.now() - 60000) return workNamesCache;
   const [members, people] = await Promise.all([db.collection('members').get(), db.collection('people').get()]);
-  const names = {};
-  people.docs.forEach(function(d){ const p = d.data(); if (p.email && p.name) names[String(p.email).toLowerCase()] = p.name; });
+  const names = {}, ids = {};
+  people.docs.forEach(function(d){ const p = d.data(), e = String(p.email || '').toLowerCase(); if (!e) return; ids[e] = d.id; if (p.name) names[e] = p.name; });
   members.docs.forEach(function(d){ const m = d.data(); if (m.name) names[d.id.toLowerCase()] = m.name; });
-  workNamesCache = { at: Date.now(), names };
-  return names;
+  workNamesCache = { at: Date.now(), names, ids };
+  return workNamesCache;
+}
+
+// Pure: what the people on an item do (each shown as a tag before their names): Reviewer,
+// Decides, Writes it…; once done, what happened (Accepted by, Merged…).
+function workRole(x){
+  if (x.column === 'done') return { accepted: 'Accepted by', approved: 'Approved by', declined: 'Declined by', merged: 'Merged', closed: 'Closed', withdrawn: 'Withdrawn' }[x.state] || 'Done by';
+  if (x.kind === 'pr') return x.state === 'draft' ? 'Working on it' : 'Reviewer';
+  if (x.kind === 'review') return x.state === 'changes requested' ? 'Revises' : 'Reviewer';
+  return { issue: 'Assigned', letter: 'Writes it', introduction: 'Introduces', invite: 'Confirms', event: 'Releases' }[x.kind] || 'Decides';
 }
 
 // Pure: a proposal's page: its collection and document → { page (Who can see what), title, url }.
@@ -3434,7 +3444,7 @@ async function requestWork(email, full, person){
   const uniq = function(lists){ const seen = {}; return [].concat.apply([], lists).filter(function(d){ if (seen[d.ref.path]) return false; seen[d.ref.path] = true; return true; }); };
   const [joins, groups, lettersA, lettersB, introsA, introsB, studyA, studyB, tokens, boards] = await Promise.all([
     full ? all('joinRequests') : q('joinRequests', 'invitedBy.email'),
-    full ? all('groupRequests') : q('groupRequests', 'email'),
+    full ? all('groupRequests') : Promise.all([q('groupRequests', 'email'), q('groupRequests', 'inviterEmail')]).then(function(x){ return x[0].concat(x[1]); }),
     q('letterRequests', 'requesterEmail'), q('letterRequests', 'writerEmail'),
     q('introRequests', 'requesterEmail'), q('introRequests', 'offererEmail'),
     access.can(email, 'calendar', 'view').then(function(ok){ return ok ? q('studyRequests', 'email') : []; }),
@@ -3464,8 +3474,9 @@ async function requestWork(email, full, person){
   groups.forEach(function(d){
     const r = d.data();
     add({ kind: 'group', ref: d.ref.path, title: 'Change group: ' + (r.name || r.email) + ', ' + (GROUP_LABELS[r.from] || r.from || '?') + ' → ' + (GROUP_LABELS[r.to] || r.to || '?'),
-      url: SITE_URL + 'join-requests.html#g=' + d.id, by: person(r.email, r.name), on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [],
-      waiting: r.status === 'open' ? PIS_ADMINS : '', state: r.status },
+      url: SITE_URL + 'join-requests.html#g=' + d.id, by: person(r.email, r.name),
+      on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : r.status === 'open' && r.inviterEmail ? [person(r.inviterEmail, r.inviterName)] : [],
+      waiting: r.status === 'open' && !r.inviterEmail ? PIS_ADMINS : '', state: r.status },
     requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
   });
   uniq([lettersA, lettersB]).forEach(function(d){
@@ -3557,11 +3568,11 @@ exports.projectWork = onCall(
     if (!validSlug(pid)) throw new HttpsError('invalid-argument', 'No project given.');
     const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data();
     if (!ws || !ws.work || !ws.work.on) throw new HttpsError('failed-precondition', 'This project has no work board.');
-    const names = await workNames();
-    // A person as BOLD.OS names them: { name, email }.
+    const known = await workNames(), names = known.names;
+    // A person as BOLD.OS names them: { name, email, id (their page's Slack id) }.
     const person = function(e, fallback){
       e = String(e || '').toLowerCase();
-      return { name: names[e] || fallback || e.split('@')[0] || 'someone', email: e };
+      return Object.assign({ name: names[e] || fallback || e.split('@')[0] || 'someone', email: e }, known.ids[e] ? { id: known.ids[e] } : {});
     };
     // The repositories: the board's, or else the project's own.
     const repos = (ws.work.repos && ws.work.repos.length) ? ws.work.repos : ws.repoName ? [ws.repoName] : [];
@@ -3602,6 +3613,8 @@ exports.projectWork = onCall(
       ]);
       items = items.concat(content, requests);
     }
+    // Each person on an item tagged with what they do there.
+    items = items.map(function(x){ const role = workRole(x); return Object.assign({}, x, { role, on: (x.on || []).map(function(p){ return Object.assign({ role }, p); }) }); });
     return { items, errors, repos, at: gh.at };
   }
 );
@@ -5071,10 +5084,13 @@ exports.onGroupChannels = onDocumentWritten(
   }
 );
 
-// A member's request to be in another group, and the PIs' and admins' decision:
-// - 'request': { to, note } → { id }; one open request at a time; DMs the PIs and admins.
+// A member's request to be in another group, decided by whoever invited them (as a
+// request to join is: their members doc's invitedBy, unless they said they didn't),
+// or, for someone without an inviter, by the PIs and admins:
+// - 'request': { to, note } → { id }; one open request at a time; DMs whoever decides.
 // - 'withdraw': { id }: their own open request.
-// - 'decide': { id, accept }: PIs and admins; accepting sets their group. DMs them.
+// - 'decide': { id, accept }: the inviter (inviterEmail on the request), or a PI or admin
+//   when it has none; accepting sets their group. DMs them.
 exports.groupRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -5094,9 +5110,12 @@ exports.groupRequest = onCall(
       if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
       const name = m.data().name || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
-      const ref = await col.add({ email, name, from, to, note, status: 'open', at: Date.now() });
-      const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-      await sendEvent(token, { emails: staff, headline: '🏷️ ' + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to] +
+      const inv = m.data().invitedBy;
+      const inviter = inv && inv.email && inv.status !== 'denied' && String(inv.email).toLowerCase() !== email ? { email: String(inv.email).toLowerCase(), name: String(inv.name || inv.email) } : null;
+      const ref = await col.add(Object.assign({ email, name, from, to, note, status: 'open', at: Date.now() },
+        inviter ? { inviterEmail: inviter.email, inviterName: inviter.name } : {}));
+      const deciders = inviter ? [inviter.email] : (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+      await sendEvent(token, { emails: deciders, headline: '🏷️ ' + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to] +
         (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id) + '.' });
       return { id: ref.id };
     }
@@ -5113,11 +5132,15 @@ exports.groupRequest = onCall(
       return { ok: true };
     }
     if (d.action !== 'decide') throw new HttpsError('invalid-argument', 'Unknown action.');
-    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins decide.');
+    const full = await isFullWrite(email);
     const accept = !!d.accept;
     const r = await db.runTransaction(async function(tx){
       const r = (await tx.get(ref)).data();
       if (!r) throw new HttpsError('not-found', 'That request isn’t there.');
+      // Whoever invited them decides; PIs and admins only when nobody did.
+      if (r.inviterEmail ? r.inviterEmail !== email : !full) {
+        throw new HttpsError('permission-denied', r.inviterEmail ? (r.inviterName || 'Whoever invited them') + ' decides this: they invited them.' : 'Only PIs and admins decide.');
+      }
       if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
       tx.update(ref, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: request.auth.token.name || email, decidedAt: Date.now() });
       if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now() });
@@ -5867,7 +5890,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
+  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,

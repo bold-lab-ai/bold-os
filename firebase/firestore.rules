@@ -181,7 +181,8 @@ service cloud.firestore {
     // Requests to be in another group: theirs to read, and the PIs' and admins'; all writes
     // through groupRequest.
     match /groupRequests/{id} {
-      allow read: if hasFullWrite() || (isLabMember() && resource.data.email == email().lower());
+      // PIs and admins; who asked; and whoever invited them, who decides it (groupRequest).
+      allow read: if hasFullWrite() || (isLabMember() && (resource.data.email == email().lower() || resource.data.get('inviterEmail', '') == email().lower()));
       allow write: if false;
     }
 

@@ -14,10 +14,16 @@
   // Their group (Who is BOLD) and a request for another (groupRequest in functions/index.js).
   var groupReq = null, asking = false, gBusy = false, gError = '', unsubReq = null;
   function when(t){ return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
+  // Who decides a request to change group: whoever invited them (unless they said they
+  // didn't), else the PIs and admins (as groupRequest decides).
+  function decider(){
+    var inv = rec && rec.invitedBy;
+    return inv && inv.email && inv.status !== 'denied' ? (inv.name || inv.email) : '';
+  }
   function groupHtml(){
     var g = BoldJoin.groupOf(rec);
     var html = BoldJoin.groupBadge(g) + ' <a class="acct-handle" href="boldiquette.html#who-is-bold">What’s this?</a>';
-    if (groupReq) return html + '<span class="st-links">You asked for ' + BoldJoin.groupBadge(groupReq.to) + ' on ' + when(groupReq.at) + ': a PI or admin will decide. ' +
+    if (groupReq) return html + '<span class="st-links">You asked for ' + BoldJoin.groupBadge(groupReq.to) + ' on ' + when(groupReq.at) + ': ' + (groupReq.inviterName ? esc(groupReq.inviterName) + ', who invited you,' : 'a PI or admin') + ' will decide. ' +
       '<button type="button" class="btn-text md-g-withdraw"' + (gBusy ? ' disabled' : '') + '>Withdraw</button></span>';
     if (!asking) return html + ' <button type="button" class="btn-text md-g-ask">Ask for another group</button>';
     return html + '<div class="md-g-form">' + BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== g; }).map(function(c){
@@ -25,7 +31,7 @@
       }).join('') +
       '<textarea class="md-g-note no-tags" rows="2" maxlength="1000" placeholder="Why (optional): who you work with, what you do in BOLD"></textarea>' +
       (gError ? '<p class="st-error">' + esc(gError) + '</p>' : '') +
-      '<div class="event-form-actions"><button type="button" class="ev-save md-g-send"' + (gBusy ? ' disabled' : '') + '>Send to the PIs</button><button type="button" class="md-g-cancel">Cancel</button></div></div>';
+      '<div class="event-form-actions"><button type="button" class="ev-save md-g-send"' + (gBusy ? ' disabled' : '') + '>Send to ' + (decider() ? esc(decider()) : 'the PIs') + '</button><button type="button" class="md-g-cancel">Cancel</button></div></div>';
   }
   function callGroup(data){ return firebase.app().functions('europe-west2').httpsCallable('groupRequest')(data); }
 
@@ -88,7 +94,7 @@
           .then(function(){ gBusy = false; render(); });
       };
       if (!send) { go(); return; }
-      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: ['Send the PIs and admins a Slack message asking to approve it'] })
+      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: [decider() ? 'Send ' + decider() + ', who invited you, a Slack message asking to approve it' : 'Send the PIs and admins a Slack message asking to approve it'] })
         .then(function(ok){ if (ok) go(); });
       return;
     }

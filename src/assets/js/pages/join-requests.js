@@ -1,7 +1,7 @@
 // join-requests.html: whoever an applicant names as inviting them approves or declines
 // their request to join BOLD (decideJoinRequest; "Invited by you", #i=<id> from their DM);
-// PIs and admins see them all but decide only one without an inviter; and the PIs and admins decide members' requests to be in another group of Who is BOLD
-// (groupRequests, groupRequest), see whether each welcome email went (sendWelcomeEmail
+// PIs and admins see them all but decide only one without an inviter; members' requests to be in another group of Who is BOLD
+// (groupRequests, groupRequest), decided the same way: whoever invited them, or the PIs and admins when nobody did; PIs and admins also see whether each welcome email went (sendWelcomeEmail
 // sends one again), and edit the Slack invite link, the email's text
 // (settings/joinInvite), the join form's choices (settings/joinForm) and each group's
 // Slack channel (settings/groups: whoever is in the group is added to it).
@@ -20,7 +20,7 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, form = null, unsubs = [], busy = {}, editing = false;
-  var groupReqs = [], groups = {}, invited = [], invitedMembers = [], shown = {}, slackIds = {}, actReqs = [];
+  var groupReqs = [], myGroupReqs = [], groups = {}, invited = [], invitedMembers = [], shown = {}, slackIds = {}, actReqs = [];
 
   var SUBJECT = 'Welcome to BOLD';
   var BODY = ['Hi {name},', '', 'Welcome to BOLD! Your request to join has been approved. Here are your next steps:', '',
@@ -61,13 +61,17 @@
   // A member asking to be in another group.
   function groupReqHtml(r){
     var open = r.status === 'open';
+    // Whoever invited them decides it (groupRequest); PIs and admins only one without an inviter.
+    var others = !!(r.inviterEmail && !(me && r.inviterEmail === me.email.toLowerCase()));
+    var off = busy[r.id] || others ? ' disabled' + (others ? ' title="' + esc((r.inviterName || 'Whoever invited them') + ' decides this: they invited them') + '"' : '') : '';
     return '<li id="g-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
       '<span class="proj-meta">' + esc(r.email) + ' · asked ' + when(r.at) + '</span>' +
       '<p class="jr-move">' + BoldJoin.groupBadge(r.from) + ' → ' + BoldJoin.groupBadge(r.to) + '</p>' +
       (r.note && shown['g:' + r.id] ? '<p class="lt-text">' + esc(r.note) + '</p>' : '') +
+      (open && others ? '<p class="proj-meta">Invited by ' + who(r.inviterName || r.inviterEmail, r.inviterEmail) + ', who decides it</p>' : '') +
       (open ? '' : '<p class="proj-meta">' + (r.status === 'withdrawn' ? 'Withdrawn' : (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + who(r.decidedByName || r.decidedBy || '', r.decidedBy)) + ', ' + when(r.decidedAt) + '</p>') +
-      '<div class="event-controls">' + (r.note ? moreBtn('g:' + r.id) : '') + (open ? '<button type="button" class="btn-text jr-g-approve" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Approve</button>' +
-          '<button type="button" class="btn-text danger jr-g-decline" data-gid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Decline</button>' : '') + '</div></li>';
+      '<div class="event-controls">' + (r.note ? moreBtn('g:' + r.id) : '') + (open ? '<button type="button" class="btn-text jr-g-approve" data-gid="' + esc(r.id) + '"' + off + '>Approve</button>' +
+          '<button type="button" class="btn-text danger jr-g-decline" data-gid="' + esc(r.id) + '"' + off + '>Decline</button>' : '') + '</div></li>';
   }
 
   // A request to let someone's agent act for them (a token of theirs, functions/api.js).
@@ -162,7 +166,11 @@
   function render(){
     if (!me) return;
     if (staff === false) {
-      main.innerHTML = invitedSection() + (invited.length || invitedMembers.length ? '' : '<p class="proj-msg">Nobody says you invited them.</p>');
+      // Someone you invited asking to change group: yours to decide.
+      var mine = myGroupReqs.filter(function(r){ return r.status === 'open'; });
+      var groupsMine = mine.length ? '<section class="block" id="groups"><div class="block-head"><h2>Changing group<span class="proj-count">' + mine.length + ' waiting</span></h2></div>' +
+        '<ul class="proj-list">' + mine.map(groupReqHtml).join('') + '</ul></section>' : '';
+      main.innerHTML = invitedSection() + groupsMine + (invited.length || invitedMembers.length || mine.length ? '' : '<p class="proj-msg">Nobody says you invited them.</p>');
       jump();
       return;
     }
@@ -349,7 +357,7 @@
     }
     var gid = t.getAttribute('data-gid');
     if (gid) {
-      var g = groupReqs.filter(function(q){ return q.id === gid; })[0];
+      var g = groupReqs.concat(myGroupReqs).filter(function(q){ return q.id === gid; })[0];
       if (!g) return;
       var accept = t.classList.contains('jr-g-approve');
       BOLD.confirmAction({ title: (accept ? 'Move ' + g.name + ' to ' : 'Decline ' + g.name + '’s request for ') + BoldJoin.categoryLabel(g.to) + '?', go: accept ? 'Move' : 'Decline',
@@ -423,6 +431,11 @@
         .sort(function(a, b){ return b.at - a.at; });
       render();
     }, function(err){ console.error('[BOLD Join] loading your invitations failed', err); }));
+    // Requests to change group from people you invited (you decide them).
+    unsubs.push(db.collection('groupRequests').where('inviterEmail', '==', me.email.toLowerCase()).onSnapshot(function(snap){
+      myGroupReqs = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return b.at - a.at; });
+      render();
+    }, function(err){ console.error('[BOLD Join] loading group requests for you failed', err); }));
     // Members who named you on their profile (those from a request to join are listed above).
     unsubs.push(db.collection('members').where('invitedBy.email', '==', me.email).onSnapshot(function(snap){
       invitedMembers = snap.docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); })
