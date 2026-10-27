@@ -9,6 +9,10 @@
 // column of the card's and theirs; a pull request that closes an issue ("Closes #5")
 // takes it in. project.js mounts it (ProjectWork.start, then attach on each render);
 // its DOM is kept between renders, so an open editor survives the page redrawing.
+// Each card, and each GitHub issue or pull request, has its own page in the tab
+// (#…&tab=work&card=<id>, &item=<owner/repo#n>): a description (Markdown) and images
+// (Storage, work/<pid>/<card>/…; storage.rules). Describing a GitHub item makes it a card
+// linking it. Proposals and requests open their own pages elsewhere on BOLD.OS.
 var ProjectWork = (function(){
   var esc = BOLD.escapeHtml;
   var COLUMNS = [['todo', 'To do'], ['doing', 'In progress'], ['review', 'Waiting for review'], ['done', 'Done']];
@@ -31,6 +35,11 @@ var ProjectWork = (function(){
   var draftLinks = [];     // links in the open editor
   var busy = false, msg = '';
   var slackIds = {};       // email → Slack id, for links to people's pages (the people roster)
+  var view = null;         // a page: { card: id } or { item: ref }; null, the board
+  var describing = false;  // the page's description being edited
+  var IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+  var MAX_IMAGES = 20, MAX_IMAGE_MB = 10, MAX_NOTES = 20000;
+  var upload = { busy: false, msg: '' };
 
   function el(sel){ return root.querySelector(sel); }
   function me(){ var m = ctx.me(); return m && m.email ? m.email.toLowerCase() : ''; }
@@ -59,7 +68,11 @@ var ProjectWork = (function(){
   function start(c){
     ctx = c; db = c.db;
     // Adding and changing cards depend on the viewer's group (BOLD.can), known a little later.
-    if (!accessWatched) { accessWatched = true; BOLD.onAccess(function(){ draw(); }); }
+    if (!accessWatched) {
+      accessWatched = true; BOLD.onAccess(function(){ draw(); });
+      window.addEventListener('popstate', function(){ readView(); draw(); });
+    }
+    readView();
     if (pid === c.pid) return;
     pid = c.pid;
     if (unsub) unsub();
@@ -79,7 +92,26 @@ var ProjectWork = (function(){
       draw();
     }).catch(function(err){ console.error('[BOLD Lab] loading the roster failed', err); });
   }
-  function stop(){ if (unsub) unsub(); unsub = null; pid = ''; }
+  function stop(){ if (unsub) unsub(); unsub = null; pid = ''; view = null; }
+
+  // The page open, from the address; go(v) opens another (null: the board).
+  function readView(){
+    var c = /[#&]card=([^&]+)/.exec(location.hash), i = /[#&]item=([^&]+)/.exec(location.hash);
+    var v = c ? { card: decodeURIComponent(c[1]) } : i ? { item: decodeURIComponent(i[1]) } : null;
+    if (JSON.stringify(v) !== JSON.stringify(view)) describing = false;
+    view = v;
+  }
+  function hrefOf(v){
+    var h = location.hash.replace(/&(card|item)=[^&]*/g, '');
+    if (!/[#&]tab=/.test(h)) h += '&tab=work';
+    return h + (!v ? '' : v.card ? '&card=' + encodeURIComponent(v.card) : '&item=' + encodeURIComponent(v.item));
+  }
+  function go(v, replace){
+    try { history[replace ? 'replaceState' : 'pushState'](null, '', location.pathname + location.search + hrefOf(v)); } catch (e){}
+    view = v; describing = false; editing = null; upload = { busy: false, msg: '' };
+    draw();
+    if (!replace) window.scrollTo(0, 0);
+  }
   function attach(mount){ if (mount) { mount.appendChild(root); draw(); } }
 
   function fetchRemote(fresh){
@@ -99,6 +131,10 @@ var ProjectWork = (function(){
 
   // Everything on the board, joined: [{ key, type, kind, source, title, url, column, by, on, waiting, since, … }].
   function items(){
+    // Done more than 30 days ago: archived, shown only when Done shows the archive.
+    return allItems().filter(function(x){ var old = x.column === 'done' && x.since && x.since < Date.now() - DAYS * 86400000; return archive ? x.column !== 'done' || old : !old; });
+  }
+  function allItems(){
     var byRef = {};
     remote.items.forEach(function(x){ byRef[x.ref] = x; });
     var taken = {};
@@ -124,8 +160,7 @@ var ProjectWork = (function(){
       if (taken[x.ref]) return;
       out.push(Object.assign({ key: x.ref }, x, { on: dedupe(x.on || []), linked: x.closesItems || [] }));
     });
-    // Done more than 30 days ago: archived, shown only when Done shows the archive.
-    return out.filter(function(x){ var old = x.column === 'done' && x.since && x.since < Date.now() - DAYS * 86400000; return archive ? x.column !== 'done' || old : !old; });
+    return out;
   }
   function personKey(p){ return p.email || ('gh:' + String(p.login || p.name || '').toLowerCase()); }
   function dedupe(list){
@@ -178,14 +213,17 @@ var ProjectWork = (function(){
   function itemHtml(x){
     var n = days(x.since), late = x.column === 'review' && n >= SLOW;
     var t = TYPES.filter(function(y){ return y[0] === x.type; })[0] || TYPES[3];
-    var title = x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>'
-      : x.card ? '<button class="wk-open board-drag-through" type="button">' + esc(x.title) + '</button>' : esc(x.title);
+    // A card or a GitHub item opens its page here; a proposal or a request, its own page.
+    var page = x.card ? { card: x.card.id } : x.source === 'github' ? { item: x.ref } : null;
+    var title = page ? '<a class="wk-open board-drag-through" href="' + esc(hrefOf(page)) + '">' + esc(x.title) + '</a>'
+      : x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>' : esc(x.title);
+    var ref = refLabel(x) && x.source === 'github' && x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(refLabel(x)) + '</a>' : esc(refLabel(x));
     var linked = (x.linked || []).map(function(i){ return '<a href="' + esc(i.url) + '" target="_blank" rel="noopener">' + esc(refLabel(i)) + '</a>'; }).join(' ');
     // A card that can be changed is dragged to another column (BoldBoard.drag, in wire()).
     var drag = x.card && canChange(x.card);
-    var html = '<div class="board-card wk-item' + (drag ? ' board-draggable' : '') + '" data-key="' + esc(x.key) + '"' + (x.notes ? ' title="' + esc(x.notes) + '"' : '') + '>' +
+    var html = '<div class="board-card wk-item' + (drag ? ' board-draggable' : '') + '" data-key="' + esc(x.key) + '"' + (x.notes ? ' title="' + esc(x.notes.slice(0, 300)) + '"' : '') + '>' +
       '<div class="wk-top"><span class="wk-type wk-type-' + t[0] + '">' + t[1] + '</span>' +
-        (refLabel(x) ? '<span class="wk-ref">' + esc(refLabel(x)) + '</span>' : '') + (linked ? '<span class="wk-ref">' + linked + '</span>' : '') +
+        (ref ? '<span class="wk-ref">' + ref + '</span>' : '') + (linked ? '<span class="wk-ref">' + linked + '</span>' : '') +
         (late ? '<span class="wk-late">' + n + ' days</span>' : '') + '</div>' +
       '<div class="wk-title">' + title + '</div>' +
       whoHtml(x);
@@ -205,7 +243,7 @@ var ProjectWork = (function(){
     var options = remote.items.filter(function(x){ return x.column !== 'done' || x.kind === 'pr'; });
     return '<form class="wk-editor" novalidate>' +
       '<label>Title<input type="text" class="wk-f-title" maxlength="200" value="' + esc(c ? c.title : '') + '" required></label>' +
-      '<label>Notes<textarea class="wk-f-notes" maxlength="4000" rows="3">' + esc(c ? c.notes || '' : '') + '</textarea></label>' +
+      '<label>Description<textarea class="wk-f-notes" maxlength="' + MAX_NOTES + '" rows="3">' + esc(c ? c.notes || '' : '') + '</textarea></label>' +
       (c ? '<label>Column<select class="wk-f-col">' + COLUMNS.map(function(k){
         return '<option value="' + k[0] + '"' + (k[0] === c.column ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></label>' : '') +
       '<label>Type<select class="wk-f-kind"><option value="">From its links</option>' + TYPES.map(function(y){
@@ -252,6 +290,7 @@ var ProjectWork = (function(){
 
   function draw(){
     if (!ctx) return;
+    if (view) { drawPage(); return; }
     // An open editor stays as it is; the rest redraws around it.
     var keep = editing && root.querySelector('.wk-editor');
     if (keep) { drawBoard(keep); return; }
@@ -361,13 +400,13 @@ var ProjectWork = (function(){
     if (r) r.addEventListener('click', function(){ fetchRemote(true); });
     var s = el('[data-wk="settings"]');
     if (s) s.addEventListener('click', function(){ if (editing) return; editing = 'settings'; draw(); });
+    wireOpen();
     Array.prototype.forEach.call(root.querySelectorAll('.wk-item'), function(li){
       var key = li.getAttribute('data-key');
       if (key.indexOf('card:') !== 0) return;
       var c = cards.filter(function(x){ return 'card:' + x.id === key; })[0];
       if (!c) return;
-      var edit = li.querySelector('.wk-edit'), open = li.querySelector('.wk-open');
-      if (open) open.addEventListener('click', function(){ if (edit && !edit.disabled) edit.click(); });
+      var edit = li.querySelector('.wk-edit');
       if (edit) edit.addEventListener('click', function(){ if (editing) return; editing = c.id; draftLinks = (c.links || []).slice(); draw(); focusTitle(); });
     });
   }
@@ -426,7 +465,10 @@ var ProjectWork = (function(){
     var remove = form.querySelector('.wk-f-remove');
     if (remove) remove.addEventListener('click', function(){
       if (!window.confirm('Remove this card?')) return;
-      cardsRef().doc(c.id).delete().then(function(){ editing = null; draw(); })
+      // Its images first: Storage's rules check the card they belong to.
+      Promise.all((c.images || []).map(function(i){ return firebase.storage().ref(i.path).delete().catch(function(){}); }))
+        .then(function(){ return cardsRef().doc(c.id).delete(); })
+        .then(function(){ editing = null; if (view) go(null, true); else draw(); })
         .catch(function(err){ console.error('[BOLD Lab] removing a card failed', err); fail('Couldn’t remove it — try again.'); });
     });
     form.addEventListener('submit', function(e){
@@ -437,7 +479,7 @@ var ProjectWork = (function(){
       var a = form.querySelector('.wk-f-who').value, p = a && personByEmail(a);
       var m = ctx.me(), now = Date.now();
       var data = {
-        title: title.slice(0, 200), notes: form.querySelector('.wk-f-notes').value.trim().slice(0, 4000), kind: form.querySelector('.wk-f-kind').value,
+        title: title.slice(0, 200), notes: form.querySelector('.wk-f-notes').value.trim().slice(0, MAX_NOTES), kind: form.querySelector('.wk-f-kind').value,
         assignees: a ? [{ email: a, name: (p && p.name) || (a === me() && m.displayName) || a }] : [], assigneeEmails: a ? [a] : [],
         links: draftLinks.slice(0, 10).map(function(l){ var o = { type: l.type, url: l.url, label: l.label || '' }; if (l.ref) o.ref = l.ref; return o; }),
         updatedAt: now, updatedBy: m.email
@@ -445,6 +487,9 @@ var ProjectWork = (function(){
       busy = true;
       var job;
       var col = form.querySelector('.wk-f-col') ? form.querySelector('.wk-f-col').value : c && c.column;
+      // Images added since the editor opened are kept.
+      var now2 = c && (cards.filter(function(k){ return k.id === c.id; })[0] || c);
+      if (now2 && now2.images) data.images = now2.images;
       if (c) job = cardsRef().doc(c.id).set(Object.assign({}, data, { column: col, by: c.by, at: c.at, movedAt: col !== c.column ? now : c.movedAt || c.at }));
       else {
         var column = form.querySelector('.wk-f-column').value;
@@ -456,6 +501,203 @@ var ProjectWork = (function(){
     });
   }
 
+  // A card's or a GitHub item's own page, in place of the board.
+  function wireOpen(){
+    Array.prototype.forEach.call(root.querySelectorAll('a.wk-open, a.wk-back'), function(a){
+      a.addEventListener('click', function(e){
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        var c = /[#&]card=([^&]+)/.exec(a.getAttribute('href')), i = /[#&]item=([^&]+)/.exec(a.getAttribute('href'));
+        go(c ? { card: decodeURIComponent(c[1]) } : i ? { item: decodeURIComponent(i[1]) } : null);
+      });
+    });
+  }
+  // Only images Storage holds for this board are shown (an address in the card can't load anything else).
+  function imageOk(i){ return i && /^https:\/\/firebasestorage\.googleapis\.com\//.test(String(i.url || '')) && String(i.path || '').indexOf('work/' + pid + '/') === 0; }
+  function drawPage(){
+    var all = allItems(), x = null, c = null;
+    if (view.item) {
+      // A GitHub item a card links is shown as that card.
+      var holder = cards.filter(function(k){ return (k.links || []).some(function(l){ return l.ref === view.item; }); })[0];
+      if (holder) { go({ card: holder.id }, true); return; }
+      x = remote.items.filter(function(i){ return i.ref === view.item; })[0] || null;
+    } else {
+      x = all.filter(function(i){ return i.key === 'card:' + view.card; })[0] || null;
+      c = x && x.card;
+    }
+    // A description or an editor being written survives the page redrawing.
+    var keepDesc = root.querySelector('.wk-desc-form'), keepEditor = root.querySelector('.wk-editor');
+    if (keepDesc) keepDesc.remove();
+    if (keepEditor) keepEditor.remove();
+    var back = '<a class="detail-back wk-back" href="' + esc(hrefOf(null)) + '">&larr; Back to the board</a>';
+    var loading = view.card ? !cardsLoaded || (remote.loading && !remote.loaded) : !remote.loaded;
+    if (!x) {
+      root.innerHTML = '<div class="wk-page">' + back + '<p class="detail-muted">' + (loading ? 'Loading…'
+        : view.card ? 'This card isn’t on the board any more.' : 'This isn’t on the board (closed, or not in its repositories).' +
+          (/^[^\/\s]+\/[^\/\s#]+#\d+$/.test(view.item) ? ' <a href="https://github.com/' + esc(view.item.replace('#', '/issues/')) + '" target="_blank" rel="noopener">See it on GitHub</a>.' : '')) + '</p></div>';
+      wireOpen();
+      return;
+    }
+    var t = TYPES.filter(function(y){ return y[0] === x.type; })[0] || TYPES[3];
+    var col = COLUMNS.filter(function(k){ return k[0] === x.column; })[0];
+    var n = days(x.since);
+    var linked = (c ? (c.links || []) : []).map(function(l){
+      var i = l.ref && remote.items.filter(function(r){ return r.ref === l.ref; })[0];
+      return '<li><a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(i ? refLabel(i) + ': ' + i.title : l.label || l.url) + '</a>' + (i && i.state ? ' <span class="detail-muted">' + esc(i.state) + '</span>' : '') + '</li>';
+    }).concat((x.linked || []).filter(function(i){ return !c; }).map(function(i){
+      return '<li><a href="' + esc(i.url) + '" target="_blank" rel="noopener">' + esc(refLabel(i) + ': ' + i.title) + '</a></li>';
+    }));
+    var ok = c ? canChange(c) : canAdd();
+    var why = !canAdd() ? BOLD.cannotReason('projects', 'edit') : NO_EDIT;
+    var html = '<div class="wk-page">' + back +
+      '<div class="wk-top"><span class="wk-type wk-type-' + t[0] + '">' + t[1] + '</span>' +
+        (refLabel(x) ? '<span class="wk-ref">' + (x.source === 'github' && x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(refLabel(x)) + '</a>' : esc(refLabel(x))) + '</span>' : '') + '</div>' +
+      '<h2 class="wk-page-title">' + esc(x.title) + '</h2>' +
+      '<p class="detail-muted wk-page-col">' + esc(col ? col[1] : '') + (x.since && x.column !== 'done' ? ', for ' + (n === 1 ? '1 day' : n + ' days') : '') +
+        (x.source === 'github' && x.url ? ' · <a href="' + esc(x.url) + '" target="_blank" rel="noopener">Open on GitHub</a>' : '') + '</p>' +
+      whoHtml(x) +
+      (c ? '<div class="wk-actions"><button class="btn-text wk-edit" type="button"' + (ok ? '' : ' disabled title="' + esc(why) + '"') + '>Edit the card</button></div><div class="wk-page-edit"></div>' : '');
+    // The description: the card's (Markdown); a GitHub item has none until it's described.
+    html += '<section class="wk-sec"><h3>Description</h3>';
+    if (c) {
+      html += describing ? '<div class="wk-desc-slot"></div>'
+        : (c.notes ? '<div class="wk-desc">' + BoldMarkdown.render(c.notes) + '</div>' : '<p class="detail-muted">No description yet.</p>') +
+          '<button class="btn-text wk-describe" type="button"' + (ok ? '' : ' disabled title="' + esc(why) + '"') + '>' + (c.notes ? 'Edit the description' : 'Add a description') + '</button>';
+    } else {
+      html += '<p class="detail-muted">No description yet. Describing it makes it a card on the board, linked to it.</p>' +
+        '<button class="btn-text wk-adopt" type="button"' + (ok ? '' : ' disabled title="' + esc(why) + '"') + '>Add a description</button>';
+    }
+    html += '</section>';
+    if (c) {
+      var imgs = (c.images || []).filter(imageOk), full = imgs.length >= MAX_IMAGES;
+      html += '<section class="wk-sec"><h3>Images</h3>' +
+        (imgs.length ? '<div class="wk-images">' + imgs.map(function(i, k){
+          return '<figure class="wk-image"><a href="' + esc(i.url) + '" target="_blank" rel="noopener"><img src="' + esc(i.url) + '" alt="' + esc(i.name || 'An image') + '" loading="lazy"></a>' +
+            '<figcaption>' + esc(i.name || '') + (ok ? ' <button class="btn-text wk-unimage" type="button" data-path="' + esc(i.path) + '" aria-label="Remove this image">Remove</button>' : '') + '</figcaption></figure>';
+        }).join('') + '</div>' : '<p class="detail-muted">No images yet.</p>') +
+        '<p class="wk-upload"><button class="btn-text wk-addimg" type="button"' + (!ok ? ' disabled title="' + esc(why) + '"' : full || upload.busy ? ' disabled' + (full ? ' title="' + MAX_IMAGES + ' images at most"' : '') : '') + '>Add images</button>' +
+          ' <span class="detail-muted">PNG, JPEG, GIF or WebP, up to ' + MAX_IMAGE_MB + ' MB each</span>' +
+          '<input type="file" class="wk-imgfile" accept="' + Object.keys(IMAGE_TYPES).join(',') + '" multiple hidden>' +
+          (upload.msg ? ' <span class="wk-upmsg">' + esc(upload.msg) + '</span>' : '') + '</p></section>';
+    }
+    if (linked.length) html += '<section class="wk-sec"><h3>Linked</h3><ul class="wk-linked">' + linked.join('') + '</ul></section>';
+    root.innerHTML = html + (msg ? '<p class="wk-error">' + esc(msg) + '</p>' : '') + '</div>';
+
+    var descSlot = el('.wk-desc-slot');
+    if (descSlot) {
+      var f = keepDesc;
+      if (!f) {
+        var tmp = document.createElement('div');
+        tmp.innerHTML = '<form class="wk-editor wk-desc-form" novalidate><label>Description <span class="detail-muted">Markdown: **bold**, lists, [links](https://…)</span>' +
+          '<textarea class="wk-d-text" maxlength="' + MAX_NOTES + '" rows="12">' + esc(c.notes || '') + '</textarea></label>' +
+          '<div class="field-error wk-d-error" hidden></div>' +
+          '<div class="stage-fields-actions"><button class="btn" type="submit">Save</button><button class="btn" type="button" data-wk="dcancel">Cancel</button></div></form>';
+        f = tmp.firstChild;
+        wireDescription(f, c);
+      }
+      descSlot.replaceWith(f);
+      if (!keepDesc) f.querySelector('textarea').focus();
+    }
+    var editSlot = el('.wk-page-edit');
+    if (editSlot && editing === c.id) {
+      var form = keepEditor;
+      if (!form) {
+        var t2 = document.createElement('div');
+        t2.innerHTML = editorHtml(c, null);
+        form = t2.firstChild;
+      }
+      editSlot.appendChild(form);
+      if (!keepEditor) { wireEditor(form, c); focusTitle(); }
+    }
+    wireOpen();
+    var edit = el('.wk-edit');
+    if (edit) edit.addEventListener('click', function(){ if (editing) return; editing = c.id; draftLinks = (c.links || []).slice(); draw(); });
+    var desc = el('.wk-describe');
+    if (desc) desc.addEventListener('click', function(){ describing = true; draw(); });
+    var adopt = el('.wk-adopt');
+    if (adopt) adopt.addEventListener('click', function(){ adoptItem(x, adopt); });
+    var add = el('.wk-addimg'), file = el('.wk-imgfile');
+    if (add) add.addEventListener('click', function(){ file.click(); });
+    if (file) file.addEventListener('change', function(){ addImages(c, Array.prototype.slice.call(file.files || [])); });
+    Array.prototype.forEach.call(root.querySelectorAll('.wk-unimage'), function(b){
+      b.addEventListener('click', function(){ removeImage(c, b.getAttribute('data-path')); });
+    });
+  }
+  function cardChange(c, data){
+    var m = ctx.me();
+    return cardsRef().doc(c.id).update(Object.assign(data, { updatedAt: Date.now(), updatedBy: m.email }));
+  }
+  function wireDescription(form, c){
+    var error = form.querySelector('.wk-d-error');
+    form.querySelector('[data-wk="dcancel"]').addEventListener('click', function(){ describing = false; form.remove(); draw(); });
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      if (busy) return;
+      busy = true;
+      cardChange(c, { notes: form.querySelector('.wk-d-text').value.trim().slice(0, MAX_NOTES) }).then(function(){
+        busy = false; describing = false; form.remove(); draw();
+      }).catch(function(err){
+        console.error('[BOLD Lab] saving a description failed', err);
+        busy = false; error.textContent = 'Couldn’t save — try again.'; error.hidden = false;
+      });
+    });
+  }
+  // Describing a GitHub item: a card for it, linking it, in its column; its page then shows the card.
+  function adoptItem(x, button){
+    if (busy) return;
+    busy = true; button.disabled = true;
+    var m = ctx.me(), now = Date.now();
+    cardsRef().add({
+      title: String(x.title || x.ref).slice(0, 200), notes: '', kind: 'code', column: x.column || 'todo', assignees: [], assigneeEmails: [],
+      links: [{ type: x.kind === 'pr' ? 'pr' : 'issue', ref: x.ref, url: x.url, label: (refLabel(x) + ': ' + x.title).slice(0, 200) }],
+      by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now, updatedAt: now, updatedBy: m.email
+    }).then(function(d){
+      busy = false;
+      go({ card: d.id }, true);
+      describing = true; draw();
+      setTimeout(function(){ fetchRemote(false); }, 2500);
+    }).catch(function(err){
+      console.error('[BOLD Lab] making a card failed', err);
+      busy = false; msg = 'Couldn’t make a card for it — try again.'; draw();
+    });
+  }
+  // Images go to Storage (work/<project>/<card>/…), then their addresses onto the card.
+  function addImages(c, files){
+    if (upload.busy || !files.length) return;
+    var room = MAX_IMAGES - (c.images || []).length;
+    var bad = files.filter(function(f){ return !IMAGE_TYPES[f.type] || f.size > MAX_IMAGE_MB * 1048576; });
+    files = files.filter(function(f){ return bad.indexOf(f) < 0; }).slice(0, Math.max(0, room));
+    if (!files.length) { upload.msg = bad.length ? 'Only PNG, JPEG, GIF or WebP images, up to ' + MAX_IMAGE_MB + ' MB.' : MAX_IMAGES + ' images at most.'; draw(); return; }
+    upload = { busy: true, msg: 'Uploading ' + files.length + (files.length === 1 ? ' image' : ' images') + '…' };
+    draw();
+    var m = ctx.me();
+    Promise.all(files.map(function(f){
+      var path = 'work/' + pid + '/' + c.id + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + IMAGE_TYPES[f.type];
+      var ref = firebase.storage().ref(path);
+      return ref.put(f, { contentType: f.type }).then(function(){ return ref.getDownloadURL(); })
+        .then(function(url){ return { path: path, url: url, name: String(f.name || '').slice(0, 200), by: m.email, at: Date.now() }; });
+    })).then(function(added){
+      var fresh = cards.filter(function(k){ return k.id === c.id; })[0] || c;
+      return cardChange(c, { images: (fresh.images || []).concat(added).slice(0, MAX_IMAGES) });
+    }).then(function(){
+      upload = { busy: false, msg: bad.length ? 'Some weren’t PNG, JPEG, GIF or WebP up to ' + MAX_IMAGE_MB + ' MB, and were left out.' : '' };
+      draw();
+    }).catch(function(err){
+      console.error('[BOLD Lab] uploading images failed', err);
+      upload = { busy: false, msg: 'Couldn’t upload — try again.' };
+      draw();
+    });
+  }
+  function removeImage(c, path){
+    if (!window.confirm('Remove this image?')) return;
+    cardChange(c, { images: (c.images || []).filter(function(i){ return i.path !== path; }) }).then(function(){
+      return firebase.storage().ref(path).delete().catch(function(err){ console.error('[BOLD Lab] deleting an image failed', err); });
+    }).catch(function(err){
+      console.error('[BOLD Lab] removing an image failed', err);
+      upload.msg = 'Couldn’t remove it — try again.'; draw();
+    });
+  }
+
   function moveCard(c, column){
     if (column === c.column) return;
     // Shown in its new column at once; the live listener confirms it (or puts it back).
@@ -464,6 +706,7 @@ var ProjectWork = (function(){
     var m = ctx.me(), now = Date.now();
     var data = {};
     ['title', 'notes', 'assignees', 'assigneeEmails', 'links', 'by', 'at'].forEach(function(k){ data[k] = c[k]; });
+    if (c.images) data.images = c.images;
     data.kind = c.kind || '';
     cardsRef().doc(c.id).set(Object.assign(data, { notes: c.notes || '', column: column, movedAt: now, updatedAt: now, updatedBy: m.email }))
       .catch(function(err){ console.error('[BOLD Lab] moving a card failed', err); c.column = was; msg = 'Couldn’t move it — try again.'; draw(); });

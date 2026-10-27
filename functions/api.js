@@ -596,7 +596,7 @@ module.exports = function(deps){
       shows_site_proposals: !!w.work.content,
       cards: (await db.collection('projectWorkspaces').doc(pid).collection('work').get()).docs.map((d) => {
         const c = d.data();
-        return { card_id: d.id, title: c.title, notes: c.notes || '', column: COLUMN[c.column] || c.column, assigned_to: (c.assignees || []).map((x) => x.name || name(x.email)),
+        return { card_id: d.id, title: c.title, description: c.notes || '', images: (c.images || []).map((i) => i.url), column: COLUMN[c.column] || c.column, assigned_to: (c.assignees || []).map((x) => x.name || name(x.email)),
           links: (c.links || []).map((l) => l.url), made_by: c.by && (c.by.name || name(c.by.email)) };
       }),
     } : null;

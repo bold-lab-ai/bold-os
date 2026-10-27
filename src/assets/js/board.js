@@ -23,7 +23,7 @@
 //   BoldBoard.drag(root, { item, canDrag(el), drop(el, columnId) }): cards matching
 //     the selector `item` inside `root` can be dragged to another column, with a
 //     mouse, or on a touch screen by holding a card for a moment first. Links,
-//     buttons and fields in a card still work as usual; a button marked
+//     buttons and fields in a card still work as usual; a link or button marked
 //     .board-drag-through (a card's title that opens it) also starts a drag. Call it again after each
 //     redraw (it listens on `root`, once).
 var BoldBoard = (function(){
@@ -168,11 +168,13 @@ var BoldBoard = (function(){
       s = null;
     }
 
+    // A title that's a link would otherwise be dragged by the browser itself, as a link.
+    root.addEventListener('dragstart', function(e){ if (e.target.closest && e.target.closest('.board-drag-through')) e.preventDefault(); });
     root.addEventListener('pointerdown', function(e){
       var o = root.__boldBoardDrag;
       if ((e.pointerType === 'mouse' && e.button !== 0) || s) return;
       var el = e.target.closest(o.item);
-      if (!el || !root.contains(el) || e.target.closest('a, button:not(.board-drag-through), input, select, textarea, label')) return;
+      if (!el || !root.contains(el) || e.target.closest('a:not(.board-drag-through), button:not(.board-drag-through), input, select, textarea, label')) return;
       if (o.canDrag && !o.canDrag(el)) return;
       s = { el: el, from: el.closest('.column[data-col]'), x: e.clientX, y: e.clientY, touch: e.pointerType !== 'mouse', live: false };
       // On a touch screen a quick swipe scrolls; holding a card picks it up.

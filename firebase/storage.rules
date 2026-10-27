@@ -20,6 +20,26 @@ service firebase.storage {
         request.auth.token.email in firestore.get(/databases/(default)/documents/roles/admins).data.emails
       );
     }
+    // A board card's images (project page, a card's page; firestore.rules' work/{id}):
+    // read by the lab; added and removed by whoever may change the card (its maker, whom it's
+    // assigned to, the project's people, PIs and admins). Images only, 10 MB at most.
+    match /work/{ws}/{card}/{file} {
+      function signedIn() { return request.auth != null && 'oidc.slack' in request.auth.token.firebase.identities; }
+      function mayChange() {
+        let me = request.auth.token.email;
+        let c = /databases/(default)/documents/projectWorkspaces/$(ws)/work/$(card);
+        let w = /databases/(default)/documents/projectWorkspaces/$(ws);
+        return firestore.exists(c) && (
+          firestore.get(c).data.by.email == me || me in firestore.get(c).data.assigneeEmails ||
+          me.lower() in firestore.get(w).data.get('members', []) ||
+          me in firestore.get(/databases/(default)/documents/roles/pis).data.emails ||
+          me in firestore.get(/databases/(default)/documents/roles/admins).data.emails);
+      }
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.size <= 10 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/(png|jpeg|gif|webp)') && mayChange();
+      allow delete: if signedIn() && mayChange();
+    }
     match /{allPaths=**} {
       allow read, write: if false;
     }

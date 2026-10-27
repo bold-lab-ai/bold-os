@@ -220,7 +220,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
 
   function setTab(name, focus){
     if (name === tab) return;
-    var hash = location.hash.replace(/&tab=[^&]*/, '') + (name === 'overview' ? '' : '&tab=' + name);
+    var hash = location.hash.replace(/&(tab|card|item)=[^&]*/g, '') + (name === 'overview' ? '' : '&tab=' + name);
     try { history.replaceState(null, '', location.pathname + location.search + hash); } catch (e){}
     BOLD.switchTab('.tabs', el('projectBody'), function(){ tab = name; editing = false; render(); });
     if (focus) document.querySelector('.tab.active').focus();
