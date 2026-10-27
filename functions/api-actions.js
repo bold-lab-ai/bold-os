@@ -302,8 +302,8 @@ module.exports = function(ctx){
     if (a.action === 'list') {
       const [r, snap] = await Promise.all([act(who, 'projectWork', { project: pid }), ref.get()]);
       return {
-        cards: snap.docs.map((d) => { const x = d.data(); return { card_id: d.id, title: x.title, type: x.kind || '', notes: x.notes || '', column: WORK_COLUMNS[x.column], assigned_to: (x.assignees || []).map((p) => p.name), links: (x.links || []).map((l) => l.url) }; }),
-        elsewhere: (r.items || []).map((x) => ({ kind: x.kind === 'pr' ? 'pull request' : x.kind === 'proposal' ? 'proposed change' : x.kind, title: x.title, url: x.url,
+        cards: snap.docs.map((d) => { const x = d.data(); return { card_id: d.id, number: r.cardNumbers && r.cardNumbers[d.id] ? '#' + r.cardNumbers[d.id] : '', title: x.title, type: x.kind || '', notes: x.notes || '', column: WORK_COLUMNS[x.column], assigned_to: (x.assignees || []).map((p) => p.name), links: (x.links || []).map((l) => l.url) }; }),
+        elsewhere: (r.items || []).map((x) => ({ number: x.num ? '#' + x.num : x.source === 'github' ? x.repo + '#' + x.number : '', kind: x.kind === 'pr' ? 'pull request' : x.kind === 'proposal' ? 'proposed change' : x.kind, title: x.title, url: x.url,
           type: x.type, column: WORK_COLUMNS[x.column], state: x.state, from: x.by ? x.by.name || x.by.login || '' : '', on_it: (x.on || []).map((p) => p.name || p.login), waiting_for: x.waiting || '', since: x.since ? new Date(x.since).toISOString().slice(0, 10) : '' })),
         problems: r.errors || [],
       };

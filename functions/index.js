@@ -40,6 +40,42 @@ const crypto = require('crypto');
 admin.initializeApp();
 const db = admin.firestore();
 
+// ---------- Item numbers: #123, one sequence for all of BOLD.OS ----------
+// Every request and every card on a board is registered with a number when it's made
+// (a GitHub issue or pull request keeps GitHub's, shown with its repository: bold-os#23).
+// Kept apart from the items themselves, so any kind can be numbered without touching
+// how it's edited: itemNumbers/{path with / as ~}: { number, path, at }, and the next
+// number in counters/itemNumbers. Server only (firestore.rules' catch-all).
+// `path` is the item's document path, or a key under it for something that can be
+// asked more than once (an agent's request to act: apiTokens/<id>/act/<at>).
+const numberKey = (path) => String(path).replace(/\//g, '~');
+async function numberFor(path){
+  const ref = db.collection('itemNumbers').doc(numberKey(path)), counter = db.collection('counters').doc('itemNumbers');
+  return db.runTransaction(async function(tx){
+    const [had, c] = await Promise.all([tx.get(ref), tx.get(counter)]);
+    if (had.exists) return had.data().number;
+    const n = (c.exists && c.data().next) || 1;
+    tx.set(counter, { next: n + 1 }, { merge: true });
+    tx.set(ref, { number: n, path: String(path), at: Date.now() });
+    return n;
+  });
+}
+// paths → { path: number } for those already numbered.
+async function numbersOf(paths){
+  const out = {};
+  for (let i = 0; i < paths.length; i += 300){
+    const refs = paths.slice(i, i + 300).map(function(p){ return db.collection('itemNumbers').doc(numberKey(p)); });
+    if (!refs.length) continue;
+    (await db.getAll.apply(db, refs)).forEach(function(d){ if (d.exists) out[d.data().path] = d.data().number; });
+  }
+  return out;
+}
+// "#123 " at the start of a Slack message about it (never fails the message).
+async function numberTag(path){
+  try { return '#' + (await numberFor(path)) + ' '; }
+  catch (err){ logger.warn('Numbering failed', { path, error: String(err && err.message || err) }); return ''; }
+}
+
 const SLACK_BOT_TOKEN = defineSecret('SLACK_BOT_TOKEN');
 // App Home + reviewer-assignment (2026-09-12, see bold-os#3) —
 // verifies that an incoming HTTP request actually came from Slack (see
@@ -901,7 +937,7 @@ exports.onEventAdded = onDocumentCreated(
     if (!data || data.hidden !== true || !data.createdBy || await isFullWrite(data.createdBy)) return;
     const snap = await db.collection('people').where('email', '==', data.createdBy).limit(1).get();
     const who = snap.empty ? data.createdBy.split('@')[0] : snap.docs[0].data().name;
-    await tellStaff('🔔 ' + slackText(who) + ' added an event, ' + linkedTitle(data.title || event.params.slug, SITE_URL + 'event.html?event=' + encodeURIComponent(event.params.slug)) +
+    await tellStaff('🔔 ' + await numberTag('events/' + event.params.slug) + slackText(who) + ' added an event, ' + linkedTitle(data.title || event.params.slug, SITE_URL + 'event.html?event=' + encodeURIComponent(event.params.slug)) +
       '. It stays hidden until a PI or admin releases it from its page.', data.createdBy);
   }
 );
@@ -918,7 +954,7 @@ exports.onVenueProposed = onDocumentCreated(
     const url = venueUrl(event.params.boardId);
     // 🔔 — same "needs a decision from you" family as onCardWritten's
     // PI-approval notification, not a plain FYI icon.
-    const headline = '🔔 New venue proposal: ' + linkedTitle(data.label, url) + ' — proposed by ' + proposer +
+    const headline = '🔔 ' + await numberTag('boards/' + event.params.boardId) + 'New venue proposal: ' + linkedTitle(data.label, url) + ' — proposed by ' + proposer +
       '. It needs your approval before it’s visible to the lab.';
     await sendEvent(token, {
       emails: pis.concat(admins),
@@ -977,7 +1013,7 @@ function onProposed(collection, pageUrl){
       const what = q.kind === 'new' && !doc.exists
         ? ' proposed a new ' + (collection === 'agentTools' ? 'tool' : 'skill') + ', ' + link
         : ' suggested ' + proposalSummary(q) + ' in ' + link;
-      const headline = '🔔 ' + slackText(who) + what +
+      const headline = '🔔 ' + await numberTag(event.data.ref.path) + slackText(who) + what +
         (q.note ? ': “' + slackText(String(q.note).slice(0, 300)) + '”' : '') +
         '. It needs a PI or admin to accept or decline it.';
       const pis = await rolesEmails('pis');
@@ -3503,7 +3539,7 @@ async function requestWork(email, full, person){
   tokens.forEach(function(d){
     const x = d.data(), r = x.actRequest;
     if (!r) return;
-    add({ kind: 'agent', ref: d.ref.path, title: 'Let an agent act: ' + (x.label || 'a token'), url: SITE_URL + 'join-requests.html#agents',
+    add({ kind: 'agent', ref: d.ref.path, numKey: d.ref.path + '/act/' + (r.at || 0), title: 'Let an agent act: ' + (x.label || 'a token'), url: SITE_URL + 'join-requests.html#agents',
       by: person(x.email), on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [], waiting: r.status === 'open' ? PIS_ADMINS : '', state: r.status },
     requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
   });
@@ -3529,7 +3565,7 @@ async function requestWork(email, full, person){
   invites.forEach(function(d){
     const m = d.data(), inv = m.invitedBy;
     if (!inv || inv.status !== 'pending') return;
-    add({ kind: 'invite', ref: d.ref.path, title: 'Confirm you invited ' + (m.name || d.id), url: SITE_URL + 'join-requests.html#invited',
+    add({ kind: 'invite', ref: d.ref.path, numKey: d.ref.path + '/invite/' + (inv.askedAt || 0), title: 'Confirm you invited ' + (m.name || d.id), url: SITE_URL + 'join-requests.html#invited',
       by: person(d.id, m.name), on: [person(inv.email, inv.name)], state: 'open' }, { column: 'review', since: inv.askedAt || 0 });
   });
   events.forEach(function(d){
@@ -3547,7 +3583,7 @@ async function requestWork(email, full, person){
   hackathon.forEach(function(d){
     const h = d.data();
     if (h.status !== 'requested') return;
-    add({ kind: 'hackathon', ref: d.ref.path, title: 'Join the hackathon team on GitHub' + (h.github ? ' (' + h.github + ')' : ''), url: SITE_URL + 'events.html',
+    add({ kind: 'hackathon', ref: d.ref.path, numKey: d.ref.path + '/ask/' + (h.requestedAt || 0), title: 'Join the hackathon team on GitHub' + (h.github ? ' (' + h.github + ')' : ''), url: SITE_URL + 'events.html',
       by: person(h.email || d.id, h.name), on: [], waiting: PIS_ADMINS, state: 'requested' }, { column: 'review', since: h.requestedAt || 0 });
   });
   boards.forEach(function(d){
@@ -3559,6 +3595,25 @@ async function requestWork(email, full, person){
   });
   return items;
 }
+
+// Numbered when made: a board's card, an event series waiting to be released, an agent's
+// request to act, a request to join the hackathon team (requests made through a callable
+// are numbered there, so their Slack message has it).
+exports.onWorkCardAdded = onDocumentCreated('projectWorkspaces/{pid}/work/{id}', async function(event){
+  await numberFor(event.data.ref.path);
+});
+exports.onSeriesAdded = onDocumentCreated('eventSeries/{id}', async function(event){
+  const d = event.data && event.data.data();
+  if (d && d.hidden === true) await numberFor(event.data.ref.path);
+});
+exports.onActRequested = onDocumentWritten('apiTokens/{id}', async function(event){
+  const r = event.data.after.exists && event.data.after.data().actRequest;
+  if (r && r.status === 'open') await numberFor('apiTokens/' + event.params.id + '/act/' + (r.at || 0));
+});
+exports.onHackathonAsked = onDocumentWritten('hackathonJoins/{id}', async function(event){
+  const h = event.data.after.exists && event.data.after.data();
+  if (h && h.status === 'requested') await numberFor('hackathonJoins/' + event.params.id + '/ask/' + (h.requestedAt || 0));
+});
 
 exports.projectWork = onCall(
   { secrets: [GITHUB_APP], timeoutSeconds: 60 },
@@ -3616,7 +3671,17 @@ exports.projectWork = onCall(
     }
     // Each person on an item tagged with what they do there.
     items = items.map(function(x){ const role = workRole(x); return Object.assign({}, x, { role, on: (x.on || []).map(function(p){ return Object.assign({ role }, p); }) }); });
-    return { items, errors, repos, at: gh.at };
+    // Their numbers (#123), and the board's own cards'; anything made before numbers, or
+    // missed, is numbered now (a few at a time, so a first look stays quick).
+    const cardPaths = (await db.collection('projectWorkspaces').doc(pid).collection('work').get()).docs.map(function(d){ return d.ref.path; });
+    const keys = items.filter(function(x){ return x.source !== 'github'; }).map(function(x){ return x.numKey || x.ref; }).concat(cardPaths);
+    const nums = await numbersOf(keys);
+    let numbered = 0;
+    for (const k of keys) if (!nums[k] && numbered++ < 40) nums[k] = await numberFor(k);
+    items.forEach(function(x){ if (x.source !== 'github' && nums[x.numKey || x.ref]) x.num = nums[x.numKey || x.ref]; delete x.numKey; });
+    const cardNumbers = {};
+    cardPaths.forEach(function(p){ if (nums[p]) cardNumbers[p.split('/').pop()] = nums[p]; });
+    return { items, errors, repos, at: gh.at, cardNumbers };
   }
 );
 
@@ -4091,7 +4156,7 @@ exports.studyRequest = onCall(
       const name = (m.exists && m.data().name) || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
       const ref = await col.add({ student, studentName: s.name || student, email, name, note, status: 'open', at: Date.now() });
-      await sendEvent(token, { emails: [student], headline: '🎓 ' + slackText(name) + ' asks to join your supervision meeting' +
+      await sendEvent(token, { emails: [student], headline: '🎓 ' + await numberTag(ref.path) + slackText(name) + ' asks to join your supervision meeting' +
         (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', SITE_URL + 'profile.html#studies') + '.' });
       return { id: ref.id };
     }
@@ -4824,7 +4889,7 @@ exports.setMyInviter = onCall(
     const invitedBy = { id: who.id, name: String(who.data().name || to), email: to, status: 'pending', askedAt: Date.now(), via: 'profile' };
     await ref.update({ invitedBy });
     const name = m.data().name || email;
-    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: [to], headline: '👋 ' + slackText(name) + ' names you as their BOLD point of contact, who invited them. ' +
+    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: [to], headline: '👋 ' + await numberTag('members/' + email + '/invite/' + invitedBy.askedAt) + slackText(name) + ' names you as their BOLD point of contact, who invited them. ' +
       linkedTitle('Confirm it, or say you didn’t', joinPageUrl() + '#invited') + '.' });
     return { invitedBy };
   }
@@ -4882,13 +4947,14 @@ exports.onJoinRequested = onDocumentCreated(
   async function(event){
     const r = event.data && event.data.data();
     if (!r || r.status !== 'open') return;
+    const num = await numberTag('joinRequests/' + event.params.id);
     // Whoever invited them decides it; the PIs and admins only hear of one without an inviter (from before it was required).
     if (r.invitedBy) {
-      await dmBySlackId(SLACK_BOT_TOKEN.value(), r.invitedBy.id, '👋 ' + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ', ' + slackText(r.email) + ') asked to join BOLD and says you invited them. ' +
+      await dmBySlackId(SLACK_BOT_TOKEN.value(), r.invitedBy.id, '👋 ' + num + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ', ' + slackText(r.email) + ') asked to join BOLD and says you invited them. ' +
         linkedTitle('Approve or decline', joinPageUrl() + '#i=' + event.params.id) + '.');
       return;
     }
-    const headline = '👋 ' + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ') asked to join BOLD' +
+    const headline = '👋 ' + num + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ') asked to join BOLD' +
       (r.contact ? ', with ' + slackText(r.contact) + ' as their point of contact' : '') + '. ' +
       linkedTitle('Approve or decline', joinPageUrl() + '#r=' + event.params.id) + '.';
     const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
@@ -5116,7 +5182,7 @@ exports.groupRequest = onCall(
       const ref = await col.add(Object.assign({ email, name, from, to, note, status: 'open', at: Date.now() },
         inviter ? { inviterEmail: inviter.email, inviterName: inviter.name } : {}));
       const deciders = inviter ? [inviter.email] : (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-      await sendEvent(token, { emails: deciders, headline: '🏷️ ' + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to] +
+      await sendEvent(token, { emails: deciders, headline: '🏷️ ' + await numberTag(ref.path) + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to] +
         (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id) + '.' });
       return { id: ref.id };
     }
@@ -5308,7 +5374,7 @@ exports.letterRequest = onCall(
         requesterEmail: email, requesterName: myName, writerEmail, writerName: writer.name,
         acknowledgedAt: null, open: true, at: now, updatedAt: now,
       }));
-      await tell(writerEmail, '✉️ ' + slackText(myName) + ' asked you for a recommendation letter: ' +
+      await tell(writerEmail, '✉️ ' + await numberTag(ref.path) + slackText(myName) + ' asked you for a recommendation letter: ' +
         linkedTitle(slackText(n.request.purpose), letterUrl(ref.id)) + '. Deadlines: ' + letterDeadlines(n.request.recipients) + '.\n' +
         '💡 To draft it, copy the prompt under "For your agent" on the request into Claude Code: it uses the <' +
         SITE_URL + 'skill.html?skill=bold-recommendation-letter|bold-recommendation-letter> skill.');
@@ -5490,7 +5556,7 @@ exports.introRequest = onCall(
         offerId, org: String(o.org || ''), area: String(o.area || ''), requesterEmail: email, requesterName: myName,
         offererEmail, offererName: String((o.by && o.by.name) || offererEmail), why, status: 'asked', reply: '', at: now, updatedAt: now,
       });
-      await tell(offererEmail, '🤝 ' + slackText(myName) + ' asked you for an introduction at ' + linkedTitle(slackText(o.org), introUrl(ref.id)) +
+      await tell(offererEmail, '🤝 ' + await numberTag(ref.path) + slackText(myName) + ' asked you for an introduction at ' + linkedTitle(slackText(o.org), introUrl(ref.id)) +
         ': “' + slackText(why.length > 300 ? why.slice(0, 300) + '…' : why) + '”');
       return { id: ref.id };
     }
@@ -5891,7 +5957,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
+  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,

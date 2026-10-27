@@ -87,7 +87,7 @@ var ProjectWork = (function(){
     remote.loading = true; draw();
     call()({ project: pid, fresh: !!fresh }).then(function(r){
       var d = r.data || {};
-      remote = { items: d.items || [], errors: d.errors || [], at: d.at || Date.now(), repos: d.repos || [], loading: false, loaded: true };
+      remote = { items: d.items || [], errors: d.errors || [], at: d.at || Date.now(), repos: d.repos || [], cardNumbers: d.cardNumbers || {}, loading: false, loaded: true };
       draw();
     }).catch(function(err){
       console.error('[BOLD Lab] projectWork failed', err);
@@ -117,7 +117,7 @@ var ProjectWork = (function(){
       var t = c.kind || (linked.some(function(x){ return x.type === 'code'; }) || (c.links || []).some(function(l){ return l.type === 'pr' || l.type === 'issue'; }) ? 'code'
         : (c.links || []).some(function(l){ return l.type === 'proposal'; }) || linked.some(function(x){ return x.type === 'content'; }) ? 'content' : 'other');
       var waiting = on.length ? '' : linked.map(function(x){ return x.waiting; }).filter(Boolean)[0] || '';
-      return { key: 'card:' + c.id, card: c, source: 'card', type: t, title: c.title, notes: c.notes, column: column, since: since,
+      return { key: 'card:' + c.id, card: c, source: 'card', num: (remote.cardNumbers || {})[c.id], type: t, title: c.title, notes: c.notes, column: column, since: since,
         by: c.by ? { name: c.by.name, email: String(c.by.email || '').toLowerCase() } : null, on: dedupe(on), waiting: waiting, linked: linked, auto: column !== c.column };
     });
     remote.items.forEach(function(x){
@@ -136,14 +136,17 @@ var ProjectWork = (function(){
   function days(t){ return t ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : 0; }
   // Its reference, small: PR #23, Issue #5, the request's kind; nothing for a card.
   var REQUEST_KINDS = { join: 'Joining', invite: 'Invitation', group: 'Group', letter: 'Letter', introduction: 'Introduction', supervision: 'Supervision', agent: 'Agent', venue: 'Venue', review: 'Internal Review', event: 'Event', hackathon: 'Hackathon' };
+  // Its reference, small: BOLD.OS's own number (#123, one sequence for all of BOLD.OS,
+  // projectWork) and what it is; a GitHub item by its repository and GitHub's number (bold-os#23).
   function refLabel(x){
-    var repo = (remote.repos || []).length > 1 && x.repo ? ' ' + x.repo : '';
-    if (x.kind === 'pr') return 'PR #' + x.number + (x.state === 'draft' ? ' draft' : '') + repo;
-    if (x.kind === 'issue') return 'Issue #' + x.number + repo;
-    if (x.kind === 'proposal') return 'Proposal' + (x.state && x.state !== 'open' ? ', ' + x.state : '');
-    if (x.source === 'request') return REQUEST_KINDS[x.kind] || 'Request';
-    return '';
+    var num = x.num ? '#' + x.num : '';
+    if (x.kind === 'pr') return 'PR ' + x.repo + '#' + x.number + (x.state === 'draft' ? ' draft' : '');
+    if (x.kind === 'issue') return 'Issue ' + x.repo + '#' + x.number;
+    if (x.kind === 'proposal') return [num, 'Proposal' + (x.state && x.state !== 'open' ? ', ' + x.state : '')].filter(Boolean).join(' ');
+    if (x.source === 'request') return [num, REQUEST_KINDS[x.kind] || 'Request'].filter(Boolean).join(' ');
+    return num;
   }
+
   // A person's name, linked to their page on BOLD.OS (person.html?id=<Slack id>), or to
   // GitHub for someone who hasn't linked it; you in bold.
   function name(p){
@@ -271,7 +274,7 @@ var ProjectWork = (function(){
     var words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     var matches = function(x){
       if (!words.length) return true;
-      var hay = [x.title, refLabel(x), x.by && (x.by.name || x.by.login)].concat((x.on || []).map(function(p){ return p.name || p.login; })).join(' ').toLowerCase();
+      var hay = [x.title, refLabel(x), x.num ? String(x.num) : '', x.by && (x.by.name || x.by.login)].concat((x.on || []).map(function(p){ return p.name || p.login; })).join(' ').toLowerCase();
       return words.every(function(w){ return hay.indexOf(w) >= 0; });
     };
     var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type) && matches(x); });
@@ -287,7 +290,7 @@ var ProjectWork = (function(){
       .map(function(y){ return [y[0], y[1] + ' (' + all.filter(function(x){ return x.type === y[0]; }).length + ')']; }));
     var filtering = words.length || who || type;
     // The shared board's search bar (BoldBoard.searchHtml), as on the Internal Review Board.
-    var head = BoldBoard.searchHtml({ query: query, placeholder: 'Search by title, reference or person\u2026', label: 'Search the board',
+    var head = BoldBoard.searchHtml({ query: query, placeholder: 'Search by title, #number or person\u2026', label: 'Search the board',
       count: filtering ? shown.length + ' of ' + all.length : all.length + ' item' + (all.length === 1 ? '' : 's'),
       filters: [{ key: 'type', label: 'Type', value: type, options: typeOptions }, { key: 'who', label: 'Person', value: who, options: personOptions }],
       extra: '<span class="wk-tools"><span class="detail-muted">' + (remote.loading ? 'Updating\u2026' : remote.at ? 'Updated ' + new Date(remote.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '') + '</span>' +
@@ -447,7 +450,8 @@ var ProjectWork = (function(){
         var column = form.querySelector('.wk-f-column').value;
         job = cardsRef().add(Object.assign(data, { column: column, by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now }));
       }
-      job.then(function(){ busy = false; editing = null; draftLinks = []; draw(); })
+      // A new card is numbered by the server a moment after it's saved: fetched again to show it.
+      job.then(function(){ busy = false; editing = null; draftLinks = []; draw(); if (!c) setTimeout(function(){ fetchRemote(false); }, 2500); })
         .catch(function(err){ console.error('[BOLD Lab] saving a card failed', err); fail('Couldn’t save — try again.'); });
     });
   }
