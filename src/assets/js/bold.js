@@ -582,6 +582,7 @@
       '<p>This page is for ' + esc(LEVEL_NAMES[level]) + ' and above; you’re in ' + esc(LEVEL_NAMES[access.group] || 'PAN-BOLD') + '. ' +
       '<a href="boldiquette.html#access">Who can see what</a>.</p>' +
       '<a class="gate-signup-btn" href="profile.html">Ask for another group on your profile</a></div>';
+    gate.setAttribute('data-level-gate', '');
     gate.hidden = false;
   }
 
@@ -618,8 +619,12 @@
       if (!a.e) return;   // signed out: the sign-in gate above
       var ok = BOLD.can(area, 'view');
       shell.hidden = !ok;
+      // Allowed after all (the server's answer, a PI's say): the gate shown on the first guess goes.
+      var shown = document.getElementById('pageGate');
+      if (ok && shown && shown.hasAttribute('data-level-gate')) shown.hidden = true;
       if (!ok) {
-        var show = function(){ showLevelGate(document.getElementById('pageGate'), area); };
+        // Checked again when it's drawn: the server may have said yes by then.
+        var show = function(){ if (!BOLD.can(area, 'view')) showLevelGate(document.getElementById('pageGate'), area); };
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
       }
     });

@@ -80,6 +80,7 @@ Building a feature (a page that reads and writes its own data, say a rota) needs
 
 ## Shipping
 
+- **Plan on the board:** BOLD.OS's own work, code and content, is on the BOLD OS project's **Work** tab. Add a card for what you take on, put yourself on it, and link it to its pull request or proposed change: it then moves along with it.
 - **Pull requests:** work on a branch and open a PR to `main` (one approval needed). **Merging deploys the site** through GitHub Actions; there is no staging site.
 - **Rules and functions deploy separately**, by someone with access to the Firebase project:
   - `npx firebase deploy --only functions:<name>` and `npx firebase deploy --only firestore:rules`, with `--project bold-d7ff2`.

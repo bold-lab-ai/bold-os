@@ -47,7 +47,8 @@
       { key: 'announce', text: 'Announce it in #all-active-projects on Slack' },
       { key: 'meeting', text: 'Make its meeting on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ' (Google emails you the invitation)' },
       { key: 'docs', text: 'Make its slides and notes on Google Drive' },
-      repo && repo.template ? { key: 'repo', text: 'Make its GitHub repository in bold-lab-ai, from the ' + repo.template + ' template' } : null].filter(Boolean)) }).then(function(ok){
+      repo && repo.template ? { key: 'repo', text: 'Make its GitHub repository in bold-lab-ai, from the ' + repo.template + ' template' }
+        : repo && repo.name ? { key: 'repo', text: 'Link bold-lab-ai/' + repo.name.replace(/^.*\//, '') + ' and give the project\u2019s people with GitHub write access to it' } : null].filter(Boolean)) }).then(function(ok){
       if (ok) register(title, abstractText, channel, meeting, repo, ok.skip || {}, channelEffects.length > 0);
     });
   });

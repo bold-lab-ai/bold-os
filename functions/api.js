@@ -589,6 +589,17 @@ module.exports = function(deps){
     const card = mine[mine.length - 1].data, w = workspaces.find((x) => x._id === pid) || {};
     const presentations = (await db.collection('projectWorkspaces').doc(pid).collection('presentations').get()).docs.map((d) => d.data())
       .map((t) => ({ title: t.title, type: t.type, date: t.date || '', presenter: t.presenter && (t.presenter.name || name(t.presenter.email)), slides: t.slidesUrl || '', recording: t.recordingUrl || '' }));
+    // Its work board's own cards (the Work tab); its issues, pull requests and proposals come with the work tool's list.
+    const COLUMN = { todo: 'To do', doing: 'In progress', review: 'In review', done: 'Done' };
+    const work = w.work && w.work.on ? {
+      repositories: (w.work.repos && w.work.repos.length ? w.work.repos : w.repoName ? [w.repoName] : []).map((r) => 'bold-lab-ai/' + r),
+      shows_site_proposals: !!w.work.content,
+      cards: (await db.collection('projectWorkspaces').doc(pid).collection('work').get()).docs.map((d) => {
+        const c = d.data();
+        return { card_id: d.id, title: c.title, notes: c.notes || '', column: COLUMN[c.column] || c.column, assigned_to: (c.assignees || []).map((x) => x.name || name(x.email)),
+          links: (c.links || []).map((l) => l.url), made_by: c.by && (c.by.name || name(c.by.email)) };
+      }),
+    } : null;
     return {
       id: pid, title: card.title || 'Untitled', url: url(projectHref(mine[mine.length - 1].id, mine[mine.length - 1].boardId)),
       group: projectGroupForCards(mine, !!w.completedAt, workspaceStarted(w)),
@@ -602,7 +613,7 @@ module.exports = function(deps){
       meeting: w.meeting ? meetingText(w.meeting) + (w.pausedAt ? ' (paused)' : '') : '', meet_url: w.meetUrl || '',
       slides: w.deckUrl || '', notes: w.notesUrl || '', repository: w.repoUrl || '',
       links: { overleaf: card.overleafLink || '', arxiv: card.arxivLink || '', pitch: card.pitchLink || '', submission: card.submissionLink || '', camera_ready: card.cameraReadyLink || '' },
-      presentations,
+      presentations, work,
     };
   }
 

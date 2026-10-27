@@ -2583,7 +2583,7 @@ function projectGroupForCards(cards, completed, started){
 function workspaceView(ws){
   const out = {};
   ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'startedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
-    'deckUrl', 'notesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'repoError'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
+    'deckUrl', 'notesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'repoError', 'work'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   return out;
 }
 
@@ -2614,7 +2614,19 @@ function normalizeRepo(r){
     const t = String(r.template || '');
     return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/.test(t) ? { mode: 'template', template: t } : { error: 'Choose a template.' };
   }
+  // One the lab already has: its name in bold-lab-ai (or its github.com address).
+  if (r.mode === 'existing'){
+    const n = repoNameOf(r.name);
+    return n ? { mode: 'existing', name: n } : { error: 'Give a repository in ' + GITHUB_ORG + ', as its name or its GitHub address.' };
+  }
   return { error: 'Choose a repository.' };
+}
+// Pure: "bold-os", "bold-lab-ai/bold-os" or "https://github.com/bold-lab-ai/bold-os" → "bold-os"; '' if it isn't one of the org's.
+function repoNameOf(s){
+  s = String(s || '').trim().replace(/^https?:\/\/(www\.)?github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, '');
+  const m = /^(?:([A-Za-z0-9-]+)\/)?([A-Za-z0-9_.-]{1,100})$/.exec(s);
+  if (!m || (m[1] && m[1].toLowerCase() !== GITHUB_ORG)) return '';
+  return m[2];
 }
 
 // Pure: the name of a project's new repository: its Slack channel's ("proj-…"),
@@ -2848,7 +2860,16 @@ async function syncWorkspace(id, changes){
     await save();
 
     try {
-      if (ws.repo && !ws.repoName){
+      if (ws.repo && ws.repo.mode === 'existing' && !ws.repoName){
+        let r;
+        try { r = await githubApp('GET', '/repos/' + GITHUB_ORG + '/' + ws.repo.name); }
+        catch (err){
+          if (err.status === 404) throw new HttpsError('not-found', GITHUB_ORG + '/' + ws.repo.name + ' isn’t there, or BOLD.OS can’t see it.');
+          throw err;
+        }
+        patch.repoName = r.name; patch.repoUrl = r.html_url; await save();
+      }
+      if (ws.repo && ws.repo.mode !== 'existing' && !ws.repoName){
         if (!(await projectTemplates()).some(function(t){ return t.name === ws.repo.template; })) {
           throw new HttpsError('invalid-argument', ws.repo.template + ' isn\u2019t one of the lab\u2019s templates.');
         }
@@ -3213,7 +3234,210 @@ exports.projectWorkspace = onCall(
       await wsRef.set({ skipped: FieldValue.arrayRemove('announce') }, { merge: true });
       return { ok: true };
     }
+
+    // Its work board (projectWork): on or off, the repositories it shows, and whether it
+    // shows the proposed changes to the site's content (PIs and admins only: that's the
+    // whole lab's). data.work: any of { on, repos, content }.
+    if (data.action === 'work'){
+      const w = data.work && typeof data.work === 'object' ? data.work : {};
+      const full = await isFullWrite(email);
+      if (!full && !(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can do this.');
+      const ws = (await wsRef.get()).data() || {};
+      const next = Object.assign({ on: false, repos: [], content: false }, ws.work || {});
+      if (w.on !== undefined) next.on = !!w.on;
+      if (w.content !== undefined && !!w.content !== !!next.content){
+        if (!full) throw new HttpsError('permission-denied', 'Only PIs and admins can show the site’s proposed changes on a board.');
+        next.content = !!w.content;
+      }
+      if (w.repos !== undefined){
+        if (!Array.isArray(w.repos) || w.repos.length > 5) throw new HttpsError('invalid-argument', 'Up to 5 repositories.');
+        const names = [];
+        for (const x of w.repos){
+          const n = repoNameOf(x);
+          if (!n) throw new HttpsError('invalid-argument', String(x).slice(0, 100) + ' isn’t a repository in ' + GITHUB_ORG + '.');
+          if (names.indexOf(n) >= 0) continue;
+          // Only ones BOLD.OS can see.
+          try { await githubApp('GET', '/repos/' + GITHUB_ORG + '/' + n); }
+          catch (err){
+            if (err instanceof HttpsError) throw err;
+            throw new HttpsError('not-found', GITHUB_ORG + '/' + n + ' isn’t there, or BOLD.OS can’t see it.');
+          }
+          names.push(n);
+        }
+        next.repos = names;
+      }
+      next.updatedAt = Date.now(); next.updatedBy = email;
+      await wsRef.set({ work: next }, { merge: true });
+      workCache.delete(pid);
+      return { work: next };
+    }
     throw new HttpsError('invalid-argument', 'Unknown action.');
+  }
+);
+
+// --- Work boards: a project's code and content work in one place (project page, Work tab) ---
+// The board's own cards are projectWorkspaces/{pid}/work/{id} (firestore.rules), read
+// live by the page; projectWork adds what's happening elsewhere, each placed in a
+// column: To do, In progress, In review, Done (the last 14 days).
+// - GitHub, from the board's repositories: open issues (To do; In progress once
+//   someone has it), pull requests (a draft In progress, open In review, merged
+//   Done) and recently closed issues (Done). Needs the GitHub App's Issues and Pull
+//   requests: read.
+// - With `content` on: every proposed change to the BOLDiquette, guides, skills and
+//   tools, open (In review) or decided lately (Done), those the caller can see.
+// A card linking a pull request, an issue or a proposal shows as one (the page joins them).
+const WORK_DAYS = 14;
+const WORK_COLUMNS = ['todo', 'doing', 'review', 'done'];
+const workCache = new Map();   // pid → { at, items, errors } (the caller-independent part: GitHub)
+
+// Pure: an issue's or pull request's numbers it closes ("Closes #12", "fixes #3").
+function closesIssues(body){
+  const out = [], re = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)/gi;
+  let m;
+  while ((m = re.exec(String(body || '')))) if (out.indexOf(Number(m[1])) < 0) out.push(Number(m[1]));
+  return out;
+}
+
+// Pure: a GitHub issue or pull request → a board item. `who(login)` → a person.
+function githubWorkItem(repo, x, isPr, who, now){
+  const since = function(t){ return t ? Date.parse(t) : 0; };
+  const base = {
+    source: 'github', kind: isPr ? 'pr' : 'issue', ref: (GITHUB_ORG + '/' + repo + '#' + x.number).toLowerCase(), repo, number: x.number,
+    title: String(x.title || ''), url: x.html_url, labels: (x.labels || []).map(function(l){ return typeof l === 'string' ? l : l.name; }).filter(Boolean)
+  };
+  if (!isPr){
+    const assignees = (x.assignees || []).map(function(a){ return who(a.login, 'assignee'); });
+    // Whoever opened it shows only while nobody has it (and not on a card linking it).
+    const people = assignees.length ? assignees : [who(x.user && x.user.login, 'opener')];
+    if (x.state === 'closed') return Object.assign(base, { column: 'done', state: 'closed', since: since(x.closed_at), people });
+    return Object.assign(base, { column: assignees.length ? 'doing' : 'todo', state: 'open', since: since(x.created_at), people });
+  }
+  const people = [who(x.user && x.user.login, 'author')].concat((x.requested_reviewers || []).map(function(r){ return who(r.login, 'reviewer'); }));
+  const closes = closesIssues(x.body).map(function(n){ return (GITHUB_ORG + '/' + repo + '#' + n).toLowerCase(); });
+  if (x.merged_at) return Object.assign(base, { column: 'done', state: 'merged', since: since(x.merged_at), people, closes });
+  if (x.state === 'closed') return Object.assign(base, { column: 'done', state: 'closed', since: since(x.closed_at), people, closes });
+  return Object.assign(base, { column: x.draft ? 'doing' : 'review', state: x.draft ? 'draft' : 'open', since: since(x.draft ? x.created_at : (x.ready_at || x.created_at)), people, closes });
+}
+
+// One repository's items → { items } or { error }.
+async function githubWork(repo, who){
+  const now = Date.now(), after = new Date(now - WORK_DAYS * 86400000).toISOString();
+  const base = '/repos/' + GITHUB_ORG + '/' + repo;
+  try {
+    const [open, closed, pulls] = await Promise.all([
+      githubApp('GET', base + '/issues?state=open&per_page=100'),
+      githubApp('GET', base + '/issues?state=closed&since=' + encodeURIComponent(after) + '&per_page=100'),
+      githubApp('GET', base + '/pulls?state=all&sort=updated&direction=desc&per_page=100')
+    ]);
+    const items = [];
+    open.concat(closed).forEach(function(x){
+      if (x.pull_request) return;   // pulls, below
+      if (x.state === 'closed' && Date.parse(x.closed_at) < now - WORK_DAYS * 86400000) return;
+      items.push(githubWorkItem(repo, x, false, who, now));
+    });
+    pulls.forEach(function(x){
+      if (x.state === 'closed' && Date.parse(x.closed_at) < now - WORK_DAYS * 86400000) return;
+      items.push(githubWorkItem(repo, x, true, who, now));
+    });
+    return { items };
+  } catch (err){
+    if (err instanceof HttpsError) return { error: err.message };
+    if (err.status === 403) return { error: 'BOLD.OS can’t read ' + repo + '’s issues and pull requests yet — an admin gives its GitHub App Issues and Pull requests: read.' };
+    if (err.status === 404) return { error: GITHUB_ORG + '/' + repo + ' isn’t there, or BOLD.OS can’t see it.' };
+    return { error: 'GitHub didn’t answer for ' + repo + ' — try again.' };
+  }
+}
+
+// Pure: a proposal's page: its collection and document → { page (Who can see what), title, url }.
+function proposalPlace(collection, slug, doc){
+  const title = (doc && doc.title) || slug;
+  if (collection === 'handbook') return { page: 'boldiquette', title: slug === 'boldiquette' ? 'BOLDiquette' : title, url: handbookUrl(slug) };
+  if (collection === 'guides') return { page: access.guideArea(slug), title, url: guideUrl(slug) };
+  if (collection === 'skills') return { page: 'skills', title, url: skillUrl(slug) };
+  if (collection === 'agentTools') return { page: 'tools', title, url: toolUrl(slug) };
+  return null;
+}
+
+// The site's proposed changes the caller can see: open, or decided in the last 14 days.
+async function contentWork(email){
+  const after = Date.now() - WORK_DAYS * 86400000;
+  // All of them, filtered here: a few hundred at most, and no collection-group index needed.
+  const docs = (await db.collectionGroup('proposals').get()).docs.filter(function(d){
+    const q = d.data();
+    return q.status === 'open' || (q.decidedAt || 0) >= after;
+  });
+  const titles = {}, mayView = {};
+  const items = [];
+  for (const d of docs){
+    const parent = d.ref.parent.parent;
+    if (!parent || parent.parent.parent) continue;   // only {collection}/{slug}/proposals
+    const collection = parent.parent.id, slug = parent.id;
+    if (['handbook', 'guides', 'skills', 'agentTools'].indexOf(collection) < 0) continue;
+    if (!(parent.path in titles)){
+      const s = await parent.get();
+      titles[parent.path] = s.exists ? s.data() : null;
+    }
+    const place = proposalPlace(collection, slug, titles[parent.path] || (d.data().after || null));
+    if (!place) continue;
+    if (!(place.page in mayView)) mayView[place.page] = await access.can(email, place.page, 'view');
+    if (!mayView[place.page]) continue;
+    const q = d.data();
+    const by = { name: (q.by && q.by.name) || '', email: String((q.by && q.by.email) || '').toLowerCase(), role: 'author' };
+    const what = proposalSummary(q).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+    const item = { source: 'content', kind: 'proposal', ref: d.ref.path, title: place.title + ': ' + what, place: place.title,
+      url: place.url + '#proposals', note: String(q.note || '').slice(0, 300), people: [by] };
+    if (q.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: q.editedAt || q.at || 0 });
+    else {
+      Object.assign(item, { column: 'done', state: q.status, since: q.decidedAt || 0 });
+      if (q.decidedBy) item.people.push({ name: q.decidedByName || '', email: String(q.decidedBy).toLowerCase(), role: 'decider' });
+    }
+    items.push(item);
+  }
+  return items;
+}
+
+exports.projectWork = onCall(
+  { secrets: [GITHUB_APP], timeoutSeconds: 60 },
+  async (request) => {
+    const email = callerEmail(request);
+    await access.requireAccess(email, 'projects', 'view');   // Who can see what
+    const pid = String((request.data || {}).project || '');
+    if (!validSlug(pid)) throw new HttpsError('invalid-argument', 'No project given.');
+    const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data();
+    if (!ws || !ws.work || !ws.work.on) throw new HttpsError('failed-precondition', 'This project has no work board.');
+    // The repositories: the board's, or else the project's own.
+    const repos = (ws.work.repos && ws.work.repos.length) ? ws.work.repos : ws.repoName ? [ws.repoName] : [];
+    const fresh = !!(request.data || {}).fresh;
+    let gh = workCache.get(pid);
+    const key = JSON.stringify(repos);
+    if (!gh || gh.key !== key || fresh || gh.at < Date.now() - 60000){
+      // GitHub logins → people, from who linked their GitHub (githubLinks).
+      const links = await db.collection('githubLinks').get();
+      const byLogin = {};
+      for (const d of links.docs){
+        const g = d.data();
+        if (g.github && g.status !== 'failed') byLogin[String(g.github).toLowerCase()] = d.id;
+      }
+      const names = {};
+      for (const e of Object.values(byLogin)){ const p = await personFor(e); names[e] = (p && p.name) || ''; }
+      const who = function(login, role){
+        const e = byLogin[String(login || '').toLowerCase()];
+        return e ? { name: names[e] || e, email: e, login: login || '', role } : { name: login || 'someone', login: login || '', role };
+      };
+      const results = await Promise.all(repos.map(function(r){ return githubWork(r, who); }));
+      gh = { key, at: Date.now(), items: [], errors: [] };
+      results.forEach(function(r){ if (r.error) gh.errors.push(r.error); else gh.items = gh.items.concat(r.items); });
+      workCache.set(pid, gh);
+    }
+    let items = gh.items, errors = gh.errors.slice();
+    if (ws.work.content){
+      try { items = items.concat(await contentWork(email)); }
+      catch (err){
+        logger.error('projectWork: reading the proposals failed', { pid, error: String(err && err.message || err) });
+        errors.push('The site’s proposed changes couldn’t load — try again.');
+      }
+    }
+    return { items, errors, repos, at: gh.at };
   }
 );
 
@@ -5454,7 +5678,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   tellStaff,
   tellPerson: (email, text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: [email], headline: text }),
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
-  callables: () => ({ projectWorkspace: exports.projectWorkspace, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
+  callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
     confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, eventSeries: exports.eventSeries }) });
 exports.apiTokens = agentApi.apiTokens;
@@ -5478,7 +5702,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  projectGroupForCard, allProjectsFromCards, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
+  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,

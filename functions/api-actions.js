@@ -291,6 +291,69 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
+  // ---------- a project's work board (project page, Work tab) ----------
+  // Cards are projectWorkspaces/{pid}/work/{id}, written as the page writes them (firestore.rules
+  // decides who may); list is projectWork's, the cards and what it adds from GitHub and the site.
+  const WORK_COLUMNS = { todo: 'To do', doing: 'In progress', review: 'In review', done: 'Done' };
+  async function work(who, a){
+    const c = await cardOf(a.project_id);
+    const pid = c.data.projectId || c.id, col = 'projectWorkspaces/' + pid + '/work';
+    const ref = db.collection('projectWorkspaces').doc(pid).collection('work');
+    if (a.action === 'list') {
+      const [r, snap] = await Promise.all([act(who, 'projectWork', { project: pid }), ref.get()]);
+      const people = (list) => (list || []).map((p) => (p.name || p.login || '') + (p.role === 'reviewer' ? ' (reviewing)' : p.role === 'opener' ? ' (opened it)' : p.role === 'decider' ? ' (decided)' : ''));
+      return {
+        cards: snap.docs.map((d) => { const x = d.data(); return { card_id: d.id, title: x.title, notes: x.notes || '', column: WORK_COLUMNS[x.column], assigned_to: (x.assignees || []).map((p) => p.name), links: (x.links || []).map((l) => l.url) }; }),
+        elsewhere: (r.items || []).map((x) => ({ kind: x.kind === 'pr' ? 'pull request' : x.kind === 'proposal' ? 'proposed change' : 'issue', title: x.title, url: x.url,
+          column: WORK_COLUMNS[x.column], state: x.state, people: people(x.people), since: x.since ? new Date(x.since).toISOString().slice(0, 10) : '' })),
+        problems: r.errors || [],
+      };
+    }
+    const now = Date.now();
+    let assignees;
+    if (a.assign_to !== undefined) {
+      const q = String(a.assign_to || '').trim();
+      if (!q) assignees = [];
+      else if (q.toLowerCase() === 'me') assignees = [{ email: who.email, name: nameOfMe(who) }];
+      else {
+        const ms = await lab.members();
+        const m = ms.find((x) => String(x.email || x._id).toLowerCase() === q.toLowerCase()) || ms.find((x) => fold(x.name) === fold(q));
+        if (!m) throw httpError(404, 'No one in BOLD called “' + q + '”.');
+        assignees = [{ email: String(m.email || m._id).toLowerCase(), name: m.name || m.email }];
+      }
+    }
+    const links = a.links === undefined ? undefined : (a.links || []).slice(0, 10).map((u) => {
+      u = http(String(u).trim());
+      const g = /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/(pull|issues)\/(\d+)/i.exec(u);
+      return g ? { type: g[3].toLowerCase() === 'pull' ? 'pr' : 'issue', ref: (g[1] + '/' + g[2] + '#' + g[4]).toLowerCase(), url: g[0], label: g[1] + '/' + g[2] + '#' + g[4] } : { type: 'url', url: u, label: u };
+    });
+    if (a.column !== undefined && !WORK_COLUMNS[a.column]) throw httpError(400, 'The column is one of todo, doing, review, done.');
+    if (a.action === 'add') {
+      const d = { title: need(a.title, 'a title').slice(0, 200), notes: String(a.notes || '').slice(0, 4000), column: a.column || 'todo',
+        assignees: assignees || [], assigneeEmails: (assignees || []).map((x) => x.email), links: links || [],
+        by: { email: who.email, name: nameOfMe(who) }, at: now, movedAt: now, updatedAt: now, updatedBy: who.email };
+      const id = await asUser(who, 'create', col, d);
+      return { card_id: id, url: url('project.html#id=' + encodeURIComponent(c.id) + (c.boardId ? '&board=' + encodeURIComponent(c.boardId) : '') + '&tab=work') };
+    }
+    const id = need(a.card_id, 'the card_id');
+    const cur = await ref.doc(id).get();
+    if (!cur.exists) throw httpError(404, 'No card with that id on this board.');
+    if (a.action === 'remove') { await asUser(who, 'delete', col + '/' + id); return { ok: true }; }
+    const x = cur.data();
+    const next = { title: x.title, notes: x.notes || '', column: x.column, assignees: x.assignees || [], assigneeEmails: x.assigneeEmails || [], links: x.links || [],
+      by: x.by, at: x.at, movedAt: x.movedAt || x.at, updatedAt: now, updatedBy: who.email };
+    if (a.action === 'move') { next.column = need(a.column, 'the column'); next.movedAt = now; }
+    else {
+      if (a.title !== undefined) next.title = need(a.title, 'a title').slice(0, 200);
+      if (a.notes !== undefined) next.notes = String(a.notes).slice(0, 4000);
+      if (assignees) { next.assignees = assignees; next.assigneeEmails = assignees.map((p) => p.email); }
+      if (links) next.links = links;
+      if (a.column !== undefined && a.column !== x.column) { next.column = a.column; next.movedAt = now; }
+    }
+    await asUser(who, 'set', col + '/' + id, next);
+    return { ok: true };
+  }
+
   // ---------- projects ----------
   const cardPath = (c) => c.boardId ? 'boards/' + c.boardId + '/cards/' + c.id : 'projects/' + c.id;
   async function projects(who, a){
@@ -623,6 +686,11 @@ module.exports = function(ctx){
         slack_channel: str('register, update: "proj-…".'), overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
+    { name: 'work', run: work,
+      description: 'A project’s work board (its Work tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s the proposed changes to the site), or add, update, move or remove a card. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it.',
+      inputSchema: S({ action: ACTIONS(['list', 'add', 'update', 'move', 'remove']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove (list gives it).'),
+        title: str('add, update'), notes: str('add, update'), column: ACTIONS(['todo', 'doing', 'review', 'done']), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
+        links: { type: 'array', items: { type: 'string' }, description: 'add, update: https://… links: a GitHub pull request or issue, a proposal, anything.' } }, ['action', 'project_id']) },
     { name: 'presentations', run: presentations,
       description: 'A project’s presentations (its Meetings tab): add, update or remove a talk about it, with where it was given (one of the site’s events, a venue, or a name) and its slides and recording links.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'remove']), project_id: str('The project id.'), presentation_id: str('update, remove (get_project lists them).'),
