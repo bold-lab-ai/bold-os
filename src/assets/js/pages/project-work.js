@@ -25,6 +25,7 @@ var ProjectWork = (function(){
   var remote = { items: [], errors: [], at: 0, loading: false, loaded: false };
   var who = '';            // the person filter: an email or a GitHub login ('' all)
   var type = '';           // the type filter: code, content, request ('' all)
+  var query = '';          // the search box's text
   var TYPES = [['code', 'Code'], ['content', 'Content'], ['request', 'Request'], ['other', 'Other']];
   var editing = null;      // a card's id, or 'new:<column>'; 'settings'
   var draftLinks = [];     // links in the open editor
@@ -255,35 +256,43 @@ var ProjectWork = (function(){
   }
   function drawBoard(keepEditor){
     var all = items();
-    // Who's doing what: everyone on something in progress or in review.
-    var load = {};
+    // Who's doing what, for the Person filter: everyone on the board, busiest first.
+    var people = {};
     all.forEach(function(x){
-      if (x.column !== 'doing' && x.column !== 'review') return;
-      (x.on || []).forEach(function(p){
+      [x.by].concat(x.on || []).forEach(function(p, i){
+        if (!p || !(p.name || p.login || p.email)) return;
         var k = personKey(p);
-        load[k] = load[k] || { p: p, doing: 0, review: 0 };
-        load[k][x.column]++;
+        people[k] = people[k] || { p: p, doing: 0, review: 0 };
+        if (i > 0 && (x.column === 'doing' || x.column === 'review')) people[k][x.column]++;
       });
     });
     var involves = function(x, k){ return personKey(x.by || {}) === k || (x.on || []).some(function(p){ return personKey(p) === k; }); };
-    var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type); });
-    var strip = Object.keys(load).sort(function(a, b){ return (load[b].doing + load[b].review) - (load[a].doing + load[a].review); }).map(function(k){
-      var l = load[k], parts = [];
-      if (l.doing) parts.push(l.doing + ' in progress');
-      if (l.review) parts.push(l.review + ' waiting for review');
-      return '<button class="wk-who' + (who === k ? ' active' : '') + '" type="button" data-who="' + esc(k) + '">' + esc(l.p.name || l.p.login || l.p.email) +
-        ' <span class="detail-muted">' + parts.join(', ') + '</span></button>';
-    }).join('');
-    var types = '<div class="wk-filters wk-types">' + [['', 'All']].concat(TYPES).map(function(y){
-      var n = all.filter(function(x){ return !y[0] || x.type === y[0]; }).length;
-      return y[0] === 'other' && !n ? '' : '<button class="wk-who' + (type === y[0] ? ' active' : '') + '" type="button" data-type="' + y[0] + '">' + y[1] + ' <span class="detail-muted">' + n + '</span></button>';
-    }).join('') + '</div>';
-    var head = '<div class="wk-head">' + types +
-      '<div class="wk-filters"><button class="wk-who' + (!who ? ' active' : '') + '" type="button" data-who="">Everyone</button>' +
-        (me() ? '<button class="wk-who' + (who === me() ? ' active' : '') + '" type="button" data-who="' + esc(me()) + '">Mine</button>' : '') + strip + '</div>' +
-      '<div class="wk-tools"><span class="detail-muted">' + (remote.loading ? 'Updating…' : remote.at ? 'Updated ' + new Date(remote.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '') + '</span>' +
+    // The search: title, its reference, and the people on it.
+    var words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    var matches = function(x){
+      if (!words.length) return true;
+      var hay = [x.title, refLabel(x), x.by && (x.by.name || x.by.login)].concat((x.on || []).map(function(p){ return p.name || p.login; })).join(' ').toLowerCase();
+      return words.every(function(w){ return hay.indexOf(w) >= 0; });
+    };
+    var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type) && matches(x); });
+    var personOptions = [['', 'Everyone']].concat(me() ? [[me(), 'Mine']] : []).concat(Object.keys(people).filter(function(k){ return k !== me(); })
+      .sort(function(a, b){ return (people[b].doing + people[b].review) - (people[a].doing + people[a].review) || String(people[a].p.name).localeCompare(String(people[b].p.name)); })
+      .map(function(k){
+        var l = people[k], parts = [];
+        if (l.doing) parts.push(l.doing + ' in progress');
+        if (l.review) parts.push(l.review + ' waiting for review');
+        return [k, (l.p.name || l.p.login || l.p.email) + (parts.length ? ' (' + parts.join(', ') + ')' : '')];
+      }));
+    var typeOptions = [['', 'All types']].concat(TYPES.filter(function(y){ return y[0] !== 'other' || all.some(function(x){ return x.type === 'other'; }); })
+      .map(function(y){ return [y[0], y[1] + ' (' + all.filter(function(x){ return x.type === y[0]; }).length + ')']; }));
+    var filtering = words.length || who || type;
+    // The shared board's search bar (BoldBoard.searchHtml), as on the Internal Review Board.
+    var head = BoldBoard.searchHtml({ query: query, placeholder: 'Search by title, reference or person\u2026', label: 'Search the board',
+      count: filtering ? shown.length + ' of ' + all.length : all.length + ' item' + (all.length === 1 ? '' : 's'),
+      filters: [{ key: 'type', label: 'Type', value: type, options: typeOptions }, { key: 'who', label: 'Person', value: who, options: personOptions }],
+      extra: '<span class="wk-tools"><span class="detail-muted">' + (remote.loading ? 'Updating\u2026' : remote.at ? 'Updated ' + new Date(remote.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '') + '</span>' +
         '<button class="btn-text" type="button" data-wk="refresh"' + (remote.loading ? ' disabled' : '') + '>Refresh</button>' +
-        '<button class="btn-text" type="button" data-wk="settings">Board settings</button></div></div>';
+        '<button class="btn-text" type="button" data-wk="settings">Board settings</button></span>' });
     var notes = (remote.errors || []).map(function(e){ return '<p class="wk-error">' + esc(e) + '</p>'; }).join('') + (msg ? '<p class="wk-error">' + esc(msg) + '</p>' : '');
     var settings = editing === 'settings' ? '<div class="wk-settings-slot"></div>' : '';
     // The shared board (assets/js/board.js): the Internal Review Board's columns.
@@ -338,11 +347,9 @@ var ProjectWork = (function(){
         if (c && canChange(c)) moveCard(c, column);
       }
     });
-    Array.prototype.forEach.call(root.querySelectorAll('[data-who]'), function(b){
-      b.addEventListener('click', function(){ who = b.getAttribute('data-who'); draw(); });
-    });
-    Array.prototype.forEach.call(root.querySelectorAll('[data-type]'), function(b){
-      b.addEventListener('click', function(){ type = b.getAttribute('data-type'); draw(); });
+    BoldBoard.wireSearch(root, {
+      query: function(v){ query = v; draw(); },
+      filter: function(key, v){ if (key === 'type') type = v; else if (key === 'who') who = v; draw(); }
     });
     Array.prototype.forEach.call(root.querySelectorAll('.wk-add'), function(b){
       b.addEventListener('click', function(){ if (editing) return; editing = 'new:' + b.getAttribute('data-col'); draftLinks = []; draw(); focusTitle(); });

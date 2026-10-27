@@ -174,12 +174,8 @@
 /* The Work tab's board (pages/project-work.js): filters, then the shared board's
    columns (board.css), scrolling sideways when they don't fit, as on the Internal Review Board. */
 .wk{font-family:var(--sans); font-size:14px; line-height:1.45; margin-top:6px;}
-.wk-head{display:flex; flex-wrap:wrap; gap:10px 18px; align-items:flex-start; justify-content:space-between; margin-bottom:14px;}
-.wk-filters{display:flex; flex-wrap:wrap; gap:6px;}
-.wk-who{font:inherit; font-size:13px; padding:3px 9px; border:1px solid var(--line); background:var(--surface); color:var(--ink-soft); border-radius:var(--radius); cursor:pointer;}
-.wk-who:hover{border-color:var(--accent);}
-.wk-who.active{border-color:var(--accent); color:var(--ink); font-weight:600;}
-.wk-tools{display:flex; gap:12px; align-items:baseline; font-size:13px;}
+.wk .board-search{margin-bottom:14px;}
+.wk-tools{display:flex; gap:12px; align-items:baseline; font-size:13px; margin-left:auto;}
 .wk-error{color:var(--warn-text); font-size:13px; margin:0 0 10px;}
 .wk-add{font-size:12.5px; margin-top:6px;}
 /* The Work tab takes the Internal Review Board's width (board.css's --board-max). */
@@ -208,7 +204,6 @@
 /* What someone does on an item (From, Reviewer, Decides…), before their names. */
 .wk-tag{flex:none; font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted);
   border:1px solid var(--line); border-radius:var(--radius); padding:0 4px; line-height:1.5;}
-.wk-types{flex:0 0 100%;}
 .wk-actions{display:flex; gap:10px; align-items:center; margin-top:4px;}
 .wk-actions .wk-edit{flex:none; white-space:nowrap; font-size:12px;}
 .wk-editor{background:var(--surface); border:1px solid var(--accent); padding:10px; margin-bottom:8px; display:flex; flex-direction:column; gap:8px;}

@@ -7,6 +7,11 @@
 //   BoldBoard.columnsHtml(columns) → the columns' HTML. columns: [{ id, label, count,
 //     hint (HTML under the label, optional), body (the cards' HTML), empty (shown
 //     when there are none), headExtra (HTML after the hint, optional) }].
+//   BoldBoard.searchHtml({ query, placeholder, label, filters: [{ key, label, value,
+//     options: [[value, text]] }], count, id }) → the search bar above a board: a search
+//     box, a dropdown per filter, and how many cards match. BoldBoard.wireSearch(root,
+//     { query(text), filter(key, value) }) calls back on each change; whoever redraws the
+//     board, the search box keeps its focus and caret.
 //   BoldBoard.paged(scope, columnId, list) → { items, more }: the first 20 of a column's
 //     cards (PAGE), and how many more there are; a column's `more` in columnsHtml
 //     shows "Load more" under its cards, which shows 20 more each time (BoldBoard.
@@ -78,6 +83,34 @@ var BoldBoard = (function(){
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function(){ equalized.forEach(function(r){ if (r === document || r.isConnected) equalizeHeads(r); }); }, 120);
   });
+
+  function searchHtml(o){
+    var filters = (o.filters || []).map(function(f){
+      return '<select data-board-filter="' + esc(f.key) + '"' + (f.id ? ' id="' + esc(f.id) + '"' : '') + ' aria-label="' + esc(f.label) + '">' +
+        f.options.map(function(x){ return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(f.value) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select>';
+    }).join('');
+    return '<div class="board-search">' +
+      '<input type="search" data-board-search' + (o.id ? ' id="' + esc(o.id) + '"' : '') + ' placeholder="' + esc(o.placeholder || 'Search') + '" value="' + esc(o.query || '') + '" aria-label="' + esc(o.label || 'Search') + '">' +
+      filters + (o.count ? '<span class="board-search-count">' + esc(o.count) + '</span>' : '') + (o.extra || '') + '</div>';
+  }
+  function wireSearch(root, on){
+    if (!root) return;
+    root.__boldBoardSearch = on;
+    if (root.__boldBoardSearchWired) return;
+    root.__boldBoardSearchWired = true;
+    root.addEventListener('input', function(e){
+      if (!e.target.matches || !e.target.matches('[data-board-search]')) return;
+      var a = e.target.selectionStart, b = e.target.selectionEnd;
+      root.__boldBoardSearch.query(e.target.value);
+      // Redrawn: the new box takes the focus and caret back.
+      var box = root.querySelector('[data-board-search]');
+      if (box && box !== document.activeElement) { box.focus(); try { box.setSelectionRange(a, b); } catch (x){} }
+    });
+    root.addEventListener('change', function(e){
+      var key = e.target.getAttribute && e.target.getAttribute('data-board-filter');
+      if (key) root.__boldBoardSearch.filter(key, e.target.value);
+    });
+  }
 
   var HOLD_MS = 280, SLOP = 6;
   function drag(root, opts){
@@ -171,5 +204,5 @@ var BoldBoard = (function(){
     window.addEventListener('keydown', function(e){ if (e.key === 'Escape') end(false); });
   }
 
-  return { columnsHtml: columnsHtml, paged: paged, onMore: onMore, PAGE: PAGE, equalizeHeads: equalizeHeads, drag: drag, COLUMN_MIN: COLUMN_MIN };
+  return { columnsHtml: columnsHtml, searchHtml: searchHtml, wireSearch: wireSearch, paged: paged, onMore: onMore, PAGE: PAGE, equalizeHeads: equalizeHeads, drag: drag, COLUMN_MIN: COLUMN_MIN };
 })();

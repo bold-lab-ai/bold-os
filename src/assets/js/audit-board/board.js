@@ -694,36 +694,12 @@
     var filterActive = !!q.trim() || reviewFilter !== 'all';
     var matched = filterActive ? state.cards.filter(matchesSearch).length : total;
     var countText = filterActive ? (matched + ' of ' + total + ' paper' + (total === 1 ? '' : 's')) : (total + ' paper' + (total === 1 ? '' : 's'));
-    return '<div class="board-search">' +
-      '<input type="search" id="boardSearchInput" placeholder="Search by title, PI, author…" value="' + escapeHtml(q) + '" aria-label="Search papers">' +
-      '<select id="boardSearchField" aria-label="Search in">' +
-        Object.keys(SEARCH_FIELD_LABELS).map(function(k){
-          return '<option value="' + k + '"' + (k === field ? ' selected' : '') + '>' + SEARCH_FIELD_LABELS[k] + '</option>';
-        }).join('') +
-      '</select>' +
-      '<select id="boardReviewFilter" aria-label="Filter by review status">' +
-        Object.keys(REVIEW_FILTER_LABELS).map(function(k){
-          return '<option value="' + k + '"' + (k === reviewFilter ? ' selected' : '') + '>' + REVIEW_FILTER_LABELS[k] + '</option>';
-        }).join('') +
-      '</select>' +
-      '<span class="board-search-count">' + countText + '</span>' +
-    '</div>';
-  }
-
-  function onSearchInput(value){
-    state.search.query = value;
-    var active = document.activeElement;
-    var hadFocus = active && active.id === 'boardSearchInput';
-    var selStart = hadFocus ? active.selectionStart : null;
-    var selEnd = hadFocus ? active.selectionEnd : null;
-    renderBoard();
-    if (hadFocus){
-      var input = document.getElementById('boardSearchInput');
-      if (input){
-        input.focus();
-        if (selStart != null) input.setSelectionRange(selStart, selEnd);
-      }
-    }
+    // The shared board's search bar (BoldBoard.searchHtml); wired in renderBoard (wireSearch).
+    return BoldBoard.searchHtml({ id: 'boardSearchInput', query: q, placeholder: 'Search by title, PI, author\u2026', label: 'Search papers', count: countText,
+      filters: [
+        { key: 'field', id: 'boardSearchField', label: 'Search in', value: field, options: Object.keys(SEARCH_FIELD_LABELS).map(function(k){ return [k, SEARCH_FIELD_LABELS[k]]; }) },
+        { key: 'reviewState', id: 'boardReviewFilter', label: 'Filter by review status', value: reviewFilter, options: Object.keys(REVIEW_FILTER_LABELS).map(function(k){ return [k, REVIEW_FILTER_LABELS[k]]; }) }
+      ] });
   }
 
   function renderColumns(board){
@@ -866,12 +842,10 @@
       });
     });
 
-    var searchInput = document.getElementById('boardSearchInput');
-    if (searchInput) searchInput.addEventListener('input', function(){ onSearchInput(searchInput.value); });
-    var searchField = document.getElementById('boardSearchField');
-    if (searchField) searchField.addEventListener('change', function(){ state.search.field = searchField.value; renderBoard(); });
-    var reviewFilterSel = document.getElementById('boardReviewFilter');
-    if (reviewFilterSel) reviewFilterSel.addEventListener('change', function(){ state.search.reviewState = reviewFilterSel.value; renderBoard(); });
+    BoldBoard.wireSearch(els.boardRegion, {
+      query: function(v){ state.search.query = v; renderBoard(); },
+      filter: function(key, v){ state.search[key] = v; renderBoard(); }
+    });
 
     Array.prototype.forEach.call(document.querySelectorAll('[data-status-for]'), function(sel){
       sel.addEventListener('change', function(){

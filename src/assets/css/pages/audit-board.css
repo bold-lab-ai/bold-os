@@ -303,13 +303,7 @@ select{min-width:180px;}
 .venues-section-title:first-child{margin-top:0;}
 .badge-pending{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
 /* ---------- board search ---------- */
-.board-search{
-  max-width:var(--board-max); margin:16px 0 0; padding:0 var(--gutter);
-  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-}
-.board-search input[type="search"]{flex:1 1 260px; min-width:180px;}
-.board-search select{min-width:140px;}
-.board-search-count{font-size:12.5px; color:var(--muted); white-space:nowrap;}
+.board-search{max-width:var(--board-max); margin:16px 0 0; padding:0 var(--gutter);}   /* the rest: board.css */
 /* ---------- board columns: assets/css/board.css (shared with a project's Work tab) ---------- */
 .board-scroll{max-width:var(--board-max); margin:12px 0 0; padding:0 var(--gutter) 80px;}
 /* ch-hint is ALWAYS rendered (renderColumns never omits it, even with
