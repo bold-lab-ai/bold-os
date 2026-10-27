@@ -493,7 +493,7 @@ module.exports = function(deps){
     });
     const jobs = [];
     if (want('boldiquette')) jobs.push(lab.handbook().then((l) => parts(l, 'boldiquette', (id) => id === 'boldiquette' ? 'boldiquette.html' : 'index.html', '', 'BOLDiquette')));
-    // Get started is the Service desk's (access.js GUIDE_AREAS): labelled so, and only for who can see that.
+    // Get started has its own page in Who can see what (access.js GUIDE_AREAS), on the Service desk: labelled so, and only for who can see it.
     if (want('guides')) jobs.push(lab.guides().then(async (l) => {
       for (const g of l) {
         const area = require('./access').guideArea(g._id);

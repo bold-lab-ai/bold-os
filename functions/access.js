@@ -25,14 +25,15 @@ const PAGES = [
   ['skills', 'Skills'],
   ['guides', 'How to'],
   ['service-desk', 'Service desk'],
+  ['get-started', 'Get started'],
   ['search', 'Search'],
   ['changelog', 'Changes'],
 ];
 const WHAT = ['view', 'edit'];
 // Pages where every change is a proposal (and commenting is part of it): editing them is proposing.
-const REVIEWED = ['boldiquette', 'guides', 'skills', 'tools'];
+const REVIEWED = ['boldiquette', 'guides', 'skills', 'tools', 'get-started'];
 // A guide whose page is in another area than How to's (firestore.rules guideArea, bold.js BOLD.GUIDE_AREAS).
-const GUIDE_AREAS = { 'get-started-at-bold': 'service-desk' };
+const GUIDE_AREAS = { 'get-started-at-bold': 'get-started' };
 const guideArea = (slug) => GUIDE_AREAS[slug] || 'guides';
 // propose (callers, older tables) → edit.
 const whatOf = (what) => what === 'view' ? 'view' : 'edit';
@@ -51,6 +52,8 @@ const DEFAULT_PAGES = {
   boldiquette: { view: 'everyone', edit: 'internal' },
   projects: { view: 'associate', edit: 'associate' },
   profile: { view: 'everyone', edit: 'everyone' },
+  // Get started at BOLD: for everyone who joins, PAN-BOLD included; changed by proposals, as the Service desk.
+  'get-started': { view: 'everyone', edit: 'associate' },
 };
 PAGES.forEach(([key]) => { if (!DEFAULT_PAGES[key]) DEFAULT_PAGES[key] = { view: 'internal', edit: 'internal' }; });
 

@@ -46,7 +46,7 @@
   // like any guide, but not listed under How to. guide.html?guide=<slug> goes there.
   BOLD.GUIDE_PAGES = { 'get-started-at-bold': 'get-started.html' };
   // Its page in Who can see what, when not How to's (firestore.rules guideArea, functions/access.js GUIDE_AREAS).
-  BOLD.GUIDE_AREAS = { 'get-started-at-bold': 'service-desk' };
+  BOLD.GUIDE_AREAS = { 'get-started-at-bold': 'get-started' };
   BOLD.guideHref = function(slug){ return BOLD.GUIDE_PAGES[slug] || 'guide.html?guide=' + encodeURIComponent(slug); };
 
   // The lab's Slack workspace, for links into the Slack app (tags).
@@ -327,7 +327,7 @@
     accessListeners.slice().forEach(function(fn){ fn(a); });
   }
   // Pages where every change is a proposal someone reviews (functions/access.js REVIEWED).
-  var REVIEWED = ['boldiquette', 'guides', 'skills', 'tools'];
+  var REVIEWED = ['boldiquette', 'guides', 'skills', 'tools', 'get-started'];
   // A page's level for `what`: view, or edit (propose is edit).
   // PAN-BOLD is Everyone (everyone signed in): one level.
   function levelFor(area, what){
@@ -391,7 +391,7 @@
   // The pages, as the table names them (functions/access.js PAGES, kept in sync by hand).
   var AREA_NAMES = { boldiquette: 'BOLDiquette', projects: 'Projects', profile: 'Your profile', calendar: 'Calendar', 'ml-cycle': 'ML Conference Cycle',
     people: 'People', requests: 'Requests', events: 'Events', agents: 'Agents', tools: 'Tools', skills: 'Skills', guides: 'How to',
-    'service-desk': 'Service desk', search: 'Search', changelog: 'Changes' };
+    'service-desk': 'Service desk', 'get-started': 'Get started', search: 'Search', changelog: 'Changes' };
   var WHAT = ['view', 'edit'];
   var WHAT_ROW = { view: 'View', edit: 'Edit' };
   var WHAT_VERB = { view: 'view', edit: 'edit' };
@@ -635,6 +635,27 @@
     BOLD.onAccess(function(){
       Array.prototype.forEach.call(document.querySelectorAll('#sidebar [data-area]'), function(el){
         el.hidden = !BOLD.can(el.getAttribute('data-area'), 'view');
+      });
+      // A group the viewer can't open still shows for a link in it they can (Get started under the
+      // Service desk, for PAN-BOLD): only those links, and its heading goes to the first of them.
+      Array.prototype.forEach.call(document.querySelectorAll('#sidebar .nav-group[data-area]'), function(g){
+        var label = g.querySelector('.nav-group-label');
+        if (label && !label.hasAttribute('data-href')) label.setAttribute('data-href', label.getAttribute('href'));
+        var open = BOLD.can(g.getAttribute('data-area'), 'view'), own = [];
+        Array.prototype.forEach.call(g.querySelectorAll('.nav-sub'), function(a){
+          var area = a.getAttribute('data-area');
+          if (!area) a.hidden = !open; else if (!a.hidden) own.push(a);
+        });
+        g.hidden = !open && !own.length;
+        if (label) label.setAttribute('href', open || !own.length ? label.getAttribute('data-href') : own[0].getAttribute('href'));
+      });
+      // A divider shows only between groups the viewer sees: none first, last or twice in a row.
+      var seen = false, pending = null;
+      Array.prototype.forEach.call(document.querySelectorAll('#sidebar .nav-groups > *'), function(el){
+        if (el.classList.contains('nav-sep')) { el.hidden = true; if (seen) pending = el; seen = false; return; }
+        if (el.hidden) return;
+        if (pending) { pending.hidden = false; pending = null; }
+        seen = true;
       });
     });
   }

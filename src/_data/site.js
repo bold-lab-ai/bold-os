@@ -51,7 +51,7 @@ export default {
     // Its sub-pages are the how-to guides (Firestore), filled in by bold.js.
     { label: 'How to', href: 'guides.html', links: [], guides: true, area: 'guides' },
     { label: 'Service desk', href: 'service-desk.html', area: 'service-desk', links: [
-      { label: 'Get started at BOLD', href: 'get-started.html' },
+      { label: 'Get started at BOLD', href: 'get-started.html', area: 'get-started' },
       { label: 'Recommendation letters', href: 'letters.html' },
       { label: 'Introductions', href: 'introductions.html' },
     ] },

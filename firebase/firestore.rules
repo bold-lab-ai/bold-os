@@ -567,7 +567,7 @@ service cloud.firestore {
     // edit or withdraw it while it's open. PIs/admins add a guide (empty) and delete one.
     match /guides/{slug} {
       // Its page in Who can see what: Get started sits on the Service desk (bold.js BOLD.GUIDE_AREAS).
-      function guideArea(slug){ return slug == 'get-started-at-bold' ? 'service-desk' : 'guides'; }
+      function guideArea(slug){ return slug == 'get-started-at-bold' ? 'get-started' : 'guides'; }
       allow read: if may(guideArea(slug), 'view');
       // updatedBy is who the version history (functions/index.js) credits.
       allow create: if hasFullWrite() && request.resource.data.slug == slug

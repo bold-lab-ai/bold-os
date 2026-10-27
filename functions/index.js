@@ -672,7 +672,7 @@ async function slackFetch(token, method, body){
 // simply nowhere to send that DM.
 async function slackIdForEmail(email){
   if (!email) return null;
-  const snap = await db.collection('people').where('email', '==', email).limit(1).get();
+  const snap = await db.collection('people').where('email', '==', String(email).toLowerCase()).limit(1).get();
   if (snap.empty) return null;
   return snap.docs[0].data().slackId || null;
 }
@@ -1776,7 +1776,8 @@ async function upsertPerson(u){
   const ref = db.collection('people').doc(u.id);
   if (u.deleted) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); return; }
   if (!u.profile || !u.profile.email) { logger.warn('upsertPerson: no email (users:read.email?)', { slackId: u.id }); return; }
-  const p = { slackId: u.id, email: u.profile.email, name: u.profile.real_name || u.real_name || u.name || u.profile.email };
+  // Emails lower case, as everywhere else on BOLD.OS (Slack keeps whatever case was typed).
+  const p = { slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email };
   const was = (await ref.get()).data();
   if (was && was.name === p.name && was.email === p.email) return;
   await ref.set(p, { merge: true });
@@ -4165,7 +4166,7 @@ async function syncPeopleFromSlack(token){
   const members = await slackMembers(token);
   const people = members
     .filter(u => !u.deleted && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
-    .map(u => ({ slackId: u.id, email: u.profile.email, name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
+    .map(u => ({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
   if (!people.length) {
     logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
     throw new Error('Slack returned nobody with an email (is users:read.email granted?)');
