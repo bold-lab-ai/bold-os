@@ -178,8 +178,12 @@
 .wk-tools{display:flex; gap:12px; align-items:baseline; font-size:13px; margin-left:auto;}
 .wk-error{color:var(--warn-text); font-size:13px; margin:0 0 10px;}
 .wk-add{font-size:12.5px; margin-top:6px;}
-/* The Work tab takes the Internal Review Board's width (board.css's --board-max). */
-.detail.is-board{max-width:var(--board-max); margin:0;}
+/* The Board tab: only the board is wider than the page, up to the Internal Review Board's
+   width (board.css's --board-max) or the room beside the sidebar, centred under the tabs;
+   the title and tabs above it stay where they are on every tab. */
+.shell-main{container-type:inline-size;}
+.wk{--wk-w:min(calc(var(--board-max) - 2 * var(--gutter)), calc(100cqw - 2 * var(--gutter)));
+  width:var(--wk-w); margin-left:calc((100% - var(--wk-w)) / 2);}
 .wk .board-scroll{padding-bottom:6px;}
 .wk .column-head .ch-hint a{color:inherit;}
 .wk-item.board-ghost{font-family:var(--sans); font-size:14px; line-height:1.45;}
