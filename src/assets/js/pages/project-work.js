@@ -293,6 +293,8 @@ var ProjectWork = (function(){
 
   function draw(){
     if (!ctx) return;
+    // A card's page sits in the tab as the Overview does; only the board itself is wide.
+    root.classList.toggle('wk-paged', !!view);
     if (view) { drawPage(); return; }
     // An open editor stays as it is; the rest redraws around it.
     var keep = editing && root.querySelector('.wk-editor');

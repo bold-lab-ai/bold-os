@@ -219,16 +219,17 @@
 .wk-f-linklist{list-style:none; margin:0; padding:0;}
 .wk-f-urlrow{display:flex; gap:8px;}
 
-/* A card's own page (Board tab, &card=…): laid out as the project page itself (.detail-head,
-   .detail-badges, .detail-grid, .detail-abstract above), in its serif, under the tabs. */
-.wk-page{max-width:var(--article-max); margin:0 auto; padding-top:8px; font-family:var(--serif); font-size:16px; line-height:1.55; color:var(--ink-soft);}
+/* A card's own page (Board tab, &card=…): laid out as the Overview tab (.detail-head,
+   .detail-badges, .detail-grid, .detail-abstract above), from the tab panel's left edge,
+   not the board's width (.wk.wk-paged). */
+.wk.wk-paged{width:auto; margin-left:0; margin-top:0;}
+.wk-page{max-width:var(--article-max); padding-top:26px; font-family:var(--serif); font-size:16px; line-height:1.55; color:var(--ink-soft);}
 .wk-page .detail-back{margin-bottom:14px;}
 .wk-page .detail-head h2.wk-page-title{font-size:clamp(24px, 3.6vw, 32px); line-height:1.2; font-weight:800; color:var(--ink); max-width:none;}
 .wk-page .detail-badges{margin-top:6px;}
 .wk-page .wk-badge-code{color:var(--blue);}
 .wk-page .wk-badge-content{color:var(--plum);}
 .wk-page .wk-badge-request{color:var(--warn-text);}
-.wk-page .detail-grid{margin:22px 0 28px;}
 .wk-page .detail-grid dd a{color:inherit;}
 .wk-page .detail-grid .is-me{color:var(--ink); font-weight:600;}
 .wk-page .detail-abstract-label{display:flex; align-items:baseline;}
