@@ -31,6 +31,9 @@ const PAGES = [
 const WHAT = ['view', 'edit'];
 // Pages where every change is a proposal (and commenting is part of it): editing them is proposing.
 const REVIEWED = ['boldiquette', 'guides', 'skills', 'tools'];
+// A guide whose page is in another area than How to's (firestore.rules guideArea, bold.js BOLD.GUIDE_AREAS).
+const GUIDE_AREAS = { 'get-started-at-bold': 'service-desk' };
+const guideArea = (slug) => GUIDE_AREAS[slug] || 'guides';
 // propose (callers, older tables) → edit.
 const whatOf = (what) => what === 'view' ? 'view' : 'edit';
 
@@ -143,4 +146,4 @@ module.exports = function access({ db, groupOf, isFullWrite, HttpsError }){
   }
   return { table, groupFor, can, requireAccess, checkTableChange, forget(){ cache = null; } };
 };
-Object.assign(module.exports, { ACCESS_PART, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, parseAccessTable, accessTableMarkdown, rank });
+Object.assign(module.exports, { ACCESS_PART, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, GUIDE_AREAS, guideArea, parseAccessTable, accessTableMarkdown, rank });

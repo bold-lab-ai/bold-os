@@ -536,7 +536,9 @@ service cloud.firestore {
     // of a guide's content and of a proposal's status; whoever proposed it can
     // edit or withdraw it while it's open. PIs/admins add a guide (empty) and delete one.
     match /guides/{slug} {
-      allow read: if may('guides', 'view');
+      // Its page in Who can see what: Get started sits on the Service desk (bold.js BOLD.GUIDE_AREAS).
+      function guideArea(slug){ return slug == 'get-started-at-bold' ? 'service-desk' : 'guides'; }
+      allow read: if may(guideArea(slug), 'view');
       // updatedBy is who the version history (functions/index.js) credits.
       allow create: if hasFullWrite() && request.resource.data.slug == slug
         && request.resource.data.updatedBy == email() && request.resource.data.parts.size() == 0;
@@ -546,15 +548,15 @@ service cloud.firestore {
       allow delete: if hasFullWrite();
       // Its history, written only by the historyGuides function.
       match /versions/{version} {
-        allow read: if may('guides', 'view');
+        allow read: if may(guideArea(slug), 'view');
         allow write: if false;
       }
       // Comments on selected text (comments.js): the lab reads and comments as
       // themselves; the author edits their text; the author or a PI/admin resolves or
       // deletes it; whoever started a thread can delete its replies with it.
       match /comments/{id} {
-        allow read: if may('guides', 'view');
-        allow create: if may('guides', 'edit') && request.resource.data.by.email == email()
+        allow read: if may(guideArea(slug), 'view');
+        allow create: if may(guideArea(slug), 'edit') && request.resource.data.by.email == email()
           && request.resource.data.keys().hasOnly(['partId', 'quote', 'prefix', 'suffix', 'text', 'by', 'at', 'parent', 'proposalId'])
           && request.resource.data.partId is string && request.resource.data.at is number
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
@@ -564,20 +566,20 @@ service cloud.firestore {
             : 'proposalId' in request.resource.data
             ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/guides/$(slug)/proposals/$(request.resource.data.proposalId))
             : request.resource.data.quote is string && request.resource.data.quote.size() > 0 && request.resource.data.quote.size() <= 500);
-        allow update: if may('guides', 'edit') && (
+        allow update: if may(guideArea(slug), 'edit') && (
           (resource.data.by.email == email() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['text', 'editedAt'])
             && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
             && (!('editedAt' in request.resource.data) || request.resource.data.editedAt is number))
           || ((resource.data.by.email == email() || hasFullWrite())
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['resolved', 'resolvedBy', 'resolvedByName', 'resolvedAt'])
             && request.resource.data.resolvedBy == email()));
-        allow delete: if may('guides', 'edit') && (resource.data.by.email == email() || hasFullWrite()
+        allow delete: if may(guideArea(slug), 'edit') && (resource.data.by.email == email() || hasFullWrite()
           || ('parent' in resource.data && resource.data.parent is string
             && get(/databases/$(database)/documents/guides/$(slug)/comments/$(resource.data.parent)).data.by.email == email()));
       }
       match /proposals/{id} {
-        allow read: if may('guides', 'view');
-        allow create: if may('guides', 'edit') && request.resource.data.by.email == email()
+        allow read: if may(guideArea(slug), 'view');
+        allow create: if may(guideArea(slug), 'edit') && request.resource.data.by.email == email()
           && request.resource.data.status == 'open'
           && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch']
           && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes'])
@@ -587,7 +589,7 @@ service cloud.firestore {
             : !('changes' in request.resource.data));
         // Edited by whoever proposed it, while it's open: its changes and note, as when
         // proposed; who, when and its status stay as they were.
-        allow update: if may('guides', 'edit') && resource.data.by.email == email() && resource.data.status == 'open'
+        allow update: if may(guideArea(slug), 'edit') && resource.data.by.email == email() && resource.data.status == 'open'
           && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
           && request.resource.data.editedAt is number
           && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'batch']
@@ -596,7 +598,7 @@ service cloud.firestore {
             ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
             : !('changes' in request.resource.data));
         // Withdrawn by whoever proposed it while it's open, or with its guide.
-        allow delete: if hasFullWrite() || (may('guides', 'edit') && resource.data.by.email == email() && resource.data.status == 'open');
+        allow delete: if hasFullWrite() || (may(guideArea(slug), 'edit') && resource.data.by.email == email() && resource.data.status == 'open');
       }
     }
 

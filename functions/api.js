@@ -438,7 +438,8 @@ module.exports = function(deps){
   // which check it themselves.
   const TOOL_PAGE = { search: 'search', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
-  const pageOfTool = (name, args) => name === 'read_page' ? (String((args || {}).page || '').trim().toLowerCase() === 'boldiquette' ? 'boldiquette' : 'guides') : TOOL_PAGE[name];
+  const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
+    return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
   async function mayView(who, page){
     if (!page || await access.can(who.email, page, 'view')) return;
     const level = ((await access.table())[page] || {}).view || 'internal';
@@ -492,7 +493,13 @@ module.exports = function(deps){
     });
     const jobs = [];
     if (want('boldiquette')) jobs.push(lab.handbook().then((l) => parts(l, 'boldiquette', (id) => id === 'boldiquette' ? 'boldiquette.html' : 'index.html', '', 'BOLDiquette')));
-    if (want('guides')) jobs.push(lab.guides().then((l) => parts(l, 'guides', guideHref, 'p-', 'How to')));
+    // Get started is the Service desk's (access.js GUIDE_AREAS): labelled so, and only for who can see that.
+    if (want('guides')) jobs.push(lab.guides().then(async (l) => {
+      for (const g of l) {
+        const area = require('./access').guideArea(g._id);
+        if (area === 'guides' || await access.can(who.email, area, 'view')) parts([g], 'guides', guideHref, 'p-', area === 'guides' ? 'How to' : 'Service desk');
+      }
+    }));
     if (want('skills')) jobs.push(lab.skills().then((l) => l.forEach((x) => item('skills', x.title || x.name || x._id, 'Skill', [x.name, x.description, x.body].join(' '), 'skill.html?skill=' + encodeURIComponent(x._id)))));
     if (want('events')) jobs.push(Promise.all([lab.events(), lab.sessions(), lab.talks()]).then(([evs, ss, ts]) => {
       const talk = (x) => [x.abstract, x.speaker, x.affiliation, x.description, x.summary].filter(Boolean).join(' ');

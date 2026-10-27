@@ -34,8 +34,8 @@
   if (!cfg.slug && BOLD.GUIDE_PAGES[slug]) { location.replace(BOLD.GUIDE_PAGES[slug] + location.hash); return; }
   var ref = !isNew && G.SLUG.test(slug) ? db.collection(COLLECTION).doc(slug) : null;
   var MAX_SIZE = 900000;
-  // Its page in Who can see what (BOLD.can): the BOLDiquette or the How to guides.
-  var AREA = COLLECTION === 'handbook' ? 'boldiquette' : 'guides';
+  // Its page in Who can see what (BOLD.can): the BOLDiquette, the How to guides, or its own (BOLD.GUIDE_AREAS).
+  var AREA = COLLECTION === 'handbook' ? 'boldiquette' : BOLD.GUIDE_AREAS[slug] || 'guides';
   // Why `p` (a part; none: the page) can't be suggested a change by this viewer, or ''.
   function proposeOff(p){
     if (!me) return 'Sign in to suggest a change';

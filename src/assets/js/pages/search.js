@@ -30,9 +30,11 @@
       var out = [];
       s.docs.forEach(function(d){
         var x = d.data(), url = page(d.id), name = x.title || d.id;
-        out.push(item(name, where, x.description, url));
+        // A guide with its own page in another area (BOLD.GUIDE_AREAS: Get started, on the Service desk) says so.
+        var w = col === 'guides' && BOLD.GUIDE_AREAS[d.id] ? 'Service desk' : where;
+        out.push(item(name, w, x.description, url));
         (x.parts || []).forEach(function(p){
-          out.push(item(p.title, name + (p.section ? ' › ' + p.section : ''), p.body, url + '#' + prefix + p.id));
+          out.push(item(p.title, (w === where ? name : w + ' › ' + name) + (p.section ? ' › ' + p.section : ''), p.body, url + '#' + prefix + p.id));
         });
       });
       return out;

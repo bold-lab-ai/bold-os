@@ -8,7 +8,7 @@ window.BoldSearch = (function(){
   // Where one can search: key, label, and the pages that belong to it.
   var SCOPES = [
     { key: 'boldiquette', label: 'BOLDiquette', pages: /^boldiquette\.html$/ },
-    { key: 'guides', label: 'How to', pages: /^(guides?|get-started)\.html$/ },
+    { key: 'guides', label: 'How to', pages: /^guides?\.html$/ },
     { key: 'skills', label: 'Skills', pages: /^skills?\.html$/ },
     { key: 'events', label: 'Events', pages: /^(events?|session|talk|calendar|event-.*)\.html$/ },
     { key: 'projects', label: 'Projects', pages: /^(projects?|project-meetings|projects-register)\.html$/ },

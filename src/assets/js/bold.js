@@ -45,6 +45,8 @@
   // Guides with a page of their own elsewhere (guides/{slug} → its page): edited
   // like any guide, but not listed under How to. guide.html?guide=<slug> goes there.
   BOLD.GUIDE_PAGES = { 'get-started-at-bold': 'get-started.html' };
+  // Its page in Who can see what, when not How to's (firestore.rules guideArea, functions/access.js GUIDE_AREAS).
+  BOLD.GUIDE_AREAS = { 'get-started-at-bold': 'service-desk' };
   BOLD.guideHref = function(slug){ return BOLD.GUIDE_PAGES[slug] || 'guide.html?guide=' + encodeURIComponent(slug); };
 
   // The lab's Slack workspace, for links into the Slack app (tags).
