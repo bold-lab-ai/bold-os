@@ -200,12 +200,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // The second tab is named for what it holds (the project's meeting, slides and notes, and
   // its talks); its hash stays #presentations, so links keep working.
   var TABS = [['overview', 'Overview'], ['presentations', 'Meetings'], ['paper', 'Papers']];
-  // A fourth, Work, on a project with a work board (pages/project-work.js).
+  // A fourth, Board, on a project with a board (pages/project-work.js).
   function hasBoard(){ return !!(ws && ws.work && ws.work.on); }
-  function tabs(){ return hasBoard() ? TABS.concat([['work', 'Work']]) : TABS; }
+  // Named Board; its hash stays #…&tab=work (links keep working), and &tab=board works too.
+  function tabs(){ return hasBoard() ? TABS.concat([['work', 'Board']]) : TABS; }
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
   // The Team tab's people and channel are on Overview now, its meeting, slides and notes on Meetings.
   if (tab === 'team') tab = 'overview';
+  if (tab === 'board') tab = 'work';
   // Work is kept until the workspace has loaded and shows whether there's a board.
   if (tab !== 'work' && !TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
   // &join=1, the link in a project's #all-active-projects announcement: join it
@@ -245,7 +247,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
         : missing());
       html += row('Registered', card.createdAt ? formatDate(card.createdAt) : missing());
-      html += row('Work board', workBoardHtml());
+      html += row('Board', workBoardHtml());
       html += '</dl>';
       if (editing === 'abstract') {
         // Same editor as the registration form, with Save and Cancel.
@@ -274,9 +276,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     work: function(){ return '<div id="workMount"></div>'; }
   };
 
-  // Overview's Work board row: the tab, or adding one (optional, for any project).
+  // Overview's Board row: the tab, or adding one (optional, for any project).
   function workBoardHtml(){
-    if (hasBoard()) return '<a href="#" id="workTabLink">On the Work tab</a>';
+    if (hasBoard()) return '<a href="#" id="workTabLink">On the Board tab</a>';
     if (!wsLoaded) return '<span class="detail-muted">Loading\u2026</span>';
     return missing() + ' <button class="btn-text detail-inline-edit" type="button" id="workAdd"' +
       (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Add one</button>' +

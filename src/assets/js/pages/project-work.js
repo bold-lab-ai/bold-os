@@ -1,4 +1,4 @@
-// A project's work board (project page, Work tab): everything in the works, and on BOLD
+// A project's board (project page, Board tab; #…&tab=work): everything in the works, and on BOLD
 // OS's board everything on BOLD.OS waiting on someone, in To do, In progress, Waiting for review
 // or Done. Each item shows only what's needed to scan it: its type (code, content or a
 // request), what it's about, who it's from, and who's on it (or what it waits for).
@@ -305,7 +305,7 @@ var ProjectWork = (function(){
       var newSlot = editing === 'new:' + c[0] ? '<div class="wk-new-slot"></div>' : '';
       return { id: c[0], label: c[0] === 'done' && archive ? 'Done, archived' : c[1], count: all.length, more: page.more,
         hint: c[0] === 'done' ? (archive ? 'Cards done more than ' + DAYS + ' days ago (the rest are on GitHub and the <a href="changelog.html">Changelog</a>). <button class="btn-text wk-archive" type="button">Back to the last ' + DAYS + ' days</button>'
-          : 'The last ' + DAYS + ' days. <button class="btn-text wk-archive" type="button">Archive</button>') : '',
+          : 'The last ' + DAYS + ' days. <button class="btn-text wk-archive" type="button">Show archived</button>') : '',
         headExtra: add,
         body: newSlot + list.map(itemHtml).join(''),
         empty: !cardsLoaded || (remote.loading && !remote.loaded) ? 'Loading\u2026' : 'Nothing here' };
@@ -388,7 +388,7 @@ var ProjectWork = (function(){
         }).catch(function(err){ fail((err && err.message) || 'Couldn’t save — try again.'); });
       });
       form.querySelector('.wk-s-off').addEventListener('click', function(){
-        BOLD.confirmAction({ title: 'Remove the work board?', go: 'Remove it', effects: ['Hide the Work tab (its cards are kept, and come back if it’s added again)'] }).then(function(ok){
+        BOLD.confirmAction({ title: 'Remove the board?', go: 'Remove it', effects: ['Hide the Board tab (its cards are kept, and come back if it’s added again)'] }).then(function(ok){
           if (!ok) return;
           ctx.callWorkspace({ action: 'work', work: { on: false } }).then(function(){ editing = null; })
             .catch(function(err){ fail((err && err.message) || 'Couldn’t remove it — try again.'); });

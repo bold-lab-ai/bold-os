@@ -291,7 +291,7 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
-  // ---------- a project's work board (project page, Work tab) ----------
+  // ---------- a project's board (project page, Board tab) ----------
   // Cards are projectWorkspaces/{pid}/work/{id}, written as the page writes them (firestore.rules
   // decides who may); list is projectWork's, the cards and what it adds from GitHub and the site.
   const WORK_COLUMNS = { todo: 'To do', doing: 'In progress', review: 'Waiting for review', done: 'Done' };
@@ -686,7 +686,7 @@ module.exports = function(ctx){
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'work', run: work,
-      description: 'A project’s work board (its Work tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it.',
+      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it.',
       inputSchema: S({ action: ACTIONS(['list', 'add', 'update', 'move', 'remove']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove (list gives it).'),
         title: str('add, update'), notes: str('add, update'), type: ACTIONS(['code', 'content', 'request', 'other']), column: ACTIONS(['todo', 'doing', 'review', 'done']), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
         links: { type: 'array', items: { type: 'string' }, description: 'add, update: https://… links: a GitHub pull request or issue, a proposal, anything.' } }, ['action', 'project_id']) },
