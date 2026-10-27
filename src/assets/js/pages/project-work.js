@@ -544,46 +544,50 @@ var ProjectWork = (function(){
     var t = TYPES.filter(function(y){ return y[0] === x.type; })[0] || TYPES[3];
     var col = COLUMNS.filter(function(k){ return k[0] === x.column; })[0];
     var n = days(x.since);
-    var linked = (c ? (c.links || []) : []).map(function(l){
+    // Laid out as the project page's own: badges, the title with Edit beside it, the
+    // Overview's rows (project.css .detail-grid), then the description and images as its abstract.
+    var ext = function(u, text){ return '<a href="' + esc(href(u)) + '" target="_blank" rel="noopener">' + text + '</a>'; };
+    var links = (c ? (c.links || []) : []).map(function(l){
       var i = l.ref && remote.items.filter(function(r){ return r.ref === l.ref; })[0];
-      return '<li><a href="' + esc(href(l.url)) + '" target="_blank" rel="noopener">' + esc(i ? refLabel(i) + ': ' + i.title : l.label || l.url) + '</a>' + (i && i.state ? ' <span class="detail-muted">' + esc(i.state) + '</span>' : '') + '</li>';
-    }).concat((x.linked || []).filter(function(i){ return !c; }).map(function(i){
-      return '<li><a href="' + esc(href(i.url)) + '" target="_blank" rel="noopener">' + esc(refLabel(i) + ': ' + i.title) + '</a></li>';
-    }));
+      return '<li>' + ext(l.url, esc(i ? refLabel(i) + ': ' + i.title : l.label || l.url)) + (i && i.state ? ' <span class="detail-muted">· ' + esc(i.state) + '</span>' : '') + '</li>';
+    }).concat((x.linked || []).filter(function(){ return !c; }).map(function(i){ return '<li>' + ext(i.url, esc(refLabel(i) + ': ' + i.title)) + '</li>'; }));
     var ok = c ? canChange(c) : canAdd();
     var why = !canAdd() ? BOLD.cannotReason('projects', 'edit') : NO_EDIT;
+    var off = ok ? '' : ' disabled title="' + esc(why) + '"';
+    var row = function(label, value){ return '<dt>' + esc(label) + '</dt><dd>' + value + '</dd>'; };
+    var rows = row('Column', esc(col ? col[1] : '') + (x.since && x.column !== 'done' ? ' <span class="detail-muted">· for ' + (n === 1 ? '1 day' : n + ' days') + '</span>' : ''));
+    if (x.by && (x.by.name || x.by.login || x.by.email)) rows += row('From', name(x.by));
+    var roles = [], byRole = {};
+    (x.on || []).forEach(function(p){ var r = p.role || x.role || 'On it'; if (!byRole[r]) { byRole[r] = []; roles.push(r); } byRole[r].push(p); });
+    roles.forEach(function(r){ rows += row(r, byRole[r].map(name).join(', ')); });
+    if (!roles.length && x.waiting && x.column !== 'done') rows += row('Waiting for', x.waiting === 'a reviewer' ? 'Nobody yet' : esc(x.waiting.charAt(0).toUpperCase() + x.waiting.slice(1)));
+    if (x.source === 'github' && x.url) rows += row('On GitHub', ext(x.url, esc(refLabel(x))));
+    if (links.length) rows += row('Linked', '<ul class="wk-linked">' + links.join('') + '</ul>');
+    var badges = '<span class="badge wk-badge-' + t[0] + '">' + t[1] + '</span>' + (x.num ? '<span class="badge">#' + x.num + '</span>' : '');
     var html = '<div class="wk-page">' + back +
-      '<div class="wk-top"><span class="wk-type wk-type-' + t[0] + '">' + t[1] + '</span>' +
-        (refLabel(x) ? '<span class="wk-ref">' + (x.source === 'github' && x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(refLabel(x)) + '</a>' : esc(refLabel(x))) + '</span>' : '') + '</div>' +
-      '<h2 class="wk-page-title">' + esc(x.title) + '</h2>' +
-      '<p class="detail-muted wk-page-col">' + esc(col ? col[1] : '') + (x.since && x.column !== 'done' ? ', for ' + (n === 1 ? '1 day' : n + ' days') : '') +
-        (x.source === 'github' && x.url ? ' · <a href="' + esc(x.url) + '" target="_blank" rel="noopener">Open on GitHub</a>' : '') + '</p>' +
-      whoHtml(x) +
-      (c ? '<div class="wk-actions"><button class="btn-text wk-edit" type="button"' + (ok ? '' : ' disabled title="' + esc(why) + '"') + '>Edit the card</button></div><div class="wk-page-edit"></div>' : '');
+      '<div class="detail-head"><h2 class="wk-page-title">' + esc(x.title) +
+        (c ? '<button class="btn-text detail-inline-edit wk-edit" type="button"' + off + '>Edit</button>' : '') + '</h2>' +
+        '<div class="detail-badges">' + badges + '</div></div>' +
+      (c ? '<div class="wk-page-edit"></div>' : '') +
+      '<dl class="detail-grid">' + rows + '</dl>';
     // The description: the card's (Markdown); a GitHub item has none until it's described.
-    html += '<section class="wk-sec"><h3>Description</h3>';
-    if (c) {
-      html += describing ? '<div class="wk-desc-slot"></div>'
-        : (c.notes ? '<div class="wk-desc">' + BoldMarkdown.render(c.notes) + '</div>' : '<p class="detail-muted">No description yet.</p>') +
-          '<button class="btn-text wk-describe" type="button"' + (ok ? '' : ' disabled title="' + esc(why) + '"') + '>' + (c.notes ? 'Edit the description' : 'Add a description') + '</button>';
-    } else {
-      html += '<p class="detail-muted">No description yet. Describing it makes it a card on the board, linked to it.</p>' +
-        '<button class="btn-text wk-adopt" type="button"' + (ok ? '' : ' disabled title="' + esc(why) + '"') + '>Add a description</button>';
-    }
-    html += '</section>';
+    html += '<div class="detail-abstract"><div class="detail-abstract-label">Description' +
+      (c && !describing ? '<button class="btn-text detail-inline-edit wk-describe" type="button"' + off + '>' + (c.notes ? 'Edit' : 'Add') + '</button>' : '') + '</div>';
+    if (c) html += describing ? '<div class="wk-desc-slot"></div>' : c.notes ? '<div class="wk-desc">' + BoldMarkdown.render(c.notes) + '</div>' : '<p class="detail-muted wk-none">No description yet.</p>';
+    else html += '<p class="detail-muted wk-none">No description yet. Describing it makes it a card on the board, linked to it.</p>' +
+      '<button class="btn-text wk-adopt" type="button"' + off + '>Add a description</button>';
+    html += '</div>';
     if (c) {
       var imgs = (c.images || []).filter(imageOk), full = imgs.length >= MAX_IMAGES;
-      html += '<section class="wk-sec"><h3>Images</h3>' +
-        (imgs.length ? '<div class="wk-images">' + imgs.map(function(i, k){
+      html += '<div class="detail-abstract"><div class="detail-abstract-label">Images' +
+          '<button class="btn-text detail-inline-edit wk-addimg" type="button"' + (!ok ? off : full || upload.busy ? ' disabled' + (full ? ' title="' + MAX_IMAGES + ' images at most"' : '') : '') + '>Add</button></div>' +
+        (imgs.length ? '<div class="wk-images">' + imgs.map(function(i){
           return '<figure class="wk-image"><a href="' + esc(i.url) + '" target="_blank" rel="noopener"><img src="' + esc(i.url) + '" alt="' + esc(i.name || 'An image') + '" loading="lazy"></a>' +
-            '<figcaption>' + esc(i.name || '') + (ok ? ' <button class="btn-text wk-unimage" type="button" data-path="' + esc(i.path) + '" aria-label="Remove this image">Remove</button>' : '') + '</figcaption></figure>';
-        }).join('') + '</div>' : '<p class="detail-muted">No images yet.</p>') +
-        '<p class="wk-upload"><button class="btn-text wk-addimg" type="button"' + (!ok ? ' disabled title="' + esc(why) + '"' : full || upload.busy ? ' disabled' + (full ? ' title="' + MAX_IMAGES + ' images at most"' : '') : '') + '>Add images</button>' +
-          ' <span class="detail-muted">PNG, JPEG, GIF or WebP, up to ' + MAX_IMAGE_MB + ' MB each</span>' +
-          '<input type="file" class="wk-imgfile" accept="' + Object.keys(IMAGE_TYPES).join(',') + '" multiple hidden>' +
-          (upload.msg ? ' <span class="wk-upmsg">' + esc(upload.msg) + '</span>' : '') + '</p></section>';
+            '<figcaption><span>' + esc(i.name || '') + '</span>' + (ok ? '<button class="btn-text wk-unimage" type="button" data-path="' + esc(i.path) + '" aria-label="Remove this image">Remove</button>' : '') + '</figcaption></figure>';
+        }).join('') + '</div>' : '<p class="detail-muted wk-none">No images yet.</p>') +
+        '<div class="detail-hint">PNG, JPEG, GIF or WebP, up to ' + MAX_IMAGE_MB + ' MB each' + (upload.msg ? ' · <span class="wk-upmsg">' + esc(upload.msg) + '</span>' : '') + '</div>' +
+        '<input type="file" class="wk-imgfile" accept="' + Object.keys(IMAGE_TYPES).join(',') + '" multiple hidden></div>';
     }
-    if (linked.length) html += '<section class="wk-sec"><h3>Linked</h3><ul class="wk-linked">' + linked.join('') + '</ul></section>';
     root.innerHTML = html + (msg ? '<p class="wk-error">' + esc(msg) + '</p>' : '') + '</div>';
 
     var descSlot = el('.wk-desc-slot');

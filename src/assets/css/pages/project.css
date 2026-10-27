@@ -219,23 +219,36 @@
 .wk-f-linklist{list-style:none; margin:0; padding:0;}
 .wk-f-urlrow{display:flex; gap:8px;}
 
-/* A card's own page (Board tab, &card=…): as wide as the page's text, centred under the tabs. */
-.wk-page{max-width:var(--article-max); margin:0 auto;}
-.wk-page .detail-back{margin-bottom:12px;}
-.wk-page-title{font-size:24px; line-height:1.3; margin:4px 0 2px; color:var(--ink);}
-.wk-page-col{margin:0 0 6px; font-size:13px;}
-.wk-page .wk-actions{margin-top:8px;}
-.wk-page-edit .wk-editor{margin-top:8px;}
-.wk-sec{margin-top:22px;}
-.wk-sec > h3{font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted); margin:0 0 6px;}
-.wk-desc{font-size:15px; line-height:1.55; color:var(--ink); overflow-wrap:anywhere;}
+/* A card's own page (Board tab, &card=…): laid out as the project page itself (.detail-head,
+   .detail-badges, .detail-grid, .detail-abstract above), in its serif, under the tabs. */
+.wk-page{max-width:var(--article-max); margin:0 auto; padding-top:8px; font-family:var(--serif); font-size:16px; line-height:1.55; color:var(--ink-soft);}
+.wk-page .detail-back{margin-bottom:14px;}
+.wk-page .detail-head h2.wk-page-title{font-size:clamp(24px, 3.6vw, 32px); line-height:1.2; font-weight:800; color:var(--ink); max-width:none;}
+.wk-page .detail-badges{margin-top:6px;}
+.wk-page .wk-badge-code{color:var(--blue);}
+.wk-page .wk-badge-content{color:var(--plum);}
+.wk-page .wk-badge-request{color:var(--warn-text);}
+.wk-page .detail-grid{margin:22px 0 28px;}
+.wk-page .detail-grid dd a{color:inherit;}
+.wk-page .detail-grid .is-me{color:var(--ink); font-weight:600;}
+.wk-page .detail-abstract-label{display:flex; align-items:baseline;}
+.wk-page .detail-abstract-label .detail-inline-edit{font-size:13px;}
+.wk-page .wk-none{margin:0 0 6px;}
+.wk-page .wk-adopt{display:inline-block;}
+.wk-page-edit .wk-editor{margin:16px 0 0; font-family:var(--sans); font-size:14px;}
+.wk-desc{color:var(--ink); overflow-wrap:anywhere;}
 .wk-desc > :first-child{margin-top:0;}
-.wk-desc pre{overflow-x:auto;}
+.wk-desc > :last-child{margin-bottom:0;}
+.wk-desc h1, .wk-desc h2, .wk-desc h3, .wk-desc h4{font-size:18px; font-weight:700; margin:18px 0 6px;}
+.wk-desc p, .wk-desc ul, .wk-desc ol{margin:0 0 10px;}
+.wk-desc pre{overflow-x:auto; font-size:13px;}
+.wk-desc-form{font-family:var(--sans); font-size:14px;}
 .wk-desc-form textarea{font-family:ui-monospace, Menlo, monospace; font-size:13px;}
-.wk-images{display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:10px;}
+.wk-images{display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:14px; margin:4px 0 2px;}
 .wk-image{margin:0; display:flex; flex-direction:column; gap:4px;}
 .wk-image img{display:block; width:100%; height:140px; object-fit:cover; border:1px solid var(--line); background:var(--surface);}
-.wk-image figcaption{font-size:12px; color:var(--ink-soft); display:flex; justify-content:space-between; gap:6px; overflow-wrap:anywhere;}
-.wk-upload{font-size:13px; margin:8px 0 0;}
+.wk-image figcaption{font-family:var(--sans); font-size:12px; color:var(--muted); display:flex; justify-content:space-between; gap:8px; overflow-wrap:anywhere;}
+.wk-image .btn-text{font-size:12px; flex:none;}
 .wk-upmsg{color:var(--ink-soft);}
-.wk-linked{margin:0; padding-left:18px; font-size:14px;}
+.wk-linked{margin:0; padding:0; list-style:none;}
+.wk-linked li + li{margin-top:2px;}
