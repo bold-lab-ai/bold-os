@@ -55,6 +55,9 @@ var ProjectWork = (function(){
     return canAdd() && (ctx.fullWrite() || ctx.members().some(function(m){ return String(m).toLowerCase() === e; }) ||
       String(c.by && c.by.email || '').toLowerCase() === e);
   }
+  // A link to a page of BOLD.OS (the server's are whole addresses on the live site) stays on
+  // the site the board is on: the live one, a preview or localhost.
+  function href(u){ return String(u || '').replace(/^https:\/\/bold-lab-ai\.github\.io\/bold-os\//, ''); }
   function cardsRef(){ return db.collection('projectWorkspaces').doc(pid).collection('work'); }
   function call(){ return firebase.app().functions('europe-west2').httpsCallable('projectWork'); }
 
@@ -216,9 +219,9 @@ var ProjectWork = (function(){
     // A card or a GitHub item opens its page here; a proposal or a request, its own page.
     var page = x.card ? { card: x.card.id } : x.source === 'github' ? { item: x.ref } : null;
     var title = page ? '<a class="wk-open board-drag-through" href="' + esc(hrefOf(page)) + '">' + esc(x.title) + '</a>'
-      : x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>' : esc(x.title);
+      : x.url ? '<a href="' + esc(href(x.url)) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>' : esc(x.title);
     var ref = refLabel(x) && x.source === 'github' && x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(refLabel(x)) + '</a>' : esc(refLabel(x));
-    var linked = (x.linked || []).map(function(i){ return '<a href="' + esc(i.url) + '" target="_blank" rel="noopener">' + esc(refLabel(i)) + '</a>'; }).join(' ');
+    var linked = (x.linked || []).map(function(i){ return '<a href="' + esc(href(i.url)) + '" target="_blank" rel="noopener">' + esc(refLabel(i)) + '</a>'; }).join(' ');
     // A card that can be changed is dragged to another column (BoldBoard.drag, in wire()).
     var drag = x.card && canChange(x.card);
     var html = '<div class="board-card wk-item' + (drag ? ' board-draggable' : '') + '" data-key="' + esc(x.key) + '"' + (x.notes ? ' title="' + esc(x.notes.slice(0, 300)) + '"' : '') + '>' +
@@ -543,9 +546,9 @@ var ProjectWork = (function(){
     var n = days(x.since);
     var linked = (c ? (c.links || []) : []).map(function(l){
       var i = l.ref && remote.items.filter(function(r){ return r.ref === l.ref; })[0];
-      return '<li><a href="' + esc(l.url) + '" target="_blank" rel="noopener">' + esc(i ? refLabel(i) + ': ' + i.title : l.label || l.url) + '</a>' + (i && i.state ? ' <span class="detail-muted">' + esc(i.state) + '</span>' : '') + '</li>';
+      return '<li><a href="' + esc(href(l.url)) + '" target="_blank" rel="noopener">' + esc(i ? refLabel(i) + ': ' + i.title : l.label || l.url) + '</a>' + (i && i.state ? ' <span class="detail-muted">' + esc(i.state) + '</span>' : '') + '</li>';
     }).concat((x.linked || []).filter(function(i){ return !c; }).map(function(i){
-      return '<li><a href="' + esc(i.url) + '" target="_blank" rel="noopener">' + esc(refLabel(i) + ': ' + i.title) + '</a></li>';
+      return '<li><a href="' + esc(href(i.url)) + '" target="_blank" rel="noopener">' + esc(refLabel(i) + ': ' + i.title) + '</a></li>';
     }));
     var ok = c ? canChange(c) : canAdd();
     var why = !canAdd() ? BOLD.cannotReason('projects', 'edit') : NO_EDIT;
