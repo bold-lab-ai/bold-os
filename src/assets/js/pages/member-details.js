@@ -26,13 +26,23 @@
     if (groupReq) return html + '<span class="st-links">You asked for ' + BoldJoin.groupBadge(groupReq.to) + ' on ' + when(groupReq.at) + ': ' + (groupReq.inviterName ? esc(groupReq.inviterName) + ', who invited you,' : 'a PI or admin') + ' will decide. ' +
       '<button type="button" class="btn-text md-g-withdraw"' + (gBusy ? ' disabled' : '') + '>Withdraw</button></span>';
     if (!asking) return html + ' <button type="button" class="btn-text md-g-ask">Ask for another group</button>';
-    return html + '<div class="md-g-form">' + BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== g; }).map(function(c){
-        return '<label class="jn-check"><input type="radio" name="md-g-to" value="' + c[0] + '"> ' + BoldJoin.groupBadge(c[0]) + '</label>';
+    // Whoever invited them decides: without one, they choose one here, in the same request.
+    var pick = !decider() && !exec() ? (people ? '<label class="md-g-contact">Your point of contact, who invited you to BOLD: they confirm it and decide this' +
+        '<select class="md-g-inviter"><option value="">Choose a person…</option>' + people.filter(function(p){ return p.email !== String(me.email || '').toLowerCase(); }).map(function(p){
+          return '<option value="' + esc(p.email) + '"' + (p.email === gInviter ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></label>'
+      : '<p class="proj-msg">Loading&hellip;</p>') : '';
+    var to = decider() || (gInviter && nameOf(gInviter)) || (exec() ? 'the PIs' : 'your point of contact');
+    return html + '<div class="md-g-form">' + pick + BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== g; }).map(function(c){
+        return '<label class="jn-check"><input type="radio" name="md-g-to" value="' + c[0] + '"' + (c[0] === gTo ? ' checked' : '') + '> ' + BoldJoin.groupBadge(c[0]) + '</label>';
       }).join('') +
-      '<textarea class="md-g-note no-tags" rows="2" maxlength="1000" placeholder="Why (optional): who you work with, what you do in BOLD"></textarea>' +
+      '<textarea class="md-g-note no-tags" rows="2" maxlength="1000" placeholder="Why (optional): who you work with, what you do in BOLD">' + esc(gNote) + '</textarea>' +
       (gError ? '<p class="st-error">' + esc(gError) + '</p>' : '') +
-      '<div class="event-form-actions"><button type="button" class="ev-save md-g-send"' + (gBusy ? ' disabled' : '') + '>Send to ' + (decider() ? esc(decider()) : 'the PIs') + '</button><button type="button" class="md-g-cancel">Cancel</button></div></div>';
+      '<div class="event-form-actions"><button type="button" class="ev-save md-g-send"' + (gBusy ? ' disabled' : '') + '>Send to ' + esc(to) + '</button><button type="button" class="md-g-cancel">Cancel</button></div></div>';
   }
+  // PIs and admins (BOLD-exec) have nobody inviting them: theirs go to the PIs and admins.
+  function exec(){ return BOLD.myGroup() === 'exec'; }
+  function nameOf(e){ var p = (people || []).filter(function(x){ return x.email === e; })[0]; return p ? p.name : e; }
+  var gInviter = '', gTo = '', gNote = '';   // the form's point of contact, group and note, kept when it's redrawn
   function callGroup(data){ return firebase.app().functions('europe-west2').httpsCallable('groupRequest')(data); }
 
   // A Slack field (by its label) and the record's field that says the same.
@@ -77,24 +87,36 @@
       '<div class="event-controls"><button type="button" class="btn-text md-edit">Add your details</button></div>';
   }
 
+  // The chosen point of contact: kept, and named on the Send button (without redrawing the form).
+  box.addEventListener('change', function(e){
+    if (!e.target.classList || !e.target.classList.contains('md-g-inviter')) return;
+    gInviter = e.target.value;
+    var b = box.querySelector('.md-g-send');
+    if (b) b.textContent = 'Send to ' + (gInviter ? nameOf(gInviter) : 'your point of contact');
+  });
   box.addEventListener('click', function(e){
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('md-edit')) { editing = true; loadPeople(); render(); return; }
-    if (t.classList.contains('md-g-ask')) { asking = true; gError = ''; render(); return; }
+    if (t.classList.contains('md-g-ask')) { asking = true; gError = ''; gInviter = gTo = gNote = ''; if (!decider()) loadPeople(); render(); return; }
     if (t.classList.contains('md-g-cancel')) { asking = false; render(); return; }
     if (t.classList.contains('md-g-send') || t.classList.contains('md-g-withdraw')) {
       var send = t.classList.contains('md-g-send'), to = (box.querySelector('input[name="md-g-to"]:checked') || {}).value;
+      if (send) { gTo = to || ''; gNote = (box.querySelector('.md-g-note') || {}).value || ''; }
       if (send && !to) { gError = 'Choose a group.'; render(); return; }
+      var named = send && !decider() && !exec() ? gInviter : '';
+      if (send && !decider() && !exec() && !named) { gError = 'Choose your point of contact: they decide this.'; render(); return; }
       var note = send ? box.querySelector('.md-g-note').value : '';
       var go = function(){
         gBusy = true; gError = ''; render();
-        callGroup(send ? { action: 'request', to: to, note: note } : { action: 'withdraw', id: groupReq.id }).then(function(){ asking = false; })
+        callGroup(send ? Object.assign({ action: 'request', to: to, note: note }, named ? { inviter: named } : {}) : { action: 'withdraw', id: groupReq.id }).then(function(){ asking = false; })
           .catch(function(err){ console.error('[BOLD Profile] the group request failed', err); gError = (err && err.message) || 'Couldn’t send it — try again.'; })
           .then(function(){ gBusy = false; render(); });
       };
       if (!send) { go(); return; }
-      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: [decider() ? 'Send ' + decider() + ', who invited you, a Slack message asking to approve it' : 'Send the PIs and admins a Slack message asking to approve it'] })
+      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: named
+          ? ['Make ' + nameOf(named) + ' your point of contact, who invited you', 'Send them one Slack message asking to confirm it and to approve the move']
+          : [decider() ? 'Send ' + decider() + ', who invited you, a Slack message asking to approve it' : 'Send the PIs and admins a Slack message asking to approve it'] })
         .then(function(ok){ if (ok) go(); });
       return;
     }

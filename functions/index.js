@@ -4906,6 +4906,16 @@ exports.joinInviters = onCall(async (request) => {
 // .invitedBy, which they can't write themselves): someone on the roster, or nobody
 // (email ''). Whoever they name gets a DM to confirm it on the Requests page (Invited by
 // you; confirmJoinInvite with { member }). data: { email } → { invitedBy }.
+// Who `email` names as inviting them (their point of contact): someone on BOLD.OS, not
+// themselves → the member's invitedBy, waiting for them to confirm it.
+async function inviterFor(email, to){
+  if (!to || to === email) throw new HttpsError('invalid-argument', 'Choose who invited you.');
+  const p = await db.collection('people').where('email', '==', to).limit(1).get();
+  if (p.empty) throw new HttpsError('not-found', 'Choose someone on BOLD.OS.');
+  const who = p.docs[0];
+  return { id: who.id, name: String(who.data().name || to), email: to, status: 'pending', askedAt: Date.now(), via: 'profile' };
+}
+
 exports.setMyInviter = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -4917,12 +4927,8 @@ exports.setMyInviter = onCall(
     if (!m.exists) throw new HttpsError('failed-precondition', 'Save your details first.');
     const cur = m.data().invitedBy || null;
     if (!to) { if (cur) await ref.update({ invitedBy: FieldValue.delete() }); return { invitedBy: null }; }
-    if (to === email) throw new HttpsError('invalid-argument', 'Choose who invited you.');
     if (cur && cur.email === to) return { invitedBy: cur };
-    const p = await db.collection('people').where('email', '==', to).limit(1).get();
-    if (p.empty) throw new HttpsError('not-found', 'Choose someone on BOLD.OS.');
-    const who = p.docs[0];
-    const invitedBy = { id: who.id, name: String(who.data().name || to), email: to, status: 'pending', askedAt: Date.now(), via: 'profile' };
+    const invitedBy = await inviterFor(email, to);
     await ref.update({ invitedBy });
     const name = m.data().name || email;
     await sendEvent(SLACK_BOT_TOKEN.value(), { emails: [to], headline: '👋 ' + await numberTag('members/' + email + '/invite/' + invitedBy.askedAt) + slackText(name) + ' names you as their BOLD point of contact, who invited them. ' +
@@ -5194,6 +5200,8 @@ exports.onGroupChannels = onDocumentWritten(
 // - 'withdraw': { id }: their own open request.
 // - 'decide': { id, accept }: the inviter (inviterEmail on the request), or a PI or admin
 //   when it has none; accepting sets their group. DMs them.
+// - 'request' needs an inviter (a PI or admin asking goes to the PIs and admins): one who
+//   hasn't got one names one in it ({ inviter: email }), which also asks them to confirm it.
 exports.groupRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -5213,13 +5221,29 @@ exports.groupRequest = onCall(
       if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
       const name = m.data().name || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
-      const inv = m.data().invitedBy;
-      const inviter = inv && inv.email && inv.status !== 'denied' && String(inv.email).toLowerCase() !== email ? { email: String(inv.email).toLowerCase(), name: String(inv.name || inv.email) } : null;
+      // Whoever invited them decides, so they need one: without one (or one who said they
+      // didn't), they name one here, in the same request (inviter: email), as on their
+      // profile (setMyInviter). PIs and admins, who have nobody, go to the PIs and admins.
+      let inv = m.data().invitedBy, named = false;
+      const hasInviter = (x) => x && x.email && x.status !== 'denied' && String(x.email).toLowerCase() !== email;
+      if (!hasInviter(inv) && !(await isFullWrite(email))) {
+        const to = String(d.inviter || '').trim().toLowerCase();
+        if (!to) throw new HttpsError('failed-precondition', 'Choose your point of contact first: whoever invited you to BOLD decides this.');
+        inv = await inviterFor(email, to);
+        await m.ref.update({ invitedBy: inv });
+        named = true;
+      }
+      const inviter = hasInviter(inv) ? { email: String(inv.email).toLowerCase(), name: String(inv.name || inv.email) } : null;
       const ref = await col.add(Object.assign({ email, name, from, to, note, status: 'open', at: Date.now() },
         inviter ? { inviterEmail: inviter.email, inviterName: inviter.name } : {}));
       const deciders = inviter ? [inviter.email] : (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-      await sendEvent(token, { emails: deciders, headline: '🏷️ ' + await numberTag(ref.path) + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to] +
-        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id) + '.' });
+      // Named just now: one message for both, confirming they invited them and deciding the move.
+      await sendEvent(token, { emails: deciders, headline: (named
+        ? '👋 ' + await numberTag('members/' + email + '/invite/' + inv.askedAt) + await numberTag(ref.path) + slackText(name) + ' names you as their BOLD point of contact, who invited them, and asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to]
+        : '🏷️ ' + await numberTag(ref.path) + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to]) +
+        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' +
+        (named ? linkedTitle('Confirm you invited them', joinPageUrl() + '#invited') + ', then ' + linkedTitle('approve or decline the move', joinPageUrl() + '#g=' + ref.id)
+          : linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id)) + '.' });
       return { id: ref.id };
     }
     const id = String(d.id || '');
