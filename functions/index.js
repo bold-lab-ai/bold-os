@@ -3371,7 +3371,7 @@ async function workNames(){
 function proposalPlace(collection, slug, doc){
   const title = (doc && doc.title) || slug;
   if (collection === 'handbook') return { page: 'boldiquette', title: slug === 'boldiquette' ? 'BOLDiquette' : title, url: handbookUrl(slug) };
-  if (collection === 'guides') return { page: access.guideArea(slug), title, url: guideUrl(slug) };
+  if (collection === 'guides') return { page: require('./access').guideArea(slug), title, url: guideUrl(slug) };
   if (collection === 'skills') return { page: 'skills', title: 'Skill ' + title, url: skillUrl(slug) };
   if (collection === 'agentTools') return { page: 'tools', title: 'Tool ' + title, url: toolUrl(slug) };
   return null;
@@ -3402,7 +3402,9 @@ async function contentWork(email, person){
     if (!mayView[place.page]) continue;
     const q = d.data();
     const what = proposalSummary(q).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-    const item = { source: 'content', type: 'content', kind: 'proposal', ref: d.ref.path, title: place.title + ': ' + what,
+    // A new skill or tool reads as one ("New skill: Paper review"), anything else as its change.
+    const title = q.kind === 'new' && /^(Skill|Tool) /.test(place.title) ? 'New ' + place.title.replace(/^(Skill|Tool) /, function(x){ return x.trim().toLowerCase() + ': '; }) : place.title + ': ' + what;
+    const item = { source: 'content', type: 'content', kind: 'proposal', ref: d.ref.path, title: title,
       url: place.url + '#proposals', by: person(q.by && q.by.email, q.by && q.by.name) };
     if (q.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: q.editedAt || q.at || 0, on: [], waiting: PIS_ADMINS });
     else Object.assign(item, { column: 'done', state: q.status, since: q.decidedAt || 0, on: q.decidedBy ? [person(q.decidedBy, q.decidedByName)] : [] });
@@ -3439,6 +3441,18 @@ async function requestWork(email, full, person){
     access.can(email, 'calendar', 'view').then(function(ok){ return ok ? q('studyRequests', 'student') : []; }),
     full ? all('apiTokens') : q('apiTokens', 'email'),
     full ? all('boards') : Promise.resolve([])
+  ]);
+  // Papers in Internal Review (ML Conference Cycle's view), people to confirm as having
+  // invited them (the inviter; PIs and admins), events and series waiting to be
+  // released (PIs and admins, and whoever added them), hackathon team requests.
+  const [cycle, invites, events, series, hackathon] = await Promise.all([
+    access.can(email, 'ml-cycle', 'view').then(function(ok){
+      return ok ? Promise.all([all('boards'), db.collectionGroup('cards').get().then(function(x){ return x.docs; })]) : [[], []];
+    }),
+    full ? db.collection('members').where('invitedBy.status', '==', 'pending').get().then(function(x){ return x.docs; }) : q('members', 'invitedBy.email'),
+    full ? db.collection('events').where('hidden', '==', true).get().then(function(x){ return x.docs; }) : q('events', 'createdBy'),
+    full ? db.collection('eventSeries').where('hidden', '==', true).get().then(function(x){ return x.docs; }) : q('eventSeries', 'createdBy'),
+    full ? all('hackathonJoins') : db.collection('hackathonJoins').doc(email).get().then(function(x){ return x.exists ? [x] : []; })
   ]);
   joins.forEach(function(d){
     const r = d.data(), inv = r.invitedBy && r.invitedBy.email;
@@ -3480,6 +3494,49 @@ async function requestWork(email, full, person){
     add({ kind: 'agent', ref: d.ref.path, title: 'Let an agent act: ' + (x.label || 'a token'), url: SITE_URL + 'join-requests.html#agents',
       by: person(x.email), on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [], waiting: r.status === 'open' ? PIS_ADMINS : '', state: r.status },
     requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
+  });
+  const venues = {};
+  cycle[0].forEach(function(d){ venues[d.id] = d.data(); });
+  cycle[1].forEach(function(d){
+    const c = d.data(), boardId = d.ref.parent.parent && d.ref.parent.parent.id, v = venues[boardId];
+    if (!v || (v.status || 'approved') === 'pending' || c.outcome) return;
+    const base = { kind: 'review', ref: d.ref.path, title: 'Internal Review: ' + (c.title || 'a paper') + (v.label ? ' (' + v.label + ')' : ''), url: cardUrl(boardId, d.id),
+      by: person(c.submittedBy && c.submittedBy.email, c.submittedBy && c.submittedBy.name) };
+    // Its reviewers who haven't approved it yet (the abstract: both, until it's approved).
+    const own = { junior: c.jrReviewState, senior: c.srReviewState };
+    const left = ['junior', 'senior'].filter(function(k){ return c.reviewers && c.reviewers[k] && (c.status === 'abstract' || own[k] !== 'approved'); })
+      .map(function(k){ return c.reviewers[k]; });
+    if (c.status === 'abstract' || c.status === 'paper'){
+      const states = c.status === 'abstract' ? [c.abstractReviewState || 'in_review'] : [c.jrReviewState, c.srReviewState];
+      if (states.indexOf('changes_requested') >= 0) add(Object.assign(base, { on: [base.by], state: 'changes requested' }), { column: 'doing', since: c.updatedAt || c.createdAt || 0 });
+      else if (!states.every(function(x){ return x === 'approved'; })){
+        add(Object.assign(base, { on: left.map(function(e){ return person(e); }), waiting: left.length ? '' : 'a reviewer', state: 'in review' }), { column: 'review', since: c.updatedAt || c.createdAt || 0 });
+      }
+    }
+  });
+  invites.forEach(function(d){
+    const m = d.data(), inv = m.invitedBy;
+    if (!inv || inv.status !== 'pending') return;
+    add({ kind: 'invite', ref: d.ref.path, title: 'Confirm you invited ' + (m.name || d.id), url: SITE_URL + 'join-requests.html#invited',
+      by: person(d.id, m.name), on: [person(inv.email, inv.name)], state: 'open' }, { column: 'review', since: inv.askedAt || 0 });
+  });
+  events.forEach(function(d){
+    const e = d.data();
+    if (e.hidden !== true || e.series) return;   // a series' dates are released with it
+    add({ kind: 'event', ref: d.ref.path, title: 'Release the event: ' + (e.title || d.id), url: SITE_URL + 'event.html?event=' + encodeURIComponent(d.id),
+      by: person(e.createdBy), on: [], waiting: PIS_ADMINS, state: 'hidden' }, { column: 'review', since: e.createdAt || 0 });
+  });
+  series.forEach(function(d){
+    const e = d.data();
+    if (e.hidden !== true) return;
+    add({ kind: 'event', ref: d.ref.path, title: 'Release the event series: ' + (e.title || d.id), url: SITE_URL + 'series.html?series=' + encodeURIComponent(d.id),
+      by: person(e.createdBy), on: [], waiting: PIS_ADMINS, state: 'hidden' }, { column: 'review', since: e.createdAt || 0 });
+  });
+  hackathon.forEach(function(d){
+    const h = d.data();
+    if (h.status !== 'requested') return;
+    add({ kind: 'hackathon', ref: d.ref.path, title: 'Join the hackathon team on GitHub' + (h.github ? ' (' + h.github + ')' : ''), url: SITE_URL + 'events.html',
+      by: person(h.email || d.id, h.name), on: [], waiting: PIS_ADMINS, state: 'requested' }, { column: 'review', since: h.requestedAt || 0 });
   });
   boards.forEach(function(d){
     const b = d.data();
@@ -5810,7 +5867,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
+  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,

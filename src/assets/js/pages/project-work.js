@@ -127,7 +127,7 @@ var ProjectWork = (function(){
 
   function days(t){ return t ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : 0; }
   // Its reference, small: PR #23, Issue #5, the request's kind; nothing for a card.
-  var REQUEST_KINDS = { join: 'Joining', group: 'Group', letter: 'Letter', introduction: 'Introduction', supervision: 'Supervision', agent: 'Agent', venue: 'Venue' };
+  var REQUEST_KINDS = { join: 'Joining', invite: 'Invitation', group: 'Group', letter: 'Letter', introduction: 'Introduction', supervision: 'Supervision', agent: 'Agent', venue: 'Venue', review: 'Internal Review', event: 'Event', hackathon: 'Hackathon' };
   function refLabel(x){
     var repo = (remote.repos || []).length > 1 && x.repo ? ' ' + x.repo : '';
     if (x.kind === 'pr') return 'PR #' + x.number + (x.state === 'draft' ? ' draft' : '') + repo;
