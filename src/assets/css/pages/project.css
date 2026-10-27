@@ -187,7 +187,7 @@
 .wk .board-scroll{padding-bottom:6px;}
 .wk .column-head .ch-hint a{color:inherit;}
 .wk-item.board-ghost{font-family:var(--sans); font-size:14px; line-height:1.45;}
-.wk-item{background:var(--surface); border:1px solid var(--line); padding:7px 9px; min-width:0; overflow-wrap:anywhere;}
+
 .wk-top{display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; font-size:11.5px; color:var(--muted);}
 .wk-type{font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em;}
 .wk-type-code{color:var(--blue);}

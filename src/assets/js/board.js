@@ -7,6 +7,9 @@
 //   BoldBoard.columnsHtml(columns) → the columns' HTML. columns: [{ id, label, count,
 //     hint (HTML under the label, optional), body (the cards' HTML), empty (shown
 //     when there are none), headExtra (HTML after the hint, optional) }].
+//   BoldBoard.equalizeHeads(root): every column head on the boards inside `root` as
+//     tall as the tallest, so the cards start on one line across the board; kept so
+//     when the window is resized. Call it after each redraw.
 //   BoldBoard.drag(root, { item, canDrag(el), drop(el, columnId) }): cards matching
 //     the selector `item` inside `root` can be dragged to another column, with a
 //     mouse, or on a touch screen by holding a card for a moment first. Links,
@@ -29,6 +32,25 @@ var BoldBoard = (function(){
     });
     return html + '</div>';
   }
+
+  // Heads differ (a hint that wraps, a button under the label): each is pinned to the
+  // tallest one's natural height, measured again after every redraw and resize.
+  var equalized = [];
+  function equalizeHeads(root){
+    root = root || document;
+    if (equalized.indexOf(root) < 0) equalized.push(root);
+    Array.prototype.forEach.call(root.querySelectorAll('.columns'), function(cols){
+      var heads = Array.prototype.filter.call(cols.querySelectorAll('.column-head'), function(h){ return h.parentNode.parentNode === cols; });
+      heads.forEach(function(h){ h.style.height = ''; });
+      var max = heads.reduce(function(m, h){ return Math.max(m, h.offsetHeight); }, 0);
+      if (max) heads.forEach(function(h){ h.style.height = max + 'px'; });
+    });
+  }
+  var resizeTimer = null;
+  window.addEventListener('resize', function(){
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function(){ equalized.forEach(function(r){ if (r === document || r.isConnected) equalizeHeads(r); }); }, 120);
+  });
 
   var HOLD_MS = 280, SLOP = 6;
   function drag(root, opts){
@@ -122,5 +144,5 @@ var BoldBoard = (function(){
     window.addEventListener('keydown', function(e){ if (e.key === 'Escape') end(false); });
   }
 
-  return { columnsHtml: columnsHtml, drag: drag, COLUMN_MIN: COLUMN_MIN };
+  return { columnsHtml: columnsHtml, equalizeHeads: equalizeHeads, drag: drag, COLUMN_MIN: COLUMN_MIN };
 })();

@@ -339,13 +339,7 @@ select{min-width:180px;}
 .column-head .ch-hint.ch-hint-deadlines .hint-row{word-break:break-word;}
 .column-head .ch-hint .hint-overdue{color:var(--danger-text); font-weight:600;}
 /* ---------- card ---------- */
-.card{
-  border:1px solid var(--line);
-  border-left-width:1px;
-  border-radius:var(--radius);
-  padding:12px;
-  background:var(--surface);
-}
+/* .card's border, padding and background: .board-card in board.css (shared with a project's Work tab). */
 /* Draft & Review's collapsed sub-state, colour-coded on the card itself. */
 .card.rv-in_review{border-left:4px solid var(--warn-text); background:var(--warn-bg);}
 .card.rv-changes_requested{border-left:4px solid var(--danger-text); background:var(--danger-bg);}

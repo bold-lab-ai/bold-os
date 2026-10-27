@@ -21,6 +21,7 @@
   scroll-snap-align:start;
 }
 .column-head{
+  box-sizing:border-box;
   padding:11px 12px 10px;
   border-bottom:1px solid var(--line);
   background:var(--wash);
@@ -34,6 +35,8 @@
 .column-head .ch-hint{margin-top:4px; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);}
 .column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
 .column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
+/* A card in a column: the Internal Review Board's (.card) and a project's Work tab's (.wk-item). */
+.board-card{border:1px solid var(--line); border-radius:var(--radius); padding:12px; background:var(--surface); min-width:0; overflow-wrap:anywhere;}
 /* Dragging a card to another column (BoldBoard.drag). */
 .board-draggable{cursor:grab; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;}
 .board-draggable.is-dragging{opacity:0.35;}

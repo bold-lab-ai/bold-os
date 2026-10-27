@@ -607,7 +607,7 @@
     var rv = card.status === 'abstract' ? (card.abstractReviewState || 'in_review')
       : inPaperStage ? reviewFilterState(card) : null;
     var rushOverdue = isRushColumnPastCutoff(displayStatus(card, board), board);
-    var cardClass = 'card' + (rv ? ' rv-' + rv : '') + (rushOverdue ? ' rush-deadline-passed' : '');
+    var cardClass = 'board-card card' + (rv ? ' rv-' + rv : '') + (rushOverdue ? ' rush-deadline-passed' : '');
     var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
     html += '<button class="card-title-btn" type="button" data-open-card="' + escapeHtml(card.id) + '">' + escapeHtml(card.title) + '</button>';
     // Badges only; Overleaf link / edit + remove live on the detail page
@@ -753,29 +753,9 @@
     return BoldBoard.columnsHtml(columns);
   }
 
-  // Keeps every column-head the same height (2026-09-18+6, per Eduardo).
-  // ch-hint's own CSS is min-height/auto now — no fixed height, so a
-  // wrapped date never gets clipped — but left alone that means each
-  // column-head naturally sizes to its own content, so the head/body
-  // divider no longer lines up across the board the way it used to when
-  // every ch-hint shared one fixed height. Measures each rendered
-  // .ch-hint's natural height, then pins all of them to the tallest one
-  // via an explicit style.height. Called after every renderBoard() (fresh
-  // DOM, needs remeasuring) and on window resize (column width — and so
-  // how much a hint wraps — changes with viewport width; a height pinned
-  // at one width would either clip again or waste space at another).
-  function equalizeColumnHeadHints(){
-    var hints = Array.prototype.slice.call(document.querySelectorAll('.column-head .ch-hint'));
-    if (hints.length < 2) return;
-    hints.forEach(function(el){ el.style.height = ''; });
-    var max = hints.reduce(function(m, el){ return Math.max(m, el.offsetHeight); }, 0);
-    hints.forEach(function(el){ el.style.height = max + 'px'; });
-  }
-  var equalizeResizeTimer = null;
-  window.addEventListener('resize', function(){
-    clearTimeout(equalizeResizeTimer);
-    equalizeResizeTimer = setTimeout(equalizeColumnHeadHints, 120);
-  });
+  // Every column head the same height, so the cards start on one line (2026-09-18+6,
+  // per Eduardo): the shared board's (BoldBoard.equalizeHeads), which measures each
+  // head's natural height after every render and resize and pins all to the tallest.
 
   function renderBoard(){
     if (state.view === 'card'){
@@ -913,6 +893,6 @@
       });
     });
 
-    equalizeColumnHeadHints();
+    BoldBoard.equalizeHeads(els.boardRegion);
   }
 

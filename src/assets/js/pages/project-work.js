@@ -157,7 +157,7 @@ var ProjectWork = (function(){
     var linked = (x.linked || []).map(function(i){ return '<a href="' + esc(i.url) + '" target="_blank" rel="noopener">' + esc(refLabel(i)) + '</a>'; }).join(' ');
     // A card that can be changed is dragged to another column (BoldBoard.drag, in wire()).
     var drag = x.card && canChange(x.card);
-    var html = '<div class="wk-item' + (drag ? ' board-draggable' : '') + '" data-key="' + esc(x.key) + '"' + (x.notes ? ' title="' + esc(x.notes) + '"' : '') + '>' +
+    var html = '<div class="board-card wk-item' + (drag ? ' board-draggable' : '') + '" data-key="' + esc(x.key) + '"' + (x.notes ? ' title="' + esc(x.notes) + '"' : '') + '>' +
       '<div class="wk-top"><span class="wk-type wk-type-' + t[0] + '">' + t[1] + '</span>' +
         (refLabel(x) ? '<span class="wk-ref">' + esc(refLabel(x)) + '</span>' : '') + (linked ? '<span class="wk-ref">' + linked + '</span>' : '') +
         (late ? '<span class="wk-late">' + n + ' days</span>' : '') + '</div>' +
@@ -299,6 +299,8 @@ var ProjectWork = (function(){
   }
 
   function wire(){
+    // Heads the same height across the board, as on the Internal Review Board.
+    BoldBoard.equalizeHeads(root);
     BoldBoard.drag(root, {
       item: '.wk-item.board-draggable',
       drop: function(li, column){
