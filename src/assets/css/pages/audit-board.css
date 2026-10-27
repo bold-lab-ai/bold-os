@@ -17,7 +17,6 @@
   --amber:#b7791f;
   --focus:#1a2b4a;
   --shadow:0 14px 44px #1a2b4a1f;
-  --board-max:1360px;
   --read-max:760px;
   --sidebar-w:200px;
   --sidebar-w-collapsed:40px;
@@ -311,40 +310,8 @@ select{min-width:180px;}
 .board-search input[type="search"]{flex:1 1 260px; min-width:180px;}
 .board-search select{min-width:140px;}
 .board-search-count{font-size:12.5px; color:var(--muted); white-space:nowrap;}
-/* ---------- board columns ---------- */
-.board-scroll{
-  max-width:var(--board-max); margin:12px 0 0; padding:0 var(--gutter) 80px;
-  overflow-x:auto;
-  scroll-snap-type:x proximity;
-}
-.columns{
-  display:flex;
-  gap:1px;
-  background:var(--line);
-  border:1px solid var(--line);
-  border-radius:var(--radius);
-  overflow:hidden;
-  min-width:2170px;
-}
-.column{
-  background:var(--surface);
-  flex:1 1 0;
-  min-width:240px;
-  display:flex;
-  flex-direction:column;
-  scroll-snap-align:start;
-}
-.column-head{
-  padding:11px 12px 10px;
-  border-bottom:1px solid var(--line);
-  background:var(--wash);
-  color:var(--ink);
-}
-.column-head .ch-top{
-  display:flex; align-items:center; justify-content:space-between;
-  font-weight:700; font-size:12.5px; letter-spacing:0;
-}
-.column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
+/* ---------- board columns: assets/css/board.css (shared with a project's Work tab) ---------- */
+.board-scroll{max-width:var(--board-max); margin:12px 0 0; padding:0 var(--gutter) 80px;}
 /* ch-hint is ALWAYS rendered (renderColumns never omits it, even with
    nothing to say) — min-height keeps a short/empty hint from collapsing
    the column-head down to nothing, so heads still roughly line up
@@ -356,9 +323,7 @@ select{min-width:180px;}
    without either clipping it or guessing generously and wasting space
    everywhere else). The "Requires: a) … b) …" line that used to sit
    below this (ch-requires) was dropped entirely 2026-09-18+5. */
-.column-head .ch-hint{
-  margin-top:4px; min-height:2.7em; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);
-}
+.column-head .ch-hint{min-height:2.7em;}
 /* Rush mode's column deadline hint — up to three rows (review deadline
    where a review is a gate, internal <Stage> deadline, venue External
    <Stage> deadline), each a label with its date on the same line
@@ -373,8 +338,6 @@ select{min-width:180px;}
 }
 .column-head .ch-hint.ch-hint-deadlines .hint-row{word-break:break-word;}
 .column-head .ch-hint .hint-overdue{color:var(--danger-text); font-weight:600;}
-.column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
-.column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
 /* ---------- card ---------- */
 .card{
   border:1px solid var(--line);

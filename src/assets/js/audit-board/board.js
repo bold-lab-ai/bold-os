@@ -729,55 +729,28 @@
   function renderColumns(board){
     var searching = !!(state.search && ((state.search.query && state.search.query.trim()) || (state.search.reviewState && state.search.reviewState !== 'all')));
     var order = effectiveStatusOrder(board);
-    var hasOrphaned = state.cards.some(function(c){ return !STATUS_LABELS[c.status]; });
-    // .columns' CSS min-width is calibrated for the full 9-column board
-    // (240px × columns + 1px × gaps + 2px border — see docs/AGENTS.md
-    // guideline 6); rush mode's 4 columns need the same formula applied to
-    // the actual column count, or they'd render stretched across 9
-    // columns' worth of empty space.
-    var columnCount = order.length + (hasOrphaned ? 1 : 0);
-    var html = '<div class="columns" style="min-width:' + (240 * columnCount + (columnCount - 1) + 2) + 'px">';
-    order.forEach(function(status){
+    // The columns are the shared board's (assets/js/board.js), sized to however many
+    // there are (rush mode has 4), plus Other for cards whose status no longer maps.
+    var columns = order.map(function(status){
       var allForStatus = state.cards.filter(function(c){ return displayStatus(c, board) === status; });
       var cardsForStatus = allForStatus.filter(matchesSearch);
-      html += '<div class="column">';
-      var hint = columnHintFor(status, board);
       // Only the two-row grid case (an actual venue deadline to show)
       // wants ch-hint-deadlines — the "No deadline set" fallback inside
       // columnHintFor is plain text and should keep ch-hint's own layout.
       var isDeadlineHint = !!(board && board.rushMode && (status === 'register' || status === 'abstract' || status === 'paper') && rushColumnRealDeadline(status, board));
-      html += '<div class="column-head">' +
-        '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
-        '<div class="ch-hint' + (isDeadlineHint ? ' ch-hint-deadlines' : '') + '">' + hint + '</div>' +
-      '</div>';
-      html += '<div class="column-body">';
-      if (cardsForStatus.length === 0){
-        html += '<div class="column-empty">' + (searching && allForStatus.length > 0 ? 'No matches' : 'Nothing here') + '</div>';
-      } else {
-        cardsForStatus.forEach(function(c){ html += renderCard(c, board); });
-      }
-      html += '</div></div>';
+      return { id: status, label: statusLabelFor(status, board), count: cardsForStatus.length,
+        hint: isDeadlineHint ? null : columnHintFor(status, board),
+        headExtra: isDeadlineHint ? '<div class="ch-hint ch-hint-deadlines">' + columnHintFor(status, board) + '</div>' : '',
+        body: cardsForStatus.map(function(c){ return renderCard(c, board); }).join(''),
+        empty: searching && allForStatus.length > 0 ? 'No matches' : 'Nothing here' };
     });
-
     var orphanedAll = state.cards.filter(function(c){ return !STATUS_LABELS[c.status]; });
-    var orphaned = orphanedAll.filter(matchesSearch);
     if (orphanedAll.length > 0){
-      html += '<div class="column">';
-      html += '<div class="column-head">' +
-        '<div class="ch-top"><span>Other</span><span class="count">' + orphaned.length + '</span></div>' +
-        '<div class="ch-hint">Status no longer maps to a column</div>' +
-      '</div>';
-      html += '<div class="column-body">';
-      if (orphaned.length === 0){
-        html += '<div class="column-empty">' + (searching ? 'No matches' : 'Nothing here') + '</div>';
-      } else {
-        orphaned.forEach(function(c){ html += renderCard(c, board); });
-      }
-      html += '</div></div>';
+      var orphaned = orphanedAll.filter(matchesSearch);
+      columns.push({ id: 'other', label: 'Other', count: orphaned.length, hint: 'Status no longer maps to a column',
+        body: orphaned.map(function(c){ return renderCard(c, board); }).join(''), empty: searching ? 'No matches' : 'Nothing here' });
     }
-
-    html += '</div>';
-    return html;
+    return BoldBoard.columnsHtml(columns);
   }
 
   // Keeps every column-head the same height (2026-09-18+6, per Eduardo).

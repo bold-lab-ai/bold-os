@@ -331,6 +331,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
 
     el('projectBody').innerHTML = html;
     el('projectBody').hidden = false;
+    el('detail').classList.toggle('is-board', tab === 'work');
     if (tab === 'work') {
       ProjectWork.start({ db: db, pid: wsKey, me: function(){ return me; }, ws: function(){ return ws; }, fullWrite: function(){ return fullWrite; },
         canEdit: canEdit, members: memberEmails, callWorkspace: callWorkspace });

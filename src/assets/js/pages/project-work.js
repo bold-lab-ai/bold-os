@@ -153,22 +153,22 @@ var ProjectWork = (function(){
     var n = days(x.since), late = x.column === 'review' && n >= SLOW;
     var t = TYPES.filter(function(y){ return y[0] === x.type; })[0] || TYPES[3];
     var title = x.url ? '<a href="' + esc(x.url) + '" target="_blank" rel="noopener">' + esc(x.title) + '</a>'
-      : x.card ? '<button class="wk-open" type="button">' + esc(x.title) + '</button>' : esc(x.title);
+      : x.card ? '<button class="wk-open board-drag-through" type="button">' + esc(x.title) + '</button>' : esc(x.title);
     var linked = (x.linked || []).map(function(i){ return '<a href="' + esc(i.url) + '" target="_blank" rel="noopener">' + esc(refLabel(i)) + '</a>'; }).join(' ');
-    var html = '<li class="wk-item" data-key="' + esc(x.key) + '"' + (x.notes ? ' title="' + esc(x.notes) + '"' : '') + '>' +
+    // A card that can be changed is dragged to another column (BoldBoard.drag, in wire()).
+    var drag = x.card && canChange(x.card);
+    var html = '<div class="wk-item' + (drag ? ' board-draggable' : '') + '" data-key="' + esc(x.key) + '"' + (x.notes ? ' title="' + esc(x.notes) + '"' : '') + '>' +
       '<div class="wk-top"><span class="wk-type wk-type-' + t[0] + '">' + t[1] + '</span>' +
         (refLabel(x) ? '<span class="wk-ref">' + esc(refLabel(x)) + '</span>' : '') + (linked ? '<span class="wk-ref">' + linked + '</span>' : '') +
         (late ? '<span class="wk-late">' + n + ' days</span>' : '') + '</div>' +
       '<div class="wk-title">' + title + '</div>' +
       (whoHtml(x) ? '<div class="wk-who-line">' + whoHtml(x) + '</div>' : '');
     if (x.card) {
-      var ok = canChange(x.card), why = ok ? '' : ' disabled title="' + esc(canAdd() ? NO_EDIT : BOLD.cannotReason('projects', 'edit')) + '"';
-      html += '<div class="wk-actions"><select class="wk-move" aria-label="Move to"' + why + '>' + COLUMNS.map(function(c){
-          return '<option value="' + c[0] + '"' + (c[0] === x.card.column ? ' selected' : '') + '>' + (c[0] === x.card.column ? 'Move\u2026' : c[1]) + '</option>';
-        }).join('') + '</select>' +
-        '<button class="btn-text wk-edit" type="button"' + why + '>Edit</button></div>';
+      var ok = canChange(x.card);
+      html += '<div class="wk-actions"><button class="btn-text wk-edit" type="button"' +
+        (ok ? '' : ' disabled title="' + esc(canAdd() ? NO_EDIT : BOLD.cannotReason('projects', 'edit')) + '"') + '>Edit</button></div>';
     }
-    return html + '</li>';
+    return html + '</div>';
   }
 
   function editorHtml(c, column){
@@ -180,6 +180,8 @@ var ProjectWork = (function(){
     return '<form class="wk-editor" novalidate>' +
       '<label>Title<input type="text" class="wk-f-title" maxlength="200" value="' + esc(c ? c.title : '') + '" required></label>' +
       '<label>Notes<textarea class="wk-f-notes" maxlength="4000" rows="3">' + esc(c ? c.notes || '' : '') + '</textarea></label>' +
+      (c ? '<label>Column<select class="wk-f-col">' + COLUMNS.map(function(k){
+        return '<option value="' + k[0] + '"' + (k[0] === c.column ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></label>' : '') +
       '<label>Type<select class="wk-f-kind"><option value="">From its links</option>' + TYPES.map(function(y){
         return '<option value="' + y[0] + '"' + (c && c.kind === y[0] ? ' selected' : '') + '>' + y[1] + '</option>'; }).join('') + '</select></label>' +
       '<label>Who’s on it<select class="wk-f-who"><option value="">Nobody yet</option>' + people.map(function(e){
@@ -262,17 +264,18 @@ var ProjectWork = (function(){
         '<button class="btn-text" type="button" data-wk="settings">Board settings</button></div></div>';
     var notes = (remote.errors || []).map(function(e){ return '<p class="wk-error">' + esc(e) + '</p>'; }).join('') + (msg ? '<p class="wk-error">' + esc(msg) + '</p>' : '');
     var settings = editing === 'settings' ? '<div class="wk-settings-slot"></div>' : '';
-    var cols = '<div class="wk-cols">' + COLUMNS.map(function(c){
+    // The shared board (assets/js/board.js): the Internal Review Board's columns.
+    var cols = '<div class="board-scroll">' + BoldBoard.columnsHtml(COLUMNS.map(function(c){
       var list = shown.filter(function(x){ return x.column === c[0]; }).sort(function(a, b){ return (b.since || 0) - (a.since || 0); });
       var add = c[0] !== 'done' ? '<button class="btn-text wk-add" type="button" data-col="' + c[0] + '"' +
         (canAdd() ? '' : ' disabled title="' + esc(BOLD.cannotReason('projects', 'edit')) + '"') + '>+ Add a card</button>' : '';
       var newSlot = editing === 'new:' + c[0] ? '<div class="wk-new-slot"></div>' : '';
-      return '<section class="wk-col" aria-label="' + c[1] + '"><h3>' + c[1] + ' <span class="detail-muted">' + list.length + '</span></h3>' + add + newSlot +
-        '<ul class="wk-list">' + list.map(itemHtml).join('') + '</ul>' +
-        (!list.length ? '<p class="detail-muted wk-empty">' + (!cardsLoaded || (remote.loading && !remote.loaded) ? 'Loading…' : 'Nothing') + '</p>' : '') +
-        (c[0] === 'done' ? '<p class="detail-muted wk-empty">The last ' + DAYS + ' days. Before: <a href="changelog.html">Changelog</a>.</p>' : '') +
-        '</section>';
-    }).join('') + '</div>';
+      return { id: c[0], label: c[1], count: list.length,
+        hint: c[0] === 'done' ? 'The last ' + DAYS + ' days; before, the <a href="changelog.html">Changelog</a>' : '',
+        headExtra: add,
+        body: newSlot + list.map(itemHtml).join(''),
+        empty: !cardsLoaded || (remote.loading && !remote.loaded) ? 'Loading\u2026' : 'Nothing here' };
+    })) + '</div>';
     if (keepEditor) keepEditor.remove();
     root.innerHTML = head + notes + settings + cols;
     // The open editor goes back where it was: settings, a new card, or in place of its card.
@@ -296,6 +299,13 @@ var ProjectWork = (function(){
   }
 
   function wire(){
+    BoldBoard.drag(root, {
+      item: '.wk-item.board-draggable',
+      drop: function(li, column){
+        var c = cards.filter(function(x){ return 'card:' + x.id === li.getAttribute('data-key'); })[0];
+        if (c && canChange(c)) moveCard(c, column);
+      }
+    });
     Array.prototype.forEach.call(root.querySelectorAll('[data-who]'), function(b){
       b.addEventListener('click', function(){ who = b.getAttribute('data-who'); draw(); });
     });
@@ -314,9 +324,8 @@ var ProjectWork = (function(){
       if (key.indexOf('card:') !== 0) return;
       var c = cards.filter(function(x){ return 'card:' + x.id === key; })[0];
       if (!c) return;
-      var move = li.querySelector('.wk-move'), edit = li.querySelector('.wk-edit'), open = li.querySelector('.wk-open');
+      var edit = li.querySelector('.wk-edit'), open = li.querySelector('.wk-open');
       if (open) open.addEventListener('click', function(){ if (edit && !edit.disabled) edit.click(); });
-      if (move) move.addEventListener('change', function(){ moveCard(c, move.value); });
       if (edit) edit.addEventListener('click', function(){ if (editing) return; editing = c.id; draftLinks = (c.links || []).slice(); draw(); focusTitle(); });
     });
   }
@@ -393,7 +402,8 @@ var ProjectWork = (function(){
       };
       busy = true;
       var job;
-      if (c) job = cardsRef().doc(c.id).set(Object.assign({}, data, { column: c.column, by: c.by, at: c.at, movedAt: c.movedAt || c.at }));
+      var col = form.querySelector('.wk-f-col') ? form.querySelector('.wk-f-col').value : c && c.column;
+      if (c) job = cardsRef().doc(c.id).set(Object.assign({}, data, { column: col, by: c.by, at: c.at, movedAt: col !== c.column ? now : c.movedAt || c.at }));
       else {
         var column = form.querySelector('.wk-f-column').value;
         job = cardsRef().add(Object.assign(data, { column: column, by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now }));
@@ -405,12 +415,15 @@ var ProjectWork = (function(){
 
   function moveCard(c, column){
     if (column === c.column) return;
+    // Shown in its new column at once; the live listener confirms it (or puts it back).
+    var was = c.column;
+    c.column = column; draw();
     var m = ctx.me(), now = Date.now();
     var data = {};
     ['title', 'notes', 'assignees', 'assigneeEmails', 'links', 'by', 'at'].forEach(function(k){ data[k] = c[k]; });
     data.kind = c.kind || '';
     cardsRef().doc(c.id).set(Object.assign(data, { notes: c.notes || '', column: column, movedAt: now, updatedAt: now, updatedBy: m.email }))
-      .catch(function(err){ console.error('[BOLD Lab] moving a card failed', err); msg = 'Couldn’t move it — try again.'; draw(); });
+      .catch(function(err){ console.error('[BOLD Lab] moving a card failed', err); c.column = was; msg = 'Couldn’t move it — try again.'; draw(); });
   }
 
   return { start: start, stop: stop, attach: attach, refresh: function(){ fetchRemote(true); }, _items: items, _githubRef: githubRef };

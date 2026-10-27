@@ -1,0 +1,44 @@
+/* A board (assets/js/board.js): columns side by side, scrolling sideways when they
+   don't fit. Shared by the Internal Review Board and a project's Work tab; a page
+   loads it with `styles: ["board"]`. Each page sizes its own .board-scroll. */
+:root{ --board-max:1360px; }
+.board-scroll{overflow-x:auto; scroll-snap-type:x proximity;}
+.columns{
+  display:flex;
+  gap:1px;
+  background:var(--line);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  overflow:hidden;
+  min-width:2170px;
+}
+.column{
+  background:var(--surface);
+  flex:1 1 0;
+  min-width:240px;
+  display:flex;
+  flex-direction:column;
+  scroll-snap-align:start;
+}
+.column-head{
+  padding:11px 12px 10px;
+  border-bottom:1px solid var(--line);
+  background:var(--wash);
+  color:var(--ink);
+}
+.column-head .ch-top{
+  display:flex; align-items:center; justify-content:space-between;
+  font-weight:700; font-size:12.5px; letter-spacing:0;
+}
+.column-head .count{color:var(--muted); font-weight:600; font-variant-numeric:tabular-nums;}
+.column-head .ch-hint{margin-top:4px; font-weight:400; font-size:11px; line-height:1.35; color:var(--muted);}
+.column-body{padding:10px; display:flex; flex-direction:column; gap:10px; min-height:60px;}
+.column-empty{color:var(--muted); font-size:12px; padding:8px 2px;}
+/* Dragging a card to another column (BoldBoard.drag). */
+.board-draggable{cursor:grab; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none;}
+.board-draggable.is-dragging{opacity:0.35;}
+.board-ghost{position:fixed; left:0; top:0; z-index:1000; pointer-events:none; margin:0; cursor:grabbing;
+  box-shadow:0 8px 24px rgba(26,43,74,0.18); opacity:0.95;}
+.column.is-drop-target{background:var(--wash);}
+.column.is-drop-target .column-body{outline:2px dashed var(--accent); outline-offset:-6px;}
+html.board-dragging, html.board-dragging *{cursor:grabbing !important;}
