@@ -3280,7 +3280,7 @@ exports.projectWorkspace = onCall(
 // live by the page; projectWork adds what's happening elsewhere. Every item says what
 // it's about, its type (code, content or a request), who it's from (`by`) and who's on
 // it (`on`, or `waiting` when it's waiting on someone not named, such as "a PI or
-// admin"), and sits in a column: To do, In progress, In review, Done (the last 14 days).
+// admin"), and sits in a column: To do, In progress, Waiting for review, Done (the last 14 days).
 // - GitHub, from the board's repositories: open issues (To do; In progress once
 //   someone has it), pull requests (a draft In progress, open In review, merged
 //   Done) and recently closed issues (Done). Needs the GitHub App's Issues and Pull

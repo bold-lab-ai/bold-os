@@ -1,5 +1,5 @@
 // A project's work board (project page, Work tab): everything in the works, and on BOLD
-// OS's board everything on BOLD.OS waiting on someone, in To do, In progress, In review
+// OS's board everything on BOLD.OS waiting on someone, in To do, In progress, Waiting for review
 // or Done. Each item shows only what's needed to scan it: its type (code, content or a
 // request), what it's about, who it's from, and who's on it (or what it waits for).
 // - the board's own cards, projectWorkspaces/{pid}/work/{id} (firestore.rules), live;
@@ -11,7 +11,7 @@
 // its DOM is kept between renders, so an open editor survives the page redrawing.
 var ProjectWork = (function(){
   var esc = BOLD.escapeHtml;
-  var COLUMNS = [['todo', 'To do'], ['doing', 'In progress'], ['review', 'In review'], ['done', 'Done']];
+  var COLUMNS = [['todo', 'To do'], ['doing', 'In progress'], ['review', 'Waiting for review'], ['done', 'Done']];
   var ORDER = { todo: 0, doing: 1, review: 2, done: 3 };
   var DAYS = 14, SLOW = 3;   // Done shows the last 14 days; "waiting" after 3 in review
   var NO_EDIT = 'Only whoever made it, whom it’s assigned to, the project’s people, PIs and admins can change it';
@@ -248,7 +248,7 @@ var ProjectWork = (function(){
     var strip = Object.keys(load).sort(function(a, b){ return (load[b].doing + load[b].review) - (load[a].doing + load[a].review); }).map(function(k){
       var l = load[k], parts = [];
       if (l.doing) parts.push(l.doing + ' in progress');
-      if (l.review) parts.push(l.review + ' in review');
+      if (l.review) parts.push(l.review + ' waiting for review');
       return '<button class="wk-who' + (who === k ? ' active' : '') + '" type="button" data-who="' + esc(k) + '">' + esc(l.p.name || l.p.login || l.p.email) +
         ' <span class="detail-muted">' + parts.join(', ') + '</span></button>';
     }).join('');

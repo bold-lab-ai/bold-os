@@ -590,7 +590,7 @@ module.exports = function(deps){
     const presentations = (await db.collection('projectWorkspaces').doc(pid).collection('presentations').get()).docs.map((d) => d.data())
       .map((t) => ({ title: t.title, type: t.type, date: t.date || '', presenter: t.presenter && (t.presenter.name || name(t.presenter.email)), slides: t.slidesUrl || '', recording: t.recordingUrl || '' }));
     // Its work board's own cards (the Work tab); its issues, pull requests and proposals come with the work tool's list.
-    const COLUMN = { todo: 'To do', doing: 'In progress', review: 'In review', done: 'Done' };
+    const COLUMN = { todo: 'To do', doing: 'In progress', review: 'Waiting for review', done: 'Done' };
     const work = w.work && w.work.on ? {
       repositories: (w.work.repos && w.work.repos.length ? w.work.repos : w.repoName ? [w.repoName] : []).map((r) => 'bold-lab-ai/' + r),
       shows_site_proposals: !!w.work.content,

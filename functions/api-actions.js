@@ -294,7 +294,7 @@ module.exports = function(ctx){
   // ---------- a project's work board (project page, Work tab) ----------
   // Cards are projectWorkspaces/{pid}/work/{id}, written as the page writes them (firestore.rules
   // decides who may); list is projectWork's, the cards and what it adds from GitHub and the site.
-  const WORK_COLUMNS = { todo: 'To do', doing: 'In progress', review: 'In review', done: 'Done' };
+  const WORK_COLUMNS = { todo: 'To do', doing: 'In progress', review: 'Waiting for review', done: 'Done' };
   async function work(who, a){
     const c = await cardOf(a.project_id);
     const pid = c.data.projectId || c.id, col = 'projectWorkspaces/' + pid + '/work';
