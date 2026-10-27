@@ -442,11 +442,16 @@
         return accessRow(k, { view: q.view || 'internal', edit: q.edit || 'internal' });
       }).join('\n');
     }
-    var lines = body.split('\n'), last = -1, done = false;
+    // In the table headed Page (the part also has the groups' ranks and the roles), as
+    // functions/access.js setAccessRow.
+    var lines = body.split('\n'), last = -1, done = false, inTable = false;
     lines = lines.map(function(l, i){
-      if (!/^\s*\|/.test(l)) return l;
+      if (!/^\s*\|/.test(l)) { inTable = false; return l; }
+      var first = norm(l.trim().replace(/^\|/, '').split('|')[0]);
+      if (first === 'page') { inTable = true; last = i; return l; }
+      if (!inTable) return l;
       last = i;
-      if (norm(l.trim().replace(/^\|/, '').split('|')[0]) === norm(AREA_NAMES[area])) { done = true; return accessRow(area, lv); }
+      if (first === norm(AREA_NAMES[area])) { done = true; return accessRow(area, lv); }
       return l;
     });
     if (!done) { if (last === -1) lines.push('', '| Page | View | Edit |', '|---|---|---|', accessRow(area, lv)); else lines.splice(last + 1, 0, accessRow(area, lv)); }
@@ -465,7 +470,8 @@
         snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return b.at - a.at; }).some(function(q){
           var changes = q.kind === 'batch' ? (q.changes || []) : [q];
           return changes.some(function(c){
-            var lv = c.partId === 'access' && c.after && rowOf(c.after.body, area);
+            // One row (kind 'access'), or the whole part with this page's row in it.
+            var lv = c.kind === 'access' ? (c.area === area && c.after) : c.partId === 'access' && c.after && rowOf(c.after.body, area);
             if (lv && !sameLevels(lv, cur)) { waiting = { id: q.id, lv: lv }; return true; }
             return false;
           });
@@ -496,13 +502,13 @@
     if (panel) {
       var can = !!access.fullWrite, lv = panel.lv, changed = !sameLevels(lv, cur);
       html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">Who can see ' + esc(AREA_NAMES[area]) + '</div>';
-      if (panel.done) html += '<p class="ac-sentence">Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposals">the BOLDiquette</a>.</p>' +
+      if (panel.done) html += '<p class="ac-sentence">Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposal-' + esc(panel.done) + '">the BOLDiquette</a>.</p>' +
         '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
       else {
         html += ladderHtml(lv, waiting && !changed ? waiting.lv : null, can) +
           '<p class="ac-sentence">' + esc(sentence(lv)) + '</p>' +
           (REVIEWED.indexOf(area) >= 0 ? '<p class="ac-note">Edits here are proposals that a PI or admin reviews.</p>' : '') +
-          (waiting && !changed ? '<p class="ac-note">Waiting: ' + esc(sentence(waiting.lv)) + ' <a href="boldiquette.html#proposals">See it on the BOLDiquette</a>.</p>' : '');
+          (waiting && !changed ? '<p class="ac-note">Waiting: ' + esc(sentence(waiting.lv)) + ' <a href="boldiquette.html#proposal-' + esc(waiting.id) + '">See it on the BOLDiquette</a>.</p>' : '');
         if (!can) html += '<p class="ac-note">Only PIs and admins change this.</p><div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
         else html += (changed ? '<label class="ac-why">Why?<textarea class="ac-note-input" maxlength="1000" rows="2">' + esc(panel.note || '') + '</textarea></label>' : '') +
           '<p class="ev-error"' + (panel.error ? '' : ' hidden') + '>' + esc(panel.error || '') + '</p>' +
@@ -514,22 +520,33 @@
     el.innerHTML = html;
     el.hidden = false;
   }
+  // For the BOLDiquette's list of proposed changes (pages/guide.js): a one-row proposal in
+  // words, and the part with it applied.
+  BOLD.accessProposal = {
+    pageName: function(area){ return AREA_NAMES[area] || area; },
+    levelName: function(l){ return l === 'none' ? '—' : groupName(l); },
+    // "Who can see Calendar: View and Edit, BOLD-internal → BOLD-associate"
+    describe: function(q){
+      var b = q.before || {}, a = q.after || {}, n = BOLD.accessProposal.levelName;
+      var ch = WHAT.filter(function(w){ return b[w] !== a[w]; });
+      var what = !ch.length ? 'no change' : ch.length === 2 && b.view === b.edit && a.view === a.edit ? 'View and Edit, ' + n(b.view) + ' → ' + n(a.view)
+        : ch.map(function(w){ return WHAT_ROW[w] + ', ' + n(b[w]) + ' → ' + n(a[w]); }).join('; ');
+      return 'Who can see ' + (AREA_NAMES[q.area] || q.area) + ': ' + what;
+    },
+    body: function(body, area, lv){ return accessBody(body, area, lv); },
+  };
   function proposeAccess(){
     var area = pageArea(), u = auth && auth.currentUser;
     if (!String(panel.note || '').trim()) { panel.error = 'Say why, for whoever reviews it.'; drawAccess(); return; }
     var lv = Object.assign({}, panel.lv);
     panel.busy = true; panel.error = ''; drawAccess();
+    // Just this page's row: accepting it sets that row in the table as it is then
+    // (functions/index.js appliedProposal), whatever else changes in the part meanwhile.
     var ref = firebase.firestore(BOLD.getApp()).collection('handbook').doc('boldiquette');
-    ref.get().then(function(snap){
-      var p = ((snap.exists && snap.data().parts) || []).filter(function(x){ return x.id === 'access'; })[0];
-      var body = accessBody(p && p.body, area, lv);
-      var change = p
-        ? { kind: 'edit', partId: 'access', before: { title: p.title, body: p.body }, after: { title: p.title, body: body } }
-        : { kind: 'add', partId: 'access', before: null, after: { title: 'Who can see what', body: body, section: 'People' } };
-      return ref.collection('proposals').add(Object.assign(change, {
-        note: String(panel.note).trim(), by: { email: u.email || '', name: u.displayName || '' }, at: Date.now(), status: 'open',
-      }));
-    }).then(function(){ panel.busy = false; panel.done = true; drawAccess(); }, function(err){
+    ref.collection('proposals').add({
+      kind: 'access', partId: 'access', area: area, before: currentLevels(area), after: { view: lv.view, edit: lv.edit },
+      note: String(panel.note).trim(), by: { email: u.email || '', name: u.displayName || '' }, at: Date.now(), status: 'open',
+    }).then(function(d){ panel.busy = false; panel.done = d.id; drawAccess(); }, function(err){
       console.error('[BOLD Lab] proposing who can see what failed', err);
       panel.busy = false; panel.error = 'Couldn’t propose it — try again.'; drawAccess();
     });
@@ -565,12 +582,18 @@
   document.addEventListener('input', function(e){
     if (e.target.classList && e.target.classList.contains('ac-note-input') && panel) panel.note = e.target.value;
   });
+  // Watched again when the person, the table or the page changes. A remembered visit's
+  // access comes before the page's body (and its area) is there: watched once it is.
   var watchedFor = null;
+  function rewatch(a){
+    var key = pageArea() + '|' + a.e + '|' + JSON.stringify(a.pages);
+    if (watchedFor !== key) { watchedFor = key; watchWaiting(); }
+  }
   BOLD.onAccess(function(a){
-    if (watchedFor !== a.e + '|' + JSON.stringify(a.pages)) { watchedFor = a.e + '|' + JSON.stringify(a.pages); watchWaiting(); }
+    rewatch(a);
     if (!panel || panel.done) drawAccess();
   });
-  document.addEventListener('DOMContentLoaded', drawAccess);
+  document.addEventListener('DOMContentLoaded', function(){ if (access) rewatch(access); drawAccess(); });
 
   /* ---------- shell: sidebar state + gating ---------- */
 

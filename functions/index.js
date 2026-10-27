@@ -32,6 +32,8 @@ const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https')
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { beforeUserCreated, HttpsError: IdentityHttpsError } = require('firebase-functions/v2/identity');
 const { defineSecret } = require('firebase-functions/params');
+// Who can see what's pure helpers (the table, its rows); `access` below is the instance reading settings/access.
+const accessLib = require('./access');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -986,6 +988,12 @@ function proposalSummary(q){
   if (q.kind === 'tool') return 'a change to the tool';
   if (q.kind === 'new') return 'adding it';
   if (q.kind === 'delete') return 'removing it';
+  // Who can see what: a row from a page's eye chip, or the part's rows that differ.
+  if (q.kind === 'access') return slackText(accessLib.accessChangeText(q.area, q.before, q.after));
+  if (q.partId === accessLib.ACCESS_PART && (q.kind === 'add' || q.kind === 'edit')) {
+    const rows = accessLib.accessRowsChanged(q.kind === 'edit' && q.before ? q.before.body : '', (q.after || {}).body);
+    if (q.kind === 'edit' && rows && rows.length) return 'a change to who can see ' + rows.join(', ');
+  }
   if (q.kind === 'add') return 'a new part, ' + title(q.after);
   if (q.kind === 'remove') return 'removing the part ' + title(q.before);
   if (q.kind === 'move' && q.after && q.after.tab) return 'moving the tab ' + title(q.after);
@@ -999,6 +1007,12 @@ function proposalSummary(q){
   return 'a change to the part ' + title(q.before || q.after);
 }
 
+// A link to one proposed change: on the BOLDiquette and the guides, the change itself
+// (#proposal-<id>, pages/guide.js); elsewhere the page's list.
+function proposalAnchor(collection, id){
+  return (collection === 'handbook' || collection === 'guides') && id ? '#proposal-' + id : '#proposals';
+}
+
 function onProposed(collection, pageUrl){
   return onDocumentCreated(
     { document: collection + '/{slug}/proposals/{id}', secrets: [SLACK_BOT_TOKEN] },
@@ -1009,7 +1023,7 @@ function onProposed(collection, pageUrl){
       // A new skill or tool has no document yet: its proposal carries the title.
       const name = (doc.exists && doc.data().title) || (q.after && q.after.title) || event.params.slug;
       const who = (q.by && (q.by.name || q.by.email)) || 'Someone';
-      const link = linkedTitle(slackText(name), pageUrl(event.params.slug) + '#proposals');
+      const link = linkedTitle(slackText(name), pageUrl(event.params.slug) + proposalAnchor(collection, event.params.id));
       const what = q.kind === 'new' && !doc.exists
         ? ' proposed a new ' + (collection === 'agentTools' ? 'tool' : 'skill') + ', ' + link
         : ' suggested ' + proposalSummary(q) + ' in ' + link;
@@ -1254,7 +1268,7 @@ function onProposalTagged(collection, pageUrl){
       if (!doc.exists && q.kind !== 'new') return;
       const by = String((q.by && q.by.email) || '').toLowerCase();
       const text = '🏷️ ' + slackText((q.by && (q.by.name || q.by.email)) || 'Someone') + ' tagged you in a suggested change to ' +
-        linkedTitle(slackText((doc.exists && doc.data().title) || (q.after || {}).title || event.params.slug), pageUrl(event.params.slug) + '#proposals') + ': ' + proposalSummary(q) + '.';
+        linkedTitle(slackText((doc.exists && doc.data().title) || (q.after || {}).title || event.params.slug), pageUrl(event.params.slug) + proposalAnchor(collection, event.params.id)) + ': ' + proposalSummary(q) + '.';
       const emails = await emailsForSlackIds(ids);
       for (const id of ids) if (emails[id] && emails[id] !== by) await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text);
     }
@@ -1407,7 +1421,7 @@ const REVIEWED = ['guides', 'handbook', 'skills', 'agentTools'];
 const access = require('./access')({ db, groupOf, isFullWrite, HttpsError });
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
-function appliedProposal(doc, q){
+function appliedProposal(doc, q, ctx){
   // Several changes proposed together (a draft): each in turn, on the result of the last.
   if (q.kind === 'batch') {
     const changes = Array.isArray(q.changes) ? q.changes : [];
@@ -1416,7 +1430,7 @@ function appliedProposal(doc, q){
     const out = {};
     changes.forEach((c) => {
       if (!c || c.kind === 'batch' || c.kind === 'restore') throw new HttpsError('invalid-argument', 'Unknown kind of change.');
-      const r = appliedProposal(cur, c);
+      const r = appliedProposal(cur, c, ctx);
       cur = Object.assign({}, cur, r);
       Object.assign(out, r);
     });
@@ -1440,10 +1454,30 @@ function appliedProposal(doc, q){
     return out;
   }
   const parts = (doc.parts || []).map((p) => Object.assign({}, p));
+  // One row of Who can see what (a page's eye chip), set in the table as it is now; without
+  // the part yet, the part, from the table in force (ctx.pages, settings/access).
+  if (q.kind === 'access') {
+    const lv = q.after || {}, levels = accessLib.LEVELS;
+    if (!accessLib.PAGES.some((p) => p[0] === q.area) || !['view', 'edit'].every((w) => levels.indexOf(lv[w]) >= 0)) {
+      throw new HttpsError('invalid-argument', 'That isn’t a page and its groups.');
+    }
+    const row = { view: lv.view, edit: lv.edit };
+    const p = parts.find((x) => x.id === accessLib.ACCESS_PART);
+    if (p) p.body = accessLib.setAccessRow(p.body, q.area, row);
+    else {
+      const np = { id: accessLib.ACCESS_PART, title: 'Who can see what', section: 'People', body: accessLib.accessPartBody(ctx && ctx.pages, q.area, row) };
+      let at = -1;
+      parts.forEach((x, i) => { if (x.section === np.section) at = i; });
+      if (at === -1) parts.push(np); else parts.splice(at + 1, 0, np);
+    }
+    return { parts };
+  }
   const after = q.after || {};
   if (q.kind === 'about') return { title: String(after.title || ''), description: String(after.description || '') };
   if (q.kind === 'restore') return { title: String(after.title || ''), description: String(after.description || ''), parts: after.parts || [] };
   if (q.kind === 'add') {
+    // Never the same part twice (two proposals adding one, the second accepted later).
+    if (parts.some((p) => p.id === q.partId)) throw new HttpsError('failed-precondition', 'That part is there already: propose a change to it instead.');
     // At the end of its section, if it names one that's there; else at the end.
     const part = Object.assign({ id: q.partId }, after);
     let at = -1;
@@ -1505,7 +1539,9 @@ exports.decideProposal = onCall(
           tx.update(ref, stamp);
           tx.delete(ref);
         } else {
-          let fields = appliedProposal(snap.exists ? snap.data() : {}, q);
+          // A row of Who can see what, without the part yet, starts from the table in force.
+          const pages = q.kind === 'access' ? ((await tx.get(db.collection('settings').doc('access'))).data() || {}).pages : null;
+          let fields = appliedProposal(snap.exists ? snap.data() : {}, q, { pages });
           // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
           if (data.collection === 'agentTools') {
             try { fields = agentApi.checkTool(data.slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }
@@ -3452,7 +3488,7 @@ async function contentWork(email, person){
     // A new skill or tool reads as one ("New skill: Paper review"), anything else as its change.
     const title = q.kind === 'new' && /^(Skill|Tool) /.test(place.title) ? 'New ' + place.title.replace(/^(Skill|Tool) /, function(x){ return x.trim().toLowerCase() + ': '; }) : place.title + ': ' + what;
     const item = { source: 'content', type: 'content', kind: 'proposal', ref: d.ref.path, title: title,
-      url: place.url + '#proposals', by: person(q.by && q.by.email, q.by && q.by.name) };
+      url: place.url + proposalAnchor(collection, d.id), by: person(q.by && q.by.email, q.by && q.by.name) };
     if (q.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: q.editedAt || q.at || 0, on: [], waiting: PIS_ADMINS });
     else Object.assign(item, { column: 'done', state: q.status, since: q.decidedAt || 0, on: q.decidedBy ? [person(q.decidedBy, q.decidedByName)] : [] });
     items.push(item);

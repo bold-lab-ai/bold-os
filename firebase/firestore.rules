@@ -709,13 +709,21 @@ service cloud.firestore {
       }
       // Who can see what (partId 'access') only PIs and admins propose changes to; one inside
       // a batch (which rules can't look into) is refused when accepted (decideProposal).
+      // kind 'access': one page's row, from its eye chip (bold.js): { area, before, after:
+      // { view, edit } }, set in the table when accepted.
+      function validAccessRow(d) {
+        return d.partId == 'access' && d.area is string && d.area.size() <= 40 &&
+          d.after is map && d.after.keys().hasOnly(['view', 'edit']) && d.after.view is string && d.after.edit is string &&
+          d.before is map && d.before.keys().hasOnly(['view', 'edit']);
+      }
       match /proposals/{id} {
         allow read: if may('boldiquette', 'view');
         allow create: if may('boldiquette', 'edit') && request.resource.data.by.email == email()
           && (request.resource.data.get('partId', '') != 'access' || hasFullWrite())
           && request.resource.data.status == 'open'
-          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch']
-          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes'])
+          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch', 'access']
+          && request.resource.data.keys().hasOnly(['kind', 'partId', 'area', 'before', 'after', 'note', 'by', 'at', 'status', 'changes'])
+          && (request.resource.data.kind == 'access' ? validAccessRow(request.resource.data) : !('area' in request.resource.data))
           // Several changes proposed together (a draft): a list of them, as single proposals.
           && (request.resource.data.kind == 'batch'
             ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50

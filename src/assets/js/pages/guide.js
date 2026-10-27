@@ -336,6 +336,13 @@
     }
     var list = (d.parts || []).map(function(p){ return Object.assign({}, p); });
     var after = q.after || {};
+    // One row of Who can see what (a page's eye chip, bold.js), set in the part as it is now.
+    if (q.kind === 'access') {
+      var ap = list.filter(function(p){ return p.id === 'access'; })[0], lv = { view: after.view, edit: after.edit };
+      if (ap) ap.body = BOLD.accessProposal.body(ap.body, q.area, lv);
+      else list.push({ id: 'access', title: 'Who can see what', section: 'People', body: BOLD.accessProposal.body('', q.area, lv) });
+      return { parts: list };
+    }
     if (q.kind === 'about') return { title: after.title || '', description: after.description || '' };
     if (q.kind === 'restore') return { title: after.title || '', description: after.description || '', parts: after.parts || [] };
     if (q.kind === 'add') {
@@ -366,6 +373,7 @@
     }
     if (kind === 'restore') return flatten(side);
     if (kind === 'about') return { Title: side.title || '', Description: side.description || '' };
+    if (kind === 'access') return { View: BOLD.accessProposal.levelName(side.view), Edit: BOLD.accessProposal.levelName(side.edit) };
     var o = { Title: side.title || '', Text: side.body || '' };
     if (side.section !== undefined) o.Section = side.section;
     return o;
@@ -375,18 +383,20 @@
     var cur = q.kind === 'about' ? { title: x.title, description: x.description || '' } : q.partId ? part(q.partId) : null;
     var stale = (q.kind === 'about' || q.kind === 'edit' || q.kind === 'remove') && (!cur || (q.before && (cur.title !== q.before.title || (q.kind === 'about' ? (cur.description || '') !== (q.before.description || '') :
       (cur.body || '') !== (q.before.body || '') || (q.before.section !== undefined && (cur.section || '') !== q.before.section)))));
-    var what = q.kind === 'about' ? KIND.about : q.kind === 'restore' ? 'Restore the version of ' + esc(BoldHistory.when(q.after.versionAt)) :
+    var what = q.kind === 'access' ? esc(BOLD.accessProposal.describe(q)) : q.kind === 'about' ? KIND.about : q.kind === 'restore' ? 'Restore the version of ' + esc(BoldHistory.when(q.after.versionAt)) :
       q.kind === 'batch' ? (q.changes || []).length + ' changes' :
       KIND[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
     var mine = me && q.by && q.by.email === me.email;
     var off = !fullWrite ? ' disabled title="' + G.NOT_PI + '"' :
       mine ? ' disabled title="Another PI or admin reviews your change"' : '';
-    return '<li class="gd-proposal" data-id="' + esc(q.id) + '">' +
+    // Its own address (#proposal-<id>): the board, Slack and the eye chip link to it.
+    return '<li class="gd-proposal" id="proposal-' + esc(q.id) + '" data-id="' + esc(q.id) + '">' +
       '<p class="gd-proposal-head"><span class="hist-when">' + BoldHistory.when(q.at) + '</span>' +
         '<span>' + what + ' · proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') +
           (q.editedAt ? ' · edited ' + esc(BoldHistory.when(q.editedAt)) : '') + '</span></p>' +
       (draftEditing === q.id ? '<p class="gd-proposal-note"><em>You’re editing it: see your draft at the top.</em></p>' : '') +
       (q.note ? '<p class="gd-proposal-note">' + esc(q.note) + '</p>' : '') +
+      (q.kind === 'add' && cur ? '<p class="gd-proposal-stale">That part is there already, so this can’t be accepted: propose a change to it instead.</p>' : '') +
       (stale ? '<p class="gd-proposal-stale">' + (q.kind !== 'about' && !cur ? 'That part has since been removed.' : 'This has changed since it was proposed; accepting replaces the current text.') + '</p>' : '') +
       (q.kind === 'batch' ? '<ol class="gd-batch">' + (q.changes || []).map(function(c){
           return '<li><p class="hist-label">' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + '</p>' + BoldHistory.changesHtml(sideText(c.kind, c.before), sideText(c.kind, c.after), {}) + '</li>';
@@ -394,10 +404,10 @@
         BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {})) +
       '<div class="event-controls">' +
         '<button type="button" class="btn-text gd-view">View as proposed</button>' +
-        '<button type="button" class="btn-text gd-accept"' + off + (q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && q.kind !== 'batch' && !cur ? ' disabled' : '') + '>Accept</button>' +
+        '<button type="button" class="btn-text gd-accept"' + off + ((q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && q.kind !== 'batch' && q.kind !== 'access' && !cur) || (q.kind === 'add' && cur) ? ' disabled' : '') + '>Accept</button>' +
         '<button type="button" class="btn-text danger gd-decline"' + off + '>Decline</button>' +
-        // A restore stays as it is: withdraw it and restore another version instead.
-        (mine && q.kind !== 'restore' ? '<button type="button" class="btn-text gd-revise">' + (draftEditing === q.id ? 'Editing' : 'Edit') + '</button>' : '') +
+        // A restore, or a row of Who can see what, stays as it is: withdraw it and propose again instead.
+        (mine && q.kind !== 'restore' && q.kind !== 'access' ? '<button type="button" class="btn-text gd-revise">' + (draftEditing === q.id ? 'Editing' : 'Edit') + '</button>' : '') +
         (mine ? '<button type="button" class="btn-text gd-withdraw">Withdraw</button>' : '') +
       '</div>' + (comments ? comments.proposalThreadHtml(q.id) : '') + '</li>';
   }
@@ -985,7 +995,7 @@
   var jumped = !location.hash, proposalsLoaded = false;
   function refresh(){
     if (form) return;
-    var ready = !jumped && x && (proposalsLoaded || location.hash !== '#proposals') &&
+    var ready = !jumped && x && (proposalsLoaded || !/^#proposal/.test(location.hash)) &&
       (!commentFor(location.hash) || (comments && comments.ready() && proposalsLoaded));
     if (ready) tab = tabFor(location.hash);
     render();

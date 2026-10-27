@@ -96,6 +96,8 @@ section.block{max-width:var(--article-max); margin:48px 0 0;}
 /* ---------- proposed changes ---------- */
 .gd-proposal-list{list-style:none; margin:0; padding:0;}
 .gd-proposal{border-top:1px solid var(--line); padding:12px 0 16px;}
+/* A link to one proposed change (#proposal-<id>: the board, Slack, the eye chip). */
+.gd-proposal:target{background:var(--wash); box-shadow:-12px 0 0 var(--wash), 12px 0 0 var(--wash); scroll-margin-top:80px;}
 .gd-proposal:last-child{border-bottom:1px solid var(--line);}
 .gd-proposal-head{display:flex; flex-wrap:wrap; gap:4px 14px; margin:0; font-family:var(--sans); font-size:14px;}
 .gd-proposal-note{margin:6px 0 0; font-size:16px; color:var(--ink-soft);}

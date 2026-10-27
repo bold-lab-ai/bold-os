@@ -94,6 +94,60 @@ function parseAccessTable(body){
   return out;
 }
 
+// A proposal from a page's eye chip (bold.js) changes one row: { kind: 'access', area,
+// before: { view, edit }, after: { view, edit } }, applied when it's accepted to the table as
+// it is then (setAccessRow), so it never undoes another change to the part. Without the part
+// yet, accepting it adds the part (accessPartBody), from the table in force.
+const ACCESS_INTRO = 'Who can view each page of BOLD.OS, and who can edit it (on the BOLDiquette, How to, Skills and Tools, by proposing). Everyone means everyone signed in; each group can do everything the groups below it can; — is nobody. Only PIs and admins change this table, and who is in which group.';
+const pageName = (key) => (PAGES.filter((p) => p[0] === key)[0] || [key, key])[1];
+const levelCell = (l) => l === 'none' ? '—' : LEVEL_NAMES[l];
+const accessRowMarkdown = (area, lv) => '| ' + pageName(area) + ' | ' + WHAT.map((w) => levelCell(lv[w])).join(' | ') + ' |';
+// Pure: the part's body with one page's row set: replaced in the table headed Page, or added
+// at its end (or a table added); everything else as it is.
+function setAccessRow(body, area, lv){
+  let inTable = false, last = -1, done = false;
+  const lines = String(body || '').split('\n').map((line, i) => {
+    if (!/^\s*\|/.test(line)) { inTable = false; return line; }
+    const first = line.trim().replace(/^\||\|$/g, '').split('|')[0];
+    if (norm(first) === 'page') { inTable = true; last = i; return line; }
+    if (!inTable) return line;
+    last = i;
+    if (norm(first) === norm(pageName(area))) { done = true; return accessRowMarkdown(area, lv); }
+    return line;
+  });
+  if (!done) {
+    if (last === -1) lines.push('', '| Page | View | Edit |', '|---|---|---|', accessRowMarkdown(area, lv));
+    else lines.splice(last + 1, 0, accessRowMarkdown(area, lv));
+  }
+  return lines.join('\n');
+}
+// Pure: the whole part's body: the introduction and the table, with one row set.
+function accessPartBody(pages, area, lv){
+  const p = Object.assign({}, DEFAULT_PAGES, pages || {});
+  if (area) p[area] = lv;
+  return ACCESS_INTRO + '\n\n' + accessTableMarkdown(p);
+}
+// Pure: what an `access` proposal changes, in words: "who can see Calendar (View and Edit:
+// BOLD-internal → BOLD-associate)".
+function accessChangeText(area, before, after){
+  before = before || {}; after = after || {};
+  const name = (l) => l === 'none' ? 'nobody' : LEVEL_NAMES[l] || l;
+  const changed = WHAT.filter((w) => before[w] !== after[w]);
+  const label = (ws) => ws.map((w) => w === 'view' ? 'View' : 'Edit').join(' and ');
+  let what;
+  if (!changed.length) what = 'no change';
+  else if (changed.length === 2 && before.view === before.edit && after.view === after.edit) what = label(changed) + ': ' + name(before.view) + ' → ' + name(after.view);
+  else what = changed.map((w) => label([w]) + ': ' + name(before[w]) + ' → ' + name(after[w])).join('; ');
+  return 'who can see ' + pageName(area) + ' (' + what + ')';
+}
+// Pure: the pages whose rows differ between two bodies of the part (unreadable: null).
+function accessRowsChanged(beforeBody, afterBody){
+  try {
+    const a = beforeBody ? parseAccessTable(beforeBody) : {}, b = parseAccessTable(afterBody);
+    return PAGES.map((p) => p[0]).filter((k) => JSON.stringify(a[k] || null) !== JSON.stringify(b[k] || null)).map(pageName);
+  } catch (e) { return null; }
+}
+
 // Pure: the table as Markdown, for the BOLDiquette (the starting text).
 function accessTableMarkdown(pages){
   pages = pages || DEFAULT_PAGES;
@@ -149,4 +203,4 @@ module.exports = function access({ db, groupOf, isFullWrite, HttpsError }){
   }
   return { table, groupFor, can, requireAccess, checkTableChange, forget(){ cache = null; } };
 };
-Object.assign(module.exports, { ACCESS_PART, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, GUIDE_AREAS, guideArea, parseAccessTable, accessTableMarkdown, rank });
+Object.assign(module.exports, { ACCESS_PART, ACCESS_INTRO, setAccessRow, accessPartBody, accessChangeText, accessRowsChanged, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, GUIDE_AREAS, guideArea, parseAccessTable, accessTableMarkdown, rank });
