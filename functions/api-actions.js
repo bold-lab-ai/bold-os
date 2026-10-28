@@ -260,7 +260,15 @@ module.exports = function(ctx){
       if (kind === 'add') {
         const after = { title: need(a.title, 'the part’s title'), body: need(a.body, 'the part’s text') };
         if (a.section) after.section = String(a.section).trim();
-        q = { kind, partId: Math.random().toString(36).slice(2, 10), before: null, after, note };
+        // Its id: one given (a part the site looks for by id, as the BOLDiquette's `access`), if
+        // it's free; else a new one.
+        let partId = Math.random().toString(36).slice(2, 10);
+        if (a.part_id) {
+          partId = String(a.part_id).trim();
+          if (!/^[a-z0-9-]{1,64}$/.test(partId)) throw httpError(400, 'A part’s id is lowercase letters, digits and dashes.');
+          if ((pg.data.parts || []).some((p) => p.id === partId)) throw httpError(400, 'There’s already a part “' + partId + '”: propose an edit to it instead.');
+        }
+        q = { kind, partId, before: null, after, note };
       } else if (kind === 'edit') {
         const p = partOf(pg, need(a.part_id, 'the part_id'));
         const after = { title: a.title !== undefined ? String(a.title).trim() : p.title, body: a.body !== undefined ? String(a.body) : p.body };
@@ -281,6 +289,72 @@ module.exports = function(ctx){
       return act(who, 'decideProposal', { collection: pg.col, slug: pg.slug, id: pid, accept: a.action === 'accept', editedAt: s.data().editedAt || 0 });
     }
     throw httpError(400, 'Unknown action.');
+  }
+
+  // ---------- a project's board (project page, Board tab) ----------
+  // Cards are projectWorkspaces/{pid}/work/{id}, written as the page writes them (firestore.rules
+  // decides who may); list is projectWork's, the cards and what it adds from GitHub and the site.
+  const WORK_COLUMNS = { todo: 'To do', doing: 'In progress', review: 'Waiting for review', done: 'Done' };
+  async function work(who, a){
+    const c = await cardOf(a.project_id);
+    const pid = c.data.projectId || c.id, col = 'projectWorkspaces/' + pid + '/work';
+    const ref = db.collection('projectWorkspaces').doc(pid).collection('work');
+    if (a.action === 'list') {
+      const [r, snap] = await Promise.all([act(who, 'projectWork', { project: pid }), ref.get()]);
+      return {
+        cards: snap.docs.map((d) => { const x = d.data(); return { card_id: d.id, number: r.cardNumbers && r.cardNumbers[d.id] ? '#' + r.cardNumbers[d.id] : '', title: x.title, type: x.kind || '', description: x.notes || '', column: WORK_COLUMNS[x.column], assigned_to: (x.assignees || []).map((p) => p.name), links: (x.links || []).map((l) => l.url),
+          images: (x.images || []).map((i) => i.url), url: url(pageOf(d.id)) }; }),
+        elsewhere: (r.items || []).map((x) => ({ number: x.num ? '#' + x.num : x.source === 'github' ? x.repo + '#' + x.number : '', kind: x.kind === 'pr' ? 'pull request' : x.kind === 'proposal' ? 'proposed change' : x.kind, title: x.title, url: x.url,
+          type: x.type, column: WORK_COLUMNS[x.column], state: x.state, from: x.by ? x.by.name || x.by.login || '' : '', on_it: (x.on || []).map((p) => p.name || p.login), waiting_for: x.waiting || '', since: x.since ? new Date(x.since).toISOString().slice(0, 10) : '' })),
+        problems: r.errors || [],
+      };
+    }
+    // A card's own page: the project's Board tab, opened on it.
+    function pageOf(id){ return 'project.html#id=' + encodeURIComponent(c.id) + (c.boardId ? '&board=' + encodeURIComponent(c.boardId) : '') + '&tab=work&card=' + encodeURIComponent(id); }
+    const now = Date.now();
+    let assignees;
+    if (a.assign_to !== undefined) {
+      const q = String(a.assign_to || '').trim();
+      if (!q) assignees = [];
+      else if (q.toLowerCase() === 'me') assignees = [{ email: who.email, name: nameOfMe(who) }];
+      else {
+        const ms = await lab.members();
+        const m = ms.find((x) => String(x.email || x._id).toLowerCase() === q.toLowerCase()) || ms.find((x) => fold(x.name) === fold(q));
+        if (!m) throw httpError(404, 'No one in BOLD called “' + q + '”.');
+        assignees = [{ email: String(m.email || m._id).toLowerCase(), name: m.name || m.email }];
+      }
+    }
+    const links = a.links === undefined ? undefined : (a.links || []).slice(0, 10).map((u) => {
+      u = http(String(u).trim());
+      const g = /^https?:\/\/github\.com\/([^/\s]+)\/([^/\s]+)\/(pull|issues)\/(\d+)/i.exec(u);
+      return g ? { type: g[3].toLowerCase() === 'pull' ? 'pr' : 'issue', ref: (g[1] + '/' + g[2] + '#' + g[4]).toLowerCase(), url: g[0], label: g[1] + '/' + g[2] + '#' + g[4] } : { type: 'url', url: u, label: u };
+    });
+    if (a.column !== undefined && !WORK_COLUMNS[a.column]) throw httpError(400, 'The column is one of todo, doing, review, done.');
+    if (a.action === 'add') {
+      const d = { title: need(a.title, 'a title').slice(0, 200), notes: String(a.description !== undefined ? a.description : a.notes || '').slice(0, 20000), kind: a.type || '', column: a.column || 'todo',
+        assignees: assignees || [], assigneeEmails: (assignees || []).map((x) => x.email), links: links || [],
+        by: { email: who.email, name: nameOfMe(who) }, at: now, movedAt: now, updatedAt: now, updatedBy: who.email };
+      const id = await asUser(who, 'create', col, d);
+      return { card_id: id, url: url(pageOf(id)) };
+    }
+    const id = need(a.card_id, 'the card_id');
+    const cur = await ref.doc(id).get();
+    if (!cur.exists) throw httpError(404, 'No card with that id on this board.');
+    if (a.action === 'remove') { await asUser(who, 'delete', col + '/' + id); return { ok: true }; }
+    const x = cur.data();
+    const next = { title: x.title, notes: x.notes || '', kind: a.type !== undefined ? String(a.type) : x.kind || '', column: x.column, assignees: x.assignees || [], assigneeEmails: x.assigneeEmails || [], links: x.links || [],
+      ...(x.images ? { images: x.images } : {}), by: x.by, at: x.at, movedAt: x.movedAt || x.at, updatedAt: now, updatedBy: who.email };
+    if (a.action === 'move') { next.column = need(a.column, 'the column'); next.movedAt = now; }
+    else {
+      if (a.title !== undefined) next.title = need(a.title, 'a title').slice(0, 200);
+      const desc = a.description !== undefined ? a.description : a.notes;
+      if (desc !== undefined) next.notes = String(desc).slice(0, 20000);
+      if (assignees) { next.assignees = assignees; next.assigneeEmails = assignees.map((p) => p.email); }
+      if (links) next.links = links;
+      if (a.column !== undefined && a.column !== x.column) { next.column = a.column; next.movedAt = now; }
+    }
+    await asUser(who, 'set', col + '/' + id, next);
+    return { ok: true };
   }
 
   // ---------- projects ----------
@@ -317,7 +391,7 @@ module.exports = function(ctx){
         return { ok: true, changed: Object.keys(patch).filter((k) => k !== 'updatedAt') };
       }
       case 'remove': await asUser(who, 'delete', cardPath(c)); return { ok: true };
-      case 'join': case 'leave': case 'complete': case 'reopen': case 'pause_meeting': case 'resume_meeting':
+      case 'join': case 'leave': case 'start': case 'plan': case 'complete': case 'reopen': case 'pause_meeting': case 'resume_meeting':
         await act(who, 'projectWorkspace', Object.assign({ action: a.action.replace('_meeting', '') }, ws));
         return { ok: true, project: c.data.title };
       case 'set_meeting': case 'remove_meeting':
@@ -444,6 +518,28 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
+  // Recurring events every few weeks (eventSeries of kind 'meeting'; functions/series.js), through its callable.
+  async function labMeetings(who, a){
+    const full = await isFullWrite(who.email);
+    const pool = (await lab.series()).filter((x) => x.kind !== 'editions' && (x.hidden === false || full || (x.organisers || []).indexOf(who.email) >= 0))
+      .map((x) => ({ id: x._id, name: x.title }));
+    const meeting = () => ({ day: String(a.day || '').toUpperCase(), time: a.time, minutes: Number(a.minutes || 60), every: Number(a.every || 1),
+      until: a.until || '', link: a.link || '' });
+    const invite = () => a.invite && a.invite !== 'join' ? { mode: 'group', group: a.invite } : { mode: 'join' };
+    if (a.action === 'add') return act(who, 'eventSeries', { action: 'save', title: need(a.title, 'a title'), description: a.description || '', meeting: meeting(), invite: invite(), organisers: [] });
+    const id = pool.find((x) => x.id === a.meeting) ? a.meeting : (pool.find((x) => fold(x.name) === fold(a.meeting)) || {}).id;
+    if (!id) throw httpError(404, 'No recurring event “' + (a.meeting || '') + '”.');
+    if (a.action === 'update') {
+      const s = (await lab.series()).find((x) => x._id === id);
+      const m = Object.assign({}, s.meeting, a.day ? { day: String(a.day).toUpperCase() } : {}, a.time ? { time: a.time } : {}, a.minutes ? { minutes: Number(a.minutes) } : {},
+        a.every ? { every: Number(a.every) } : {}, a.until !== undefined ? { until: a.until } : {}, a.link !== undefined ? { link: a.link } : {});
+      return act(who, 'eventSeries', { action: 'save', id, title: a.title || s.title, description: a.description !== undefined ? a.description : s.description,
+        meeting: m, invite: a.invite ? invite() : s.invite, organisers: s.organisers });
+    }
+    if (['join', 'leave', 'pause', 'resume', 'release', 'hide', 'delete'].indexOf(a.action) >= 0) return act(who, 'eventSeries', { action: a.action, id });
+    throw httpError(400, 'Unknown action.');
+  }
+
   // ---------- you ----------
   const PROFILE = { role: 'role', institution: 'institution', interests: 'interests', pillars: 'pillars', based_in: 'basedIn', pronouns: 'pronouns',
     links: 'links', contact: 'contact', contact_email: 'contactEmail', booking_url: 'bookingUrl', feedback: 'feedback', start_date: 'startDate', end_date: 'endDate', list_on_website: 'listOnWebsite' };
@@ -474,7 +570,7 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
-  // ---------- PIs and admins ----------
+  // ---------- PIs and admins (events: adding is the table's Edit; see firestore.rules) ----------
   async function events(who, a){
     const now = Date.now();
     if (a.action === 'add') {
@@ -482,9 +578,14 @@ module.exports = function(ctx){
       if (end < start) throw httpError(400, 'It has to end on or after the day it starts.');
       const slug = (fold(title).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'event') + '-' + Math.random().toString(16).slice(2, 8);
       await asUser(who, 'create', 'events', { slug, hidden: true, title, startDate: start, endDate: end, place: a.place || '', description: a.description || '', createdAt: now, createdBy: who.email, updatedAt: now, updatedBy: who.email }, slug);
-      return { slug, url: url('event.html?event=' + slug), note: 'It starts hidden: release it to show it to the lab.' };
+      return { slug, url: url('event.html?event=' + slug), note: (await isFullWrite(who.email)) ? 'It starts hidden: release it to show it to the lab.'
+        : 'It starts hidden: the PIs and admins are told, and one of them releases it.' };
     }
-    const e = (await lab.events()).find((x) => x._id === a.event || fold(x.title) === fold(a.event));
+    const full = await isFullWrite(who.email);
+    if ((a.action === 'release' || a.action === 'hide') && !full) throw httpError(403, 'Only PIs and admins release and hide events.');
+    // Hidden ones: a PI's or admin's, or the ones they added.
+    const e = (await lab.events()).filter((x) => x.hidden === false || full || x.createdBy === who.email)
+      .find((x) => x._id === a.event || fold(x.title) === fold(a.event));
     if (!e) throw httpError(404, 'No event “' + a.event + '”.');
     const stamp = { updatedAt: now, updatedBy: who.email };
     switch (a.action) {
@@ -542,6 +643,30 @@ module.exports = function(ctx){
     throw httpError(400, 'Unknown action.');
   }
 
+  // The rota page's own callables enforce Slack identity, registration,
+  // ownership, administrator status and slot revisions. Keep one action path.
+  async function groupRota(who, a){
+    const action = String(a.action || '');
+    const table = {
+      register: ['Register', ['category']], leave: ['Leave', []],
+      edit: ['Edit', ['slotId', 'revision', 'topic', 'projectId', 'slidesUrl', 'auditNote']],
+      claim: ['Claim', ['slotId']], recuse: ['Recuse', ['slotId', 'revision', 'reason']],
+      request_swap: ['RequestSwap', ['slotId', 'otherSlotId']],
+      cancel_swap: ['CancelSwap', ['id']], retry_swap: ['RetrySwap', ['id']],
+      outcome: ['Outcome', ['slotId', 'revision', 'outcome']],
+      offer_short: ['OfferShort', ['slotId', 'recipientSlackId']],
+      save_season: ['SaveSeason', ['id', 'label', 'regularTime', 'location', 'rotationDescription', 'publicationState']],
+      save_meeting: ['SaveMeeting', ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'location']],
+      create_slot: ['CreateSlot', ['date', 'slotNumber']],
+      delete_slot: ['DeleteSlot', ['slotId']], delete_meeting: ['DeleteMeeting', ['date']],
+    };
+    const spec = table[action];
+    if (!spec) throw httpError(400, 'Unknown rota action.');
+    const payload = {};
+    spec[1].forEach((key) => { if (a[key] !== undefined) payload[key] = a[key]; });
+    return act(who, 'groupRota' + spec[0], payload);
+  }
+
   // ---------- reading, for acting ----------
   async function listSkills(){
     return { skills: (await lab.skills()).map((x) => ({ name: x._id, title: x.title || x.name || x._id, description: x.description || '', url: url('skill.html?skill=' + encodeURIComponent(x._id)) })) };
@@ -553,16 +678,43 @@ module.exports = function(ctx){
       files: (x.files || []).map((f) => ({ path: f.path || f.name || '', content: typeof f.content === 'string' ? f.content : '' })),
       download: SITE_URL ? url('skill.html?skill=' + encodeURIComponent(x._id)) : '' };
   }
+  async function listGroupRota(who, a){
+    const [seasons, meetings, slots, people] = await Promise.all([lab.rotaSeasons(), lab.rotaMeetings(), lab.rotaSlots(), lab.people()]);
+    const published = new Set(seasons.filter((s) => s.publicationState === 'published').map((s) => s._id));
+    const visible = meetings.filter((m) => published.has(m.seasonId) && (!a.date || m.date === a.date));
+    const dates = new Set(visible.map((m) => m.date));
+    const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
+    return { url: url('group-meetings.html'), seasons: seasons.filter((s) => published.has(s._id)).map((s) => ({ id: s._id, label: s.label, regular_time: s.regularTime, location: s.location })),
+      meetings: visible.map((m) => ({ date: m.date, format: m.format, start_time: m.startTime, location: m.location, status: m.status, skip_reason: m.skipReason || '', url: url('group-meetings.html?date=' + m.date) })),
+      slots: slots.filter((s) => dates.has(s.meetingId)).map((s) => ({ id: s._id, date: s.date, slot: s.slotNumber, format: s.format,
+        presenter: names[s.presenterSlackId] || s.legacyName || 'Open slot', unresolved: !!(s.presenterSlackId && !names[s.presenterSlackId]) || !!(s.legacyName && !s.presenterSlackId),
+        topic: s.topic || '', project_id: s.projectId || '', slides: s.slidesUrl || '', outcome: s.outcome || 'unconfirmed', revision: s.revision || 0,
+        url: url('group-meetings.html?date=' + encodeURIComponent(s.date) + '&slot=' + encodeURIComponent(s.slotNumber)) })) };
+  }
 
   const S = (props, required) => ({ type: 'object', properties: props, required: required || ['action'] });
   const str = (d) => ({ type: 'string', description: d });
   const READ = [
+    { name: 'list_group_rota', description: 'Published group meeting dates and slots, including presenter, topic, slides, outcome, project link and stable slot revision. A date narrows the result.',
+      inputSchema: S({ date: str('Optional YYYY-MM-DD meeting date.') }, []), run: listGroupRota },
     { name: 'read_page', description: 'The BOLDiquette or a how-to guide in full, with each part’s id (for commenting and proposing changes) and the open proposed changes.',
       inputSchema: S({ page: str('"boldiquette", or a guide’s slug (in its url: guide.html?guide=<slug>).') }, ['page']), run: readPage },
     { name: 'list_skills', description: 'The lab’s Claude skills (Skills page).', inputSchema: S({}, []), run: listSkills },
     { name: 'get_skill', description: 'One skill: its SKILL.md and files, to use or install it.', inputSchema: S({ name: str('The skill’s name.') }, ['name']), run: getSkill },
   ];
   const WRITE = [
+    { name: 'group_rota', run: groupRota,
+      description: 'The group meeting rota: register or leave; edit your assigned talk, claim an open long slot, decline a slot with a private reason, or request a confirmed swap. Rota administrators can set outcomes, offer short slots, and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
+      inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'save_season', 'save_meeting', 'create_slot', 'delete_slot', 'delete_meeting']),
+        slotId: str('Stable slot id, from the rota.'), otherSlotId: str('Swap target slot id.'), id: str('Swap id or season id, depending on action.'),
+        revision: { type: 'integer', description: 'The slot revision shown by the rota; stale edits fail.' },
+        topic: str('Talk topic, up to 140 characters.'), projectId: str('Optional linked project id.'), slidesUrl: str('Optional HTTPS slides link.'), auditNote: str('Administrator correction note.'),
+        reason: str('Private recusal reason.'), category: ACTIONS(['phd', 'masters', 'postdoc', 'associate']),
+        outcome: ACTIONS(['unconfirmed', 'presented', 'did-not-present']), recipientSlackId: str('Verified recipient Slack id.'),
+        date: str('Meeting date, YYYY-MM-DD.'), slotNumber: { type: 'integer' }, seasonId: str('Season id.'),
+        format: ACTIONS(['short', 'long']), startTime: str('HH:MM London time.'), durationMinutes: { type: 'integer' },
+        location: str('Meeting location.'), label: str('Season label.'), regularTime: str('Season regular time.'),
+        rotationDescription: str('Season rotation description.'), publicationState: ACTIONS(['draft', 'published']) }) },
     { name: 'comments', run: comments,
       description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change), edit or delete your own, resolve. People tagged or replied to get Slack messages.',
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
@@ -572,7 +724,7 @@ module.exports = function(ctx){
         'For the BOLDiquette or a guide: kind add, edit or remove a part (read_page). For a skill (page "skill:<name>", get_skill): its new title, description or body (SKILL.md’s instructions), and its files (set_files, remove_files, or all of them in files); a new name proposes a new skill. ' +
         'For a tool (page "tool:<name>", list_tools): its title, description, acting, input and code; a new name proposes a new tool; remove: true proposes removing it.',
       inputSchema: S({ action: ACTIONS(['propose', 'withdraw', 'accept', 'decline']), page: str('"boldiquette", a guide’s slug, or "skill:<name>".'), kind: ACTIONS(['add', 'edit', 'remove']),
-        part_id: str('edit, remove: the part.'), title: str('The part’s title, or the skill’s.'), body: str('The part’s text (Markdown), or the skill’s instructions.'), section: str('Its section (tab).'),
+        part_id: str('edit, remove: the part. add: optional, its id (else a new one).'), title: str('The part’s title, or the skill’s.'), body: str('The part’s text (Markdown), or the skill’s instructions.'), section: str('Its section (tab).'),
         description: str('A skill’s description.'), files: { type: 'array', description: 'A skill: all its files (besides SKILL.md).', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
         set_files: { type: 'array', description: 'A skill: files to add or replace.', items: { type: 'object', properties: { path: str(''), content: str('') }, required: ['path'] } },
         remove_files: { type: 'array', items: { type: 'string' }, description: 'A skill: paths to remove.' },
@@ -582,14 +734,19 @@ module.exports = function(ctx){
         remove: { type: 'boolean', description: 'A tool: propose removing it.' },
         note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
-      description: 'Projects, as on the Projects page and a project’s page: register a new one (with its Slack channel, created if new), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
-      inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
+      description: 'Projects, as on the Projects page and a project’s page: register a new one (with its Slack channel, created if new), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to planned (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
+      inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
         id: str('The project id (list_projects), for all but register.'), title: str(''), abstract: str(''), keywords: { type: 'array', items: { type: 'string' } },
         slack_channel: str('register, update: "proj-…".'), overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
+    { name: 'work', run: work,
+      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it.',
+      inputSchema: S({ action: ACTIONS(['list', 'add', 'update', 'move', 'remove']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove (list gives it).'),
+        title: str('add, update'), description: str('add, update: what it is (Markdown), shown on the card’s page.'), type: ACTIONS(['code', 'content', 'request', 'other']), column: ACTIONS(['todo', 'doing', 'review', 'done']), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
+        links: { type: 'array', items: { type: 'string' }, description: 'add, update: https://… links: a GitHub pull request or issue, a proposal, anything.' } }, ['action', 'project_id']) },
     { name: 'presentations', run: presentations,
-      description: 'A project’s presentations (its Presentations tab): add, update or remove a talk about it, with where it was given (one of the site’s events, a venue, or a name) and its slides and recording links.',
+      description: 'A project’s presentations (its Meetings tab): add, update or remove a talk about it, with where it was given (one of the site’s events, a venue, or a name) and its slides and recording links.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'remove']), project_id: str('The project id.'), presentation_id: str('update, remove (get_project lists them).'),
         title: str(''), type: ACTIONS(['research-talk', 'pitch', 'keynote']), date: str('YYYY-MM-DD'), presenter: str('Who gave it (default: you).'),
         event: str('Where: one of the site’s events (name or slug).'), venue: str('Or: a venue on the board.'), where: str('Or: anywhere else, by name.'), slides: str('https://…'), recording: str('https://…') }, ['action', 'project_id']) },
@@ -606,22 +763,28 @@ module.exports = function(ctx){
     { name: 'supervision', run: supervision,
       description: 'Supervision meetings (PhD and Master students’): ask a student to join theirs, withdraw your request; as the student, approve or decline someone’s request. The other gets a Slack message.',
       inputSchema: S({ action: ACTIONS(['ask_to_join', 'withdraw', 'approve', 'decline']), student: str('ask_to_join: their name'), note: str(''), request_id: str('my_items') }) },
+    { name: 'lab_meetings', run: labMeetings,
+      description: 'Recurring events that meet every 1–4 weeks at a set time (Events; series.html), such as a weekly reading group: add one (it starts hidden, and nobody is invited, until a PI or admin releases it), change, pause, resume or delete one you organise; join or leave one that is opt-in. PIs and admins release and hide them. Google Calendar sends the invitations.',
+      inputSchema: S({ action: ACTIONS(['add', 'update', 'join', 'leave', 'pause', 'resume', 'release', 'hide', 'delete']), meeting: str('Its name or id (all but add).'),
+        title: str(''), description: str(''), day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM, London time'), minutes: { type: 'integer', description: '15–240, in 15s (default 60)' },
+        every: { type: 'integer', description: 'Every N weeks, 1–4 (default 1)' }, until: str('YYYY-MM-DD, optional last day'), link: str('Its own meeting link (https), instead of a new Google Meet'),
+        invite: ACTIONS(['join', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
     { name: 'profile', run: profile,
       description: 'Your profile and place in BOLD: update your details, ask to move to another group (Who is BOLD), withdraw that request, say who invited you to the BOLD Slack, and confirm (or deny) that you invited someone who says you did.',
       inputSchema: S(Object.assign({ action: ACTIONS(['update', 'ask_group', 'withdraw_group_request', 'set_inviter', 'confirm_invite', 'deny_invite']) },
         ...Object.keys(PROFILE).map((k) => ({ [k]: k === 'pillars' ? { type: 'array', items: { type: 'string' } } : k === 'list_on_website' ? { type: 'boolean' } : str('update') })),
         { group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']), note: str(''), request_id: str(''), inviter: str('set_inviter: their name ("" for nobody)'), member: str('confirm_invite, deny_invite: the member’s name') })) },
     { name: 'events', run: events,
-      description: 'PIs and admins: the lab’s events: add one (it starts hidden), update it, release or hide it, delete it.',
+      description: 'The lab’s events: add one (it starts hidden, until a PI or admin releases it), update or delete one you added (PIs and admins: any), release or hide one (PIs and admins).',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str('') }) },
     { name: 'requests', run: requests,
-      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them, or set someone’s group.',
+      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody), or set someone’s group.',
       inputSchema: S({ action: ACTIONS(['list', 'approve_join', 'decline_join', 'approve_group', 'decline_group', 'set_group']), request_id: str(''), member: str('set_group: their name'), group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']) }) },
     { name: 'skills', run: skills,
       description: 'PIs and admins: add a new Claude skill, or delete one. Changing a skill is a proposal, by anyone (proposals, page "skill:<name>").',
       inputSchema: S({ action: ACTIONS(['add', 'delete']), name: str('The skill’s name.'), title: str(''), description: str(''), body: str('SKILL.md body'), change_note: str('What changed') }, ['action', 'name']) },
   ];
-  WRITE.forEach((t) => { t.write = true; if (t.name === 'comments' || t.name === 'events' || t.name === 'skills' || t.name === 'projects' || t.name === 'presentations') t.destructive = true; });
+  WRITE.forEach((t) => { t.write = true; if (t.name === 'group_rota' || t.name === 'comments' || t.name === 'events' || t.name === 'lab_meetings' || t.name === 'skills' || t.name === 'projects' || t.name === 'presentations') t.destructive = true; });
   return { READ, WRITE, asUser, toFields, idTokenFor };
 };
 module.exports.toFields = toFields;

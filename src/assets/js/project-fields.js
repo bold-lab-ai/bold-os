@@ -189,7 +189,9 @@ function wireChannelField(verb, from, project){
 
 // The project's recurring meeting (projectWorkspace in functions/index.js): weekday,
 // time in London, length, how often and until when (optional: the last day it may fall
-// on). Fixed ids #pmDay, #pmTime, #pmMinutes, #pmEvery, #pmUntil.
+// on), and its link (optional: an existing Meet, Zoom or Teams link instead of a new
+// Google Meet; the invitation still comes from BOLD.OS, with that link). Fixed ids
+// #pmDay, #pmTime, #pmMinutes, #pmEvery, #pmUntil, #pmLink.
 var MEETING_DAYS = [['MO', 'Monday'], ['TU', 'Tuesday'], ['WE', 'Wednesday'], ['TH', 'Thursday'], ['FR', 'Friday'], ['SA', 'Saturday'], ['SU', 'Sunday']];
 var MEETING_MINUTES = [30, 45, 60, 90, 120];
 
@@ -202,15 +204,19 @@ function meetingEntryHtml(m){
       '<select id="pmMinutes" aria-label="Length">' + MEETING_MINUTES.map(function(n){ return opt(n, n < 60 ? n + ' min' : (n / 60) + ' h', m.minutes); }).join('') + '</select>' +
       '<select id="pmEvery" aria-label="How often">' + [1, 2, 3, 4].map(function(n){ return opt(n, n === 1 ? 'Every week' : 'Every ' + n + ' weeks', m.every); }).join('') + '</select>' +
       '<label class="meeting-until">Until (optional) <input type="date" id="pmUntil" aria-label="Until (leave empty for no end)" value="' + BOLD.escapeHtml(m.until || '') + '"></label>' +
+      '<label class="meeting-link">Own link (optional) <input type="url" id="pmLink" maxlength="500" placeholder="Empty: a new Google Meet" aria-label="Your own meeting link (leave empty for a new Google Meet)" value="' + BOLD.escapeHtml(m.link || '') + '"></label>' +
     '</div>';
 }
 
-// → { day, time, minutes, every, until? } or { error }.
+// → { day, time, minutes, every, until?, link? } or { error }.
 function readMeetingEntry(){
   var v = function(id){ return document.getElementById(id).value; };
   if (!/^\d\d:\d\d$/.test(v('pmTime'))) return { error: 'Choose a time for the meeting.' };
   var m = { day: v('pmDay'), time: v('pmTime'), minutes: Number(v('pmMinutes')), every: Number(v('pmEvery')) };
   if (v('pmUntil')) m.until = v('pmUntil');
+  var link = v('pmLink').trim();
+  if (link && !/^https:\/\/[^\s"<>]+$/.test(link)) return { error: 'Give a meeting link starting with https://' };
+  if (link) m.link = link;
   return m;
 }
 
@@ -225,35 +231,47 @@ function meetingText(m){
   return (day ? day[1] + 's' : m.day) + ', ' + m.time + '\u2013' + end + (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + until;
 }
 
+// How the meeting is joined: its own link, or the Google Meet BOLD.OS made.
+function meetLabel(m){ return m && m.link ? 'Own link' : 'Google Meet'; }
+function meetVia(m){ return m && m.link ? 'with your own link' : 'with a Meet link'; }
+
 // The project's GitHub repository (projectWorkspace in functions/index.js): made from
 // one of bold-lab-ai's template repositories, never empty: the template has the
-// project-tracking tools the QA audit checks. Fixed ids #prMode, #prHint.
+// project-tracking tools the QA audit checks; or one the lab already has, linked.
+// Fixed ids #prMode, #prExisting, #prHint.
 function repoEntryHtml(){
-  return '<select id="prMode" aria-label="Template">' +
+  return '<select id="prMode" aria-label="Repository">' +
       '<option value="" id="prLoading">Loading templates\u2026</option>' +
+      '<option value="=existing">Link an existing repository</option>' +
     '</select>' +
+    '<input type="text" id="prExisting" maxlength="200" placeholder="bold-lab-ai/\u2026 or its GitHub address" aria-label="Existing repository" hidden>' +
     '<div class="field-hint" id="prHint"></div>';
 }
 
 // Lists the templates, the first chosen, with the chosen one's description.
 function wireRepoEntry(){
-  var mode = document.getElementById('prMode'), hint = document.getElementById('prHint');
+  var mode = document.getElementById('prMode'), hint = document.getElementById('prHint'), existing = document.getElementById('prExisting');
   var templates = [];
   function update(){
+    var linking = mode.value === '=existing';
+    existing.hidden = !linking;
     var t = templates.filter(function(x){ return x.name === mode.value; })[0];
-    hint.textContent = t ? (t.description || '') : '';
+    hint.textContent = linking ? 'One in bold-lab-ai. The project\u2019s people with GitHub get write access to it.' : t ? (t.description || '') : '';
   }
   mode.addEventListener('change', update);
   try {
     firebase.app().functions('europe-west2').httpsCallable('projectWorkspace')({ action: 'templates' }).then(function(r){
       templates = (r.data && r.data.templates) || [];
-      if (!templates.length) { document.getElementById('prLoading').textContent = 'No templates yet \u2014 ask an admin'; return; }
-      mode.innerHTML = '';
-      templates.forEach(function(t){
+      var loading = document.getElementById('prLoading');
+      if (!templates.length) { loading.textContent = 'No templates yet \u2014 ask an admin'; return; }
+      var linking = mode.value === '=existing';
+      loading.remove();
+      templates.slice().reverse().forEach(function(t){
         var o = document.createElement('option');
         o.value = t.name; o.textContent = 'From the template ' + t.name;
-        mode.appendChild(o);
+        mode.insertBefore(o, mode.firstChild);
       });
+      mode.value = linking ? '=existing' : templates[0].name;
       update();
     }).catch(function(err){
       console.error('[BOLD Lab] loading the repository templates failed', err);
@@ -262,8 +280,12 @@ function wireRepoEntry(){
   } catch (e){}
 }
 
-// → { mode: 'template', template } or { error }.
+// → { mode: 'template', template }, { mode: 'existing', name } or { error }.
 function readRepoEntry(){
   var t = document.getElementById('prMode').value;
+  if (t === '=existing') {
+    var n = document.getElementById('prExisting').value.trim();
+    return n ? { mode: 'existing', name: n } : { error: 'Give the repository: its name in bold-lab-ai, or its GitHub address.' };
+  }
   return t ? { mode: 'template', template: t } : { error: 'The repository templates haven\u2019t loaded \u2014 reload, or check back shortly.' };
 }

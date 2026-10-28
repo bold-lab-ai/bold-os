@@ -288,10 +288,13 @@
     patch.reviewers = { junior: junior, senior: senior };
     if (prevReviewers.junior !== junior) patch.jrReviewState = 'in_review';
     if (prevReviewers.senior !== senior) patch.srReviewState = 'in_review';
-    var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, patch) : c; });
-    state.cards = next;
+    // Only what they changed; asks first if someone else changed it too meanwhile.
+    var change = formChange('stage', cardId, patch);
+    if (!change) return;
+    prev = change.prev;
+    state.cards = change.next;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: change.mine }, change.base).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
@@ -373,7 +376,7 @@
     var next = state.cards.map(function(c){ return c.id === cardId ? Object.assign({}, c, { rebuttalDocLink: value, updatedAt: Date.now() }) : c; });
     state.cards = next;
     renderCardDetail();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderCardDetail();
@@ -604,7 +607,7 @@
     var rv = card.status === 'abstract' ? (card.abstractReviewState || 'in_review')
       : inPaperStage ? reviewFilterState(card) : null;
     var rushOverdue = isRushColumnPastCutoff(displayStatus(card, board), board);
-    var cardClass = 'card' + (rv ? ' rv-' + rv : '') + (rushOverdue ? ' rush-deadline-passed' : '');
+    var cardClass = 'board-card card' + (rv ? ' rv-' + rv : '') + (rushOverdue ? ' rush-deadline-passed' : '');
     var html = '<div class="' + cardClass + '" data-card-id="' + escapeHtml(card.id) + '">';
     html += '<button class="card-title-btn" type="button" data-open-card="' + escapeHtml(card.id) + '">' + escapeHtml(card.title) + '</button>';
     // Badges only; Overleaf link / edit + remove live on the detail page
@@ -691,115 +694,46 @@
     var filterActive = !!q.trim() || reviewFilter !== 'all';
     var matched = filterActive ? state.cards.filter(matchesSearch).length : total;
     var countText = filterActive ? (matched + ' of ' + total + ' paper' + (total === 1 ? '' : 's')) : (total + ' paper' + (total === 1 ? '' : 's'));
-    return '<div class="board-search">' +
-      '<input type="search" id="boardSearchInput" placeholder="Search by title, PI, author…" value="' + escapeHtml(q) + '" aria-label="Search papers">' +
-      '<select id="boardSearchField" aria-label="Search in">' +
-        Object.keys(SEARCH_FIELD_LABELS).map(function(k){
-          return '<option value="' + k + '"' + (k === field ? ' selected' : '') + '>' + SEARCH_FIELD_LABELS[k] + '</option>';
-        }).join('') +
-      '</select>' +
-      '<select id="boardReviewFilter" aria-label="Filter by review status">' +
-        Object.keys(REVIEW_FILTER_LABELS).map(function(k){
-          return '<option value="' + k + '"' + (k === reviewFilter ? ' selected' : '') + '>' + REVIEW_FILTER_LABELS[k] + '</option>';
-        }).join('') +
-      '</select>' +
-      '<span class="board-search-count">' + countText + '</span>' +
-    '</div>';
-  }
-
-  function onSearchInput(value){
-    state.search.query = value;
-    var active = document.activeElement;
-    var hadFocus = active && active.id === 'boardSearchInput';
-    var selStart = hadFocus ? active.selectionStart : null;
-    var selEnd = hadFocus ? active.selectionEnd : null;
-    renderBoard();
-    if (hadFocus){
-      var input = document.getElementById('boardSearchInput');
-      if (input){
-        input.focus();
-        if (selStart != null) input.setSelectionRange(selStart, selEnd);
-      }
-    }
+    // The shared board's search bar (BoldBoard.searchHtml); wired in renderBoard (wireSearch).
+    return BoldBoard.searchHtml({ id: 'boardSearchInput', query: q, placeholder: 'Search by title, PI, author\u2026', label: 'Search papers', count: countText,
+      filters: [
+        { key: 'field', id: 'boardSearchField', label: 'Search in', value: field, options: Object.keys(SEARCH_FIELD_LABELS).map(function(k){ return [k, SEARCH_FIELD_LABELS[k]]; }) },
+        { key: 'reviewState', id: 'boardReviewFilter', label: 'Filter by review status', value: reviewFilter, options: Object.keys(REVIEW_FILTER_LABELS).map(function(k){ return [k, REVIEW_FILTER_LABELS[k]]; }) }
+      ] });
   }
 
   function renderColumns(board){
     var searching = !!(state.search && ((state.search.query && state.search.query.trim()) || (state.search.reviewState && state.search.reviewState !== 'all')));
     var order = effectiveStatusOrder(board);
-    var hasOrphaned = state.cards.some(function(c){ return !STATUS_LABELS[c.status]; });
-    // .columns' CSS min-width is calibrated for the full 9-column board
-    // (240px × columns + 1px × gaps + 2px border — see docs/AGENTS.md
-    // guideline 6); rush mode's 4 columns need the same formula applied to
-    // the actual column count, or they'd render stretched across 9
-    // columns' worth of empty space.
-    var columnCount = order.length + (hasOrphaned ? 1 : 0);
-    var html = '<div class="columns" style="min-width:' + (240 * columnCount + (columnCount - 1) + 2) + 'px">';
-    order.forEach(function(status){
+    // The columns are the shared board's (assets/js/board.js), sized to however many
+    // there are (rush mode has 4), plus Other for cards whose status no longer maps.
+    var columns = order.map(function(status){
       var allForStatus = state.cards.filter(function(c){ return displayStatus(c, board) === status; });
       var cardsForStatus = allForStatus.filter(matchesSearch);
-      html += '<div class="column">';
-      var hint = columnHintFor(status, board);
       // Only the two-row grid case (an actual venue deadline to show)
       // wants ch-hint-deadlines — the "No deadline set" fallback inside
       // columnHintFor is plain text and should keep ch-hint's own layout.
       var isDeadlineHint = !!(board && board.rushMode && (status === 'register' || status === 'abstract' || status === 'paper') && rushColumnRealDeadline(status, board));
-      html += '<div class="column-head">' +
-        '<div class="ch-top"><span>' + statusLabelFor(status, board) + '</span><span class="count">' + cardsForStatus.length + '</span></div>' +
-        '<div class="ch-hint' + (isDeadlineHint ? ' ch-hint-deadlines' : '') + '">' + hint + '</div>' +
-      '</div>';
-      html += '<div class="column-body">';
-      if (cardsForStatus.length === 0){
-        html += '<div class="column-empty">' + (searching && allForStatus.length > 0 ? 'No matches' : 'Nothing here') + '</div>';
-      } else {
-        cardsForStatus.forEach(function(c){ html += renderCard(c, board); });
-      }
-      html += '</div></div>';
+      // 20 at a time, with Load more (the shared board's BoldBoard.paged).
+      var page = BoldBoard.paged(board && board.id, status, cardsForStatus);
+      return { id: status, label: statusLabelFor(status, board), count: cardsForStatus.length, more: page.more,
+        hint: isDeadlineHint ? null : columnHintFor(status, board),
+        headExtra: isDeadlineHint ? '<div class="ch-hint ch-hint-deadlines">' + columnHintFor(status, board) + '</div>' : '',
+        body: page.items.map(function(c){ return renderCard(c, board); }).join(''),
+        empty: searching && allForStatus.length > 0 ? 'No matches' : 'Nothing here' };
     });
-
     var orphanedAll = state.cards.filter(function(c){ return !STATUS_LABELS[c.status]; });
-    var orphaned = orphanedAll.filter(matchesSearch);
     if (orphanedAll.length > 0){
-      html += '<div class="column">';
-      html += '<div class="column-head">' +
-        '<div class="ch-top"><span>Other</span><span class="count">' + orphaned.length + '</span></div>' +
-        '<div class="ch-hint">Status no longer maps to a column</div>' +
-      '</div>';
-      html += '<div class="column-body">';
-      if (orphaned.length === 0){
-        html += '<div class="column-empty">' + (searching ? 'No matches' : 'Nothing here') + '</div>';
-      } else {
-        orphaned.forEach(function(c){ html += renderCard(c, board); });
-      }
-      html += '</div></div>';
+      var orphaned = orphanedAll.filter(matchesSearch);
+      columns.push({ id: 'other', label: 'Other', count: orphaned.length, hint: 'Status no longer maps to a column',
+        body: orphaned.map(function(c){ return renderCard(c, board); }).join(''), empty: searching ? 'No matches' : 'Nothing here' });
     }
-
-    html += '</div>';
-    return html;
+    return BoldBoard.columnsHtml(columns);
   }
 
-  // Keeps every column-head the same height (2026-09-18+6, per Eduardo).
-  // ch-hint's own CSS is min-height/auto now — no fixed height, so a
-  // wrapped date never gets clipped — but left alone that means each
-  // column-head naturally sizes to its own content, so the head/body
-  // divider no longer lines up across the board the way it used to when
-  // every ch-hint shared one fixed height. Measures each rendered
-  // .ch-hint's natural height, then pins all of them to the tallest one
-  // via an explicit style.height. Called after every renderBoard() (fresh
-  // DOM, needs remeasuring) and on window resize (column width — and so
-  // how much a hint wraps — changes with viewport width; a height pinned
-  // at one width would either clip again or waste space at another).
-  function equalizeColumnHeadHints(){
-    var hints = Array.prototype.slice.call(document.querySelectorAll('.column-head .ch-hint'));
-    if (hints.length < 2) return;
-    hints.forEach(function(el){ el.style.height = ''; });
-    var max = hints.reduce(function(m, el){ return Math.max(m, el.offsetHeight); }, 0);
-    hints.forEach(function(el){ el.style.height = max + 'px'; });
-  }
-  var equalizeResizeTimer = null;
-  window.addEventListener('resize', function(){
-    clearTimeout(equalizeResizeTimer);
-    equalizeResizeTimer = setTimeout(equalizeColumnHeadHints, 120);
-  });
+  // Every column head the same height, so the cards start on one line (2026-09-18+6,
+  // per Eduardo): the shared board's (BoldBoard.equalizeHeads), which measures each
+  // head's natural height after every render and resize and pins all to the tallest.
 
   function renderBoard(){
     if (state.view === 'card'){
@@ -908,12 +842,10 @@
       });
     });
 
-    var searchInput = document.getElementById('boardSearchInput');
-    if (searchInput) searchInput.addEventListener('input', function(){ onSearchInput(searchInput.value); });
-    var searchField = document.getElementById('boardSearchField');
-    if (searchField) searchField.addEventListener('change', function(){ state.search.field = searchField.value; renderBoard(); });
-    var reviewFilterSel = document.getElementById('boardReviewFilter');
-    if (reviewFilterSel) reviewFilterSel.addEventListener('change', function(){ state.search.reviewState = reviewFilterSel.value; renderBoard(); });
+    BoldBoard.wireSearch(els.boardRegion, {
+      query: function(v){ state.search.query = v; renderBoard(); },
+      filter: function(key, v){ state.search[key] = v; renderBoard(); }
+    });
 
     Array.prototype.forEach.call(document.querySelectorAll('[data-status-for]'), function(sel){
       sel.addEventListener('change', function(){
@@ -937,6 +869,7 @@
       });
     });
 
-    equalizeColumnHeadHints();
+    BoldBoard.equalizeHeads(els.boardRegion);
+    BoldBoard.onMore(els.boardRegion, function(){ var b = getCurrentBoard(); return b && b.id; }, renderBoard);
   }
 

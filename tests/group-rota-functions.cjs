@@ -8,6 +8,7 @@ const sends = [];
 const rota = require('../functions/group-rota')({
   db, admin, HttpsError, onCall: (opts, fn) => fn || opts, onSchedule: (opts, fn) => fn,
   signedInEmail: r => r.email,
+  requireAccess: async () => {},
   rolesEmails: async role => role === 'admins' ? ['admin@example.org'] : [],
   slackFetch: async (_token, method, body) => {
     if (method === 'conversations.open') return { ok: true, channel: { id: 'D1' } };

@@ -20,11 +20,20 @@
 // RATE_PER_MINUTE requests a minute. Every call is logged in apiLog { email, token
 // (prefix), tool, args, at, expireAt } (expireAt: for a Firestore TTL policy, 90 days).
 const crypto = require('crypto');
+// Search ranking, shared with the site: copied here at deploy (firebase.json's predeploy),
+// else the site's copy (run as a script: the repo's root package is an ES module).
+const rank = (function(){
+  const fs = require('fs'), path = require('path'), vm = require('vm');
+  const here = path.join(__dirname, 'search-rank.js'), src = path.join(__dirname, '..', 'src', 'assets', 'js', 'search-rank.js');
+  const ctx = { module: { exports: {} } };
+  vm.runInNewContext(fs.readFileSync(fs.existsSync(here) ? here : src, 'utf8'), ctx);
+  return ctx.module.exports;
+})();
 
 module.exports = function(deps){
   const { db, admin, onRequest, onCall, HttpsError, logger, callerEmail, isFullWrite,
-    allProjectsFromCards, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
-    SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl, skillMd, onSchedule } = deps;
+    allProjectsFromCards, projectGroupForCards, workspaceStarted, groupOf, SITE_URL, SIGN_IN_PROVIDER, secrets, callables,
+    SLACK_BOT_TOKEN, tellStaff, tellPerson, slackText, linkedTitle, joinPageUrl, skillMd, onSchedule, access } = deps;
 
   const TOKENS_PER_PERSON = 5, RATE_PER_MINUTE = 60, LOG_DAYS = 90;
   const sha = (s) => crypto.createHash('sha256').update(s).digest('hex');
@@ -42,7 +51,7 @@ module.exports = function(deps){
   //       { action: 'stopAct', id }       its owner, or a PI or admin: back to reading only
   //       { action: 'actRequests' }       PIs and admins → { requests }
   //       { action: 'decideAct', id, accept }   PIs and admins
-  //       { action: 'activity', all }     → { tokens, log }: yours (all: everyone's, PIs and admins)
+  //       { action: 'activity', all }     → { tokens, log }: yours (all: everyone's, at Agents' View level)
   const apiTokens = onCall({ secrets: [SLACK_BOT_TOKEN] }, async (request) => {
     const email = callerEmail(request);
     const d = request.data || {};
@@ -121,9 +130,9 @@ module.exports = function(deps){
       return { ok: true };
     }
     if (d.action === 'activity') {
-      // agents.html: your tokens and what they did; with `all`, everyone's (PIs and admins).
+      // agents.html: your tokens and what they did; with `all`, everyone's (whoever can view Agents).
       const all = d.all === true;
-      if (all && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see everyone’s.');
+      if (all) await access.requireAccess(email, 'agents', 'view');
       const [tokenDocs, logDocs] = await Promise.all([
         all ? db.collection('apiTokens').get().then((x) => x.docs) : mine(),
         (all ? db.collection('apiLog').orderBy('at', 'desc').limit(LOG_SHOWN) : db.collection('apiLog').where('email', '==', email)).get().then((x) => x.docs),
@@ -133,7 +142,7 @@ module.exports = function(deps){
       tokenDocs.forEach((t) => { labels[t.data().prefix] = t.data().label; });
       return {
         all,
-        tokens: tokenDocs.map((t) => Object.assign(view(t), { owner: name(t.data().email) })).sort((a, b) => (b.lastUsedAt || b.createdAt) - (a.lastUsedAt || a.createdAt)),
+        tokens: tokenDocs.map((t) => Object.assign(view(t), { owner: name(t.data().email), mine: t.data().email === email })).sort((a, b) => (b.lastUsedAt || b.createdAt) - (a.lastUsedAt || a.createdAt)),
         log: logDocs.map((x) => x.data()).sort((a, b) => b.at - a.at).slice(0, LOG_SHOWN)
           .map((x) => ({ at: x.at, who: name(x.email), token: labels[x.token] || x.token + '… (revoked)', tool: x.tool, args: x.args === '{}' ? '' : x.args })),
       };
@@ -201,7 +210,11 @@ module.exports = function(deps){
     events: () => cached('events', async () => docs(await db.collection('events').get())),
     sessions: () => cached('sessions', async () => docs(await db.collection('collabWeekSessions').get())),
     talks: () => cached('talks', async () => docs(await db.collection('collabWeekTalks').get())),
+    rotaSeasons: () => cached('rotaSeasons', async () => docs(await db.collection('groupMeetingSeasons').get())),
+    rotaMeetings: () => cached('rotaMeetings', async () => docs(await db.collection('groupMeetings').get())),
+    rotaSlots: () => cached('rotaSlots', async () => docs(await db.collection('groupRotaSlots').get())),
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
+    series: () => cached('series', async () => docs(await db.collection('eventSeries').get())),
     skills: () => cached('skills', async () => docs(await db.collection('skills').get())),
     guides: () => cached('guides', async () => docs(await db.collection('guides').get())),
     handbook: () => cached('handbook', async () => docs(await db.collection('handbook').get())),
@@ -222,7 +235,7 @@ module.exports = function(deps){
     const [h, mi] = m.time.split(':').map(Number), end = h * 60 + mi + (m.minutes || 60);
     const pad = (n) => String(n).padStart(2, '0');
     return DAYS[m.day] + 's, ' + m.time + '–' + pad(Math.floor(end / 60) % 24) + ':' + pad(end % 60) + ' London time' +
-      (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + (m.until ? ', until ' + m.until : '');
+      (m.every > 1 ? ', every ' + m.every + ' weeks' : '') + (m.until ? ', until ' + m.until : '') + (m.link ? ', on its own link' : '');
   }
   // Email → name: the roster, members' own names, else how a project lists them (an
   // author, or whoever registered it), for people not on Slack.
@@ -245,9 +258,71 @@ module.exports = function(deps){
     const [boards, cards, unassigned, workspaces] = await Promise.all([lab.boards(), lab.cards(), lab.unassigned(), lab.workspaces()]);
     return allProjectsFromCards(
       boards.map((b) => ({ id: b._id, label: b.label, status: b.status || 'approved' })), cards, unassigned,
-      workspaces.filter((w) => w.completedAt > 0).map((w) => w._id));
+      workspaces.filter((w) => w.completedAt > 0).map((w) => w._id), workspaces.filter(workspaceStarted).map((w) => w._id));
   }
   function isHidden(ev, full){ return ev.hidden !== false && !full; }
+
+  // ---------- subscribing to the Calendar (calendar.html's Subscribe) ----------
+  // One private link a person: GET /calendar/<token>.ics on boldApi, for Google Calendar,
+  // Apple Calendar or Outlook, which can't sign in. It holds what its owner can see on the
+  // Calendar, as they can see it whenever it's fetched (events, if they can view Events;
+  // project and supervision meetings, if they can view Projects), without the meetings
+  // they're in: those are already in their calendar, as invitations; and the released lab
+  // meetings (eventSeries) they aren't invited to, if they can view Events. It stops working
+  // when they leave the BOLD Slack or make a new link.
+  // calendarFeeds/{email} { token, createdAt, lastUsedAt }; server only (firestore.rules' deny-all).
+  // data: { action: 'get' } → { url }: theirs, made the first time
+  //       { action: 'reset' } → { url }: a new one; the old one stops working
+  const feedUrl = (token) => 'https://europe-west2-bold-d7ff2.cloudfunctions.net/boldApi/calendar/' + token + '.ics';
+  const calendarFeed = onCall(async (request) => {
+    const email = callerEmail(request);
+    await access.requireAccess(email, 'calendar', 'view');
+    const action = (request.data || {}).action;
+    if (action !== 'get' && action !== 'reset') throw new HttpsError('invalid-argument', 'Unknown action.');
+    const ref = db.collection('calendarFeeds').doc(email), snap = await ref.get();
+    if (action === 'get' && snap.exists && snap.data().token) return { url: feedUrl(snap.data().token) };
+    const token = 'cal_' + crypto.randomBytes(24).toString('base64url');
+    await ref.set({ token, createdAt: Date.now(), lastUsedAt: 0 });
+    return { url: feedUrl(token) };
+  });
+
+  async function calendarIcs(token){
+    if (!/^cal_[A-Za-z0-9_-]{32}$/.test(token)) throw httpError(404, 'No such calendar.');
+    const snap = await db.collection('calendarFeeds').where('token', '==', token).limit(1).get();
+    if (snap.empty) throw httpError(404, 'No such calendar: the link may have been replaced by a new one.');
+    const doc = snap.docs[0], email = doc.id;
+    if (!(await personByEmail(email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
+    if (!(await access.can(email, 'calendar', 'view'))) throw httpError(403, 'The Calendar isn’t open to your group.');
+    if (Date.now() - (doc.data().lastUsedAt || 0) > 3600000) doc.ref.update({ lastUsedAt: Date.now() }).catch(() => {});
+    const [seeEvents, seeMeetings, full] = await Promise.all([access.can(email, 'events', 'view'), access.can(email, 'projects', 'view'), isFullWrite(email)]);
+    const mine = (list) => (list || []).some((e) => String(e || '').toLowerCase() === email);
+    let events = [], meetings = [];
+    if (seeEvents) {
+      events = (await lab.events()).filter((e) => !isHidden(e, full)).map((e) => ({
+        id: e._id, title: e.title, start: e.startDate, end: e.endDate, place: e.place || '', description: plain(e.description),
+        url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
+      // Lab meetings (eventSeries): the released ones they aren't invited to.
+      (await lab.series()).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {
+        meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, start: x.eventStart, pausedAt: x.pausedAt,
+          description: plain(x.description), url: url('series.html?series=' + encodeURIComponent(x._id)) });
+      });
+    }
+    if (seeMeetings) {
+      const [workspaces, studies, name] = await Promise.all([lab.workspaces(), lab.studies(), nameOf()]);
+      // Ids without anyone's address in them.
+      const hid = (s) => crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 20);
+      workspaces.filter((w) => w.meeting && (w.eventId || w.pausedAt) && w.group !== 'completed' && !w.completedAt && !mine(w.members)).forEach((w) => {
+        meetings.push({ id: 'project-' + w._id, title: (w.title || 'Untitled') + ' · project meeting', meeting: w.meeting, start: w.eventStart, pausedAt: w.pausedAt,
+          description: Array.from(new Set((w.members || []).map(name))).join(', '), url: url(projectHref(w.cardId || w._id, w.boardId)) });
+      });
+      studies.filter((s) => s.meeting && (s.eventId || s.pausedAt) &&
+        !mine([s._id].concat(s.everyone || [], (s.people || []).map((p) => p.email)))).forEach((s) => {
+        meetings.push({ id: 'study-' + hid(s._id), title: (s.name || name(s._id)) + ' · ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision',
+          meeting: s.meeting, start: s.eventStart, pausedAt: s.pausedAt, description: s.title || '', url: url('calendar.html') });
+      });
+    }
+    return require('./calendar-ics').buildCalendar({ name: 'BOLD Lab', events, meetings });
+  }
 
   // ---------- acting: through the site's own callables, as the token's owner ----------
   // The same function the page calls (same checks, same Slack messages), with the
@@ -284,11 +359,11 @@ module.exports = function(deps){
   // The tools the lab adds, from the Tools pages (agentTools), run in mcpSandbox (functions/api-tools.js).
   const added = require('./api-tools')({ db, httpError, builtins: () => TOOLS, idTokenFor: (e) => actions.idTokenFor(e), fetchImpl: deps.fetchImpl, sandboxUrl: deps.sandboxUrl, SITE_URL });
   const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
-  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'comments'];
+  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'rota', 'projects', 'people', 'board', 'comments'];
   const TOOLS = [
     {
       name: 'search',
-      description: 'Search BOLD.OS as its site search does: the BOLDiquette (the lab handbook), how-to guides, skills, events with their sessions and talks, projects, people, papers on the Internal Review Board, and comments. Every word must match; title matches rank first.',
+      description: 'Search BOLD.OS as its site search does: the BOLDiquette (the lab handbook), how-to guides, skills, events with their sessions and talks, projects, people, papers on the Internal Review Board, and comments. Every word must match, as a whole word or a word’s start (abbreviations such as RL and LLM included), unless nothing does; title matches rank first.',
       inputSchema: { type: 'object', properties: {
         query: { type: 'string', description: 'Words to look for.' },
         scope: { type: 'string', enum: SCOPES, description: 'Only this section (default: everywhere).' },
@@ -298,9 +373,9 @@ module.exports = function(deps){
     },
     {
       name: 'list_projects',
-      description: 'The lab’s research projects, as on the Projects page: planned, ongoing and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
+      description: 'The lab’s research projects, as on the Projects page: planned, ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
       inputSchema: { type: 'object', properties: {
-        group: { type: 'string', enum: ['planned', 'ongoing', 'completed'] },
+        group: { type: 'string', enum: ['planned', 'ongoing', 'submission', 'completed'] },
         keyword: { type: 'string', description: 'A project keyword, e.g. "reinforcement learning".' },
         query: { type: 'string', description: 'Words in the title, abstract, keywords or people.' },
         mine: { type: 'boolean', description: 'Only projects you are a member of.' },
@@ -335,7 +410,7 @@ module.exports = function(deps){
     },
     {
       name: 'calendar',
-      description: 'What is on, as on the Calendar: the lab’s events between two dates (with their schedule of sessions), and the recurring project and supervision meetings.',
+      description: 'What is on, as on the Calendar: the lab’s events between two dates (with their schedule of sessions), and the recurring project, supervision and lab meetings.',
       inputSchema: { type: 'object', properties: {
         from: { type: 'string', description: 'YYYY-MM-DD (default: today).' },
         to: { type: 'string', description: 'YYYY-MM-DD (default: 60 days after from).' },
@@ -361,14 +436,27 @@ module.exports = function(deps){
     { name: 'list_tools', description: 'BOLD.OS’s own tools and the ones the lab has added (Tools pages), with how to propose a new tool or a change to one. with_code: true includes the added tools’ code.',
       inputSchema: { type: 'object', properties: { with_code: { type: 'boolean' } } }, run: (who, a) => added.listTools(who, a) },
   ];
+  // Who can see what (functions/access.js): each reading tool reads one page, and answers
+  // only if its person may view that page. Acting goes through the rules and callables,
+  // which check it themselves.
+  const TOOL_PAGE = { search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+    calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
+  const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
+    return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
+  async function mayView(who, page){
+    if (!page || await access.can(who.email, page, 'view')) return;
+    const level = ((await access.table())[page] || {}).view || 'internal';
+    throw httpError(403, 'That page is for ' + (require('./access').LEVEL_NAMES[level] || level) + ' and above (BOLDiquette › Who can see what).');
+  }
   const toolsFor = (who) => TOOLS.filter((t) => !t.write || who.write);
   // A tool by name: BOLD.OS's own, else one the lab's agents added (run in mcpSandbox).
   async function toolNamed(who, name){
     const t = TOOLS.find((x) => x.name === name);
-    if (t) return t;
+    if (t) return Object.assign({}, t, { run: async (w, args) => { await mayView(w, pageOfTool(t.name, args)); return t.run(w, args); } });
     const one = (await added.toolList(Object.assign({}, who, { write: true }))).find((x) => x.name === name);
     if (!one) return null;
-    return Object.assign({}, one, { run: (w, args) => added.runTool(w, name, args || {}) });
+    // The lab's added tools come from the Tools page.
+    return Object.assign({}, one, { run: async (w, args) => { await mayView(w, 'tools'); return added.runTool(w, name, args || {}); } });
   }
   async function runBuiltin(who, name, args){
     const t = TOOLS.find((x) => x.name === name);
@@ -408,7 +496,13 @@ module.exports = function(deps){
     });
     const jobs = [];
     if (want('boldiquette')) jobs.push(lab.handbook().then((l) => parts(l, 'boldiquette', (id) => id === 'boldiquette' ? 'boldiquette.html' : 'index.html', '', 'BOLDiquette')));
-    if (want('guides')) jobs.push(lab.guides().then((l) => parts(l, 'guides', guideHref, 'p-', 'How to')));
+    // Get started has its own page in Who can see what (access.js GUIDE_AREAS), on the Service desk: labelled so, and only for who can see it.
+    if (want('guides')) jobs.push(lab.guides().then(async (l) => {
+      for (const g of l) {
+        const area = require('./access').guideArea(g._id);
+        if (area === 'guides' || await access.can(who.email, area, 'view')) parts([g], 'guides', guideHref, 'p-', area === 'guides' ? 'How to' : 'Service desk');
+      }
+    }));
     if (want('skills')) jobs.push(lab.skills().then((l) => l.forEach((x) => item('skills', x.title || x.name || x._id, 'Skill', [x.name, x.description, x.body].join(' '), 'skill.html?skill=' + encodeURIComponent(x._id)))));
     if (want('events')) jobs.push(Promise.all([lab.events(), lab.sessions(), lab.talks()]).then(([evs, ss, ts]) => {
       const talk = (x) => [x.abstract, x.speaker, x.affiliation, x.description, x.summary].filter(Boolean).join(' ');
@@ -416,8 +510,18 @@ module.exports = function(deps){
       ss.forEach((x) => item('events', x.title, 'Session', talk(x), 'session.html?session=' + encodeURIComponent(x._id)));
       ts.forEach((x) => item('events', x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(x._id)));
     }));
-    if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.ongoing, g.planned, g.completed).forEach((p) =>
-      item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
+    if (want('rota') && await access.can(who.email, 'events', 'view')) jobs.push(Promise.all([lab.rotaSeasons(), lab.rotaSlots(), lab.people()]).then(([seasons, slots, people]) => {
+      if (!seasons.some((s) => s.publicationState === 'published')) return;
+      const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
+      item('rota', 'Group meetings', 'Rota', seasons.filter((s) => s.publicationState === 'published').map((s) => s.label).join(' '), 'group-meetings.html');
+      slots.forEach((s) => {
+        const person = names[s.presenterSlackId] || s.legacyName || 'Open slot';
+        item('rota', s.topic || person, 'Group meeting · ' + (s.date || s.meetingId) + ' · Slot ' + s.slotNumber,
+          [person, s.topic, s.format].join(' '), 'group-meetings.html?date=' + encodeURIComponent(s.date || s.meetingId) + '&slot=' + encodeURIComponent(s.slotNumber));
+      });
+    }));
+    if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
+      item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
     if (want('people')) jobs.push(Promise.all([lab.members(), profileUrlOf()]).then(([ms, profile]) => ms.forEach((x) => {
       const p = profile(x.email || x._id);
       item('people', x.name || 'A member', [x.role, x.institution].filter(Boolean).join(' · ') || 'Member', [x.interests, x.basedIn, x.pronouns].join(' '), p ? p.slice(SITE_URL.length) : 'people.html');
@@ -445,20 +549,14 @@ module.exports = function(deps){
       });
     }));
     await Promise.all(jobs);
-    const q = fold(a.query);
-    const scored = items.map((it) => {
-      const t = fold(it.title), all = t + ' ' + fold(it.where) + ' ' + fold(it.text);
-      if (!ws.every((w) => all.indexOf(w) !== -1)) return null;
-      const s = 1 + ws.reduce((n, w) => n + (t.indexOf(w) !== -1 ? 5 : 0) + Math.min(5, all.split(w).length - 1), 0) + (t === q ? 20 : 0);
-      return { s, it };
-    }).filter(Boolean).sort((x, y) => y.s - x.s);
-    const snippet = (text) => {
-      const low = fold(text), at = ws.map((w) => low.indexOf(w)).filter((i) => i !== -1).sort((x, y) => x - y)[0];
-      if (at === undefined) return text.length > 240 ? text.slice(0, 240) + '…' : text;
-      const from = Math.max(0, at - 80), to = Math.min(text.length, at + 200);
-      return (from ? '…' : '') + text.slice(from, to) + (to < text.length ? '…' : '');
-    };
-    return { total: scored.length, results: scored.slice(0, limit).map((h) => ({ scope: h.it.scope, title: h.it.title, where: h.it.where, snippet: snippet(h.it.text), url: h.it.url })) };
+    // As the site's search page ranks them (search-rank.js).
+    const query = rank.prepare(a.query);
+    let scored = rank.rank(items, query);
+    if (scored.some((h) => !h.partial)) scored = scored.filter((h) => !h.partial);
+    const snippet = (text) => rank.snippet(text, query, 280);
+    const partial = !!(scored[0] && scored[0].partial);
+    return Object.assign({ total: scored.length }, partial ? { note: 'Nothing has every word; these have most of them.' } : {},
+      { results: scored.slice(0, limit).map((h) => ({ scope: h.item.scope, title: h.item.title, where: h.item.where, snippet: snippet(h.item.text), url: h.item.url })) });
   }
 
   function projectRow(p, group, name){
@@ -475,12 +573,12 @@ module.exports = function(deps){
     workspaces.forEach((w) => { members[w._id] = w.members || []; });
     const ws = words(a.query), kw = fold(a.keyword);
     let rows = [];
-    ['ongoing', 'planned', 'completed'].forEach((group) => {
+    ['ongoing', 'submission', 'planned', 'completed'].forEach((group) => {
       if (a.group && a.group !== group) return;
       g[group].forEach((p) => {
         const id = p.pid || p.projectId || p.cardId;
         if (kw && !(p.keywords || []).some((k) => fold(k) === kw)) return;
-        if (ws.length && !matches([p.title, p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).join(' ')].join(' '), ws)) return;
+        if (ws.length && !matches([p.title, p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), ws)) return;
         const team = (members[id] || []).map((e) => String(e).toLowerCase());
         if (a.mine && team.indexOf(who.email) === -1 && !(p.authors || []).some((x) => String(x.email).toLowerCase() === who.email)) return;
         rows.push(Object.assign(projectRow(p, group, name), { id, members: team.map(name) }));
@@ -504,10 +602,20 @@ module.exports = function(deps){
     const card = mine[mine.length - 1].data, w = workspaces.find((x) => x._id === pid) || {};
     const presentations = (await db.collection('projectWorkspaces').doc(pid).collection('presentations').get()).docs.map((d) => d.data())
       .map((t) => ({ title: t.title, type: t.type, date: t.date || '', presenter: t.presenter && (t.presenter.name || name(t.presenter.email)), slides: t.slidesUrl || '', recording: t.recordingUrl || '' }));
-    const completed = !!w.completedAt || card.status === 'conference' || card.outcome === 'accepted';
+    // Its work board's own cards (the Board tab); its issues, pull requests and proposals come with the work tool's list.
+    const COLUMN = { todo: 'To do', doing: 'In progress', review: 'Waiting for review', done: 'Done' };
+    const work = w.work && w.work.on ? {
+      repositories: (w.work.repos && w.work.repos.length ? w.work.repos : w.repoName ? [w.repoName] : []).map((r) => 'bold-lab-ai/' + r),
+      shows_site_proposals: !!w.work.content,
+      cards: (await db.collection('projectWorkspaces').doc(pid).collection('work').get()).docs.map((d) => {
+        const c = d.data();
+        return { card_id: d.id, title: c.title, description: c.notes || '', images: (c.images || []).map((i) => i.url), column: COLUMN[c.column] || c.column, assigned_to: (c.assignees || []).map((x) => x.name || name(x.email)),
+          links: (c.links || []).map((l) => l.url), made_by: c.by && (c.by.name || name(c.by.email)) };
+      }),
+    } : null;
     return {
       id: pid, title: card.title || 'Untitled', url: url(projectHref(mine[mine.length - 1].id, mine[mine.length - 1].boardId)),
-      group: completed ? 'completed' : card.status === 'register' || card.status === 'pitch' ? 'planned' : 'ongoing',
+      group: projectGroupForCards(mine, !!w.completedAt, workspaceStarted(w)),
       stage: card.status || '', outcome: card.outcome || '',
       venues: mine.map((c) => ({ venue: c.boardId ? labels[c.boardId] : 'No venue yet', stage: c.data.status || '', outcome: c.data.outcome || '' })),
       abstract: card.abstractText || '', keywords: card.keywords || [],
@@ -518,7 +626,7 @@ module.exports = function(deps){
       meeting: w.meeting ? meetingText(w.meeting) + (w.pausedAt ? ' (paused)' : '') : '', meet_url: w.meetUrl || '',
       slides: w.deckUrl || '', notes: w.notesUrl || '', repository: w.repoUrl || '',
       links: { overleaf: card.overleafLink || '', arxiv: card.arxivLink || '', pitch: card.pitchLink || '', submission: card.submissionLink || '', camera_ready: card.cameraReadyLink || '' },
-      presentations,
+      presentations, work,
     };
   }
 
@@ -592,6 +700,12 @@ module.exports = function(deps){
       out.supervision_meetings = studies.filter((s) => s.meeting && (s.eventId || s.pausedAt))
         .map((s) => ({ student: s.name || name(s._id), title: s.title || '', when: meetingText(s.meeting), paused: !!s.pausedAt,
           you_are_in_it: (s.everyone || []).some((e) => String(e).toLowerCase() === who.email) }));
+      if (await access.can(who.email, 'events', 'view')) {
+        out.lab_meetings = (await lab.series()).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt))
+          .map((x) => ({ id: x._id, title: x.title, when: meetingText(x.meeting), paused: !!x.pausedAt,
+            invited: x.invite && x.invite.mode === 'group' ? (GROUP_LABEL[x.invite.group] || 'everyone in BOLD') + ' and above' : 'whoever joins',
+            you_are_invited: (x.guests || []).indexOf(who.email) >= 0, url: url('series.html?series=' + encodeURIComponent(x._id)) }));
+      }
     }
     return out;
   }
@@ -629,7 +743,8 @@ module.exports = function(deps){
     return d.exists ? Object.assign({ _id: d.id }, d.data()) : null;
   }
   let docsModule = null;
-  const documents = () => docsModule || (docsModule = require('./api-resources')({ lab, url, httpError, isFullWrite, skillMd, freshSkill, toolItems: () => added.items(),
+  const documents = () => docsModule || (docsModule = require('./api-resources')({ lab, url, httpError, isFullWrite, skillMd, freshSkill, mayView,
+    canView: (who, page) => access.can(who.email, page, 'view'), toolItems: () => added.items(),
     tools: { listProjects, getProject, getPerson, calendar, myItems } }));
 
   // ---------- MCP (Streamable HTTP, stateless) ----------
@@ -663,9 +778,13 @@ module.exports = function(deps){
         });
       }
       case 'ping': return reply({});
-      case 'tools/list':
-        return reply({ tools: toolsFor(who).concat(await added.toolList(who)).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
+      case 'tools/list': {
+        const views = {};
+        await Promise.all(Object.values(TOOL_PAGE).filter((v, i, a) => a.indexOf(v) === i).map(async (pg) => { views[pg] = await access.can(who.email, pg, 'view'); }));
+        views.tools = views.tools || await access.can(who.email, 'tools', 'view');
+        return reply({ tools: toolsFor(who).filter((t) => !TOOL_PAGE[t.name] || views[TOOL_PAGE[t.name]]).concat(views.tools ? await added.toolList(who) : []).map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema,
           annotations: { readOnlyHint: !t.write && !t.setup, destructiveHint: !!t.destructive || (!!t.added && !!t.write), idempotentHint: !t.write && !t.setup, openWorldHint: !!t.write } })) });
+      }
       case 'tools/call': {
         const tool = await toolNamed(who, p.name);
         if (!tool) return fail(-32602, 'Unknown tool: ' + p.name);
@@ -702,6 +821,19 @@ module.exports = function(deps){
     if (path === '/' && req.method === 'GET') {
       return res.json({ name: 'BOLD.OS API', mcp: '/mcp', mcp_also: 'prompts (the skills) and resources (every page, bold://…)', read: TOOLS.filter((t) => !t.write && !t.setup).map((t) => 'GET /v1/' + t.name), act: TOOLS.filter((t) => t.write).map((t) => 'POST /v1/' + t.name), auth: 'Authorization: Bearer <token from the Agents tab of your BOLD.OS profile>' });
     }
+    // A Calendar subscription (calendarFeed): the link is the key, as calendar apps can't send one.
+    const cal = /^\/calendar\/([^/]+)\.ics$/.exec(path);
+    if (cal) {
+      if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(405).set('Allow', 'GET').send('GET this link.');
+      try {
+        const ics = await calendarIcs(cal[1]);
+        return res.status(200).set('Content-Type', 'text/calendar; charset=utf-8').set('Cache-Control', 'private, max-age=300')
+          .set('Content-Disposition', 'inline; filename="bold-lab.ics"').send(ics);
+      } catch (err) {
+        if (!err.status) logger.error('calendar feed failed', { error: String(err.stack || err) });
+        return res.status(err.status || 500).type('text/plain').send(err.status ? err.message : 'Something went wrong.');
+      }
+    }
     if (path === '/mcp' && req.method !== 'POST') return res.status(405).set('Allow', 'POST').json({ error: 'POST JSON-RPC to /mcp.' });
     let who;
     try { who = await authorize(req); }
@@ -737,5 +869,5 @@ module.exports = function(deps){
     }
   });
 
-  return { apiTokens, boldApi, checkTool: (name, def) => added.check(name, def), _internal: { meetingText, TOOLS, mcp, resolve, added } };
+  return { apiTokens, boldApi, calendarFeed, checkTool: (name, def) => added.check(name, def), _internal: { meetingText, TOOLS, mcp, resolve, added } };
 };

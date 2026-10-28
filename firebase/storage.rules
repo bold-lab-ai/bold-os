@@ -12,6 +12,17 @@ rules_version = '2';
 // underlying data, same "PI or admin" check, just spelled out again here.
 service firebase.storage {
   match /b/{bucket}/o {
+    match /rota-profiles/{slackId}/portrait {
+      function owner() {
+        return request.auth != null && 'oidc.slack' in request.auth.token.firebase.identities
+          && firestore.exists(/databases/(default)/documents/people/$(slackId))
+          && firestore.get(/databases/(default)/documents/people/$(slackId)).data.email.lower() == request.auth.token.email.lower();
+      }
+      allow read: if request.auth != null && 'oidc.slack' in request.auth.token.firebase.identities;
+      allow create, update: if owner() && request.resource.size <= 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/(webp|png|jpeg)');
+      allow delete: if owner();
+    }
     match /venues/{boardId}/feed.ics {
       allow read: if true;
       // A Slack account, as firestore.rules' isSignedIn() requires.
@@ -19,6 +30,26 @@ service firebase.storage {
         request.auth.token.email in firestore.get(/databases/(default)/documents/roles/pis).data.emails ||
         request.auth.token.email in firestore.get(/databases/(default)/documents/roles/admins).data.emails
       );
+    }
+    // A board card's images (project page, a card's page; firestore.rules' work/{id}):
+    // read by the lab; added and removed by whoever may change the card (its maker, whom it's
+    // assigned to, the project's people, PIs and admins). Images only, 10 MB at most.
+    match /work/{ws}/{card}/{file} {
+      function signedIn() { return request.auth != null && 'oidc.slack' in request.auth.token.firebase.identities; }
+      function mayChange() {
+        let me = request.auth.token.email;
+        let c = /databases/(default)/documents/projectWorkspaces/$(ws)/work/$(card);
+        let w = /databases/(default)/documents/projectWorkspaces/$(ws);
+        return firestore.exists(c) && (
+          firestore.get(c).data.by.email == me || me in firestore.get(c).data.assigneeEmails ||
+          me.lower() in firestore.get(w).data.get('members', []) ||
+          me in firestore.get(/databases/(default)/documents/roles/pis).data.emails ||
+          me in firestore.get(/databases/(default)/documents/roles/admins).data.emails);
+      }
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.size <= 10 * 1024 * 1024 &&
+        request.resource.contentType.matches('image/(png|jpeg|gif|webp)') && mayChange();
+      allow delete: if signedIn() && mayChange();
     }
     match /{allPaths=**} {
       allow read, write: if false;

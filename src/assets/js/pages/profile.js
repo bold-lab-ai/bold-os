@@ -385,10 +385,16 @@
     // connections.js loads after this script.
     if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', drawConnections); return; }
     var u = connectionsUser;
-    if (!u || !u.email || !window.BoldConnections || connectionsFor === u.email) return;
+    if (!u || !u.email || !window.BoldConnections || connectionsFor === u.email || BOLD.myGroup() === null) return;
     connectionsFor = u.email;
+    // Connections are the People area's (interactions): below its level, say so rather than fail.
+    if (!BOLD.isFullWrite() && !BOLD.can('people', 'view')) {
+      el('connectionsBody').innerHTML = '<p class="proj-msg">Connections are ' + BOLD.escapeHtml(BOLD.cannotReason('people', 'view').replace(/^For /, 'for ')) + '</p>';
+      return;
+    }
     BoldConnections.mountPerson(el('connectionsBody'), u.email, u.email);
   }
+  BOLD.onAccess(function(){ drawConnections(); });
   function showTab(){
     var want = String(location.hash || '').replace(/^#/, '');
     if (TABS.indexOf(want) === -1) want = TABS[0];

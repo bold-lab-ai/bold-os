@@ -4,7 +4,7 @@
 // calculation writes to a slot. The caller supplies the Firebase auth context;
 // every mutation below checks the linked Slack identity again on the server.
 module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, signedInEmail,
-  rolesEmails, slackFetch, botToken, logger }) {
+  rolesEmails, requireAccess, slackFetch, botToken, logger }) {
   const slots = db.collection('groupRotaSlots');
   const meetings = db.collection('groupMeetings');
   const swaps = db.collection('groupRotaSwaps');
@@ -25,6 +25,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
   const slotRef = id => { if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(id || ''))) error('invalid-argument', 'Invalid slot.'); return slots.doc(id); };
   async function actor(request) {
     const email = signedInEmail(request).toLowerCase();
+    await requireAccess(email, 'events', 'view');
     const roster = await db.collection('people').get();
     const matches = roster.docs.filter(d => String(d.data().email || '').toLowerCase() === email);
     if (matches.length !== 1 || !matches[0].data().slackId) error('failed-precondition', 'Your Slack account is not uniquely matched in the roster.');
@@ -35,7 +36,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     ]);
     return { email, slackId, registered: member.exists && member.data().active === true,
       eligible: eligible.exists && eligible.data().eligible === true,
-      admin: admins.map(x => String(x).toLowerCase()).includes(email) };
+      admin: admins.map(x => String(x).toLowerCase()).includes(email),
+      people: roster.docs.map(d => ({ slackId: d.id, name: d.data().name || '' })) };
   }
   const requirePresenter = a => { if (!a.registered || !a.eligible) error('permission-denied', 'An active eligible rota registration is required.'); };
   const requireAdmin = a => { if (!a.admin) error('permission-denied', 'Only a rota administrator can do this.'); };
@@ -200,7 +202,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const a = await actor(request); requireAdmin(a); const d = request.data || {}, date = clean(d.date);
     if (!iso(date) || !['short', 'long'].includes(d.format) || !/^\d{2}:\d{2}$/.test(d.startTime || '') || !Number.isInteger(d.durationMinutes) || d.durationMinutes < 15 || d.durationMinutes > 480 || !clean(d.seasonId) || clean(d.location).length > 200) error('invalid-argument', 'Check the meeting details.');
     const ref = meetings.doc(date), [old, season, assigned] = await Promise.all([ref.get(), db.collection('groupMeetingSeasons').doc(clean(d.seasonId)).get(), slots.where('meetingId', '==', date).limit(1).get()]);
-    if (!season.exists) error('failed-precondition', 'Create the season first.');
+    if (!season.exists || season.data().publicationState !== 'published') error('failed-precondition', 'Publish the season first.');
     if (!assigned.empty && old.exists && old.data().format !== d.format) error('failed-precondition', 'A meeting with published slots cannot change format.');
     const meeting = { date, seasonId: clean(d.seasonId), format: d.format, timeZone: 'Europe/London', startTime: d.startTime, durationMinutes: d.durationMinutes, location: clean(d.location), status: old.exists ? old.data().status || 'scheduled' : 'scheduled', origin: old.exists ? old.data().origin || 'import' : 'site', ...stamp(a, 'Meeting details updated') };
     if (old.exists) await ref.set(meeting, { merge: true });
@@ -248,8 +250,10 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
   }
   async function saveSeason(request) {
     const a = await actor(request); requireAdmin(a); const d = request.data || {}, id = clean(d.id);
-    if (!/^[a-z0-9-]{1,64}$/.test(id) || !clean(d.label) || clean(d.label).length > 120 || clean(d.rotationDescription).length > 2000) error('invalid-argument', 'Check the season details.');
-    await db.collection('groupMeetingSeasons').doc(id).set({ label: clean(d.label), regularTime: clean(d.regularTime), location: clean(d.location), rotationDescription: clean(d.rotationDescription), publicationState: clean(d.publicationState) || 'draft', ...stamp(a, 'Season details updated') }, { merge: true });
+    const state = clean(d.publicationState) || 'draft';
+    if (!/^[a-z0-9-]{1,64}$/.test(id) || !clean(d.label) || clean(d.label).length > 120 || clean(d.rotationDescription).length > 2000 || !['draft', 'published'].includes(state)) error('invalid-argument', 'Check the season details.');
+    if (state === 'draft' && !(await meetings.where('seasonId', '==', id).limit(1).get()).empty) error('failed-precondition', 'A season with published meetings cannot become a draft.');
+    await db.collection('groupMeetingSeasons').doc(id).set({ label: clean(d.label), regularTime: clean(d.regularTime), location: clean(d.location), rotationDescription: clean(d.rotationDescription), publicationState: state, ...stamp(a, 'Season details updated') }, { merge: true });
     return { ok: true };
   }
   async function access(request) {
@@ -261,7 +265,10 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     }
     const ownSwaps = await swaps.where('requesterSlackId', '==', a.slackId).get();
     const offeredSwaps = await swaps.where('recipientSlackId', '==', a.slackId).get();
+    const [assigned, registered] = await Promise.all([slots.get(), db.collection('groupRotaMembers').get()]);
+    const visibleIds = new Set(assigned.docs.map(d => d.data().presenterSlackId).concat(registered.docs.filter(d => d.data().active).map(d => d.id)));
     return { slackId: a.slackId, registered: a.registered, eligible: a.eligible, admin: a.admin,
+      people: a.people.filter(p => visibleIds.has(p.slackId)),
       reason: !a.registered ? 'Join the rota to use this action' : !a.eligible ? 'Eligibility has not been confirmed' : '',
       swaps: [...ownSwaps.docs, ...offeredSwaps.docs].filter((s, i, arr) => arr.findIndex(x => x.id === s.id) === i).map(s => ({ id: s.id, ...s.data() })) };
   }

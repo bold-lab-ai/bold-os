@@ -197,19 +197,30 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   }
 
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
-  var TABS = [['overview', 'Overview'], ['presentations', 'Presentations'], ['paper', 'Papers']];
+  // The second tab is named for what it holds (the project's meeting, slides and notes, and
+  // its talks); its hash stays #presentations, so links keep working.
+  var TABS = [['overview', 'Overview'], ['presentations', 'Meetings'], ['paper', 'Papers']];
+  // A fourth, Board, on a project with a board (pages/project-work.js).
+  function hasBoard(){ return !!(ws && ws.work && ws.work.on); }
+  // Named Board; its hash stays #…&tab=work (links keep working), and &tab=board works too.
+  function tabs(){ return hasBoard() ? TABS.concat([['work', 'Board']]) : TABS; }
   var tab = (location.hash.match(/[#&]tab=([^&]+)/) || [])[1];
-  // The Team tab's people and channel are on Overview now, its meeting, slides and notes on Presentations.
+  // The Team tab's people and channel are on Overview now, its meeting, slides and notes on Meetings.
   if (tab === 'team') tab = 'overview';
-  if (!TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
+  if (tab === 'board') tab = 'work';
+  // Work is kept until the workspace has loaded and shows whether there's a board.
+  if (tab !== 'work' && !TABS.some(function(t){ return t[0] === tab; })) tab = 'overview';
   // &join=1, the link in a project's #all-active-projects announcement: join it
   // once it's loaded, on the Overview tab (maybeJoin).
   var joinRequested = /[#&]join=1(&|$)/.test(location.hash);
+  var workWanted = false;   // #…&tab=work before the workspace said whether it has a board
+  // &pres=<id>: one presentation (from an event's Projects tab), scrolled to and marked once it's drawn.
+  var presWanted = (location.hash.match(/[#&]pres=([^&]+)/) || [])[1] || '', presScrolled = false;
   if (joinRequested) tab = 'overview';
 
   function setTab(name, focus){
     if (name === tab) return;
-    var hash = location.hash.replace(/&tab=[^&]*/, '') + (name === 'overview' ? '' : '&tab=' + name);
+    var hash = location.hash.replace(/&(tab|card|item)=[^&]*/g, '') + (name === 'overview' ? '' : '&tab=' + name);
     try { history.replaceState(null, '', location.pathname + location.search + hash); } catch (e){}
     BOLD.switchTab('.tabs', el('projectBody'), function(){ tab = name; editing = false; render(); });
     if (focus) document.querySelector('.tab.active').focus();
@@ -236,6 +247,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
         : missing());
       html += row('Registered', card.createdAt ? formatDate(card.createdAt) : missing());
+      html += row('Board', workBoardHtml());
       html += '</dl>';
       if (editing === 'abstract') {
         // Same editor as the registration form, with Save and Cancel.
@@ -259,10 +271,34 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     paper: function(){
       return '<dl class="detail-grid">' + row('Venues', venuesHtml()) +
         repoRow() + simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') + '</dl>';
-    }
+    },
+    // Its work board: the board keeps its own drawing (project-work.js), put back in here on each render.
+    work: function(){ return '<div id="workMount"></div>'; }
   };
 
+  // Overview's Board row: the tab, or adding one (optional, for any project).
+  function workBoardHtml(){
+    if (hasBoard()) return '<a href="#" id="workTabLink">On the Board tab</a>';
+    if (!wsLoaded) return '<span class="detail-muted">Loading\u2026</span>';
+    return missing() + ' <button class="btn-text detail-inline-edit" type="button" id="workAdd"' +
+      (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Add one</button>' +
+      '<div class="detail-hint">One place for its to-dos, issues and pull requests, and who\u2019s on each.</div>';
+  }
+  function addWorkBoard(){
+    if (wsBusy) return;
+    wsBusy = true; render();
+    callWorkspace({ action: 'work', work: { on: true } }).then(function(){
+      wsBusy = false; setTab('work');
+    }).catch(function(err){
+      console.error('[BOLD Lab] adding the work board failed', err);
+      wsBusy = false; wsMsg = esc((err && err.message) || 'That didn\u2019t work \u2014 try again.'); render();
+    });
+  }
+
   function render(){
+    if (tab === 'work' && wsLoaded && !hasBoard()) tab = 'overview';
+    if (tab === 'work' && !wsLoaded) tab = 'overview', workWanted = true;
+    if (workWanted && wsLoaded) { workWanted = false; if (hasBoard()) tab = 'work'; }
     // The title, edited in place (Edit beside it).
     var html = '<div class="detail-head">' + (editing === 'title'
       ? '<div class="detail-title-edit"><input type="text" id="fieldInput" maxlength="300" value="' + esc(card.title || '') + '" aria-label="Title">' + saveCancelHtml('fieldSave') + '</div>'
@@ -273,15 +309,22 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       html += '<span class="badge">' + OUTCOME_LABELS[card.outcome] + '</span>';
     }
     if (ws && ws.completedAt) html += '<span class="badge">Completed</span>';
+    else if (ws && ws.group === 'ongoing' && !ws.boardId) html += '<span class="badge">Ongoing</span>';
     // Marking it completed (or reopening it): its meeting is cancelled (or comes back).
     var done = !!(ws && ws.completedAt);
     // Join (or Leave, for whoever joined rather than registered or wrote it).
     html += joinButton();
+    // Ongoing (being worked on) or back to planned, before it's on a venue's board (then it's in submission).
+    // A weekly meeting makes it ongoing anyway.
+    if (!done && !(ws && (ws.boardId || ws.meeting))) {
+      html += '<button class="btn-box detail-remove" type="button" id="startProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
+        (ws && ws.startedAt ? 'Back to planned' : 'Mark as ongoing') + '</button>';
+    }
     html += '<button class="btn-box detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
       (done ? 'Reopen project' : 'Mark as completed') + '</button>';
     html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
     html += '</div></div>';
-    html += '<div class="tabs" role="tablist" aria-label="Project">' + TABS.map(function(t){
+    html += '<div class="tabs" role="tablist" aria-label="Project">' + tabs().map(function(t){
       var on = t[0] === tab;
       return '<button class="tab' + (on ? ' active' : '') + '" type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + on + '"' +
         (on ? '' : ' tabindex="-1"') + ' aria-controls="projectPanel">' + t[1] + '</button>';
@@ -290,12 +333,20 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
 
     el('projectBody').innerHTML = html;
     el('projectBody').hidden = false;
+    if (tab === 'work') {
+      ProjectWork.start({ db: db, pid: wsKey, me: function(){ return me; }, ws: function(){ return ws; }, fullWrite: function(){ return fullWrite; },
+        canEdit: canEdit, members: memberEmails, callWorkspace: callWorkspace });
+      ProjectWork.attach(el('workMount'));
+    }
+    if (el('workAdd')) el('workAdd').addEventListener('click', addWorkBoard);
+    if (el('workTabLink')) el('workTabLink').addEventListener('click', function(e){ e.preventDefault(); setTab('work'); });
     el('detailMsg').hidden = true;
     document.title = card.title + ' | BOLD Lab';
     linkSlackChannel();
     wireAbstract();
     el('removeProject').addEventListener('click', removeProject);
     el('completeProject').addEventListener('click', completeProject);
+    if (el('startProject')) el('startProject').addEventListener('click', startProject);
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(t, i, all){
       t.addEventListener('click', function(){ setTab(t.getAttribute('data-tab')); });
       t.addEventListener('keydown', function(e){
@@ -334,7 +385,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var meeting = m && ws.pausedAt && ws.group !== 'completed' ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 paused</span>' + pauseBtn('resume')
       : m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 ' + (ws.group === 'completed' ? 'ended with the project' : 'not set up yet') + '</span>'
       : m ? esc(meetingText(m)) + pauseBtn('pause') +
-        (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">Google Meet</a>' : '') +
+        (ws.meetUrl ? ' \u00b7 <a href="' + esc(ws.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m) + '</a>' : '') +
         (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')
       : wsLoaded && !setting ? missing() + skipped('meeting') : state;
     var html = editableRow('meeting', 'Meeting', meeting, '',
@@ -420,8 +471,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function saveRepo(){
     var fail = failer(), repo = readRepoEntry();
     if (repo.error) return fail(repo.error);
-    BOLD.confirmAction({ title: 'Make the repository?', go: 'Make it', effects: [
-      'Make the project\u2019s GitHub repository in bold-lab-ai, from the ' + repo.template + ' template'] }).then(function(ok){ if (ok) sendRepo(repo, fail); });
+    BOLD.confirmAction(repo.mode === 'existing'
+      ? { title: 'Link the repository?', go: 'Link it', effects: [
+        'Link bold-lab-ai/' + repo.name.replace(/^.*\//, '') + ' as the project\u2019s repository',
+        'Give the project\u2019s people who linked their GitHub write access to it'] }
+      : { title: 'Make the repository?', go: 'Make it', effects: [
+        'Make the project\u2019s GitHub repository in bold-lab-ai, from the ' + repo.template + ' template'] }).then(function(ok){ if (ok) sendRepo(repo, fail); });
   }
   function sendRepo(repo, fail){
     el('repoSave').disabled = true;
@@ -533,7 +588,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     BOLD.confirmAction(remove ? { title: 'Remove the meeting?', go: 'Remove', effects: ['Cancel it on Google Calendar: Google tells its guests'] }
       : { title: ws && ws.meeting ? 'Change the meeting?' : 'Add a meeting?', go: 'Save', effects: [ws && ws.meeting
         ? 'Change it on Google Calendar to ' + meetingText(meeting) + ': Google emails its guests the change'
-        : 'Make it on Google Calendar, ' + meetingText(meeting) + ', with a Meet link: Google emails the project\u2019s members the invitation'] }).then(function(ok){
+        : 'Make it on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ': Google emails the project\u2019s members the invitation'] }).then(function(ok){
       if (ok) sendMeeting(meeting, fail);
     });
   }
@@ -771,7 +826,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       var title = t.slidesUrl ? '<a href="' + esc(t.slidesUrl) + '" target="_blank" rel="noopener">' + esc(t.title) + '</a>' : esc(t.title);
       var when = new Date(t.date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
       var occasion = occasionHtml(t);
-      return '<li><div class="talk-when">' + esc(when) + (occasion ? ' \u00b7 ' + occasion : '') + (typeLabel(t.type) ? ' \u00b7 ' + typeLabel(t.type) : '') + '</div>' +
+      return '<li id="pres-' + esc(t.id) + '"' + (t.id === presWanted ? ' class="is-target"' : '') + '><div class="talk-when">' + esc(when) + (occasion ? ' \u00b7 ' + occasion : '') + (typeLabel(t.type) ? ' \u00b7 ' + typeLabel(t.type) : '') + '</div>' +
         '<div class="talk-title">' + title + (t.presenter ? ' <span class="detail-muted">\u2014 ' + esc(t.presenter) + '</span>' : '') + '</div>' +
         '<div class="talk-actions">' +
           (t.recordingUrl ? '<a href="' + esc(t.recordingUrl) + '" target="_blank" rel="noopener">Recording</a>' : '') +
@@ -838,7 +893,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       // An earlier venue's card: the project page is its latest one's.
       if (ws && ws.cardId && (ws.cardId !== projectId || (ws.boardId || null) !== (boardId || null))) {
         location.replace('project.html#id=' + encodeURIComponent(ws.cardId) + (ws.boardId ? '&board=' + encodeURIComponent(ws.boardId) : '') +
-          (tab !== 'overview' ? '&tab=' + tab : '') + (joinRequested ? '&join=1' : ''));
+          (tab !== 'overview' ? '&tab=' + tab : '') + (joinRequested ? '&join=1' : '') + (presWanted ? '&pres=' + presWanted : ''));
         location.reload();
         return;
       }
@@ -852,6 +907,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         .sort(function(a, b){ return (b.date || '').localeCompare(a.date || '') || (b.at || 0) - (a.at || 0); });
       loadLiveTalks();
       if (card && !editing) render();
+      var target = presWanted && document.getElementById('pres-' + presWanted);
+      if (target && !presScrolled) { presScrolled = true; target.scrollIntoView({ block: 'center' }); }
     }, function(err){ console.error('[BOLD Lab] loading the presentations failed', err); });
     groupUnsub = db.collection('groupRotaSlots').where('projectId', '==', key).onSnapshot(function(snap){
       groupTalks = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
@@ -976,6 +1033,20 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       ? { title: 'Reopen \u201c' + card.title + '\u201d?', go: 'Reopen', effects: meeting ? ['Put its meeting back on Google Calendar: Google emails its guests'] : [] }
       : { title: 'Mark \u201c' + card.title + '\u201d as completed?', go: 'Mark completed', effects: meeting ? ['Cancel its meeting on Google Calendar: Google tells everyone on it'] : [] })
       .then(function(ok){ if (ok) sendComplete(reopen); });
+  }
+  function startProject(){
+    var back = !!(ws && ws.startedAt);
+    wsBusy = true; render();
+    callWorkspace({ action: back ? 'plan' : 'start' }).then(function(){
+      wsBusy = false;
+      // The Projects page's cached list still has it in its old tab.
+      try { localStorage.removeItem(CACHE_KEY + me.email.toLowerCase()); } catch (e){}
+      if (!editing) render();
+    }).catch(function(err){
+      console.error('[BOLD Lab] marking the project ' + (back ? 'planned' : 'ongoing') + ' failed', err);
+      wsBusy = false; render();
+      window.alert((err && err.message) || 'That didn\u2019t work \u2014 try again.');
+    });
   }
   function sendComplete(reopen){
     wsBusy = true; render();

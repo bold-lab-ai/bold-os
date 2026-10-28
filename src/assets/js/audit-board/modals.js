@@ -204,6 +204,7 @@
       showToast('Only the paper’s authors can edit its fields.', 'error');
       return;
     }
+    startEditing('edit', cardId, true);
     var editBoard = getCurrentBoard();
     var authorsLock = authorsLocked(card, editBoard);
     els.modalRegion.innerHTML =
@@ -359,15 +360,14 @@
         updates.reviewers = { junior: prevReviewers.junior || '', senior: (authors.length ? authors[authors.length - 1].email : '') || '' };
       }
     }
-    var next = state.cards.map(function(c){
-      if (c.id !== cardId) return c;
-      return Object.assign({}, c, updates);
-    });
-    var prev = state.cards;
-    state.cards = next;
+    // Only what they changed; asks first if someone else changed it too meanwhile.
+    var change = formChange('edit', cardId, updates);
+    if (!change) return;
+    var prev = change.prev;
+    state.cards = change.next;
     closeModal();
     renderBoard();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: change.mine }, change.base).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderBoard();

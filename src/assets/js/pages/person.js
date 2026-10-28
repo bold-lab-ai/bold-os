@@ -23,12 +23,12 @@
     return '<dl class="facts">' +
       row('Degree', esc(s.degree || '')) + row('Working title', esc(s.title || '')) +
       row('People involved', (s.people || []).map(function(p){ return esc(p.name); }).join(', ')) +
-      row('Meeting', s.meeting ? esc(meetingText(s.meeting)) : '') + '</dl>';
+      row('Meeting', s.meeting ? esc(meetingText(s.meeting)) + (s.meeting.link ? ' <span class="acct-handle">· own link</span>' : '') : '') + '</dl>';
   }
 
-  // Planned, Ongoing and Completed, as on the profile's Projects tab.
+  // Planned, Ongoing, In submission and Completed, as on the Projects page.
   function projectsHtml(list){
-    return [['ongoing', 'Ongoing'], ['planned', 'Planned'], ['completed', 'Completed']].map(function(g){
+    return [['planned', 'Planned'], ['ongoing', 'Ongoing'], ['submission', 'In submission'], ['completed', 'Completed']].map(function(g){
       var items = list.filter(function(w){ return (w.group || 'ongoing') === g[0]; });
       return '<div class="proj-group"><h3>' + g[1] + '<span class="proj-count">' + (items.length || '') + '</span></h3><ul class="proj-list">' +
         (items.length ? items.map(function(w){

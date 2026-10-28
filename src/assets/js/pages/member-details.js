@@ -5,6 +5,7 @@
 // fill the form the first time (SLACK_SAME), and aren't shown.
 (function(){
   var esc = BOLD.escapeHtml;
+  var shownContact = '';   // the point of contact the form opened with
   var box = document.getElementById('memberDetails');
   if (!box || !BOLD.getAuth()) return;
   var db;
@@ -13,19 +14,35 @@
   // Their group (Who is BOLD) and a request for another (groupRequest in functions/index.js).
   var groupReq = null, asking = false, gBusy = false, gError = '', unsubReq = null;
   function when(t){ return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
+  // Who decides a request to change group: whoever invited them (unless they said they
+  // didn't), else the PIs and admins (as groupRequest decides).
+  function decider(){
+    var inv = rec && rec.invitedBy;
+    return inv && inv.email && inv.status !== 'denied' ? (inv.name || inv.email) : '';
+  }
   function groupHtml(){
     var g = BoldJoin.groupOf(rec);
     var html = BoldJoin.groupBadge(g) + ' <a class="acct-handle" href="boldiquette.html#who-is-bold">What’s this?</a>';
-    if (groupReq) return html + '<span class="st-links">You asked for ' + BoldJoin.groupBadge(groupReq.to) + ' on ' + when(groupReq.at) + ': a PI or admin will decide. ' +
+    if (groupReq) return html + '<span class="st-links">You asked for ' + BoldJoin.groupBadge(groupReq.to) + ' on ' + when(groupReq.at) + ': ' + (groupReq.inviterName ? esc(groupReq.inviterName) + ', who invited you,' : 'a PI or admin') + ' will decide. ' +
       '<button type="button" class="btn-text md-g-withdraw"' + (gBusy ? ' disabled' : '') + '>Withdraw</button></span>';
     if (!asking) return html + ' <button type="button" class="btn-text md-g-ask">Ask for another group</button>';
-    return html + '<div class="md-g-form">' + BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== g; }).map(function(c){
-        return '<label class="jn-check"><input type="radio" name="md-g-to" value="' + c[0] + '"> ' + BoldJoin.groupBadge(c[0]) + '</label>';
+    // Whoever invited them decides: without one, they choose one here, in the same request.
+    var pick = !decider() && !exec() ? (people ? '<label class="md-g-contact">Your point of contact, who invited you to BOLD: they confirm it and decide this' +
+        '<select class="md-g-inviter"><option value="">Choose a person…</option>' + people.filter(function(p){ return p.email !== String(me.email || '').toLowerCase(); }).map(function(p){
+          return '<option value="' + esc(p.email) + '"' + (p.email === gInviter ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></label>'
+      : '<p class="proj-msg">Loading&hellip;</p>') : '';
+    var to = decider() || (gInviter && nameOf(gInviter)) || (exec() ? 'the PIs' : 'your point of contact');
+    return html + '<div class="md-g-form">' + pick + BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== g; }).map(function(c){
+        return '<label class="jn-check"><input type="radio" name="md-g-to" value="' + c[0] + '"' + (c[0] === gTo ? ' checked' : '') + '> ' + BoldJoin.groupBadge(c[0]) + '</label>';
       }).join('') +
-      '<textarea class="md-g-note no-tags" rows="2" maxlength="1000" placeholder="Why (optional): who you work with, what you do in BOLD"></textarea>' +
+      '<textarea class="md-g-note no-tags" rows="2" maxlength="1000" placeholder="Why (optional): who you work with, what you do in BOLD">' + esc(gNote) + '</textarea>' +
       (gError ? '<p class="st-error">' + esc(gError) + '</p>' : '') +
-      '<div class="event-form-actions"><button type="button" class="ev-save md-g-send"' + (gBusy ? ' disabled' : '') + '>Send to the PIs</button><button type="button" class="md-g-cancel">Cancel</button></div></div>';
+      '<div class="event-form-actions"><button type="button" class="ev-save md-g-send"' + (gBusy ? ' disabled' : '') + '>Send to ' + esc(to) + '</button><button type="button" class="md-g-cancel">Cancel</button></div></div>';
   }
+  // PIs and admins (BOLD-exec) have nobody inviting them: theirs go to the PIs and admins.
+  function exec(){ return BOLD.myGroup() === 'exec'; }
+  function nameOf(e){ var p = (people || []).filter(function(x){ return x.email === e; })[0]; return p ? p.name : e; }
+  var gInviter = '', gTo = '', gNote = '';   // the form's point of contact, group and note, kept when it's redrawn
   function callGroup(data){ return firebase.app().functions('europe-west2').httpsCallable('groupRequest')(data); }
 
   // A Slack field (by its label) and the record's field that says the same.
@@ -43,13 +60,13 @@
     return out;
   }
 
-  // The people on BOLD.OS, to choose the point of contact from.
+  // Who can be the point of contact: those who can invite (as on the join form), from
+  // joinInviters, since not every group can read the roster.
   var people = null;
   function loadPeople(){
     if (people) return;
-    db.collection('people').get().then(function(s){
-      people = s.docs.map(function(d){ var x = d.data(); return { name: x.name || x.email, email: String(x.email || '').toLowerCase() }; })
-        .filter(function(p){ return p.email && p.email !== me.email; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
+    firebase.app().functions('europe-west2').httpsCallable('joinInviters')({ all: true }).then(function(r){
+      people = ((r.data && r.data.people) || []).map(function(p){ return { name: p.name, email: String(p.email || '').toLowerCase() }; });
       render();
     }).catch(function(err){ console.error('[BOLD Profile] loading the people failed', err); people = []; render(); });
   }
@@ -60,6 +77,8 @@
     if (editing) {
       box.innerHTML = '<div class="event-form join-form">' + BoldJoin.fieldsHtml(rec || fromSlack(), opt, { people: people }) +
         '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save md-save">Save</button><button type="button" class="md-cancel">Cancel</button></div></div>';
+      var pick = box.querySelector('.jn-contact-pick');
+      shownContact = pick ? pick.value : '';
       return;
     }
     var who = { name: me.name, email: me.email };
@@ -68,24 +87,36 @@
       '<div class="event-controls"><button type="button" class="btn-text md-edit">Add your details</button></div>';
   }
 
+  // The chosen point of contact: kept, and named on the Send button (without redrawing the form).
+  box.addEventListener('change', function(e){
+    if (!e.target.classList || !e.target.classList.contains('md-g-inviter')) return;
+    gInviter = e.target.value;
+    var b = box.querySelector('.md-g-send');
+    if (b) b.textContent = 'Send to ' + (gInviter ? nameOf(gInviter) : 'your point of contact');
+  });
   box.addEventListener('click', function(e){
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('md-edit')) { editing = true; loadPeople(); render(); return; }
-    if (t.classList.contains('md-g-ask')) { asking = true; gError = ''; render(); return; }
+    if (t.classList.contains('md-g-ask')) { asking = true; gError = ''; gInviter = gTo = gNote = ''; if (!decider()) loadPeople(); render(); return; }
     if (t.classList.contains('md-g-cancel')) { asking = false; render(); return; }
     if (t.classList.contains('md-g-send') || t.classList.contains('md-g-withdraw')) {
       var send = t.classList.contains('md-g-send'), to = (box.querySelector('input[name="md-g-to"]:checked') || {}).value;
+      if (send) { gTo = to || ''; gNote = (box.querySelector('.md-g-note') || {}).value || ''; }
       if (send && !to) { gError = 'Choose a group.'; render(); return; }
+      var named = send && !decider() && !exec() ? gInviter : '';
+      if (send && !decider() && !exec() && !named) { gError = 'Choose your point of contact: they decide this.'; render(); return; }
       var note = send ? box.querySelector('.md-g-note').value : '';
       var go = function(){
         gBusy = true; gError = ''; render();
-        callGroup(send ? { action: 'request', to: to, note: note } : { action: 'withdraw', id: groupReq.id }).then(function(){ asking = false; })
+        callGroup(send ? Object.assign({ action: 'request', to: to, note: note }, named ? { inviter: named } : {}) : { action: 'withdraw', id: groupReq.id }).then(function(){ asking = false; })
           .catch(function(err){ console.error('[BOLD Profile] the group request failed', err); gError = (err && err.message) || 'Couldn’t send it — try again.'; })
           .then(function(){ gBusy = false; render(); });
       };
       if (!send) { go(); return; }
-      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: ['Send the PIs and admins a Slack message asking to approve it'] })
+      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: named
+          ? ['Make ' + nameOf(named) + ' your point of contact, who invited you', 'Send them one Slack message asking to confirm it and to approve the move']
+          : [decider() ? 'Send ' + decider() + ', who invited you, a Slack message asking to approve it' : 'Send the PIs and admins a Slack message asking to approve it'] })
         .then(function(ok){ if (ok) go(); });
       return;
     }
@@ -94,10 +125,13 @@
     var d = BoldJoin.read(box), err = box.querySelector('.ev-error');
     var p = BoldJoin.problem(d);
     if (p) { err.textContent = p; err.hidden = false; return; }
-    // Who invited them goes through setMyInviter (they can't write it, and it asks them to confirm).
-    var inviter = d.inviterEmail, was = String((rec && rec.invitedBy && rec.invitedBy.email) || '');
+    // Their point of contact is who invited them: that goes through setMyInviter (they can't
+    // write it, and it asks them to confirm). A typed one from before leaves it as it is.
+    // Only when they change it: saving other details never asks anyone.
+    var was = String((rec && rec.invitedBy && rec.invitedBy.email) || '');
+    var inviter = d.inviterEmail !== undefined && d.inviterEmail !== shownContact ? d.inviterEmail : undefined;
     delete d.inviterEmail;
-    (inviter && inviter !== was ? BOLD.confirmAction({ title: 'Save your details?', go: 'Save', effects: ['Send whoever you named as inviting you a Slack message asking them to confirm it'] }) : Promise.resolve(true))
+    (inviter && inviter !== was ? BOLD.confirmAction({ title: 'Save your details?', go: 'Save', effects: ['Send your point of contact a Slack message asking them to confirm they invited you'] }) : Promise.resolve(true))
       .then(function(ok){ if (ok) saveDetails(t, d, inviter, was, err); });
   });
   function saveDetails(t, d, inviter, was, err){

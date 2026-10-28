@@ -13,16 +13,21 @@ window.BoldJoin = (function(){
   // These roles have no end date.
   var NO_END = ['PI', 'Adjunct', 'Alumni', 'Collaborator'];
   // The BOLDiquette's groups (Who is BOLD). A member's is the one a PI or admin set
-  // (`category`: on the People page, or approving their request), else by role: PIs
-  // BOLD-exec, PhD students BOLD-internal, Staff BOLD-staff, everyone else PAN-BOLD (functions/index.js
-  // groupOf, kept in sync by hand).
+  // (`category`: on the People page, or approving their request, from their role), else
+  // PAN-BOLD (functions/index.js groupOf, kept in sync by hand).
   var CATEGORIES = [['exec', 'BOLD-exec'], ['staff', 'BOLD-staff'], ['internal', 'BOLD-internal'], ['associate', 'BOLD-associate'], ['pan', 'PAN-BOLD']];
   function categoryLabel(key){ var c = CATEGORIES.filter(function(x){ return x[0] === key; })[0]; return c ? c[1] : 'PAN-BOLD'; }
   function groupOf(m){
     m = m || {};
-    if (CATEGORIES.some(function(c){ return c[0] === m.category; })) return m.category;
-    return m.role === 'PI' ? 'exec' : m.role === 'PhD student' ? 'internal' : m.role === 'Staff' ? 'staff' : 'pan';
+    return CATEGORIES.some(function(c){ return c[0] === m.category; }) ? m.category : 'pan';
   }
+  // The group a role suggests when a request is approved (functions/index.js roleGroup).
+  // The lower of two groups (CATEGORIES runs from the top down), as functions/index.js cappedGroup.
+  function cappedGroup(g, cap){
+    var ids = CATEGORIES.map(function(c){ return c[0]; });
+    return ids.indexOf(cap) < 0 ? g : ids[Math.max(ids.indexOf(g), ids.indexOf(cap))];
+  }
+  function roleGroup(role){ return role === 'PI' ? 'exec' : role === 'PhD student' || role === 'Master student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan'; }
   function groupBadge(g){ return '<span class="type-badge pp-' + g + '">' + esc(categoryLabel(g)) + '</span>'; }
   // How someone likes to receive feedback (functions/index.js JOIN_FEEDBACK, firestore.rules).
   var FEEDBACK = [
@@ -38,11 +43,12 @@ window.BoldJoin = (function(){
       .catch(function(err){ console.error('[BOLD Join] reading the form’s choices failed', err); done(null); });
   }
 
-  // The point of contact: a choice from the people on BOLD.OS (the `people` roster, o.people,
-  // [{ name, email }]) when the page can read it, else typed (join.html: applicants aren't
-  // signed in). A typed one from before stays on offer until another is chosen.
+  // The point of contact, on the profile: who invited them too (since 2026-10-26), a choice
+  // from the people on BOLD.OS (the `people` roster, o.people, [{ name, email }]), with
+  // whether they've confirmed inviting them. A typed one from before stays on offer until
+  // another is chosen. (join.html has its own: join.js.)
   function contactHtml(v, people){
-    var label = 'BOLD supervisor, mentor or point of contact';
+    var label = 'BOLD supervisor, mentor or point of contact (they invited you; we ask them to confirm)';
     if (!people) return '<label>' + label + '<input type="text" class="jn-contact" maxlength="200" value="' + esc(v.contact || '') + '" placeholder="Who connects you to BOLD?"></label>';
     var cur = String(v.contactEmail || '').toLowerCase();
     if (!cur && v.contact) {
@@ -50,18 +56,10 @@ window.BoldJoin = (function(){
       if (named) cur = named.email;
     }
     var known = people.some(function(p){ return p.email === cur; });
-    return '<label>' + label + '<select class="jn-contact-pick"><option value="">Choose a person…</option>' +
+    var inv = v.invitedBy || {}, st = cur && inv.email === cur ? inv.status : '';
+    label += st === 'confirmed' ? ' · they confirmed it' : st === 'denied' ? ' · they say they didn’t' : st ? ' · waiting for them to confirm' : '';
+    return '<label>' + esc(label) + '<select class="jn-contact-pick"><option value="">Choose a person…</option>' +
       (!known && v.contact ? '<option value="__typed__" selected>' + esc(v.contact) + '</option>' : '') +
-      people.map(function(p){ return '<option value="' + esc(p.email) + '"' + (p.email === cur ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
-      '</select></label>';
-  }
-
-  // Who invited them to the BOLD Slack, on the profile: a choice from the roster, with
-  // whether they've confirmed it.
-  function inviterHtml(v, people){
-    var cur = String((v.invitedBy && v.invitedBy.email) || '').toLowerCase(), st = v.invitedBy && v.invitedBy.status;
-    var note = !cur ? '' : st === 'confirmed' ? ' (they confirmed it)' : st === 'denied' ? ' (they say they didn’t)' : ' (waiting for them to confirm)';
-    return '<label>Who invited you to the BOLD Slack? (we ask them to confirm)' + esc(note) + '<select class="jn-inviter-pick"><option value="">Choose a person…</option>' +
       people.map(function(p){ return '<option value="' + esc(p.email) + '"' + (p.email === cur ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') +
       '</select></label>';
   }
@@ -84,11 +82,10 @@ window.BoldJoin = (function(){
       '<label>Role at BOLD<select class="jn-role"><option value="">Choose…</option>' + opt.roles.map(function(r){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';
       }).join('') + (v.role && opt.roles.indexOf(v.role) === -1 ? '<option selected>' + esc(v.role) + '</option>' : '') + '</select></label>' +
-      contactHtml(v, o.people) +
-      // The profile: who invited them, from the roster (setMyInviter saves it and asks them to confirm).
-      (o.people && !o.withIdentity ? inviterHtml(v, o.people) : '') +
-      // join.html only: who invited them to the Slack, picked from the roster as they type (join.js).
-      (o.withIdentity ? '<label>Who invited you to the BOLD Slack? (optional; we ask them to confirm)' +
+      (o.withIdentity ? '' : contactHtml(v, o.people)) +
+      // join.html only: their point of contact, who invited them, picked from the roster as they
+      // type (join.js); they decide the request.
+      (o.withIdentity ? '<label>BOLD supervisor, mentor or point of contact (they invited you, and approve your request)' +
         '<input type="text" class="jn-inviter" maxlength="120" placeholder="Start typing their name" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"></label>' +
         '<input type="hidden" class="jn-inviter-id"><ul class="jn-inviter-list" role="listbox" hidden></ul>' : '') +
       '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
@@ -120,12 +117,12 @@ window.BoldJoin = (function(){
     if (pick) {
       var o = pick.options[pick.selectedIndex];
       out.contact = pick.value ? o.textContent.trim() : '';
-      if (pick.value !== '__typed__') out.contactEmail = pick.value;
+      if (pick.value !== '__typed__') out.contactEmail = out.inviterEmail = pick.value;
     }
     if (el.querySelector('.jn-name')) { out.name = v('.jn-name'); out.email = v('.jn-email').toLowerCase(); }
-    if (el.querySelector('.jn-inviter')) { out.invitedBy = v('.jn-inviter-id'); out.inviterTyped = v('.jn-inviter'); }
-    // Not part of the record: member-details.js sends it to setMyInviter.
-    if (el.querySelector('.jn-inviter-pick')) out.inviterEmail = el.querySelector('.jn-inviter-pick').value;
+    // join.html: the point of contact is who invited them.
+    if (el.querySelector('.jn-inviter')) { out.invitedBy = v('.jn-inviter-id'); out.inviterTyped = v('.jn-inviter'); out.contact = out.invitedBy ? out.inviterTyped : ''; }
+    // inviterEmail is not part of the record: member-details.js sends it to setMyInviter.
     return out;
   }
 
@@ -135,8 +132,8 @@ window.BoldJoin = (function(){
     if (d.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return 'Give a valid email address.';
     if (!d.institution) return 'Give your home institution.';
     if (!d.role) return 'Choose your role at BOLD.';
+    if (d.invitedBy !== undefined && !d.invitedBy) return 'Choose your point of contact from the list.';
     if (!d.contact) return 'Say who your BOLD point of contact is.';
-    if (d.inviterTyped && !d.invitedBy) return 'Choose who invited you from the list, or leave it empty.';
     if (!d.interests) return 'Give your main research interests.';
     if (!d.endDate && NO_END.indexOf(d.role) === -1) return 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).';
     if (d.startDate && d.endDate && d.endDate < d.startDate) return 'The end date is before the start date.';
@@ -160,7 +157,8 @@ window.BoldJoin = (function(){
         row('Pronouns', esc(d.pronouns || '')) + row('Institution', esc(d.institution || '')) +
         row('Based in', esc(d.basedIn || '')) + row('Links', links)) +
       group('At BOLD', row('Group', o.group || '') + row('Role', esc(d.role || '')) + row('Point of contact', esc(d.contact || '')) +
-        row('Invited by', d.invitedBy && d.invitedBy.name ? esc(d.invitedBy.name) + ' <span class="acct-handle">' +
+        // Since 2026-10-26 the point of contact is who invited them: one row, then.
+        row('Invited by', d.invitedBy && d.invitedBy.name && !(d.contactEmail && d.contactEmail === d.invitedBy.email) ? esc(d.invitedBy.name) + ' <span class="acct-handle">' +
           ({ confirmed: 'confirmed', denied: 'says they didn’t' }[d.invitedBy.status] || 'not confirmed yet') + '</span>' : '') +
         row('Dates', esc(d.startDate && d.endDate ? d.startDate + ' – ' + d.endDate : d.startDate ? 'From ' + d.startDate : d.endDate ? 'Until ' + d.endDate : '')) +
         (d.role !== undefined ? row('On the website', d.listOnWebsite ? 'Yes' : 'No') : '')) +
@@ -169,5 +167,5 @@ window.BoldJoin = (function(){
         row('Booking link', /^https:\/\/\S+$/.test(d.bookingUrl || '') ? '<a href="' + esc(d.bookingUrl) + '" target="_blank" rel="noopener">' + esc(d.bookingUrl.replace(/^https:\/\//, '')) + '</a>' : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, roleGroup: roleGroup, cappedGroup: cappedGroup, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
 })();

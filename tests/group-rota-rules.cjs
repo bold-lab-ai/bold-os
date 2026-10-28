@@ -7,15 +7,17 @@ admin.initializeApp({ projectId });
 const db = admin.firestore();
 const root = `http://${host}/v1/projects/${projectId}/databases/(default)/documents`;
 const b64 = x => Buffer.from(JSON.stringify(x)).toString('base64url');
-const jwt = (email, slackId) => {
+const jwt = (email, slackId, provider = 'oidc.slack') => {
   const now = Math.floor(Date.now() / 1000);
-  return b64({ alg: 'none', typ: 'JWT' }) + '.' + b64({ iss: `https://securetoken.google.com/${projectId}`, aud: projectId, auth_time: now, iat: now, exp: now + 3600, sub: slackId, user_id: slackId, email, firebase: { identities: { 'oidc.slack': [slackId] }, sign_in_provider: 'oidc.slack' } }) + '.';
+  return b64({ alg: 'none', typ: 'JWT' }) + '.' + b64({ iss: `https://securetoken.google.com/${projectId}`, aud: projectId, auth_time: now, iat: now, exp: now + 3600, sub: slackId, user_id: slackId, email, firebase: { identities: { [provider]: [slackId] }, sign_in_provider: provider } }) + '.';
 };
 const get = (path, token) => fetch(root + '/' + path, { headers: token ? { Authorization: 'Bearer ' + token } : {} });
 const write = (path, token) => fetch(root + '/' + path, { method: 'PATCH', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { test: { stringValue: 'bad' } } }) });
+const writePhoto = (id, token, path = `rota-profiles/${id}/portrait`) => fetch(root + '/groupRotaPhotos/' + id, { method: 'PATCH', headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: { path: { stringValue: path }, updatedBy: { stringValue: 'one@example.org' }, updatedAt: { integerValue: String(Date.now()) } } }) });
 (async () => {
   await db.collection('roles').doc('admins').set({ emails: ['admin@example.org'] });
   await db.collection('roles').doc('pis').set({ emails: [] });
+  for (const email of ['one@example.org', 'two@example.org', 'admin@example.org']) await db.collection('members').doc(email).set({ email, name: email, category: 'internal' });
   await db.collection('people').doc('U1').set({ email: 'one@example.org', slackId: 'U1' });
   await db.collection('people').doc('U2').set({ email: 'two@example.org', slackId: 'U2' });
   await db.collection('people').doc('UA').set({ email: 'admin@example.org', slackId: 'UA' });
@@ -26,10 +28,21 @@ const write = (path, token) => fetch(root + '/' + path, { method: 'PATCH', heade
   await db.collection('groupRotaDeclines').doc('decline').set({ byEmail: 'one@example.org', reason: 'private' });
   await db.collection('groupRotaEligibility').doc('U1').set({ eligible: true });
   await db.collection('groupRotaNotifications').doc('n1').set({ status: 'sent' });
+  await db.collection('groupMeetingSeasons').doc('released').set({ label: 'Released', publicationState: 'published' });
+  await db.collection('groupMeetingSeasons').doc('draft').set({ label: 'Draft', publicationState: 'draft' });
+  await db.collection('groupRotaPhotos').doc('U1').set({ path: 'rota-profiles/U1/portrait', updatedBy: 'one@example.org', updatedAt: Date.now() });
   const one = jwt('one@example.org', 'U1'), two = jwt('two@example.org', 'U2'), adm = jwt('admin@example.org', 'UA');
   const cases = [
     ['signed out rota', await get('groupRotaSlots/s1'), 403],
+    ['wrong provider rota', await get('groupRotaSlots/s1', jwt('one@example.org', 'U1', 'github.com')), 403],
     ['signed in rota', await get('groupRotaSlots/s1', one), 200],
+    ['published season', await get('groupMeetingSeasons/released', one), 200],
+    ['hidden draft', await get('groupMeetingSeasons/draft', one), 403],
+    ['admin draft', await get('groupMeetingSeasons/draft', adm), 200],
+    ['portrait reference', await get('groupRotaPhotos/U1', one), 200],
+    ['own portrait reference update', await writePhoto('U1', one), 200],
+    ['another portrait reference update denied', await writePhoto('U1', two), 403],
+    ['portrait path substitution denied', await writePhoto('U1', one, 'rota-profiles/U2/portrait'), 403],
     ['signed in meeting', await get('groupMeetings/2099-01-05', one), 200],
     ['version readable', await get('groupRotaSlots/s1/versions/v1', one), 200],
     ['direct slot write denied', await write('groupRotaSlots/s1', one), 403],

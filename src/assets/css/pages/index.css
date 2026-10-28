@@ -39,7 +39,7 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
    state being entered, so declaring it on the collapsed class animated
    closing but made opening snap. max-height (not height) because height can't
    interpolate to auto; 160px clears the wrapped mobile masthead. */
-:root{--chrome-ease:cubic-bezier(.22,.61,.36,1); --chrome-dur:.38s;}
+:root{--chrome-ease:cubic-bezier(.22,.61,.36,1); --chrome-dur:.25s;}
 .shell .sidebar{
   transition:flex-basis var(--chrome-dur) var(--chrome-ease), width var(--chrome-dur) var(--chrome-ease), border-right-width var(--chrome-dur) var(--chrome-ease);
 }

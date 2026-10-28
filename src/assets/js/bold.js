@@ -45,6 +45,8 @@
   // Guides with a page of their own elsewhere (guides/{slug} → its page): edited
   // like any guide, but not listed under How to. guide.html?guide=<slug> goes there.
   BOLD.GUIDE_PAGES = { 'get-started-at-bold': 'get-started.html' };
+  // Its page in Who can see what, when not How to's (firestore.rules guideArea, functions/access.js GUIDE_AREAS).
+  BOLD.GUIDE_AREAS = { 'get-started-at-bold': 'get-started' };
   BOLD.guideHref = function(slug){ return BOLD.GUIDE_PAGES[slug] || 'guide.html?guide=' + encodeURIComponent(slug); };
 
   // The lab's Slack workspace, for links into the Slack app (tags).
@@ -301,18 +303,325 @@
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
   };
 
+  /* ---------- who can see what ---------- */
+
+  // The BOLDiquette's Who can see what (settings/access, functions/access.js): for each
+  // page (area), the lowest group of Who is BOLD that may view it, edit on it and propose
+  // changes on it. The viewer's group is their members/{email} `category` (PAN-BOLD
+  // without one; getMyAccess, where the page has functions, also counts PIs and admins
+  // as BOLD-exec). The rules enforce it; this only decides what the page shows.
+  // Everyone is everyone signed in, the same as PAN-BOLD; not signed in ('out') is below every level.
+  var LEVELS = ['everyone', 'pan', 'associate', 'internal', 'staff', 'exec', 'none'];
+  var RANKS = { out: 0, everyone: 1, pan: 1, associate: 2, internal: 3, staff: 4, exec: 5, none: 6 };
+  var LEVEL_NAMES = { out: 'not signed in', everyone: 'Everyone', pan: 'PAN-BOLD', associate: 'BOLD-associate', internal: 'BOLD-internal', staff: 'BOLD-staff', exec: 'BOLD-exec', none: 'nobody' };
+  function rankOf(level){ return level in RANKS ? RANKS[level] : 3; }
+  var access = null, accessListeners = [];
+  // The last visit's, for the first paint (same person only).
+  try {
+    var seen = JSON.parse(localStorage.getItem('boldAccess') || 'null');
+    if (seen && hint && seen.e === hint.e) access = seen;
+  } catch (e){}
+  function setAccess(a){
+    access = a;
+    try { if (a.e) localStorage.setItem('boldAccess', JSON.stringify(a)); else localStorage.removeItem('boldAccess'); } catch (e){}
+    accessListeners.slice().forEach(function(fn){ fn(a); });
+  }
+  // Pages where every change is a proposal someone reviews (functions/access.js REVIEWED).
+  var REVIEWED = ['boldiquette', 'guides', 'skills', 'tools', 'get-started'];
+  // A page's level for `what`: view, or edit (propose is edit).
+  // PAN-BOLD is Everyone (everyone signed in): one level.
+  function levelFor(area, what){
+    var p = (access && access.pages && access.pages[area]) || {};
+    var l = (what === 'view' ? p.view : p.edit) || 'internal';
+    return l === 'pan' ? 'everyone' : l;
+  }
+  // Whether the viewer may view | edit | propose on `area` (a page key: projects, …).
+  BOLD.can = function(area, what){
+    if (!access) return false;
+    var level = levelFor(area, what || 'view');
+    return level !== 'none' && rankOf(access.group) >= rankOf(level);
+  };
+  // Why not, for a disabled control's tooltip.
+  BOLD.cannotReason = function(area, what){
+    var level = levelFor(area, what || 'view');
+    return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can see what).';
+  };
+  BOLD.myGroup = function(){ return access ? access.group : null; };
+  // fn(access) once known and on every change; replayed at once if known.
+  BOLD.onAccess = function(fn){ accessListeners.push(fn); if (access) fn(access); };
+  function loadAccess(user){
+    if (!firebase.firestore) return;
+    var db = firebase.firestore(BOLD.getApp());
+    var table = !user ? null : db.collection('settings').doc('access').get().then(function(s){ return (s.exists && s.data().pages) || {}; }).catch(function(){ return {}; });
+    if (!user) { setAccess({ e: '', group: 'out', pages: {} }); return; }
+    var mine = db.collection('members').doc(String(user.email || '').toLowerCase()).get().then(function(s){
+      var c = s.exists && s.data().category;
+      return ['exec', 'staff', 'internal', 'associate', 'pan'].indexOf(c) >= 0 ? c : 'pan';
+    }).catch(function(){ return 'pan'; });
+    Promise.all([table, mine]).then(function(r){
+      var known = access && access.e === (user.email || '') ? access : null;
+      setAccess({ e: user.email || '', group: known && known.fullWrite ? 'exec' : r[1], pages: r[0], fullWrite: !!(known && known.fullWrite) });
+      // PIs and admins count as BOLD-exec and change who can see what, which only the server knows.
+      withFunctions(function(){
+        firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(x){
+          var d = x.data || {};
+          setAccess({ e: user.email || '', group: d.group || r[1], pages: d.pages || r[0], fullWrite: !!d.fullWrite });
+        }).catch(function(){});
+      });
+    });
+  }
+  // fn() once the Functions SDK is there: loaded (same pinned version) if the page hasn't it.
+  function withFunctions(fn){
+    if (firebase.functions) return fn();
+    var app = document.querySelector('script[src*="firebase-app-compat.js"]');
+    if (!app) return;
+    var el = document.createElement('script');
+    el.src = app.src.replace('firebase-app-compat.js', 'firebase-functions-compat.js');
+    el.onload = fn;
+    document.head.appendChild(el);
+  }
+  BOLD.isFullWrite = function(){ return !!(access && access.fullWrite); };
+
+  // ---------- who can see this page: a chip at its top right, and its panel ----------
+  // The chip says who can see the page; it opens the page's row of the BOLDiquette's Who
+  // can see what as a ladder (each group can do what the groups below it can): for each
+  // action, the lowest group allowed. Everyone can open it; PIs and admins propose a change
+  // there, as a proposal on the BOLDiquette that another PI or admin accepts, and the chip
+  // says while one waits.
+  // The pages, as the table names them (functions/access.js PAGES, kept in sync by hand).
+  var AREA_NAMES = { boldiquette: 'BOLDiquette', projects: 'Projects', profile: 'Your profile', calendar: 'Calendar', 'ml-cycle': 'ML Conference Cycle',
+    people: 'People', requests: 'Requests', events: 'Events', agents: 'Agents', tools: 'Tools', skills: 'Skills', guides: 'How to',
+    'service-desk': 'Service desk', 'get-started': 'Get started', search: 'Search', changelog: 'Changes' };
+  var WHAT = ['view', 'edit'];
+  var WHAT_ROW = { view: 'View', edit: 'Edit' };
+  var WHAT_VERB = { view: 'view', edit: 'edit' };
+  var LADDER = ['everyone', 'associate', 'internal', 'staff', 'exec', 'none'];
+  var LADDER_HEAD = { everyone: 'Everyone', pan: 'PAN-BOLD', associate: 'Associate', internal: 'Internal', staff: 'Staff', exec: 'Exec', none: 'Nobody' };
+  var ACCESS_INTRO = 'Who can view each page of BOLD.OS, and who can edit it (on the BOLDiquette, How to, Skills and Tools, by proposing). Everyone means everyone signed in; each group can do everything the groups below it can; — is nobody. Only PIs and admins change this table, and who is in which group.';
+  var ICON_EYE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8z"/><circle cx="8" cy="8" r="2"/></svg>';
+  var panel = null;      // open: { lv: {view, edit, propose}, note, busy, error, done }
+  var waiting = null;    // this page's row in an open proposal: { id, lv } | null
+  var waitingUnsub = null;
+  function pageArea(){ var sh = document.getElementById('shell'); return sh && sh.getAttribute('data-area'); }
+  function currentLevels(area){ var lv = {}; WHAT.forEach(function(w){ lv[w] = levelFor(area, w); }); return lv; }
+  function sameLevels(a, b){ return WHAT.every(function(w){ return a[w] === b[w]; }); }
+  function groupName(l){ return l === 'everyone' ? 'Everyone' : l === 'none' ? 'Nobody' : LEVEL_NAMES[l]; }
+  function who(l){ return l === 'everyone' ? 'Everyone' : l === 'none' ? 'Nobody' : l === 'exec' ? 'BOLD-exec' : LEVEL_NAMES[l] + ' and above'; }
+  // One sentence for the ladder: "BOLD-internal and above can view and edit it."
+  function sentence(lv){
+    if (lv.view === lv.edit) return who(lv.view) + ' can view and edit it.';
+    var low = function(l){ var s = who(l); return l === 'none' || l === 'everyone' ? s.charAt(0).toLowerCase() + s.slice(1) : s; };
+    return who(lv.view) + ' can view it; ' + low(lv.edit) + ' can edit it.';
+  }
+  // Pure: a table cell or row ↔ levels, as functions/access.js reads them.
+  var norm = function(c){ return String(c || '').replace(/[*_`]/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim().toLowerCase(); };
+  function levelOfCell(c){
+    c = norm(c);
+    if (c === '' || c === '-' || c === '—' || c === '–') return 'none';
+    return LADDER.filter(function(l){ return norm(groupName(l)) === c; })[0] || null;
+  }
+  function rowOf(body, area){
+    var out = null;
+    String(body || '').split('\n').forEach(function(l){
+      if (out || !/^\s*\|/.test(l)) return;
+      var cells = l.trim().replace(/^\||\|$/g, '').split('|');
+      if (norm(cells[0]) !== norm(AREA_NAMES[area])) return;
+      // View | Edit; a row as the table first was (View | Edit | Propose) reads as functions/access.js reads it.
+      var old = cells.length >= 4, lv = { view: levelOfCell(cells[1]), edit: levelOfCell(cells[old ? (REVIEWED.indexOf(area) >= 0 ? 3 : 2) : 2]) };
+      if (lv.view && lv.edit) out = lv;
+    });
+    return out;
+  }
+  function accessRow(area, lv){ return '| ' + AREA_NAMES[area] + ' | ' + WHAT.map(function(w){ return lv[w] === 'none' ? '—' : groupName(lv[w]); }).join(' | ') + ' |'; }
+  // The part's new body: this page's row replaced (or added), the rest as it is.
+  function accessBody(body, area, lv){
+    if (!body) {
+      var pages = Object.assign({}, access.pages); pages[area] = lv;
+      return ACCESS_INTRO + '\n\n| Page | View | Edit |\n|---|---|---|\n' + Object.keys(AREA_NAMES).map(function(k){
+        var q = pages[k] || {};
+        return accessRow(k, { view: q.view || 'internal', edit: q.edit || 'internal' });
+      }).join('\n');
+    }
+    // In the table headed Page (the part also has the groups' ranks and the roles), as
+    // functions/access.js setAccessRow.
+    var lines = body.split('\n'), last = -1, done = false, inTable = false;
+    lines = lines.map(function(l, i){
+      if (!/^\s*\|/.test(l)) { inTable = false; return l; }
+      var first = norm(l.trim().replace(/^\|/, '').split('|')[0]);
+      if (first === 'page') { inTable = true; last = i; return l; }
+      if (!inTable) return l;
+      last = i;
+      if (first === norm(AREA_NAMES[area])) { done = true; return accessRow(area, lv); }
+      return l;
+    });
+    if (!done) { if (last === -1) lines.push('', '| Page | View | Edit |', '|---|---|---|', accessRow(area, lv)); else lines.splice(last + 1, 0, accessRow(area, lv)); }
+    return lines.join('\n');
+  }
+  // An open proposal changing this page's row (the newest), for the chip and the panel.
+  function watchWaiting(){
+    if (waitingUnsub) { waitingUnsub(); waitingUnsub = null; }
+    waiting = null;
+    var area = pageArea();
+    if (!area || !access || !access.e || !firebase.firestore || !BOLD.can('boldiquette', 'view')) return;
+    waitingUnsub = firebase.firestore(BOLD.getApp()).collection('handbook').doc('boldiquette').collection('proposals')
+      .where('status', '==', 'open').onSnapshot(function(snap){
+        var cur = currentLevels(area);
+        waiting = null;
+        snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return b.at - a.at; }).some(function(q){
+          var changes = q.kind === 'batch' ? (q.changes || []) : [q];
+          return changes.some(function(c){
+            // One row (kind 'access'), or the whole part with this page's row in it.
+            var lv = c.kind === 'access' ? (c.area === area && c.after) : c.partId === 'access' && c.after && rowOf(c.after.body, area);
+            if (lv && !sameLevels(lv, cur)) { waiting = { id: q.id, lv: lv }; return true; }
+            return false;
+          });
+        });
+        drawAccess();
+      }, function(){ waiting = null; drawAccess(); });
+  }
+  function ladderHtml(lv, ghost, editable){
+    var head = '<div class="ac-row ac-head"><span></span>' + LADDER.map(function(l){ return '<span' + (l === 'everyone' ? ' title="Everyone signed in (PAN-BOLD and above)"' : '') + '>' + esc(LADDER_HEAD[l]) + '</span>'; }).join('') + '</div>';
+    return '<div class="ac-ladder" role="group" aria-label="Who can see this page">' + head + WHAT.map(function(w){
+      var at = LADDER.indexOf(lv[w]), ghostAt = ghost ? LADDER.indexOf(ghost[w]) : -1;
+      return '<div class="ac-row" role="radiogroup" aria-label="' + esc(WHAT_ROW[w]) + '"><span class="ac-what">' + esc(WHAT_ROW[w]) + '</span>' + LADDER.map(function(l, i){
+        var on = lv[w] === 'none' ? l === 'none' : (l !== 'none' && i >= at);
+        var cls = 'ac-cell' + (on ? ' is-on' : '') + (i === at ? ' is-pick' : '') + (ghost && (ghost[w] === 'none' ? l === 'none' : l !== 'none' && i >= ghostAt) ? ' is-ghost' : '');
+        var tip = who(l) + ' can ' + WHAT_VERB[w] + ' it';
+        return '<button type="button" class="' + cls + '" role="radio" aria-checked="' + (i === at) + '" data-what="' + w + '" data-level="' + l + '" title="' + esc(tip) + '"' +
+          (editable ? '' : ' disabled') + '><span class="ac-dot"></span></button>';
+      }).join('') + '</div>';
+    }).join('') + '</div>';
+  }
+  function drawAccess(){
+    var el = document.getElementById('pageAccess'), area = pageArea();
+    if (!el) return;
+    if (!area || !AREA_NAMES[area] || !access || !access.e) { el.hidden = true; el.innerHTML = ''; return; }
+    var cur = currentLevels(area);
+    var html = '<button type="button" class="ac-chip" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="Who can see this page">' + ICON_EYE +
+      '<span>' + esc(groupName(cur.view)) + '</span>' + (waiting ? '<span class="ac-waiting">· 1 change waiting</span>' : '') + '<svg class="ac-caret" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button>';
+    if (panel) {
+      var can = !!access.fullWrite, lv = panel.lv, changed = !sameLevels(lv, cur);
+      html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">Who can see ' + esc(AREA_NAMES[area]) + '</div>';
+      if (panel.done) html += '<p class="ac-sentence">Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposal-' + esc(panel.done) + '">the BOLDiquette</a>.</p>' +
+        '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
+      else {
+        html += ladderHtml(lv, waiting && !changed ? waiting.lv : null, can) +
+          '<p class="ac-sentence">' + esc(sentence(lv)) + '</p>' +
+          (REVIEWED.indexOf(area) >= 0 ? '<p class="ac-note">Edits here are proposals that a PI or admin reviews.</p>' : '') +
+          (waiting && !changed ? '<p class="ac-note">Waiting: ' + esc(sentence(waiting.lv)) + ' <a href="boldiquette.html#proposal-' + esc(waiting.id) + '">See it on the BOLDiquette</a>.</p>' : '');
+        if (!can) html += '<p class="ac-note">Only PIs and admins change this.</p><div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
+        else html += (changed ? '<label class="ac-why">Why?<textarea class="ac-note-input" maxlength="1000" rows="2">' + esc(panel.note || '') + '</textarea></label>' : '') +
+          '<p class="ev-error"' + (panel.error ? '' : ' hidden') + '>' + esc(panel.error || '') + '</p>' +
+          '<div class="ac-actions"><button type="button" class="btn-text ac-close">' + (changed ? 'Cancel' : 'Close') + '</button>' +
+          '<button type="button" class="btn-box is-primary ac-propose"' + (!changed || panel.busy ? ' disabled' : '') + (changed ? '' : ' title="Change a row first"') + '>Propose change</button></div>';
+      }
+      html += '</div>';
+    }
+    el.innerHTML = html;
+    el.hidden = false;
+  }
+  // For the BOLDiquette's list of proposed changes (pages/guide.js): a one-row proposal in
+  // words, and the part with it applied.
+  BOLD.accessProposal = {
+    pageName: function(area){ return AREA_NAMES[area] || area; },
+    levelName: function(l){ return l === 'none' ? '—' : groupName(l); },
+    // "Who can see Calendar: View and Edit, BOLD-internal → BOLD-associate"
+    describe: function(q){
+      var b = q.before || {}, a = q.after || {}, n = BOLD.accessProposal.levelName;
+      var ch = WHAT.filter(function(w){ return b[w] !== a[w]; });
+      var what = !ch.length ? 'no change' : ch.length === 2 && b.view === b.edit && a.view === a.edit ? 'View and Edit, ' + n(b.view) + ' → ' + n(a.view)
+        : ch.map(function(w){ return WHAT_ROW[w] + ', ' + n(b[w]) + ' → ' + n(a[w]); }).join('; ');
+      return 'Who can see ' + (AREA_NAMES[q.area] || q.area) + ': ' + what;
+    },
+    body: function(body, area, lv){ return accessBody(body, area, lv); },
+  };
+  function proposeAccess(){
+    var area = pageArea(), u = auth && auth.currentUser;
+    if (!String(panel.note || '').trim()) { panel.error = 'Say why, for whoever reviews it.'; drawAccess(); return; }
+    var lv = Object.assign({}, panel.lv);
+    panel.busy = true; panel.error = ''; drawAccess();
+    // Just this page's row: accepting it sets that row in the table as it is then
+    // (functions/index.js appliedProposal), whatever else changes in the part meanwhile.
+    var ref = firebase.firestore(BOLD.getApp()).collection('handbook').doc('boldiquette');
+    ref.collection('proposals').add({
+      kind: 'access', partId: 'access', area: area, before: currentLevels(area), after: { view: lv.view, edit: lv.edit },
+      note: String(panel.note).trim(), by: { email: u.email || '', name: u.displayName || '' }, at: Date.now(), status: 'open',
+    }).then(function(d){ panel.busy = false; panel.done = d.id; drawAccess(); }, function(err){
+      console.error('[BOLD Lab] proposing who can see what failed', err);
+      panel.busy = false; panel.error = 'Couldn’t propose it — try again.'; drawAccess();
+    });
+  }
+  // Whoever can edit a page can view it: raising View raises Edit with it, and lowering
+  // Edit lowers View with it. Nobody viewing it means nobody edits it.
+  function setLevel(w, l){
+    var lv = panel.lv, rank = function(x){ return LADDER.indexOf(x); };
+    lv[w] = l;
+    if (w === 'view' && lv.edit !== 'none' && (l === 'none' || rank(lv.edit) < rank(l))) lv.edit = l;
+    if (w === 'edit' && l !== 'none' && rank(l) < rank(lv.view)) lv.view = l;
+  }
+  document.addEventListener('click', function(e){
+    var box = document.getElementById('pageAccess');
+    if (!box) return;
+    if (!box.contains(e.target)) {
+      if (panel && !panel.busy && !(panel.note && !panel.done)) { panel = null; drawAccess(); }
+      return;
+    }
+    var t = e.target.closest('button');
+    if (!t || t.disabled) return;
+    if (t.classList.contains('ac-chip')) panel = panel ? null : { lv: currentLevels(pageArea()), note: '' };
+    else if (t.classList.contains('ac-close')) panel = null;
+    else if (t.classList.contains('ac-cell')) setLevel(t.getAttribute('data-what'), t.getAttribute('data-level'));
+    else if (t.classList.contains('ac-propose')) { proposeAccess(); return; }
+    drawAccess();
+    var again = panel && box.querySelector('.ac-cell[data-what="' + t.getAttribute('data-what') + '"][data-level="' + t.getAttribute('data-level') + '"]');
+    if (again) again.focus();
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && panel && !panel.busy) { panel = null; drawAccess(); var c = document.querySelector('#pageAccess .ac-chip'); if (c) c.focus(); }
+  });
+  document.addEventListener('input', function(e){
+    if (e.target.classList && e.target.classList.contains('ac-note-input') && panel) panel.note = e.target.value;
+  });
+  // Watched again when the person, the table or the page changes. A remembered visit's
+  // access comes before the page's body (and its area) is there: watched once it is.
+  var watchedFor = null;
+  function rewatch(a){
+    var key = pageArea() + '|' + a.e + '|' + JSON.stringify(a.pages);
+    if (watchedFor !== key) { watchedFor = key; watchWaiting(); }
+  }
+  BOLD.onAccess(function(a){
+    rewatch(a);
+    if (!panel || panel.done) drawAccess();
+  });
+  document.addEventListener('DOMContentLoaded', function(){ if (access) rewatch(access); drawAccess(); });
+
   /* ---------- shell: sidebar state + gating ---------- */
+
+  // The gate when signed in but the page is for groups above theirs.
+  function showLevelGate(gate, area){
+    if (!gate) return;
+    var level = levelFor(area, 'view');
+    gate.innerHTML = '<div class="gate-box"><h1>Not open to your group</h1>' +
+      '<p>This page is for ' + esc(LEVEL_NAMES[level]) + ' and above; you’re in ' + esc(LEVEL_NAMES[access.group] || 'PAN-BOLD') + '. ' +
+      '<a href="boldiquette.html#access">Who can see what</a>.</p>' +
+      '<a class="gate-signup-btn" href="profile.html">Ask for another group on your profile</a></div>';
+    gate.setAttribute('data-level-gate', '');
+    gate.hidden = false;
+  }
 
   // Called right after the opening <div class="shell">.
   BOLD.mountShell = function(){
     var shell = document.getElementById('shell');
     // Saved sidebar state, applied before first paint so it doesn't animate in.
     try { if (localStorage.getItem('boldNavCollapsed') === '1') shell.classList.add('is-collapsed'); } catch (e){}
+    if (BOLD.getAuth()) BOLD.onUser(loadAccess);
     if (shell.hasAttribute('data-public')) return;
+    // The page's area in Who can see what (front matter `area`); without one, BOLD-internal's.
+    var area = shell.getAttribute('data-area') || 'internal';
 
-    // Gated page: hidden until signed in. A cached sign-in shows it at once
+    // Gated page: hidden until signed in and allowed. A cached sign-in shows it at once
     // instead of after Firebase Auth resolves; auth stays authoritative.
-    shell.hidden = !hint;
+    shell.hidden = !hint || !BOLD.can(area, 'view');
     if (!BOLD.getAuth()) {
       document.addEventListener('DOMContentLoaded', function(){
         var gate = document.getElementById('pageGate');
@@ -327,16 +636,59 @@
     BOLD.onUser(function(user){
       var gate = document.getElementById('pageGate');
       if (gate) gate.hidden = !!user;
-      shell.hidden = !user;
+      if (!user) shell.hidden = true;
+    });
+    BOLD.onAccess(function(a){
+      if (!a.e) return;   // signed out: the sign-in gate above
+      var ok = BOLD.can(area, 'view');
+      shell.hidden = !ok;
+      // Allowed after all (the server's answer, a PI's say): the gate shown on the first guess goes.
+      var shown = document.getElementById('pageGate');
+      if (ok && shown && shown.hasAttribute('data-level-gate')) shown.hidden = true;
+      if (!ok) {
+        // Checked again when it's drawn: the server may have said yes by then.
+        var show = function(){ if (!BOLD.can(area, 'view')) showLevelGate(document.getElementById('pageGate'), area); };
+        if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+      }
     });
   };
+
+  // The sidebar shows only the pages the viewer may view ([data-area] on its groups and links).
+  function sidebarAccess(){
+    BOLD.onAccess(function(){
+      Array.prototype.forEach.call(document.querySelectorAll('#sidebar [data-area]'), function(el){
+        el.hidden = !BOLD.can(el.getAttribute('data-area'), 'view');
+      });
+      // A group the viewer can't open still shows for a link in it they can (Get started under the
+      // Service desk, for PAN-BOLD): only those links, and its heading goes to the first of them.
+      Array.prototype.forEach.call(document.querySelectorAll('#sidebar .nav-group[data-area]'), function(g){
+        var label = g.querySelector('.nav-group-label');
+        if (label && !label.hasAttribute('data-href')) label.setAttribute('data-href', label.getAttribute('href'));
+        var open = BOLD.can(g.getAttribute('data-area'), 'view'), own = [];
+        Array.prototype.forEach.call(g.querySelectorAll('.nav-sub'), function(a){
+          var area = a.getAttribute('data-area');
+          if (!area) a.hidden = !open; else if (!a.hidden) own.push(a);
+        });
+        g.hidden = !open && !own.length;
+        if (label) label.setAttribute('href', open || !own.length ? label.getAttribute('data-href') : own[0].getAttribute('href'));
+      });
+      // A divider shows only between groups the viewer sees: none first, last or twice in a row.
+      var seen = false, pending = null;
+      Array.prototype.forEach.call(document.querySelectorAll('#sidebar .nav-groups > *'), function(el){
+        if (el.classList.contains('nav-sep')) { el.hidden = true; if (seen) pending = el; seen = false; return; }
+        if (el.hidden) return;
+        if (pending) { pending.hidden = false; pending = null; }
+        seen = true;
+      });
+    });
+  }
 
   /* ---------- sidebar: BOLDiquette's sections, the events, the skills and the guides ---------- */
 
   // A group's sub-links come from Firestore: [data-nav-<key>] is filled from
   // load() → [{ title, href }]. The last list seen paints first (localStorage
   // `cacheKey`); Firestore stays authoritative.
-  function firestoreNav(key, cacheKey, load){
+  function firestoreNav(key, cacheKey, area, load){
     var group = document.querySelector('[data-nav-' + key + ']');
     if (!group) return;
     var page = location.pathname.split('/').pop() || 'index.html';
@@ -357,8 +709,8 @@
       if (anyActive) label.classList.remove('active');
     }
     try { draw(JSON.parse(localStorage.getItem(cacheKey) || '[]')); } catch (e){}
-    BOLD.onUser(function(user){
-      if (!user || !firebase.firestore) return;
+    BOLD.onAccess(function(){
+      if (!BOLD.can(area, 'view') || !firebase.firestore) return;
       load(firebase.firestore(BOLD.getApp())).then(function(list){
         draw(list);
         try { localStorage.setItem(cacheKey, JSON.stringify(list)); } catch (e){}
@@ -366,22 +718,26 @@
     });
   }
 
-  // The released events (events/{slug}, hidden == false — see events-common.js),
-  // newest first: an event with its own page links there, the rest to
-  // event.html?event=<slug>.
+  // The released event series (eventSeries, hidden == false; series.html), by title, each
+  // to its own page; then the released one-off events (events/{slug} with no series),
+  // newest first: an event with its own page links there, the rest to event.html?event=<slug>.
   function eventsNav(){
-    firestoreNav('events', 'boldNavEvents', function(db){
-      return db.collection('events').where('hidden', '==', false).get().then(function(snap){
-        return snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title; })
+    firestoreNav('events', 'boldNavEvents', 'events', function(db){
+      return Promise.all([db.collection('eventSeries').where('hidden', '==', false).get(), db.collection('events').where('hidden', '==', false).get(), db.collection('groupMeetingSeasons').where('publicationState', '==', 'published').get()]).then(function(r){
+        var series = r[0].docs.map(function(d){ return d.data(); }).filter(function(x){ return x.id && x.title; })
+          .sort(function(a, b){ return a.title.localeCompare(b.title); })
+          .map(function(x){ return { title: x.title, href: x.page || 'series.html?series=' + encodeURIComponent(x.id) }; });
+        var once = r[1].docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title && !e.series; })
           .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; })
           .map(function(e){ return { title: e.title, href: e.page || 'event.html?event=' + encodeURIComponent(e.slug) }; });
+        return (r[2].empty ? [] : [{ title: 'Group meetings', href: 'group-meetings.html' }]).concat(series, once);
       });
     });
   }
 
   // The skills (skills/{name} — see skills-common.js), by title.
   function skillsNav(){
-    firestoreNav('skills', 'boldNavSkills', function(db){
+    firestoreNav('skills', 'boldNavSkills', 'skills', function(db){
       return db.collection('skills').get().then(function(snap){
         return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.name; })
           .map(function(x){ return { title: x.title || x.name, href: 'skill.html?skill=' + encodeURIComponent(x.name) }; })
@@ -392,7 +748,7 @@
 
   // The how-to guides (guides/{slug} — see guides-common.js), by title.
   function guidesNav(){
-    firestoreNav('guides', 'boldNavGuides', function(db){
+    firestoreNav('guides', 'boldNavGuides', 'guides', function(db){
       return db.collection('guides').get().then(function(snap){
         return snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug && !BOLD.GUIDE_PAGES[x.slug]; })
           .map(function(x){ return { title: x.title || x.slug, href: 'guide.html?guide=' + encodeURIComponent(x.slug) }; })
@@ -404,7 +760,7 @@
   // BOLDiquette's sections (handbook/boldiquette — see pages/guide.js), in
   // order, each linking to its heading on the page.
   function handbookNav(){
-    firestoreNav('handbook', 'boldNavHandbook', function(db){
+    firestoreNav('handbook', 'boldNavHandbook', 'boldiquette', function(db){
       return db.collection('handbook').doc('boldiquette').get().then(function(snap){
         var out = [];
         ((snap.exists && snap.data().parts) || []).forEach(function(p){
@@ -424,7 +780,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) { handbookNav(); eventsNav(); skillsNav(); guidesNav(); }
+    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');

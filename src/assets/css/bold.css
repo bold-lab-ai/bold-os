@@ -263,6 +263,49 @@ footer{
 a.mast-auth-name{text-decoration:none;}
 a.mast-auth-name:hover{text-decoration:underline;}
 .mast-auth-email{font-weight:400; color:var(--muted);}
+/* Who can see this page (bold.js): a chip at the page's top right, opening its ladder (each
+   group can do what the groups below it can); PIs and admins propose a change there. */
+.shell-main{position:relative;}
+/* In the page, but outside its content: its own row, right under the name in the masthead (same
+   inset), so nothing at the top of a page (a sticky bar, a hero) can sit under it. */
+.page-access{position:relative; padding:10px var(--chrome-pad) 0; z-index:1100; font-family:var(--sans); font-size:12px; color:var(--muted); display:flex; flex-direction:column; align-items:flex-end;}
+.ac-chip{display:inline-flex; align-items:center; gap:5px; font:inherit; color:var(--ink-soft); background:none; border:1px solid var(--line); border-radius:999px; padding:1px 9px 1px 7px; cursor:pointer;}
+.ac-chip:hover, .ac-chip[aria-expanded="true"]{border-color:var(--ink-soft); color:var(--ink);}
+.ac-chip svg{flex:none;}
+.ac-waiting{color:var(--ink); font-weight:600;}
+.ac-caret{color:var(--muted);}
+.ac-panel{position:absolute; top:100%; right:var(--chrome-pad); z-index:1; margin-top:6px; width:min(560px, calc(100vw - 32px)); background:var(--surface); border:1px solid var(--line); padding:14px 16px; display:flex; flex-direction:column; gap:10px; font-size:13px; color:var(--ink); box-shadow:0 8px 24px rgba(26,43,74,.10); text-align:left;}
+.ac-title{font-family:var(--serif); font-size:18px; font-weight:600;}
+.ac-ladder{display:flex; flex-direction:column; gap:2px;}
+.ac-row{display:grid; grid-template-columns:118px repeat(6, 1fr); align-items:center;}
+.ac-head span{font-size:11px; color:var(--muted); text-align:center; letter-spacing:.02em;}
+.ac-what{color:var(--ink-soft);}
+.ac-cell{height:28px; background:none; border:0; padding:0; cursor:pointer; display:flex; align-items:center; justify-content:center; position:relative;}
+.ac-cell:disabled{cursor:default;}
+.ac-cell.is-on::before{content:''; position:absolute; left:0; right:0; top:50%; height:4px; margin-top:-2px; background:rgba(26,43,74,.18);}
+.ac-cell.is-pick::before{left:50%;}
+.ac-cell.is-on[data-level="exec"]::before{right:50%;}
+.ac-cell.is-pick[data-level="exec"]::before, .ac-cell[data-level="none"]::before{display:none;}
+.ac-dot{width:12px; height:12px; border-radius:50%; border:1.5px solid var(--line); background:var(--surface); position:relative;}
+.ac-cell.is-on .ac-dot{border-color:var(--ink); background:var(--ink);}
+.ac-cell:not(:disabled):hover .ac-dot{border-color:var(--ink);}
+.ac-cell:disabled:not(.is-on) .ac-dot{opacity:.45;}
+.ac-cell.is-ghost:not(.is-on) .ac-dot{border:1.5px dashed var(--ink); opacity:1;}
+.ac-cell:focus-visible{outline:2px solid var(--ink); outline-offset:-2px;}
+.ac-sentence{margin:0; font-family:var(--serif); font-size:15px;}
+.ac-note{margin:0; color:var(--muted);}
+.ac-why{display:flex; flex-direction:column; gap:4px; color:var(--ink-soft);}
+.ac-why textarea{width:100%; font:inherit; box-sizing:border-box;}
+.ac-panel .ev-error{margin:0;}
+.ac-actions{display:flex; gap:14px; justify-content:flex-end; align-items:center;}
+@media (max-width:560px){
+  .ac-panel{position:fixed; left:0; right:0; bottom:0; top:auto; width:auto; margin:0; max-height:80vh; overflow:auto; border-width:1px 0 0; padding:16px;}
+  .ac-row{grid-template-columns:repeat(6, 1fr);}
+  .ac-row > :first-child{grid-column:1 / -1;}
+  .ac-head > :first-child{display:none;}
+  .ac-what{margin-top:6px;}
+  .ac-head span{font-size:10px;}
+}
 .btn-text{
   font-family:var(--sans); font-weight:400; font-size:12.5px;
   color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
@@ -275,6 +318,9 @@ a.mast-auth-name:hover{text-decoration:underline;}
 
 /* Add/edit form for an event added on the site (events-common.js) — the events page and event.html. */
 .event-form{padding:14px 16px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); max-width:560px; font-family:var(--sans); font-size:13px;}
+.event-form-head{margin:0 0 10px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink);}
+.event-form-hint{margin:2px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.btn-text:disabled, .btn-text.is-off{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
 .event-form label{display:block; margin-bottom:10px; color:var(--muted);}
 .event-form input, .event-form textarea{
   display:block; width:100%; margin-top:4px; font-family:var(--sans); font-size:14px; color:var(--ink);
@@ -306,6 +352,7 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .event-controls .btn-text:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
 .event-controls .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
 .event-hidden-note{margin:0 0 16px; font-family:var(--sans); font-size:13px; color:var(--danger-text);}
+.event-series{margin:8px 0 0; font-family:var(--sans); font-size:14px; color:var(--muted);}
 
 /* ---------- an event's days and time slots (event-schedule.js) ---------- */
 .day-card{border-top:1px solid var(--line); padding:22px 0; scroll-margin-top:12px;}
@@ -314,6 +361,9 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .day-note{margin:5px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .slot{display:flex; gap:20px; padding:14px 0; border-bottom:1px solid var(--line); scroll-margin-top:12px;}
 .slots{border-top:1px solid var(--line); margin-top:14px;}
+/* One line between days (the next day's), and none under a tab bar, which has its own. */
+.slots .slot:last-child{border-bottom:none;}
+.tab-panel .schedule > .day-card:first-child{border-top:none; padding-top:4px;}
 .slot-time{flex:0 0 auto; width:96px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink); font-variant-numeric:tabular-nums; padding-top:3px;}
 .slot-sessions{flex:1 1 auto; min-width:0; display:grid; grid-template-columns:1fr; gap:3px 20px;}
 .slot-sessions.is-parallel{grid-template-columns:repeat(auto-fit, minmax(190px, 1fr));}
@@ -499,8 +549,8 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .mention-list li{padding:5px 12px; cursor:pointer;}
 .mention-list li.is-active, .mention-list li:hover{background:var(--wash);}
 /* A recurring meeting's end date, in its row of fields (project-fields.js meetingEntryHtml) */
-.meeting-entry label.meeting-until{display:flex; align-items:center; gap:8px; flex:1 1 200px; margin:0; font-family:var(--sans); font-size:13px; font-weight:400; color:var(--muted); white-space:nowrap;}
-.meeting-entry label.meeting-until input{flex:1 1 auto; width:auto; min-width:0; margin:0;}
+.meeting-entry label.meeting-until, .meeting-entry label.meeting-link{display:flex; align-items:center; gap:8px; flex:1 1 200px; margin:0; font-family:var(--sans); font-size:13px; font-weight:400; color:var(--muted); white-space:nowrap;}
+.meeting-entry label.meeting-until input, .meeting-entry label.meeting-link input{flex:1 1 auto; width:auto; min-width:0; margin:0;}
 /* ---------- view toggle (Projects, Calendar, Connections, Network) ---------- */
 .view-toggle{display:flex; border:1px solid var(--line);}
 .view-btn{
@@ -570,6 +620,9 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .cx-ctl-row > .cx-pair:first-child .cx-bar-label{min-width:44px;}
 .cx-chip-n{color:var(--muted); font-size:12px; margin-left:6px;}
 .cx-find{width:280px; max-width:100%;}
+/* Since runs right to left: today at the left, 1 August 2026 (everything) at the right. */
+.cx-since{width:280px; max-width:100%; accent-color:var(--accent); direction:rtl;}
+.cx-since-day{font-family:var(--sans); font-size:13px; color:var(--ink-soft); min-width:92px;}
 .cx-ctl-row[hidden], .cx-pair[hidden]{display:none;}
 .cx-pair{display:inline-flex; flex-wrap:wrap; align-items:center; gap:6px 10px; min-width:0; max-width:100%;}
 .cx-pair .view-toggle{flex-wrap:wrap;}
@@ -624,3 +677,30 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .confirm-dialog li.confirm-opt{list-style:none; margin-left:-20px;}
 .confirm-dialog li.confirm-opt label{display:flex; gap:6px; align-items:flex-start;}
 .confirm-dialog li.confirm-opt input{margin-top:3px;}
+/* Proposals for an event (event-proposals.js): Collaboration Week, and any edition of a recurring event that takes them. */
+.proposal-card{border-top:1px solid var(--line); padding:18px 0;}
+.proposal-top{display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap;}
+.proposal-title{font-size:18px; font-weight:600; color:var(--ink);}
+.proposal-type{
+  flex:0 0 auto; font-family:var(--sans); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em;
+  color:var(--muted); border:1px solid var(--line); padding:2px 8px;
+}
+.proposal-meta{margin-top:8px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.proposal-meta strong{color:var(--ink-soft); font-weight:600;}
+.proposal-note{margin-top:8px; font-family:var(--sans); font-size:14px; color:var(--ink-soft); white-space:pre-wrap; overflow-wrap:break-word;}
+.proposal-actions{margin-top:10px; display:flex; align-items:center; gap:14px; font-family:var(--sans); font-size:13px;}
+.proposal-actions .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}
+.proposal-empty{font-size:16px; color:var(--muted); margin-top:14px;}
+/* switching between a series' occurrences (series-editions.js) */
+.ed-switch{max-width:var(--content-max); margin:0 auto; padding:28px var(--gutter) 0; font-family:var(--sans); font-size:13px;}
+.ed-row{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px;}
+.ed-switch[hidden]{display:none;}
+.ed-row > a{color:var(--muted); text-decoration:none; padding-bottom:2px; border-bottom:2px solid transparent;}
+.ed-row > a:hover{color:var(--ink);}
+.ed-row > a.is-current{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
+.ed-switch:not([hidden]) + .hero{padding-top:28px;}
+.ed-tools{margin-left:auto; display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 16px;}
+.ed-hidden{font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--danger-text);}
+.ed-form{margin-top:14px;}
+.ed-plan{font-family:var(--sans); font-size:15px; line-height:1; width:22px; height:22px; padding:0; border:1px solid var(--line); background:var(--surface); color:var(--accent); cursor:pointer; align-self:center;}
+.ed-plan:hover{border-color:var(--accent);}

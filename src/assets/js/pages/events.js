@@ -1,90 +1,125 @@
-// Events page — every event is an events/{slug} doc (see events-common.js),
-// listed newest first by start date. An event with its own page (`page`,
-// e.g. Collaboration Week) links there; the rest to event.html?event=<slug>. "+ Add an event" is always shown,
-// greyed out for anyone but a PI/admin. A new event starts hidden — only
-// PIs/admins see it, marked "Hidden" — until it's released from its page.
+// Events page, laid out as People is: a search, then the event series (eventSeries;
+// series.html), each with its next occurrence (or its last), and under Once any one-off
+// events (events/{slug} with no series; see events-common.js), newest first. A series'
+// occurrences show only under it. An event with its own page (`page`, e.g. Collaboration Week) links
+// there; the rest to event.html?event=<slug>, a recurring one to series.html?series=<id>.
+// A hidden one (still being planned) shows only to PIs/admins and whoever added or
+// organises it, marked Hidden, until a PI or admin releases it.
+// "+ Add a new event series" (series.html?new: once, or recurring) is for Events' Edit level
+// (BOLDiquette › Who can see what): always shown, greyed out for everyone else.
 (function(){
   var esc = BOLD.escapeHtml;
   var E = window.BoldEvents;
-  var list = document.getElementById('eventList');
-  var addBtn = document.getElementById('eventAdd');
-  var loading = document.getElementById('eventLoading');
-  if (!list || !BOLD.getAuth()) return;
+  var root = document.getElementById('eventList');
+  var search = document.getElementById('evSearch');
+  var seriesAdds = Array.prototype.slice.call(document.querySelectorAll('.series-add'));
+  if (!root || !BOLD.getAuth()) return;
   var db = null;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
 
-  var events = [], fullWrite = false, me = null;
+  var events = null, series = [], rotaSeasons = [], rotaMeetings = [], fullWrite = false, me = null;
 
-  function cardHtml(x){
-    var past = E.isPast(x);
-    var href = x.page || 'event.html?event=' + encodeURIComponent(x.slug);
-    return '<a class="event-card' + (x.hidden ? ' is-hidden' : '') + '" href="' + esc(href) + '">' +
-      '<div class="event-top"><span class="eyebrow eyebrow--' + (past ? 'past' : 'upcoming') + '">' + (past ? 'Past' : 'Upcoming') + '</span>' +
-      (x.hidden ? '<span class="eyebrow eyebrow--hidden">Hidden</span>' : '') + '</div>' +
-      '<h3>' + esc(x.title) + '</h3>' +
-      '<p class="event-when">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' &middot; ' + esc(x.place) : '') + '</p>' +
-      (x.description ? '<p>' + esc(x.description.split(/\n\s*\n/)[0]) + '</p>' : '') +
-      '<span class="event-cta">See details &rarr;</span></a>';
+  function canAdd(){ return fullWrite || BOLD.can('events', 'edit'); }
+  function cadenceText(c){
+    c = c || { every: 1, unit: 'month' };
+    return c.unit === 'month' && c.every === 12 ? 'Every year' : 'Every ' + (c.every > 1 ? c.every + ' ' + c.unit + 's' : c.unit);
+  }
+  function badge(text){ return ' <span class="badge">' + esc(text) + '</span>'; }
+  function row(href, title, meta, badges){
+    return '<li><a class="proj-title" href="' + esc(href) + '">' + esc(title) + '</a>' + badges +
+      '<span class="proj-meta">' + meta + '</span></li>';
+  }
+  function eventRow(x){
+    return row(x.page || 'event.html?event=' + encodeURIComponent(x.slug), x.title,
+      esc(E.when(x.startDate, x.endDate)) + (x.place ? ' · ' + esc(x.place) : ''), x.hidden ? badge('Hidden') : '');
+  }
+  function seriesRow(x){
+    var meta = x.kind === 'editions' ? cadenceText(x.cadence) : meetingText(x.meeting) + ' · London time';
+    if (x.kind === 'editions') {
+      var eds = events.filter(function(e){ return e.series === x.id; }).sort(function(a, b){ return a.startDate < b.startDate ? -1 : 1; });
+      var next = eds.filter(function(e){ return !E.isPast(e); })[0], last = eds[eds.length - 1];
+      if (next) meta += ' · next: ' + E.when(next.startDate, next.endDate) + (next.place ? ', ' + next.place : '');
+      else if (last) meta += ' · last: ' + E.when(last.startDate, last.endDate);
+    }
+    return row(x.page || 'series.html?series=' + encodeURIComponent(x.id), x.title, esc(meta),
+      (x.hidden ? badge('Hidden') : '') + (x.pausedAt ? badge('Paused') : ''));
+  }
+  function group(label, rows){
+    return rows.length ? '<div class="proj-group"><h3>' + esc(label) + '<span class="proj-count">' + rows.length + '</span></h3><ul class="proj-list">' + rows.join('') + '</ul></div>' : '';
+  }
+  function rotaRow(){
+    var available = rotaSeasons.filter(function(s){ return s.publicationState === 'published'; });
+    var drafts = rotaSeasons.filter(function(s){ return s.publicationState !== 'published'; });
+    if (!available.length && !drafts.length) return '';
+    var today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+    var next = rotaMeetings.filter(function(m){ return m.status !== 'skipped' && m.date >= today && available.some(function(s){ return s.id === m.seasonId; }); })
+      .sort(function(a,b){ return a.date.localeCompare(b.date); })[0];
+    var season = next ? available.filter(function(s){ return s.id === next.seasonId; })[0] : available[0] || drafts[0];
+    var meta = season.label || 'Group meeting rota';
+    if (next) meta += ' · next: ' + E.when(next.date, next.date) + (next.startTime ? ', ' + next.startTime : '') + (next.location ? ' · ' + next.location : '');
+    else if (season.location) meta += ' · ' + season.location;
+    return row('group-meetings.html', 'Group meetings', esc(meta), available.length ? '' : badge('Hidden'));
   }
 
   function render(){
-    list.innerHTML = events.map(function(x){ return '<li>' + cardHtml(x) + '</li>'; }).join('');
-    addBtn.disabled = !fullWrite;
-    addBtn.title = fullWrite ? '' : E.NOT_PI;
+    var can = canAdd(), why = can ? '' : BOLD.cannotReason('events', 'edit');
+    seriesAdds.forEach(function(a){ a.classList.toggle('is-off', !can); a.title = why; a.setAttribute('aria-disabled', String(!can)); });
+    if (events === null) return;
+    var q = search.value.trim().toLowerCase();
+    var hit = function(x){ return !q || [x.title, x.place, x.description].join(' ').toLowerCase().indexOf(q) !== -1; };
+    // A series' occurrences are under it; an occurrence whose series this person can't see stays listed.
+    var known = {};
+    series.forEach(function(x){ known[x.id] = 1; });
+    var evs = events.filter(function(x){ return !(x.series && known[x.series]); }).filter(hit), ss = series.filter(hit);
+    var once = evs.slice().sort(function(a, b){ return a.startDate < b.startDate ? 1 : -1; });
+    var rota = rotaRow();
+    var html = (ss.length || (rota && (!q || ['group meetings', rotaSeasons.map(function(s){ return s.label; }).join(' ')].join(' ').toLowerCase().includes(q)))
+      ? '<ul class="proj-list ev-series">' + (rota && (!q || ['group meetings', rotaSeasons.map(function(s){ return s.label; }).join(' ')].join(' ').toLowerCase().includes(q)) ? rota : '') + ss.map(seriesRow).join('') + '</ul>' : '') + group('Once', once.map(eventRow));
+    root.innerHTML = html || '<p class="proj-msg">' + (q ? 'Nothing matches.' : 'No events yet.') + '</p>';
   }
+  search.addEventListener('input', render);
+  BOLD.onAccess(function(){ render(); });
 
-  function openForm(){
-    if (document.querySelector('.event-form')) return;
-    var form = document.createElement('div');
-    form.className = 'event-form';
-    form.innerHTML = '<p class="event-form-head">New event</p>' + E.formHtml({}) +
-      '<p class="event-form-hint">It stays hidden — only PIs and admins see it — until you release it from its page.</p>' +
-      '<div class="event-form-actions"><button type="button" class="ev-save">Add event</button><button type="button" class="ev-cancel">Cancel</button></div>';
-    addBtn.parentNode.insertBefore(form, addBtn);
-    addBtn.hidden = true;
-    var close = function(){ form.remove(); addBtn.hidden = false; };
-    form.querySelector('.ev-title').focus();
-    form.querySelector('.ev-cancel').addEventListener('click', close);
-    form.querySelector('.ev-save').addEventListener('click', function(){
-      var r = E.read(form);
-      if (r.error) { E.showError(form, r.error); return; }
-      var stem = r.fields.title.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
-        .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'event';
-      var slug = stem + '-' + Math.random().toString(16).slice(2, 8);
-      var now = Date.now();
-      var save = form.querySelector('.ev-save');
-      save.disabled = true;
-      db.collection('events').doc(slug).set(Object.assign({ slug: slug, hidden: true }, r.fields,
-        { createdAt: now, createdBy: me.email, updatedAt: now, updatedBy: me.email })).then(close).catch(function(err){
-        console.error('[BOLD Events] adding an event failed', err);
-        E.showError(form, 'Couldn’t add the event — try again.');
-        save.disabled = false;
-      });
+  seriesAdds.forEach(function(a){ a.addEventListener('click', function(e){ if (!canAdd()) e.preventDefault(); }); });
+
+  // Several queries as one list, by key: the rules let everyone else query only the released
+  // ones, and the ones they added or organise.
+  function watchAll(queries, key, done){
+    var got = queries.map(function(){ return []; });
+    var unsubs = queries.map(function(query, i){
+      return query.onSnapshot(function(snap){
+        got[i] = snap.docs.map(function(d){ return d.data(); });
+        var seen = {};
+        done([].concat.apply([], got).filter(function(x){ if (!x[key] || seen[x[key]]) return false; seen[x[key]] = 1; return true; }));
+      }, function(err){ console.error('[BOLD Events] loading failed', err); done(null); });
     });
+    return function(){ unsubs.forEach(function(u){ u(); }); };
   }
-  addBtn.addEventListener('click', function(){ if (fullWrite) openForm(); });
 
-  var unsubscribe = null, signIns = 0;
+  var unsubs = [], signIns = 0;
   BOLD.onUser(function(user){
     var mine = ++signIns;
-    if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user ? { email: user.email || '' } : null;
-    fullWrite = false;
-    events = [];
+    fullWrite = false; events = null; series = []; rotaSeasons = []; rotaMeetings = [];
     render();
     if (!user) return;
-    // Everyone else may only query the released ones (firestore.rules).
     E.access(function(ok){
       if (mine !== signIns) return;
       fullWrite = ok;
-      render();
-      var query = ok ? db.collection('events') : db.collection('events').where('hidden', '==', false);
-      unsubscribe = query.onSnapshot(function(snap){
-        loading.hidden = true;
-        events = snap.docs.map(function(d){ return d.data(); }).filter(function(x){ return x.slug && x.startDate; })
-          .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; });
-        render();
-      }, function(err){ console.error('[BOLD Events] loading events failed', err); });
+      var ev = db.collection('events'), se = db.collection('eventSeries');
+      unsubs.push(watchAll(ok ? [ev] : [ev.where('hidden', '==', false), ev.where('createdBy', '==', me.email)], 'slug', function(list){
+        events = (list || []).filter(function(x){ return x.startDate; }); render();
+      }));
+      unsubs.push(watchAll(ok ? [se] : [se.where('hidden', '==', false), se.where('organisers', 'array-contains', me.email.toLowerCase())], 'id', function(list){
+        series = (list || []).sort(function(a, b){ return a.title.localeCompare(b.title); }); render();
+      }));
+      unsubs.push((ok ? db.collection('groupMeetingSeasons') : db.collection('groupMeetingSeasons').where('publicationState', '==', 'published')).onSnapshot(function(snap){
+        rotaSeasons = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); render();
+      }, function(err){ console.error('[BOLD Events] loading rota seasons failed', err); }));
+      unsubs.push(db.collection('groupMeetings').onSnapshot(function(snap){
+        rotaMeetings = snap.docs.map(function(d){ return d.data(); }); render();
+      }, function(err){ console.error('[BOLD Events] loading rota meetings failed', err); }));
     });
   });
 })();

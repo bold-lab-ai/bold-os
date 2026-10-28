@@ -31,8 +31,13 @@
     keep();
     tab.hidden = !isStudent();
     if (!isStudent()) { box.innerHTML = '<p class="proj-msg">For PhD and Master students: set your role in <a href="#details">Your details</a>.</p>'; return; }
+    // Studies go through the Calendar (studies callable): below its level, say so rather than offer a form that can't save.
+    if (!mayUse()) { box.innerHTML = '<p class="proj-msg">Your studies (supervisors, meeting and channel) are ' + esc(BOLD.cannotReason('calendar', 'view').replace(/^For /, 'for ')) +
+      (BOLD.myGroup() === 'pan' ? ' Your group isn\u2019t set yet: ask a PI or admin, or ask for one in <a href="#details">Your details</a>.</p>' : ' To use them, ask for another group in <a href="#details">Your details</a>.</p>'); return; }
     box.innerHTML = (editing ? '' : asksHtml()) + (editing ? formHtml() : factsHtml());
   }
+  function mayUse(){ return BOLD.isFullWrite() || BOLD.can('calendar', 'view'); }
+  BOLD.onAccess(function(){ render(); });
 
   function asksHtml(){
     if (!asks.length) return '';
@@ -54,7 +59,7 @@
     var meeting = s.meeting && s.pausedAt ? esc(meetingText(s.meeting)) + ' <span class="acct-handle">· paused</span>' + pause
       : s.meeting ? esc(meetingText(s.meeting)) + pause +
         (s.eventLink || s.meetUrl ? '<span class="st-links">' + [s.eventLink ? '<a href="' + esc(s.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '',
-          s.meetUrl ? '<a href="' + esc(s.meetUrl) + '" target="_blank" rel="noopener">Meet</a>' : ''].filter(Boolean).join(' · ') + '</span>' : '') +
+          s.meetUrl ? '<a href="' + esc(s.meetUrl) + '" target="_blank" rel="noopener">' + (s.meeting.link ? 'Own link' : 'Meet') + '</a>' : ''].filter(Boolean).join(' · ') + '</span>' : '') +
         (s.error ? '<span class="st-error">' + esc(s.error) + ' <button type="button" class="btn-text st-retry"' + (busy ? ' disabled' : '') + '>Try again</button></span>' : '')
       : '';
     var channel = s.channel ? (s.channelUrl ? '<a href="' + esc(s.channelUrl) + '" target="_blank" rel="noopener">#' + esc(s.channel) + '</a>' : '#' + esc(s.channel)) +
@@ -63,8 +68,8 @@
     return (studies ? '<dl class="facts">' +
         row('Degree', esc(s.degree || m.role || '')) + (dates ? row('Dates', esc(dates)) : '') +
         row('Working title', esc(s.title || '') || '—') +
-        row('People involved', people || '—') + row('Meeting', meeting || 'Not set yet') + row('Slack channel', channel || '—') + '</dl>'
-      : '<p class="proj-msg">Add who supervises your studies and set a recurring meeting with them.</p>') +
+        row('People involved', people || '—') + row('Meeting', meeting || 'None' + (s.error ? '<span class="st-error">' + esc(s.error) + ' <button type="button" class="btn-text st-retry"' + (busy ? ' disabled' : '') + '>Try again</button></span>' : '')) + row('Slack channel', channel || 'None') + '</dl>'
+      : '<p class="proj-msg">Add who supervises your studies, and a recurring meeting with them if you like.</p>') +
       (msg ? '<p class="proj-msg">' + esc(msg) + '</p>' : '') +
       '<div class="event-controls"><button type="button" class="btn-text st-edit">' + (studies ? 'Edit your studies' : 'Add your studies') + '</button></div>';
   }
@@ -75,7 +80,7 @@
       .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('');
     return '<div class="event-form join-form">' +
       '<label>Working title<input type="text" class="st-title" maxlength="200" value="' + esc(e.title) + '" placeholder="Your thesis or project, as it stands"></label>' +
-      '<label>People involved in your studies, supervisors first: they’re invited to the meeting and added to the Slack channel</label>' +
+      '<label>People involved in your studies, supervisors first: they’re added to the Slack channel and invited to the meeting, if any</label>' +
       (e.people.length ? '<ul class="st-people">' + e.people.map(function(p, i){
         return '<li>' + esc(p.name) + '<span class="st-email">' + esc(p.email) + '</span><button type="button" class="btn-text danger st-remove" data-i="' + i + '">Remove</button></li>';
       }).join('') + '</ul>' : '') +
@@ -84,9 +89,12 @@
           '<button type="button" class="btn-text st-add-new">Add</button><button type="button" class="btn-text st-add-cancel">Cancel</button></div>'
         : '<div class="st-add"><select class="st-pick" aria-label="Add a person"><option value="">' + (roster ? 'Add a person…' : 'Loading…') + '</option>' + options +
           '<option value="__new__">+ Someone not on Slack…</option></select></div>') +
-      '<label class="st-meeting-label">Your recurring meeting (London time): Google Calendar invites you and everyone above</label>' + meetingEntryHtml(e.meeting) +
-      (e.channelFixed ? '' : '<label>Slack channel with you and everyone above (private; ' + SUPERVISION_PREFIX + ' is added if missing)<input type="text" class="st-channel" maxlength="80" value="' + esc(e.channel) + '"></label>' +
-        '<p class="field-hint st-channel-hint">' + esc(channelCheck.name === e.channel ? channelCheck.text : '') + '</p>') +
+      '<label class="st-meeting-label st-meeting-toggle"><input type="checkbox" class="st-has-meeting"' + (e.meeting ? ' checked' : '') + '> A recurring meeting (London time): Google Calendar invites you and everyone above</label>' +
+      (e.meeting ? meetingEntryHtml(e.meeting) : '') +
+      // The channel is optional until it's made: none if they have one already, such as their project's.
+      (e.channelFixed ? '' : '<label class="st-meeting-label st-meeting-toggle"><input type="checkbox" class="st-has-channel"' + (e.hasChannel ? ' checked' : '') + '> A Slack channel with you and everyone above (untick it if you have one already, such as your project’s)</label>' +
+        (e.hasChannel ? '<label>Its name (private; ' + SUPERVISION_PREFIX + ' is added if missing)<input type="text" class="st-channel" maxlength="80" value="' + esc(e.channel) + '"></label>' +
+        '<p class="field-hint st-channel-hint">' + esc(channelCheck.name === e.channel ? channelCheck.text : '') + '</p>' : '')) +
       '<p class="ev-error"' + (e.error ? '' : ' hidden') + '>' + esc(e.error || '') + '</p>' +
       '<div class="event-form-actions"><button type="button" class="ev-save st-save"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : 'Save') + '</button>' +
         '<button type="button" class="st-cancel"' + (busy ? ' disabled' : '') + '>Cancel</button></div></div>';
@@ -102,7 +110,7 @@
     if (document.getElementById('pmDay')) {
       editing.meeting = { day: document.getElementById('pmDay').value, time: document.getElementById('pmTime').value,
         minutes: Number(document.getElementById('pmMinutes').value), every: Number(document.getElementById('pmEvery').value),
-        until: document.getElementById('pmUntil').value };
+        until: document.getElementById('pmUntil').value, link: document.getElementById('pmLink').value.trim() };
     }
   }
 
@@ -119,20 +127,24 @@
     keep();
     var e = editing;
     if (!e.people.length) { e.error = 'Add who supervises your studies.'; render(); return; }
-    var meeting = readMeetingEntry();
-    if (meeting.error) { e.error = meeting.error; render(); return; }
+    var meeting = e.meeting ? readMeetingEntry() : null;
+    if (meeting && meeting.error) { e.error = meeting.error; render(); return; }
     var names = e.people.map(function(p){ return p.name; }).join(', ');
-    BOLD.confirmAction({ title: 'Save your studies?', go: 'Save', effects: [
-      'Set the meeting on Google Calendar, ' + meetingText(meeting) + ': Google emails ' + names + ' the invitation or the change',
-      e.channelFixed ? 'Add anyone new to its Slack channel' : 'Make or use the Slack channel #' + (e.channel || '').replace(/^#/, '') + ' and add ' + names + ' to it'] })
+    var effects = [
+      meeting ? 'Set the meeting on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ': Google emails ' + names + ' the invitation or the change'
+        : studies && studies.meeting ? 'Cancel the meeting on Google Calendar: Google emails ' + names + ' the cancellation' : '',
+      e.channelFixed ? 'Add anyone new to its Slack channel' : !e.hasChannel ? '' : 'Make or use the Slack channel #' + (e.channel || '').replace(/^#/, '') + ' and add ' + names + ' to it'].filter(Boolean);
+    // Nothing outside BOLD.OS (no meeting, no channel): nothing to confirm.
+    (effects.length ? BOLD.confirmAction({ title: 'Save your studies?', go: 'Save', effects: effects }) : Promise.resolve(true))
       .then(function(ok){ if (ok) sendSave(e, meeting); });
   }
   function sendSave(e, meeting){
     busy = true; e.error = ''; render();
-    call({ action: 'save', title: e.title.trim(), people: e.people, meeting: meeting, channel: e.channelFixed ? '' : e.channel }).then(function(r){
+    call({ action: 'save', title: e.title.trim(), people: e.people, meeting: meeting, channel: e.channelFixed || !e.hasChannel ? '' : e.channel, noChannel: !e.channelFixed && !e.hasChannel }).then(function(r){
       busy = false; editing = null;
       var s = r.data || {};
-      msg = !s.error && !s.channelError ? 'Saved. Google Calendar sends everyone the invitation, and Slack adds them to #' + (s.channel || '') + '.' : 'Saved.';
+      var said = [s.meeting ? 'Google Calendar sends everyone the invitation' : '', s.channel ? 'Slack adds them to #' + s.channel : ''].filter(Boolean).join(', and ');
+      msg = !s.error && !s.channelError && said ? 'Saved. ' + said.charAt(0).toUpperCase() + said.slice(1) + '.' : 'Saved.';
       render();
     }).catch(function(err){
       console.error('[BOLD Studies] saving failed', err);
@@ -147,13 +159,13 @@
       var s = studies || {};
       msg = '';
       editing = { title: s.title || '', people: (s.people || []).slice(), meeting: s.meeting || null, adding: false, error: '',
-        channelFixed: !!s.channelUrl, channel: s.channel || channelFor((member && member.name) || me.name) };
-      loadRoster(); render(); if (!editing.channelFixed) checkChannel(); return;
+        channelFixed: !!s.channelUrl, hasChannel: !studies || !!s.channel, channel: s.channel || channelFor((member && member.name) || me.name) };
+      loadRoster(); render(); if (!editing.channelFixed && editing.hasChannel) checkChannel(); return;
     }
     if (t.classList.contains('st-decide')) {
       var id = t.getAttribute('data-id'), a = asks.filter(function(x){ return x.id === id; })[0], yes = !!t.getAttribute('data-accept');
       var who = (a && (a.name || a.requesterName)) || 'them';
-      BOLD.confirmAction(yes ? { title: 'Approve ' + who + '?', go: 'Approve', effects: ['Add ' + who + ' to your meeting on Google Calendar (Google emails them the invitation) and to your Slack channel', 'Tell them on Slack'] }
+      BOLD.confirmAction(yes ? { title: 'Approve ' + who + '?', go: 'Approve', effects: [(studies && studies.meeting ? 'Add ' + who + ' to your meeting on Google Calendar (Google emails them the invitation) and to your Slack channel' : 'Add ' + who + ' to your Slack channel'), 'Tell them on Slack'] }
         : { title: 'Decline?', go: 'Decline', effects: ['Tell ' + who + ' on Slack'] }).then(function(ok){ if (ok) decide(id, a, yes); });
       return;
     }
@@ -200,7 +212,7 @@
   }
   // Says what saving would do with the channel: make it, or use the one already there.
   function checkChannel(){
-    if (!editing || editing.channelFixed) return;
+    if (!editing || editing.channelFixed || !editing.hasChannel) return;
     var name = editing.channel;
     var hint = function(text){ channelCheck = { name: name, text: text }; var h = box.querySelector('.st-channel-hint'); if (h && editing && editing.channel === name) h.textContent = text; };
     if (!name) { hint('Enter a channel name.'); return; }
@@ -219,6 +231,13 @@
     if (!editing) return;
     var t = ev.target;
     keep();
+    // The meeting is optional: unticking keeps what was typed, to come back on ticking again.
+    if (t.classList.contains('st-has-channel')) { editing.hasChannel = t.checked; render(); checkChannel(); return; }
+    if (t.classList.contains('st-has-meeting')) {
+      if (t.checked) editing.meeting = editing.lastMeeting || { day: 'MO', time: '', minutes: 60, every: 1 };
+      else { editing.lastMeeting = editing.meeting; editing.meeting = null; }
+      render();
+    }
     if (t.classList.contains('st-pick')) {
       if (t.value === '__new__') editing.adding = true;
       else {
@@ -241,6 +260,6 @@
     unsubs.push(db.collection('studyRequests').where('student', '==', me.email).where('status', '==', 'open').onSnapshot(function(s){
       asks = s.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return a.at - b.at; });
       render();
-    }, function(e){ console.error('[BOLD Studies] loading the requests failed', e); }));
+    }, function(e){ if (e.code !== 'permission-denied') console.error('[BOLD Studies] loading the requests failed', e); }));   // below the Calendar's level: none to show
   });
 })();

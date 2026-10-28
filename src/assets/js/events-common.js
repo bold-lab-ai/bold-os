@@ -1,13 +1,15 @@
 // Events added on the site — events/{slug} in Firestore: { slug, title,
 // startDate, endDate ('YYYY-MM-DD'), place, description, hidden, createdAt,
 // createdBy, updatedAt, updatedBy }; `hidden` (a new event starts hidden):
-// only PIs/admins can read it until it's released. Only PIs/admins write them
-// (firestore.rules). Shared by the events page (the list, "+ Add an event")
+// only PIs/admins and whoever added it can read it until a PI or admin releases it.
+// Adding one is for the Events page's Edit level (BOLDiquette › Who can see what);
+// whoever added it edits and deletes it, PIs/admins any (firestore.rules). Shared by the events page (the list, "+ Add an event")
 // and an added event's page (event.html?event=<slug>, Edit, Delete).
 window.BoldEvents = (function(){
   var esc = BOLD.escapeHtml;
   var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-  var NOT_PI = 'Only PIs and admins can add and change events';
+  var NOT_PI = 'Only PIs and admins, and whoever added it, can change this event';
+  var NOT_PI_RELEASE = 'Only PIs and admins release and hide events';
 
   function parts(d){ var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d || ''); return m ? { y: +m[1], m: +m[2] - 1, d: +m[3] } : null; }
 
@@ -48,6 +50,16 @@ window.BoldEvents = (function(){
     return error ? { error: error } : { fields: f };
   }
 
+  // Who gets a Google Calendar invitation to an occurrence of an event series
+  // (`inviteGroup`: functions/series.js syncOccurrence): a group and those above it, or nobody.
+  var INVITE_GROUPS = [['exec', 'BOLD-exec'], ['staff', 'BOLD-staff and above'], ['internal', 'BOLD-internal and above'],
+    ['associate', 'BOLD-associate and above'], ['everyone', 'Everyone in BOLD'], ['none', 'Nobody']];
+  function inviteText(g){ return (INVITE_GROUPS.filter(function(o){ return o[0] === g; })[0] || INVITE_GROUPS[5])[1]; }
+  function inviteSelectHtml(cls, value, why){
+    return '<label>Google Calendar invites<select class="' + cls + '"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' +
+      INVITE_GROUPS.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === (value || 'none') ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
+  }
+
   function showError(form, msg){
     var box = form.querySelector('.ev-error');
     box.textContent = msg; box.hidden = !msg;
@@ -60,5 +72,6 @@ window.BoldEvents = (function(){
     }).catch(function(err){ console.error('[BOLD Events] access check failed', err); cb(false); });
   }
 
-  return { when: when, isPast: isPast, formHtml: formHtml, read: read, showError: showError, access: access, NOT_PI: NOT_PI };
+  return { when: when, isPast: isPast, formHtml: formHtml, read: read, showError: showError, access: access, NOT_PI: NOT_PI, NOT_PI_RELEASE: NOT_PI_RELEASE,
+    inviteText: inviteText, inviteSelectHtml: inviteSelectHtml };
 })();

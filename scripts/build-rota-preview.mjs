@@ -60,9 +60,10 @@ for (const change of source.changes) {
 }
 
 const inlineJson = JSON.stringify(docs).replace(/</g, '\\u003c');
-const photoFiles = await readdir('_site/assets/img/rota-profiles').catch(() => []);
+const photoFiles = await readdir('src/assets/img/rota-profiles').catch(() => []);
 const localPhotos = photoFiles.filter(file => /^[a-z0-9-]+\.webp$/.test(file)).map(file => file.slice(0, -5));
 const mock = `const data = ${inlineJson};\nconst localPhotos = new Set(${JSON.stringify(localPhotos)});\n` + String.raw`
+window.ROTA_LOCAL_PREVIEW = true;
 const docs = items => ({ docs: items.map(([id, data]) => ({ id, data: () => data })), empty: !items.length });
 const previewUser = { displayName: 'Sam' };
 window.BOLD = {
@@ -83,7 +84,7 @@ const previewCollection = name => {
 window.previewFirebase = {
   firestore: () => ({ collection: previewCollection }),
   app: () => ({ functions: () => ({ httpsCallable: name => () => name === 'groupRotaAccess'
-    ? Promise.resolve({ data: { slackId: '', registered: false, eligible: false, admin: false, preview: true, swaps: [], reason: 'Changes are unavailable in the local preview' } })
+    ? Promise.resolve({ data: { slackId: '', registered: false, eligible: false, admin: false, preview: true, swaps: [], people: data.people.map(([id, p]) => ({ slackId: id, name: p.name })), reason: 'Changes are unavailable in the local preview' } })
     : Promise.reject(new Error('Local preview only — changes are not saved.')) }) }),
 };
 document.addEventListener('click', event => {
@@ -129,7 +130,10 @@ page = page.replace('</head>', `<script>\n${mock}\n</script>\n</head>`);
 if (page.includes('firebasejs/') || page.includes('window.BOLD_CONFIG') || page.includes('fonts.googleapis.com') || page.includes('fonts.gstatic.com')) throw new Error('Could not isolate the preview from external services.');
 let rotaScript = await readFile('src/assets/js/pages/group-meetings.js', 'utf8');
 rotaScript = rotaScript.replace('firebase.firestore(', 'previewFirebase.firestore(').replace('firebase.app()', 'previewFirebase.app()');
-rotaScript = rotaScript.replace("return slug ? 'https://bold-lab.ai/profile-assets/' + slug + '.webp' : '';", "return localPhotos.has(slug) ? 'assets/img/rota-profiles/' + slug + '.webp' : '';");
+rotaScript = rotaScript.replace(/function publicPhoto\(s, person\)\{[^}]+\}/, `function publicPhoto(s, person){
+    var slug = String(person || '').toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return localPhotos.has(slug) ? 'assets/img/rota-profiles/' + slug + '.webp' : '';
+  }`);
 rotaScript = rotaScript.replace('access && !access.eligible ? \'<p class="rota-alert">', 'access && !access.preview && !access.eligible ? \'<p class="rota-alert">');
 rotaScript = rotaScript.replace('Eligibility has not been confirmed', 'Changes are unavailable in the local preview');
 if (rotaScript.includes('firebase.firestore(') || rotaScript.includes('firebase.app()') || rotaScript.includes('var notice = access && !access.eligible')) throw new Error('Could not isolate the rota script from production data and access checks.');

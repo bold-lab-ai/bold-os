@@ -197,9 +197,10 @@
       computeEstimate: document.getElementById('pCompute').value.trim(),
       note: noteText
     }, now);
-    var next = state.cards.concat([card]);
+    var prev = state.cards;
+    var next = prev.concat([card]);
     var boardId = state.currentBoardId;
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){ showToast(saveErrorMessage('Could not save the paper \u2014 try again.'), 'error'); return; }
       if (state.currentBoardId !== boardId) return;
       state.cards = next;
@@ -299,7 +300,7 @@
     var prev = state.cards;
     state.cards = next; // optimistic
     renderBoard();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderBoard();
@@ -350,7 +351,7 @@
     var prev = state.cards;
     state.cards = next; // optimistic
     renderBoard();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         renderBoard();
@@ -375,7 +376,7 @@
     state.cards = next;
     if (wasOnDetail){ state.view = 'venue'; state.currentCardId = null; }
     if (wasOnDetail) renderAll(); else renderBoard();
-    saveBoard(boardId, { cards: next }).then(function(ok){
+    saveBoard(boardId, { cards: next }, prev).then(function(ok){
       if (!ok){
         state.cards = prev;
         if (wasOnDetail){ state.view = 'card'; state.currentCardId = cardId; renderAll(); }

@@ -18,7 +18,7 @@
   function render(){
     if (tokens === null) { box.innerHTML = '<span class="proj-msg">Loading&hellip;</span>'; return; }
     var off = busy ? ' disabled' : '';
-    box.innerHTML = '<p class="hero-note">Let an AI agent use BOLD.OS as you, through MCP: it reads what you can read, and acts for you once a PI or admin approves. <a href="agents.html">What your tokens did</a>.</p>' +
+    box.innerHTML = '<p class="hero-note">Let an AI agent use BOLD.OS as you, through MCP: it reads what you can read, and acts for you once a PI or admin approves. <a href="agents.html#activity">What your tokens did</a>.</p>' +
       (fresh ? '<div class="api-fresh"><p class="acct-note">Your token for <strong>' + esc(fresh.label) + '</strong>, shown only now:</p>' + BOLD.copyBoxHtml(fresh.token) +
         '<p class="acct-note">To add it to Claude Code:</p>' +
         BOLD.copyBoxHtml('claude mcp add --scope user --transport http bold-os ' + API + '/mcp --header "Authorization: Bearer ' + fresh.token + '"') +

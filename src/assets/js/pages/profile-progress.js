@@ -28,16 +28,17 @@
     var out = [
       ['Name', !!u.displayName, ''], ['Email', !!u.email, ''], ['Slack photo', !!u.photoURL, ''],
       ['Group', !!member, 'details'], ['Pronouns', has('pronouns'), 'details'],
-      ['Role', has('role'), 'details'], ['Institution', has('institution'), 'details'], ['Point of contact', has('contact'), 'details'],
-      // Not for PIs: nobody invited them.
-      m.role === 'PI' ? null : ['Who invited you', !!(m.invitedBy && m.invitedBy.email), 'details'],
+      ['Role', has('role'), 'details'], ['Institution', has('institution'), 'details'],
+      // One field since 2026-10-26: who invited them. Not for PIs: nobody invited them.
+      m.role === 'PI' ? null : ['Point of contact', has('contact') || !!(m.invitedBy && m.invitedBy.email), 'details'],
       ['Research interests', has('interests'), 'details'], ['Research pillars', !!(m.pillars || []).length, 'details'],
       ['Based in', has('basedIn'), 'details'], ['Links', has('links'), 'details'], ['Feedback preference', has('feedback'), 'details'], ['Booking link', has('bookingUrl'), 'details'],
       ['Start date', has('startDate'), 'details'],
     ];
     out = out.filter(Boolean);
     if (BoldJoin.NO_END.indexOf(m.role) === -1) out.push(['End date', has('endDate'), 'details']);
-    if (STUDY_ROLES.indexOf(m.role) !== -1 || studies) {
+    // Not counted below the Calendar's level, where the Studies tab can't save (pages/studies.js).
+    if ((STUDY_ROLES.indexOf(m.role) !== -1 || studies) && (BOLD.isFullWrite() || BOLD.can('calendar', 'view'))) {
       out.push(['Working title', !!String(s.title || '').trim(), 'studies'], ['Supervisors', !!(s.people || []).length, 'studies'],
         ['Supervision meeting', !!s.meeting, 'studies'], ['Supervision channel', !!s.channelUrl, 'studies']);
     }
@@ -85,4 +86,5 @@
     unsubs.push(db.collection('studies').doc(me.email).onSnapshot(function(s){ studies = s.exists ? s.data() : null; render(); },
       function(){ studies = null; render(); }));
   });
+  BOLD.onAccess(function(){ render(); });
 })();

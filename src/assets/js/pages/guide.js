@@ -34,6 +34,15 @@
   if (!cfg.slug && BOLD.GUIDE_PAGES[slug]) { location.replace(BOLD.GUIDE_PAGES[slug] + location.hash); return; }
   var ref = !isNew && G.SLUG.test(slug) ? db.collection(COLLECTION).doc(slug) : null;
   var MAX_SIZE = 900000;
+  // Its page in Who can see what (BOLD.can): the BOLDiquette, the How to guides, or its own (BOLD.GUIDE_AREAS).
+  var AREA = COLLECTION === 'handbook' ? 'boldiquette' : BOLD.GUIDE_AREAS[slug] || 'guides';
+  // Why `p` (a part; none: the page) can't be suggested a change by this viewer, or ''.
+  function proposeOff(p){
+    if (!me) return 'Sign in to suggest a change';
+    if (!BOLD.can(AREA, 'propose')) return BOLD.cannotReason(AREA, 'propose');
+    if (p && p.id === 'access' && COLLECTION === 'handbook' && !fullWrite) return 'Only PIs and admins change who can see what';
+    return '';
+  }
 
   var x = null, loaded = false, fullWrite = false, me = null;
   var proposals = [];
@@ -161,12 +170,13 @@
     var editing = form && form.kind === 'edit' && form.id === p.id;
     if (editing) return '<section class="guide-part" id="' + anchor(p) + '">' + partFormHtml(p) + '</section>';
     if (form && form.kind === 'move' && form.id === p.id) return '<section class="guide-part" id="' + anchor(p) + '">' + moveFormHtml(p) + '</section>';
+    var why = proposeOff(p);
     var icon = function(cls, label, svg, off){
-      return '<button type="button" class="icon-btn ' + cls + '" data-id="' + esc(p.id) + '" aria-label="' + label + '" title="' + label + '"' + (off ? ' disabled' : '') + '>' + svg + '</button>';
+      return '<button type="button" class="icon-btn ' + cls + '" data-id="' + esc(p.id) + '" aria-label="' + label + '" title="' + esc(why || label) + '"' + (off || why ? ' disabled' : '') + '>' + svg + '</button>';
     };
     var q = viewed(), fold = !!folded[p.id] && !q;
     // The grip drags it above or below another part, or onto a tab (into your draft).
-    var grip = '<span class="icon-btn gd-grip" draggable="true" data-id="' + esc(p.id) + '" role="img" aria-label="Drag to move it" title="Drag to move it">' + GRIP + '</span>';
+    var grip = why ? '' : '<span class="icon-btn gd-grip" draggable="true" data-id="' + esc(p.id) + '" role="img" aria-label="Drag to move it" title="Drag to move it">' + GRIP + '</span>';
     return '<section class="guide-part' + (q && changedIds(q).indexOf(p.id) !== -1 ? ' gd-proposed' : '') + (fold ? ' is-folded' : '') + '" id="' + anchor(p) + '" data-pid="' + esc(p.id) + '">' +
       // Its controls on the title's line, before it.
       '<div class="guide-part-head">' +
@@ -326,6 +336,13 @@
     }
     var list = (d.parts || []).map(function(p){ return Object.assign({}, p); });
     var after = q.after || {};
+    // One row of Who can see what (a page's eye chip, bold.js), set in the part as it is now.
+    if (q.kind === 'access') {
+      var ap = list.filter(function(p){ return p.id === 'access'; })[0], lv = { view: after.view, edit: after.edit };
+      if (ap) ap.body = BOLD.accessProposal.body(ap.body, q.area, lv);
+      else list.push({ id: 'access', title: 'Who can see what', section: 'People', body: BOLD.accessProposal.body('', q.area, lv) });
+      return { parts: list };
+    }
     if (q.kind === 'about') return { title: after.title || '', description: after.description || '' };
     if (q.kind === 'restore') return { title: after.title || '', description: after.description || '', parts: after.parts || [] };
     if (q.kind === 'add') {
@@ -356,6 +373,7 @@
     }
     if (kind === 'restore') return flatten(side);
     if (kind === 'about') return { Title: side.title || '', Description: side.description || '' };
+    if (kind === 'access') return { View: BOLD.accessProposal.levelName(side.view), Edit: BOLD.accessProposal.levelName(side.edit) };
     var o = { Title: side.title || '', Text: side.body || '' };
     if (side.section !== undefined) o.Section = side.section;
     return o;
@@ -365,18 +383,20 @@
     var cur = q.kind === 'about' ? { title: x.title, description: x.description || '' } : q.partId ? part(q.partId) : null;
     var stale = (q.kind === 'about' || q.kind === 'edit' || q.kind === 'remove') && (!cur || (q.before && (cur.title !== q.before.title || (q.kind === 'about' ? (cur.description || '') !== (q.before.description || '') :
       (cur.body || '') !== (q.before.body || '') || (q.before.section !== undefined && (cur.section || '') !== q.before.section)))));
-    var what = q.kind === 'about' ? KIND.about : q.kind === 'restore' ? 'Restore the version of ' + esc(BoldHistory.when(q.after.versionAt)) :
+    var what = q.kind === 'access' ? esc(BOLD.accessProposal.describe(q)) : q.kind === 'about' ? KIND.about : q.kind === 'restore' ? 'Restore the version of ' + esc(BoldHistory.when(q.after.versionAt)) :
       q.kind === 'batch' ? (q.changes || []).length + ' changes' :
       KIND[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
     var mine = me && q.by && q.by.email === me.email;
     var off = !fullWrite ? ' disabled title="' + G.NOT_PI + '"' :
       mine ? ' disabled title="Another PI or admin reviews your change"' : '';
-    return '<li class="gd-proposal" data-id="' + esc(q.id) + '">' +
+    // Its own address (#proposal-<id>): the board, Slack and the eye chip link to it.
+    return '<li class="gd-proposal" id="proposal-' + esc(q.id) + '" data-id="' + esc(q.id) + '">' +
       '<p class="gd-proposal-head"><span class="hist-when">' + BoldHistory.when(q.at) + '</span>' +
         '<span>' + what + ' · proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') +
           (q.editedAt ? ' · edited ' + esc(BoldHistory.when(q.editedAt)) : '') + '</span></p>' +
       (draftEditing === q.id ? '<p class="gd-proposal-note"><em>You’re editing it: see your draft at the top.</em></p>' : '') +
       (q.note ? '<p class="gd-proposal-note">' + esc(q.note) + '</p>' : '') +
+      (q.kind === 'add' && cur ? '<p class="gd-proposal-stale">That part is there already, so this can’t be accepted: propose a change to it instead.</p>' : '') +
       (stale ? '<p class="gd-proposal-stale">' + (q.kind !== 'about' && !cur ? 'That part has since been removed.' : 'This has changed since it was proposed; accepting replaces the current text.') + '</p>' : '') +
       (q.kind === 'batch' ? '<ol class="gd-batch">' + (q.changes || []).map(function(c){
           return '<li><p class="hist-label">' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + '</p>' + BoldHistory.changesHtml(sideText(c.kind, c.before), sideText(c.kind, c.after), {}) + '</li>';
@@ -384,10 +404,10 @@
         BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {})) +
       '<div class="event-controls">' +
         '<button type="button" class="btn-text gd-view">View as proposed</button>' +
-        '<button type="button" class="btn-text gd-accept"' + off + (q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && q.kind !== 'batch' && !cur ? ' disabled' : '') + '>Accept</button>' +
+        '<button type="button" class="btn-text gd-accept"' + off + ((q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && q.kind !== 'batch' && q.kind !== 'access' && !cur) || (q.kind === 'add' && cur) ? ' disabled' : '') + '>Accept</button>' +
         '<button type="button" class="btn-text danger gd-decline"' + off + '>Decline</button>' +
-        // A restore stays as it is: withdraw it and restore another version instead.
-        (mine && q.kind !== 'restore' ? '<button type="button" class="btn-text gd-revise">' + (draftEditing === q.id ? 'Editing' : 'Edit') + '</button>' : '') +
+        // A restore, or a row of Who can see what, stays as it is: withdraw it and propose again instead.
+        (mine && q.kind !== 'restore' && q.kind !== 'access' ? '<button type="button" class="btn-text gd-revise">' + (draftEditing === q.id ? 'Editing' : 'Edit') + '</button>' : '') +
         (mine ? '<button type="button" class="btn-text gd-withdraw">Withdraw</button>' : '') +
       '</div>' + (comments ? comments.proposalThreadHtml(q.id) : '') + '</li>';
   }
@@ -458,7 +478,7 @@
       '<div class="guide-layout"><div class="guide-main">' +
       (adding && form.newTab ? '<section class="guide-part">' + partFormHtml(null) + '</section>' : foldAllHtml() + shown().map(partHtml).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
-        '<button type="button" class="event-add gd-add">' + '+ Suggest a new part' + '</button>')) +
+        '<button type="button" class="event-add gd-add"' + (proposeOff() ? ' disabled title="' + esc(proposeOff()) + '"' : '') + '>' + '+ Suggest a new part' + '</button>')) +
       proposalsHtml() + (readPoint ? readPoint.readersHtml() : '') + '</div>' + contentsHtml() + '</div></main>';
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
@@ -858,8 +878,14 @@
     if (readPoint && readPoint.click(e)) return;
     if (comments && comments.click(e)) return;
     var t = e.target.closest('button');
-    if (!t || t.disabled || !x || !me) return;
+    if (!t || t.disabled || !x) return;
     if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
+    if (t.classList.contains('gd-fold') && !me) {
+      var ofid = t.getAttribute('data-id');
+      keepInPlace(ofid, function(){ folded[ofid] = !folded[ofid]; saveFolded(); render(); });
+      return;
+    }
+    if (!me) return;
     if (t.classList.contains('gd-fold')) {
       var fid = t.getAttribute('data-id');
       keepInPlace(fid, function(){ folded[fid] = !folded[fid]; saveFolded(); render(); });
@@ -952,6 +978,8 @@
   }
 
   var unsubs = [], signIns = 0;
+  // What the viewer may do here (Who can see what) can arrive after the page is drawn.
+  BOLD.onAccess(function(){ if (loaded && !form) render(); });
   if (isNew) {
     BOLD.onUser(function(user){
       var mine = ++signIns;
@@ -967,7 +995,7 @@
   var jumped = !location.hash, proposalsLoaded = false;
   function refresh(){
     if (form) return;
-    var ready = !jumped && x && (proposalsLoaded || location.hash !== '#proposals') &&
+    var ready = !jumped && x && (proposalsLoaded || !/^#proposal/.test(location.hash)) &&
       (!commentFor(location.hash) || (comments && comments.ready() && proposalsLoaded));
     if (ready) tab = tabFor(location.hash);
     render();

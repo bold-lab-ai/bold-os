@@ -7,17 +7,21 @@
 // open any one by its id without listing. The server is stateless, so it doesn't
 // notify of changes (listChanged and subscribe are false): an agent lists again.
 module.exports = function(ctx){
-  const { lab, url, httpError, isFullWrite, skillMd, tools, freshSkill, toolItems } = ctx;
+  const { lab, url, httpError, isFullWrite, skillMd, tools, freshSkill, toolItems, mayView, canView } = ctx;
+  // Who can see what: each kind of resource is a page, listed and read only by whoever may view it.
+  const PAGE_OF = { boldiquette: 'boldiquette', guide: 'guides', skill: 'skills', tool: 'tools', event: 'events', project: 'projects', person: 'people', calendar: 'calendar', me: 'profile' };
   const PAGE = 200;
 
   // ---------- prompts: the skills ----------
-  async function listPrompts(){
+  async function listPrompts(who){
+    if (!(await canView(who, 'skills'))) return { prompts: [] };
     return { prompts: (await lab.skills()).sort((a, b) => a._id.localeCompare(b._id)).map((s) => ({
       name: s._id, title: s.title || s._id, description: s.description || '',
       arguments: [{ name: 'request', description: 'What you would like done with it (optional).', required: false }],
     })) };
   }
   async function getPrompt(who, p){
+    await mayView(who, 'skills');
     // Read fresh if it's newer than the list kept for a minute.
     const s = (await lab.skills()).find((x) => x._id === p.name) || (freshSkill && await freshSkill(p.name));
     if (!s) throw httpError(404, 'No skill called ' + p.name + '.');
@@ -84,10 +88,10 @@ module.exports = function(ctx){
       list: async () => { const t = toolItems ? await toolItems() : {}; return Object.keys(t).map((n) => ({ uri: 'bold://tool/' + n, name: 'tool-' + n, title: t[n].title || n, description: t[n].description || '', mimeType: 'application/json' })); },
       read: async (id) => { const t = toolItems ? (await toolItems())[id] : null; if (!t) throw httpError(404, 'No tool ' + id + '.'); return { name: id, title: t.title || id, description: t.description, acting: !!t.acting, input: t.input || {}, code: t.code, url: url('tool.html?tool=' + encodeURIComponent(id)) }; } },
     { template: 'bold://event/{slug}', name: 'event', title: 'An event', description: 'One of the lab’s events, with its programme.',
-      list: async (who) => { const full = await isFullWrite(who.email); return (await lab.events()).filter((e) => e.hidden === false || full).map((e) => ({ uri: 'bold://event/' + e._id, name: 'event-' + e._id, title: e.title, description: [e.startDate, e.place].filter(Boolean).join(' · '), mimeType: 'text/markdown' })); },
+      list: async (who) => { const full = await isFullWrite(who.email); return (await lab.events()).filter((e) => e.hidden === false || full || e.createdBy === who.email).map((e) => ({ uri: 'bold://event/' + e._id, name: 'event-' + e._id, title: e.title, description: [e.startDate, e.place].filter(Boolean).join(' · '), mimeType: 'text/markdown' })); },
       read: async (id, who) => {
         const e = (await lab.events()).find((x) => x._id === id);
-        if (!e || (e.hidden !== false && !(await isFullWrite(who.email)))) throw httpError(404, 'No event ' + id + '.');
+        if (!e || (e.hidden !== false && e.createdBy !== who.email && !(await isFullWrite(who.email)))) throw httpError(404, 'No event ' + id + '.');
         const [ss, ts] = await Promise.all([lab.sessions(), lab.talks()]);
         return eventMd(e, ss.filter((s) => (s.eventSlug || 'collaboration-week') === e._id), ts);
       } },
@@ -110,7 +114,7 @@ module.exports = function(ctx){
   ];
 
   async function listResources(who, p){
-    const all = [].concat(...(await Promise.all(KINDS.map((k) => k.list(who)))));
+    const all = [].concat(...(await Promise.all(KINDS.map(async (k) => (await canView(who, PAGE_OF[k.name])) ? k.list(who) : []))));
     const from = Math.max(0, parseInt((p && p.cursor) || '0', 10) || 0);
     const out = { resources: all.slice(from, from + PAGE) };
     if (from + PAGE < all.length) out.nextCursor = String(from + PAGE);
@@ -124,6 +128,7 @@ module.exports = function(ctx){
     const m = /^bold:\/\/([a-z]+)(?:\/(.+))?$/.exec(uri);
     const k = m && KINDS.find((x) => x.template === 'bold://' + m[1] || x.template.indexOf('bold://' + m[1] + '/') === 0);
     if (!k || (k.template.indexOf('{') !== -1) !== !!m[2]) throw httpError(404, 'No resource at ' + uri + '.');
+    await mayView(who, PAGE_OF[k.name]);
     const id = m[2] ? decodeURIComponent(m[2]) : '';
     const data = await k.read(id, who);
     return k.json ? json(uri, data) : md(uri, data);

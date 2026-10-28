@@ -1,5 +1,9 @@
 .rota-hero { max-width: 72rem; margin: 0 auto; padding: 64px 1.5rem 0; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 2rem; }
 .rota-hero-copy { min-width: 0; }
+.rota-back { display: inline-block; margin-bottom: 1rem; font: .82rem var(--sans); color: var(--muted); text-decoration: none; }
+.rota-back:hover { color: var(--accent); }
+.rota-eyebrow { display: block; margin-bottom: .65rem; font: .68rem var(--sans); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.rota-meta { margin: .7rem 0 0; font: .92rem var(--sans); color: var(--muted); }
 .rota-hero h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.14; overflow-wrap: break-word; }
 .rota-hero .hero-note { margin: 12px 0 0; font-size: 16px; color: var(--ink-soft); }
 .rota-hero-tools { display: grid; gap: .35rem; flex: 0 1 26rem; min-width: 0; margin-left: auto; }
@@ -61,6 +65,15 @@
 .rota-changelog-list { padding-left: 1.5rem; }
 .rota-changelog-list li { border-bottom: 1px solid var(--line); padding: .45rem 0; }
 .rota-changelog-list time { font-family: var(--sans); font-size: .8rem; color: var(--muted); }
+.rota-tracker { border-top: 1px solid var(--line); margin-top: 2rem; padding-top: 1rem; }
+.rota-tracker summary { width: fit-content; font: 600 .9rem var(--sans); cursor: pointer; }
+.rota-tracker summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.rota-tracker label { display: flex; align-items: center; gap: .5rem; margin: 1rem 0; font: .82rem var(--sans); }
+.rota-tracker input { width: 6rem; }
+.rota-table-wrap { overflow-x: auto; }
+.rota-tracker table { width: 100%; border-collapse: collapse; text-align: left; font: .8rem var(--sans); }
+.rota-tracker th, .rota-tracker td { padding: .5rem .65rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.rota-tracker tbody th { font-weight: 500; }
 @media (max-width: 40rem) {
   .rota-hero { display: block; padding: 44px 1rem 0; }
   .rota-hero-tools { margin-top: 1.25rem; }
