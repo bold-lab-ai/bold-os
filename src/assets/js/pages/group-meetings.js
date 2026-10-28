@@ -55,6 +55,7 @@
     var project = s.projectId ? projects.filter(function(p){ return p.id === s.projectId; })[0] : null;
     var m = meetings.filter(function(x){ return x.date === s.meetingId; })[0];
     var can = able(s), canSwap = can && access.registered && access.eligible, adminEdit = access && access.admin && assigned && !s.pendingActionId, open = !assigned && future(m) && !s.pendingActionId, claimant = open && s.format === 'long' && access && access.registered && access.eligible;
+    var showClaimForm = claimant || (access && access.preview && open && s.format === 'long');
     var why = !access ? 'Sign in to use this action' : access.reason || 'Only the assigned presenter may use this action for an upcoming slot';
     var slide = s.slidesUrl ? '<a href="' + esc(s.slidesUrl) + '" target="_blank" rel="noopener">Slides</a>' : '<span class="rota-resource-missing" tabindex="0" data-rota-hint="(not added)" aria-label="Slides (not added)">Slides</span>';
     var projectLink = project ? '<a href="' + projectHref(project) + '" title="' + esc(project.title || 'Project') + '">Project</a>' : '<span class="rota-resource-missing" tabindex="0" data-rota-hint="' + (s.projectId ? '(unavailable)' : '(not added)') + '" aria-label="Project ' + (s.projectId ? '(unavailable)' : '(not added)') + '">Project</span>';
@@ -65,14 +66,13 @@
       '<button type="button" class="btn-text" data-action="edit" data-id="' + esc(s.id) + '"' + disabled(can || adminEdit, why) + '>' + (s.slidesUrl ? 'Edit talk' : 'Add slides URL / edit talk') + '</button>' +
       '<button type="button" class="btn-text" data-action="swap" data-id="' + esc(s.id) + '"' + disabled(canSwap, access && access.reason || why) + '>Swap</button>' +
       '<button type="button" class="btn-text" data-action="recuse" data-id="' + esc(s.id) + '"' + disabled(can, why) + '>Decline slot</button>' +
-      (!assigned ? '<button type="button" class="btn-text" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(claimant, s.format !== 'long' ? 'Only open long slots can be claimed' : access && access.reason || 'This slot is unavailable') + '>Claim</button>' : '') +
       (!assigned && future(m) && s.format === 'short' ? '<button type="button" class="btn-text" data-action="offer" data-id="' + esc(s.id) + '"' + disabled(access && access.admin && !s.pendingActionId, access && access.admin ? 'An offer is already pending' : 'Only a rota administrator can offer a short slot') + '>Offer short slot</button>' : '') +
       (!future(m) ? '<button type="button" class="btn-text" data-action="outcome" data-id="' + esc(s.id) + '"' + disabled(access && access.admin, 'Only a rota administrator can set presentation outcomes') + '>Set outcome</button>' : '') +
       (s.origin === 'site' && s.revision === 0 && !assigned ? '<button type="button" class="btn-text" data-action="deleteSlot" data-id="' + esc(s.id) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new open slot') + '>Remove slot</button>' : ''));
     return '<article class="rota-slot" id="slot-' + esc(s.meetingId) + '-' + esc(s.slotNumber) + '"><div class="rota-slot-head"><h3>' + esc(slotLabel(s)) + '</h3>' + (outcome ? '<span class="rota-outcome">' + esc(outcome) + '</span>' : '') + '</div>' +
       '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '" aria-hidden="true">' + (assigned ? esc(initials(presenter)) + (photo ? '<img class="rota-avatar-photo" src="' + esc(photo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') : '+') + '</span><div class="rota-slot-details">' +
       '<div class="rota-person-row"><p class="rota-person">' + esc(presenter) + (assigned && (!s.presenterSlackId || !people.some(function(p){ return p.slackId === s.presenterSlackId; })) ? ' <span class="rota-muted">(unresolved account)</span>' : '') + '</p>' + slotActions + '</div>' +
-      (assigned ? '<p class="rota-topic">' + esc(s.topic || 'Topic to come') + '</p><p class="rota-resources">' + slide + projectLink + '</p>' : '') + '</div></div></article>';
+      (assigned ? '<p class="rota-topic">' + esc(s.topic || 'Topic to come') + '</p><p class="rota-resources">' + slide + projectLink + '</p>' : '<button type="button" class="btn-text rota-claim" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(showClaimForm, s.format !== 'long' ? 'Only open long slots can be claimed' : access && access.reason || 'This slot is unavailable') + '>Claim slot</button>') + '</div></div></article>';
   }
   function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });
@@ -194,10 +194,12 @@
   }
   function showPanel(html){ panel = '<div class="rota-panel">' + html + '<button type="button" class="btn-text" data-action="close">Cancel</button></div>'; render(); document.getElementById('rotaPanel').scrollIntoView({ block: 'nearest' }); }
   function projectOptions(selected){
-    var mine = projects.filter(function(p){ return access && (p.members || []).map(function(x){ return String(x).toLowerCase(); }).includes(user.email.toLowerCase()) || p.id === selected; });
+    var email = user && user.email ? user.email.toLowerCase() : '';
+    var mine = projects.filter(function(p){ return access && (p.members || []).map(function(x){ return String(x).toLowerCase(); }).includes(email) || p.id === selected; });
     return '<option value="">No project</option>' + mine.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === selected ? ' selected' : '') + '>' + esc(p.title || p.id) + '</option>'; }).join('');
   }
   function openAction(action, s){
+    if (action === 'claim') showPanel('<h2>Claim slot</h2><form id="rotaForm" data-submit="Claim" data-id="' + esc(s.id) + '"><label>Title (optional) <input name="topic" maxlength="140" placeholder="Talk title"></label><label>Slides URL (optional) <input name="slidesUrl" type="url" placeholder="https://…"></label><label>Project (optional) <select name="projectId">' + projectOptions('') + '</select></label><button type="submit"' + disabled(!(access && access.preview), 'Changes are unavailable in the local preview') + '>Claim slot</button></form>');
     if (action === 'edit') showPanel('<h2>Edit talk</h2><form id="rotaForm" data-submit="Edit" data-id="' + esc(s.id) + '"><label>Topic <input name="topic" maxlength="140" value="' + esc(s.topic || '') + '"></label><label>Project <select name="projectId">' + projectOptions(s.projectId) + '</select></label><label>Slides URL <input name="slidesUrl" type="url" value="' + esc(s.slidesUrl || '') + '" placeholder="https://…"></label>' + (access.admin && !mine(s) ? '<label>Correction note <textarea name="auditNote" required maxlength="300"></textarea></label>' : '') + '<button type="submit">Save</button></form>');
     if (action === 'recuse') showPanel('<h2>Decline slot</h2><form id="rotaForm" data-submit="Recuse" data-id="' + esc(s.id) + '"><label>Reason (private) <textarea name="reason" required maxlength="2000"></textarea></label><button type="submit">Decline slot</button></form>');
     if (action === 'swap') {
@@ -275,7 +277,6 @@
     if (action === 'retrySwap') { act('RetrySwap', { id: button.dataset.id }); return; }
     if (action === 'deleteSlot') { act('DeleteSlot', { slotId: s.id }); return; }
     if (action === 'deleteMeeting') { act('DeleteMeeting', { date: button.dataset.date }); return; }
-    if (action === 'claim') { act('Claim', { slotId: s.id }); return; }
     if (action === 'leave') { act('Leave', {}); return; }
     if (action === 'register') { showPanel('<h2>Join the rota</h2><form id="rotaForm" data-submit="Register"><label>Category <select name="category"><option value="phd">PhD</option><option value="masters">Master’s</option><option value="postdoc">Postdoc</option><option value="associate">Associate</option></select></label><button type="submit">Save registration</button></form>'); return; }
     if (action === 'photo') { showPanel('<h2>Your rota photo</h2><p>Choose a WebP, PNG or JPEG image up to 2 MB.</p><label>Photo <input type="file" id="rotaPhotoFile" accept="image/webp,image/png,image/jpeg"></label><button type="button" class="btn-text" data-action="uploadPhoto">Save photo</button> <button type="button" class="btn-text" data-action="removePhoto"' + disabled(!!photoUrls[access.slackId], 'No photo to remove') + '>Remove photo</button>'); return; }
