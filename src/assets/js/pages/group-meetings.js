@@ -64,9 +64,9 @@
   function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });
     var remove = m.origin === 'site' && !rows.length ? '<button type="button" class="btn-text" data-action="deleteMeeting" data-date="' + esc(m.date) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new empty meeting') + '>Remove meeting</button>' : '';
-    return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head' + (remove ? ' has-actions' : '') + '"><div><span class="rota-meeting-eyebrow">' + (index === 0 && !archive ? 'Next meeting' : archive ? 'Past meeting' : 'Group meeting') + '</span><h2>' + esc(fmt(m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.location ? ' · ' + esc(m.location) : '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + '</p>' +
+    return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head' + (remove ? ' has-actions' : '') + '"><div>' + (index === 0 && !archive ? '<span class="rota-meeting-eyebrow">Next meeting</span>' : '') + '<h2>' + esc(fmt(m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.location ? ' · ' + esc(m.location) : '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + '</p>' +
       (remove ? actionsHtml('rota-actions-meeting-' + m.date, 'Actions for meeting on ' + fmt(m.date), remove) : '') + '</div>' +
-      (m.status === 'skipped' ? '' : '<div class="rota-slots">' + rows.map(slotHtml).join('') + '</div>') + '</section>';
+      (m.status === 'skipped' ? '' : '<div class="rota-slots rota-slots--' + Math.min(rows.length, 3) + '">' + rows.map(slotHtml).join('') + '</div>') + '</section>';
   }
   function changesHtml(){
     if (changesFailed) return '<p>Could not load the changelog. Close and reopen it to retry.</p>';
@@ -143,12 +143,6 @@
       if (linkedIndex >= visibleCount) visibleCount = linkedIndex + 1;
     }
     var visible = filtered.slice(0, visibleCount);
-    var dateNav = document.getElementById('rotaDates');
-    var navMeetings = meetings.filter(function(m){ return future(m); }).sort(function(a,b){ return a.date.localeCompare(b.date); }).slice(0, 6);
-    dateNav.hidden = archive || !!search || !navMeetings.length;
-    dateNav.innerHTML = dateNav.hidden ? '' : '<span class="rota-dates-label">Coming up</span>' + navMeetings.map(function(m){
-      return '<a href="group-meetings.html?date=' + esc(m.date) + '">' + esc(new Date(m.date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })) + '</a>';
-    }).join('');
     var remaining = filtered.length - visible.length;
     var more = remaining ? '<div class="rota-more"><span>Showing ' + visible.length + ' of ' + filtered.length + ' meetings</span><button type="button" class="btn-text" data-action="moreMeetings">Show ' + Math.min(10, remaining) + ' more</button></div>' : '';
     var notice = access && !access.eligible ? '<p class="rota-alert">New assignments and swaps are unavailable until your Slack eligibility is confirmed. Published assignments remain visible.</p>' : '';
