@@ -27,7 +27,7 @@
 .rota-slot h3 { font: 600 13px/1.4 var(--sans); color: var(--ink); }
 .rota-outcome, .rota-muted { opacity: .7; }
 .rota-slot-content { display: flex; align-items: flex-start; gap: .85rem; margin-top: .55rem; min-width: 0; }
-.rota-avatar { position: relative; display: grid; place-items: center; flex: 0 0 3.5rem; width: 3.5rem; height: 3.5rem; overflow: hidden; border: 1px solid var(--line); border-radius: 50%; background: var(--wash); color: var(--ink-soft); font: 600 1.2rem/1 var(--sans); }
+.rota-avatar { position: relative; display: grid; place-items: center; flex: 0 0 3.875rem; width: 3.875rem; height: 3.875rem; overflow: hidden; border: 1px solid var(--line); border-radius: 50%; background: var(--wash); color: var(--ink-soft); font: 600 1.2rem/1 var(--sans); }
 .rota-avatar-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .rota-avatar--open { background: transparent; color: var(--muted); font-size: 0; }
 .rota-avatar--open::before, .rota-avatar--open::after { content: ''; position: absolute; top: 50%; left: 50%; background: currentColor; transform: translate(-50%, -50%); }
@@ -35,10 +35,11 @@
 .rota-avatar--open::after { width: 1.5px; height: 1rem; }
 .rota-slot-details { min-width: 0; overflow-wrap: anywhere; }
 .rota-slot-details p { margin: 0; }
-.rota-slot-details .rota-topic { font: 600 16.5px/1.3 var(--serif); color: var(--ink); }
-.rota-slot-details .rota-person { margin-top: 3px; font: 400 13px/1.4 var(--sans); color: var(--ink-soft); }
-.rota-slot-details .rota-slides { margin-top: 3px; font: 400 11.5px/1.4 var(--sans); color: var(--muted); }
-.rota-slot-details .rota-project { margin-top: 4px; font: 400 13px/1.4 var(--sans); }
+.rota-slot-details .rota-person { font: 600 16.5px/1.3 var(--serif); color: var(--ink); }
+.rota-slot-details .rota-topic { margin-top: 3px; font: 400 13px/1.4 var(--sans); color: var(--ink-soft); }
+.rota-slot-details .rota-resources { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 3px; font: 400 11.5px/1.4 var(--sans); }
+.rota-resource-missing { color: var(--muted); text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }
+.rota-resource-missing:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rota-actions { position: relative; flex: none; z-index: 2; }
 .rota-slot > .rota-actions { position: absolute; top: 1rem; right: 1rem; }
 .rota-meeting-head > .rota-actions { position: absolute; top: 0; right: 0; }

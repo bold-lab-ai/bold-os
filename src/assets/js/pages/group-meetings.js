@@ -43,16 +43,15 @@
     var m = meetings.filter(function(x){ return x.date === s.meetingId; })[0];
     var can = able(s), canSwap = can && access.registered && access.eligible, adminEdit = access && access.admin && assigned && !s.pendingActionId, open = !assigned && future(m) && !s.pendingActionId, claimant = open && s.format === 'long' && access && access.registered && access.eligible;
     var why = !access ? 'Sign in to use this action' : access.reason || 'Only the assigned presenter may use this action for an upcoming slot';
-    var slide = s.slidesUrl ? '<a href="' + esc(s.slidesUrl) + '" target="_blank" rel="noopener">Slides</a>' : '<span class="rota-muted">Slides not added</span>';
+    var slide = s.slidesUrl ? '<a href="' + esc(s.slidesUrl) + '" target="_blank" rel="noopener">Slides</a>' : '<span class="rota-resource-missing" tabindex="0" title="(not added)" aria-label="Slides (not added)">Slides</span>';
+    var projectLink = project ? '<a href="' + projectHref(project) + '" title="' + esc(project.title || 'Project') + '">Project</a>' : '<span class="rota-resource-missing" tabindex="0" title="' + (s.projectId ? '(unavailable)' : '(not added)') + '" aria-label="Project ' + (s.projectId ? '(unavailable)' : '(not added)') + '">Project</span>';
     var presenter = name(s.presenterSlackId, s.legacyName);
     var photo = assigned ? publicPhoto(s, presenter) : '';
     var outcome = assigned && !future(m) ? (s.outcome === 'presented' ? 'Presented' : s.outcome === 'did-not-present' ? 'Did not present' : 'Unconfirmed') : '';
     return '<article class="rota-slot" id="slot-' + esc(s.meetingId) + '-' + esc(s.slotNumber) + '"><div class="rota-slot-head"><h3>' + esc(slotLabel(s)) + '</h3>' + (outcome ? '<span class="rota-outcome">' + esc(outcome) + '</span>' : '') + '</div>' +
       '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '" aria-hidden="true">' + (assigned ? esc(initials(presenter)) + (photo ? '<img class="rota-avatar-photo" src="' + esc(photo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') : '+') + '</span><div class="rota-slot-details">' +
-      (assigned ? '<p class="rota-topic">' + esc(s.topic || 'Topic to come') + '</p>' : '') +
       '<p class="rota-person">' + esc(presenter) + (assigned && (!s.presenterSlackId || !people.some(function(p){ return p.slackId === s.presenterSlackId; })) ? ' <span class="rota-muted">(unresolved account)</span>' : '') + '</p>' +
-      (assigned ? '<p class="rota-slides">' + slide + '</p>' : '') +
-      (s.projectId ? '<p class="rota-project">' + (project ? '<a href="' + projectHref(project) + '">' + esc(project.title || 'Project') + '</a>' : '<span class="rota-muted">Project unavailable</span>') + '</p>' : '') + '</div></div>' +
+      (assigned ? '<p class="rota-topic">' + esc(s.topic || 'Topic to come') + '</p><p class="rota-resources">' + slide + projectLink + '</p>' : '') + '</div></div>' +
       actionsHtml('rota-actions-' + s.id, 'Actions for ' + slotLabel(s),
       '<button type="button" class="btn-text" data-action="edit" data-id="' + esc(s.id) + '"' + disabled(can || adminEdit, why) + '>' + (s.slidesUrl ? 'Edit talk' : 'Add slides URL / edit talk') + '</button>' +
       '<button type="button" class="btn-text" data-action="swap" data-id="' + esc(s.id) + '"' + disabled(canSwap, access && access.reason || why) + '>Swap</button>' +
