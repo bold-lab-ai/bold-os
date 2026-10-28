@@ -11,7 +11,7 @@
   function updateArchiveHeader(){
     var archiveLink = document.getElementById('rotaArchiveLink');
     archiveLink.href = archive ? 'group-meetings.html' : 'group-meetings.html?archive=1';
-    archiveLink.textContent = archive ? 'Upcoming meetings' : 'Archive';
+    archiveLink.textContent = archive ? 'Upcoming meetings →' : 'Archive →';
     document.querySelector('.rota-hero h1').textContent = archive ? 'Past group meetings' : 'Group meetings';
     document.querySelector('.rota-hero .hero-note').textContent = archive ? 'Previous talks and presentations, newest first.' : 'The weekly rota, talks and presentation record.';
   }
@@ -61,10 +61,10 @@
       (!future(m) ? '<button type="button" class="btn-text" data-action="outcome" data-id="' + esc(s.id) + '"' + disabled(access && access.admin, 'Only a rota administrator can set presentation outcomes') + '>Set outcome</button>' : '') +
       (s.origin === 'site' && s.revision === 0 && !assigned ? '<button type="button" class="btn-text" data-action="deleteSlot" data-id="' + esc(s.id) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new open slot') + '>Remove slot</button>' : '')) + '</article>';
   }
-  function meetingHtml(m){
+  function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });
     var remove = m.origin === 'site' && !rows.length ? '<button type="button" class="btn-text" data-action="deleteMeeting" data-date="' + esc(m.date) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new empty meeting') + '>Remove meeting</button>' : '';
-    return '<section class="rota-meeting" id="date-' + esc(m.date) + '"><div class="rota-meeting-head' + (remove ? ' has-actions' : '') + '"><h2>' + esc(fmt(m.date)) + '</h2><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.location ? ' · ' + esc(m.location) : '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + '</p>' +
+    return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head' + (remove ? ' has-actions' : '') + '"><div><span class="rota-meeting-eyebrow">' + (index === 0 && !archive ? 'Next meeting' : archive ? 'Past meeting' : 'Group meeting') + '</span><h2>' + esc(fmt(m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.location ? ' · ' + esc(m.location) : '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + '</p>' +
       (remove ? actionsHtml('rota-actions-meeting-' + m.date, 'Actions for meeting on ' + fmt(m.date), remove) : '') + '</div>' +
       (m.status === 'skipped' ? '' : '<div class="rota-slots">' + rows.map(slotHtml).join('') + '</div>') + '</section>';
   }
@@ -143,6 +143,12 @@
       if (linkedIndex >= visibleCount) visibleCount = linkedIndex + 1;
     }
     var visible = filtered.slice(0, visibleCount);
+    var dateNav = document.getElementById('rotaDates');
+    var navMeetings = meetings.filter(function(m){ return future(m); }).sort(function(a,b){ return a.date.localeCompare(b.date); }).slice(0, 6);
+    dateNav.hidden = archive || !!search || !navMeetings.length;
+    dateNav.innerHTML = dateNav.hidden ? '' : '<span class="rota-dates-label">Coming up</span>' + navMeetings.map(function(m){
+      return '<a href="group-meetings.html?date=' + esc(m.date) + '">' + esc(new Date(m.date + 'T12:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'short' })) + '</a>';
+    }).join('');
     var remaining = filtered.length - visible.length;
     var more = remaining ? '<div class="rota-more"><span>Showing ' + visible.length + ' of ' + filtered.length + ' meetings</span><button type="button" class="btn-text" data-action="moreMeetings">Show ' + Math.min(10, remaining) + ' more</button></div>' : '';
     var notice = access && !access.eligible ? '<p class="rota-alert">New assignments and swaps are unavailable until your Slack eligibility is confirmed. Published assignments remain visible.</p>' : '';
