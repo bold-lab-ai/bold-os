@@ -8,6 +8,19 @@
   var manageOpen = false, changelogOpen = false, changes = [], changesLoaded = false, changesLoading = false, changesFailed = false, changesLast = null, changesMore = false;
   var params = new URLSearchParams(location.search), selectedDate = params.get('date') || '', selectedSlot = params.get('slot') || '', archive = params.get('archive') === '1';
   var search = '', panel = null, visibleCount = 10, pendingJump = !!selectedDate, trackerOpen = false, trackerYear = new Date().getFullYear();
+  var resourceHint = document.createElement('div');
+  resourceHint.className = 'rota-resource-hint';
+  resourceHint.setAttribute('role', 'tooltip');
+  resourceHint.hidden = true;
+  document.body.appendChild(resourceHint);
+  function hideResourceHint(){ resourceHint.hidden = true; }
+  function showResourceHint(target){
+    resourceHint.textContent = target.dataset.rotaHint;
+    resourceHint.hidden = false;
+    var rect = target.getBoundingClientRect(), gap = 5, edge = 8;
+    resourceHint.style.left = Math.max(edge, Math.min(rect.left, window.innerWidth - resourceHint.offsetWidth - edge)) + 'px';
+    resourceHint.style.top = rect.bottom + gap + 'px';
+  }
   function updateArchiveHeader(){
     var archiveLink = document.getElementById('rotaArchiveLink');
     archiveLink.href = archive ? 'group-meetings.html' : 'group-meetings.html?archive=1';
@@ -43,8 +56,8 @@
     var m = meetings.filter(function(x){ return x.date === s.meetingId; })[0];
     var can = able(s), canSwap = can && access.registered && access.eligible, adminEdit = access && access.admin && assigned && !s.pendingActionId, open = !assigned && future(m) && !s.pendingActionId, claimant = open && s.format === 'long' && access && access.registered && access.eligible;
     var why = !access ? 'Sign in to use this action' : access.reason || 'Only the assigned presenter may use this action for an upcoming slot';
-    var slide = s.slidesUrl ? '<a href="' + esc(s.slidesUrl) + '" target="_blank" rel="noopener">Slides</a>' : '<span class="rota-resource-missing" tabindex="0" title="(not added)" aria-label="Slides (not added)">Slides</span>';
-    var projectLink = project ? '<a href="' + projectHref(project) + '" title="' + esc(project.title || 'Project') + '">Project</a>' : '<span class="rota-resource-missing" tabindex="0" title="' + (s.projectId ? '(unavailable)' : '(not added)') + '" aria-label="Project ' + (s.projectId ? '(unavailable)' : '(not added)') + '">Project</span>';
+    var slide = s.slidesUrl ? '<a href="' + esc(s.slidesUrl) + '" target="_blank" rel="noopener">Slides</a>' : '<span class="rota-resource-missing" tabindex="0" data-rota-hint="(not added)" aria-label="Slides (not added)">Slides</span>';
+    var projectLink = project ? '<a href="' + projectHref(project) + '" title="' + esc(project.title || 'Project') + '">Project</a>' : '<span class="rota-resource-missing" tabindex="0" data-rota-hint="' + (s.projectId ? '(unavailable)' : '(not added)') + '" aria-label="Project ' + (s.projectId ? '(unavailable)' : '(not added)') + '">Project</span>';
     var presenter = name(s.presenterSlackId, s.legacyName);
     var photo = assigned ? publicPhoto(s, presenter) : '';
     var outcome = assigned && !future(m) ? (s.outcome === 'presented' ? 'Presented' : s.outcome === 'did-not-present' ? 'Did not present' : 'Unconfirmed') : '';
@@ -124,6 +137,7 @@
   }
   function render(){
     if (!user) return;
+    hideResourceHint();
     var season = seasons.filter(function(s){ return s.publicationState === 'published'; })[0] || seasons[0];
     document.getElementById('rotaMeta').textContent = season ? [season.label, season.regularTime, season.location].filter(Boolean).join(' · ') : '';
     var ordered = meetings.filter(function(m){ return search ? true : archive ? past(m) : !past(m); })
@@ -209,15 +223,25 @@
   body.addEventListener('error', function(e){
     if (e.target.classList && e.target.classList.contains('rota-avatar-photo')) e.target.remove();
   }, true);
-  body.addEventListener('pointerover', function(e){ syncMenu(e.target.closest('.rota-actions')); });
+  body.addEventListener('pointerover', function(e){
+    syncMenu(e.target.closest('.rota-actions'));
+    var target = e.target.closest('.rota-resource-missing');
+    if (target) showResourceHint(target);
+  });
   body.addEventListener('pointerout', function(e){
     var menu = e.target.closest('.rota-actions');
     if (menu && !menu.contains(e.relatedTarget)) setTimeout(function(){ syncMenu(menu); }, 0);
+    if (e.target.closest('.rota-resource-missing')) hideResourceHint();
   });
-  body.addEventListener('focusin', function(e){ syncMenu(e.target.closest('.rota-actions')); });
+  body.addEventListener('focusin', function(e){
+    syncMenu(e.target.closest('.rota-actions'));
+    var target = e.target.closest('.rota-resource-missing');
+    if (target) showResourceHint(target);
+  });
   body.addEventListener('focusout', function(e){
     var menu = e.target.closest('.rota-actions');
     if (menu) setTimeout(function(){ syncMenu(menu); }, 0);
+    if (e.target.closest('.rota-resource-missing')) hideResourceHint();
   });
   body.addEventListener('keydown', function(e){
     if (e.key !== 'Escape') return;
