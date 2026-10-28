@@ -1,8 +1,10 @@
 .rota-hero-copy { min-width: 0; }
 .rota-hero .eyebrow { display: block; }
-.rota-hero-tools { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 1rem; margin-top: 2.5rem; padding: 1rem 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font: .82rem var(--sans); }
-.rota-hero-tools label { white-space: nowrap; }
-.rota-hero-tools input { width: 100%; min-width: 0; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--ink); font: .9rem var(--sans); }
+.rota-heading-row { display: flex; align-items: center; justify-content: space-between; gap: 1.5rem; }
+.rota-heading-row h1 { flex: 0 0 auto; }
+.rota-hero-tools { display: flex; align-items: center; justify-content: flex-end; gap: 1rem; min-width: 0; font: 13px var(--sans); }
+.rota-hero-tools label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.rota-hero-tools input { width: clamp(10rem, 22vw, 14rem); min-width: 0; padding: .45rem .6rem; border: 1px solid var(--line); border-radius: var(--radius); background: transparent; color: var(--ink); font: 13px var(--sans); }
 .rota-archive-link { white-space: nowrap; text-decoration: none; }
 .rota { max-width: var(--content-max); margin: 0 auto; padding: 0 var(--gutter) 48px; }
 .rota > #rotaBody { max-width: none; }
@@ -76,8 +78,9 @@
 .rota-tracker tbody th { font-weight: 500; }
 @media (max-width: 40rem) {
   .rota-hero { padding-right: 1rem; padding-left: 1rem; }
-  .rota-hero-tools { grid-template-columns: minmax(0, 1fr) auto; margin-top: 1.5rem; }
-  .rota-hero-tools label { grid-column: 1 / -1; }
+  .rota-heading-row { align-items: flex-start; flex-wrap: wrap; gap: .75rem; }
+  .rota-hero-tools { justify-content: space-between; width: 100%; }
+  .rota-hero-tools input { flex: 1 1 auto; width: auto; }
   .rota { padding: 0 1rem 2rem; }
   .rota-meeting-head { display: block; }
   .rota-slots--2 { grid-template-columns: repeat(2, minmax(15rem, 1fr)); overflow-x: auto; }
