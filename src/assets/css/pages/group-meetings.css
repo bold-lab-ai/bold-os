@@ -37,6 +37,8 @@
 .rota-slot-details p { margin: 0; }
 .rota-person-row { display: flex; align-items: center; gap: .3rem; }
 .rota-slot-details .rota-person { font: 600 16.5px/1.3 var(--serif); color: var(--ink); }
+.rota-person a { color: inherit; text-decoration: none; }
+.rota-person a:hover, .rota-person a:focus-visible { text-decoration: underline; }
 .rota-slot-details .rota-topic { margin-top: 3px; font: 400 13px/1.4 var(--sans); color: var(--ink-soft); }
 .rota-field-button { display: inline; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .rota-field-button:hover:not(:disabled), .rota-field-button:focus-visible { text-decoration: underline; text-underline-offset: 2px; }

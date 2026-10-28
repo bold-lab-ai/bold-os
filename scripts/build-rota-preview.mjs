@@ -95,6 +95,11 @@ document.addEventListener('click', event => {
   if (url.origin === location.origin && url.pathname.endsWith('/group-meetings.html')) {
     event.preventDefault();
     location.href = 'group-meetings-preview.html' + url.search + url.hash;
+  } else if (url.origin === location.origin && url.pathname.endsWith('/person.html')) {
+    event.preventDefault();
+    const message = document.getElementById('rotaMessage');
+    message.textContent = 'Member profiles are unavailable in this offline preview.';
+    message.hidden = false;
   } else if (url.origin !== location.origin || !url.pathname.endsWith('/group-meetings-preview.html')) {
     event.preventDefault();
   }
