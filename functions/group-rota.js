@@ -69,22 +69,14 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
   }
   async function claim(request) {
     const a = await actor(request); requirePresenter(a);
-    const data = request.data || {};
-    const ref = slotRef(data.slotId), topic = clean(data.topic), projectId = clean(data.projectId), slidesUrl = clean(data.slidesUrl);
-    if (topic.length > 140 || projectId.length > 100 || !url(slidesUrl)) error('invalid-argument', 'Check the title, project and HTTPS slides URL.');
-    if (projectId) {
-      const ws = await db.collection('projectWorkspaces').doc(projectId).get();
-      if (!ws.exists) error('invalid-argument', 'That project is unavailable.');
-      const members = (ws.data().members || []).map(x => String(x).toLowerCase());
-      if (!members.includes(a.email)) error('permission-denied', 'You can link only your own team’s project.');
-    }
+    const ref = slotRef(request.data && request.data.slotId);
     await db.runTransaction(async tx => {
       const s = await tx.get(ref); if (!s.exists) error('not-found', 'Slot not found.');
       const v = s.data(), m = await tx.get(meetings.doc(v.meetingId));
       const peers = await tx.get(slots.where('meetingId', '==', v.meetingId));
       if (!m.exists || !upcoming(m.data()) || v.format !== 'long' || v.presenterSlackId || v.legacyMemberId || v.legacyName || pending(v)) error('failed-precondition', 'This long slot is not open for claims.');
       if (peers.docs.some(d => d.data().presenterSlackId === a.slackId)) error('failed-precondition', 'You already present at this meeting.');
-      tx.update(ref, { presenterSlackId: a.slackId, legacyMemberId: '', legacyName: '', topic, projectId, slidesUrl, outcome: 'unconfirmed', revision: v.revision + 1, ...stamp(a, 'Open slot claimed') });
+      tx.update(ref, { presenterSlackId: a.slackId, legacyMemberId: '', legacyName: '', topic: '', projectId: '', slidesUrl: '', outcome: 'unconfirmed', revision: v.revision + 1, ...stamp(a, 'Open slot claimed') });
     });
     return { ok: true };
   }
@@ -112,7 +104,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       if (!left.exists || !right.exists) error('not-found', 'Slot not found.');
       const x = left.data(), y = right.data();
       const [mx, my, ey, ry] = await Promise.all([tx.get(meetings.doc(x.meetingId)), tx.get(meetings.doc(y.meetingId)), tx.get(db.collection('groupRotaEligibility').doc(y.presenterSlackId || '_')), tx.get(db.collection('groupRotaMembers').doc(y.presenterSlackId || '_'))]);
-      if (x.presenterSlackId !== a.slackId || !y.presenterSlackId || y.presenterSlackId === a.slackId || !ey.exists || ey.data().eligible !== true || !ry.exists || ry.data().active !== true || !sameFormat(x, y) || pending(x) || pending(y) || !mx.exists || !my.exists || !upcoming(mx.data()) || !upcoming(my.data())) error('failed-precondition', 'These slots cannot be swapped.');
+      if (x.presenterSlackId !== a.slackId || !y.presenterSlackId || y.presenterSlackId === a.slackId || !ey.exists || ey.data().eligible !== true || !ry.exists || ry.data().active !== true || !sameFormat(x, y) || x.format !== 'short' || pending(x) || pending(y) || !mx.exists || !my.exists || !upcoming(mx.data()) || !upcoming(my.data())) error('failed-precondition', 'These short slots cannot be swapped.');
       const deadline = Math.min(expiresAt, Date.parse(mx.data().date + 'T00:00:00Z'), Date.parse(my.data().date + 'T00:00:00Z'));
       tx.create(swapRef, { slotId: first.id, otherSlotId: second.id, slotRevision: x.revision, otherRevision: y.revision, requesterSlackId: a.slackId, recipientSlackId: y.presenterSlackId, createdAt: now(), expiresAt: deadline, status: 'pending', notificationState: 'queued' });
       tx.update(first, { pendingActionId: swapRef.id }); tx.update(second, { pendingActionId: swapRef.id });

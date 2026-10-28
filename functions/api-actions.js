@@ -650,7 +650,7 @@ module.exports = function(ctx){
     const table = {
       register: ['Register', ['category']], leave: ['Leave', []],
       edit: ['Edit', ['slotId', 'revision', 'topic', 'projectId', 'slidesUrl', 'auditNote']],
-      claim: ['Claim', ['slotId', 'topic', 'projectId', 'slidesUrl']], recuse: ['Recuse', ['slotId', 'revision', 'reason']],
+      claim: ['Claim', ['slotId']], recuse: ['Recuse', ['slotId', 'revision', 'reason']],
       request_swap: ['RequestSwap', ['slotId', 'otherSlotId']],
       cancel_swap: ['CancelSwap', ['id']], retry_swap: ['RetrySwap', ['id']],
       outcome: ['Outcome', ['slotId', 'revision', 'outcome']],
@@ -704,7 +704,7 @@ module.exports = function(ctx){
   ];
   const WRITE = [
     { name: 'group_rota', run: groupRota,
-      description: 'The group meeting rota: register or leave; edit your assigned talk, claim an open long slot with optional topic, project and slides, decline a slot with a private reason, or request a confirmed swap. Rota administrators can set outcomes, offer short slots, and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
+      description: 'The group meeting rota: register or leave; edit your assigned talk, claim an open long slot, decline a slot with a private reason, or request a confirmed short-slot swap. Rota administrators can set outcomes, offer short slots, and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
       inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'save_season', 'save_meeting', 'create_slot', 'delete_slot', 'delete_meeting']),
         slotId: str('Stable slot id, from the rota.'), otherSlotId: str('Swap target slot id.'), id: str('Swap id or season id, depending on action.'),
         revision: { type: 'integer', description: 'The slot revision shown by the rota; stale edits fail.' },

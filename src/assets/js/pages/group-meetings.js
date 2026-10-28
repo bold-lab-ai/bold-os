@@ -45,34 +45,41 @@
   function future(m){ return !!m && m.status !== 'skipped' && !past(m); }
   function mine(s){ return !!access && !!access.slackId && !!s.presenterSlackId && s.presenterSlackId === access.slackId; }
   function able(s){ return !!access && mine(s) && future(meetings.filter(function(m){ return m.date === s.meetingId; })[0]) && !s.pendingActionId; }
+  function ownShortSlots(){ return slots.filter(function(s){ return s.format === 'short' && mine(s) && !s.pendingActionId && future(meetings.filter(function(m){ return m.date === s.meetingId; })[0]); }); }
   function disabled(ok, reason){ return ok ? '' : ' disabled title="' + esc(reason) + '"'; }
   function slotLabel(s){ return 'Slot ' + s.slotNumber + ' · ' + (s.format === 'long' ? 'Long' : 'Short'); }
   function actionsHtml(id, label, controls){
     return '<div class="rota-actions"><button type="button" class="rota-actions-trigger" aria-label="' + esc(label) + '" aria-expanded="false" aria-controls="' + esc(id) + '" title="' + esc(label) + '">&#8943;</button><div class="rota-actions-menu" id="' + esc(id) + '">' + controls + '</div></div>';
   }
+  function swapHtml(s, ready, reason){
+    var hint = ready ? 'Request Swap' : 'Request Swap · ' + reason;
+    return '<span class="rota-swap-hint" data-rota-hint="' + esc(hint) + '"' + (ready ? '' : ' tabindex="0" aria-label="' + esc(hint) + '"') + '><button type="button" class="rota-swap-trigger" data-action="swap" data-id="' + esc(s.id) + '" aria-label="Request swap"' + (ready ? '' : ' disabled') + '><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 8h15m-4-4 4 4-4 4M20 16H5m4-4-4 4 4 4"/></svg></button></span>';
+  }
   function slotHtml(s){
     var assigned = !!s.presenterSlackId || !!s.legacyMemberId || !!s.legacyName;
     var project = s.projectId ? projects.filter(function(p){ return p.id === s.projectId; })[0] : null;
     var m = meetings.filter(function(x){ return x.date === s.meetingId; })[0];
-    var can = able(s), canSwap = can && access.registered && access.eligible, adminEdit = access && access.admin && assigned && !s.pendingActionId, open = !assigned && future(m) && !s.pendingActionId, claimant = open && s.format === 'long' && access && access.registered && access.eligible;
-    var showClaimForm = claimant || (access && access.preview && open && s.format === 'long');
+    var own = mine(s), admin = access && access.admin;
+    var can = able(s), adminEdit = admin && assigned && !s.pendingActionId, open = !assigned && future(m) && !s.pendingActionId, claimant = open && s.format === 'long' && access && access.registered && access.eligible;
     var why = !access ? 'Sign in to use this action' : access.reason || 'Only the assigned presenter may use this action for an upcoming slot';
+    var swapSources = s.format === 'short' && !own ? ownShortSlots() : [];
+    var swapReason = !s.presenterSlackId ? 'This slot has no presenter' : !future(m) ? 'Only upcoming slots can be swapped' : s.pendingActionId ? 'A change is already pending' : !swapSources.length ? 'You need your own upcoming short slot' : access && access.reason || 'An active eligible rota registration is required';
+    var swapReady = !!s.presenterSlackId && future(m) && !s.pendingActionId && !!swapSources.length && !!access && (access.registered && access.eligible || access.preview);
     var slide = s.slidesUrl ? '<a href="' + esc(s.slidesUrl) + '" target="_blank" rel="noopener">Slides</a>' : '<span class="rota-resource-missing" tabindex="0" data-rota-hint="(not added)" aria-label="Slides (not added)">Slides</span>';
     var projectLink = project ? '<a href="' + projectHref(project) + '" title="' + esc(project.title || 'Project') + '">Project</a>' : '<span class="rota-resource-missing" tabindex="0" data-rota-hint="' + (s.projectId ? '(unavailable)' : '(not added)') + '" aria-label="Project ' + (s.projectId ? '(unavailable)' : '(not added)') + '">Project</span>';
     var presenter = name(s.presenterSlackId, s.legacyName);
     var photo = assigned ? publicPhoto(s, presenter) : '';
     var outcome = assigned && !future(m) ? (s.outcome === 'presented' ? 'Presented' : s.outcome === 'did-not-present' ? 'Did not present' : 'Unconfirmed') : '';
-    var slotActions = actionsHtml('rota-actions-' + s.id, 'Actions for ' + slotLabel(s),
-      '<button type="button" class="btn-text" data-action="edit" data-id="' + esc(s.id) + '"' + disabled(can || adminEdit, why) + '>' + (s.slidesUrl ? 'Edit talk' : 'Add slides URL / edit talk') + '</button>' +
-      '<button type="button" class="btn-text" data-action="swap" data-id="' + esc(s.id) + '"' + disabled(canSwap, access && access.reason || why) + '>Swap</button>' +
-      '<button type="button" class="btn-text" data-action="recuse" data-id="' + esc(s.id) + '"' + disabled(can, why) + '>Decline slot</button>' +
-      (!assigned && future(m) && s.format === 'short' ? '<button type="button" class="btn-text" data-action="offer" data-id="' + esc(s.id) + '"' + disabled(access && access.admin && !s.pendingActionId, access && access.admin ? 'An offer is already pending' : 'Only a rota administrator can offer a short slot') + '>Offer short slot</button>' : '') +
-      (!future(m) ? '<button type="button" class="btn-text" data-action="outcome" data-id="' + esc(s.id) + '"' + disabled(access && access.admin, 'Only a rota administrator can set presentation outcomes') + '>Set outcome</button>' : '') +
-      (s.origin === 'site' && s.revision === 0 && !assigned ? '<button type="button" class="btn-text" data-action="deleteSlot" data-id="' + esc(s.id) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new open slot') + '>Remove slot</button>' : ''));
+    var menuControls = (own || admin && assigned ? '<button type="button" class="btn-text" data-action="edit" data-id="' + esc(s.id) + '"' + disabled(can || adminEdit, why) + '>' + (s.slidesUrl ? 'Edit talk' : 'Add slides URL / edit talk') + '</button>' : '') +
+      (own ? '<button type="button" class="btn-text" data-action="recuse" data-id="' + esc(s.id) + '"' + disabled(can, why) + '>Decline slot</button>' : '') +
+      (!assigned && future(m) && s.format === 'short' && admin ? '<button type="button" class="btn-text" data-action="offer" data-id="' + esc(s.id) + '"' + disabled(!s.pendingActionId, 'An offer is already pending') + '>Offer short slot</button>' : '') +
+      (!future(m) && admin ? '<button type="button" class="btn-text" data-action="outcome" data-id="' + esc(s.id) + '">Set outcome</button>' : '') +
+      (s.origin === 'site' && s.revision === 0 && !assigned && admin ? '<button type="button" class="btn-text" data-action="deleteSlot" data-id="' + esc(s.id) + '">Remove slot</button>' : '');
+    var slotActions = (menuControls ? actionsHtml('rota-actions-' + s.id, 'Actions for ' + slotLabel(s), menuControls) : '') + (s.format === 'short' && !own && s.presenterSlackId ? swapHtml(s, swapReady, swapReason) : '');
     return '<article class="rota-slot" id="slot-' + esc(s.meetingId) + '-' + esc(s.slotNumber) + '"><div class="rota-slot-head"><h3>' + esc(slotLabel(s)) + '</h3>' + (outcome ? '<span class="rota-outcome">' + esc(outcome) + '</span>' : '') + '</div>' +
       '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '" aria-hidden="true">' + (assigned ? esc(initials(presenter)) + (photo ? '<img class="rota-avatar-photo" src="' + esc(photo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') : '+') + '</span><div class="rota-slot-details">' +
       '<div class="rota-person-row"><p class="rota-person">' + esc(presenter) + (assigned && (!s.presenterSlackId || !people.some(function(p){ return p.slackId === s.presenterSlackId; })) ? ' <span class="rota-muted">(unresolved account)</span>' : '') + '</p>' + slotActions + '</div>' +
-      (assigned ? '<p class="rota-topic">' + esc(s.topic || 'Topic to come') + '</p><p class="rota-resources">' + slide + projectLink + '</p>' : '<button type="button" class="btn-text rota-claim" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(showClaimForm, s.format !== 'long' ? 'Only open long slots can be claimed' : access && access.reason || 'This slot is unavailable') + '>Claim slot</button>') + '</div></div></article>';
+      (assigned ? '<p class="rota-topic">' + esc(s.topic || 'Topic to come') + '</p><p class="rota-resources">' + slide + projectLink + '</p>' : '<button type="button" class="btn-text rota-claim" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(claimant, s.format !== 'long' ? 'Only open long slots can be claimed' : access && access.reason || 'This slot is unavailable') + '>Claim slot</button>') + '</div></div></article>';
   }
   function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });
@@ -199,12 +206,11 @@
     return '<option value="">No project</option>' + mine.map(function(p){ return '<option value="' + esc(p.id) + '"' + (p.id === selected ? ' selected' : '') + '>' + esc(p.title || p.id) + '</option>'; }).join('');
   }
   function openAction(action, s){
-    if (action === 'claim') showPanel('<h2>Claim slot</h2><form id="rotaForm" data-submit="Claim" data-id="' + esc(s.id) + '"><label>Title (optional) <input name="topic" maxlength="140" placeholder="Talk title"></label><label>Slides URL (optional) <input name="slidesUrl" type="url" placeholder="https://…"></label><label>Project (optional) <select name="projectId">' + projectOptions('') + '</select></label><button type="submit"' + disabled(!(access && access.preview), 'Changes are unavailable in the local preview') + '>Claim slot</button></form>');
     if (action === 'edit') showPanel('<h2>Edit talk</h2><form id="rotaForm" data-submit="Edit" data-id="' + esc(s.id) + '"><label>Topic <input name="topic" maxlength="140" value="' + esc(s.topic || '') + '"></label><label>Project <select name="projectId">' + projectOptions(s.projectId) + '</select></label><label>Slides URL <input name="slidesUrl" type="url" value="' + esc(s.slidesUrl || '') + '" placeholder="https://…"></label>' + (access.admin && !mine(s) ? '<label>Correction note <textarea name="auditNote" required maxlength="300"></textarea></label>' : '') + '<button type="submit">Save</button></form>');
     if (action === 'recuse') showPanel('<h2>Decline slot</h2><form id="rotaForm" data-submit="Recuse" data-id="' + esc(s.id) + '"><label>Reason (private) <textarea name="reason" required maxlength="2000"></textarea></label><button type="submit">Decline slot</button></form>');
     if (action === 'swap') {
-      var others = slots.filter(function(x){ return x.id !== s.id && x.format === s.format && x.presenterSlackId && x.presenterSlackId !== s.presenterSlackId && !x.pendingActionId && future(meetings.filter(function(m){ return m.date === x.meetingId; })[0]); });
-      showPanel('<h2>Request swap</h2><form id="rotaForm" data-submit="RequestSwap" data-id="' + esc(s.id) + '"><label>Other presenter’s slot <select name="otherSlotId" required>' + others.map(function(x){ return '<option value="' + esc(x.id) + '">' + esc(x.date + ' · ' + name(x.presenterSlackId)) + '</option>'; }).join('') + '</select></label><button type="submit"' + disabled(others.length, 'No matching slots') + '>Send request</button></form>');
+      var sources = ownShortSlots();
+      showPanel('<h2>Request swap</h2><p>Ask ' + esc(name(s.presenterSlackId)) + ' to swap their ' + esc(fmt(s.meetingId)) + ' slot with yours. They can confirm or decline in Slack.</p><form id="rotaForm" data-submit="RequestSwap" data-id="' + esc(s.id) + '"><label>Your short slot <select name="slotId" required>' + sources.map(function(x){ return '<option value="' + esc(x.id) + '">' + esc(fmt(x.meetingId) + ' · Slot ' + x.slotNumber) + '</option>'; }).join('') + '</select></label><button type="submit"' + disabled(sources.length && !(access && access.preview), access && access.preview ? 'Changes are unavailable in the local preview' : 'No upcoming short slot to swap') + '>Send request</button></form>');
     }
     if (action === 'outcome') showPanel('<h2>Presentation outcome</h2><form id="rotaForm" data-submit="Outcome" data-id="' + esc(s.id) + '"><label>Outcome <select name="outcome">' + ['unconfirmed','presented','did-not-present'].map(function(v){ return '<option value="' + v + '"' + (s.outcome === v ? ' selected' : '') + '>' + v + '</option>'; }).join('') + '</select></label><button type="submit">Save</button></form>');
     if (action === 'offer') {
@@ -227,23 +233,24 @@
   }, true);
   body.addEventListener('pointerover', function(e){
     syncMenu(e.target.closest('.rota-actions'));
-    var target = e.target.closest('.rota-resource-missing');
+    var target = e.target.closest('[data-rota-hint]');
     if (target) showResourceHint(target);
   });
   body.addEventListener('pointerout', function(e){
     var menu = e.target.closest('.rota-actions');
     if (menu && !menu.contains(e.relatedTarget)) setTimeout(function(){ syncMenu(menu); }, 0);
-    if (e.target.closest('.rota-resource-missing')) hideResourceHint();
+    var hinted = e.target.closest('[data-rota-hint]');
+    if (hinted && !hinted.contains(e.relatedTarget)) hideResourceHint();
   });
   body.addEventListener('focusin', function(e){
     syncMenu(e.target.closest('.rota-actions'));
-    var target = e.target.closest('.rota-resource-missing');
+    var target = e.target.closest('[data-rota-hint]');
     if (target) showResourceHint(target);
   });
   body.addEventListener('focusout', function(e){
     var menu = e.target.closest('.rota-actions');
     if (menu) setTimeout(function(){ syncMenu(menu); }, 0);
-    if (e.target.closest('.rota-resource-missing')) hideResourceHint();
+    if (e.target.closest('[data-rota-hint]')) hideResourceHint();
   });
   body.addEventListener('keydown', function(e){
     if (e.key !== 'Escape') return;
@@ -275,6 +282,7 @@
     if (action === 'close') { panel = null; render(); return; }
     if (action === 'cancelSwap') { act('CancelSwap', { id: button.dataset.id }); return; }
     if (action === 'retrySwap') { act('RetrySwap', { id: button.dataset.id }); return; }
+    if (action === 'claim') { act('Claim', { slotId: s.id }); return; }
     if (action === 'deleteSlot') { act('DeleteSlot', { slotId: s.id }); return; }
     if (action === 'deleteMeeting') { act('DeleteMeeting', { date: button.dataset.date }); return; }
     if (action === 'leave') { act('Leave', {}); return; }
@@ -296,7 +304,12 @@
     var f = e.target, data = Object.fromEntries(new FormData(f).entries());
     if (f.dataset.submit === 'SaveMeeting') data.durationMinutes = Number(data.durationMinutes);
     var s = slots.filter(function(x){ return x.id === f.dataset.id; })[0];
-    if (s) { data.slotId = s.id; data.revision = s.revision; }
+    if (s && f.dataset.submit === 'RequestSwap') data.otherSlotId = s.id;
+    else if (s) { data.slotId = s.id; data.revision = s.revision; }
+    if (f.dataset.submit === 'RequestSwap') {
+      BOLD.confirmAction({ title: 'Request a swap with ' + name(s.presenterSlackId) + '?', go: 'Send request', effects: ['Send ' + name(s.presenterSlackId) + ' a Slack message asking them to confirm or decline the swap'] }).then(function(ok){ if (ok) act('RequestSwap', data); });
+      return;
+    }
     act(f.dataset.submit, data);
   });
   body.addEventListener('change', function(e){ if (e.target.id === 'rotaTrackerYear') { trackerYear = Number(e.target.value) || new Date().getFullYear(); render(); } });

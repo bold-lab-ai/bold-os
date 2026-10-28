@@ -66,6 +66,7 @@ const mock = `const data = ${inlineJson};\nconst localPhotos = new Set(${JSON.st
 window.ROTA_LOCAL_PREVIEW = true;
 const docs = items => ({ docs: items.map(([id, data]) => ({ id, data: () => data })), empty: !items.length });
 const previewUser = { displayName: 'Sam' };
+const previewSlackId = (data.people.find(([, person]) => person.name === 'Samuel Simons') || [])[0] || '';
 window.BOLD = {
   getAuth: () => true, getApp: () => ({}), authHint: () => null,
   escapeHtml: value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]),
@@ -84,7 +85,7 @@ const previewCollection = name => {
 window.previewFirebase = {
   firestore: () => ({ collection: previewCollection }),
   app: () => ({ functions: () => ({ httpsCallable: name => () => name === 'groupRotaAccess'
-    ? Promise.resolve({ data: { slackId: '', registered: false, eligible: false, admin: false, preview: true, swaps: [], people: data.people.map(([id, p]) => ({ slackId: id, name: p.name })), reason: 'Changes are unavailable in the local preview' } })
+    ? Promise.resolve({ data: { slackId: previewSlackId, registered: false, eligible: false, admin: false, preview: true, swaps: [], people: data.people.map(([id, p]) => ({ slackId: id, name: p.name })), reason: 'Changes are unavailable in the local preview' } })
     : Promise.reject(new Error('Local preview only — changes are not saved.')) }) }),
 };
 document.addEventListener('click', event => {
