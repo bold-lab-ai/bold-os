@@ -23,10 +23,10 @@
 .rota-meeting-head h2 { font-size: clamp(1.45rem, 2.8vw, 1.7rem); font-weight: 700; line-height: 1.25; }
 .rota-meeting.is-next h2 { font-size: clamp(1.55rem, 3vw, 1.85rem); }
 .rota-meeting-head p { margin: 0; font-family: var(--sans); font-size: .82rem; color: var(--muted); }
-.rota-slots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem 1.5rem; margin-top: .75rem; }
+.rota-slots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.25rem 1.5rem; margin-top: .35rem; }
 .rota-slots--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .rota-slots--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.rota-slot { position: relative; border-top: 1px solid var(--line); background: transparent; padding: .85rem 0 .35rem; min-width: 0; }
+.rota-slot { position: relative; background: transparent; padding: .35rem 0; min-width: 0; }
 .rota-slot-head { display: flex; align-items: start; justify-content: space-between; gap: .6rem; padding-right: 2rem; }
 .rota-slot h3 { font: 600 .68rem/1.4 var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .rota-outcome, .rota-muted { opacity: .7; }
