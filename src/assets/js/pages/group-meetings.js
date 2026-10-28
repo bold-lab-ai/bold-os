@@ -35,7 +35,7 @@
   function disabled(ok, reason){ return ok ? '' : ' disabled title="' + esc(reason) + '"'; }
   function slotLabel(s){ return 'Slot ' + s.slotNumber + ' · ' + (s.format === 'long' ? 'Long' : 'Short'); }
   function actionsHtml(id, label, controls){
-    return '<div class="rota-actions"><button type="button" class="rota-actions-trigger" aria-label="' + esc(label) + '" aria-expanded="false" aria-controls="' + esc(id) + '" title="' + esc(label) + '">&#8230;</button><div class="rota-actions-menu" id="' + esc(id) + '">' + controls + '</div></div>';
+    return '<div class="rota-actions"><button type="button" class="rota-actions-trigger" aria-label="' + esc(label) + '" aria-expanded="false" aria-controls="' + esc(id) + '" title="' + esc(label) + '">&#8943;</button><div class="rota-actions-menu" id="' + esc(id) + '">' + controls + '</div></div>';
   }
   function slotHtml(s){
     var assigned = !!s.presenterSlackId || !!s.legacyMemberId || !!s.legacyName;
@@ -48,18 +48,18 @@
     var presenter = name(s.presenterSlackId, s.legacyName);
     var photo = assigned ? publicPhoto(s, presenter) : '';
     var outcome = assigned && !future(m) ? (s.outcome === 'presented' ? 'Presented' : s.outcome === 'did-not-present' ? 'Did not present' : 'Unconfirmed') : '';
-    return '<article class="rota-slot" id="slot-' + esc(s.meetingId) + '-' + esc(s.slotNumber) + '"><div class="rota-slot-head"><h3>' + esc(slotLabel(s)) + '</h3>' + (outcome ? '<span class="rota-outcome">' + esc(outcome) + '</span>' : '') + '</div>' +
-      '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '" aria-hidden="true">' + (assigned ? esc(initials(presenter)) + (photo ? '<img class="rota-avatar-photo" src="' + esc(photo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') : '+') + '</span><div class="rota-slot-details">' +
-      '<p class="rota-person">' + esc(presenter) + (assigned && (!s.presenterSlackId || !people.some(function(p){ return p.slackId === s.presenterSlackId; })) ? ' <span class="rota-muted">(unresolved account)</span>' : '') + '</p>' +
-      (assigned ? '<p class="rota-topic">' + esc(s.topic || 'Topic to come') + '</p><p class="rota-resources">' + slide + projectLink + '</p>' : '') + '</div></div>' +
-      actionsHtml('rota-actions-' + s.id, 'Actions for ' + slotLabel(s),
+    var slotActions = actionsHtml('rota-actions-' + s.id, 'Actions for ' + slotLabel(s),
       '<button type="button" class="btn-text" data-action="edit" data-id="' + esc(s.id) + '"' + disabled(can || adminEdit, why) + '>' + (s.slidesUrl ? 'Edit talk' : 'Add slides URL / edit talk') + '</button>' +
       '<button type="button" class="btn-text" data-action="swap" data-id="' + esc(s.id) + '"' + disabled(canSwap, access && access.reason || why) + '>Swap</button>' +
       '<button type="button" class="btn-text" data-action="recuse" data-id="' + esc(s.id) + '"' + disabled(can, why) + '>Decline slot</button>' +
-      '<button type="button" class="btn-text" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(claimant, s.format !== 'long' ? 'Only open long slots can be claimed' : access && access.reason || 'This slot is unavailable') + '>Claim</button>' +
+      (!assigned ? '<button type="button" class="btn-text" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(claimant, s.format !== 'long' ? 'Only open long slots can be claimed' : access && access.reason || 'This slot is unavailable') + '>Claim</button>' : '') +
       (!assigned && future(m) && s.format === 'short' ? '<button type="button" class="btn-text" data-action="offer" data-id="' + esc(s.id) + '"' + disabled(access && access.admin && !s.pendingActionId, access && access.admin ? 'An offer is already pending' : 'Only a rota administrator can offer a short slot') + '>Offer short slot</button>' : '') +
       (!future(m) ? '<button type="button" class="btn-text" data-action="outcome" data-id="' + esc(s.id) + '"' + disabled(access && access.admin, 'Only a rota administrator can set presentation outcomes') + '>Set outcome</button>' : '') +
-      (s.origin === 'site' && s.revision === 0 && !assigned ? '<button type="button" class="btn-text" data-action="deleteSlot" data-id="' + esc(s.id) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new open slot') + '>Remove slot</button>' : '')) + '</article>';
+      (s.origin === 'site' && s.revision === 0 && !assigned ? '<button type="button" class="btn-text" data-action="deleteSlot" data-id="' + esc(s.id) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new open slot') + '>Remove slot</button>' : ''));
+    return '<article class="rota-slot" id="slot-' + esc(s.meetingId) + '-' + esc(s.slotNumber) + '"><div class="rota-slot-head"><h3>' + esc(slotLabel(s)) + '</h3>' + (outcome ? '<span class="rota-outcome">' + esc(outcome) + '</span>' : '') + '</div>' +
+      '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '" aria-hidden="true">' + (assigned ? esc(initials(presenter)) + (photo ? '<img class="rota-avatar-photo" src="' + esc(photo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') : '+') + '</span><div class="rota-slot-details">' +
+      '<div class="rota-person-row"><p class="rota-person">' + esc(presenter) + (assigned && (!s.presenterSlackId || !people.some(function(p){ return p.slackId === s.presenterSlackId; })) ? ' <span class="rota-muted">(unresolved account)</span>' : '') + '</p>' + slotActions + '</div>' +
+      (assigned ? '<p class="rota-topic">' + esc(s.topic || 'Topic to come') + '</p><p class="rota-resources">' + slide + projectLink + '</p>' : '') + '</div></div></article>';
   }
   function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });

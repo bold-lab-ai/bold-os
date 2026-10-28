@@ -23,7 +23,7 @@
 .rota-slots--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .rota-slots--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .rota-slot { position: relative; background: transparent; padding: .35rem 0; min-width: 0; }
-.rota-slot-head { display: flex; align-items: start; justify-content: space-between; gap: .6rem; padding-right: 2rem; }
+.rota-slot-head { display: flex; align-items: start; justify-content: space-between; gap: .6rem; }
 .rota-slot h3 { font: 600 13px/1.4 var(--sans); color: var(--ink); }
 .rota-outcome, .rota-muted { opacity: .7; }
 .rota-slot-content { display: flex; align-items: flex-start; gap: .85rem; margin-top: .55rem; min-width: 0; }
@@ -35,13 +35,14 @@
 .rota-avatar--open::after { width: 1.5px; height: 1rem; }
 .rota-slot-details { min-width: 0; overflow-wrap: anywhere; }
 .rota-slot-details p { margin: 0; }
+.rota-person-row { display: flex; align-items: center; gap: .3rem; }
 .rota-slot-details .rota-person { font: 600 16.5px/1.3 var(--serif); color: var(--ink); }
 .rota-slot-details .rota-topic { margin-top: 3px; font: 400 13px/1.4 var(--sans); color: var(--ink-soft); }
 .rota-slot-details .rota-resources { display: flex; flex-wrap: wrap; gap: .75rem; margin-top: 3px; font: 400 11.5px/1.4 var(--sans); }
 .rota-resource-missing { color: var(--muted); text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }
 .rota-resource-missing:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .rota-actions { position: relative; flex: none; z-index: 2; }
-.rota-slot > .rota-actions { position: absolute; top: 1rem; right: 1rem; }
+.rota-person-row .rota-actions-trigger { width: 1.375rem; height: 1.375rem; }
 .rota-meeting-head > .rota-actions { position: absolute; top: 0; right: 0; }
 .rota-actions-trigger { display: grid; place-items: center; width: 2rem; height: 2rem; padding: 0; border: 0; background: transparent; color: var(--muted); font: 600 1.25rem/1 var(--sans); cursor: pointer; }
 .rota-actions-trigger:hover, .rota-actions-trigger:focus-visible, .rota-actions.is-open .rota-actions-trigger { color: var(--ink); background: var(--wash); }
