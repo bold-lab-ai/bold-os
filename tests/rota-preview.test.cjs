@@ -15,6 +15,8 @@ const fixture = {
   groupRotaSlots: [
     ['open-long', { meetingId: '2026-11-16', format: 'long', presenterSlackId: '', legacyMemberId: '', legacyName: '', topic: '', slidesUrl: '', projectId: '', revision: 0 }],
     ['assigned-short', { meetingId: '2026-11-09', format: 'short', presenterSlackId: 'preview-other', legacyMemberId: '', legacyName: '', topic: '', slidesUrl: '', projectId: '', revision: 0 }],
+    ['open-short', { meetingId: '2026-11-09', format: 'short', presenterSlackId: '', legacyMemberId: '', legacyName: '', topic: '', slidesUrl: '', projectId: '', revision: 0 }],
+    ['second-open-short', { meetingId: '2026-11-09', format: 'short', presenterSlackId: '', legacyMemberId: '', legacyName: '', topic: '', slidesUrl: '', projectId: '', revision: 0 }],
   ],
   people: [['preview-sam', { name: 'Samuel Simons' }], ['preview-other', { name: 'Other speaker' }]],
   projectWorkspaces: [],
@@ -79,6 +81,14 @@ test('the preview rejects invalid or unavailable local actions', async () => {
   const slot = preview.slot('open-long');
   await assert.rejects(preview.call('groupRotaEdit')({ slotId: 'open-long', revision: slot.revision, topic: 'Talk', slidesUrl: 'http://example.invalid', projectId: '' }));
   await assert.rejects(preview.call('groupRotaRecuse')({ slotId: 'open-long' }));
+});
+
+test('an open short slot can be claimed, but only one slot per meeting', async () => {
+  const preview = boot(new Map());
+  const access = (await preview.call('groupRotaAccess')()).data;
+  await preview.call('groupRotaClaim')({ slotId: 'open-short' });
+  assert.equal(preview.slot('open-short').presenterSlackId, access.slackId);
+  await assert.rejects(preview.call('groupRotaClaim')({ slotId: 'second-open-short' }));
 });
 
 test('declining a claimed slot opens it again and persists locally', async () => {

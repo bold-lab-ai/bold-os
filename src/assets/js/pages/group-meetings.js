@@ -64,7 +64,9 @@
     var project = s.projectId ? projects.filter(function(p){ return p.id === s.projectId; })[0] : null;
     var m = meetings.filter(function(x){ return x.date === s.meetingId; })[0];
     var own = mine(s), admin = access && access.admin;
-    var can = able(s), adminEdit = admin && assigned && !s.pendingActionId, open = !assigned && future(m) && !s.pendingActionId, claimant = open && s.format === 'long' && access && (access.registered && access.eligible || access.preview);
+    var can = able(s), adminEdit = admin && assigned && !s.pendingActionId, open = !assigned && future(m) && !s.pendingActionId;
+    var alreadyPresenting = access && slots.some(function(x){ return x.meetingId === s.meetingId && x.presenterSlackId === access.slackId; });
+    var claimant = open && !alreadyPresenting && ['short', 'long'].includes(s.format) && access && (access.registered && access.eligible || access.preview);
     var why = !access ? 'Sign in to use this action' : access.reason || 'Only the assigned presenter may use this action for an upcoming slot';
     var swapSources = s.format === 'short' && !own ? ownShortSlots() : [];
     var swapReason = !s.presenterSlackId ? 'This slot has no presenter' : !future(m) ? 'Only upcoming slots can be swapped' : s.pendingActionId ? 'A change is already pending' : !swapSources.length ? 'You need your own upcoming short slot' : access && access.reason || 'An active eligible rota registration is required';
@@ -88,7 +90,7 @@
     return '<article class="rota-slot" id="slot-' + esc(s.meetingId) + '-' + esc(s.slotNumber) + '"><div class="rota-slot-head"><h3>' + esc(slotLabel(s)) + '</h3>' + (outcome ? own && admin ? '<button type="button" class="rota-outcome rota-outcome-edit" data-action="outcome" data-id="' + esc(s.id) + '" title="Set outcome">' + esc(outcome) + '</button>' : '<span class="rota-outcome">' + esc(outcome) + '</span>' : '') + '</div>' +
       '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '" aria-hidden="true">' + (assigned ? esc(initials(presenter)) + (photo ? '<img class="rota-avatar-photo" src="' + esc(photo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') : '+') + '</span><div class="rota-slot-details">' +
       '<div class="rota-person-row"><p class="rota-person">' + presenterHtml + (assigned && !hasProfile ? ' <span class="rota-muted">(unresolved account)</span>' : '') + '</p>' + slotActions + '</div>' +
-      (assigned ? (topic ? '<p class="rota-topic">' + topic + '</p>' : '') + (slide || projectLink ? '<p class="rota-resources">' + slide + projectLink + '</p>' : '') : '<button type="button" class="btn-text rota-claim" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(claimant, s.format !== 'long' ? 'Only open long slots can be claimed' : access && access.reason || 'This slot is unavailable') + '>Claim slot</button>') + '</div></div></article>';
+      (assigned ? (topic ? '<p class="rota-topic">' + topic + '</p>' : '') + (slide || projectLink ? '<p class="rota-resources">' + slide + projectLink + '</p>' : '') : '<button type="button" class="btn-text rota-claim" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(claimant, alreadyPresenting ? 'You already present at this meeting' : access && access.reason || 'This slot is unavailable') + '>Claim slot</button>') + '</div></div></article>';
   }
   function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });

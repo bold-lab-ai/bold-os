@@ -74,7 +74,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       const s = await tx.get(ref); if (!s.exists) error('not-found', 'Slot not found.');
       const v = s.data(), m = await tx.get(meetings.doc(v.meetingId));
       const peers = await tx.get(slots.where('meetingId', '==', v.meetingId));
-      if (!m.exists || !upcoming(m.data()) || v.format !== 'long' || v.presenterSlackId || v.legacyMemberId || v.legacyName || pending(v)) error('failed-precondition', 'This long slot is not open for claims.');
+      if (!m.exists || !upcoming(m.data()) || !['short', 'long'].includes(v.format) || v.presenterSlackId || v.legacyMemberId || v.legacyName || pending(v)) error('failed-precondition', 'This slot is not open for claims.');
       if (peers.docs.some(d => d.data().presenterSlackId === a.slackId)) error('failed-precondition', 'You already present at this meeting.');
       tx.update(ref, { presenterSlackId: a.slackId, legacyMemberId: '', legacyName: '', topic: '', projectId: '', slidesUrl: '', outcome: 'unconfirmed', revision: v.revision + 1, ...stamp(a, 'Open slot claimed') });
     });

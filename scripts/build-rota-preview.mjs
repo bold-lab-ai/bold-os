@@ -93,7 +93,7 @@ const previewCallable = (name, request = {}) => {
   const currentLondonTime = new Date().toLocaleString('sv-SE', { timeZone: 'Europe/London', hour12: false }).replace(' ', 'T').slice(0, 16);
   const upcoming = meeting && meeting.status !== 'skipped' && meeting.date + 'T' + (meeting.startTime || '00:00') > currentLondonTime;
   if (name === 'groupRotaClaim') {
-    if (!upcoming || slot.format !== 'long' || slot.presenterSlackId || slot.legacyMemberId || slot.legacyName || slot.pendingActionId || data.groupRotaSlots.some(([, other]) => other.meetingId === slot.meetingId && other.presenterSlackId === previewSlackId)) return Promise.reject(new Error('This long slot is not open for claims.'));
+    if (!upcoming || !['short', 'long'].includes(slot.format) || slot.presenterSlackId || slot.legacyMemberId || slot.legacyName || slot.pendingActionId || data.groupRotaSlots.some(([, other]) => other.meetingId === slot.meetingId && other.presenterSlackId === previewSlackId)) return Promise.reject(new Error('This slot is not open for claims.'));
     Object.assign(slot, { presenterSlackId: previewSlackId, legacyMemberId: '', legacyName: '', topic: '', slidesUrl: '', projectId: '', outcome: 'unconfirmed', revision: (slot.revision || 0) + 1 });
     savePreviewSlot(id, slot);
     return Promise.resolve({ data: { ok: true } });
