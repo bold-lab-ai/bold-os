@@ -77,7 +77,7 @@
   function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });
     var remove = m.origin === 'site' && !rows.length ? '<button type="button" class="btn-text" data-action="deleteMeeting" data-date="' + esc(m.date) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new empty meeting') + '>Remove meeting</button>' : '';
-    return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head' + (remove ? ' has-actions' : '') + '"><div>' + (index === 0 && !archive ? '<span class="rota-meeting-eyebrow">Next meeting</span>' : '') + '<h2>' + esc(fmt(m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.location ? ' · ' + esc(m.location) : '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + '</p>' +
+    return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head' + (remove ? ' has-actions' : '') + '"><div>' + (index === 0 && !archive ? '<span class="rota-meeting-eyebrow">Next meeting</span>' : '') + '<h2>' + esc(fmt(m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + '</p>' +
       (remove ? actionsHtml('rota-actions-meeting-' + m.date, 'Actions for meeting on ' + fmt(m.date), remove) : '') + '</div>' +
       (m.status === 'skipped' ? '' : '<div class="rota-slots rota-slots--' + Math.min(rows.length, 3) + '">' + rows.map(slotHtml).join('') + '</div>') + '</section>';
   }
@@ -139,7 +139,7 @@
     if (!user) return;
     hideResourceHint();
     var season = seasons.filter(function(s){ return s.publicationState === 'published'; })[0] || seasons[0];
-    document.getElementById('rotaMeta').textContent = season ? [season.label, season.regularTime, season.location].filter(Boolean).join(' · ') : '';
+    document.getElementById('rotaMeta').textContent = season ? [season.label, season.regularTime].filter(Boolean).join(' · ') : '';
     var ordered = meetings.filter(function(m){ return search ? true : archive ? past(m) : !past(m); })
       .sort(function(a,b){
         if (search) {
