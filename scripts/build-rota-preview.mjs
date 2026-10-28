@@ -126,7 +126,7 @@ page = page.replace(/<script src="assets\/js\/bold\.js[^\"]*"><\/script>\n/, '')
 page = page.replace(/<script src="assets\/js\/search-box\.js[^\"]*"><\/script>\n/, '');
 page = page.replace(/<script src="assets\/js\/mentions\.js[^\"]*"><\/script>\n/, '');
 page = page.replace(/assets\/js\/pages\/group-meetings\.js\?v=/, 'assets/js/pages/group-meetings-preview.js?v=');
-page = page.replace('</head>', `<script>\n${mock}\n</script>\n</head>`);
+page = page.replace('</head>', `<link rel="stylesheet" href="assets/fonts/rota-preview/fonts.css">\n<script>\n${mock}\n</script>\n</head>`);
 if (page.includes('firebasejs/') || page.includes('window.BOLD_CONFIG') || page.includes('fonts.googleapis.com') || page.includes('fonts.gstatic.com')) throw new Error('Could not isolate the preview from external services.');
 let rotaScript = await readFile('src/assets/js/pages/group-meetings.js', 'utf8');
 rotaScript = rotaScript.replace('firebase.firestore(', 'previewFirebase.firestore(').replace('firebase.app()', 'previewFirebase.app()');
