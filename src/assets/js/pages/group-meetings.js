@@ -162,7 +162,7 @@
     text('Loading…');
     call('Access').then(function(a){ access = a.data; return Promise.all([
       db.collection('groupMeetings').get(), db.collection('groupRotaSlots').get(), db.collection('groupRotaMembers').get(),
-      (access.admin ? db.collection('groupMeetingSeasons') : db.collection('groupMeetingSeasons').where('publicationState', '==', 'published')).get(),
+      (access.canSeeDrafts ? db.collection('groupMeetingSeasons') : db.collection('groupMeetingSeasons').where('publicationState', '==', 'published')).get(),
       db.collection('projectWorkspaces').get().catch(function(){ return { docs: [] }; }), db.collection('groupRotaPhotos').get()
     ]); }).then(function(v){
       meetings = v[0].docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });

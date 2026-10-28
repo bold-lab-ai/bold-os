@@ -30,13 +30,14 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const matches = roster.docs.filter(d => String(d.data().email || '').toLowerCase() === email);
     if (matches.length !== 1 || !matches[0].data().slackId) error('failed-precondition', 'Your Slack account is not uniquely matched in the roster.');
     const slackId = matches[0].data().slackId;
-    const [member, eligible, admins] = await Promise.all([
+    const [member, eligible, admins, pis] = await Promise.all([
       db.collection('groupRotaMembers').doc(slackId).get(),
-      db.collection('groupRotaEligibility').doc(slackId).get(), rolesEmails('admins')
+      db.collection('groupRotaEligibility').doc(slackId).get(), rolesEmails('admins'), rolesEmails('pis')
     ]);
+    const adminRole = admins.map(x => String(x).toLowerCase()).includes(email);
     return { email, slackId, registered: member.exists && member.data().active === true,
       eligible: eligible.exists && eligible.data().eligible === true,
-      admin: admins.map(x => String(x).toLowerCase()).includes(email),
+      admin: adminRole, canSeeDrafts: adminRole || pis.map(x => String(x).toLowerCase()).includes(email),
       people: roster.docs.map(d => ({ slackId: d.id, name: d.data().name || '' })) };
   }
   const requirePresenter = a => { if (!a.registered || !a.eligible) error('permission-denied', 'An active eligible rota registration is required.'); };
@@ -267,7 +268,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const offeredSwaps = await swaps.where('recipientSlackId', '==', a.slackId).get();
     const [assigned, registered] = await Promise.all([slots.get(), db.collection('groupRotaMembers').get()]);
     const visibleIds = new Set(assigned.docs.map(d => d.data().presenterSlackId).concat(registered.docs.filter(d => d.data().active).map(d => d.id)));
-    return { slackId: a.slackId, registered: a.registered, eligible: a.eligible, admin: a.admin,
+    return { slackId: a.slackId, registered: a.registered, eligible: a.eligible, admin: a.admin, canSeeDrafts: a.canSeeDrafts,
       people: a.people.filter(p => visibleIds.has(p.slackId)),
       reason: !a.registered ? 'Join the rota to use this action' : !a.eligible ? 'Eligibility has not been confirmed' : '',
       swaps: [...ownSwaps.docs, ...offeredSwaps.docs].filter((s, i, arr) => arr.findIndex(x => x.id === s.id) === i).map(s => ({ id: s.id, ...s.data() })) };
