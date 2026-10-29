@@ -130,27 +130,33 @@
   }
   function testersOf(d, key){ return key ? (d.pilotTesters[key] = d.pilotTesters[key] || []) : d.testers; }
   function nameOf(e){ var p = roster.filter(function(x){ return x.email === e; })[0]; return p ? p.name : e.split('@')[0]; }
+  // Two parts, as the other tabs: the testers of every pilot, then the features, by group,
+  // each a row (its switch, its name, Live or Pilot) with, in pilot, its own testers below.
   function pilotHtml(){
     if (!pilot) return '';
     var d = pilotNow(), known = pilot.known || {}, keys = Object.keys(known).sort();
-    return '<div class="event-form join-form jr-pilot"><fieldset class="md-group"><legend>Slack features</legend>' +
-      '<p class="proj-meta">Every Slack message BOLD.OS sends belongs to one of these features. One that isn’t live messages only its testers: each message goes to them instead, saying whom it was for. New ones start that way.</p>' +
-      '<label>Testers of every pilot</label>' + testersHtml(d.testers, '', 'Nobody') +
+    var group = function(title){ return '<fieldset class="md-group"><legend>' + title + '</legend>'; };
+    return '<div class="event-form join-form jr-pilot">' +
+      group('Testers') + '<p class="proj-meta">A feature that isn’t live messages only its testers: each message goes to them instead, saying whom it was for. These get every one; a feature can have its own too.</p>' +
+      testersHtml(d.testers, '', 'Nobody yet') + '</fieldset>' +
+      group('Slack features') + '<p class="proj-meta">Every Slack message BOLD.OS sends belongs to one of these. New ones start in pilot.</p>' +
       (keys.length ? GROUPS.concat([['Other', []]]).map(function(g){
         // Other: whatever isn't in a group yet (a new feature: add it to GROUPS).
         var mine = g[0] === 'Other' ? keys.filter(function(k){ return !GROUPS.some(function(x){ return x[1].indexOf(k) >= 0; }); })
           : g[1].filter(function(k){ return known[k]; });
-        // A label that starts with its group's name ("Internal Review Board: …") is shown without it.
-        return mine.length ? '<h3 class="jr-feature-group">' + esc(g[0]) + '</h3>' + mine.map(function(k){ return featureHtml(k, g[0]); }).join('') : '';
+        return mine.length ? '<section class="jr-fgroup"><h3 class="jr-fgroup-head">' + esc(g[0]) + '</h3><ul class="jr-flist">' +
+          mine.map(function(k){ return featureHtml(k, g[0]); }).join('') + '</ul></section>' : '';
       }).join('') : '<p class="proj-meta">None yet: a feature appears here once it’s deployed.</p>') +
       '</fieldset>' + (pilotError ? '<p class="ev-error">' + esc(pilotError) + '</p>' : '') +
       '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (pilotDraft ? '' : ' disabled title="Nothing changed"') + '>Save features</button>' +
         (pilotDraft ? '<button type="button" class="jr-pilot-cancel">Cancel</button>' : '') + '</div></div>';
-    function featureHtml(k, group){
-        var label = known[k].indexOf(group + ': ') === 0 ? known[k].slice(group.length + 2) : known[k];
-        label = label.charAt(0).toUpperCase() + label.slice(1);
-        return '<div class="jr-feature"><label class="jn-check"><input type="checkbox" class="jr-live" data-key="' + esc(k) + '"' + (d.live[k] ? ' checked' : '') + '> ' + esc(label) + ' <span class="proj-meta">· ' + (d.live[k] ? 'live: messages everyone it’s for' : 'in pilot: testers only') + '</span></label>' +
-          (d.live[k] ? '' : '<p class="proj-meta">Its own testers, besides those of every pilot:</p>' + testersHtml(d.pilotTesters[k] || [], k, 'None')) + '</div>';
+    // A label that starts with its group's name ("Internal Review Board: …") is shown without it.
+    function featureHtml(k, g){
+      var label = known[k].indexOf(g + ': ') === 0 ? known[k].slice(g.length + 2) : known[k], on = !!d.live[k];
+      label = label.charAt(0).toUpperCase() + label.slice(1);
+      return '<li class="jr-feature' + (on ? '' : ' is-pilot') + '"><label class="jr-frow"><input type="checkbox" class="jr-live" data-key="' + esc(k) + '"' + (on ? ' checked' : '') + '>' +
+          '<span class="jr-fname">' + esc(label) + '</span><span class="badge ' + (on ? 'badge-live' : 'badge-pilot') + '" title="' + (on ? 'Messages everyone it’s for' : 'Messages only its testers') + '">' + (on ? 'Live' : 'Pilot') + '</span></label>' +
+        (on ? '' : '<div class="jr-fown"><span class="jr-fown-label">Its own testers</span>' + testersHtml(d.pilotTesters[k] || [], k, 'Only those of every pilot') + '</div>') + '</li>';
     }
   }
   function savePilot(btn){
@@ -158,7 +164,7 @@
     var goingLive = Object.keys(d.live).filter(function(k){ return d.live[k] && !was[k]; });
     // Going live reaches everyone each feature is for: asked every time (the ground rule).
     (goingLive.length ? BOLD.confirmAlways({ title: 'Make ' + (goingLive.length === 1 ? 'it' : 'them') + ' live?', go: 'Make live',
-      effects: goingLive.map(function(k){ return 'Let ' + (known[k] || k) + ' message everyone it’s for on Slack, not just the testers'; }) }) : Promise.resolve(true)).then(function(ok){
+      effects: goingLive.map(function(k){ return 'Let “' + (known[k] || k) + '” message everyone it’s for on Slack, not just the testers'; }) }) : Promise.resolve(true)).then(function(ok){
       if (!ok) return;
       btn.disabled = true; pilotError = '';
       db.collection('settings').doc('pilot').set({ testers: d.testers, pilotTesters: d.pilotTesters, live: d.live, updatedAt: Date.now(), updatedBy: me.email }, { merge: true }).then(function(){
