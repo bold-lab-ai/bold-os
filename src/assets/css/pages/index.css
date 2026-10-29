@@ -47,6 +47,8 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
   max-height:160px; overflow:hidden;
   transition:max-height var(--chrome-dur) var(--chrome-ease), padding var(--chrome-dur) var(--chrome-ease), opacity var(--chrome-dur) ease, border-bottom-color var(--chrome-dur) ease;
 }
+/* The menu under your name (bold.js) opens below it: not clipped while it's open. */
+.masthead:has(.mast-menu:not([hidden])){overflow:visible;}
 .masthead.chrome-collapsed{
   max-height:0; padding-top:0; padding-bottom:0; opacity:0; border-bottom-color:transparent;
 }
