@@ -171,4 +171,6 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .st-chips .kw-chip{display:inline-flex; align-items:center; gap:6px; font-family:var(--sans); font-size:13px; color:var(--ink); background:var(--wash); border-radius:12px; padding:2px 6px 2px 10px;}
 .st-chips .kw-chip button{border:none; background:none; padding:0 2px; font-size:15px; line-height:1; color:var(--muted); cursor:pointer;}
 .st-chips .kw-chip button:hover{color:var(--danger-text);}
-.jr-feature-group{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:18px 0 8px;}
+.jr-pilot .md-group .jr-feature-group{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:26px 0 8px;}
+/* Room between the testers of every pilot and the first group. */
+.jr-pilot fieldset > .jr-tester-add{margin-bottom:8px;}
