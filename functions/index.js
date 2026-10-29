@@ -1033,7 +1033,8 @@ async function handleBlockSuggestion(payload){
 // (the default for chat.postMessage's `text`) already renders the bold
 // link correctly with no Block Kit needed.
 // ---------- Pilots: a new Slack feature reaches only its testers until it's live ----------
-// settings/pilot: { testers: [emails], live: { <feature>: true }, known: { <feature>: label } }
+// settings/pilot: { testers: [emails], pilotTesters: { <feature>: [emails] }, live: { <feature>: true },
+// known: { <feature>: label } }: a feature in pilot goes to every pilot's testers and its own.
 // (Requests › Settings › Pilots, PIs and admins). A new feature sends through pilotSlack
 // with a key of its own: until it's switched live there (it starts in pilot), whatever
 // it would send goes to the testers instead, each message marked with whom it was for, so
@@ -1078,7 +1079,8 @@ async function pilotSlack(token, key, label, m){
     return (p && p.data().name) || String(e).split('@')[0];
   }))).filter(Boolean).join(', ');
   const note = '🧪 *Pilot of ' + slackText(label) + '*, for ' + (forWhom || 'nobody') + ' (only testers get it until it’s live):';
-  for (const t of s.testers || []) await dm(t, note + '\n' + m.text, m.blocks ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }].concat(m.blocks) : undefined);
+  const testers = Array.from(new Set((s.testers || []).concat(((s.pilotTesters || {})[key]) || [])));
+  for (const t of testers) await dm(t, note + '\n' + m.text, m.blocks ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }].concat(m.blocks) : undefined);
   return { pilot: true };
 }
 

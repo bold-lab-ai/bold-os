@@ -120,21 +120,33 @@
   }
 
   // ---------- Pilots ----------
-  function pilotNow(){ return pilotDraft || { testers: ((pilot || {}).testers || []).slice(), live: Object.assign({}, (pilot || {}).live || {}) }; }
+  // testers: everyone's, for every pilot; pilotTesters: { feature: [emails] }, for that one too.
+  function pilotNow(){
+    if (pilotDraft) return pilotDraft;
+    var p = pilot || {}, each = {};
+    Object.keys(p.pilotTesters || {}).forEach(function(k){ each[k] = (p.pilotTesters[k] || []).slice(); });
+    return { testers: (p.testers || []).slice(), pilotTesters: each, live: Object.assign({}, p.live || {}) };
+  }
+  // A list of testers with Remove beside each and a menu to add one: key '' the general ones.
+  function testersHtml(list, key, none){
+    return '<ul class="jr-testers">' + (list.length ? list.map(function(e, i){
+        return '<li>' + esc(nameOf(e)) + ' <button type="button" class="btn-text danger jr-tester-remove" data-for="' + esc(key) + '" data-i="' + i + '">Remove</button></li>';
+      }).join('') : '<li class="proj-meta">' + none + '</li>') + '</ul>' +
+      '<select class="jr-tester-add" data-for="' + esc(key) + '" aria-label="Add a tester"><option value="">Add a tester…</option>' + roster.filter(function(p){ return list.indexOf(p.email) < 0; })
+        .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</select>';
+  }
+  function testersOf(d, key){ return key ? (d.pilotTesters[key] = d.pilotTesters[key] || []) : d.testers; }
   function nameOf(e){ var p = roster.filter(function(x){ return x.email === e; })[0]; return p ? p.name : e.split('@')[0]; }
   function pilotHtml(){
     if (!pilot) return '';
     var d = pilotNow(), known = pilot.known || {}, keys = Object.keys(known).sort();
     return '<div class="event-form join-form jr-pilot"><fieldset class="md-group"><legend>Pilots</legend>' +
       '<p class="proj-meta">A new Slack feature only messages its testers until it’s live: each message goes to them instead, saying whom it was for.</p>' +
-      '<label>Testers</label><ul class="jr-testers">' + (d.testers.length ? d.testers.map(function(e, i){
-        return '<li>' + esc(nameOf(e)) + ' <button type="button" class="btn-text danger jr-tester-remove" data-i="' + i + '">Remove</button></li>';
-      }).join('') : '<li class="proj-meta">Nobody: features in pilot message no one.</li>') + '</ul>' +
-      '<select class="jr-tester-add" aria-label="Add a tester"><option value="">Add a tester…</option>' + roster.filter(function(p){ return d.testers.indexOf(p.email) < 0; })
-        .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</select>' +
+      '<label>Testers of every pilot</label>' + testersHtml(d.testers, '', 'Nobody') +
       '<label>Features</label>' + (keys.length ? keys.map(function(k){
-        return '<label class="jn-check"><input type="checkbox" class="jr-live" data-key="' + esc(k) + '"' + (d.live[k] ? ' checked' : '') + '> ' + esc(known[k]) + ' <span class="proj-meta">· ' + (d.live[k] ? 'live: messages everyone it’s for' : 'in pilot: testers only') + '</span></label>';
-      }).join('') : '<p class="proj-meta">None yet: a feature appears here the first time it sends something.</p>') +
+        return '<div class="jr-feature"><label class="jn-check"><input type="checkbox" class="jr-live" data-key="' + esc(k) + '"' + (d.live[k] ? ' checked' : '') + '> ' + esc(known[k]) + ' <span class="proj-meta">· ' + (d.live[k] ? 'live: messages everyone it’s for' : 'in pilot: testers only') + '</span></label>' +
+          (d.live[k] ? '' : '<p class="proj-meta">Its own testers, besides those of every pilot:</p>' + testersHtml(d.pilotTesters[k] || [], k, 'None')) + '</div>';
+      }).join('') : '<p class="proj-meta">None yet: a feature appears here once it’s deployed.</p>') +
       '</fieldset>' + (pilotError ? '<p class="ev-error">' + esc(pilotError) + '</p>' : '') +
       '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (pilotDraft ? '' : ' disabled title="Nothing changed"') + '>Save pilots</button>' +
         (pilotDraft ? '<button type="button" class="jr-pilot-cancel">Cancel</button>' : '') + '</div></div>';
@@ -147,7 +159,7 @@
       effects: goingLive.map(function(k){ return 'Let ' + (known[k] || k) + ' message everyone it’s for on Slack, not just the testers'; }) }) : Promise.resolve(true)).then(function(ok){
       if (!ok) return;
       btn.disabled = true; pilotError = '';
-      db.collection('settings').doc('pilot').set({ testers: d.testers, live: d.live, updatedAt: Date.now(), updatedBy: me.email }, { merge: true }).then(function(){
+      db.collection('settings').doc('pilot').set({ testers: d.testers, pilotTesters: d.pilotTesters, live: d.live, updatedAt: Date.now(), updatedBy: me.email }, { merge: true }).then(function(){
         pilotDraft = null; render();
       }).catch(function(err){ console.error('[BOLD Join] saving the pilots failed', err); pilotError = 'Couldn’t save — try again.'; render(); });
     });
@@ -394,7 +406,7 @@
 
   main.addEventListener('change', function(e){
     var t = e.target;
-    if (t.classList.contains('jr-tester-add') && t.value) { pilotDraft = pilotNow(); pilotDraft.testers.push(t.value); render(); return; }
+    if (t.classList.contains('jr-tester-add') && t.value) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).push(t.value); render(); return; }
     if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.checked; render(); }
   });
   main.addEventListener('click', function(e){
@@ -403,7 +415,7 @@
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
     if (t.classList.contains('jr-pilot-save')) { savePilot(t); return; }
     if (t.classList.contains('jr-pilot-cancel')) { pilotDraft = null; pilotError = ''; render(); return; }
-    if (t.classList.contains('jr-tester-remove')) { pilotDraft = pilotNow(); pilotDraft.testers.splice(+t.getAttribute('data-i'), 1); render(); return; }
+    if (t.classList.contains('jr-tester-remove')) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).splice(+t.getAttribute('data-i'), 1); render(); return; }
     if (t.classList.contains('jr-more')) { var mo = t.getAttribute('data-more'); shown[mo] = !shown[mo]; render(); return; }
     var iid = t.getAttribute('data-iid'), mid = t.getAttribute('data-mid');
     if (iid || mid) {

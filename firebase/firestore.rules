@@ -177,7 +177,9 @@ service cloud.firestore {
     // features, with their names) is the server's; PIs and admins set testers and live.
     match /settings/pilot {
       allow read: if hasFullWrite();
-      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['testers', 'live', 'known', 'updatedAt', 'updatedBy'])
+      // testers: every pilot's; pilotTesters: { feature: [emails] }, one pilot's besides.
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['testers', 'pilotTesters', 'live', 'known', 'updatedAt', 'updatedBy'])
+        && request.resource.data.get('pilotTesters', {}) is map && request.resource.data.get('pilotTesters', {}).size() <= 50
         && request.resource.data.get('known', {}) == (resource == null ? {} : resource.data.get('known', {}))
         && request.resource.data.get('testers', []) is list && request.resource.data.get('testers', []).size() <= 20
         && request.resource.data.get('live', {}) is map && request.resource.data.updatedBy == email();
