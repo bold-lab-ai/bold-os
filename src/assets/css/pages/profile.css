@@ -168,23 +168,12 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .st-chips .kw-chip{display:inline-flex; align-items:center; gap:6px; font-family:var(--sans); font-size:13px; color:var(--ink); background:var(--wash); border-radius:12px; padding:2px 6px 2px 10px;}
 .st-chips .kw-chip button{border:none; background:none; padding:0 2px; font-size:15px; line-height:1; color:var(--muted); cursor:pointer;}
 .st-chips .kw-chip button:hover{color:var(--danger-text);}
-/* Settings › Features (pages/settings.js pilotHtml): testers, then the features by group,
-   each a row with its switch and Live or Pilot, and in pilot its own testers below. */
-.jr-pilot .jr-testers{list-style:none; margin:4px 0 10px; padding:0; display:flex; flex-wrap:wrap; gap:6px 14px; font-family:var(--sans); font-size:14px;}
-.jr-pilot .jr-testers .proj-meta{margin:0;}
-.jr-fgroup{margin:22px 0 0;}
-.jr-fgroup:first-of-type{margin-top:16px;}
-.jr-fgroup-head{font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink); margin:0 0 6px;}
-.jr-flist{list-style:none; margin:0; padding:0; border:1px solid var(--line); border-radius:var(--radius);}
-.jr-feature{padding:10px 12px; border-top:1px solid var(--line);}
-.jr-feature:first-child{border-top:0;}
-.jr-feature.is-pilot{background:var(--wash);}
-.event-form label.jr-frow{display:flex; align-items:center; gap:10px; margin:0; color:var(--ink); font-size:14px; cursor:pointer;}
-.event-form .jr-frow input{width:auto; margin:0; flex:none;}
-.jr-fname{flex:1; min-width:0;}
-.badge-live{color:var(--success-text);}
-.badge-pilot{color:var(--warn-text);}
-.jr-fown{margin:10px 0 2px 26px;}
-.jr-fown-label{display:block; font-family:var(--sans); font-size:12px; color:var(--muted); margin-bottom:2px;}
-.jr-fown .jr-testers{margin:2px 0 8px;}
-.jr-fown .jr-tester-add{width:100%; box-sizing:border-box;}
+/* Settings › Features (pages/settings.js pilotHtml): as the Requests page's lists. */
+.jr-pilot .hero-note{margin:0 0 4px; max-width:640px;}
+.jr-tester{display:inline-block; margin:0 18px 4px 0; font-size:16px;}
+.jr-tester .btn-text{font-size:13px; margin-left:4px;}
+.jr-own{margin:6px 0 0;}
+.jr-add{margin-top:8px; max-width:320px;}
+.jr-add select{display:block; width:100%; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.jr-pilot .proj-list .event-controls{margin-top:8px;}
+.jr-pilot .event-form-actions{margin-top:24px;}
