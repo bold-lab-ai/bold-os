@@ -105,7 +105,7 @@ Building a feature (a page that reads and writes its own data, say a rota) needs
 
 ## Shipping
 
-- **Plan on the board:** BOLD.OS's own work, code and content, is on the BOLD OS project's **Board** tab. Add a card for what you take on, put yourself on it, and link it to its pull request or proposed change: it then moves along with it. Each card has its own page (click its title) for a description and images.
+- **Plan on the board:** BOLD.OS's own work, code and content, is on the BOLD OS project's **Board** tab. Add a card for what you take on, put yourself on it, and link it to its pull request or proposed change: it then moves along with it. **Move every card you work on as you go**: to Doing when you start, to Review when it's waiting on someone (a pull request, a proposal to accept, a push to approve), to Done once it's live. A card linked to its pull request or proposal moves by itself; any other card you move yourself, on the board or with the MCP's `work` tool (`action: move`, `column`: `doing`, `review` or `done`). Each card has its own page (click its title) for a description and images.
 - **Pull requests:** work on a branch and open a PR to `main` (one approval needed). **Merging deploys the site** through GitHub Actions; there is no staging site.
 - **Rules and functions deploy separately**, by someone with access to the Firebase project:
   - `npx firebase deploy --only functions:<name>` and `npx firebase deploy --only firestore:rules`, with `--project bold-d7ff2`.
