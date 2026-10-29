@@ -157,4 +157,5 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .ev-series{margin-top:22px;}
 /* Pilots (join-requests.js): each feature, with its own testers while it's in pilot. */
 .jr-feature{margin:0 0 14px;}
-.jr-feature .jr-testers, .jr-feature .jr-tester-add, .jr-feature > .proj-meta{margin-left:26px;}
+.jr-feature .jr-testers, .jr-feature > .proj-meta{margin-left:26px;}
+.jr-feature .jr-tester-add{margin-left:26px; width:calc(100% - 26px); box-sizing:border-box;}
