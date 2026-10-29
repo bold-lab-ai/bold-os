@@ -11,7 +11,8 @@
 // its DOM is kept between renders, so an open editor survives the page redrawing.
 // Each card, and each GitHub issue or pull request, has its own page in the tab
 // (#…&tab=work&card=<id>, &item=<owner/repo#n>): a description (Markdown) and images
-// (Storage, work/<pid>/<card>/…; storage.rules). Describing a GitHub item makes it a card
+// (Storage, work/<pid>/<card>/…; storage.rules), then its conversation (card-talk.js; a
+// card's only, not a GitHub item's: those talk on GitHub). Describing a GitHub item makes it a card
 // linking it. Proposals and requests open their own pages elsewhere on BOLD.OS.
 var ProjectWork = (function(){
   var esc = BOLD.escapeHtml;
@@ -37,6 +38,7 @@ var ProjectWork = (function(){
   var slackIds = {};       // email → Slack id, for links to people's pages (the people roster)
   var view = null;         // a page: { card: id } or { item: ref }; null, the board
   var describing = false;  // the page's description being edited
+  var talk = null;         // the open card's conversation (BoldCardTalk), with its card's id
   var IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
   var MAX_IMAGES = 20, MAX_IMAGE_MB = 10, MAX_NOTES = 20000;
   var upload = { busy: false, msg: '' };
@@ -105,7 +107,8 @@ var ProjectWork = (function(){
       draw();
     }).catch(function(err){ console.error('[BOLD Lab] loading the roster failed', err); });
   }
-  function stop(){ if (unsub) unsub(); unsub = null; pid = ''; view = null; }
+  function stop(){ if (unsub) unsub(); unsub = null; pid = ''; view = null; endTalk(); }
+  function endTalk(){ if (talk) talk.stop(); talk = null; }
 
   // The page open, from the address; go(v) opens another (null: the board).
   function readView(){
@@ -309,6 +312,7 @@ var ProjectWork = (function(){
     if (!ctx) return;
     // A card's page sits in the tab as the Overview does; only the board itself is wide.
     root.classList.toggle('wk-paged', !!view);
+    if (!view || !view.card) endTalk();
     if (view) { drawPage(); return; }
     // An open editor stays as it is; the rest redraws around it.
     var keep = editing && root.querySelector('.wk-editor');
@@ -606,7 +610,8 @@ var ProjectWork = (function(){
             '<figcaption><span>' + esc(i.name || '') + '</span>' + (ok ? '<button class="btn-text wk-unimage" type="button" data-path="' + esc(i.path) + '" aria-label="Remove this image">Remove</button>' : '') + '</figcaption></figure>';
         }).join('') + '</div>' : '<p class="detail-muted wk-none">No images yet.</p>') +
         '<div class="detail-hint">PNG, JPEG, GIF or WebP, up to ' + MAX_IMAGE_MB + ' MB each' + (upload.msg ? ' · <span class="wk-upmsg">' + esc(upload.msg) + '</span>' : '') + '</div>' +
-        '<input type="file" class="wk-imgfile" accept="' + Object.keys(IMAGE_TYPES).join(',') + '" multiple hidden></div>';
+        '<input type="file" class="wk-imgfile" accept="' + Object.keys(IMAGE_TYPES).join(',') + '" multiple hidden></div>' +
+        '<div class="wk-talk-slot"></div>';
     }
     root.innerHTML = html + (msg ? '<p class="wk-error">' + esc(msg) + '</p>' : '') + '</div>';
 
@@ -624,6 +629,16 @@ var ProjectWork = (function(){
       }
       descSlot.replaceWith(f);
       if (!keepDesc) f.querySelector('textarea').focus();
+    }
+    var talkSlot = el('.wk-talk-slot');
+    if (talkSlot) {
+      if (!talk || talk.id !== c.id) {
+        endTalk();
+        var cid = c.id;
+        talk = BoldCardTalk.create(cardsRef().doc(cid), { me: ctx.me, fullWrite: ctx.fullWrite, card: function(){ return cards.filter(function(k){ return k.id === cid; })[0]; } });
+        talk.id = cid;
+      }
+      talkSlot.replaceWith(talk.el);
     }
     var editSlot = el('.wk-page-edit');
     if (editSlot && editing === c.id) {

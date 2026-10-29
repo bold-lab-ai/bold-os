@@ -253,3 +253,11 @@
 .wk-upmsg{color:var(--ink-soft);}
 .wk-linked{margin:0; padding:0; list-style:none;}
 .wk-linked li + li{margin-top:2px;}
+/* A card's conversation (card-talk.js). */
+.wk-talk-list{list-style:none; margin:0 0 14px; padding:0;}
+.wk-talk-item{padding:10px 0; border-top:1px solid var(--line);}
+.wk-talk-item:first-child{border-top:0; padding-top:0;}
+.wk-talk-item.is-marked{background:var(--wash); padding-left:10px; padding-right:10px;}
+.wk-talk-head{font-family:var(--sans); font-size:14px; margin-bottom:4px;}
+.wk-talk-form textarea, .wk-talk-edit textarea{width:100%; box-sizing:border-box; font:inherit; font-size:15px;}
+.wk-talk-edit{margin-top:4px;}

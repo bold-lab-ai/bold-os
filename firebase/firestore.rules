@@ -413,6 +413,23 @@ service cloud.firestore {
           (isProjectMember() || hasFullWrite() || resource.data.by.email == email() || email() in resource.data.assigneeEmails) &&
           request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at && validWork(request.resource.data);
         allow delete: if may('projects', 'edit') && (isProjectMember() || hasFullWrite() || resource.data.by.email == email());
+
+        // Its conversation (card-talk.js): whoever sees the board reads it and comments, as
+        // themselves; the author edits their text; the author, a PI or an admin deletes one.
+        // { text, by: { email, name }, at, editedAt? }; onCardCommented tells the card's people.
+        function validTalk(d) {
+          return d.keys().hasOnly(['text', 'by', 'at', 'editedAt']) &&
+            d.text is string && d.text.size() > 0 && d.text.size() <= 2000 &&
+            d.by is map && d.by.keys().hasOnly(['email', 'name']) && d.by.name is string && d.at is number;
+        }
+        match /comments/{cid} {
+          allow read: if may('projects', 'view');
+          allow create: if may('projects', 'view') && exists(/databases/$(database)/documents/projectWorkspaces/$(cardId)/work/$(id)) &&
+            request.resource.data.by.email == email() && !('editedAt' in request.resource.data) && validTalk(request.resource.data);
+          allow update: if resource.data.by.email == email() && request.resource.data.by == resource.data.by &&
+            request.resource.data.at == resource.data.at && request.resource.data.editedAt is number && validTalk(request.resource.data);
+          allow delete: if resource.data.by.email == email() || hasFullWrite();
+        }
       }
     }
 

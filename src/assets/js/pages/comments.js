@@ -1,8 +1,10 @@
 // Comments (comments.html): every comment thread on BOLD.OS, newest activity first.
 // Threads on a guide or the BOLDiquette (<collection>/{slug}/comments, comments.js)
 // and on a paper's card on the Internal Review Board (its discussion and its
-// checklist points' feedback, cards' `discussion` and `checklist[].comments`).
-// Each links to the thread itself (#c= on a guide, &msg= on the board).
+// checklist points' feedback, cards' `discussion` and `checklist[].comments`), and a
+// project board card's conversation (projectWorkspaces/{pid}/work/{id}/comments, card-talk.js;
+// one thread per card, resolved once the card is Done).
+// Each links to the thread itself (#c= on a guide, &msg= on the board, &c= on a card).
 // Filters: open, involving me (I wrote in it or am tagged), resolved, all.
 // comments.html?on=<collection>/<slug> shows one page's threads (its header links here).
 (function(){
@@ -59,6 +61,27 @@
       })));
   }
 
+  // Board cards' conversations, as threads: one per card, from its card and project.
+  function talkThreads(docs, db){
+    var byCard = {};
+    docs.forEach(function(d){
+      var card = d.ref.parent.parent;
+      if (!card || card.parent.id !== 'work') return;
+      (byCard[card.path] = byCard[card.path] || { card: card, docs: [] }).docs.push(d);
+    });
+    return Promise.all(Object.keys(byCard).map(function(k){
+      var g = byCard[k], ws = g.card.parent.parent;
+      return Promise.all([g.card.get(), ws.get()]).then(function(r){
+        if (!r[0].exists) return null;
+        var c = r[0].data(), w = r[1].exists ? r[1].data() : {};
+        var msgs = g.docs.map(function(d){ var x = d.data(); return { id: d.id, by: x.by ? (x.by.name || x.by.email) : 'Someone', email: x.by ? String(x.by.email || '').toLowerCase() : '', text: x.text, at: x.at || 0 }; })
+          .sort(function(a, b){ return a.at - b.at; });
+        return { key: k, msgs: msgs, where: 'Board · ' + (w.title || 'a project'), title: c.title || 'A card', resolved: c.column === 'done',
+          href: 'project.html#id=' + encodeURIComponent(w.cardId || ws.id) + (w.boardId ? '&board=' + encodeURIComponent(w.boardId) : '') + '&tab=work&card=' + encodeURIComponent(g.card.id) + '&c=' + encodeURIComponent(msgs[0].id) };
+      }).catch(function(){ return null; });
+    })).then(function(ts){ return ts.filter(Boolean); });
+  }
+
   function load(){
     var db = firebase.firestore(BOLD.getApp());
     var titles = {}, boards = {};
@@ -77,7 +100,9 @@
     return Promise.all(guideTitles.concat([venues, mine])).then(function(){
       return Promise.all([db.collectionGroup('comments').get(), db.collectionGroup('cards').get()]);
     }).then(function(r){
-      threads = pageThreads(r[0].docs, titles).concat([].concat.apply([], r[1].docs.map(function(d){ return cardThreads(d, boards); })));
+      return talkThreads(r[0].docs, db).then(function(talks){ return r.concat([talks]); });
+    }).then(function(r){
+      threads = pageThreads(r[0].docs, titles).concat([].concat.apply([], r[1].docs.map(function(d){ return cardThreads(d, boards); }))).concat(r[2]);
       threads.forEach(function(t){ t.last = t.msgs.reduce(function(m, x){ return Math.max(m, x.at || 0); }, 0); });
       threads.sort(function(a, b){ return b.last - a.last; });
       loaded = true; render();

@@ -1533,6 +1533,7 @@ exports.flushCommentQueue = onSchedule(
         return s.data();
       });
       if (!taken || !(taken.items || []).length) continue;
+      if (taken.collection === 'work') { await flushCardTalk(taken); continue; }
       const page = db.collection(taken.collection).doc(taken.slug);
       const [pageSnap, all, props] = await Promise.all([page.get(), page.collection('comments').get(), page.collection('proposals').get()]);
       if (!pageSnap.exists) continue;
@@ -1553,6 +1554,71 @@ exports.flushCommentQueue = onSchedule(
     }
   }
 );
+
+// ---------- A board card's conversation (card-talk.js), in Slack, batched ----------
+// A comment on a card (projectWorkspaces/{pid}/work/{id}/comments/{cid}) joins the card's
+// queue (commentQueue/work__{pid}__{id}), sent as the guides' are (flushCommentQueue): one
+// message per person, through pilotSlack ('card-comments'). Who hears: whoever made the card,
+// its assignees and whoever has commented on it, and whoever a comment tags (an edit: only
+// whoever it newly tags); nobody of their own.
+function queueCardTalk(event, item){
+  const ref = db.collection('commentQueue').doc('work__' + event.params.pid + '__' + event.params.id);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const q = snap.exists ? snap.data() : { collection: 'work', pid: event.params.pid, card: event.params.id, slug: event.params.pid + '/' + event.params.id, items: [], firstAt: Date.now() };
+    q.items = (q.items || []).concat([item]).slice(-200);
+    q.lastAt = Date.now();
+    tx.set(ref, q);
+  });
+}
+const talkItem = (id, c, extra) => Object.assign({ id, text: String(c.text || '').slice(0, 300), tagged: taggedIds(c.text),
+  by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: c.at || Date.now() }, extra || {});
+exports.onCardCommented = onDocumentCreated('projectWorkspaces/{pid}/work/{id}/comments/{cid}', async function(event){
+  const c = event.data && event.data.data();
+  if (c) await queueCardTalk(event, talkItem(event.params.cid, c));
+});
+exports.onCardCommentEdited = onDocumentUpdated('projectWorkspaces/{pid}/work/{id}/comments/{cid}', async function(event){
+  const c = event.data.after.data(), tagged = newTags(event.data.before.data().text, c.text);
+  if (tagged.length) await queueCardTalk(event, talkItem(event.params.cid, c, { tagged, tagsOnly: true, at: Date.now() }));
+});
+
+// Who hears of which comments on a card → { email: [items] }. people: whoever made it, its
+// assignees and whoever has commented; tagEmails: { Slack id: email }. Pure.
+function cardTalkRecipients(items, people, tagEmails){
+  const out = {};
+  const add = (email, it, tagged) => {
+    email = String(email || '').toLowerCase();
+    if (!email || email === it.by.email) return;
+    const mine = out[email] = out[email] || [];
+    const had = mine.filter((x) => x.id === it.id)[0];
+    if (had) { if (tagged) had.taggedYou = true; return; }
+    mine.push(Object.assign({}, it, tagged ? { taggedYou: true } : {}));
+  };
+  items.forEach((it) => {
+    if (!it.tagsOnly) people.forEach((e) => add(e, it));
+    (it.tagged || []).forEach((id) => add((tagEmails || {})[id], it, true));
+  });
+  return out;
+}
+// One person's message about a card's comments; each links to itself (&c=). Pure.
+function cardTalkDigest(items, title, url){
+  const n = items.length, untag = (t) => String(t || '').replace(TAG, '@$1');
+  const line = (it) => { const t = untag(it.text); return '• <' + url + '&c=' + encodeURIComponent(it.id) + '|' + slackText(it.by.name || it.by.email).replace(/\|/g, '¦') + (it.taggedYou ? ' tagged you' : '') + '>: ' + slackText(t.length > 140 ? t.slice(0, 140) + '…' : t); };
+  return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on the card ' + linkedTitle(slackText(title), url) + '\n' +
+    items.slice(0, 5).map(line).join('\n') + (n > 5 ? '\n…and ' + (n - 5) + ' more.' : '');
+}
+async function flushCardTalk(q){
+  const card = db.collection('projectWorkspaces').doc(q.pid).collection('work').doc(q.card);
+  const [cs, ws, all] = await Promise.all([card.get(), db.collection('projectWorkspaces').doc(q.pid).get(), card.collection('comments').get()]);
+  if (!cs.exists) return;
+  const c = cs.data(), w = ws.data() || {};
+  const people = [c.by && c.by.email].concat(c.assigneeEmails || []).concat(all.docs.map((d) => d.data().by && d.data().by.email)).filter(Boolean).map((e) => String(e).toLowerCase());
+  const byPerson = cardTalkRecipients(q.items, Array.from(new Set(people)), await emailsForSlackIds([].concat.apply([], q.items.map((it) => it.tagged || []))));
+  const url = projectPageUrl(w.cardId || q.pid, w.boardId) + '&tab=work&card=' + encodeURIComponent(q.card);
+  const title = (await numberTag(card.path)) + (c.title || 'a card');
+  const token = SLACK_BOT_TOKEN.value();
+  for (const email of Object.keys(byPerson)) await pilotSlack(token, 'card-comments', 'Comments on board cards', { emails: [email], text: cardTalkDigest(byPerson[email], title, url) });
+}
 
 // ---------- Deciding a suggested change to a guide or the BOLDiquette ----------
 // A guide (guides/{slug}) or the BOLDiquette (handbook/{slug}) changes only by
@@ -6273,7 +6339,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, cardTalkRecipients, cardTalkDigest, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,

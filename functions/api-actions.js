@@ -343,6 +343,17 @@ module.exports = function(ctx){
     const cur = await ref.doc(id).get();
     if (!cur.exists) throw httpError(404, 'No card with that id on this board.');
     if (a.action === 'remove') { await asUser(who, 'delete', col + '/' + id); return { ok: true }; }
+    // Its conversation (card-talk.js): read it, or add to it (its people hear of it on Slack).
+    if (a.action === 'comments') {
+      const cs = await ref.doc(id).collection('comments').orderBy('at').get();
+      return { comments: cs.docs.map((d) => { const m = d.data(); return { id: d.id, by: (m.by && (m.by.name || m.by.email)) || '', at: new Date(m.at || 0).toISOString(), text: m.text, edited: !!m.editedAt }; }), url: url(pageOf(id)) };
+    }
+    if (a.action === 'comment') {
+      const t = need(a.text, 'the text');
+      if (t.length > 2000) throw httpError(400, 'At most 2000 characters.');
+      const cid = await asUser(who, 'create', col + '/' + id + '/comments', { text: t, by: { email: who.email, name: nameOfMe(who) }, at: now });
+      return { id: cid, url: url(pageOf(id) + '&c=' + encodeURIComponent(cid)) };
+    }
     const x = cur.data();
     const next = { title: x.title, notes: x.notes || '', kind: a.type !== undefined ? String(a.type) : x.kind || '', column: x.column, assignees: x.assignees || [], assigneeEmails: x.assigneeEmails || [], links: x.links || [],
       ...(x.images ? { images: x.images } : {}), by: x.by, at: x.at, movedAt: x.movedAt || x.at, updatedAt: now, updatedBy: who.email };
@@ -695,8 +706,8 @@ module.exports = function(ctx){
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'work', run: work,
-      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false.',
-      inputSchema: S({ post_in_channel: { type: 'boolean', description: 'add: post it in the project’s Slack channel (default true)' }, action: ACTIONS(['list', 'add', 'update', 'move', 'remove']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove (list gives it).'),
+      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card, or read (comments) and add to (comment) a card’s conversation. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false. A comment sends whoever made the card, its assignees and whoever has commented a Slack message: tell your person first. Move the cards you work on as you go: doing when you start, review while it waits on someone, done once it’s live.',
+      inputSchema: S({ post_in_channel: { type: 'boolean', description: 'add: post it in the project’s Slack channel (default true)' }, action: ACTIONS(['list', 'add', 'update', 'move', 'remove', 'comments', 'comment']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove, comments, comment (list gives it).'), text: str('comment: what you say (Markdown).'),
         title: str('add, update'), description: str('add, update: what it is (Markdown), shown on the card’s page.'), type: ACTIONS(['code', 'content', 'request', 'other']), column: ACTIONS(['todo', 'doing', 'review', 'done']), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
         links: { type: 'array', items: { type: 'string' }, description: 'add, update: https://… links: a GitHub pull request or issue, a proposal, anything.' } }, ['action', 'project_id']) },
     { name: 'presentations', run: presentations,
