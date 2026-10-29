@@ -62,7 +62,7 @@ module.exports = function(deps){
       const n = String(note || '').trim().slice(0, 1000);
       await ref.update({ actRequest: { status: 'open', note: n, at: Date.now() } });
       await Promise.resolve(tellStaff('🤖 ' + slackText(await myName()) + ' asks to let their agent act for them (token “' + slackText(label) + '”)' +
-        (n ? ': “' + slackText(n.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#agents') + '.', email)).catch((err) => logger.warn('Telling the PIs failed', { error: String(err.message) }));
+        (n ? ': “' + slackText(n.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#agents') + '.', email, 'agent-requests')).catch((err) => logger.warn('Telling the PIs failed', { error: String(err.message) }));
     };
     const tokenRef = (id) => {
       if (!/^[0-9a-f]{64}$/.test(String(id || ''))) throw new HttpsError('invalid-argument', 'No such token.');
@@ -117,7 +117,7 @@ module.exports = function(deps){
       });
       await Promise.resolve(tellPerson(x.email, accept
         ? '🤖 Your agent can now act for you (token “' + slackText(x.label) + '”), in your name. ' + linkedTitle('See what it does', SITE_URL + 'agents.html') + '.'
-        : '🤖 Your request to let your agent act for you (token “' + slackText(x.label) + '”) was declined. It still reads. Ask a PI if you’d like to know more.')).catch((err) => logger.warn('Telling them failed', { error: String(err.message) }));
+        : '🤖 Your request to let your agent act for you (token “' + slackText(x.label) + '”) was declined. It still reads. Ask a PI if you’d like to know more.', 'agent-requests')).catch((err) => logger.warn('Telling them failed', { error: String(err.message) }));
       return { ok: true };
     }
     if (d.action === 'revoke') {

@@ -216,7 +216,7 @@ module.exports = function series(deps){
       if (others.length) {
         const who = ((await db.collection('people').where('email', '==', email).limit(1).get()).docs[0] || { data: () => ({}) }).data().name || email.split('@')[0];
         await Promise.resolve(tellPeople(others, '🔔 ' + slackText(who) + ' added ' + linkedTitle(n.title, seriesUrl(id)) + ', with you as an organiser. It stays hidden' +
-          (n.kind === 'editions' ? '' : ', and nobody is invited,') + ' until one of you releases it from its page.')).catch((err) => logger.warn('Telling the organisers failed', { error: String(err.message) }));
+          (n.kind === 'editions' ? '' : ', and nobody is invited,') + ' until one of you releases it from its page.', 'series-added')).catch((err) => logger.warn('Telling the organisers failed', { error: String(err.message) }));
       }
       return { series: view((await db.collection('eventSeries').doc(id).get()).data(), email, full) };
     }
@@ -378,7 +378,7 @@ module.exports = function series(deps){
       const when = new Date(due + 'T00:00:00Z').toLocaleDateString('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' });
       const to = staff.concat((s.organisers || []).map(lower)).filter((e, i, a) => e && a.indexOf(e) === i);
       await tellPeople(to, '🗓️ The next ' + slackText(s.title) + ' is due around ' + when + ' and isn’t scheduled yet. ' +
-        linkedTitle('Schedule it', seriesUrl(doc.id)) + ', or tell its organisers.').catch((err) => logger.warn('Nudging about a series failed', { id: doc.id, error: String(err.message) }));
+        linkedTitle('Schedule it', seriesUrl(doc.id)) + ', or tell its organisers.', 'series-due').catch((err) => logger.warn('Nudging about a series failed', { id: doc.id, error: String(err.message) }));
       await doc.ref.set({ nudgedFor: due }, { merge: true });
     }
   });

@@ -123,7 +123,7 @@
     if (!pilot) return '';
     var d = pilotNow(), known = pilot.known || {}, keys = Object.keys(known).sort();
     return '<div class="event-form join-form jr-pilot"><fieldset class="md-group"><legend>Pilots</legend>' +
-      '<p class="proj-meta">A new Slack feature only messages its testers until it’s live: each message goes to them instead, saying whom it was for.</p>' +
+      '<p class="proj-meta">Every Slack message BOLD.OS sends belongs to one of these features. One that isn’t live messages only its testers: each message goes to them instead, saying whom it was for. New ones start that way.</p>' +
       '<label>Testers of every pilot</label>' + testersHtml(d.testers, '', 'Nobody') +
       '<label>Features</label>' + (keys.length ? keys.map(function(k){
         return '<div class="jr-feature"><label class="jn-check"><input type="checkbox" class="jr-live" data-key="' + esc(k) + '"' + (d.live[k] ? ' checked' : '') + '> ' + esc(known[k]) + ' <span class="proj-meta">· ' + (d.live[k] ? 'live: messages everyone it’s for' : 'in pilot: testers only') + '</span></label>' +

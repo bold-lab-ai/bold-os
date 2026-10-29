@@ -721,8 +721,16 @@ async function slackIdForEmail(email){
 // logs and resolves false on any failure, so one bad recipient (no Slack
 // id, a transient API error) can't take the rest of a batch down with it,
 // and a retry of the whole trigger isn't forced by one skipped DM.
-async function dmBySlackId(token, slackId, text){
+// With a feature's key (LIVE_FEATURES, PILOTS), a feature in pilot sends to its testers instead.
+async function dmBySlackId(token, slackId, text, key){
   try {
+    if (key) {
+      const st = await pilotState(key);
+      if (!st.live) {
+        const p = (await db.collection('people').doc(slackId).get()).data();
+        return toTesters(token, st, (p && p.name) || slackId, text);
+      }
+    }
     const opened = await slackFetch(token, 'conversations.open', { users: slackId });
     if (!opened.ok) return false;
     const posted = await slackFetch(token, 'chat.postMessage', { channel: opened.channel.id, text: text });
@@ -733,7 +741,11 @@ async function dmBySlackId(token, slackId, text){
   }
 }
 
-async function dmByEmail(token, email, text){
+async function dmByEmail(token, email, text, key){
+  if (key) {
+    const st = await pilotState(key);
+    if (!st.live) return toTesters(token, st, await nameForEmail(email), text);
+  }
   const slackId = await slackIdForEmail(email);
   if (!slackId){
     logger.info('No Slack id for email — skipping DM', { email });
@@ -1046,19 +1058,88 @@ const PILOTS = {
   'card-comments': 'Comments on board cards',
   'card-done': 'Telling who raised a card it’s done',
 };
+// Every Slack feature from before Pilots: listed too, and live unless switched off there
+// (listPilots sets each one live the first time; until then it counts as live). Each sends
+// with its key: dmByEmail, dmBySlackId, sendEvent ({ key }), postInChannel, tellStaff,
+// tellPerson, tellPeople. Replies to someone's own click in Slack (a slash command's
+// answer) have no key: they always go.
+const LIVE_FEATURES = {
+  'venue-proposed': 'A venue proposed for the Internal Review Board (to PIs and admins)',
+  'venue-calls': 'New calls for papers (to PIs and admins)',
+  'irb-board': 'Internal Review Board: papers, reviewers and reviews',
+  'irb-author-cap': 'Internal Review Board: authors on too many papers',
+  'irb-reviews-out': 'Internal Review Board: reviews out',
+  'proposals': 'Proposed changes (to PIs and admins)',
+  'proposal-decided': 'Proposed changes accepted or declined',
+  'proposal-reviewer': 'The reviewer’s concerns about a proposed change (to PIs and admins)',
+  'guide-comments': 'Comments on guides and the BOLDiquette',
+  'tags': 'Tagging someone',
+  'project-announce': 'New projects in #all-active-projects',
+  'card-added': 'New board cards in the project’s channel',
+  'supervision-requests': 'Asking to join a supervision meeting',
+  'join-requests': 'Requests to join BOLD',
+  'inviter-confirm': 'Confirming who invited someone',
+  'group-requests': 'Requests to change group',
+  'invite-link-reminder': 'The Slack invite link expiring (to PIs and admins)',
+  'letters': 'Recommendation letters',
+  'introductions': 'Introductions',
+  'agent-requests': 'Letting an agent act',
+  'series-added': 'Added as an organiser of an event series',
+  'series-due': 'An event series’ next edition due',
+};
 let pilotsListed = null;
 function listPilots(){
   if (!pilotsListed) pilotsListed = db.collection('settings').doc('pilot').get().then((s) => {
-    const known = (s.data() || {}).known || {}, missing = Object.keys(PILOTS).filter((k) => !known[k]);
-    if (missing.length) return s.ref.set({ known: Object.fromEntries(missing.map((k) => [k, PILOTS[k]])) }, { merge: true });
+    const d = s.data() || {}, known = d.known || {}, live = d.live || {}, all = Object.assign({}, LIVE_FEATURES, PILOTS);
+    const missing = Object.keys(all).filter((k) => !known[k]), wasLive = Object.keys(LIVE_FEATURES).filter((k) => !(k in live));
+    if (missing.length || wasLive.length) return s.ref.set(Object.assign({ known: Object.fromEntries(missing.map((k) => [k, all[k]])) },
+      wasLive.length ? { live: Object.fromEntries(wasLive.map((k) => [k, true])) } : {}), { merge: true });
   }).catch((err) => { pilotsListed = null; logger.warn('Listing the pilots failed', { error: String(err && err.message || err) }); });
   return pilotsListed;
 }
 if (process.env.K_SERVICE) listPilots();
+// settings/pilot, read at most every 30 seconds per server instance.
+let pilotRead = null;
+async function pilotSettings(){
+  if (!pilotRead || Date.now() - pilotRead.at > 30000) pilotRead = { at: Date.now(), d: db.collection('settings').doc('pilot').get().then((x) => x.data() || {}) };
+  try { return await pilotRead.d; } catch (err){ pilotRead = null; logger.warn('Reading the pilots failed', { error: String(err && err.message || err) }); return {}; }
+}
+// Whether feature `key` messages whom it's for → { live, testers, label }. Live: switched live
+// under Pilots, or one from before Pilots never switched off. Pure on the settings.
+function pilotStateOf(d, key){
+  const live = d.live || {}, label = (d.known || {})[key] || PILOTS[key] || LIVE_FEATURES[key] || key;
+  return { live: key in live ? live[key] === true : !!LIVE_FEATURES[key], label,
+    testers: Array.from(new Set((d.testers || []).concat(((d.pilotTesters || {})[key]) || []))) };
+}
+async function pilotState(key){ return pilotStateOf(await pilotSettings(), key); }
+function pilotNote(label, forWhom){ return '🧪 *Pilot of ' + slackText(label) + '*, for ' + (forWhom || 'nobody') + ' (only testers get it until it’s live):'; }
+async function nameForEmail(e){
+  const p = (await db.collection('people').where('email', '==', String(e).toLowerCase()).limit(1).get()).docs[0];
+  return (p && p.data().name) || String(e).split('@')[0];
+}
+// A message for whom it's for, in pilot: to each tester instead, marked. → true.
+async function toTesters(token, st, forWhom, text, blocks){
+  const note = pilotNote(st.label, forWhom);
+  for (const t of st.testers) {
+    const id = await slackIdForEmail(t);
+    if (!id) continue;
+    const open = await slackFetch(token, 'conversations.open', { users: id });
+    if (open.ok) await slackFetch(token, 'chat.postMessage', Object.assign({ channel: open.channel.id, text: note + '\n' + text, unfurl_links: false },
+      blocks ? { blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }].concat(blocks) } : {}));
+  }
+  return true;
+}
+// A post in a channel (by id; name for the pilot's note), as feature `key`. → Slack's answer.
+async function postInChannel(token, key, channelId, name, args){
+  const st = await pilotState(key);
+  if (!st.live) { await toTesters(token, st, '#' + String(name || channelId).replace(/^#/, ''), args.text || '', args.blocks); return { ok: true, pilot: true }; }
+  return slackFetch(token, 'chat.postMessage', Object.assign({ channel: channelId }, args));
+}
 async function pilotSlack(token, key, label, m){
   const ref = db.collection('settings').doc('pilot');
-  const s = (await ref.get()).data() || {};
-  if (!(s.known || {})[key]) await ref.set({ known: { [key]: label } }, { merge: true });
+  const d = (await ref.get()).data() || {};
+  if (!(d.known || {})[key]) await ref.set({ known: { [key]: label } }, { merge: true });
+  const st = pilotStateOf(Object.assign({}, d, { known: Object.assign({ [key]: label }, d.known || {}) }), key);
   const send = async (channel, text, blocks) => {
     const res = await slackFetch(token, 'chat.postMessage', Object.assign({ channel, text, unfurl_links: false }, blocks ? { blocks } : {}));
     if (!res.ok) logger.warn('Slack message failed', { feature: key, error: res.error });
@@ -1069,25 +1150,21 @@ async function pilotSlack(token, key, label, m){
     const open = await slackFetch(token, 'conversations.open', { users: id });
     if (open.ok) await send(open.channel.id, text, blocks);
   };
-  if ((s.live || {})[key]) {
+  if (st.live) {
     for (const e of Array.from(new Set(m.emails || []))) await dm(e, m.text, m.blocks);
     if (m.channel) { const id = await slackChannelId(token, String(m.channel).replace(/^#/, '')); if (id) await send(id, m.text, m.blocks); }
     return { pilot: false };
   }
-  const forWhom = [m.channel ? '#' + String(m.channel).replace(/^#/, '') : ''].concat(await Promise.all((m.emails || []).map(async (e) => {
-    const p = (await db.collection('people').where('email', '==', String(e).toLowerCase()).limit(1).get()).docs[0];
-    return (p && p.data().name) || String(e).split('@')[0];
-  }))).filter(Boolean).join(', ');
-  const note = '🧪 *Pilot of ' + slackText(label) + '*, for ' + (forWhom || 'nobody') + ' (only testers get it until it’s live):';
-  const testers = Array.from(new Set((s.testers || []).concat(((s.pilotTesters || {})[key]) || [])));
-  for (const t of testers) await dm(t, note + '\n' + m.text, m.blocks ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }].concat(m.blocks) : undefined);
+  const forWhom = [m.channel ? '#' + String(m.channel).replace(/^#/, '') : ''].concat(await Promise.all((m.emails || []).map(nameForEmail))).filter(Boolean).join(', ');
+  await toTesters(token, st, forWhom, m.text, m.blocks);
   return { pilot: true };
 }
 
+// event: { emails, headline, excludeEmail?, key: the feature (LIVE_FEATURES, PILOTS) }.
 async function sendEvent(token, event){
   const unique = Array.from(new Set(event.emails.filter(Boolean)))
     .filter(function(e){ return e !== event.excludeEmail; });
-  await Promise.all(unique.map(function(email){ return dmByEmail(token, email, event.headline); }));
+  await Promise.all(unique.map(function(email){ return dmByEmail(token, email, event.headline, event.key); }));
 }
 
 // ---------- 1. Venue proposal needs approval ----------
@@ -1122,7 +1199,7 @@ exports.onVenueProposed = onDocumentCreated(
     // PI-approval notification, not a plain FYI icon.
     const headline = '🔔 ' + await numberTag('boards/' + event.params.boardId) + 'New venue proposal: ' + linkedTitle(data.label, url) + ' — proposed by ' + proposer +
       '. It needs your approval before it’s visible to the lab.';
-    await sendEvent(token, {
+    await sendEvent(token, { key: 'venue-proposed',
       emails: pis.concat(admins),
       excludeEmail: data.proposedBy && data.proposedBy.email,
       headline: headline
@@ -1196,7 +1273,7 @@ function onProposed(collection, pageUrl){
         '. It needs a PI or admin to accept or decline it.';
       const pis = await rolesEmails('pis');
       const admins = await rolesEmails('admins');
-      await sendEvent(SLACK_BOT_TOKEN.value(), {
+      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'proposals',
         emails: pis.concat(admins),
         excludeEmail: q.by && q.by.email,
         headline: headline
@@ -1269,8 +1346,8 @@ function onProposalDecided(collection, pageUrl){
       const decider = after && after.decidedBy ? String(after.decidedBy).toLowerCase() : '';
       const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'))
         .map((e) => String(e).toLowerCase()).filter((e) => e !== proposer && e !== decider);
-      const jobs = [sendEvent(token, { emails: staff, headline: out.others })];
-      if (out.proposer && proposer) jobs.push(sendEvent(token, { emails: [proposer], headline: out.proposer }));
+      const jobs = [sendEvent(token, { key: 'proposal-decided', emails: staff, headline: out.others })];
+      if (out.proposer && proposer) jobs.push(sendEvent(token, { key: 'proposal-decided', emails: [proposer], headline: out.proposer }));
       await Promise.all(jobs);
     }
   );
@@ -1410,7 +1487,7 @@ function onTagged(document){
       const excerpt = tagExcerpt(after, id), msg = /^boards\/[^/]+\/cards\//.test(path) ? tagMessageId(after, id) : '';
       const text = '🏷️ ' + (who ? slackText(who.name || who.email) + ' tagged you' : 'You were tagged') + ' in ' + linkedTitle(slackText(place.title), place.url + (msg ? '&msg=' + encodeURIComponent(msg) : '')) +
         (excerpt ? ': “' + slackText(excerpt) + '”' : '.');
-      const sent = await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text);
+      const sent = await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text, 'tags');
       logger.info('Tag DM', { path, to: id, by, sent, authType: event.authType, authId: event.authId });
     }
   });
@@ -1434,7 +1511,7 @@ function onProposalTagged(collection, pageUrl){
       const text = '🏷️ ' + slackText((q.by && (q.by.name || q.by.email)) || 'Someone') + ' tagged you in a suggested change to ' +
         linkedTitle(slackText((doc.exists && doc.data().title) || (q.after || {}).title || event.params.slug), pageUrl(event.params.slug) + proposalAnchor(collection, event.params.id)) + ': ' + proposalSummary(q) + '.';
       const emails = await emailsForSlackIds(ids);
-      for (const id of ids) if (emails[id] && emails[id] !== by) await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text);
+      for (const id of ids) if (emails[id] && emails[id] !== by) await dmBySlackId(SLACK_BOT_TOKEN.value(), id, text, 'tags');
     }
   );
 }
@@ -1567,7 +1644,7 @@ exports.flushCommentQueue = onSchedule(
       const byPerson = commentRecipients(taken.items, Array.from(new Set(staff)), threads,
         await emailsForSlackIds([].concat.apply([], taken.items.map((it) => it.tagged || []))));
       const token = SLACK_BOT_TOKEN.value();
-      await Promise.all(Object.keys(byPerson).map((email) => dmByEmail(token, email, commentDigest(byPerson[email], name, url))));
+      await Promise.all(Object.keys(byPerson).map((email) => dmByEmail(token, email, commentDigest(byPerson[email], name, url), 'guide-comments')));
     }
   }
 );
@@ -1823,7 +1900,7 @@ async function notifyAuthorsOverCap(token, boardId, before, after){
     if (count > max){
       const headline = '⚠️ You’re now an author on ' + count + ' papers for ' + linkedTitle(venueLabel, url) +
         ' — over its ' + max + '-per-author limit.';
-      await sendEvent(token, { emails: [email], headline: headline });
+      await sendEvent(token, { key: 'irb-author-cap', emails: [email], headline: headline });
     }
   }
 }
@@ -1841,7 +1918,7 @@ exports.onCardWritten = onDocumentWritten(
     const tagged = Object.values(await emailsForSlackIds(newTags(before, after)));
     for (let i = 0; i < events.length; i++){
       const e = events[i];
-      await sendEvent(token, e.comment ? Object.assign({}, e, { emails: e.emails.filter((x) => tagged.indexOf(String(x || '').toLowerCase()) === -1) }) : e);
+      await sendEvent(token, e.comment ? Object.assign({ key: 'irb-board' }, e, { emails: e.emails.filter((x) => tagged.indexOf(String(x || '').toLowerCase()) === -1) }) : Object.assign({ key: 'irb-board' }, e));
     }
 
     // Refresh anyone whose Home tab dashboard is now stale because
@@ -1931,7 +2008,7 @@ exports.notifyReviewsOut = onSchedule(
         if (submitterEmail){
           const headline = '📢 ' + linkedTitle(card.title || 'a paper', cardUrl(boardId, card.id)) +
             ' — reviews are out. Time to start the rebuttal.';
-          await dmByEmail(token, submitterEmail, headline);
+          await dmByEmail(token, submitterEmail, headline, 'irb-reviews-out');
         }
       } catch (err){
         logger.error('notifyReviewsOut failed for one card', { boardId: boardId, cardId: card.id, error: String(err) });
@@ -3307,8 +3384,8 @@ async function announceProject(card, cardId){
   const token = SLACK_BOT_TOKEN.value();
   const channel = await slackChannelId(token, ACTIVE_PROJECTS_CHANNEL);
   if (!channel) throw new Error('The BOLD.OS app can’t see #' + ACTIVE_PROJECTS_CHANNEL + ': invite it to the channel.');
-  const posted = await slackFetch(token, 'chat.postMessage', {
-    channel, text: projectAnnouncement(card, projectPageUrl(cardId)), unfurl_links: false,
+  const posted = await postInChannel(token, 'project-announce', channel, ACTIVE_PROJECTS_CHANNEL, {
+    text: projectAnnouncement(card, projectPageUrl(cardId)), unfurl_links: false,
   });
   if (!posted.ok) throw new Error('Slack said ' + posted.error + '.');
 }
@@ -3923,7 +4000,7 @@ exports.onWorkCardAdded = onDocumentCreated({ document: 'projectWorkspaces/{pid}
     const on = (c.assignees || []).map((a) => slackText(a.name || a.email)).join(', ');
     const text = '🗂️ ' + tag + slackText(who) + ' added a card to the board: ' + linkedTitle(slackText(c.title || 'a card'), url) +
       ' (' + [c.kind ? c.kind.charAt(0).toUpperCase() + c.kind.slice(1) : '', COL[c.column] || '', on ? 'on it: ' + on : ''].filter(Boolean).join(' · ') + ')';
-    const posted = await slackFetch(token, 'chat.postMessage', { channel, text, unfurl_links: false });
+    const posted = await postInChannel(token, 'card-added', channel, name, { text, unfurl_links: false });
     if (!posted.ok) logger.warn('Posting a new card failed', { channel: name, error: posted.error });
   } catch (err){ logger.warn('Posting a new card failed', { channel: name, error: String(err && err.message || err) }); }
 });
@@ -4501,7 +4578,7 @@ exports.studyRequest = onCall(
       const name = (m.exists && m.data().name) || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
       const ref = await col.add({ student, studentName: s.name || student, email, name, note, status: 'open', at: Date.now() });
-      await sendEvent(token, { emails: [student], headline: '🎓 ' + await numberTag(ref.path) + slackText(name) + ' asks to join your supervision meeting' +
+      await sendEvent(token, { key: 'supervision-requests', emails: [student], headline: '🎓 ' + await numberTag(ref.path) + slackText(name) + ' asks to join your supervision meeting' +
         (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', SITE_URL + 'profile.html#studies') + '.' });
       return { id: ref.id };
     }
@@ -4538,7 +4615,7 @@ exports.studyRequest = onCall(
       return r;
     });
     if (accept){ await syncStudyChannel(email); await syncStudyMeeting(email); }
-    await sendEvent(token, { emails: [r.email], headline: accept
+    await sendEvent(token, { key: 'supervision-requests', emails: [r.email], headline: accept
       ? '🎓 ' + slackText(r.studentName) + ' added you to their supervision meeting: Google Calendar sends the invitation.'
       : '🎓 ' + slackText(r.studentName) + ' declined your request to join their supervision meeting.' });
     return { ok: true };
@@ -5240,7 +5317,7 @@ exports.setMyInviter = onCall(
     const invitedBy = await inviterFor(email, to);
     await ref.update({ invitedBy });
     const name = m.data().name || email;
-    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: [to], headline: '👋 ' + await numberTag('members/' + email + '/invite/' + invitedBy.askedAt) + slackText(name) + ' names you as their BOLD point of contact, who invited them. ' +
+    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'inviter-confirm', emails: [to], headline: '👋 ' + await numberTag('members/' + email + '/invite/' + invitedBy.askedAt) + slackText(name) + ' names you as their BOLD point of contact, who invited them. ' +
       linkedTitle('Confirm it, or say you didn’t', joinPageUrl() + '#invited') + '.' });
     return { invitedBy };
   }
@@ -5267,7 +5344,7 @@ exports.confirmJoinInvite = onCall(
       });
       if (!d.confirm && m.invitedBy.status !== 'denied'){
         const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-        await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline: '⚠️ ' + slackText(m.invitedBy.name) + ' says they didn’t invite ' + slackText(m.name || mref.id) + ' to the BOLD Slack (they said so on their profile).' });
+        await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'inviter-confirm', emails: staff, headline: '⚠️ ' + slackText(m.invitedBy.name) + ' says they didn’t invite ' + slackText(m.name || mref.id) + ' to the BOLD Slack (they said so on their profile).' });
       }
       return { ok: true };
     }
@@ -5286,7 +5363,7 @@ exports.confirmJoinInvite = onCall(
     }
     if (!d.confirm && r.invitedBy.status !== 'denied'){
       const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-      await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline: '⚠️ ' + slackText(r.invitedBy.name) + ' says they didn’t invite ' + slackText(r.name) + ' (' + slackText(r.email) + '). ' +
+      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'inviter-confirm', emails: staff, headline: '⚠️ ' + slackText(r.invitedBy.name) + ' says they didn’t invite ' + slackText(r.name) + ' (' + slackText(r.email) + '). ' +
         linkedTitle('See the request', joinPageUrl() + '#r=' + d.id) + '.' });
     }
     return { ok: true };
@@ -5302,14 +5379,14 @@ exports.onJoinRequested = onDocumentCreated(
     // Whoever invited them decides it; the PIs and admins only hear of one without an inviter (from before it was required).
     if (r.invitedBy) {
       await dmBySlackId(SLACK_BOT_TOKEN.value(), r.invitedBy.id, '👋 ' + num + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ', ' + slackText(r.email) + ') asked to join BOLD and says you invited them. ' +
-        linkedTitle('Approve or decline', joinPageUrl() + '#i=' + event.params.id) + '.');
+        linkedTitle('Approve or decline', joinPageUrl() + '#i=' + event.params.id) + '.', 'join-requests');
       return;
     }
     const headline = '👋 ' + num + slackText(r.name) + ' (' + slackText(r.role) + ', ' + slackText(r.institution) + ') asked to join BOLD' +
       (r.contact ? ', with ' + slackText(r.contact) + ' as their point of contact' : '') + '. ' +
       linkedTitle('Approve or decline', joinPageUrl() + '#r=' + event.params.id) + '.';
     const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline });
+    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'join-requests', emails: staff, headline });
   }
 );
 
@@ -5594,7 +5671,7 @@ exports.groupRequest = onCall(
         inviter ? { inviterEmail: inviter.email, inviterName: inviter.name } : {}));
       const deciders = inviter ? [inviter.email] : (await rolesEmails('pis')).concat(await rolesEmails('admins'));
       // Named just now: one message for both, confirming they invited them and deciding the move.
-      await sendEvent(token, { emails: deciders, headline: (named
+      await sendEvent(token, { key: 'group-requests', emails: deciders, headline: (named
         ? '👋 ' + await numberTag('members/' + email + '/invite/' + inv.askedAt) + await numberTag(ref.path) + slackText(name) + ' names you as their BOLD point of contact, who invited them, and asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to]
         : '🏷️ ' + await numberTag(ref.path) + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to]) +
         (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' +
@@ -5629,7 +5706,7 @@ exports.groupRequest = onCall(
       if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now() });
       return r;
     });
-    await sendEvent(token, { emails: [r.email], headline: accept
+    await sendEvent(token, { key: 'group-requests', emails: [r.email], headline: accept
       ? '🏷️ You’re now ' + GROUP_LABELS[r.to] + ' (' + linkedTitle('Who is BOLD', SITE_URL + 'boldiquette.html#who-is-bold') + ').'
       : '🏷️ Your request to move to ' + GROUP_LABELS[r.to] + ' was declined. Ask a PI if you’d like to know more.' });
     return { ok: true };
@@ -5663,7 +5740,7 @@ exports.remindJoinInvite = onSchedule(
       : '⏳ The Slack invite link in the welcome email expires on ' + inv.slackInviteExpires + '. ') +
       'In Slack: Invite people → Copy invite link (the longest expiry), then ' + linkedTitle('add it under Settings', SITE_URL + 'settings.html') + ' with its new expiry date.';
     const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-    await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline });
+    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'invite-link-reminder', emails: staff, headline });
     await ref.set({ reminded: key }, { merge: true });
   }
 );
@@ -5773,7 +5850,7 @@ exports.letterRequest = onCall(
     const d = request.data || {};
     const token = SLACK_BOT_TOKEN.value();
     const myName = request.auth.token.name || email;
-    const tell = (to, text) => dmByEmail(token, to, text);
+    const tell = (to, text) => dmByEmail(token, to, text, 'letters');
 
     if (d.action === 'create') {
       const writerEmail = String(d.writerEmail || '').trim().toLowerCase();
@@ -5889,7 +5966,7 @@ exports.remindLetterWriters = onSchedule(
       const r = q.recipients.filter((y) => y.id === x.recipientId)[0];
       const when = x.left === 0 ? 'today' : x.left === 1 ? 'tomorrow' : 'in ' + x.left + ' days';
       const sent = await dmByEmail(SLACK_BOT_TOKEN.value(), q.writerEmail, '⏰ ' + slackText(q.requesterName) + '’s letter for ' + slackText(r.name) +
-        ' is due ' + when + ' (' + r.deadline + '): ' + linkedTitle(slackText(q.purpose), letterUrl(x.id)) + '.');
+        ' is due ' + when + ' (' + r.deadline + '): ' + linkedTitle(slackText(q.purpose), letterUrl(x.id)) + '.', 'letters');
       if (!sent) continue;
       // Marks every reminder up to this one sent, so a missed one doesn't follow.
       await db.runTransaction(async (tx) => {
@@ -5930,7 +6007,7 @@ exports.introRequest = onCall(
     const token = SLACK_BOT_TOKEN.value();
     const me = await personFor(email);
     const myName = (me && me.name) || request.auth.token.name || email;
-    const tell = (to, text) => dmByEmail(token, to, text);
+    const tell = (to, text) => dmByEmail(token, to, text, 'introductions');
 
     if (d.action === 'withdrawOffer') {
       const offerId = String(d.offerId || '');
@@ -6072,7 +6149,7 @@ exports.checkVenueCalls = onSchedule(
       if (!inv) continue;
       const text = venueCallMessage(v.name, v.year, v.group, inv);
       const to = Array.from(new Set((await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => e.toLowerCase())));
-      for (const email of to) await dmByEmail(SLACK_BOT_TOKEN.value(), email, text);
+      for (const email of to) await dmByEmail(SLACK_BOT_TOKEN.value(), email, text, 'venue-calls');
       await ref.set({ venue: v.name, year: v.year, cdate: inv.cdate || null, duedate: inv.duedate || null, notified: to, at: FieldValue.serverTimestamp() });
     }
   }
@@ -6334,11 +6411,11 @@ exports.rebuildInteractions = onCall(
   }
 );
 
-// A DM to each PI and admin, once each, but not to `except` (whoever caused it).
-async function tellStaff(text, except){
+// A DM to each PI and admin, once each, but not to `except` (whoever caused it), as feature `key`.
+async function tellStaff(text, except, key){
   const skip = String(except || '').toLowerCase();
   const emails = Array.from(new Set((await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase()))).filter((e) => e !== skip);
-  if (emails.length) await sendEvent(SLACK_BOT_TOKEN.value(), { emails, headline: text });
+  if (emails.length) await sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text });
 }
 
 // BOLD.OS for agents: personal tokens (apiTokens) and the read-only API and MCP
@@ -6347,7 +6424,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   SIGN_IN_PROVIDER, secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], SLACK_BOT_TOKEN,
   // Asking to act, and the decision: the PIs and admins hear of a request, its owner of the decision.
   tellStaff,
-  tellPerson: (email, text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails: [email], headline: text }),
+  tellPerson: (email, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails: [email], headline: text }),
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
@@ -6360,7 +6437,7 @@ exports.calendarFeed = agentApi.calendarFeed;
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
   googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
-  onSchedule, tellPeople: (emails, text) => sendEvent(SLACK_BOT_TOKEN.value(), { emails, headline: text }) });
+  onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
@@ -6376,7 +6453,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, cardTalkRecipients, cardTalkDigest, cardDoneText, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, pilotStateOf, sendEvent, cardTalkRecipients, cardTalkDigest, cardDoneText, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
