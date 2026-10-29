@@ -63,7 +63,7 @@ var ProjectWork = (function(){
   // → Promise of { announce } to go ahead, or null.
   function confirmNewCard(title){
     var w = (ctx.ws && ctx.ws()) || {}, ch = String(w.slackChannel || '').replace(/^#/, '');
-    if (!ch || w.slackSkipped) return Promise.resolve({ announce: true });
+    if (!ch || (w.skipped || []).indexOf('channel') >= 0) return Promise.resolve({ announce: true });
     return BOLD.confirmAlways({ title: 'Add “' + title + '”?', go: 'Add it',
       effects: [{ key: 'announce', text: 'Post it in #' + ch + ' on Slack, for everyone in the channel' }] })
       .then(function(ok){ return ok ? { announce: !(ok.skip && ok.skip.announce) } : null; });

@@ -906,7 +906,7 @@ async function handleSlashCommand(token, body){
     { type: 'input', block_id: 'notes', optional: true, label: { type: 'plain_text', text: 'Description' },
       element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: c.kind === 'code' ? 'What happens, what you expected, and how to make it happen again (a link, a command, a config)' : 'What it’s for, and who’d use it' } } },
   ];
-  if (channel && !board.ws.slackSkipped) blocks.push({ type: 'input', block_id: 'announce', optional: true, label: { type: 'plain_text', text: 'Slack' },
+  if (channel && (board.ws.skipped || []).indexOf('channel') < 0) blocks.push({ type: 'input', block_id: 'announce', optional: true, label: { type: 'plain_text', text: 'Slack' },
     element: { type: 'checkboxes', action_id: 'v', options: [{ text: { type: 'plain_text', text: 'Post it in #' + channel + ', for everyone in the channel' }, value: 'yes' }],
       initial_options: [{ text: { type: 'plain_text', text: 'Post it in #' + channel + ', for everyone in the channel' }, value: 'yes' }] } });
   blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: 'Adds it to ' + slackText(board.ws.title || 'BOLD OS') + '’s board, in To do.' }] });
@@ -1848,10 +1848,11 @@ exports.slackEvents = onRequest(
     // A slash command (/bug, /feature-request): form-encoded, with `command`. Answered at
     // once (Slack waits 3 seconds): it opens the card's form, or says why not, to them alone.
     if (req.body && typeof req.body.command === 'string'){
-      let out = {};
+      let out = null;
       try { out = await handleSlashCommand(token, req.body); }
       catch (err){ logger.error('slackEvents: slash command failed', { command: req.body.command, error: String(err && err.message || err) }); out = { response_type: 'ephemeral', text: 'That didn’t work — try again.' }; }
-      res.status(200).json(out);
+      // The form opened: an empty reply (anything else, even {}, shows as a message).
+      if (out && out.text) res.status(200).json(out); else res.status(200).send('');
       return;
     }
 
@@ -3763,7 +3764,9 @@ exports.onWorkCardAdded = onDocumentCreated({ document: 'projectWorkspaces/{pid}
   if (c.announce === false) return;
   const ws = (await db.collection('projectWorkspaces').doc(event.params.pid).get()).data() || {};
   const name = String(ws.slackChannel || '').replace(/^#/, '');
-  if (!name || ws.slackSkipped) return;
+  // No channel, or making it was skipped when the project was registered (`skipped`;
+  // `slackSkipped` is something else: who chose not to join it).
+  if (!name || (ws.skipped || []).indexOf('channel') >= 0) return;
   try {
     const token = SLACK_BOT_TOKEN.value();
     const channel = await slackChannelId(token, name);
