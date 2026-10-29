@@ -20,6 +20,9 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, form = null, unsubs = [], busy = {}, editing = false;
+  // Pilots (settings/pilot; functions/index.js pilotSlack): a new Slack feature only messages
+  // its testers until it's switched live here. pilotDraft: the form's testers and switches.
+  var pilot = null, pilotDraft = null, pilotError = '', roster = [];
   var groupReqs = [], myGroupReqs = [], groups = {}, invited = [], invitedMembers = [], shown = {}, slackIds = {}, actReqs = [];
 
   var SUBJECT = 'Welcome to BOLD';
@@ -112,7 +115,42 @@
         }).join('') + '</fieldset>' + group('Join form') +
       '<label>Roles, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
       '<label>Research pillars, one per line<textarea class="jr-pillars no-tags" rows="4">' + esc((f.pillars || BoldJoin.PILLARS).join('\n')) + '</textarea></label></fieldset>' +
-      '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div></div></section>';
+      '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div></div>' +
+      pilotHtml() + '</section>';
+  }
+
+  // ---------- Pilots ----------
+  function pilotNow(){ return pilotDraft || { testers: ((pilot || {}).testers || []).slice(), live: Object.assign({}, (pilot || {}).live || {}) }; }
+  function nameOf(e){ var p = roster.filter(function(x){ return x.email === e; })[0]; return p ? p.name : e.split('@')[0]; }
+  function pilotHtml(){
+    if (!pilot) return '';
+    var d = pilotNow(), known = pilot.known || {}, keys = Object.keys(known).sort();
+    return '<div class="event-form join-form jr-pilot"><fieldset class="md-group"><legend>Pilots</legend>' +
+      '<p class="proj-meta">A new Slack feature only messages its testers until it’s live: each message goes to them instead, saying whom it was for.</p>' +
+      '<label>Testers</label><ul class="jr-testers">' + (d.testers.length ? d.testers.map(function(e, i){
+        return '<li>' + esc(nameOf(e)) + ' <button type="button" class="btn-text danger jr-tester-remove" data-i="' + i + '">Remove</button></li>';
+      }).join('') : '<li class="proj-meta">Nobody: features in pilot message no one.</li>') + '</ul>' +
+      '<select class="jr-tester-add" aria-label="Add a tester"><option value="">Add a tester…</option>' + roster.filter(function(p){ return d.testers.indexOf(p.email) < 0; })
+        .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</select>' +
+      '<label>Features</label>' + (keys.length ? keys.map(function(k){
+        return '<label class="jn-check"><input type="checkbox" class="jr-live" data-key="' + esc(k) + '"' + (d.live[k] ? ' checked' : '') + '> ' + esc(known[k]) + ' <span class="proj-meta">· ' + (d.live[k] ? 'live: messages everyone it’s for' : 'in pilot: testers only') + '</span></label>';
+      }).join('') : '<p class="proj-meta">None yet: a feature appears here the first time it sends something.</p>') +
+      '</fieldset>' + (pilotError ? '<p class="ev-error">' + esc(pilotError) + '</p>' : '') +
+      '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (pilotDraft ? '' : ' disabled title="Nothing changed"') + '>Save pilots</button>' +
+        (pilotDraft ? '<button type="button" class="jr-pilot-cancel">Cancel</button>' : '') + '</div></div>';
+  }
+  function savePilot(btn){
+    var d = pilotNow(), was = (pilot || {}).live || {}, known = (pilot || {}).known || {};
+    var goingLive = Object.keys(d.live).filter(function(k){ return d.live[k] && !was[k]; });
+    // Going live reaches everyone each feature is for: asked every time (the ground rule).
+    (goingLive.length ? BOLD.confirmAlways({ title: 'Make ' + (goingLive.length === 1 ? 'it' : 'them') + ' live?', go: 'Make live',
+      effects: goingLive.map(function(k){ return 'Let ' + (known[k] || k) + ' message everyone it’s for on Slack, not just the testers'; }) }) : Promise.resolve(true)).then(function(ok){
+      if (!ok) return;
+      btn.disabled = true; pilotError = '';
+      db.collection('settings').doc('pilot').set({ testers: d.testers, live: d.live, updatedAt: Date.now(), updatedBy: me.email }, { merge: true }).then(function(){
+        pilotDraft = null; render();
+      }).catch(function(err){ console.error('[BOLD Join] saving the pilots failed', err); pilotError = 'Couldn’t save — try again.'; render(); });
+    });
   }
 
   // No invite link, or one expired or about to: welcome emails wait, or will.
@@ -354,10 +392,18 @@
     });
   }
 
+  main.addEventListener('change', function(e){
+    var t = e.target;
+    if (t.classList.contains('jr-tester-add') && t.value) { pilotDraft = pilotNow(); pilotDraft.testers.push(t.value); render(); return; }
+    if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.checked; render(); }
+  });
   main.addEventListener('click', function(e){
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
+    if (t.classList.contains('jr-pilot-save')) { savePilot(t); return; }
+    if (t.classList.contains('jr-pilot-cancel')) { pilotDraft = null; pilotError = ''; render(); return; }
+    if (t.classList.contains('jr-tester-remove')) { pilotDraft = pilotNow(); pilotDraft.testers.splice(+t.getAttribute('data-i'), 1); render(); return; }
     if (t.classList.contains('jr-more')) { var mo = t.getAttribute('data-more'); shown[mo] = !shown[mo]; render(); return; }
     var iid = t.getAttribute('data-iid'), mid = t.getAttribute('data-mid');
     if (iid || mid) {
@@ -442,6 +488,8 @@
     staff = null; requests = null; invited = []; invitedMembers = [];
     db.collection('people').get().then(function(ps){
       ps.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });
+      roster = ps.docs.map(function(d){ return { email: String(d.data().email || '').toLowerCase(), name: d.data().name || '' }; })
+        .filter(function(p){ return p.email && p.name; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
       render();
     }).catch(function(){});
     if (!user) return;
@@ -478,6 +526,7 @@
         groupReqs = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); render();
       }, function(err){ console.error('[BOLD Join] loading group requests failed', err); }));
       unsubs.push(db.collection('settings').doc('groups').onSnapshot(function(s){ groups = s.exists ? s.data() : {}; render(); }, function(){}));
+      unsubs.push(db.collection('settings').doc('pilot').onSnapshot(function(s){ pilot = s.exists ? s.data() : {}; render(); }, function(){ pilot = {}; }));
       loadActReqs();
     }).catch(function(err){ console.error('[BOLD Join] checking access failed', err); staff = false; render(); });
   });

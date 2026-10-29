@@ -4,7 +4,8 @@
   "description": "BOLD Lab's tool suite for taking a paper from venue choice to conference presentation \u2014 an implementation of BOLDiquette \u00a7 ML Conference Cycle.",
   "scripts": {
     "build": "eleventy",
-    "start": "eleventy --serve --port=8137"
+    "start": "eleventy --serve --port=8137",
+    "emulators": "sh scripts/emulators.sh"
   },
   "keywords": [],
   "devDependencies": {

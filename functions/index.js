@@ -41,6 +41,8 @@ const crypto = require('crypto');
 
 admin.initializeApp();
 const db = admin.firestore();
+// In the emulator, Slack is pretended: every call is written to `slackOutbox` instead.
+require('./slack-outbox')(db);
 
 // ---------- Item numbers: #123, one sequence for all of BOLD.OS ----------
 // Every request and every card on a board is registered with a number when it's made
@@ -1030,6 +1032,41 @@ async function handleBlockSuggestion(payload){
 // the same place once the title itself became clickable. Slack's mrkdwn
 // (the default for chat.postMessage's `text`) already renders the bold
 // link correctly with no Block Kit needed.
+// ---------- Pilots: a new Slack feature reaches only its testers until it's live ----------
+// settings/pilot: { testers: [emails], live: { <feature>: true }, known: { <feature>: label } }
+// (Requests › Settings › Pilots, PIs and admins). A new feature sends through pilotSlack
+// with a key of its own: until it's switched live there (it starts in pilot), whatever
+// it would send goes to the testers instead, each message marked with whom it was for, so
+// they see it all in the real Slack and nobody else hears a thing. With no testers, nobody.
+// pilotSlack(token, key, label, { emails?: [..], channel?: 'name', text, blocks? }).
+async function pilotSlack(token, key, label, m){
+  const ref = db.collection('settings').doc('pilot');
+  const s = (await ref.get()).data() || {};
+  if (!(s.known || {})[key]) await ref.set({ known: { [key]: label } }, { merge: true });
+  const send = async (channel, text, blocks) => {
+    const res = await slackFetch(token, 'chat.postMessage', Object.assign({ channel, text, unfurl_links: false }, blocks ? { blocks } : {}));
+    if (!res.ok) logger.warn('Slack message failed', { feature: key, error: res.error });
+  };
+  const dm = async (email, text, blocks) => {
+    const id = await slackIdForEmail(email);
+    if (!id) return;
+    const open = await slackFetch(token, 'conversations.open', { users: id });
+    if (open.ok) await send(open.channel.id, text, blocks);
+  };
+  if ((s.live || {})[key]) {
+    for (const e of Array.from(new Set(m.emails || []))) await dm(e, m.text, m.blocks);
+    if (m.channel) { const id = await slackChannelId(token, String(m.channel).replace(/^#/, '')); if (id) await send(id, m.text, m.blocks); }
+    return { pilot: false };
+  }
+  const forWhom = [m.channel ? '#' + String(m.channel).replace(/^#/, '') : ''].concat(await Promise.all((m.emails || []).map(async (e) => {
+    const p = (await db.collection('people').where('email', '==', String(e).toLowerCase()).limit(1).get()).docs[0];
+    return (p && p.data().name) || String(e).split('@')[0];
+  }))).filter(Boolean).join(', ');
+  const note = '🧪 *Pilot of ' + slackText(label) + '*, for ' + (forWhom || 'nobody') + ' (only testers get it until it’s live):';
+  for (const t of s.testers || []) await dm(t, note + '\n' + m.text, m.blocks ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }].concat(m.blocks) : undefined);
+  return { pilot: true };
+}
+
 async function sendEvent(token, event){
   const unique = Array.from(new Set(event.emails.filter(Boolean)))
     .filter(function(e){ return e !== event.excludeEmail; });
@@ -6236,7 +6273,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
