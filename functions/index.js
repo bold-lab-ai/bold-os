@@ -860,13 +860,20 @@ async function handleAppHomeOpened(token, slackUserId){
 // picker click is self-evident (the dropdown just doesn't visibly change)
 // rather than actively misleading.
 // ---------- Cards from Slack: /bug and /feature-request ----------
-// Either opens a form (views.open) for a card on BOLD OS's board (the board showing the
-// site's own work: work.content), in To do: its title (from what was typed after the
+// Either opens a form (views.open) for a card, in To do, on a board: typed in a project's
+// own channel (its workspace's slackChannel) whose project has a board, that board;
+// anywhere else, BOLD OS's (the board showing the site's own work: work.content). The form: its title (from what was typed after the
 // command), a description, and, ticked, posting it in the project's channel. Submitting
 // the form is the go-ahead (the ground rule: it asks before posting); closing it adds
 // nothing. Whoever types it needs Projects' Edit, as on the page; the card is theirs.
 const SLASH_CARDS = { '/bug': { kind: 'code', prefix: 'Bug: ', what: 'bug' }, '/feature-request': { kind: 'request', prefix: 'Feature request: ', what: 'feature request' } };
-async function slashBoard(){
+async function slashBoard(channelName){
+  const name = String(channelName || '').replace(/^#/, '').toLowerCase();
+  if (name && name !== 'directmessage' && name !== 'privategroup') {
+    const here = (await db.collection('projectWorkspaces').where('slackChannel', 'in', ['#' + name, name]).get()).docs
+      .filter((x) => (x.data().work || {}).on)[0];
+    if (here) return { id: here.id, ws: here.data() };
+  }
   const snap = await db.collection('projectWorkspaces').where('work.content', '==', true).get();
   const d = snap.docs.filter((x) => (x.data().work || {}).on)[0];
   return d ? { id: d.id, ws: d.data() } : null;
@@ -878,7 +885,7 @@ async function handleSlashCommand(token, body){
   const email = await emailForSlackId(body.user_id);
   if (!email) return say('Sign in to BOLD.OS once first, so it knows who you are: ' + SITE_URL);
   if (!(await access.can(email, 'projects', 'edit'))) return say('Adding cards is for whoever can edit Projects (BOLDiquette › Who can see what).');
-  const board = await slashBoard();
+  const board = await slashBoard(body.channel_name);
   if (!board) return say('There’s no board for BOLD.OS’s own work yet.');
   const channel = String(board.ws.slackChannel || '').replace(/^#/, '');
   const typed = String(body.text || '').trim();
