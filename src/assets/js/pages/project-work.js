@@ -292,6 +292,10 @@ var ProjectWork = (function(){
       '<label>Repositories<input type="text" class="wk-s-repos" value="' + esc((w.repos || []).join(', ')) + '" placeholder="' +
         esc(ctx.ws() && ctx.ws().repoName ? ctx.ws().repoName + ' (the project’s)' : 'bold-lab-ai/…') + '"' + (edit ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' +
         '<span class="field-hint">In bold-lab-ai, separated by commas. Empty: the project’s own.</span></label>' +
+      // Slack's /bug and /feature-request in the project's own channel come here; these too.
+      '<label>Slack channels for /bug and /feature-request<input type="text" class="wk-s-channels" value="' + esc((w.channels || []).map(function(n){ return '#' + n; }).join(', ')) + '" placeholder="#channel"' +
+        (edit ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' +
+        '<span class="field-hint">Besides ' + esc((ctx.ws() && ctx.ws().slackChannel) || 'the project’s own channel') + ', separated by commas.</span></label>' +
       '<label class="wk-check"><input type="checkbox" class="wk-s-content"' + (w.content ? ' checked' : '') +
         (ctx.fullWrite() ? '' : ' disabled title="Only PIs and admins can change this"') + '> Show everything on BOLD.OS waiting on someone: proposed changes and requests (each only to whoever can see it)</label>' +
       '<div class="field-error wk-f-error" hidden></div>' +
@@ -437,7 +441,8 @@ var ProjectWork = (function(){
         if (busy) return;
         busy = true;
         var repos = form.querySelector('.wk-s-repos').value.split(/[\s,]+/).filter(Boolean);
-        var change = { repos: repos };
+        var channels = form.querySelector('.wk-s-channels').value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
+        var change = { repos: repos, channels: channels };
         var content = form.querySelector('.wk-s-content');
         if (!content.disabled) change.content = content.checked;
         ctx.callWorkspace({ action: 'work', work: change }).then(function(){

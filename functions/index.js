@@ -860,23 +860,27 @@ async function handleAppHomeOpened(token, slackUserId){
 // picker click is self-evident (the dropdown just doesn't visibly change)
 // rather than actively misleading.
 // ---------- Cards from Slack: /bug and /feature-request ----------
-// Either opens a form (views.open) for a card, in To do, on a board: typed in a project's
-// own channel (its workspace's slackChannel) whose project has a board, that board;
-// anywhere else, BOLD OS's (the board showing the site's own work: work.content). The form: its title (from what was typed after the
+// Either opens a form (views.open) for a card, in To do, on the board of the channel it's
+// typed in: a project's own channel (its workspace's slackChannel), or one a board takes
+// besides (work.channels: BOLD OS's takes #bold-operating-system). A project's channel
+// without a board, or any other channel (#general, a DM), says so instead. The form: its title (from what was typed after the
 // command), a description, and, ticked, posting it in the project's channel. Submitting
 // the form is the go-ahead (the ground rule: it asks before posting); closing it adds
 // nothing. Whoever types it needs Projects' Edit, as on the page; the card is theirs.
 const SLASH_CARDS = { '/bug': { kind: 'code', prefix: 'Bug: ', what: 'bug' }, '/feature-request': { kind: 'request', prefix: 'Feature request: ', what: 'feature request' } };
+// → { id, ws } (the board's project), or { error: 'noboard', id, ws } (a project's channel,
+// no board) or { error: 'elsewhere' }.
 async function slashBoard(channelName){
   const name = String(channelName || '').replace(/^#/, '').toLowerCase();
-  if (name && name !== 'directmessage' && name !== 'privategroup') {
-    const here = (await db.collection('projectWorkspaces').where('slackChannel', 'in', ['#' + name, name]).get()).docs
-      .filter((x) => (x.data().work || {}).on)[0];
-    if (here) return { id: here.id, ws: here.data() };
-  }
-  const snap = await db.collection('projectWorkspaces').where('work.content', '==', true).get();
-  const d = snap.docs.filter((x) => (x.data().work || {}).on)[0];
-  return d ? { id: d.id, ws: d.data() } : null;
+  if (!name || name === 'directmessage' || name === 'privategroup') return { error: 'elsewhere' };
+  const on = (d) => !!(d.data().work || {}).on;
+  const extra = (await db.collection('projectWorkspaces').where('work.channels', 'array-contains', name).get()).docs.filter(on)[0];
+  if (extra) return { id: extra.id, ws: extra.data() };
+  const own = (await db.collection('projectWorkspaces').where('slackChannel', 'in', ['#' + name, name]).get()).docs;
+  const withBoard = own.filter(on)[0];
+  if (withBoard) return { id: withBoard.id, ws: withBoard.data() };
+  if (own.length) return { error: 'noboard', id: own[0].id, ws: own[0].data() };
+  return { error: 'elsewhere' };
 }
 async function handleSlashCommand(token, body){
   const c = SLASH_CARDS[body.command];
@@ -886,7 +890,14 @@ async function handleSlashCommand(token, body){
   if (!email) return say('Sign in to BOLD.OS once first, so it knows who you are: ' + SITE_URL);
   if (!(await access.can(email, 'projects', 'edit'))) return say('Adding cards is for whoever can edit Projects (BOLDiquette › Who can see what).');
   const board = await slashBoard(body.channel_name);
-  if (!board) return say('There’s no board for BOLD.OS’s own work yet.');
+  if (board.error === 'noboard') return say((board.ws.title ? slackText(board.ws.title) : 'This project') + ' doesn’t have a board: add one on ' +
+    linkedTitle('its page', projectPageUrl(board.ws.cardId || board.id, board.ws.boardId)) + ' in BOLD.OS, then try again.');
+  if (board.error){
+    // Where BOLD.OS's own cards go (the board with work.content): its channels, from its settings.
+    const os = (await db.collection('projectWorkspaces').where('work.content', '==', true).get()).docs.map((d) => d.data()).filter((x) => (x.work || {}).on)[0];
+    const chans = os ? [os.slackChannel].concat((os.work.channels || []).map((n) => '#' + n)).filter(Boolean) : [];
+    return say(body.command + ' adds a card to a project’s board: type it in the project’s Slack channel' + (chans.length ? ' (for BOLD.OS itself, ' + chans.join(' or ') + ')' : '') + '.');
+  }
   const channel = String(board.ws.slackChannel || '').replace(/^#/, '');
   const typed = String(body.text || '').trim();
   const blocks = [
@@ -3421,6 +3432,28 @@ exports.projectWorkspace = onCall(
           names.push(n);
         }
         next.repos = names;
+      }
+      // Slack channels besides the project's own whose /bug and /feature-request come to
+      // this board (BOLD OS's: #bold-operating-system): ones the bot can see, not another
+      // project's own channel, nor another board's.
+      if (w.channels !== undefined){
+        if (!Array.isArray(w.channels) || w.channels.length > 5) throw new HttpsError('invalid-argument', 'Up to 5 Slack channels.');
+        const token = SLACK_BOT_TOKEN.value(), names = [];
+        for (const x of w.channels){
+          const n = String(x || '').trim().replace(/^#/, '').toLowerCase();
+          if (!n || names.indexOf(n) >= 0) continue;
+          if (!/^[a-z0-9_-]{1,80}$/.test(n)) throw new HttpsError('invalid-argument', '#' + n.slice(0, 80) + ' isn’t a Slack channel name.');
+          if (!(await slackChannelId(token, n))) {
+            const near = nearestChannel(n, channelNamesCache ? Array.from(channelNamesCache.names.keys()) : []);
+            throw new HttpsError('not-found', 'BOLD.OS can’t see #' + n + (near ? ' — did you mean #' + near + '?' : ': if it’s private, invite the BOLD OS app to it first.'));
+          }
+          const own = (await db.collection('projectWorkspaces').where('slackChannel', 'in', ['#' + n, n]).get()).docs.filter((d) => d.id !== pid)[0];
+          if (own) throw new HttpsError('failed-precondition', '#' + n + ' is ' + ((own.data().title) || 'another project') + '’s own channel.');
+          const other = (await db.collection('projectWorkspaces').where('work.channels', 'array-contains', n).get()).docs.filter((d) => d.id !== pid)[0];
+          if (other) throw new HttpsError('failed-precondition', '#' + n + ' already sends to ' + ((other.data().title) || 'another project') + '’s board.');
+          names.push(n);
+        }
+        next.channels = names;
       }
       next.updatedAt = Date.now(); next.updatedBy = email;
       await wsRef.set({ work: next }, { merge: true });
