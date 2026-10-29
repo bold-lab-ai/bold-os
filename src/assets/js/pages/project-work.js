@@ -60,6 +60,16 @@ var ProjectWork = (function(){
   // A link to a page of BOLD.OS (the server's are whole addresses on the live site) stays on
   // the site the board is on: the live one, a preview or localhost.
   function href(u){ return String(u || '').replace(/^https:\/\/bold-lab-ai\.github\.io\/bold-os\//, ''); }
+  // A card moved to Done tells whoever raised it on Slack (onWorkCardDone), unless it's you:
+  // asked first, with the message a box to untick (then doneQuiet: true on the card).
+  // → Promise of the fields to save with the move ({} or { doneQuiet }), or null to stay put.
+  function confirmDone(c, column){
+    var by = c.by || {}, mine = String(by.email || '').toLowerCase() === me();
+    if (column !== 'done' || c.column === 'done' || !by.email || mine) return Promise.resolve(column === 'done' && c.column !== 'done' ? { doneQuiet: true } : {});
+    return BOLD.confirmAction({ title: 'Move “' + c.title + '” to Done?', go: 'Move it',
+      effects: [{ key: 'tell', text: 'Send ' + (by.name || by.email) + ', who raised it, a Slack message that it’s done' }] })
+      .then(function(go){ return go ? { doneQuiet: !!(go.skip && go.skip.tell) } : null; });
+  }
   // A new card is posted in the project's Slack channel (functions/index.js onWorkCardAdded):
   // asked every time, with the post a box to untick (then announce: false on the card).
   // → Promise of { announce } to go ahead, or null.
@@ -514,7 +524,10 @@ var ProjectWork = (function(){
       // Images added since the editor opened are kept.
       var now2 = c && (cards.filter(function(k){ return k.id === c.id; })[0] || c);
       if (now2 && now2.images) data.images = now2.images;
-      if (c) job = cardsRef().doc(c.id).set(Object.assign({}, data, { column: col, by: c.by, at: c.at, movedAt: col !== c.column ? now : c.movedAt || c.at }));
+      if (c) job = confirmDone(c, col).then(function(done){
+        if (!done) throw { cancelled: true };
+        return cardsRef().doc(c.id).set(Object.assign({}, data, done, { column: col, by: c.by, at: c.at, movedAt: col !== c.column ? now : c.movedAt || c.at }));
+      });
       else {
         var column = form.querySelector('.wk-f-column').value;
         job = confirmNewCard(data.title).then(function(go){
@@ -754,8 +767,10 @@ var ProjectWork = (function(){
     ['title', 'notes', 'assignees', 'assigneeEmails', 'links', 'by', 'at'].forEach(function(k){ data[k] = c[k]; });
     if (c.images) data.images = c.images;
     data.kind = c.kind || '';
-    cardsRef().doc(c.id).set(Object.assign(data, { notes: c.notes || '', column: column, movedAt: now, updatedAt: now, updatedBy: m.email }))
-      .catch(function(err){ console.error('[BOLD Lab] moving a card failed', err); c.column = was; msg = 'Couldn’t move it — try again.'; draw(); });
+    confirmDone(Object.assign({}, c, { column: was }), column).then(function(done){
+      if (!done) { c.column = was; draw(); return; }
+      return cardsRef().doc(c.id).set(Object.assign(data, done, { notes: c.notes || '', column: column, movedAt: now, updatedAt: now, updatedBy: m.email }));
+    }).catch(function(err){ console.error('[BOLD Lab] moving a card failed', err); c.column = was; msg = 'Couldn’t move it — try again.'; draw(); });
   }
 
   return { start: start, stop: stop, attach: attach, refresh: function(){ fetchRemote(true); }, _items: items, _githubRef: githubRef };

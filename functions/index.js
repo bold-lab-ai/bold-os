@@ -3910,6 +3910,26 @@ exports.onWorkCardAdded = onDocumentCreated({ document: 'projectWorkspaces/{pid}
     if (!posted.ok) logger.warn('Posting a new card failed', { channel: name, error: posted.error });
   } catch (err){ logger.warn('Posting a new card failed', { channel: name, error: String(err && err.message || err) }); }
 });
+// A card moved to Done (project-work.js, the agents' work tool) tells whoever raised it, in a
+// Slack DM through pilotSlack ('card-done'), unless they moved it themselves or whoever moved
+// it unticked that (doneQuiet). A card linked to a pull request or proposal that's only shown
+// in Done (projectWork) isn't moved, so it doesn't.
+function cardDoneText(c, tag, url){
+  const who = (c.updatedBy && c.updatedByName) || c.updatedBy || 'Someone';
+  return '✅ ' + tag + linkedTitle(slackText(c.title || 'A card'), url) + ', which you raised, is done: ' + slackText(who) + ' moved it to Done.';
+}
+exports.onWorkCardDone = onDocumentUpdated({ document: 'projectWorkspaces/{pid}/work/{id}', secrets: [SLACK_BOT_TOKEN] }, async function(event){
+  const before = event.data.before.data() || {}, c = event.data.after.data() || {};
+  const raiser = String((c.by && c.by.email) || '').toLowerCase();
+  if (c.column !== 'done' || before.column === 'done' || c.doneQuiet === true || !raiser || raiser === String(c.updatedBy || '').toLowerCase()) return;
+  const ws = (await db.collection('projectWorkspaces').doc(event.params.pid).get()).data() || {};
+  const url = projectPageUrl(ws.cardId || event.params.pid, ws.boardId) + '&tab=work&card=' + encodeURIComponent(event.params.id);
+  const mover = (await db.collection('people').where('email', '==', String(c.updatedBy || '').toLowerCase()).limit(1).get()).docs[0];
+  const text = cardDoneText(Object.assign({}, c, { updatedByName: mover && mover.data().name }), await numberTag(event.data.after.ref.path), url);
+  try { await pilotSlack(SLACK_BOT_TOKEN.value(), 'card-done', 'Telling who raised a card it’s done', { emails: [raiser], text }); }
+  catch (err){ logger.warn('Telling who raised a card it’s done failed', { error: String(err && err.message || err) }); }
+});
+
 exports.onSeriesAdded = onDocumentCreated('eventSeries/{id}', async function(event){
   const d = event.data && event.data.data();
   if (d && d.hidden === true) await numberFor(event.data.ref.path);
@@ -6339,7 +6359,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, cardTalkRecipients, cardTalkDigest, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, cardTalkRecipients, cardTalkDigest, cardDoneText, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,

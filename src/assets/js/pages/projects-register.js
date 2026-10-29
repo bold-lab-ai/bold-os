@@ -33,29 +33,36 @@
     var abstractText = el('stageAbstractText').value.trim();
     if (!title) return showError('Give the project a title.');
     if (!abstractText) return showError('Add an abstract or pitch.');
-    var channel = normalizeProjectChannel(channelInput.value);
+    // A project led elsewhere may have its channel in another Slack and its meetings
+    // organised by another group: left empty, BOLD.OS makes neither (#169).
+    var noChannel = !channelInput.value.trim(), noMeeting = !el('pmTime').value;
+    var channel = noChannel ? { name: '' } : normalizeProjectChannel(channelInput.value);
     if (channel.error) return showError(channel.error);
-    var meeting = readMeetingEntry();
-    if (meeting.error) return showError(meeting.error);
+    var meeting = noMeeting ? null : readMeetingEntry();
+    if (meeting && meeting.error) return showError(meeting.error);
     var repo = readRepoEntry();
     if (repo.error) return showError(repo.error);
     keywordField.addTyped();
     errorBox.hidden = true;
     // Each can be left out, and done later from the project's page (its workspace's `skipped`).
-    var channelEffects = channelField.effects(channel.name);
+    var channelEffects = noChannel ? [] : channelField.effects(channel.name);
     BOLD.confirmAlways({ title: 'Register \u201c' + title + '\u201d?', go: 'Register', effects: channelEffects.map(function(t){ return { key: 'channel', text: t }; }).concat([
       { key: 'announce', text: 'Announce it in #all-active-projects on Slack' },
-      { key: 'meeting', text: 'Make its meeting on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ' (Google emails you the invitation)' },
+      meeting ? { key: 'meeting', text: 'Make its meeting on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ' (Google emails you the invitation)' } : null,
       { key: 'docs', text: 'Make its slides and notes on Google Drive' },
       repo && repo.template ? { key: 'repo', text: 'Make its GitHub repository in bold-lab-ai, from the ' + repo.template + ' template' }
         : repo && repo.name ? { key: 'repo', text: 'Link bold-lab-ai/' + repo.name.replace(/^.*\//, '') + ' and give the project\u2019s people with GitHub write access to it' } : null].filter(Boolean)) }).then(function(ok){
-      if (ok) register(title, abstractText, channel, meeting, repo, ok.skip || {}, channelEffects.length > 0);
+      if (!ok) return;
+      var skip = ok.skip || {};
+      if (noChannel) skip.channel = true;
+      if (noMeeting) skip.meeting = true;
+      register(title, abstractText, channel, meeting, repo, skip, channelEffects.length > 0);
     });
   });
 
   function register(title, abstractText, channel, meeting, repo, skip, makesChannel){
     submitBtn.disabled = true;
-    var ensure = skip.channel && makesChannel ? Promise.resolve(null) : channelField.ensure(channel.name);
+    var ensure = !channel.name || (skip.channel && makesChannel) ? Promise.resolve(null) : channelField.ensure(channel.name);
     ensure.then(function(r){
       // A project is a card (card-model.js) \u2014 the same one "+ Register paper" makes.
       // It's kept in `projects` until a venue is set (Projects page).
