@@ -3,7 +3,7 @@
 // join form's choices (settings/joinForm), each group's and role's Slack channels
 // (settings/groups: whoever is in the group, or has the role, is added to them) and the
 // pilots of new Slack features (settings/pilot; functions/index.js pilotSlack). Anyone else
-// who can open it is told who can. Moved here from Requests' Settings tab (#164);
+// who can open it is told who can. Tabs: Slack, Join form, Pilots (settingsHtml). Moved here from Requests' Settings tab (#164);
 // join-requests.html#settings opens this page.
 (function(){
   var esc = BOLD.escapeHtml;
@@ -23,30 +23,50 @@
     '4. Read the BOLDiquette: {site}boldiquette.html', '5. Add your projects, if you have any: {site}projects-register.html', '',
     'See you on Slack,', 'The BOLD team'].join('\n');
 
+  // Three tabs, by #hash: Slack (#slack: the invite link, the groups' and roles' channels),
+  // Join form (#join: its choices and the welcome email) and Pilots (#pilots). The first two
+  // are one form, saved from either.
+  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['pilots', 'Pilots']];
   function settingsHtml(){
     var inv = invite || {}, f = form || {};
     var group = function(title){ return '<fieldset class="md-group"><legend>' + title + '</legend>'; };
-    return '<div class="event-form join-form jr-settings">' +
+    var save = '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div>';
+    return '<nav class="guide-tabs profile-tabs" id="stTabs" aria-label="Settings">' + TABS.map(function(t){ return '<a class="guide-tab" href="#' + t[0] + '">' + t[1] + '</a>'; }).join('') + '</nav>' +
+      '<div class="event-form join-form jr-settings">' +
+      '<section class="profile-panel" id="slack">' +
       group('Slack invite') + '<label>Link (in Slack: Invite people → Copy invite link; replace it when it expires)<input type="url" class="jr-invite" maxlength="300" value="' + esc(inv.slackInviteUrl || '') + '" placeholder="https://join.slack.com/t/…"></label>' +
-      '<label>Expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label>' +
-      '</fieldset>' + group('Welcome email') + '<label>Subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
-      '<label>Text ({name}: their first name, {slackInvite}: the link above, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label>' +
-      '</fieldset>' + group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channels (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>). Several are separated by commas.</p>' +
+      '<label>Expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label></fieldset>' +
+      group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channels (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>). Several are separated by commas.</p>' +
         BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== 'pan'; }).map(function(c){
           var err = (groups.channelErrors || {})[c[0]];
           return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="400" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel, #another (none: nobody is added)"></label>' +
             (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
-        }).join('') + '</fieldset>' + group('Slack channels by role') + '<p class="proj-meta">Everyone with a role (on their details) is added to its channels. The roles are the join form’s, below.</p>' +
+        }).join('') + '</fieldset>' + group('Slack channels by role') + '<p class="proj-meta">Everyone with a role (on their details) is added to its channels. The roles are the join form’s (<a href="#join">Join form</a>).</p>' +
         (f.roles || BoldJoin.ROLES).map(function(r){
           var err = (groups.roleChannelErrors || {})[r];
           return '<label>' + esc(r) + '<input type="text" class="jr-rchan" data-role="' + esc(r) + '" maxlength="400" value="' + esc(((groups.roleChannels || {})[r]) || '') + '" placeholder="#channel, #another (none: nobody is added)"></label>' +
             (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
-        }).join('') + '</fieldset>' + group('Join form') +
+        }).join('') + '</fieldset>' + save + '</section>' +
+      '<section class="profile-panel" id="join">' + group('Join form') +
       '<label>Roles, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
       '<label>Research pillars, one per line<textarea class="jr-pillars no-tags" rows="4">' + esc((f.pillars || BoldJoin.PILLARS).join('\n')) + '</textarea></label></fieldset>' +
-      '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div></div>' +
-      pilotHtml();
+      group('Welcome email') + '<label>Subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
+      '<label>Text ({name}: their first name, {slackInvite}: the invite link, on the Slack tab, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label></fieldset>' +
+      save + '</section></div>' +
+      '<section class="profile-panel" id="pilots">' + pilotHtml() + '</section>';
   }
+  function showTab(){
+    var tabs = document.getElementById('stTabs');
+    if (!tabs) return;
+    var h = location.hash.slice(1), want = TABS.some(function(t){ return t[0] === h; }) ? h : 'slack';
+    TABS.forEach(function(t){ var x = document.getElementById(t[0]); if (x) x.hidden = t[0] !== want; });
+    Array.prototype.forEach.call(tabs.querySelectorAll('.guide-tab'), function(a){
+      var on = a.getAttribute('href') === '#' + want;
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+  window.addEventListener('hashchange', showTab);
 
   // ---------- Pilots ----------
   // testers: everyone's, for every pilot; pilotTesters: { feature: [emails] }, for that one too.
@@ -98,10 +118,12 @@
     if (!me) return;
     if (staff === false) { main.innerHTML = '<p class="proj-msg">Only PIs and admins see and change BOLD.OS’s settings.</p>'; return; }
     if (staff === null || invite === null || form === null) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
-    if (editing) return; // don't redraw over settings being changed
+    // Settings being changed aren't redrawn over: only the Pilots tab is.
+    if (editing) { var pp = document.getElementById('pilots'); if (pp) pp.innerHTML = pilotHtml(); return; }
     main.innerHTML = settingsHtml();
     main.querySelector('.jr-settings').addEventListener('input', function(){ editing = true; });
     var drawn = readSettings(); settingsFrom = drawn.error ? null : drawn;
+    showTab();
   }
 
   function lines(t){ return t.split('\n').map(function(l){ return l.trim(); }).filter(Boolean); }
@@ -137,7 +159,7 @@
   var settingsFrom = null;
 
   function saveSettings(btn){
-    var err = main.querySelector('.jr-settings .ev-error');
+    var err = btn.closest('.profile-panel').querySelector('.ev-error');
     var mine = readSettings();
     if (mine.error) { err.textContent = mine.error; err.hidden = false; return; }
     var channels = mine.groups.channels, roleChannels = mine.groups.roleChannels;
