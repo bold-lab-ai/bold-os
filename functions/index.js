@@ -904,7 +904,7 @@ async function handleSlashCommand(token, body){
     { type: 'input', block_id: 'title', label: { type: 'plain_text', text: 'Title' },
       element: { type: 'plain_text_input', action_id: 'v', max_length: 200, initial_value: (c.prefix + typed).slice(0, 200) } },
     { type: 'input', block_id: 'notes', optional: true, label: { type: 'plain_text', text: 'Description' },
-      element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: c.kind === 'code' ? 'What happens, what you expected, where (a page’s link)' : 'What it’s for, and who’d use it' } } },
+      element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: c.kind === 'code' ? 'What happens, what you expected, and how to make it happen again (a link, a command, a config)' : 'What it’s for, and who’d use it' } } },
   ];
   if (channel && !board.ws.slackSkipped) blocks.push({ type: 'input', block_id: 'announce', optional: true, label: { type: 'plain_text', text: 'Slack' },
     element: { type: 'checkboxes', action_id: 'v', options: [{ text: { type: 'plain_text', text: 'Post it in #' + channel + ', for everyone in the channel' }, value: 'yes' }],
