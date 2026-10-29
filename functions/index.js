@@ -1039,6 +1039,21 @@ async function handleBlockSuggestion(payload){
 // it would send goes to the testers instead, each message marked with whom it was for, so
 // they see it all in the real Slack and nobody else hears a thing. With no testers, nobody.
 // pilotSlack(token, key, label, { emails?: [..], channel?: 'name', text, blocks? }).
+// Every feature is also in PILOTS, so Pilots lists it as soon as it's deployed (each server
+// instance adds what's missing to `known` when it starts), before it first sends anything.
+const PILOTS = {
+  'card-comments': 'Comments on board cards',
+  'card-done': 'Telling who raised a card it’s done',
+};
+let pilotsListed = null;
+function listPilots(){
+  if (!pilotsListed) pilotsListed = db.collection('settings').doc('pilot').get().then((s) => {
+    const known = (s.data() || {}).known || {}, missing = Object.keys(PILOTS).filter((k) => !known[k]);
+    if (missing.length) return s.ref.set({ known: Object.fromEntries(missing.map((k) => [k, PILOTS[k]])) }, { merge: true });
+  }).catch((err) => { pilotsListed = null; logger.warn('Listing the pilots failed', { error: String(err && err.message || err) }); });
+  return pilotsListed;
+}
+if (process.env.K_SERVICE) listPilots();
 async function pilotSlack(token, key, label, m){
   const ref = db.collection('settings').doc('pilot');
   const s = (await ref.get()).data() || {};
