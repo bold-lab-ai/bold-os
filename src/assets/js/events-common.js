@@ -45,7 +45,7 @@ window.BoldEvents = (function(){
       '<div class="ev-row"><label>Starts<input type="date" class="ev-start" value="' + esc(x.startDate || '') + '"></label>' +
       '<label>Ends<input type="date" class="ev-end" value="' + esc(x.endDate && x.endDate !== x.startDate ? x.endDate : '') + '" placeholder="optional"></label></div>' +
       '<label>Place<input type="text" class="ev-place" value="' + esc(x.place || '') + '" placeholder="e.g. Oxford"></label>' +
-      '<label>Description<textarea class="ev-description" rows="5">' + esc(x.description || '') + '</textarea></label>' +
+      '<label>Description <span class="ev-hint">Markdown: **bold**, lists, [links](https://…)</span><textarea class="ev-description" rows="5">' + esc(x.description || '') + '</textarea></label>' +
       '<p class="ev-error" hidden></p>';
   }
 

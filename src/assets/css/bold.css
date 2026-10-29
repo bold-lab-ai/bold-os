@@ -545,6 +545,14 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .bpl-note{display:block; margin-top:4px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .bpl-error{color:#b42318;}
 .bpl-line{margin-top:14px; font-family:var(--sans); font-size:14px; color:var(--muted);}
+/* An event's or a series' description (markdown.js), and the hint by its field. */
+.md-desc{overflow-wrap:anywhere;}
+.md-desc > :first-child{margin-top:0;}
+.md-desc > :last-child{margin-bottom:0;}
+.md-desc h1, .md-desc h2, .md-desc h3, .md-desc h4{font-size:18px; font-weight:700; color:var(--ink); margin:18px 0 6px;}
+.md-desc p, .md-desc ul, .md-desc ol, .md-desc blockquote{margin:0 0 10px;}
+.md-desc pre{overflow-x:auto; font-size:13px;}
+.ev-hint{font-weight:400; color:var(--muted);}
 /* Tagged people (bold.js, markdown.js) and the list for tagging them (mentions.js). */
 .md-mention{text-decoration:none; color:var(--accent); background:var(--wash); border-radius:var(--radius); padding:0 3px; font-weight:600;}
 .md-mention:hover{text-decoration:underline;}

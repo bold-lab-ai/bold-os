@@ -66,9 +66,9 @@
   var BACK = '<a class="back-link" href="events.html">&larr; All events</a>';
   var projectsEl = document.getElementById('eventProjects');
 
+  // The description, in Markdown (markdown.js).
   function paragraphs(s){
-    return String(s || '').split(/\n\s*\n/).map(function(p){ return p.trim(); }).filter(Boolean)
-      .map(function(p){ return '<p class="hero-note">' + esc(p).replace(/\n/g, '<br>') + '</p>'; }).join('');
+    return String(s || '').trim() ? '<div class="hero-note md-desc">' + BoldMarkdown.render(s) + '</div>' : '';
   }
 
   // Whoever added it edits and deletes it, if the table still lets them edit Events.

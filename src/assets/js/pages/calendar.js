@@ -7,6 +7,9 @@
   // - supervision meetings: studies/{email} (see exports.studies) in Google Calendar;
   // - recurring events every few weeks: the released ones (eventSeries of kind 'meeting';
   //   functions/series.js, series.html), joined from their card when they're opt-in.
+  // Events and recurring events not released yet show, greyed and marked Hidden, to whoever
+  // sees them on Events (PIs and admins, their organisers, whoever added them): the same
+  // queries as pages/events.js. A hidden recurring event has no Google Calendar event yet.
   // A Week grid (a dated week, events across the top; the default) or a List
   // (upcoming events, then the meetings by weekday), filtered by kind; both choices kept in localStorage.
   // Clicking a meeting opens a card to join it: a project's at once (projectWorkspace
@@ -53,9 +56,9 @@
         href: isMe(s.email) ? 'profile.html#studies' : id ? 'person.html?id=' + encodeURIComponent(id) : '' });
     });
     if (all || shown('series')) (data.series || []).forEach(function(x){
-      if (!x.meeting || !(x.eventId || x.pausedAt)) return;
+      if (!x.meeting || !(x.eventId || x.pausedAt || x.hidden)) return;
       out.push({ kind: 'series', id: x.id, title: x.title, href: 'series.html?series=' + encodeURIComponent(x.id), meeting: x.meeting,
-        mine: (x.guests || []).some(isMe), paused: !!x.pausedAt, start: x.eventStart || '', meetUrl: x.meetUrl, people: (x.guests || []).length, x: x });
+        mine: (x.guests || []).some(isMe), paused: !!x.pausedAt, hidden: !!x.hidden, start: x.eventStart || '', meetUrl: x.meetUrl, people: (x.guests || []).length, x: x });
     });
     return out;
   }
@@ -84,7 +87,8 @@
 
   // The card for one meeting, by the block or button that opened it.
   function keyOf(m){ return m.kind + ':' + m.id; }
-  function pausedBadge(m){ return m.paused ? '<span class="badge">Paused</span>' : ''; }
+  function pausedBadge(m){ return m.hidden ? '<span class="badge">Hidden</span>' : m.paused ? '<span class="badge">Paused</span>' : ''; }
+  function greyed(m){ return m.paused || m.hidden; }
   // A meeting on its own link (not a Google Meet BOLD.OS made).
   function ownBadge(m){ return m.meeting.link ? '<span class="badge badge-own">Own link</span>' : ''; }
   function renderPop(){
@@ -99,6 +103,7 @@
     if (m.mine) html += '<p class="cal-pop-note">' + (m.paused ? 'Paused: its upcoming dates are off Google Calendar until it’s resumed.' : '') +
       ' <button type="button" class="btn-text cal-pause" data-action="' + (m.paused ? 'resume' : 'pause') + '"' + (busy[keyOf(m)] ? ' disabled' : '') + '>' + (m.paused ? 'Resume' : 'Pause the meeting') + '</button></p>';
     if (m.kind === 'project') html += '<div class="cal-pop-act">' + joinHtml(m.w) + '</div>';
+    else if (m.kind === 'series' && m.hidden) html += '<p class="cal-pop-note">Not released yet: nobody is invited until an organiser releases it.</p>';
     else if (m.kind === 'series') html += m.x.invite && m.x.invite.mode === 'join'
       ? '<div class="cal-pop-act"><button type="button" class="join-btn cal-series" data-action="' + ((m.x.joined || []).some(isMe) ? 'leave' : 'join') + '"' + (busy[keyOf(m)] ? ' disabled' : '') + '>' +
         ((m.x.joined || []).some(isMe) ? 'Leave' : 'Join') + '</button></div>'
@@ -145,9 +150,9 @@
     if (coming.length) {
       html += '<h2 class="meet-day">Events</h2><ul class="proj-list">';
       coming.forEach(function(x){
-        html += '<li><div class="proj-main"><a class="proj-title" href="' + esc(eventUrl(x)) + '">' + esc(x.title) + '</a>' +
+        html += '<li' + (x.hidden ? ' class="is-paused"' : '') + '><div class="proj-main"><a class="proj-title" href="' + esc(eventUrl(x)) + '">' + esc(x.title) + '</a>' +
           '<span class="proj-meta">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' · ' + esc(x.place) : '') + '</span>' +
-          '<div class="proj-badges">' + kindBadge('event') + '</div></div></li>';
+          '<div class="proj-badges">' + kindBadge('event') + (x.hidden ? '<span class="badge">Hidden</span>' : '') + '</div></div></li>';
       });
       html += '</ul>';
     }
@@ -162,10 +167,10 @@
         var when = meetingText(m.meeting).replace(/^[^,]*, /, '');
         var meta = [esc(when), m.people + (m.people === 1 ? ' person' : ' people')];
         if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m.meeting) + '</a>');
-        html += '<li' + (m.paused ? ' class="is-paused"' : '') + '><div class="proj-main">' + titleHtml(m, 'proj-title') +
+        html += '<li' + (greyed(m) ? ' class="is-paused"' : '') + '><div class="proj-main">' + titleHtml(m, 'proj-title') +
           '<span class="proj-meta">' + meta.join(' · ') + '</span>' +
           '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + ownBadge(m) + '</div></div>' +
-          (m.kind === 'project' ? joinHtml(m.w) : m.kind === 'series' ? (m.mine || !(m.x.invite && m.x.invite.mode === 'join') ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">Join</button></div>') : m.mine ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">' + (asked[m.id] ? 'Asked' : 'Ask to join') + '</button></div>') + '</li>';
+          (m.kind === 'project' ? joinHtml(m.w) : m.kind === 'series' ? (m.mine || m.hidden || !(m.x.invite && m.x.invite.mode === 'join') ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">Join</button></div>') : m.mine ? '' : '<div class="join-wrap"><button type="button" class="join-btn cal-open" data-key="' + esc(keyOf(m)) + '">' + (asked[m.id] ? 'Asked' : 'Ask to join') + '</button></div>') + '</li>';
       });
       html += '</ul>';
     });
@@ -240,7 +245,7 @@
     if (cols.some(function(i){ return onDay(i).length; })) {
       html += '<div class="week-head week-allday"><span></span>' + cols.map(function(i){
         return '<span>' + onDay(i).map(function(x){
-          return '<a class="cal-chip" href="' + esc(eventUrl(x)) + '" title="' + esc(x.title + ' · ' + E.when(x.startDate, x.endDate) + (x.place ? ' · ' + x.place : '')) + '">' + esc(x.title) + '</a>';
+          return '<a class="cal-chip' + (x.hidden ? ' is-paused' : '') + '" href="' + esc(eventUrl(x)) + '" title="' + esc(x.title + ' · ' + E.when(x.startDate, x.endDate) + (x.place ? ' · ' + x.place : '') + (x.hidden ? ' · Hidden' : '')) + '">' + esc(x.title) + '</a>';
         }).join('') + '</span>';
       }).join('') + '</div>';
     }
@@ -264,9 +269,9 @@
       groups.forEach(function(g){
         g.items.forEach(function(b){
           var m = b.m, n = g.lanes.length, tag = m.href ? 'a' : 'span';
-          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (m.paused ? ' is-paused' : '') + '" data-key="' + esc(keyOf(m)) + '"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
+          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) ? ' is-paused' : '') + '" data-key="' + esc(keyOf(m)) + '"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + y(b.s) + 'px;height:' + Math.max(18, y(b.e) - y(b.s) - 2) + 'px;' +
-            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '')) + '">' +
+            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '')) + '">' +
             '<span class="week-time">' + esc(m.meeting.time) + '</span> ' + esc(m.title) + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
         });
       });
@@ -275,7 +280,8 @@
     html += '</div></div>' +
       '<p class="week-note"><span class="week-key"></span> Yours' +
       (kind === 'all' ? ' <span class="week-key is-outline cal-project"></span> Projects <span class="week-key is-outline cal-study"></span> Supervision <span class="week-key is-outline cal-series"></span> Recurring' : '') +
-      (ms.some(function(m){ return m.paused; }) ? ' <span class="week-key is-outline is-paused"></span> Paused' : '') + '</p>';
+      (ms.some(function(m){ return m.paused; }) ? ' <span class="week-key is-outline is-paused"></span> Paused' : '') +
+      (ms.some(function(m){ return m.hidden; }) || evs.some(function(x){ return x.hidden; }) ? ' <span class="week-key is-outline is-paused"></span> Hidden' : '') + '</p>';
     return html;
   }
 
@@ -448,15 +454,24 @@
     });
   }
 
-  function watch(key, query, map){
-    unsubs.push(query.onSnapshot(function(snap){
-      data[key] = snap.docs.map(map);
-      render();
-    }, function(err){
-      console.error('[BOLD Lab] loading the calendar (' + key + ') failed', err);
-      data[key] = data[key] || [];
-      render();
-    }));
+  // One query, or several merged (each item once, by `id`).
+  function watch(key, queries, map, id){
+    queries = [].concat(queries);
+    var got = queries.map(function(){ return null; });
+    queries.forEach(function(query, i){
+      unsubs.push(query.onSnapshot(function(snap){
+        got[i] = snap.docs.map(map);
+        var seen = {};
+        data[key] = [].concat.apply([], got.map(function(g){ return g || []; }))
+          .filter(function(x){ var k = id ? x[id] : null; if (k == null) return true; if (seen[k]) return false; seen[k] = 1; return true; });
+        render();
+      }, function(err){
+        console.error('[BOLD Lab] loading the calendar (' + key + ') failed', err);
+        got[i] = got[i] || [];
+        data[key] = data[key] || [];
+        render();
+      }));
+    });
   }
 
   BOLD.onUser(function(user){
@@ -470,9 +485,14 @@
     }).catch(function(){});
     watch('project', db.collection('projectWorkspaces'), function(d){ return Object.assign({ cardId: d.id }, d.data()); });
     watch('study', db.collection('studies'), function(d){ return Object.assign({ email: d.id }, d.data()); });
-    // Everyone but PIs/admins may only query the released ones (firestore.rules); hidden ones stay off here for all.
-    watch('event', db.collection('events').where('hidden', '==', false), function(d){ return d.data(); });
-    watch('series', db.collection('eventSeries').where('hidden', '==', false), function(d){ return d.data(); });
+    // PIs and admins query them all; everyone else the released ones and their own (firestore.rules).
+    var mine = String(user.email || '').toLowerCase(), signIn = unsubs;
+    E.access(function(all){
+      if (signIn !== unsubs) return; // signed out or in again meanwhile
+      var ev = db.collection('events'), se = db.collection('eventSeries'), fields = function(d){ return d.data(); };
+      watch('event', all ? ev : [ev.where('hidden', '==', false), ev.where('createdBy', '==', user.email || '')], fields, 'slug');
+      watch('series', all ? se : [se.where('hidden', '==', false), se.where('organisers', 'array-contains', mine)], fields, 'id');
+    });
     // My open requests to join a student's meeting.
     unsubs.push(db.collection('studyRequests').where('email', '==', String(user.email || '').toLowerCase()).where('status', '==', 'open').onSnapshot(function(snap){
       asked = {};
