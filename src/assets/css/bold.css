@@ -164,6 +164,9 @@ footer{
 }
 .nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--accent);}
 /* A group fixed open or closed with its dash (outranks the rules above). */
+/* An event or series not released yet: only its organisers, PIs and admins see it. */
+.nav-link.nav-sub.nav-hidden{font-style:italic; color:var(--muted);}
+.nav-link.nav-sub.nav-hidden::after{content:' · hidden'; font-style:normal; font-size:11px;}
 .nav-groups .nav-group.is-pinned .nav-link.nav-sub{max-height:32px; opacity:1; pointer-events:auto; padding-top:4px; padding-bottom:4px;}
 .nav-groups .nav-group.is-shut:not(:hover) .nav-link.nav-sub,
 .nav-groups .nav-group.is-hushed .nav-link.nav-sub{max-height:0; opacity:0; pointer-events:none; padding-top:0; padding-bottom:0;}

@@ -702,6 +702,8 @@
         a.href = e.href;
         a.textContent = e.title;
         a.title = e.title;
+        // Only its organisers, PIs and admins see it until it's released.
+        if (e.hidden) { a.classList.add('nav-hidden'); a.title = e.title + ' (hidden: not released yet)'; }
         var on = e.href === page || e.href === page + location.search;
         if (on) { a.classList.add('active'); anyActive = true; }
         group.appendChild(a);
@@ -713,24 +715,37 @@
       if (!BOLD.can(area, 'view') || !firebase.firestore) return;
       load(firebase.firestore(BOLD.getApp())).then(function(list){
         draw(list);
-        try { localStorage.setItem(cacheKey, JSON.stringify(list)); } catch (e){}
+        // What only this person may see isn't remembered for whoever signs in next.
+        try { localStorage.setItem(cacheKey, JSON.stringify(list.filter(function(e){ return !e.hidden; }))); } catch (e){}
       }).catch(function(err){ console.error('[BOLD Lab] loading the ' + key + ' for the sidebar failed', err); });
     });
   }
 
-  // The released event series (eventSeries, hidden == false; series.html), by title, each
-  // to its own page; then the released one-off events (events/{slug} with no series),
-  // newest first: an event with its own page links there, the rest to event.html?event=<slug>.
+  // The event series (eventSeries; series.html), by title, each to its own page; then the
+  // one-off events (events/{slug} with no series), newest first: an event with its own page
+  // links there, the rest to event.html?event=<slug>. The released ones for everyone; a new
+  // one, until it's released, for whoever sees it on Events (PIs and admins, its organisers,
+  // whoever added it), marked hidden. The same queries as pages/events.js.
   function eventsNav(){
     firestoreNav('events', 'boldNavEvents', 'events', function(db){
-      return Promise.all([db.collection('eventSeries').where('hidden', '==', false).get(), db.collection('events').where('hidden', '==', false).get()]).then(function(r){
-        var series = r[0].docs.map(function(d){ return d.data(); }).filter(function(x){ return x.id && x.title; })
+      var me = String((access && access.e) || '').toLowerCase(), all = BOLD.isFullWrite();
+      var se = db.collection('eventSeries'), ev = db.collection('events');
+      var get = function(qs){
+        return Promise.all(qs.map(function(q){ return q.get().then(function(s){ return s.docs.map(function(d){ return d.data(); }); }, function(){ return []; }); }))
+          .then(function(lists){ return [].concat.apply([], lists); });
+      };
+      return Promise.all([
+        get(all ? [se] : [se.where('hidden', '==', false)].concat(me ? [se.where('organisers', 'array-contains', me)] : [])),
+        get(all ? [ev] : [ev.where('hidden', '==', false)].concat(me ? [ev.where('createdBy', '==', me)] : [])),
+      ]).then(function(r){
+        var seen = {}, once = function(k){ if (seen[k]) return false; seen[k] = true; return true; };
+        var series = r[0].filter(function(x){ return x.id && x.title && once('s:' + x.id); })
           .sort(function(a, b){ return a.title.localeCompare(b.title); })
-          .map(function(x){ return { title: x.title, href: x.page || 'series.html?series=' + encodeURIComponent(x.id) }; });
-        var once = r[1].docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title && !e.series; })
+          .map(function(x){ return { title: x.title, href: x.page || 'series.html?series=' + encodeURIComponent(x.id), hidden: !!x.hidden }; });
+        var single = r[1].filter(function(e){ return e.slug && e.title && !e.series && once('e:' + e.slug); })
           .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; })
-          .map(function(e){ return { title: e.title, href: e.page || 'event.html?event=' + encodeURIComponent(e.slug) }; });
-        return series.concat(once);
+          .map(function(e){ return { title: e.title, href: e.page || 'event.html?event=' + encodeURIComponent(e.slug), hidden: !!e.hidden }; });
+        return series.concat(single);
       });
     });
   }
