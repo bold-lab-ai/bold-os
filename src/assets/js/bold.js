@@ -299,20 +299,27 @@
 
   /* ---------- masthead ---------- */
 
+  // Signed in: your name opens a menu (Profile; Settings, for PIs and admins only, shown once
+  // that's known; Sign out). Signed out: Sign in with Slack.
   function renderAuthRegion(region, user){
     if (user) {
       var who = user.displayName
         ? esc(user.displayName) + (user.email ? ' <span class="mast-auth-email">(' + esc(user.email) + ')</span>' : '')
         : esc(user.email || 'Signed in');
-      // BOLD.OS's settings (settings.html): a gear beside the name, for PIs and admins only.
-      var here = /(^|\/)settings\.html$/.test(location.pathname);
       region.innerHTML =
-        '<div class="mast-auth">' +
-          '<a class="mast-settings" href="settings.html" aria-label="Settings" title="BOLD.OS’s settings"' + (here ? ' aria-current="page"' : '') + (BOLD.isFullWrite() ? '' : ' hidden') + '>' +
-            '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>' +
-          '<a class="mast-auth-name" href="profile.html">' + who + '</a>' +
-          '<button class="btn-text" type="button" id="mastSignOutBtn">Sign out</button>' +
+        '<div class="mast-auth mast-menu-wrap">' +
+          '<button class="mast-auth-name mast-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="mastMenu">' + who + ' <span class="mast-caret" aria-hidden="true">▾</span></button>' +
+          '<ul class="mast-menu" id="mastMenu" role="menu" hidden>' +
+            '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
+            '<li role="none" class="mast-menu-settings"' + (BOLD.isFullWrite() ? '' : ' hidden') + '><a role="menuitem" href="settings.html">Settings</a></li>' +
+            '<li role="none"><button role="menuitem" type="button" id="mastSignOutBtn">Sign out</button></li>' +
+          '</ul>' +
         '</div>';
+      var btn = region.querySelector('.mast-menu-btn'), menu = region.querySelector('.mast-menu');
+      var open = function(yes){ menu.hidden = !yes; btn.setAttribute('aria-expanded', String(yes)); };
+      btn.addEventListener('click', function(e){ e.stopPropagation(); open(menu.hidden); });
+      document.addEventListener('click', function(e){ if (!region.contains(e.target)) open(false); });
+      region.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
       region.querySelector('#mastSignOutBtn').addEventListener('click', BOLD.signOut);
     } else {
       region.innerHTML = '<button class="auth-signin" type="button" id="mastSignInBtn">Sign in with Slack</button>';
@@ -326,8 +333,8 @@
     // Paint the last visit's name at once; auth stays authoritative.
     if (hint) renderAuthRegion(region, { displayName: hint.n, email: hint.e });
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
-    // The settings gear shows once the viewer is known to be a PI or admin.
-    BOLD.onAccess(function(a){ var g = region.querySelector('.mast-settings'); if (g) g.hidden = !a.fullWrite; });
+    // Settings, in the menu, once the viewer is known to be a PI or admin.
+    BOLD.onAccess(function(a){ var g = region.querySelector('.mast-menu-settings'); if (g) g.hidden = !a.fullWrite; });
   };
 
   /* ---------- who can see what ---------- */

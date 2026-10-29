@@ -27,32 +27,65 @@
   // Join form (#join: its choices and the welcome email) and Pilots (#pilots). The first two
   // are one form, saved from either.
   var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['pilots', 'Pilots']];
+  // A list typed in one at a time, as keywords are on the register form: type, Enter or +,
+  // × to remove (project.css .kw-*). kind: 'chan' (Slack channels, shown with #), 'role',
+  // 'pillar'; key: the group's or role's for channels.
+  var CHIPS = { chan: { ph: 'Add a channel', max: 80 }, role: { ph: 'Add a role', max: 80 }, pillar: { ph: 'Add a pillar', max: 80 } };
+  function chipHtml(kind, v){
+    var label = kind === 'chan' ? '#' + v : v;
+    return '<li class="kw-chip" data-v="' + esc(v) + '">' + esc(label) + '<button type="button" class="st-chip-x" aria-label="Remove ' + esc(label) + '">×</button></li>';
+  }
+  // of: 'group' or 'role', whose channels these are.
+  function chipsHtml(kind, key, items, of){
+    return '<div class="st-chips" data-kind="' + kind + '"' + (key ? ' data-key="' + esc(key) + '"' : '') + (of ? ' data-of="' + of + '"' : '') + '>' +
+      '<div class="kw-entry"><input type="text" class="st-chip-in no-tags" maxlength="' + CHIPS[kind].max + '" autocomplete="off" placeholder="' + CHIPS[kind].ph + '"' + (key ? ' aria-label="' + esc(CHIPS[kind].ph + ' for ' + key) + '"' : ' aria-label="' + CHIPS[kind].ph + '"') + '>' +
+      '<button class="btn kw-add st-chip-add" type="button" aria-label="' + CHIPS[kind].ph + '">+</button></div>' +
+      '<ul class="kw-list">' + items.map(function(v){ return chipHtml(kind, v); }).join('') + '</ul></div>';
+  }
+  // A group's or role's channels as saved ("a, b") → [names].
+  function chanList(v){ return String(v || '').split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean); }
+  // A chip typed in → its value, or { error }.
+  function chipValue(kind, raw){
+    var v = String(raw || '').trim();
+    if (kind !== 'chan') return v;
+    v = v.replace(/^#/, '').toLowerCase();
+    return !v || /^[a-z0-9_-]{1,80}$/.test(v) ? v : { error: 'Slack channel names use letters, numbers, hyphens and underscores.' };
+  }
+  function addChip(box){
+    var input = box.querySelector('.st-chip-in'), kind = box.getAttribute('data-kind'), v = chipValue(kind, input.value);
+    var err = box.closest('.profile-panel').querySelector('.ev-error');
+    if (v && v.error) { err.textContent = v.error; err.hidden = false; return; }
+    err.hidden = true; input.value = '';
+    var has = Array.prototype.some.call(box.querySelectorAll('.kw-chip'), function(c){ return c.getAttribute('data-v').toLowerCase() === String(v).toLowerCase(); });
+    if (!v || has) return;
+    box.querySelector('.kw-list').insertAdjacentHTML('beforeend', chipHtml(kind, v));
+    editing = true;
+  }
+  function chipsOf(box){ return Array.prototype.map.call(box.querySelectorAll('.kw-chip'), function(c){ return c.getAttribute('data-v'); }); }
   function settingsHtml(){
     var inv = invite || {}, f = form || {};
     var group = function(title){ return '<fieldset class="md-group"><legend>' + title + '</legend>'; };
     var save = '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div>';
+    var row = function(label, inner, err){ return '<div class="st-row"><span class="st-row-label">' + esc(label) + '</span>' + inner + (err ? '<p class="st-error">' + esc(err) + '</p>' : '') + '</div>'; };
+    // Each tab its own box; the Slack and Join form tabs are one form (.jr-settings).
     return '<nav class="guide-tabs profile-tabs" id="stTabs" aria-label="Settings">' + TABS.map(function(t){ return '<a class="guide-tab" href="#' + t[0] + '">' + t[1] + '</a>'; }).join('') + '</nav>' +
-      '<div class="event-form join-form jr-settings">' +
-      '<section class="profile-panel" id="slack">' +
+      '<div class="jr-settings">' +
+      '<section class="profile-panel" id="slack"><div class="event-form join-form">' +
       group('Slack invite') + '<label>Link (in Slack: Invite people → Copy invite link; replace it when it expires)<input type="url" class="jr-invite" maxlength="300" value="' + esc(inv.slackInviteUrl || '') + '" placeholder="https://join.slack.com/t/…"></label>' +
       '<label>Expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label></fieldset>' +
-      group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channels (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>). Several are separated by commas.</p>' +
+      group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channels (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>). None: nobody is added.</p>' +
         BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== 'pan'; }).map(function(c){
-          var err = (groups.channelErrors || {})[c[0]];
-          return '<label>' + esc(c[1]) + '<input type="text" class="jr-chan" data-group="' + c[0] + '" maxlength="400" value="' + esc(((groups.channels || {})[c[0]]) || '') + '" placeholder="#channel, #another (none: nobody is added)"></label>' +
-            (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
+          return row(c[1], chipsHtml('chan', c[0], chanList((groups.channels || {})[c[0]]), 'group'), (groups.channelErrors || {})[c[0]]);
         }).join('') + '</fieldset>' + group('Slack channels by role') + '<p class="proj-meta">Everyone with a role (on their details) is added to its channels. The roles are the join form’s (<a href="#join">Join form</a>).</p>' +
         (f.roles || BoldJoin.ROLES).map(function(r){
-          var err = (groups.roleChannelErrors || {})[r];
-          return '<label>' + esc(r) + '<input type="text" class="jr-rchan" data-role="' + esc(r) + '" maxlength="400" value="' + esc(((groups.roleChannels || {})[r]) || '') + '" placeholder="#channel, #another (none: nobody is added)"></label>' +
-            (err ? '<p class="st-error">' + esc(err) + '</p>' : '');
-        }).join('') + '</fieldset>' + save + '</section>' +
-      '<section class="profile-panel" id="join">' + group('Join form') +
-      '<label>Roles, one per line<textarea class="jr-roles no-tags" rows="6">' + esc((f.roles || BoldJoin.ROLES).join('\n')) + '</textarea></label>' +
-      '<label>Research pillars, one per line<textarea class="jr-pillars no-tags" rows="4">' + esc((f.pillars || BoldJoin.PILLARS).join('\n')) + '</textarea></label></fieldset>' +
+          return row(r, chipsHtml('chan', r, chanList((groups.roleChannels || {})[r]), 'role'), (groups.roleChannelErrors || {})[r]);
+        }).join('') + '</fieldset>' + save + '</div></section>' +
+      '<section class="profile-panel" id="join"><div class="event-form join-form">' + group('Join form') +
+      row('Roles', chipsHtml('role', '', f.roles || BoldJoin.ROLES)) +
+      row('Research pillars', chipsHtml('pillar', '', f.pillars || BoldJoin.PILLARS)) + '</fieldset>' +
       group('Welcome email') + '<label>Subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
       '<label>Text ({name}: their first name, {slackInvite}: the invite link, on the Slack tab, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label></fieldset>' +
-      save + '</section></div>' +
+      save + '</div></section></div>' +
       '<section class="profile-panel" id="pilots">' + pilotHtml() + '</section>';
   }
   function showTab(){
@@ -121,12 +154,12 @@
     // Settings being changed aren't redrawn over: only the Pilots tab is.
     if (editing) { var pp = document.getElementById('pilots'); if (pp) pp.innerHTML = pilotHtml(); return; }
     main.innerHTML = settingsHtml();
-    main.querySelector('.jr-settings').addEventListener('input', function(){ editing = true; });
+    // Typing in a chip's box isn't a change until it's added.
+    main.querySelector('.jr-settings').addEventListener('input', function(e){ if (!e.target.classList.contains('st-chip-in')) editing = true; });
     var drawn = readSettings(); settingsFrom = drawn.error ? null : drawn;
     showTab();
   }
 
-  function lines(t){ return t.split('\n').map(function(l){ return l.trim(); }).filter(Boolean); }
 
   // What the settings form says, as saved: { invite, form, groups } (each a settings
   // document's fields), or { error }.
@@ -135,18 +168,16 @@
     var v = function(c){ return s.querySelector(c).value; };
     var url = v('.jr-invite').trim();
     if (url && !/^https:\/\/\S+$/.test(url)) return { error: 'The invite link starts with https://' };
-    var roles = lines(v('.jr-roles')), pillars = lines(v('.jr-pillars'));
+    var box = function(kind){ return s.querySelector('.st-chips[data-kind="' + kind + '"]'); };
+    var roles = chipsOf(box('role')), pillars = chipsOf(box('pillar'));
     if (!roles.length) return { error: 'Give at least one role.' };
-    // One or more names each, kept as "a, b".
-    var names = function(sel, attr){
+    // Each group's and role's channels, kept as "a, b" (one name: "a").
+    var names = function(sel){
       var m = {};
-      Array.prototype.forEach.call(s.querySelectorAll(sel), function(i){
-        var v = i.value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
-        if (v.length) m[i.getAttribute(attr)] = v.join(', ');
-      });
+      Array.prototype.forEach.call(s.querySelectorAll(sel), function(b){ var v = chipsOf(b); if (v.length) m[b.getAttribute('data-key')] = v.join(', '); });
       return m;
     };
-    var channels = names('.jr-chan', 'data-group'), roleChannels = names('.jr-rchan', 'data-role');
+    var channels = names('.st-chips[data-of="group"]'), roleChannels = names('.st-chips[data-of="role"]');
     var badName = function(m){ return Object.keys(m).some(function(k){ return m[k].split(', ').some(function(n){ return !/^[a-z0-9_-]{1,80}$/.test(n); }); }); };
     if (badName(channels) || badName(roleChannels)) return { error: 'Slack channel names use letters, numbers, hyphens and underscores.' };
     return {
@@ -246,9 +277,14 @@
     if (t.classList.contains('jr-tester-add') && t.value) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).push(t.value); render(); return; }
     if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.checked; render(); }
   });
+  main.addEventListener('keydown', function(e){
+    if (e.key === 'Enter' && e.target.classList.contains('st-chip-in')) { e.preventDefault(); addChip(e.target.closest('.st-chips')); }
+  });
   main.addEventListener('click', function(e){
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
+    if (t.classList.contains('st-chip-add')) { addChip(t.closest('.st-chips')); return; }
+    if (t.classList.contains('st-chip-x')) { t.closest('.kw-chip').remove(); editing = true; return; }
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
     if (t.classList.contains('jr-pilot-save')) { savePilot(t); return; }
     if (t.classList.contains('jr-pilot-cancel')) { pilotDraft = null; pilotError = ''; render(); return; }
