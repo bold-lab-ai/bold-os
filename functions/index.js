@@ -859,7 +859,75 @@ async function handleAppHomeOpened(token, slackUserId){
 // toast" primitive without an extra response_url round trip, and a no-op
 // picker click is self-evident (the dropdown just doesn't visibly change)
 // rather than actively misleading.
+// ---------- Cards from Slack: /bug and /feature-request ----------
+// Either opens a form (views.open) for a card on BOLD OS's board (the board showing the
+// site's own work: work.content), in To do: its title (from what was typed after the
+// command), a description, and, ticked, posting it in the project's channel. Submitting
+// the form is the go-ahead (the ground rule: it asks before posting); closing it adds
+// nothing. Whoever types it needs Projects' Edit, as on the page; the card is theirs.
+const SLASH_CARDS = { '/bug': { kind: 'code', prefix: 'Bug: ', what: 'bug' }, '/feature-request': { kind: 'request', prefix: 'Feature request: ', what: 'feature request' } };
+async function slashBoard(){
+  const snap = await db.collection('projectWorkspaces').where('work.content', '==', true).get();
+  const d = snap.docs.filter((x) => (x.data().work || {}).on)[0];
+  return d ? { id: d.id, ws: d.data() } : null;
+}
+async function handleSlashCommand(token, body){
+  const c = SLASH_CARDS[body.command];
+  const say = (text) => ({ response_type: 'ephemeral', text });
+  if (!c) return say('BOLD.OS doesn’t know ' + body.command + '.');
+  const email = await emailForSlackId(body.user_id);
+  if (!email) return say('Sign in to BOLD.OS once first, so it knows who you are: ' + SITE_URL);
+  if (!(await access.can(email, 'projects', 'edit'))) return say('Adding cards is for whoever can edit Projects (BOLDiquette › Who can see what).');
+  const board = await slashBoard();
+  if (!board) return say('There’s no board for BOLD.OS’s own work yet.');
+  const channel = String(board.ws.slackChannel || '').replace(/^#/, '');
+  const typed = String(body.text || '').trim();
+  const blocks = [
+    { type: 'input', block_id: 'title', label: { type: 'plain_text', text: 'Title' },
+      element: { type: 'plain_text_input', action_id: 'v', max_length: 200, initial_value: (c.prefix + typed).slice(0, 200) } },
+    { type: 'input', block_id: 'notes', optional: true, label: { type: 'plain_text', text: 'Description' },
+      element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: c.kind === 'code' ? 'What happens, what you expected, where (a page’s link)' : 'What it’s for, and who’d use it' } } },
+  ];
+  if (channel && !board.ws.slackSkipped) blocks.push({ type: 'input', block_id: 'announce', optional: true, label: { type: 'plain_text', text: 'Slack' },
+    element: { type: 'checkboxes', action_id: 'v', options: [{ text: { type: 'plain_text', text: 'Post it in #' + channel + ', for everyone in the channel' }, value: 'yes' }],
+      initial_options: [{ text: { type: 'plain_text', text: 'Post it in #' + channel + ', for everyone in the channel' }, value: 'yes' }] } });
+  blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: 'Adds it to ' + slackText(board.ws.title || 'BOLD OS') + '’s board, in To do.' }] });
+  const opened = await slackFetch(token, 'views.open', { trigger_id: body.trigger_id, view: {
+    type: 'modal', callback_id: 'work_card', title: { type: 'plain_text', text: c.what === 'bug' ? 'Report a bug' : 'Request a feature' },
+    submit: { type: 'plain_text', text: 'Add it' }, close: { type: 'plain_text', text: 'Cancel' },
+    private_metadata: JSON.stringify({ pid: board.id, kind: c.kind, channel: body.channel_id || '' }), blocks } });
+  if (!opened.ok) { logger.warn('Opening the card form failed', { error: opened.error }); return say('Couldn’t open the form — try again.'); }
+  return {};
+}
+// The form submitted: the card, as the page would add it (firestore.rules validWork), then a
+// note to them alone with its number and link. onWorkCardAdded posts it in the channel.
+async function addCardFromSlack(token, payload){
+  const meta = JSON.parse(payload.view.private_metadata || '{}');
+  const v = payload.view.state && payload.view.state.values || {};
+  const val = (b) => (v[b] && v[b].v) || {};
+  const email = await emailForSlackId(payload.user && payload.user.id);
+  if (!email || !(await access.can(email, 'projects', 'edit'))) return;
+  const wsSnap = await db.collection('projectWorkspaces').doc(String(meta.pid || '')).get();
+  if (!wsSnap.exists || !((wsSnap.data().work || {}).on)) return;
+  const person = (await db.collection('people').where('email', '==', email).limit(1).get()).docs[0];
+  const name = (person && person.data().name) || email.split('@')[0];
+  const title = String(val('title').value || '').trim().slice(0, 200);
+  if (!title) return;
+  const now = Date.now();
+  const ref = await db.collection('projectWorkspaces').doc(wsSnap.id).collection('work').add({
+    title, notes: String(val('notes').value || '').trim().slice(0, 20000), kind: meta.kind === 'request' ? 'request' : 'code', column: 'todo',
+    assignees: [], assigneeEmails: [], links: [], announce: !!(val('announce').selected_options || []).length,
+    by: { email, name }, at: now, movedAt: now, updatedAt: now, updatedBy: email,
+  });
+  const num = await numberFor(ref.path);
+  const url = projectPageUrl(wsSnap.data().cardId || wsSnap.id, wsSnap.data().boardId) + '&tab=work&card=' + encodeURIComponent(ref.id);
+  const text = '✅ Added #' + num + ' to the board: ' + linkedTitle(slackText(title), url) + '.';
+  const sent = meta.channel ? await slackFetch(token, 'chat.postEphemeral', { channel: meta.channel, user: payload.user.id, text }) : { ok: false };
+  if (!sent.ok) await dmBySlackId(token, payload.user.id, text);
+}
+
 async function handleInteractivity(token, payload){
+  if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'work_card') return addCardFromSlack(token, payload);
   if (payload.type !== 'block_actions') return;
   const action = (payload.actions || [])[0];
   if (!action) return;
@@ -1758,6 +1826,16 @@ exports.slackEvents = onRequest(
     }
 
     const token = SLACK_BOT_TOKEN.value();
+
+    // A slash command (/bug, /feature-request): form-encoded, with `command`. Answered at
+    // once (Slack waits 3 seconds): it opens the card's form, or says why not, to them alone.
+    if (req.body && typeof req.body.command === 'string'){
+      let out = {};
+      try { out = await handleSlashCommand(token, req.body); }
+      catch (err){ logger.error('slackEvents: slash command failed', { command: req.body.command, error: String(err && err.message || err) }); out = { response_type: 'ephemeral', text: 'That didn’t work — try again.' }; }
+      res.status(200).json(out);
+      return;
+    }
 
     // Interactivity arrives form-encoded with the JSON payload inside a
     // single `payload` field; Events API arrives as plain JSON — this is
