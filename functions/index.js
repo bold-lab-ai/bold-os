@@ -1035,7 +1035,7 @@ async function handleBlockSuggestion(payload){
 // ---------- Pilots: a new Slack feature reaches only its testers until it's live ----------
 // settings/pilot: { testers: [emails], pilotTesters: { <feature>: [emails] }, live: { <feature>: true },
 // known: { <feature>: label } }: a feature in pilot goes to every pilot's testers and its own.
-// (Requests › Settings › Pilots, PIs and admins). A new feature sends through pilotSlack
+// (Settings › Pilots, settings.html; PIs and admins). A new feature sends through pilotSlack
 // with a key of its own: until it's switched live there (it starts in pilot), whatever
 // it would send goes to the testers instead, each message marked with whom it was for, so
 // they see it all in the real Slack and nobody else hears a thing. With no testers, nobody.
@@ -5661,7 +5661,7 @@ exports.remindJoinInvite = onSchedule(
     const headline = (stage === 'expired'
       ? '⚠️ The Slack invite link in the welcome email expired on ' + inv.slackInviteExpires + ': welcome emails wait until there’s a new one. '
       : '⏳ The Slack invite link in the welcome email expires on ' + inv.slackInviteExpires + '. ') +
-      'In Slack: Invite people → Copy invite link (the longest expiry), then ' + linkedTitle('add it under Settings', joinPageUrl() + '#settings') + ' with its new expiry date.';
+      'In Slack: Invite people → Copy invite link (the longest expiry), then ' + linkedTitle('add it under Settings', SITE_URL + 'settings.html') + ' with its new expiry date.';
     const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
     await sendEvent(SLACK_BOT_TOKEN.value(), { emails: staff, headline });
     await ref.set({ reminded: key }, { merge: true });

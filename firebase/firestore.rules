@@ -173,7 +173,7 @@ service cloud.firestore {
         && request.resource.data.get('roleChannels', {}) is map && request.resource.data.get('roleChannels', {}).size() <= 30;
     }
     // Pilots (functions/index.js pilotSlack): a new Slack feature reaches only its testers
-    // until a PI or admin switches it live (Requests › Settings › Pilots). `known` (the
+    // until a PI or admin switches it live (Settings › Pilots, settings.html). `known` (the
     // features, with their names) is the server's; PIs and admins set testers and live.
     match /settings/pilot {
       allow read: if hasFullWrite();
