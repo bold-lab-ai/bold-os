@@ -266,6 +266,9 @@ footer{
 a.mast-auth-name{text-decoration:none;}
 a.mast-auth-name:hover{text-decoration:underline;}
 .mast-auth-email{font-weight:400; color:var(--muted);}
+/* BOLD.OS's settings (bold.js renderAuthRegion): a gear beside the name, for PIs and admins. */
+.mast-settings{display:inline-flex; align-items:center; padding:4px; color:var(--muted); border-radius:var(--radius);}
+.mast-settings:hover, .mast-settings[aria-current]{color:var(--ink); background:var(--wash);}
 /* Who can see this page (bold.js): a chip at the page's top right, opening its ladder (each
    group can do what the groups below it can); PIs and admins propose a change there. */
 .shell-main{position:relative;}
