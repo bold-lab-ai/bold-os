@@ -333,6 +333,8 @@ module.exports = function(ctx){
     if (a.action === 'add') {
       const d = { title: need(a.title, 'a title').slice(0, 200), notes: String(a.description !== undefined ? a.description : a.notes || '').slice(0, 20000), kind: a.type || '', column: a.column || 'todo',
         assignees: assignees || [], assigneeEmails: (assignees || []).map((x) => x.email), links: links || [],
+        // Posted in the project's Slack channel (onWorkCardAdded) unless post_in_channel is false.
+        announce: a.post_in_channel !== false,
         by: { email: who.email, name: nameOfMe(who) }, at: now, movedAt: now, updatedAt: now, updatedBy: who.email };
       const id = await asUser(who, 'create', col, d);
       return { card_id: id, url: url(pageOf(id)) };
@@ -693,8 +695,8 @@ module.exports = function(ctx){
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'work', run: work,
-      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it.',
-      inputSchema: S({ action: ACTIONS(['list', 'add', 'update', 'move', 'remove']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove (list gives it).'),
+      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false.',
+      inputSchema: S({ post_in_channel: { type: 'boolean', description: 'add: post it in the project’s Slack channel (default true)' }, action: ACTIONS(['list', 'add', 'update', 'move', 'remove']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove (list gives it).'),
         title: str('add, update'), description: str('add, update: what it is (Markdown), shown on the card’s page.'), type: ACTIONS(['code', 'content', 'request', 'other']), column: ACTIONS(['todo', 'doing', 'review', 'done']), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
         links: { type: 'array', items: { type: 'string' }, description: 'add, update: https://… links: a GitHub pull request or issue, a proposal, anything.' } }, ['action', 'project_id']) },
     { name: 'presentations', run: presentations,

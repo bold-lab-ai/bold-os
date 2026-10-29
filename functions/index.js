@@ -3636,8 +3636,29 @@ async function requestWork(email, full, person){
 // Numbered when made: a board's card, an event series waiting to be released, an agent's
 // request to act, a request to join the hackathon team (requests made through a callable
 // are numbered there, so their Slack message has it).
-exports.onWorkCardAdded = onDocumentCreated('projectWorkspaces/{pid}/work/{id}', async function(event){
-  await numberFor(event.data.ref.path);
+// A new card on a project's board: numbered, and posted in the project's Slack channel
+// (its workspace's slackChannel), unless whoever added it unticked that (announce: false,
+// in the page's popup) or the project has no channel.
+exports.onWorkCardAdded = onDocumentCreated({ document: 'projectWorkspaces/{pid}/work/{id}', secrets: [SLACK_BOT_TOKEN] }, async function(event){
+  const tag = await numberTag(event.data.ref.path);
+  const c = event.data.data() || {};
+  if (c.announce === false) return;
+  const ws = (await db.collection('projectWorkspaces').doc(event.params.pid).get()).data() || {};
+  const name = String(ws.slackChannel || '').replace(/^#/, '');
+  if (!name || ws.slackSkipped) return;
+  try {
+    const token = SLACK_BOT_TOKEN.value();
+    const channel = await slackChannelId(token, name);
+    if (!channel) { logger.warn('Posting a new card: the bot can’t see the project’s channel', { channel: name }); return; }
+    const url = projectPageUrl(ws.cardId || event.params.pid, ws.boardId) + '&tab=work&card=' + encodeURIComponent(event.params.id);
+    const COL = { todo: 'To do', doing: 'In progress', review: 'Waiting for review', done: 'Done' };
+    const who = (c.by && (c.by.name || c.by.email)) || 'Someone';
+    const on = (c.assignees || []).map((a) => slackText(a.name || a.email)).join(', ');
+    const text = '🗂️ ' + tag + slackText(who) + ' added a card to the board: ' + linkedTitle(slackText(c.title || 'a card'), url) +
+      ' (' + [c.kind ? c.kind.charAt(0).toUpperCase() + c.kind.slice(1) : '', COL[c.column] || '', on ? 'on it: ' + on : ''].filter(Boolean).join(' · ') + ')';
+    const posted = await slackFetch(token, 'chat.postMessage', { channel, text, unfurl_links: false });
+    if (!posted.ok) logger.warn('Posting a new card failed', { channel: name, error: posted.error });
+  } catch (err){ logger.warn('Posting a new card failed', { channel: name, error: String(err && err.message || err) }); }
 });
 exports.onSeriesAdded = onDocumentCreated('eventSeries/{id}', async function(event){
   const d = event.data && event.data.data();

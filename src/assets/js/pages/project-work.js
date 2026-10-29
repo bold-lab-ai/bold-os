@@ -58,6 +58,16 @@ var ProjectWork = (function(){
   // A link to a page of BOLD.OS (the server's are whole addresses on the live site) stays on
   // the site the board is on: the live one, a preview or localhost.
   function href(u){ return String(u || '').replace(/^https:\/\/bold-lab-ai\.github\.io\/bold-os\//, ''); }
+  // A new card is posted in the project's Slack channel (functions/index.js onWorkCardAdded):
+  // asked every time, with the post a box to untick (then announce: false on the card).
+  // → Promise of { announce } to go ahead, or null.
+  function confirmNewCard(title){
+    var w = (ctx.ws && ctx.ws()) || {}, ch = String(w.slackChannel || '').replace(/^#/, '');
+    if (!ch || w.slackSkipped) return Promise.resolve({ announce: true });
+    return BOLD.confirmAlways({ title: 'Add “' + title + '”?', go: 'Add it',
+      effects: [{ key: 'announce', text: 'Post it in #' + ch + ' on Slack, for everyone in the channel' }] })
+      .then(function(ok){ return ok ? { announce: !(ok.skip && ok.skip.announce) } : null; });
+  }
   function cardsRef(){ return db.collection('projectWorkspaces').doc(pid).collection('work'); }
   function call(){ return firebase.app().functions('europe-west2').httpsCallable('projectWork'); }
 
@@ -498,11 +508,14 @@ var ProjectWork = (function(){
       if (c) job = cardsRef().doc(c.id).set(Object.assign({}, data, { column: col, by: c.by, at: c.at, movedAt: col !== c.column ? now : c.movedAt || c.at }));
       else {
         var column = form.querySelector('.wk-f-column').value;
-        job = cardsRef().add(Object.assign(data, { column: column, by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now }));
+        job = confirmNewCard(data.title).then(function(go){
+          if (!go) throw { cancelled: true };
+          return cardsRef().add(Object.assign(data, { column: column, announce: go.announce, by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now }));
+        });
       }
       // A new card is numbered by the server a moment after it's saved: fetched again to show it.
       job.then(function(){ busy = false; editing = null; draftLinks = []; draw(); if (!c) setTimeout(function(){ fetchRemote(false); }, 2500); })
-        .catch(function(err){ console.error('[BOLD Lab] saving a card failed', err); fail('Couldn’t save — try again.'); });
+        .catch(function(err){ if (err && err.cancelled) { busy = false; return; } console.error('[BOLD Lab] saving a card failed', err); fail('Couldn’t save — try again.'); });
     });
   }
 
@@ -655,17 +668,21 @@ var ProjectWork = (function(){
   function adoptItem(x, button){
     if (busy) return;
     busy = true; button.disabled = true;
-    var m = ctx.me(), now = Date.now();
-    cardsRef().add({
-      title: String(x.title || x.ref).slice(0, 200), notes: '', kind: 'code', column: x.column || 'todo', assignees: [], assigneeEmails: [],
-      links: [{ type: x.kind === 'pr' ? 'pr' : 'issue', ref: x.ref, url: x.url, label: (refLabel(x) + ': ' + x.title).slice(0, 200) }],
-      by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now, updatedAt: now, updatedBy: m.email
+    var m = ctx.me(), now = Date.now(), title = String(x.title || x.ref).slice(0, 200);
+    confirmNewCard(title).then(function(go){
+      if (!go) throw { cancelled: true };
+      return cardsRef().add({
+        title: title, notes: '', kind: 'code', column: x.column || 'todo', assignees: [], assigneeEmails: [], announce: go.announce,
+        links: [{ type: x.kind === 'pr' ? 'pr' : 'issue', ref: x.ref, url: x.url, label: (refLabel(x) + ': ' + x.title).slice(0, 200) }],
+        by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now, updatedAt: now, updatedBy: m.email
+      });
     }).then(function(d){
       busy = false;
       go({ card: d.id }, true);
       describing = true; draw();
       setTimeout(function(){ fetchRemote(false); }, 2500);
     }).catch(function(err){
+      if (err && err.cancelled) { busy = false; button.disabled = false; return; }
       console.error('[BOLD Lab] making a card failed', err);
       busy = false; msg = 'Couldn’t make a card for it — try again.'; draw();
     });

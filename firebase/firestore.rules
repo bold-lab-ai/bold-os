@@ -380,7 +380,9 @@ service cloud.firestore {
         return exists(ws) && get(ws).data.get('work', {}).get('on', false) == true;
       }
       function validWork(d) {
-        return d.keys().hasOnly(['title', 'notes', 'kind', 'column', 'assignees', 'assigneeEmails', 'links', 'images', 'by', 'at', 'updatedAt', 'updatedBy', 'movedAt']) &&
+        // announce: false when whoever added it chose not to post it in the project's channel.
+        return d.keys().hasOnly(['title', 'notes', 'kind', 'column', 'assignees', 'assigneeEmails', 'links', 'images', 'announce', 'by', 'at', 'updatedAt', 'updatedBy', 'movedAt']) &&
+          d.get('announce', true) is bool &&
           d.title is string && d.title.size() > 0 && d.title.size() <= 200 &&
           d.get('kind', '') in ['', 'code', 'content', 'request', 'other'] &&
           // notes: its description (Markdown, on its page); images: [{ path, url, name, by, at }]
