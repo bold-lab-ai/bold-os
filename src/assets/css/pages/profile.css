@@ -156,6 +156,9 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .proj-list .badge{margin-left:6px; vertical-align:2px;}
 .ev-series{margin-top:22px;}
 /* Pilots (join-requests.js): each feature, with its own testers while it's in pilot. */
+.jr-feature{margin:0 0 14px;}
+.jr-feature .jr-testers, .jr-feature > .proj-meta{margin-left:26px;}
+.jr-feature .jr-tester-add{margin-left:26px; width:calc(100% - 26px); box-sizing:border-box;}
 /* Settings (pages/settings.js): lists typed in one at a time, as keywords are on the register form. */
 .st-row{margin:0 0 14px;}
 .st-row-label{display:block; font-family:var(--sans); font-size:13px; color:var(--ink-soft); margin-bottom:4px;}
@@ -168,12 +171,4 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .st-chips .kw-chip{display:inline-flex; align-items:center; gap:6px; font-family:var(--sans); font-size:13px; color:var(--ink); background:var(--wash); border-radius:12px; padding:2px 6px 2px 10px;}
 .st-chips .kw-chip button{border:none; background:none; padding:0 2px; font-size:15px; line-height:1; color:var(--muted); cursor:pointer;}
 .st-chips .kw-chip button:hover{color:var(--danger-text);}
-/* Settings › Features (pages/settings.js pilotHtml): as the Requests page's lists. */
-.jr-pilot .hero-note{margin:0 0 4px; max-width:640px;}
-.jr-tester{display:inline-block; margin:0 18px 4px 0; font-size:16px;}
-.jr-tester .btn-text{font-size:13px; margin-left:4px;}
-.jr-own{margin:6px 0 0;}
-.jr-add{margin-top:8px; max-width:320px;}
-.jr-add select{display:block; width:100%; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
-.jr-pilot .proj-list .event-controls{margin-top:8px;}
-.jr-pilot .event-form-actions{margin-top:24px;}
+.jr-feature-group{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:18px 0 8px;}

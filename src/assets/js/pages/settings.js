@@ -120,42 +120,37 @@
     Object.keys(p.pilotTesters || {}).forEach(function(k){ each[k] = (p.pilotTesters[k] || []).slice(); });
     return { testers: (p.testers || []).slice(), pilotTesters: each, live: Object.assign({}, p.live || {}) };
   }
-  // Laid out as the Requests page's lists (profile.css .proj-group, .proj-list): a heading per
-  // part, then a row per tester or feature, its actions as text buttons below it.
-  // A tester's name with Remove; key '' for the testers of every pilot, else the feature's.
-  function testerHtml(e, i, key){
-    return '<span class="jr-tester">' + esc(nameOf(e)) + ' <button type="button" class="btn-text jr-tester-remove" data-for="' + esc(key) + '" data-i="' + i + '">Remove</button></span>';
-  }
-  function addTesterHtml(list, key){
-    return '<select class="jr-tester-add" data-for="' + esc(key) + '" aria-label="Add a tester"><option value="">Add a tester…</option>' + roster.filter(function(p){ return list.indexOf(p.email) < 0; })
-      .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</select>';
+  // A list of testers with Remove beside each and a menu to add one: key '' the general ones.
+  function testersHtml(list, key, none){
+    return '<ul class="jr-testers">' + (list.length ? list.map(function(e, i){
+        return '<li>' + esc(nameOf(e)) + ' <button type="button" class="btn-text danger jr-tester-remove" data-for="' + esc(key) + '" data-i="' + i + '">Remove</button></li>';
+      }).join('') : '<li class="proj-meta">' + none + '</li>') + '</ul>' +
+      '<select class="jr-tester-add" data-for="' + esc(key) + '" aria-label="Add a tester"><option value="">Add a tester…</option>' + roster.filter(function(p){ return list.indexOf(p.email) < 0; })
+        .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</select>';
   }
   function testersOf(d, key){ return key ? (d.pilotTesters[key] = d.pilotTesters[key] || []) : d.testers; }
   function nameOf(e){ var p = roster.filter(function(x){ return x.email === e; })[0]; return p ? p.name : e.split('@')[0]; }
   function pilotHtml(){
     if (!pilot) return '';
     var d = pilotNow(), known = pilot.known || {}, keys = Object.keys(known).sort();
-    return '<div class="jr-pilot"><p class="hero-note">Every Slack message BOLD.OS sends belongs to one of these features. One in pilot messages only its testers, saying whom each message was for; new ones start that way.</p>' +
-      '<div class="proj-group"><h3>Testers of every pilot</h3><ul class="proj-list"><li>' +
-        (d.testers.length ? d.testers.map(function(e, i){ return testerHtml(e, i, ''); }).join('') : '<span class="proj-meta">Nobody yet.</span>') +
-        '<div class="jr-add">' + addTesterHtml(d.testers, '') + '</div></li></ul></div>' +
+    return '<div class="event-form join-form jr-pilot"><fieldset class="md-group"><legend>Slack features</legend>' +
+      '<p class="proj-meta">Every Slack message BOLD.OS sends belongs to one of these features. One that isn’t live messages only its testers: each message goes to them instead, saying whom it was for. New ones start that way.</p>' +
+      '<label>Testers of every pilot</label>' + testersHtml(d.testers, '', 'Nobody') +
       (keys.length ? GROUPS.concat([['Other', []]]).map(function(g){
         // Other: whatever isn't in a group yet (a new feature: add it to GROUPS).
         var mine = g[0] === 'Other' ? keys.filter(function(k){ return !GROUPS.some(function(x){ return x[1].indexOf(k) >= 0; }); })
           : g[1].filter(function(k){ return known[k]; });
-        return mine.length ? '<div class="proj-group"><h3>' + esc(g[0]) + '</h3><ul class="proj-list">' + mine.map(function(k){ return featureHtml(k, g[0]); }).join('') + '</ul></div>' : '';
-      }).join('') : '<p class="proj-msg">None yet: a feature appears here once it’s deployed.</p>') +
-      (pilotError ? '<p class="ev-error">' + esc(pilotError) + '</p>' : '') +
-      '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (pilotDraft ? '' : ' disabled title="Nothing changed"') + '>Save</button>' +
+        // A label that starts with its group's name ("Internal Review Board: …") is shown without it.
+        return mine.length ? '<h3 class="jr-feature-group">' + esc(g[0]) + '</h3>' + mine.map(function(k){ return featureHtml(k, g[0]); }).join('') : '';
+      }).join('') : '<p class="proj-meta">None yet: a feature appears here once it’s deployed.</p>') +
+      '</fieldset>' + (pilotError ? '<p class="ev-error">' + esc(pilotError) + '</p>' : '') +
+      '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (pilotDraft ? '' : ' disabled title="Nothing changed"') + '>Save features</button>' +
         (pilotDraft ? '<button type="button" class="jr-pilot-cancel">Cancel</button>' : '') + '</div></div>';
-    // A label that starts with its group's name ("Internal Review Board: …") is shown without it.
-    function featureHtml(k, g){
-      var label = known[k].indexOf(g + ': ') === 0 ? known[k].slice(g.length + 2) : known[k], on = !!d.live[k], own = d.pilotTesters[k] || [];
-      label = label.charAt(0).toUpperCase() + label.slice(1);
-      return '<li><span class="proj-title">' + esc(label) + '</span><span class="badge' + (on ? ' badge-stage' : '') + '">' + (on ? 'Live' : 'Pilot') + '</span>' +
-        '<span class="proj-meta">' + (on ? 'Messages everyone it’s for.' : 'Messages only the testers of every pilot' + (own.length ? ' and its own:' : '.')) + '</span>' +
-        (on ? '' : (own.length ? '<p class="jr-own">' + own.map(function(e, i){ return testerHtml(e, i, k); }).join('') + '</p>' : '') + '<div class="jr-add">' + addTesterHtml(own, k) + '</div>') +
-        '<div class="event-controls"><button type="button" class="btn-text jr-live" data-key="' + esc(k) + '" data-on="' + (on ? '0' : '1') + '">' + (on ? 'Back to pilot' : 'Make live') + '</button></div></li>';
+    function featureHtml(k, group){
+        var label = known[k].indexOf(group + ': ') === 0 ? known[k].slice(group.length + 2) : known[k];
+        label = label.charAt(0).toUpperCase() + label.slice(1);
+        return '<div class="jr-feature"><label class="jn-check"><input type="checkbox" class="jr-live" data-key="' + esc(k) + '"' + (d.live[k] ? ' checked' : '') + '> ' + esc(label) + ' <span class="proj-meta">· ' + (d.live[k] ? 'live: messages everyone it’s for' : 'in pilot: testers only') + '</span></label>' +
+          (d.live[k] ? '' : '<p class="proj-meta">Its own testers, besides those of every pilot:</p>' + testersHtml(d.pilotTesters[k] || [], k, 'None')) + '</div>';
     }
   }
   function savePilot(btn){
@@ -163,7 +158,7 @@
     var goingLive = Object.keys(d.live).filter(function(k){ return d.live[k] && !was[k]; });
     // Going live reaches everyone each feature is for: asked every time (the ground rule).
     (goingLive.length ? BOLD.confirmAlways({ title: 'Make ' + (goingLive.length === 1 ? 'it' : 'them') + ' live?', go: 'Make live',
-      effects: goingLive.map(function(k){ return 'Let “' + (known[k] || k) + '” message everyone it’s for on Slack, not just the testers'; }) }) : Promise.resolve(true)).then(function(ok){
+      effects: goingLive.map(function(k){ return 'Let ' + (known[k] || k) + ' message everyone it’s for on Slack, not just the testers'; }) }) : Promise.resolve(true)).then(function(ok){
       if (!ok) return;
       btn.disabled = true; pilotError = '';
       db.collection('settings').doc('pilot').set({ testers: d.testers, pilotTesters: d.pilotTesters, live: d.live, updatedAt: Date.now(), updatedBy: me.email }, { merge: true }).then(function(){
@@ -300,7 +295,7 @@
   main.addEventListener('change', function(e){
     var t = e.target;
     if (t.classList.contains('jr-tester-add') && t.value) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).push(t.value); render(); return; }
-
+    if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.checked; render(); }
   });
   main.addEventListener('keydown', function(e){
     if (e.key === 'Enter' && e.target.classList.contains('st-chip-in')) { e.preventDefault(); addChip(e.target.closest('.st-chips')); }
@@ -312,7 +307,6 @@
     if (t.classList.contains('st-chip-x')) { t.closest('.kw-chip').remove(); editing = true; return; }
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
     if (t.classList.contains('jr-pilot-save')) { savePilot(t); return; }
-    if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.getAttribute('data-on') === '1'; render(); return; }
     if (t.classList.contains('jr-pilot-cancel')) { pilotDraft = null; pilotError = ''; render(); return; }
     if (t.classList.contains('jr-tester-remove')) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).splice(+t.getAttribute('data-i'), 1); render(); }
   });
