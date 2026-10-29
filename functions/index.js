@@ -1047,7 +1047,7 @@ async function handleBlockSuggestion(payload){
 // ---------- Pilots: a new Slack feature reaches only its testers until it's live ----------
 // settings/pilot: { testers: [emails], pilotTesters: { <feature>: [emails] }, live: { <feature>: true },
 // known: { <feature>: label } }: a feature in pilot goes to every pilot's testers and its own.
-// (Settings › Pilots, settings.html; PIs and admins). A new feature sends through pilotSlack
+// (Settings › Features, settings.html#features; PIs and admins). A new feature sends through pilotSlack
 // with a key of its own: until it's switched live there (it starts in pilot), whatever
 // it would send goes to the testers instead, each message marked with whom it was for, so
 // they see it all in the real Slack and nobody else hears a thing. With no testers, nobody.

@@ -3,7 +3,7 @@
 // join form's choices (settings/joinForm), each group's and role's Slack channels
 // (settings/groups: whoever is in the group, or has the role, is added to them) and the
 // pilots of new Slack features (settings/pilot; functions/index.js pilotSlack). Anyone else
-// who can open it is told who can. Tabs: Slack, Join form, Pilots (settingsHtml). Moved here from Requests' Settings tab (#164);
+// who can open it is told who can. Tabs: Slack, Join form, Features (settingsHtml). Moved here from Requests' Settings tab (#164);
 // join-requests.html#settings opens this page.
 (function(){
   var esc = BOLD.escapeHtml;
@@ -24,9 +24,10 @@
     'See you on Slack,', 'The BOLD team'].join('\n');
 
   // Three tabs, by #hash: Slack (#slack: the invite link, the groups' and roles' channels),
-  // Join form (#join: its choices and the welcome email) and Pilots (#pilots). The first two
+  // Join form (#join: its choices and the welcome email) and Features (#features: each Slack
+  // feature's switch and testers, the pilots; #pilots, its old name, opens it). The first two
   // are one form, saved from either.
-  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['pilots', 'Pilots']];
+  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['features', 'Features']];
   // A list typed in one at a time, as keywords are on the register form: type, Enter or +,
   // × to remove (project.css .kw-*). kind: 'chan' (Slack channels, shown with #), 'role',
   // 'pillar'; key: the group's or role's for channels.
@@ -86,12 +87,12 @@
       group('Welcome email') + '<label>Subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
       '<label>Text ({name}: their first name, {slackInvite}: the invite link, on the Slack tab, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label></fieldset>' +
       save + '</div></section></div>' +
-      '<section class="profile-panel" id="pilots">' + pilotHtml() + '</section>';
+      '<section class="profile-panel" id="features">' + pilotHtml() + '</section>';
   }
   function showTab(){
     var tabs = document.getElementById('stTabs');
     if (!tabs) return;
-    var h = location.hash.slice(1), want = TABS.some(function(t){ return t[0] === h; }) ? h : 'slack';
+    var h = location.hash.slice(1) === 'pilots' ? 'features' : location.hash.slice(1), want = TABS.some(function(t){ return t[0] === h; }) ? h : 'slack';
     TABS.forEach(function(t){ var x = document.getElementById(t[0]); if (x) x.hidden = t[0] !== want; });
     Array.prototype.forEach.call(tabs.querySelectorAll('.guide-tab'), function(a){
       var on = a.getAttribute('href') === '#' + want;
@@ -122,15 +123,15 @@
   function pilotHtml(){
     if (!pilot) return '';
     var d = pilotNow(), known = pilot.known || {}, keys = Object.keys(known).sort();
-    return '<div class="event-form join-form jr-pilot"><fieldset class="md-group"><legend>Pilots</legend>' +
+    return '<div class="event-form join-form jr-pilot"><fieldset class="md-group"><legend>Slack features</legend>' +
       '<p class="proj-meta">Every Slack message BOLD.OS sends belongs to one of these features. One that isn’t live messages only its testers: each message goes to them instead, saying whom it was for. New ones start that way.</p>' +
       '<label>Testers of every pilot</label>' + testersHtml(d.testers, '', 'Nobody') +
-      '<label>Features</label>' + (keys.length ? keys.map(function(k){
+      (keys.length ? keys.map(function(k){
         return '<div class="jr-feature"><label class="jn-check"><input type="checkbox" class="jr-live" data-key="' + esc(k) + '"' + (d.live[k] ? ' checked' : '') + '> ' + esc(known[k]) + ' <span class="proj-meta">· ' + (d.live[k] ? 'live: messages everyone it’s for' : 'in pilot: testers only') + '</span></label>' +
           (d.live[k] ? '' : '<p class="proj-meta">Its own testers, besides those of every pilot:</p>' + testersHtml(d.pilotTesters[k] || [], k, 'None')) + '</div>';
       }).join('') : '<p class="proj-meta">None yet: a feature appears here once it’s deployed.</p>') +
       '</fieldset>' + (pilotError ? '<p class="ev-error">' + esc(pilotError) + '</p>' : '') +
-      '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (pilotDraft ? '' : ' disabled title="Nothing changed"') + '>Save pilots</button>' +
+      '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (pilotDraft ? '' : ' disabled title="Nothing changed"') + '>Save features</button>' +
         (pilotDraft ? '<button type="button" class="jr-pilot-cancel">Cancel</button>' : '') + '</div></div>';
   }
   function savePilot(btn){
@@ -151,8 +152,8 @@
     if (!me) return;
     if (staff === false) { main.innerHTML = '<p class="proj-msg">Only PIs and admins see and change BOLD.OS’s settings.</p>'; return; }
     if (staff === null || invite === null || form === null) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
-    // Settings being changed aren't redrawn over: only the Pilots tab is.
-    if (editing) { var pp = document.getElementById('pilots'); if (pp) pp.innerHTML = pilotHtml(); return; }
+    // Settings being changed aren't redrawn over: only the Features tab is.
+    if (editing) { var pp = document.getElementById('features'); if (pp) pp.innerHTML = pilotHtml(); return; }
     main.innerHTML = settingsHtml();
     // Typing in a chip's box isn't a change until it's added.
     main.querySelector('.jr-settings').addEventListener('input', function(e){ if (!e.target.classList.contains('st-chip-in')) editing = true; });
