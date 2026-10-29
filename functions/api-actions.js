@@ -557,7 +557,11 @@ module.exports = function(ctx){
         else await asUser(who, 'create', 'members', doc, who.email);
         return { ok: true, changed: Object.keys(patch).filter((k) => k !== 'updatedAt') };
       }
-      case 'ask_group': return act(who, 'groupRequest', { action: 'request', to: need(a.group, 'the group (exec, staff, internal, associate or pan)'), note: a.note || '' });
+      // Whoever invited them decides it: without one, the request names one (inviter), as on the profile.
+      case 'ask_group': {
+        const inviter = a.inviter ? resolve((await lab.people()).map((p) => ({ email: p.email, name: p.name || '' })), a.inviter, 'people in BOLD') : '';
+        return act(who, 'groupRequest', Object.assign({ action: 'request', to: need(a.group, 'the group (exec, staff, internal, associate or pan)'), note: a.note || '' }, inviter ? { inviter } : {}));
+      }
       case 'withdraw_group_request': return act(who, 'groupRequest', { action: 'withdraw', id: need(a.request_id, 'the request_id') });
       case 'set_inviter': {
         let email = '';
@@ -578,12 +582,11 @@ module.exports = function(ctx){
       if (end < start) throw httpError(400, 'It has to end on or after the day it starts.');
       const slug = (fold(title).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'event') + '-' + Math.random().toString(16).slice(2, 8);
       await asUser(who, 'create', 'events', { slug, hidden: true, title, startDate: start, endDate: end, place: a.place || '', description: a.description || '', createdAt: now, createdBy: who.email, updatedAt: now, updatedBy: who.email }, slug);
-      return { slug, url: url('event.html?event=' + slug), note: (await isFullWrite(who.email)) ? 'It starts hidden: release it to show it to the lab.'
-        : 'It starts hidden: the PIs and admins are told, and one of them releases it.' };
+      return { slug, url: url('event.html?event=' + slug), note: 'It starts hidden: you release it (action release), which shows it to the lab and has Google Calendar invite its group. Tell your person exactly that first.' };
     }
     const full = await isFullWrite(who.email);
-    if ((a.action === 'release' || a.action === 'hide') && !full) throw httpError(403, 'Only PIs and admins release and hide events.');
-    // Hidden ones: a PI's or admin's, or the ones they added.
+    // Hidden ones: a PI's or admin's, or the ones they added. Releasing and hiding are
+    // whoever added it's (or its series' organisers'), as on the page: the rules decide.
     const e = (await lab.events()).filter((x) => x.hidden === false || full || x.createdBy === who.email)
       .find((x) => x._id === a.event || fold(x.title) === fold(a.event));
     if (!e) throw httpError(404, 'No event “' + a.event + '”.');
@@ -713,18 +716,18 @@ module.exports = function(ctx){
       description: 'Supervision meetings (PhD and Master students’): ask a student to join theirs, withdraw your request; as the student, approve or decline someone’s request. The other gets a Slack message.',
       inputSchema: S({ action: ACTIONS(['ask_to_join', 'withdraw', 'approve', 'decline']), student: str('ask_to_join: their name'), note: str(''), request_id: str('my_items') }) },
     { name: 'lab_meetings', run: labMeetings,
-      description: 'Recurring events that meet every 1–4 weeks at a set time (Events; series.html), such as a weekly reading group: add one (it starts hidden, and nobody is invited, until a PI or admin releases it), change, pause, resume or delete one you organise; join or leave one that is opt-in. PIs and admins release and hide them. Google Calendar sends the invitations.',
+      description: 'Recurring events that meet every 1–4 weeks at a set time (Events; series.html), such as a weekly reading group: add one (it starts hidden, and nobody is invited, until one of its organisers releases it), change, pause, resume, release, hide or delete one you organise (PIs and admins: any); join or leave one that is opt-in. Releasing one has Google Calendar invite everyone it invites: tell your person that, and who, before you do it. Google Calendar sends the invitations.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'join', 'leave', 'pause', 'resume', 'release', 'hide', 'delete']), meeting: str('Its name or id (all but add).'),
         title: str(''), description: str(''), day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM, London time'), minutes: { type: 'integer', description: '15–240, in 15s (default 60)' },
         every: { type: 'integer', description: 'Every N weeks, 1–4 (default 1)' }, until: str('YYYY-MM-DD, optional last day'), link: str('Its own meeting link (https), instead of a new Google Meet'),
         invite: ACTIONS(['join', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
     { name: 'profile', run: profile,
-      description: 'Your profile and place in BOLD: update your details, ask to move to another group (Who is BOLD), withdraw that request, say who invited you to the BOLD Slack, and confirm (or deny) that you invited someone who says you did.',
+      description: 'Your profile and place in BOLD: update your details, ask to move to another group (Who is BOLD; whoever invited you decides it, so without one name them in inviter), withdraw that request, say who invited you to the BOLD Slack, and confirm (or deny) that you invited someone who says you did.',
       inputSchema: S(Object.assign({ action: ACTIONS(['update', 'ask_group', 'withdraw_group_request', 'set_inviter', 'confirm_invite', 'deny_invite']) },
         ...Object.keys(PROFILE).map((k) => ({ [k]: k === 'pillars' ? { type: 'array', items: { type: 'string' } } : k === 'list_on_website' ? { type: 'boolean' } : str('update') })),
-        { group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']), note: str(''), request_id: str(''), inviter: str('set_inviter: their name ("" for nobody)'), member: str('confirm_invite, deny_invite: the member’s name') })) },
+        { group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']), note: str(''), request_id: str(''), inviter: str('set_inviter: their name ("" for nobody); ask_group: who invited you, if you haven’t said'), member: str('confirm_invite, deny_invite: the member’s name') })) },
     { name: 'events', run: events,
-      description: 'The lab’s events: add one (it starts hidden, until a PI or admin releases it), update or delete one you added (PIs and admins: any), release or hide one (PIs and admins).',
+      description: 'The lab’s events: add one (it starts hidden, until you release it), update, release, hide or delete one you added or whose series you organise (PIs and admins: any). Releasing one has Google Calendar invite its group: tell your person that, and who, before you do it.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str('') }) },
     { name: 'requests', run: requests,
       description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody), or set someone’s group.',

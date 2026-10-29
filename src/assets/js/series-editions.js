@@ -6,8 +6,8 @@
 // pages/event.js mounts this once it knows the event's series (SeriesEditions.mount).
 // #editionSwitch, above the header: the occurrences (1st, 2nd…, by month), then for its
 // organisers, PIs and admins (eventSeries, functions/series.js) a "+" to add one by hand
-// (its dates; a hidden occurrence, released as any event), and for PIs and admins Release
-// while the series is hidden.
+// (its dates; a hidden occurrence, released as any event), and Release while the series
+// is hidden.
 // Anything marked data-edition="<slug>" shows only on that occurrence.
 window.SeriesEditions = (function(){
   var esc = BOLD.escapeHtml;
@@ -40,12 +40,12 @@ window.SeriesEditions = (function(){
         return '<a href="' + esc(href(e)) + '"' + (e.slug === slug ? ' class="is-current" aria-current="page"' : '') + '>' + esc(label) + (e.hidden ? ' · hidden' : '') + '</a>';
       }).join('') + (canChange() && !planning ? '<button type="button" class="ed-plan" title="Add an occurrence" aria-label="Add an occurrence">+</button>' : '');
       var tools = canChange() && s.hidden ? '<span class="ed-tools"><span class="ed-hidden">Series hidden</span>' +
-          (BOLD.isFullWrite() ? '<button type="button" class="btn-text ed-release">Release</button>' : '') + '</span>' : '';
+          '<button type="button" class="btn-text ed-release">Release</button></span>' : '';
       var form = planning ? '<div class="event-form ed-form"><p class="event-form-head">A new occurrence of ' + esc(s.title) + '</p>' +
           '<div class="ev-row"><label>Starts<input type="date" class="ed-start" value="' + esc(planning.start) + '"></label>' +
           '<label>Ends<input type="date" class="ed-end" value="' + esc(planning.end) + '"></label></div>' +
           BoldEvents.inviteSelectHtml('ed-invite', planning.inviteGroup) +
-          '<p class="event-form-hint">It starts hidden, with the place and description of the last one; you build its programme here, and a PI or admin releases it: then Google Calendar invites the group chosen.</p>' +
+          '<p class="event-form-hint">It starts hidden, with the place and description of the last one; you build its programme here, then release it: Google Calendar then invites the group chosen.</p>' +
           '<p class="ev-error"' + (planning.error ? '' : ' hidden') + '>' + esc(planning.error || '') + '</p>' +
           '<div class="event-form-actions"><button type="button" class="ev-save ed-go"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Adding…' : 'Add it') + '</button>' +
           '<button type="button" class="ed-cancel">Cancel</button></div></div>' : '';
@@ -68,7 +68,7 @@ window.SeriesEditions = (function(){
       if (t.classList.contains('ed-plan')) { openPlanning(); return; }
       if (t.classList.contains('ed-cancel')) { planning = null; draw(); return; }
       if (t.classList.contains('ed-release')) {
-        BOLD.confirmAction({ title: 'Release ' + s.title + '?', go: 'Release', effects: ['Show the series to the lab on Events'] }).then(function(ok){
+        BOLD.confirmAction({ title: 'Release ' + s.title + '?', go: 'Release', effects: ['Show the series to the lab on Events'], always: true }).then(function(ok){
           if (ok) call({ action: 'release', id: id }).then(function(){ s.hidden = false; draw(); }).catch(function(err){ window.alert((err && err.message) || 'Couldn’t release it — try again.'); });
         });
         return;

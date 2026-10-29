@@ -6,7 +6,7 @@
 //   every 1–4 weeks, its dates the Google Calendar series' (below);
 // - 'editions', without (the Festival, Collaboration Week…): every N weeks or months
 //   (`cadence: { every, unit: 'week' | 'month' }`), each edition an events/{slug} doc with
-//   `series: <id>`, made by 'nextEdition' (hidden, until a PI or admin releases it, as
+//   `series: <id>`, made by 'nextEdition' (hidden, until one of its organisers releases it, as
 //   any event). The series' organisers edit its editions (firestore.rules); seriesNudges
 //   tells the PIs, admins and organisers when the next one is due and not scheduled.
 //   `proposals`: its editions take proposals (event-proposals.js).
@@ -25,11 +25,10 @@
 // released ones, PIs and admins and its organisers the hidden ones too.
 //
 // Who does what (the Events row of BOLDiquette › Who can see what for adding):
-// - adding one: Events' Edit level; it starts hidden, and the PIs and admins are told;
-// - changing, pausing, deleting it: its organisers, PIs and admins;
-// - releasing and hiding it: PIs and admins. Nobody is invited before it's released,
-//   so nobody invites a whole group on their own; nor, once released, does an organiser
-//   change who is invited (PIs and admins do);
+// - adding one: Events' Edit level; it starts hidden, and the other organisers are told;
+// - changing, pausing, deleting, releasing and hiding it, and who it invites: its organisers
+//   (who are responsible for it), PIs and admins. Nobody is invited before it's released;
+//   the page warns of what releasing sets off (Google Calendar invites a whole group), always;
 // - joining and leaving one that's opt-in: whoever can view Events.
 // Invited: everyone in `invite.group` and above (members' groups; PIs and admins count
 // as BOLD-exec), kept in line as people join BOLD or change group (onMemberGroupChanged),
@@ -212,10 +211,12 @@ module.exports = function series(deps){
       const id = stem + '-' + crypto.randomBytes(3).toString('hex');
       const now = Date.now();
       await db.collection('eventSeries').doc(id).set(Object.assign({ id, hidden: true, joined: [], createdBy: email, createdAt: now, updatedAt: now, updatedBy: email }, n));
-      if (!full) {
+      // Its organisers release it: the others hear they're one (whoever added it knows).
+      const others = (n.organisers || []).filter((e) => e !== email);
+      if (others.length) {
         const who = ((await db.collection('people').where('email', '==', email).limit(1).get()).docs[0] || { data: () => ({}) }).data().name || email.split('@')[0];
-        await Promise.resolve(tellStaff('🔔 ' + slackText(who) + ' added a recurring event, ' + linkedTitle(n.title, seriesUrl(id)) +
-          (n.kind === 'editions' ? '. It stays hidden until a PI or admin releases it.' : '. It stays hidden, and nobody is invited, until a PI or admin releases it.'), email)).catch((err) => logger.warn('Telling the PIs failed', { error: String(err.message) }));
+        await Promise.resolve(tellPeople(others, '🔔 ' + slackText(who) + ' added ' + linkedTitle(n.title, seriesUrl(id)) + ', with you as an organiser. It stays hidden' +
+          (n.kind === 'editions' ? '' : ', and nobody is invited,') + ' until one of you releases it from its page.')).catch((err) => logger.warn('Telling the organisers failed', { error: String(err.message) }));
       }
       return { series: view((await db.collection('eventSeries').doc(id).get()).data(), email, full) };
     }
@@ -234,9 +235,6 @@ module.exports = function series(deps){
         const n = normalizeSeries(d, null);
         if (n.error) throw new HttpsError('invalid-argument', n.error);
         if (!n.organisers.length) throw new HttpsError('invalid-argument', 'Keep at least one organiser.');
-        // Adding, removing or changing the invite of a released one changes who Google invites.
-        if (!s.hidden && !full && JSON.stringify(n.kind === 'meeting' ? n.invite : null) !== JSON.stringify((s.kind || 'meeting') === 'meeting' ? s.invite : null))
-          throw new HttpsError('permission-denied', 'Once it’s released, only PIs and admins change who is invited.');
         // What the other kind had goes (the invite's Calendar series is cancelled by syncSeries).
         const drop = n.kind === 'meeting' ? { cadence: FieldValue.delete(), proposals: FieldValue.delete() }
           : { meeting: FieldValue.delete(), invite: FieldValue.delete(), pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() };
@@ -244,7 +242,7 @@ module.exports = function series(deps){
         break;
       }
       case 'release': case 'hide':
-        if (!full) throw new HttpsError('permission-denied', 'Only PIs and admins release and hide recurring events.');
+        if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins release and hide it.');
         await ref.set(Object.assign({ hidden: d.action === 'hide' }, stamp), { merge: true });
         break;
       case 'nextEdition': {

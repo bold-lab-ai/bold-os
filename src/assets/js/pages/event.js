@@ -2,8 +2,9 @@
 // (see events-common.js): the whole of an event added from the events page
 // (event.html?event=<slug>), or the top of an event with its own page
 // (#eventBody's data-event, e.g. Collaboration Week). PIs/admins, and whoever added
-// it, edit it in place or delete it for good; PIs/admins release or hide it; those
-// buttons are always shown, greyed out for everyone else. A hidden event can't be read
+// it (or organises its series), edit it in place, release or hide it (after a warning of
+// what that sets off, always shown) or delete it for good; those buttons are always shown,
+// greyed out for everyone else. A hidden event can't be read
 // by anyone else (firestore.rules), so for them it's "not found" — as is one that was
 // deleted, and then the rest of its page (<main>) is hidden too.
 (function(){
@@ -78,9 +79,8 @@
   function canChange(){ return fullWrite || mine(); }
   function controls(){
     var off = canChange() ? '' : ' disabled title="' + E.NOT_PI + '"';
-    var offRelease = fullWrite ? '' : ' disabled title="' + E.NOT_PI_RELEASE + '"';
     return '<div class="event-controls"><button type="button" class="btn-text ev-edit"' + off + '>Edit</button>' +
-      '<button type="button" class="btn-text ev-visibility"' + offRelease + '>' + (x.hidden ? 'Release' : 'Hide') + '</button>' +
+      '<button type="button" class="btn-text ev-visibility"' + off + '>' + (x.hidden ? 'Release' : 'Hide') + '</button>' +
       '<button type="button" class="btn-text danger ev-delete"' + off + '>Delete</button></div>';
   }
 
@@ -94,8 +94,8 @@
     }
     document.title = x.title + ' | BOLD Lab';
     if (editing) {
-      // Who Google invites (theirs while hidden; then PIs' and admins'), on any event but a built-in page's.
-      var inviteField = !x.page || x.series ? E.inviteSelectHtml('ev-invite', x.inviteGroup, x.hidden || fullWrite ? '' : 'Once it’s released, only PIs and admins change who is invited') : '';
+      // Who Google invites, on any event but a built-in page's.
+      var inviteField = !x.page || x.series ? E.inviteSelectHtml('ev-invite', x.inviteGroup) : '';
       body.innerHTML = BACK + '<div class="event-form">' + E.formHtml(x).replace('<p class="ev-error" hidden></p>', inviteField + '<p class="ev-error" hidden></p>') +
         '<div class="event-form-actions"><button type="button" class="ev-save">Save</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
       var form = body.querySelector('.event-form');
@@ -119,7 +119,7 @@
     }
     var past = E.isPast(x);
     body.innerHTML = BACK +
-      (x.hidden ? '<p class="event-hidden-note">Hidden — only PIs and admins' + (mine() ? ', and you,' : '') + ' can see this event until a PI or admin releases it.</p>' : '') +
+      (x.hidden ? '<p class="event-hidden-note">Hidden — only ' + (mine() ? 'you, ' : 'whoever added it, ') + 'PIs and admins can see this event until ' + (mine() ? 'you release it' : 'it’s released') + '.</p>' : '') +
       '<div><span class="eyebrow">' + (past ? 'Past' : 'Upcoming') + '</span></div>' +
       '<h1>' + esc(x.title) + '</h1>' +
       '<p class="hero-when">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' &middot; ' + esc(x.place) : '') + '</p>' +
@@ -131,11 +131,15 @@
     if (projectsEl && links) projectsEl.innerHTML = links.panelHtml();
     body.querySelector('.ev-edit').addEventListener('click', function(){ if (canChange()) { editing = true; render(); } });
     body.querySelector('.ev-visibility').addEventListener('click', function(){
-      if (!fullWrite) return;
-      if (!x.hidden && !window.confirm('Hide “' + x.title + '”? Only PIs and admins will see it until it’s released again.')) return;
-      ref.update({ hidden: !x.hidden, updatedAt: Date.now(), updatedBy: me.email }).catch(function(err){
-        console.error('[BOLD Events] changing the event’s visibility failed', err);
-        window.alert('Couldn’t change that — try again.');
+      if (!canChange()) return;
+      var hide = !x.hidden;
+      // It reaches everyone it invites: warned every time, even with "Don't ask me again".
+      BOLD.confirmAction({ title: (hide ? 'Hide' : 'Release') + ' “' + x.title + '”?', go: hide ? 'Hide it' : 'Release it', effects: E.visibilityEffects(x, hide), always: true }).then(function(ok){
+        if (!ok) return;
+        ref.update({ hidden: hide, updatedAt: Date.now(), updatedBy: me.email }).catch(function(err){
+          console.error('[BOLD Events] changing the event’s visibility failed', err);
+          window.alert('Couldn’t change that — try again.');
+        });
       });
     });
     body.querySelector('.ev-delete').addEventListener('click', function(){

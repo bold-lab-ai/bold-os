@@ -7,9 +7,9 @@
   // eventSeries callable, which keeps its Google Calendar event in line.
   // - Everyone who can view Events: when it is, who's invited, its organisers; Join or
   //   Leave one that's opt-in; its Meet link once invited.
-  // - Its organisers, PIs and admins: Edit, Pause or Resume, Delete.
-  // - PIs and admins: Release (the invitations go out) and Hide.
-  // A new one starts hidden, until a PI or admin releases it.
+  // - Its organisers (and PIs and admins): Edit, Pause or Resume, Delete, and Release (the
+  //   invitations go out) and Hide, each after a warning of what it sets off, always shown.
+  // A new one starts hidden, until one of its organisers releases it.
   // A recurring event (kind 'editions': the Festival, Collaboration Week) instead lists its
   // editions (events with its `series`), says when the next is due, and its organisers
   // Schedule the next edition (eventSeries 'nextEdition': a hidden event, released as any).
@@ -98,7 +98,7 @@
     }
     var link = invited() && s.meetUrl ? '<a href="' + esc(s.meetUrl) + '" target="_blank" rel="noopener">' + (s.meeting.link ? 'Own link' : 'Google Meet') + '</a>' : '';
     body.innerHTML = BACK +
-      (s.hidden ? '<p class="event-hidden-note">Hidden — only PIs, admins and its organisers see it, and nobody is invited, until a PI or admin releases it.</p>' : '') +
+      (s.hidden ? '<p class="event-hidden-note">Hidden — only its organisers, PIs and admins see it, and nobody is invited, until an organiser releases it.</p>' : '') +
       '<div><span class="eyebrow">Recurring event' + (s.pausedAt ? ' · paused' : '') + '</span></div>' +
       '<h1>' + esc(s.title) + '</h1>' +
       '<p class="hero-when">' + esc(meetingText(s.meeting)) + ' · London time' + (link ? ' · ' + link : '') + '</p>' +
@@ -113,7 +113,7 @@
       '<div class="event-controls">' +
         '<button type="button" class="btn-text sr-edit"' + off(canChange(), NOT_ORG) + '>Edit</button>' +
         '<button type="button" class="btn-text sr-act" data-action="' + (s.pausedAt ? 'resume' : 'pause') + '"' + off(canChange() && !s.hidden, s.hidden ? 'Not released yet' : NOT_ORG) + '>' + (s.pausedAt ? 'Resume' : 'Pause') + '</button>' +
-        '<button type="button" class="btn-text sr-act" data-action="' + (s.hidden ? 'release' : 'hide') + '"' + off(full, 'Only PIs and admins release and hide recurring events') + '>' + (s.hidden ? 'Release' : 'Hide') + '</button>' +
+        '<button type="button" class="btn-text sr-act" data-action="' + (s.hidden ? 'release' : 'hide') + '"' + off(canChange(), NOT_ORG) + '>' + (s.hidden ? 'Release' : 'Hide') + '</button>' +
         '<button type="button" class="btn-text danger sr-act" data-action="delete"' + off(canChange(), NOT_ORG) + '>Delete</button>' +
       '</div>';
   }
@@ -132,12 +132,12 @@
       plan = '<div class="event-form sr-plan"><p class="event-form-head">The next edition</p>' +
         '<div class="ev-row"><label>Starts<input type="date" class="sr-start" value="' + esc(planning.start) + '"></label>' +
         '<label>Ends<input type="date" class="sr-end" value="' + esc(planning.end) + '"></label></div>' +
-        '<p class="event-form-hint">It starts hidden, with the place and description of the last one; you build its programme on its page, and a PI or admin releases it.</p>' +
+        '<p class="event-form-hint">It starts hidden, with the place and description of the last one; you build its programme on its page, then release it.</p>' +
         '<p class="ev-error"' + (planning.error ? '' : ' hidden') + '>' + esc(planning.error || '') + '</p>' +
         '<div class="event-form-actions"><button type="button" class="ev-save sr-plan-go"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Scheduling…' : 'Schedule it') + '</button>' +
         '<button type="button" class="sr-plan-cancel">Cancel</button></div></div>';
     }
-    return (s.hidden ? '<p class="event-hidden-note">Hidden — only PIs, admins and its organisers see it, until a PI or admin releases it.</p>' : '') +
+    return (s.hidden ? '<p class="event-hidden-note">Hidden — only its organisers, PIs and admins see it, until an organiser releases it.</p>' : '') +
       '<div><span class="eyebrow">Recurring event</span></div>' +
       '<h1>' + esc(s.title) + '</h1>' +
       '<p class="hero-when">' + esc(cadenceText(s.cadence)) + (s.proposals ? ' · takes proposals' : '') +
@@ -152,7 +152,7 @@
       (msg ? '<p class="hero-note" role="status">' + esc(msg) + '</p>' : '') +
       '<div class="event-controls">' +
         '<button type="button" class="btn-text sr-edit"' + off(canChange(), NOT_ORG) + '>Edit</button>' +
-        '<button type="button" class="btn-text sr-act" data-action="' + (s.hidden ? 'release' : 'hide') + '"' + off(full, 'Only PIs and admins release and hide recurring events') + '>' + (s.hidden ? 'Release' : 'Hide') + '</button>' +
+        '<button type="button" class="btn-text sr-act" data-action="' + (s.hidden ? 'release' : 'hide') + '"' + off(canChange(), NOT_ORG) + '>' + (s.hidden ? 'Release' : 'Hide') + '</button>' +
         '<button type="button" class="btn-text danger sr-act" data-action="delete"' + off(canChange(), NOT_ORG) + '>Delete</button>' +
       '</div>';
   }
@@ -182,8 +182,7 @@
     var e = editing;
     var opts = (roster || []).filter(function(p){ return e.organisers.indexOf(p.email) < 0; })
       .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('');
-    // Once released, only PIs and admins change who Google invites: adding or removing the invite too.
-    var lockInvite = !!(s && !s.hidden && !full), once = e.often === 'once', weekly = e.often.charAt(0) === 'w', invite = weekly && e.hasInvite, ed = !invite;
+    var once = e.often === 'once', weekly = e.often.charAt(0) === 'w', invite = weekly && e.hasInvite, ed = !invite;
     var oftens = s ? OFTEN : [['once', 'Once']].concat(OFTEN);   // a recurring one stays recurring
     var head = '<h1>' + (s ? 'Edit ' + esc(s.title) : 'New event series') + '</h1>' +
       '<div class="event-form sr-form">' +
@@ -195,30 +194,29 @@
       '<label>Ends<input type="date" class="sr-end1" value="' + esc(e.end || '') + '"></label></div>' +
       '<label>Place<input type="text" class="sr-place" maxlength="200" value="' + esc(e.place || '') + '"></label>' +
       E.inviteSelectHtml('sr-invite-group', e.inviteGroup) +
-      '<p class="event-form-hint">' + (full ? 'It stays hidden — only PIs and admins see it — until you release it from its page.'
-        : 'It stays hidden — only you, PIs and admins see it — until a PI or admin releases it.') + '</p>' + onceEnd();
+      '<p class="event-form-hint">It stays hidden — only you, PIs and admins see it — until you release it from its page.</p>' + onceEnd();
     return head +
-        '<label class="sr-check"' + (weekly && !lockInvite ? '' : ' title="' + (lockInvite ? 'Once it’s released, only PIs and admins change who is invited' : 'A recurring invite needs a set day every 1–4 weeks') + '"') + '>' +
-          '<input type="checkbox" class="sr-has-invite"' + (invite ? ' checked' : '') + (weekly && !lockInvite ? '' : ' disabled') + '> A recurring Google Calendar invite, at a set day and time</label>' +
+        '<label class="sr-check"' + (weekly ? '' : ' title="A recurring invite needs a set day every 1–4 weeks"') + '>' +
+          '<input type="checkbox" class="sr-has-invite"' + (invite ? ' checked' : '') + (weekly ? '' : ' disabled') + '> A recurring Google Calendar invite, at a set day and time</label>' +
         (ed ? '<p class="event-form-hint sr-check-hint">Without it, each occurrence is added by hand, with its own dates, place and programme.</p>' +
             '<label class="sr-check"><input type="checkbox" class="sr-proposals"' + (e.proposals ? ' checked' : '') + '> It takes proposals (workshops, pitches, talks)</label>' +
             E.inviteSelectHtml('sr-invite-group', e.inviteGroup) +
-            '<p class="event-form-hint">To each occurrence, once a PI or admin releases it; each can choose its own.</p>'
+            '<p class="event-form-hint">To each occurrence, once it’s released; each can choose its own.</p>'
           : '<label>When (London time)</label>' + meetingEntryHtml(e.meeting) +
-            '<label>Who’s invited<select class="sr-invite"' + (lockInvite ? ' disabled title="Once it’s released, only PIs and admins change this"' : '') + '>' +
+            '<label>Who’s invited<select class="sr-invite">' +
               INVITE.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.invite ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>') +
         '<label>Organisers: they change it, and are always invited</label>' +
         '<ul class="sr-orgs">' + e.organisers.map(function(m, i){
           return '<li><span>' + esc(nameOf(m)) + '</span>' + (e.organisers.length > 1 ? '<button type="button" class="btn-text danger sr-org-remove" data-i="' + i + '">Remove</button>' : '') + '</li>';
         }).join('') + '</ul>' +
         '<select class="sr-pick" aria-label="Add an organiser"><option value="">' + (roster ? 'Add an organiser…' : 'Loading…') + '</option>' + opts + '</select>' +
-        (s ? '' : '<p class="event-form-hint">' + (ed ? 'It stays hidden until a PI or admin releases it; then you schedule its editions.' : 'It stays hidden, and nobody is invited, until a PI or admin releases it.') + '</p>') +
+        (s ? '' : '<p class="event-form-hint">' + (ed ? 'It stays hidden until you release it from its page; then you schedule its editions.' : 'It stays hidden, and nobody is invited, until you release it from its page.') + '</p>') +
         '<p class="ev-error"' + (e.error ? '' : ' hidden') + '>' + esc(e.error || '') + '</p>' +
         '<div class="event-form-actions"><button type="button" class="ev-save sr-save"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Saving…' : s ? 'Save' : 'Add') + '</button>' +
           '<button type="button" class="sr-cancel"' + (busy ? ' disabled' : '') + '>Cancel</button></div>' +
       '</div>' +
       (s && isEditions(s) ? '<div class="event-controls">' +
-        (full ? '<button type="button" class="btn-text sr-act" data-action="' + (s.hidden ? 'release' : 'hide') + '">' + (s.hidden ? 'Release the series' : 'Hide the series') + '</button>' : '') +
+        '<button type="button" class="btn-text sr-act" data-action="' + (s.hidden ? 'release' : 'hide') + '">' + (s.hidden ? 'Release the series' : 'Hide the series') + '</button>' +
         '<button type="button" class="btn-text danger sr-act" data-action="delete">Delete the series</button></div>' : '');
   }
 
@@ -326,7 +324,8 @@
       }).catch(function(err){ busy = false; msg = (err && err.message) || 'Couldn’t do that — try again.'; render(); });
     };
     if (action === 'retry') { go(); return; }
-    BOLD.confirmAction({ title: TITLES[action], go: action === 'delete' ? 'Delete' : 'Go ahead', effects: EFFECTS[action]() })
+    // Releasing or hiding reaches everyone it invites: always warned, even with "Don't ask me again".
+    BOLD.confirmAction({ title: TITLES[action], go: action === 'delete' ? 'Delete' : 'Go ahead', effects: EFFECTS[action](), always: action === 'release' || action === 'hide' })
       .then(function(ok){ if (ok) go(); });
   }
 

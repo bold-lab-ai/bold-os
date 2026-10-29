@@ -454,11 +454,12 @@ service cloud.firestore {
 
     // Events added from the events page (src/assets/js/events-common.js),
     // keyed by their slug; the built-in events are static pages. Adding one is for the
-    // table's Edit (BOLDiquette › Who can see what); it starts hidden and a PI or admin
-    // releases it (onEventAdded tells them). A hidden one is for PIs/admins and whoever
-    // added it — everyone else queries where('hidden', '==', false), and their own by
-    // createdBy. Whoever added it edits and deletes it; releasing and hiding are for PIs and admins.
-    // An edition of a recurring event (`series`, eventSeries/{id}) is its organisers' too.
+    // table's Edit (BOLDiquette › Who can see what); it starts hidden, and whoever added it
+    // releases it. A hidden one is for PIs/admins and whoever added it — everyone else
+    // queries where('hidden', '==', false), and their own by createdBy. Whoever added it
+    // edits, releases, hides and deletes it, and chooses who Google invites (the page warns
+    // what releasing sets off). An edition of a recurring event (`series`, eventSeries/{id})
+    // is its organisers' too. PIs and admins can do all of it.
     match /events/{slug} {
       function addedByMe(d) { return d.get('createdBy', '') == email(); }
       function organisesIt(d) {
@@ -474,9 +475,7 @@ service cloud.firestore {
       allow update: if hasFullWrite() || (may('events', 'edit') && mine(resource.data)
         && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '')
         && request.resource.data.get('series', '') == resource.data.get('series', '')
-        && request.resource.data.hidden == resource.data.hidden
-        // Who Google invites: theirs to choose while it's hidden; once released, PIs' and admins'.
-        && (resource.data.hidden == true || request.resource.data.get('inviteGroup', '') == resource.data.get('inviteGroup', ''))
+        && request.resource.data.hidden is bool
         && request.resource.data.get('inviteGroup', 'none') in ['none', 'everyone', 'associate', 'internal', 'staff', 'exec']);
       allow delete: if hasFullWrite() || (may('events', 'edit') && mine(resource.data));
     }

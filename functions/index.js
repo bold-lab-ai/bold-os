@@ -930,17 +930,15 @@ async function sendEvent(token, event){
 // the moment a proposal exists, rather than relying on someone happening
 // to open the board and see "Pending your approval".
 
-// An event added by someone who isn't a PI or admin starts hidden: tell the PIs and
-// admins, who release it from its page (firestore.rules, events/{slug}).
+// An event added from the site starts hidden; whoever added it (or organises its series)
+// releases it from its page (firestore.rules, events/{slug}), so nobody else is told. It's
+// numbered here, as every request is (it's on the board until it's released).
 exports.onEventAdded = onDocumentCreated(
   { document: 'events/{slug}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
     const data = event.data && event.data.data();
-    if (!data || data.hidden !== true || !data.createdBy || await isFullWrite(data.createdBy)) return;
-    const snap = await db.collection('people').where('email', '==', data.createdBy).limit(1).get();
-    const who = snap.empty ? data.createdBy.split('@')[0] : snap.docs[0].data().name;
-    await tellStaff('🔔 ' + await numberTag('events/' + event.params.slug) + slackText(who) + ' added an event, ' + linkedTitle(data.title || event.params.slug, SITE_URL + 'event.html?event=' + encodeURIComponent(event.params.slug)) +
-      '. It stays hidden until a PI or admin releases it from its page.', data.createdBy);
+    if (!data || data.hidden !== true) return;
+    await numberTag('events/' + event.params.slug);
   }
 );
 
@@ -3527,14 +3525,16 @@ async function requestWork(email, full, person){
   ]);
   // Papers in Internal Review (ML Conference Cycle's view), people to confirm as having
   // invited them (the inviter; PIs and admins), events and series waiting to be
-  // released (PIs and admins, and whoever added them), hackathon team requests.
+  // released (on whoever added the event or organises the series, who release them; PIs
+  // and admins see them too), hackathon team requests.
   const [cycle, invites, events, series, hackathon] = await Promise.all([
     access.can(email, 'ml-cycle', 'view').then(function(ok){
       return ok ? Promise.all([all('boards'), db.collectionGroup('cards').get().then(function(x){ return x.docs; })]) : [[], []];
     }),
     full ? db.collection('members').where('invitedBy.status', '==', 'pending').get().then(function(x){ return x.docs; }) : q('members', 'invitedBy.email'),
     full ? db.collection('events').where('hidden', '==', true).get().then(function(x){ return x.docs; }) : q('events', 'createdBy'),
-    full ? db.collection('eventSeries').where('hidden', '==', true).get().then(function(x){ return x.docs; }) : q('eventSeries', 'createdBy'),
+    full ? db.collection('eventSeries').where('hidden', '==', true).get().then(function(x){ return x.docs; })
+      : db.collection('eventSeries').where('organisers', 'array-contains', email).get().then(function(x){ return x.docs; }),
     full ? all('hackathonJoins') : db.collection('hackathonJoins').doc(email).get().then(function(x){ return x.exists ? [x] : []; })
   ]);
   joins.forEach(function(d){
@@ -3608,13 +3608,14 @@ async function requestWork(email, full, person){
     const e = d.data();
     if (e.hidden !== true || e.series) return;   // a series' dates are released with it
     add({ kind: 'event', ref: d.ref.path, title: 'Release the event: ' + (e.title || d.id), url: SITE_URL + 'event.html?event=' + encodeURIComponent(d.id),
-      by: person(e.createdBy), on: [], waiting: PIS_ADMINS, state: 'hidden' }, { column: 'review', since: e.createdAt || 0 });
+      by: person(e.createdBy), on: e.createdBy ? [person(e.createdBy)] : [], waiting: e.createdBy ? '' : PIS_ADMINS, state: 'hidden' }, { column: 'review', since: e.createdAt || 0 });
   });
   series.forEach(function(d){
     const e = d.data();
     if (e.hidden !== true) return;
+    const orgs = (e.organisers || []).map(function(o){ return person(o); });
     add({ kind: 'event', ref: d.ref.path, title: 'Release the event series: ' + (e.title || d.id), url: SITE_URL + 'series.html?series=' + encodeURIComponent(d.id),
-      by: person(e.createdBy), on: [], waiting: PIS_ADMINS, state: 'hidden' }, { column: 'review', since: e.createdAt || 0 });
+      by: person(e.createdBy), on: orgs, waiting: orgs.length ? '' : PIS_ADMINS, state: 'hidden' }, { column: 'review', since: e.createdAt || 0 });
   });
   hackathon.forEach(function(d){
     const h = d.data();

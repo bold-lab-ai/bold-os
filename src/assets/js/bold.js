@@ -159,7 +159,8 @@
     return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).set({ skipConfirm: !!on, at: Date.now() });
   };
   BOLD.confirmAction = function(o){
-    return BOLD.getSkipConfirm().then(function(skip){
+    // o.always: asked even with "Don't ask me again" (it reaches many people), and not offered.
+    return (o.always ? Promise.resolve(false) : BOLD.getSkipConfirm()).then(function(skip){
       if (skip) return { skip: {} };
       return new Promise(function(resolve){
         var d = document.createElement('dialog');
@@ -168,7 +169,7 @@
           ((o.effects || []).length ? '<p>This will:</p><ul>' + o.effects.map(function(e){
             return e.key ? '<li class="confirm-opt"><label><input type="checkbox" checked data-key="' + esc(e.key) + '"> ' + esc(e.text) + '</label></li>' : '<li>' + esc(e.text || e) + '</li>';
           }).join('') + '</ul>' : '') +
-          (auth && auth.currentUser ? '<label class="confirm-skip"><input type="checkbox"> Don’t ask me again (you can turn it back on in your profile)</label>' : '') +
+          (auth && auth.currentUser && !o.always ? '<label class="confirm-skip"><input type="checkbox"> Don’t ask me again (you can turn it back on in your profile)</label>' : '') +
           '<div class="confirm-actions"><button class="btn-box" type="button" data-no>Cancel</button>' +
           '<button class="btn-box is-primary" type="button" data-yes>' + esc(o.go || 'Go ahead') + '</button></div>';
         document.body.appendChild(d);
