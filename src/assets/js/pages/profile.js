@@ -259,7 +259,7 @@
     if (!t || t.disabled || !user) return;
     ghError = '';
     if (t.classList.contains('gh-link')) {
-      BOLD.confirmAction({ title: 'Link your GitHub account?', go: 'Link', effects: ['Invite it to the bold-lab-ai organisation on GitHub (GitHub emails you the invitation)'] })
+      BOLD.confirmAlways({ title: 'Link your GitHub account?', go: 'Link', effects: ['Invite it to the bold-lab-ai organisation on GitHub (GitHub emails you the invitation)'] })
         .then(function(ok){ if (ok) linkGithub(); });
       return;
     }

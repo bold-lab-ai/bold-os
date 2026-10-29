@@ -288,7 +288,7 @@
       var before = String(hadRoles[r] || '').split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); });
       roleChannels[r].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) added.push('Invite everyone whose role is ' + r + ' to #' + n + ' on Slack'); });
     });
-    (added.length ? BOLD.confirmAction({ title: 'Save the settings?', go: 'Save', effects: added }) : Promise.resolve(true)).then(function(ok){
+    (added.length ? BOLD.confirmAlways({ title: 'Save the settings?', go: 'Save', effects: added }) : Promise.resolve(true)).then(function(ok){
       if (ok) writeSettings(btn, err, mine);
     });
   }
@@ -340,7 +340,7 @@
     var iid = t.getAttribute('data-iid'), mid = t.getAttribute('data-mid');
     if (iid || mid) {
       var yes = t.classList.contains('jr-i-yes'), key = iid || 'm:' + mid;
-      (yes ? Promise.resolve(true) : BOLD.confirmAction({ title: 'Say you didn’t invite them?', go: 'Say so', effects: ['Tell the PIs and admins on Slack'] })).then(function(ok){
+      (yes ? Promise.resolve(true) : BOLD.confirmAlways({ title: 'Say you didn’t invite them?', go: 'Say so', effects: ['Tell the PIs and admins on Slack'] })).then(function(ok){
         if (ok) confirmInvite(key, iid, mid, yes);
       });
       return;
@@ -404,12 +404,12 @@
       var group = BoldJoin.cappedGroup(BoldJoin.roleGroup(r.role), staff ? 'exec' : BOLD.myGroup());
       var unconfirmed = !inv.name || inv.email === me.email ? '' : inv.status === 'denied' ? inv.name + ' says they didn’t invite them.'
         : inv.status !== 'confirmed' ? inv.name + ' hasn’t confirmed inviting them yet.' : '';
-      BOLD.confirmAction({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack', 'Put them in ' + BoldJoin.categoryLabel(group) + (staff ? ' (change it on People)' : ' (a PI or admin can change it)')] })
+      BOLD.confirmAlways({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack', 'Put them in ' + BoldJoin.categoryLabel(group) + (staff ? ' (change it on People)' : ' (a PI or admin can change it)')] })
         .then(function(ok){ if (ok) run(function(){ return fn('decideJoinRequest')({ id: id, accept: true }); }); });
     } else if (t.classList.contains('jr-decline')) {
       if (window.confirm('Decline ' + r.name + '’s request? They aren’t told.')) run(function(){ return fn('decideJoinRequest')({ id: id, accept: false }); });
     } else if (t.classList.contains('jr-resend')) {
-      BOLD.confirmAction({ title: 'Send the welcome email again?', go: 'Send', effects: ['Email ' + r.name + ' the welcome again'] })
+      BOLD.confirmAlways({ title: 'Send the welcome email again?', go: 'Send', effects: ['Email ' + r.name + ' the welcome again'] })
         .then(function(ok){ if (ok) run(function(){ return fn('sendWelcomeEmail')({ id: id }); }); });
     }
   }

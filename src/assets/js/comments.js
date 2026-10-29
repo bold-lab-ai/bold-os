@@ -283,10 +283,20 @@ window.BoldComments = (function(){
       var k = e.target.getAttribute && e.target.getAttribute('data-key');
       if (k && e.target.tagName === 'TEXTAREA') drafts[k] = e.target.value;
     });
+    // Posting one tells people on Slack (functions/index.js onCommented, in a digest within
+    // minutes): a new thread the PIs and admins, a reply whoever is in its thread, one on a
+    // proposed change whoever proposed it and is in its discussion. Whoever it tags was asked
+    // when they were tagged (mentions.js). → Promise of true to go ahead.
+    function confirmPost(who){
+      return BOLD.confirmAction({ title: 'Post it?', go: 'Post', effects: ['Send ' + who + ' a Slack message about it, within a few minutes'] });
+    }
     function sendOnProposal(pid){
       var key = 'p:' + pid, text = (drafts[key] || '').trim();
       open = key;
       if (!text) { error = 'Write something first.'; changed(); return; }
+      confirmPost('whoever proposed it, and everyone in its discussion,').then(function(ok){ if (ok) postOnProposal(pid, key, text); });
+    }
+    function postOnProposal(pid, key, text){
       busy = true; error = ''; changed();
       col.add({ partId: '', proposalId: pid, text: text, by: { email: me.email, name: me.name }, at: Date.now() }).then(function(){
         busy = false; drafts[key] = ''; boxOpen[key] = false; open = null; changed();
@@ -300,6 +310,9 @@ window.BoldComments = (function(){
     function send(){
       var text = (drafts[open] || '').trim();
       if (!text) { error = 'Write something first.'; changed(); return; }
+      confirmPost(open === 'new' ? 'every PI and admin' : 'everyone in this thread').then(function(ok){ if (ok) post(text); });
+    }
+    function post(text){
       busy = true; error = ''; changed();
       var base = { text: text, by: { email: me.email, name: me.name }, at: Date.now() };
       var doc = open === 'new' ? Object.assign(base, pending) : Object.assign(base, { parent: open, partId: byId(open).partId });

@@ -359,7 +359,7 @@
 
   // Join or leave an opt-in recurring event (eventSeries).
   function joinSeries(m, action){
-    BOLD.confirmAction({ title: (action === 'join' ? 'Join ' : 'Leave ') + m.title + '?', go: action === 'join' ? 'Join' : 'Leave',
+    BOLD.confirmAlways({ title: (action === 'join' ? 'Join ' : 'Leave ') + m.title + '?', go: action === 'join' ? 'Join' : 'Leave',
       effects: [action === 'join' ? 'Google Calendar sends you the invitation' : 'Take you off its Google Calendar invitation'] }).then(function(ok){
       if (!ok) return;
       var k = keyOf(m);
@@ -372,7 +372,7 @@
 
   // Pause or resume a meeting: projectWorkspace for a project, studies for a student's.
   function pauseOrResume(m, action){
-    BOLD.confirmAction(action === 'pause'
+    BOLD.confirmAlways(action === 'pause'
       ? { title: 'Pause “' + m.title + '”?', go: 'Pause', effects: ['Take its upcoming dates off everyone’s Google Calendar until it’s resumed (the invitation and Meet link stay the same)'] }
       : { title: 'Resume “' + m.title + '”?', go: 'Resume', effects: ['Put its upcoming dates back on everyone’s Google Calendar'] })
       .then(function(ok){ if (ok) sendPause(m, action); });
@@ -424,7 +424,7 @@
     var w = (data.project || []).filter(function(x){ return x.cardId === id; })[0];
     if (!w) return;
     var join = action === 'join';
-    BOLD.confirmAction({ title: (join ? 'Join “' : 'Leave “') + (w.title || 'this project') + '”?', go: join ? 'Join' : 'Leave', effects: join
+    BOLD.confirmAlways({ title: (join ? 'Join “' : 'Leave “') + (w.title || 'this project') + '”?', go: join ? 'Join' : 'Leave', effects: join
       ? [w.slackChannel ? { key: 'slack', text: 'Invite you to ' + w.slackChannel + ' on Slack' } : '', 'Add you to its meeting on Google Calendar (Google emails you the invitation)', 'Share its slides and notes on Google Drive with you'].filter(Boolean)
       : ['Take you off its meeting on Google Calendar', 'Stop sharing its slides and notes with you'] })
       .then(function(ok){ if (ok) sendJoin(id, action, w, !!ok.skip.slack); });

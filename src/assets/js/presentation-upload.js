@@ -22,6 +22,13 @@ window.BoldPresentationUpload = (function(){
     file.addEventListener('change', function(){
       var f = file.files && file.files[0];
       if (!f) return;
+      // A file anyone with its link can open: asked every time (the ground rule).
+      BOLD.confirmAction({ title: 'Upload ' + f.name + '?', go: 'Upload it', always: true,
+        effects: ['Put it on the lab’s Google Drive, where anyone with the link can open it'] }).then(function(ok){
+        if (ok) upload(f); else file.value = '';
+      });
+    });
+    function upload(f){
       busy(true); say('Starting…');
       call({ name: f.name, type: f.type, size: f.size }).then(function(r){
         return new Promise(function(ok, no){
@@ -40,7 +47,7 @@ window.BoldPresentationUpload = (function(){
         console.error('[BOLD] uploading a presentation file failed', err);
         say(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t upload it — try again.');
       }).then(function(){ busy(false); file.value = ''; });
-    });
+    }
   }
   return { html: html, wire: wire };
 })();

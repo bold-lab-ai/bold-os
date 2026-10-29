@@ -3,7 +3,8 @@
 // lab's people (the `people` roster); picking one writes @[Name](SlackId), which
 // bold.js shows as @Name, linking to their Slack profile. Loaded on every signed-in
 // page (base.njk). Whoever is tagged gets a Slack DM (functions/index.js, "Tagging
-// people"). One list for the whole page, on whichever box is being typed in.
+// people"), so picking someone asks first (BOLD.confirmAction; "Don't ask me again"
+// skips it). One list for the whole page, on whichever box is being typed in.
 (function(){
   var people = null, loading = null;
   var box = null, list = [], at = 0, field = null, start = -1;
@@ -74,15 +75,19 @@
   }
 
   function pick(i){
-    var p = list[i], ta = field;
+    var p = list[i], ta = field, from = start, to = ta && ta.selectionStart;
     if (!p || !ta) return;
-    var tag = '@[' + p.name + '](' + p.id + ') ';
-    ta.value = ta.value.slice(0, start) + tag + ta.value.slice(ta.selectionStart);
-    var caret = start + tag.length;
     close();
-    ta.focus(); ta.setSelectionRange(caret, caret);
-    // Whoever keeps what's typed (comments.js drafts) hears of it.
-    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    BOLD.confirmAction({ title: 'Tag ' + p.name + '?', go: 'Tag them', effects: ['Send ' + p.name + ' a Slack message about it when you save'] }).then(function(ok){
+      ta.focus();
+      if (!ok) { ta.setSelectionRange(to, to); return; }
+      var tag = '@[' + p.name + '](' + p.id + ') ';
+      ta.value = ta.value.slice(0, from) + tag + ta.value.slice(to);
+      var caret = from + tag.length;
+      ta.setSelectionRange(caret, caret);
+      // Whoever keeps what's typed (comments.js drafts) hears of it.
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    });
   }
 
   function isField(el){ return el && el.tagName === 'TEXTAREA' && !el.closest('.no-tags'); }

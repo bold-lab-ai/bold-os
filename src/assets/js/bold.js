@@ -158,6 +158,26 @@
     try { localStorage.setItem(skipKey(), on ? '1' : '0'); } catch (e){}
     return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).set({ skipConfirm: !!on, at: Date.now() });
   };
+  // A proposed change (the BOLDiquette, a guide, a skill, a tool) tells every PI and admin on
+  // Slack when it's proposed, edited, withdrawn or decided (functions/index.js onProposed,
+  // onProposalDecided): asked every time, as it reaches them all. what: propose | edit |
+  // withdraw | accept | decline | restore; who: whoever proposed it (accept, decline); more:
+  // what else it does (["Every agent gets it at once"]). → Promise of true to go ahead.
+  BOLD.confirmProposal = function(what, who, more){
+    var them = who ? who + ', who proposed it,' : 'whoever proposed it';
+    var o = {
+      propose: ['Propose it?', 'Propose it', 'Send every PI and admin a Slack message asking them to review it'],
+      restore: ['Propose restoring it?', 'Propose it', 'Send every PI and admin a Slack message asking them to review it'],
+      edit: ['Update your proposed change?', 'Update it', 'Tell every PI and admin on Slack what it is now'],
+      withdraw: ['Withdraw your proposed change?', 'Withdraw it', 'Tell every PI and admin on Slack it’s withdrawn'],
+      accept: ['Accept it?', 'Accept it', 'Tell ' + them + ' on Slack that you accepted it, and the other PIs and admins'],
+      decline: ['Decline it?', 'Decline it', 'Tell ' + them + ' on Slack that you declined it, and the other PIs and admins'],
+    }[what];
+    return BOLD.confirmAction({ title: o[0], go: o[1], effects: (more || []).concat([o[2]]), always: true });
+  };
+  // The same, asked every time ("Don't ask me again" doesn't skip it): for what reaches many
+  // people or leaves BOLD.OS (Calendar, Slack or GitHub invitations, emails, a whole group).
+  BOLD.confirmAlways = function(o){ return BOLD.confirmAction(Object.assign({}, o, { always: true })); };
   BOLD.confirmAction = function(o){
     // o.always: asked even with "Don't ask me again" (it reaches many people), and not offered.
     return (o.always ? Promise.resolve(false) : BOLD.getSkipConfirm()).then(function(skip){
@@ -544,10 +564,14 @@
     // Just this page's row: accepting it sets that row in the table as it is then
     // (functions/index.js appliedProposal), whatever else changes in the part meanwhile.
     var ref = firebase.firestore(BOLD.getApp()).collection('handbook').doc('boldiquette');
-    ref.collection('proposals').add({
-      kind: 'access', partId: 'access', area: area, before: currentLevels(area), after: { view: lv.view, edit: lv.edit },
-      note: String(panel.note).trim(), by: { email: u.email || '', name: u.displayName || '' }, at: Date.now(), status: 'open',
+    BOLD.confirmProposal('propose').then(function(ok){
+      if (!ok) throw { cancelled: true };
+      return ref.collection('proposals').add({
+        kind: 'access', partId: 'access', area: area, before: currentLevels(area), after: { view: lv.view, edit: lv.edit },
+        note: String(panel.note).trim(), by: { email: u.email || '', name: u.displayName || '' }, at: Date.now(), status: 'open',
+      });
     }).then(function(d){ panel.busy = false; panel.done = d.id; drawAccess(); }, function(err){
+      if (err && err.cancelled) { panel.busy = false; drawAccess(); return; }
       console.error('[BOLD Lab] proposing who can see what failed', err);
       panel.busy = false; panel.error = 'Couldn’t propose it — try again.'; drawAccess();
     });

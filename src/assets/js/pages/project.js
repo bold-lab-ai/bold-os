@@ -471,7 +471,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function saveRepo(){
     var fail = failer(), repo = readRepoEntry();
     if (repo.error) return fail(repo.error);
-    BOLD.confirmAction(repo.mode === 'existing'
+    BOLD.confirmAlways(repo.mode === 'existing'
       ? { title: 'Link the repository?', go: 'Link it', effects: [
         'Link bold-lab-ai/' + repo.name.replace(/^.*\//, '') + ' as the project\u2019s repository',
         'Give the project\u2019s people who linked their GitHub write access to it'] }
@@ -555,7 +555,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function workspaceAction(action){
     if (wsBusy) return;
     if (!WS_CONFIRM[action]) return runWorkspaceAction(action, {});
-    BOLD.confirmAction(WS_CONFIRM[action]()).then(function(ok){ if (ok) runWorkspaceAction(action, ok.skip || {}); });
+    BOLD.confirmAlways(WS_CONFIRM[action]()).then(function(ok){ if (ok) runWorkspaceAction(action, ok.skip || {}); });
   }
   function runWorkspaceAction(action, skip){
     if (wsBusy) return;
@@ -585,7 +585,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       meeting = readMeetingEntry();
       if (meeting.error) return fail(meeting.error);
     }
-    BOLD.confirmAction(remove ? { title: 'Remove the meeting?', go: 'Remove', effects: ['Cancel it on Google Calendar: Google tells its guests'] }
+    BOLD.confirmAlways(remove ? { title: 'Remove the meeting?', go: 'Remove', effects: ['Cancel it on Google Calendar: Google tells its guests'] }
       : { title: ws && ws.meeting ? 'Change the meeting?' : 'Add a meeting?', go: 'Save', effects: [ws && ws.meeting
         ? 'Change it on Google Calendar to ' + meetingText(meeting) + ': Google emails its guests the change'
         : 'Make it on Google Calendar, ' + meetingText(meeting) + ', ' + meetVia(meeting) + ': Google emails the project\u2019s members the invitation'] }).then(function(ok){
@@ -1013,7 +1013,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function completeProject(){
     var reopen = !!(ws && ws.completedAt), meeting = ws && ws.meeting;
     if (reopen && !meeting) return sendComplete(true);
-    BOLD.confirmAction(reopen
+    BOLD.confirmAlways(reopen
       ? { title: 'Reopen \u201c' + card.title + '\u201d?', go: 'Reopen', effects: meeting ? ['Put its meeting back on Google Calendar: Google emails its guests'] : [] }
       : { title: 'Mark \u201c' + card.title + '\u201d as completed?', go: 'Mark completed', effects: meeting ? ['Cancel its meeting on Google Calendar: Google tells everyone on it'] : [] })
       .then(function(ok){ if (ok) sendComplete(reopen); });
@@ -1110,7 +1110,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var fail = failer(), n = normalizeProjectChannel(el('pfChannel').value), btn = el('slackSave');
     if (n.error) return fail(n.error);
     var effects = channelField.effects(n.name);
-    (effects.length ? BOLD.confirmAction({ title: 'Change the Slack channel?', go: 'Save', effects: effects }) : Promise.resolve(true)).then(function(ok){
+    (effects.length ? BOLD.confirmAlways({ title: 'Change the Slack channel?', go: 'Save', effects: effects }) : Promise.resolve(true)).then(function(ok){
       if (ok) sendSlack(n, btn, fail);
     });
   }

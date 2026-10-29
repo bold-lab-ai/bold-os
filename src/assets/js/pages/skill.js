@@ -84,19 +84,16 @@
     if (!q) return;
     if (t.classList.contains('sk-q-show')) { shownQ[id] = !isShown(q); render(); return; }
     if (t.classList.contains('sk-q-edit')) { editingQ = q; editing = true; render(); return; }
-    var job;
-    if (t.classList.contains('sk-q-withdraw')) {
-      if (!window.confirm('Withdraw your proposed change?')) return;
-      job = ref.collection('proposals').doc(id).delete();
-    } else {
-      var accept = t.classList.contains('sk-q-accept');
-      var what = !x && q.kind === 'new' ? 'new skill? ' + (accept ? 'Every agent gets it at once.' : '') : 'change to the skill?';
-      if (!window.confirm((accept ? 'Accept' : 'Decline') + ' ' + ((q.by && q.by.name) || 'this') + '’s ' + what)) return;
-      // editedAt: the version decided on, in case it's edited meanwhile.
-      job = firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: 'skills', slug: name, id: id, accept: accept, editedAt: q.editedAt || 0 });
-    }
-    busyQ[id] = true; render();
+    var withdraw = t.classList.contains('sk-q-withdraw'), accept = t.classList.contains('sk-q-accept');
+    var job = BOLD.confirmProposal(withdraw ? 'withdraw' : accept ? 'accept' : 'decline', q.by && q.by.name, accept ? ['Give every agent the skill as changed, at once'] : []).then(function(ok){
+      if (!ok) throw { cancelled: true };
+      busyQ[id] = true; render();
+      return withdraw ? ref.collection('proposals').doc(id).delete()
+        // editedAt: the version decided on, in case it's edited meanwhile.
+        : firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: 'skills', slug: name, id: id, accept: accept, editedAt: q.editedAt || 0 });
+    });
     job.catch(function(err){
+      if (err && err.cancelled) return;
       console.error('[BOLD Skills] that failed', err);
       window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'That didn’t work — try again.');
     }).then(function(){ delete busyQ[id]; render(); });
@@ -262,6 +259,7 @@
       var save = form.querySelector('.ev-save');
       save.disabled = true;
       var failed = function(err){
+        if (err && err.cancelled) { save.disabled = false; return; }
         console.error('[BOLD Skills] saving the skill failed', err);
         S.showError(form, 'Couldn’t save — try again.');
         save.disabled = false;
@@ -281,9 +279,9 @@
       if (!note) { S.showError(form, 'Say what you changed and why, for whoever reviews it.'); save.disabled = false; return; }
       var after = content(fields), q = editingQ;
       if (JSON.stringify(after) === JSON.stringify(content(q ? Object.assign({}, x, q.after) : x))) { editing = false; editingQ = null; render(); return; }
-      var job = q
+      var job = BOLD.confirmProposal(q ? 'edit' : 'propose').then(function(ok){ if (!ok) throw { cancelled: true }; }).then(function(){ return q
         ? ref.collection('proposals').doc(q.id).set({ kind: 'skill', before: q.before, after: after, note: note, by: q.by, at: q.at, status: 'open', editedAt: Date.now() })
-        : ref.collection('proposals').add({ kind: 'skill', before: content(x), after: after, note: note, by: { email: me.email, name: me.name }, at: Date.now(), status: 'open' });
+        : ref.collection('proposals').add({ kind: 'skill', before: content(x), after: after, note: note, by: { email: me.email, name: me.name }, at: Date.now(), status: 'open' }); });
       job.then(function(){
         editing = false; editingQ = null; notice = 'Thanks — your change is under Proposed changes until ' + (fullWrite ? 'another' : 'a') + ' PI or admin reviews it.';
         history.replaceState(null, '', location.pathname + location.search); render();

@@ -75,7 +75,8 @@
     body.querySelector('.tl-save').disabled = true;
     var col = db.collection('agentTools').doc(target).collection('proposals');
     var start = isNew ? db.collection('agentTools').doc(target).get().then(function(s){ if (s.exists) throw new Error('exists'); }) : Promise.resolve();
-    start.then(function(){
+    start.then(function(){ return BOLD.confirmProposal(editingQ ? 'edit' : 'propose'); }).then(function(ok){
+      if (!ok) throw { cancelled: true };
       var q = editingQ;
       return q ? col.doc(q.id).set({ kind: q.kind, before: null, after: after, note: note, by: q.by, at: q.at, status: 'open', editedAt: Date.now() })
         : col.add({ kind: kind, before: null, after: after, note: note, by: { email: me.email, name: me.name }, at: Date.now(), status: 'open' });
@@ -84,6 +85,7 @@
       if (isNew) { location.replace('tool.html?tool=' + encodeURIComponent(target) + '#proposals'); return; }
       form = null; editingQ = null; render();
     }).catch(function(err){
+      if (err && err.cancelled) { body.querySelector('.tl-save').disabled = false; return; }
       if (err && err.message === 'exists') return fail('There’s already a tool called ' + target + ': propose a change to it instead.');
       console.error('[BOLD Tools] proposing failed', err); fail('Couldn’t save — try again.');
     });
@@ -116,17 +118,15 @@
     if (!q) return;
     if (t.classList.contains('tq-show')) { shown[id] = !shownQ(q); render(); return; }
     if (t.classList.contains('tq-edit')) { editingQ = q; form = 'change'; render(); return; }
-    var job;
-    if (t.classList.contains('tq-withdraw')) {
-      if (!window.confirm('Withdraw your proposed change?')) return;
-      job = db.collection('agentTools').doc(name).collection('proposals').doc(id).delete();
-    } else {
-      var accept = t.classList.contains('tq-accept');
-      if (!window.confirm((accept ? 'Accept' : 'Decline') + ' ' + ((q.by && q.by.name) || 'this') + '’s change? ' + (accept ? 'Every agent gets it at once.' : ''))) return;
-      job = firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: 'agentTools', slug: name, id: id, accept: accept, editedAt: q.editedAt || 0 });
-    }
-    busy[id] = true; render();
+    var withdraw = t.classList.contains('tq-withdraw'), accept = t.classList.contains('tq-accept');
+    var job = BOLD.confirmProposal(withdraw ? 'withdraw' : accept ? 'accept' : 'decline', q.by && q.by.name, accept ? ['Give every agent the tool as changed, at once'] : []).then(function(ok){
+      if (!ok) throw { cancelled: true };
+      busy[id] = true; render();
+      return withdraw ? db.collection('agentTools').doc(name).collection('proposals').doc(id).delete()
+        : firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: 'agentTools', slug: name, id: id, accept: accept, editedAt: q.editedAt || 0 });
+    });
     job.catch(function(err){
+      if (err && err.cancelled) return;
       console.error('[BOLD Tools] that failed', err);
       window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'That didn’t work — try again.');
     }).then(function(){ delete busy[id]; render(); });

@@ -135,7 +135,7 @@
         : studies && studies.meeting ? 'Cancel the meeting on Google Calendar: Google emails ' + names + ' the cancellation' : '',
       e.channelFixed ? 'Add anyone new to its Slack channel' : !e.hasChannel ? '' : 'Make or use the Slack channel #' + (e.channel || '').replace(/^#/, '') + ' and add ' + names + ' to it'].filter(Boolean);
     // Nothing outside BOLD.OS (no meeting, no channel): nothing to confirm.
-    (effects.length ? BOLD.confirmAction({ title: 'Save your studies?', go: 'Save', effects: effects }) : Promise.resolve(true))
+    (effects.length ? BOLD.confirmAlways({ title: 'Save your studies?', go: 'Save', effects: effects }) : Promise.resolve(true))
       .then(function(ok){ if (ok) sendSave(e, meeting); });
   }
   function sendSave(e, meeting){
@@ -165,13 +165,13 @@
     if (t.classList.contains('st-decide')) {
       var id = t.getAttribute('data-id'), a = asks.filter(function(x){ return x.id === id; })[0], yes = !!t.getAttribute('data-accept');
       var who = (a && (a.name || a.requesterName)) || 'them';
-      BOLD.confirmAction(yes ? { title: 'Approve ' + who + '?', go: 'Approve', effects: [(studies && studies.meeting ? 'Add ' + who + ' to your meeting on Google Calendar (Google emails them the invitation) and to your Slack channel' : 'Add ' + who + ' to your Slack channel'), 'Tell them on Slack'] }
+      BOLD.confirmAlways(yes ? { title: 'Approve ' + who + '?', go: 'Approve', effects: [(studies && studies.meeting ? 'Add ' + who + ' to your meeting on Google Calendar (Google emails them the invitation) and to your Slack channel' : 'Add ' + who + ' to your Slack channel'), 'Tell them on Slack'] }
         : { title: 'Decline?', go: 'Decline', effects: ['Tell ' + who + ' on Slack'] }).then(function(ok){ if (ok) decide(id, a, yes); });
       return;
     }
     if (t.classList.contains('st-pause')) {
       var act = t.getAttribute('data-action');
-      BOLD.confirmAction(act === 'pause'
+      BOLD.confirmAlways(act === 'pause'
         ? { title: 'Pause your meeting?', go: 'Pause', effects: ['Take its upcoming dates off everyone’s Google Calendar until it’s resumed (the invitation and Meet link stay the same)'] }
         : { title: 'Resume your meeting?', go: 'Resume', effects: ['Put its upcoming dates back on everyone’s Google Calendar'] }).then(function(ok){ if (ok) pause(act); });
       return;

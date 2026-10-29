@@ -777,6 +777,13 @@
 
     function approve(emails, button){
       var adminMsg = el('joinAdminMsg');
+      var n = emails ? emails.length : 0;
+      BOLD.confirmAction({ title: 'Add them on GitHub?', go: 'Add them', always: true,
+        effects: ['Invite ' + (emails ? (n === 1 ? 'them' : 'these ' + n + ' people') : 'everyone waiting') + ' to the bold-lab-ai hackathon team on GitHub: GitHub emails each of them'] }).then(function(ok){
+        if (ok) approveNow(emails, button, adminMsg);
+      });
+    }
+    function approveNow(emails, button, adminMsg){
       button.disabled = true;
       if (adminMsg) adminMsg.textContent = 'Adding on GitHub…';
       callable('approveHackathonJoins')(emails ? { emails: emails } : {}).then(function(){ return loadJoin(); }).catch(function(err){

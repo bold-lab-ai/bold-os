@@ -434,8 +434,15 @@
     return firebase.app().functions('europe-west2').httpsCallable('decideProposal')({ collection: COLLECTION, slug: slug, id: q.id, accept: accept, editedAt: q.editedAt || 0 });
   }
 
-  // Proposes a change. change: { kind, partId, before, after, note } → Promise.
+  // Proposes a change, once they've agreed to it telling the PIs and admins (it rejects with
+  // { cancelled: true } if not). change: { kind, partId, before, after, note } → Promise.
   function submit(change){
+    return BOLD.confirmProposal(change.kind === 'restore' ? 'restore' : 'propose').then(function(ok){
+      if (!ok) throw { cancelled: true };
+      return add(change);
+    });
+  }
+  function add(change){
     return ref.collection('proposals').add(Object.assign({}, change, {
       by: { email: me.email, name: me.name }, at: Date.now(), status: 'open',
     })).then(function(){ notice = 'Thanks — your change is under “Proposed changes” until ' + (fullWrite ? 'another' : 'a') + ' PI or admin reviews it.'; });
@@ -531,12 +538,15 @@
     draftBusy = true; draftError = ''; render();
     var q = draftEditing && proposals.filter(function(p){ return p.id === draftEditing; })[0];
     // The proposal as it is now, its proposer, time and status kept: firestore.rules allow nothing else.
-    var job = q ? ref.collection('proposals').doc(q.id).set(Object.assign(asProposal(), { by: q.by, at: q.at, status: 'open', editedAt: Date.now() }))
-        .then(function(){ notice = 'Your proposed change is updated.'; }) :
+    var job = q ? BOLD.confirmProposal('edit').then(function(ok){
+        if (!ok) throw { cancelled: true };
+        return ref.collection('proposals').doc(q.id).set(Object.assign(asProposal(), { by: q.by, at: q.at, status: 'open', editedAt: Date.now() }));
+      }).then(function(){ notice = 'Your proposed change is updated.'; }) :
       submit(asProposal());
     job.then(function(){
       clearDraft(); draftBusy = false; render();
     }).catch(function(err){
+      if (err && err.cancelled) { draftBusy = false; render(); return; }
       console.error('[BOLD Guides] proposing the draft failed', err);
       draftBusy = false; draftError = 'Couldn’t ' + (q ? 'update' : 'propose') + ' it — try again.'; render();
     });
@@ -785,6 +795,7 @@
       }
       setBusy(true);
       submit(change).then(closeForm).catch(function(err){
+        if (err && err.cancelled) { setBusy(false); return; }
         console.error('[BOLD Guides] saving failed', err);
         showError(el, 'Couldn’t save — try again.');
         setBusy(false);
@@ -943,13 +954,14 @@
       if (!q) return;
       if (t.classList.contains('gd-view')) { view(q.id); return; }
       if (t.classList.contains('gd-revise')) { editProposal(q); return; }
-      var job = null;
-      if (t.classList.contains('gd-accept') && fullWrite) job = decide(q, true);
-      else if (t.classList.contains('gd-decline') && fullWrite && window.confirm('Decline this proposed change?')) job = decide(q, false);
-      else if (t.classList.contains('gd-withdraw') && window.confirm('Withdraw your proposed change?')) job = ref.collection('proposals').doc(q.id).delete();
-      if (job) {
+      var what = t.classList.contains('gd-accept') && fullWrite ? 'accept' : t.classList.contains('gd-decline') && fullWrite ? 'decline' : t.classList.contains('gd-withdraw') ? 'withdraw' : '';
+      if (what) {
         t.disabled = true;
-        job.catch(function(err){
+        BOLD.confirmProposal(what, q.by && q.by.name).then(function(ok){
+          if (!ok) throw { cancelled: true };
+          return what === 'withdraw' ? ref.collection('proposals').doc(q.id).delete() : decide(q, what === 'accept');
+        }).catch(function(err){
+          if (err && err.cancelled) { t.disabled = false; return; }
           console.error('[BOLD Guides] updating a proposal failed', err);
           window.alert(err && err.code === 'functions/failed-precondition' && err.message ? err.message : 'Couldn’t do that — try again.');
           t.disabled = false;
@@ -972,7 +984,8 @@
       canRestore: function(){ return !!me; },
       restore: function(v){
         return submit({ kind: 'restore', partId: '', before: null, note: 'Restore the version of ' + BoldHistory.when(v.at),
-          after: { title: v.data.title || '', description: v.data.description || '', parts: v.data.parts || [], versionAt: v.at } }).then(render);
+          after: { title: v.data.title || '', description: v.data.description || '', parts: v.data.parts || [], versionAt: v.at } })
+          .then(render, function(err){ if (!(err && err.cancelled)) throw err; });
       },
     });
   }

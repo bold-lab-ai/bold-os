@@ -281,7 +281,7 @@
       });
     };
     if (!s || s.hidden || (ed && isEditions(s))) { send(); return; }
-    BOLD.confirmAction({ title: 'Save it?', go: 'Save', effects: [ed ? 'Cancel its Google Calendar invite: Google emails everyone invited the cancellation'
+    BOLD.confirmAlways({ title: 'Save it?', go: 'Save', effects: [ed ? 'Cancel its Google Calendar invite: Google emails everyone invited the cancellation'
       : isEditions(s) ? 'Make its Google Calendar invite: Google emails everyone invited' : 'Change it on Google Calendar: Google emails everyone invited the change'] })
       .then(function(ok){ if (ok) send(); });
   }

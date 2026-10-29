@@ -53,12 +53,17 @@
           proposedBy: { name: state.currentUser.name || state.currentUser.email, email: state.currentUser.email }
         });
         var pendingNext = state.boards.concat([pendingEntry]);
+        // Not theirs to add, so it's proposed: every PI and admin hears of it (onVenueProposed).
+        BOLD.confirmAction({ title: 'Propose ' + pendingEntry.label + '?', go: 'Propose it', always: true,
+          effects: ['Send every PI and admin a Slack message asking them to approve it'] }).then(function(go){
+        if (!go) { showToast('Not proposed.', 'ok'); return; }
         saveBoardsIndex(pendingNext).then(function(ok3){
           if (!ok3){ showToast(saveErrorMessage('Could not submit the venue proposal \u2014 try again.'), 'error'); return; }
           state.boards = pendingNext;
           showToast('Proposed ' + pendingEntry.label + ' \u2014 a PI or admin will review it.', 'ok');
           closeModal();
           renderAll();
+        });
         });
       });
     });

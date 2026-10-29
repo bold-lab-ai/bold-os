@@ -45,11 +45,11 @@
     if (t.classList.contains('api-create')) {
       var label = box.querySelector('.api-label').value.trim(), write = box.querySelector('.api-can-act').checked;
       if (!label) { error = 'Name it first, after the agent that will use it.'; render(); return; }
-      (write ? BOLD.confirmAction({ title: 'Make the token and ask to let it act?', go: 'Make it', effects: ['Send the PIs and admins a Slack message asking to approve it'] }) : Promise.resolve(true))
+      (write ? BOLD.confirmAlways({ title: 'Make the token and ask to let it act?', go: 'Make it', effects: ['Send the PIs and admins a Slack message asking to approve it'] }) : Promise.resolve(true))
         .then(function(ok){ if (ok) create(label, write); });
     } else if (t.classList.contains('api-ask') || t.classList.contains('api-stop')) {
       var ask = t.classList.contains('api-ask');
-      (ask ? BOLD.confirmAction({ title: 'Ask to let it act for you?', go: 'Ask', effects: [ASK, 'Send the PIs and admins a Slack message asking to approve it'] })
+      (ask ? BOLD.confirmAlways({ title: 'Ask to let it act for you?', go: 'Ask', effects: [ASK, 'Send the PIs and admins a Slack message asking to approve it'] })
         : Promise.resolve(window.confirm('Stop it acting for you? It still reads.'))).then(function(ok){ if (ok) askOrStop(t, ask); });
     } else rest(t);
   });

@@ -171,6 +171,47 @@
     var mine = strip(data && data.cards), was = strip(base);
     var changed = Object.keys(Object.assign({}, mine, was)).filter(function(k){ return stableStringify(mine[k]) !== stableStringify(was[k]); });
     if (!changed.length) return Promise.resolve(true);
+    // Who hears of it on Slack asks first (the ground rule); not going ahead is "not saved".
+    var notices = [];
+    changed.forEach(function(k){ if (was[k] && mine[k]) notices = notices.concat(cardNotices(was[k], mine[k])); });
+    var ask = notices.length ? BOLD.confirmAction({ title: 'Save it?', go: 'Save', effects: notices }) : Promise.resolve(true);
+    return ask.then(function(ok){
+      if (!ok) { lastWriteErrorCode = 'cancelled'; return false; }
+      return write(id, mine, was, changed);
+    });
+  }
+  // What a change to a card tells people on Slack (functions/index.js cardEventsToNotify and
+  // notifyAuthorsOverCap: keep the two in step), in words, for its popup; not you.
+  function cardNotices(before, after){
+    var me = String((auth && auth.currentUser && auth.currentUser.email) || '').toLowerCase();
+    var name = function(e){ var p = personByEmail(e); return (p && p.name) || String(e).split('@')[0]; };
+    var out = [], tell = function(emails, what){
+      var who = (emails || []).filter(function(e){ return e && String(e).toLowerCase() !== me; }).filter(function(e, i, a){ return a.indexOf(e) === i; });
+      if (who.length) out.push('Tell ' + who.map(name).join(' and ') + ' on Slack ' + what);
+    };
+    var sub = after.submittedBy && after.submittedBy.email, rb = before.reviewers || {}, ra = after.reviewers || {};
+    if ((after.jrReviewState !== before.jrReviewState || after.srReviewState !== before.srReviewState)) tell([sub], 'about the review');
+    if (ra.junior && ra.junior !== rb.junior) tell([ra.junior], 'that they’re its junior reviewer');
+    if (ra.senior && ra.senior !== rb.senior) tell([ra.senior], 'that they’re its senior reviewer');
+    if (before.status !== after.status) tell([sub], 'that it moved to another stage');
+    var byId = {};
+    (before.discussion || []).forEach(function(m){ byId[m.id] = m; });
+    (after.discussion || []).forEach(function(m){
+      var b = byId[m.id];
+      if (!b) { tell([sub, ra.junior, ra.senior], 'about your message'); return; }
+      var had = {}; (b.replies || []).forEach(function(r){ had[r.id] = true; });
+      if ((m.replies || []).some(function(r){ return !had[r.id]; })) tell([b.authorEmail].concat((b.replies || []).map(function(r){ return r.authorEmail; })), 'about your reply');
+    });
+    (after.checklist || []).forEach(function(item){
+      var b = (before.checklist || []).filter(function(x){ return x.id === item.id; })[0], seen = {};
+      ((b && b.comments) || []).forEach(function(c){ seen[c.id] = true; });
+      if ((item.comments || []).some(function(c){ return !seen[c.id]; })) tell(me === String(sub || '').toLowerCase() ? [ra.junior, ra.senior] : [sub], 'about your comment');
+    });
+    var authorsBefore = before.authorEmails || [];
+    if ((after.authorEmails || []).some(function(e){ return authorsBefore.indexOf(e) < 0; })) out.push('Tell any author you added who is now over this venue’s limit of papers, on Slack');
+    return out.filter(function(t, i, a){ return a.indexOf(t) === i; });
+  }
+  function write(id, mine, was, changed){
     return db.runTransaction(function(tx){
       return Promise.all(changed.map(function(k){ return tx.get(cardsCol(id).doc(k)); })).then(function(snaps){
         snaps.forEach(function(snap, i){
@@ -284,6 +325,7 @@
     lastWriteErrorCode = null;
     return code === 'permission-denied' ? 'You don’t have permission to do that — check with a PI or lab admin.'
       : code === 'gone' ? 'Someone removed this paper meanwhile.'
+      : code === 'cancelled' ? 'Not saved.'
       : fallback;
   }
 
