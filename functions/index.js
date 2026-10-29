@@ -862,8 +862,10 @@ async function handleAppHomeOpened(token, slackUserId){
 // ---------- Cards from Slack: /bug and /feature-request ----------
 // Either opens a form (views.open) for a card, in To do, on the board of the channel it's
 // typed in: a project's own channel (its workspace's slackChannel), or one a board takes
-// besides (work.channels: BOLD OS's takes #bold-operating-system). A project's channel
-// without a board, or any other channel (#general, a DM), says so instead. The form: its title (from what was typed after the
+// besides (work.channels: BOLD OS's takes #bold-operating-system). A project's #proj-
+// channel without a board: the project's people (submitter, authors, members), PIs and
+// admins get the form, the board added with the card (the form says so); anyone else is
+// told whom to ask. Any other channel (#general, #supervision-…, a DM) says so instead. The form: its title (from what was typed after the
 // command), a description, and, ticked, posting it in the project's channel. Submitting
 // the form is the go-ahead (the ground rule: it asks before posting); closing it adds
 // nothing. Whoever types it needs Projects' Edit, as on the page; the card is theirs.
@@ -882,6 +884,12 @@ async function slashBoard(channelName){
   if (own.length) return { error: 'noboard', id: own[0].id, ws: own[0].data() };
   return { error: 'elsewhere' };
 }
+// Whether they may add a board to the project (as on its page, and its people too).
+async function mayAddBoard(email, board){
+  if ((board.ws.members || []).map((e) => String(e).toLowerCase()).indexOf(email) >= 0) return true;
+  const card = await cardRefFor(board.ws.cardId || board.id, board.ws.boardId || null).get();
+  return card.exists ? !!(await canEditCard(email, card.data())) : !!(await isFullWrite(email));
+}
 async function handleSlashCommand(token, body){
   const c = SLASH_CARDS[body.command];
   const say = (text) => ({ response_type: 'ephemeral', text });
@@ -890,9 +898,17 @@ async function handleSlashCommand(token, body){
   if (!email) return say('Sign in to BOLD.OS once first, so it knows who you are: ' + SITE_URL);
   if (!(await access.can(email, 'projects', 'edit'))) return say('Adding cards is for whoever can edit Projects (BOLDiquette › Who can see what).');
   const board = await slashBoard(body.channel_name);
-  if (board.error === 'noboard') return say((board.ws.title ? slackText(board.ws.title) : 'This project') + ' doesn’t have a board: add one on ' +
-    linkedTitle('its page', projectPageUrl(board.ws.cardId || board.id, board.ws.boardId)) + ' in BOLD.OS, then try again.');
-  if (board.error){
+  const chName = String(body.channel_name || '').toLowerCase();
+  let addBoard = false;
+  if (board.error === 'noboard') {
+    const pname = board.ws.title ? slackText(board.ws.title) : 'This project';
+    const page = linkedTitle('its page', projectPageUrl(board.ws.cardId || board.id, board.ws.boardId));
+    if (!/^proj-/.test(chName)) return say(pname + ' doesn’t have a board: add one on ' + page + ' in BOLD.OS, then try again.');
+    if (!(await mayAddBoard(email, board))) return say(pname + ' doesn’t have a board yet: ask someone on the project (its submitter, authors or people), or a PI or admin, to add one, here or on ' + page + '.');
+    addBoard = true;
+  }
+  if (board.error === 'elsewhere' && /^proj-/.test(chName)) return say('No project in BOLD.OS uses #' + chName + ': register it first (' + SITE_URL + 'projects-register.html), then try again.');
+  if (board.error === 'elsewhere'){
     // Where BOLD.OS's own cards go (the board with work.content): its channels, from its settings.
     const os = (await db.collection('projectWorkspaces').where('work.content', '==', true).get()).docs.map((d) => d.data()).filter((x) => (x.work || {}).on)[0];
     const chans = os ? [os.slackChannel].concat((os.work.channels || []).map((n) => '#' + n)).filter(Boolean) : [];
@@ -909,11 +925,13 @@ async function handleSlashCommand(token, body){
   if (channel && (board.ws.skipped || []).indexOf('channel') < 0) blocks.push({ type: 'input', block_id: 'announce', optional: true, label: { type: 'plain_text', text: 'Slack' },
     element: { type: 'checkboxes', action_id: 'v', options: [{ text: { type: 'plain_text', text: 'Post it in #' + channel + ', for everyone in the channel' }, value: 'yes' }],
       initial_options: [{ text: { type: 'plain_text', text: 'Post it in #' + channel + ', for everyone in the channel' }, value: 'yes' }] } });
-  blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: 'Adds it to ' + slackText(board.ws.title || 'BOLD OS') + '’s board, in To do.' }] });
+  blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: addBoard
+    ? slackText(board.ws.title || 'This project') + ' has no board yet: adding the card adds one, on its project page, with the card in To do.'
+    : 'Adds it to ' + slackText(board.ws.title || 'BOLD OS') + '’s board, in To do.' }] });
   const opened = await slackFetch(token, 'views.open', { trigger_id: body.trigger_id, view: {
     type: 'modal', callback_id: 'work_card', title: { type: 'plain_text', text: c.what === 'bug' ? 'Report a bug' : 'Request a feature' },
     submit: { type: 'plain_text', text: 'Add it' }, close: { type: 'plain_text', text: 'Cancel' },
-    private_metadata: JSON.stringify({ pid: board.id, kind: c.kind, channel: body.channel_id || '' }), blocks } });
+    private_metadata: JSON.stringify({ pid: board.id, kind: c.kind, channel: body.channel_id || '', addBoard }), blocks } });
   if (!opened.ok) { logger.warn('Opening the card form failed', { error: opened.error }); return say('Couldn’t open the form — try again.'); }
   return {};
 }
@@ -925,8 +943,16 @@ async function addCardFromSlack(token, payload){
   const val = (b) => (v[b] && v[b].v) || {};
   const email = await emailForSlackId(payload.user && payload.user.id);
   if (!email || !(await access.can(email, 'projects', 'edit'))) return;
-  const wsSnap = await db.collection('projectWorkspaces').doc(String(meta.pid || '')).get();
-  if (!wsSnap.exists || !((wsSnap.data().work || {}).on)) return;
+  const wsRef = db.collection('projectWorkspaces').doc(String(meta.pid || ''));
+  let wsSnap = await wsRef.get();
+  if (!wsSnap.exists) return;
+  // A project's #proj- channel without a board: the board, added first (as the page's Add one).
+  if (!((wsSnap.data().work || {}).on)) {
+    if (!meta.addBoard || !(await mayAddBoard(email, { id: wsSnap.id, ws: wsSnap.data() }))) return;
+    await wsRef.set({ work: Object.assign({ repos: [], content: false }, wsSnap.data().work || {}, { on: true, updatedAt: Date.now(), updatedBy: email }) }, { merge: true });
+    workCache.delete(wsSnap.id);
+    wsSnap = await wsRef.get();
+  }
   const person = (await db.collection('people').where('email', '==', email).limit(1).get()).docs[0];
   const name = (person && person.data().name) || email.split('@')[0];
   const title = String(val('title').value || '').trim().slice(0, 200);
