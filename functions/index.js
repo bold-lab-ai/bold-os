@@ -5135,6 +5135,38 @@ async function inviteToGroupChannel(token, emails, name){
   return error;
 }
 
+// Pure: the visible channel most like `name` (a typo, a missing "s"), or '' when none is close.
+function nearestChannel(name, names){
+  const dist = (a, b) => {
+    const d = Array.from({ length: b.length + 1 }, (_, i) => i);
+    for (let i = 1; i <= a.length; i++){
+      let prev = d[0]; d[0] = i;
+      for (let j = 1; j <= b.length; j++){ const t = d[j]; d[j] = Math.min(d[j] + 1, d[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; }
+    }
+    return d[b.length];
+  };
+  let best = '', bestD = 3;
+  for (const n of names){ const k = dist(name, n); if (k < bestD) { best = n; bestD = k; } }
+  return best;
+}
+
+// The group settings' Slack channels (Requests): before saving, which of `names` the bot
+// can't see — no such channel, or a private one it isn't in — each with the nearest one
+// it can see. PIs and admins. data: { names: [..] } → { missing: [{ name, suggest }], bot }.
+exports.checkGroupChannels = onCall(
+  { secrets: [SLACK_BOT_TOKEN] },
+  async (request) => {
+    const email = signedInEmail(request);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins set the groups’ channels.');
+    const names = Array.isArray((request.data || {}).names) ? request.data.names.map((n) => String(n).replace(/^#/, '').toLowerCase()).filter((n) => /^[a-z0-9_-]{1,80}$/.test(n)).slice(0, 60) : [];
+    const token = SLACK_BOT_TOKEN.value();
+    const missing = [];
+    for (const n of names) if (!(await slackChannelId(token, n))) missing.push({ name: n, suggest: nearestChannel(n, channelNamesCache ? Array.from(channelNamesCache.names.keys()) : []) });
+    const auth = missing.length ? await slackAuthInfo(token) : null;
+    return { missing, bot: auth && auth.bot ? '@' + auth.bot : '' };
+  }
+);
+
 exports.onMemberGroup = onDocumentWritten(
   { document: 'members/{email}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
@@ -5150,7 +5182,22 @@ exports.onMemberGroup = onDocumentWritten(
     const names = [];
     wanted.forEach(function(h){ groupChannelNames((set.channels || {})[h]).forEach(function(n){ if (names.indexOf(n) < 0) names.push(n); }); });
     if (newRole) groupChannelNames((set.roleChannels || {})[role]).forEach(function(n){ if (names.indexOf(n) < 0) names.push(n); });
-    for (const name of names) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
+    const failed = {};
+    for (const name of names){
+      const err = await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [event.params.email], name);
+      if (err) failed[name] = err;
+    }
+    // Not just in the logs: shown on Requests by the group's (or role's) channels, where
+    // PIs and admins set them, and the group is no longer counted as done, so saving the
+    // settings again (once the channel is fixed) adds everyone in it (onGroupChannels).
+    const bad = Object.keys(failed);
+    if (!bad.length) return;
+    const uses = (v) => groupChannelNames(v).filter((n) => bad.indexOf(n) >= 0)[0];
+    const errs = {}, undo = {};
+    wanted.forEach(function(h){ const n = uses((set.channels || {})[h]); if (n) { errs['channelErrors.' + h] = failed[n]; undo['channels.' + h] = FieldValue.delete(); } });
+    if (newRole){ const n = uses((set.roleChannels || {})[role]); if (n) { errs['roleChannelErrors.' + role] = failed[n]; undo['roles.' + role] = FieldValue.delete(); } }
+    if (Object.keys(undo).length) await db.collection('settings').doc('groupsInvited').update(undo).catch(function(){});
+    if (Object.keys(errs).length) await db.collection('settings').doc('groups').update(errs);
   }
 );
 exports.onGroupChannels = onDocumentWritten(
@@ -6021,7 +6068,7 @@ exports._internal = {
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
-  reviewStateEmoji, verifySlackSignatureRaw, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
+  reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, canAssignReviewer, parseAssignAction,
   reviewerEmailFromAction, cardLine, personOptionsFor, filterPeopleOptions, initialOptionForEmail,
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,

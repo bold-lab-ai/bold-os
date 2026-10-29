@@ -278,18 +278,40 @@
     var channels = mine.groups.channels, roleChannels = mine.groups.roleChannels;
     // Channels added to a group: everyone meant to be in them is invited (onGroupChannels).
     var had = (groups && groups.channels) || {};
-    var added = [];
+    var added = [], newNames = [];
     Object.keys(channels).forEach(function(g){
       var before = String(had[g] || '').split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); });
-      channels[g].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) added.push('Invite everyone in ' + BoldJoin.categoryLabel(g) + ' and the groups above it to #' + n + ' on Slack'); });
+      channels[g].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) { added.push('Invite everyone in ' + BoldJoin.categoryLabel(g) + ' and the groups above it to #' + n + ' on Slack'); newNames.push(n); } });
     });
     var hadRoles = (groups && groups.roleChannels) || {};
     Object.keys(roleChannels).forEach(function(r){
       var before = String(hadRoles[r] || '').split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); });
-      roleChannels[r].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) added.push('Invite everyone whose role is ' + r + ' to #' + n + ' on Slack'); });
+      roleChannels[r].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) { added.push('Invite everyone whose role is ' + r + ' to #' + n + ' on Slack'); newNames.push(n); } });
     });
-    (added.length ? BOLD.confirmAlways({ title: 'Save the settings?', go: 'Save', effects: added }) : Promise.resolve(true)).then(function(ok){
-      if (ok) writeSettings(btn, err, mine);
+    // A channel the bot can't see (a typo, or a private one it isn't in) isn't saved: nobody
+    // would be added to it, and nobody would know (checkGroupChannels).
+    btn.disabled = true; err.hidden = true;
+    checkChannels(newNames).then(function(missing){
+      btn.disabled = false;
+      if (missing) { err.textContent = missing; err.hidden = false; return; }
+      (added.length ? BOLD.confirmAlways({ title: 'Save the settings?', go: 'Save', effects: added }) : Promise.resolve(true)).then(function(ok){
+        if (ok) writeSettings(btn, err, mine);
+      });
+    }).catch(function(e){
+      btn.disabled = false;
+      console.error('[BOLD Requests] checking the channels failed', e);
+      err.textContent = 'Couldn’t check the channels on Slack — try again.'; err.hidden = false;
+    });
+  }
+  // → Promise of '' (all there) or what's wrong with the names, in words.
+  function checkChannels(names){
+    names = names.filter(function(n, i){ return names.indexOf(n) === i; });
+    if (!names.length) return Promise.resolve('');
+    return firebase.app().functions('europe-west2').httpsCallable('checkGroupChannels')({ names: names }).then(function(r){
+      var d = r.data || {};
+      return (d.missing || []).map(function(m){
+        return 'BOLD.OS can’t see #' + m.name + (m.suggest ? ' — did you mean #' + m.suggest + '?' : ': if it’s a private channel, invite ' + (d.bot || 'the BOLD OS app') + ' to it first.');
+      }).join(' ');
     });
   }
   // Each settings document is written only if something in it was changed, and then
