@@ -243,7 +243,7 @@
   // Branches (#177): the site as an open proposal would make it, like checking out a git
   // branch: one proposal anywhere (the BOLDiquette, a guide, a skill, a tool, who can see
   // what), chosen on the Version pill under the eye chip, for this tab until you go back to
-  // the site now. Each page shows it where it applies (pages/guide.js, skill.js, tool.js);
+  // main. Each page shows it where it applies (pages/guide.js, skill.js, tool.js);
   // one that changes Who can see what applies its table here (levelFor) and, for PIs and
   // admins, on the server too (every callable carries `branch`: functions/index.js onCall).
   // branch: { ref (the proposal's path), num, title, url (its page), pages? } or null.
@@ -258,7 +258,7 @@
   })();
   if (branch && !BRANCH_REF.test(branch.ref || '')) branch = null;
   BOLD.branch = function(){ return branch; };
-  // b: a branch from `branches`, or null for the site now. o.go: open its page (else reload this one).
+  // b: a branch from `branches`, or null for main. o.go: open its page (else reload this one).
   BOLD.setBranch = function(b, o){
     branch = b && BRANCH_REF.test(b.ref || '') ? { ref: b.ref, num: b.num || 0, title: b.title || '', url: b.url || '', pages: b.pages || null } : null;
     try { if (branch) sessionStorage.setItem('boldBranch', JSON.stringify(branch)); else sessionStorage.removeItem('boldBranch'); } catch (e){}
@@ -412,7 +412,7 @@
   }
 
   // While on a branch or viewing as a group (access.viewAs): a bar saying so, to go back.
-  function branchLabel(b){ return b ? (b.num ? '#' + b.num + ' ' : '') + (b.title || 'a proposed change') : 'The site now'; }
+  function branchLabel(b){ return b ? (b.num ? '#' + b.num + ' ' : '') + (b.title || 'a proposed change') : 'Main'; }
   function previewBar(){
     var bar = document.getElementById('viewAsBar'), g = access && access.viewAs;
     if (!g && !branch) { if (bar) bar.remove(); return; }
@@ -423,7 +423,7 @@
     }
     bar.innerHTML = (branch ? '<span class="vb-part"><span class="vb-text">On ' + esc(branchLabel(branch)) + '</span>' +
         (branch.url && pageOf(branch.url) !== (location.pathname.split('/').pop() || 'index.html') ? ' <a href="' + esc(pageOf(branch.url)) + '">Its page</a>' : '') +
-        ' <button type="button" data-vb="branch">Back to the site now</button></span>' : '') +
+        ' <button type="button" data-vb="branch">Back to main</button></span>' : '') +
       (g ? '<span class="vb-part">Viewing as ' + esc(LEVEL_NAMES[g] || g) + ' <button type="button" data-vb="as">Stop</button></span>' : '');
     bar.onclick = function(e){
       var b = e.target.closest('[data-vb]');
@@ -434,7 +434,7 @@
 
   // The open proposals, for the Version pill (`branches`, kept a minute in this tab), and the
   // branch you're on brought up to date from them: gone (accepted, declined or withdrawn
-  // meanwhile), you're back on the site now.
+  // meanwhile), you're back on main.
   var branchList = null, branchError = false, branchLoading = false;
   function loadBranches(){
     if (branchLoading || !access || !access.e) return;
@@ -711,13 +711,13 @@
     var cur = currentLevels(area);
     var html = '<button type="button" class="ac-chip" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="Who can see this page">' + ICON_EYE +
       '<span>' + esc(groupName(cur.view)) + '</span>' + (waiting ? '<span class="ac-waiting">· 1 change waiting</span>' : '') + ICON_CARET + '</button>' +
-      // The Version pill (branches): the site now, or as an open proposal would make it.
+      // The Version pill (branches): main (the site as it is), or as an open proposal would make it.
       '<button type="button" class="ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="See the site as an open proposal would make it">' + ICON_BRANCH +
       '<span class="br-label">' + esc(branchLabel(branch)) + '</span>' + ICON_CARET + '</button>';
     if (brOpen) {
       html += '<div class="ac-panel br-panel" id="brPanel" role="dialog" aria-label="Versions of the site"><div class="ac-title">Version</div>' +
         '<p class="ac-note">See the whole site as an open proposal would make it, before anyone accepts it. Only you see it, in this tab.</p>' +
-        '<ul class="br-list"><li><button type="button" class="br-item' + (branch ? '' : ' is-on') + '" data-ref=""><span class="br-t">The site now</span></button></li>' +
+        '<ul class="br-list"><li><button type="button" class="br-item' + (branch ? '' : ' is-on') + '" data-ref=""><span class="br-t">Main</span></button></li>' +
         (branchList || []).map(function(b){
           return '<li><button type="button" class="br-item' + (branch && branch.ref === b.ref ? ' is-on' : '') + '" data-ref="' + esc(b.ref) + '">' +
             '<span class="br-t">' + esc(branchLabel(b)) + '</span><span class="br-by">' + esc((b.by ? 'by ' + b.by : '') + (b.pages ? ' · changes who can see what' : '')) + '</span></button></li>';
