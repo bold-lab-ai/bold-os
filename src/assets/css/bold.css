@@ -124,8 +124,6 @@ footer{
 }
 .nav-group-label:hover{color:var(--accent);}
 .nav-group-label.active{color:var(--accent);}
-/* Requests: how many wait on you (bold.js requestsNav). */
-.nav-count{color:var(--accent);}
 /* The dash beside a group with sub-links. Untouched, a group opens on hover
    and stays open on its own pages. Clicking the dash fixes it: an open group
    (on its own page, or kept open) closes, so it no longer stays open on its

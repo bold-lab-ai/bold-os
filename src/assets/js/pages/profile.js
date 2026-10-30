@@ -380,9 +380,9 @@
 
   /* ---------- tabs ---------- */
   // Your details, Studies (PhD and Master students; pages/studies.js shows its tab),
-  // Projects, Connections (connections.js, drawn the first time it's shown), Linked
+  // Projects, Requests (pages/profile-requests.js), Connections (connections.js, drawn the first time it's shown), Linked
   // accounts and Agents (pages/profile-api.js), one shown at a time; the #hash names it.
-  var TABS = ['details', 'studies', 'projects', 'connections', 'linked-accounts', 'agents'];
+  var TABS = ['details', 'studies', 'projects', 'requests', 'connections', 'linked-accounts', 'agents'];
   var connectionsFor = '', connectionsUser = null;
   function drawConnections(){
     // connections.js loads after this script.

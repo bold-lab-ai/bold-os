@@ -4213,14 +4213,14 @@ function splitRequests(items, email, full){
   return { forYou: forYou.sort(oldest), byYou: byYou.sort(oldest) };
 }
 
-// The Requests page (join-requests.html) and the sidebar's count: everything on BOLD.OS
-// waiting on the caller, and what they asked that waits on someone else, as BOLD OS's board
+// Your profile's Requests tab (pages/profile-requests.js): everything on BOLD.OS waiting on
+// the caller to answer, and what they asked that waits on someone else, as BOLD OS's board
 // sees it (requestWork, contentWork). → { forYou, byYou: [{ kind, num, title, url, by, on, waiting, state, since, column }] }
 exports.myRequests = onCall(
   { timeoutSeconds: 60 },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'requests', 'view');   // Who can see what
+    await access.requireAccess(email, 'profile', 'view');   // Who can see what
     const person = workPerson(await workNames()), full = await isFullWrite(email);
     const [content, requests] = await Promise.all([contentWork(email, person), requestWork(email, full, person)]);
     const split = splitRequests(content.concat(requests), email, full);

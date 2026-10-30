@@ -4,7 +4,7 @@ title: "Profile | BOLD Lab"
 description: "Your BOLD Lab profile."
 sdk: ["functions"]
 css: "profile"
-scripts: ["pages/profile.js", "join-common.js", "pages/member-details.js", "project-fields.js", "pages/studies.js", "pages/profile-progress.js", "connections.js", "pages/profile-api.js"]
+scripts: ["pages/profile.js", "join-common.js", "pages/member-details.js", "project-fields.js", "pages/studies.js", "pages/profile-progress.js", "connections.js", "pages/profile-api.js", "pages/profile-requests.js"]
 permalink: "profile.html"
 ---
 <div class="hero">
@@ -21,6 +21,7 @@ permalink: "profile.html"
     <a class="guide-tab" href="#details">Your details</a>
     <a class="guide-tab" href="#studies" id="studiesTab" hidden>Studies</a>
     <a class="guide-tab" href="#projects">Projects</a>
+    <a class="guide-tab" href="#requests" id="requestsTab">Requests</a>
     <a class="guide-tab" href="#connections">Connections</a>
     <a class="guide-tab" href="#linked-accounts">Linked accounts</a>
     <a class="guide-tab" href="#agents">Agents</a>
@@ -43,6 +44,10 @@ permalink: "profile.html"
       <div class="proj-group"><h3>Member<span class="proj-count" id="cntMember"></span></h3><ul class="proj-list" id="projMember"></ul></div>
       <div class="proj-group"><h3>Reviewer<span class="proj-count" id="cntReviewer"></span></h3><ul class="proj-list" id="projReviewer"></ul></div>
     </div>
+  </section>
+
+  <section class="profile-panel" id="requests" hidden>
+    <div id="requestsBody"><p class="proj-msg">Loading&hellip;</p></div>
   </section>
 
   <section class="profile-panel" id="connections" hidden>

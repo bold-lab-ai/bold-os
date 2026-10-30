@@ -32,12 +32,11 @@ export default {
       { label: 'Guide', href: 'how-to-submit-a-paper.html' },
       { label: 'Internal review board', href: 'audit-board.html' },
     ] },
-    { label: 'Calendar', href: 'calendar.html', links: [], area: 'calendar' },
-    // Counts what's waiting on the viewer (bold.js requestsNav).
-    { label: 'Requests', href: 'join-requests.html', links: [], separatorAfter: true, area: 'requests' },
+    { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true, area: 'calendar' },
     { label: 'People', href: 'people.html', area: 'people', links: [
       { label: 'Members', href: 'people.html' },
       { label: 'Network', href: 'network.html' },
+      { label: 'Requests', href: 'join-requests.html', area: 'requests' },
     ] },
     // areaWhat list: Projects' View or Edit (Edit alone sees the titles, and joins).
     { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'list', links: [

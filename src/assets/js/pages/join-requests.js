@@ -9,11 +9,7 @@
 // #invited), who you confirm or say you didn't invite (confirmJoinInvite).
 // and requests to let an agent act for someone (apiTokens 'actRequests'/'decideAct' in
 // functions/api.js; the Agents tab).
-// First, for everyone, everything on BOLD.OS waiting on you (#for-you) and what you asked
-// that waits on someone else (#by-you), as BOLD OS's board sees it (myRequests in
-// functions/index.js): requests, proposed changes, papers to review, events to release;
-// each links to where it's decided. The sidebar counts what's for you (bold.js).
-// Tabs, by #hash: #for-you, #by-you, #signup, #invited, #groups, #agents (#r=, #g=, #i= open their
+// Tabs, by #hash: #signup, #invited, #groups, #agents (#r=, #g=, #i= open their
 // request's tab); #settings, the old Settings tab, opens settings.html. A request's answers are behind Details; names link to person.html.
 (function(){
   var esc = BOLD.escapeHtml;
@@ -28,7 +24,6 @@
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, unsubs = [], busy = {};
   var groupReqs = [], myGroupReqs = [], invited = [], invitedMembers = [], shown = {}, slackIds = {}, actReqs = [];
-  var waits = null, waitsError = '';
 
 
   // Someone's name, linked to their page once they're on the BOLD Slack (the people roster).
@@ -87,34 +82,6 @@
         '<button type="button" class="btn-text danger jr-a-decline" data-aid="' + esc(r.id) + '"' + off + '>Decline</button>'
         : r.status === 'approved' ? '<button type="button" class="btn-text danger jr-a-stop" data-aid="' + esc(r.id) + '"' + off + '>Stop acting</button>' : '') + '</div></li>';
   }
-  // Everything waiting on you, and on others for you (myRequests); again after each decision here.
-  var KINDS = { join: 'Joining BOLD', group: 'Changing group', letter: 'Recommendation letter', introduction: 'Introduction', supervision: 'Supervision meetings',
-    agent: 'Agent acting', invite: 'Invited by you', review: 'Internal Review', event: 'Event', hackathon: 'Hackathon', venue: 'Venue', proposal: 'Proposed change' };
-  function loadWaits(){
-    return fn('myRequests')().then(function(r){
-      waits = r.data || { forYou: [], byYou: [] }; waitsError = '';
-      BOLD.setRequestCount(waits.forYou.length);
-      render();
-    }).catch(function(err){
-      console.error('[BOLD Join] loading your requests failed', err);
-      waitsError = 'Couldn’t load them — try reloading the page.'; render();
-    });
-  }
-  function names(ps){ return ps.map(function(p){ return p.name; }).filter(Boolean).join(', '); }
-  function waitHtml(x, forYou){
-    var whom = forYou ? (x.by && x.by.name ? 'from ' + x.by.name : '') : 'waiting on ' + (names(x.on) || x.waiting || 'someone');
-    var meta = [KINDS[x.kind] || 'Request', whom, (x.column === 'doing' ? 'under way since ' : 'since ') + when(x.since)].filter(Boolean).join(' · ');
-    return '<li><a class="proj-title" href="' + esc(x.url) + '">' + (x.num ? '#' + x.num + ' ' : '') + esc(x.title) + '</a>' +
-      '<span class="proj-meta">' + esc(meta) + '</span></li>';
-  }
-  function waitsPanel(id, forYou){
-    var list = waits && (forYou ? waits.forYou : waits.byYou);
-    var body = waitsError ? '<p class="proj-msg">' + esc(waitsError) + '</p>' : !waits ? '<p class="proj-msg">Loading&hellip;</p>'
-      : list.length ? '<ul class="proj-list">' + list.map(function(x){ return waitHtml(x, forYou); }).join('') + '</ul>'
-      : '<p class="proj-msg">' + (forYou ? 'Nothing waiting on you.' : 'Nothing you asked is waiting.') + '</p>';
-    return '<section class="profile-panel" id="' + id + '">' + body + '</section>';
-  }
-
   function loadActReqs(){
     return fn('apiTokens')({ action: 'actRequests' }).then(function(r){ actReqs = (r.data && r.data.requests) || []; render(); })
       .catch(function(err){ console.error('[BOLD Join] loading agent requests failed', err); });
@@ -170,24 +137,14 @@
     return invited.filter(function(r){ return r.status === 'open' || (r.invitedBy || {}).status === 'pending'; }).length +
       invitedMembers.filter(function(m){ return (m.invitedBy || {}).status === 'pending'; }).length;
   }
-  // Tabs: [hash, label, count].
-  function tabsHtml(tabs){
-    var n = function(k){ return k ? ' (' + k + ')' : ''; };
-    return '<nav class="guide-tabs profile-tabs" id="jrTabs" aria-label="Requests">' +
-      tabs.map(function(t){ return '<a class="guide-tab" href="#' + t[0] + '">' + t[1] + n(t[2]) + '</a>'; }).join('') + '</nav>';
-  }
   function render(){
     if (!me) return;
-    var fy = waits ? waits.forYou.length : 0, by = waits ? waits.byYou.length : 0;
     if (staff === false) {
       // Someone you invited asking to change group: yours to decide.
       var mine = myGroupReqs.filter(function(r){ return r.status === 'open'; });
-      var tabs = [['for-you', 'For you', fy], ['by-you', 'By you', by]];
-      if (invited.length || invitedMembers.length) tabs.push(['invited', 'Invited by you', invitedWaiting()]);
-      if (mine.length) tabs.push(['groups', 'Groups', mine.length]);
-      main.innerHTML = tabsHtml(tabs) + waitsPanel('for-you', true) + waitsPanel('by-you', false) + invitedSection(true) +
-        (mine.length ? '<section class="profile-panel" id="groups"><ul class="proj-list">' + mine.map(groupReqHtml).join('') + '</ul></section>' : '');
-      showTab();
+      var groupsMine = mine.length ? '<section class="block" id="groups"><div class="block-head"><h2>Changing group<span class="proj-count">' + mine.length + ' waiting</span></h2></div>' +
+        '<ul class="proj-list">' + mine.map(groupReqHtml).join('') + '</ul></section>' : '';
+      main.innerHTML = invitedSection() + groupsMine + (invited.length || invitedMembers.length || mine.length ? '' : '<p class="proj-msg">Nobody says you invited them.</p>');
       jump();
       return;
     }
@@ -199,10 +156,15 @@
     var aOpen = actReqs.filter(function(r){ return r.status === 'open'; });
     var aDone = actReqs.filter(function(r){ return r.status !== 'open'; });
     var list = function(items, html, none){ return items.length ? '<ul class="proj-list">' + items.map(html).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>'; };
-    // Then four tabs for the PIs and admins: joining BOLD, invited by you, changing group, agents acting.
-    main.innerHTML = tabsHtml([['for-you', 'For you', fy], ['by-you', 'By you', by], ['signup', 'Sign up', open.length],
-        ['invited', 'Invited by you', invitedWaiting()], ['groups', 'Groups', gOpen.length], ['agents', 'Agents', aOpen.length]]) +
-      waitsPanel('for-you', true) + waitsPanel('by-you', false) +
+    var waiting = invitedWaiting();
+    var n = function(k){ return k ? ' (' + k + ')' : ''; };
+    // Four tabs, named by the #hash: joining BOLD, invited by you, changing group, agents acting.
+    main.innerHTML =
+      '<nav class="guide-tabs profile-tabs" id="jrTabs" aria-label="Requests">' +
+        '<a class="guide-tab" href="#signup">Sign up' + n(open.length) + '</a>' +
+        '<a class="guide-tab" href="#invited">Invited by you' + n(waiting) + '</a>' +
+        '<a class="guide-tab" href="#groups">Groups' + n(gOpen.length) + '</a>' +
+        '<a class="guide-tab" href="#agents">Agents' + n(aOpen.length) + '</a></nav>' +
       inviteNotice() +
       '<section class="profile-panel" id="signup">' +
         list(open, requestHtml, 'No requests waiting.') +
@@ -220,33 +182,28 @@
   // The tab a #hash names: links to one request (#r=, #g=, #i=) open its tab.
   function tabOf(h){
     var m = /^#([rgi])=/.exec(h);
-    if (m) return { r: staff === false ? 'invited' : 'signup', g: 'groups', i: 'invited' }[m[1]];
-    return TABS.indexOf(h.slice(1)) >= 0 ? h.slice(1) : '';
+    if (m) return { r: 'signup', g: 'groups', i: 'invited' }[m[1]];
+    return ['#signup', '#invited', '#groups', '#agents'].indexOf(h) >= 0 ? h.slice(1) : '';
   }
-  var TABS = ['for-you', 'by-you', 'signup', 'invited', 'groups', 'agents'];
   function showTab(){
     var tabs = document.getElementById('jrTabs');
     if (!tabs) return;
-    var want = tabOf(location.hash) || 'for-you';
-    if (!document.getElementById(want)) want = 'for-you';
+    var want = tabOf(location.hash) || 'signup';
     var note = document.getElementById('jrNotice');
     if (note) note.hidden = want !== 'signup';
-    TABS.forEach(function(t){ var x = document.getElementById(t); if (x) x.hidden = t !== want; });
+    ['signup', 'invited', 'groups', 'agents'].forEach(function(t){ var x = document.getElementById(t); if (x) x.hidden = t !== want; });
     Array.prototype.forEach.call(tabs.querySelectorAll('.guide-tab'), function(a){
       var on = a.getAttribute('href') === '#' + want;
       a.classList.toggle('is-current', on);
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
   }
-  // A link on For you to a request here (#r=…) opens it, as from Slack.
-  window.addEventListener('hashchange', function(){ render.jumped = false; showTab(); jump(); });
+  window.addEventListener('hashchange', showTab);
   function jump(){
     var m = /#([rgi])=([A-Za-z0-9]+)/.exec(location.hash);
-    // A request to join, for whoever was named as inviting them: under Invited by you.
-    var t = m && (m[1] === 'r' && staff === false ? 'i' : m[1]);
-    var key = m && (t === 'r' ? m[2] : t + ':' + m[2]);
+    var key = m && (m[1] === 'r' ? m[2] : m[1] + ':' + m[2]);
     if (key && !shown[key] && !render.jumped) { shown[key] = true; render(); return; }
-    var el = m ? document.getElementById(t + '-' + m[2]) : null;
+    var el = m ? document.getElementById(m[1] + '-' + m[2]) : null;
     if (el && !render.jumped) { render.jumped = true; el.scrollIntoView({ block: 'start' }); }
   }
 
@@ -290,21 +247,21 @@
     fn('confirmJoinInvite')(iid ? { id: iid, confirm: yes } : { member: mid, confirm: yes }).catch(function(err){
       console.error('[BOLD Join] confirming the invitation failed', err);
       window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
-    }).then(function(){ delete busy[key]; render(); loadWaits(); });
+    }).then(function(){ delete busy[key]; render(); });
   }
   function decideAct(t, aid, stop, yes){
     busy['a:' + aid] = true; t.disabled = true;
     fn('apiTokens')(stop ? { action: 'stopAct', id: aid } : { action: 'decideAct', id: aid, accept: yes }).catch(function(err){
       console.error('[BOLD Join] deciding the agent request failed', err);
       window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
-    }).then(function(){ delete busy['a:' + aid]; loadWaits(); return loadActReqs(); });
+    }).then(function(){ delete busy['a:' + aid]; return loadActReqs(); });
   }
   function decideGroup(t, gid, accept){
     busy[gid] = true; t.disabled = true;
     fn('groupRequest')({ action: 'decide', id: gid, accept: accept }).catch(function(err){
       console.error('[BOLD Join] deciding the group request failed', err);
       window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
-    }).then(function(){ delete busy[gid]; render(); loadWaits(); });
+    }).then(function(){ delete busy[gid]; render(); });
   }
   function rest(t){
     var id = t.getAttribute('data-id');
@@ -315,7 +272,7 @@
       job().catch(function(err){
         console.error('[BOLD Join] that failed', err);
         window.alert(err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t do that — try again.');
-      }).then(function(){ delete busy[id]; render(); loadWaits(); });
+      }).then(function(){ delete busy[id]; render(); });
     };
     if (t.classList.contains('jr-approve')) {
       var inv = r.invitedBy || {};
@@ -340,10 +297,8 @@
       ps.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });
       render();
     }).catch(function(){});
-    waits = null; waitsError = '';
     if (!user) return;
     render();
-    loadWaits();
     // Requests that name you as inviting them (readable by you: firestore.rules).
     unsubs.push(db.collection('joinRequests').where('invitedBy.email', '==', me.email).onSnapshot(function(snap){
       invited = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
