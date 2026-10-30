@@ -1,16 +1,17 @@
-// join-requests.html: whoever an applicant names as inviting them approves or declines
-// their request to join BOLD (decideJoinRequest; "Invited by you", #i=<id> from their DM);
+// join-requests.html (People → Requests): whoever an applicant names as inviting them approves
+// or declines their request to join BOLD (decideJoinRequest; #i=<id> from their DM);
 // PIs and admins see them all but decide only one without an inviter; members' requests to be in another group of Who is BOLD
 // (groupRequests, groupRequest), decided the same way: whoever invited them, or the PIs and admins when nobody did; PIs and admins also see whether each welcome email went (sendWelcomeEmail
 // sends one again); BOLD.OS's settings (the invite link, the email, the join form, the
 // groups' channels, the pilots) are on settings.html (pages/settings.js).
-// Only PIs and admins can read any of it (firestore.rules), except "Invited by you": the
-// requests naming you, and members who named you on their profile (setMyInviter;
-// #invited), who you confirm or say you didn't invite (confirmJoinInvite).
-// and requests to let an agent act for someone (apiTokens 'actRequests'/'decideAct' in
-// functions/api.js; the Agents tab).
-// Tabs, by #hash: #signup, #invited, #groups, #agents (#r=, #g=, #i= open their
-// request's tab); #settings, the old Settings tab, opens settings.html. A request's answers are behind Details; names link to person.html.
+// Only PIs and admins can read all of it (firestore.rules); everyone else sees, under Sign up,
+// the requests naming them and members who named them on their profile (setMyInviter), and
+// confirms or says they didn't invite them (confirmJoinInvite), and under Group change those
+// they decide. One list for everyone: each person's own are also on their Requests (requests.html).
+// PIs and admins also decide requests to let an agent act for someone (apiTokens
+// 'actRequests'/'decideAct' in functions/api.js; the Agents tab).
+// Tabs, by #hash: #signup, #groups, #agents (#r=, #g=, #i= open their request's tab; #invited,
+// the old Invited by you tab, opens Sign up); #settings, the old Settings tab, opens settings.html. A request's answers are behind Details; names link to person.html.
 (function(){
   var esc = BOLD.escapeHtml;
   var main = document.getElementById('joinRequests');
@@ -42,16 +43,19 @@
     var off = busy[r.id] ? ' disabled' : mine ? '' : ' disabled title="' + esc('Only ' + (inv.name || inv.email) + ', who invited them, decides this') + '"';
     var w = r.welcome || {};
     var status = open ? '' : '<p class="proj-meta">' + (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + who(r.decidedByName || r.decidedBy || '', r.decidedBy) + ', ' + when(r.decidedAt) +
-      (r.status === 'approved' ? ' · Welcome email: ' + (w.status === 'sent' ? 'sent ' + when(w.at) : 'not sent yet' + (w.error ? ' (' + esc(w.error) + ')' : '')) : '') + '</p>';
+      (r.status === 'approved' && staff ? ' · Welcome email: ' + (w.status === 'sent' ? 'sent ' + when(w.at) : 'not sent yet' + (w.error ? ' (' + esc(w.error) + ')' : '')) : '') + '</p>';
     return '<li id="r-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
       '<span class="proj-meta">' + esc([r.email, r.role, r.institution].filter(Boolean).join(' · ')) + ' · asked ' + when(r.at) + '</span>' + status +
+      (toConfirm(r) ? '<p class="proj-meta">They say you invited them.</p>' : '') +
       (open && inv && !mine ? '<p class="proj-meta">Invited by ' + who(inv.name, inv.email) + ', who decides it</p>' : '') +
       // Their answers, collapsed: a request is long.
       (shown[r.id] ? BoldJoin.factsHtml(r, { other: true }) : '') +
       '<div class="event-controls">' + moreBtn(r.id) + (open ?
         '<button type="button" class="btn-text jr-approve" data-id="' + esc(r.id) + '"' + off + '>Approve</button>' +
         '<button type="button" class="btn-text danger jr-decline" data-id="' + esc(r.id) + '"' + off + '>Decline</button>' :
-        r.status === 'approved' && w.status !== 'sent' ? '<button type="button" class="btn-text jr-resend" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Send the welcome email</button>' : '') +
+        (toConfirm(r) ? '<button type="button" class="btn-text jr-i-yes" data-iid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Yes, I invited them</button>' +
+          '<button type="button" class="btn-text danger jr-i-no" data-iid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>I didn’t</button>' : '') +
+        (staff && r.status === 'approved' && w.status !== 'sent' ? '<button type="button" class="btn-text jr-resend" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Send the welcome email</button>' : '')) +
       '</div></li>';
   }
 
@@ -99,23 +103,8 @@
     return msg ? '<p class="jn-notice" id="jrNotice">' + esc(msg).replace('under Settings', 'under <a href="settings.html">Settings</a>') + '</p>' : '';
   }
 
-  // A request that names you as inviting them: approve or decline it while it's open
-  // (from before, one a PI or admin approved: confirm it, or say you didn't).
-  function invitedHtml(r){
-    var st = (r.invitedBy || {}).status, off = busy[r.id] ? ' disabled' : '';
-    if (r.status === 'open') return '<li id="i-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
-      '<span class="proj-meta">' + esc(r.email) + ' · ' + esc([r.role, r.institution].filter(Boolean).join(', ')) + ' · asked ' + when(r.at) + '</span>' +
-      '<p class="proj-meta">Asks to join BOLD, and says you invited them.</p>' +
-      (shown['i:' + r.id] ? BoldJoin.factsHtml(r, { other: true }) : '') +
-      '<div class="event-controls">' + moreBtn('i:' + r.id) + '<button type="button" class="btn-text jr-approve" data-id="' + esc(r.id) + '"' + off + '>Approve</button>' +
-        '<button type="button" class="btn-text danger jr-decline" data-id="' + esc(r.id) + '"' + off + '>Decline</button></div></li>';
-    return '<li id="i-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
-      '<span class="proj-meta">' + esc(r.email) + ' · ' + esc([r.role, r.institution].filter(Boolean).join(', ')) + ' · asked ' + when(r.at) + '</span>' +
-      '<p class="proj-meta">' + (st === 'confirmed' ? 'You confirmed you invited them.' : st === 'denied' ? 'You said you didn’t invite them.' : 'They say you invited them to the BOLD Slack.') + '</p>' +
-      (shown['i:' + r.id] ? BoldJoin.factsHtml(r, { other: true }) : '') +
-      '<div class="event-controls">' + moreBtn('i:' + r.id) + (st !== 'confirmed' ? '<button type="button" class="btn-text jr-i-yes" data-iid="' + esc(r.id) + '"' + off + '>Yes, I invited them</button>' : '') +
-        (st !== 'denied' ? '<button type="button" class="btn-text danger jr-i-no" data-iid="' + esc(r.id) + '"' + off + '>I didn’t</button>' : '') + '</div></li>';
-  }
+  // Approved by a PI or admin, naming you as inviting them: confirm it, or say you didn't.
+  function toConfirm(r){ var inv = r.invitedBy || {}; return r.status === 'approved' && me && inv.email === me.email && inv.status === 'pending'; }
   // A member who named you on their profile (setMyInviter): the same, by their email.
   function invitedMemberHtml(m){
     var st = (m.invitedBy || {}).status, key = 'm:' + m.email, off = busy[key] ? ' disabled' : '';
@@ -125,65 +114,50 @@
       '<div class="event-controls">' + (st !== 'confirmed' ? '<button type="button" class="btn-text jr-i-yes" data-mid="' + esc(m.email) + '"' + off + '>Yes, I invited them</button>' : '') +
         (st !== 'denied' ? '<button type="button" class="btn-text danger jr-i-no" data-mid="' + esc(m.email) + '"' + off + '>I didn’t</button>' : '') + '</div></li>';
   }
-  // Without tabs (not a PI or admin), it keeps its heading.
-  function invitedSection(tabbed){
-    if (!invited.length && !invitedMembers.length) return '';
-    return '<section class="' + (tabbed ? 'profile-panel' : 'block') + '" id="invited">' + (tabbed ? '' : '<div class="block-head"><h2>Invited by you<span class="proj-count">' + invitedWaiting() + ' waiting</span></h2></div>') +
-      '<ul class="proj-list">' + invited.map(invitedHtml).join('') + invitedMembers.map(invitedMemberHtml).join('') + '</ul></section>';
-  }
-
-  // Requests naming you still open, and members still to confirm.
-  function invitedWaiting(){
-    return invited.filter(function(r){ return r.status === 'open' || (r.invitedBy || {}).status === 'pending'; }).length +
-      invitedMembers.filter(function(m){ return (m.invitedBy || {}).status === 'pending'; }).length;
-  }
   function render(){
     if (!me) return;
-    if (staff === false) {
-      // Someone you invited asking to change group: yours to decide.
-      var mine = myGroupReqs.filter(function(r){ return r.status === 'open'; });
-      var groupsMine = mine.length ? '<section class="block" id="groups"><div class="block-head"><h2>Group change<span class="proj-count">' + mine.length + ' waiting</span></h2></div>' +
-        '<ul class="proj-list">' + mine.map(groupReqHtml).join('') + '</ul></section>' : '';
-      main.innerHTML = invitedSection() + groupsMine + (invited.length || invitedMembers.length || mine.length ? '' : '<p class="proj-msg">Nobody says you invited them.</p>');
-      jump();
-      return;
-    }
-    if (staff === null || requests === null) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
-    var open = requests.filter(function(r){ return r.status === 'open'; });
-    var done = requests.filter(function(r){ return r.status !== 'open'; });
-    var gOpen = groupReqs.filter(function(r){ return r.status === 'open'; });
-    var gDone = groupReqs.filter(function(r){ return r.status !== 'open'; });
+    if (staff === null || (staff && requests === null)) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
+    // PIs and admins see every request; everyone else those naming them as inviting them, and
+    // who named them on their profile. Theirs are also on their own Requests (requests.html).
+    var reqs = staff ? requests : invited, groupsAll = staff ? groupReqs : myGroupReqs;
+    var waits = function(r){ return r.status === 'open' || toConfirm(r); };
+    var open = reqs.filter(waits), done = reqs.filter(function(r){ return !waits(r); });
+    var mOpen = invitedMembers.filter(function(m){ return (m.invitedBy || {}).status === 'pending'; });
+    var mDone = invitedMembers.filter(function(m){ return (m.invitedBy || {}).status !== 'pending'; });
+    var gOpen = groupsAll.filter(function(r){ return r.status === 'open'; });
+    var gDone = groupsAll.filter(function(r){ return r.status !== 'open'; });
     var aOpen = actReqs.filter(function(r){ return r.status === 'open'; });
     var aDone = actReqs.filter(function(r){ return r.status !== 'open'; });
-    var list = function(items, html, none){ return items.length ? '<ul class="proj-list">' + items.map(html).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>'; };
-    var waiting = invitedWaiting();
+    var ul = function(html){ return html ? '<ul class="proj-list">' + html + '</ul>' : ''; };
+    var rows = function(items, html){ return items.map(html).join(''); };
     var n = function(k){ return k ? ' (' + k + ')' : ''; };
-    // Four tabs, named by the #hash: joining BOLD, invited by you, changing group, agents acting.
+    var openHtml = rows(open, requestHtml) + rows(mOpen, invitedMemberHtml), doneHtml = rows(done, requestHtml) + rows(mDone, invitedMemberHtml);
+    // Tabs, named by the #hash: joining BOLD, changing group, and agents acting (PIs and admins).
     main.innerHTML =
       '<nav class="guide-tabs profile-tabs" id="jrTabs" aria-label="Requests">' +
-        '<a class="guide-tab" href="#signup">Sign up' + n(open.length) + '</a>' +
-        '<a class="guide-tab" href="#invited">Invited by you' + n(waiting) + '</a>' +
+        '<a class="guide-tab" href="#signup">Sign up' + n(open.length + mOpen.length) + '</a>' +
         '<a class="guide-tab" href="#groups">Group change' + n(gOpen.length) + '</a>' +
-        '<a class="guide-tab" href="#agents">Agents' + n(aOpen.length) + '</a></nav>' +
-      inviteNotice() +
+        (staff ? '<a class="guide-tab" href="#agents">Agents' + n(aOpen.length) + '</a>' : '') + '</nav>' +
+      (staff ? inviteNotice() : '') +
       '<section class="profile-panel" id="signup">' +
-        list(open, requestHtml, 'No requests waiting.') +
-        (done.length ? '<div class="proj-group"><h3>Decided</h3>' + list(done, requestHtml, '') + '</div>' : '') + '</section>' +
-      (invitedSection(true) || '<section class="profile-panel" id="invited"><p class="proj-msg">Nobody says you invited them.</p></section>') +
+        (ul(openHtml) || '<p class="proj-msg">No requests waiting.</p>') +
+        (doneHtml ? '<div class="proj-group"><h3>Decided</h3>' + ul(doneHtml) + '</div>' : '') + '</section>' +
       '<section class="profile-panel" id="groups">' +
-        list(gOpen, groupReqHtml, 'No requests waiting.') +
-        (gDone.length ? '<div class="proj-group"><h3>Decided</h3>' + list(gDone, groupReqHtml, '') + '</div>' : '') + '</section>' +
-      '<section class="profile-panel" id="agents"><p class="hero-note">Requests to let an agent act for someone, in their name: join projects, ask for introductions and letters, comment, propose changes and more. <a href="agents.html#activity">What agents did</a>.</p>' +
-        list(aOpen, actReqHtml, 'No requests waiting.') +
-        (aDone.length ? '<div class="proj-group"><h3>Decided</h3>' + list(aDone, actReqHtml, '') + '</div>' : '') + '</section>';
+        (ul(rows(gOpen, groupReqHtml)) || '<p class="proj-msg">No requests waiting.</p>') +
+        (gDone.length ? '<div class="proj-group"><h3>Decided</h3>' + ul(rows(gDone, groupReqHtml)) + '</div>' : '') + '</section>' +
+      (staff ? '<section class="profile-panel" id="agents"><p class="hero-note">Requests to let an agent act for someone, in their name: join projects, ask for introductions and letters, comment, propose changes and more. <a href="agents.html#activity">What agents did</a>.</p>' +
+        (ul(rows(aOpen, actReqHtml)) || '<p class="proj-msg">No requests waiting.</p>') +
+        (aDone.length ? '<div class="proj-group"><h3>Decided</h3>' + ul(rows(aDone, actReqHtml)) + '</div>' : '') + '</section>' : '');
     showTab();
     jump();
   }
-  // The tab a #hash names: links to one request (#r=, #g=, #i=) open its tab.
+  // The tab a #hash names: links to one request (#r=, #g=, #i=) open its tab; #invited, the
+  // old Invited by you tab (Slack messages), is Sign up.
   function tabOf(h){
     var m = /^#([rgi])=/.exec(h);
-    if (m) return { r: 'signup', g: 'groups', i: 'invited' }[m[1]];
-    return ['#signup', '#invited', '#groups', '#agents'].indexOf(h) >= 0 ? h.slice(1) : '';
+    if (m) return { r: 'signup', g: 'groups', i: 'signup' }[m[1]];
+    if (h === '#invited') return 'signup';
+    return ['#signup', '#groups', '#agents'].indexOf(h) >= 0 ? h.slice(1) : '';
   }
   function showTab(){
     var tabs = document.getElementById('jrTabs');
@@ -191,7 +165,8 @@
     var want = tabOf(location.hash) || 'signup';
     var note = document.getElementById('jrNotice');
     if (note) note.hidden = want !== 'signup';
-    ['signup', 'invited', 'groups', 'agents'].forEach(function(t){ var x = document.getElementById(t); if (x) x.hidden = t !== want; });
+    if (!document.getElementById(want)) want = 'signup';
+    ['signup', 'groups', 'agents'].forEach(function(t){ var x = document.getElementById(t); if (x) x.hidden = t !== want; });
     Array.prototype.forEach.call(tabs.querySelectorAll('.guide-tab'), function(a){
       var on = a.getAttribute('href') === '#' + want;
       a.classList.toggle('is-current', on);
@@ -201,9 +176,10 @@
   window.addEventListener('hashchange', showTab);
   function jump(){
     var m = /#([rgi])=([A-Za-z0-9]+)/.exec(location.hash);
-    var key = m && (m[1] === 'r' ? m[2] : m[1] + ':' + m[2]);
+    var t = m && (m[1] === 'i' ? 'r' : m[1]);   // #i=, from an inviter's DM: the same row
+    var key = m && (t === 'r' ? m[2] : t + ':' + m[2]);
     if (key && !shown[key] && !render.jumped) { shown[key] = true; render(); return; }
-    var el = m ? document.getElementById(m[1] + '-' + m[2]) : null;
+    var el = m ? document.getElementById(t + '-' + m[2]) : null;
     if (el && !render.jumped) { render.jumped = true; el.scrollIntoView({ block: 'start' }); }
   }
 
