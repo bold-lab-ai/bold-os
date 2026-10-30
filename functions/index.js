@@ -28,7 +28,8 @@
 // changelog.
 
 const { onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentWrittenWithAuthContext } = require('firebase-functions/v2/firestore');
-const { onRequest, onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onRequest, onCall: plainOnCall, HttpsError } = require('firebase-functions/v2/https');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { beforeUserCreated, HttpsError: IdentityHttpsError } = require('firebase-functions/v2/identity');
 const { defineSecret } = require('firebase-functions/params');
@@ -41,6 +42,31 @@ const crypto = require('crypto');
 
 admin.initializeApp();
 const db = admin.firestore();
+
+// ---------- View as (#172): a PI or admin sees the site as a lower group ----------
+// The browser (bold.js, the account menu's View as) adds `viewAs` (a group) to every
+// callable while it's on. For a PI or admin, that call then runs as that group: for the
+// caller only, isFullWrite is false and access.groupFor gives the group, so it can only
+// ever see and do less. Anyone else's viewAs is ignored. The rules still read as them.
+const VIEW_AS = ['staff', 'internal', 'associate', 'pan'];
+const viewing = new AsyncLocalStorage();
+function viewingAs(email){
+  const v = viewing.getStore();
+  return v && v.email === String(email || '').toLowerCase() ? v.group : null;
+}
+function onCall(opts, fn){
+  if (typeof opts === 'function') { fn = opts; opts = {}; }
+  return plainOnCall(opts, async (request, response) => {
+    const data = request.data;
+    if (!data || typeof data !== 'object' || !('viewAs' in data)) return fn(request, response);
+    const rest = Object.assign({}, data), group = rest.viewAs;
+    delete rest.viewAs;
+    request = Object.assign({}, request, { data: rest });
+    const email = request.auth && request.auth.token && request.auth.token.email ? String(request.auth.token.email).toLowerCase() : '';
+    if (VIEW_AS.indexOf(group) === -1 || !email || !(await realFullWrite(email))) return fn(request, response);
+    return viewing.run({ email, group }, () => fn(request, response));
+  });
+}
 // In the emulator, Slack is pretended: every call is written to `slackOutbox` instead.
 require('./slack-outbox')(db);
 
@@ -1781,7 +1807,7 @@ const REVIEWED = ['guides', 'handbook', 'skills', 'agentTools'];
 
 // Who can see what (functions/access.js): the BOLDiquette's table of who can view, edit
 // and propose on each page, by group, saved in settings/access when a change to it is accepted.
-const access = require('./access')({ db, groupOf, isFullWrite, HttpsError });
+const access = require('./access')({ db, groupOf, isFullWrite, viewingAs, HttpsError });
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
 function appliedProposal(doc, q, ctx){
@@ -2278,9 +2304,11 @@ exports.getMyAccess = onCall(
   async (request) => {
     const email = signedInEmail(request);
     try { await recordSignUp(request.auth.uid, email.toLowerCase()); } catch (err){ logger.warn('Recording a first sign-in failed', { error: String(err && err.message || err) }); }
-    const [pis, admins, group, pages] = await Promise.all([rolesEmails('pis'), rolesEmails('admins'), access.groupFor(email), access.table()]);
-    // Their group and Who can see what, for the pages to show what's theirs (BOLD.can).
-    return { fullWrite: pis.indexOf(email) !== -1 || admins.indexOf(email) !== -1, group, pages };
+    const [fullWrite, group, pages] = await Promise.all([isFullWrite(email.toLowerCase()), access.groupFor(email), access.table()]);
+    // Their group and Who can see what, for the pages to show what's theirs (BOLD.can);
+    // viewAs: the group a PI or admin is viewing the site as (View as), so the page says so.
+    const as = viewingAs(email);
+    return Object.assign({ fullWrite, group, pages }, as ? { viewAs: as } : {});
   }
 );
 
@@ -4319,7 +4347,12 @@ function callerEmail(request){
   return signedInEmail(request).toLowerCase();
 }
 
+// Whether `email` is a PI or admin: not while they view the site as a group (View as).
 async function isFullWrite(email){
+  return viewingAs(email) ? false : realFullWrite(email);
+}
+async function realFullWrite(email){
+  email = String(email || '').toLowerCase();
   const [pis, admins] = await Promise.all([rolesEmails('pis'), rolesEmails('admins')]);
   return pis.concat(admins).some(e => String(e).toLowerCase() === email);
 }

@@ -288,6 +288,14 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .mast-menu a, .mast-menu button{display:block; width:100%; box-sizing:border-box; padding:7px 10px; border:0; background:none; text-align:left;
   font:inherit; color:var(--ink); text-decoration:none; cursor:pointer;}
 .mast-menu a:hover, .mast-menu button:hover, .mast-menu a:focus-visible, .mast-menu button:focus-visible{background:var(--wash); outline:none;}
+.mast-menu-viewas{border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin:4px 0; padding:4px 0;}
+.mast-menu-label{display:block; padding:4px 10px 2px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
+.mast-menu-viewas button{padding-left:22px; position:relative;}
+.mast-menu-viewas button[aria-checked="true"]::before{content:"✓"; position:absolute; left:8px;}
+/* View as (bold.js): while a PI or admin views the site as a group. */
+.viewas-bar{position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:1300; display:flex; gap:12px; align-items:center;
+  padding:8px 14px; border-radius:999px; background:var(--ink); color:var(--surface); font-family:var(--sans); font-size:13.5px; box-shadow:0 6px 18px rgba(26,43,74,.25); max-width:calc(100vw - 32px);}
+.viewas-bar button{border:1px solid currentColor; background:none; color:inherit; font:inherit; border-radius:999px; padding:2px 10px; cursor:pointer;}
 /* Who can see this page (bold.js): a chip at the page's top right, opening its ladder (each
    group can do what the groups below it can); PIs and admins propose a change there. */
 .shell-main{position:relative;}

@@ -216,6 +216,46 @@
   // Signed in last visit: lets page CSS keep "sign in" panels out of the first paint.
   if (hint) document.documentElement.classList.add('auth-hint');
 
+  // View as (#172; functions/index.js onCall): a PI or admin sees the site as a lower group,
+  // in this tab, until they stop (the account menu, or the bar it shows). Every callable then
+  // carries viewAs; the server honours it for PIs and admins only, and getMyAccess says so
+  // (access.viewAs). The rules still read as them, so data a page reads straight from the
+  // database is theirs: the page hides what that group wouldn't see.
+  var VIEW_AS = ['staff', 'internal', 'associate', 'pan'];
+  var viewAs = null;
+  try { viewAs = sessionStorage.getItem('boldViewAs'); } catch (e){}
+  if (VIEW_AS.indexOf(viewAs) < 0) viewAs = null;
+  BOLD.viewAs = function(){ return viewAs; };
+  // Switching it: the pages' caches of what the server sent are for the other view.
+  BOLD.setViewAs = function(g){
+    try {
+      if (VIEW_AS.indexOf(g) >= 0) sessionStorage.setItem('boldViewAs', g); else sessionStorage.removeItem('boldViewAs');
+      Object.keys(localStorage).forEach(function(k){
+        if (/^(boldProfile:|boldProject:|boldProjects:|boldBoardsIndex:|boldAccess$)/.test(k) && k !== 'boldProjects:view') localStorage.removeItem(k);
+      });
+    } catch (e){}
+    location.reload();
+  };
+  // Every callable's data gets viewAs, from wherever the page calls it.
+  function viewAsCalls(){
+    if (!viewAs || !app || typeof app.functions !== 'function' || app.functions.viewAs) return;
+    var plain = app.functions;
+    var wrapped = function(){
+      var f = plain.apply(app, arguments);
+      if (f && f.httpsCallable && !f.httpsCallable.viewAs) {
+        var hc = f.httpsCallable;
+        f.httpsCallable = function(){
+          var c = hc.apply(f, arguments);
+          return function(d){ return c(d == null ? { viewAs: viewAs } : typeof d === 'object' && !Array.isArray(d) ? Object.assign({}, d, { viewAs: viewAs }) : d); };
+        };
+        f.httpsCallable.viewAs = true;
+      }
+      return f;
+    };
+    wrapped.viewAs = true;
+    app.functions = wrapped;
+  }
+
   /* ---------- Firebase + auth ---------- */
 
   var app = null, auth = null, authReady = false, current = null, listeners = [];
@@ -223,6 +263,7 @@
   BOLD.getApp = function(){
     if (app) return app;
     try { app = firebase.apps.length ? firebase.app() : firebase.initializeApp(BOLD.firebaseConfig); } catch (e){ app = null; }
+    viewAsCalls();
     return app;
   };
 
@@ -312,6 +353,9 @@
             '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
             '<li role="none"><a role="menuitem" href="requests.html">Requests</a></li>' +
             '<li role="none" class="mast-menu-settings"' + (BOLD.isFullWrite() ? '' : ' hidden') + '><a role="menuitem" href="settings.html">Settings</a></li>' +
+            '<li role="none" class="mast-menu-viewas" hidden><span class="mast-menu-label">View as</span>' +
+              VIEW_AS.map(function(g){ return '<button role="menuitemradio" type="button" data-view-as="' + g + '" aria-checked="' + (viewAs === g) + '">' + LEVEL_NAMES[g] + '</button>'; }).join('') +
+              '<button role="menuitemradio" type="button" data-view-as="" aria-checked="' + !viewAs + '">Yourself</button></li>' +
             '<li role="none"><button role="menuitem" type="button" id="mastSignOutBtn">Sign out</button></li>' +
           '</ul>' +
         '</div>';
@@ -322,10 +366,27 @@
       document.addEventListener('focusin', function(e){ if (!region.contains(e.target)) open(false); });
       region.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
       region.querySelector('#mastSignOutBtn').addEventListener('click', BOLD.signOut);
+      region.querySelector('.mast-menu-viewas').addEventListener('click', function(e){
+        var b = e.target.closest('[data-view-as]');
+        if (b && b.getAttribute('aria-checked') !== 'true') BOLD.setViewAs(b.getAttribute('data-view-as'));
+      });
     } else {
       region.innerHTML = '<button class="auth-signin" type="button" id="mastSignInBtn">Sign in with Slack</button>';
       region.querySelector('#mastSignInBtn').addEventListener('click', BOLD.signIn);
     }
+  }
+
+  // While viewing as a group: a bar saying so, to stop.
+  function viewAsBar(g){
+    var bar = document.getElementById('viewAsBar');
+    if (!g) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.id = 'viewAsBar'; bar.className = 'viewas-bar'; bar.setAttribute('role', 'status');
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = 'Viewing as ' + esc(LEVEL_NAMES[g] || g) + ' <button type="button">Stop</button>';
+    bar.querySelector('button').addEventListener('click', function(){ BOLD.setViewAs(null); });
   }
 
   // Called right after the masthead markup.
@@ -335,7 +396,11 @@
     if (hint) renderAuthRegion(region, { displayName: hint.n, email: hint.e });
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
     // Settings, in the menu, once the viewer is known to be a PI or admin.
-    BOLD.onAccess(function(a){ var g = region.querySelector('.mast-menu-settings'); if (g) g.hidden = !a.fullWrite; });
+    BOLD.onAccess(function(a){
+      var g = region.querySelector('.mast-menu-settings'); if (g) g.hidden = !a.fullWrite;
+      var v = region.querySelector('.mast-menu-viewas'); if (v) v.hidden = !(a.fullWrite || a.viewAs);
+      viewAsBar(a.viewAs);
+    });
     alignSearch();
   };
 
@@ -379,7 +444,7 @@
   // The last visit's, for the first paint (same person only).
   try {
     var seen = JSON.parse(localStorage.getItem('boldAccess') || 'null');
-    if (seen && hint && seen.e === hint.e) access = seen;
+    if (seen && hint && seen.e === hint.e && (seen.viewAs || null) === viewAs) access = seen;
   } catch (e){}
   function setAccess(a){
     access = a;
@@ -422,12 +487,15 @@
     }).catch(function(){ return 'pan'; });
     Promise.all([table, mine]).then(function(r){
       var known = access && access.e === (user.email || '') ? access : null;
-      setAccess({ e: user.email || '', group: known && known.fullWrite ? 'exec' : r[1], pages: r[0], fullWrite: !!(known && known.fullWrite) });
+      // Viewing as a group: the server says which (getMyAccess), not the member record.
+      if (!viewAs) setAccess({ e: user.email || '', group: known && known.fullWrite ? 'exec' : r[1], pages: r[0], fullWrite: !!(known && known.fullWrite) });
       // PIs and admins count as BOLD-exec and change who can see what, which only the server knows.
       withFunctions(function(){
         firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(x){
           var d = x.data || {};
-          setAccess({ e: user.email || '', group: d.group || r[1], pages: d.pages || r[0], fullWrite: !!d.fullWrite });
+          // Asked to view as a group but not a PI or admin: the server ignored it, and so do we.
+          if (viewAs && !d.viewAs) { viewAs = null; try { sessionStorage.removeItem('boldViewAs'); } catch (e){} }
+          setAccess(Object.assign({ e: user.email || '', group: d.group || r[1], pages: d.pages || r[0], fullWrite: !!d.fullWrite }, d.viewAs ? { viewAs: d.viewAs } : {}));
         }).catch(function(){});
       });
     });
@@ -439,7 +507,7 @@
     if (!app) return;
     var el = document.createElement('script');
     el.src = app.src.replace('firebase-app-compat.js', 'firebase-functions-compat.js');
-    el.onload = fn;
+    el.onload = function(){ viewAsCalls(); fn(); };
     document.head.appendChild(el);
   }
   BOLD.isFullWrite = function(){ return !!(access && access.fullWrite); };

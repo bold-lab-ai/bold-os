@@ -155,7 +155,7 @@ function accessTableMarkdown(pages){
     PAGES.map(([key, name]) => '| ' + name + ' | ' + WHAT.map((w) => LEVEL_NAMES[(pages[key] || {})[w] || DEFAULT_LEVEL]).join(' | ') + ' |').join('\n');
 }
 
-module.exports = function access({ db, groupOf, isFullWrite, HttpsError }){
+module.exports = function access({ db, groupOf, isFullWrite, viewingAs, HttpsError }){
   let cache = null, cachedAt = 0;
   async function table(){
     if (cache && Date.now() - cachedAt < 60000) return cache;
@@ -167,6 +167,8 @@ module.exports = function access({ db, groupOf, isFullWrite, HttpsError }){
   // as in the rules).
   async function groupFor(email){
     if (!email) return 'out';   // not signed in: below every level
+    const as = viewingAs && viewingAs(email);   // a PI or admin viewing the site as a group (View as)
+    if (as) return as;
     if (await isFullWrite(email)) return 'exec';
     const snap = await db.collection('members').doc(String(email).toLowerCase()).get();
     return groupOf(snap.exists ? snap.data() : null);
