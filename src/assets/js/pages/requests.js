@@ -1,8 +1,8 @@
-// Your profile's Requests tab: the requests you have to answer and those you made that wait
-// on someone else, of every kind on BOLD.OS, from myRequests (functions/index.js; as BOLD
-// OS's board sees them). Each links to where it's answered; the tab counts what waits on you.
+// requests.html (the account menu's Requests): the requests you have to answer and those you
+// made that wait on someone else, of every kind on BOLD.OS, from myRequests (functions/index.js;
+// as BOLD OS's board sees them). Each links to where it's answered.
 (function(){
-  var body = document.getElementById('requestsBody'), tab = document.getElementById('requestsTab');
+  var body = document.getElementById('requestsBody');
   if (!body || !BOLD.getAuth()) return;
   var esc = BOLD.escapeHtml;
   var KINDS = { join: 'Joining BOLD', group: 'Changing group', letter: 'Recommendation letter', introduction: 'Introduction', supervision: 'Supervision meetings',
@@ -22,17 +22,15 @@
   var asked = 0;
   BOLD.onUser(function(user){
     var mine = ++asked;
-    tab.textContent = 'Requests';
     if (!user) return;
     body.innerHTML = '<p class="proj-msg">Loading&hellip;</p>';
     firebase.app().functions('europe-west2').httpsCallable('myRequests')().then(function(r){
       if (mine !== asked) return;
       var d = r.data || {}, forYou = d.forYou || [], byYou = d.byYou || [];
-      tab.textContent = 'Requests' + (forYou.length ? ' (' + forYou.length + ')' : '');
       body.innerHTML = group('To answer', forYou, true, 'Nothing waiting on you.') + group('Yours', byYou, false, 'Nothing you asked is waiting.');
     }).catch(function(err){
       if (mine !== asked) return;
-      console.error('[BOLD Profile] loading your requests failed', err);
+      console.error('[BOLD Requests] loading your requests failed', err);
       body.innerHTML = '<p class="proj-msg">Couldn’t load your requests — try reloading the page.</p>';
     });
   });

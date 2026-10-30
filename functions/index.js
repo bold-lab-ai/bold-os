@@ -4213,7 +4213,7 @@ function splitRequests(items, email, full){
   return { forYou: forYou.sort(oldest), byYou: byYou.sort(oldest) };
 }
 
-// Your profile's Requests tab (pages/profile-requests.js): everything on BOLD.OS waiting on
+// Your requests (requests.html, the account menu's Requests; pages/requests.js): everything on BOLD.OS waiting on
 // the caller to answer, and what they asked that waits on someone else, as BOLD OS's board
 // sees it (requestWork, contentWork). → { forYou, byYou: [{ kind, num, title, url, by, on, waiting, state, since, column }] }
 exports.myRequests = onCall(

@@ -299,8 +299,8 @@
 
   /* ---------- masthead ---------- */
 
-  // Signed in: your name opens a menu (Profile; Settings, for PIs and admins only, shown once
-  // that's known; Sign out). Signed out: Sign in with Slack.
+  // Signed in: your name opens a menu (Profile; Requests, yours (requests.html); Settings, for
+  // PIs and admins only, shown once that's known; Sign out). Signed out: Sign in with Slack.
   function renderAuthRegion(region, user){
     if (user) {
       // Your name only (your email is on your profile); without a name, the email.
@@ -310,6 +310,7 @@
           '<button class="mast-auth-name mast-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="mastMenu">' + who + ' <span class="mast-caret" aria-hidden="true">▾</span></button>' +
           '<ul class="mast-menu" id="mastMenu" role="menu" hidden>' +
             '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
+            '<li role="none"><a role="menuitem" href="requests.html">Requests</a></li>' +
             '<li role="none" class="mast-menu-settings"' + (BOLD.isFullWrite() ? '' : ' hidden') + '><a role="menuitem" href="settings.html">Settings</a></li>' +
             '<li role="none"><button role="menuitem" type="button" id="mastSignOutBtn">Sign out</button></li>' +
           '</ul>' +
