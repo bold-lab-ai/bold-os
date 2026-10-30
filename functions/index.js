@@ -2170,7 +2170,7 @@ exports.slackEvents = onRequest(
     // their entry in the people roster (the daily syncPeople catches anything missed).
     if (body.type === 'event_callback' && body.event && (body.event.type === 'team_join' || body.event.type === 'user_change')){
       try {
-        await upsertPerson(body.event.user);
+        await upsertPerson(body.event.user, body.team_id);
       } catch (err){
         logger.error('upsertPerson threw', { error: String(err) });
       }
@@ -2182,11 +2182,13 @@ exports.slackEvents = onRequest(
 );
 
 // One Slack user (users.list's shape, as team_join and user_change send it) → their
-// people/{slackId}: written if they have an email, removed once deactivated.
-async function upsertPerson(u){
+// people/{slackId}: written if they have an email, removed once deactivated. Someone from
+// another workspace (in a channel shared with it: their team_id isn't ours) isn't one of
+// the lab's people, and their id can't be invited to our channels (user_not_found).
+async function upsertPerson(u, teamId){
   if (!u || !u.id || u.is_bot || u.id === 'USLACKBOT') return;
   const ref = db.collection('people').doc(u.id);
-  if (u.deleted) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); return; }
+  if (u.deleted || (teamId && u.team_id && u.team_id !== teamId)) { if ((await ref.get()).exists) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); } return; }
   if (!u.profile || !u.profile.email) { logger.warn('upsertPerson: no email (users:read.email?)', { slackId: u.id }); return; }
   // Emails lower case, as everywhere else on BOLD.OS (Slack keeps whatever case was typed).
   const p = { slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email };
@@ -2627,9 +2629,19 @@ async function slackChannelUrl(token, channelId){
 
 function slackChannelError(code, json){
   logger.warn('Slack channel call failed', { error: code, needed: json && json.needed, provided: json && json.provided });
-  return new HttpsError('failed-precondition', code === 'missing_scope'
+  return Object.assign(new HttpsError('failed-precondition', code === 'missing_scope'
     ? 'The Slack app can\u2019t manage channels yet \u2014 ask an admin to add its channel permissions.'
-    : 'Slack said no (' + code + ').');
+    : 'Slack said no (' + code + ').'), { slackCode: code });
+}
+// Pure: why Slack wouldn't add one person to a channel, in words (Slack's code in brackets),
+// or '' when it isn't about them.
+function slackPersonProblem(code){
+  const why = { user_not_found: 'Slack doesn\u2019t know their account here (it may be one from another workspace)',
+    user_disabled: 'their Slack account is deactivated', user_is_inactive: 'their Slack account is deactivated',
+    user_is_restricted: 'they\u2019re a guest on Slack, and the app can\u2019t add guests to channels',
+    user_is_ultra_restricted: 'they\u2019re a single-channel guest on Slack', ura_max_channels: 'they\u2019re a single-channel guest on Slack, already in their one channel',
+    cant_invite: 'Slack won\u2019t let the app add them' }[code];
+  return why ? why + ' (' + code + ')' : '';
 }
 
 // mode 'check' (default): { name, prefixed, exists, url } — nothing is changed;
@@ -4778,14 +4790,18 @@ async function slackMembers(token){
 // → { added, updated, removed }
 async function syncPeopleFromSlack(token){
   const members = await slackMembers(token);
+  // Only our workspace's people: users.list also has those from other workspaces in
+  // channels shared with ours (upsertPerson).
+  const auth = await slackAuthInfo(token), team = auth && auth.teamId;
+  const ours = u => !team || !u.team_id || u.team_id === team;
   const people = members
-    .filter(u => !u.deleted && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
+    .filter(u => !u.deleted && ours(u) && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
     .map(u => ({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
   if (!people.length) {
     logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
     throw new Error('Slack returned nobody with an email (is users:read.email granted?)');
   }
-  const gone = members.filter(u => u.deleted).map(u => u.id);
+  const gone = members.filter(u => u.deleted || !ours(u)).map(u => u.id);
   const existing = await db.collection('people').get();
   const current = {};
   existing.docs.forEach(d => { current[d.id] = d.data(); });
@@ -5632,14 +5648,21 @@ function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, ''
 // A group's channels, as saved ("#a, b c") → ['a', 'b', 'c'].
 function groupChannelNames(raw){ return String(raw || '').split(/[\s,]+/).map(groupChannelName).filter(Boolean); }
 
-// Invites each of `emails` to group channel `name`; → the first error, or ''.
+// Invites each of `emails` to group channel `name`; → the first error, or ''. One about a
+// person says who, and why, and that the rest were added (the loop goes on past them).
 async function inviteToGroupChannel(token, emails, name){
   let error = '';
   for (const e of emails){
-    if (!(await slackIdForEmail(e))) continue;   // not on Slack (yet)
+    const uid = await slackIdForEmail(e);
+    if (!uid) continue;   // not on Slack (yet)
     try { await inviteToProjectChannel(token, e, name); }
     catch (err){
-      logger.warn('Adding someone to a group channel failed', { channel: name, error: String(err.message) });
+      logger.warn('Adding someone to a group channel failed', { channel: name, slackId: uid, error: String(err.message) });
+      const why = slackPersonProblem(err.slackCode);
+      if (why && !error){
+        const p = (await db.collection('people').doc(uid).get()).data() || {};
+        error = 'Couldn\u2019t add ' + (p.name || 'someone') + ' to #' + name + ': ' + why + '. Everyone else was added; Save again to retry.';
+      }
       error = error || err.message;
       if (/can.t see|can.t manage/.test(err.message)) break;   // same for everyone after
     }
