@@ -812,7 +812,12 @@ var ProjectWork = (function(){
     var off = ok ? '' : ' disabled title="' + esc(why) + '"';
     var row = function(label, value){ return '<dt>' + esc(label) + '</dt><dd>' + value + '</dd>'; };
     var rows = row('Column', esc(col ? col[1] : '') + (x.since && x.column !== 'done' ? ' <span class="detail-muted">· for ' + (n === 1 ? '1 day' : n + ' days') + '</span>' : ''));
-    if (x.milestone) rows += row('Milestone', esc(milestoneOf(x.milestone).name) + (milestoneDates(milestoneOf(x.milestone)) ? ' <span class="detail-muted">· ' + esc(milestoneDates(milestoneOf(x.milestone))) + '</span>' : ''));
+    // A card's milestone, picked here (saved at once); none yet: a link to plan them.
+    if (c) rows += row('Milestone', milestones().length
+      ? '<select class="wk-p-milestone" aria-label="Milestone"' + off + '><option value="">None</option>' + milestones().map(function(s){
+          return '<option value="' + esc(s.id) + '"' + (s.id === x.milestone ? ' selected' : '') + '>' + esc(s.name + (milestoneDates(s) ? ' (' + milestoneDates(s) + ')' : '')) + '</option>';
+        }).join('') + '</select>'
+      : '<span class="detail-muted">None yet: <a class="wk-open" href="' + esc(hrefOf({ milestones: true })) + '">add one in Milestones</a></span>');
     if (x.by && (x.by.name || x.by.login || x.by.email)) rows += row('From', name(x.by));
     var roles = [], byRole = {};
     (x.on || []).forEach(function(p){ var r = p.role || x.role || 'On it'; if (!byRole[r]) { byRole[r] = []; roles.push(r); } byRole[r].push(p); });
@@ -887,6 +892,10 @@ var ProjectWork = (function(){
     wireOpen();
     var edit = el('.wk-edit');
     if (edit) edit.addEventListener('click', function(){ if (editing) return; editing = c.id; draftLinks = (c.links || []).slice(); draw(); });
+    var pm = el('.wk-p-milestone');
+    if (pm) pm.addEventListener('change', function(){
+      cardChange(c, { milestone: pm.value }).catch(function(err){ console.error('[BOLD Lab] setting a card’s milestone failed', err); msg = 'Couldn’t save — try again.'; draw(); });
+    });
     var desc = el('.wk-describe');
     if (desc) desc.addEventListener('click', function(){ describing = true; draw(); });
     var adopt = el('.wk-adopt');

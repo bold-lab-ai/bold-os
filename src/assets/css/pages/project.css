@@ -263,6 +263,7 @@
 .wk-page .wk-badge-content{color:var(--plum);}
 .wk-page .wk-badge-request{color:var(--warn-text);}
 .wk-page .detail-grid dd a{color:inherit;}
+.wk-p-milestone{font:inherit; font-family:var(--sans); font-size:14px; max-width:100%;}
 .wk-page .detail-grid .is-me{color:var(--ink); font-weight:600;}
 .wk-page .detail-abstract-label{display:flex; align-items:baseline;}
 .wk-page .detail-abstract-label .detail-inline-edit{font-size:13px;}
