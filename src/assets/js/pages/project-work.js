@@ -416,7 +416,7 @@ var ProjectWork = (function(){
       if (plan.adding === s.id) {
         // Cards in no milestone yet: not done first; the search narrows them.
         var words = plan.find.trim().toLowerCase().split(/\s+/).filter(Boolean);
-        var free = allItems().filter(function(x){ return pickable(x) && words.every(function(w){ return cardRef(x).toLowerCase().indexOf(w) >= 0; }); })
+        var free = allItems().filter(function(x){ return pickable(x) && words.every(function(w){ return (cardRef(x) + ' ' + (x.notes || (x.card && x.card.notes) || '')).toLowerCase().indexOf(w) >= 0; }); })
           .sort(function(a, b){ return ORDER[a.column] - ORDER[b.column] || (b.since || 0) - (a.since || 0); });
         var n = Object.keys(plan.picked).length;
         html += '<div class="wk-editor wk-ms-pick"><input type="search" class="wk-m-find" placeholder="Search cards, issues, pull requests and proposals…" aria-label="Search cards" value="' + esc(plan.find) + '">' +
@@ -539,11 +539,11 @@ var ProjectWork = (function(){
       });
     });
     var involves = function(x, k){ return personKey(x.by || {}) === k || (x.on || []).some(function(p){ return personKey(p) === k; }); };
-    // The search: title, its reference, and the people on it.
+    // The search: title, description, its reference, and the people on it.
     var words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     var matches = function(x){
       if (!words.length) return true;
-      var hay = [x.title, refLabel(x), x.num ? String(x.num) : '', x.by && (x.by.name || x.by.login)].concat((x.on || []).map(function(p){ return p.name || p.login; })).join(' ').toLowerCase();
+      var hay = [x.title, x.notes || (x.card && x.card.notes) || '', refLabel(x), x.num ? String(x.num) : '', x.by && (x.by.name || x.by.login)].concat((x.on || []).map(function(p){ return p.name || p.login; })).join(' ').toLowerCase();
       return words.every(function(w){ return hay.indexOf(w) >= 0; });
     };
     if (milestone && milestone !== '-' && !milestoneOf(milestone)) milestone = '';
@@ -563,7 +563,7 @@ var ProjectWork = (function(){
       return [s.id, s.name + (milestoneNow(s) ? ' (now)' : '')]; })).concat([['-', 'No milestone']]);
     var filtering = words.length || who || type || milestone;
     // The shared board's search bar (BoldBoard.searchHtml), as on the Internal Review Board.
-    var head = BoldBoard.searchHtml({ query: query, placeholder: 'Search by title, #number or person\u2026', label: 'Search the board',
+    var head = BoldBoard.searchHtml({ query: query, placeholder: 'Search by title, description, #number or person\u2026', label: 'Search the board',
       count: filtering ? shown.length + ' of ' + all.length : all.length + ' item' + (all.length === 1 ? '' : 's'),
       filters: [{ key: 'type', label: 'Type', value: type, options: typeOptions }, { key: 'who', label: 'Person', value: who, options: personOptions }]
         .concat(milestones().length ? [{ key: 'milestone', label: 'Milestone', value: milestone, options: milestoneOptions }] : []),
