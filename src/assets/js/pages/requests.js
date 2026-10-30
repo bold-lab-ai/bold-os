@@ -15,10 +15,21 @@
     return '<li><a class="proj-title" href="' + esc(x.url) + '">' + (x.num ? '#' + x.num + ' ' : '') + esc(x.title) + '</a>' +
       '<span class="proj-meta">' + esc(meta) + '</span></li>';
   }
-  function group(title, items, toAnswer, none){
-    return '<div class="proj-group"><h3>' + title + '<span class="proj-count">' + (items.length || '') + '</span></h3>' +
-      (items.length ? '<ul class="proj-list">' + items.map(function(x){ return itemHtml(x, toAnswer); }).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>') + '</div>';
+  function panel(id, items, toAnswer, none){
+    return '<section class="profile-panel" id="' + id + '">' +
+      (items.length ? '<ul class="proj-list">' + items.map(function(x){ return itemHtml(x, toAnswer); }).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>') + '</section>';
   }
+  // Two tabs, named by the #hash: To answer (#to-answer, the default) and Yours (#yours).
+  function showTab(){
+    var want = location.hash === '#yours' ? 'yours' : 'to-answer';
+    ['to-answer', 'yours'].forEach(function(id){ var x = document.getElementById(id); if (x) x.hidden = id !== want; });
+    Array.prototype.forEach.call(body.querySelectorAll('.guide-tab'), function(a){
+      var on = a.getAttribute('href') === '#' + want;
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+  window.addEventListener('hashchange', showTab);
   var asked = 0;
   BOLD.onUser(function(user){
     var mine = ++asked;
@@ -27,7 +38,11 @@
     firebase.app().functions('europe-west2').httpsCallable('myRequests')().then(function(r){
       if (mine !== asked) return;
       var d = r.data || {}, forYou = d.forYou || [], byYou = d.byYou || [];
-      body.innerHTML = group('To answer', forYou, true, 'Nothing waiting on you.') + group('Yours', byYou, false, 'Nothing you asked is waiting.');
+      var n = function(k){ return k ? ' (' + k + ')' : ''; };
+      body.innerHTML = '<nav class="guide-tabs profile-tabs" aria-label="Requests"><a class="guide-tab" href="#to-answer">To answer' + n(forYou.length) + '</a>' +
+        '<a class="guide-tab" href="#yours">Yours' + n(byYou.length) + '</a></nav>' +
+        panel('to-answer', forYou, true, 'Nothing waiting on you.') + panel('yours', byYou, false, 'Nothing you asked is waiting.');
+      showTab();
     }).catch(function(err){
       if (mine !== asked) return;
       console.error('[BOLD Requests] loading your requests failed', err);

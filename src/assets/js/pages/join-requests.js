@@ -142,7 +142,7 @@
     if (staff === false) {
       // Someone you invited asking to change group: yours to decide.
       var mine = myGroupReqs.filter(function(r){ return r.status === 'open'; });
-      var groupsMine = mine.length ? '<section class="block" id="groups"><div class="block-head"><h2>Changing group<span class="proj-count">' + mine.length + ' waiting</span></h2></div>' +
+      var groupsMine = mine.length ? '<section class="block" id="groups"><div class="block-head"><h2>Group change<span class="proj-count">' + mine.length + ' waiting</span></h2></div>' +
         '<ul class="proj-list">' + mine.map(groupReqHtml).join('') + '</ul></section>' : '';
       main.innerHTML = invitedSection() + groupsMine + (invited.length || invitedMembers.length || mine.length ? '' : '<p class="proj-msg">Nobody says you invited them.</p>');
       jump();
@@ -163,7 +163,7 @@
       '<nav class="guide-tabs profile-tabs" id="jrTabs" aria-label="Requests">' +
         '<a class="guide-tab" href="#signup">Sign up' + n(open.length) + '</a>' +
         '<a class="guide-tab" href="#invited">Invited by you' + n(waiting) + '</a>' +
-        '<a class="guide-tab" href="#groups">Groups' + n(gOpen.length) + '</a>' +
+        '<a class="guide-tab" href="#groups">Group change' + n(gOpen.length) + '</a>' +
         '<a class="guide-tab" href="#agents">Agents' + n(aOpen.length) + '</a></nav>' +
       inviteNotice() +
       '<section class="profile-panel" id="signup">' +
