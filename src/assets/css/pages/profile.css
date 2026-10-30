@@ -174,3 +174,7 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .jr-pilot .md-group .jr-feature-group{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:26px 0 8px;}
 /* Room between the testers of every pilot and the first group. */
 .jr-pilot fieldset > .jr-tester-add{margin-bottom:8px;}
+.md-g-expect{font-family:var(--sans); font-size:14px; margin:4px 0 8px;}
+.md-g-expect:empty{display:none;}
+.md-g-expect-head{margin:0 0 4px; font-weight:600;}
+.md-g-expect .wk-desc ul{margin:0; padding-left:20px;}

@@ -35,10 +35,30 @@
     return html + '<div class="md-g-form">' + pick + BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== g; }).map(function(c){
         return '<label class="jn-check"><input type="radio" name="md-g-to" value="' + c[0] + '"' + (c[0] === gTo ? ' checked' : '') + '> ' + BoldJoin.groupBadge(c[0]) + '</label>';
       }).join('') +
+      '<div class="md-g-expect">' + expectHtml(gTo) + '</div>' +
       '<textarea class="md-g-note no-tags" rows="2" maxlength="1000" placeholder="Why (optional): who you work with, what you do in BOLD">' + esc(gNote) + '</textarea>' +
       (gError ? '<p class="st-error">' + esc(gError) + '</p>' : '') +
       '<div class="event-form-actions"><button type="button" class="ev-save md-g-send"' + (gBusy ? ' disabled' : '') + '>Send to ' + esc(to) + '</button><button type="button" class="md-g-cancel">Cancel</button></div></div>';
   }
+  // What the chosen group asks of its members, from Who is BOLD (BoldJoin.requirementsOf),
+  // so nobody asks to move without knowing (#173). whoIs: that part's Markdown, once loaded.
+  var whoIs = null;
+  function loadWhoIs(){
+    if (whoIs !== null) return;
+    whoIs = '';
+    db.collection('handbook').doc('boldiquette').get().then(function(s){
+      var p = ((s.exists && s.data().parts) || []).filter(function(x){ return x.id === 'who-is-bold'; })[0];
+      whoIs = (p && p.body) || ''; showExpect();
+    }).catch(function(err){ console.error('[BOLD Profile] loading Who is BOLD failed', err); });
+  }
+  function requirements(g){ return BoldJoin.requirementsOf(whoIs, g).replace(/\]\(#/g, '](boldiquette.html#'); }
+  function expectHtml(g){
+    if (!g) return '';
+    var r = requirements(g), label = esc(BoldJoin.categoryLabel(g));
+    return '<p class="md-g-expect-head">' + (r ? 'In ' + label + ', you’re expected to:' : 'What ' + label + ' asks of you is in <a href="boldiquette.html#who-is-bold">Who is BOLD</a>.') + '</p>' +
+      (r ? '<div class="wk-desc">' + BoldMarkdown.render(r) + '</div>' : '');
+  }
+  function showExpect(){ var el = box.querySelector('.md-g-expect'); if (el) el.innerHTML = expectHtml(gTo); }
   // PIs and admins (BOLD-exec) have nobody inviting them: theirs go to the PIs and admins.
   function exec(){ return BOLD.myGroup() === 'exec'; }
   function nameOf(e){ var p = (people || []).filter(function(x){ return x.email === e; })[0]; return p ? p.name : e; }
@@ -89,6 +109,7 @@
 
   // The chosen point of contact: kept, and named on the Send button (without redrawing the form).
   box.addEventListener('change', function(e){
+    if (e.target.name === 'md-g-to') { gTo = e.target.value; showExpect(); return; }
     if (!e.target.classList || !e.target.classList.contains('md-g-inviter')) return;
     gInviter = e.target.value;
     var b = box.querySelector('.md-g-send');
@@ -98,7 +119,7 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('md-edit')) { editing = true; loadPeople(); render(); return; }
-    if (t.classList.contains('md-g-ask')) { asking = true; gError = ''; gInviter = gTo = gNote = ''; if (!decider()) loadPeople(); render(); return; }
+    if (t.classList.contains('md-g-ask')) { asking = true; gError = ''; gInviter = gTo = gNote = ''; loadWhoIs(); if (!decider()) loadPeople(); render(); return; }
     if (t.classList.contains('md-g-cancel')) { asking = false; render(); return; }
     if (t.classList.contains('md-g-send') || t.classList.contains('md-g-withdraw')) {
       var send = t.classList.contains('md-g-send'), to = (box.querySelector('input[name="md-g-to"]:checked') || {}).value;
@@ -114,9 +135,9 @@
           .then(function(){ gBusy = false; render(); });
       };
       if (!send) { go(); return; }
-      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: named
+      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: (requirements(to) ? ['Commit to what ' + BoldJoin.categoryLabel(to) + ' expects of you, listed on the form'] : []).concat(named
           ? ['Make ' + nameOf(named) + ' your point of contact, who invited you', 'Send them one Slack message asking to confirm it and to approve the move']
-          : [decider() ? 'Send ' + decider() + ', who invited you, a Slack message asking to approve it' : 'Send the PIs and admins a Slack message asking to approve it'] })
+          : [decider() ? 'Send ' + decider() + ', who invited you, a Slack message asking to approve it' : 'Send the PIs and admins a Slack message asking to approve it']) })
         .then(function(ok){ if (ok) go(); });
       return;
     }

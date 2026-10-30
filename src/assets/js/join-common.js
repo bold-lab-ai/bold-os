@@ -29,6 +29,22 @@ window.BoldJoin = (function(){
   }
   function roleGroup(role){ return role === 'PI' ? 'exec' : role === 'PhD student' || role === 'Master student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan'; }
   function groupBadge(g){ return '<span class="type-badge pp-' + g + '">' + esc(categoryLabel(g)) + '</span>'; }
+  // What a group asks of its members: the **Requirements** list under its #### heading in
+  // the BOLDiquette's Who is BOLD (the part's Markdown, `body`), dedented, or '' if it has none.
+  function requirementsOf(body, g){
+    var lines = String(body || '').split('\n'), label = categoryLabel(g).toLowerCase(), i = 0, out = [], indent = -1;
+    var heading = function(l){ var m = /^#{1,6}\s+(.*?)\s*:?\s*$/.exec(l); return m ? m[1].toLowerCase() : null; };
+    while (i < lines.length && heading(lines[i]) !== label) i++;
+    for (i++; i < lines.length && heading(lines[i]) === null; i++) {
+      var l = lines[i], lead = l.search(/\S/);
+      if (indent < 0) { if (/^\s*-\s*\*\*Requirements\*\*/i.test(l)) indent = lead; continue; }
+      if (lead < 0) continue;
+      if (lead <= indent) break;
+      out.push(l);
+    }
+    var cut = Math.min.apply(null, out.map(function(l){ return l.search(/\S/); }));
+    return out.map(function(l){ return l.slice(cut); }).join('\n');
+  }
   // How someone likes to receive feedback (functions/index.js JOIN_FEEDBACK, firestore.rules).
   var FEEDBACK = [
     ['direct', 'Direct', 'Be blunt: tell me plainly what’s wrong.'],
@@ -167,5 +183,5 @@ window.BoldJoin = (function(){
         row('Booking link', /^https:\/\/\S+$/.test(d.bookingUrl || '') ? '<a href="' + esc(d.bookingUrl) + '" target="_blank" rel="noopener">' + esc(d.bookingUrl.replace(/^https:\/\//, '')) + '</a>' : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, roleGroup: roleGroup, cappedGroup: cappedGroup, groupBadge: groupBadge, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, roleGroup: roleGroup, cappedGroup: cappedGroup, groupBadge: groupBadge, requirementsOf: requirementsOf, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
 })();
