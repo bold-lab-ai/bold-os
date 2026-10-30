@@ -219,3 +219,7 @@ body:has(.gd-viewing){padding-bottom:72px;}
 .gd-draft-empty{margin:10px 0 0; color:var(--muted);}
 /* Proposals as branches (#177): one behind the page (it merges). */
 .gd-proposal-behind{margin:6px 0 0; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}
+/* Rebasing a proposal on main (#177): a conflict to resolve, its text with git's markers. */
+.gd-resolve{margin:10px 0; padding:12px 14px; border:1px solid var(--line); background:var(--surface);}
+.gd-resolve-head{margin:0 0 8px; font-family:var(--sans); font-size:13px;}
+.gd-resolve textarea{font-family:var(--mono, ui-monospace, monospace); font-size:13px;}

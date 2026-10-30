@@ -420,23 +420,67 @@
     if (q.kind === 'batch') return (q.changes || []).length + ' changes';
     return KIND[q.kind] + ' “' + ((q.after || q.before || {}).title || '') + '”';
   }
-  // Brings your proposal up to the page as it is now (a rebase): each edit merged with what
-  // changed since, and made on the page now. Its discussion stays.
-  function rebase(q){
-    var cur = x;
-    var one = function(c){
-      var p = c.kind === 'edit' && partIn(cur, c.partId), out = c;
+  // Rebasing your proposal on main (#177), as git rebases a branch: its changes replayed in
+  // order on the page as it is now, each merged with what changed since. Where one can't be
+  // (main changed the same lines), it stops there for you to resolve: the part's text with
+  // the conflicts marked as git marks them; Continue takes it from there. At the end the
+  // proposal is saved on main. rebasing: { id, changes, single, i, cur (the page so far),
+  // out (the changes rebased so far), resolve?: { part, title, titleWas, text, error } }.
+  var rebasing = null;
+  function startRebase(q){
+    rebasing = { id: q.id, changes: q.kind === 'batch' ? (q.changes || []).slice() : [q], single: q.kind !== 'batch', i: 0, cur: x, out: [] };
+    stepRebase();
+  }
+  function stepRebase(){
+    var r = rebasing;
+    while (r.i < r.changes.length) {
+      var c = r.changes[r.i], p = c.kind === 'edit' && partIn(r.cur, c.partId), out = c;
       if (p) {
-        var r = BoldMerge.mergeEdit(p, c.before, c.after || {});
-        if (r.conflict) throw new Error('conflict');
-        out = Object.assign({}, c, { before: partSide(p), after: Object.assign({}, c.after, r.fields) });
+        var m = BoldMerge.mergeEdit(p, c.before, c.after || {});
+        if (m.conflict) {
+          var base = c.before || {}, want = c.after || {};
+          var pick = function(k){ var b = base[k], w = want[k], n = p[k]; return w === undefined || n === w || b === n ? (w === undefined ? n : w) : w === b ? n : w; };
+          r.resolve = { part: p, title: pick('title'), titleWas: base.title !== p.title && want.title !== base.title && want.title !== p.title ? p.title : '',
+            text: typeof want.body === 'string' ? BoldMerge.mergeMarked(base.body === undefined ? p.body : base.body, p.body || '', want.body).text : p.body || '', error: '' };
+          render();
+          var el = body.querySelector('.gd-resolve');
+          if (el) el.scrollIntoView({ block: 'center' });
+          return;
+        }
+        out = Object.assign({}, c, { before: partSide(p), after: Object.assign({}, c.after, m.fields) });
       }
-      cur = Object.assign({}, cur, applied(cur, out));
-      return out;
-    };
-    var upd = q.kind === 'batch' ? { changes: (q.changes || []).map(one) } : (function(){ var c = one(q); return { before: c.before, after: c.after }; })();
+      r.cur = Object.assign({}, r.cur, applied(r.cur, out)); r.out.push(out); r.i++;
+    }
+    var upd = r.single ? { before: r.out[0].before, after: r.out[0].after } : { changes: r.out };
     upd.editedAt = Date.now();
-    return ref.collection('proposals').doc(q.id).update(upd);
+    r.saving = true; render();
+    ref.collection('proposals').doc(r.id).update(upd).then(function(){ rebasing = null; notice = 'Your proposal is rebased on main.'; render(); }, function(err){
+      console.error('[BOLD Guides] rebasing a proposal failed', err);
+      rebasing = null; notice = 'Couldn’t save the rebase — try again.'; render();
+    });
+  }
+  // Continue: the resolved part, as this change now makes it, then the rest.
+  function continueRebase(){
+    var r = rebasing, v = r && r.resolve;
+    if (!v) return;
+    v.title = (body.querySelector('.gd-r-title') || {}).value || v.title; v.text = (body.querySelector('.gd-r-body') || {}).value || v.text;
+    if (BoldMerge.hasMarkers(v.text)) { v.error = 'Some conflicts are still marked: keep what should stay and remove the <<<<<<<, ======= and >>>>>>> lines.'; render(); return; }
+    if (!v.title.trim()) { v.error = 'Give the part a title.'; render(); return; }
+    var c = r.changes[r.i], p = v.part;
+    var out = Object.assign({}, c, { before: partSide(p), after: Object.assign({}, c.after, { title: v.title.trim(), body: v.text.replace(/\s+$/, '') }) });
+    r.cur = Object.assign({}, r.cur, applied(r.cur, out)); r.out.push(out); r.i++;
+    r.resolve = null;
+    stepRebase();
+  }
+  function resolveHtml(){
+    var r = rebasing, v = r.resolve, n = r.changes.length;
+    return '<div class="event-form gd-resolve"><p class="gd-resolve-head"><strong>Resolving ' + (n > 1 ? 'change ' + (r.i + 1) + ' of ' + n + ', ' : '') + '“' + esc(v.part.title) + '”</strong>: main changed the same lines. ' +
+        'Between <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; Main</code> and <code>=======</code> is main’s text, then yours, to <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code>. Keep what should stay and remove those lines.</p>' +
+      (v.titleWas ? '<p class="event-form-hint">Main’s title for it is now “' + esc(v.titleWas) + '”.</p>' : '') +
+      '<label>Title<input type="text" class="gd-r-title" maxlength="200" value="' + esc(v.title) + '"></label>' +
+      '<label>Text<textarea class="gd-r-body" rows="14" spellcheck="false">' + esc(v.text) + '</textarea></label>' +
+      (v.error ? '<p class="ev-error">' + esc(v.error) + '</p>' : '') +
+      '<div class="event-form-actions"><button type="button" class="ev-save gd-r-go">Continue</button><button type="button" class="ev-cancel gd-r-stop">Stop rebasing</button></div></div>';
   }
 
   function proposalHtml(q){
@@ -447,6 +491,7 @@
     var what = q.kind === 'access' ? esc(BOLD.accessProposal.describe(q)) : q.kind === 'about' ? KIND.about : q.kind === 'restore' ? 'Restore the version of ' + esc(BoldHistory.when(q.after.versionAt)) :
       q.kind === 'batch' ? (q.changes || []).length + ' changes' :
       KIND[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
+    var resolvingHere = !!(rebasing && rebasing.id === q.id);
     var mine = me && q.by && q.by.email === me.email, byName = esc(q.by ? (q.by.name || q.by.email) : 'whoever proposed it');
     var off = st === 'conflict' ? ' disabled title="It changed in the same lines since it was proposed"' : !fullWrite ? ' disabled title="' + G.NOT_PI + '"' :
       mine ? ' disabled title="Another PI or admin reviews your change"' : '';
@@ -459,10 +504,11 @@
       (q.note ? '<p class="gd-proposal-note">' + esc(q.note) + '</p>' : '') +
       (q.kind === 'add' && cur ? '<p class="gd-proposal-stale">That part is there already, so this can’t be accepted: propose a change to it instead.</p>' : '') +
       (stale ? '<p class="gd-proposal-stale">' + (q.kind !== 'about' && !cur ? 'That part has since been removed.' : 'This has changed since it was proposed; accepting replaces the current text.') + '</p>' : '') +
-      (st === 'behind' ? '<p class="gd-proposal-behind">The page has changed since this was proposed; accepting merges the two, as shown.' +
-        (mine ? ' <button type="button" class="btn-text gd-rebase">Update to the latest</button>' : '') + '</p>' : '') +
-      (st === 'conflict' ? '<p class="gd-proposal-stale">The page has changed in the same lines since this was proposed, so it can’t be accepted: ' +
-        (mine ? 'withdraw it and propose it again on the latest version.' : 'decline it, or ask ' + byName + ' to propose it again on the latest version.') + '</p>' : '') +
+      (st === 'behind' ? '<p class="gd-proposal-behind">Main has changed since this was proposed; accepting merges the two, as shown.' +
+        (mine && !resolvingHere ? ' <button type="button" class="btn-text gd-rebase">Rebase on main</button>' : '') + '</p>' : '') +
+      (st === 'conflict' ? '<p class="gd-proposal-stale">Main has changed in the same lines since this was proposed, so it can’t be accepted until it’s rebased on main and the conflicts resolved' +
+        (mine ? (resolvingHere ? '.' : ': <button type="button" class="btn-text gd-rebase">Rebase on main</button>') : ', by ' + byName + '.') + '</p>' : '') +
+      (resolvingHere && rebasing.resolve ? resolveHtml() : resolvingHere && rebasing.saving ? '<p class="gd-proposal-behind">Saving the rebase…</p>' : '') +
       (q.kind === 'batch' ? '<ol class="gd-batch">' + (q.changes || []).map(function(c){
           return '<li><p class="hist-label">' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + (c.at ? ' · <span class="hist-when">' + BoldHistory.when(c.at) + '</span>' : '') + '</p>' + BoldHistory.changesHtml(sideText(c.kind, c.before), sideText(c.kind, c.after), {}) + '</li>';
         }).join('') + '</ol>' :
@@ -1047,12 +1093,9 @@
       if (!q) return;
       if (t.classList.contains('gd-view')) { view(q.id); return; }
       if (t.classList.contains('gd-revise')) { editProposal(q); return; }
-      if (t.classList.contains('gd-rebase')) {
-        t.disabled = true;
-        try { rebase(q).catch(function(err){ console.error('[BOLD Guides] updating a proposal failed', err); window.alert('Couldn’t update it — try again.'); t.disabled = false; }); }
-        catch (err) { window.alert('It changed in the same lines since: withdraw it and propose it again.'); t.disabled = false; }
-        return;
-      }
+      if (t.classList.contains('gd-rebase')) { notice = ''; startRebase(q); return; }
+      if (t.classList.contains('gd-r-go')) { continueRebase(); return; }
+      if (t.classList.contains('gd-r-stop')) { rebasing = null; render(); return; }
       var what = t.classList.contains('gd-accept') && fullWrite ? 'accept' : t.classList.contains('gd-decline') && fullWrite ? 'decline' : t.classList.contains('gd-withdraw') ? 'withdraw' : '';
       if (what) {
         t.disabled = true;
@@ -1138,6 +1181,13 @@
     if (!target && tabFor(hash) !== null) target = document.getElementById('gdTabs');
     if (target) target.scrollIntoView({ block: 'start' });
   }
+  // What you type while resolving a conflict, kept when the page is drawn again meanwhile.
+  body.addEventListener('input', function(e){
+    var v = rebasing && rebasing.resolve;
+    if (!v || !e.target.classList) return;
+    if (e.target.classList.contains('gd-r-title')) v.title = e.target.value;
+    else if (e.target.classList.contains('gd-r-body')) v.text = e.target.value;
+  });
   // A section tab switches in place, the tab bar staying where it is on screen.
   body.addEventListener('click', function(e){
     var a = e.target.closest('.guide-tab');

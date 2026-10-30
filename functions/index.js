@@ -1827,7 +1827,7 @@ const access = require('./access')({ db, groupOf, isFullWrite, viewingAs, viewin
 // proposals), the proposal as it is. → the fields to set; throws if they can't be merged.
 function mergedEdit(p, before, after){
   const r = merge.mergeEdit(p, before, after || {});
-  if (r.conflict) throw new HttpsError('failed-precondition', '“' + (p.title || 'This part') + '” has changed in the same lines since this was proposed. Decline it, and propose it again on the latest version.');
+  if (r.conflict) throw new HttpsError('failed-precondition', '“' + (p.title || 'This part') + '” has changed in the same lines since this was proposed: whoever proposed it rebases it on main and resolves the conflicts, then it can be accepted.');
   return r.fields;
 }
 

@@ -15,7 +15,15 @@
   // changing the same lines differently (or lines next to each other) is a conflict,
   // unless it's the same lines both added around one side's change. → the merged text,
   // or null on a conflict.
-  function mergeText(base, ours, theirs){
+  function mergeText(base, ours, theirs){ var r = merge3(base, ours, theirs, null); return r.conflicts ? null : r.text; }
+  // The same, with each conflict written out as git does, for a person to resolve:
+  // <<<<<<< labels[0] / ours / ======= / theirs / >>>>>>> labels[1]. → { text, conflicts }.
+  function mergeMarked(base, ours, theirs, labels){ return merge3(base, ours, theirs, labels || ['Main', 'Your proposal']); }
+  // Lines a conflict is marked with (mergeMarked), so a resolved text can be checked for them.
+  var MARKER = /^(<{7}|={7}|>{7})( |$)/m;
+  function hasMarkers(text){ return MARKER.test(String(text || '')); }
+
+  function merge3(base, ours, theirs, labels){
     var o = String(base).split('\n'), a = String(ours).split('\n'), b = String(theirs).split('\n');
     // For each line of o, the line of x it stays as (longest common subsequence), or -1.
     var match = function(x){
@@ -30,7 +38,7 @@
       return at;
     };
     var same = function(x, y){ return x.length === y.length && x.every(function(l, k){ return l === y[k]; }); };
-    var ma = match(a), mb = match(b), out = [], io = 0, ia = 0, ib = 0;
+    var ma = match(a), mb = match(b), out = [], io = 0, ia = 0, ib = 0, conflicts = 0;
     for (;;) {
       var i = io;
       while (i < o.length && !(ma[i] >= 0 && mb[i] >= 0)) i++;
@@ -45,13 +53,17 @@
         while (p < A.length && p < B.length && A[p] === B[p]) p++;
         while (q < A.length - p && q < B.length - p && A[A.length - 1 - q] === B[B.length - 1 - q]) q++;
         var A2 = A.slice(p, A.length - q), B2 = B.slice(p, B.length - q);
-        if (!same(A2, O) && !same(B2, O)) return null;
-        out.push.apply(out, A.slice(0, p).concat(same(A2, O) ? B2 : A2, A.slice(A.length - q)));
+        if (!same(A2, O) && !same(B2, O)) {
+          conflicts++;
+          if (!labels) return { text: null, conflicts: conflicts };
+          out.push.apply(out, A.slice(0, p).concat(['<<<<<<< ' + labels[0]], A2, ['======='], B2, ['>>>>>>> ' + labels[1]], A.slice(A.length - q)));
+        }
+        else out.push.apply(out, A.slice(0, p).concat(same(A2, O) ? B2 : A2, A.slice(A.length - q)));
       }
       if (i >= o.length) break;
       out.push(o[i]); io = i + 1; ia = ja + 1; ib = jb + 1;
     }
-    return out.join('\n');
+    return { text: out.join('\n'), conflicts: conflicts };
   }
 
   // An edit proposed on `before` (a part's { title, section, body } then), applied to the
@@ -84,5 +96,5 @@
     return mergeEdit(now, before, after).conflict ? 'conflict' : 'behind';
   }
 
-  return { mergeText: mergeText, mergeEdit: mergeEdit, editState: editState };
+  return { mergeText: mergeText, mergeMarked: mergeMarked, hasMarkers: hasMarkers, mergeEdit: mergeEdit, editState: editState };
 });
