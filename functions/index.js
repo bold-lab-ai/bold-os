@@ -883,6 +883,9 @@ async function handleAppHomeOpened(token, slackUserId){
 // command), a description, and, ticked, posting it in the project's channel. Submitting
 // the form is the go-ahead (the ground rule: it asks before posting); closing it adds
 // nothing. Whoever types it needs Projects' Edit, as on the page; the card is theirs.
+// It also puts it in one of the board's milestones (work.milestones; ended ones aren't
+// offered), or names a new one: made for whoever plans them (the project's people, PIs and
+// admins: mayAddBoard), proposed in the card's description for anyone else.
 const SLASH_CARDS = { '/bug': { kind: 'code', prefix: 'Bug: ', what: 'bug' }, '/feature-request': { kind: 'request', prefix: 'Feature request: ', what: 'feature request' } };
 // → { id, ws } (the board's project), or { error: 'noboard', id, ws } (a project's channel,
 // no board) or { error: 'elsewhere' }.
@@ -904,6 +907,8 @@ async function mayAddBoard(email, board){
   const card = await cardRefFor(board.ws.cardId || board.id, board.ws.boardId || null).get();
   return card.exists ? !!(await canEditCard(email, card.data())) : !!(await isFullWrite(email));
 }
+// A board's milestones ([{ id, name, start, end }]).
+function slashMilestones(ws){ return ((ws && ws.work) || {}).milestones || []; }
 async function handleSlashCommand(token, body){
   const c = SLASH_CARDS[body.command];
   const say = (text) => ({ response_type: 'ephemeral', text });
@@ -930,12 +935,21 @@ async function handleSlashCommand(token, body){
   }
   const channel = String(board.ws.slackChannel || '').replace(/^#/, '');
   const typed = String(body.text || '').trim();
+  const plans = addBoard || await mayAddBoard(email, board);
+  const today = new Date().toISOString().slice(0, 10);
+  const open = slashMilestones(board.ws).filter((m) => !m.end || m.end >= today).slice(0, 100);
   const blocks = [
     { type: 'input', block_id: 'title', label: { type: 'plain_text', text: 'Title' },
       element: { type: 'plain_text_input', action_id: 'v', max_length: 200, initial_value: (c.prefix + typed).slice(0, 200) } },
     { type: 'input', block_id: 'notes', optional: true, label: { type: 'plain_text', text: 'Description' },
       element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: c.kind === 'code' ? 'What happens, what you expected, and how to make it happen again (a link, a command, a config)' : 'What it’s for, and who’d use it' } } },
   ];
+  if (open.length) blocks.push({ type: 'input', block_id: 'milestone', optional: true, label: { type: 'plain_text', text: 'Milestone' },
+    element: { type: 'static_select', action_id: 'v', placeholder: { type: 'plain_text', text: 'None' },
+      options: open.map((m) => ({ text: { type: 'plain_text', text: (m.name + (m.end ? ' (until ' + m.end + ')' : '')).slice(0, 75) }, value: m.id })) } });
+  blocks.push({ type: 'input', block_id: 'newMilestone', optional: true, label: { type: 'plain_text', text: open.length ? 'Or a new milestone' : 'Milestone' },
+    element: { type: 'plain_text_input', action_id: 'v', max_length: 60, placeholder: { type: 'plain_text', text: 'A new milestone’s name' } },
+    hint: { type: 'plain_text', text: plans ? 'Adds it to the board’s milestones, with the card in it.' : 'Proposes it, in the card’s description: the project’s people add milestones.' } });
   if (channel && (board.ws.skipped || []).indexOf('channel') < 0) blocks.push({ type: 'input', block_id: 'announce', optional: true, label: { type: 'plain_text', text: 'Slack' },
     element: { type: 'checkboxes', action_id: 'v', options: [{ text: { type: 'plain_text', text: 'Post it in #' + channel + ', for everyone in the channel' }, value: 'yes' }],
       initial_options: [{ text: { type: 'plain_text', text: 'Post it in #' + channel + ', for everyone in the channel' }, value: 'yes' }] } });
@@ -972,14 +986,34 @@ async function addCardFromSlack(token, payload){
   const title = String(val('title').value || '').trim().slice(0, 200);
   if (!title) return;
   const now = Date.now();
-  const ref = await db.collection('projectWorkspaces').doc(wsSnap.id).collection('work').add({
-    title, notes: String(val('notes').value || '').trim().slice(0, 20000), kind: meta.kind === 'request' ? 'request' : 'code', column: 'todo',
+  let notes = String(val('notes').value || '').trim();
+  // Its milestone: one picked, or a new one named (one of the same name is that one).
+  const ms = slashMilestones(wsSnap.data());
+  const picked = (val('milestone').selected_option || {}).value || '';
+  const fresh = String(val('newMilestone').value || '').trim().slice(0, 60);
+  let milestone = ms.some((m) => m.id === picked) ? picked : '', proposed = '', made = '';
+  if (fresh) {
+    const same = ms.find((m) => m.name.toLowerCase() === fresh.toLowerCase());
+    if (same) milestone = same.id;
+    else if (ms.length < 50 && await mayAddBoard(email, { id: wsSnap.id, ws: wsSnap.data() })) {
+      milestone = Math.random().toString(36).slice(2, 10); made = fresh;
+      await wsRef.update({ 'work.milestones': ms.concat([{ id: milestone, name: fresh, start: '', end: '' }]), 'work.updatedAt': now, 'work.updatedBy': email });
+    } else {
+      proposed = fresh;
+      notes = (notes ? notes + '\n\n' : '') + '**Proposed milestone:** ' + fresh;
+    }
+  }
+  const ref = await db.collection('projectWorkspaces').doc(wsSnap.id).collection('work').add(Object.assign({
+    title, notes: notes.slice(0, 20000), kind: meta.kind === 'request' ? 'request' : 'code', column: 'todo',
     assignees: [], assigneeEmails: [], links: [], announce: !!(val('announce').selected_options || []).length,
     by: { email, name }, at: now, movedAt: now, updatedAt: now, updatedBy: email,
-  });
+  }, milestone ? { milestone } : {}));
   const num = await numberFor(ref.path);
   const url = projectPageUrl(wsSnap.data().cardId || wsSnap.id, wsSnap.data().boardId) + '&tab=work&card=' + encodeURIComponent(ref.id);
-  const text = '✅ Added #' + num + ' to the board: ' + linkedTitle(slackText(title), url) + '.';
+  const mName = milestone && ((ms.find((m) => m.id === milestone) || {}).name || made);
+  const text = '✅ Added #' + num + ' to the board: ' + linkedTitle(slackText(title), url) +
+    (made ? ', in the new milestone ' + slackText(made) : mName ? ', in ' + slackText(mName) : '') + '.' +
+    (proposed ? ' Milestone ' + slackText(proposed) + ' is proposed in its description: the project’s people add milestones.' : '');
   const sent = meta.channel ? await slackFetch(token, 'chat.postEphemeral', { channel: meta.channel, user: payload.user.id, text }) : { ok: false };
   if (!sent.ok) await dmBySlackId(token, payload.user.id, text);
 }

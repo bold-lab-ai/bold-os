@@ -80,11 +80,13 @@ var ProjectWork = (function(){
   // A new card is posted in the project's Slack channel (functions/index.js onWorkCardAdded):
   // asked every time, with the post a box to untick (then announce: false on the card).
   // → Promise of { announce } to go ahead, or null.
-  function confirmNewCard(title){
+  // n: how many at once (the Milestones view's Add cards), asked about together.
+  function confirmNewCard(title, n){
     var w = (ctx.ws && ctx.ws()) || {}, ch = String(w.slackChannel || '').replace(/^#/, '');
     if (!ch || (w.skipped || []).indexOf('channel') >= 0) return Promise.resolve({ announce: true });
-    return BOLD.confirmAlways({ title: 'Add “' + title + '”?', go: 'Add it',
-      effects: [{ key: 'announce', text: 'Post it in #' + ch + ' on Slack, for everyone in the channel' }] })
+    var many = n > 1;
+    return BOLD.confirmAlways({ title: many ? 'Add ' + n + ' cards for them?' : 'Add “' + title + '”?', go: many ? 'Add them' : 'Add it',
+      effects: [{ key: 'announce', text: (many ? 'Post each' : 'Post it') + ' in #' + ch + ' on Slack, for everyone in the channel' }] })
       .then(function(ok){ return ok ? { announce: !(ok.skip && ok.skip.announce) } : null; });
   }
   // The board's milestones, and how they read: "1 Nov – 14 Nov".
@@ -391,14 +393,17 @@ var ProjectWork = (function(){
         '<label>Ends<input type="date" class="wk-m-end" value="' + esc(s.end || '') + '"></label></div>' +
       '<div class="stage-fields-actions"><button class="btn" type="submit">Save</button><button class="btn" type="button" data-ms="cancel">Cancel</button></div></form>';
   }
-  function cardRef(x){ return (x.num ? '#' + x.num + ' ' : '') + x.title; }
+  function cardRef(x){ return (x.card ? (x.num ? '#' + x.num + ' ' : '') : refLabel(x) + ': ') + x.title; }
+  // What Add cards offers: the board's cards in no milestone, and its GitHub issues and pull
+  // requests and proposed changes (not requests) that no card links yet: adding one of those
+  // makes a card linking it, in the milestone (as describing it does, adoptItem).
+  function pickable(x){ return x.card ? !x.milestone : x.source !== 'request' && (x.kind === 'pr' || x.kind === 'issue' || x.kind === 'proposal'); }
   function drawMilestones(){
     var focused = document.activeElement && root.contains(document.activeElement) && document.activeElement.classList.contains('wk-m-find');
     // What's typed in a milestone's form survives the view redrawing (a card changing, live).
     var open = el('.wk-ms-form');
     if (open && plan.form) { plan.form.name = open.querySelector('.wk-m-name').value; plan.form.start = open.querySelector('.wk-m-start').value; plan.form.end = open.querySelector('.wk-m-end').value; }
     var plans = canPlan(), off = plans ? '' : ' disabled title="' + PLAN_ONLY + '"';
-    var all = allItems().filter(function(x){ return x.card; });
     var html = '<div class="wk-page wk-ms">' +
       '<a class="detail-back wk-back" href="' + esc(hrefOf(null)) + '">&larr; Back to the board</a>' +
       '<div class="detail-head"><h2 class="wk-page-title">Milestones</h2></div>' +
@@ -423,15 +428,15 @@ var ProjectWork = (function(){
       if (plan.adding === s.id) {
         // Cards in no milestone yet: not done first; the search narrows them.
         var words = plan.find.trim().toLowerCase().split(/\s+/).filter(Boolean);
-        var free = all.filter(function(x){ return !x.milestone && words.every(function(w){ return cardRef(x).toLowerCase().indexOf(w) >= 0; }); })
+        var free = allItems().filter(function(x){ return pickable(x) && words.every(function(w){ return cardRef(x).toLowerCase().indexOf(w) >= 0; }); })
           .sort(function(a, b){ return ORDER[a.column] - ORDER[b.column] || (b.since || 0) - (a.since || 0); });
         var n = Object.keys(plan.picked).length;
-        html += '<div class="wk-editor wk-ms-pick"><input type="search" class="wk-m-find" placeholder="Search cards in no milestone…" aria-label="Search cards" value="' + esc(plan.find) + '">' +
+        html += '<div class="wk-editor wk-ms-pick"><input type="search" class="wk-m-find" placeholder="Search cards, issues, pull requests and proposals…" aria-label="Search cards" value="' + esc(plan.find) + '">' +
           '<ul class="wk-ms-free">' + (free.map(function(x){
-            var ok = canChange(x.card);
-            return '<li><label' + (ok ? '' : ' title="' + esc(canAdd() ? NO_EDIT : BOLD.cannotReason('projects', 'edit')) + '"') + '><input type="checkbox" data-card="' + esc(x.card.id) + '"' + (plan.picked[x.card.id] ? ' checked' : '') + (ok ? '' : ' disabled') + '>' +
+            var ok = x.card ? canChange(x.card) : canAdd();
+            return '<li><label' + (ok ? '' : ' title="' + esc(canAdd() ? NO_EDIT : BOLD.cannotReason('projects', 'edit')) + '"') + '><input type="checkbox" data-key="' + esc(x.key) + '"' + (plan.picked[x.key] ? ' checked' : '') + (ok ? '' : ' disabled') + '>' +
               '<span class="wk-ms-col wk-ms-col-' + x.column + '">' + esc(colName(x.column)) + '</span>' + esc(cardRef(x)) + '</label></li>';
-          }).join('') || '<li class="detail-muted">' + (words.length ? 'No card matches.' : 'Every card is in a milestone.') + '</li>') + '</ul>' +
+          }).join('') || '<li class="detail-muted">' + (words.length ? 'No card matches.' : 'Everything is in a milestone.') + '</li>') + '</ul>' +
           '<div class="stage-fields-actions"><button class="btn" type="button" data-ms="add"' + (n && !busy ? '' : ' disabled') + '>' + (n ? 'Add ' + n + (n === 1 ? ' card' : ' cards') : 'Add cards') + '</button>' +
             '<button class="btn" type="button" data-ms="close">Cancel</button></div></div>';
       } else html += '<button class="btn-text wk-ms-addcards" type="button"' + (canAdd() ? '' : ' disabled title="' + esc(BOLD.cannotReason('projects', 'edit')) + '"') + '>+ Add cards</button>';
@@ -496,11 +501,27 @@ var ProjectWork = (function(){
         else if (b.classList.contains('wk-ms-addcards')) { plan.adding = id; plan.picked = {}; plan.find = ''; draw(); var f = el('.wk-m-find'); if (f) f.focus(); }
         else if (act === 'close') { plan.adding = null; plan.picked = {}; draw(); }
         else if (act === 'add') {
-          var ids = Object.keys(plan.picked);
+          var items = allItems().filter(function(x){ return plan.picked[x.key]; });
+          var have = items.filter(function(x){ return x.card; }), make = items.filter(function(x){ return !x.card; });
           busy = true; draw();
-          Promise.all(ids.map(function(cid){ var c = cards.filter(function(k){ return k.id === cid; })[0]; return c ? cardChange(c, { milestone: id }) : null; }))
-            .then(function(){ busy = false; plan.adding = null; plan.picked = {}; draw(); })
-            .catch(function(err){ console.error('[BOLD Lab] adding cards to a milestone failed', err); busy = false; plan.msg = 'Couldn’t add them all — try again.'; draw(); });
+          (make.length ? confirmNewCard(make[0].title, make.length) : Promise.resolve({})).then(function(go){
+            if (!go) throw { cancelled: true };
+            var m = ctx.me(), now = Date.now();
+            return Promise.all(have.map(function(x){ return cardChange(x.card, { milestone: id }); }).concat(make.map(function(x){
+              return cardsRef().add({ title: String(x.title || x.ref).slice(0, 200), notes: '', kind: x.type === 'content' ? 'content' : 'code', column: x.column || 'todo',
+                assignees: [], assigneeEmails: [], announce: go.announce, milestone: id,
+                links: [{ type: x.kind, ref: x.ref, url: x.url, label: (refLabel(x) + ': ' + x.title).slice(0, 200) }],
+                by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now, updatedAt: now, updatedBy: m.email });
+            })));
+          }).then(function(){
+            busy = false; plan.adding = null; plan.picked = {}; draw();
+            // New cards are numbered by the server a moment after they're saved.
+            if (make.length) setTimeout(function(){ fetchRemote(false); }, 2500);
+          }).catch(function(err){
+            busy = false;
+            if (!(err && err.cancelled)) { console.error('[BOLD Lab] adding cards to a milestone failed', err); plan.msg = 'Couldn’t add them all — try again.'; }
+            draw();
+          });
         }
         else if (b.classList.contains('wk-ms-out')) {
           var c = cards.filter(function(k){ return k.id === b.getAttribute('data-card'); })[0];
@@ -508,9 +529,9 @@ var ProjectWork = (function(){
         }
       });
       sec.addEventListener('change', function(e){
-        var cb = e.target.closest('input[type=checkbox][data-card]');
+        var cb = e.target.closest('input[type=checkbox][data-key]');
         if (!cb) return;
-        if (cb.checked) plan.picked[cb.getAttribute('data-card')] = true; else delete plan.picked[cb.getAttribute('data-card')];
+        if (cb.checked) plan.picked[cb.getAttribute('data-key')] = true; else delete plan.picked[cb.getAttribute('data-key')];
         var add = sec.querySelector('[data-ms="add"]'), n = Object.keys(plan.picked).length;
         add.disabled = !n || busy; add.textContent = n ? 'Add ' + n + (n === 1 ? ' card' : ' cards') : 'Add cards';
       });
