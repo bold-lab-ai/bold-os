@@ -2772,18 +2772,24 @@ async function isRegisteredProjectChannel(name){
 // Invites `email` to the project channel `name` (normalized, without '#').
 // → { status: 'joined' | 'already', url }; throws an HttpsError a page can show.
 async function inviteToProjectChannel(token, email, name){
-  const slackId = await slackIdForEmail(email);
-  if (!slackId) throw new HttpsError('failed-precondition', 'Your Slack account isn’t linked to this site yet.');
+  // Everyone the roster has with this email: one Slack doesn't know (user_not_found: an
+  // account from another workspace, before the sync drops it) gives way to the next.
+  const ids = (await db.collection('people').where('email', '==', String(email || '').toLowerCase()).get()).docs.map((d) => d.data().slackId).filter(Boolean);
+  if (!ids.length) throw new HttpsError('failed-precondition', 'Your Slack account isn’t linked to this site yet.');
   const channelId = await slackChannelId(token, name);
   if (!channelId){
     const auth = await slackAuthInfo(token);
     throw new HttpsError('failed-precondition', 'The bot can’t see #' + name + (auth && auth.bot ? ' — invite @' + auth.bot + ' to it first.' : '.'));
   }
-  let res = await slackFetch(token, 'conversations.invite', { channel: channelId, users: slackId });
-  if (!res.ok && res.error === 'not_in_channel'){
-    // A public channel the bot isn't in yet: join it (channels:join), then retry once.
-    await slackFetch(token, 'conversations.join', { channel: channelId });
+  let res;
+  for (const slackId of ids){
     res = await slackFetch(token, 'conversations.invite', { channel: channelId, users: slackId });
+    if (!res.ok && res.error === 'not_in_channel'){
+      // A public channel the bot isn't in yet: join it (channels:join), then retry once.
+      await slackFetch(token, 'conversations.join', { channel: channelId });
+      res = await slackFetch(token, 'conversations.invite', { channel: channelId, users: slackId });
+    }
+    if (res.ok || res.error !== 'user_not_found') break;
   }
   const url = await slackChannelUrl(token, channelId);
   if (res.ok) return { status: 'joined', url };

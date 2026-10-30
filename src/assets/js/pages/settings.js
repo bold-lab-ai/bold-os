@@ -270,6 +270,9 @@
       return mineV;
     };
     var keys = Object.keys(SETTINGS_DOCS).filter(function(k){ return !same(mine[k], from[k]); });
+    // A channel that failed is tried again by saving (onGroupChannels), even with nothing changed.
+    var failed = Object.keys(groups.channelErrors || {}).length || Object.keys(groups.roleChannelErrors || {}).length;
+    if (failed && keys.indexOf('groups') < 0) keys.push('groups');
     btn.disabled = true; err.hidden = true;
     db.runTransaction(function(tx){
       var refs = keys.map(function(k){ return db.collection('settings').doc(SETTINGS_DOCS[k]); });
