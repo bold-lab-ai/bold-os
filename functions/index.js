@@ -4188,6 +4188,53 @@ exports.onHackathonAsked = onDocumentWritten('hackathonJoins/{id}', async functi
   if (h && h.status === 'requested') await numberFor('hackathonJoins/' + event.params.id + '/ask/' + (h.requestedAt || 0));
 });
 
+// A person as BOLD.OS names them (workNames): (email, fallback) → { name, email, id (their page's Slack id) }.
+function workPerson(known){
+  return function(e, fallback){
+    e = String(e || '').toLowerCase();
+    return Object.assign({ name: known.names[e] || fallback || e.split('@')[0] || 'someone', email: e }, known.ids[e] ? { id: known.ids[e] } : {});
+  };
+}
+
+// Pure: what waits on someone (requestWork, contentWork) → what waits on `email` (forYou:
+// they're on it, or it's for a PI or admin and they're one, but not one they asked) and what
+// they asked that waits on someone else (byYou). Done ones are left out; oldest first.
+function splitRequests(items, email, full){
+  email = String(email || '').toLowerCase();
+  const forYou = [], byYou = [];
+  items.forEach(function(x){
+    if (x.column === 'done') return;
+    const mine = !!email && String((x.by && x.by.email) || '').toLowerCase() === email;
+    const on = (x.on || []).some(function(p){ return String(p.email || '').toLowerCase() === email; });
+    if (on || (full && !mine && x.waiting === PIS_ADMINS)) forYou.push(x);
+    else if (mine) byYou.push(x);
+  });
+  const oldest = function(a, b){ return (a.since || 0) - (b.since || 0); };
+  return { forYou: forYou.sort(oldest), byYou: byYou.sort(oldest) };
+}
+
+// The Requests page (join-requests.html) and the sidebar's count: everything on BOLD.OS
+// waiting on the caller, and what they asked that waits on someone else, as BOLD OS's board
+// sees it (requestWork, contentWork). → { forYou, byYou: [{ kind, num, title, url, by, on, waiting, state, since, column }] }
+exports.myRequests = onCall(
+  { timeoutSeconds: 60 },
+  async (request) => {
+    const email = callerEmail(request);
+    await access.requireAccess(email, 'requests', 'view');   // Who can see what
+    const person = workPerson(await workNames()), full = await isFullWrite(email);
+    const [content, requests] = await Promise.all([contentWork(email, person), requestWork(email, full, person)]);
+    const split = splitRequests(content.concat(requests), email, full);
+    const all = split.forYou.concat(split.byYou);
+    const nums = await numbersOf(all.map(function(x){ return x.numKey || x.ref; }));
+    const name = function(p){ return { name: (p && p.name) || '' }; };
+    const out = function(x){
+      return { kind: x.kind, num: nums[x.numKey || x.ref] || 0, title: x.title, url: x.url, by: name(x.by), on: (x.on || []).map(name),
+        waiting: x.waiting || '', state: x.state || '', since: x.since || 0, column: x.column, role: workRole(x) };
+    };
+    return { forYou: split.forYou.map(out), byYou: split.byYou.map(out) };
+  }
+);
+
 exports.projectWork = onCall(
   { secrets: [GITHUB_APP], timeoutSeconds: 60 },
   async (request) => {
@@ -4198,12 +4245,7 @@ exports.projectWork = onCall(
     await requireSeesProject(email, pid);
     const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data();
     if (!ws || !ws.work || !ws.work.on) throw new HttpsError('failed-precondition', 'This project has no work board.');
-    const known = await workNames(), names = known.names;
-    // A person as BOLD.OS names them: { name, email, id (their page's Slack id) }.
-    const person = function(e, fallback){
-      e = String(e || '').toLowerCase();
-      return Object.assign({ name: names[e] || fallback || e.split('@')[0] || 'someone', email: e }, known.ids[e] ? { id: known.ids[e] } : {});
-    };
+    const person = workPerson(await workNames());
     // The repositories: the board's, or else the project's own.
     const repos = (ws.work.repos && ws.work.repos.length) ? ws.work.repos : ws.repoName ? [ws.repoName] : [];
     const fresh = !!(request.data || {}).fresh;
@@ -6641,7 +6683,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
 
 exports._internal = {
   projectTitlesOnly, projectTitleDoc, githubLoginsFor,
-  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
+  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, pilotStateOf, sendEvent, cardTalkRecipients, cardTalkDigest, cardDoneText, canAssignReviewer, parseAssignAction,

@@ -853,6 +853,50 @@
     });
   }
 
+  /* ---------- sidebar: how many requests wait on you ---------- */
+
+  // Next to Requests: how many things wait on the viewer (myRequests, functions/index.js).
+  // The last count paints first (localStorage boldRequests, same person); asked again when
+  // older than 5 minutes, and set by the Requests page whenever it loads them.
+  var REQ_FRESH = 5 * 60000;
+  function requestCountEl(){
+    var label = document.querySelector('#sidebar .nav-group-label[href="join-requests.html"]');
+    if (!label) return null;
+    var el = label.querySelector('.nav-count');
+    if (!el) { el = document.createElement('span'); el.className = 'nav-count'; label.appendChild(el); }
+    return el;
+  }
+  function paintRequestCount(n){
+    var el = requestCountEl();
+    if (!el) return;
+    el.textContent = n ? ' (' + n + ')' : '';
+    el.parentNode.setAttribute('aria-label', 'Requests' + (n ? ', ' + n + ' waiting on you' : ''));
+  }
+  BOLD.setRequestCount = function(n){
+    var hint = BOLD.authHint();
+    try { if (hint) localStorage.setItem('boldRequests', JSON.stringify({ e: hint.e, n: n, at: Date.now() })); } catch (e){}
+    paintRequestCount(n);
+  };
+  function requestsNav(){
+    var hint = BOLD.authHint(), seen = null;
+    try { seen = JSON.parse(localStorage.getItem('boldRequests') || 'null'); } catch (e){}
+    if (seen && hint && seen.e === hint.e) paintRequestCount(seen.n);
+    var page = location.pathname.split('/').pop();
+    BOLD.onUser(function(user){
+      if (!user) { paintRequestCount(0); return; }
+      if (page === 'join-requests.html' || (seen && seen.e === user.email && seen.at > Date.now() - REQ_FRESH)) return;
+      BOLD.onAccess(function(a){
+        if (!a.e || !BOLD.can('requests', 'view') || requestsNav.asked) return;
+        requestsNav.asked = true;
+        withFunctions(function(){
+          firebase.app().functions('europe-west2').httpsCallable('myRequests')().then(function(r){
+            BOLD.setRequestCount(((r.data && r.data.forYou) || []).length);
+          }).catch(function(){});
+        });
+      });
+    });
+  }
+
   /* ---------- behaviour: gate button, sidebar collapse, mobile drawer ---------- */
 
   document.addEventListener('DOMContentLoaded', function(){
@@ -861,7 +905,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); }
+    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); requestsNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');
