@@ -288,10 +288,6 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .mast-menu a, .mast-menu button{display:block; width:100%; box-sizing:border-box; padding:7px 10px; border:0; background:none; text-align:left;
   font:inherit; color:var(--ink); text-decoration:none; cursor:pointer;}
 .mast-menu a:hover, .mast-menu button:hover, .mast-menu a:focus-visible, .mast-menu button:focus-visible{background:var(--wash); outline:none;}
-.mast-menu-viewas{border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin:4px 0; padding:4px 0;}
-.mast-menu-label{display:block; padding:4px 10px 2px; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
-.mast-menu-viewas button{padding-left:22px; position:relative;}
-.mast-menu-viewas button[aria-checked="true"]::before{content:"✓"; position:absolute; left:8px;}
 /* View as (bold.js): while a PI or admin views the site as a group. */
 .viewas-bar{position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:1300; display:flex; gap:12px; align-items:center;
   padding:8px 14px; border-radius:999px; background:var(--ink); color:var(--surface); font-family:var(--sans); font-size:13.5px; box-shadow:0 6px 18px rgba(26,43,74,.25); max-width:calc(100vw - 32px);}
@@ -331,6 +327,11 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .ac-why textarea{width:100%; font:inherit; box-sizing:border-box;}
 .ac-panel .ev-error{margin:0;}
 .ac-actions{display:flex; gap:14px; justify-content:flex-end; align-items:center;}
+.ac-viewas{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding-top:10px; border-top:1px solid var(--line);}
+.ac-viewas .ac-what{margin-right:6px;}
+.ac-as{font:inherit; color:var(--ink-soft); background:none; border:1px solid var(--line); border-radius:999px; padding:2px 10px; cursor:pointer;}
+.ac-as:hover{border-color:var(--ink-soft); color:var(--ink);}
+.ac-as.is-on{background:var(--ink); border-color:var(--ink); color:var(--surface); cursor:default;}
 @media (max-width:560px){
   .ac-panel{position:fixed; left:0; right:0; bottom:0; top:auto; width:auto; margin:0; max-height:80vh; overflow:auto; border-width:1px 0 0; padding:16px;}
   .ac-row{grid-template-columns:repeat(6, 1fr);}

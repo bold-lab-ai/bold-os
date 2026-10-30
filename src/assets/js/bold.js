@@ -217,7 +217,7 @@
   if (hint) document.documentElement.classList.add('auth-hint');
 
   // View as (#172; functions/index.js onCall): a PI or admin sees the site as a lower group,
-  // in this tab, until they stop (the account menu, or the bar it shows). Every callable then
+  // in this tab, until they stop (the eye chip's panel, or the bar it shows). Every callable then
   // carries viewAs; the server honours it for PIs and admins only, and getMyAccess says so
   // (access.viewAs). The rules still read as them, so data a page reads straight from the
   // database is theirs: the page hides what that group wouldn't see.
@@ -353,9 +353,6 @@
             '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
             '<li role="none"><a role="menuitem" href="requests.html">Requests</a></li>' +
             '<li role="none" class="mast-menu-settings"' + (BOLD.isFullWrite() ? '' : ' hidden') + '><a role="menuitem" href="settings.html">Settings</a></li>' +
-            '<li role="none" class="mast-menu-viewas" hidden><span class="mast-menu-label">View as</span>' +
-              VIEW_AS.map(function(g){ return '<button role="menuitemradio" type="button" data-view-as="' + g + '" aria-checked="' + (viewAs === g) + '">' + LEVEL_NAMES[g] + '</button>'; }).join('') +
-              '<button role="menuitemradio" type="button" data-view-as="" aria-checked="' + !viewAs + '">Yourself</button></li>' +
             '<li role="none"><button role="menuitem" type="button" id="mastSignOutBtn">Sign out</button></li>' +
           '</ul>' +
         '</div>';
@@ -366,10 +363,6 @@
       document.addEventListener('focusin', function(e){ if (!region.contains(e.target)) open(false); });
       region.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
       region.querySelector('#mastSignOutBtn').addEventListener('click', BOLD.signOut);
-      region.querySelector('.mast-menu-viewas').addEventListener('click', function(e){
-        var b = e.target.closest('[data-view-as]');
-        if (b && b.getAttribute('aria-checked') !== 'true') BOLD.setViewAs(b.getAttribute('data-view-as'));
-      });
     } else {
       region.innerHTML = '<button class="auth-signin" type="button" id="mastSignInBtn">Sign in with Slack</button>';
       region.querySelector('#mastSignInBtn').addEventListener('click', BOLD.signIn);
@@ -398,7 +391,6 @@
     // Settings, in the menu, once the viewer is known to be a PI or admin.
     BOLD.onAccess(function(a){
       var g = region.querySelector('.mast-menu-settings'); if (g) g.hidden = !a.fullWrite;
-      var v = region.querySelector('.mast-menu-viewas'); if (v) v.hidden = !(a.fullWrite || a.viewAs);
       viewAsBar(a.viewAs);
     });
     alignSearch();
@@ -639,7 +631,13 @@
           '<p class="ac-sentence">' + esc(sentence(lv)) + '</p>' +
           (REVIEWED.indexOf(area) >= 0 ? '<p class="ac-note">Edits here are proposals that a PI or admin reviews.</p>' : '') +
           (waiting && !changed ? '<p class="ac-note">Waiting: ' + esc(sentence(waiting.lv)) + ' <a href="boldiquette.html#proposal-' + esc(waiting.id) + '">See it on the BOLDiquette</a>.</p>' : '');
-        if (!can) html += '<p class="ac-note">Only PIs and admins change this.</p><div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
+        // View as: PIs and admins (and whoever is viewing as a group) see the site as a group.
+        if (can || access.viewAs) html += '<div class="ac-viewas" role="radiogroup" aria-label="View the site as"><span class="ac-what">View as</span>' +
+          VIEW_AS.slice().reverse().concat(['']).map(function(g){
+            var on = (access.viewAs || '') === g;
+            return '<button type="button" class="ac-as' + (on ? ' is-on' : '') + '" role="radio" aria-checked="' + on + '" data-view-as="' + g + '" title="' + esc(g ? 'See the site as ' + LEVEL_NAMES[g] + ' sees it' : 'See the site as you') + '">' + esc(g === 'pan' ? 'PAN-BOLD' : g ? LADDER_HEAD[g] : 'Yourself') + '</button>';
+          }).join('') + '</div>';
+        if (!can) html += (access.viewAs ? '' : '<p class="ac-note">Only PIs and admins change this.</p>') + '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
         else html += (changed ? '<label class="ac-why">Why?<textarea class="ac-note-input" maxlength="1000" rows="2">' + esc(panel.note || '') + '</textarea></label>' : '') +
           '<p class="ev-error"' + (panel.error ? '' : ' hidden') + '>' + esc(panel.error || '') + '</p>' +
           '<div class="ac-actions"><button type="button" class="btn-text ac-close">' + (changed ? 'Cancel' : 'Close') + '</button>' +
@@ -706,6 +704,7 @@
     else if (t.classList.contains('ac-close')) panel = null;
     else if (t.classList.contains('ac-cell')) setLevel(t.getAttribute('data-what'), t.getAttribute('data-level'));
     else if (t.classList.contains('ac-propose')) { proposeAccess(); return; }
+    else if (t.classList.contains('ac-as')) { if (t.getAttribute('aria-checked') !== 'true') BOLD.setViewAs(t.getAttribute('data-view-as')); return; }
     drawAccess();
     var again = panel && box.querySelector('.ac-cell[data-what="' + t.getAttribute('data-what') + '"][data-level="' + t.getAttribute('data-level') + '"]');
     if (again) again.focus();
