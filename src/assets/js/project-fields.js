@@ -239,10 +239,12 @@ function meetVia(m){ return m && m.link ? 'with your own link' : 'with a Meet li
 // one of bold-lab-ai's template repositories, never empty: the template has the
 // project-tracking tools the QA audit checks; or one the lab already has, linked.
 // Fixed ids #prMode, #prExisting, #prHint.
-function repoEntryHtml(){
+// optional: a "No repository" choice too (the register form; readRepoEntry then gives null).
+function repoEntryHtml(optional){
   return '<select id="prMode" aria-label="Repository">' +
       '<option value="" id="prLoading">Loading templates\u2026</option>' +
       '<option value="=existing">Link an existing repository</option>' +
+      (optional ? '<option value="=none">No repository</option>' : '') +
     '</select>' +
     '<input type="text" id="prExisting" maxlength="200" placeholder="bold-lab-ai/\u2026 or its GitHub address" aria-label="Existing repository" hidden>' +
     '<div class="field-hint" id="prHint"></div>';
@@ -256,7 +258,7 @@ function wireRepoEntry(){
     var linking = mode.value === '=existing';
     existing.hidden = !linking;
     var t = templates.filter(function(x){ return x.name === mode.value; })[0];
-    hint.textContent = linking ? 'One in bold-lab-ai. The project\u2019s people with GitHub get write access to it.' : t ? (t.description || '') : '';
+    hint.textContent = linking ? 'One in bold-lab-ai. The project\u2019s people with GitHub get write access to it.' : mode.value === '=none' ? 'You can add one later, from the project\u2019s page.' : t ? (t.description || '') : '';
   }
   mode.addEventListener('change', update);
   try {
@@ -264,14 +266,14 @@ function wireRepoEntry(){
       templates = (r.data && r.data.templates) || [];
       var loading = document.getElementById('prLoading');
       if (!templates.length) { loading.textContent = 'No templates yet \u2014 ask an admin'; return; }
-      var linking = mode.value === '=existing';
+      var linking = mode.value === '=existing', none = mode.value === '=none';
       loading.remove();
       templates.slice().reverse().forEach(function(t){
         var o = document.createElement('option');
         o.value = t.name; o.textContent = 'From the template ' + t.name;
         mode.insertBefore(o, mode.firstChild);
       });
-      mode.value = linking ? '=existing' : templates[0].name;
+      mode.value = linking ? '=existing' : none ? '=none' : templates[0].name;
       update();
     }).catch(function(err){
       console.error('[BOLD Lab] loading the repository templates failed', err);
@@ -280,9 +282,10 @@ function wireRepoEntry(){
   } catch (e){}
 }
 
-// → { mode: 'template', template }, { mode: 'existing', name } or { error }.
+// → { mode: 'template', template }, { mode: 'existing', name }, null (No repository) or { error }.
 function readRepoEntry(){
   var t = document.getElementById('prMode').value;
+  if (t === '=none') return null;
   if (t === '=existing') {
     var n = document.getElementById('prExisting').value.trim();
     return n ? { mode: 'existing', name: n } : { error: 'Give the repository: its name in bold-lab-ai, or its GitHub address.' };

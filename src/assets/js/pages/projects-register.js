@@ -23,7 +23,7 @@
   var channelField = wireChannelField('submit');
   var channelInput = el('pfChannel');
   el('meetingEntry').innerHTML = meetingEntryHtml();
-  el('repoEntry').innerHTML = repoEntryHtml();
+  el('repoEntry').innerHTML = repoEntryHtml(true);
   wireRepoEntry();
 
   form.addEventListener('submit', function(e){
@@ -41,7 +41,7 @@
     var meeting = noMeeting ? null : readMeetingEntry();
     if (meeting && meeting.error) return showError(meeting.error);
     var repo = readRepoEntry();
-    if (repo.error) return showError(repo.error);
+    if (repo && repo.error) return showError(repo.error);
     keywordField.addTyped();
     errorBox.hidden = true;
     // Each can be left out, and done later from the project's page (its workspace's `skipped`).
@@ -56,6 +56,7 @@
       var skip = ok.skip || {};
       if (noChannel) skip.channel = true;
       if (noMeeting) skip.meeting = true;
+      if (!repo) skip.repo = true;
       register(title, abstractText, channel, meeting, repo, skip, channelEffects.length > 0);
     });
   });
