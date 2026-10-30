@@ -14,6 +14,9 @@
 // (Storage, work/<pid>/<card>/…; storage.rules), then its conversation (card-talk.js; a
 // card's only, not a GitHub item's: those talk on GitHub). Describing a GitHub item makes it a card
 // linking it. Proposals and requests open their own pages elsewhere on BOLD.OS.
+// Sprints: the board's (work.sprints on the workspace, [{ id, name, start, end }], planned in
+// Board settings by its editors and the project's people); a card is in one by its `sprint`,
+// and the Sprint filter shows that sprint's progress.
 var ProjectWork = (function(){
   var esc = BOLD.escapeHtml;
   var COLUMNS = [['todo', 'To do'], ['doing', 'In progress'], ['review', 'Waiting for review'], ['done', 'Done']];
@@ -22,6 +25,7 @@ var ProjectWork = (function(){
   var archive = false;       // Done showing the archive (cards done more than 30 days ago) instead
   var NO_EDIT = 'Only whoever made it, whom it’s assigned to, the project’s people, PIs and admins can change it';
   var NOT_EDITOR = 'Only the project’s submitter, authors, PIs and admins can do this';
+  var PLAN_ONLY = 'Only the project’s people, PIs and admins can plan its sprints';
 
   var ctx = null, pid = '', db = null;
   var root = document.createElement('div');
@@ -31,6 +35,8 @@ var ProjectWork = (function(){
   var who = '';            // the person filter: an email or a GitHub login ('' all)
   var type = '';           // the type filter: code, content, request ('' all)
   var query = '';          // the search box's text
+  var sprint = '';         // the sprint filter: a sprint's id, '-' for none ('' all)
+  var draftSprints = null; // Board settings' sprints being edited
   var TYPES = [['code', 'Code'], ['content', 'Content'], ['request', 'Request'], ['other', 'Other']];
   var editing = null;      // a card's id, or 'new:<column>'; 'settings'
   var draftLinks = [];     // links in the open editor
@@ -80,6 +86,16 @@ var ProjectWork = (function(){
       effects: [{ key: 'announce', text: 'Post it in #' + ch + ' on Slack, for everyone in the channel' }] })
       .then(function(ok){ return ok ? { announce: !(ok.skip && ok.skip.announce) } : null; });
   }
+  // The board's sprints, and how they read: "1 Nov – 14 Nov".
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function sprints(){ return ((ctx.ws() && ctx.ws().work) || {}).sprints || []; }
+  function sprintOf(id){ return id ? sprints().filter(function(s){ return s.id === id; })[0] || null : null; }
+  function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function dayLabel(v){ var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1] : ''; }
+  function sprintDates(s){ return s.start && s.end ? dayLabel(s.start) + ' – ' + dayLabel(s.end) : s.start ? 'from ' + dayLabel(s.start) : s.end ? 'until ' + dayLabel(s.end) : ''; }
+  function sprintNow(s){ var t = today(); return !!(s.start || s.end) && (!s.start || s.start <= t) && (!s.end || t <= s.end); }
+  // Who plans the sprints: the board's editors, the project's people, PIs and admins.
+  function canPlan(){ var e = me(); return ctx.canEdit() || ctx.fullWrite() || ctx.members().some(function(m){ return String(m).toLowerCase() === e; }); }
   function cardsRef(){ return db.collection('projectWorkspaces').doc(pid).collection('work'); }
   function call(){ return firebase.app().functions('europe-west2').httpsCallable('projectWork'); }
 
@@ -179,7 +195,7 @@ var ProjectWork = (function(){
       var t = c.kind || (linked.some(function(x){ return x.type === 'code'; }) || (c.links || []).some(function(l){ return l.type === 'pr' || l.type === 'issue'; }) ? 'code'
         : (c.links || []).some(function(l){ return l.type === 'proposal'; }) || linked.some(function(x){ return x.type === 'content'; }) ? 'content' : 'other');
       var waiting = on.length ? '' : linked.map(function(x){ return x.waiting; }).filter(Boolean)[0] || '';
-      return { key: 'card:' + c.id, card: c, source: 'card', num: (remote.cardNumbers || {})[c.id], type: t, title: c.title, notes: c.notes, column: column, since: since,
+      return { key: 'card:' + c.id, card: c, source: 'card', num: (remote.cardNumbers || {})[c.id], type: t, title: c.title, notes: c.notes, column: column, since: since, sprint: sprintOf(c.sprint) ? c.sprint : '',
         by: c.by ? { name: c.by.name, email: String(c.by.email || '').toLowerCase() } : null, on: dedupe(on), waiting: waiting, linked: linked, auto: column !== c.column };
     });
     remote.items.forEach(function(x){
@@ -250,7 +266,8 @@ var ProjectWork = (function(){
     var html = '<div class="board-card wk-item' + (drag ? ' board-draggable' : '') + '" data-key="' + esc(x.key) + '"' + (x.notes ? ' title="' + esc(x.notes.slice(0, 300)) + '"' : '') + '>' +
       '<div class="wk-top"><span class="wk-type wk-type-' + t[0] + '">' + t[1] + '</span>' +
         (ref ? '<span class="wk-ref">' + ref + '</span>' : '') + (linked ? '<span class="wk-ref">' + linked + '</span>' : '') +
-        (late ? '<span class="wk-late">' + n + ' days</span>' : '') + '</div>' +
+        (late ? '<span class="wk-late">' + n + ' days</span>' : '') +
+        (x.sprint && sprint !== x.sprint ? '<span class="wk-sprint">' + esc(sprintOf(x.sprint).name) + '</span>' : '') + '</div>' +
       '<div class="wk-title">' + title + '</div>' +
       whoHtml(x);
     if (x.card) {
@@ -274,6 +291,10 @@ var ProjectWork = (function(){
         return '<option value="' + k[0] + '"' + (k[0] === c.column ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></label>' : '') +
       '<label>Type<select class="wk-f-kind"><option value="">From its links</option>' + TYPES.map(function(y){
         return '<option value="' + y[0] + '"' + (c && c.kind === y[0] ? ' selected' : '') + '>' + y[1] + '</option>'; }).join('') + '</select></label>' +
+      (sprints().length ? '<label>Sprint<select class="wk-f-sprint"><option value="">None</option>' + sprints().map(function(s){
+        var cur = c ? c.sprint : sprintOf(sprint) ? sprint : '';
+        return '<option value="' + esc(s.id) + '"' + (s.id === cur ? ' selected' : '') + '>' + esc(s.name + (sprintDates(s) ? ' (' + sprintDates(s) + ')' : '')) + '</option>';
+      }).join('') + '</select></label>' : '') +
       '<label>Who’s on it<select class="wk-f-who"><option value="">Nobody yet</option>' + people.map(function(e){
         var p = personByEmail(e);
         return '<option value="' + esc(e) + '"' + (e === cur ? ' selected' : '') + '>' + esc(p && p.name || e) + (e === me() ? ' (you)' : '') + '</option>';
@@ -289,6 +310,24 @@ var ProjectWork = (function(){
         '<button class="btn" type="button" data-wk="cancel">Cancel</button>' +
         (c ? '<button class="btn-text danger wk-f-remove" type="button"' + (canRemove(c) ? '' : ' disabled title="Only whoever made it, the project’s people, PIs and admins can remove it"') + '>Remove</button>' : '') +
       '</div><input type="hidden" class="wk-f-column" value="' + esc(column || (c && c.column) || 'todo') + '"></form>';
+  }
+  // Board settings' sprints, each a name and its dates; removing one takes its cards out of it.
+  function drawSprints(){
+    var ul = el('.wk-s-sprintlist');
+    if (!ul) return;
+    var off = canPlan() ? '' : ' disabled title="' + PLAN_ONLY + '"';
+    ul.innerHTML = draftSprints.map(function(x, i){
+      return '<li class="wk-s-sprint" data-i="' + i + '"><input type="text" class="wk-s-sname" maxlength="60" placeholder="Name" aria-label="Its name" value="' + esc(x.name) + '"' + off + '>' +
+        '<input type="date" class="wk-s-start" aria-label="It starts" value="' + esc(x.start || '') + '"' + off + '>' +
+        '<input type="date" class="wk-s-end" aria-label="It ends" value="' + esc(x.end || '') + '"' + off + '>' +
+        '<button class="btn-text wk-s-unsprint" type="button" aria-label="Remove ' + esc(x.name || 'this sprint') + '"' + off + '>×</button></li>';
+    }).join('') || '<li class="detail-muted">None yet</li>';
+  }
+  function readSprints(form){
+    Array.prototype.forEach.call(form.querySelectorAll('.wk-s-sprint'), function(li){
+      var x = draftSprints[Number(li.getAttribute('data-i'))];
+      x.name = li.querySelector('.wk-s-sname').value.trim(); x.start = li.querySelector('.wk-s-start').value; x.end = li.querySelector('.wk-s-end').value;
+    });
   }
   function drawLinks(){
     var ul = el('.wk-f-linklist');
@@ -311,8 +350,10 @@ var ProjectWork = (function(){
         '<span class="field-hint">Besides ' + esc((ctx.ws() && ctx.ws().slackChannel) || 'the project’s own channel') + ', separated by commas.</span></label>' +
       '<label class="wk-check"><input type="checkbox" class="wk-s-content"' + (w.content ? ' checked' : '') +
         (ctx.fullWrite() ? '' : ' disabled title="Only PIs and admins can change this"') + '> Show everything on BOLD.OS waiting on someone: proposed changes and requests (each only to whoever can see it)</label>' +
+      '<div class="wk-s-sprints"><span>Sprints</span><ul class="wk-s-sprintlist"></ul>' +
+        '<button class="btn-text wk-s-addsprint" type="button"' + (canPlan() ? '' : ' disabled title="' + PLAN_ONLY + '"') + '>+ Add a sprint</button></div>' +
       '<div class="field-error wk-f-error" hidden></div>' +
-      '<div class="stage-fields-actions"><button class="btn" type="submit"' + (edit || ctx.fullWrite() ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Save</button>' +
+      '<div class="stage-fields-actions"><button class="btn" type="submit"' + (edit || ctx.fullWrite() || canPlan() ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Save</button>' +
         '<button class="btn" type="button" data-wk="cancel">Cancel</button>' +
         '<button class="btn-text danger wk-s-off" type="button"' + (edit ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Remove the board</button></div>' +
       '</form>';
@@ -328,6 +369,24 @@ var ProjectWork = (function(){
     var keep = editing && root.querySelector('.wk-editor');
     if (keep) { drawBoard(keep); return; }
     drawBoard(null);
+  }
+  // A sprint's progress, above the columns: the one filtered on, or else the one on now
+  // (with a button to filter on it). Its cards count however old, archived ones too.
+  function sprintHtml(){
+    var s = sprintOf(sprint), focus = !!s;
+    if (!s) s = !sprint ? sprints().filter(sprintNow)[0] : null;
+    if (!s) return '';
+    var cs = allItems().filter(function(x){ return x.sprint === s.id; });
+    var n = function(col){ return cs.filter(function(x){ return x.column === col; }).length; };
+    var done = n('done'), pct = cs.length ? Math.round(100 * done / cs.length) : 0;
+    var parts = [[n('doing'), 'in progress'], [n('review'), 'waiting for review'], [n('todo'), 'to do']].filter(function(p){ return p[0]; }).map(function(p){ return p[0] + ' ' + p[1]; });
+    var left = s.end && sprintNow(s) ? Math.round((Date.parse(s.end) - Date.parse(today())) / 86400000) : null;
+    var when = [sprintDates(s), left === null ? (s.end && s.end < today() ? 'ended' : '') : left === 0 ? 'ends today' : left === 1 ? '1 day left' : left + ' days left'].filter(Boolean).join(' · ');
+    return '<div class="wk-sprintbar">' +
+      '<div class="wk-sprintbar-head"><strong>' + esc(s.name) + '</strong>' + (when ? ' <span class="detail-muted">' + esc(when) + '</span>' : '') +
+        (focus ? '' : ' <button class="btn-text" type="button" data-wk="sprint-now" data-id="' + esc(s.id) + '">Show only its cards</button>') + '</div>' +
+      '<div class="wk-sprintbar-track" role="progressbar" aria-label="' + esc(s.name) + ' done" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>' +
+      '<div class="detail-muted">' + (cs.length ? done + ' of ' + cs.length + ' done (' + pct + '%)' + (parts.length ? ' · ' + parts.join(', ') : '') : 'No cards in it yet: pick it in a card’s Sprint.') + '</div></div>';
   }
   function drawBoard(keepEditor){
     var all = items();
@@ -349,7 +408,9 @@ var ProjectWork = (function(){
       var hay = [x.title, refLabel(x), x.num ? String(x.num) : '', x.by && (x.by.name || x.by.login)].concat((x.on || []).map(function(p){ return p.name || p.login; })).join(' ').toLowerCase();
       return words.every(function(w){ return hay.indexOf(w) >= 0; });
     };
-    var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type) && matches(x); });
+    if (sprint && sprint !== '-' && !sprintOf(sprint)) sprint = '';
+    var inSprint = function(x){ return !sprint || (sprint === '-' ? !x.sprint : x.sprint === sprint); };
+    var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type) && inSprint(x) && matches(x); });
     var personOptions = [['', 'Everyone']].concat(me() ? [[me(), 'Mine']] : []).concat(Object.keys(people).filter(function(k){ return k !== me(); })
       .sort(function(a, b){ return (people[b].doing + people[b].review) - (people[a].doing + people[a].review) || String(people[a].p.name).localeCompare(String(people[b].p.name)); })
       .map(function(k){
@@ -360,11 +421,14 @@ var ProjectWork = (function(){
       }));
     var typeOptions = [['', 'All types']].concat(TYPES.filter(function(y){ return y[0] !== 'other' || all.some(function(x){ return x.type === 'other'; }); })
       .map(function(y){ return [y[0], y[1] + ' (' + all.filter(function(x){ return x.type === y[0]; }).length + ')']; }));
-    var filtering = words.length || who || type;
+    var sprintOptions = [['', 'All sprints']].concat(sprints().map(function(s){
+      return [s.id, s.name + (sprintNow(s) ? ' (now)' : '')]; })).concat([['-', 'No sprint']]);
+    var filtering = words.length || who || type || sprint;
     // The shared board's search bar (BoldBoard.searchHtml), as on the Internal Review Board.
     var head = BoldBoard.searchHtml({ query: query, placeholder: 'Search by title, #number or person\u2026', label: 'Search the board',
       count: filtering ? shown.length + ' of ' + all.length : all.length + ' item' + (all.length === 1 ? '' : 's'),
-      filters: [{ key: 'type', label: 'Type', value: type, options: typeOptions }, { key: 'who', label: 'Person', value: who, options: personOptions }],
+      filters: [{ key: 'type', label: 'Type', value: type, options: typeOptions }, { key: 'who', label: 'Person', value: who, options: personOptions }]
+        .concat(sprints().length ? [{ key: 'sprint', label: 'Sprint', value: sprint, options: sprintOptions }] : []),
       extra: '<span class="wk-tools"><span class="detail-muted">' + (remote.loading ? 'Updating\u2026' : remote.at ? 'Updated ' + new Date(remote.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '') + '</span>' +
         '<button class="btn-text" type="button" data-wk="refresh"' + (remote.loading ? ' disabled' : '') + '>Refresh</button>' +
         '<button class="btn-text" type="button" data-wk="settings">Board settings</button></span>' });
@@ -386,7 +450,7 @@ var ProjectWork = (function(){
         empty: !cardsLoaded || (remote.loading && !remote.loaded) ? 'Loading\u2026' : 'Nothing here' };
     })) + '</div>';
     if (keepEditor) keepEditor.remove();
-    root.innerHTML = head + notes + settings + cols;
+    root.innerHTML = head + notes + settings + sprintHtml() + cols;
     // The open editor goes back where it was: settings, a new card, or in place of its card.
     if (editing) {
       var slot = editing === 'settings' ? el('.wk-settings-slot') : editing.indexOf('new:') === 0 ? el('.wk-new-slot')
@@ -424,11 +488,13 @@ var ProjectWork = (function(){
     });
     BoldBoard.wireSearch(root, {
       query: function(v){ query = v; draw(); },
-      filter: function(key, v){ if (key === 'type') type = v; else if (key === 'who') who = v; draw(); }
+      filter: function(key, v){ if (key === 'type') type = v; else if (key === 'who') who = v; else if (key === 'sprint') sprint = v; draw(); }
     });
     Array.prototype.forEach.call(root.querySelectorAll('.wk-add'), function(b){
       b.addEventListener('click', function(){ if (editing) return; editing = 'new:' + b.getAttribute('data-col'); draftLinks = []; draw(); focusTitle(); });
     });
+    var now = el('[data-wk="sprint-now"]');
+    if (now) now.addEventListener('click', function(){ sprint = now.getAttribute('data-id'); draw(); });
     var r = el('[data-wk="refresh"]');
     if (r) r.addEventListener('click', function(){ fetchRemote(true); });
     var s = el('[data-wk="settings"]');
@@ -450,15 +516,42 @@ var ProjectWork = (function(){
     function fail(m){ error.textContent = m; error.hidden = false; busy = false; }
     form.querySelector('[data-wk="cancel"]').addEventListener('click', function(){ editing = null; msg = ''; draw(); });
     if (form.classList.contains('wk-settings')) {
+      draftSprints = sprints().map(function(x){ return Object.assign({}, x); });
+      drawSprints();
+      form.querySelector('.wk-s-addsprint').addEventListener('click', function(){
+        readSprints(form);
+        // The next one, by default: numbered on, starting the day after the last ends, as long as it.
+        var last = draftSprints[draftSprints.length - 1], next = { id: Math.random().toString(36).slice(2, 10), name: 'Sprint ' + (draftSprints.length + 1), start: '', end: '' };
+        if (last && last.end) {
+          var d = function(v, n){ var t = new Date(Date.parse(v) + n * 86400000); return t.toISOString().slice(0, 10); };
+          next.start = d(last.end, 1);
+          next.end = last.start ? d(next.start, Math.round((Date.parse(last.end) - Date.parse(last.start)) / 86400000)) : '';
+        }
+        draftSprints.push(next); drawSprints();
+        var names = form.querySelectorAll('.wk-s-sname'); if (names.length) names[names.length - 1].select();
+      });
+      form.querySelector('.wk-s-sprintlist').addEventListener('click', function(e){
+        var b = e.target.closest('.wk-s-unsprint');
+        if (!b) return;
+        readSprints(form);
+        draftSprints.splice(Number(b.closest('.wk-s-sprint').getAttribute('data-i')), 1); drawSprints();
+      });
       form.addEventListener('submit', function(e){
         e.preventDefault();
         if (busy) return;
+        readSprints(form);
+        if (draftSprints.some(function(x){ return !x.name; })) return fail('Give each sprint a name.');
+        var bad = draftSprints.filter(function(x){ return x.start && x.end && x.end < x.start; })[0];
+        if (bad) return fail(bad.name + ' ends before it starts.');
         busy = true;
-        var repos = form.querySelector('.wk-s-repos').value.split(/[\s,]+/).filter(Boolean);
-        var channels = form.querySelector('.wk-s-channels').value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
-        var change = { repos: repos, channels: channels };
+        var change = {};
+        if (ctx.canEdit() || ctx.fullWrite()) {
+          change.repos = form.querySelector('.wk-s-repos').value.split(/[\s,]+/).filter(Boolean);
+          change.channels = form.querySelector('.wk-s-channels').value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
+        }
         var content = form.querySelector('.wk-s-content');
         if (!content.disabled) change.content = content.checked;
+        if (canPlan()) change.sprints = draftSprints.map(function(x){ return { id: x.id, name: x.name, start: x.start || '', end: x.end || '' }; });
         ctx.callWorkspace({ action: 'work', work: change }).then(function(){
           busy = false; editing = null; fetchRemote(true); draw();
         }).catch(function(err){ fail((err && err.message) || 'Couldn’t save — try again.'); });
@@ -518,6 +611,8 @@ var ProjectWork = (function(){
         links: draftLinks.slice(0, 10).map(function(l){ var o = { type: l.type, url: l.url, label: l.label || '' }; if (l.ref) o.ref = l.ref; return o; }),
         updatedAt: now, updatedBy: m.email
       };
+      var sp = form.querySelector('.wk-f-sprint');
+      if (sp ? sp.value : c && c.sprint) data.sprint = sp ? sp.value : c.sprint;
       busy = true;
       var job;
       var col = form.querySelector('.wk-f-col') ? form.querySelector('.wk-f-col').value : c && c.column;
@@ -593,6 +688,7 @@ var ProjectWork = (function(){
     var off = ok ? '' : ' disabled title="' + esc(why) + '"';
     var row = function(label, value){ return '<dt>' + esc(label) + '</dt><dd>' + value + '</dd>'; };
     var rows = row('Column', esc(col ? col[1] : '') + (x.since && x.column !== 'done' ? ' <span class="detail-muted">· for ' + (n === 1 ? '1 day' : n + ' days') + '</span>' : ''));
+    if (x.sprint) rows += row('Sprint', esc(sprintOf(x.sprint).name) + (sprintDates(sprintOf(x.sprint)) ? ' <span class="detail-muted">· ' + esc(sprintDates(sprintOf(x.sprint))) + '</span>' : ''));
     if (x.by && (x.by.name || x.by.login || x.by.email)) rows += row('From', name(x.by));
     var roles = [], byRole = {};
     (x.on || []).forEach(function(p){ var r = p.role || x.role || 'On it'; if (!byRole[r]) { byRole[r] = []; roles.push(r); } byRole[r].push(p); });
@@ -766,6 +862,7 @@ var ProjectWork = (function(){
     var data = {};
     ['title', 'notes', 'assignees', 'assigneeEmails', 'links', 'by', 'at'].forEach(function(k){ data[k] = c[k]; });
     if (c.images) data.images = c.images;
+    if (c.sprint) data.sprint = c.sprint;
     data.kind = c.kind || '';
     confirmDone(Object.assign({}, c, { column: was }), column).then(function(done){
       if (!done) { c.column = was; draw(); return; }
