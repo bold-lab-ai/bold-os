@@ -801,15 +801,10 @@
   // marked, and a bar to go back.
   function renderViewing(){
     var q = viewed(), d = doc();
-    var what = q.kind === 'about' ? 'a new title and description' : q.kind === 'restore' ? 'restoring an earlier version' :
-      q.kind === 'batch' ? (q.changes || []).length + ' changes' :
-      { edit: 'a change to', add: 'a new part,', remove: 'removing', move: 'moving' }[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
-    // A proposal is the site's branch, whose bar (bold.js) is at the bottom: this says how, at the top.
-    body.innerHTML = '<div class="gd-viewing' + (q.version ? '' : ' is-inline') + '" role="status"><span>' + (q.version ? 'Viewing the page as it was on ' + esc(BoldHistory.when(q.at)) :
-        'Viewing the page as proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') + ': ' + what) +
-        '.</span>' +
-        (stateOf(q) === 'conflict' ? ' <span>It conflicts with a change made since: this is the text as proposed.</span>' : stateOf(q) === 'behind' ? ' <span>Merged with the changes made since, as accepting would.</span>' : '') +
-        '<button type="button" class="btn-text gd-view-exit">Back to the current page</button></div>' +
+    // A proposal is the site's branch: the Version pill and its bar (bold.js) say so. An earlier
+    // version (the History panel) has this bar of its own, to go back.
+    body.innerHTML = (q.version ? '<div class="gd-viewing" role="status"><span>Viewing the page as it was on ' + esc(BoldHistory.when(q.at)) + '.</span>' +
+        '<button type="button" class="btn-text gd-view-exit">Back to the current page</button></div>' : '') +
       '<div class="hero">' + BACK + EYEBROW_HTML + '<h1' + (q.kind === 'about' || (q.kind === 'batch' && (q.changes || []).some(function(c){ return c.kind === 'about'; })) ? ' class="gd-proposed"' : '') + '>' + esc(d.title) + '</h1>' +
         (d.description ? '<p class="hero-note">' + esc(d.description) + '</p>' : '') + '</div>' +
       '<main>' + tabsHtml() + '<div class="guide-layout"><div class="guide-main">' + shown().map(partHtml).join('') + '</div>' + contentsHtml() + '</div></main>';
