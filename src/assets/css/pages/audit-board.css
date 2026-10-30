@@ -89,11 +89,11 @@ button{font-family:inherit; font-size:14px;}
   text-transform:uppercase; letter-spacing:0.03em;
 }
 .auth-signin svg{flex:none;}
-.backlink{max-width:var(--board-max); margin:24px 0 0 var(--page-left); padding:0 var(--gutter);}
+.backlink{max-width:var(--content-max); margin:24px 0 0 var(--page-left); padding:0 var(--gutter);}
 .backlink a{font-size:13.5px; color:var(--muted); text-decoration:none;}
 .backlink a:hover{color:var(--blue);}
 /* ---------- hero ---------- */
-.hero{max-width:var(--board-max); margin:0 0 0 var(--page-left); padding:20px var(--gutter) 8px;}
+.hero{max-width:var(--content-max); margin:0 0 0 var(--page-left); padding:20px var(--gutter) 8px;}
 .hero h1{font-size:clamp(30px, 4.5vw, 44px); line-height:1.02;}
 .hero .lede{margin-top:14px; font-size:16px; color:var(--ink-soft); max-width:66ch;}
 .hero .lede a{color:var(--blue);}
@@ -102,7 +102,7 @@ button{font-family:inherit; font-size:14px;}
 .page-source a:hover{color:var(--blue);}
 /* ---------- toolbar ---------- */
 .toolbar{
-  max-width:var(--board-max);
+  max-width:var(--content-max);
   margin:24px 0 0 var(--page-left);
   padding:18px var(--gutter);
   border-top:1px solid var(--line);
@@ -244,7 +244,7 @@ select{min-width:180px;}
 #venueForm .field-section:first-child{margin-top:2px;}
 .field-2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
 /* ---------- toast ---------- */
-.toast{max-width:var(--board-max); margin:16px 0 0 var(--page-left); padding:0 var(--gutter);}
+.toast{max-width:var(--content-max); margin:16px 0 0 var(--page-left); padding:0 var(--gutter);}
 .toast-inner{
   font-size:13.5px; padding:10px 14px; border:1px solid var(--line);
   border-radius:var(--radius); background:var(--surface);
@@ -253,7 +253,7 @@ select{min-width:180px;}
 .toast-inner.ok{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
 /* ---------- board meta ---------- */
 .board-meta{
-  max-width:var(--board-max); margin:20px 0 0 var(--page-left); padding:0 var(--gutter);
+  max-width:var(--content-max); margin:20px 0 0 var(--page-left); padding:0 var(--gutter);
   display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;
 }
 .board-meta h2{font-size:22px; font-weight:760;}
@@ -303,9 +303,15 @@ select{min-width:180px;}
 .venues-section-title:first-child{margin-top:0;}
 .badge-pending{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
 /* ---------- board search ---------- */
-.board-search{max-width:var(--board-max); margin:16px 0 0 var(--page-left); padding:0 var(--gutter);}   /* the rest: board.css */
+.board-search{margin:16px 0 0;}   /* the rest: board.css */
 /* ---------- board columns: assets/css/board.css (shared with a project's Work tab) ---------- */
-.board-scroll{max-width:var(--board-max); margin:12px 0 0 var(--page-left); padding:0 var(--gutter) 80px;}
+.board-scroll{margin:12px 0 0; padding:0 0 80px;}
+/* As on a project's Board tab (project.css .wk): the page keeps its column; only the board
+   (its search and columns) is wider, up to --board-max or the room beside the sidebar,
+   centred under the column. */
+.shell-main{container-type:inline-size;}
+.board-search, .board-scroll{--bw:min(calc(var(--board-max) - 2 * var(--gutter)), calc(100cqw - 2 * var(--gutter)));
+  width:var(--bw); max-width:none; box-sizing:border-box; margin-left:calc((100% - var(--bw)) / 2);}
 /* ch-hint is ALWAYS rendered (renderColumns never omits it, even with
    nothing to say) — min-height keeps a short/empty hint from collapsing
    the column-head down to nothing, so heads still roughly line up
@@ -421,7 +427,7 @@ select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
 .card-move-btn.card-move-btn-accept:hover:not(:disabled){background:#cde8df; border-color:var(--success-text);}
 .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); background:var(--surface); border-color:var(--line); opacity:.5;}
 /* ---------- card detail ---------- */
-.detail{max-width:var(--board-max); margin:20px 0 0 var(--page-left); padding:0 var(--gutter) 88px;}
+.detail{max-width:var(--content-max); margin:20px 0 0 var(--page-left); padding:0 var(--gutter) 88px;}
 .detail-back{font-size:13.5px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:16px;}
 .detail-back:hover{color:var(--blue);}
 .detail-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
@@ -584,7 +590,7 @@ select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
   background:var(--danger-bg); border:1px solid var(--danger-text);
   border-radius:var(--radius); padding:12px 16px; margin-bottom:16px;
 }
-footer{max-width:var(--board-max); margin:0 0 0 var(--page-left); padding:32px var(--gutter) 56px;}
+footer{max-width:var(--content-max); margin:0 0 0 var(--page-left); padding:32px var(--gutter) 56px;}
 @media (max-width:760px){
   .field-2{grid-template-columns:1fr;}
 }
