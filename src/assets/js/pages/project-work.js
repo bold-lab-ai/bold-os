@@ -96,9 +96,6 @@ var ProjectWork = (function(){
   function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function dayLabel(v){ var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1] : ''; }
   function milestoneDates(s){ return s.start && s.end ? dayLabel(s.start) + ' – ' + dayLabel(s.end) : s.start ? 'from ' + dayLabel(s.start) : s.end ? 'until ' + dayLabel(s.end) : ''; }
-  // Its colour: one of 8 (project.css .wk-mc-0…7), by the order milestones were added in.
-  function mc(id){ var i = milestones().map(function(s){ return s.id; }).indexOf(id); return ' wk-mc-' + (Math.max(0, i) % 8); }
-  function chip(s){ return '<span class="wk-milestone' + mc(s.id) + '">' + esc(s.name) + '</span>'; }
   function milestoneNow(s){ var t = today(); return !!(s.start || s.end) && (!s.start || s.start <= t) && (!s.end || t <= s.end); }
   // Who plans the milestones: the board's editors, the project's people, PIs and admins.
   function canPlan(){ var e = me(); return ctx.canEdit() || ctx.fullWrite() || ctx.members().some(function(m){ return String(m).toLowerCase() === e; }); }
@@ -273,7 +270,7 @@ var ProjectWork = (function(){
       '<div class="wk-top"><span class="wk-type wk-type-' + t[0] + '">' + t[1] + '</span>' +
         (ref ? '<span class="wk-ref">' + ref + '</span>' : '') + (linked ? '<span class="wk-ref">' + linked + '</span>' : '') +
         (late ? '<span class="wk-late">' + n + ' days</span>' : '') +
-        (x.milestone && milestone !== x.milestone ? chip(milestoneOf(x.milestone)) : '') + '</div>' +
+        (x.milestone && milestone !== x.milestone ? '<span class="wk-milestone wk-mc-' + (milestones().map(function(s){ return s.id; }).indexOf(x.milestone) % 3) + '">' + esc(milestoneOf(x.milestone).name) + '</span>' : '') + '</div>' +
       '<div class="wk-title">' + title + '</div>' +
       whoHtml(x);
     if (x.card) {
@@ -367,7 +364,7 @@ var ProjectWork = (function(){
     var left = s.end && milestoneNow(s) ? Math.round((Date.parse(s.end) - Date.parse(today())) / 86400000) : null;
     return { cards: cs,
       when: [milestoneDates(s), left === null ? (s.end && s.end < today() ? 'ended' : '') : left === 0 ? 'ends today' : left === 1 ? '1 day left' : left + ' days left'].filter(Boolean).join(' · '),
-      bar: '<div class="wk-milestonebar-track' + mc(s.id) + '" role="progressbar" aria-label="' + esc(s.name) + ' done" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>',
+      bar: '<div class="wk-milestonebar-track" role="progressbar" aria-label="' + esc(s.name) + ' done" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>',
       summary: cs.length ? done + ' of ' + cs.length + ' done (' + pct + '%)' + (parts.length ? ' · ' + parts.join(', ') : '') : 'No cards in it yet.' };
   }
   // Above the columns: the milestone filtered on, or else the one on now (with a button to filter on it).
@@ -377,7 +374,7 @@ var ProjectWork = (function(){
     if (!s) return '';
     var g = progressOf(s);
     return '<div class="wk-milestonebar">' +
-      '<div class="wk-milestonebar-head">' + chip(s) + (g.when ? ' <span class="detail-muted">' + esc(g.when) + '</span>' : '') +
+      '<div class="wk-milestonebar-head"><strong>' + esc(s.name) + '</strong>' + (g.when ? ' <span class="detail-muted">' + esc(g.when) + '</span>' : '') +
         (focus ? '' : ' <button class="btn-text" type="button" data-wk="milestone-now" data-id="' + esc(s.id) + '">Show only its cards</button>') + '</div>' +
       g.bar + '<div class="detail-muted">' + esc(g.summary) + '</div></div>';
   }
@@ -418,7 +415,7 @@ var ProjectWork = (function(){
       var g = progressOf(s);
       html += '<section class="wk-ms-item" data-id="' + esc(s.id) + '">';
       if (plan.editing === s.id) html += msFormHtml(plan.form);
-      else html += '<div class="wk-ms-head"><h3>' + chip(s) + '</h3>' + (g.when ? '<span class="detail-muted">' + esc(g.when) + '</span>' : '') +
+      else html += '<div class="wk-ms-head"><h3>' + esc(s.name) + '</h3>' + (g.when ? '<span class="detail-muted">' + esc(g.when) + '</span>' : '') +
         '<span class="wk-ms-acts"><button class="btn-text" type="button" data-ms="edit"' + off + '>Edit</button><button class="btn-text danger" type="button" data-ms="remove"' + off + '>Remove</button></span></div>';
       html += g.bar + '<div class="detail-muted wk-ms-sum">' + esc(g.summary) + '</div>';
       var cs = g.cards.slice().sort(function(a, b){ return ORDER[a.column] - ORDER[b.column] || (b.since || 0) - (a.since || 0); });
@@ -815,7 +812,7 @@ var ProjectWork = (function(){
     var off = ok ? '' : ' disabled title="' + esc(why) + '"';
     var row = function(label, value){ return '<dt>' + esc(label) + '</dt><dd>' + value + '</dd>'; };
     var rows = row('Column', esc(col ? col[1] : '') + (x.since && x.column !== 'done' ? ' <span class="detail-muted">· for ' + (n === 1 ? '1 day' : n + ' days') + '</span>' : ''));
-    if (x.milestone) rows += row('Milestone', chip(milestoneOf(x.milestone)) + (milestoneDates(milestoneOf(x.milestone)) ? ' <span class="detail-muted">· ' + esc(milestoneDates(milestoneOf(x.milestone))) + '</span>' : ''));
+    if (x.milestone) rows += row('Milestone', esc(milestoneOf(x.milestone).name) + (milestoneDates(milestoneOf(x.milestone)) ? ' <span class="detail-muted">· ' + esc(milestoneDates(milestoneOf(x.milestone))) + '</span>' : ''));
     if (x.by && (x.by.name || x.by.login || x.by.email)) rows += row('From', name(x.by));
     var roles = [], byRole = {};
     (x.on || []).forEach(function(p){ var r = p.role || x.role || 'On it'; if (!byRole[r]) { byRole[r] = []; roles.push(r); } byRole[r].push(p); });
