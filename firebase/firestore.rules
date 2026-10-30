@@ -411,10 +411,10 @@ service cloud.firestore {
       function validWork(d) {
         // announce: false when whoever added it chose not to post it in the project's channel;
         // doneQuiet: true when whoever moved it to Done chose not to tell whoever raised it.
-        // sprint: the id of one of the board's sprints (work.sprints on the workspace), or ''.
-        return d.keys().hasOnly(['title', 'notes', 'kind', 'column', 'assignees', 'assigneeEmails', 'links', 'images', 'announce', 'doneQuiet', 'sprint', 'by', 'at', 'updatedAt', 'updatedBy', 'movedAt']) &&
+        // milestone: the id of one of the board's milestones (work.milestones on the workspace), or ''.
+        return d.keys().hasOnly(['title', 'notes', 'kind', 'column', 'assignees', 'assigneeEmails', 'links', 'images', 'announce', 'doneQuiet', 'milestone', 'by', 'at', 'updatedAt', 'updatedBy', 'movedAt']) &&
           d.get('announce', true) is bool && d.get('doneQuiet', false) is bool &&
-          d.get('sprint', '') is string && d.get('sprint', '').size() <= 20 &&
+          d.get('milestone', '') is string && d.get('milestone', '').size() <= 20 &&
           d.title is string && d.title.size() > 0 && d.title.size() <= 200 &&
           d.get('kind', '') in ['', 'code', 'content', 'request', 'other'] &&
           // notes: its description (Markdown, on its page); images: [{ path, url, name, by, at }]

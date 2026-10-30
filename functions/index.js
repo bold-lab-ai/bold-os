@@ -3708,15 +3708,15 @@ exports.projectWorkspace = onCall(
 
     // Its work board (projectWork): on or off, the repositories it shows, and whether it
     // shows the proposed changes to the site's content (PIs and admins only: that's the
-    // whole lab's). data.work: any of { on, repos, content, channels, sprints }; the
-    // project's people also plan its sprints.
+    // whole lab's). data.work: any of { on, repos, content, channels, milestones }; the
+    // project's people also plan its milestones.
     if (data.action === 'work'){
       const w = data.work && typeof data.work === 'object' ? data.work : {};
       const full = await isFullWrite(email);
       const ws = (await wsRef.get()).data() || {};
-      const onlySprints = Object.keys(w).every((k) => k === 'sprints');
+      const onlyMilestones = Object.keys(w).every((k) => k === 'milestones');
       const member = (ws.members || []).map(lowerEmail).indexOf(email) >= 0;
-      if (!full && !(onlySprints && member) && !(await canEditCard(email, card))) throw new HttpsError('permission-denied', onlySprints ? 'Only the project’s people, PIs and admins can plan its sprints.' : 'Only the project’s submitter, authors, PIs and admins can do this.');
+      if (!full && !(onlyMilestones && member) && !(await canEditCard(email, card))) throw new HttpsError('permission-denied', onlyMilestones ? 'Only the project’s people, PIs and admins can plan its milestones.' : 'Only the project’s submitter, authors, PIs and admins can do this.');
       const next = Object.assign({ on: false, repos: [], content: false }, ws.work || {});
       if (w.on !== undefined) next.on = !!w.on;
       if (w.content !== undefined && !!w.content !== !!next.content){
@@ -3762,16 +3762,16 @@ exports.projectWorkspace = onCall(
         }
         next.channels = names;
       }
-      // Its sprints: [{ id, name, start, end }] (dates YYYY-MM-DD, either may be ''); a card
-      // is in one by its `sprint` (the id), and the board shows each one's progress.
-      if (w.sprints !== undefined){
-        if (!Array.isArray(w.sprints) || w.sprints.length > 50) throw new HttpsError('invalid-argument', 'Up to 50 sprints.');
-        const day = (v) => { v = String(v || '').trim(); if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new HttpsError('invalid-argument', 'A sprint’s dates are YYYY-MM-DD.'); return v; };
+      // Its milestones: [{ id, name, start, end }] (dates YYYY-MM-DD, either may be ''); a card
+      // is in one by its `milestone` (the id), and the board shows each one's progress.
+      if (w.milestones !== undefined){
+        if (!Array.isArray(w.milestones) || w.milestones.length > 50) throw new HttpsError('invalid-argument', 'Up to 50 milestones.');
+        const day = (v) => { v = String(v || '').trim(); if (v && !/^\d{4}-\d{2}-\d{2}$/.test(v)) throw new HttpsError('invalid-argument', 'A milestone’s dates are YYYY-MM-DD.'); return v; };
         const ids = {};
-        next.sprints = w.sprints.map((x) => {
+        next.milestones = w.milestones.map((x) => {
           const id = String((x && x.id) || '').trim(), name = String((x && x.name) || '').trim().slice(0, 60);
-          if (!/^[a-z0-9]{1,20}$/.test(id) || ids[id]) throw new HttpsError('invalid-argument', 'A sprint needs its own id.');
-          if (!name) throw new HttpsError('invalid-argument', 'Give each sprint a name.');
+          if (!/^[a-z0-9]{1,20}$/.test(id) || ids[id]) throw new HttpsError('invalid-argument', 'A milestone needs its own id.');
+          if (!name) throw new HttpsError('invalid-argument', 'Give each milestone a name.');
           const start = day(x.start), end = day(x.end);
           if (start && end && end < start) throw new HttpsError('invalid-argument', name + ' ends before it starts.');
           ids[id] = true;

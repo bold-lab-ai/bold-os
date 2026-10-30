@@ -14,9 +14,10 @@
 // (Storage, work/<pid>/<card>/…; storage.rules), then its conversation (card-talk.js; a
 // card's only, not a GitHub item's: those talk on GitHub). Describing a GitHub item makes it a card
 // linking it. Proposals and requests open their own pages elsewhere on BOLD.OS.
-// Sprints: the board's (work.sprints on the workspace, [{ id, name, start, end }], planned in
-// Board settings by its editors and the project's people); a card is in one by its `sprint`,
-// and the Sprint filter shows that sprint's progress.
+// Milestones: the board's (work.milestones on the workspace, [{ id, name, start, end }]); a card
+// is in one by its `milestone`. Their own view (#…&tab=work&milestones, the board's Milestones
+// button) plans them (its editors and the project's people) and adds cards to each, many at
+// once; the Milestone filter shows one's progress above the columns.
 var ProjectWork = (function(){
   var esc = BOLD.escapeHtml;
   var COLUMNS = [['todo', 'To do'], ['doing', 'In progress'], ['review', 'Waiting for review'], ['done', 'Done']];
@@ -25,7 +26,7 @@ var ProjectWork = (function(){
   var archive = false;       // Done showing the archive (cards done more than 30 days ago) instead
   var NO_EDIT = 'Only whoever made it, whom it’s assigned to, the project’s people, PIs and admins can change it';
   var NOT_EDITOR = 'Only the project’s submitter, authors, PIs and admins can do this';
-  var PLAN_ONLY = 'Only the project’s people, PIs and admins can plan its sprints';
+  var PLAN_ONLY = 'Only the project’s people, PIs and admins can plan its milestones';
 
   var ctx = null, pid = '', db = null;
   var root = document.createElement('div');
@@ -35,8 +36,8 @@ var ProjectWork = (function(){
   var who = '';            // the person filter: an email or a GitHub login ('' all)
   var type = '';           // the type filter: code, content, request ('' all)
   var query = '';          // the search box's text
-  var sprint = '';         // the sprint filter: a sprint's id, '-' for none ('' all)
-  var draftSprints = null; // Board settings' sprints being edited
+  var milestone = '';         // the milestone filter: a milestone's id, '-' for none ('' all)
+  var plan = { editing: null, form: null, adding: null, picked: {}, find: '', msg: '' }; // the Milestones view: a milestone being edited ('new' a new one), or having cards added
   var TYPES = [['code', 'Code'], ['content', 'Content'], ['request', 'Request'], ['other', 'Other']];
   var editing = null;      // a card's id, or 'new:<column>'; 'settings'
   var draftLinks = [];     // links in the open editor
@@ -86,15 +87,15 @@ var ProjectWork = (function(){
       effects: [{ key: 'announce', text: 'Post it in #' + ch + ' on Slack, for everyone in the channel' }] })
       .then(function(ok){ return ok ? { announce: !(ok.skip && ok.skip.announce) } : null; });
   }
-  // The board's sprints, and how they read: "1 Nov – 14 Nov".
+  // The board's milestones, and how they read: "1 Nov – 14 Nov".
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  function sprints(){ return ((ctx.ws() && ctx.ws().work) || {}).sprints || []; }
-  function sprintOf(id){ return id ? sprints().filter(function(s){ return s.id === id; })[0] || null : null; }
+  function milestones(){ return ((ctx.ws() && ctx.ws().work) || {}).milestones || []; }
+  function milestoneOf(id){ return id ? milestones().filter(function(s){ return s.id === id; })[0] || null : null; }
   function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function dayLabel(v){ var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1] : ''; }
-  function sprintDates(s){ return s.start && s.end ? dayLabel(s.start) + ' – ' + dayLabel(s.end) : s.start ? 'from ' + dayLabel(s.start) : s.end ? 'until ' + dayLabel(s.end) : ''; }
-  function sprintNow(s){ var t = today(); return !!(s.start || s.end) && (!s.start || s.start <= t) && (!s.end || t <= s.end); }
-  // Who plans the sprints: the board's editors, the project's people, PIs and admins.
+  function milestoneDates(s){ return s.start && s.end ? dayLabel(s.start) + ' – ' + dayLabel(s.end) : s.start ? 'from ' + dayLabel(s.start) : s.end ? 'until ' + dayLabel(s.end) : ''; }
+  function milestoneNow(s){ var t = today(); return !!(s.start || s.end) && (!s.start || s.start <= t) && (!s.end || t <= s.end); }
+  // Who plans the milestones: the board's editors, the project's people, PIs and admins.
   function canPlan(){ var e = me(); return ctx.canEdit() || ctx.fullWrite() || ctx.members().some(function(m){ return String(m).toLowerCase() === e; }); }
   function cardsRef(){ return db.collection('projectWorkspaces').doc(pid).collection('work'); }
   function call(){ return firebase.app().functions('europe-west2').httpsCallable('projectWork'); }
@@ -138,19 +139,19 @@ var ProjectWork = (function(){
 
   // The page open, from the address; go(v) opens another (null: the board).
   function readView(){
-    var c = /[#&]card=([^&]+)/.exec(location.hash), i = /[#&]item=([^&]+)/.exec(location.hash);
-    var v = c ? { card: decodeURIComponent(c[1]) } : i ? { item: decodeURIComponent(i[1]) } : null;
+    var c = /[#&]card=([^&]+)/.exec(location.hash), i = /[#&]item=([^&]+)/.exec(location.hash), ms = /[#&]milestones(&|$)/.test(location.hash);
+    var v = c ? { card: decodeURIComponent(c[1]) } : i ? { item: decodeURIComponent(i[1]) } : ms ? { milestones: true } : null;
     if (JSON.stringify(v) !== JSON.stringify(view)) describing = false;
     view = v;
   }
   function hrefOf(v){
-    var h = location.hash.replace(/&(card|item)=[^&]*/g, '');
+    var h = location.hash.replace(/&(card|item)=[^&]*/g, '').replace(/&milestones(?=&|$)/g, '');
     if (!/[#&]tab=/.test(h)) h += '&tab=work';
-    return h + (!v ? '' : v.card ? '&card=' + encodeURIComponent(v.card) : '&item=' + encodeURIComponent(v.item));
+    return h + (!v ? '' : v.card ? '&card=' + encodeURIComponent(v.card) : v.milestones ? '&milestones' : '&item=' + encodeURIComponent(v.item));
   }
   function go(v, replace){
     try { history[replace ? 'replaceState' : 'pushState'](null, '', location.pathname + location.search + hrefOf(v)); } catch (e){}
-    view = v; describing = false; editing = null; upload = { busy: false, msg: '' };
+    view = v; describing = false; editing = null; upload = { busy: false, msg: '' }; plan = { editing: null, form: null, adding: null, picked: {}, find: '', msg: '' };
     draw();
     if (!replace) window.scrollTo(0, 0);
   }
@@ -195,7 +196,7 @@ var ProjectWork = (function(){
       var t = c.kind || (linked.some(function(x){ return x.type === 'code'; }) || (c.links || []).some(function(l){ return l.type === 'pr' || l.type === 'issue'; }) ? 'code'
         : (c.links || []).some(function(l){ return l.type === 'proposal'; }) || linked.some(function(x){ return x.type === 'content'; }) ? 'content' : 'other');
       var waiting = on.length ? '' : linked.map(function(x){ return x.waiting; }).filter(Boolean)[0] || '';
-      return { key: 'card:' + c.id, card: c, source: 'card', num: (remote.cardNumbers || {})[c.id], type: t, title: c.title, notes: c.notes, column: column, since: since, sprint: sprintOf(c.sprint) ? c.sprint : '',
+      return { key: 'card:' + c.id, card: c, source: 'card', num: (remote.cardNumbers || {})[c.id], type: t, title: c.title, notes: c.notes, column: column, since: since, milestone: milestoneOf(c.milestone) ? c.milestone : '',
         by: c.by ? { name: c.by.name, email: String(c.by.email || '').toLowerCase() } : null, on: dedupe(on), waiting: waiting, linked: linked, auto: column !== c.column };
     });
     remote.items.forEach(function(x){
@@ -267,7 +268,7 @@ var ProjectWork = (function(){
       '<div class="wk-top"><span class="wk-type wk-type-' + t[0] + '">' + t[1] + '</span>' +
         (ref ? '<span class="wk-ref">' + ref + '</span>' : '') + (linked ? '<span class="wk-ref">' + linked + '</span>' : '') +
         (late ? '<span class="wk-late">' + n + ' days</span>' : '') +
-        (x.sprint && sprint !== x.sprint ? '<span class="wk-sprint">' + esc(sprintOf(x.sprint).name) + '</span>' : '') + '</div>' +
+        (x.milestone && milestone !== x.milestone ? '<span class="wk-milestone">' + esc(milestoneOf(x.milestone).name) + '</span>' : '') + '</div>' +
       '<div class="wk-title">' + title + '</div>' +
       whoHtml(x);
     if (x.card) {
@@ -291,9 +292,9 @@ var ProjectWork = (function(){
         return '<option value="' + k[0] + '"' + (k[0] === c.column ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></label>' : '') +
       '<label>Type<select class="wk-f-kind"><option value="">From its links</option>' + TYPES.map(function(y){
         return '<option value="' + y[0] + '"' + (c && c.kind === y[0] ? ' selected' : '') + '>' + y[1] + '</option>'; }).join('') + '</select></label>' +
-      (sprints().length ? '<label>Sprint<select class="wk-f-sprint"><option value="">None</option>' + sprints().map(function(s){
-        var cur = c ? c.sprint : sprintOf(sprint) ? sprint : '';
-        return '<option value="' + esc(s.id) + '"' + (s.id === cur ? ' selected' : '') + '>' + esc(s.name + (sprintDates(s) ? ' (' + sprintDates(s) + ')' : '')) + '</option>';
+      (milestones().length ? '<label>Milestone<select class="wk-f-milestone"><option value="">None</option>' + milestones().map(function(s){
+        var cur = c ? c.milestone : milestoneOf(milestone) ? milestone : '';
+        return '<option value="' + esc(s.id) + '"' + (s.id === cur ? ' selected' : '') + '>' + esc(s.name + (milestoneDates(s) ? ' (' + milestoneDates(s) + ')' : '')) + '</option>';
       }).join('') + '</select></label>' : '') +
       '<label>Who’s on it<select class="wk-f-who"><option value="">Nobody yet</option>' + people.map(function(e){
         var p = personByEmail(e);
@@ -310,24 +311,6 @@ var ProjectWork = (function(){
         '<button class="btn" type="button" data-wk="cancel">Cancel</button>' +
         (c ? '<button class="btn-text danger wk-f-remove" type="button"' + (canRemove(c) ? '' : ' disabled title="Only whoever made it, the project’s people, PIs and admins can remove it"') + '>Remove</button>' : '') +
       '</div><input type="hidden" class="wk-f-column" value="' + esc(column || (c && c.column) || 'todo') + '"></form>';
-  }
-  // Board settings' sprints, each a name and its dates; removing one takes its cards out of it.
-  function drawSprints(){
-    var ul = el('.wk-s-sprintlist');
-    if (!ul) return;
-    var off = canPlan() ? '' : ' disabled title="' + PLAN_ONLY + '"';
-    ul.innerHTML = draftSprints.map(function(x, i){
-      return '<li class="wk-s-sprint" data-i="' + i + '"><input type="text" class="wk-s-sname" maxlength="60" placeholder="Name" aria-label="Its name" value="' + esc(x.name) + '"' + off + '>' +
-        '<input type="date" class="wk-s-start" aria-label="It starts" value="' + esc(x.start || '') + '"' + off + '>' +
-        '<input type="date" class="wk-s-end" aria-label="It ends" value="' + esc(x.end || '') + '"' + off + '>' +
-        '<button class="btn-text wk-s-unsprint" type="button" aria-label="Remove ' + esc(x.name || 'this sprint') + '"' + off + '>×</button></li>';
-    }).join('') || '<li class="detail-muted">None yet</li>';
-  }
-  function readSprints(form){
-    Array.prototype.forEach.call(form.querySelectorAll('.wk-s-sprint'), function(li){
-      var x = draftSprints[Number(li.getAttribute('data-i'))];
-      x.name = li.querySelector('.wk-s-sname').value.trim(); x.start = li.querySelector('.wk-s-start').value; x.end = li.querySelector('.wk-s-end').value;
-    });
   }
   function drawLinks(){
     var ul = el('.wk-f-linklist');
@@ -350,10 +333,8 @@ var ProjectWork = (function(){
         '<span class="field-hint">Besides ' + esc((ctx.ws() && ctx.ws().slackChannel) || 'the project’s own channel') + ', separated by commas.</span></label>' +
       '<label class="wk-check"><input type="checkbox" class="wk-s-content"' + (w.content ? ' checked' : '') +
         (ctx.fullWrite() ? '' : ' disabled title="Only PIs and admins can change this"') + '> Show everything on BOLD.OS waiting on someone: proposed changes and requests (each only to whoever can see it)</label>' +
-      '<div class="wk-s-sprints"><span>Sprints</span><ul class="wk-s-sprintlist"></ul>' +
-        '<button class="btn-text wk-s-addsprint" type="button"' + (canPlan() ? '' : ' disabled title="' + PLAN_ONLY + '"') + '>+ Add a sprint</button></div>' +
       '<div class="field-error wk-f-error" hidden></div>' +
-      '<div class="stage-fields-actions"><button class="btn" type="submit"' + (edit || ctx.fullWrite() || canPlan() ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Save</button>' +
+      '<div class="stage-fields-actions"><button class="btn" type="submit"' + (edit || ctx.fullWrite() ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Save</button>' +
         '<button class="btn" type="button" data-wk="cancel">Cancel</button>' +
         '<button class="btn-text danger wk-s-off" type="button"' + (edit ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Remove the board</button></div>' +
       '</form>';
@@ -364,29 +345,177 @@ var ProjectWork = (function(){
     // A card's page sits in the tab as the Overview does; only the board itself is wide.
     root.classList.toggle('wk-paged', !!view);
     if (!view || !view.card) endTalk();
+    if (view && view.milestones) { drawMilestones(); return; }
     if (view) { drawPage(); return; }
     // An open editor stays as it is; the rest redraws around it.
     var keep = editing && root.querySelector('.wk-editor');
     if (keep) { drawBoard(keep); return; }
     drawBoard(null);
   }
-  // A sprint's progress, above the columns: the one filtered on, or else the one on now
-  // (with a button to filter on it). Its cards count however old, archived ones too.
-  function sprintHtml(){
-    var s = sprintOf(sprint), focus = !!s;
-    if (!s) s = !sprint ? sprints().filter(sprintNow)[0] : null;
-    if (!s) return '';
-    var cs = allItems().filter(function(x){ return x.sprint === s.id; });
+  // A milestone's progress: its dates and days left (when), and done of all its cards, archived
+  // ones too, with how many are in each other column (bar, summary).
+  function progressOf(s){
+    var cs = allItems().filter(function(x){ return x.milestone === s.id; });
     var n = function(col){ return cs.filter(function(x){ return x.column === col; }).length; };
     var done = n('done'), pct = cs.length ? Math.round(100 * done / cs.length) : 0;
     var parts = [[n('doing'), 'in progress'], [n('review'), 'waiting for review'], [n('todo'), 'to do']].filter(function(p){ return p[0]; }).map(function(p){ return p[0] + ' ' + p[1]; });
-    var left = s.end && sprintNow(s) ? Math.round((Date.parse(s.end) - Date.parse(today())) / 86400000) : null;
-    var when = [sprintDates(s), left === null ? (s.end && s.end < today() ? 'ended' : '') : left === 0 ? 'ends today' : left === 1 ? '1 day left' : left + ' days left'].filter(Boolean).join(' · ');
-    return '<div class="wk-sprintbar">' +
-      '<div class="wk-sprintbar-head"><strong>' + esc(s.name) + '</strong>' + (when ? ' <span class="detail-muted">' + esc(when) + '</span>' : '') +
-        (focus ? '' : ' <button class="btn-text" type="button" data-wk="sprint-now" data-id="' + esc(s.id) + '">Show only its cards</button>') + '</div>' +
-      '<div class="wk-sprintbar-track" role="progressbar" aria-label="' + esc(s.name) + ' done" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>' +
-      '<div class="detail-muted">' + (cs.length ? done + ' of ' + cs.length + ' done (' + pct + '%)' + (parts.length ? ' · ' + parts.join(', ') : '') : 'No cards in it yet: pick it in a card’s Sprint.') + '</div></div>';
+    var left = s.end && milestoneNow(s) ? Math.round((Date.parse(s.end) - Date.parse(today())) / 86400000) : null;
+    return { cards: cs,
+      when: [milestoneDates(s), left === null ? (s.end && s.end < today() ? 'ended' : '') : left === 0 ? 'ends today' : left === 1 ? '1 day left' : left + ' days left'].filter(Boolean).join(' · '),
+      bar: '<div class="wk-milestonebar-track" role="progressbar" aria-label="' + esc(s.name) + ' done" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>',
+      summary: cs.length ? done + ' of ' + cs.length + ' done (' + pct + '%)' + (parts.length ? ' · ' + parts.join(', ') : '') : 'No cards in it yet.' };
+  }
+  // Above the columns: the milestone filtered on, or else the one on now (with a button to filter on it).
+  function milestoneHtml(){
+    var s = milestoneOf(milestone), focus = !!s;
+    if (!s) s = !milestone ? milestones().filter(milestoneNow)[0] : null;
+    if (!s) return '';
+    var g = progressOf(s);
+    return '<div class="wk-milestonebar">' +
+      '<div class="wk-milestonebar-head"><strong>' + esc(s.name) + '</strong>' + (g.when ? ' <span class="detail-muted">' + esc(g.when) + '</span>' : '') +
+        (focus ? '' : ' <button class="btn-text" type="button" data-wk="milestone-now" data-id="' + esc(s.id) + '">Show only its cards</button>') + '</div>' +
+      g.bar + '<div class="detail-muted">' + esc(g.summary) + '</div></div>';
+  }
+
+  // The Milestones view (#…&tab=work&milestones), in place of the board: each milestone, in
+  // date order, with its progress and cards; planning them, and adding cards many at once.
+  function ordered(){
+    var key = function(s){ return s.start || s.end || '9999'; };
+    return milestones().map(function(s, i){ return [s, i]; }).sort(function(a, b){ return key(a[0]) < key(b[0]) ? -1 : key(a[0]) > key(b[0]) ? 1 : a[1] - b[1]; }).map(function(x){ return x[0]; });
+  }
+  function colName(c){ var k = COLUMNS.filter(function(x){ return x[0] === c; })[0]; return k ? k[1] : ''; }
+  function msFormHtml(s){
+    return '<form class="wk-editor wk-ms-form" novalidate>' +
+      '<label>Name<input type="text" class="wk-m-name" maxlength="60" value="' + esc(s.name) + '" required></label>' +
+      '<div class="wk-ms-dates"><label>Starts<input type="date" class="wk-m-start" value="' + esc(s.start || '') + '"></label>' +
+        '<label>Ends<input type="date" class="wk-m-end" value="' + esc(s.end || '') + '"></label></div>' +
+      '<div class="stage-fields-actions"><button class="btn" type="submit">Save</button><button class="btn" type="button" data-ms="cancel">Cancel</button></div></form>';
+  }
+  function cardRef(x){ return (x.num ? '#' + x.num + ' ' : '') + x.title; }
+  function drawMilestones(){
+    var focused = document.activeElement && root.contains(document.activeElement) && document.activeElement.classList.contains('wk-m-find');
+    // What's typed in a milestone's form survives the view redrawing (a card changing, live).
+    var open = el('.wk-ms-form');
+    if (open && plan.form) { plan.form.name = open.querySelector('.wk-m-name').value; plan.form.start = open.querySelector('.wk-m-start').value; plan.form.end = open.querySelector('.wk-m-end').value; }
+    var plans = canPlan(), off = plans ? '' : ' disabled title="' + PLAN_ONLY + '"';
+    var all = allItems().filter(function(x){ return x.card; });
+    var html = '<div class="wk-page wk-ms">' +
+      '<a class="detail-back wk-back" href="' + esc(hrefOf(null)) + '">&larr; Back to the board</a>' +
+      '<div class="detail-head"><h2 class="wk-page-title">Milestones</h2></div>' +
+      (plan.editing === 'new' ? msFormHtml(plan.form) : '<button class="btn-text wk-ms-new" type="button"' + off + '>+ Add a milestone</button>') +
+      (plan.msg ? '<p class="wk-error">' + esc(plan.msg) + '</p>' : '');
+    var list = ordered();
+    if (!list.length && plan.editing !== 'new') html += '<p class="detail-muted wk-none">No milestones yet.</p>';
+    list.forEach(function(s){
+      var g = progressOf(s);
+      html += '<section class="wk-ms-item" data-id="' + esc(s.id) + '">';
+      if (plan.editing === s.id) html += msFormHtml(plan.form);
+      else html += '<div class="wk-ms-head"><h3>' + esc(s.name) + '</h3>' + (g.when ? '<span class="detail-muted">' + esc(g.when) + '</span>' : '') +
+        '<span class="wk-ms-acts"><button class="btn-text" type="button" data-ms="edit"' + off + '>Edit</button><button class="btn-text danger" type="button" data-ms="remove"' + off + '>Remove</button></span></div>';
+      html += g.bar + '<div class="detail-muted wk-ms-sum">' + esc(g.summary) + '</div>';
+      var cs = g.cards.slice().sort(function(a, b){ return ORDER[a.column] - ORDER[b.column] || (b.since || 0) - (a.since || 0); });
+      if (cs.length) html += '<ul class="wk-ms-cards">' + cs.map(function(x){
+        var ok = canChange(x.card);
+        return '<li><span class="wk-ms-col wk-ms-col-' + x.column + '">' + esc(colName(x.column)) + '</span>' +
+          '<a class="wk-open" href="' + esc(hrefOf({ card: x.card.id })) + '">' + esc(cardRef(x)) + '</a>' +
+          '<button class="btn-text wk-ms-out" type="button" data-card="' + esc(x.card.id) + '" aria-label="Take ' + esc(x.title) + ' out of ' + esc(s.name) + '"' + (ok ? '' : ' disabled title="' + esc(canAdd() ? NO_EDIT : BOLD.cannotReason('projects', 'edit')) + '"') + '>×</button></li>';
+      }).join('') + '</ul>';
+      if (plan.adding === s.id) {
+        // Cards in no milestone yet: not done first; the search narrows them.
+        var words = plan.find.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        var free = all.filter(function(x){ return !x.milestone && words.every(function(w){ return cardRef(x).toLowerCase().indexOf(w) >= 0; }); })
+          .sort(function(a, b){ return ORDER[a.column] - ORDER[b.column] || (b.since || 0) - (a.since || 0); });
+        var n = Object.keys(plan.picked).length;
+        html += '<div class="wk-editor wk-ms-pick"><input type="search" class="wk-m-find" placeholder="Search cards in no milestone…" aria-label="Search cards" value="' + esc(plan.find) + '">' +
+          '<ul class="wk-ms-free">' + (free.map(function(x){
+            var ok = canChange(x.card);
+            return '<li><label' + (ok ? '' : ' title="' + esc(canAdd() ? NO_EDIT : BOLD.cannotReason('projects', 'edit')) + '"') + '><input type="checkbox" data-card="' + esc(x.card.id) + '"' + (plan.picked[x.card.id] ? ' checked' : '') + (ok ? '' : ' disabled') + '>' +
+              '<span class="wk-ms-col wk-ms-col-' + x.column + '">' + esc(colName(x.column)) + '</span>' + esc(cardRef(x)) + '</label></li>';
+          }).join('') || '<li class="detail-muted">' + (words.length ? 'No card matches.' : 'Every card is in a milestone.') + '</li>') + '</ul>' +
+          '<div class="stage-fields-actions"><button class="btn" type="button" data-ms="add"' + (n && !busy ? '' : ' disabled') + '>' + (n ? 'Add ' + n + (n === 1 ? ' card' : ' cards') : 'Add cards') + '</button>' +
+            '<button class="btn" type="button" data-ms="close">Cancel</button></div></div>';
+      } else html += '<button class="btn-text wk-ms-addcards" type="button"' + (canAdd() ? '' : ' disabled title="' + esc(BOLD.cannotReason('projects', 'edit')) + '"') + '>+ Add cards</button>';
+      html += '</section>';
+    });
+    root.innerHTML = html + '</div>';
+    wireOpen();
+    wireMilestones();
+    var f = el('.wk-m-find');
+    if (f && focused) { f.focus(); f.setSelectionRange(f.value.length, f.value.length); }
+  }
+  // A new one, by default: numbered on, starting the day after the last ends, as long as it.
+  function nextMilestone(){
+    var list = ordered(), last = list[list.length - 1];
+    var s = { id: Math.random().toString(36).slice(2, 10), name: 'Milestone ' + (list.length + 1), start: today(), end: '' };
+    if (last && last.end) {
+      var d = function(v, n){ return new Date(Date.parse(v) + n * 86400000).toISOString().slice(0, 10); };
+      s.start = d(last.end, 1);
+      s.end = last.start ? d(s.start, Math.round((Date.parse(last.end) - Date.parse(last.start)) / 86400000)) : '';
+    }
+    return s;
+  }
+  function openForm(id, s){
+    plan.editing = id; plan.form = Object.assign({}, s); plan.msg = ''; draw();
+    var n = el('.wk-ms-form .wk-m-name'); if (n) n.select();
+  }
+  function savePlan(list){
+    busy = true; plan.msg = ''; draw();
+    return ctx.callWorkspace({ action: 'work', work: { milestones: list.map(function(x){ return { id: x.id, name: x.name, start: x.start || '', end: x.end || '' }; }) } })
+      .then(function(){ busy = false; plan.editing = null; plan.form = null; draw(); })
+      .catch(function(err){ busy = false; plan.msg = (err && err.message) || 'Couldn’t save — try again.'; draw(); throw err; });
+  }
+  function wireMilestones(){
+    var nb = el('.wk-ms-new');
+    if (nb) nb.addEventListener('click', function(){ openForm('new', nextMilestone()); });
+    var form = el('.wk-ms-form');
+    if (form) {
+      form.querySelector('[data-ms="cancel"]').addEventListener('click', function(){ plan.editing = null; plan.form = null; plan.msg = ''; draw(); });
+      form.addEventListener('submit', function(e){
+        e.preventDefault();
+        if (busy) return;
+        var x = { name: form.querySelector('.wk-m-name').value.trim(), start: form.querySelector('.wk-m-start').value, end: form.querySelector('.wk-m-end').value };
+        if (!x.name) { plan.msg = 'Give it a name.'; draw(); return; }
+        if (x.start && x.end && x.end < x.start) { plan.msg = x.name + ' ends before it starts.'; draw(); return; }
+        var list = milestones().map(function(s){ return Object.assign({}, s); });
+        if (plan.editing === 'new') list.push(Object.assign({ id: plan.form.id }, x));
+        else list = list.map(function(s){ return s.id === plan.editing ? Object.assign(s, x) : s; });
+        savePlan(list).catch(function(){});
+      });
+    }
+    Array.prototype.forEach.call(root.querySelectorAll('.wk-ms-item'), function(sec){
+      var id = sec.getAttribute('data-id'), s = milestoneOf(id);
+      sec.addEventListener('click', function(e){
+        var b = e.target.closest('button');
+        if (!b || b.disabled) return;
+        var act = b.getAttribute('data-ms');
+        if (act === 'edit') openForm(id, s);
+        else if (act === 'remove') {
+          if (!window.confirm('Remove “' + s.name + '”? Its cards stay on the board, in no milestone.')) return;
+          savePlan(milestones().filter(function(x){ return x.id !== id; })).catch(function(){});
+        }
+        else if (b.classList.contains('wk-ms-addcards')) { plan.adding = id; plan.picked = {}; plan.find = ''; draw(); var f = el('.wk-m-find'); if (f) f.focus(); }
+        else if (act === 'close') { plan.adding = null; plan.picked = {}; draw(); }
+        else if (act === 'add') {
+          var ids = Object.keys(plan.picked);
+          busy = true; draw();
+          Promise.all(ids.map(function(cid){ var c = cards.filter(function(k){ return k.id === cid; })[0]; return c ? cardChange(c, { milestone: id }) : null; }))
+            .then(function(){ busy = false; plan.adding = null; plan.picked = {}; draw(); })
+            .catch(function(err){ console.error('[BOLD Lab] adding cards to a milestone failed', err); busy = false; plan.msg = 'Couldn’t add them all — try again.'; draw(); });
+        }
+        else if (b.classList.contains('wk-ms-out')) {
+          var c = cards.filter(function(k){ return k.id === b.getAttribute('data-card'); })[0];
+          if (c) cardChange(c, { milestone: '' }).catch(function(err){ console.error('[BOLD Lab] taking a card out of a milestone failed', err); plan.msg = 'Couldn’t take it out — try again.'; draw(); });
+        }
+      });
+      sec.addEventListener('change', function(e){
+        var cb = e.target.closest('input[type=checkbox][data-card]');
+        if (!cb) return;
+        if (cb.checked) plan.picked[cb.getAttribute('data-card')] = true; else delete plan.picked[cb.getAttribute('data-card')];
+        var add = sec.querySelector('[data-ms="add"]'), n = Object.keys(plan.picked).length;
+        add.disabled = !n || busy; add.textContent = n ? 'Add ' + n + (n === 1 ? ' card' : ' cards') : 'Add cards';
+      });
+      sec.addEventListener('input', function(e){ if (e.target.classList.contains('wk-m-find')) { plan.find = e.target.value; draw(); } });
+    });
   }
   function drawBoard(keepEditor){
     var all = items();
@@ -408,9 +537,9 @@ var ProjectWork = (function(){
       var hay = [x.title, refLabel(x), x.num ? String(x.num) : '', x.by && (x.by.name || x.by.login)].concat((x.on || []).map(function(p){ return p.name || p.login; })).join(' ').toLowerCase();
       return words.every(function(w){ return hay.indexOf(w) >= 0; });
     };
-    if (sprint && sprint !== '-' && !sprintOf(sprint)) sprint = '';
-    var inSprint = function(x){ return !sprint || (sprint === '-' ? !x.sprint : x.sprint === sprint); };
-    var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type) && inSprint(x) && matches(x); });
+    if (milestone && milestone !== '-' && !milestoneOf(milestone)) milestone = '';
+    var inMilestone = function(x){ return !milestone || (milestone === '-' ? !x.milestone : x.milestone === milestone); };
+    var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type) && inMilestone(x) && matches(x); });
     var personOptions = [['', 'Everyone']].concat(me() ? [[me(), 'Mine']] : []).concat(Object.keys(people).filter(function(k){ return k !== me(); })
       .sort(function(a, b){ return (people[b].doing + people[b].review) - (people[a].doing + people[a].review) || String(people[a].p.name).localeCompare(String(people[b].p.name)); })
       .map(function(k){
@@ -421,16 +550,17 @@ var ProjectWork = (function(){
       }));
     var typeOptions = [['', 'All types']].concat(TYPES.filter(function(y){ return y[0] !== 'other' || all.some(function(x){ return x.type === 'other'; }); })
       .map(function(y){ return [y[0], y[1] + ' (' + all.filter(function(x){ return x.type === y[0]; }).length + ')']; }));
-    var sprintOptions = [['', 'All sprints']].concat(sprints().map(function(s){
-      return [s.id, s.name + (sprintNow(s) ? ' (now)' : '')]; })).concat([['-', 'No sprint']]);
-    var filtering = words.length || who || type || sprint;
+    var milestoneOptions = [['', 'All milestones']].concat(milestones().map(function(s){
+      return [s.id, s.name + (milestoneNow(s) ? ' (now)' : '')]; })).concat([['-', 'No milestone']]);
+    var filtering = words.length || who || type || milestone;
     // The shared board's search bar (BoldBoard.searchHtml), as on the Internal Review Board.
     var head = BoldBoard.searchHtml({ query: query, placeholder: 'Search by title, #number or person\u2026', label: 'Search the board',
       count: filtering ? shown.length + ' of ' + all.length : all.length + ' item' + (all.length === 1 ? '' : 's'),
       filters: [{ key: 'type', label: 'Type', value: type, options: typeOptions }, { key: 'who', label: 'Person', value: who, options: personOptions }]
-        .concat(sprints().length ? [{ key: 'sprint', label: 'Sprint', value: sprint, options: sprintOptions }] : []),
+        .concat(milestones().length ? [{ key: 'milestone', label: 'Milestone', value: milestone, options: milestoneOptions }] : []),
       extra: '<span class="wk-tools"><span class="detail-muted">' + (remote.loading ? 'Updating\u2026' : remote.at ? 'Updated ' + new Date(remote.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '') + '</span>' +
         '<button class="btn-text" type="button" data-wk="refresh"' + (remote.loading ? ' disabled' : '') + '>Refresh</button>' +
+        '<a class="btn-text wk-open" href="' + esc(hrefOf({ milestones: true })) + '">Milestones</a>' +
         '<button class="btn-text" type="button" data-wk="settings">Board settings</button></span>' });
     var notes = (remote.errors || []).map(function(e){ return '<p class="wk-error">' + esc(e) + '</p>'; }).join('') + (msg ? '<p class="wk-error">' + esc(msg) + '</p>' : '');
     var settings = editing === 'settings' ? '<div class="wk-settings-slot"></div>' : '';
@@ -450,7 +580,7 @@ var ProjectWork = (function(){
         empty: !cardsLoaded || (remote.loading && !remote.loaded) ? 'Loading\u2026' : 'Nothing here' };
     })) + '</div>';
     if (keepEditor) keepEditor.remove();
-    root.innerHTML = head + notes + settings + sprintHtml() + cols;
+    root.innerHTML = head + notes + settings + milestoneHtml() + cols;
     // The open editor goes back where it was: settings, a new card, or in place of its card.
     if (editing) {
       var slot = editing === 'settings' ? el('.wk-settings-slot') : editing.indexOf('new:') === 0 ? el('.wk-new-slot')
@@ -488,13 +618,13 @@ var ProjectWork = (function(){
     });
     BoldBoard.wireSearch(root, {
       query: function(v){ query = v; draw(); },
-      filter: function(key, v){ if (key === 'type') type = v; else if (key === 'who') who = v; else if (key === 'sprint') sprint = v; draw(); }
+      filter: function(key, v){ if (key === 'type') type = v; else if (key === 'who') who = v; else if (key === 'milestone') milestone = v; draw(); }
     });
     Array.prototype.forEach.call(root.querySelectorAll('.wk-add'), function(b){
       b.addEventListener('click', function(){ if (editing) return; editing = 'new:' + b.getAttribute('data-col'); draftLinks = []; draw(); focusTitle(); });
     });
-    var now = el('[data-wk="sprint-now"]');
-    if (now) now.addEventListener('click', function(){ sprint = now.getAttribute('data-id'); draw(); });
+    var now = el('[data-wk="milestone-now"]');
+    if (now) now.addEventListener('click', function(){ milestone = now.getAttribute('data-id'); draw(); });
     var r = el('[data-wk="refresh"]');
     if (r) r.addEventListener('click', function(){ fetchRemote(true); });
     var s = el('[data-wk="settings"]');
@@ -516,42 +646,15 @@ var ProjectWork = (function(){
     function fail(m){ error.textContent = m; error.hidden = false; busy = false; }
     form.querySelector('[data-wk="cancel"]').addEventListener('click', function(){ editing = null; msg = ''; draw(); });
     if (form.classList.contains('wk-settings')) {
-      draftSprints = sprints().map(function(x){ return Object.assign({}, x); });
-      drawSprints();
-      form.querySelector('.wk-s-addsprint').addEventListener('click', function(){
-        readSprints(form);
-        // The next one, by default: numbered on, starting the day after the last ends, as long as it.
-        var last = draftSprints[draftSprints.length - 1], next = { id: Math.random().toString(36).slice(2, 10), name: 'Sprint ' + (draftSprints.length + 1), start: '', end: '' };
-        if (last && last.end) {
-          var d = function(v, n){ var t = new Date(Date.parse(v) + n * 86400000); return t.toISOString().slice(0, 10); };
-          next.start = d(last.end, 1);
-          next.end = last.start ? d(next.start, Math.round((Date.parse(last.end) - Date.parse(last.start)) / 86400000)) : '';
-        }
-        draftSprints.push(next); drawSprints();
-        var names = form.querySelectorAll('.wk-s-sname'); if (names.length) names[names.length - 1].select();
-      });
-      form.querySelector('.wk-s-sprintlist').addEventListener('click', function(e){
-        var b = e.target.closest('.wk-s-unsprint');
-        if (!b) return;
-        readSprints(form);
-        draftSprints.splice(Number(b.closest('.wk-s-sprint').getAttribute('data-i')), 1); drawSprints();
-      });
       form.addEventListener('submit', function(e){
         e.preventDefault();
         if (busy) return;
-        readSprints(form);
-        if (draftSprints.some(function(x){ return !x.name; })) return fail('Give each sprint a name.');
-        var bad = draftSprints.filter(function(x){ return x.start && x.end && x.end < x.start; })[0];
-        if (bad) return fail(bad.name + ' ends before it starts.');
         busy = true;
-        var change = {};
-        if (ctx.canEdit() || ctx.fullWrite()) {
-          change.repos = form.querySelector('.wk-s-repos').value.split(/[\s,]+/).filter(Boolean);
-          change.channels = form.querySelector('.wk-s-channels').value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
-        }
+        var repos = form.querySelector('.wk-s-repos').value.split(/[\s,]+/).filter(Boolean);
+        var channels = form.querySelector('.wk-s-channels').value.split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); }).filter(Boolean);
+        var change = { repos: repos, channels: channels };
         var content = form.querySelector('.wk-s-content');
         if (!content.disabled) change.content = content.checked;
-        if (canPlan()) change.sprints = draftSprints.map(function(x){ return { id: x.id, name: x.name, start: x.start || '', end: x.end || '' }; });
         ctx.callWorkspace({ action: 'work', work: change }).then(function(){
           busy = false; editing = null; fetchRemote(true); draw();
         }).catch(function(err){ fail((err && err.message) || 'Couldn’t save — try again.'); });
@@ -611,8 +714,8 @@ var ProjectWork = (function(){
         links: draftLinks.slice(0, 10).map(function(l){ var o = { type: l.type, url: l.url, label: l.label || '' }; if (l.ref) o.ref = l.ref; return o; }),
         updatedAt: now, updatedBy: m.email
       };
-      var sp = form.querySelector('.wk-f-sprint');
-      if (sp ? sp.value : c && c.sprint) data.sprint = sp ? sp.value : c.sprint;
+      var sp = form.querySelector('.wk-f-milestone');
+      if (sp ? sp.value : c && c.milestone) data.milestone = sp ? sp.value : c.milestone;
       busy = true;
       var job;
       var col = form.querySelector('.wk-f-col') ? form.querySelector('.wk-f-col').value : c && c.column;
@@ -642,8 +745,8 @@ var ProjectWork = (function(){
       a.addEventListener('click', function(e){
         if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
-        var c = /[#&]card=([^&]+)/.exec(a.getAttribute('href')), i = /[#&]item=([^&]+)/.exec(a.getAttribute('href'));
-        go(c ? { card: decodeURIComponent(c[1]) } : i ? { item: decodeURIComponent(i[1]) } : null);
+        var h = a.getAttribute('href'), c = /[#&]card=([^&]+)/.exec(h), i = /[#&]item=([^&]+)/.exec(h);
+        go(c ? { card: decodeURIComponent(c[1]) } : i ? { item: decodeURIComponent(i[1]) } : /[#&]milestones(&|$)/.test(h) ? { milestones: true } : null);
       });
     });
   }
@@ -688,7 +791,7 @@ var ProjectWork = (function(){
     var off = ok ? '' : ' disabled title="' + esc(why) + '"';
     var row = function(label, value){ return '<dt>' + esc(label) + '</dt><dd>' + value + '</dd>'; };
     var rows = row('Column', esc(col ? col[1] : '') + (x.since && x.column !== 'done' ? ' <span class="detail-muted">· for ' + (n === 1 ? '1 day' : n + ' days') + '</span>' : ''));
-    if (x.sprint) rows += row('Sprint', esc(sprintOf(x.sprint).name) + (sprintDates(sprintOf(x.sprint)) ? ' <span class="detail-muted">· ' + esc(sprintDates(sprintOf(x.sprint))) + '</span>' : ''));
+    if (x.milestone) rows += row('Milestone', esc(milestoneOf(x.milestone).name) + (milestoneDates(milestoneOf(x.milestone)) ? ' <span class="detail-muted">· ' + esc(milestoneDates(milestoneOf(x.milestone))) + '</span>' : ''));
     if (x.by && (x.by.name || x.by.login || x.by.email)) rows += row('From', name(x.by));
     var roles = [], byRole = {};
     (x.on || []).forEach(function(p){ var r = p.role || x.role || 'On it'; if (!byRole[r]) { byRole[r] = []; roles.push(r); } byRole[r].push(p); });
@@ -862,7 +965,7 @@ var ProjectWork = (function(){
     var data = {};
     ['title', 'notes', 'assignees', 'assigneeEmails', 'links', 'by', 'at'].forEach(function(k){ data[k] = c[k]; });
     if (c.images) data.images = c.images;
-    if (c.sprint) data.sprint = c.sprint;
+    if (c.milestone) data.milestone = c.milestone;
     data.kind = c.kind || '';
     confirmDone(Object.assign({}, c, { column: was }), column).then(function(done){
       if (!done) { c.column = was; draw(); return; }
