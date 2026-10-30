@@ -129,8 +129,10 @@
     var box = el('githubBody');
     var off = ghBusy ? ' disabled' : '';
     var err = ghError ? '<span class="gh-error">' + escapeHtml(ghError) + '</span>' : '';
+    // BOLD-internal and above join the org; everyone else gets their projects' repositories (linkGithub).
+    var inOrg = ['internal', 'staff', 'exec'].indexOf(BOLD.myGroup()) >= 0;
     if (!link) {
-      box.innerHTML = '<span class="gh-line">Not linked. Linking it invites you to the bold-lab-ai organisation.</span>' + err +
+      box.innerHTML = '<span class="gh-line">Not linked. Linking it ' + (inOrg ? 'invites you to the bold-lab-ai organisation' : 'gives you the repositories of the projects you’re on') + '.</span>' + err +
         '<span class="gh-actions"><button type="button" class="btn-box is-primary gh-link"' + off + '>Link GitHub</button></span>';
       return;
     }
@@ -138,6 +140,7 @@
     var login = link.github || (p && ghLogin[p.uid]) || '';
     var status = link.status === 'active' ? 'Member of bold-lab-ai' :
       link.status === 'pending' ? 'Invited to bold-lab-ai: <a href="' + ORG + '/invitation" target="_blank" rel="noopener">accept the invitation</a>' :
+      link.status === 'outside' ? 'Linked: you get the repositories of the projects you’re on' :
       link.status === 'unchecked' ? 'Linked, but couldn’t check bold-lab-ai' :
       'Not invited to bold-lab-ai: ' + escapeHtml(link.error || 'GitHub refused.');
     box.innerHTML = accountHtml({

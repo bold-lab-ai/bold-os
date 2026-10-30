@@ -73,6 +73,14 @@ service cloud.firestore {
     function need(page, what) { return myRank() >= levelRank(level(page, what)); }
     // Signed in (with Slack) and allowed by the table.
     function may(page, what)   { return isSignedIn() && need(page, what); }
+    // View or Edit (functions/access.js 'list'): on Projects, Edit without View sees the
+    // titles and joins; each project's people see it in full (seesProject below).
+    function mayList(page)     { return may(page, 'view') || may(page, 'edit'); }
+    // A project in full: Projects' View, or being on it (its workspace's members).
+    function seesProject(pid) {
+      let ws = /databases/$(database)/documents/projectWorkspaces/$(pid);
+      return may('projects', 'view') || (isSignedIn() && exists(ws) && email().lower() in get(ws).data.get('members', []));
+    }
 
     // Admin-only data, never read or written by a client — only via the
     // get() calls above, and via the Firebase Console (or an Admin SDK
@@ -87,8 +95,8 @@ service cloud.firestore {
     // one-off script against Slack's users.list, same admin-only-write
     // pattern as roles/{roleId}.
     match /people/{personId} {
-      // Names on a project's page too.
-      allow read: if may('people', 'view') || may('projects', 'view');
+      // Names on a project's page too, for whoever may be on one.
+      allow read: if may('people', 'view') || mayList('projects');
       allow write: if false;
     }
 
@@ -233,7 +241,7 @@ service cloud.firestore {
       // docs/FIREBASE.md before deploying this against boards created
       // pre-2026-09-11.
       // A project's page shows its venue.
-      allow read: if (may('ml-cycle', 'view') || may('projects', 'view')) && (
+      allow read: if (may('ml-cycle', 'view') || mayList('projects')) && (
         resource.data.get('status', 'approved') != 'pending' ||
         hasFullWrite() ||
         (('proposedBy' in resource.data) && email() == resource.data.proposedBy.email)
@@ -258,7 +266,7 @@ service cloud.firestore {
 
       // A paper on the board is also a project (project.html#board=…).
       match /cards/{cardId} {
-        allow read: if may('ml-cycle', 'view') || may('projects', 'view');
+        allow read: if may('ml-cycle', 'view') || seesProject(resource.data.get('projectId', cardId));
         // Only the server (projectWorkspace 'submit') files a card under another
         // card's project (`projectId`); nobody changes it afterwards.
         allow create: if (may('ml-cycle', 'edit') || may('projects', 'edit')) && request.resource.data.get('projectId', cardId) == cardId;
@@ -303,7 +311,7 @@ service cloud.firestore {
     // as on a project's page) or a PI/admin, deleted or moved only by its
     // submitter or a PI/admin.
     match /projects/{projectId} {
-      allow read: if may('projects', 'view');
+      allow read: if seesProject(resource.data.get('projectId', projectId));
       allow create: if may('projects', 'edit') && request.resource.data.submittedBy.email == email() &&
         request.resource.data.get('projectId', projectId) == projectId;
       allow update: if may('projects', 'edit') && (
@@ -350,8 +358,16 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // What the Calendar shows of each project to whoever doesn't see the projects
+    // (functions/index.js onWorkspaceTitles): title, meeting time, Slack channel, no links.
+    match /projectTitles/{pid} {
+      allow read: if mayList('projects');
+      allow write: if false;
+    }
+
     match /projectWorkspaces/{cardId} {
-      allow read: if may('projects', 'view');
+      // Its own people's query (members array-contains them) is provable as written.
+      allow read: if may('projects', 'view') || (isSignedIn() && email().lower() in resource.data.get('members', []));
       allow write: if false;
 
       function isProjectMember() {
@@ -375,7 +391,7 @@ service cloud.firestore {
           d.recordingUrl is string && d.recordingUrl.size() <= 2000;
       }
       match /presentations/{id} {
-        allow read: if may('projects', 'view');
+        allow read: if seesProject(cardId);
         allow create: if may('projects', 'edit') && (isProjectMember() || hasFullWrite()) &&
           request.resource.data.by.email == email() && validPresentation(request.resource.data);
         allow update: if may('projects', 'edit') && (isProjectMember() || hasFullWrite()) &&
@@ -384,8 +400,8 @@ service cloud.firestore {
       }
 
       // Its work board's cards (project page, Work tab; projectWork adds GitHub and the
-      // site's proposals). Anyone with Projects' Edit adds one to a board that's on, even
-      // if they aren't on the project; whoever made it and whom it's assigned to change
+      // site's proposals). Anyone with Projects' Edit who sees the project adds one to a board
+      // that's on, even if they aren't on the project; whoever made it and whom it's assigned to change
       // and move it; the project's people, PIs and admins change or remove any.
       function boardOn() {
         let ws = /databases/$(database)/documents/projectWorkspaces/$(cardId);
@@ -409,8 +425,8 @@ service cloud.firestore {
           d.at is number && d.updatedAt is number && d.movedAt is number && d.updatedBy == email();
       }
       match /work/{id} {
-        allow read: if may('projects', 'view');
-        allow create: if may('projects', 'edit') && boardOn() &&
+        allow read: if seesProject(cardId);
+        allow create: if may('projects', 'edit') && seesProject(cardId) && boardOn() &&
           request.resource.data.by.email == email() && validWork(request.resource.data);
         allow update: if may('projects', 'edit') &&
           (isProjectMember() || hasFullWrite() || resource.data.by.email == email() || email() in resource.data.assigneeEmails) &&
@@ -426,8 +442,8 @@ service cloud.firestore {
             d.by is map && d.by.keys().hasOnly(['email', 'name']) && d.by.name is string && d.at is number;
         }
         match /comments/{cid} {
-          allow read: if may('projects', 'view');
-          allow create: if may('projects', 'view') && exists(/databases/$(database)/documents/projectWorkspaces/$(cardId)/work/$(id)) &&
+          allow read: if seesProject(cardId);
+          allow create: if seesProject(cardId) && exists(/databases/$(database)/documents/projectWorkspaces/$(cardId)/work/$(id)) &&
             request.resource.data.by.email == email() && !('editedAt' in request.resource.data) && validTalk(request.resource.data);
           allow update: if resource.data.by.email == email() && request.resource.data.by == resource.data.by &&
             request.resource.data.at == resource.data.at && request.resource.data.editedAt is number && validTalk(request.resource.data);

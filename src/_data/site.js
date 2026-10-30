@@ -38,7 +38,8 @@ export default {
       { label: 'Network', href: 'network.html' },
       { label: 'Requests', href: 'join-requests.html', area: 'requests' },
     ] },
-    { label: 'Projects', href: 'projects.html', area: 'projects', links: [
+    // areaWhat list: Projects' View or Edit (Edit alone sees the titles, and joins).
+    { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'list', links: [
       { label: 'All projects', href: 'projects.html' },
     ] },
     // Its sub-pages are the released events (Firestore), filled in by bold.js.

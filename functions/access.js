@@ -178,14 +178,20 @@ module.exports = function access({ db, groupOf, isFullWrite, HttpsError }){
     return p[w] || DEFAULT_LEVEL;
   }
   async function can(email, page, what){
+    // list: View or Edit (Projects: whoever has Edit without View sees the titles and joins).
+    if (what === 'list') return (await can(email, page, 'view')) || can(email, page, 'edit');
     const level = await levelOf(page, what);
     if (level === 'none') return false;
     return rank(await groupFor(email)) >= rank(level);
   }
+  async function lowerOf(page){
+    const v = await levelOf(page, 'view'), e = await levelOf(page, 'edit');
+    return rank(v) <= rank(e) ? v : e;
+  }
   // Throws permission-denied unless they may.
   async function requireAccess(email, page, what){
     if (await can(email, page, what)) return;
-    const level = await levelOf(page, what);
+    const level = what === 'list' ? await lowerOf(page) : await levelOf(page, what);
     const name = (PAGES.filter((p) => p[0] === page)[0] || [page, page])[1];
     throw new HttpsError('permission-denied', level === 'none' ? 'Nobody can do this on ' + name + '.'
       : name + ' is for ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can see what).');

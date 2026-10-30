@@ -1171,6 +1171,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       if (changed && !editing) render();
     }).catch(function(err){
       console.error('[BOLD Lab] loading project failed', err);
+      // Projects' Edit without View: only the projects they're on (BOLDiquette › Who can see what).
+      if (err && err.code === 'permission-denied') {
+        cacheDrop(projectId); card = null;
+        el('projectBody').hidden = true;
+        show('Only its people see this project.');
+        el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">Join it from Projects</a>.');
+        return;
+      }
       if (!card) show('Could not load the project.');
     });
   }

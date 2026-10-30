@@ -394,9 +394,11 @@
     var l = (what === 'view' ? p.view : p.edit) || 'internal';
     return l === 'pan' ? 'everyone' : l;
   }
-  // Whether the viewer may view | edit | propose on `area` (a page key: projects, …).
+  // Whether the viewer may view | edit | propose on `area` (a page key: projects, …); list:
+  // view or edit (on Projects, Edit without View sees the titles and joins; functions/access.js).
   BOLD.can = function(area, what){
     if (!access) return false;
+    if (what === 'list') return BOLD.can(area, 'view') || BOLD.can(area, 'edit');
     var level = levelFor(area, what || 'view');
     return level !== 'none' && rankOf(access.group) >= rankOf(level);
   };
@@ -661,9 +663,10 @@
   /* ---------- shell: sidebar state + gating ---------- */
 
   // The gate when signed in but the page is for groups above theirs.
-  function showLevelGate(gate, area){
+  function showLevelGate(gate, area, what){
     if (!gate) return;
     var level = levelFor(area, 'view');
+    if (what === 'list' && rankOf(levelFor(area, 'edit')) < rankOf(level)) level = levelFor(area, 'edit');
     gate.innerHTML = '<div class="gate-box"><h1>Not open to your group</h1>' +
       '<p>This page is for ' + esc(LEVEL_NAMES[level]) + ' and above; you’re in ' + esc(LEVEL_NAMES[access.group] || 'PAN-BOLD') + '. ' +
       '<a href="boldiquette.html#access">Who can see what</a>.</p>' +
@@ -680,11 +683,11 @@
     if (BOLD.getAuth()) BOLD.onUser(loadAccess);
     if (shell.hasAttribute('data-public')) return;
     // The page's area in Who can see what (front matter `area`); without one, BOLD-internal's.
-    var area = shell.getAttribute('data-area') || 'internal';
+    var area = shell.getAttribute('data-area') || 'internal', areaWhat = shell.getAttribute('data-area-what') || 'view';
 
     // Gated page: hidden until signed in and allowed. A cached sign-in shows it at once
     // instead of after Firebase Auth resolves; auth stays authoritative.
-    shell.hidden = !hint || !BOLD.can(area, 'view');
+    shell.hidden = !hint || !BOLD.can(area, areaWhat);
     if (!BOLD.getAuth()) {
       document.addEventListener('DOMContentLoaded', function(){
         var gate = document.getElementById('pageGate');
@@ -703,14 +706,14 @@
     });
     BOLD.onAccess(function(a){
       if (!a.e) return;   // signed out: the sign-in gate above
-      var ok = BOLD.can(area, 'view');
+      var ok = BOLD.can(area, areaWhat);
       shell.hidden = !ok;
       // Allowed after all (the server's answer, a PI's say): the gate shown on the first guess goes.
       var shown = document.getElementById('pageGate');
       if (ok && shown && shown.hasAttribute('data-level-gate')) shown.hidden = true;
       if (!ok) {
         // Checked again when it's drawn: the server may have said yes by then.
-        var show = function(){ if (!BOLD.can(area, 'view')) showLevelGate(document.getElementById('pageGate'), area); };
+        var show = function(){ if (!BOLD.can(area, areaWhat)) showLevelGate(document.getElementById('pageGate'), area, areaWhat); };
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
       }
     });
@@ -720,14 +723,14 @@
   function sidebarAccess(){
     BOLD.onAccess(function(){
       Array.prototype.forEach.call(document.querySelectorAll('#sidebar [data-area]'), function(el){
-        el.hidden = !BOLD.can(el.getAttribute('data-area'), 'view');
+        el.hidden = !BOLD.can(el.getAttribute('data-area'), el.getAttribute('data-area-what') || 'view');
       });
       // A group the viewer can't open still shows for a link in it they can (Get started under the
       // Service desk, for PAN-BOLD): only those links, and its heading goes to the first of them.
       Array.prototype.forEach.call(document.querySelectorAll('#sidebar .nav-group[data-area]'), function(g){
         var label = g.querySelector('.nav-group-label');
         if (label && !label.hasAttribute('data-href')) label.setAttribute('data-href', label.getAttribute('href'));
-        var open = BOLD.can(g.getAttribute('data-area'), 'view'), own = [];
+        var open = BOLD.can(g.getAttribute('data-area'), g.getAttribute('data-area-what') || 'view'), own = [];
         Array.prototype.forEach.call(g.querySelectorAll('.nav-sub'), function(a){
           var area = a.getAttribute('data-area');
           if (!area) a.hidden = !open; else if (!a.hidden) own.push(a);

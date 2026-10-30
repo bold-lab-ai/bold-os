@@ -21,7 +21,7 @@
   var el = function(id){ return document.getElementById(id); };
   var esc = BOLD.escapeHtml;
   var E = window.BoldEvents;
-  var db = null, me = null, busy = {}, msgs = {}, unsubs = [], slackIds = {};
+  var db = null, me = null, busy = {}, msgs = {}, unsubs = [], slackIds = {}, seenProjects = false;
   var asked = {}, pop = null; // asked: student email → my open request's id; pop: the open card { key, x, y }
   var data = { project: null, study: null, event: null, series: null };
   var VIEW_KEY = 'boldCalendar:view', KIND_KEY = 'boldCalendar:kind', view = 'week', kind = 'all';
@@ -42,9 +42,10 @@
   function meetings(all){
     var out = [];
     if (all || shown('project')) (data.project || []).forEach(function(w){
-      if (!w.meeting || !(w.eventId || w.pausedAt) || w.group === 'completed') return;
-      out.push({ kind: 'project', id: w.cardId, title: w.title || 'Untitled', href: projectUrl(w), meeting: w.meeting,
-        mine: (w.members || []).some(isMe), paused: !!w.pausedAt, start: w.eventStart || '', meetUrl: w.meetUrl, people: (w.members || []).length, w: w });
+      if (!w.meeting || !(w.eventId || w.hasEvent || w.pausedAt) || w.group === 'completed') return;
+      out.push({ kind: 'project', id: w.cardId, title: w.title || 'Untitled', href: w.titleOnly ? '' : projectUrl(w), meeting: w.meeting,
+        mine: (w.members || []).some(isMe), paused: !!w.pausedAt, start: w.eventStart || '', meetUrl: w.meetUrl,
+        people: w.memberCount != null ? w.memberCount : (w.members || []).length, w: w });
     });
     if (all || shown('study')) (data.study || []).forEach(function(s){
       if (!s.meeting || !(s.eventId || s.pausedAt)) return;
@@ -476,17 +477,27 @@
 
   BOLD.onUser(function(user){
     me = user;
-    unsubs.forEach(function(u){ u(); }); unsubs = [];
+    unsubs.forEach(function(u){ u(); }); unsubs = []; seenProjects = false;
     if (!user || !db) return;
+    var mine = String(user.email || '').toLowerCase(), signIn = unsubs;
     // A student's meeting opens their page: person.html?id=<their Slack id> (the people roster).
     db.collection('people').get().then(function(ps){
       ps.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });
       render();
     }).catch(function(){});
-    watch('project', db.collection('projectWorkspaces'), function(d){ return Object.assign({ cardId: d.id }, d.data()); });
+    // Projects' View: every workspace. Otherwise (Edit alone) their own, then the others'
+    // titles and meetings (projectTitles: no links, files or people), to join.
+    BOLD.onAccess(function(){
+      if (signIn !== unsubs || seenProjects) return;
+      if (!BOLD.can('projects', 'list')) return;
+      seenProjects = true;
+      var wsAll = db.collection('projectWorkspaces');
+      watch('project', BOLD.can('projects', 'view') ? wsAll : [wsAll.where('members', 'array-contains', mine), db.collection('projectTitles')], function(d){
+        return d.ref.parent.id === 'projectTitles' ? Object.assign({ cardId: d.id, titleOnly: true }, d.data()) : Object.assign({ cardId: d.id }, d.data());
+      }, 'cardId');
+    });
     watch('study', db.collection('studies'), function(d){ return Object.assign({ email: d.id }, d.data()); });
     // PIs and admins query them all; everyone else the released ones and their own (firestore.rules).
-    var mine = String(user.email || '').toLowerCase(), signIn = unsubs;
     E.access(function(all){
       if (signIn !== unsubs) return; // signed out or in again meanwhile
       var ev = db.collection('events'), se = db.collection('eventSeries'), fields = function(d){ return d.data(); };

@@ -1667,6 +1667,28 @@ function queueCardTalk(event, item){
 }
 const talkItem = (id, c, extra) => Object.assign({ id, text: String(c.text || '').slice(0, 300), tagged: taggedIds(c.text),
   by: { email: String((c.by && c.by.email) || '').toLowerCase(), name: String((c.by && c.by.name) || '') }, at: c.at || Date.now() }, extra || {});
+// ---------- Projects' titles and meetings, for whoever doesn't see the projects ----------
+// projectTitles/{pid}: what the Calendar shows of a project to someone with Projects' Edit
+// but not View (BOLD-associates, as the table has it): its title, when it meets and
+// whether it's paused or completed, how many are on it and its Slack channel, to join it.
+// No links, files or people. Kept by onWorkspaceTitles from the workspace; read by the
+// Calendar (firestore.rules), written only here.
+// Pure: a workspace → its projectTitles document (null: none).
+function projectTitleDoc(id, ws){
+  if (!ws || !ws.title) return null;
+  const out = { title: ws.title, cardId: ws.cardId || id, boardId: ws.boardId || null, group: ws.group || '',
+    meeting: ws.meeting || null, hasEvent: !!ws.eventId, eventStart: ws.eventStart || '', pausedAt: ws.pausedAt || 0,
+    completedAt: ws.completedAt || 0, slackChannel: ws.slackChannel || '', memberCount: (ws.members || []).length };
+  return out;
+}
+exports.onWorkspaceTitles = onDocumentWritten('projectWorkspaces/{pid}', async function(event){
+  const ref = db.collection('projectTitles').doc(event.params.pid);
+  const before = projectTitleDoc(event.params.pid, event.data.before.exists ? event.data.before.data() : null);
+  const after = projectTitleDoc(event.params.pid, event.data.after.exists ? event.data.after.data() : null);
+  if (JSON.stringify(before) === JSON.stringify(after) && (await ref.get()).exists === !!after) return;
+  if (after) await ref.set(after); else await ref.delete();
+});
+
 exports.onCardCommented = onDocumentCreated('projectWorkspaces/{pid}/work/{id}/comments/{cid}', async function(event){
   const c = event.data && event.data.data();
   if (c) await queueCardTalk(event, talkItem(event.params.cid, c));
@@ -2431,11 +2453,36 @@ async function slackLinksFor(names){
   return out;
 }
 
+// Pure: the groups as someone with Projects' Edit but not View sees them: the projects
+// they're on (`mine`: pid → true) in full, every other one as its title, to join.
+function projectTitlesOnly(groups, mine){
+  const out = {};
+  Object.keys(groups).forEach(function(g){
+    out[g] = groups[g].map(function(i){
+      return mine[i.pid] ? i : { pid: i.pid, title: i.title, projectId: i.projectId, cardId: i.cardId, boardId: i.boardId, slackChannel: i.slackChannel, titleOnly: true };
+    });
+  });
+  return out;
+}
+
+// Who sees a project in full (BOLDiquette › Who can see what › Projects): whoever has its
+// View, and its people (its workspace's `members`) whatever their group. Edit without View
+// sees the titles and joins (getAllProjects, projectTitles); firestore.rules hold to the same.
+async function seesProject(email, pid){
+  if (await access.can(email, 'projects', 'view')) return true;
+  const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data();
+  return !!ws && (ws.members || []).indexOf(String(email).toLowerCase()) >= 0;
+}
+async function requireSeesProject(email, pid){
+  if (!(await seesProject(email, pid))) throw new HttpsError('permission-denied', 'Only its people see this project: join it from Projects.');
+}
+
 exports.getAllProjects = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
-    const email = signedInEmail(request);
-    await access.requireAccess(email, 'projects', 'view');   // Who can see what
+    const email = signedInEmail(request).toLowerCase();
+    const full = await access.can(email, 'projects', 'view');
+    if (!full) await access.requireAccess(email, 'projects', 'list');   // Who can see what
     const [boardsSnap, cardsSnap, unassignedSnap, wsSnap] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
@@ -2449,10 +2496,13 @@ exports.getAllProjects = onCall(
       wsSnap.docs.filter(function(d){ return d.data().completedAt > 0; }).map(function(d){ return d.id; }),
       wsSnap.docs.filter(function(d){ return workspaceStarted(d.data()); }).map(function(d){ return d.id; })
     );
-    const items = groups.ongoing.concat(groups.submission, groups.completed, groups.planned);
+    const mine = {};
+    wsSnap.docs.forEach(function(d){ if ((d.data().members || []).indexOf(email) >= 0) mine[d.id] = true; });
+    const shown = full ? groups : projectTitlesOnly(groups, mine);
+    const items = shown.ongoing.concat(shown.submission, shown.completed, shown.planned);
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
-    return groups;
+    return shown;
   }
 );
 
@@ -2474,7 +2524,7 @@ function keywordCounts(cardDatas){
 exports.getProjectKeywords = onCall(
   async (request) => {
     const email = signedInEmail(request);
-    await access.requireAccess(email, 'projects', 'view');   // Who can see what
+    await access.requireAccess(email, 'projects', 'list');   // Who can see what
     const [cardsSnap, projectsSnap] = await Promise.all([
       db.collectionGroup('cards').get(),
       db.collection('projects').get()
@@ -2601,7 +2651,7 @@ exports.projectChannel = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
     const email = signedInEmail(request);
-    await access.requireAccess(email, 'projects', 'view');   // Who can see what
+    await access.requireAccess(email, 'projects', 'list');   // Who can see what
     const data = request.data || {};
     const n = normalizeProjectChannel(data.name);
     if (n.error) throw new HttpsError('invalid-argument', n.error);
@@ -3098,12 +3148,19 @@ async function googleAddressesFor(emails){
 }
 
 // The GitHub logins of `emails` who have linked their account (githubLinks).
+// Whether `email`'s GitHub account belongs in the bold-lab-ai organisation: BOLD-internal
+// and above (Who is BOLD). Everyone else gets their projects' repositories alone.
+async function inGithubOrg(email){
+  return accessLib.rank(await access.groupFor(email)) >= accessLib.rank('internal');
+}
+// The linked GitHub accounts of `emails` → { team: [login] (in the org: the project's team),
+// outside: [login] (outside collaborators on its repository) }.
 async function githubLoginsFor(emails){
-  const out = [];
+  const out = { team: [], outside: [] };
   for (const e of emails){
     const snap = await db.collection('githubLinks').doc(e).get();
     const d = snap.exists ? snap.data() : null;
-    if (d && d.github && d.status !== 'failed') out.push(d.github.toLowerCase());
+    if (d && d.github && d.status !== 'failed') out[(await inGithubOrg(e)) ? 'team' : 'outside'].push(d.github.toLowerCase());
   }
   return out;
 }
@@ -3284,16 +3341,37 @@ async function syncWorkspace(id, changes){
           await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + team.slug + '/repos/' + GITHUB_ORG + '/' + ws.repoName, { permission: 'push' });
           patch.teamSlug = team.slug; patch.teamMembers = []; await save();
         }
+        // BOLD-internal and above through the team (adding someone to a team invites them
+        // to the org, so nobody else goes in it); everyone else as an outside collaborator
+        // on this repository alone, with write access (GitHub emails them an invitation).
         const want = await githubLoginsFor(ws.members);
         const have = ws.teamMembers || [];
-        for (const login of want.filter(function(l){ return have.indexOf(l) < 0; })){
+        for (const login of want.team.filter(function(l){ return have.indexOf(l) < 0; })){
           await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + ws.teamSlug + '/memberships/' + login, { role: 'member' });
           patch.teamMembers = (ws.teamMembers || []).concat(login); await save();
         }
-        for (const login of have.filter(function(l){ return want.indexOf(l) < 0; })){
+        for (const login of have.filter(function(l){ return want.team.indexOf(l) < 0; })){
           await githubApp('DELETE', '/orgs/' + GITHUB_ORG + '/teams/' + ws.teamSlug + '/memberships/' + login)
             .catch(function(err){ if (err.status !== 404) throw err; });
           patch.teamMembers = ws.teamMembers.filter(function(l){ return l !== login; }); await save();
+        }
+        const repoPath = '/repos/' + GITHUB_ORG + '/' + ws.repoName;
+        const outside = ws.repoCollaborators || [];
+        for (const login of want.outside.filter(function(l){ return outside.indexOf(l) < 0; })){
+          await githubApp('PUT', repoPath + '/collaborators/' + login, { permission: 'push' });
+          patch.repoCollaborators = (ws.repoCollaborators || []).concat(login); await save();
+        }
+        const gone = outside.filter(function(l){ return want.outside.indexOf(l) < 0; });
+        if (gone.length){
+          // Their access, or the invitation they haven't accepted yet.
+          const invites = await githubApp('GET', repoPath + '/invitations?per_page=100').catch(function(){ return []; });
+          for (const login of gone){
+            await githubApp('DELETE', repoPath + '/collaborators/' + login).catch(function(err){ if (err.status !== 404) throw err; });
+            for (const inv of (invites || []).filter(function(i){ return i.invitee && String(i.invitee.login).toLowerCase() === login; })){
+              await githubApp('DELETE', repoPath + '/invitations/' + inv.id).catch(function(err){ if (err.status !== 404) throw err; });
+            }
+            patch.repoCollaborators = ws.repoCollaborators.filter(function(l){ return l !== login; }); await save();
+          }
         }
       }
       patch.repoError = FieldValue.delete();
@@ -3481,7 +3559,7 @@ exports.projectWorkspace = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540 },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'projects', 'view');   // Who can see what
+    await access.requireAccess(email, 'projects', 'list');   // Who can see what; a project's own below
     const data = request.data || {};
     if (data.action === 'templates') return { templates: await projectTemplates() };
     if (data.action === 'mine'){
@@ -3526,6 +3604,8 @@ exports.projectWorkspace = onCall(
     const card = cardSnap.data();
     const pid = projectIdOf(card, id);
     const wsRef = db.collection('projectWorkspaces').doc(pid);
+    // Edit without View: joining, and then everything its people do.
+    if (data.action !== 'join') await requireSeesProject(email, pid);
 
     if (data.action === 'setUp' || data.action === 'meeting' || data.action === 'repo'){
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can do this.');
@@ -4041,9 +4121,10 @@ exports.projectWork = onCall(
   { secrets: [GITHUB_APP], timeoutSeconds: 60 },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'projects', 'view');   // Who can see what
+    await access.requireAccess(email, 'projects', 'list');   // Who can see what
     const pid = String((request.data || {}).project || '');
     if (!validSlug(pid)) throw new HttpsError('invalid-argument', 'No project given.');
+    await requireSeesProject(email, pid);
     const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data();
     if (!ws || !ws.work || !ws.work.on) throw new HttpsError('failed-precondition', 'This project has no work board.');
     const known = await workNames(), names = known.names;
@@ -4199,12 +4280,14 @@ exports.approveHackathonJoins = onCall(
 // On their profile (profile.html) a signed-in person links their GitHub account
 // to their BOLD.OS sign-in (Firebase Auth's GitHub provider), which proves the
 // account is theirs. linkGithub then invites that account to the bold-lab-ai
-// organisation, with no approval: everyone who can sign in may join. The
+// organisation, with no approval, if they're BOLD-internal or above (inGithubOrg);
+// everyone else is 'outside': an outside collaborator on the repositories of the
+// projects they're on, and nothing else of the org's (syncWorkspace). The
 // GitHub account is read from Firebase Auth, never from the client, so nobody
 // can have someone else's account invited. GitHub emails the invitation; the
 // person is "pending" until they accept it, then "active". Kept in
 // githubLinks/{email}: { email, name, github (login), githubId, status:
-// 'active' | 'pending' | 'failed', error, linkedAt, updatedAt } (no client
+// 'active' | 'pending' | 'outside' | 'failed', error, linkedAt, updatedAt } (no client
 // access: firestore.rules' catch-all). Calling it again refreshes the status;
 // after the account is unlinked it forgets the link (org membership stays).
 // Called as the BOLD.OS GitHub App (GITHUB_APP), with Organization → Members: read and write.
@@ -4273,7 +4356,8 @@ exports.linkGithub = onCall(
       throw new HttpsError('unavailable', 'Couldn’t reach GitHub — try again.');
     }
     const login = (await who.json()).login;
-    const r = await joinOrg(login, gh.uid);
+    // BOLD-internal and above join the org; everyone else gets their projects' repositories alone.
+    const r = (await inGithubOrg(email)) ? await joinOrg(login, gh.uid) : { status: 'outside', error: '' };
     const now = Date.now();
     const doc = { email, name: request.auth.token.name || '', github: login, githubId: gh.uid,
       status: r.status, error: r.error, linkedAt: (prev && prev.githubId === gh.uid && prev.linkedAt) || now, updatedAt: now };
@@ -4286,6 +4370,30 @@ exports.linkGithub = onCall(
       }
     }
     return { link: githubView(doc) };
+  }
+);
+
+// A member's group crossing BOLD-internal (Who is BOLD): a linked GitHub account joins the
+// org on the way up; either way their projects' repositories move between the team and
+// outside collaborators. Going down doesn't take them out of the org: an owner does that on GitHub.
+exports.onMemberGithub = onDocumentWritten(
+  { document: 'members/{email}', secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 },
+  async function(event){
+    const before = event.data.before.exists ? event.data.before.data() : null;
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    const high = (m) => accessLib.rank(groupOf(m)) >= accessLib.rank('internal');
+    if (!after || high(before) === high(after)) return;
+    const email = event.params.email;
+    const ref = db.collection('githubLinks').doc(email);
+    const link = (await ref.get()).data();
+    if (!link || !link.github) return;
+    if ((await inGithubOrg(email)) && link.status === 'outside'){
+      const r = await joinOrg(link.github, link.githubId);
+      await ref.set({ status: r.status, error: r.error, updatedAt: Date.now() }, { merge: true });
+      if (r.status === 'failed') return;
+    }
+    const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
+    for (const d of mine.docs) if (d.data().teamSlug) await syncWorkspace(d.id);
   }
 );
 
@@ -6450,6 +6558,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
+  projectTitlesOnly, projectTitleDoc, githubLoginsFor,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,

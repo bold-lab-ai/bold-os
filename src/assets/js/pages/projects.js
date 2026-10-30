@@ -51,9 +51,11 @@
     var main = document.createElement('div');
     main.className = 'proj-main';
     // Every project opens its own page, wherever it lives (with a venue: its card there).
-    var a = document.createElement('a');
+    // Only its title, to join, for whoever has Projects' Edit but not View (getAllProjects).
+    var href = 'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '');
+    var a = document.createElement(p.titleOnly ? 'span' : 'a');
     a.className = 'proj-title';
-    a.href = 'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '');
+    if (!p.titleOnly) a.href = href;
     a.textContent = p.title;
     var meta = document.createElement('span');
     meta.className = 'proj-meta';
@@ -65,7 +67,9 @@
       if (href.indexOf('http') === 0) { l.target = '_blank'; l.rel = 'noopener'; }
       return l;
     };
-    if (p.boardId) {
+    if (p.titleOnly) {
+      parts.push(textNode('Join it to see it'));
+    } else if (p.boardId) {
       var inVenue = document.createElement('span');
       inVenue.appendChild(textNode('In: '));
       inVenue.appendChild(linkNode(p.boardLabel, 'audit-board.html#board=' + encodeURIComponent(p.boardId)));
@@ -75,7 +79,7 @@
     } else {
       parts.push(textNode('No venue yet'));
     }
-    if (p.slackChannel) parts.push(p.slackUrl ? linkNode(p.slackChannel, p.slackUrl) : textNode(p.slackChannel));
+    if (p.slackChannel && !p.titleOnly) parts.push(p.slackUrl ? linkNode(p.slackChannel, p.slackUrl) : textNode(p.slackChannel));
     if (p.owner) parts.push(textNode(p.owner));
     parts.forEach(function(n, i){
       if (i) meta.appendChild(textNode(' \u00b7 '));
@@ -149,6 +153,15 @@
       var slack = (res.data || {}).slack || {};
       btn.textContent = 'Joined';
       msg.textContent = slack.error || '';
+      // Its page is open to them now.
+      if (p.titleOnly) {
+        cacheClear();
+        var open = document.createElement('a');
+        open.href = 'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '');
+        open.textContent = 'Open it';
+        msg.appendChild(open);
+        if (slack.url) msg.appendChild(document.createTextNode(' \u00b7 '));
+      }
       if (slack.url) {
         var a = document.createElement('a');
         a.href = slack.url; a.target = '_blank'; a.rel = 'noopener';
@@ -172,7 +185,7 @@
   function hasAuthors(d){
     return Array.isArray(d.submission) && ['ongoing', 'submission', 'completed', 'planned'].every(function(g){
       // …and lists from before projects spanned venues (no `pid`): refetch those too.
-      return (d[g] || []).every(function(p){ return Array.isArray(p.authors) && p.pid; });
+      return (d[g] || []).every(function(p){ return (p.titleOnly || Array.isArray(p.authors)) && p.pid; });
     });
   }
 
