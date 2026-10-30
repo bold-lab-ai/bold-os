@@ -218,13 +218,18 @@
 .wk-f-links{display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--ink-soft);}
 .wk-f-linklist{list-style:none; margin:0; padding:0;}
 .wk-f-urlrow{display:flex; gap:8px;}
-.wk-milestone{color:var(--ink-soft); border:1px solid var(--line); border-radius:var(--radius); padding:0 4px; line-height:1.5;}
-.wk-late + .wk-milestone{margin-left:0;}
+/* A milestone's tag: white on its colour (.wk-mc-0…7, by the order they were added; each
+   at least 5.7:1 with white), as on its progress bar. */
+.wk-milestone{color:#fff; background:var(--mc); border-radius:var(--radius); padding:0 6px; line-height:1.6; font-weight:600; white-space:nowrap;}
+.wk-ms-head h3 .wk-milestone, .wk-milestonebar-head .wk-milestone{font-size:inherit; padding:1px 8px;}
+.wk-page .detail-grid dd .wk-milestone{font-family:var(--sans); font-size:14px;}
+.wk-mc-0{--mc:#2457a6;} .wk-mc-1{--mc:#7b3fa0;} .wk-mc-2{--mc:#a14a0b;} .wk-mc-3{--mc:#22743a;}
+.wk-mc-4{--mc:#b0245b;} .wk-mc-5{--mc:#0f6e6e;} .wk-mc-6{--mc:#80620a;} .wk-mc-7{--mc:#4b5563;}
 /* A milestone's progress (Milestone filter), above the columns. */
 .wk-milestonebar{border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px; margin:0 0 12px; font-size:12.5px; display:flex; flex-direction:column; gap:5px;}
 .wk-milestonebar-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; font-size:13.5px; color:var(--ink);}
 .wk-milestonebar-track{height:6px; border-radius:3px; background:var(--line); overflow:hidden;}
-.wk-milestonebar-track span{display:block; height:100%; background:var(--accent);}
+.wk-milestonebar-track span{display:block; height:100%; background:var(--mc, var(--accent));}
 /* The Milestones view (&milestones): each milestone, its progress and cards. */
 .wk-ms .wk-ms-new{margin:4px 0 6px;}
 .wk-ms-item{border-top:1px solid var(--line); padding:16px 0 18px; display:flex; flex-direction:column; gap:6px; font-family:var(--sans); font-size:14px;}
