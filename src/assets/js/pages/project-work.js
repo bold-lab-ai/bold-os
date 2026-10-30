@@ -17,7 +17,7 @@
 // Milestones: the board's (work.milestones on the workspace, [{ id, name, start, end }]); a card
 // is in one by its `milestone`. Their own view (#…&tab=work&milestones, the board's Milestones
 // button) plans them (its editors and the project's people) and adds cards to each, many at
-// once; the Milestone filter shows one's progress above the columns.
+// once; their progress is there only, never above the board's columns.
 var ProjectWork = (function(){
   var esc = BOLD.escapeHtml;
   var COLUMNS = [['todo', 'To do'], ['doing', 'In progress'], ['review', 'Waiting for review'], ['done', 'Done']];
@@ -367,18 +367,6 @@ var ProjectWork = (function(){
       bar: '<div class="wk-milestonebar-track" role="progressbar" aria-label="' + esc(s.name) + ' done" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><span style="width:' + pct + '%"></span></div>',
       summary: cs.length ? done + ' of ' + cs.length + ' done (' + pct + '%)' + (parts.length ? ' · ' + parts.join(', ') : '') : 'No cards in it yet.' };
   }
-  // Above the columns: the milestone filtered on, or else the one on now (with a button to filter on it).
-  function milestoneHtml(){
-    var s = milestoneOf(milestone), focus = !!s;
-    if (!s) s = !milestone ? milestones().filter(milestoneNow)[0] : null;
-    if (!s) return '';
-    var g = progressOf(s);
-    return '<div class="wk-milestonebar">' +
-      '<div class="wk-milestonebar-head"><strong>' + esc(s.name) + '</strong>' + (g.when ? ' <span class="detail-muted">' + esc(g.when) + '</span>' : '') +
-        (focus ? '' : ' <button class="btn-text" type="button" data-wk="milestone-now" data-id="' + esc(s.id) + '">Show only its cards</button>') + '</div>' +
-      g.bar + '<div class="detail-muted">' + esc(g.summary) + '</div></div>';
-  }
-
   // The Milestones view (#…&tab=work&milestones), in place of the board: each milestone, in
   // date order, with its progress and cards; planning them, and adding cards many at once.
   function ordered(){
@@ -601,7 +589,7 @@ var ProjectWork = (function(){
         empty: !cardsLoaded || (remote.loading && !remote.loaded) ? 'Loading\u2026' : 'Nothing here' };
     })) + '</div>';
     if (keepEditor) keepEditor.remove();
-    root.innerHTML = head + notes + settings + milestoneHtml() + cols;
+    root.innerHTML = head + notes + settings + cols;
     // The open editor goes back where it was: settings, a new card, or in place of its card.
     if (editing) {
       var slot = editing === 'settings' ? el('.wk-settings-slot') : editing.indexOf('new:') === 0 ? el('.wk-new-slot')
@@ -644,8 +632,6 @@ var ProjectWork = (function(){
     Array.prototype.forEach.call(root.querySelectorAll('.wk-add'), function(b){
       b.addEventListener('click', function(){ if (editing) return; editing = 'new:' + b.getAttribute('data-col'); draftLinks = []; draw(); focusTitle(); });
     });
-    var now = el('[data-wk="milestone-now"]');
-    if (now) now.addEventListener('click', function(){ milestone = now.getAttribute('data-id'); draw(); });
     var r = el('[data-wk="refresh"]');
     if (r) r.addEventListener('click', function(){ fetchRemote(true); });
     var s = el('[data-wk="settings"]');

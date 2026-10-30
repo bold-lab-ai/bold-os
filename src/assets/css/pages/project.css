@@ -225,8 +225,6 @@
 .wk-mc-0{--mc:#8a5a12;} .wk-mc-1{--mc:#1a2b4a;} .wk-mc-2{--mc:#256b60;}
 .wk-late + .wk-milestone{margin-left:0;}
 /* A milestone's progress (Milestone filter), above the columns. */
-.wk-milestonebar{border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px; margin:0 0 12px; font-size:12.5px; display:flex; flex-direction:column; gap:5px;}
-.wk-milestonebar-head{display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; font-size:13.5px; color:var(--ink);}
 .wk-milestonebar-track{height:6px; border-radius:3px; background:var(--line); overflow:hidden;}
 .wk-milestonebar-track span{display:block; height:100%; background:var(--accent);}
 /* The Milestones view (&milestones): each milestone, its progress and cards. */
