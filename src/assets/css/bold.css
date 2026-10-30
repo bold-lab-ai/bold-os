@@ -292,6 +292,8 @@ a.mast-auth-name:hover{text-decoration:underline;}
 .viewas-bar{position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:1300; display:flex; gap:12px; align-items:center;
   padding:8px 14px; border-radius:999px; background:var(--ink); color:var(--surface); font-family:var(--sans); font-size:13.5px; box-shadow:0 6px 18px rgba(26,43,74,.25); max-width:calc(100vw - 32px);}
 .viewas-bar{flex-wrap:wrap; justify-content:center; border-radius:18px;}
+/* Room at the end of the page, so the bar never covers its last controls. */
+body:has(#viewAsBar){padding-bottom:72px;}
 .vb-part{display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap;}
 .vb-part + .vb-part{padding-left:12px; border-left:1px solid rgba(255,255,255,.35);}
 .vb-text{max-width:min(420px, 70vw); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}

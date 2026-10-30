@@ -80,7 +80,11 @@
   // proposed change of yours (draftEditing: its id) makes it your draft again;
   // proposing it then updates that proposal, its discussion kept.
   var draft = [], draftOpen = false, draftNote = '', draftBusy = false, draftError = '', draftEditing = null;
-  function draftKey(){ return me && ref ? 'bold-draft:' + COLLECTION + '/' + slug + ':' + me.email : null; }
+  // On your own proposal's branch (#177), the page is your proposal: what you change is staged
+  // here (its own draft, kept apart), and added to it as more changes, like commits on a branch.
+  var commitTo = null;
+  function committing(){ return commitTo ? proposals.filter(function(q){ return q.id === commitTo; })[0] || null : null; }
+  function draftKey(){ return me && ref ? 'bold-draft:' + COLLECTION + '/' + slug + ':' + me.email + (commitTo ? ':on:' + commitTo : '') : null; }
   function loadDraft(){
     draft = []; draftNote = ''; draftEditing = null;
     try {
@@ -102,7 +106,8 @@
     if (!x) return x;
     var q = viewed();
     if (q) return Object.assign({}, x, applied(x, q));
-    return draft.length ? Object.assign({}, x, applied(x, { kind: 'batch', changes: draft })) : x;
+    var cq = committing(), base = cq ? Object.assign({}, x, applied(x, cq)) : x;
+    return draft.length ? Object.assign({}, base, applied(base, { kind: 'batch', changes: draft })) : base;
   }
   function parts(){ var d = doc(); return (d && d.parts) || []; }
   function part(id){ return parts().filter(function(p){ return p.id === id; })[0] || null; }
@@ -229,7 +234,8 @@
   // With a draft open, a change joins it; without, it's proposed or starts one.
   function actionsHtml(extra){
     return '<p class="ev-error" hidden></p><div class="event-form-actions">' +
-      (draft.length ? '<button type="button" class="ev-save" data-stage="1">Add to draft</button>' :
+      // On your branch, every change is staged, then added to your proposal.
+      (draft.length || commitTo ? '<button type="button" class="ev-save" data-stage="1">Add to draft</button>' :
         '<button type="button" class="ev-save">Propose change</button><button type="button" class="ev-save ev-stage" data-stage="1">Add to draft</button>') +
       '<button type="button" class="ev-cancel">Cancel</button>' + (extra || '') + '</div>';
   }
@@ -393,12 +399,16 @@
   // edits 'current' (made on the page as it is), 'behind' (the page changed since, and they
   // merge), 'conflict' (changed in the same lines) or 'gone' (the part was removed).
   var STATE_RANK = { current: 0, behind: 1, conflict: 2, gone: 3 };
+  // Its changes in order, each on the page as the ones before it leave it (a branch's commits).
+  function partIn(d, id){ return ((d && d.parts) || []).filter(function(p){ return p.id === id; })[0] || null; }
   function stateOf(q){
-    var worst = 'current';
+    var worst = 'current', cur = x;
     (q.kind === 'batch' ? q.changes || [] : [q]).forEach(function(c){
-      if (c.kind !== 'edit') return;
-      var st = BoldMerge.editState(livePart(c.partId), c.before, c.after || {});
-      if (STATE_RANK[st] > STATE_RANK[worst]) worst = st;
+      if (c.kind === 'edit') {
+        var st = BoldMerge.editState(partIn(cur, c.partId), c.before, c.after || {});
+        if (STATE_RANK[st] > STATE_RANK[worst]) worst = st;
+      }
+      try { cur = Object.assign({}, cur, applied(cur, c)); } catch (e){}
     });
     return worst;
   }
@@ -413,12 +423,16 @@
   // Brings your proposal up to the page as it is now (a rebase): each edit merged with what
   // changed since, and made on the page now. Its discussion stays.
   function rebase(q){
+    var cur = x;
     var one = function(c){
-      var p = c.kind === 'edit' && livePart(c.partId);
-      if (!p) return c;
-      var r = BoldMerge.mergeEdit(p, c.before, c.after || {});
-      if (r.conflict) throw new Error('conflict');
-      return Object.assign({}, c, { before: partSide(p), after: Object.assign({}, c.after, r.fields) });
+      var p = c.kind === 'edit' && partIn(cur, c.partId), out = c;
+      if (p) {
+        var r = BoldMerge.mergeEdit(p, c.before, c.after || {});
+        if (r.conflict) throw new Error('conflict');
+        out = Object.assign({}, c, { before: partSide(p), after: Object.assign({}, c.after, r.fields) });
+      }
+      cur = Object.assign({}, cur, applied(cur, out));
+      return out;
     };
     var upd = q.kind === 'batch' ? { changes: (q.changes || []).map(one) } : (function(){ var c = one(q); return { before: c.before, after: c.after }; })();
     upd.editedAt = Date.now();
@@ -450,7 +464,7 @@
       (st === 'conflict' ? '<p class="gd-proposal-stale">The page has changed in the same lines since this was proposed, so it can’t be accepted: ' +
         (mine ? 'withdraw it and propose it again on the latest version.' : 'decline it, or ask ' + byName + ' to propose it again on the latest version.') + '</p>' : '') +
       (q.kind === 'batch' ? '<ol class="gd-batch">' + (q.changes || []).map(function(c){
-          return '<li><p class="hist-label">' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + '</p>' + BoldHistory.changesHtml(sideText(c.kind, c.before), sideText(c.kind, c.after), {}) + '</li>';
+          return '<li><p class="hist-label">' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + (c.at ? ' · <span class="hist-when">' + BoldHistory.when(c.at) + '</span>' : '') + '</p>' + BoldHistory.changesHtml(sideText(c.kind, c.before), sideText(c.kind, c.after), {}) + '</li>';
         }).join('') + '</ol>' :
         (q.kind === 'edit' && st === 'behind' ? (function(lp){ return BoldHistory.changesHtml(sideText('edit', partSide(lp)), sideText('edit', Object.assign(partSide(lp), BoldMerge.mergeEdit(lp, q.before, q.after || {}).fields)), {}); })(livePart(q.partId)) :
         BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {}))) +
@@ -557,14 +571,15 @@
     return KIND[c.kind] + ' “' + esc((c.after || c.before || {}).title || '') + '”';
   }
   function draftHtml(){
-    if (!draft.length && !draftEditing) return '';
+    if (!draft.length && !draftEditing && !commitTo) return '';
     var n = draft.length + (draft.length === 1 ? ' change' : ' changes');
-    var head = draftEditing ? '<strong>Editing your proposed change:</strong> ' + n + '. Others see it as proposed until you update it.' :
+    var head = commitTo ? '<strong>On your proposal:</strong> ' + (draft.length ? n + ' not added to it yet.' : 'change the page here to add to it.') :
+      draftEditing ? '<strong>Editing your proposed change:</strong> ' + n + '. Others see it as proposed until you update it.' :
       '<strong>Your draft:</strong> ' + n + ', not proposed yet. It shows here only for you.';
     return '<aside class="gd-draft" aria-label="Your draft">' +
       '<p class="gd-draft-head"><span>' + head + '</span>' +
         '<span class="gd-draft-actions">' + (draft.length ? '<button type="button" class="btn-text gd-draft-toggle">' + (draftOpen ? 'Hide' : 'Review') + '</button>' : '') +
-        '<button type="button" class="btn-text danger gd-draft-discard">' + (draftEditing ? 'Cancel editing' : 'Discard') + '</button></span></p>' +
+        (draft.length || !commitTo ? '<button type="button" class="btn-text danger gd-draft-discard">' + (draftEditing ? 'Cancel editing' : commitTo ? 'Discard them' : 'Discard') + '</button>' : '') + '</span></p>' +
       (draftOpen && draft.length ? '<ol class="gd-draft-list">' + draft.map(function(c, i){
         return '<li><span>' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + '</span>' +
           '<button type="button" class="btn-text gd-draft-drop" data-i="' + i + '">Remove</button>' +
@@ -573,8 +588,8 @@
       (draft.length ? '<div class="event-form gd-draft-form"><label>What you changed and why<input type="text" class="gd-draft-note" maxlength="300" value="' + esc(draftNote) + '" placeholder="e.g. Brought the setup section up to date"></label>' +
         (draftError ? '<p class="ev-error">' + esc(draftError) + '</p>' : '') +
         '<div class="event-form-actions"><button type="button" class="ev-save gd-draft-propose"' + (draftBusy ? ' disabled' : '') + '>' +
-          (draftEditing ? 'Update proposed change' : 'Propose ' + (draft.length === 1 ? 'it' : 'all ' + draft.length)) + '</button></div></div>' :
-        '<p class="gd-draft-empty">No changes left. To drop the proposal, withdraw it under “Proposed changes”.</p>') +
+          (commitTo ? 'Add to the proposal' : draftEditing ? 'Update proposed change' : 'Propose ' + (draft.length === 1 ? 'it' : 'all ' + draft.length)) + '</button></div></div>' :
+        commitTo ? '' : '<p class="gd-draft-empty">No changes left. To drop the proposal, withdraw it under “Proposed changes”.</p>') +
       '</aside>';
   }
   // A change as a proposal stores it (a draft's changes keep their own notes).
@@ -588,9 +603,18 @@
     draftNote = (body.querySelector('.gd-draft-note') || {}).value || draftNote;
     if (!draftNote.trim()) { draftError = 'Say what you changed and why, for whoever reviews it.'; render(); return; }
     draftBusy = true; draftError = ''; render();
-    var q = draftEditing && proposals.filter(function(p){ return p.id === draftEditing; })[0];
+    var q = draftEditing && proposals.filter(function(p){ return p.id === draftEditing; })[0], cq = committing();
+    // On your branch: these changes after its own, each with this note and time, like a commit.
+    var job = cq ? BOLD.confirmProposal('edit').then(function(ok){
+        if (!ok) throw { cancelled: true };
+        var now = Date.now(), strip = function(c, at){ return { kind: c.kind, partId: c.partId || '', before: c.before === undefined ? null : c.before, after: c.after === undefined ? null : c.after, note: c.note || '', at: c.at || at }; };
+        var had = cq.kind === 'batch' ? (cq.changes || []).map(function(c){ return strip(c, cq.at); }) : [strip(cq, cq.at)];
+        var added = draft.map(function(c){ return Object.assign(strip(c, now), { note: draftNote.trim() }); });
+        if (had.length + added.length > 50) throw { tooMany: true };
+        return ref.collection('proposals').doc(cq.id).set({ kind: 'batch', partId: '', before: null, after: null, changes: had.concat(added), note: cq.note || '', by: cq.by, at: cq.at, status: 'open', editedAt: now });
+      }).then(function(){ notice = 'Added to your proposal.'; }) :
     // The proposal as it is now, its proposer, time and status kept: firestore.rules allow nothing else.
-    var job = q ? BOLD.confirmProposal('edit').then(function(ok){
+      q ? BOLD.confirmProposal('edit').then(function(ok){
         if (!ok) throw { cancelled: true };
         return ref.collection('proposals').doc(q.id).set(Object.assign(asProposal(), { by: q.by, at: q.at, status: 'open', editedAt: Date.now() }));
       }).then(function(){ notice = 'Your proposed change is updated.'; }) :
@@ -600,7 +624,7 @@
     }).catch(function(err){
       if (err && err.cancelled) { draftBusy = false; render(); return; }
       console.error('[BOLD Guides] proposing the draft failed', err);
-      draftBusy = false; draftError = 'Couldn’t ' + (q ? 'update' : 'propose') + ' it — try again.'; render();
+      draftBusy = false; draftError = err && err.tooMany ? 'A proposal holds 50 changes at most: propose these on their own.' : 'Couldn’t ' + (q || cq ? 'update' : 'propose') + ' it — try again.'; render();
     });
   }
   // Makes your proposed change q your draft, to change it.
@@ -802,9 +826,17 @@
   function branchPrefix(){ return COLLECTION + '/' + slug + '/proposals/'; }
   function branchHere(){ var b = BOLD.branch(); return b && b.ref.indexOf(branchPrefix()) === 0 ? b.ref.slice(branchPrefix().length) : ''; }
   // Viewing a proposal puts the whole site on it (a branch), so other pages follow.
+  // Your own (one you can edit: not a restore, or a row of who can see what) is your branch to add to.
+  function canCommit(q){ return !!(q && me && q.by && q.by.email === me.email && q.kind !== 'restore' && q.kind !== 'access'); }
+  function enterCommit(id){
+    commitTo = id; viewing = null; form = null; notice = '';
+    loadDraft(); draftOpen = !!draft.length; render();
+    body.scrollIntoView({ block: 'start' });
+  }
   function view(id){
     var bq = id !== VERSION && proposals.filter(function(q){ return q.id === id; })[0];
     if (bq && branchHere() !== id) BOLD.setBranch({ ref: branchPrefix() + id, title: doc().title + ': ' + whatText(bq), url: location.pathname.split('/').pop() + location.search }, { quiet: true });
+    if (canCommit(bq)) { enterCommit(id); return; }
     if (!viewing) tabBefore = tab;
     viewing = id; form = null; notice = '';
     var q = viewed(), ids = changedIds(q), target = parts().filter(function(p){ return ids.indexOf(p.id) !== -1; })[0];
@@ -917,7 +949,7 @@
     });
     var rm = el.querySelector('.gd-remove');
     if (rm) rm.addEventListener('click', function(){
-      staging = draft.length > 0;
+      staging = draft.length > 0 || !!commitTo;
       if (needNote()) return;
       run({ kind: 'remove', partId: p.id, before: partSide(p), after: null, note: note() });
     });
@@ -1152,6 +1184,8 @@
       proposals = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
         .sort(function(a, b){ return a.at - b.at; });
       proposalsLoaded = true;
+      // Your branch decided or withdrawn meanwhile: bold.js takes the site off it; its staged changes go.
+      if (commitTo && !committing()) { commitTo = null; loadDraft(); notice = 'Your proposal is no longer open.'; }
       // Decided or withdrawn while you were editing it: your edits stay, as a draft.
       if (draftEditing && !proposals.some(function(q){ return q.id === draftEditing; })) {
         draftEditing = null; saveDraft();
