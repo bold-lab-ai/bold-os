@@ -30,14 +30,14 @@ a:hover{text-decoration-thickness:2px;}
 a:focus-visible{outline:2px solid var(--focus); outline-offset:2px; border-radius:2px;}
 h1,h2{font-family:inherit; color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
 /* ---------- hero ---------- */
-.hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
+.hero{max-width:var(--content-max); margin:0 auto 0 var(--page-left); padding:56px var(--gutter) 10px;}
 .hero h1{font-size:clamp(27px, 5.4vw, 44px); line-height:1.08; overflow-wrap:break-word; max-width:var(--article-max);}
 .hero-note{margin:18px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 .page-source{font-size:12.5px; color:var(--muted); margin-top:16px;}
 .page-source a{color:var(--muted); text-decoration:underline; text-underline-offset:2px;}
 .page-source a:hover{color:var(--blue);}
 /* ---------- article ---------- */
-main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
+main{max-width:var(--content-max); margin:0 auto 0 var(--page-left); padding:8px var(--gutter) 24px;}
 .legend{
   list-style:none; margin:24px 0 0; padding:16px 18px;
   max-width:var(--article-max);

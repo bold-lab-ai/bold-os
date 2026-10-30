@@ -2,7 +2,7 @@
 :root{--guide-max:calc(var(--article-max) + 248px + 2 * var(--gutter));}
 
 /* A how-to guide's page (guide.html?guide=<slug>, pages/guide.js): its parts, proposed changes and history. */
-.hero{max-width:var(--guide-max); margin:0 auto; padding:56px var(--gutter) 24px;}
+.hero{max-width:var(--guide-max); margin:0 auto 0 var(--page-left); padding:56px var(--gutter) 24px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
 .back-link:hover{color:var(--accent);}
 .eyebrow{
@@ -13,7 +13,7 @@
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
 .hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 .hero .event-controls{flex-wrap:wrap;}
-main{max-width:var(--guide-max); margin:0 auto; padding:8px var(--gutter) 24px;}
+main{max-width:var(--guide-max); margin:0 auto 0 var(--page-left); padding:8px var(--gutter) 24px;}
 section.block{max-width:var(--article-max); margin:48px 0 0;}
 .block-head{margin-bottom:10px;}
 .block h2, .read-point h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}

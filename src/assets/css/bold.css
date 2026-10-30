@@ -15,6 +15,11 @@
   --accent:#1a2b4a;
   --radius:2px;
   --content-max:900px;
+  /* Every page's content starts at the same left edge: that of a 900px column centred beside
+     the sidebar. A wider page (a board, a guide with its contents) keeps that edge and grows
+     rightwards: its blocks use margin-left:var(--page-left) in place of auto. % is the block's
+     container's width, so it works wherever it's used. */
+  --page-left:max(0px, calc((100% - 900px) / 2));
   --article-max:640px;
   --gutter:clamp(20px, 4vw, 48px);
   --chrome-pad:16px; /* shared inset: masthead left/right padding = sidebar-inner left/right padding */

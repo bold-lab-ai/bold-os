@@ -9,7 +9,7 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 /* ---------- hero ---------- */
 .hero{
   max-width:var(--content-max);
-  margin:0 auto;
+  margin:0 auto 0 var(--page-left);
   padding:64px var(--gutter) 10px;
 }
 .hero h1{
@@ -34,7 +34,7 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 /* ---------- phase timeline (at-a-glance + quick nav) ---------- */
 .timeline{
   max-width:var(--content-max);
-  margin:0 auto;
+  margin:0 auto 0 var(--page-left);
   padding:26px var(--gutter) 4px;
 }
 .timeline ol{
@@ -69,7 +69,7 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 /* ---------- layout ---------- */
 .layout{
   max-width:var(--content-max);
-  margin:0 auto;
+  margin:0 auto 0 var(--page-left);
   padding:24px var(--gutter) 100px;
   display:grid;
   grid-template-columns:var(--rail) 1fr;
@@ -180,7 +180,7 @@ main{min-width:0;}
 /* ---------- Rush-mode phase toggle ---------- */
 .pipeline-toggle-wrap{
   max-width:var(--content-max);
-  margin:0 auto;
+  margin:0 auto 0 var(--page-left);
   padding:0 var(--gutter);
 }
 .pipeline-toggle{
