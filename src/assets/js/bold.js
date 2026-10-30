@@ -303,9 +303,8 @@
   // that's known; Sign out). Signed out: Sign in with Slack.
   function renderAuthRegion(region, user){
     if (user) {
-      var who = user.displayName
-        ? esc(user.displayName) + (user.email ? ' <span class="mast-auth-email">(' + esc(user.email) + ')</span>' : '')
-        : esc(user.email || 'Signed in');
+      // Your name only (your email is on your profile); without a name, the email.
+      var who = esc(user.displayName || user.email || 'Signed in');
       region.innerHTML =
         '<div class="mast-auth mast-menu-wrap">' +
           '<button class="mast-auth-name mast-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="mastMenu">' + who + ' <span class="mast-caret" aria-hidden="true">▾</span></button>' +
@@ -319,6 +318,7 @@
       var open = function(yes){ menu.hidden = !yes; btn.setAttribute('aria-expanded', String(yes)); };
       btn.addEventListener('click', function(e){ e.stopPropagation(); open(menu.hidden); });
       document.addEventListener('click', function(e){ if (!region.contains(e.target)) open(false); });
+      document.addEventListener('focusin', function(e){ if (!region.contains(e.target)) open(false); });
       region.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
       region.querySelector('#mastSignOutBtn').addEventListener('click', BOLD.signOut);
     } else {
@@ -335,7 +335,32 @@
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
     // Settings, in the menu, once the viewer is known to be a PI or admin.
     BOLD.onAccess(function(a){ var g = region.querySelector('.mast-menu-settings'); if (g) g.hidden = !a.fullWrite; });
+    alignSearch();
   };
+
+  // The masthead's search starts where the page's content does (its first block's text, after
+  // its padding), wherever the sidebar and the window put it; kept so as they change. Where
+  // that would run into the wordmark (a narrow window), it stays at the right, in the flow.
+  function alignSearch(){
+    var mast = document.getElementById('masthead'), box = mast && mast.querySelector('.mast-search');
+    if (!box) return;
+    var place = function(){
+      var main = document.querySelector('.shell-main'), first = main && main.querySelector('.hero, main');
+      var brand = mast.querySelector('.masthead-brand');
+      if (!first || !brand || !first.getBoundingClientRect().width) { mast.classList.remove('is-search-left'); return; }
+      var left = first.getBoundingClientRect().left + parseFloat(getComputedStyle(first).paddingLeft) - mast.getBoundingClientRect().left;
+      var fits = left > brand.getBoundingClientRect().right - mast.getBoundingClientRect().left + 24;
+      mast.classList.toggle('is-search-left', fits);
+      mast.style.setProperty('--search-left', left + 'px');
+    };
+    var later = function(){ requestAnimationFrame(place); };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', later); else later();
+    window.addEventListener('load', later);
+    window.addEventListener('resize', later);
+    // The sidebar opening, closing or sliding, and the page drawing its content.
+    if (window.ResizeObserver) { var ro = new ResizeObserver(later); document.addEventListener('DOMContentLoaded', function(){ var m = document.querySelector('.shell-main'); if (m) ro.observe(m); }); }
+    document.addEventListener('transitionend', function(e){ if (e.target.classList && e.target.classList.contains('sidebar')) later(); });
+  }
 
   /* ---------- who can see what ---------- */
 

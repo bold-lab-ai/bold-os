@@ -248,6 +248,10 @@ footer{
 .masthead-right{display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
 /* The search box (search-box.js): a menu of where to search under it, as the person picker's. */
 .mast-search{position:relative;}
+/* Lined up with the page's content (bold.js alignSearch); its list then opens rightwards. */
+.masthead{position:relative;}
+.masthead.is-search-left .mast-search{position:absolute; left:var(--search-left); top:50%; transform:translateY(-50%);}
+.masthead.is-search-left .ms-menu{left:0; right:auto;}
 .ms-form{display:flex; align-items:center; position:relative;}
 .ms-input{width:220px; font-family:var(--sans); font-size:13px; padding:5px 26px 5px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 .ms-input:focus{width:300px; outline:none; border-color:var(--accent);}
@@ -265,20 +269,20 @@ footer{
 .mast-auth-name{font-weight:500; color:var(--ink);}
 a.mast-auth-name{text-decoration:none;}
 a.mast-auth-name:hover{text-decoration:underline;}
-.mast-auth-email{font-weight:400; color:var(--muted);}
-/* Your name's menu (bold.js renderAuthRegion): Profile, Settings (PIs and admins), Sign out. */
+/* Your name's menu (bold.js renderAuthRegion): Profile, Settings (PIs and admins), Sign out,
+   styled as the search's own list (.ms-menu, .ms-row). */
 .mast-menu-wrap{position:relative;}
 /* Open, above the page's visibility chip (.page-access, z-index 1100), which comes after it. */
-.masthead:has(.mast-menu:not([hidden])){position:relative; z-index:1200;}
-.mast-menu-btn{border:0; background:none; padding:0; font:inherit; cursor:pointer;}
+.masthead:has(.mast-menu:not([hidden])){z-index:1200;}
+.mast-menu-btn{border:0; background:none; padding:0; font:inherit; color:var(--ink); font-weight:500; cursor:pointer;}
 .mast-menu-btn:hover{text-decoration:underline;}
-.mast-caret{font-size:11px; color:var(--muted);}
-.mast-menu{position:absolute; right:0; top:calc(100% + 6px); z-index:300; min-width:160px; margin:0; padding:4px 0; list-style:none;
-  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 10px 30px rgba(26,43,74,.16);}
+.mast-caret{font-size:10px; color:var(--muted);}
+.mast-menu{position:absolute; right:0; top:calc(100% + 4px); z-index:300; width:180px; margin:0; padding:4px 0; list-style:none;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 6px 18px rgba(26,43,74,.12); font-family:var(--sans); font-size:13.5px;}
 .mast-menu[hidden], .mast-menu li[hidden]{display:none;}
-.mast-menu a, .mast-menu button{display:block; width:100%; box-sizing:border-box; padding:7px 14px; border:0; background:none; text-align:left;
-  font:inherit; font-size:14px; color:var(--ink); text-decoration:none; cursor:pointer;}
-.mast-menu a:hover, .mast-menu button:hover, .mast-menu a:focus-visible, .mast-menu button:focus-visible{background:var(--wash);}
+.mast-menu a, .mast-menu button{display:block; width:100%; box-sizing:border-box; padding:7px 10px; border:0; background:none; text-align:left;
+  font:inherit; color:var(--ink); text-decoration:none; cursor:pointer;}
+.mast-menu a:hover, .mast-menu button:hover, .mast-menu a:focus-visible, .mast-menu button:focus-visible{background:var(--wash); outline:none;}
 /* Who can see this page (bold.js): a chip at the page's top right, opening its ladder (each
    group can do what the groups below it can); PIs and admins propose a change there. */
 .shell-main{position:relative;}
