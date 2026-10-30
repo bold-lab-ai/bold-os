@@ -454,7 +454,10 @@
     var upd = r.single ? { before: r.out[0].before, after: r.out[0].after } : { changes: r.out };
     upd.editedAt = Date.now();
     r.saving = true; render();
-    ref.collection('proposals').doc(r.id).update(upd).then(function(){ rebasing = null; notice = 'Your proposal is rebased on main.'; render(); }, function(err){
+    ref.collection('proposals').doc(r.id).update(upd).then(function(){
+      rebasing = null; notice = 'Your proposal is rebased on main.'; render();
+      var el = body.querySelector('.gd-notice'); if (el) el.scrollIntoView({ block: 'center' });
+    }, function(err){
       console.error('[BOLD Guides] rebasing a proposal failed', err);
       rebasing = null; notice = 'Couldn’t save the rebase — try again.'; render();
     });
@@ -562,8 +565,15 @@
 
   // ---------- page ----------
 
+  // Rebase on main beside Back to main (bold.js's bar), on your own branch when main has moved on.
+  function offerRebase(){
+    var b = branchHere(), q = b && proposals.filter(function(p){ return p.id === b; })[0];
+    var st = q && me && q.by && q.by.email === me.email && !rebasing ? stateOf(q) : '';
+    BOLD.setBranchAction(st === 'behind' || st === 'conflict' ? { label: 'Rebase on main', go: function(){ notice = ''; startRebase(q); } } : null);
+  }
   function render(){
     if (!loaded) return;
+    offerRebase();
     drawHistory();
     if (isNew) {
       document.title = 'New guide | BOLD Lab';

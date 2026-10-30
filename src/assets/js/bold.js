@@ -411,6 +411,13 @@
     }
   }
 
+  // A page's action for the branch you're on, beside Back to main (pages/guide.js: Rebase on
+  // main, on your own proposal when main has moved on): { label, go } or null.
+  var branchAction = null;
+  BOLD.setBranchAction = function(a){
+    if ((a && a.label) === (branchAction && branchAction.label)) { branchAction = a; return; }
+    branchAction = a; previewBar();
+  };
   // While on a branch or viewing as a group (access.viewAs): a bar saying so, to go back.
   function branchLabel(b){ return b ? (b.num ? '#' + b.num + ' ' : '') + (b.title || 'a proposed change') : 'Main'; }
   function previewBar(){
@@ -423,12 +430,15 @@
     }
     bar.innerHTML = (branch ? '<span class="vb-part"><span class="vb-text">On ' + esc(branchLabel(branch)) + '</span>' +
         (branch.url && pageOf(branch.url) !== (location.pathname.split('/').pop() || 'index.html') ? ' <a href="' + esc(pageOf(branch.url)) + '">Its page</a>' : '') +
+        (branchAction ? ' <button type="button" data-vb="action">' + esc(branchAction.label) + '</button>' : '') +
         ' <button type="button" data-vb="branch">Back to main</button></span>' : '') +
       (g ? '<span class="vb-part">Viewing as ' + esc(LEVEL_NAMES[g] || g) + ' <button type="button" data-vb="as">Stop</button></span>' : '');
     bar.onclick = function(e){
       var b = e.target.closest('[data-vb]');
       if (!b) return;
-      if (b.getAttribute('data-vb') === 'as') BOLD.setViewAs(null); else BOLD.setBranch(null);
+      var what = b.getAttribute('data-vb');
+      if (what === 'action') { if (branchAction) branchAction.go(); return; }
+      if (what === 'as') BOLD.setViewAs(null); else BOLD.setBranch(null);
     };
   }
 
