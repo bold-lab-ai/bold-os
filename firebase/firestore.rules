@@ -360,8 +360,9 @@ service cloud.firestore {
 
     // What the Calendar shows of each project to whoever doesn't see the projects
     // (functions/index.js onWorkspaceTitles): title, meeting time, Slack channel, no links.
+    // Whoever sees the Calendar, or the Projects list.
     match /projectTitles/{pid} {
-      allow read: if mayList('projects');
+      allow read: if may('calendar', 'view') || mayList('projects');
       allow write: if false;
     }
 

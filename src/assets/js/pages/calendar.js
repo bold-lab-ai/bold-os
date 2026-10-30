@@ -182,9 +182,11 @@
     var members = w.members || [];
     var mine = members.some(isMe), joined = (w.joined || []).some(isMe);
     var label = !mine ? 'Join the project' : joined ? 'Leave' : 'On the project';
-    var off = busy[w.cardId] || (mine && !joined);
+    // Joining is Projects' Edit (BOLDiquette › Who can see what).
+    var may = mine || BOLD.can('projects', 'edit');
+    var off = busy[w.cardId] || (mine && !joined) || !may;
     return '<div class="join-wrap"><button type="button" class="join-btn" data-id="' + esc(w.cardId) + '" data-action="' + (mine ? 'leave' : 'join') + '"' +
-        (off ? ' disabled' : '') + (mine && !joined ? ' title="Its submitter and authors stay on the project"' : '') + '>' + label + '</button>' +
+        (off ? ' disabled' : '') + (mine && !joined ? ' title="Its submitter and authors stay on the project"' : !may ? ' title="' + esc(BOLD.cannotReason('projects', 'edit')) + '"' : '') + '>' + label + '</button>' +
       '<span class="join-msg" role="status">' + (msgs[w.cardId] || '') + '</span></div>';
   }
 
@@ -485,14 +487,13 @@
       ps.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });
       render();
     }).catch(function(){});
-    // Projects' View: every workspace. Otherwise (Edit alone) their own, then the others'
-    // titles and meetings (projectTitles: no links, files or people), to join.
+    // Projects' View: every workspace. Otherwise their own (if they may be on one), then the
+    // others' titles and meetings (projectTitles: no links, files or people), to join.
     BOLD.onAccess(function(){
       if (signIn !== unsubs || seenProjects) return;
-      if (!BOLD.can('projects', 'list')) return;
       seenProjects = true;
-      var wsAll = db.collection('projectWorkspaces');
-      watch('project', BOLD.can('projects', 'view') ? wsAll : [wsAll.where('members', 'array-contains', mine), db.collection('projectTitles')], function(d){
+      var wsAll = db.collection('projectWorkspaces'), titles = db.collection('projectTitles');
+      watch('project', BOLD.can('projects', 'view') ? wsAll : BOLD.can('projects', 'list') ? [wsAll.where('members', 'array-contains', mine), titles] : titles, function(d){
         return d.ref.parent.id === 'projectTitles' ? Object.assign({ cardId: d.id, titleOnly: true }, d.data()) : Object.assign({ cardId: d.id }, d.data());
       }, 'cardId');
     });
