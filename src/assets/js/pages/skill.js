@@ -57,6 +57,24 @@
   function content(d){ var o = {}; CONTENT.forEach(function(k){ o[k] = d[k] !== undefined ? d[k] : (k === 'files' ? [] : ''); }); return o; }
   function mine(q){ return !!(me && q.by && String(q.by.email).toLowerCase() === me.email.toLowerCase()); }
   // A proposed new skill's changes are shown from the start: they are all there is to see.
+  // The proposal for this skill the site is on (bold.js's branch, the Version pill), if any:
+  // the skill is shown as it would make it.
+  function branchPrefix(){ return 'skills/' + name + '/proposals/'; }
+  function branchQ(){
+    var b = BOLD.branch(), id = b && b.ref.indexOf(branchPrefix()) === 0 ? b.ref.slice(branchPrefix().length) : '';
+    return id ? proposals.filter(function(q){ return q.id === id; })[0] || null : null;
+  }
+  function viewQ(q){
+    if (q) BOLD.setBranch({ ref: branchPrefix() + q.id, title: 'Skill ' + ((x && x.title) || name) + ': ' + (q.note || 'a change'), url: 'skill.html?skill=' + encodeURIComponent(name) }, { quiet: true });
+    else BOLD.setBranch(null, { quiet: true });
+    render(); window.scrollTo(0, 0);
+  }
+  // fn() with x as shown: on a branch that changes the skill, as proposed.
+  function withShown(fn){
+    var bq = branchQ(), x0 = x;
+    if (bq && bq.kind === 'skill' && x) x = Object.assign({}, x, bq.after);
+    try { return fn(); } finally { x = x0; }
+  }
   function isShown(q){ return shownQ[q.id] !== undefined ? shownQ[q.id] : !x && q.kind === 'new'; }
   function proposalsHtml(){
     if (!proposals.length && !notice) return '';
@@ -72,6 +90,7 @@
           (stale ? '<p class="event-form-hint">The skill has changed since this was proposed: accepting it replaces those changes with these.</p>' : '') +
           (isShown(q) ? '<div class="sk-p-changes">' + BoldHistory.changesHtml(content(q.before || {}), content(Object.assign({}, q.before, q.after)), FIELDS) + '</div>' : '') +
           '<div class="event-controls"><button type="button" class="btn-text sk-q-show" data-id="' + esc(q.id) + '">' + (isShown(q) ? 'Hide changes' : 'Show changes') + '</button>' +
+            (x ? '<button type="button" class="btn-text sk-q-view" data-id="' + esc(q.id) + '">' + (branchQ() === q ? 'Back to the skill now' : 'View as proposed') + '</button>' : '') +
             '<button type="button" class="btn-text sk-q-accept" data-id="' + esc(q.id) + '"' + (decide || b) + '>Accept</button>' +
             '<button type="button" class="btn-text danger sk-q-decline" data-id="' + esc(q.id) + '"' + (decide || b) + '>Decline</button>' +
             // A proposed new skill is edited by proposing it again (the form here changes an existing one).
@@ -83,6 +102,7 @@
     var id = t.getAttribute('data-id'), q = proposals.filter(function(p){ return p.id === id; })[0];
     if (!q) return;
     if (t.classList.contains('sk-q-show')) { shownQ[id] = !isShown(q); render(); return; }
+    if (t.classList.contains('sk-q-view')) { viewQ(branchQ() === q ? null : q); return; }
     if (t.classList.contains('sk-q-edit')) { editingQ = q; editing = true; render(); return; }
     var withdraw = t.classList.contains('sk-q-withdraw'), accept = t.classList.contains('sk-q-accept');
     var job = BOLD.confirmProposal(withdraw ? 'withdraw' : accept ? 'accept' : 'decline', q.by && q.by.name, accept ? ['Give every agent the skill as changed, at once'] : []).then(function(ok){
@@ -341,12 +361,22 @@
       bindForm();
       return;
     }
-    body.innerHTML = head + '<p class="hero-note">' + esc(x.description || '') + '</p>' + controls() + '</div>' +
-      '<main>' + proposalsHtml() + installHtml() + filesHtml() + '</main>';
-    body.querySelector('.sk-edit').addEventListener('click', function(){ editingQ = null; notice = ''; editing = true; render(); });
+    // On a branch that changes it: shown as proposed, with no controls but the way back.
+    var bq = branchQ(), qsHtml = proposalsHtml();   // measured against the skill as it is
+    withShown(function(){
+      body.innerHTML = '<div class="hero">' + BACK + '<div><span class="eyebrow">Skill</span></div><h1>' + esc(x.title || x.name) + '</h1>' +
+        '<p class="skill-name"><code>' + esc(x.name) + '</code></p><p class="hero-note">' + esc(x.description || '') + '</p>' +
+        (bq ? '<p class="sk-branch">Shown as proposed by ' + esc((bq.by && bq.by.name) || 'someone') + (bq.note ? ': “' + esc(bq.note) + '”' : '') + '. <button type="button" class="btn-text sk-branch-back">Back to the skill now</button></p>' : controls()) + '</div>' +
+        '<main>' + qsHtml + installHtml() + filesHtml() + '</main>';
+    });
+    var back = body.querySelector('.sk-branch-back');
+    if (back) back.addEventListener('click', function(){ viewQ(null); });
+    var ed = body.querySelector('.sk-edit');
+    if (ed) ed.addEventListener('click', function(){ editingQ = null; notice = ''; editing = true; render(); });
     var qs = body.querySelector('.sk-proposals');
     if (qs) qs.addEventListener('click', function(e){ var t = e.target.closest('button'); if (t && !t.disabled) proposalAction(t); });
-    body.querySelector('.sk-delete').addEventListener('click', function(){
+    var del = body.querySelector('.sk-delete');
+    if (del) del.addEventListener('click', function(){
       if (!fullWrite || !window.confirm('Delete the skill “' + (x.title || x.name) + '” for good? Anyone who installed it keeps their copy.')) return;
       // Stamp who's deleting it first: the history credits the last updatedBy.
       ref.update({ updatedBy: me.email, updatedAt: Date.now(), changeNote: '' }).then(function(){ return ref.delete(); })
@@ -358,7 +388,7 @@
     body.querySelector('.skill-files').addEventListener('click', function(e){
       var pv = e.target.closest('.sk-preview');
       if (pv) {
-        var f = allFiles().filter(function(f){ return f.path === pv.getAttribute('data-path'); })[0];
+        var f = withShown(function(){ return allFiles().filter(function(f){ return f.path === pv.getAttribute('data-path'); })[0]; });
         if (f) window.open(URL.createObjectURL(new Blob([f.content], { type: 'text/html' })), '_blank');
         return;
       }

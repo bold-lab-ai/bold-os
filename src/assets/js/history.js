@@ -9,7 +9,8 @@
 // BoldHistory.mount(el, { ref, fields: { key: 'Label', … } (shown first, in
 // order), flatten: data → { 'Label': text, … } (optional: what to compare, for
 // content that isn't one field per label), canRestore: () => bool,
-// restore: (version) => Promise }) → { stop }. A version made from someone's
+// restore: (version) => Promise, view: (version) => void (optional: shows the page as
+// it was then, like checking out an earlier commit) }) → { stop }. A version made from someone's
 // proposed change (guides) names them too.
 window.BoldHistory = (function(){
   var esc = BOLD.escapeHtml;
@@ -160,6 +161,7 @@ window.BoldHistory = (function(){
         var v = e.v, i = e.i;
         var isOpen = v.id === open;
         var restore = i > 0 && v.kind !== 'deleted' && isOpen ?
+          (opts.view ? '<button type="button" class="btn-text hist-view">View the page then</button> ' : '') +
           '<button type="button" class="btn-text hist-restore"' + (opts.canRestore() ? '' : ' disabled title="You can’t edit this"') + '>Restore this version</button>' : '';
         return '<li class="hist-item' + (isOpen ? ' is-open' : '') + '">' +
           '<button type="button" class="hist-head" data-id="' + esc(v.id) + '" aria-expanded="' + isOpen + '">' +
@@ -177,6 +179,7 @@ window.BoldHistory = (function(){
       if (e.target.closest('.hist-more')) { all = !all; render(); return; }
       var head = e.target.closest('.hist-head');
       if (head) { var id = head.getAttribute('data-id'); open = open === id ? null : id; render(); return; }
+      if (e.target.closest('.hist-view') && opts.view) { opts.view(versions.filter(function(x){ return x.id === open; })[0]); return; }
       var btn = e.target.closest('.hist-restore');
       if (btn && opts.canRestore()) {
         var v = versions.filter(function(x){ return x.id === open; })[0];

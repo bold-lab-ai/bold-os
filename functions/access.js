@@ -155,9 +155,12 @@ function accessTableMarkdown(pages){
     PAGES.map(([key, name]) => '| ' + name + ' | ' + WHAT.map((w) => LEVEL_NAMES[(pages[key] || {})[w] || DEFAULT_LEVEL]).join(' | ') + ' |').join('\n');
 }
 
-module.exports = function access({ db, groupOf, isFullWrite, viewingAs, HttpsError }){
+module.exports = function access({ db, groupOf, isFullWrite, viewingAs, viewingTable, HttpsError }){
   let cache = null, cachedAt = 0;
   async function table(){
+    // A PI or admin on a branch that changes it (functions/index.js onCall): the table it would make.
+    const proposed = viewingTable && viewingTable();
+    if (proposed) return proposed;
     if (cache && Date.now() - cachedAt < 60000) return cache;
     const snap = await db.collection('settings').doc('access').get();
     cache = (snap.exists && snap.data().pages) || DEFAULT_PAGES; cachedAt = Date.now();

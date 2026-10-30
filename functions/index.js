@@ -35,6 +35,8 @@ const { beforeUserCreated, HttpsError: IdentityHttpsError } = require('firebase-
 const { defineSecret } = require('firebase-functions/params');
 // Who can see what's pure helpers (the table, its rows); `access` below is the instance reading settings/access.
 const accessLib = require('./access');
+// Three-way merges for proposals (#177): shared with the pages (assets/js/merge.js).
+const merge = require('./merge');
 const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
@@ -43,28 +45,39 @@ const crypto = require('crypto');
 admin.initializeApp();
 const db = admin.firestore();
 
-// ---------- View as (#172): a PI or admin sees the site as a lower group ----------
-// The browser (bold.js, the account menu's View as) adds `viewAs` (a group) to every
-// callable while it's on. For a PI or admin, that call then runs as that group: for the
-// caller only, isFullWrite is false and access.groupFor gives the group, so it can only
-// ever see and do less. Anyone else's viewAs is ignored. The rules still read as them.
+// ---------- View as (#172) and branches (#177): a PI or admin previews the site ----------
+// The browser (bold.js) adds `viewAs` (a group: the eye chip's View as) and `branch` (an
+// open proposal's path: the Version pill) to every callable while they're on. For a PI or
+// admin, that call then runs as that group (for the caller only, isFullWrite is false and
+// access.groupFor gives the group, so it can only ever see and do less) and, on a branch
+// that changes Who can see what, with that proposal's table (access.table), to see what
+// it would change. Anyone else's are ignored (their pages still show a branch, from what
+// they can read). The rules still read as them.
 const VIEW_AS = ['staff', 'internal', 'associate', 'pan'];
 const viewing = new AsyncLocalStorage();
 function viewingAs(email){
   const v = viewing.getStore();
-  return v && v.email === String(email || '').toLowerCase() ? v.group : null;
+  return v && v.email === String(email || '').toLowerCase() ? v.group || null : null;
 }
+function viewingTable(){ const v = viewing.getStore(); return (v && v.pages) || null; }
 function onCall(opts, fn){
   if (typeof opts === 'function') { fn = opts; opts = {}; }
   return plainOnCall(opts, async (request, response) => {
     const data = request.data;
-    if (!data || typeof data !== 'object' || !('viewAs' in data)) return fn(request, response);
-    const rest = Object.assign({}, data), group = rest.viewAs;
-    delete rest.viewAs;
+    if (!data || typeof data !== 'object' || !('viewAs' in data || 'branch' in data)) return fn(request, response);
+    const rest = Object.assign({}, data), group = rest.viewAs, branch = rest.branch;
+    delete rest.viewAs; delete rest.branch;
     request = Object.assign({}, request, { data: rest });
     const email = request.auth && request.auth.token && request.auth.token.email ? String(request.auth.token.email).toLowerCase() : '';
-    if (VIEW_AS.indexOf(group) === -1 || !email || !(await realFullWrite(email))) return fn(request, response);
-    return viewing.run({ email, group }, () => fn(request, response));
+    if (!email || !(await realFullWrite(email))) return fn(request, response);
+    const store = { email };
+    if (VIEW_AS.indexOf(group) !== -1) store.group = group;
+    if (typeof branch === 'string' && branch) {
+      try { const pages = await proposedTable(branch); if (pages) store.pages = pages; }
+      catch (err) { logger.warn('A branch’s table couldn’t be worked out', { branch, error: String(err && err.message || err) }); }
+    }
+    if (!store.group && !store.pages) return fn(request, response);
+    return viewing.run(store, () => fn(request, response));
   });
 }
 // In the emulator, Slack is pretended: every call is written to `slackOutbox` instead.
@@ -1807,65 +1820,15 @@ const REVIEWED = ['guides', 'handbook', 'skills', 'agentTools'];
 
 // Who can see what (functions/access.js): the BOLDiquette's table of who can view, edit
 // and propose on each page, by group, saved in settings/access when a change to it is accepted.
-const access = require('./access')({ db, groupOf, isFullWrite, viewingAs, HttpsError });
+const access = require('./access')({ db, groupOf, isFullWrite, viewingAs, viewingTable, HttpsError });
 
-// A three-way merge, line by line, as git merges (#177): `base` the text a proposal was made
-// on, `ours` the text now, `theirs` the proposal's. Lines kept by both sides anchor the
-// merge; between anchors, whichever side changed wins, or both if they made the same change.
-// Both changing the same lines differently (or lines next to each other) is a conflict,
-// unless it's the same lines both added around one side's change.
-// Pure. → the merged text, or null on a conflict.
-function mergeText(base, ours, theirs){
-  const o = String(base).split('\n'), a = String(ours).split('\n'), b = String(theirs).split('\n');
-  // For each line of o, the line of x it stays as (longest common subsequence), or -1.
-  const match = (x) => {
-    const n = o.length, m = x.length, L = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
-    for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = o[i] === x[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
-    const at = new Array(n).fill(-1);
-    for (let i = 0, j = 0; i < n && j < m;) {
-      if (o[i] === x[j]) { at[i] = j; i++; j++; } else if (L[i + 1][j] >= L[i][j + 1]) i++; else j++;
-    }
-    return at;
-  };
-  const ma = match(a), mb = match(b), same = (x, y) => x.length === y.length && x.every((l, k) => l === y[k]);
-  const out = [];
-  let io = 0, ia = 0, ib = 0;
-  for (;;) {
-    let i = io;
-    while (i < o.length && !(ma[i] >= 0 && mb[i] >= 0)) i++;
-    const ja = i < o.length ? ma[i] : a.length, jb = i < o.length ? mb[i] : b.length;
-    const O = o.slice(io, i), A = a.slice(ia, ja), B = b.slice(ib, jb);
-    if (same(A, O)) out.push(...B);
-    else if (same(B, O) || same(A, B)) out.push(...A);
-    else {
-      // As git does: lines both sides added at the start or end of the change are kept once;
-      // what's left must be one side's change alone.
-      let p = 0, q = 0;
-      while (p < A.length && p < B.length && A[p] === B[p]) p++;
-      while (q < A.length - p && q < B.length - p && A[A.length - 1 - q] === B[B.length - 1 - q]) q++;
-      const A2 = A.slice(p, A.length - q), B2 = B.slice(p, B.length - q);
-      if (!same(A2, O) && !same(B2, O)) return null;
-      out.push(...A.slice(0, p), ...(same(A2, O) ? B2 : A2), ...A.slice(A.length - q));
-    }
-    if (i >= o.length) break;
-    out.push(o[i]); io = i + 1; ia = ja + 1; ib = jb + 1;
-  }
-  return out.join('\n');
-}
-// An edit proposed on `before`, applied to part `p` as it is now: each of its title, section
-// and body merged with whatever changed since (mergeText). Without `before` (older
+// An edit proposed on `before`, applied to part `p` as it is now: each field it sets merged
+// with whatever changed since (functions/merge.js, the pages' too). Without `before` (older
 // proposals), the proposal as it is. → the fields to set; throws if they can't be merged.
 function mergedEdit(p, before, after){
-  if (!before || typeof before !== 'object') return after;
-  const out = {};
-  Object.keys(after).forEach((k) => {
-    const base = before[k], now = p[k], want = after[k];
-    if (base === undefined || now === base || want === base || now === want) { out[k] = now === base || base === undefined || now === want ? want : now; return; }
-    const merged = k === 'body' && typeof now === 'string' && typeof want === 'string' ? mergeText(base, now, want) : null;
-    if (merged === null) throw new HttpsError('failed-precondition', '“' + (p.title || 'This part') + '” has changed in the same lines since this was proposed. Decline it, and propose it again on the latest version.');
-    out[k] = merged;
-  });
-  return out;
+  const r = merge.mergeEdit(p, before, after || {});
+  if (r.conflict) throw new HttpsError('failed-precondition', '“' + (p.title || 'This part') + '” has changed in the same lines since this was proposed. Decline it, and propose it again on the latest version.');
+  return r.fields;
 }
 
 // The document with proposal q applied: pure, so it's testable on its own. → { title, description, parts } changed.
@@ -1952,6 +1915,25 @@ function appliedProposal(doc, q, ctx){
     return { parts: moved.concat(parts.filter((p) => order.indexOf(p.id) === -1)) };
   }
   throw new HttpsError('invalid-argument', 'Unknown kind of change.');
+}
+
+// Who can see what as an open BOLDiquette proposal (its path) would make it, if it changes
+// it, else null: the proposal applied to the BOLDiquette as it is (appliedProposal), and
+// the table read from it, as accepting it would save it (access.checkTableChange).
+async function proposedTable(path){
+  const m = /^handbook\/boldiquette\/proposals\/([A-Za-z0-9]{1,40})$/.exec(String(path || ''));
+  if (!m) return null;
+  const [qs, ds, as] = await Promise.all([db.doc(path).get(), db.doc('handbook/boldiquette').get(), db.doc('settings/access').get()]);
+  const q = qs.data();
+  if (!q || q.status !== 'open' || !ds.exists) return null;
+  const doc = ds.data(), now = (as.exists && as.data().pages) || accessLib.DEFAULT_PAGES;
+  const fields = appliedProposal(doc, q, { pages: now });
+  const partOf = (parts) => (parts || []).filter((p) => p && p.id === accessLib.ACCESS_PART)[0];
+  const part = partOf(fields.parts || doc.parts), was = partOf(doc.parts);
+  if (!part || (was && was.body === part.body)) return null;
+  const pages = accessLib.parseAccessTable(part.body);
+  // Compared as read from the text both ways, so a table written differently isn't a change.
+  return was && JSON.stringify(accessLib.parseAccessTable(was.body)) === JSON.stringify(pages) ? null : pages;
 }
 
 exports.decideProposal = onCall(
@@ -4304,6 +4286,26 @@ function splitRequests(items, email, full){
 // Your requests (requests.html, the account menu's Requests; pages/requests.js): everything on BOLD.OS waiting on
 // the caller to answer, and what they asked that waits on someone else, as BOLD OS's board
 // sees it (requestWork, contentWork). → { forYou, byYou: [{ kind, num, title, url, by, on, waiting, state, since, column }] }
+// Branches (#177; bold.js, the Version pill): every open proposal on the site you can see,
+// newest first, each { ref (its path), num, title, url (its page), by, since }, and for one
+// that changes Who can see what, `pages`: the table it would make.
+exports.branches = onCall(
+  { timeoutSeconds: 60 },
+  async (request) => {
+    const email = callerEmail(request);
+    const open = (await contentWork(email, workPerson(await workNames()))).filter((x) => x.state === 'open');
+    const nums = await numbersOf(open.map((x) => x.ref));
+    const out = [];
+    for (const x of open){
+      const b = { ref: x.ref, num: nums[x.ref] || 0, title: x.title, url: String(x.url || '').replace(/#.*$/, ''), by: (x.by && x.by.name) || '', since: x.since || 0 };
+      try { const pages = await proposedTable(x.ref); if (pages) b.pages = pages; }
+      catch (err) { logger.warn('A branch’s table couldn’t be worked out', { ref: x.ref, error: String(err && err.message || err) }); }
+      out.push(b);
+    }
+    return { branches: out.sort((a, b) => b.since - a.since) };
+  }
+);
+
 exports.myRequests = onCall(
   { timeoutSeconds: 60 },
   async (request) => {
@@ -6775,7 +6777,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  projectTitlesOnly, projectTitleDoc, githubLoginsFor, mergeText, mergedEdit,
+  projectTitlesOnly, projectTitleDoc, githubLoginsFor, mergedEdit,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,

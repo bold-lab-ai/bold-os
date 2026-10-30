@@ -72,3 +72,5 @@ section.block:first-of-type{margin-top:12px;}
 .tl-inputs li{padding:8px 0; border-bottom:1px solid var(--line); font-family:var(--sans); font-size:14px;}
 .tl-type{color:var(--muted); margin-left:6px;}
 .tl-desc{display:block; color:var(--ink-soft); margin-top:2px;}
+/* On a branch (#177): the skill or tool shown as proposed. */
+.sk-branch{margin:10px 0 0; padding:8px 12px; border-left:3px solid var(--ink); background:var(--wash); font-family:var(--sans); font-size:13.5px;}

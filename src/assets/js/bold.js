@@ -226,19 +226,56 @@
   try { viewAs = sessionStorage.getItem('boldViewAs'); } catch (e){}
   if (VIEW_AS.indexOf(viewAs) < 0) viewAs = null;
   BOLD.viewAs = function(){ return viewAs; };
-  // Switching it: the pages' caches of what the server sent are for the other view.
-  BOLD.setViewAs = function(g){
+  // The pages' caches of what the server sent are for the other view.
+  function dropCaches(){
     try {
-      if (VIEW_AS.indexOf(g) >= 0) sessionStorage.setItem('boldViewAs', g); else sessionStorage.removeItem('boldViewAs');
       Object.keys(localStorage).forEach(function(k){
-        if (/^(boldProfile:|boldProject:|boldProjects:|boldBoardsIndex:|boldAccess$)/.test(k) && k !== 'boldProjects:view') localStorage.removeItem(k);
+        if (/^(boldProfile:|boldProject:|boldProjects:|boldBoardsIndex:|boldAccess$|boldBranches$)/.test(k) && k !== 'boldProjects:view') localStorage.removeItem(k);
       });
     } catch (e){}
+  }
+  BOLD.setViewAs = function(g){
+    try { if (VIEW_AS.indexOf(g) >= 0) sessionStorage.setItem('boldViewAs', g); else sessionStorage.removeItem('boldViewAs'); } catch (e){}
+    dropCaches();
     location.reload();
   };
-  // Every callable's data gets viewAs, from wherever the page calls it.
+
+  // Branches (#177): the site as an open proposal would make it, like checking out a git
+  // branch: one proposal anywhere (the BOLDiquette, a guide, a skill, a tool, who can see
+  // what), chosen on the Version pill under the eye chip, for this tab until you go back to
+  // the site now. Each page shows it where it applies (pages/guide.js, skill.js, tool.js);
+  // one that changes Who can see what applies its table here (levelFor) and, for PIs and
+  // admins, on the server too (every callable carries `branch`: functions/index.js onCall).
+  // branch: { ref (the proposal's path), num, title, url (its page), pages? } or null.
+  // ?branch=<path> in the address (a link to one) picks it; `branches` fills in the rest.
+  var BRANCH_REF = /^(handbook|guides|skills|agentTools)\/[a-z0-9_-]{1,64}\/proposals\/[A-Za-z0-9]{1,40}$/;
+  var branch = null;
+  try { branch = JSON.parse(sessionStorage.getItem('boldBranch') || 'null'); } catch (e){}
+  (function(){
+    var linked = '';
+    try { linked = new URLSearchParams(location.search).get('branch') || ''; } catch (e){}
+    if (BRANCH_REF.test(linked) && (!branch || branch.ref !== linked)) { branch = { ref: linked, title: '', url: '' }; try { sessionStorage.setItem('boldBranch', JSON.stringify(branch)); } catch (e){} }
+  })();
+  if (branch && !BRANCH_REF.test(branch.ref || '')) branch = null;
+  BOLD.branch = function(){ return branch; };
+  // b: a branch from `branches`, or null for the site now. o.go: open its page (else reload this one).
+  BOLD.setBranch = function(b, o){
+    branch = b && BRANCH_REF.test(b.ref || '') ? { ref: b.ref, num: b.num || 0, title: b.title || '', url: b.url || '', pages: b.pages || null } : null;
+    try { if (branch) sessionStorage.setItem('boldBranch', JSON.stringify(branch)); else sessionStorage.removeItem('boldBranch'); } catch (e){}
+    // Quiet: no reload (a page showing its own proposal); its details from `branches`, unless they're from there.
+    if (o && o.quiet) { drawAccess(); previewBar(); if (branch && !o.known && access && access.e) loadBranches(); return; }
+    dropCaches();
+    var here = location.pathname + location.search.replace(/([?&])branch=[^&]*&?/, '$1').replace(/[?&]$/, '');
+    if (o && o.go && branch && branch.url) location.href = pageOf(branch.url);
+    else location.replace(here + location.hash);
+  };
+  // A page of this site from its full address (as the server gives it), so it opens here
+  // whether the site is served from GitHub Pages or a preview.
+  function pageOf(url){ try { var u = new URL(url, location.href); return u.pathname.split('/').pop() + u.search; } catch (e){ return url; } }
+
+  // Every callable's data gets viewAs and branch, from wherever the page calls it.
   function viewAsCalls(){
-    if (!viewAs || !app || typeof app.functions !== 'function' || app.functions.viewAs) return;
+    if (!(viewAs || branch) || !app || typeof app.functions !== 'function' || app.functions.viewAs) return;
     var plain = app.functions;
     var wrapped = function(){
       var f = plain.apply(app, arguments);
@@ -246,7 +283,12 @@
         var hc = f.httpsCallable;
         f.httpsCallable = function(){
           var c = hc.apply(f, arguments);
-          return function(d){ return c(d == null ? { viewAs: viewAs } : typeof d === 'object' && !Array.isArray(d) ? Object.assign({}, d, { viewAs: viewAs }) : d); };
+          return function(d){
+            var extra = {};
+            if (viewAs) extra.viewAs = viewAs;
+            if (branch) extra.branch = branch.ref;
+            return c(d == null ? extra : typeof d === 'object' && !Array.isArray(d) ? Object.assign({}, d, extra) : d);
+          };
         };
         f.httpsCallable.viewAs = true;
       }
@@ -369,17 +411,59 @@
     }
   }
 
-  // While viewing as a group: a bar saying so, to stop.
-  function viewAsBar(g){
-    var bar = document.getElementById('viewAsBar');
-    if (!g) { if (bar) bar.remove(); return; }
+  // While on a branch or viewing as a group (access.viewAs): a bar saying so, to go back.
+  function branchLabel(b){ return b ? (b.num ? '#' + b.num + ' ' : '') + (b.title || 'a proposed change') : 'The site now'; }
+  function previewBar(){
+    var bar = document.getElementById('viewAsBar'), g = access && access.viewAs;
+    if (!g && !branch) { if (bar) bar.remove(); return; }
     if (!bar) {
       bar = document.createElement('div');
       bar.id = 'viewAsBar'; bar.className = 'viewas-bar'; bar.setAttribute('role', 'status');
       document.body.appendChild(bar);
     }
-    bar.innerHTML = 'Viewing as ' + esc(LEVEL_NAMES[g] || g) + ' <button type="button">Stop</button>';
-    bar.querySelector('button').addEventListener('click', function(){ BOLD.setViewAs(null); });
+    bar.innerHTML = (branch ? '<span class="vb-part"><span class="vb-text">On ' + esc(branchLabel(branch)) + '</span>' +
+        (branch.url && pageOf(branch.url) !== (location.pathname.split('/').pop() || 'index.html') ? ' <a href="' + esc(pageOf(branch.url)) + '">Its page</a>' : '') +
+        ' <button type="button" data-vb="branch">Back to the site now</button></span>' : '') +
+      (g ? '<span class="vb-part">Viewing as ' + esc(LEVEL_NAMES[g] || g) + ' <button type="button" data-vb="as">Stop</button></span>' : '');
+    bar.onclick = function(e){
+      var b = e.target.closest('[data-vb]');
+      if (!b) return;
+      if (b.getAttribute('data-vb') === 'as') BOLD.setViewAs(null); else BOLD.setBranch(null);
+    };
+  }
+
+  // The open proposals, for the Version pill (`branches`, kept a minute in this tab), and the
+  // branch you're on brought up to date from them: gone (accepted, declined or withdrawn
+  // meanwhile), you're back on the site now.
+  var branchList = null, branchError = false, branchLoading = false;
+  function loadBranches(){
+    if (branchLoading || !access || !access.e) return;
+    try {
+      var c = JSON.parse(sessionStorage.getItem('boldBranches') || 'null');
+      var fresh = c && c.e === access.e && c.as === (viewAs || '') && Date.now() - c.t < 60000;
+      // Not without the branch you're on (one proposed since): asked again.
+      if (fresh && (!branch || c.list.some(function(b){ return b.ref === branch.ref; }))) { gotBranches(c.list); return; }
+    } catch (e){}
+    branchLoading = true;
+    withFunctions(function(){
+      firebase.app().functions('europe-west2').httpsCallable('branches')().then(function(r){
+        var list = (r.data && r.data.branches) || [];
+        try { sessionStorage.setItem('boldBranches', JSON.stringify({ e: access.e, as: viewAs || '', t: Date.now(), list: list })); } catch (e){}
+        branchLoading = false; gotBranches(list);
+      }).catch(function(err){ console.error('[BOLD Lab] loading the open proposals failed', err); branchLoading = false; branchError = true; drawAccess(); });
+    });
+  }
+  function gotBranches(list){
+    branchList = list; branchError = false;
+    if (branch) {
+      var now = list.filter(function(b){ return b.ref === branch.ref; })[0];
+      if (!now) { BOLD.setBranch(null); return; }
+      // Its table changed (or first known, from a link): the page is drawn again with it.
+      if (JSON.stringify(now.pages || null) !== JSON.stringify(branch.pages || null)) { BOLD.setBranch(now); return; }
+      BOLD.setBranch(now, { quiet: true, known: true });
+      return;
+    }
+    drawAccess(); previewBar();
   }
 
   // Called right after the masthead markup.
@@ -391,7 +475,8 @@
     // Settings, in the menu, once the viewer is known to be a PI or admin.
     BOLD.onAccess(function(a){
       var g = region.querySelector('.mast-menu-settings'); if (g) g.hidden = !a.fullWrite;
-      viewAsBar(a.viewAs);
+      previewBar();
+      if (branch && !branchList) loadBranches();
     });
     alignSearch();
   };
@@ -448,7 +533,9 @@
   // A page's level for `what`: view, or edit (propose is edit).
   // PAN-BOLD is Everyone (everyone signed in): one level.
   function levelFor(area, what){
-    var p = (access && access.pages && access.pages[area]) || {};
+    // On a branch that changes Who can see what: the table it would make.
+    var pages = (branch && branch.pages) || (access && access.pages);
+    var p = (pages && pages[area]) || {};
     var l = (what === 'view' ? p.view : p.edit) || 'internal';
     return l === 'pan' ? 'everyone' : l;
   }
@@ -614,13 +701,30 @@
       }).join('') + '</div>';
     }).join('') + '</div>';
   }
+  var brOpen = false;   // the Version pill's list is open
+  var ICON_CARET = '<svg class="ac-caret" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg>';
+  var ICON_BRANCH = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="5.5" r="1.6"/><path d="M4.5 5.1v5.8M11.5 7.1c0 2.6-2.2 3.4-5.4 4.4"/></svg>';
   function drawAccess(){
     var el = document.getElementById('pageAccess'), area = pageArea();
     if (!el) return;
     if (!area || !AREA_NAMES[area] || !access || !access.e) { el.hidden = true; el.innerHTML = ''; return; }
     var cur = currentLevels(area);
     var html = '<button type="button" class="ac-chip" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="Who can see this page">' + ICON_EYE +
-      '<span>' + esc(groupName(cur.view)) + '</span>' + (waiting ? '<span class="ac-waiting">· 1 change waiting</span>' : '') + '<svg class="ac-caret" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg></button>';
+      '<span>' + esc(groupName(cur.view)) + '</span>' + (waiting ? '<span class="ac-waiting">· 1 change waiting</span>' : '') + ICON_CARET + '</button>' +
+      // The Version pill (branches): the site now, or as an open proposal would make it.
+      '<button type="button" class="ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="See the site as an open proposal would make it">' + ICON_BRANCH +
+      '<span class="br-label">' + esc(branchLabel(branch)) + '</span>' + ICON_CARET + '</button>';
+    if (brOpen) {
+      html += '<div class="ac-panel br-panel" id="brPanel" role="dialog" aria-label="Versions of the site"><div class="ac-title">Version</div>' +
+        '<p class="ac-note">See the whole site as an open proposal would make it, before anyone accepts it. Only you see it, in this tab.</p>' +
+        '<ul class="br-list"><li><button type="button" class="br-item' + (branch ? '' : ' is-on') + '" data-ref=""><span class="br-t">The site now</span></button></li>' +
+        (branchList || []).map(function(b){
+          return '<li><button type="button" class="br-item' + (branch && branch.ref === b.ref ? ' is-on' : '') + '" data-ref="' + esc(b.ref) + '">' +
+            '<span class="br-t">' + esc(branchLabel(b)) + '</span><span class="br-by">' + esc((b.by ? 'by ' + b.by : '') + (b.pages ? ' · changes who can see what' : '')) + '</span></button></li>';
+        }).join('') + '</ul>' +
+        (branchError ? '<p class="ev-error">Couldn’t load the proposals — try again.</p>' : !branchList ? '<p class="ac-note">Loading…</p>' : !branchList.length ? '<p class="ac-note">No proposals are open.</p>' : '') +
+        '<div class="ac-actions"><button type="button" class="btn-text br-close">Close</button></div></div>';
+    }
     if (panel) {
       var can = !!access.fullWrite, lv = panel.lv, changed = !sameLevels(lv, cur);
       html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">Who can see ' + esc(AREA_NAMES[area]) + '</div>';
@@ -696,10 +800,20 @@
     if (!box) return;
     if (!box.contains(e.target)) {
       if (panel && !panel.busy && !(panel.note && !panel.done)) { panel = null; drawAccess(); }
+      if (brOpen) { brOpen = false; drawAccess(); }
       return;
     }
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
+    if (t.classList.contains('br-chip')) { brOpen = !brOpen; if (brOpen) { panel = null; loadBranches(); } drawAccess(); return; }
+    if (t.classList.contains('br-close')) { brOpen = false; drawAccess(); return; }
+    if (t.classList.contains('br-item')) {
+      var r = t.getAttribute('data-ref');
+      if (branch ? branch.ref === r : !r) { brOpen = false; drawAccess(); return; }
+      BOLD.setBranch(r ? (branchList || []).filter(function(b){ return b.ref === r; })[0] : null, { go: !!r });
+      return;
+    }
+    if (t.classList.contains('ac-chip')) brOpen = false;
     if (t.classList.contains('ac-chip')) panel = panel ? null : { lv: currentLevels(pageArea()), note: '' };
     else if (t.classList.contains('ac-close')) panel = null;
     else if (t.classList.contains('ac-cell')) setLevel(t.getAttribute('data-what'), t.getAttribute('data-level'));
@@ -710,6 +824,7 @@
     if (again) again.focus();
   });
   document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && brOpen) { brOpen = false; drawAccess(); var bc = document.querySelector('#pageAccess .br-chip'); if (bc) bc.focus(); return; }
     if (e.key === 'Escape' && panel && !panel.busy) { panel = null; drawAccess(); var c = document.querySelector('#pageAccess .ac-chip'); if (c) c.focus(); }
   });
   document.addEventListener('input', function(e){

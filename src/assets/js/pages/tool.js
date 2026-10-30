@@ -24,6 +24,18 @@
   var historyWrap = document.getElementById('toolHistoryWrap'), histPanel = null;
 
   function content(d){ var o = {}; d = d || {}; CONTENT.forEach(function(k){ o[k] = d[k] !== undefined ? d[k] : (k === 'acting' ? false : k === 'input' ? {} : ''); }); return o; }
+  // The proposal for this tool the site is on (bold.js's branch, the Version pill), if any:
+  // the tool is shown as it would make it.
+  function branchPrefix(){ return 'agentTools/' + name + '/proposals/'; }
+  function branchQ(){
+    var b = BOLD.branch(), id = b && b.ref.indexOf(branchPrefix()) === 0 ? b.ref.slice(branchPrefix().length) : '';
+    return id ? proposals.filter(function(q){ return q.id === id; })[0] || null : null;
+  }
+  function viewQ(q){
+    if (q) BOLD.setBranch({ ref: branchPrefix() + q.id, title: 'Tool ' + ((x && x.title) || name) + ': ' + (q.note || (q.kind === 'delete' ? 'remove it' : 'a change')), url: 'tool.html?tool=' + encodeURIComponent(name) }, { quiet: true });
+    else BOLD.setBranch(null, { quiet: true });
+    render(); window.scrollTo(0, 0);
+  }
   function mine(q){ return !!(me && q.by && String(q.by.email).toLowerCase() === me.email.toLowerCase()); }
   function inputsHtml(input){
     var keys = Object.keys(input || {});
@@ -106,6 +118,7 @@
           (shownQ(q) ? '<div class="sk-p-changes">' + (q.kind === 'delete' ? '<p class="event-form-hint">Removes the tool.</p>' : BoldHistory.changesHtml(content(x), content(Object.assign({}, x || {}, q.after)), FIELDS)) +
             (r && r.reasons && r.reasons.length ? '<ul class="mx-reasons">' + r.reasons.map(function(t){ return '<li>' + esc(t) + '</li>'; }).join('') + '</ul>' : '') + '</div>' : '') +
           '<div class="event-controls"><button type="button" class="btn-text tq-show" data-id="' + esc(q.id) + '">' + (shownQ(q) ? 'Hide changes' : 'Show changes') + '</button>' +
+            (x ? '<button type="button" class="btn-text tq-view" data-id="' + esc(q.id) + '">' + (branchQ() === q ? 'Back to the tool now' : 'View as proposed') + '</button>' : '') +
             '<button type="button" class="btn-text tq-accept" data-id="' + esc(q.id) + '"' + (decide || b) + '>Accept</button>' +
             '<button type="button" class="btn-text danger tq-decline" data-id="' + esc(q.id) + '"' + (decide || b) + '>Decline</button>' +
             (own ? (q.kind !== 'delete' ? '<button type="button" class="btn-text tq-edit" data-id="' + esc(q.id) + '"' + b + '>Edit</button>' : '') + '<button type="button" class="btn-text danger tq-withdraw" data-id="' + esc(q.id) + '"' + b + '>Withdraw</button>' : '') +
@@ -117,6 +130,7 @@
     var id = t.getAttribute('data-id'), q = proposals.filter(function(p){ return p.id === id; })[0];
     if (!q) return;
     if (t.classList.contains('tq-show')) { shown[id] = !shownQ(q); render(); return; }
+    if (t.classList.contains('tq-view')) { viewQ(branchQ() === q ? null : q); return; }
     if (t.classList.contains('tq-edit')) { editingQ = q; form = 'change'; render(); return; }
     var withdraw = t.classList.contains('tq-withdraw'), accept = t.classList.contains('tq-accept');
     var job = BOLD.confirmProposal(withdraw ? 'withdraw' : accept ? 'accept' : 'decline', q.by && q.by.name, accept ? ['Give every agent the tool as changed, at once'] : []).then(function(ok){
@@ -162,14 +176,21 @@
       return;
     }
     var shown_ = x ? content(x) : content((proposals.filter(function(q){ return q.kind === 'new'; })[0] || {}).after);
+    // On a branch that changes it: shown as proposed, with no controls but the way back.
+    var bq = x && branchQ();
+    if (bq && bq.kind === 'tool') shown_ = content(Object.assign({}, x, bq.after));
     document.title = (shown_.title || name) + ' | BOLD Lab';
     var head = '<div class="hero">' + BACK + '<div><span class="eyebrow">Tool' + (x ? '' : ' · proposed') + '</span></div><h1>' + esc(shown_.title || name) + '</h1>' +
       '<p class="skill-name"><code>' + esc(name) + '</code> · ' + (shown_.acting ? 'acts' : 'reads') + '</p>';
     if (form) { body.innerHTML = head + '</div><main>' + formHtml() + '</main>'; bind(); return; }
     body.innerHTML = head + '<p class="hero-note">' + esc(shown_.description || '') + '</p>' +
-      (x ? '<div class="event-controls"><button type="button" class="btn-text tl-change">Propose a change</button><button type="button" class="btn-text danger tl-remove">Propose removing it</button></div>' : '') + '</div>' +
-      '<main>' + proposalsHtml() + (x ? '<section class="block"><div class="block-head"><h2>Inputs</h2></div>' + inputsHtml(x.input) + '</section>' +
-        '<section class="block"><div class="block-head"><h2>Code</h2></div><pre class="skill-file-body"><code>' + esc(x.code || '') + '</code></pre></section>' : '') + '</main>';
+      (bq ? '<p class="sk-branch">' + (bq.kind === 'delete' ? 'This tool would be removed, as proposed by ' : 'Shown as proposed by ') + esc((bq.by && bq.by.name) || 'someone') + (bq.note ? ': “' + esc(bq.note) + '”' : '') +
+        '. <button type="button" class="btn-text tl-branch-back">Back to the tool now</button></p>' :
+      x ? '<div class="event-controls"><button type="button" class="btn-text tl-change">Propose a change</button><button type="button" class="btn-text danger tl-remove">Propose removing it</button></div>' : '') + '</div>' +
+      '<main>' + proposalsHtml() + (x ? '<section class="block"><div class="block-head"><h2>Inputs</h2></div>' + inputsHtml(shown_.input) + '</section>' +
+        '<section class="block"><div class="block-head"><h2>Code</h2></div><pre class="skill-file-body"><code>' + esc(shown_.code || '') + '</code></pre></section>' : '') + '</main>';
+    var tb = body.querySelector('.tl-branch-back');
+    if (tb) tb.addEventListener('click', function(){ viewQ(null); });
     var c = body.querySelector('.tl-change'), rm = body.querySelector('.tl-remove');
     if (c) c.addEventListener('click', function(){ notice = ''; editingQ = null; form = 'change'; render(); });
     if (rm) rm.addEventListener('click', function(){ notice = ''; editingQ = null; form = 'delete'; render(); });

@@ -4,6 +4,8 @@
 export default function (eleventyConfig) {
   // Static files served as-is.
   eleventyConfig.addPassthroughCopy({ 'src/assets': 'assets' });
+  // The three-way merge proposals use: one file for the server and the pages (#177).
+  eleventyConfig.addPassthroughCopy({ 'functions/merge.js': 'assets/js/merge.js' });
 
   // Page bodies are plain HTML; only layouts and partials use Nunjucks.
   eleventyConfig.addFilter('navState', (groups, current) =>

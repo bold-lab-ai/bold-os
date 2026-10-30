@@ -61,8 +61,14 @@
   }) : null;
 
   // The proposal whose result is on show ("View as proposed"), or null.
-  var viewing = null, tabBefore = null;
-  function viewed(){ return viewing ? proposals.filter(function(q){ return q.id === viewing; })[0] || null : null; }
+  // Or an earlier version (the History panel's View the page then): viewing is VERSION, and
+  // viewedVersion the version, shown as a restore of it would make the page.
+  var viewing = null, tabBefore = null, viewedVersion = null, VERSION = '#version';
+  function viewed(){
+    if (viewing === VERSION) return viewedVersion ? { id: VERSION, kind: 'restore', version: true, at: viewedVersion.at,
+      after: { title: viewedVersion.data.title || '', description: viewedVersion.data.description || '', parts: viewedVersion.data.parts || [] } } : null;
+    return viewing ? proposals.filter(function(q){ return q.id === viewing; })[0] || null : null;
+  }
   // Parts you've folded (only their title shows): this browser's, per guide.
   var folded = {};
   function foldKey(){ return 'bold-folded:' + COLLECTION + '/' + slug; }
@@ -100,6 +106,8 @@
   }
   function parts(){ var d = doc(); return (d && d.parts) || []; }
   function part(id){ return parts().filter(function(p){ return p.id === id; })[0] || null; }
+  // A part as the page has it now: no proposal on show, no draft (proposals are measured against it).
+  function livePart(id){ return ((x && x.parts) || []).filter(function(p){ return p.id === id; })[0] || null; }
   function anchor(p){ return PREFIX + p.id; }
   function hasSections(){ return parts().some(function(p){ return p.section; }); }
 
@@ -352,7 +360,9 @@
       return { parts: list };
     }
     if (q.kind === 'remove') return { parts: list.filter(function(p){ return p.id !== q.partId; }) };
-    if (q.kind === 'edit') { list.forEach(function(p){ if (p.id === q.partId) Object.assign(p, after); }); return { parts: list }; }
+    // Merged with any change since it was proposed, as accepting merges it (BoldMerge, functions/merge.js);
+    // if it can't be, as proposed.
+    if (q.kind === 'edit') { list.forEach(function(p){ if (p.id === q.partId) Object.assign(p, BoldMerge.mergeEdit(p, q.before, after).fields || after); }); return { parts: list }; }
     if (q.kind === 'move') {
       var order = after.order || [], byId = {};
       list.forEach(function(p){ byId[p.id] = p; });
@@ -379,15 +389,52 @@
     return o;
   }
 
+  // Where a proposal stands against the page now, as a git branch does against main: its
+  // edits 'current' (made on the page as it is), 'behind' (the page changed since, and they
+  // merge), 'conflict' (changed in the same lines) or 'gone' (the part was removed).
+  var STATE_RANK = { current: 0, behind: 1, conflict: 2, gone: 3 };
+  function stateOf(q){
+    var worst = 'current';
+    (q.kind === 'batch' ? q.changes || [] : [q]).forEach(function(c){
+      if (c.kind !== 'edit') return;
+      var st = BoldMerge.editState(livePart(c.partId), c.before, c.after || {});
+      if (STATE_RANK[st] > STATE_RANK[worst]) worst = st;
+    });
+    return worst;
+  }
+  // A proposal in a few words, plain text (the Version picker).
+  function whatText(q){
+    if (q.kind === 'access') return BOLD.accessProposal.describe(q);
+    if (q.kind === 'about') return KIND.about;
+    if (q.kind === 'restore') return 'Restore the version of ' + BoldHistory.when(q.after.versionAt);
+    if (q.kind === 'batch') return (q.changes || []).length + ' changes';
+    return KIND[q.kind] + ' “' + ((q.after || q.before || {}).title || '') + '”';
+  }
+  // Brings your proposal up to the page as it is now (a rebase): each edit merged with what
+  // changed since, and made on the page now. Its discussion stays.
+  function rebase(q){
+    var one = function(c){
+      var p = c.kind === 'edit' && livePart(c.partId);
+      if (!p) return c;
+      var r = BoldMerge.mergeEdit(p, c.before, c.after || {});
+      if (r.conflict) throw new Error('conflict');
+      return Object.assign({}, c, { before: partSide(p), after: Object.assign({}, c.after, r.fields) });
+    };
+    var upd = q.kind === 'batch' ? { changes: (q.changes || []).map(one) } : (function(){ var c = one(q); return { before: c.before, after: c.after }; })();
+    upd.editedAt = Date.now();
+    return ref.collection('proposals').doc(q.id).update(upd);
+  }
+
   function proposalHtml(q){
     var cur = q.kind === 'about' ? { title: x.title, description: x.description || '' } : q.partId ? part(q.partId) : null;
-    var stale = (q.kind === 'about' || q.kind === 'edit' || q.kind === 'remove') && (!cur || (q.before && (cur.title !== q.before.title || (q.kind === 'about' ? (cur.description || '') !== (q.before.description || '') :
+    var st = stateOf(q);
+    var stale = (q.kind === 'about' || q.kind === 'edit' || q.kind === 'remove') && (!cur || q.kind !== 'edit' && (q.before && (cur.title !== q.before.title || (q.kind === 'about' ? (cur.description || '') !== (q.before.description || '') :
       (cur.body || '') !== (q.before.body || '') || (q.before.section !== undefined && (cur.section || '') !== q.before.section)))));
     var what = q.kind === 'access' ? esc(BOLD.accessProposal.describe(q)) : q.kind === 'about' ? KIND.about : q.kind === 'restore' ? 'Restore the version of ' + esc(BoldHistory.when(q.after.versionAt)) :
       q.kind === 'batch' ? (q.changes || []).length + ' changes' :
       KIND[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
-    var mine = me && q.by && q.by.email === me.email;
-    var off = !fullWrite ? ' disabled title="' + G.NOT_PI + '"' :
+    var mine = me && q.by && q.by.email === me.email, byName = esc(q.by ? (q.by.name || q.by.email) : 'whoever proposed it');
+    var off = st === 'conflict' ? ' disabled title="It changed in the same lines since it was proposed"' : !fullWrite ? ' disabled title="' + G.NOT_PI + '"' :
       mine ? ' disabled title="Another PI or admin reviews your change"' : '';
     // Its own address (#proposal-<id>): the board, Slack and the eye chip link to it.
     return '<li class="gd-proposal" id="proposal-' + esc(q.id) + '" data-id="' + esc(q.id) + '">' +
@@ -398,10 +445,15 @@
       (q.note ? '<p class="gd-proposal-note">' + esc(q.note) + '</p>' : '') +
       (q.kind === 'add' && cur ? '<p class="gd-proposal-stale">That part is there already, so this can’t be accepted: propose a change to it instead.</p>' : '') +
       (stale ? '<p class="gd-proposal-stale">' + (q.kind !== 'about' && !cur ? 'That part has since been removed.' : 'This has changed since it was proposed; accepting replaces the current text.') + '</p>' : '') +
+      (st === 'behind' ? '<p class="gd-proposal-behind">The page has changed since this was proposed; accepting merges the two, as shown.' +
+        (mine ? ' <button type="button" class="btn-text gd-rebase">Update to the latest</button>' : '') + '</p>' : '') +
+      (st === 'conflict' ? '<p class="gd-proposal-stale">The page has changed in the same lines since this was proposed, so it can’t be accepted: ' +
+        (mine ? 'withdraw it and propose it again on the latest version.' : 'decline it, or ask ' + byName + ' to propose it again on the latest version.') + '</p>' : '') +
       (q.kind === 'batch' ? '<ol class="gd-batch">' + (q.changes || []).map(function(c){
           return '<li><p class="hist-label">' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + '</p>' + BoldHistory.changesHtml(sideText(c.kind, c.before), sideText(c.kind, c.after), {}) + '</li>';
         }).join('') + '</ol>' :
-        BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {})) +
+        (q.kind === 'edit' && st === 'behind' ? (function(lp){ return BoldHistory.changesHtml(sideText('edit', partSide(lp)), sideText('edit', Object.assign(partSide(lp), BoldMerge.mergeEdit(lp, q.before, q.after || {}).fields)), {}); })(livePart(q.partId)) :
+        BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {}))) +
       '<div class="event-controls">' +
         '<button type="button" class="btn-text gd-view">View as proposed</button>' +
         '<button type="button" class="btn-text gd-accept"' + off + ((q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && q.kind !== 'batch' && q.kind !== 'access' && !cur) || (q.kind === 'add' && cur) ? ' disabled' : '') + '>Accept</button>' +
@@ -728,8 +780,11 @@
     var what = q.kind === 'about' ? 'a new title and description' : q.kind === 'restore' ? 'restoring an earlier version' :
       q.kind === 'batch' ? (q.changes || []).length + ' changes' :
       { edit: 'a change to', add: 'a new part,', remove: 'removing', move: 'moving' }[q.kind] + ' “' + esc((q.after || q.before || {}).title || '') + '”';
-    body.innerHTML = '<div class="gd-viewing" role="status"><span>Viewing the page as proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') + ': ' + what +
+    // A proposal is the site's branch, whose bar (bold.js) is at the bottom: this says how, at the top.
+    body.innerHTML = '<div class="gd-viewing' + (q.version ? '' : ' is-inline') + '" role="status"><span>' + (q.version ? 'Viewing the page as it was on ' + esc(BoldHistory.when(q.at)) :
+        'Viewing the page as proposed by ' + esc(q.by ? (q.by.name || q.by.email) : 'someone') + ': ' + what) +
         '.</span>' +
+        (stateOf(q) === 'conflict' ? ' <span>It conflicts with a change made since: this is the text as proposed.</span>' : stateOf(q) === 'behind' ? ' <span>Merged with the changes made since, as accepting would.</span>' : '') +
         '<button type="button" class="btn-text gd-view-exit">Back to the current page</button></div>' +
       '<div class="hero">' + BACK + EYEBROW_HTML + '<h1' + (q.kind === 'about' || (q.kind === 'batch' && (q.changes || []).some(function(c){ return c.kind === 'about'; })) ? ' class="gd-proposed"' : '') + '>' + esc(d.title) + '</h1>' +
         (d.description ? '<p class="hero-note">' + esc(d.description) + '</p>' : '') + '</div>' +
@@ -743,7 +798,13 @@
     return (q.kind === 'batch' ? q.changes || [] : [q]).map(function(c){ return c.partId; }).filter(Boolean);
   }
 
+  // This page's proposal the site is on (bold.js's branch, the Version pill), or ''.
+  function branchPrefix(){ return COLLECTION + '/' + slug + '/proposals/'; }
+  function branchHere(){ var b = BOLD.branch(); return b && b.ref.indexOf(branchPrefix()) === 0 ? b.ref.slice(branchPrefix().length) : ''; }
+  // Viewing a proposal puts the whole site on it (a branch), so other pages follow.
   function view(id){
+    var bq = id !== VERSION && proposals.filter(function(q){ return q.id === id; })[0];
+    if (bq && branchHere() !== id) BOLD.setBranch({ ref: branchPrefix() + id, title: doc().title + ': ' + whatText(bq), url: location.pathname.split('/').pop() + location.search }, { quiet: true });
     if (!viewing) tabBefore = tab;
     viewing = id; form = null; notice = '';
     var q = viewed(), ids = changedIds(q), target = parts().filter(function(p){ return ids.indexOf(p.id) !== -1; })[0];
@@ -754,7 +815,12 @@
   }
   function stopViewing(){
     var id = viewing;
-    viewing = null; tab = tabBefore; render();
+    if (id !== VERSION && branchHere()) {
+      // A branch that changes who can see what: the page is drawn again without it.
+      if (BOLD.branch().pages) { BOLD.setBranch(null); return; }
+      BOLD.setBranch(null, { quiet: true });
+    }
+    viewing = null; viewedVersion = null; tab = tabBefore; render();
     var li = body.querySelector('.gd-proposal[data-id="' + id + '"]');
     if (li) li.scrollIntoView({ block: 'center' });
   }
@@ -954,6 +1020,12 @@
       if (!q) return;
       if (t.classList.contains('gd-view')) { view(q.id); return; }
       if (t.classList.contains('gd-revise')) { editProposal(q); return; }
+      if (t.classList.contains('gd-rebase')) {
+        t.disabled = true;
+        try { rebase(q).catch(function(err){ console.error('[BOLD Guides] updating a proposal failed', err); window.alert('Couldn’t update it — try again.'); t.disabled = false; }); }
+        catch (err) { window.alert('It changed in the same lines since: withdraw it and propose it again.'); t.disabled = false; }
+        return;
+      }
       var what = t.classList.contains('gd-accept') && fullWrite ? 'accept' : t.classList.contains('gd-decline') && fullWrite ? 'decline' : t.classList.contains('gd-withdraw') ? 'withdraw' : '';
       if (what) {
         t.disabled = true;
@@ -982,6 +1054,7 @@
       // Resolved comments are listed among the edits.
       extras: function(){ return comments ? comments.resolvedItems() : []; },
       canRestore: function(){ return !!me; },
+      view: function(v){ if (!v || !v.data) return; viewedVersion = v; view(VERSION); },
       restore: function(v){
         return submit({ kind: 'restore', partId: '', before: null, note: 'Restore the version of ' + BoldHistory.when(v.at),
           after: { title: v.data.title || '', description: v.data.description || '', parts: v.data.parts || [], versionAt: v.at } })
@@ -1006,8 +1079,14 @@
   // loads, so a link to one of its parts (#…) is followed once it's there.
   // A link to the proposed changes (#proposals, as Slack sends PIs) waits for them too.
   var jumped = !location.hash, proposalsLoaded = false;
+  var branchShown = false;
   function refresh(){
     if (form) return;
+    // On a branch that's one of this page's proposals: shown as it would be accepted, once they're in.
+    if (!branchShown && x && proposalsLoaded && !viewing && branchHere()) {
+      branchShown = true;
+      if (proposals.some(function(q){ return q.id === branchHere(); })) { view(branchHere()); return; }
+    }
     var ready = !jumped && x && (proposalsLoaded || !/^#proposal/.test(location.hash)) &&
       (!commentFor(location.hash) || (comments && comments.ready() && proposalsLoaded));
     if (ready) tab = tabFor(location.hash);
