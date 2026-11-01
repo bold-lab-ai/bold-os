@@ -1,0 +1,17 @@
+/* Layout for the gallery pages only; every colour is the site's own (bold.css). */
+body{overflow-x:hidden;}
+.gl{padding:28px 28px 0; display:flex; flex-direction:column; gap:30px;}
+.gl > section{max-width:900px;}
+.gl > footer{margin:0 -28px;}
+.gl-label{margin:0 0 10px; font-family:var(--sans); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted);}
+.gl-row{display:flex; flex-wrap:wrap; align-items:center; gap:12px 14px; margin-bottom:12px;}
+.gl-cols{display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:24px;}
+.gl-muted{color:var(--muted);}
+.gl-flat{margin:0;}
+.gl-static{position:static !important; transform:none !important; inset:auto !important; margin:0 0 16px; width:auto; max-width:100%;}
+dialog.gl-static{display:block;}
+.mast-menu .gl-hover{background:var(--surface);}
+.gl-week .week-block{position:relative; width:118px; height:56px; padding:6px;}
+.gl-columns{min-width:0;}
+.gl .sidebar-collapse{flex:none;}
+.gl .cx-svg{max-width:520px;}
