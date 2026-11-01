@@ -14,6 +14,8 @@
   --content-max:1060px;
   --article-max:680px;
 }
+/* Dark: the shared dark palette (bold.css), with this page's own blue and focus lightened. */
+:root[data-theme="dark"]{--blue:#7aa7ff; --focus:#e6a24a;}
 body{
   margin:0;
   background:var(--paper);

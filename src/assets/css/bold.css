@@ -6,9 +6,10 @@
    muted accent, serif body, sans chrome, underlined links over buttons). */
 /* ---------- colour ----------
    Rules use these roles, never a colour value, so a theme is one block that sets them:
-   light here, and any other theme as a block that overrides them. Tints, rules and shadows are
+   light here, dark under :root[data-theme="dark"] below. Tints, rules and shadows are
    mixed from the roles (color-mix), so they follow the theme too. A page may change a
-   role in its own :root. */
+   role in its own :root; the dark block's selector is stronger, so in dark mode the
+   shared value wins unless the page also gives its own :root[data-theme="dark"] one. */
 :root{
   color-scheme:light;
   --ink:#1a2b4a;          /* headings, strong text, solid fills */
@@ -21,13 +22,14 @@
   --rule:color-mix(in srgb, var(--ink) 8%, transparent);      /* fainter rules between list rows */
   --underline:color-mix(in srgb, var(--ink) 32%, transparent); /* a link's resting underline */
   /* The accent marks things (focus rings, current tab, indicators, filled buttons);
-     --link colours text you can click. Both are the one navy here. */
+     --link colours text you can click. One navy in light; in dark the marks turn
+     azure while the text stays white. */
   --accent:#1a2b4a;
   --accent-hover:#0f1c33; /* a filled accent control under the pointer */
   --accent-dim:#e3e6ec;   /* a quiet accent-tinted fill */
   --link:var(--accent);
   --on-fill:#fff;         /* text and icons on the accent, or on a hue below */
-  --hover-mix:#000;       /* mixed into a filled hue under the pointer */
+  --hover-mix:#000;       /* mixed into a filled hue under the pointer: darker in light, lighter in dark */
   --shade:#1a2b4a;        /* shadows and backdrops */
   --shadow:0 14px 44px color-mix(in srgb, var(--shade) 12%, transparent);
   /* Hues for kinds of things (session types, groups, calendar entries) and status. */
@@ -58,6 +60,45 @@
   --chrome-pad:16px; /* shared inset: masthead left/right padding = sidebar-inner left/right padding */
   --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
   --sans:'Cabin', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+/* Dark: the light theme's navy becomes the page, its slate the cards. Set by the masthead's
+   theme button (bold.js mountTheme), kept in localStorage and applied before the page paints
+   (base.njk). */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ink:#fff;
+  --ink-soft:#dfe3ea;
+  --muted:#a6b3c6;
+  --paper:#1a2b4a;
+  --surface:#33445f;
+  --wash:#22365a;
+  --accent:#70b5ff;
+  --accent-hover:#a8d2ff;
+  --accent-dim:#2a3d5c;
+  /* Restated from the light block, though they mix the same way, so that a page's
+     own light value for one of them doesn't carry into dark. */
+  --line:color-mix(in srgb, var(--ink) 16%, transparent);
+  --rule:color-mix(in srgb, var(--ink) 8%, transparent);
+  --underline:color-mix(in srgb, var(--ink) 32%, transparent);
+  --success-text:var(--green);
+  --warn-text:var(--brown);
+  --link:var(--ink);
+  --on-fill:#1a2b4a;
+  --hover-mix:#fff;
+  --shade:#000;
+  --shadow:0 14px 44px color-mix(in srgb, var(--shade) 35%, transparent);
+  --green:#8acdbb;
+  --brown:#e6bd7a;
+  --amber:#e6bd7a;
+  --plum:#c6a6e3;
+  --teal:#91c6db;
+  --success-bg:#1d3934; --success-line:#3d6f63;
+  --warn-bg:#392e20;    --warn-line:#7a6034;
+  --danger-text:#f4a69f; --danger-bg:#41272b; --danger-line:#8a4a4c;
+  --neutral-text:#b5c0d0; --neutral-bg:#293240;
+  --highlight:rgba(230,189,122,.24);
+  --highlight-strong:rgba(230,189,122,.45);
+  --highlight-line:rgba(230,189,122,.7);
 }
 
 *{box-sizing:border-box;}
@@ -313,7 +354,10 @@ footer{
 .mast-menu .mast-menu-head ~ .mast-menu-head{margin-top:4px; border-top:1px solid var(--line); padding-top:9px;}
 .mast-menu .is-off{display:block; padding:7px 10px; color:var(--muted); opacity:.6; cursor:default;}
 .mast-sep{width:1px; height:20px; background:var(--line); margin:0 4px;}
-.mast-bell[hidden] + .mast-sep, #authRegion:empty{display:none;}
+.mast-bell[hidden] + .mast-theme + .mast-sep, #authRegion:empty{display:none;}
+/* The theme button (bold.js mountTheme) shows the theme in use: a sun in light, a moon in dark. */
+.mast-theme .ic-moon, :root[data-theme="dark"] .mast-theme .ic-sun{display:none;}
+:root[data-theme="dark"] .mast-theme .ic-moon{display:block;}
 .mast-search{margin-right:4px;}
 /* The search box (search-box.js): a menu of where to search under it, as the person picker's. */
 .mast-search{position:relative;}
