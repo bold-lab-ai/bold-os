@@ -4,7 +4,7 @@
 .back-link:hover{color:var(--link);}
 .eyebrow{
   display:inline-block; font-family:var(--sans); font-weight:400; font-size:11px;
-  text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:.7;
+  text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:var(--label-fade);
   margin-bottom:12px;
 }
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}

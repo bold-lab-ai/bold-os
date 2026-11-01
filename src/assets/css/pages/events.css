@@ -16,7 +16,7 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 section.block{max-width:var(--article-max); margin:64px 0 0;}
 section.block:first-of-type{margin-top:12px;}
 .block-head{margin-bottom:6px;}
-.block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+.block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:var(--label-fade); font-weight:400;}
 /* ---------- event list ---------- */
 .event-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column;}
 .event-card{
@@ -32,7 +32,7 @@ section.block:first-of-type{margin-top:12px;}
 .event-top{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;}
 .eyebrow{
   display:inline-block; font-family:var(--sans); font-weight:400; font-size:11px;
-  text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:.7;
+  text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:var(--label-fade);
 }
 .eyebrow--upcoming{color:var(--link); opacity:.85;}
 .eyebrow--past{color:var(--muted);}

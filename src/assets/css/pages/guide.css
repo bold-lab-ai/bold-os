@@ -7,7 +7,7 @@
 .back-link:hover{color:var(--link);}
 .eyebrow{
   display:inline-block; font-family:var(--sans); font-weight:400; font-size:11px;
-  text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:.7;
+  text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:var(--label-fade);
   margin-bottom:12px;
 }
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
@@ -16,7 +16,7 @@
 main{max-width:var(--guide-max); margin:0 auto 0 var(--page-left); padding:8px var(--gutter) 24px;}
 section.block{max-width:var(--article-max); margin:48px 0 0;}
 .block-head{margin-bottom:10px;}
-.block h2, .read-point h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+.block h2, .read-point h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:var(--label-fade); font-weight:400;}
 .guide-history{padding-top:0;}
 
 /* ---------- contents and parts ---------- */
