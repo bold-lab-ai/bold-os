@@ -70,10 +70,10 @@
   --ink-soft:#dfe3ea;
   --muted:#a6b3c6;
   --paper:#1a2b4a;
-  --surface:#33445f;
+  --surface:#284171;
   --wash:#22365a;
-  --accent:#70b5ff;
-  --accent-hover:#a8d2ff;
+  --accent:#4981e9;
+  --accent-hover:#77a1ee;
   --accent-dim:#2a3d5c;
   /* Restated from the light block, though they mix the same way, so that a page's
      own light value for one of them doesn't carry into dark. */
@@ -87,7 +87,7 @@
   --hover-mix:#fff;
   --shade:#000;
   --shadow:0 14px 44px color-mix(in srgb, var(--shade) 35%, transparent);
-  --green:#8acdbb;
+  --green:#3ae9ba;
   --brown:#e6bd7a;
   --amber:#e6bd7a;
   --plum:#c6a6e3;
