@@ -5,7 +5,7 @@
 main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
 section.block{max-width:var(--article-max); margin:36px 0 0;}
 .block-head{margin-bottom:6px;}
-.block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+.block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:var(--label-fade); font-weight:400;}
 
 .cl-filters{display:flex; gap:18px; margin:8px 0 0; font-family:var(--sans); font-size:14px;}
 .cl-filter{color:var(--muted);}

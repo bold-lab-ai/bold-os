@@ -13,7 +13,7 @@
 .sr-title{font-size:19px; font-weight:500;}
 .sr-where{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .sr-text{margin:6px 0 0; font-size:15px; color:var(--ink-soft); overflow-wrap:anywhere;}
-.sr-item mark{background:rgba(214,170,60,.28); color:inherit; padding:0 1px;}
+.sr-item mark{background:var(--highlight); color:inherit; padding:0 1px;}
 @media (max-width:820px){
   .sr-layout{grid-template-columns:1fr; gap:14px;}
   .sr-scopes{position:static; flex-direction:row; flex-wrap:wrap;}

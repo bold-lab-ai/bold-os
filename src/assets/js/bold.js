@@ -614,8 +614,33 @@
     BOLD.onUser(function(user){ box.hidden = !user; if (!user) open(false); });
   }
 
+  // Light or dark (the dark block in bold.css): the masthead's sun/moon button, showing the theme
+  // in use. The choice is kept in localStorage (boldTheme) and applied before the page paints by
+  // the line at the top of base.njk; other open tabs follow it.
+  function mountTheme(){
+    var btn = document.getElementById('themeToggle'), root = document.documentElement;
+    if (!btn) return;
+    var show = function(){
+      var dark = root.getAttribute('data-theme') === 'dark';
+      btn.setAttribute('aria-pressed', String(dark));
+      btn.title = dark ? 'Switch to the light theme' : 'Switch to the dark theme';
+    };
+    var set = function(dark){
+      if (dark) root.setAttribute('data-theme', 'dark'); else root.removeAttribute('data-theme');
+      show();
+    };
+    show();
+    btn.addEventListener('click', function(){
+      var dark = root.getAttribute('data-theme') !== 'dark';
+      set(dark);
+      try { localStorage.setItem('boldTheme', dark ? 'dark' : 'light'); } catch (e){}
+    });
+    window.addEventListener('storage', function(e){ if (e.key === 'boldTheme') set(e.newValue === 'dark'); });
+  }
+
   // Called right after the masthead markup.
   BOLD.mountMasthead = function(){
+    mountTheme();
     mountCreate();
     mountMine();
     var region = document.getElementById('authRegion');
