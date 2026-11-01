@@ -17,6 +17,17 @@ service firebase.storage {
     match /profile-photos/{slackId}/{version} {
       allow read, write: if false;
     }
+    match /rota-profiles/{slackId}/portrait {
+      function owner() {
+        return request.auth != null && 'oidc.slack' in request.auth.token.firebase.identities
+          && firestore.exists(/databases/(default)/documents/people/$(slackId))
+          && firestore.get(/databases/(default)/documents/people/$(slackId)).data.email.lower() == request.auth.token.email.lower();
+      }
+      allow read: if request.auth != null && 'oidc.slack' in request.auth.token.firebase.identities;
+      allow create, update: if owner() && request.resource.size <= 2 * 1024 * 1024
+        && request.resource.contentType.matches('image/(webp|png|jpeg)');
+      allow delete: if owner();
+    }
     match /venues/{boardId}/feed.ics {
       allow read: if true;
       // A Slack account, as firestore.rules' isSignedIn() requires.

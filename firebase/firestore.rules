@@ -106,6 +106,64 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Published group meeting records are server-written. A callable checks
+    // the actor, eligibility and revisions in the same transaction as edits.
+    match /groupMeetingSeasons/{id} {
+      allow read: if hasFullWrite() || (may('events', 'view') && resource.data.get('publicationState', 'draft') == 'published');
+      allow write: if false;
+    }
+    match /groupMeetings/{date} {
+      allow read: if may('events', 'view');
+      allow write: if false;
+    }
+    match /groupRotaSlots/{id} {
+      allow read: if may('events', 'view');
+      allow write: if false;
+      match /versions/{version} {
+        allow read: if may('events', 'view');
+        allow write: if false;
+      }
+    }
+    match /groupRotaMembers/{slackId} {
+      allow read: if may('events', 'view');
+      allow write: if false;
+    }
+    // A portrait belongs to a verified Slack roster ID. The file lives at the
+    // corresponding Storage path; members can replace or remove their own.
+    match /groupRotaPhotos/{slackId} {
+      allow read: if may('events', 'view');
+      allow create, update: if isSignedIn()
+        && exists(/databases/$(database)/documents/people/$(slackId))
+        && get(/databases/$(database)/documents/people/$(slackId)).data.email.lower() == email().lower()
+        && request.resource.data.keys().hasOnly(['path', 'updatedBy', 'updatedAt'])
+        && request.resource.data.path == 'rota-profiles/' + slackId + '/portrait'
+        && request.resource.data.updatedBy == email().lower()
+        && request.resource.data.updatedAt is number;
+      allow delete: if isSignedIn()
+        && get(/databases/$(database)/documents/people/$(slackId)).data.email.lower() == email().lower();
+    }
+    match /groupRotaEligibility/{slackId} {
+      allow read, write: if false;
+    }
+    match /groupRotaSwaps/{id} {
+      allow get: if isAdmin() || (isLabMember() && (
+        get(/databases/$(database)/documents/people/$(resource.data.requesterSlackId)).data.email.lower() == email().lower() ||
+        get(/databases/$(database)/documents/people/$(resource.data.recipientSlackId)).data.email.lower() == email().lower()));
+      allow list, write: if false;
+    }
+    match /groupRotaDeclines/{id} {
+      allow get: if isAdmin() || (isLabMember() && resource.data.byEmail.lower() == email().lower());
+      allow list, write: if false;
+    }
+    match /groupRotaOffers/{id} {
+      allow read, write: if false;
+    }
+    match /groupRotaNotifications/{id} {
+      allow read, write: if false;
+    }
+    match /groupRotaConfig/{id} {
+      allow read, write: if false;
+    }
     // Joining BOLD (functions/index.js "Joining BOLD"): requests come in through
     // requestToJoin and are decided through decideJoinRequest, so clients write
     // neither; PIs and admins read them (join-requests.html).

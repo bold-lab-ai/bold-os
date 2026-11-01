@@ -79,6 +79,19 @@
           .concat(r[2].docs.map(function(d){ var x = d.data(); return item(x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(d.id)); }));
       });
     },
+    rota: function(){
+      return Promise.all([db.collection('groupMeetingSeasons').where('publicationState', '==', 'published').get(),
+        db.collection('groupRotaSlots').get(), db.collection('people').get().catch(function(){ return { docs: [] }; })]).then(function(r){
+        var names = {}, published = r[0].docs.length > 0;
+        r[2].docs.forEach(function(d){ names[d.id] = d.data().name || ''; });
+        if (!published) return [];
+        return [item('Group meetings', 'Rota', r[0].docs.map(function(d){ return d.data().label || ''; }).join(' '), 'group-meetings.html')]
+          .concat(r[1].docs.map(function(d){ var s = d.data(), person = names[s.presenterSlackId] || s.legacyName || 'Open slot';
+            return item(s.topic || person, 'Group meeting · ' + (s.date || s.meetingId) + ' · Slot ' + s.slotNumber,
+              [person, s.topic, s.format].join(' '), 'group-meetings.html?date=' + encodeURIComponent(s.date || s.meetingId) + '&slot=' + encodeURIComponent(s.slotNumber));
+          }));
+      });
+    },
     projects: function(){
       return firebase.app().functions('europe-west2').httpsCallable('getAllProjects')({}).then(function(r){
         var d = r.data || {};

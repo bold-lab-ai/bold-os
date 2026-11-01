@@ -210,6 +210,9 @@ module.exports = function(deps){
     events: () => cached('events', async () => docs(await db.collection('events').get())),
     sessions: () => cached('sessions', async () => docs(await db.collection('collabWeekSessions').get())),
     talks: () => cached('talks', async () => docs(await db.collection('collabWeekTalks').get())),
+    rotaSeasons: () => cached('rotaSeasons', async () => docs(await db.collection('groupMeetingSeasons').get())),
+    rotaMeetings: () => cached('rotaMeetings', async () => docs(await db.collection('groupMeetings').get())),
+    rotaSlots: () => cached('rotaSlots', async () => docs(await db.collection('groupRotaSlots').get())),
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
     series: () => cached('series', async () => docs(await db.collection('eventSeries').get())),
     skills: () => cached('skills', async () => docs(await db.collection('skills').get())),
@@ -356,7 +359,7 @@ module.exports = function(deps){
   // The tools the lab adds, from the Tools pages (agentTools), run in mcpSandbox (functions/api-tools.js).
   const added = require('./api-tools')({ db, httpError, builtins: () => TOOLS, idTokenFor: (e) => actions.idTokenFor(e), fetchImpl: deps.fetchImpl, sandboxUrl: deps.sandboxUrl, SITE_URL });
   const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
-  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'comments'];
+  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'rota', 'projects', 'people', 'board', 'comments'];
   const TOOLS = [
     {
       name: 'search',
@@ -436,7 +439,7 @@ module.exports = function(deps){
   // Who can see what (functions/access.js): each reading tool reads one page, and answers
   // only if its person may view that page. Acting goes through the rules and callables,
   // which check it themselves.
-  const TOOL_PAGE = { search: 'search', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
+  const TOOL_PAGE = { search: 'search', list_group_rota: 'events', list_projects: 'projects', get_project: 'projects', find_people: 'people', get_person: 'people',
     calendar: 'calendar', my_items: 'profile', list_introduction_offers: 'service-desk', list_tools: 'tools', list_skills: 'skills', get_skill: 'skills' };
   const pageOfTool = (name, args) => { const p = String((args || {}).page || '').trim().toLowerCase();
     return name === 'read_page' ? (p === 'boldiquette' ? 'boldiquette' : require('./access').guideArea(p)) : TOOL_PAGE[name]; };
@@ -506,6 +509,16 @@ module.exports = function(deps){
       evs.filter((x) => !isHidden(x, full)).forEach((x) => item('events', x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), x.page || 'event.html?event=' + encodeURIComponent(x._id)));
       ss.forEach((x) => item('events', x.title, 'Session', talk(x), 'session.html?session=' + encodeURIComponent(x._id)));
       ts.forEach((x) => item('events', x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(x._id)));
+    }));
+    if (want('rota') && await access.can(who.email, 'events', 'view')) jobs.push(Promise.all([lab.rotaSeasons(), lab.rotaSlots(), lab.people()]).then(([seasons, slots, people]) => {
+      if (!seasons.some((s) => s.publicationState === 'published')) return;
+      const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
+      item('rota', 'Group meetings', 'Rota', seasons.filter((s) => s.publicationState === 'published').map((s) => s.label).join(' '), 'group-meetings.html');
+      slots.forEach((s) => {
+        const person = names[s.presenterSlackId] || s.legacyName || 'Open slot';
+        item('rota', s.topic || person, 'Group meeting · ' + (s.date || s.meetingId) + ' · Slot ' + s.slotNumber,
+          [person, s.topic, s.format].join(' '), 'group-meetings.html?date=' + encodeURIComponent(s.date || s.meetingId) + '&slot=' + encodeURIComponent(s.slotNumber));
+      });
     }));
     if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
       item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));

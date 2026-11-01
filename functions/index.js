@@ -1270,6 +1270,7 @@ exports.onVenueProposed = onDocumentCreated(
     const data = event.data && event.data.data();
     if (!data || data.status !== 'pending') return;
     const token = SLACK_BOT_TOKEN.value();
+
     const pis = await rolesEmails('pis');
     const admins = await rolesEmails('admins');
     const proposer = (data.proposedBy && (data.proposedBy.name || data.proposedBy.email)) || 'Someone';
@@ -2202,7 +2203,11 @@ exports.slackEvents = onRequest(
     // once (Slack waits 3 seconds): it opens the card's form, or says why not, to them alone.
     if (req.body && typeof req.body.command === 'string'){
       let out = null;
-      try { out = await handleSlashCommand(token, req.body); }
+      try {
+        out = req.body.command === '/rota'
+          ? { response_type: 'ephemeral', text: await groupRota.slackCommand(req.body) }
+          : await handleSlashCommand(token, req.body);
+      }
       catch (err){ logger.error('slackEvents: slash command failed', { command: req.body.command, error: String(err && err.message || err) }); out = { response_type: 'ephemeral', text: 'That didn’t work — try again.' }; }
       // The form opened: an empty reply (anything else, even {}, shows as a message).
       if (out && out.text) res.status(200).json(out); else res.status(200).send('');
@@ -2245,7 +2250,7 @@ exports.slackEvents = onRequest(
       // retry for interactivity payloads on timeout, so completing before
       // responding is the only way this reliably runs at all.
       try {
-        await handleInteractivity(token, payload);
+        if (!(await groupRota.slackAction(payload))) await handleInteractivity(token, payload);
       } catch (err){
         logger.error('handleInteractivity threw', { error: String(err) });
       }
@@ -5485,8 +5490,8 @@ exports.skillPackage = onRequest(
 // Each version is also listed in brief in changelog/{version id} (changelog.html):
 // { at, by, note, kind, proposedBy, collection, docId, title }; clients only read it.
 
-const TRACKED = ['skills', 'guides', 'handbook', 'agentTools'];
-const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy'];
+const TRACKED = ['skills', 'guides', 'handbook', 'agentTools', 'groupRotaSlots'];
+const VERSION_META = ['updatedAt', 'updatedBy', 'createdAt', 'createdBy', 'changeNote', 'proposedBy', 'pendingActionId'];
 
 function stableJson(v){
   if (Array.isArray(v)) return '[' + v.map(stableJson).join(',') + ']';
@@ -5505,7 +5510,9 @@ async function personFor(email){
   if (!email) return null;
   let name = '';
   try {
-    const snap = await db.collection('people').where('email', '==', email).limit(1).get();
+    const key = email.startsWith('slack:') ? 'slackId' : 'email';
+    const value = key === 'slackId' ? email.slice(6) : email;
+    const snap = await db.collection('people').where(key, '==', value).limit(1).get();
     if (!snap.empty) name = snap.docs[0].data().name || '';
   } catch (e) { /* the name is a nicety */ }
   return { email, name };
@@ -5531,14 +5538,27 @@ function recordVersions(collection){
     const added = await event.data.after.ref.collection('versions').add(version);
     // The site's changelog (changelog.html) lists it too, in brief: a version
     // holds the whole document, too much to load dozens of at once.
-    await db.collection('changelog').doc(added.id).set({
+    const entry = {
       at: version.at, by: version.by, note: version.note, kind, proposedBy: version.proposedBy,
       collection, docId: event.params.id, title: String(src.title || src.name || event.params.id),
-    });
+    };
+    if (collection === 'groupRotaSlots') {
+      entry.date = src.meetingId;
+      entry.slotNumber = src.slotNumber;
+      entry.title = 'Group meeting ' + src.meetingId + ', slot ' + src.slotNumber;
+    }
+    await db.collection('changelog').doc(added.id).set(entry);
   });
 }
 TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice(1)] = recordVersions(c); });
 
+// Group meeting rota. Its eligibility sync is inert until a maintainer records
+// the stable Slack User Group ID in groupRotaConfig/current.
+const groupRota = require('./group-rota')({
+  db, admin, HttpsError, onCall, onSchedule, signedInEmail, rolesEmails,
+  requireAccess: access.requireAccess, slackFetch, botToken: SLACK_BOT_TOKEN, logger
+});
+Object.keys(groupRota).filter(k => k !== 'slackAction' && k !== 'slackCommand' && k !== '_internal').forEach(k => { exports[k] = groupRota[k]; });
 // ---------- Joining BOLD: requests, approval, the welcome email ----------
 // Anyone can ask to join on join.html (requestToJoin; no sign-in, since they
 // aren't in the Slack yet). The PIs and admins are told in Slack and decide on

@@ -18,7 +18,7 @@
   var db = null;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
 
-  var events = null, series = [], fullWrite = false, me = null;
+  var events = null, series = [], rotaSeasons = [], rotaMeetings = [], fullWrite = false, me = null;
 
   function canAdd(){ return fullWrite || BOLD.can('events', 'edit'); }
   function cadenceText(c){
@@ -48,6 +48,19 @@
   function group(label, rows){
     return rows.length ? '<div class="proj-group"><h3>' + esc(label) + '<span class="proj-count">' + rows.length + '</span></h3><ul class="proj-list">' + rows.join('') + '</ul></div>' : '';
   }
+  function rotaRow(){
+    var available = rotaSeasons.filter(function(s){ return s.publicationState === 'published'; });
+    var drafts = rotaSeasons.filter(function(s){ return s.publicationState !== 'published'; });
+    if (!available.length && !drafts.length) return '';
+    var today = new Date().toLocaleDateString('en-CA', { timeZone: 'Europe/London' });
+    var next = rotaMeetings.filter(function(m){ return m.status !== 'skipped' && m.date >= today && available.some(function(s){ return s.id === m.seasonId; }); })
+      .sort(function(a,b){ return a.date.localeCompare(b.date); })[0];
+    var season = next ? available.filter(function(s){ return s.id === next.seasonId; })[0] : available[0] || drafts[0];
+    var meta = season.label || 'Group meeting rota';
+    if (next) meta += ' · next: ' + E.when(next.date, next.date) + (next.startTime ? ', ' + next.startTime : '') + (next.location ? ' · ' + next.location : '');
+    else if (season.location) meta += ' · ' + season.location;
+    return row('group-meetings.html', 'Group meetings', esc(meta), available.length ? '' : badge('Hidden'));
+  }
 
   function render(){
     var can = canAdd(), why = can ? '' : BOLD.cannotReason('events', 'edit');
@@ -64,7 +77,8 @@
     series.forEach(function(x){ known[x.id] = 1; });
     var evs = events.filter(function(x){ return !(x.series && known[x.series]); }).filter(hit), ss = series.filter(hit);
     var once = evs.slice().sort(function(a, b){ return a.startDate < b.startDate ? 1 : -1; });
-    var html = (ss.length ? '<ul class="proj-list ev-series">' + ss.map(seriesRow).join('') + '</ul>' : '') + group('Once', once.map(eventRow));
+    var rota = !yours && (!q || ['group meetings', rotaSeasons.map(function(s){ return s.label; }).join(' ')].join(' ').toLowerCase().includes(q)) ? rotaRow() : '';
+    var html = (ss.length || rota ? '<ul class="proj-list ev-series">' + rota + ss.map(seriesRow).join('') + '</ul>' : '') + group('Once', once.map(eventRow));
     root.innerHTML = html || '<p class="proj-msg">' + (q || yours ? 'Nothing matches.' : 'No events yet.') + '</p>';
   }
   search.addEventListener('input', render);
@@ -98,7 +112,7 @@
     var mine = ++signIns;
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user ? { email: user.email || '' } : null;
-    fullWrite = false; events = null; series = [];
+    fullWrite = false; events = null; series = []; rotaSeasons = []; rotaMeetings = [];
     render();
     if (!user) return;
     E.access(function(ok){
@@ -111,6 +125,12 @@
       unsubs.push(watchAll(ok ? [se] : [se.where('hidden', '==', false), se.where('organisers', 'array-contains', me.email.toLowerCase())], 'id', function(list){
         series = (list || []).sort(function(a, b){ return a.title.localeCompare(b.title); }); render();
       }));
+      unsubs.push((ok ? db.collection('groupMeetingSeasons') : db.collection('groupMeetingSeasons').where('publicationState', '==', 'published')).onSnapshot(function(snap){
+        rotaSeasons = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); render();
+      }, function(err){ console.error('[BOLD Events] loading rota seasons failed', err); }));
+      unsubs.push(db.collection('groupMeetings').onSnapshot(function(snap){
+        rotaMeetings = snap.docs.map(function(d){ return d.data(); }); render();
+      }, function(err){ console.error('[BOLD Events] loading rota meetings failed', err); }));
     });
   });
 })();

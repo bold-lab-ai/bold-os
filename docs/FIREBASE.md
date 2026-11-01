@@ -352,6 +352,16 @@ The old "Subscribable deadline feed" TODO item was blocked for as long as this w
 **Only if we pick up the Phase 5 stretch (Slack channel auto-invite) later:**
 - [ ] BOLD's Slack plan tier (gates whether workspace auto-invite, not just channel auto-invite, is possible at all).
 
+## Group meeting rota (2026-10-15 implementation)
+
+The rota page reads `groupMeetingSeasons`, `groupMeetings`, `groupRotaSlots` and `groupRotaMembers` after Slack sign-in. `groupRotaAccess` supplies relevant roster names; project details are optional when Projects View is unavailable. Direct client writes to rota collections are denied. `functions/group-rota.js` handles edits, claims, recusals, swap requests, short-slot offers and presentation outcomes as callable or signed Slack interactions. Every slot mutation checks ownership and/or rota administration on the server. Slot versions and the general changelog are lab-readable; recusal reasons live only in `groupRotaDeclines`, readable by their author and site admins. Eligibility documents and notification logs are server-only.
+
+The Events page and sidebar discover the rota from published `groupMeetingSeasons`; the Calendar links to scheduled `groupMeetings`, with no second event or invitation. A draft season is visible only to PIs/admins and cannot acquire meetings until published; a season with meetings cannot return to draft. Meeting and slot reads follow Events View, while the rota's own admin, eligibility and ownership checks still govern actions. `groupRotaPhotos/{slackId}` stores a fixed Storage path for each verified Slack ID. Its owner can replace or remove a WebP, PNG or JPEG image of at most 2 MB at `rota-profiles/{slackId}/portrait`; available legacy portraits still need a separately authorised identity match and Storage migration.
+
+`groupRotaConfig/current` is server-only. Set `eligibilityUserGroupId` only after verifying that `bold-associates` is a Slack User Group and recording its stable ID; grant the app `usergroups:read`. Until then the daily sync returns without changing any eligibility data. Failed Slack refreshes preserve the last known results. The scheduled reminder runs at **14:00 Europe/London on Monday** for the following Monday and requires `remindersEnabled: true` plus `reminderChannelId`. Keep it disabled until the old Cloudflare reminder is disabled and the channel is verified. Notification documents distinguish sent, failed and uncertain deliveries; an uncertain send needs inspection before retry.
+
+For the migration, freeze the old rota's current merged public schedule at cutover and use its actual presenter assignments, topics and skipped dates; do not regenerate the published season from the seed. Full D1 change history is not required. Run `node functions/tools/prepare-rota-import.mjs frozen-export.json identity-map.json output.json` locally, with an explicit map from legacy IDs to verified Slack IDs. It makes no network calls and does not import anything. Review every slot in `comparisons` and every `unresolved` match before importing. An unresolved legacy presenter remains visible by name but cannot edit, decline or swap their own slot until matched. Inspect existing `kind: group` project presentations for duplicates. Preserve the frozen snapshot and a reversal procedure until the first live cycle succeeds. The rules and named functions must be deployed with the client code, and the `/rota` command switched to the BOLD.OS Slack handler only after the Firestore data and eligibility source are verified.
+
 ## Who can see what (2026-10-26)
 
 Every rule that let any signed-in member read or write (`isLabMember()`) now asks the BOLDiquette's table first: `may(area, what)` (`firebase/firestore.rules`), with the viewer's group from `members/{email}.category` (PIs and admins: BOLD-exec) and the table from `settings/access`, which only `decideProposal` writes, from the BOLDiquette's `access` part. Each check costs up to two extra document reads per request (the member and the table; repeated reads of the same document in one request count once). Nothing is readable without signing in; Everyone in the table means everyone signed in (the same as PAN-BOLD). Collection-group rules (`{path=**}/…`) are no more open than the page that lists them, since rules that match the same document add up. Callables check the same through `functions/access.js` (`requireAccess`), and so does the agents' API. Details: `docs/REFERENCE.md`, "Who can see what".
@@ -375,7 +385,7 @@ prevents two logins or a racing manual replacement from overwriting the
 chosen photo. Removal records an opt-out so automatic import cannot restore
 it. No existing photo is automatically refreshed when Slack changes.
 
-The meeting rota is still on a separate branch. When rebased, it can use
-the shared photo helper for presenters while retaining `groupRotaPhotos` as a
-fallback. The offline preview keeps local portraits and makes no shared-photo
-request. No legacy portraits are copied in this PR.
+The meeting rota uses the shared portrait for verified presenter Slack IDs,
+with `groupRotaPhotos` as a fallback while existing rota portraits await a
+separately approved migration. The offline preview keeps its local portraits
+and makes no shared-photo request.

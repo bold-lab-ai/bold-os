@@ -6,7 +6,9 @@
     "build": "eleventy",
     "start": "eleventy --serve --port=8137",
     "emulators": "sh scripts/emulators.sh",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "preview:rota": "npm run build && node scripts/build-rota-preview.mjs",
+    "test:rota:local": "bash scripts/test-rota-local.sh"
   },
   "keywords": [],
   "devDependencies": {
