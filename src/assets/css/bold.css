@@ -358,7 +358,7 @@ footer{
 .mast-menu .mast-menu-head ~ .mast-menu-head{margin-top:4px; border-top:1px solid var(--line); padding-top:9px;}
 .mast-menu .is-off{display:block; padding:7px 10px; color:var(--muted); opacity:.6; cursor:default;}
 .mast-sep{width:1px; height:20px; background:var(--line); margin:0 4px;}
-.mast-bell[hidden] + .mast-theme + .mast-sep, #authRegion:empty{display:none;}
+.mast-bell[hidden] + .mast-sep, #authRegion:empty{display:none;}
 /* The theme button (bold.js mountTheme) shows the theme in use: a sun in light, a moon in dark. */
 .mast-theme .ic-moon, :root[data-theme="dark"] .mast-theme .ic-sun{display:none;}
 :root[data-theme="dark"] .mast-theme .ic-moon{display:block;}
