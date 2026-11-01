@@ -1,7 +1,7 @@
 /* An event added on the site (event.html?event=<slug>) — laid out like the built-in event pages. */
 .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 48px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
-.back-link:hover{color:var(--accent);}
+.back-link:hover{color:var(--link);}
 .eyebrow{
   display:inline-block; font-family:var(--sans); font-weight:400; font-size:11px;
   text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:.7;

@@ -1,14 +1,13 @@
 /* Minimal editorial design system, shared across bold-lab.ai — see
    events.html for the full rationale. */
 :root{
-  --danger-text:#b42318;
   --article-max:600px;
 }
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible{outline:2px solid var(--accent); outline-offset:2px;}
 h1,h2{font-family:var(--serif); color:var(--ink); font-weight:800; letter-spacing:-0.005em; margin:0;}
 .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
-.back-link:hover{color:var(--accent);}
+.back-link:hover{color:var(--link);}
 .hero h1{font-size:clamp(27px, 4.4vw, 38px); line-height:1.15; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
 .hero-note{margin:16px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 /* Matches .cl-agent-note .note-lead (audit-board.css) so supplementary
@@ -31,8 +30,8 @@ main > *{max-width:var(--article-max);}
 .auth-user-name{font-weight:600; color:var(--ink);}
 .btn-text{
   font-family:var(--sans); font-weight:400; font-size:13px;
-  color:var(--accent); background:none; border:none; padding:0; cursor:pointer;
-  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
+  color:var(--link); background:none; border:none; padding:0; cursor:pointer;
+  text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:2px;
 }
 /* ---------- form ---------- */
 .field{margin-bottom:22px;}
@@ -49,11 +48,11 @@ textarea{resize:vertical; min-height:96px; line-height:1.5;}
 }
 .btn{
   display:inline-block; font-family:var(--sans); font-size:15px; font-weight:500;
-  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
+  text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:3px;
   padding:0; border:none; cursor:pointer; background:none;
 }
 .btn:hover{text-decoration-color:currentColor;}
-.btn-primary{color:var(--accent); font-weight:600;}
+.btn-primary{color:var(--link); font-weight:600;}
 .btn-primary:disabled{color:var(--muted); cursor:default; text-decoration-color:transparent;}
 .btn-text.danger{margin-left:16px;}
 .btn-text.danger:hover:not(:disabled){color:var(--danger-text);}

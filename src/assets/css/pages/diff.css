@@ -64,9 +64,9 @@ main{max-width:var(--content-max); margin:0 auto 0 var(--page-left); padding:8px
   font-size:11px; font-weight:600; letter-spacing:0;
   padding:2px 9px; border-radius:999px;
 }
-.diff-badge--new{background:#e3ebfc; color:var(--blue);}
-.diff-badge--divergence{background:#f6e9d4; color:var(--amber);}
-.diff-badge--proposed{background:#ece3f7; color:var(--plum);}
+.diff-badge--new{background:color-mix(in srgb, currentColor 12%, var(--surface)); color:var(--blue);}
+.diff-badge--divergence{background:color-mix(in srgb, currentColor 12%, var(--surface)); color:var(--amber);}
+.diff-badge--proposed{background:color-mix(in srgb, currentColor 12%, var(--surface)); color:var(--plum);}
 .diff-item{
   max-width:var(--article-max);
   margin:44px 0 0; padding-top:36px;

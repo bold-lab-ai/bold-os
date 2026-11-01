@@ -8,30 +8,9 @@
    everything here is dense short UI text, not long-form prose; only
    headings switch to the serif for brand consistency. */
 :root{
-  --body:#33445f;
-  --blue:#1a2b4a;
-  /* junior/senior reviewer coding — the original teal (#2f8f83) sat too close in hue to --success-text (#256b60), so a junior tag and an "approved" state read as nearly the same color;
-     shifted teal toward blue and muted plum to fit the desaturated palette. */
-  --teal:#4f7f94;
-  --plum:#7d5a99;
-  --amber:#b7791f;
-  --focus:#1a2b4a;
-  --shadow:0 14px 44px #1a2b4a1f;
   --read-max:760px;
   --sidebar-w:200px;
   --sidebar-w-collapsed:40px;
-  --serif:'EB Garamond', Georgia, 'Times New Roman', serif;
-  /* names the inline JS styles depend on */
-  --accent:#1a2b4a;
-  --accent-dim:#e3e6ec;
-  --neutral-bg:#eef2f4;
-  --neutral-text:#4b5563;
-  --warn-bg:#f6ecda;
-  --warn-text:#8a5a12;
-  --success-bg:#ddefe9;
-  --success-text:#256b60;
-  --danger-bg:#fbe6e4;
-  --danger-text:#b42318;
 }
 body{
   margin:0;
@@ -45,9 +24,9 @@ body{
   -moz-osx-font-smoothing:grayscale;
 }
 h1,h2,h3{font-family:var(--serif);}
-a{color:var(--blue); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px; transition:text-decoration-color .15s;}
+a{color:var(--link); text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:3px; transition:text-decoration-color .15s;}
 a:focus-visible, button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible{
-  outline:2px solid var(--focus); outline-offset:2px;
+  outline:2px solid var(--accent); outline-offset:2px;
 }
 h1,h2,h3{color:var(--ink); font-weight:760; letter-spacing:0; margin:0;}
 button{font-family:inherit; font-size:14px;}
@@ -82,24 +61,24 @@ button{font-family:inherit; font-size:14px;}
   flex-wrap:wrap;
 }
 .wordmark{font-weight:500; font-size:17px; letter-spacing:-0.01em; color:var(--ink); text-decoration:none;}
-.wordmark span{color:var(--blue); opacity:.55;}
+.wordmark span{color:var(--link); opacity:.55;}
 .masthead-sub{font-size:11px; font-weight:400; letter-spacing:0.16em; text-transform:uppercase; color:var(--muted); opacity:.7;}
 .auth-role{
-  font-size:11px; font-weight:600; color:var(--blue);
+  font-size:11px; font-weight:600; color:var(--link);
   text-transform:uppercase; letter-spacing:0.03em;
 }
 .auth-signin svg{flex:none;}
 .backlink{max-width:var(--content-max); margin:24px 0 0 var(--page-left); padding:0 var(--gutter);}
 .backlink a{font-size:13.5px; color:var(--muted); text-decoration:none;}
-.backlink a:hover{color:var(--blue);}
+.backlink a:hover{color:var(--link);}
 /* ---------- hero ---------- */
 .hero{max-width:var(--content-max); margin:0 0 0 var(--page-left); padding:20px var(--gutter) 8px;}
 .hero h1{font-size:clamp(30px, 4.5vw, 44px); line-height:1.02;}
 .hero .lede{margin-top:14px; font-size:16px; color:var(--ink-soft); max-width:66ch;}
-.hero .lede a{color:var(--blue);}
+.hero .lede a{color:var(--link);}
 .page-source{font-size:12.5px; color:var(--muted); margin-top:18px;}
 .page-source a{color:var(--muted);}
-.page-source a:hover{color:var(--blue);}
+.page-source a:hover{color:var(--link);}
 /* ---------- toolbar ---------- */
 .toolbar{
   max-width:var(--content-max);
@@ -138,7 +117,7 @@ select{min-width:180px;}
   cursor:pointer;
   white-space:nowrap;
 }
-.btn:hover{border-color:var(--blue); color:var(--blue);}
+.btn:hover{border-color:var(--accent); color:var(--link);}
 /* Was missing entirely (2026-09-18+15, found by Eduardo — the inline
    "Submit" button in the stage-fields forms looked fully clickable even
    while disabled, so a blocked submit silently did nothing with zero
@@ -146,30 +125,30 @@ select{min-width:180px;}
    elsewhere on this page — muted, half-opacity, no hover response. */
 .btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
 .btn:disabled:hover{border-color:var(--line); color:var(--muted);}
-.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
-.btn-primary:hover{background:#0f1c33; border-color:#0f1c33; color:#fff;}
+.btn-primary{background:var(--accent); color:var(--on-fill); border-color:var(--accent);}
+.btn-primary:hover{background:var(--accent-hover); border-color:var(--accent-hover); color:var(--on-fill);}
 .btn-primary:disabled{background:var(--surface); color:var(--muted); border-color:var(--line); opacity:.5;}
 .btn-primary:disabled:hover{background:var(--surface); border-color:var(--line); color:var(--muted);}
 /* Approve/Reject (venue proposals, 2026-09-11): same size/weight as any
    other .btn, just green vs. red — same visual weight for a symmetric
    either-way decision, unlike a primary/plain pairing that would make
    one option look like the "right" default. */
-.btn-approve{background:var(--success-text); color:#fff; border-color:var(--success-text);}
-.btn-approve:hover{background:#1c5049; border-color:#1c5049; color:#fff;}
-.btn-reject{background:var(--danger-text); color:#fff; border-color:var(--danger-text);}
-.btn-reject:hover{background:#8f1c13; border-color:#8f1c13; color:#fff;}
+.btn-approve{background:var(--success-text); color:var(--on-fill); border-color:var(--success-text);}
+.btn-approve:hover{background:color-mix(in srgb, var(--green), var(--hover-mix) 22%); border-color:color-mix(in srgb, var(--green), var(--hover-mix) 22%); color:var(--on-fill);}
+.btn-reject{background:var(--danger-text); color:var(--on-fill); border-color:var(--danger-text);}
+.btn-reject:hover{background:color-mix(in srgb, var(--danger-text), var(--hover-mix) 22%); border-color:color-mix(in srgb, var(--danger-text), var(--hover-mix) 22%); color:var(--on-fill);}
 .btn-text{
   font-family:var(--sans); font-weight:400; font-size:12.5px;
-  color:var(--blue); background:none; border:none; padding:0; cursor:pointer;
-  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
+  color:var(--link); background:none; border:none; padding:0; cursor:pointer;
+  text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:2px;
 }
 .btn-text.danger:hover:not(:disabled), #deleteBoardBtn:hover:not(:disabled){color:var(--danger-text);}
 .btn-text.rush-on{color:var(--amber); font-weight:700; text-decoration:none;}
-.btn-text.rush-on:hover{color:var(--focus);}
+.btn-text.rush-on:hover{color:var(--link);}
 /* ---------- venue meta + schedule ---------- */
 .venue-meta{font-size:12.5px; color:var(--muted); margin-top:10px; line-height:1.7;}
 .venue-meta a{color:var(--muted); text-decoration:underline; text-underline-offset:2px;}
-.venue-meta a:hover{color:var(--blue);}
+.venue-meta a:hover{color:var(--link);}
 .venue-schedule{margin-top:18px; max-width:860px;}
 .vs-head{
   font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0;
@@ -194,13 +173,13 @@ select{min-width:180px;}
 }
 .vs-dot{
   width:10px; height:10px; border-radius:999px;
-  background:var(--surface); border:2px solid var(--blue);
+  background:var(--surface); border:2px solid var(--accent);
   position:relative; z-index:1;
 }
 .vs-pt.is-venue .vs-dot{border-color:var(--muted);}
 /* Reviewers' points are solid, ours (authors' internal, runway) hollow
    blue, the venue's hollow grey; the paper deadline is the big dark one. */
-.vs-pt.is-reviewers .vs-dot{background:var(--blue);}
+.vs-pt.is-reviewers .vs-dot{background:var(--accent);}
 .vs-pt.is-paper .vs-dot{width:12px; height:12px; margin-top:-1px; background:var(--ink); border-color:var(--ink);}
 .vs-name{
   margin-top:8px; font-size:11px; font-weight:600; line-height:1.25;
@@ -217,15 +196,15 @@ select{min-width:180px;}
 .ics-actions{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:14px;}
 .ics-btn{
   font-family:inherit; font-weight:600; font-size:12.5px;
-  color:var(--blue); background:var(--surface); border:1px solid var(--line);
+  color:var(--link); background:var(--surface); border:1px solid var(--line);
   border-radius:var(--radius); padding:7px 13px; cursor:pointer;
 }
-.ics-btn:hover{background:var(--wash); border-color:var(--blue);}
+.ics-btn:hover{background:var(--wash); border-color:var(--accent);}
 .ics-tip-wrap{position:relative; display:inline-flex;}
 .ics-tip{
   position:absolute; bottom:calc(100% + 9px); left:50%; transform:translateX(-50%) translateY(4px);
   width:240px; font-size:12px; font-weight:400; line-height:1.4; text-align:left;
-  color:#fff; background:var(--ink); border-radius:var(--radius); padding:9px 11px;
+  color:var(--on-fill); background:var(--ink); border-radius:var(--radius); padding:9px 11px;
   box-shadow:var(--shadow); pointer-events:none;
   opacity:0; visibility:hidden; transition:opacity .15s ease, transform .15s ease;
   z-index:5;
@@ -249,8 +228,8 @@ select{min-width:180px;}
   font-size:13.5px; padding:10px 14px; border:1px solid var(--line);
   border-radius:var(--radius); background:var(--surface);
 }
-.toast-inner.error{color:var(--danger-text); background:var(--danger-bg); border-color:#f0c9c4;}
-.toast-inner.ok{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
+.toast-inner.error{color:var(--danger-text); background:var(--danger-bg); border-color:var(--danger-line);}
+.toast-inner.ok{color:var(--success-text); background:var(--success-bg); border-color:var(--success-line);}
 /* ---------- board meta ---------- */
 .board-meta{
   max-width:var(--content-max); margin:20px 0 0 var(--page-left); padding:0 var(--gutter);
@@ -266,7 +245,7 @@ select{min-width:180px;}
   color:var(--muted); text-align:center;
 }
 .board-empty .inline-link{
-  font: inherit; color:var(--blue); background:none; border:none;
+  font: inherit; color:var(--link); background:none; border:none;
   padding:0; cursor:pointer; text-decoration:underline; text-underline-offset:2px;
 }
 /* ---------- venues list ---------- */
@@ -298,10 +277,10 @@ select{min-width:180px;}
   font:inherit; font-weight:700; font-size:16px; color:var(--ink);
   background:none; border:none; padding:0; margin:0; cursor:pointer; text-align:left;
 }
-.venue-name-btn:hover{color:var(--blue);}
+.venue-name-btn:hover{color:var(--link);}
 .venues-section-title{font-size:12.5px; font-weight:700; color:var(--muted); margin:22px 0 8px;}
 .venues-section-title:first-child{margin-top:0;}
-.badge-pending{background:var(--warn-bg); color:var(--warn-text); border:1px solid #e6c98f;}
+.badge-pending{background:var(--warn-bg); color:var(--warn-text); border:1px solid var(--warn-line);}
 /* ---------- board search ---------- */
 .board-search{margin:16px 0 0;}   /* the rest: board.css */
 /* ---------- board columns: assets/css/board.css (shared with a project's Work tab) ---------- */
@@ -364,7 +343,7 @@ select{min-width:180px;}
   background:none; border:none; padding:0; margin-bottom:6px; cursor:pointer;
   text-decoration:underline; text-decoration-color:var(--line); text-underline-offset:2px;
 }
-.card-title-btn:hover{color:var(--blue); text-decoration-color:var(--blue);}
+.card-title-btn:hover{color:var(--link); text-decoration-color:var(--accent);}
 .card-meta-row{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:8px;}
 .badge{
   display:inline-block; font-size:11px; font-weight:600; letter-spacing:0;
@@ -407,7 +386,7 @@ select{min-width:180px;}
   border:1px solid var(--line); border-radius:var(--radius);
   background:var(--surface); color:var(--ink); font-family:inherit;
 }
-select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
+select.rv-input:invalid{border-color:var(--warn-line); background:color-mix(in srgb, var(--warn-bg) 50%, var(--surface));}
 .card-footer{display:flex; align-items:center; gap:2px; margin-top:8px;}
 .card-move{display:flex; gap:6px; margin-top:8px;}
 .card-move-btn{
@@ -417,19 +396,19 @@ select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
   border:1px solid var(--line); border-radius:var(--radius);
   padding:6px 4px; cursor:pointer; text-align:center; white-space:nowrap;
 }
-.card-move-btn:hover:not(:disabled){background:var(--wash); border-color:var(--blue); color:var(--blue);}
+.card-move-btn:hover:not(:disabled){background:var(--wash); border-color:var(--accent); color:var(--link);}
 .card-move-btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
 /* Rush mode's "Submit paper"/"Paper accepted" buttons — see
    moveButtonsHtml — read as a sign-off, not a plain forward move, so
    they get the same green as an approved review state instead of the
    neutral default. */
-.card-move-btn.card-move-btn-accept{color:var(--success-text); background:var(--success-bg); border-color:#bfe0d6;}
-.card-move-btn.card-move-btn-accept:hover:not(:disabled){background:#cde8df; border-color:var(--success-text);}
+.card-move-btn.card-move-btn-accept{color:var(--success-text); background:var(--success-bg); border-color:var(--success-line);}
+.card-move-btn.card-move-btn-accept:hover:not(:disabled){background:color-mix(in srgb, var(--success-text) 12%, var(--success-bg)); border-color:var(--success-text);}
 .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); background:var(--surface); border-color:var(--line); opacity:.5;}
 /* ---------- card detail ---------- */
 .detail{max-width:var(--content-max); margin:20px 0 0 var(--page-left); padding:0 var(--gutter) 88px;}
 .detail-back{font-size:13.5px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:16px;}
-.detail-back:hover{color:var(--blue);}
+.detail-back:hover{color:var(--link);}
 .detail-head{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;}
 .detail-head h2{font-size:clamp(22px, 3vw, 28px); font-weight:760;}
 .detail-grid{display:grid; grid-template-columns:150px 1fr; gap:8px 16px; font-size:13.5px; margin-bottom:24px; max-width:640px;}
@@ -503,7 +482,7 @@ select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
   font-size:12px; color:var(--muted); line-height:1.5;
   margin:0 0 14px; padding:8px 10px; background:var(--wash); border-radius:var(--radius);
 }
-.cl-agent-note a{color:var(--blue);}
+.cl-agent-note a{color:var(--link);}
 .cl-cat{font-weight:700; font-size:13px; color:var(--ink); margin:16px 0 4px;}
 .cl-cat:first-child{margin-top:0;}
 .cl-head, .cl-row{display:grid; grid-template-columns:1fr 68px 68px; gap:10px;}
@@ -530,7 +509,7 @@ select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
 .cl-row input[type="checkbox"]:disabled{cursor:default; opacity:0.45;}
 .cl-row-foot{padding:0 6px 8px;}
 .cl-row-foot .btn-text{font-size:12px;}
-.cl-row-foot .btn-text.has-feedback{color:var(--blue); font-weight:600;}
+.cl-row-foot .btn-text.has-feedback{color:var(--link); font-weight:600;}
 .cl-thread{margin:0 0 12px; padding:12px 12px 4px; background:var(--wash); border-radius:var(--radius);}
 .cl-thread .disc-thread{border-top-color:var(--line);}
 .cl-thread .disc-form{max-width:100%;}
@@ -556,7 +535,7 @@ select.rv-input:invalid{border-color:#e6c98f; background:#fdf8ef;}
 .disc-new h3{font-size:13px; font-weight:700; color:var(--ink); margin:0 0 10px;}
 /* ---------- modal ---------- */
 .modal-overlay{
-  position:fixed; inset:0; background:rgba(26,43,74,0.5);
+  position:fixed; inset:0; background:color-mix(in srgb, var(--shade) 50%, transparent);
   display:flex; align-items:flex-start; justify-content:center;
   padding:40px 20px; overflow-y:auto; z-index:50;
 }
@@ -601,23 +580,23 @@ footer{max-width:var(--content-max); margin:0 0 0 var(--page-left); padding:32px
   transition:flex-basis .22s ease, width .22s ease;
 }
 .sidebar-title{font-size:11px; font-weight:400; text-transform:uppercase; letter-spacing:0.16em; color:var(--muted); opacity:.7;}
-.sidebar-collapse:hover{border-color:var(--blue); color:var(--blue);}
+.sidebar-collapse:hover{border-color:var(--accent); color:var(--link);}
 .nav-group-label{
   flex:1 1 auto; min-width:0;
   font-size:13px; font-weight:600;
   color:var(--ink); padding:4px 0; text-decoration:none;
 }
-.nav-group-label:hover{color:var(--blue);}
-.nav-group-label.active{color:var(--blue);}
+.nav-group-label:hover{color:var(--link);}
+.nav-group-label.active{color:var(--link);}
 .nav-link{
   display:block; font-size:13px; font-weight:400; color:var(--ink-soft);
   text-decoration:none; padding:4px 0; white-space:nowrap;
 }
-.nav-link:hover{color:var(--blue);}
-.nav-link.active{color:var(--blue); font-weight:600;}
-.nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--blue);}
+.nav-link:hover{color:var(--link);}
+.nav-link.active{color:var(--link); font-weight:600;}
+.nav-link.nav-sub:hover, .nav-link.nav-sub.active{color:var(--link);}
 .nav-toggle:focus-visible, .sidebar-collapse:focus-visible, .nav-link:focus-visible, .nav-group-label:focus-visible{
-  outline:2px solid var(--focus); outline-offset:2px;
+  outline:2px solid var(--accent); outline-offset:2px;
 }
 .shell.is-collapsed .sidebar{flex-basis:var(--sidebar-w-collapsed); width:var(--sidebar-w-collapsed);}
 /* ---------- card detail: editorial pass ----------
@@ -652,11 +631,11 @@ footer{max-width:var(--content-max); margin:0 0 0 var(--page-left); padding:32px
 .detail .card-move-btn.card-move-btn-accept:hover:not(:disabled){background:var(--ink); color:var(--paper);}
 .detail .card-move-btn.card-move-btn-accept:disabled{color:var(--muted); border-color:var(--line); background:none;}
 .detail .btn{
-  font-family:var(--sans); font-size:14.5px; font-weight:500; color:var(--accent);
+  font-family:var(--sans); font-size:14.5px; font-weight:500; color:var(--link);
   background:none; border:none; border-radius:0; padding:0; cursor:pointer;
-  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
+  text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:3px;
 }
-.detail .btn:hover:not(:disabled){text-decoration-color:currentColor; color:var(--accent);}
+.detail .btn:hover:not(:disabled){text-decoration-color:currentColor; color:var(--link);}
 .detail .btn:disabled{color:var(--muted); opacity:.6; cursor:default;}
 .detail .btn.btn-primary{text-decoration:none; padding:9px 20px; border:1px solid var(--ink);}
 .detail .btn.btn-primary:disabled{border-color:var(--line);}
@@ -684,11 +663,11 @@ footer{max-width:var(--content-max); margin:0 0 0 var(--page-left); padding:32px
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
   padding:9px 16px; text-decoration:none;
 }
-.detail .review-actions .btn:hover:not(:disabled){border-color:var(--blue); color:var(--blue);}
+.detail .review-actions .btn:hover:not(:disabled){border-color:var(--accent); color:var(--link);}
 .detail .review-actions .btn:disabled{color:var(--muted); opacity:.5;}
-.detail .review-actions .btn.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
-.detail .review-actions .btn.btn-primary:hover:not(:disabled){background:#0f1c33; border-color:#0f1c33; color:#fff;}
-.detail .review-actions .btn.btn-primary:disabled{background:var(--blue); color:#fff; border-color:var(--blue); opacity:.5;}
+.detail .review-actions .btn.btn-primary{background:var(--accent); color:var(--on-fill); border-color:var(--accent);}
+.detail .review-actions .btn.btn-primary:hover:not(:disabled){background:var(--accent-hover); border-color:var(--accent-hover); color:var(--on-fill);}
+.detail .review-actions .btn.btn-primary:disabled{background:var(--accent); color:var(--on-fill); border-color:var(--accent); opacity:.5;}
 .detail .review-actions .btn-text:disabled{opacity:.5; cursor:default;}
 .disc-or{font-family:var(--sans); font-size:13px; color:var(--muted);}
 .detail .cl-cat{
@@ -711,18 +690,18 @@ footer{max-width:var(--content-max); margin:0 0 0 var(--page-left); padding:32px
   color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
   padding:9px 16px; text-decoration:none;
 }
-.detail .stage-fields-actions .btn:hover:not(:disabled){background:var(--surface); border-color:var(--blue); color:var(--blue);}
+.detail .stage-fields-actions .btn:hover:not(:disabled){background:var(--surface); border-color:var(--accent); color:var(--link);}
 .detail .stage-fields-actions .btn:disabled{color:var(--muted); background:var(--surface); border:1px solid var(--line); opacity:.5; cursor:default;}
-.detail .stage-fields-actions .btn.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
-.detail .stage-fields-actions .btn.btn-primary:hover:not(:disabled){background:#0f1c33; border-color:#0f1c33; color:#fff;}
-.detail .stage-fields-actions .btn.btn-primary:disabled{background:var(--blue); color:#fff; border-color:var(--blue); opacity:.5;}
+.detail .stage-fields-actions .btn.btn-primary{background:var(--accent); color:var(--on-fill); border-color:var(--accent);}
+.detail .stage-fields-actions .btn.btn-primary:hover:not(:disabled){background:var(--accent-hover); border-color:var(--accent-hover); color:var(--on-fill);}
+.detail .stage-fields-actions .btn.btn-primary:disabled{background:var(--accent); color:var(--on-fill); border-color:var(--accent); opacity:.5;}
 /* Card page header: title, one group of badges, Remove paper pushed
    right on the same line; Edit fields right-aligned on the rule above
    the details grid. */
 .detail-head{gap:10px 14px;}
 /* One line under the title: badges left, Remove paper right. */
 .detail-badges{display:flex; align-items:center; gap:8px; flex-wrap:wrap; flex:0 0 100%; order:3; margin-top:2px;}
-.detail .badge-stage{color:var(--accent);}
+.detail .badge-stage{color:var(--link);}
 .detail-remove{margin-left:auto;}
 .detail-details-head{
   display:flex; justify-content:flex-end; margin-top:26px; padding-top:10px; border-top:1px solid var(--line);
