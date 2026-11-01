@@ -579,16 +579,16 @@
   // filtered to you (projects.html#mine, events.html#mine), and your own pages.
   var ICON_MINE = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 2 14 5 8 8 2 5z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/></svg>';
   var MINE = [
-    { label: 'Your projects', href: 'projects.html#mine', area: 'projects' },
-    { label: 'Your events', href: 'events.html#mine', area: 'events' },
+    { label: 'My projects', href: 'projects.html#mine', area: 'projects' },
+    { label: 'My events', href: 'events.html#mine', area: 'events' },
     { sep: true },
-    { label: 'Your letters', href: 'letters.html', area: 'service-desk' },
-    { label: 'Your introductions', href: 'introductions.html', area: 'service-desk' },
+    { label: 'My letters', href: 'letters.html', area: 'service-desk' },
+    { label: 'My introductions', href: 'introductions.html', area: 'service-desk' },
   ];
   function mountMine(){
     var box = document.getElementById('mastMine');
     if (!box) return;
-    box.innerHTML = '<button type="button" class="mast-btn" aria-haspopup="true" aria-expanded="false" aria-controls="mineMenu" title="Yours" aria-label="Yours">' + ICON_MINE + '</button>' +
+    box.innerHTML = '<button type="button" class="mast-btn" aria-haspopup="true" aria-expanded="false" aria-controls="mineMenu" title="Mine" aria-label="Mine">' + ICON_MINE + '</button>' +
       '<ul class="mast-menu mast-mine-menu" id="mineMenu" role="menu" hidden></ul>';
     var btn = box.querySelector('.mast-btn'), menu = box.querySelector('.mast-mine-menu');
     var draw = function(){

@@ -236,7 +236,7 @@
       opts.forEach(function(o){ add(o[0], o[1]); });
       sel.value = value;
     };
-    fill(el('projAuthor'), 'All authors', [['mine', 'Yours (an author, or joined)']].concat(authorKeys.map(function(k){ return [k, authors[k]]; })), filters.author);
+    fill(el('projAuthor'), 'All authors', [['mine', 'Mine (an author, or joined)']].concat(authorKeys.map(function(k){ return [k, authors[k]]; })), filters.author);
     fill(el('projKeyword'), 'All keywords', keywordNames.map(function(k){ return [k, k + ' (' + keywords[k] + ')']; }), filters.keyword);
   }
 
