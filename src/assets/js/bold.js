@@ -1063,7 +1063,7 @@
     gate.innerHTML = '<div class="gate-box"><h1>Not open to your group</h1>' +
       '<p>This page is for ' + esc(LEVEL_NAMES[level]) + ' and above; you’re in ' + esc(LEVEL_NAMES[access.group] || 'PAN-BOLD') + '. ' +
       '<a href="boldiquette.html#access">Who can see what</a>.</p>' +
-      '<a class="gate-signup-btn" href="profile.html">Ask for another group on your profile</a></div>';
+      '<a class="gate-signup-btn" href="group-request.html">Ask for another group</a></div>';
     gate.setAttribute('data-level-gate', '');
     gate.hidden = false;
   }
@@ -1097,16 +1097,24 @@
       if (gate) gate.hidden = !!user;
       if (!user) shell.hidden = true;
     });
+    // A page whose own data says the viewer may see it lifts the gate (BOLD.allowPage): a
+    // project's page, once the rules let them read the project as one of its people (#148).
+    var allowed = false;
+    BOLD.allowPage = function(){
+      allowed = true; shell.hidden = false;
+      var g = document.getElementById('pageGate');
+      if (g && g.hasAttribute('data-level-gate')) g.hidden = true;
+    };
     BOLD.onAccess(function(a){
       if (!a.e) return;   // signed out: the sign-in gate above
-      var ok = BOLD.can(area, areaWhat);
+      var ok = allowed || BOLD.can(area, areaWhat);
       shell.hidden = !ok;
       // Allowed after all (the server's answer, a PI's say): the gate shown on the first guess goes.
       var shown = document.getElementById('pageGate');
       if (ok && shown && shown.hasAttribute('data-level-gate')) shown.hidden = true;
       if (!ok) {
         // Checked again when it's drawn: the server may have said yes by then.
-        var show = function(){ if (!BOLD.can(area, areaWhat)) showLevelGate(document.getElementById('pageGate'), area, areaWhat); };
+        var show = function(){ if (!allowed && !BOLD.can(area, areaWhat)) showLevelGate(document.getElementById('pageGate'), area, areaWhat); };
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
       }
     });

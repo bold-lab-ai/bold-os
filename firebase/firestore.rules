@@ -200,6 +200,13 @@ service cloud.firestore {
     }
     // Requests to be in another group: theirs to read, and the PIs' and admins'; all writes
     // through groupRequest.
+    // Invitations to a project (projectInvite in functions/index.js): the person invited reads
+    // their own (the project page's Join / Decline); its editors list them through the callable.
+    match /projectInvites/{id} {
+      allow read: if isSignedIn() && resource.data.email == email().lower();
+      allow write: if false;
+    }
+
     // Onboarding marks (the BOLDiquette read, the tour taken): the onboarding callable writes them.
     match /onboarding/{who} {
       allow read: if hasFullWrite() || (isLabMember() && who == email().lower());

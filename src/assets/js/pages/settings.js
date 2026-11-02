@@ -106,7 +106,7 @@
   // The features (functions/index.js PILOTS and LIVE_FEATURES) by what they're about, in this
   // order; one in no group shows under Other.
   var GROUPS = [
-    ['Projects and boards', ['project-announce', 'card-added', 'card-comments', 'card-done', 'supervision-requests']],
+    ['Projects and boards', ['project-announce', 'card-added', 'card-comments', 'card-done', 'project-invites', 'supervision-requests']],
     ['Internal Review', ['irb-board', 'irb-reviews-out', 'irb-author-cap', 'venue-proposed', 'venue-calls']],
     ['Proposed changes and comments', ['proposals', 'proposal-decided', 'proposal-reviewer', 'guide-comments', 'tags']],
     ['Requests', ['join-requests', 'inviter-confirm', 'group-requests', 'invite-link-reminder', 'agent-requests']],

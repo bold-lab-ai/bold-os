@@ -280,3 +280,12 @@
 .wk-talk-head{font-family:var(--sans); font-size:14px; margin-bottom:4px;}
 .wk-talk-form textarea, .wk-talk-edit textarea{width:100%; box-sizing:border-box; font:inherit; font-size:15px;}
 .wk-talk-edit{margin-top:4px;}
+/* Inviting someone to the project (project-invite.js, #148): under People, and the invited's banner. */
+.pj-inv{margin-top:6px;}
+.pj-inv-list{list-style:none; margin:4px 0; padding:0; font-family:var(--sans); font-size:14px;}
+.pj-inv-list li{padding:2px 0;}
+.pj-inv-form{max-width:420px; margin-top:6px; font-family:var(--sans); font-size:14px;}
+.pj-inv-form input{display:block; width:100%; box-sizing:border-box; margin-top:4px; font-family:var(--sans); font-size:14px; padding:7px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.pj-inv-banner{margin:0 0 16px; padding:12px 16px; border:1px solid var(--ink); border-radius:var(--radius); background:var(--surface); font-family:var(--sans); font-size:15px;}
+.pj-inv-banner p{margin:0;}
+.pj-inv-banner .event-form-actions{margin-top:10px;}

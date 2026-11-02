@@ -537,7 +537,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function membersHtml(){
     var list = memberEmails();
     var names = list.map(function(e){ var p = personByEmail(e); return esc(p && p.name || e); }).join(', ');
-    return (names || missing()) + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '');
+    return (names || missing()) + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '') +
+      (window.BoldProjectInvite ? BoldProjectInvite.html() : '');
   }
   function joinButton(){
     var mine = memberEmails().some(isMe), joined = ws && (ws.joined || []).some(isMe);
@@ -1195,6 +1196,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         return show('This project isn\u2019t here \u2014 it may have been removed. Find it under Projects.');
       }
       var fresh = doc.data();
+      // Readable means they may see it (the rules: Projects' View, or one of its people), whatever
+      // the page's own level says (#148: someone invited to it).
+      if (BOLD.allowPage) BOLD.allowPage();
       var changed = !card || JSON.stringify(fresh) !== JSON.stringify(card);
       card = fresh;
       cachePut();
@@ -1207,7 +1211,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         cacheDrop(projectId); card = null;
         el('projectBody').hidden = true;
         show('Only its people see this project.');
-        el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">Join it from Projects</a>.');
+        if (/[#&]invite=/.test(location.hash)) { if (BOLD.allowPage) BOLD.allowPage(); }
+        else el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">Join it from Projects</a>.');
         return;
       }
       if (!card) show('Could not load the project.');
@@ -1228,6 +1233,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     }
   } catch (e){}
 
+  // Inviting people to it (#148): its editors under People; the invited, a banner.
+  if (window.BoldProjectInvite && db) BoldProjectInvite.init({ db: db, root: el('projectBody'), id: projectId, board: boardId || null,
+    canEdit: function(){ return !!card && canEdit(); }, people: function(){ return state.people; }, notEditor: NOT_EDITOR,
+    redraw: function(){ if (card && !editing) render(); }, onJoined: function(){ el('detailMsg').textContent = 'Loading…'; load(); watchWorkspace(); } });
+
   // Firestore reads need the signed-in user; the gate has already checked.
   BOLD.onUser(function(user){
     var was = me && me.email && me.email.toLowerCase();
@@ -1241,5 +1251,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     load();
     loadAccess();
     watchWorkspace();
+    if (window.BoldProjectInvite) BoldProjectInvite.banner(el('projectInviteBanner'));
   });
 })();

@@ -1130,6 +1130,7 @@ async function handleBlockSuggestion(payload){
 const PILOTS = {
   'card-comments': 'Comments on board cards',
   'card-done': 'Telling who raised a card it’s done',
+  'project-invites': 'Invitations to a project, and their answers',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -3779,8 +3780,11 @@ exports.projectWorkspace = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540 },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'projects', 'list');   // Who can see what; a project's own below
+    // Who can see what: Projects' View or Edit for everything; below that, only a project
+    // they're one of the people of (invited to it: projectInvite), checked below.
+    const lists = await access.can(email, 'projects', 'list');
     const data = request.data || {};
+    if (!lists && ['templates', 'mine', 'venues', 'join'].indexOf(data.action) >= 0) await access.requireAccess(email, 'projects', 'list');
     if (data.action === 'templates') return { templates: await projectTemplates() };
     if (data.action === 'mine'){
       // The caller's projects not yet completed: those whose cards name them (as
@@ -5670,12 +5674,129 @@ exports.requestToJoin = onCall(
     if (!open.empty) throw new HttpsError('already-exists', 'There’s already a request for this email address, waiting for a PI. You’ll hear by email.');
     const recent = await db.collection('joinRequests').where('at', '>', Date.now() - 3600000).count().get();
     if (recent.data().count >= 30) throw new HttpsError('resource-exhausted', 'Too many requests right now: try again in an hour.');
+    // Asked through an invitation to a project (projectInvite): they're put on it once approved.
+    if (validSlug(String(d.invite || ''))) r.projectInvite = String(d.invite);
     await db.collection('joinRequests').add(Object.assign(r, { status: 'open', at: Date.now() }));
     return { ok: true };
   }
 );
 
 const joinPageUrl = () => SITE_URL + 'join-requests.html';
+
+// ---------- Inviting someone to a project (#148, 2026-11-02) ----------
+// A project's editors (its submitter, authors, PIs and admins: canEditCard) invite someone
+// by email: projectInvites/{id} { pid, cardId, board, title, email, name, by, byName, status:
+// 'open' | 'accepted' | 'declined' | 'withdrawn', at, decidedAt, emailed }. Someone on BOLD.OS
+// gets a Slack message and the project page shows them Join / Decline; someone who isn't
+// gets an email from the lab's account to ask to join BOLD (join.html?invite=<id>), naming
+// whoever invited them, and is put on the project once their request is approved
+// (decideJoinRequest). Accepting makes them one of its people (its workspace's `joined`), so
+// they see that project in full whatever their group (seesProject; the rules hold to the same).
+// Pure: may `who` ({ email, editor }) do `action` to invite `inv`? → '' or why not.
+function inviteRefusal(inv, action, who){
+  if (!inv) return 'That invitation isn’t there.';
+  const mine = String(inv.email || '').toLowerCase() === String(who.email || '').toLowerCase();
+  if (action === 'accept' || action === 'decline') { if (!mine) return 'It’s someone else’s invitation.'; }
+  else if (action === 'withdraw') { if (!(who.editor || String(inv.by || '').toLowerCase() === String(who.email || '').toLowerCase())) return 'Only whoever invited them, or the project’s editors, withdraw it.'; }
+  else return 'Unknown action.';
+  if (inv.status !== 'open') return 'It’s already been ' + inv.status + '.';
+  return '';
+}
+// Pure: the address of an invitation, on the project page.
+function inviteUrl(inv, id){ return projectPageUrl(inv.cardId, inv.board) + '&invite=' + encodeURIComponent(id); }
+// Joins email to the project pid (its workspace's `joined`) and, if it has a channel and they're
+// on Slack, invites them to it. → { slack } (or {}).
+async function joinProjectAs(email, pid, card, slackToo){
+  await db.collection('projectWorkspaces').doc(pid).set({ joined: FieldValue.arrayUnion(email) }, { merge: true });
+  await syncWorkspace(pid);
+  if (!slackToo || !card || !card.slackChannel) return {};
+  try { return { slack: await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, normalizeProjectChannel(card.slackChannel).name) }; }
+  catch (err){ return { slack: { error: err.message || 'Couldn’t add them to the Slack channel.' } }; }
+}
+async function sendLabEmail(to, subject, body){
+  const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST', headers: { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw: mimeMessage(to, subject, body) }),
+  });
+  if (!res.ok) throw new Error(res.status === 403 ? 'The lab’s Google account can’t send email yet (gmail.send): reconnect it.' : 'Gmail refused it (' + res.status + ').');
+}
+// - 'invite' { id, board, email, name }: the project's editors → { id, emailed }.
+// - 'list' { id, board }: its editors → { invites: [...] } (open ones first).
+// - 'accept' | 'decline' { invite }: the invitee; accept → the workspace, as joining does.
+// - 'withdraw' { invite }: whoever invited them, or an editor.
+// - 'peek' { invite }: anyone, signed in or not (join.html): { title, inviter: { id, name } } of an open one.
+exports.projectInvite = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
+  async (request) => {
+    const d = request.data || {};
+    const col = db.collection('projectInvites');
+    if (d.action === 'peek') {
+      if (!validSlug(String(d.invite || ''))) throw new HttpsError('invalid-argument', 'No invitation given.');
+      const inv = (await col.doc(String(d.invite)).get()).data();
+      if (!inv || inv.status !== 'open') return { open: false };
+      const p = await db.collection('people').where('email', '==', inv.by).limit(1).get();
+      return { open: true, title: inv.title, inviter: { id: p.empty ? '' : p.docs[0].id, name: inv.byName } };
+    }
+    const email = callerEmail(request);
+    const name = request.auth.token.name || email;
+    if (d.action === 'invite' || d.action === 'list') {
+      const id = String(d.id || ''), board = d.board ? String(d.board) : null;
+      if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
+      const snap = await cardRefFor(id, board).get();
+      if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
+      const card = snap.data(), pid = projectIdOf(card, id);
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins invite people to it.');
+      if (d.action === 'list') {
+        const all = await col.where('pid', '==', pid).get();
+        return { invites: all.docs.map((x) => Object.assign({ id: x.id }, x.data())).sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1) || b.at - a.at).slice(0, 50) };
+      }
+      const to = String(d.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpsError('invalid-argument', 'Give their email address.');
+      const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
+      if ((ws.members || []).map(lowerEmail).indexOf(to) >= 0) throw new HttpsError('already-exists', 'They’re already on the project.');
+      const dup = await col.where('pid', '==', pid).where('email', '==', to).where('status', '==', 'open').limit(1).get();
+      if (!dup.empty) throw new HttpsError('already-exists', 'They already have an invitation to it.');
+      const member = (await db.collection('members').doc(to).get()).exists;
+      const inv = { pid, cardId: id, board: board || null, title: String(card.title || 'a project'), email: to, name: String(d.name || '').trim().slice(0, 120),
+        by: email, byName: name, status: 'open', at: Date.now() };
+      const ref = await col.add(inv);
+      const token = SLACK_BOT_TOKEN.value();
+      if (member) {
+        await sendEvent(token, { key: 'project-invites', emails: [to], headline: '📌 ' + slackText(name) + ' invited you to ' + linkedTitle(inv.title, inviteUrl(inv, ref.id)) + ': join it or decline, from its page.' });
+        return { id: ref.id, emailed: false };
+      }
+      let error = '';
+      try {
+        await sendLabEmail(to, name + ' invited you to a BOLD project',
+          'Hello' + (inv.name ? ' ' + inv.name.split(' ')[0] : '') + ',\n\n' + name + ' invited you to join their project “' + inv.title + '” in BOLD.\n\n' +
+          'Ask to join BOLD here, and you’ll be on the project once your request is approved:\n' + SITE_URL + 'join.html?invite=' + ref.id + '\n\nBOLD');
+      } catch (err){ error = err.message || 'Couldn’t send the email.'; logger.error('projectInvite: email failed', { id: ref.id, error }); }
+      await ref.update({ emailed: error ? { error, at: Date.now() } : { at: Date.now() } });
+      if (error) throw new HttpsError('unavailable', 'The invitation is saved, but the email didn’t go: ' + error);
+      return { id: ref.id, emailed: true };
+    }
+    const iid = String(d.invite || '');
+    if (!validSlug(iid)) throw new HttpsError('invalid-argument', 'No invitation given.');
+    const ref = col.doc(iid);
+    const inv = (await ref.get()).data();
+    let editor = false;
+    if (d.action === 'withdraw' && inv) {
+      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      editor = snap.exists && await canEditCard(email, snap.data());
+    }
+    const why = inviteRefusal(inv, d.action, { email, editor });
+    if (why) throw new HttpsError('failed-precondition', why);
+    if (d.action === 'accept') {
+      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      const out = await joinProjectAs(email, inv.pid, snap.exists ? snap.data() : null, true);
+      await ref.update({ status: 'accepted', decidedAt: Date.now() });
+      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [inv.by], headline: '📌 ' + slackText(name) + ' joined ' + linkedTitle(inv.title, projectPageUrl(inv.cardId, inv.board)) + ', as you invited them.' });
+      return Object.assign({ status: 'accepted' }, out);
+    }
+    await ref.update({ status: d.action === 'decline' ? 'declined' : 'withdrawn', decidedAt: Date.now() });
+    return { status: d.action === 'decline' ? 'declined' : 'withdrawn' };
+  }
+);
 
 // Pure: a name folded for matching ("Zoë Lee" → "zoe lee").
 function foldName(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
@@ -5864,6 +5985,15 @@ exports.decideJoinRequest = onCall(
       return Object.assign({}, q, { status });
     });
     if (r.status !== 'approved') return { status: r.status };
+    // Invited to a project (projectInvite): on it now, as they asked to join through it.
+    const invs = await db.collection('projectInvites').where('email', '==', String(r.email || '').toLowerCase()).where('status', '==', 'open').get();
+    const extra = r.projectInvite && !invs.docs.some((x) => x.id === r.projectInvite) ? [await db.collection('projectInvites').doc(r.projectInvite).get()] : [];
+    for (const x of invs.docs.concat(extra.filter((y) => y.exists && y.data().status === 'open'))) {
+      try {
+        await joinProjectAs(String(r.email).toLowerCase(), x.data().pid, null, false);
+        await x.ref.update({ status: 'accepted', decidedAt: Date.now(), via: 'join' });
+      } catch (err){ logger.error('decideJoinRequest: joining the invited project failed', { invite: x.id, error: String(err) }); }
+    }
     return { status: r.status, welcome: await sendWelcome(d.id) };
   }
 );
@@ -6948,5 +7078,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  onboardingSteps, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
 };
