@@ -6195,8 +6195,8 @@ exports.onGroupChannels = onDocumentWritten(
 // ticked from what BOLD.OS already knows, so nobody ticks their own:
 // - everyone: their details (members/{email}: role, institution, interests, pillars, start
 //   date, and who invited them unless a PI), read the BOLDiquette (its Mark as read, which
-//   lists them in handbook/boldiquette/readers: read-point.js) and take the tour (marked at
-//   its end, in onboarding/{email}, server-written);
+//   lists them in handbook/boldiquette/readers: read-point.js). The tour is optional, not a
+//   step: taking it is marked at its end (onboarding/{email}, server-written), as `tour`;
 // - BOLD-associate: be on a project (join one, or register one);
 // - BOLD-internal and up: own a project (have registered one: its submittedBy), and join every
 //   event series required for their group (eventSeries' requiredFor, set by PIs and admins on
@@ -6215,7 +6215,6 @@ function onboardingSteps(group, f){
   const steps = [
     { key: 'details', label: 'Fill in your details on your profile', done: details, href: 'profile.html#details' },
     { key: 'read', label: 'Read the BOLDiquette, and mark it read at its end', done: !!f.read, href: 'boldiquette.html' },
-    { key: 'tour', label: 'Take the tour of BOLD.OS', done: !!(f.marks || {}).tour, href: 'get-started.html#tour' },
   ];
   if (r === 1) steps.push({ key: 'project', label: 'Join a project, or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
   if (r >= 2) {
@@ -6243,7 +6242,7 @@ async function onboardingFor(email){
     db.collection('eventSeries').where('hidden', '==', false).get(),
     access.groupFor(email),
   ]);
-  return Object.assign({ group }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
+  return Object.assign({ group, tour: !!(marks.exists && marks.data().tour) }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
     inProject: !ws.empty, owns: !owned.empty || !ownedCard.empty, series: seriesFacts(series.docs) }));
 }
 // - {}: your own → { group, steps, done }.

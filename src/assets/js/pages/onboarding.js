@@ -18,7 +18,7 @@
           (status.group !== 'exec' ? ' To do more in BOLD, <a href="group-request.html">ask for another group</a>.' : '')
         : 'What everyone in ' + esc(BoldJoinLabel(status.group)) + ' does first. Each is ticked when BOLD.OS sees it done.') + '</p>' +
       BoldOnboarding.listHtml(status) +
-      '<div class="event-form-actions"><button type="button" class="btn-box' + (status.steps.some(function(s){ return s.key === 'tour' && !s.done; }) ? ' is-primary' : '') + ' ob-tour">Take the tour</button></div>';
+      '<div class="event-form-actions"><button type="button" class="btn-box' + (!status.tour ? ' is-primary' : '') + ' ob-tour">Take the tour</button></div>';
     box.hidden = false;
   }
   function BoldJoinLabel(g){ return { exec: 'BOLD-exec', staff: 'BOLD-staff', internal: 'BOLD-internal', associate: 'BOLD-associate' }[g] || 'PAN-BOLD'; }
