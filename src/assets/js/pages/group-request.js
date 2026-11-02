@@ -4,20 +4,24 @@
 // ticks "I accept these terms" and sends it to the PIs and admins, who decide (groupRequest
 // 'request', with the terms as they read them, kept on the request). An open request shows
 // here with Withdraw. ?to=<group> opens that group.
+// The contract also lists what the group needs done first (its onboarding steps: a project of
+// their own, the event series it must join…), checked now by BOLD.OS (the onboarding callable,
+// { group }), never ticked by hand; Send waits until they're all done (groupRequest checks them
+// again), and the list as checked goes into the terms they accept.
 (function(){
   var esc = BOLD.escapeHtml;
   var box = document.getElementById('groupRequest');
   if (!box || !BOLD.getAuth()) return;
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
-  var me = null, mine = null, whoIs = null, open = undefined, onboard = undefined, to = '', note = '', accepted = false, busy = false, error = '', sent = false;
+  var me = null, mine = null, whoIs = null, open = undefined, needs = {}, to = '', note = '', accepted = false, busy = false, error = '', sent = false;
   var param = (/[?&]to=([a-z]+)/.exec(location.search) || [])[1] || '';
   var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('groupRequest')(data); };
   var when = function(t){ return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); };
   var terms = function(g){ return BoldJoin.groupSectionOf(whoIs, g).replace(/\]\(#/g, '](boldiquette.html#'); };
 
   function render(){
-    if (!me || !mine || whoIs === null || open === undefined || onboard === undefined) return;
+    if (!me || !mine || whoIs === null || open === undefined) return;
     var html = '<p class="proj-meta">You’re in ' + BoldJoin.groupBadge(mine) + '.</p>';
     if (open) {
       box.innerHTML = html + '<p>You asked for ' + BoldJoin.groupBadge(open.to) + ' on ' + when(open.at) + ', accepting what it asks of you. The PIs and admins will decide' + (sent ? ': they’ve had a Slack message.' : '.') + '</p>' +
@@ -28,31 +32,49 @@
     }
     var others = BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== mine; });
     if (!to || to === mine) to = others.some(function(c){ return c[0] === param; }) ? param : '';
-    var t = to ? terms(to) : '';
-    var why = onboard && !onboard.done ? 'Finish your first steps at BOLD first (' + BoldOnboarding.count(onboard) + ' done).' : !to ? 'Choose a group.' : !t ? 'What ' + BoldJoin.categoryLabel(to) + ' asks isn’t written yet: propose it in Who is BOLD.' : !accepted ? 'Tick that you accept the terms first.' : '';
+    var t = to ? terms(to) : '', need = to ? needs[to] : null;
+    if (to && need === undefined) loadNeed(to);
+    var left = need && need.steps ? need.steps.filter(function(x){ return !x.done; }).length : 0;
+    var why = !to ? 'Choose a group.' : !need || need === 'loading' ? 'Checking what ' + BoldJoin.categoryLabel(to) + ' needs…'
+      : left ? 'Do what ' + BoldJoin.categoryLabel(to) + ' needs first: ' + left + ' still to do.' : !t ? 'What ' + BoldJoin.categoryLabel(to) + ' asks isn’t written yet: propose it in Who is BOLD.' : !accepted ? 'Tick that you accept the terms first.' : '';
     box.innerHTML = html +
       '<div class="gr-tabs" role="tablist" aria-label="Groups">' + others.map(function(c){
         var on = c[0] === to;
         return '<button type="button" role="tab" aria-selected="' + on + '" class="type-badge pp-' + c[0] + (on ? ' is-current' : '') + '" data-to="' + c[0] + '">' + esc(c[1]) + '</button>';
       }).join('') + '</div>' +
       (to ? '<h2 class="gr-head">What ' + esc(BoldJoin.categoryLabel(to)) + ' asks of you, and gives you</h2>' +
-        '<div class="gr-terms" role="tabpanel">' + (t ? '<div class="md-desc">' + BoldMarkdown.render(t) + '</div>' : '<p>Not written yet: <a href="boldiquette.html#who-is-bold">propose it in Who is BOLD</a>.</p>') + '</div>' +
+        '<div class="gr-terms" role="tabpanel">' + (t ? '<div class="md-desc">' + BoldMarkdown.render(t) + '</div>' : '<p>Not written yet: <a href="boldiquette.html#who-is-bold">propose it in Who is BOLD</a>.</p>') +
+          // What it needs done first, as BOLD.OS sees it now: part of the contract.
+          '<div class="gr-needs"><h3>What you need to have done first</h3>' +
+            (need && need.steps ? BoldOnboarding.listHtml(need) + '<p class="gr-why">' + (left ? 'Each is ticked when BOLD.OS sees it done: come back here once you have.' : 'All done.') + '</p>'
+              : '<p class="gr-why">' + (need === null ? 'Couldn’t check it. <button type="button" class="btn-text gr-recheck">Try again</button>' : 'Checking…') + '</p>') +
+          '</div></div>' +
         '<div class="gr-form">' +
           '<label>Why (optional): who you work with, what you do in BOLD<textarea class="gr-note no-tags" rows="2" maxlength="1000">' + esc(note) + '</textarea></label>' +
           '<label class="jn-check"><input type="checkbox" class="gr-accept"' + (accepted ? ' checked' : '') + (t ? '' : ' disabled') + '> I accept these terms</label>' +
           (error ? '<p class="st-error">' + esc(error) + '</p>' : '') +
           '<div class="event-form-actions"><button type="button" class="btn-box is-primary gr-send"' + (why || busy ? ' disabled' : '') + (why ? ' title="' + esc(why) + '"' : '') + '>Send to the PIs and admins</button></div>' +
-          (onboard && !onboard.done ? '<p class="gr-why">' + esc(why) + ' <a href="get-started.html">Get started</a></p>' : why && to ? '<p class="gr-why">' + esc(why) + '</p>' : '') +
+          (why && to ? '<p class="gr-why">' + esc(why) + '</p>' : '') +
         '</div>' : '<p class="gr-why">Choose a group to read what it asks of you.</p>');
   }
+
+  // What a group needs of them, checked now (onboarding { group }); again when they come back to the page.
+  function loadNeed(g){
+    needs[g] = 'loading';
+    BoldOnboarding.call({ group: g }).then(function(r){ needs[g] = r.data && Array.isArray(r.data.steps) ? r.data : null; })
+      .catch(function(err){ console.error('[BOLD Group] checking what it needs failed', err); needs[g] = null; }).then(render);
+  }
+  window.addEventListener('focus', function(){ if (to && needs[to] && needs[to] !== 'loading') { needs = {}; render(); } });
 
   box.addEventListener('click', function(e){
     var tab = e.target.closest('[data-to]');
     if (tab) { to = tab.getAttribute('data-to'); accepted = false; error = ''; render(); return; }
     var b = e.target.closest('button');
     if (!b || b.disabled) return;
+    if (b.classList.contains('gr-recheck')) { delete needs[to]; render(); return; }
     if (b.classList.contains('gr-send')) {
-      var t = terms(to);
+      // The contract as accepted: the group's terms, and what it needs, as checked now.
+      var t = terms(to) + '\n\n**Done before asking, as BOLD.OS checked it:**\n' + needs[to].steps.map(function(x){ return '- ' + x.label; }).join('\n');
       BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: ['Accept what ' + BoldJoin.categoryLabel(to) + ' asks of you, as shown', 'Send the PIs and admins a Slack message asking them to decide'] })
         .then(function(ok){
           if (!ok) return;
@@ -80,7 +102,6 @@
     if (unsub) { unsub(); unsub = null; }
     me = user ? { email: String(user.email || '').toLowerCase() } : null;
     if (!me) return;
-    BoldOnboarding.load(function(s){ onboard = s; render(); });
     db.collection('members').doc(me.email).get().then(function(s){ mine = BoldJoin.groupOf(s.exists ? s.data() : null); render(); })
       .catch(function(){ mine = 'pan'; render(); });
     db.collection('handbook').doc('boldiquette').get().then(function(s){

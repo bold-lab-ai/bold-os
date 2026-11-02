@@ -6231,7 +6231,8 @@ function onboardingSteps(group, f){
   return { steps, done: steps.every((x) => x.done) };
 }
 const seriesFacts = (docs) => docs.map((d) => { const v = d.data(); return { id: d.id, title: v.title || d.id, requiredFor: v.requiredFor || '', invite: v.invite || null, joined: v.joined || [], hidden: !!v.hidden }; });
-async function onboardingFor(email){
+// `as`: the steps of another group (asking for it: group-request.html), else their own.
+async function onboardingFor(email, as){
   email = String(email || '').toLowerCase();
   const [m, marks, read, ws, owned, ownedCard, series, group] = await Promise.all([
     db.collection('members').doc(email).get(), db.collection('onboarding').doc(email).get(),
@@ -6240,12 +6241,13 @@ async function onboardingFor(email){
     db.collection('projects').where('submittedBy.email', '==', email).limit(1).get(),
     db.collectionGroup('cards').where('submittedBy.email', '==', email).limit(1).get(),
     db.collection('eventSeries').where('hidden', '==', false).get(),
-    access.groupFor(email),
+    as && ONBOARDING_RANK[as] !== undefined ? as : access.groupFor(email),
   ]);
   return Object.assign({ group, tour: !!(marks.exists && marks.data().tour) }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
     inProject: !ws.empty, owns: !owned.empty || !ownedCard.empty, series: seriesFacts(series.docs) }));
 }
-// - {}: your own → { group, steps, done }.
+// - {}: your own → { group, steps, done, tour }.
+// - { group }: what that group needs of them, checked now (asking for it: group-request.html).
 // - { all: true }: PIs and admins, everyone with a record → { people: [{ email, name, group, steps, done }] }.
 // - { action: 'mark', step: 'tour' }: marks the tour taken (at its end).
 exports.onboarding = onCall(
@@ -6257,7 +6259,7 @@ exports.onboarding = onCall(
       await db.collection('onboarding').doc(email).set({ [d.step]: Date.now() }, { merge: true });
       return onboardingFor(email);
     }
-    if (!d.all) return onboardingFor(email);
+    if (!d.all) return onboardingFor(email, ['pan', 'associate', 'internal', 'staff', 'exec'].indexOf(d.group) >= 0 ? d.group : '');
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see everyone’s onboarding.');
     const [members, marks, readers, wss, series, projects, cards] = await Promise.all([db.collection('members').get(), db.collection('onboarding').get(),
       db.collection('handbook').doc('boldiquette').collection('readers').get(), db.collection('projectWorkspaces').get(), db.collection('eventSeries').get(),
@@ -6303,8 +6305,10 @@ exports.groupRequest = onCall(
       if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
       const name = m.data().name || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
-      // Onboarding done first (Get started).
-      if (!(await onboardingFor(email)).done) throw new HttpsError('failed-precondition', 'Finish your onboarding first: it’s on Get started.');
+      // What the group needs, done for real first (its onboarding steps, checked now: a project of
+      // their own, the series it must join…), not just promised.
+      const need = await onboardingFor(email, to);
+      if (!need.done) throw new HttpsError('failed-precondition', 'Before asking for ' + GROUP_LABELS[to] + ': ' + need.steps.filter((x) => !x.done).map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join('; ') + '.');
       // The contract: what the group asks of them, as they read it, and that they accept it.
       const terms = String(d.terms || '').trim().slice(0, 20000);
       if (d.accept !== true || !terms) throw new HttpsError('failed-precondition', 'Read what ' + GROUP_LABELS[to] + ' asks of you and tick that you accept it first.');

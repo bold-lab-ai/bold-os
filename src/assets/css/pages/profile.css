@@ -174,3 +174,5 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .gr-why{color:var(--muted); font-size:13px; margin:8px 0 0;}
 .jr-terms{margin-top:8px; padding:8px 12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);}
 .gr-head{font-family:var(--sans); font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:6px 0 8px;}
+.gr-needs{margin-top:16px; padding-top:12px; border-top:1px solid var(--line);}
+.gr-needs h3{margin:0 0 4px; font-family:var(--sans); font-size:14px; font-weight:600; color:var(--ink);}
