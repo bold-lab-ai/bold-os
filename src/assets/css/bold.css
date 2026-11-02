@@ -579,6 +579,14 @@ body:has(#viewAsBar){padding-bottom:72px;}
   color:var(--link); border:1px solid currentColor; white-space:nowrap; text-decoration:none;
 }
 .type-oral, .type-research-talk{color:var(--green);}
+/* Who is BOLD's groups (BoldJoin.groupBadge). */
+.pp-exec{color:var(--link);}
+.pp-internal{color:var(--green);}
+.pp-associate{color:var(--plum);}
+.pp-staff{color:var(--brown);}
+.pp-pan{color:var(--neutral-text);}
+button.type-badge{background:none; cursor:pointer;}
+button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);}
 .type-pitch{color:var(--plum);}
 .type-welcome, .type-keynote, .type-panel{color:var(--brown);}
 

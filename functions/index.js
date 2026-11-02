@@ -6148,7 +6148,7 @@ exports.groupRequest = onCall(
       return r;
     });
     await sendEvent(token, { key: 'group-requests', emails: [r.email], headline: accept
-      ? '🏷️ You’re now ' + GROUP_LABELS[r.to] + ' (' + linkedTitle('Who is BOLD', SITE_URL + 'boldiquette.html#who-is-bold') + ').'
+      ? '🏷️ You’re now ' + GROUP_LABELS[r.to] + ': ' + linkedTitle('your next steps', SITE_URL + 'index.html#next-steps') + '.'
       : '🏷️ Your request to move to ' + GROUP_LABELS[r.to] + ' was declined. Ask a PI if you’d like to know more.' });
     return { ok: true };
   }

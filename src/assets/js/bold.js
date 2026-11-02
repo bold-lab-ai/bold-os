@@ -763,9 +763,22 @@
           // Asked to view as a group but not a PI or admin: the server ignored it, and so do we.
           if (viewAs && !d.viewAs) { viewAs = null; try { sessionStorage.removeItem('boldViewAs'); } catch (e){} }
           setAccess(Object.assign({ e: user.email || '', group: d.group || r[1], pages: d.pages || r[0], fullWrite: !!d.fullWrite }, d.viewAs ? { viewAs: d.viewAs } : {}));
+          if (!d.viewAs) groupChanged(user.email || '', d.group || r[1]);
         }).catch(function(){});
       });
     });
+  }
+  // Accepted into a new group (#152): once, they're sent to the home page's next steps for it
+  // (index.js, #next-steps). The group last seen is remembered in this browser, per person; the
+  // first time there's none, so nothing happens (the home page shows the steps anyway). Only
+  // from the server's answer (getMyAccess), never while viewing as a group.
+  function groupChanged(email, group){
+    if (!email || !group) return;
+    var k = 'boldGroup:' + email, was = null;
+    try { was = localStorage.getItem(k); localStorage.setItem(k, group); } catch (e){ return; }
+    if (!was || was === group) return;
+    if (document.getElementById('next-steps')) { location.hash = 'next-steps'; return; }
+    location.href = 'index.html#next-steps';
   }
   // fn() once the Functions SDK is there: loaded (same pinned version) if the page hasn't it.
   function withFunctions(fn){

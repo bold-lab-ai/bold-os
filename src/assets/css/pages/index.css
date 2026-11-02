@@ -104,3 +104,16 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 .home-search .ms-input, .home-search .ms-input:focus{width:100%; box-sizing:border-box; font-size:16px; padding:10px 34px 10px 14px;}
 .home-search .ms-key{right:12px;}
 .home-search .ms-menu{left:0; right:0; width:auto;}
+/* Your next steps (index.js, #152): the Get started checklist for the visitor's group. */
+.home-steps{width:min(560px, 100%); margin:22px auto 0; text-align:left; font-family:var(--sans); font-size:14px; line-height:1.55; color:var(--ink-soft);}
+.home-steps-head{margin:0 0 8px; color:var(--ink);}
+.home-steps-head .type-badge{vertical-align:1px;}
+.home-steps-text{padding:10px 14px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); max-height:min(42vh, 380px); overflow:auto;}
+.home-steps-text > :first-child{margin-top:0;} .home-steps-text > :last-child{margin-bottom:0;}
+.home-steps-text p{margin:0 0 8px;}
+.home-steps-text .home-steps-sub{margin:12px 0 4px; font-weight:600; color:var(--ink);}
+.home-steps-text ul{margin:2px 0 8px; padding-left:20px;}
+.home-steps-foot{display:flex; align-items:center; gap:10px; margin:10px 0 0; font-size:13px;}
+.home-steps-foot a{color:var(--link);}
+.home-steps-foot .home-steps-done{margin-left:auto;}
+.home-steps > .home-steps-again{display:block; margin:0 auto;}

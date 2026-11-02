@@ -138,4 +138,49 @@
     if (BOLD.authHint()) renderGuestChrome(true);
     BOLD.onUser(function(user){ renderGuestChrome(!!user); });
   }
+  // Your next steps, for whoever just joined BOLD or a new group (#152): the Get started
+  // checklist's steps for everyone and those under their group's heading (BoldJoin.sectionsFor),
+  // read from the guide, so they change as it does. Shown until they say Done, and again
+  // after each change of group (bold.js sends them here then: #next-steps); "Your next
+  // steps" brings it back. Done is remembered in this browser, per group.
+  (function(){
+    var box = document.getElementById('next-steps');
+    if (!box || !window.BoldJoin || !window.BoldMarkdown) return;
+    var body = null, mine = null, email = '', open = false;
+    var key = function(){ return 'boldStepsDone:' + email; };
+    var store = function(v){ try { if (v === undefined) return localStorage.getItem(key()); localStorage.setItem(key(), v); } catch (e){ return null; } };
+    var links = function(md){ return BoldMarkdown.render(md.replace(/\]\(#/g, '](get-started.html#')); };
+    function render(){
+      if (body === null || !mine) return;
+      var done = store() === mine && !open && location.hash !== '#next-steps';
+      if (done) { box.innerHTML = '<button type="button" class="btn-text home-steps-again">Your next steps</button>'; box.hidden = false; return; }
+      var s = BoldJoin.sectionsFor(body, mine);
+      box.innerHTML = '<p class="home-steps-head">Welcome to ' + BoldJoin.groupBadge(mine) + '. Your next steps:</p>' +
+        '<div class="home-steps-text">' + (s.common ? links(s.common) : '') + (s.group ? '<p class="home-steps-sub">For ' + BoldJoin.groupBadge(mine) + '</p>' + links(s.group) : '') +
+          (!s.common && !s.group ? '<p>None yet: <a href="get-started.html">propose some</a>.</p>' : '') + '</div>' +
+        '<p class="home-steps-foot"><a href="get-started.html">Get started at BOLD</a> · <a href="boldiquette.html#who-is-bold">Who is BOLD</a>' +
+          '<button type="button" class="btn-box is-primary home-steps-done">Done</button></p>';
+      box.hidden = false;
+    }
+    box.addEventListener('click', function(e){
+      if (e.target.closest('.home-steps-done')) {
+        store(mine); open = false;
+        if (location.hash === '#next-steps') history.replaceState(null, '', location.pathname + location.search);
+        render();
+      } else if (e.target.closest('.home-steps-again')) { open = true; render(); }
+    });
+    window.addEventListener('hashchange', function(){ if (location.hash === '#next-steps') { open = true; render(); } });
+    var asked = false;
+    BOLD.onAccess(function(a){
+      // Viewing as a group: what that group would see, never saved as Done.
+      if (!a || a.group === 'out') { box.hidden = true; return; }
+      mine = a.group; email = a.e; render();
+      if (asked) return;
+      asked = true;
+      firebase.firestore(BOLD.getApp()).collection('guides').doc('get-started-at-bold').get().then(function(s){
+        var p = ((s.exists && s.data().parts) || []).filter(function(x){ return x.id === 'everyone'; })[0];
+        body = (p && p.body) || ''; render();
+      }).catch(function(err){ console.error('[BOLD Home] loading the Get started checklist failed', err); });
+    });
+  })();
 })();
