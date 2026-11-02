@@ -10,14 +10,14 @@
   if (!box || !BOLD.getAuth()) return;
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
-  var me = null, mine = null, whoIs = null, open = undefined, to = '', note = '', accepted = false, busy = false, error = '', sent = false;
+  var me = null, mine = null, whoIs = null, open = undefined, onboard = undefined, to = '', note = '', accepted = false, busy = false, error = '', sent = false;
   var param = (/[?&]to=([a-z]+)/.exec(location.search) || [])[1] || '';
   var call = function(data){ return firebase.app().functions('europe-west2').httpsCallable('groupRequest')(data); };
   var when = function(t){ return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); };
   var terms = function(g){ return BoldJoin.groupSectionOf(whoIs, g).replace(/\]\(#/g, '](boldiquette.html#'); };
 
   function render(){
-    if (!me || !mine || whoIs === null || open === undefined) return;
+    if (!me || !mine || whoIs === null || open === undefined || onboard === undefined) return;
     var html = '<p class="proj-meta">You’re in ' + BoldJoin.groupBadge(mine) + '.</p>';
     if (open) {
       box.innerHTML = html + '<p>You asked for ' + BoldJoin.groupBadge(open.to) + ' on ' + when(open.at) + ', accepting what it asks of you. The PIs and admins will decide' + (sent ? ': they’ve had a Slack message.' : '.') + '</p>' +
@@ -29,7 +29,7 @@
     var others = BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== mine; });
     if (!to || to === mine) to = others.some(function(c){ return c[0] === param; }) ? param : '';
     var t = to ? terms(to) : '';
-    var why = !to ? 'Choose a group.' : !t ? 'What ' + BoldJoin.categoryLabel(to) + ' asks isn’t written yet: propose it in Who is BOLD.' : !accepted ? 'Tick that you accept the terms first.' : '';
+    var why = onboard && !onboard.done ? 'Finish your first steps at BOLD first (' + BoldOnboarding.count(onboard) + ' done).' : !to ? 'Choose a group.' : !t ? 'What ' + BoldJoin.categoryLabel(to) + ' asks isn’t written yet: propose it in Who is BOLD.' : !accepted ? 'Tick that you accept the terms first.' : '';
     box.innerHTML = html +
       '<div class="gr-tabs" role="tablist" aria-label="Groups">' + others.map(function(c){
         var on = c[0] === to;
@@ -42,7 +42,7 @@
           '<label class="jn-check"><input type="checkbox" class="gr-accept"' + (accepted ? ' checked' : '') + (t ? '' : ' disabled') + '> I accept these terms</label>' +
           (error ? '<p class="st-error">' + esc(error) + '</p>' : '') +
           '<div class="event-form-actions"><button type="button" class="btn-box is-primary gr-send"' + (why || busy ? ' disabled' : '') + (why ? ' title="' + esc(why) + '"' : '') + '>Send to the PIs and admins</button></div>' +
-          (why && to ? '<p class="gr-why">' + esc(why) + '</p>' : '') +
+          (onboard && !onboard.done ? '<p class="gr-why">' + esc(why) + ' <a href="get-started.html">Get started</a></p>' : why && to ? '<p class="gr-why">' + esc(why) + '</p>' : '') +
         '</div>' : '<p class="gr-why">Choose a group to read what it asks of you.</p>');
   }
 
@@ -80,6 +80,7 @@
     if (unsub) { unsub(); unsub = null; }
     me = user ? { email: String(user.email || '').toLowerCase() } : null;
     if (!me) return;
+    BoldOnboarding.load(function(s){ onboard = s; render(); });
     db.collection('members').doc(me.email).get().then(function(s){ mine = BoldJoin.groupOf(s.exists ? s.data() : null); render(); })
       .catch(function(){ mine = 'pan'; render(); });
     db.collection('handbook').doc('boldiquette').get().then(function(s){

@@ -113,3 +113,4 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 .home-steps-foot{display:flex; align-items:center; gap:10px; margin:10px 0 0; font-size:13px;}
 .home-steps-foot a{color:var(--link);}
 .home-steps-foot .home-steps-done{margin-left:auto;}
+.home-steps-foot .btn-box{text-decoration:none;}

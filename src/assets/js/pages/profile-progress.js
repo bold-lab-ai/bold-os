@@ -75,11 +75,22 @@
   });
   document.addEventListener('bold:accounts', render);
 
+  // Onboarding (Get started), until it's done: how far they are, and where to carry on.
+  var ob = document.getElementById('pfOnboarding');
+  function onboarding(){
+    if (!ob || !window.BoldOnboarding) return;
+    BoldOnboarding.load(function(s){
+      ob.hidden = !s || s.done;
+      if (!ob.hidden) ob.innerHTML = 'Your first steps at BOLD: ' + esc(BoldOnboarding.count(s)) + ' done. <a href="get-started.html">Carry on</a>';
+    });
+  }
+
   BOLD.onUser(function(user){
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user && user.email ? { email: user.email.toLowerCase() } : null;
     member = undefined; studies = undefined;
-    if (!me) { box.hidden = true; return; }
+    if (!me) { box.hidden = true; if (ob) ob.hidden = true; return; }
+    onboarding();
     doneBefore = !!store('pfDone:' + me.email);
     unsubs.push(db.collection('members').doc(me.email).onSnapshot(function(s){ member = s.exists ? s.data() : null; render(); },
       function(){ member = null; render(); }));

@@ -8,6 +8,8 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var members = null, unsub = null, staff = false, me = null, picking = '', slackIds = {};
+  // PIs and admins: each person's onboarding (Get started), { email: { done, count } }.
+  var onboarding = {};
 
   function links(t){
     return String(t || '').split(/[\s,;]+/).filter(Boolean).map(function(u){
@@ -32,7 +34,19 @@
     return '<li><div>' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag +
       (meta ? '<span class="proj-meta">' + meta + '</span>' : '') +
       (m.interests ? '<span class="proj-meta">' + esc(m.interests) + '</span>' : '') +
-      (l ? '<span class="proj-meta">' + l + '</span>' : '') + '</div></li>';
+      (l ? '<span class="proj-meta">' + l + '</span>' : '') +
+      (staff && onboarding[String(m.email || '').toLowerCase()] ? '<span class="proj-meta pp-onboarding">' + onboarding[String(m.email || '').toLowerCase()] + '</span>' : '') + '</div></li>';
+  }
+
+  function loadOnboarding(){
+    BoldOnboarding.call({ all: true }).then(function(r){
+      onboarding = {};
+      ((r.data && r.data.people) || []).forEach(function(p){
+        var left = p.steps.filter(function(x){ return !x.done; }).map(function(x){ return x.label; });
+        onboarding[p.email] = p.done ? 'Onboarding done' : 'Onboarding ' + BoldOnboarding.count(p) + ': still to ' + esc(left.map(function(l){ return l.charAt(0).toLowerCase() + l.slice(1); }).join('; '));
+      });
+      render();
+    }).catch(function(err){ console.error('[BOLD People] loading onboarding failed', err); });
   }
 
   function render(){
@@ -79,7 +93,7 @@
       ps.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });
       render();
     }).catch(function(){});
-    firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(r){ staff = !!(r.data && r.data.fullWrite); render(); }).catch(function(){});
+    firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(r){ staff = !!(r.data && r.data.fullWrite); render(); if (staff) loadOnboarding(); }).catch(function(){});
     unsub = db.collection('members').onSnapshot(function(s){
       members = s.docs.map(function(d){ return d.data(); })
         .sort(function(a, b){ return String(a.name || a.email).localeCompare(String(b.name || b.email)); });
