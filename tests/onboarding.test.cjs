@@ -18,15 +18,37 @@ test('everyone: details, the BOLDiquette and the tour', () => {
   assert.strictEqual(onboardingSteps('pan', {}).done, false);
 });
 
-test('higher groups add a project, then an event series when there is one to join', () => {
-  assert.deepStrictEqual(keys(onboardingSteps('associate', {})), ['details', 'read', 'tour', 'project']);
-  assert.deepStrictEqual(keys(onboardingSteps('internal', {})), ['details', 'read', 'tour', 'project']);
-  assert.deepStrictEqual(keys(onboardingSteps('internal', { openSeries: true })), ['details', 'read', 'tour', 'project', 'events']);
-  assert.deepStrictEqual(keys(onboardingSteps('exec', { openSeries: true })), ['details', 'read', 'tour', 'project', 'events']);
+const series = [
+  { id: 'rg', title: 'BOLD Reading Group', requiredFor: 'internal', invite: { mode: 'join' }, joined: ['me@x.org'] },
+  { id: 'hs', title: 'Hamming Sessions', requiredFor: 'internal', invite: { mode: 'group', group: 'internal' }, joined: [] },
+  { id: 'gm', title: 'Group meeting', requiredFor: 'associate', invite: { mode: 'join' }, joined: [] },
+  { id: 'fest', title: 'Festival', requiredFor: '', invite: null, joined: [] },
+  { id: 'hid', title: 'Hidden one', requiredFor: 'internal', hidden: true },
+];
+
+test('BOLD-associate: join a project or register one', () => {
+  assert.deepStrictEqual(keys(onboardingSteps('associate', { series })), ['details', 'read', 'tour', 'project']);
+  const step = (f) => onboardingSteps('associate', f).steps[3].done;
+  assert.strictEqual(step({ inProject: true }), true);
+  assert.strictEqual(step({ owns: true }), true);
+  assert.strictEqual(step({}), false);
+});
+
+test('BOLD-internal and up: own a project, and join every series required for their group', () => {
+  assert.deepStrictEqual(keys(onboardingSteps('internal', { series })), ['details', 'read', 'tour', 'own', 'series:rg', 'series:gm', 'series:hs']);
+  const r = onboardingSteps('internal', { email: 'Me@x.org', series, inProject: true });
+  const by = Object.fromEntries(r.steps.map((s) => [s.key, s.done]));
+  assert.strictEqual(by.own, false, 'joining one isn’t owning one');
+  assert.strictEqual(by['series:rg'], true, 'joined');
+  assert.strictEqual(by['series:hs'], true, 'invites their whole group');
+  assert.strictEqual(by['series:gm'], false, 'not joined yet');
+  assert.deepStrictEqual(keys(onboardingSteps('exec', { series })), ['details', 'read', 'tour', 'own', 'series:rg', 'series:gm', 'series:hs']);
+  assert.deepStrictEqual(keys(onboardingSteps('pan', { series })), ['details', 'read', 'tour'], 'PAN-BOLD has none of these');
 });
 
 test('ticked from what BOLD.OS knows', () => {
-  const r = onboardingSteps('internal', { member, read: true, marks: { tour: 1 }, inProject: true, openSeries: true, inSeries: true });
+  const r = onboardingSteps('internal', { email: 'me@x.org', member, read: true, marks: { tour: 1 }, owns: true,
+    series: series.map((x) => x.id === 'gm' ? Object.assign({}, x, { joined: ['me@x.org'] }) : x) });
   assert.strictEqual(r.done, true);
   assert.strictEqual(onboardingSteps('pan', { member: Object.assign({}, member, { pillars: [] }), read: true, marks: { tour: 1 } }).done, false, 'pillars needed');
   assert.strictEqual(onboardingSteps('pan', { member: Object.assign({}, member, { invitedBy: null }), read: true, marks: { tour: 1 } }).done, false, 'who invited them needed');

@@ -88,8 +88,9 @@
     var off = function(ok, why){ return ok && !busy ? '' : ' disabled title="' + esc(ok ? '' : why) + '"'; };
     var NOT_ORG = 'Only its organisers, PIs and admins can do this';
     if (isEditions(s)) { body.innerHTML = BACK + editionsHtml(off, NOT_ORG); return; }
-    var who = s.invite && s.invite.mode === 'group' ? inviteText(s.invite) + ' (invited)'
-      : 'Whoever joins' + ((s.joined || []).length ? ' · ' + s.joined.length + ' so far' : '');
+    var who = (s.invite && s.invite.mode === 'group' ? inviteText(s.invite) + ' (invited)'
+      : 'Whoever joins' + ((s.joined || []).length ? ' · ' + s.joined.length + ' so far' : '')) +
+      (s.requiredFor ? ' · required for ' + esc({ associate: 'BOLD-associate', internal: 'BOLD-internal', staff: 'BOLD-staff', exec: 'BOLD-exec' }[s.requiredFor] || s.requiredFor) + ' and up' : '');
     var join = '';
     if (!s.hidden && s.invite && s.invite.mode === 'join') {
       var joined = me && (s.joined || []).indexOf(me.email.toLowerCase()) >= 0;
@@ -204,7 +205,12 @@
             '<p class="event-form-hint">To each occurrence, once it’s released; each can choose its own.</p>'
           : '<label>When (London time)</label>' + meetingEntryHtml(e.meeting) +
             '<label>Who’s invited<select class="sr-invite">' +
-              INVITE.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.invite ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>') +
+              INVITE.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.invite ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+            // Required (onboarding: each of that group, and those above it, must join it). PIs and admins set it.
+            '<label>Who must join it<select class="sr-required"' + (full ? '' : ' disabled title="Only PIs and admins make one required"') + '>' +
+              [['', 'Nobody: it’s optional'], ['associate', 'BOLD-associate and up'], ['internal', 'BOLD-internal and up'], ['staff', 'BOLD-staff and up'], ['exec', 'BOLD-exec']].map(function(o){
+                return '<option value="' + o[0] + '"' + (o[0] === (e.requiredFor || '') ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+            '<p class="event-form-hint">A required one is in their first steps at BOLD (Get started).</p>') +
         '<label>Organisers: they change it, and are always invited</label>' +
         '<ul class="sr-orgs">' + e.organisers.map(function(m, i){
           return '<li><span>' + esc(nameOf(m)) + '</span>' + (e.organisers.length > 1 ? '<button type="button" class="btn-text danger sr-org-remove" data-i="' + i + '">Remove</button>' : '') + '</li>';
@@ -227,6 +233,7 @@
     if (q('.sr-title')) editing.title = q('.sr-title').value;
     if (q('.sr-desc')) editing.description = q('.sr-desc').value;
     if (q('.sr-invite')) editing.invite = q('.sr-invite').value;
+    if (q('.sr-required')) editing.requiredFor = q('.sr-required').value;
     if (q('.sr-often')) editing.often = q('.sr-often').value;
     if (q('.sr-has-invite') && !q('.sr-has-invite').disabled) editing.hasInvite = q('.sr-has-invite').checked;
     if (q('.sr-proposals')) editing.proposals = q('.sr-proposals').checked;
@@ -241,7 +248,7 @@
 
   function startEditing(){
     editing = s ? { often: isEditions(s) ? oftenKey(s.cadence) : 'w' + ((s.meeting || {}).every || 1), hasInvite: !isEditions(s), title: s.title, description: s.description || '',
-        meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, inviteGroup: s.inviteGroup || 'none', organisers: (s.organisers || []).slice(), error: '' }
+        meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, inviteGroup: s.inviteGroup || 'none', requiredFor: s.requiredFor || '', organisers: (s.organisers || []).slice(), error: '' }
       : { often: 'once', start: '', end: '', place: '', hasInvite: false, title: '', description: '', meeting: null, invite: 'join', proposals: false, inviteGroup: 'internal', organisers: [me.email.toLowerCase()], error: '' };
     loadRoster(); render();
   }
@@ -267,7 +274,7 @@
     if (meeting && meeting.error) { e.error = meeting.error; render(); return; }
     var inv = e.invite.indexOf('group:') === 0 ? { mode: 'group', group: e.invite.slice(6) } : { mode: 'join' };
     var payload = { action: 'save', id: s ? s.id : undefined, kind: ed ? 'editions' : 'meeting', title: e.title.trim(), description: e.description.trim(), organisers: e.organisers };
-    if (ed) { payload.cadence = { every: every, unit: weekly ? 'week' : 'month' }; payload.proposals = e.proposals; payload.inviteGroup = e.inviteGroup || 'none'; } else { payload.meeting = meeting; payload.invite = inv; }
+    if (ed) { payload.cadence = { every: every, unit: weekly ? 'week' : 'month' }; payload.proposals = e.proposals; payload.inviteGroup = e.inviteGroup || 'none'; } else { payload.meeting = meeting; payload.invite = inv; payload.requiredFor = e.requiredFor || ''; }
     var send = function(){
       busy = true; e.error = ''; render();
       call(payload).then(function(r){

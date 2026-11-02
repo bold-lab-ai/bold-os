@@ -6197,16 +6197,19 @@ exports.onGroupChannels = onDocumentWritten(
 //   date, and who invited them unless a PI), read the BOLDiquette (its Mark as read, which
 //   lists them in handbook/boldiquette/readers: read-point.js) and take the tour (marked at
 //   its end, in onboarding/{email}, server-written);
-// - BOLD-associate and up: be on a project (a projectWorkspaces' members);
-// - BOLD-internal and up: join an event series you sign up to (eventSeries' joined), when
-//   there is one.
+// - BOLD-associate: be on a project (join one, or register one);
+// - BOLD-internal and up: own a project (have registered one: its submittedBy), and join every
+//   event series required for their group (eventSeries' requiredFor, set by PIs and admins on
+//   its form: the reading group, the group meeting, Hamming sessions…); one that invites their
+//   whole group counts as joined.
 // Asking for a higher group needs it done (groupRequest). PIs and admins see everyone's on People.
-const ONBOARDING_RANK = { pan: 0, associate: 1, internal: 2, staff: 3, exec: 4 };
+const ONBOARDING_RANK = { everyone: 0, pan: 0, associate: 1, internal: 2, staff: 3, exec: 4 };
 // Pure: a group and what we know of them → { steps: [{ key, label, done, href }], done }.
+// f: { email, member, marks, read, inProject, owns, series: [{ id, title, requiredFor, invite, joined, hidden }] }.
 function onboardingSteps(group, f){
   f = f || {};
   const m = f.member || {}, has = (k) => !!String(m[k] || '').trim();
-  const r = ONBOARDING_RANK[group] || 0;
+  const r = ONBOARDING_RANK[group] || 0, email = String(f.email || '').toLowerCase();
   const details = !!f.member && has('role') && has('institution') && has('interests') && (m.pillars || []).length > 0 && has('startDate') &&
     (m.role === 'PI' || has('contact') || !!(m.invitedBy && m.invitedBy.email));
   const steps = [
@@ -6214,22 +6217,34 @@ function onboardingSteps(group, f){
     { key: 'read', label: 'Read the BOLDiquette, and mark it read at its end', done: !!f.read, href: 'boldiquette.html' },
     { key: 'tour', label: 'Take the tour of BOLD.OS', done: !!(f.marks || {}).tour, href: 'get-started.html#tour' },
   ];
-  if (r >= 1) steps.push({ key: 'project', label: 'Join or register a project', done: !!f.inProject, href: 'projects.html' });
-  if (r >= 2 && (f.openSeries || f.inSeries)) steps.push({ key: 'events', label: 'Join an event series', done: !!f.inSeries, href: 'events.html' });
+  if (r === 1) steps.push({ key: 'project', label: 'Join a project, or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
+  if (r >= 2) {
+    steps.push({ key: 'own', label: 'Register a project of your own', done: !!f.owns, href: 'projects-register.html' });
+    (f.series || []).filter((x) => !x.hidden && x.requiredFor && r >= (ONBOARDING_RANK[x.requiredFor] || 0))
+      .sort((a, b) => String(a.title).localeCompare(String(b.title)))
+      .forEach((x) => {
+        const inv = x.invite || {};
+        const invited = inv.mode === 'group' && r >= (ONBOARDING_RANK[inv.group] || 0);
+        steps.push({ key: 'series:' + x.id, label: 'Join ' + x.title, done: invited || (x.joined || []).map((e) => String(e).toLowerCase()).indexOf(email) >= 0,
+          href: 'series.html?series=' + encodeURIComponent(x.id) });
+      });
+  }
   return { steps, done: steps.every((x) => x.done) };
 }
+const seriesFacts = (docs) => docs.map((d) => { const v = d.data(); return { id: d.id, title: v.title || d.id, requiredFor: v.requiredFor || '', invite: v.invite || null, joined: v.joined || [], hidden: !!v.hidden }; });
 async function onboardingFor(email){
   email = String(email || '').toLowerCase();
-  const [m, marks, read, ws, joined, open, group] = await Promise.all([
+  const [m, marks, read, ws, owned, ownedCard, series, group] = await Promise.all([
     db.collection('members').doc(email).get(), db.collection('onboarding').doc(email).get(),
     db.collection('handbook').doc('boldiquette').collection('readers').where('email', '==', email).limit(1).get(),
     db.collection('projectWorkspaces').where('members', 'array-contains', email).limit(1).get(),
-    db.collection('eventSeries').where('joined', 'array-contains', email).limit(1).get(),
-    db.collection('eventSeries').where('invite.mode', '==', 'join').where('hidden', '==', false).limit(1).get(),
+    db.collection('projects').where('submittedBy.email', '==', email).limit(1).get(),
+    db.collectionGroup('cards').where('submittedBy.email', '==', email).limit(1).get(),
+    db.collection('eventSeries').where('hidden', '==', false).get(),
     access.groupFor(email),
   ]);
-  return Object.assign({ group }, onboardingSteps(group, { member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
-    inProject: !ws.empty, inSeries: !joined.empty, openSeries: !open.empty }));
+  return Object.assign({ group }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
+    inProject: !ws.empty, owns: !owned.empty || !ownedCard.empty, series: seriesFacts(series.docs) }));
 }
 // - {}: your own → { group, steps, done }.
 // - { all: true }: PIs and admins, everyone with a record → { people: [{ email, name, group, steps, done }] }.
@@ -6245,17 +6260,19 @@ exports.onboarding = onCall(
     }
     if (!d.all) return onboardingFor(email);
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see everyone’s onboarding.');
-    const [members, marks, readers, wss, series] = await Promise.all([db.collection('members').get(), db.collection('onboarding').get(),
-      db.collection('handbook').doc('boldiquette').collection('readers').get(), db.collection('projectWorkspaces').get(), db.collection('eventSeries').get()]);
-    const mark = {}, onProject = {}, inSeries = {}, read = {};
+    const [members, marks, readers, wss, series, projects, cards] = await Promise.all([db.collection('members').get(), db.collection('onboarding').get(),
+      db.collection('handbook').doc('boldiquette').collection('readers').get(), db.collection('projectWorkspaces').get(), db.collection('eventSeries').get(),
+      db.collection('projects').get(), db.collectionGroup('cards').get()]);
+    const mark = {}, onProject = {}, read = {}, owns = {};
     readers.docs.forEach((x) => { read[String(x.data().email || '').toLowerCase()] = true; });
     marks.docs.forEach((x) => { mark[x.id] = x.data(); });
     wss.docs.forEach((x) => (x.data().members || []).forEach((e) => { onProject[String(e).toLowerCase()] = true; }));
-    let openSeries = false;
-    series.docs.forEach((x) => { const v = x.data(); if (v.invite && v.invite.mode === 'join' && !v.hidden) openSeries = true; (v.joined || []).forEach((e) => { inSeries[String(e).toLowerCase()] = true; }); });
+    projects.docs.concat(cards.docs).forEach((x) => { const e = String((x.data().submittedBy || {}).email || '').toLowerCase(); if (e) owns[e] = true; });
+    const facts = seriesFacts(series.docs);
     const people = await Promise.all(members.docs.map(async (x) => {
       const e = x.id.toLowerCase(), group = await access.groupFor(e);
-      return Object.assign({ email: e, name: x.data().name || e, group }, onboardingSteps(group, { member: x.data(), marks: mark[e] || {}, read: !!read[e], inProject: !!onProject[e], inSeries: !!inSeries[e], openSeries }));
+      return Object.assign({ email: e, name: x.data().name || e, group }, onboardingSteps(group, { email: e, member: x.data(), marks: mark[e] || {}, read: !!read[e],
+        inProject: !!onProject[e], owns: !!owns[e], series: facts }));
     }));
     return { people };
   }

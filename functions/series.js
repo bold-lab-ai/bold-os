@@ -67,7 +67,9 @@ module.exports = function series(deps){
       const inv = d.invite || {};
       const invite = inv.mode === 'group' ? { mode: 'group', group: String(inv.group || '') } : { mode: 'join' };
       if (invite.mode === 'group' && INVITE_GROUPS.indexOf(invite.group) < 0) return { error: 'Choose which group is invited.' };
-      Object.assign(out, { meeting, invite });
+      // Required for a group and the ones above it (onboarding: each must join it; set by PIs and admins).
+      const requiredFor = ['associate', 'internal', 'staff', 'exec'].indexOf(d.requiredFor) >= 0 ? d.requiredFor : '';
+      Object.assign(out, { meeting, invite, requiredFor });
     }
     const organisers = [];
     (Array.isArray(d.organisers) ? d.organisers : []).concat(me ? [me] : []).forEach((e) => {
@@ -183,7 +185,7 @@ module.exports = function series(deps){
   // What the page gets: the series, without anyone's addresses but the caller's own place in it.
   function view(s, me, full){
     const out = {};
-    ['id', 'kind', 'title', 'description', 'meeting', 'invite', 'cadence', 'proposals', 'inviteGroup', 'page', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
+    ['id', 'kind', 'title', 'description', 'meeting', 'invite', 'requiredFor', 'cadence', 'proposals', 'inviteGroup', 'page', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
     const organiser = (s.organisers || []).indexOf(me) >= 0;
     out.organiser = organiser; out.canChange = organiser || full; out.full = full;
     out.joined = (s.joined || []).indexOf(me) >= 0;
@@ -207,6 +209,7 @@ module.exports = function series(deps){
     if (d.action === 'save' && !d.id) {
       const n = normalizeSeries(d, email);
       if (n.error) throw new HttpsError('invalid-argument', n.error);
+      if (n.requiredFor && !full) throw new HttpsError('permission-denied', 'Only PIs and admins make one required.');
       const stem = n.title.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'meeting';
       const id = stem + '-' + crypto.randomBytes(3).toString('hex');
       const now = Date.now();
@@ -235,6 +238,7 @@ module.exports = function series(deps){
         const n = normalizeSeries(d, null);
         if (n.error) throw new HttpsError('invalid-argument', n.error);
         if (!n.organisers.length) throw new HttpsError('invalid-argument', 'Keep at least one organiser.');
+        if ((n.requiredFor || '') !== (s.requiredFor || '') && !full) throw new HttpsError('permission-denied', 'Only PIs and admins change who must join it.');
         // What the other kind had goes (the invite's Calendar series is cancelled by syncSeries).
         const drop = n.kind === 'meeting' ? { cadence: FieldValue.delete(), proposals: FieldValue.delete() }
           : { meeting: FieldValue.delete(), invite: FieldValue.delete(), pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() };

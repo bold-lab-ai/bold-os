@@ -12,15 +12,15 @@ window.BoldOnboarding = (function(){
     if (cache && !fresh) { cb(cache); return; }
     waiting.push(cb);
     if (waiting.length > 1 && !fresh) return;
-    call({}).then(function(r){ cache = r.data; }).catch(function(err){ console.error('[BOLD Onboarding] loading failed', err); cache = null; })
+    call({}).then(function(r){ cache = r.data && Array.isArray(r.data.steps) ? r.data : null; }).catch(function(err){ console.error('[BOLD Onboarding] loading failed', err); cache = null; })
       .then(function(){ var w = waiting; waiting = []; w.forEach(function(f){ f(cache); }); });
   }
-  function mark(step){ return call({ action: 'mark', step: step }).then(function(r){ cache = r.data; return cache; }); }
-  function count(s){ return s ? s.steps.filter(function(x){ return x.done; }).length + ' of ' + s.steps.length : ''; }
+  function mark(step){ return call({ action: 'mark', step: step }).then(function(r){ cache = r.data && Array.isArray(r.data.steps) ? r.data : cache; return cache; }); }
+  function count(s){ return s && s.steps ? s.steps.filter(function(x){ return x.done; }).length + ' of ' + s.steps.length : ''; }
   var TICK = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
   var RING = '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><circle cx="8" cy="8" r="5.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>';
   function listHtml(s){
-    if (!s) return '';
+    if (!s || !s.steps) return '';
     return '<ol class="ob-steps">' + s.steps.map(function(x){
       return '<li class="' + (x.done ? 'is-done' : '') + '"><span class="ob-mark">' + (x.done ? TICK : RING) + '</span>' +
         (x.done ? '<span>' + esc(x.label) + '</span><span class="ob-state">Done</span>' : '<a href="' + esc(x.href) + '">' + esc(x.label) + '</a>') + '</li>';
