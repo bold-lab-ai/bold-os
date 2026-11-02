@@ -70,9 +70,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function cacheGet(id){
     try { return JSON.parse(localStorage.getItem(CACHE_PREFIX + id) || 'null'); } catch (e){ return null; }
   }
+  // The copy keeps the access it was saved under (BOLD.accessSig); one saved under other access isn't shown.
   function cachePut(){
     if (!card) return;
-    try { localStorage.setItem(CACHE_PREFIX + projectId, JSON.stringify({ card: card, slack: slack, venueLabel: venueLabel })); } catch (e){}
+    try { localStorage.setItem(CACHE_PREFIX + projectId, JSON.stringify({ card: card, slack: slack, venueLabel: venueLabel, s: BOLD.accessSig('projects') })); } catch (e){}
   }
   function cacheDrop(id){
     try { localStorage.removeItem(CACHE_PREFIX + id); } catch (e){}
@@ -1212,17 +1213,18 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         el('projectBody').hidden = true;
         show('Only its people see this project.');
         if (/[#&]invite=/.test(location.hash)) { if (BOLD.allowPage) BOLD.allowPage(); }
-        else el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">Join it from Projects</a>.');
+        else el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">' + (BOLD.can('projects', 'view') ? 'Join it' : 'Ask to join it') + ' from Projects</a>.');
         return;
       }
       if (!card) show('Could not load the project.');
     });
   }
 
-  // First paint from the last visit's copy, before Firebase has loaded.
-  try {
+  // First paint from the last visit's copy, once this visit has read their access and only if the
+  // copy was saved under the same (a change of group, or of Who can see what, shows nothing early).
+  BOLD.onFreshAccess(function(){ try {
     var hint = BOLD.authHint(), hit = projectId && hint && hint.e ? cacheGet(projectId) : null;
-    if (hit && hit.card) {
+    if (hit && hit.card && hit.s === BOLD.accessSig('projects') && !card) {
       me = { email: hint.e };
       var access = cacheGet('access');
       fullWrite = !!(access && access.email === hint.e.toLowerCase() && access.fullWrite);
@@ -1231,7 +1233,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       venueLabel = hit.venueLabel || '';
       render();
     }
-  } catch (e){}
+  } catch (e){} });
 
   // Inviting people to it (#148): its editors under People; the invited, a banner.
   if (window.BoldProjectInvite && db) BoldProjectInvite.init({ db: db, root: el('projectBody'), id: projectId, board: boardId || null,

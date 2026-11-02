@@ -13,8 +13,10 @@
   function cacheGet(key){
     try { return JSON.parse(localStorage.getItem(CACHE_PREFIX + key) || 'null'); } catch (e) { return null; }
   }
+  // Each copy keeps the access it was saved under (BOLD.accessSig): one saved under other access
+  // (a change of group, or of Who can see what) is never shown, so nobody glimpses more than they may.
   function cachePut(key, data){
-    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), d: data })); } catch (e){}
+    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), d: data, s: BOLD.accessSig('projects') })); } catch (e){}
   }
   function cacheClear(){
     try {
@@ -27,6 +29,7 @@
   function loadCached(fn, email, render, onError, usable){
     var key = fn + ':' + email.toLowerCase();
     var hit = cacheGet(key);
+    if (hit && hit.s !== BOLD.accessSig('projects')) hit = null;
     var age = hit ? Math.round((Date.now() - hit.t) / 1000) : 0;
     if (hit) render(hit.d);
     if (hit && Date.now() - hit.t < CACHE_TTL_MS && (!usable || usable(hit.d))) { console.info('[BOLD Lab] ' + fn + ': cache hit (' + age + 's old), no call'); return; }
@@ -379,9 +382,10 @@
     if (!user) { cacheClear(); return; }
     if (!user.email) return;
     myKey = String(user.email).toLowerCase();
-    loadCached('getAllProjects', user.email, renderProjects, function(){
+    // Once this visit has read their access, so the saved copy is checked against it.
+    BOLD.onFreshAccess(function(){ loadCached('getAllProjects', user.email, renderProjects, function(){
       el('projMsg').textContent = 'Could not load projects.';
-    }, hasAuthors);
+    }, hasAuthors); });
   }
 
   // Last, once everything above is defined: onUser runs its callback at once if
@@ -398,13 +402,4 @@
     add.addEventListener('click', function(e){ if (add.getAttribute('aria-disabled') === 'true') e.preventDefault(); });
   }
 
-  // First paint from the last visit's cache, before Firebase has loaded.
-  try {
-    var hint = BOLD.authHint();
-    if (hint && hint.e) {
-      myKey = hint.e.toLowerCase();
-      var hit = cacheGet('getAllProjects:' + hint.e.toLowerCase());
-      if (hit) renderProjects(hit.d);
-    }
-  } catch (e){}
 })();

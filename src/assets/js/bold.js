@@ -728,8 +728,12 @@
     var seen = JSON.parse(localStorage.getItem('boldAccess') || 'null');
     if (seen && hint && seen.e === hint.e && (seen.viewAs || null) === viewAs) access = seen;
   } catch (e){}
+  // Read this visit (the table and their group from the database), not the last visit's copy:
+  // what pages check before showing a copy they saved under other access (BOLD.accessSig).
+  var freshAccess = false, freshListeners = [];
   function setAccess(a){
     access = a;
+    if (!freshAccess) { freshAccess = true; var f = freshListeners; freshListeners = []; f.forEach(function(fn){ fn(a); }); }
     try { if (a.e) localStorage.setItem('boldAccess', JSON.stringify(a)); else localStorage.removeItem('boldAccess'); } catch (e){}
     accessListeners.slice().forEach(function(fn){ fn(a); });
   }
@@ -762,6 +766,15 @@
   BOLD.myGroup = function(){ return access ? access.group : null; };
   // fn(access) once known and on every change; replayed at once if known.
   BOLD.onAccess = function(fn){ accessListeners.push(fn); if (access) fn(access); };
+  // fn(access) once, when this visit has read it (not the last visit's copy).
+  BOLD.onFreshAccess = function(fn){ if (freshAccess) fn(access); else freshListeners.push(fn); };
+  // What a page's saved copy depends on: who, their group, PI or admin, and `area`'s levels. A copy
+  // saved under another one isn't shown (a change of group, or of Who can see what, 2026-11-02).
+  BOLD.accessSig = function(area){
+    if (!access) return '';
+    var p = ((access.pages || {})[area]) || {};
+    return [access.e, access.group, access.fullWrite ? 1 : 0, p.view || '', p.edit || ''].join('|');
+  };
   function loadAccess(user){
     if (!firebase.firestore) return;
     var db = firebase.firestore(BOLD.getApp());
