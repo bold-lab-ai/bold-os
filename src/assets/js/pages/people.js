@@ -31,7 +31,7 @@
       : '<button type="button" class="type-badge pp-' + cat + ' pp-open" data-email="' + esc(m.email) + '" title="Change ' + esc(m.name || m.email) + '’s group">' + esc(BoldJoin.categoryLabel(cat)) + '</button>';
     var sid = slackIds[String(m.email || '').toLowerCase()];
     var name = sid ? '<a class="proj-title" href="person.html?id=' + encodeURIComponent(sid) + '">' + esc(m.name || m.email) + '</a>' : '<span class="proj-title">' + esc(m.name || m.email) + '</span>';
-    return '<li><div>' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag +
+    return '<li><div>' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag + (m.test ? ' <span class="badge">Your test account</span>' : '') +
       (meta ? '<span class="proj-meta">' + meta + '</span>' : '') +
       (m.interests ? '<span class="proj-meta">' + esc(m.interests) + '</span>' : '') +
       (l ? '<span class="proj-meta">' + l + '</span>' : '') +
@@ -49,10 +49,13 @@
     }).catch(function(err){ console.error('[BOLD People] loading onboarding failed', err); });
   }
 
+  // A PI's or admin's test account (testAccount): only its owner sees it here, marked Test.
+  function visible(m){ return !m.test || (me && String(m.testOf || '').toLowerCase() === String(me).toLowerCase()); }
+
   function render(){
     if (!members) return;
     var q = search.value.trim().toLowerCase();
-    var shown = members.filter(function(m){
+    var shown = members.filter(visible).filter(function(m){
       return !q || [m.name, m.institution, m.interests, m.basedIn, m.role, BoldJoin.categoryLabel(BoldJoin.groupOf(m))].join(' ').toLowerCase().indexOf(q) !== -1;
     });
     if (!members.length) { root.innerHTML = '<p class="proj-msg">Nobody has added their details yet.</p>'; return; }

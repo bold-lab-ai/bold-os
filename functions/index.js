@@ -6233,6 +6233,79 @@ exports.onGroupChannels = onDocumentWritten(
   }
 );
 
+// ---------- A PI's or admin's test account (2026-11-02) ----------
+// A second account of theirs in the BOLD Slack, signed in to like anyone's (in a private window),
+// linked on their profile (Linked accounts) so they can try BOLD.OS as someone else: testAccounts/
+// {email} { owner, at } (PIs and admins read them; written only here), and its members record
+// marked { test: true, testOf }. It's hidden from People (but for its owner) and from everyone's
+// onboarding; its owner sets its group directly and resets it to a newcomer.
+// - 'get' → { account: { email, name, group } | null }; 'link' { email }; 'unlink';
+// - 'group' { group }: pan, associate, internal or staff; 'reset': its details, onboarding (the
+//   tour, the BOLDiquette read), group requests, project invitations and asks, and the projects
+//   and event series it joined go; it's PAN-BOLD again. Projects it registered stay.
+const TEST_GROUPS = ['pan', 'associate', 'internal', 'staff'];
+exports.testAccount = onCall(
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await realFullWrite(email))) throw new HttpsError('permission-denied', 'Test accounts are for PIs and admins.');
+    const d = request.data || {};
+    const col = db.collection('testAccounts');
+    const mine = await col.where('owner', '==', email).limit(1).get();
+    const linked = mine.empty ? null : mine.docs[0].id;
+    const view = async (e) => {
+      if (!e) return { account: null };
+      const m = (await db.collection('members').doc(e).get()).data() || {};
+      return { account: { email: e, name: m.name || e, group: groupOf(m) } };
+    };
+    if (d.action === 'get') return view(linked);
+    if (d.action === 'link') {
+      if (linked) throw new HttpsError('already-exists', 'You already have one: unlink it first.');
+      const to = String(d.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpsError('invalid-argument', 'Give its email address.');
+      if (to === email) throw new HttpsError('invalid-argument', 'That’s you: give your second account’s address.');
+      if (await realFullWrite(to)) throw new HttpsError('failed-precondition', 'That’s a PI’s or admin’s account.');
+      const p = await db.collection('people').where('email', '==', to).limit(1).get();
+      if (p.empty) throw new HttpsError('failed-precondition', 'No one in the BOLD Slack has that address: join the Slack with it first.');
+      if ((await col.doc(to).get()).exists) throw new HttpsError('already-exists', 'It’s someone else’s test account.');
+      await col.doc(to).set({ owner: email, at: Date.now() });
+      await db.collection('members').doc(to).set({ test: true, testOf: email, name: p.docs[0].data().name || to, email: to }, { merge: true });
+      return view(to);
+    }
+    if (!linked) throw new HttpsError('failed-precondition', 'Link a test account first.');
+    if (d.action === 'unlink') {
+      await col.doc(linked).delete();
+      await db.collection('members').doc(linked).set({ test: FieldValue.delete(), testOf: FieldValue.delete() }, { merge: true });
+      return { account: null };
+    }
+    if (d.action === 'group') {
+      if (TEST_GROUPS.indexOf(d.group) < 0) throw new HttpsError('invalid-argument', 'Choose PAN-BOLD, BOLD-associate, BOLD-internal or BOLD-staff.');
+      await db.collection('members').doc(linked).set({ category: d.group, categoryBy: email, categoryAt: Date.now() }, { merge: true });
+      return view(linked);
+    }
+    if (d.action === 'reset') {
+      const t = linked;
+      const [reqs, invs, readers, wss, series] = await Promise.all([
+        db.collection('groupRequests').where('email', '==', t).get(), db.collection('projectInvites').where('email', '==', t).get(),
+        db.collection('handbook').doc('boldiquette').collection('readers').where('email', '==', t).get(),
+        db.collection('projectWorkspaces').where('joined', 'array-contains', t).get(), db.collection('eventSeries').where('joined', 'array-contains', t).get(),
+      ]);
+      const b = db.batch();
+      reqs.docs.concat(invs.docs, readers.docs).forEach((x) => b.delete(x.ref));
+      b.delete(db.collection('onboarding').doc(t));
+      series.docs.forEach((x) => b.update(x.ref, { joined: FieldValue.arrayRemove(t) }));
+      wss.docs.forEach((x) => b.update(x.ref, { joined: FieldValue.arrayRemove(t) }));
+      const m = (await db.collection('members').doc(t).get()).data() || {};
+      b.set(db.collection('members').doc(t), { name: m.name || t, email: t, test: true, testOf: email, category: 'pan', categoryBy: email, categoryAt: Date.now() });
+      await b.commit();
+      for (const x of wss.docs) { try { await syncWorkspace(x.id); } catch (err){ logger.warn('testAccount reset: syncing a workspace failed', { pid: x.id, error: String(err) }); } }
+      // Its BOLDiquette read point (readPoints/{uid}) goes too, so the page says it's unread.
+      try { const u = await admin.auth().getUserByEmail(t); await db.recursiveDelete(db.collection('readPoints').doc(u.uid)); } catch (err){ /* never signed in */ }
+      return view(t);
+    }
+    throw new HttpsError('invalid-argument', 'Unknown action.');
+  }
+);
+
 // ---------- Onboarding (Get started, 2026-11-02) ----------
 // What each newcomer does, by group (each group also does those of the groups below), each
 // ticked from what BOLD.OS already knows, so nobody ticks their own:
@@ -6313,7 +6386,7 @@ exports.onboarding = onCall(
     wss.docs.forEach((x) => (x.data().members || []).forEach((e) => { onProject[String(e).toLowerCase()] = true; }));
     projects.docs.concat(cards.docs).forEach((x) => { const e = String((x.data().submittedBy || {}).email || '').toLowerCase(); if (e) owns[e] = true; });
     const facts = seriesFacts(series.docs);
-    const people = await Promise.all(members.docs.map(async (x) => {
+    const people = await Promise.all(members.docs.filter((x) => !x.data().test).map(async (x) => {
       const e = x.id.toLowerCase(), group = await access.groupFor(e);
       return Object.assign({ email: e, name: x.data().name || e, group }, onboardingSteps(group, { email: e, member: x.data(), marks: mark[e] || {}, read: !!read[e],
         inProject: !!onProject[e], owns: !!owns[e], series: facts }));

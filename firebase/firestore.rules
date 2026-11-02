@@ -207,6 +207,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // PIs' and admins' test accounts (testAccount in functions/index.js): they read them; no client writes.
+    match /testAccounts/{who} {
+      allow read: if hasFullWrite();
+      allow write: if false;
+    }
+
     // Onboarding marks (the BOLDiquette read, the tour taken): the onboarding callable writes them.
     match /onboarding/{who} {
       allow read: if hasFullWrite() || (isLabMember() && who == email().lower());

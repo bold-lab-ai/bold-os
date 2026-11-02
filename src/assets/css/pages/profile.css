@@ -176,3 +176,8 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .gr-head{font-family:var(--sans); font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:6px 0 8px;}
 .gr-needs{margin-top:16px; padding-top:12px; border-top:1px solid var(--line);}
 .gr-needs h3{margin:0 0 4px; font-family:var(--sans); font-size:14px; font-weight:600; color:var(--ink);}
+/* Linked accounts › Test account (pages/test-account.js). */
+.ta-form{max-width:420px; font-family:var(--sans); font-size:14px;}
+.ta-form input{display:block; width:100%; box-sizing:border-box; margin-top:4px; font-family:var(--sans); font-size:14px; padding:7px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.ta-group{display:block; margin-top:6px; font-family:var(--sans); font-size:14px;}
+.ta-group select{margin-left:6px; font-family:var(--sans); font-size:14px;}
