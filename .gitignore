@@ -22,3 +22,4 @@ functions/.env
 functions/.env.*
 functions/lib/
 functions/.secret.local
+_site-test/

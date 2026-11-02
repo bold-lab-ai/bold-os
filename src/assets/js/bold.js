@@ -11,14 +11,15 @@
   var BOLD = window.BOLD = window.BOLD || {};
 
   BOLD.firebaseConfig = window.BOLD_CONFIG;
-  BOLD.useAuthEmulator = false;
+  // The local test copy (scripts/test-site.sh): Auth, Firestore and Functions in the emulators.
+  BOLD.useAuthEmulator = !!window.BOLD_TEST;
   // Local development (npm start) signs in the way it did before 2026-10-04:
   // popup via Firebase's own auth domain. The live site's setup (self-hosted
   // helper on bold-lab-ai.github.io + redirect, see BOLD.signIn) needs the page
   // to be on bold-lab-ai.github.io; from localhost that hand-off is cross-site,
   // and Firefox, Safari and private windows block it.
   var isLocalDev = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-  if (isLocalDev && BOLD.firebaseConfig) {
+  if (isLocalDev && BOLD.firebaseConfig && !window.BOLD_TEST) {
     BOLD.firebaseConfig = Object.assign({}, BOLD.firebaseConfig, { authDomain: 'bold-d7ff2.firebaseapp.com' });
   }
 
@@ -344,9 +345,25 @@
   BOLD.getApp = function(){
     if (app) return app;
     try { app = firebase.apps.length ? firebase.app() : firebase.initializeApp(BOLD.firebaseConfig); } catch (e){ app = null; }
+    if (window.BOLD_TEST && app) testEmulators(app);
     viewAsCalls();
     return app;
   };
+
+  // The local test copy only (window.BOLD_TEST, set by a BOLD_TEST=1 build): Firestore and every
+  // region's Functions in the emulators, before anything reads or calls.
+  function testEmulators(a){
+    if (testEmulators.done) return;
+    testEmulators.done = true;
+    try { firebase.firestore(a).useEmulator('127.0.0.1', 8080); } catch (e){ console.warn('[BOLD Test] Firestore emulator', e); }
+    if (typeof a.functions !== 'function') return;
+    var plain = a.functions, seen = {};
+    a.functions = function(region){
+      var f = plain.apply(a, arguments), k = region || '';
+      if (!seen[k]) { seen[k] = true; try { f.useEmulator('127.0.0.1', 5001); } catch (e){} }
+      return f;
+    };
+  }
 
   BOLD.getAuth = function(){
     if (auth) return auth;

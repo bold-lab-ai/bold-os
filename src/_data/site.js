@@ -1,6 +1,11 @@
 // Site-wide constants. The one place the Firebase config, SDK version, repo URL
 // and navigation are defined — layouts and partials read these, pages never repeat them.
+// A local test copy (scripts/test-site.sh, BOLD_TEST=1): a demo project that only exists in the
+// Firebase emulators, so nothing can reach the real one; never set for the real build.
+const TEST = process.env.BOLD_TEST === '1';
+
 export default {
+  testMode: TEST,
   repoUrl: 'https://github.com/bold-lab-ai/bold-os',
 
   // Firebase compat build from gstatic (docs/AGENTS.md-approved CDN exception,
@@ -8,7 +13,7 @@ export default {
   // Bumping it also means refreshing the self-hosted sign-in helper in the
   // bold-lab-ai.github.io repo and re-testing sign-in — see docs/AGENTS.md "Sign-in".
   firebaseSdkVersion: '10.14.1',
-  firebase: {
+  firebase: TEST ? { apiKey: 'demo-key', authDomain: 'localhost', projectId: 'demo-bold-os', storageBucket: 'demo-bold-os.appspot.com', appId: 'demo' } : {
     apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
     authDomain: 'bold-lab-ai.github.io',
     projectId: 'bold-d7ff2',
