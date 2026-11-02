@@ -17,7 +17,7 @@
       '<p class="ob-note">' + (done ? 'Everything ' + esc(BoldJoinLabel(status.group)) + ' asks of a newcomer is done.' +
           (status.group !== 'exec' ? ' To do more in BOLD, <a href="group-request.html">ask for another group</a>.' : '')
         : 'What everyone in ' + esc(BoldJoinLabel(status.group)) + ' does first. Each is ticked when BOLD.OS sees it done.') + '</p>' +
-      BoldOnboarding.listHtml(status) +
+      BoldOnboarding.listHtml(status, 'your first steps') +
       '<div class="event-form-actions"><button type="button" class="btn-box' + (!status.tour ? ' is-primary' : '') + ' ob-tour">Take the tour</button></div>';
     box.hidden = false;
   }

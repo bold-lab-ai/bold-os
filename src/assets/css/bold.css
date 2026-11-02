@@ -928,3 +928,10 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .ob-state{margin-left:auto; font-size:12px; color:var(--green);}
 .btn-primary.is-off{background:var(--wash); border-color:var(--line); color:var(--muted); cursor:default;}
 .btn-primary.is-off:hover{background:var(--wash);}
+/* The way back to a checklist (bold.js BOLD.checklistBack): bottom right, on every other page. */
+.checklist-back{position:fixed; right:16px; bottom:16px; z-index:1200; display:flex; align-items:center; gap:4px; padding:8px 8px 8px 14px; background:var(--surface);
+  border:1px solid var(--ink); border-radius:var(--radius); box-shadow:var(--shadow); font-family:var(--sans); font-size:14px; max-width:calc(100vw - 32px);}
+.checklist-back a{color:var(--link); font-weight:600; text-decoration:none;}
+.checklist-back a:hover{text-decoration:underline;}
+.checklist-back button{border:0; background:none; font-size:18px; line-height:1; padding:2px 6px; color:var(--muted); cursor:pointer;}
+.checklist-back button:hover{color:var(--ink);}

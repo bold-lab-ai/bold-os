@@ -149,7 +149,7 @@
       BoldOnboarding.load(function(s){
         if (!s || s.done) { box.hidden = true; return; }
         box.innerHTML = '<p class="home-steps-head">Welcome to ' + BoldJoin.groupBadge(s.group) + '. Your first steps, ' + BOLD.escapeHtml(BoldOnboarding.count(s)) + ' done:</p>' +
-          '<div class="home-steps-text">' + BoldOnboarding.listHtml(s) + '</div>' +
+          '<div class="home-steps-text">' + BoldOnboarding.listHtml(s, 'your first steps') + '</div>' +
           '<p class="home-steps-foot"><a href="get-started.html">Get started at BOLD</a> · <a href="boldiquette.html#who-is-bold">Who is BOLD</a>' +
           (!s.tour ? '<a class="btn-box is-primary home-steps-done" href="get-started.html#tour">Take the tour</a>' : '') + '</p>';
         box.hidden = false;

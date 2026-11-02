@@ -46,7 +46,7 @@
         '<div class="gr-terms" role="tabpanel">' + (t ? '<div class="md-desc">' + BoldMarkdown.render(t) + '</div>' : '<p>Not written yet: <a href="boldiquette.html#who-is-bold">propose it in Who is BOLD</a>.</p>') +
           // What it needs done first, as BOLD.OS sees it now: part of the contract.
           '<div class="gr-needs"><h3>What you need to have done first</h3>' +
-            (need && need.steps ? BoldOnboarding.listHtml(need) + '<p class="gr-why">' + (left ? 'Each is ticked when BOLD.OS sees it done: come back here once you have.' : 'All done.') + '</p>'
+            (need && need.steps ? BoldOnboarding.listHtml(need, 'your request for ' + BoldJoin.categoryLabel(to)) + '<p class="gr-why">' + (left ? 'Each is ticked when BOLD.OS sees it done: come back here once you have.' : 'All done.') + '</p>'
               : '<p class="gr-why">' + (need === null ? 'Couldn’t check it. <button type="button" class="btn-text gr-recheck">Try again</button>' : 'Checking…') + '</p>') +
           '</div></div>' +
         '<div class="gr-form">' +
@@ -79,7 +79,7 @@
         .then(function(ok){
           if (!ok) return;
           busy = true; error = ''; render();
-          call({ action: 'request', to: to, note: note, accept: true, terms: t }).then(function(){ sent = true; })
+          call({ action: 'request', to: to, note: note, accept: true, terms: t }).then(function(){ sent = true; if (BOLD.checklistBack) BOLD.checklistBack.clear(); })
             .catch(function(err){ console.error('[BOLD Group] sending the request failed', err); error = (err && err.message) || 'Couldn’t send it — try again.'; })
             .then(function(){ busy = false; render(); });
         });

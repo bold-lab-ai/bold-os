@@ -6257,7 +6257,7 @@ function onboardingSteps(group, f){
     (m.role === 'PI' || has('contact') || !!(m.invitedBy && m.invitedBy.email));
   const steps = [
     { key: 'details', label: 'Fill in your details on your profile', done: details, href: 'profile.html#details' },
-    { key: 'read', label: 'Read the BOLDiquette, and mark it read at its end', done: !!f.read, href: 'boldiquette.html' },
+    { key: 'read', label: 'Read the BOLDiquette, and mark it as read', done: !!f.read, href: 'boldiquette.html' },
   ];
   if (r === 1) steps.push({ key: 'project', label: 'Be on a project: ask to join one on Projects (its owner accepts), or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
   if (r >= 2) {

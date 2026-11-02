@@ -1088,6 +1088,34 @@
   }
 
   // Called right after the opening <div class="shell">.
+  // The way back to a checklist (onboarding's steps: Ask for another group, Get started, the home
+  // page). Following one of its links (a[data-checklist]) remembers the page, in this tab; every
+  // other page then shows "← Back to <it>" at the bottom right, with × to forget it. Back on the
+  // checklist it hides; sending the request forgets it (BOLD.checklistBack.clear()).
+  BOLD.checklistBack = (function(){
+    var KEY = 'boldChecklist';
+    var here = function(){ return location.pathname.split('/').pop() || 'index.html'; };
+    var read = function(){ try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e){ return null; } };
+    function clear(){ try { sessionStorage.removeItem(KEY); } catch (e){} var b = document.getElementById('checklistBack'); if (b) b.remove(); }
+    document.addEventListener('click', function(e){
+      var a = e.target.closest && e.target.closest('a[data-checklist]');
+      if (!a) return;
+      try { sessionStorage.setItem(KEY, JSON.stringify({ page: here(), url: here() + location.search + location.hash, label: a.getAttribute('data-checklist') })); } catch (err){}
+    }, true);
+    function show(){
+      var c = read();
+      if (!c || !c.url || c.page === here() || document.getElementById('checklistBack')) return;
+      var bar = document.createElement('div');
+      bar.id = 'checklistBack'; bar.className = 'checklist-back'; bar.setAttribute('role', 'navigation'); bar.setAttribute('aria-label', 'Back to the checklist');
+      bar.innerHTML = '<a href="' + BOLD.escapeHtml(c.url) + '">← Back to ' + BOLD.escapeHtml(c.label || 'the checklist') + '</a>' +
+        '<button type="button" aria-label="Close" title="Close">×</button>';
+      bar.querySelector('button').addEventListener('click', clear);
+      document.body.appendChild(bar);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+    return { clear: clear };
+  })();
+
   BOLD.mountShell = function(){
     var shell = document.getElementById('shell');
     // Saved sidebar state, applied before first paint so it doesn't animate in.
