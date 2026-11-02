@@ -4149,9 +4149,9 @@ function proposalPlace(collection, slug, doc){
   return null;
 }
 
-// The site's proposed changes the caller can see (what 'view', the default) or propose on ('edit':
+// The site's proposed changes the caller can see (level 'view', the default) or propose on ('edit':
 // the Version pill's), open, or decided in the last 30 days.
-async function contentWork(email, person, what){
+async function contentWork(email, person, level){
   const after = Date.now() - WORK_DAYS * 86400000;
   // All of them, filtered here: a few hundred at most, and no collection-group index needed.
   const docs = (await db.collectionGroup('proposals').get()).docs.filter(function(d){
@@ -4171,7 +4171,7 @@ async function contentWork(email, person, what){
     }
     const place = proposalPlace(collection, slug, titles[parent.path] || (d.data().after || null));
     if (!place) continue;
-    if (!(place.page in mayView)) mayView[place.page] = await access.can(email, place.page, what === 'edit' ? 'edit' : 'view');
+    if (!(place.page in mayView)) mayView[place.page] = await access.can(email, place.page, level === 'edit' ? 'edit' : 'view');
     if (!mayView[place.page]) continue;
     const q = d.data();
     const what = proposalSummary(q).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
