@@ -937,9 +937,12 @@
     // to it waits), and the Version (branches): main, or the site as an open proposal would make it.
     var seeTip = 'Who can see this page: ' + groupName(cur.view) + (waiting ? ' · 1 change waiting' : '');
     var brTip = branch ? 'Version: ' + branchLabel(branch) : 'Version: main. See the site as an open proposal would make it';
+    // The Version button: only for whoever can propose a change somewhere (a reviewed page's Edit
+    // level: not newcomers in PAN-BOLD), or is on a version already.
+    var proposes = !!access.fullWrite || REVIEWED.some(function(a){ return BOLD.can(a, 'edit'); }) || !!branch;
     var html = '<button type="button" class="mast-btn ac-chip' + (waiting ? ' has-dot' : '') + '" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="' + esc(seeTip) + '" aria-label="' + esc(seeTip) + '">' + ICON_EYE + '</button>' +
-      '<button type="button" class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</button>';
-    if (brOpen) {
+      (proposes ? '<button type="button" class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</button>' : '');
+    if (brOpen && proposes) {
       html += '<div class="ac-panel br-panel" id="brPanel" role="dialog" aria-label="Versions of the site"><div class="ac-title">Version</div>' +
         '<p class="ac-note">See the whole site as an open proposal would make it, before anyone accepts it. Only you see it, in this tab.</p>' +
         '<ul class="br-list"><li><button type="button" class="br-item' + (branch ? '' : ' is-on') + '" data-ref=""><span class="br-t">Main</span></button></li>' +

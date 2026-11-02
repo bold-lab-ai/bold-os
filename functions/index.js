@@ -4149,8 +4149,9 @@ function proposalPlace(collection, slug, doc){
   return null;
 }
 
-// The site's proposed changes the caller can see: open, or decided in the last 30 days.
-async function contentWork(email, person){
+// The site's proposed changes the caller can see (what 'view', the default) or propose on ('edit':
+// the Version pill's), open, or decided in the last 30 days.
+async function contentWork(email, person, what){
   const after = Date.now() - WORK_DAYS * 86400000;
   // All of them, filtered here: a few hundred at most, and no collection-group index needed.
   const docs = (await db.collectionGroup('proposals').get()).docs.filter(function(d){
@@ -4170,7 +4171,7 @@ async function contentWork(email, person){
     }
     const place = proposalPlace(collection, slug, titles[parent.path] || (d.data().after || null));
     if (!place) continue;
-    if (!(place.page in mayView)) mayView[place.page] = await access.can(email, place.page, 'view');
+    if (!(place.page in mayView)) mayView[place.page] = await access.can(email, place.page, what === 'edit' ? 'edit' : 'view');
     if (!mayView[place.page]) continue;
     const q = d.data();
     const what = proposalSummary(q).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
@@ -4414,14 +4415,15 @@ function splitRequests(items, email, full){
 // Your requests (requests.html, the account menu's Requests; pages/requests.js): everything on BOLD.OS waiting on
 // the caller to answer, and what they asked that waits on someone else, as BOLD OS's board
 // sees it (requestWork, contentWork). → { forYou, byYou: [{ kind, num, title, url, by, on, waiting, state, since, column }] }
-// Branches (#177; bold.js, the Version pill): every open proposal on the site you can see,
+// Branches (#177; bold.js, the Version pill): every open proposal on a page you can propose on
+// (its Edit level: newcomers in PAN-BOLD get none, 2026-11-02),
 // newest first, each { ref (its path), num, title, url (its page), by, since }, and for one
 // that changes Who can see what, `pages`: the table it would make.
 exports.branches = onCall(
   { timeoutSeconds: 60 },
   async (request) => {
     const email = callerEmail(request);
-    const open = (await contentWork(email, workPerson(await workNames()))).filter((x) => x.state === 'open');
+    const open = (await contentWork(email, workPerson(await workNames()), 'edit')).filter((x) => x.state === 'open');
     const nums = await numbersOf(open.map((x) => x.ref));
     const out = [];
     for (const x of open){
