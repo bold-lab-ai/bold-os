@@ -70,9 +70,9 @@ const LEVEL = (v, e) => ({ view: v, edit: e });
   const card = (title, by, name) => ({ title, pid: title.toLowerCase().replace(/\W+/g, '-'), submittedBy: { name, email: by }, authors: [{ name, email: by }], authorEmails: [by],
     keywords: ['rl'], badges: [], abstract: 'A made-up project for the test copy.', status: 'ongoing', createdAt: Date.now() });
   set('projects/diverging-runs', card('Diverging runs', 'internal@example.com', 'Ines Internal'));
-  set('projectWorkspaces/diverging-runs', { members: ['internal@example.com', 'associate@example.com'], joined: ['associate@example.com'] });
+  set('projectWorkspaces/diverging-runs', { members: ['internal@example.com', 'associate@example.com'], joined: ['associate@example.com'], startedAt: Date.now() });
   set('projects/world-models', card('World models', 'pi@example.com', 'Pat PI'));
-  set('projectWorkspaces/world-models', { members: ['pi@example.com'], joined: [] });
+  set('projectWorkspaces/world-models', { members: ['pi@example.com'], joined: [], startedAt: Date.now() });
   await b.commit();
   console.log('Seeded the demo project: 5 accounts, Who is BOLD (' + (process.env.BOLDIQUETTE_PARTS ? 'the real one, from your file' : 'a stand-in') + '), 3 series, 2 projects.');
 })().catch((e) => { console.error(e); process.exit(1); });

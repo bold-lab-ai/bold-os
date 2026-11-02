@@ -52,7 +52,7 @@
   }
   document.addEventListener('DOMContentLoaded', function(){
     var s = document.createElement('style');
-    s.textContent = '.test-bar{position:fixed; left:12px; bottom:12px; z-index:1500; padding:6px 12px; font:13px/1.4 var(--sans); background:#b7791f; color:#fff; border-radius:var(--radius);}' +
+    s.textContent = '.test-bar{position:fixed; left:12px; bottom:40px; z-index:1500; padding:6px 12px; font:13px/1.4 var(--sans); background:#b7791f; color:#fff; border-radius:var(--radius);}' +
       '.test-bar a, .test-bar .btn-text{color:#fff;}' +
       '.test-picker{position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); z-index:1600; width:min(460px, calc(100vw - 32px)); background:var(--surface); color:var(--ink); padding:18px 20px; border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); font-family:var(--sans);}' +
       '.test-picker h2{margin:0 0 4px; font-size:18px;} .test-picker p{margin:0 0 10px; font-size:13px; color:var(--muted);}' +
