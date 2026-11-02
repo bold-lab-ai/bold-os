@@ -37,7 +37,7 @@ test('PAN-BOLD sees titles to ask about; the button follows the ask', () => {
   const shown = projectTitlesOnly(groups, { b: true }, true);
   assert.deepStrictEqual([shown.ongoing[0].titleOnly, shown.ongoing[0].ask], [true, true]);
   assert.strictEqual(shown.ongoing[1].titleOnly, undefined, 'their own, in full');
-  assert.strictEqual(projectTitlesOnly(groups, {}, false).ongoing[0].ask, undefined, 'associates join instead');
+  assert.strictEqual(projectTitlesOnly(groups, {}, false).ongoing[0].ask, undefined, 'no ask flag when not asked for');
   const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ctx = {};
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../src/assets/js/project-join.js'), 'utf8'), ctx);
   const st = (p) => ctx.BoldProjectJoin.joinState(p);

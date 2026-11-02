@@ -68,7 +68,7 @@
       return l;
     };
     if (p.titleOnly) {
-      parts.push(textNode(p.ask ? 'Its people see it: ask its lead to invite you' : 'Join it to see it'));
+      parts.push(textNode(p.ask ? 'Its people see it: ask to join, and its owner decides' : 'Join it to see it'));
     } else if (p.boardId) {
       var inVenue = document.createElement('span');
       inVenue.appendChild(textNode('In: '));
@@ -134,11 +134,11 @@
       // An invitation to answer: on its page. Below Projects' View and Edit: ask its lead.
       if (st.invite) { location.href = 'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '') + '&invite=' + encodeURIComponent(st.invite); return; }
       if (st.ask) {
-        BOLD.confirmAction({ title: 'Ask to join “' + (p.title || 'this project') + '”?', go: 'Ask', effects: ['Send its lead a Slack message asking them to invite you'] }).then(function(ok){
+        BOLD.confirmAction({ title: 'Ask to join “' + (p.title || 'this project') + '”?', go: 'Ask', effects: ['Send its owner a Slack message asking to join; once they accept, you’re on it'] }).then(function(ok){
           if (!ok) return;
           join.disabled = true; join.textContent = 'Asking…'; msg.textContent = '';
           firebase.app().functions('europe-west2').httpsCallable('projectInvite')({ action: 'ask', id: p.projectId || p.cardId, board: p.boardId || null })
-            .then(function(){ p.asked = true; join.textContent = 'Asked'; join.title = 'Its lead has been asked to invite you'; cacheClear(); })
+            .then(function(){ p.asked = true; join.textContent = 'Asked'; join.title = 'Its owner decides'; cacheClear(); })
             .catch(function(err){ join.disabled = false; join.textContent = 'Ask to join'; msg.textContent = (err && err.message) || 'Couldn’t ask — try again.'; });
         });
         return;

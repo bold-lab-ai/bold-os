@@ -1236,7 +1236,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // Inviting people to it (#148): its editors under People; the invited, a banner.
   if (window.BoldProjectInvite && db) BoldProjectInvite.init({ db: db, root: el('projectBody'), id: projectId, board: boardId || null,
     canEdit: function(){ return !!card && canEdit(); }, people: function(){ return state.people; }, notEditor: NOT_EDITOR,
-    redraw: function(){ if (card && !editing) render(); }, onJoined: function(){ el('detailMsg').textContent = 'Loading…'; load(); watchWorkspace(); } });
+    redraw: function(){ if (card && !editing) render(); }, onAdmitted: function(){ watchWorkspace(); }, onJoined: function(){ el('detailMsg').textContent = 'Loading…'; load(); watchWorkspace(); } });
 
   // Firestore reads need the signed-in user; the gate has already checked.
   BOLD.onUser(function(user){

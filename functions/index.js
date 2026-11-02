@@ -2601,9 +2601,9 @@ exports.getAllProjects = onCall(
   async (request) => {
     const email = signedInEmail(request).toLowerCase();
     const full = await access.can(email, 'projects', 'view');
-    // Who can see what: View sees them all; Edit without View the titles, and joins; everyone
-    // else signed in (PAN-BOLD) the titles too, and asks a project's lead to invite them (2026-11-02).
-    const askOnly = !full && !(await access.can(email, 'projects', 'list'));
+    // Who can see what: View sees them all and joins any; everyone else signed in (BOLD-associate,
+    // PAN-BOLD) sees the titles and asks to join, which the project's owner accepts (2026-11-02).
+    const askOnly = !full;
     const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, mineAsked] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
@@ -3793,6 +3793,8 @@ exports.projectWorkspace = onCall(
     const lists = await access.can(email, 'projects', 'list');
     const data = request.data || {};
     if (!lists && ['templates', 'mine', 'venues', 'join'].indexOf(data.action) >= 0) await access.requireAccess(email, 'projects', 'list');
+    // Joining straight away is for Projects' View; below it they ask to join, and its owner accepts (projectInvite 'ask').
+    if (data.action === 'join' && !(await access.can(email, 'projects', 'view'))) throw new HttpsError('permission-denied', 'Ask to join it: its owner accepts. (Joining straight away is for ' + 'Projects’ View level.)');
     if (data.action === 'templates') return { templates: await projectTemplates() };
     if (data.action === 'mine'){
       // The caller's projects not yet completed: those whose cards name them (as
@@ -5733,10 +5735,11 @@ async function sendLabEmail(to, subject, body){
 // - 'accept' | 'decline' { invite }: the invitee; accept → the workspace, as joining does.
 // - 'withdraw' { invite }: whoever invited them, or an editor.
 // - 'peek' { invite }: anyone, signed in or not (join.html): { title, inviter: { id, name } } of an open one.
-// - 'ask' { id, board }: anyone signed in who isn't on it (PAN-BOLD, from Projects' titles): asks its
-//   lead (who registered it) to invite them: projectInvites/{id} with status 'asked' (by: the asker,
-//   who can withdraw it). Its editors see it on the page and Invite (it becomes an open invitation)
-//   or Decline (withdrawn).
+// - 'ask' { id, board }: anyone signed in who isn't on it, below Projects' View (BOLD-associate,
+//   PAN-BOLD, from Projects' titles): asks to join: projectInvites/{id} with status 'asked' (by: the
+//   asker, who can withdraw it); its owner (who registered it) gets a Slack message.
+// - 'admit' { invite }: the project's editors accept an ask: the asker is on the project at once (its
+//   workspace, its Slack channel), and told. Declining is 'withdraw'.
 exports.projectInvite = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
   async (request) => {
@@ -5763,7 +5766,7 @@ exports.projectInvite = onCall(
       if (dup.docs.some((x) => x.data().status === 'asked' || x.data().status === 'open')) throw new HttpsError('already-exists', 'You’ve already asked, or been invited.');
       const lead = String((card.submittedBy || {}).email || '').toLowerCase();
       const ref = await col.add({ pid, cardId: id, board: board || null, title: String(card.title || 'a project'), email, name, by: email, byName: name, status: 'asked', at: Date.now() });
-      if (lead) await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [lead], headline: '📌 ' + slackText(name) + ' asks to join ' + linkedTitle(String(card.title || 'your project'), projectPageUrl(id, board)) + ': invite them, or decline, under People on its page.' });
+      if (lead) await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [lead], headline: '📌 ' + slackText(name) + ' asks to join ' + linkedTitle(String(card.title || 'your project'), projectPageUrl(id, board)) + ': accept or decline, under People on its page.' });
       return { id: ref.id, status: 'asked' };
     }
     if (d.action === 'invite' || d.action === 'list') {
@@ -5810,6 +5813,15 @@ exports.projectInvite = onCall(
     if (!validSlug(iid)) throw new HttpsError('invalid-argument', 'No invitation given.');
     const ref = col.doc(iid);
     const inv = (await ref.get()).data();
+    if (d.action === 'admit') {
+      if (!inv || inv.status !== 'asked') throw new HttpsError('failed-precondition', inv ? 'It’s already been ' + inv.status + '.' : 'That request isn’t there.');
+      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      if (!snap.exists || !(await canEditCard(email, snap.data()))) throw new HttpsError('permission-denied', 'Only the project’s owner, authors, PIs and admins accept a request to join it.');
+      const out = await joinProjectAs(inv.email, inv.pid, snap.data(), true);
+      await ref.update({ status: 'accepted', decidedAt: Date.now(), decidedBy: email });
+      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [inv.email], headline: '📌 ' + slackText(name) + ' accepted your request to join ' + linkedTitle(inv.title, projectPageUrl(inv.cardId, inv.board)) + ': you’re on it.' });
+      return Object.assign({ status: 'accepted' }, out);
+    }
     let editor = false;
     if (d.action === 'withdraw' && inv) {
       const snap = await cardRefFor(inv.cardId, inv.board).get();
@@ -6247,7 +6259,7 @@ function onboardingSteps(group, f){
     { key: 'details', label: 'Fill in your details on your profile', done: details, href: 'profile.html#details' },
     { key: 'read', label: 'Read the BOLDiquette, and mark it read at its end', done: !!f.read, href: 'boldiquette.html' },
   ];
-  if (r === 1) steps.push({ key: 'project', label: 'Be on a project: join one on Projects (or ask its lead to invite you), or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
+  if (r === 1) steps.push({ key: 'project', label: 'Be on a project: ask to join one on Projects (its owner accepts), or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
   if (r >= 2) {
     steps.push({ key: 'own', label: 'Register a project of your own', done: !!f.owns, href: 'projects-register.html' });
     (f.series || []).filter((x) => !x.hidden && x.requiredFor && r >= (ONBOARDING_RANK[x.requiredFor] || 0))

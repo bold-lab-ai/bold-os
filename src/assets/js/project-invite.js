@@ -3,8 +3,8 @@
 // else), by email, picked from the people on BOLD's Slack or typed. Someone on BOLD.OS gets a
 // Slack message; someone who isn't gets an email to ask to join BOLD, and is put on the
 // project once that's approved (projectInvite in functions/index.js). Its editors see the
-// open invitations, with Withdraw, and who asked to join (from Projects' titles, below its levels),
-// with Invite (their ask becomes the invitation) and Decline. The person invited sees a banner on the page (#…&invite=<id>,
+// open invitations, with Withdraw, and who asked to join (from Projects' titles, below its View),
+// with Accept (they're on it at once: 'admit') and Decline. The person invited sees a banner on the page (#…&invite=<id>,
 // the message's link) with Join and Decline: joining makes them one of its people, so they
 // see it in full whatever their group.
 // BoldProjectInvite.init({ db, root, id, board, canEdit(), people(), me(), onJoined, notEditor })
@@ -33,7 +33,7 @@ window.BoldProjectInvite = (function(){
     return '<div class="pj-inv">' +
       (can && asks.length ? '<ul class="pj-inv-list">' + asks.map(function(i){
         return '<li>' + esc(i.name || i.email) + ' asks to join <span class="detail-muted">· ' + when(i.at) + '</span>' +
-          ' <button type="button" class="btn-text pj-inv-ask-yes" data-email="' + esc(i.email) + '" data-name="' + esc(i.name || '') + '"' + (busy ? ' disabled' : '') + '>Invite</button>' +
+          ' <button type="button" class="btn-text pj-inv-ask-yes" data-invite="' + esc(i.id) + '" data-name="' + esc(i.name || i.email) + '"' + (busy ? ' disabled' : '') + '>Accept</button>' +
           ' <button type="button" class="btn-text danger pj-inv-withdraw" data-invite="' + esc(i.id) + '"' + (busy ? ' disabled' : '') + '>Decline</button></li>';
       }).join('') + '</ul>' : '') +
       (can && pending.length ? '<ul class="pj-inv-list">' + pending.map(function(i){
@@ -74,13 +74,13 @@ window.BoldProjectInvite = (function(){
       else if (b.classList.contains('pj-inv-cancel')) { open = false; msg = ''; redraw(); }
       else if (b.classList.contains('pj-inv-send')) send();
       else if (b.classList.contains('pj-inv-ask-yes')) {
-        var who = b.getAttribute('data-name') || b.getAttribute('data-email');
-        BOLD.confirmAction({ title: 'Invite ' + who + '?', go: 'Invite', effects: ['Send ' + who + ' a Slack message with a link to join the project or decline'] }).then(function(ok){
+        var who = b.getAttribute('data-name');
+        BOLD.confirmAction({ title: 'Accept ' + who + ' on the project?', go: 'Accept', effects: ['Make them one of its people: they see it in full, and join its Slack channel, meeting, slides and notes', 'Send them a Slack message saying so'] }).then(function(ok){
           if (!ok) return;
           busy = true; msg = ''; redraw();
-          call({ action: 'invite', id: o.id, board: o.board || null, email: b.getAttribute('data-email'), name: b.getAttribute('data-name') || '' })
-            .then(function(){ msg = 'Invited ' + who + '.'; invites = null; })
-            .catch(function(err){ msg = (err && err.message) || 'Couldn’t invite them — try again.'; })
+          call({ action: 'admit', invite: b.getAttribute('data-invite') })
+            .then(function(){ msg = who + ' is on the project.'; invites = null; if (o.onAdmitted) o.onAdmitted(); })
+            .catch(function(err){ msg = (err && err.message) || 'Couldn’t accept them — try again.'; })
             .then(function(){ busy = false; redraw(); });
         });
       }
