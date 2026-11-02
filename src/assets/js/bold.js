@@ -732,6 +732,8 @@
   BOLD.can = function(area, what){
     if (!access) return false;
     if (what === 'list') return BOLD.can(area, 'view') || BOLD.can(area, 'edit');
+    // Projects' titles: everyone signed in (getAllProjects; below View and Edit they ask to join).
+    if (what === 'titles') return area === 'projects' ? !!access.e : BOLD.can(area, 'list');
     var level = levelFor(area, what || 'view');
     return level !== 'none' && rankOf(access.group) >= rankOf(level);
   };

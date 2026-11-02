@@ -926,3 +926,5 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .ob-steps li.is-done .ob-mark{color:var(--green);}
 .ob-steps li.is-done > span:nth-child(2){color:var(--muted);}
 .ob-state{margin-left:auto; font-size:12px; color:var(--green);}
+.btn-primary.is-off{background:var(--wash); border-color:var(--line); color:var(--muted); cursor:default;}
+.btn-primary.is-off:hover{background:var(--wash);}

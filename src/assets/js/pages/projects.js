@@ -68,7 +68,7 @@
       return l;
     };
     if (p.titleOnly) {
-      parts.push(textNode('Join it to see it'));
+      parts.push(textNode(p.ask ? 'Its people see it: ask its lead to invite you' : 'Join it to see it'));
     } else if (p.boardId) {
       var inVenue = document.createElement('span');
       inVenue.appendChild(textNode('In: '));
@@ -131,6 +131,18 @@
     msg.className = 'join-msg';
     msg.setAttribute('role', 'status');
     join.addEventListener('click', function(){
+      // An invitation to answer: on its page. Below Projects' View and Edit: ask its lead.
+      if (st.invite) { location.href = 'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '') + '&invite=' + encodeURIComponent(st.invite); return; }
+      if (st.ask) {
+        BOLD.confirmAction({ title: 'Ask to join “' + (p.title || 'this project') + '”?', go: 'Ask', effects: ['Send its lead a Slack message asking them to invite you'] }).then(function(ok){
+          if (!ok) return;
+          join.disabled = true; join.textContent = 'Asking…'; msg.textContent = '';
+          firebase.app().functions('europe-west2').httpsCallable('projectInvite')({ action: 'ask', id: p.projectId || p.cardId, board: p.boardId || null })
+            .then(function(){ p.asked = true; join.textContent = 'Asked'; join.title = 'Its lead has been asked to invite you'; cacheClear(); })
+            .catch(function(err){ join.disabled = false; join.textContent = 'Ask to join'; msg.textContent = (err && err.message) || 'Couldn’t ask — try again.'; });
+        });
+        return;
+      }
       BOLD.confirmAlways({ title: 'Join \u201c' + (p.title || 'this project') + '\u201d?', go: 'Join', effects: [
         p.slackChannel ? { key: 'slack', text: 'Invite you to ' + p.slackChannel + ' on Slack' } : '',
         'Add you to its meeting on Google Calendar, if it has one (Google emails you the invitation)',
@@ -375,6 +387,16 @@
   // Last, once everything above is defined: onUser runs its callback at once if
   // auth has already resolved, and it reads the cache constants and helpers.
   BOLD.onUser(renderPage);
+
+  // Registering one is for Projects' Edit level: greyed out, with the reason, below it (PAN-BOLD sees the titles).
+  var add = document.querySelector('.proj-add');
+  if (add) {
+    BOLD.onAccess(function(){
+      var can = BOLD.can('projects', 'edit'), why = can ? '' : BOLD.cannotReason('projects', 'edit');
+      add.classList.toggle('is-off', !can); add.setAttribute('aria-disabled', String(!can)); add.title = why;
+    });
+    add.addEventListener('click', function(e){ if (add.getAttribute('aria-disabled') === 'true') e.preventDefault(); });
+  }
 
   // First paint from the last visit's cache, before Firebase has loaded.
   try {

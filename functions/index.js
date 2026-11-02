@@ -2563,11 +2563,11 @@ async function slackLinksFor(names){
 
 // Pure: the groups as someone with Projects' Edit but not View sees them: the projects
 // they're on (`mine`: pid → true) in full, every other one as its title, to join.
-function projectTitlesOnly(groups, mine){
+function projectTitlesOnly(groups, mine, ask){
   const out = {};
   Object.keys(groups).forEach(function(g){
     out[g] = groups[g].map(function(i){
-      return mine[i.pid] ? i : { pid: i.pid, title: i.title, projectId: i.projectId, cardId: i.cardId, boardId: i.boardId, slackChannel: i.slackChannel, titleOnly: true };
+      return mine[i.pid] ? i : Object.assign({ pid: i.pid, title: i.title, projectId: i.projectId, cardId: i.cardId, boardId: i.boardId, slackChannel: i.slackChannel, titleOnly: true }, ask ? { ask: true } : {});
     });
   });
   return out;
@@ -2601,12 +2601,15 @@ exports.getAllProjects = onCall(
   async (request) => {
     const email = signedInEmail(request).toLowerCase();
     const full = await access.can(email, 'projects', 'view');
-    if (!full) await access.requireAccess(email, 'projects', 'list');   // Who can see what
-    const [boardsSnap, cardsSnap, unassignedSnap, wsSnap] = await Promise.all([
+    // Who can see what: View sees them all; Edit without View the titles, and joins; everyone
+    // else signed in (PAN-BOLD) the titles too, and asks a project's lead to invite them (2026-11-02).
+    const askOnly = !full && !(await access.can(email, 'projects', 'list'));
+    const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, mineAsked] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
       db.collection('projects').get(),
-      db.collection('projectWorkspaces').get()
+      db.collection('projectWorkspaces').get(),
+      db.collection('projectInvites').where('email', '==', email).get()
     ]);
     const groups = allProjectsFromCards(
       boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
@@ -2617,9 +2620,14 @@ exports.getAllProjects = onCall(
     );
     const mine = {};
     wsSnap.docs.forEach(function(d){ if ((d.data().members || []).indexOf(email) >= 0) mine[d.id] = true; });
-    const shown = full ? groups : projectTitlesOnly(groups, mine);
+    const shown = full ? groups : projectTitlesOnly(groups, mine, askOnly);
     const items = shown.ongoing.concat(shown.submission, shown.completed, shown.planned);
     markJoined(shown, mine);
+    // Their own asks and invitations, on each title: asked (waiting on its lead) or invited (theirs to answer).
+    const pending = {};
+    mineAsked.docs.forEach(function(d){ const v = d.data(); if (v.status === 'asked') pending[v.pid] = { asked: true }; else if (v.status === 'open') pending[v.pid] = { invited: d.id }; });
+    items.forEach(function(i){ if (pending[i.pid] && !i.joined) Object.assign(i, pending[i.pid]); });
+    if (askOnly) shown.askOnly = true;
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
     return shown;
@@ -5699,7 +5707,7 @@ function inviteRefusal(inv, action, who){
   if (action === 'accept' || action === 'decline') { if (!mine) return 'It’s someone else’s invitation.'; }
   else if (action === 'withdraw') { if (!(who.editor || String(inv.by || '').toLowerCase() === String(who.email || '').toLowerCase())) return 'Only whoever invited them, or the project’s editors, withdraw it.'; }
   else return 'Unknown action.';
-  if (inv.status !== 'open') return 'It’s already been ' + inv.status + '.';
+  if (inv.status !== 'open' && !(action === 'withdraw' && inv.status === 'asked')) return 'It’s already been ' + inv.status + '.';
   return '';
 }
 // Pure: the address of an invitation, on the project page.
@@ -5725,6 +5733,10 @@ async function sendLabEmail(to, subject, body){
 // - 'accept' | 'decline' { invite }: the invitee; accept → the workspace, as joining does.
 // - 'withdraw' { invite }: whoever invited them, or an editor.
 // - 'peek' { invite }: anyone, signed in or not (join.html): { title, inviter: { id, name } } of an open one.
+// - 'ask' { id, board }: anyone signed in who isn't on it (PAN-BOLD, from Projects' titles): asks its
+//   lead (who registered it) to invite them: projectInvites/{id} with status 'asked' (by: the asker,
+//   who can withdraw it). Its editors see it on the page and Invite (it becomes an open invitation)
+//   or Decline (withdrawn).
 exports.projectInvite = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
   async (request) => {
@@ -5739,6 +5751,21 @@ exports.projectInvite = onCall(
     }
     const email = callerEmail(request);
     const name = request.auth.token.name || email;
+    if (d.action === 'ask') {
+      const id = String(d.id || ''), board = d.board ? String(d.board) : null;
+      if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
+      const snap = await cardRefFor(id, board).get();
+      if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
+      const card = snap.data(), pid = projectIdOf(card, id);
+      const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
+      if ((ws.members || []).map(lowerEmail).indexOf(email) >= 0) throw new HttpsError('already-exists', 'You’re already on it.');
+      const dup = await col.where('pid', '==', pid).where('email', '==', email).get();
+      if (dup.docs.some((x) => x.data().status === 'asked' || x.data().status === 'open')) throw new HttpsError('already-exists', 'You’ve already asked, or been invited.');
+      const lead = String((card.submittedBy || {}).email || '').toLowerCase();
+      const ref = await col.add({ pid, cardId: id, board: board || null, title: String(card.title || 'a project'), email, name, by: email, byName: name, status: 'asked', at: Date.now() });
+      if (lead) await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [lead], headline: '📌 ' + slackText(name) + ' asks to join ' + linkedTitle(String(card.title || 'your project'), projectPageUrl(id, board)) + ': invite them, or decline, under People on its page.' });
+      return { id: ref.id, status: 'asked' };
+    }
     if (d.action === 'invite' || d.action === 'list') {
       const id = String(d.id || ''), board = d.board ? String(d.board) : null;
       if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
@@ -5754,12 +5781,16 @@ exports.projectInvite = onCall(
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpsError('invalid-argument', 'Give their email address.');
       const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
       if ((ws.members || []).map(lowerEmail).indexOf(to) >= 0) throw new HttpsError('already-exists', 'They’re already on the project.');
-      const dup = await col.where('pid', '==', pid).where('email', '==', to).where('status', '==', 'open').limit(1).get();
-      if (!dup.empty) throw new HttpsError('already-exists', 'They already have an invitation to it.');
+      const dups = (await col.where('pid', '==', pid).where('email', '==', to).get()).docs;
+      if (dups.some((x) => x.data().status === 'open')) throw new HttpsError('already-exists', 'They already have an invitation to it.');
       const member = (await db.collection('members').doc(to).get()).exists;
-      const inv = { pid, cardId: id, board: board || null, title: String(card.title || 'a project'), email: to, name: String(d.name || '').trim().slice(0, 120),
+      // They asked to join (from Projects): their ask becomes the invitation.
+      const asked = dups.filter((x) => x.data().status === 'asked')[0];
+      const inv = { pid, cardId: id, board: board || null, title: String(card.title || 'a project'), email: to, name: String(d.name || (asked && asked.data().name) || '').trim().slice(0, 120),
         by: email, byName: name, status: 'open', at: Date.now() };
-      const ref = await col.add(inv);
+      let ref;
+      if (asked) { ref = asked.ref; await ref.set(Object.assign({}, inv, { askedAt: asked.data().at })); }
+      else ref = await col.add(inv);
       const token = SLACK_BOT_TOKEN.value();
       if (member) {
         await sendEvent(token, { key: 'project-invites', emails: [to], headline: '📌 ' + slackText(name) + ' invited you to ' + linkedTitle(inv.title, inviteUrl(inv, ref.id)) + ': join it or decline, from its page.' });
@@ -6216,7 +6247,7 @@ function onboardingSteps(group, f){
     { key: 'details', label: 'Fill in your details on your profile', done: details, href: 'profile.html#details' },
     { key: 'read', label: 'Read the BOLDiquette, and mark it read at its end', done: !!f.read, href: 'boldiquette.html' },
   ];
-  if (r === 1) steps.push({ key: 'project', label: 'Join a project, or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
+  if (r === 1) steps.push({ key: 'project', label: 'Be on a project: join one on Projects (or ask its lead to invite you), or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
   if (r >= 2) {
     steps.push({ key: 'own', label: 'Register a project of your own', done: !!f.owns, href: 'projects-register.html' });
     (f.series || []).filter((x) => !x.hidden && x.requiredFor && r >= (ONBOARDING_RANK[x.requiredFor] || 0))

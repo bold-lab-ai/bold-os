@@ -29,13 +29,13 @@ export default {
     // Its sub-pages are BOLDiquette's sections (Firestore), filled in by bold.js.
     { label: 'BOLDiquette', href: 'boldiquette.html', links: [], handbook: true, area: 'boldiquette' },
     // Research: the projects and their papers' internal review. Shown with Projects (the
-    // lower of the two; areaWhat list: its View or Edit, as Edit alone sees the titles, and
-    // joins); Internal review has its own area.
-    { label: 'Research', href: 'projects.html', area: 'projects', areaWhat: 'list', links: [
+    // lower of the two; areaWhat titles: everyone signed in sees the projects' titles, and
+    // below Projects' View and Edit asks to join one, 2026-11-02); Internal review has its own area.
+    { label: 'Research', href: 'projects.html', area: 'projects', areaWhat: 'titles', links: [
       // To come: `soon: true` shows the name with a Soon tag, not a link (no page yet).
       { label: 'Problems bank', soon: true },
       { label: 'Benchmarks', soon: true },
-      { label: 'Projects', href: 'projects.html', area: 'projects' },
+      { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },
     ] },
     { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true, area: 'calendar' },
