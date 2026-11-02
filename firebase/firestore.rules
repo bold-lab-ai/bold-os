@@ -200,6 +200,12 @@ service cloud.firestore {
     }
     // Requests to be in another group: theirs to read, and the PIs' and admins'; all writes
     // through groupRequest.
+    // Onboarding marks (the BOLDiquette read, the tour taken): the onboarding callable writes them.
+    match /onboarding/{who} {
+      allow read: if hasFullWrite() || (isLabMember() && who == email().lower());
+      allow write: if false;
+    }
+
     match /groupRequests/{id} {
       // PIs and admins, who decide it (groupRequest), and who asked.
       allow read: if hasFullWrite() || (isLabMember() && resource.data.email == email().lower());

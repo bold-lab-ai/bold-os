@@ -6060,6 +6060,77 @@ exports.onGroupChannels = onDocumentWritten(
   }
 );
 
+// ---------- Onboarding (Get started, 2026-11-02) ----------
+// What each newcomer does, by group (each group also does those of the groups below), each
+// ticked from what BOLD.OS already knows, so nobody ticks their own:
+// - everyone: their details (members/{email}: role, institution, interests, pillars, start
+//   date, and who invited them unless a PI), read the BOLDiquette (its Mark as read, which
+//   lists them in handbook/boldiquette/readers: read-point.js) and take the tour (marked at
+//   its end, in onboarding/{email}, server-written);
+// - BOLD-associate and up: be on a project (a projectWorkspaces' members);
+// - BOLD-internal and up: join an event series you sign up to (eventSeries' joined), when
+//   there is one.
+// Asking for a higher group needs it done (groupRequest). PIs and admins see everyone's on People.
+const ONBOARDING_RANK = { pan: 0, associate: 1, internal: 2, staff: 3, exec: 4 };
+// Pure: a group and what we know of them → { steps: [{ key, label, done, href }], done }.
+function onboardingSteps(group, f){
+  f = f || {};
+  const m = f.member || {}, has = (k) => !!String(m[k] || '').trim();
+  const r = ONBOARDING_RANK[group] || 0;
+  const details = !!f.member && has('role') && has('institution') && has('interests') && (m.pillars || []).length > 0 && has('startDate') &&
+    (m.role === 'PI' || has('contact') || !!(m.invitedBy && m.invitedBy.email));
+  const steps = [
+    { key: 'details', label: 'Fill in your details on your profile', done: details, href: 'profile.html#details' },
+    { key: 'read', label: 'Read the BOLDiquette, and mark it read at its end', done: !!f.read, href: 'boldiquette.html' },
+    { key: 'tour', label: 'Take the tour of BOLD.OS', done: !!(f.marks || {}).tour, href: 'get-started.html#tour' },
+  ];
+  if (r >= 1) steps.push({ key: 'project', label: 'Join or register a project', done: !!f.inProject, href: 'projects.html' });
+  if (r >= 2 && (f.openSeries || f.inSeries)) steps.push({ key: 'events', label: 'Join an event series', done: !!f.inSeries, href: 'events.html' });
+  return { steps, done: steps.every((x) => x.done) };
+}
+async function onboardingFor(email){
+  email = String(email || '').toLowerCase();
+  const [m, marks, read, ws, joined, open, group] = await Promise.all([
+    db.collection('members').doc(email).get(), db.collection('onboarding').doc(email).get(),
+    db.collection('handbook').doc('boldiquette').collection('readers').where('email', '==', email).limit(1).get(),
+    db.collection('projectWorkspaces').where('members', 'array-contains', email).limit(1).get(),
+    db.collection('eventSeries').where('joined', 'array-contains', email).limit(1).get(),
+    db.collection('eventSeries').where('invite.mode', '==', 'join').where('hidden', '==', false).limit(1).get(),
+    access.groupFor(email),
+  ]);
+  return Object.assign({ group }, onboardingSteps(group, { member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
+    inProject: !ws.empty, inSeries: !joined.empty, openSeries: !open.empty }));
+}
+// - {}: your own → { group, steps, done }.
+// - { all: true }: PIs and admins, everyone with a record → { people: [{ email, name, group, steps, done }] }.
+// - { action: 'mark', step: 'tour' }: marks the tour taken (at its end).
+exports.onboarding = onCall(
+  async (request) => {
+    const email = signedInEmail(request).toLowerCase();
+    const d = request.data || {};
+    if (d.action === 'mark') {
+      if (d.step !== 'tour') throw new HttpsError('invalid-argument', 'Unknown step.');
+      await db.collection('onboarding').doc(email).set({ [d.step]: Date.now() }, { merge: true });
+      return onboardingFor(email);
+    }
+    if (!d.all) return onboardingFor(email);
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see everyone’s onboarding.');
+    const [members, marks, readers, wss, series] = await Promise.all([db.collection('members').get(), db.collection('onboarding').get(),
+      db.collection('handbook').doc('boldiquette').collection('readers').get(), db.collection('projectWorkspaces').get(), db.collection('eventSeries').get()]);
+    const mark = {}, onProject = {}, inSeries = {}, read = {};
+    readers.docs.forEach((x) => { read[String(x.data().email || '').toLowerCase()] = true; });
+    marks.docs.forEach((x) => { mark[x.id] = x.data(); });
+    wss.docs.forEach((x) => (x.data().members || []).forEach((e) => { onProject[String(e).toLowerCase()] = true; }));
+    let openSeries = false;
+    series.docs.forEach((x) => { const v = x.data(); if (v.invite && v.invite.mode === 'join' && !v.hidden) openSeries = true; (v.joined || []).forEach((e) => { inSeries[String(e).toLowerCase()] = true; }); });
+    const people = await Promise.all(members.docs.map(async (x) => {
+      const e = x.id.toLowerCase(), group = await access.groupFor(e);
+      return Object.assign({ email: e, name: x.data().name || e, group }, onboardingSteps(group, { member: x.data(), marks: mark[e] || {}, read: !!read[e], inProject: !!onProject[e], inSeries: !!inSeries[e], openSeries }));
+    }));
+    return { people };
+  }
+);
+
 // A member's request to be in another group, decided by the PIs and admins only (2026-11-02):
 // - 'request': { to, note, accept: true, terms } → { id }, from group-request.html, where they
 //   read what the group asks of them (its section of Who is BOLD) and tick that they accept it;
@@ -6086,6 +6157,8 @@ exports.groupRequest = onCall(
       if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
       const name = m.data().name || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
+      // Onboarding done first (Get started).
+      if (!(await onboardingFor(email)).done) throw new HttpsError('failed-precondition', 'Finish your onboarding first: it’s on Get started.');
       // The contract: what the group asks of them, as they read it, and that they accept it.
       const terms = String(d.terms || '').trim().slice(0, 20000);
       if (d.accept !== true || !terms) throw new HttpsError('failed-precondition', 'Read what ' + GROUP_LABELS[to] + ' asks of you and tick that you accept it first.');
@@ -6875,5 +6948,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
+  onboardingSteps, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
 };

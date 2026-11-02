@@ -899,3 +899,22 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .ed-form{margin-top:14px;}
 .ed-plan{font-family:var(--sans); font-size:15px; line-height:1; width:22px; height:22px; padding:0; border:1px solid var(--line); background:var(--surface); color:var(--link); cursor:pointer; align-self:center;}
 .ed-plan:hover{border-color:var(--accent);}
+/* The tour of BOLD.OS (tour.js): the item lit up, everything else dimmed, and a note beside it. */
+.tour-spot{position:fixed; z-index:1400; pointer-events:none; border:2px solid var(--accent); border-radius:var(--radius);
+  box-shadow:0 0 0 9999px color-mix(in srgb, var(--shade) 45%, transparent); transition:top .2s ease, left .2s ease, width .2s ease, height .2s ease;}
+.tour-pop{position:fixed; z-index:1401; box-sizing:border-box; padding:14px 16px; background:var(--surface); color:var(--ink-soft); border:1px solid var(--line);
+  border-radius:var(--radius); box-shadow:var(--shadow); font-family:var(--sans); font-size:14px; line-height:1.5;}
+.tour-pop h2{margin:0 0 4px; font-family:var(--sans); font-size:16px; color:var(--ink);}
+.tour-pop p{margin:0;}
+.tour-pop .tour-count{font-size:12px; color:var(--muted); margin-bottom:2px;}
+.tour-actions{display:flex; align-items:center; gap:8px; margin-top:12px;}
+.tour-actions .tour-skip{margin-right:auto; font-size:13px;}
+@media (prefers-reduced-motion:reduce){ .tour-spot{transition:none;} }
+/* Onboarding's steps (onboarding-common.js): each ticked when BOLD.OS sees it done. */
+.ob-steps{list-style:none; margin:0; padding:0; font-family:var(--sans); font-size:15px;}
+.ob-steps li{display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--rule);}
+.ob-steps li:last-child{border-bottom:0;}
+.ob-mark{display:inline-flex; color:var(--muted); flex:0 0 auto;}
+.ob-steps li.is-done .ob-mark{color:var(--green);}
+.ob-steps li.is-done > span:nth-child(2){color:var(--muted);}
+.ob-state{margin-left:auto; font-size:12px; color:var(--green);}

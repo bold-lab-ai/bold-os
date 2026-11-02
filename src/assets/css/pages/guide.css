@@ -217,3 +217,10 @@ body:has(.gd-viewing){padding-bottom:72px;}
 .gd-resolve{margin:10px 0; padding:12px 14px; border:1px solid var(--line); background:var(--surface);}
 .gd-resolve-head{margin:0 0 8px; font-family:var(--sans); font-size:13px;}
 .gd-resolve textarea{font-family:var(--mono, ui-monospace, monospace); font-size:13px;}
+/* Get started's onboarding (pages/onboarding.js), under the title. */
+.ob-box{max-width:var(--article-max); margin:0 auto 8px calc(var(--page-left) + var(--gutter)); padding:16px 20px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);}
+.ob-head{display:flex; align-items:baseline; gap:12px;}
+.ob-head h2{margin:0; font-family:var(--sans); font-size:18px; color:var(--ink);}
+.ob-count{margin-left:auto; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.ob-note{margin:4px 0 8px; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+@media (max-width:820px){ .ob-box{margin-left:var(--gutter); margin-right:var(--gutter);} }

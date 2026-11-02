@@ -14,12 +14,16 @@
 // data-slug, data-eyebrow, data-back (a link, or "" for none), data-anchor-prefix,
 // data-deletable and data-read-point ("true": what changed since the reader
 // last marked it read, read-point.js).
+// data-slot: the id of an element of the page, kept under the title on every redraw
+// (Get started's onboarding).
 (function(){
   var esc = BOLD.escapeHtml;
   var G = window.BoldGuides;
   var md = BoldMarkdown.render;
   var body = document.getElementById('guideBody');
   if (!body || !BOLD.getAuth()) return;
+  var slot = document.getElementById(body.getAttribute('data-slot') || '');
+  function keepSlot(){ var h = body.querySelector('.hero'); if (slot && h) { h.parentNode.insertBefore(slot, h.nextSibling); } }
   var db = null;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var params = new URLSearchParams(location.search);
@@ -604,6 +608,7 @@
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
         '<button type="button" class="event-add gd-add"' + (proposeOff() ? ' disabled title="' + esc(proposeOff()) + '"' : '') + '>' + '+ Suggest a new part' + '</button>')) +
       proposalsHtml() + (readPoint ? readPoint.readersHtml() : '') + '</div>' + contentsHtml() + '</div></main>';
+    keepSlot();
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
     var dn = body.querySelector('.gd-draft-note');
