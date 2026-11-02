@@ -37,7 +37,7 @@ const LEVEL = (v, e) => ({ view: v, edit: e });
   set('roles/admins', { emails: [] });
   set('settings/access', { pages: {
     boldiquette: LEVEL('everyone', 'internal'), profile: LEVEL('everyone', 'everyone'), 'get-started': LEVEL('everyone', 'associate'),
-    projects: LEVEL('associate', 'associate'), events: LEVEL('associate', 'internal'), calendar: LEVEL('internal', 'internal'),
+    projects: LEVEL('internal', 'associate'), events: LEVEL('associate', 'internal'), calendar: LEVEL('internal', 'internal'),
     people: LEVEL('internal', 'internal'), requests: LEVEL('internal', 'internal'), 'service-desk': LEVEL('associate', 'associate'),
     guides: LEVEL('internal', 'internal'), agents: LEVEL('internal', 'internal'), tools: LEVEL('internal', 'internal'), skills: LEVEL('internal', 'internal'),
     'ml-cycle': LEVEL('internal', 'internal'), search: LEVEL('internal', 'internal'), changelog: LEVEL('internal', 'internal'),
