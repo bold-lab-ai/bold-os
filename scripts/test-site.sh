@@ -7,11 +7,14 @@
 # BOLDIQUETTE_PARTS=<file> seeds the real BOLDiquette (keep that file outside the repo).
 set -e
 cd "$(dirname "$0")/.."
-# Homebrew's Java (brew install openjdk) isn't on the PATH by itself.
+# Java, for the emulators: on the PATH, Homebrew's (not on the PATH by itself), or one unpacked
+# in ~/.local/jdk (a Temurin JDK from adoptium.net: no Homebrew or admin rights needed).
 if ! java -version >/dev/null 2>&1; then
-  for d in /opt/homebrew/opt/openjdk/bin /usr/local/opt/openjdk/bin; do [ -x "$d/java" ] && PATH="$d:$PATH" && export PATH && break; done
+  for d in /opt/homebrew/opt/openjdk/bin /usr/local/opt/openjdk/bin "$HOME"/.local/jdk/*/Contents/Home/bin "$HOME"/.local/jdk/*/bin; do
+    [ -x "$d/java" ] && PATH="$d:$PATH" && export PATH && break
+  done
 fi
-java -version >/dev/null 2>&1 || { echo 'The emulators need Java: brew install openjdk'; exit 1; }
+java -version >/dev/null 2>&1 || { echo 'The emulators need Java 11 or later: unpack a JDK from adoptium.net into ~/.local/jdk'; exit 1; }
 cp src/assets/js/card-model.js src/assets/js/search-rank.js functions/
 if [ ! -f functions/.secret.local ]; then
   printf 'SLACK_BOT_TOKEN=outbox\nSLACK_SIGNING_SECRET=outbox\nGOOGLE_OAUTH={}\nGITHUB_APP={}\nANTHROPIC_API_KEY=none\n' > functions/.secret.local
