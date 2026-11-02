@@ -112,13 +112,6 @@ fieldset.md-group:first-child{margin-top:0;}
 /* A person's group (Who is BOLD): the talks' type badges (bold.css .type-badge). For
    PIs and admins the badge is a button that shows the groups to choose from. */
 .proj-list .type-badge{margin-left:6px; vertical-align:2px;}
-.pp-exec{color:var(--link);}
-.pp-internal{color:var(--green);}
-.pp-associate{color:var(--plum);}
-.pp-staff{color:var(--brown);}
-.pp-pan{color:var(--neutral-text);}
-button.type-badge{background:none; cursor:pointer;}
-button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);}
 .pp-choices{display:inline-flex; flex-wrap:wrap; gap:4px; vertical-align:2px;}
 .pp-choices .type-badge{margin-left:0; opacity:.55;}
 .pp-choices .type-badge.is-current, .pp-choices .type-badge:hover{opacity:1;}
