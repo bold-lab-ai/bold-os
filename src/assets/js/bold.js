@@ -787,16 +787,20 @@
       });
     });
   }
-  // Accepted into a new group (#152): once, they're sent to Get started, where onboarding has
-  // that group's first steps. The group last seen is remembered in this browser, per person; the
-  // first time there's none, so nothing happens (the home page shows the steps anyway). Only
-  // from the server's answer (getMyAccess), never while viewing as a group.
+  // In a new group (#152): once, they're sent to Get started, but only if that group's steps
+  // aren't all done (the onboarding callable): someone accepted through Ask for another group did
+  // them before asking; someone a PI or admin placed there may not have. The group last seen is
+  // remembered in this browser, per person; the first time there's none, so nothing happens (the
+  // home page shows the steps anyway). Only from the server's answer (getMyAccess), never while
+  // viewing as a group.
   function groupChanged(email, group){
     if (!email || !group) return;
     var k = 'boldGroup:' + email, was = null;
     try { was = localStorage.getItem(k); localStorage.setItem(k, group); } catch (e){ return; }
     if (!was || was === group) return;
-    location.href = 'get-started.html';
+    firebase.app().functions('europe-west2').httpsCallable('onboarding')({}).then(function(r){
+      if (r.data && Array.isArray(r.data.steps) && !r.data.done) location.href = 'get-started.html';
+    }).catch(function(){});
   }
   // fn() once the Functions SDK is there: loaded (same pinned version) if the page hasn't it.
   function withFunctions(fn){
