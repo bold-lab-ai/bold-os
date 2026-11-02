@@ -21,13 +21,6 @@ window.BoldJoin = (function(){
     m = m || {};
     return CATEGORIES.some(function(c){ return c[0] === m.category; }) ? m.category : 'pan';
   }
-  // The group a role suggests when a request is approved (functions/index.js roleGroup).
-  // The lower of two groups (CATEGORIES runs from the top down), as functions/index.js cappedGroup.
-  function cappedGroup(g, cap){
-    var ids = CATEGORIES.map(function(c){ return c[0]; });
-    return ids.indexOf(cap) < 0 ? g : ids[Math.max(ids.indexOf(g), ids.indexOf(cap))];
-  }
-  function roleGroup(role){ return role === 'PI' ? 'exec' : role === 'PhD student' || role === 'Master student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan'; }
   function groupBadge(g){ return '<span class="type-badge pp-' + g + '">' + esc(categoryLabel(g)) + '</span>'; }
   // What a group asks of its members: the **Requirements** list under its #### heading in
   // the BOLDiquette's Who is BOLD (the part's Markdown, `body`), dedented, or '' if it has none.
@@ -183,5 +176,5 @@ window.BoldJoin = (function(){
         row('Booking link', /^https:\/\/\S+$/.test(d.bookingUrl || '') ? '<a href="' + esc(d.bookingUrl) + '" target="_blank" rel="noopener">' + esc(d.bookingUrl.replace(/^https:\/\//, '')) + '</a>' : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, roleGroup: roleGroup, cappedGroup: cappedGroup, groupBadge: groupBadge, requirementsOf: requirementsOf, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, requirementsOf: requirementsOf, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
 })();

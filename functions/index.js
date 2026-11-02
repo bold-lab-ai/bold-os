@@ -4192,7 +4192,7 @@ async function requestWork(email, full, person){
   const uniq = function(lists){ const seen = {}; return [].concat.apply([], lists).filter(function(d){ if (seen[d.ref.path]) return false; seen[d.ref.path] = true; return true; }); };
   const [joins, groups, lettersA, lettersB, introsA, introsB, studyA, studyB, tokens, boards] = await Promise.all([
     full ? all('joinRequests') : q('joinRequests', 'invitedBy.email'),
-    full ? all('groupRequests') : Promise.all([q('groupRequests', 'email'), q('groupRequests', 'inviterEmail')]).then(function(x){ return x[0].concat(x[1]); }),
+    full ? all('groupRequests') : q('groupRequests', 'email'),   // PIs and admins decide them (groupRequest)
     q('letterRequests', 'requesterEmail'), q('letterRequests', 'writerEmail'),
     q('introRequests', 'requesterEmail'), q('introRequests', 'offererEmail'),
     access.can(email, 'calendar', 'view').then(function(ok){ return ok ? q('studyRequests', 'email') : []; }),
@@ -4225,8 +4225,8 @@ async function requestWork(email, full, person){
     const r = d.data();
     add({ kind: 'group', ref: d.ref.path, title: 'Change group: ' + (r.name || r.email) + ', ' + (GROUP_LABELS[r.from] || r.from || '?') + ' → ' + (GROUP_LABELS[r.to] || r.to || '?'),
       url: SITE_URL + 'join-requests.html#g=' + d.id, by: person(r.email, r.name),
-      on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : r.status === 'open' && r.inviterEmail ? [person(r.inviterEmail, r.inviterName)] : [],
-      waiting: r.status === 'open' && !r.inviterEmail ? PIS_ADMINS : '', state: r.status },
+      on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [],
+      waiting: r.status === 'open' ? PIS_ADMINS : '', state: r.status },
     requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
   });
   uniq([lettersA, lettersB]).forEach(function(d){
@@ -5836,7 +5836,6 @@ exports.decideJoinRequest = onCall(
     if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
     const ref = db.collection('joinRequests').doc(d.id);
     const name = request.auth.token.name || '';
-    const deciderGroup = await access.groupFor(email);
     const r = await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists) throw new HttpsError('not-found', 'No such request.');
@@ -5854,12 +5853,12 @@ exports.decideJoinRequest = onCall(
       Object.assign(q, confirmed);
       if (d.accept) {
         // Their record in BOLD.OS: what they told us. They keep it up to date on their profile.
-        // Their group, unless a PI or admin already set one: what their role suggests, but
-        // never above the group of whoever approves it (a PI or admin raises it on People).
+        // Their group, unless a PI or admin already set one: PAN-BOLD. Any higher group is a
+        // request PIs and admins decide (groupRequest), or a PI or admin sets it on People.
         const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'invitedBy'];
         const rec = {};
         keep.forEach((k) => { if (q[k] !== undefined) rec[k] = q[k]; });
-        if (!(had.exists && GROUPS.indexOf(had.data().category) >= 0)) Object.assign(rec, { category: cappedGroup(roleGroup(q.role), deciderGroup), categoryBy: email, categoryAt: Date.now() });
+        if (!(had.exists && GROUPS.indexOf(had.data().category) >= 0)) Object.assign(rec, { category: 'pan', categoryBy: email, categoryAt: Date.now() });
         tx.set(m, Object.assign(rec, { requestId: d.id, approvedBy: email, approvedAt: Date.now() }), { merge: true });
       }
       return Object.assign({}, q, { status });
@@ -5899,10 +5898,10 @@ exports.retryWelcomeEmails = onSchedule(
 // Every member is in one group, the one a PI or admin set (members' `category`, on the
 // People page, or by approving a request); without one, PAN-BOLD (groupOf; BoldJoin.groupOf
 // on the pages, kept in sync by hand). The group decides what they can see (settings/access),
-// so it never follows anything a member edits: approving a request sets it from their role
-// (roleGroup: PIs BOLD-exec, PhD and Master students BOLD-internal, Staff BOLD-staff, else PAN-BOLD). A member asks for another group on their profile
-// (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
-// requests. Each group but PAN-BOLD may have Slack channels (settings/groups.channels, set there:
+// so it never follows anything a member edits: approving a request to join puts them in
+// PAN-BOLD. A member asks for another group on group-request.html, accepting what it asks of
+// them (groupRequests/{id}, through groupRequest); only the PIs and admins decide, on Join
+// requests (2026-11-02). Each group but PAN-BOLD may have Slack channels (settings/groups.channels, set there:
 // one or more names, separated by commas, as "bold-internal, all-active-projects"), and each
 // role on the join form may have some too (settings/groups.roleChannels, by role: "PhD student").
 // The groups are ranked (GROUPS, highest first) and each is in the channels of those below
@@ -5927,12 +5926,6 @@ function channelGroupsFor(g){
 function groupOf(m){
   m = m || {};
   return GROUPS.indexOf(m.category) >= 0 ? m.category : 'pan';
-}
-// Pure: a role → the group it suggests, when a request is approved.
-// The lower of two groups (GROUPS runs from the top down).
-function cappedGroup(g, cap){ return GROUPS.indexOf(cap) < 0 ? g : GROUPS[Math.max(GROUPS.indexOf(g), GROUPS.indexOf(cap))]; }
-function roleGroup(role){
-  return role === 'PI' ? 'exec' : role === 'PhD student' || role === 'Master student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan';
 }
 
 function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, '').toLowerCase(); }
@@ -6067,15 +6060,13 @@ exports.onGroupChannels = onDocumentWritten(
   }
 );
 
-// A member's request to be in another group, decided by whoever invited them (as a
-// request to join is: their members doc's invitedBy, unless they said they didn't),
-// or, for someone without an inviter, by the PIs and admins:
-// - 'request': { to, note } → { id }; one open request at a time; DMs whoever decides.
+// A member's request to be in another group, decided by the PIs and admins only (2026-11-02):
+// - 'request': { to, note, accept: true, terms } → { id }, from group-request.html, where they
+//   read what the group asks of them (its section of Who is BOLD) and tick that they accept it;
+//   the terms they saw are kept on the request (`terms`, `acceptedAt`). One open request at a
+//   time; DMs the PIs and admins.
 // - 'withdraw': { id }: their own open request.
-// - 'decide': { id, accept }: the inviter (inviterEmail on the request), or a PI or admin
-//   when it has none; accepting sets their group. DMs them.
-// - 'request' needs an inviter (a PI or admin asking goes to the PIs and admins): one who
-//   hasn't got one names one in it ({ inviter: email }), which also asks them to confirm it.
+// - 'decide': { id, accept }: a PI or admin; accepting sets their group. DMs them.
 exports.groupRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -6095,29 +6086,14 @@ exports.groupRequest = onCall(
       if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
       const name = m.data().name || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
-      // Whoever invited them decides, so they need one: without one (or one who said they
-      // didn't), they name one here, in the same request (inviter: email), as on their
-      // profile (setMyInviter). PIs and admins, who have nobody, go to the PIs and admins.
-      let inv = m.data().invitedBy, named = false;
-      const hasInviter = (x) => x && x.email && x.status !== 'denied' && String(x.email).toLowerCase() !== email;
-      if (!hasInviter(inv) && !(await isFullWrite(email))) {
-        const to = String(d.inviter || '').trim().toLowerCase();
-        if (!to) throw new HttpsError('failed-precondition', 'Choose your point of contact first: whoever invited you to BOLD decides this.');
-        inv = await inviterFor(email, to);
-        await m.ref.update({ invitedBy: inv });
-        named = true;
-      }
-      const inviter = hasInviter(inv) ? { email: String(inv.email).toLowerCase(), name: String(inv.name || inv.email) } : null;
-      const ref = await col.add(Object.assign({ email, name, from, to, note, status: 'open', at: Date.now() },
-        inviter ? { inviterEmail: inviter.email, inviterName: inviter.name } : {}));
-      const deciders = inviter ? [inviter.email] : (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-      // Named just now: one message for both, confirming they invited them and deciding the move.
-      await sendEvent(token, { key: 'group-requests', emails: deciders, headline: (named
-        ? '👋 ' + await numberTag('members/' + email + '/invite/' + inv.askedAt) + await numberTag(ref.path) + slackText(name) + ' names you as their BOLD point of contact, who invited them, and asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to]
-        : '🏷️ ' + await numberTag(ref.path) + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to]) +
-        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' +
-        (named ? linkedTitle('Confirm you invited them', joinPageUrl() + '#invited') + ', then ' + linkedTitle('approve or decline the move', joinPageUrl() + '#g=' + ref.id)
-          : linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id)) + '.' });
+      // The contract: what the group asks of them, as they read it, and that they accept it.
+      const terms = String(d.terms || '').trim().slice(0, 20000);
+      if (d.accept !== true || !terms) throw new HttpsError('failed-precondition', 'Read what ' + GROUP_LABELS[to] + ' asks of you and tick that you accept it first.');
+      const ref = await col.add({ email, name, from, to, note, terms, acceptedAt: Date.now(), status: 'open', at: Date.now() });
+      const deciders = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+      await sendEvent(token, { key: 'group-requests', emails: deciders, headline:
+        '🏷️ ' + await numberTag(ref.path) + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to] + ', and accepts what it asks of them' +
+        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id) + '.' });
       return { id: ref.id };
     }
     const id = String(d.id || '');
@@ -6138,10 +6114,8 @@ exports.groupRequest = onCall(
     const r = await db.runTransaction(async function(tx){
       const r = (await tx.get(ref)).data();
       if (!r) throw new HttpsError('not-found', 'That request isn’t there.');
-      // Whoever invited them decides; PIs and admins only when nobody did.
-      if (r.inviterEmail ? r.inviterEmail !== email : !full) {
-        throw new HttpsError('permission-denied', r.inviterEmail ? (r.inviterName || 'Whoever invited them') + ' decides this: they invited them.' : 'Only PIs and admins decide.');
-      }
+      // Only PIs and admins decide a change of group (2026-11-02).
+      if (!full) throw new HttpsError('permission-denied', 'Only PIs and admins decide a change of group.');
       if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
       tx.update(ref, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: request.auth.token.name || email, decidedAt: Date.now() });
       if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now() });
@@ -6892,7 +6866,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
 
 exports._internal = {
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
-  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
+  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, pilotStateOf, sendEvent, cardTalkRecipients, cardTalkDigest, cardDoneText, canAssignReviewer, parseAssignAction,
@@ -6901,5 +6875,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, roleGroup, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
+  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
 };

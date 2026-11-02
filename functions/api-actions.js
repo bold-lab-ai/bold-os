@@ -583,10 +583,11 @@ module.exports = function(ctx){
         else await asUser(who, 'create', 'members', doc, who.email);
         return { ok: true, changed: Object.keys(patch).filter((k) => k !== 'updatedAt') };
       }
-      // Whoever invited them decides it: without one, the request names one (inviter), as on the profile.
+      // Asking for another group means accepting what it asks of you (Who is BOLD), which is
+      // the person's own act: on group-request.html, not through an agent. The PIs and admins decide.
       case 'ask_group': {
-        const inviter = a.inviter ? resolve((await lab.people()).map((p) => ({ email: p.email, name: p.name || '' })), a.inviter, 'people in BOLD') : '';
-        return act(who, 'groupRequest', Object.assign({ action: 'request', to: need(a.group, 'the group (exec, staff, internal, associate or pan)'), note: a.note || '' }, inviter ? { inviter } : {}));
+        const g = need(a.group, 'the group (exec, staff, internal, associate or pan)');
+        return { done: false, message: 'Asking for another group means accepting what it asks of you: your person does it themselves on BOLD.OS, where they read the terms and tick that they accept them. The PIs and admins decide.', url: url('group-request.html?to=' + encodeURIComponent(g)) };
       }
       case 'withdraw_group_request': return act(who, 'groupRequest', { action: 'withdraw', id: need(a.request_id, 'the request_id') });
       case 'set_inviter': {
@@ -749,15 +750,15 @@ module.exports = function(ctx){
         every: { type: 'integer', description: 'Every N weeks, 1–4 (default 1)' }, until: str('YYYY-MM-DD, optional last day'), link: str('Its own meeting link (https), instead of a new Google Meet'),
         invite: ACTIONS(['join', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
     { name: 'profile', run: profile,
-      description: 'Your profile and place in BOLD: update your details, ask to move to another group (Who is BOLD; whoever invited you decides it, so without one name them in inviter), withdraw that request, say who invited you to the BOLD Slack, and confirm (or deny) that you invited someone who says you did.',
+      description: 'Your profile and place in BOLD: update your details, ask to move to another group (Who is BOLD: gives the page where your person accepts what the group asks of them and sends it; the PIs and admins decide), withdraw that request, say who invited you to the BOLD Slack, and confirm (or deny) that you invited someone who says you did.',
       inputSchema: S(Object.assign({ action: ACTIONS(['update', 'ask_group', 'withdraw_group_request', 'set_inviter', 'confirm_invite', 'deny_invite']) },
         ...Object.keys(PROFILE).map((k) => ({ [k]: k === 'pillars' ? { type: 'array', items: { type: 'string' } } : k === 'list_on_website' ? { type: 'boolean' } : str('update') })),
-        { group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']), note: str(''), request_id: str(''), inviter: str('set_inviter: their name ("" for nobody); ask_group: who invited you, if you haven’t said'), member: str('confirm_invite, deny_invite: the member’s name') })) },
+        { group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']), note: str(''), request_id: str(''), inviter: str('set_inviter: their name ("" for nobody)'), member: str('confirm_invite, deny_invite: the member’s name') })) },
     { name: 'events', run: events,
       description: 'The lab’s events: add one (it starts hidden, until you release it), update, release, hide or delete one you added or whose series you organise (PIs and admins: any). Releasing one has Google Calendar invite its group: tell your person that, and who, before you do it.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str('') }) },
     { name: 'requests', run: requests,
-      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody), or set someone’s group.',
+      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody; a change of group, any), or set someone’s group.',
       inputSchema: S({ action: ACTIONS(['list', 'approve_join', 'decline_join', 'approve_group', 'decline_group', 'set_group']), request_id: str(''), member: str('set_group: their name'), group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']) }) },
     { name: 'skills', run: skills,
       description: 'PIs and admins: add a new Claude skill, or delete one. Changing a skill is a proposal, by anyone (proposals, page "skill:<name>").',
