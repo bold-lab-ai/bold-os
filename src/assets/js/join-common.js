@@ -22,6 +22,19 @@ window.BoldJoin = (function(){
     return CATEGORIES.some(function(c){ return c[0] === m.category; }) ? m.category : 'pan';
   }
   function groupBadge(g){ return '<span class="type-badge pp-' + g + '">' + esc(categoryLabel(g)) + '</span>'; }
+  // A group's whole section of the BOLDiquette's Who is BOLD (the part's Markdown, `body`):
+  // what's under its heading up to the next heading, dedented, or '' if it has none. The
+  // terms someone accepts to ask for that group (group-request.html).
+  function groupSectionOf(body, g){
+    var label = categoryLabel(g).toLowerCase(), out = [], on = false;
+    String(body || '').split('\n').forEach(function(l){
+      var m = /^#{1,6}\s+(.*?)\s*:?\s*$/.exec(l);
+      if (m) { on = m[1].replace(/[*_`]/g, '').replace(/^for\s+/i, '').toLowerCase() === label; return; }
+      if (on) out.push(l);
+    });
+    var cut = Math.min.apply(null, out.filter(function(l){ return /\S/.test(l); }).map(function(l){ return l.search(/\S/); }).concat([1e9]));
+    return out.map(function(l){ return l.slice(Math.min(cut, l.length)); }).join('\n').replace(/^\s*\n|\s+$/g, '');
+  }
   // What a group asks of its members: the **Requirements** list under its #### heading in
   // the BOLDiquette's Who is BOLD (the part's Markdown, `body`), dedented, or '' if it has none.
   function requirementsOf(body, g){
@@ -176,5 +189,5 @@ window.BoldJoin = (function(){
         row('Booking link', /^https:\/\/\S+$/.test(d.bookingUrl || '') ? '<a href="' + esc(d.bookingUrl) + '" target="_blank" rel="noopener">' + esc(d.bookingUrl.replace(/^https:\/\//, '')) + '</a>' : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, requirementsOf: requirementsOf, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, requirementsOf: requirementsOf, groupSectionOf: groupSectionOf, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
 })();

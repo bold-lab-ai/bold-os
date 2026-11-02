@@ -122,10 +122,6 @@ button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);
 .pp-choices{display:inline-flex; flex-wrap:wrap; gap:4px; vertical-align:2px;}
 .pp-choices .type-badge{margin-left:0; opacity:.55;}
 .pp-choices .type-badge.is-current, .pp-choices .type-badge:hover{opacity:1;}
-/* Asking for another group, on the profile (member-details.js). */
-.md-g-form{margin:8px 0 4px; max-width:520px;}
-.md-g-form .jn-check{display:flex; gap:8px; align-items:center; margin-bottom:6px; font-family:var(--sans); font-size:14px;}
-.md-g-form textarea{width:100%; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); margin:4px 0 8px;}
 .facts dd .type-badge{vertical-align:2px;}
 .jr-move{margin:6px 0 0; display:flex; gap:6px; align-items:center; font-family:var(--sans); font-size:13px; color:var(--muted);}
 /* A person's page (person.html): the way back to People, as on a skill's page. */
@@ -168,11 +164,20 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .jr-pilot .md-group .jr-feature-group{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:26px 0 8px;}
 /* Room between the testers of every pilot and the first group. */
 .jr-pilot fieldset > .jr-tester-add{margin-bottom:8px;}
-.md-g-expect{font-family:var(--sans); font-size:14px; margin:4px 0 8px;}
-.md-g-expect:empty{display:none;}
-.md-g-expect-head{margin:0 0 4px; font-weight:600;}
-.md-g-expect .wk-desc ul{margin:0; padding-left:20px;}
 /* Events: the search and Whose events (All, Yours), side by side. */
 .ev-filter{display:flex; gap:10px;}
 .ev-filter input{flex:1 1 auto; min-width:0;}
 .ev-filter select{flex:0 0 auto; font-family:var(--sans); font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+/* Asking for another group (group-request.html, pages/group-request.js): the group's terms
+   (its section of Who is BOLD), the tick that accepts them, then Send. */
+.gr-tabs{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 14px;}
+.gr-tabs .type-badge.is-current{background:var(--wash); box-shadow:inset 0 0 0 1px currentColor;}
+.gr-terms{max-width:var(--article-max); padding:14px 18px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); font-size:17px;}
+.gr-terms .md-desc ul{padding-left:22px;}
+.gr-form{max-width:var(--article-max); margin-top:16px; font-family:var(--sans); font-size:14px;}
+.gr-form textarea{display:block; width:100%; box-sizing:border-box; font-family:var(--sans); font-size:14px; padding:7px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); margin:4px 0 12px; resize:vertical;}
+.gr-form .jn-check{display:flex; gap:8px; align-items:flex-start; color:var(--ink); font-weight:600;}
+.gr-form .jn-check input{margin:3px 0 0;}
+.gr-why{color:var(--muted); font-size:13px; margin:8px 0 0;}
+.jr-terms{margin-top:8px; padding:8px 12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);}
+.gr-head{font-family:var(--sans); font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:6px 0 8px;}
