@@ -77,3 +77,9 @@ test('an associate who has done all BOLD-internal asks is told once, and only th
   for (const g of ['pan', 'internal', 'staff', 'exec']) assert.strictEqual(groupReadyNow(g, done, {}, false), false, g);
   assert.match(groupReadyText(), /group-request\.html\?to=internal/);
 });
+test('only who was newly added to a list counts (onProjectJoined, onSeriesJoined)', () => {
+  const { addedTo } = require('../functions/index.js')._internal;
+  assert.deepStrictEqual(addedTo({ joined: ['A@x.org'] }, { joined: ['a@x.org', 'B@x.org'] }, 'joined'), ['b@x.org']);
+  assert.deepStrictEqual(addedTo(null, { members: ['c@x.org'] }, 'members'), ['c@x.org']);
+  assert.deepStrictEqual(addedTo({ joined: ['a@x.org'] }, null, 'joined'), []);
+});

@@ -38,7 +38,7 @@ module.exports = function series(deps){
   const { db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
     googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
     normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL,
-    GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto, onSchedule, tellPeople, checkGroupReady } = deps;
+    GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto, onSchedule, tellPeople } = deps;
   const { rank, VISIBILITY, VIS_RANK, VISIBILITY_NAMES } = require('./access');
   const INVITE_GROUPS = ['everyone', 'associate', 'internal', 'staff', 'exec'];
   const seriesUrl = (id) => SITE_URL + 'series.html?series=' + encodeURIComponent(id);
@@ -289,7 +289,6 @@ module.exports = function series(deps){
         if (!s.invite || s.invite.mode !== 'join') throw new HttpsError('failed-precondition', 'Everyone in its group is invited already.');
         if (d.action === 'join' && !(await access.seesIt(email, s))) throw new HttpsError('permission-denied', 'It’s for ' + VISIBILITY_NAMES[s.visibleTo || 'internal'] + '.');
         await ref.update({ joined: d.action === 'join' ? FieldValue.arrayUnion(email) : FieldValue.arrayRemove(email) });
-        if (d.action === 'join' && checkGroupReady) await checkGroupReady(email);   // a series BOLD-internal may need
         break;
       case 'retry':
         if (!change) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins can do this.');

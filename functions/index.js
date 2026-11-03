@@ -3935,7 +3935,6 @@ exports.projectWorkspace = onCall(
         ? FieldValue.arrayUnion(email)
         : FieldValue.arrayRemove(email), slackSkipped: noSlack ? FieldValue.arrayUnion(email) : FieldValue.arrayRemove(email) }, { merge: true });
       const out = workspaceView(await syncWorkspace(pid));
-      if (joining) await checkGroupReady(email);
       // data.slack === false: not invited to the channel (they chose so).
       if (joining && card.slackChannel && data.slack !== false){
         const n = normalizeProjectChannel(card.slackChannel);
@@ -5724,7 +5723,6 @@ function inviteUrl(inv, id){ return projectPageUrl(inv.cardId, inv.board) + '&in
 async function joinProjectAs(email, pid, card, slackToo){
   await db.collection('projectWorkspaces').doc(pid).set({ joined: FieldValue.arrayUnion(email) }, { merge: true });
   await syncWorkspace(pid);
-  await checkGroupReady(email);
   if (!slackToo || !card || !card.slackChannel) return {};
   try { return { slack: await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, normalizeProjectChannel(card.slackChannel).name) }; }
   catch (err){ return { slack: { error: err.message || 'Couldn’t add them to the Slack channel.' } }; }
@@ -6418,7 +6416,8 @@ function groupReadyText(){
   return '🎉 Congratulations! You’ve done everything BOLD-internal asks of its members, so you can now ask to join it: ' +
     linkedTitle('read what it asks and send your request', SITE_URL + 'group-request.html?to=internal') + '. The PIs and admins decide.';
 }
-// After something they did: never fails what they did (logged instead).
+// In the background, after something they did (database triggers only, so no click waits on it);
+// never fails (logged instead).
 async function checkGroupReady(email){
   try {
     email = String(email || '').toLowerCase();
@@ -6432,6 +6431,20 @@ async function checkGroupReady(email){
     await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'group-ready', emails: [email], headline: groupReadyText() });
   } catch (err){ logger.warn('checkGroupReady failed', { error: String(err && err.message || err) }); }
 }
+// Who's newly in a list, between two versions of a document.
+const addedTo = (before, after, key) => {
+  const was = new Set(((before && before[key]) || []).map((e) => String(e).toLowerCase()));
+  return ((after && after[key]) || []).map((e) => String(e).toLowerCase()).filter((e) => !was.has(e));
+};
+// Joining a project (its workspace's members) or an event series (its `joined`).
+exports.onProjectJoined = onDocumentWritten({ document: 'projectWorkspaces/{pid}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const b = event.data.before.exists ? event.data.before.data() : null, a = event.data.after.exists ? event.data.after.data() : null;
+  for (const e of addedTo(b, a, 'members')) await checkGroupReady(e);
+});
+exports.onSeriesJoined = onDocumentWritten({ document: 'eventSeries/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const b = event.data.before.exists ? event.data.before.data() : null, a = event.data.after.exists ? event.data.after.data() : null;
+  for (const e of addedTo(b, a, 'joined')) await checkGroupReady(e);
+});
 // Marking the BOLDiquette read (written by the page: handbook/boldiquette/readers/{uid}).
 exports.onBoldiquetteRead = onDocumentCreated(
   { document: 'handbook/boldiquette/readers/{uid}', secrets: [SLACK_BOT_TOKEN] },
@@ -7234,7 +7247,7 @@ exports.calendarFeed = agentApi.calendarFeed;
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
   googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
-  onSchedule, checkGroupReady, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
+  onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
@@ -7249,7 +7262,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  groupReadyNow, groupReadyText,
+  groupReadyNow, groupReadyText, addedTo,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
