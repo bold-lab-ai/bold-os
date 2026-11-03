@@ -820,7 +820,7 @@
     try { was = localStorage.getItem(k); localStorage.setItem(k, group); } catch (e){ return; }
     if (!was || was === group) return;
     firebase.app().functions('europe-west2').httpsCallable('onboarding')({}).then(function(r){
-      if (r.data && Array.isArray(r.data.steps) && !r.data.done) location.href = 'get-started.html';
+      if (r.data && Array.isArray(r.data.steps) && !r.data.done) location.href = 'onboarding.html';
     }).catch(function(){});
   }
   // fn() once the Functions SDK is there: loaded (same pinned version) if the page hasn't it.

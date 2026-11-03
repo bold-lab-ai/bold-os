@@ -81,7 +81,7 @@
     if (!ob || !window.BoldOnboarding) return;
     BoldOnboarding.load(function(s){
       ob.hidden = !s || s.done;
-      if (!ob.hidden) ob.innerHTML = 'Your first steps at BOLD: ' + esc(BoldOnboarding.count(s)) + ' done. <a href="get-started.html">Carry on</a>';
+      if (!ob.hidden) ob.innerHTML = 'Your first steps at BOLD: ' + esc(BoldOnboarding.count(s)) + ' done. <a href="onboarding.html">Carry on</a>';
     });
   }
 

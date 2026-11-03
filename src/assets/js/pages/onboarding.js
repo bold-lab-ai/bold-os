@@ -1,7 +1,6 @@
-// Get started (get-started.html) as onboarding (2026-11-02): under the guide's title (its
-// data-slot), the viewer's steps for their group, each ticked when BOLD.OS sees it done
+// Onboarding (onboarding.html; on Get started until 2026-11-03): the viewer's steps for their group, each ticked when BOLD.OS sees it done
 // (onboarding-common.js), and the tour of BOLD.OS (tour.js; its steps are the guide's part
-// `tour`, else the tour's own). The rest of the page is the guide, as before.
+// `tour`, else the tour's own).
 // #tour starts the tour (the home page's and the steps' link); finishing it marks it done.
 (function(){
   var esc = BOLD.escapeHtml;
