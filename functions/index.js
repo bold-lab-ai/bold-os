@@ -6316,7 +6316,7 @@ exports.testAccount = onCall(
 //   lists them in handbook/boldiquette/readers: read-point.js). The tour is optional, not a
 //   step: taking it is marked at its end (onboarding/{email}, server-written), as `tour`;
 // - BOLD-associate: be on a project (join one, or register one);
-// - BOLD-internal and up: own a project (have registered one: its submittedBy), and join every
+// - BOLD-internal and above: own a project (have registered one: its submittedBy), and join every
 //   event series required for their group (eventSeries' requiredFor, set by PIs and admins on
 //   its form: the reading group, the group meeting, Hamming sessions…); one that invites their
 //   whole group counts as joined.

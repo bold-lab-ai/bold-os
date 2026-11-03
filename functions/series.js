@@ -39,7 +39,7 @@ module.exports = function series(deps){
     googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
     normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL,
     GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto, onSchedule, tellPeople } = deps;
-  const { rank } = require('./access');
+  const { rank, VISIBILITY, VIS_RANK, VISIBILITY_NAMES } = require('./access');
   const INVITE_GROUPS = ['everyone', 'associate', 'internal', 'staff', 'exec'];
   const seriesUrl = (id) => SITE_URL + 'series.html?series=' + encodeURIComponent(id);
   const lower = (e) => String(e || '').trim().toLowerCase();
@@ -54,12 +54,16 @@ module.exports = function series(deps){
     if (title.length > 120) return { error: 'Keep the title under 120 characters.' };
     const description = String(d.description || '').trim();
     if (description.length > 5000) return { error: 'Keep the description under 5000 characters.' };
-    const out = { kind, title, description };
+    // Who sees it (and its page, its editions, joining it): that group and those above; 'public' is
+    // anyone, even signed out (2026-11-02). Its invite and who must join it can't reach further.
+    const visibleTo = VISIBILITY.indexOf(d.visibleTo) >= 0 ? d.visibleTo : 'internal';
+    const out = { kind, title, description, visibleTo };
     if (kind === 'editions') {
       const unit = d.cadence && d.cadence.unit === 'week' ? 'week' : 'month', every = Number(d.cadence && d.cadence.every);
       const max = unit === 'week' ? 4 : 24;
       if (!(every >= 1 && every <= max && every % 1 === 0)) return { error: 'Choose how often it happens: every 1 to ' + max + ' ' + unit + 's.' };
       const inviteGroup = d.inviteGroup === 'none' || INVITE_GROUPS.indexOf(d.inviteGroup) >= 0 ? d.inviteGroup : 'internal';
+      if (inviteGroup !== 'none' && VIS_RANK[inviteGroup] < VIS_RANK[visibleTo]) return { error: 'It invites people who can’t see it: invite ' + VISIBILITY_NAMES[visibleTo] + ', or let more see it.' };
       Object.assign(out, { cadence: { every, unit }, proposals: d.proposals === true, inviteGroup });
     } else {
       const meeting = normalizeMeeting(d.meeting);
@@ -67,8 +71,10 @@ module.exports = function series(deps){
       const inv = d.invite || {};
       const invite = inv.mode === 'group' ? { mode: 'group', group: String(inv.group || '') } : { mode: 'join' };
       if (invite.mode === 'group' && INVITE_GROUPS.indexOf(invite.group) < 0) return { error: 'Choose which group is invited.' };
+      if (invite.mode === 'group' && VIS_RANK[invite.group] < VIS_RANK[visibleTo]) return { error: 'It invites people who can’t see it: invite ' + VISIBILITY_NAMES[visibleTo] + ', or let more see it.' };
       // Required for a group and the ones above it (onboarding: each must join it; set by PIs and admins).
       const requiredFor = ['associate', 'internal', 'staff', 'exec'].indexOf(d.requiredFor) >= 0 ? d.requiredFor : '';
+      if (requiredFor && VIS_RANK[requiredFor] < VIS_RANK[visibleTo]) return { error: 'Who must join it can’t see it: let ' + VISIBILITY_NAMES[requiredFor] + ' see it.' };
       Object.assign(out, { meeting, invite, requiredFor });
     }
     const organisers = [];
@@ -185,7 +191,7 @@ module.exports = function series(deps){
   // What the page gets: the series, without anyone's addresses but the caller's own place in it.
   function view(s, me, full){
     const out = {};
-    ['id', 'kind', 'title', 'description', 'meeting', 'invite', 'requiredFor', 'cadence', 'proposals', 'inviteGroup', 'page', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
+    ['id', 'kind', 'title', 'description', 'meeting', 'invite', 'requiredFor', 'visibleTo', 'cadence', 'proposals', 'inviteGroup', 'page', 'hidden', 'pausedAt', 'eventLink', 'error', 'createdAt', 'updatedAt'].forEach((k) => { if (s[k] !== undefined) out[k] = s[k]; });
     const organiser = (s.organisers || []).indexOf(me) >= 0;
     out.organiser = organiser; out.canChange = organiser || full; out.full = full;
     out.joined = (s.joined || []).indexOf(me) >= 0;
@@ -229,7 +235,7 @@ module.exports = function series(deps){
     const snap = await ref.get();
     const s = snap.exists ? snap.data() : null;
     const organiser = !!s && (s.organisers || []).indexOf(email) >= 0;
-    if (!s || (s.hidden && !full && !organiser)) throw new HttpsError('not-found', 'No such recurring event.');
+    if (!s || ((s.hidden || !(await access.seesIt(email, s))) && !full && !organiser)) throw new HttpsError('not-found', 'No such recurring event.');
     const change = organiser || full;
     const stamp = { updatedAt: Date.now(), updatedBy: email };
     switch (d.action) {
@@ -243,6 +249,11 @@ module.exports = function series(deps){
         const drop = n.kind === 'meeting' ? { cadence: FieldValue.delete(), proposals: FieldValue.delete() }
           : { meeting: FieldValue.delete(), invite: FieldValue.delete(), pausedAt: FieldValue.delete(), pausedBy: FieldValue.delete() };
         await ref.set(Object.assign(drop, n, stamp), { merge: true });
+        // Its editions are seen by whoever sees it.
+        if ((s.visibleTo || 'internal') !== n.visibleTo) {
+          const eds = await db.collection('events').where('series', '==', id).get();
+          const b = db.batch(); eds.docs.forEach((x) => b.update(x.ref, { visibleTo: n.visibleTo })); if (eds.size) await b.commit();
+        }
         break;
       }
       case 'release': case 'hide':
@@ -261,7 +272,7 @@ module.exports = function series(deps){
         const now = Date.now();
         // A series with its own page (`page`, set in code: the Festival's, Collaboration week's) shows it there.
         const inviteGroup = d.inviteGroup === 'none' || INVITE_GROUPS.indexOf(d.inviteGroup) >= 0 ? d.inviteGroup : (s.inviteGroup || 'none');
-        await eref.set(Object.assign({ slug, series: id, hidden: true, inviteGroup, title: s.title, startDate: start, endDate: end, place: last.place || '',
+        await eref.set(Object.assign({ slug, series: id, hidden: true, visibleTo: s.visibleTo || 'internal', inviteGroup, title: s.title, startDate: start, endDate: end, place: last.place || '',
           description: s.description || last.description || '', createdAt: now, createdBy: email, updatedAt: now, updatedBy: email },
           /^[a-z0-9-]+\.html$/.test(s.page || '') ? { page: s.page + '?edition=' + slug } : {}));
         await ref.set({ nudgedFor: FieldValue.delete() }, { merge: true });
@@ -276,6 +287,7 @@ module.exports = function series(deps){
         if (s.kind === 'editions') throw new HttpsError('invalid-argument', 'Only one with a Google Calendar invite is joined.');
         if (s.hidden) throw new HttpsError('failed-precondition', 'It isn’t released yet.');
         if (!s.invite || s.invite.mode !== 'join') throw new HttpsError('failed-precondition', 'Everyone in its group is invited already.');
+        if (d.action === 'join' && !(await access.seesIt(email, s))) throw new HttpsError('permission-denied', 'It’s for ' + VISIBILITY_NAMES[s.visibleTo || 'internal'] + '.');
         await ref.update({ joined: d.action === 'join' ? FieldValue.arrayUnion(email) : FieldValue.arrayRemove(email) });
         break;
       case 'retry':

@@ -91,7 +91,7 @@ window.SeriesEditions = (function(){
       db.collection('eventSeries').doc(id).get().then(function(d){ s = d.exists ? d.data() : null; draw(); }).catch(function(){});
       var col = db.collection('events').where('series', '==', id);
       // PIs, admins and its organisers see the hidden ones too; everyone else, the released.
-      col.get().catch(function(){ return col.where('hidden', '==', false).get(); }).then(function(snap){
+      col.get().catch(function(){ return col.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()).get(); }).then(function(snap){
         editions = snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && /^\d{4}-\d{2}-\d{2}$/.test(e.startDate || ''); })
           .sort(function(a, b){ return a.startDate < b.startDate ? -1 : 1; });
         if (own && !chosen) {

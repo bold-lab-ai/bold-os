@@ -95,7 +95,9 @@
     document.title = x.title + ' | BOLD Lab';
     if (editing) {
       // Who Google invites, on any event but a built-in page's.
-      var inviteField = !x.page || x.series ? E.inviteSelectHtml('ev-invite', x.inviteGroup) : '';
+      var inviteField = (!x.page || x.series ? E.inviteSelectHtml('ev-invite', x.inviteGroup) : '') +
+        // Who sees it: its own on a one-off event; an edition's is its series' (set there).
+        E.visibleSelectHtml('ev-visible', x.visibleTo, x.series ? 'Set on its series: its editions follow it' : '');
       body.innerHTML = BACK + '<div class="event-form">' + E.formHtml(x).replace('<p class="ev-error" hidden></p>', inviteField + '<p class="ev-error" hidden></p>') +
         '<div class="event-form-actions"><button type="button" class="ev-save">Save</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
       var form = body.querySelector('.event-form');
@@ -107,6 +109,8 @@
         save.disabled = true;
         var inv = form.querySelector('.ev-invite');
         if (inv && !inv.disabled) r.fields.inviteGroup = inv.value;
+        var vis = form.querySelector('.ev-visible');
+        if (vis && !vis.disabled) r.fields.visibleTo = vis.value;
         ref.update(Object.assign(r.fields, { updatedAt: Date.now(), updatedBy: me.email })).then(function(){
           editing = false; render();
         }).catch(function(err){
@@ -123,6 +127,7 @@
       '<div><span class="eyebrow">' + (past ? 'Past' : 'Upcoming') + '</span></div>' +
       '<h1>' + esc(x.title) + '</h1>' +
       '<p class="hero-when">' + esc(E.when(x.startDate, x.endDate)) + (x.place ? ' &middot; ' + esc(x.place) : '') + '</p>' +
+      '<p class="event-series">Who can see it: ' + esc(E.visibleText(x.visibleTo)) + '</p>' +
       (x.inviteGroup && x.inviteGroup !== 'none' ? '<p class="event-series">Google Calendar ' + (x.hidden ? 'will invite ' : 'invites ') + esc(E.inviteText(x.inviteGroup)) + (x.hidden ? ', once it’s released' : '') + '.</p>' : '') +
       seriesLine() +
       paragraphs(x.description) +

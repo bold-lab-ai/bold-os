@@ -764,6 +764,14 @@
     return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can see what).';
   };
   BOLD.myGroup = function(){ return access ? access.group : null; };
+  // The event and series levels (`visibleTo`) the viewer sees: from 'public' (anyone, even signed out)
+  // up to their group's (firestore.rules visibleLevels; functions/access.js). Lists query with them.
+  var VIS = ['public', 'everyone', 'associate', 'internal', 'staff', 'exec'];
+  BOLD.visibleLevels = function(){
+    var g = !access || !access.e ? 'out' : access.fullWrite ? 'exec' : access.group;
+    var r = { out: 0, everyone: 1, pan: 1, associate: 2, internal: 3, staff: 4, exec: 5 }[g] || 0;
+    return VIS.slice(0, r + 1);
+  };
   // fn(access) once known and on every change; replayed at once if known.
   BOLD.onAccess = function(fn){ accessListeners.push(fn); if (access) fn(access); };
   // fn(access) once, when this visit has read it (not the last visit's copy).
@@ -1269,8 +1277,8 @@
           .then(function(lists){ return [].concat.apply([], lists); });
       };
       return Promise.all([
-        get(all ? [se] : [se.where('hidden', '==', false)].concat(me ? [se.where('organisers', 'array-contains', me)] : [])),
-        get(all ? [ev] : [ev.where('hidden', '==', false)].concat(me ? [ev.where('createdBy', '==', me)] : [])),
+        get(all ? [se] : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels())].concat(me ? [se.where('organisers', 'array-contains', me)] : [])),
+        get(all ? [ev] : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels())].concat(me ? [ev.where('createdBy', '==', me)] : [])),
       ]).then(function(r){
         var seen = {}, once = function(k){ if (seen[k]) return false; seen[k] = true; return true; };
         var series = r[0].filter(function(x){ return x.id && x.title && once('s:' + x.id); })

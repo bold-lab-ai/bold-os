@@ -70,7 +70,7 @@
     events: function(){
       var talk = function(x){ return [x.abstract, x.speaker, x.affiliation, x.description, x.summary].filter(Boolean).join(' '); };
       return Promise.all([
-        db.collection('events').where('hidden', '==', false).get(),
+        db.collection('events').where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()).get(),
         db.collection('collabWeekSessions').get(),
         db.collection('collabWeekTalks').get(),
       ]).then(function(r){

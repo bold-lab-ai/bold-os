@@ -502,8 +502,8 @@
     E.access(function(all){
       if (signIn !== unsubs) return; // signed out or in again meanwhile
       var ev = db.collection('events'), se = db.collection('eventSeries'), fields = function(d){ return d.data(); };
-      watch('event', all ? ev : [ev.where('hidden', '==', false), ev.where('createdBy', '==', user.email || '')], fields, 'slug');
-      watch('series', all ? se : [se.where('hidden', '==', false), se.where('organisers', 'array-contains', mine)], fields, 'id');
+      watch('event', all ? ev : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), ev.where('createdBy', '==', user.email || '')], fields, 'slug');
+      watch('series', all ? se : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), se.where('organisers', 'array-contains', mine)], fields, 'id');
     });
     // My open requests to join a student's meeting.
     unsubs.push(db.collection('studyRequests').where('email', '==', String(user.email || '').toLowerCase()).where('status', '==', 'open').onSnapshot(function(snap){

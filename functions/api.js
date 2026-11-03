@@ -20,6 +20,7 @@
 // RATE_PER_MINUTE requests a minute. Every call is logged in apiLog { email, token
 // (prefix), tool, args, at, expireAt } (expireAt: for a Firestore TTL policy, 90 days).
 const crypto = require('crypto');
+const { seesEvent } = require('./access');
 // Search ranking, shared with the site: copied here at deploy (firebase.json's predeploy),
 // else the site's copy (run as a script: the repo's root package is an ES module).
 const rank = (function(){
@@ -212,6 +213,9 @@ module.exports = function(deps){
     talks: () => cached('talks', async () => docs(await db.collection('collabWeekTalks').get())),
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
     series: () => cached('series', async () => docs(await db.collection('eventSeries').get())),
+    // Only the events and series `email` sees (their visibleTo; access.seesEvent), for everything that lists them.
+    eventsFor: async (email) => { const g = await access.groupFor(email); return (await lab.events()).filter((x) => seesEvent(g, x)); },
+    seriesFor: async (email) => { const g = await access.groupFor(email); return (await lab.series()).filter((x) => seesEvent(g, x)); },
     skills: () => cached('skills', async () => docs(await db.collection('skills').get())),
     guides: () => cached('guides', async () => docs(await db.collection('guides').get())),
     handbook: () => cached('handbook', async () => docs(await db.collection('handbook').get())),
@@ -295,11 +299,11 @@ module.exports = function(deps){
     const mine = (list) => (list || []).some((e) => String(e || '').toLowerCase() === email);
     let events = [], meetings = [];
     if (seeEvents) {
-      events = (await lab.events()).filter((e) => !isHidden(e, full)).map((e) => ({
+      events = (await lab.eventsFor(email)).filter((e) => !isHidden(e, full)).map((e) => ({
         id: e._id, title: e.title, start: e.startDate, end: e.endDate, place: e.place || '', description: plain(e.description),
         url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
       // Lab meetings (eventSeries): the released ones they aren't invited to.
-      (await lab.series()).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {
+      (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {
         meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, start: x.eventStart, pausedAt: x.pausedAt,
           description: plain(x.description), url: url('series.html?series=' + encodeURIComponent(x._id)) });
       });
@@ -501,7 +505,7 @@ module.exports = function(deps){
       }
     }));
     if (want('skills')) jobs.push(lab.skills().then((l) => l.forEach((x) => item('skills', x.title || x.name || x._id, 'Skill', [x.name, x.description, x.body].join(' '), 'skill.html?skill=' + encodeURIComponent(x._id)))));
-    if (want('events')) jobs.push(Promise.all([lab.events(), lab.sessions(), lab.talks()]).then(([evs, ss, ts]) => {
+    if (want('events')) jobs.push(Promise.all([lab.eventsFor(who.email), lab.sessions(), lab.talks()]).then(([evs, ss, ts]) => {
       const talk = (x) => [x.abstract, x.speaker, x.affiliation, x.description, x.summary].filter(Boolean).join(' ');
       evs.filter((x) => !isHidden(x, full)).forEach((x) => item('events', x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), x.page || 'event.html?event=' + encodeURIComponent(x._id)));
       ss.forEach((x) => item('events', x.title, 'Session', talk(x), 'session.html?session=' + encodeURIComponent(x._id)));
@@ -663,7 +667,7 @@ module.exports = function(deps){
     const kind = a.kind || 'all', out = { from, to };
     const [full, name] = await Promise.all([isFullWrite(who.email), nameOf()]);
     if (kind !== 'meetings') {
-      const [evs, sessions] = await Promise.all([lab.events(), lab.sessions()]);
+      const [evs, sessions] = await Promise.all([lab.eventsFor(who.email), lab.sessions()]);
       const titles = {};
       sessions.forEach((s) => { titles[s._id] = s.title; });
       out.events = evs.filter((e) => !isHidden(e, full) && e.startDate && (e.endDate || e.startDate) >= from && e.startDate <= to)
@@ -688,7 +692,7 @@ module.exports = function(deps){
         .map((s) => ({ student: s.name || name(s._id), title: s.title || '', when: meetingText(s.meeting), paused: !!s.pausedAt,
           you_are_in_it: (s.everyone || []).some((e) => String(e).toLowerCase() === who.email) }));
       if (await access.can(who.email, 'events', 'view')) {
-        out.lab_meetings = (await lab.series()).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt))
+        out.lab_meetings = (await lab.seriesFor(who.email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt))
           .map((x) => ({ id: x._id, title: x.title, when: meetingText(x.meeting), paused: !!x.pausedAt,
             invited: x.invite && x.invite.mode === 'group' ? (GROUP_LABEL[x.invite.group] || 'everyone in BOLD') + ' and above' : 'whoever joins',
             you_are_invited: (x.guests || []).indexOf(who.email) >= 0, url: url('series.html?series=' + encodeURIComponent(x._id)) }));

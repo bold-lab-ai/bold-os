@@ -452,7 +452,7 @@ module.exports = function(ctx){
     let occasion = old && old.occasion;
     if (a.event || a.venue || a.where) {
       if (a.event) {
-        const e = (await lab.events()).find((x) => x._id === a.event || fold(x.title) === fold(a.event));
+        const e = (await lab.eventsFor(who.email)).find((x) => x._id === a.event || fold(x.title) === fold(a.event));
         if (!e) throw httpError(404, 'No event “' + a.event + '”.');
         occasion = { kind: 'event', id: e._id, label: e.title };
       } else if (a.venue) {
@@ -547,20 +547,22 @@ module.exports = function(ctx){
   // Recurring events every few weeks (eventSeries of kind 'meeting'; functions/series.js), through its callable.
   async function labMeetings(who, a){
     const full = await isFullWrite(who.email);
-    const pool = (await lab.series()).filter((x) => x.kind !== 'editions' && (x.hidden === false || full || (x.organisers || []).indexOf(who.email) >= 0))
+    const pool = (await lab.seriesFor(who.email)).filter((x) => x.kind !== 'editions' && (x.hidden === false || full || (x.organisers || []).indexOf(who.email) >= 0))
       .map((x) => ({ id: x._id, name: x.title }));
     const meeting = () => ({ day: String(a.day || '').toUpperCase(), time: a.time, minutes: Number(a.minutes || 60), every: Number(a.every || 1),
       until: a.until || '', link: a.link || '' });
     const invite = () => a.invite && a.invite !== 'join' ? { mode: 'group', group: a.invite } : { mode: 'join' };
-    if (a.action === 'add') return act(who, 'eventSeries', { action: 'save', title: need(a.title, 'a title'), description: a.description || '', meeting: meeting(), invite: invite(), organisers: [] });
+    if (a.action === 'add') return act(who, 'eventSeries', { action: 'save', title: need(a.title, 'a title'), description: a.description || '', meeting: meeting(), invite: invite(), organisers: [], visibleTo: a.visible || 'internal' });
     const id = pool.find((x) => x.id === a.meeting) ? a.meeting : (pool.find((x) => fold(x.name) === fold(a.meeting)) || {}).id;
     if (!id) throw httpError(404, 'No recurring event “' + (a.meeting || '') + '”.');
     if (a.action === 'update') {
-      const s = (await lab.series()).find((x) => x._id === id);
+      const s = (await lab.seriesFor(who.email)).find((x) => x._id === id);
       const m = Object.assign({}, s.meeting, a.day ? { day: String(a.day).toUpperCase() } : {}, a.time ? { time: a.time } : {}, a.minutes ? { minutes: Number(a.minutes) } : {},
         a.every ? { every: Number(a.every) } : {}, a.until !== undefined ? { until: a.until } : {}, a.link !== undefined ? { link: a.link } : {});
       return act(who, 'eventSeries', { action: 'save', id, title: a.title || s.title, description: a.description !== undefined ? a.description : s.description,
-        meeting: m, invite: a.invite ? invite() : s.invite, organisers: s.organisers });
+        meeting: m, invite: a.invite ? invite() : s.invite, organisers: s.organisers,
+        // What it doesn't change stays: who sees it, and who must join it.
+        visibleTo: a.visible || s.visibleTo || 'internal', requiredFor: s.requiredFor || '' });
     }
     if (['join', 'leave', 'pause', 'resume', 'release', 'hide', 'delete'].indexOf(a.action) >= 0) return act(who, 'eventSeries', { action: a.action, id });
     throw httpError(400, 'Unknown action.');
@@ -608,13 +610,14 @@ module.exports = function(ctx){
       const title = need(a.title, 'a title'), start = iso(need(a.start, 'the start date'), 'the start date'), end = iso(a.end || start, 'the end date');
       if (end < start) throw httpError(400, 'It has to end on or after the day it starts.');
       const slug = (fold(title).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'event') + '-' + Math.random().toString(16).slice(2, 8);
-      await asUser(who, 'create', 'events', { slug, hidden: true, title, startDate: start, endDate: end, place: a.place || '', description: a.description || '', createdAt: now, createdBy: who.email, updatedAt: now, updatedBy: who.email }, slug);
+      const visibleTo = ['public', 'everyone', 'associate', 'internal', 'staff', 'exec'].indexOf(a.visible) >= 0 ? a.visible : 'internal';
+      await asUser(who, 'create', 'events', { slug, hidden: true, visibleTo, title, startDate: start, endDate: end, place: a.place || '', description: a.description || '', createdAt: now, createdBy: who.email, updatedAt: now, updatedBy: who.email }, slug);
       return { slug, url: url('event.html?event=' + slug), note: 'It starts hidden: you release it (action release), which shows it to the lab and has Google Calendar invite its group. Tell your person exactly that first.' };
     }
     const full = await isFullWrite(who.email);
     // Hidden ones: a PI's or admin's, or the ones they added. Releasing and hiding are
     // whoever added it's (or its series' organisers'), as on the page: the rules decide.
-    const e = (await lab.events()).filter((x) => x.hidden === false || full || x.createdBy === who.email)
+    const e = (await lab.eventsFor(who.email)).filter((x) => x.hidden === false || full || x.createdBy === who.email)
       .find((x) => x._id === a.event || fold(x.title) === fold(a.event));
     if (!e) throw httpError(404, 'No event “' + a.event + '”.');
     const stamp = { updatedAt: now, updatedBy: who.email };
@@ -748,7 +751,7 @@ module.exports = function(ctx){
       inputSchema: S({ action: ACTIONS(['add', 'update', 'join', 'leave', 'pause', 'resume', 'release', 'hide', 'delete']), meeting: str('Its name or id (all but add).'),
         title: str(''), description: str(''), day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM, London time'), minutes: { type: 'integer', description: '15–240, in 15s (default 60)' },
         every: { type: 'integer', description: 'Every N weeks, 1–4 (default 1)' }, until: str('YYYY-MM-DD, optional last day'), link: str('Its own meeting link (https), instead of a new Google Meet'),
-        invite: ACTIONS(['join', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
+        invite: ACTIONS(['join', 'everyone', 'associate', 'internal', 'staff', 'exec']), visible: ACTIONS(['public', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
     { name: 'profile', run: profile,
       description: 'Your profile and place in BOLD: update your details, ask to move to another group (Who is BOLD: gives the page where your person accepts what the group asks of them and sends it; the PIs and admins decide), withdraw that request, say who invited you to the BOLD Slack, and confirm (or deny) that you invited someone who says you did.',
       inputSchema: S(Object.assign({ action: ACTIONS(['update', 'ask_group', 'withdraw_group_request', 'set_inviter', 'confirm_invite', 'deny_invite']) },
@@ -756,7 +759,7 @@ module.exports = function(ctx){
         { group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']), note: str(''), request_id: str(''), inviter: str('set_inviter: their name ("" for nobody)'), member: str('confirm_invite, deny_invite: the member’s name') })) },
     { name: 'events', run: events,
       description: 'The lab’s events: add one (it starts hidden, until you release it), update, release, hide or delete one you added or whose series you organise (PIs and admins: any). Releasing one has Google Calendar invite its group: tell your person that, and who, before you do it.',
-      inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str('') }) },
+      inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str(''), visible: ACTIONS(['public', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
     { name: 'requests', run: requests,
       description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody; a change of group, any), or set someone’s group.',
       inputSchema: S({ action: ACTIONS(['list', 'approve_join', 'decline_join', 'approve_group', 'decline_group', 'set_group']), request_id: str(''), member: str('set_group: their name'), group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']) }) },

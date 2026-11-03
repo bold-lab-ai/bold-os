@@ -37,7 +37,7 @@ const LEVEL = (v, e) => ({ view: v, edit: e });
   set('roles/admins', { emails: [] });
   set('settings/access', { pages: {
     boldiquette: LEVEL('everyone', 'internal'), profile: LEVEL('everyone', 'everyone'), 'get-started': LEVEL('everyone', 'associate'),
-    projects: LEVEL('internal', 'associate'), events: LEVEL('associate', 'internal'), calendar: LEVEL('internal', 'internal'),
+    projects: LEVEL('internal', 'associate'), events: LEVEL('everyone', 'internal'), calendar: LEVEL('internal', 'internal'),
     people: LEVEL('internal', 'internal'), requests: LEVEL('internal', 'internal'), 'service-desk': LEVEL('associate', 'associate'),
     guides: LEVEL('internal', 'internal'), agents: LEVEL('internal', 'internal'), tools: LEVEL('internal', 'internal'), skills: LEVEL('internal', 'internal'),
     'ml-cycle': LEVEL('internal', 'internal'), search: LEVEL('internal', 'internal'), changelog: LEVEL('internal', 'internal'),
@@ -61,12 +61,19 @@ const LEVEL = (v, e) => ({ view: v, edit: e });
   set('guides/get-started-at-bold', { title: 'Get started at BOLD', description: 'Getting set up at BOLD.', parts: [
     { id: 'everyone', section: 'BOLD', title: 'Checklist', body: '- Ask to join on BOLD.OS\n- Fill in your profile\n- Read the BOLDiquette' }] });
   const meeting = (day) => ({ day, time: '15:00', minutes: 60, every: 1 });
-  set('eventSeries/reading-group', { id: 'reading-group', kind: 'meeting', title: 'BOLD Reading Group', description: 'Papers, every week.', hidden: false,
+  set('eventSeries/reading-group', { id: 'reading-group', kind: 'meeting', title: 'BOLD Reading Group', description: 'Papers, every week.', hidden: false, visibleTo: 'internal',
     invite: { mode: 'join' }, requiredFor: 'internal', meeting: meeting('TH'), joined: ['internal@example.com'], organisers: ['pi@example.com'], createdBy: 'pi@example.com' });
-  set('eventSeries/group-meeting', { id: 'group-meeting', kind: 'meeting', title: 'Group meeting', description: 'The lab, every week.', hidden: false,
+  set('eventSeries/group-meeting', { id: 'group-meeting', kind: 'meeting', title: 'Group meeting', description: 'The lab, every week.', hidden: false, visibleTo: 'internal',
     invite: { mode: 'join' }, requiredFor: 'internal', meeting: meeting('MO'), joined: ['internal@example.com'], organisers: ['pi@example.com'], createdBy: 'pi@example.com' });
-  set('eventSeries/hamming', { id: 'hamming', kind: 'meeting', title: 'Hamming Sessions', description: 'What are the important problems?', hidden: false,
+  set('eventSeries/hamming', { id: 'hamming', kind: 'meeting', title: 'Hamming Sessions', description: 'What are the important problems?', hidden: false, visibleTo: 'internal',
     invite: { mode: 'group', group: 'internal' }, requiredFor: 'internal', meeting: meeting('WE'), joined: [], organisers: ['pi@example.com'], createdBy: 'pi@example.com' });
+  // Who sees which (visibleTo): the Festival anyone, even signed out; Collaboration week associates and above.
+  set('eventSeries/bold-festival', { id: 'bold-festival', kind: 'editions', title: 'Festival', description: 'BOLD’s festival.', hidden: false, visibleTo: 'public',
+    cadence: { every: 12, unit: 'month' }, inviteGroup: 'none', joined: [], organisers: ['pi@example.com'], createdBy: 'pi@example.com' });
+  set('events/bold-festival-2027-06-01', { slug: 'bold-festival-2027-06-01', series: 'bold-festival', title: 'Festival', hidden: false, visibleTo: 'public', startDate: '2027-06-01', endDate: '2027-06-03', place: 'Oxford', createdBy: 'pi@example.com' });
+  set('eventSeries/collaboration-week', { id: 'collaboration-week', kind: 'editions', title: 'Collaboration week', description: 'A week of working together.', hidden: false, visibleTo: 'associate',
+    cadence: { every: 12, unit: 'month' }, inviteGroup: 'associate', joined: [], organisers: ['pi@example.com'], createdBy: 'pi@example.com' });
+  set('events/collaboration-week-2027-03-01', { slug: 'collaboration-week-2027-03-01', series: 'collaboration-week', title: 'Collaboration week', hidden: false, visibleTo: 'associate', startDate: '2027-03-01', endDate: '2027-03-05', place: 'London', createdBy: 'pi@example.com' });
   const card = (title, by, name) => ({ title, pid: title.toLowerCase().replace(/\W+/g, '-'), submittedBy: { name, email: by }, authors: [{ name, email: by }], authorEmails: [by],
     keywords: ['rl'], badges: [], abstract: 'A made-up project for the test copy.', status: 'ongoing', createdAt: Date.now() });
   set('projects/diverging-runs', card('Diverging runs', 'internal@example.com', 'Ines Internal'));
@@ -74,5 +81,5 @@ const LEVEL = (v, e) => ({ view: v, edit: e });
   set('projects/world-models', card('World models', 'pi@example.com', 'Pat PI'));
   set('projectWorkspaces/world-models', { members: ['pi@example.com'], joined: [], startedAt: Date.now() });
   await b.commit();
-  console.log('Seeded the demo project: 5 accounts, Who is BOLD (' + (process.env.BOLDIQUETTE_PARTS ? 'the real one, from your file' : 'a stand-in') + '), 3 series, 2 projects.');
+  console.log('Seeded the demo project: 5 accounts, Who is BOLD (' + (process.env.BOLDIQUETTE_PARTS ? 'the real one, from your file' : 'a stand-in') + '), 5 series, 2 events, 2 projects.');
 })().catch((e) => { console.error(e); process.exit(1); });

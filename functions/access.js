@@ -212,6 +212,20 @@ module.exports = function access({ db, groupOf, isFullWrite, viewingAs, viewingT
     try { return parseAccessTable(b.body); }
     catch (err) { throw new HttpsError('failed-precondition', 'Who can see what can’t be read: ' + err.message); }
   }
-  return { table, groupFor, can, requireAccess, checkTableChange, forget(){ cache = null; } };
+  // Whether `email` (null: signed out) sees event or series x (its visibleTo).
+  async function seesIt(email, x){ return seesEvent(await groupFor(email), x); }
+  return { table, groupFor, can, requireAccess, checkTableChange, seesIt, forget(){ cache = null; } };
 };
-Object.assign(module.exports, { ACCESS_PART, ACCESS_INTRO, setAccessRow, accessPartBody, accessChangeText, accessRowsChanged, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, GUIDE_AREAS, guideArea, parseAccessTable, accessTableMarkdown, rank });
+// Who sees an event series or an event (eventSeries' and events' `visibleTo`, 2026-11-02): that
+// group and those above; 'public' is anyone, even signed out. Without one, BOLD-internal (what every
+// event was before). An edition carries its series'. The rules hold to the same (firestore.rules
+// eventVisible), and every page asks only for the levels its viewer has (BOLD.visibleLevels).
+const VISIBILITY = ['public', 'everyone', 'associate', 'internal', 'staff', 'exec'];
+const VIS_RANK = { out: 0, public: 0, everyone: 1, pan: 1, associate: 2, internal: 3, staff: 4, exec: 5 };
+const visibilityOf = (x) => (x && VISIBILITY.indexOf(x.visibleTo) >= 0 ? x.visibleTo : 'internal');
+const seesEvent = (group, x) => (VIS_RANK[group] || 0) >= VIS_RANK[visibilityOf(x)];
+const visibleLevels = (group) => VISIBILITY.filter((l) => VIS_RANK[l] <= (VIS_RANK[group] || 0));
+const VISIBILITY_NAMES = { public: 'Anyone, even signed out', everyone: 'Everyone signed in', associate: 'BOLD-associate and above',
+  internal: 'BOLD-internal and above', staff: 'BOLD-staff and above', exec: 'BOLD-exec' };
+
+Object.assign(module.exports, { VISIBILITY, VIS_RANK, visibilityOf, seesEvent, visibleLevels, VISIBILITY_NAMES, ACCESS_PART, ACCESS_INTRO, setAccessRow, accessPartBody, accessChangeText, accessRowsChanged, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, GUIDE_AREAS, guideArea, parseAccessTable, accessTableMarkdown, rank });

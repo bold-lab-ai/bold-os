@@ -657,7 +657,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function loadOccasions(){
     loadVenues();
     if (events) return;
-    db.collection('events').where('hidden', '==', false).get().then(function(snap){
+    db.collection('events').where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()).get().then(function(snap){
       events = snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title; })
         .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; });
       if (editing && editing.indexOf('talk:') === 0) { renderTalkOccasion(); fillSessions(); }
