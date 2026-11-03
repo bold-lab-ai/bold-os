@@ -73,10 +73,11 @@ window.BoldProjectLinks = (function(){
     function load(user){
       me = user ? { email: user.email || '', name: user.displayName || '' } : null;
       list = []; mine = null; open = false; error = ''; added = null;
-      if (!me || !opts.slug) return;
-      try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
+      // Signed out, on a public event's page (public-db.js): just the list.
+      if ((!me && !BOLD.eventDbPublic) || !opts.slug) return;
+      try { db = (BOLD.eventDb ? BOLD.eventDb() : firebase.firestore(BOLD.getApp())); } catch (e){ return; }
       find();
-      loadMine();
+      if (me) loadMine();
     }
 
     // The project this talk or session is linked to, among the viewer's: the form's starting choice.

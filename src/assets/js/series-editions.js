@@ -28,7 +28,7 @@ window.SeriesEditions = (function(){
     var nav = document.getElementById('editionSwitch');
     if (mounted || !nav) return;
     mounted = true;
-    var db = firebase.firestore(BOLD.getApp()), me = null, s = null, editions = [], planning = null, busy = false;
+    var db = (BOLD.eventDb ? BOLD.eventDb() : firebase.firestore(BOLD.getApp())), me = null, s = null, editions = [], planning = null, busy = false;
     var page = location.pathname.replace(/^.*\//, '') || 'event.html';
     function href(e){ return own ? page + '?edition=' + encodeURIComponent(e.slug) : 'event.html?event=' + encodeURIComponent(e.slug); }
     function canChange(){ return !!(s && me && (BOLD.isFullWrite() || (s.organisers || []).indexOf(me.email.toLowerCase()) >= 0)); }
@@ -87,7 +87,7 @@ window.SeriesEditions = (function(){
     BOLD.onAccess(function(){ if (s) draw(); });
     BOLD.onUser(function(user){
       me = user;
-      if (!user) return;
+      if (!user && !BOLD.eventDbPublic) return;   // signed out: a public series' (public-db.js)
       db.collection('eventSeries').doc(id).get().then(function(d){ s = d.exists ? d.data() : null; draw(); }).catch(function(){});
       var col = db.collection('events').where('series', '==', id);
       // PIs, admins and its organisers see the hidden ones too; everyone else, the released.

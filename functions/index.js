@@ -7198,6 +7198,8 @@ exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
 exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
+// A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
+exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.

@@ -502,8 +502,12 @@ service cloud.firestore {
     // Each is for one occurrence (eventSlug), proposed only while its call is open
     // (events/{slug}.proposalsOpen, opened and closed on its page by its organisers, PIs
     // and admins), and stays with it.
+    // Sessions, talks and proposals exist only for Collaboration Week (BOLD-associate and above)
+    // and the Festival (anyone): read directly from BOLD-associate up; a public event's are served,
+    // cut down, to everyone else by publicEvent (functions/public-event.js). (2026-11-03)
+    function eventContent() { return may('events', 'view') && myRank() >= 2; }
     match /collabWeekProposals/{proposalId} {
-      allow read: if may('events', 'view');
+      allow read: if eventContent();
       allow create: if may('events', 'edit') && request.resource.data.email == email()
         && request.resource.data.eventSlug is string
         && get(/databases/$(database)/documents/events/$(request.resource.data.eventSlug)).data.get('proposalsOpen', false) == true;
@@ -521,7 +525,7 @@ service cloud.firestore {
     // delete it; a lead can edit their session's fields but not who the
     // leads are, nor its event, type or venue.
     match /collabWeekSessions/{slug} {
-      allow read: if may('events', 'view');
+      allow read: if eventContent();
       allow create, delete: if hasFullWrite();
       allow update: if hasFullWrite() || (
         may('events', 'edit') && email().lower() in resource.data.leadEmails &&
@@ -534,7 +538,7 @@ service cloud.firestore {
     // (functions/index.js), which check the caller's email is a presenter's,
     // a session lead's or a PI/admin's.
     match /collabWeekTalks/{slug} {
-      allow read: if may('events', 'view');
+      allow read: if eventContent();
       allow write: if false;
     }
 

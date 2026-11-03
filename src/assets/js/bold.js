@@ -1167,10 +1167,13 @@
       });
       return;
     }
+    // Open to anyone signed out (front matter openSignedOut: the Festival's pages, which then show
+    // only what's public, public-db.js); signed in, gated as any other page.
+    var openSignedOut = shell.hasAttribute('data-open-signed-out');
     BOLD.onUser(function(user){
       var gate = document.getElementById('pageGate');
-      if (gate) gate.hidden = !!user;
-      if (!user) shell.hidden = true;
+      if (gate) gate.hidden = !!user || openSignedOut;
+      if (!user) shell.hidden = !openSignedOut;
     });
     // A page whose own data says the viewer may see it lifts the gate (BOLD.allowPage): a
     // project's page, once the rules let them read the project as one of its people (#148).

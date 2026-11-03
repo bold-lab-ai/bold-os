@@ -46,7 +46,7 @@
 
   // The call for proposals, the occurrence's own (`proposalsOpen` on events/{slug}; closed
   // unless opened): open, a Propose button; its organisers, PIs and admins open and close it.
-  var callEl = document.getElementById('proposalsCall'), db = firebase.firestore(BOLD.getApp());
+  var callEl = document.getElementById('proposalsCall'), db = (BOLD.eventDb ? BOLD.eventDb() : firebase.firestore(BOLD.getApp()));
   var ev = null, series = null, me = null, busy = false;
   function canRun(){
     return !!(me && ev && (BOLD.isFullWrite() || (ev.createdBy && ev.createdBy === me.email) ||
@@ -56,10 +56,12 @@
     if (!callEl || !ev) return;
     var open = ev.proposalsOpen === true;
     callEl.innerHTML = '<p class="cfp-state">' + (open ? 'The call for proposals is open.' : 'The call for proposals is closed.') + '</p>' +
-      (open ? '<a class="btn-box is-primary cfp-propose" href="event-collaboration-week-propose.html?event=' + encodeURIComponent(slug) + '">Propose a workshop, pitch or talk</a>' : '') +
+      (open && !me ? '<button type="button" class="btn-box is-primary cfp-signin">Sign in to propose</button>' : '') +
+      (open && me ? '<a class="btn-box is-primary cfp-propose" href="event-collaboration-week-propose.html?event=' + encodeURIComponent(slug) + '">Propose a workshop, pitch or talk</a>' : '') +
       (canRun() ? '<button type="button" class="btn-text cfp-toggle"' + (busy ? ' disabled' : '') + '>' + (open ? 'Close the call' : 'Open the call') + '</button>' : '');
   }
   if (callEl) callEl.addEventListener('click', function(e){
+    if (e.target.closest('.cfp-signin')) { BOLD.signIn(); return; }
     var b = e.target.closest('.cfp-toggle');
     if (!b || b.disabled) return;
     busy = true; drawCall();
@@ -81,12 +83,14 @@
     }
   } catch (e){}
   BOLD.onUser(function(user){
-    els.signedOut.hidden = !!user;
-    els.signedIn.hidden = !user;
+    // Signed out, a public event's proposals still show (public-db.js), with "Sign in to propose".
+    var shown = !!user || !!BOLD.eventDbPublic;
+    els.signedOut.hidden = shown;
+    els.signedIn.hidden = !shown;
     if (!user) document.documentElement.classList.remove('auth-hint');
     proposals.update(user);
     me = user;
-    if (!user) return;
+    if (!shown) return;
     db.collection('events').doc(slug).onSnapshot(function(d){
       ev = d.exists ? d.data() : null; drawCall();
       if (ev && ev.series && !series) db.collection('eventSeries').doc(ev.series).get().then(function(x){ series = x.exists ? x.data() : null; drawCall(); }).catch(function(){});
