@@ -1,9 +1,3 @@
-:root{
-  --success-text:#256b60;
-  --danger-text:#b42318;
-  --warn-text:#8a5a12;
-  --neutral-text:#4b5563;
-}
 /* ---------- hero ---------- */
 .hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
@@ -13,11 +7,11 @@
 main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
 .btn{
   display:inline-block; font-family:var(--sans); font-size:15px; font-weight:500;
-  text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
+  text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:3px;
   padding:0; border:none;
 }
 .btn:hover{text-decoration-color:currentColor;}
-.btn-primary{color:var(--accent); font-weight:600;}
+.btn-primary{color:var(--link); font-weight:600;}
 .btn-secondary{color:var(--ink-soft);}
 /* Hierarchy on this page, outermost first: section (larger h2 + hairline,
    wide gap) > group (small caps label + count) > row (faint hairline). */
@@ -35,7 +29,7 @@ section.block:first-of-type{margin-top:28px;}
 .pp-person-row{display:flex;align-items:flex-start;gap:12px;}
 .pp-person-row .member-photo{width:68px;height:68px;margin-top:3px;font-size:19px;}
 .facts{margin:0;}
-.fact{display:flex; gap:24px; padding:3px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+.fact{display:flex; gap:24px; padding:3px 0; border-bottom:1px solid var(--rule);}
 .fact dt{flex:0 0 150px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); padding-top:5px;}
 .fact dd{margin:0; font-size:16px; color:var(--ink); overflow-wrap:anywhere;}
 .proj-group{margin-top:34px;}
@@ -43,7 +37,7 @@ section.block:first-of-type{margin-top:28px;}
 .proj-group h3{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-soft); margin:0 0 2px;}
 .proj-count{margin-left:6px; font-weight:400; color:var(--muted);}
 .proj-list{list-style:none; margin:0; padding:0;}
-.proj-list li{padding:12px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+.proj-list li{padding:12px 0; border-bottom:1px solid var(--rule);}
 .proj-title{font-size:18px; font-weight:500;}
 .proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 /* Same badges as the board's card page (audit-board.css .detail .badge):
@@ -53,7 +47,7 @@ section.block:first-of-type{margin-top:28px;}
   font-family:var(--sans); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em;
   border:1px solid currentColor; padding:2px 7px; color:var(--neutral-text);
 }
-.badge-stage{color:var(--accent);}
+.badge-stage{color:var(--link);}
 .badge-review-approved, .badge-rebuttal-sent, .badge-outcome-accepted{color:var(--success-text);}
 .badge-review-changes_requested, .badge-outcome-rejected{color:var(--danger-text);}
 .badge-review-in_review, .badge-rebuttal-writing{color:var(--warn-text);}
@@ -92,7 +86,7 @@ section.block:first-of-type{margin-top:28px;}
 }
 /* Studies: the people involved, and the meeting's fields (as on a project's page). */
 .st-people{list-style:none; margin:4px 0 10px; padding:0;}
-.st-people li{display:flex; align-items:baseline; gap:12px; padding:4px 0; border-bottom:1px solid rgba(26,43,74,0.08); color:var(--ink);}
+.st-people li{display:flex; align-items:baseline; gap:12px; padding:4px 0; border-bottom:1px solid var(--rule); color:var(--ink);}
 .st-people .st-email{font-family:var(--sans); font-size:13px; color:var(--muted); flex:1 1 auto; min-width:0; overflow-wrap:anywhere;}
 .st-add{display:flex; flex-wrap:wrap; gap:8px; align-items:center;}
 .join-form .st-add select, .join-form .st-add input{display:block; width:auto; flex:1 1 180px; margin-top:0;}
@@ -123,36 +117,25 @@ fieldset.md-group:first-child{margin-top:0;}
 /* A person's group (Who is BOLD): the talks' type badges (bold.css .type-badge). For
    PIs and admins the badge is a button that shows the groups to choose from. */
 .proj-list .type-badge{margin-left:6px; vertical-align:2px;}
-.pp-exec{color:var(--accent);}
-.pp-internal{color:#256b60;}
-.pp-associate{color:#7d5a99;}
-.pp-staff{color:#8a5a1f;}
-.pp-pan{color:var(--neutral-text);}
-button.type-badge{background:none; cursor:pointer;}
-button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);}
 .pp-choices{display:inline-flex; flex-wrap:wrap; gap:4px; vertical-align:2px;}
 .pp-choices .type-badge{margin-left:0; opacity:.55;}
 .pp-choices .type-badge.is-current, .pp-choices .type-badge:hover{opacity:1;}
-/* Asking for another group, on the profile (member-details.js). */
-.md-g-form{margin:8px 0 4px; max-width:520px;}
-.md-g-form .jn-check{display:flex; gap:8px; align-items:center; margin-bottom:6px; font-family:var(--sans); font-size:14px;}
-.md-g-form textarea{width:100%; font-family:var(--sans); font-size:14px; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); margin:4px 0 8px;}
 .facts dd .type-badge{vertical-align:2px;}
 .jr-move{margin:6px 0 0; display:flex; gap:6px; align-items:center; font-family:var(--sans); font-size:13px; color:var(--muted);}
 /* A person's page (person.html): the way back to People, as on a skill's page. */
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
-.back-link:hover{color:var(--accent);}
+.back-link:hover{color:var(--link);}
 #person .md-group:first-child{margin-top:24px;}
 .pp-actions{display:flex; flex-wrap:wrap; gap:10px; margin-top:16px;}
 a.btn-box{text-decoration:none; display:inline-block;}
 /* Studies: requests to join the meeting, from the Calendar */
 .st-asks-head{font-family:var(--sans); font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-soft); margin:8px 0 6px;}
 .st-asks{list-style:none; margin:0 0 22px; padding:0;}
-.st-asks li{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:10px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+.st-asks li{display:flex; justify-content:space-between; align-items:flex-start; gap:16px; padding:10px 0; border-bottom:1px solid var(--rule);}
 .st-asks .event-controls{margin:0; flex:none;}
 .st-ask-note{margin:4px 0 0; font-size:15px; color:var(--ink-soft);}
 /* join.html: who invited them, chosen from the names offered as they type */
-.jn-inviter-list{list-style:none; margin:-6px 0 12px; padding:4px 0; background:var(--surface); border:1px solid var(--line); box-shadow:0 4px 14px rgba(26,43,74,0.08);}
+.jn-inviter-list{list-style:none; margin:-6px 0 12px; padding:4px 0; background:var(--surface); border:1px solid var(--line); box-shadow:0 4px 14px color-mix(in srgb, var(--shade) 8%, transparent);}
 .jn-inviter-list[hidden]{display:none;}
 .jn-inviter-list li{padding:6px 10px; font-family:var(--sans); font-size:14px; color:var(--ink); cursor:pointer;}
 .jn-inviter-list li.active, .jn-inviter-list li[data-id]:hover{background:var(--wash);}
@@ -170,7 +153,7 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .st-chips .kw-entry{display:flex; gap:8px;}
 .st-chips .kw-entry input{flex:1; width:auto;}
 .st-chips .kw-add{padding:8px 14px; font-family:var(--sans); font-size:16px; font-weight:600; line-height:1; color:var(--ink); text-decoration:none; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); cursor:pointer;}
-.st-chips .kw-add:hover{border-color:var(--blue); color:var(--blue);}
+.st-chips .kw-add:hover{border-color:var(--accent); color:var(--accent);}
 .st-chips .kw-list{list-style:none; margin:8px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:6px;}
 .st-chips .kw-list:empty{display:none;}
 .st-chips .kw-chip{display:inline-flex; align-items:center; gap:6px; font-family:var(--sans); font-size:13px; color:var(--ink); background:var(--wash); border-radius:12px; padding:2px 6px 2px 10px;}
@@ -179,11 +162,27 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .jr-pilot .md-group .jr-feature-group{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:26px 0 8px;}
 /* Room between the testers of every pilot and the first group. */
 .jr-pilot fieldset > .jr-tester-add{margin-bottom:8px;}
-.md-g-expect{font-family:var(--sans); font-size:14px; margin:4px 0 8px;}
-.md-g-expect:empty{display:none;}
-.md-g-expect-head{margin:0 0 4px; font-weight:600;}
-.md-g-expect .wk-desc ul{margin:0; padding-left:20px;}
 /* Events: the search and Whose events (All, Yours), side by side. */
 .ev-filter{display:flex; gap:10px;}
 .ev-filter input{flex:1 1 auto; min-width:0;}
 .ev-filter select{flex:0 0 auto; font-family:var(--sans); font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+/* Asking for another group (group-request.html, pages/group-request.js): the group's terms
+   (its section of Who is BOLD), the tick that accepts them, then Send. */
+.gr-tabs{display:flex; flex-wrap:wrap; gap:6px; margin:6px 0 14px;}
+.gr-tabs .type-badge.is-current{background:var(--wash); box-shadow:inset 0 0 0 1px currentColor;}
+.gr-terms{max-width:var(--article-max); padding:14px 18px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); font-size:17px;}
+.gr-terms .md-desc ul{padding-left:22px;}
+.gr-form{max-width:var(--article-max); margin-top:16px; font-family:var(--sans); font-size:14px;}
+.gr-form textarea{display:block; width:100%; box-sizing:border-box; font-family:var(--sans); font-size:14px; padding:7px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); margin:4px 0 12px; resize:vertical;}
+.gr-form .jn-check{display:flex; gap:8px; align-items:flex-start; color:var(--ink); font-weight:600;}
+.gr-form .jn-check input{margin:3px 0 0;}
+.gr-why{color:var(--muted); font-size:13px; margin:8px 0 0;}
+.jr-terms{margin-top:8px; padding:8px 12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);}
+.gr-head{font-family:var(--sans); font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin:6px 0 8px;}
+.gr-needs{margin-top:16px; padding-top:12px; border-top:1px solid var(--line);}
+.gr-needs h3{margin:0 0 4px; font-family:var(--sans); font-size:14px; font-weight:600; color:var(--ink);}
+/* Linked accounts › Test account (pages/test-account.js). */
+.ta-form{max-width:420px; font-family:var(--sans); font-size:14px;}
+.ta-form input{display:block; width:100%; box-sizing:border-box; margin-top:4px; font-family:var(--sans); font-size:14px; padding:7px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.ta-group{display:block; margin-top:6px; font-family:var(--sans); font-size:14px;}
+.ta-group select{margin-left:6px; font-family:var(--sans); font-size:14px;}

@@ -105,10 +105,10 @@
       if (mine !== signIns) return;
       fullWrite = ok;
       var ev = db.collection('events'), se = db.collection('eventSeries');
-      unsubs.push(watchAll(ok ? [ev] : [ev.where('hidden', '==', false), ev.where('createdBy', '==', me.email)], 'slug', function(list){
+      unsubs.push(watchAll(ok ? [ev] : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), ev.where('createdBy', '==', me.email)], 'slug', function(list){
         events = (list || []).filter(function(x){ return x.startDate; }); render();
       }));
-      unsubs.push(watchAll(ok ? [se] : [se.where('hidden', '==', false), se.where('organisers', 'array-contains', me.email.toLowerCase())], 'id', function(list){
+      unsubs.push(watchAll(ok ? [se] : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), se.where('organisers', 'array-contains', me.email.toLowerCase())], 'id', function(list){
         series = (list || []).sort(function(a, b){ return a.title.localeCompare(b.title); }); render();
       }));
     });

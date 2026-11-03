@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Review board components</title>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/bold.css">
+<link rel="stylesheet" href="../assets/css/board.css">
+<link rel="stylesheet" href="../assets/css/pages/audit-board.css">
+<link rel="stylesheet" href="gallery.css">
+<script src="gallery.js"></script>
+</head>
+<body>
+<!-- The Internal Review Board's own components (audit-board.css), which restyles a few shared ones. -->
+<main class="shell-main gl">
+  <section>
+    <p class="gl-label">Text</p>
+    <p class="hero"><a href="#">A link</a>, <button class="btn-text" type="button">a text button</button>, <button class="btn-text rush-on" type="button">Rush on</button>, reviewers <span class="rv-role junior">J</span> junior and <span class="rv-role senior">S</span> senior.</p>
+  </section>
+
+  <section>
+    <p class="gl-label">Buttons</p>
+    <div class="gl-row">
+      <button class="btn" type="button">Button</button>
+      <button class="btn btn-primary" type="button">Primary</button>
+      <button class="btn btn-approve" type="button">Approve</button>
+      <button class="btn btn-reject" type="button">Request changes</button>
+    </div>
+    <div class="gl-row">
+      <button class="card-move-btn" type="button">&larr; Back</button>
+      <button class="card-move-btn card-move-btn-accept" type="button">Accept &rarr;</button>
+      <select class="rv-input" required><option value="">Choose a reviewer…</option></select>
+    </div>
+  </section>
+
+  <section>
+    <p class="gl-label">Badges</p>
+    <div class="gl-row">
+      <span class="badge badge-pending">Pending</span><span class="badge badge-outcome-accepted">Accepted</span><span class="badge badge-outcome-rejected">Rejected</span><span class="badge badge-outcome-withdrawn">Withdrawn</span><span class="badge badge-overdue">Overdue</span><span class="badge badge-rebuttal-writing">Writing rebuttal</span>
+      <span class="rv-state-pill rv-state-in_review">In review</span><span class="rv-state-pill rv-state-approved">Approved</span><span class="rv-state-pill rv-state-changes_requested">Changes requested</span>
+    </div>
+  </section>
+
+  <section>
+    <p class="gl-label">Cards</p>
+    <div class="columns gl-columns">
+      <div class="column"><div class="column-head"><div class="ch-top"><span>Pre-submission</span><span class="count">2</span></div><div class="ch-hint">8 weeks out</div></div>
+        <div class="column-body">
+          <div class="card board-card"><button class="card-title-btn" type="button">Efficient long-context models</button><div class="card-meta-row"><span class="badge badge-pending">Pending</span></div><div class="card-notes">Draft in Overleaf.</div><div class="card-progress">4 / 12 checked</div>
+            <div class="card-move"><button class="card-move-btn" type="button">&larr;</button><button class="card-move-btn card-move-btn-accept" type="button">Accept &rarr;</button></div></div>
+          <div class="card board-card rv-in_review"><button class="card-title-btn" type="button">In review</button><div class="card-reviewers"><div class="rv-row"><span class="rv-role junior">J</span><select class="rv-input"><option>Alan Turing</option></select></div></div></div>
+        </div></div>
+      <div class="column"><div class="column-head"><div class="ch-top"><span>Submitted</span><span class="count">2</span></div><div class="ch-hint"><span class="hint-overdue">1 overdue</span></div></div>
+        <div class="column-body">
+          <div class="card board-card rv-approved"><button class="card-title-btn" type="button">Approved</button></div>
+          <div class="card board-card rv-changes_requested"><button class="card-title-btn" type="button">Changes requested</button></div>
+        </div></div>
+    </div>
+  </section>
+
+  <section>
+    <p class="gl-label">Messages</p>
+    <div class="toast gl-flat"><div class="toast-inner error">Could not save the card.</div></div>
+    <div class="toast gl-flat"><div class="toast-inner ok">Saved.</div></div>
+    <div class="field-error">Add at least one author.</div>
+    <div style="font-size:12px;color:var(--accent);background:var(--accent-dim);padding:6px 10px;border-radius:var(--radius);margin-top:10px">A draft is saved (an inline style in modals.js).</div>
+  </section>
+
+  <section>
+    <p class="gl-label">Venues</p>
+    <div class="venue-row"><div class="venue-row-info"><span class="venue-name">NeurIPS 2027</span><span class="venue-sub">Paper deadline 15 May</span></div></div>
+    <div class="venue-row venue-row--pending"><div class="venue-row-info"><span class="venue-name">ICLR 2028</span><span class="venue-sub">Proposed</span></div><div class="venue-row-actions"><button class="btn btn-approve" type="button">Approve</button><button class="btn btn-reject" type="button">Decline</button></div></div>
+  </section>
+</main>
+</body>
+</html>

@@ -138,4 +138,22 @@
     if (BOLD.authHint()) renderGuestChrome(true);
     BOLD.onUser(function(user){ renderGuestChrome(!!user); });
   }
+  // Onboarding, for whoever hasn't finished it (#152, 2026-11-02): their group, the steps it
+  // asks of a newcomer, each ticked when BOLD.OS sees it done (onboarding-common.js), and the
+  // tour. Gone once they're all done; it's all on Get started too.
+  (function(){
+    var box = document.getElementById('next-steps');
+    if (!box || !window.BoldOnboarding || !window.BoldJoin) return;
+    BOLD.onAccess(function(a){
+      if (!a || a.group === 'out') { box.hidden = true; return; }
+      BoldOnboarding.load(function(s){
+        if (!s || s.done) { box.hidden = true; return; }
+        box.innerHTML = '<p class="home-steps-head">Welcome to ' + BoldJoin.groupBadge(s.group) + '. Your first steps, ' + BOLD.escapeHtml(BoldOnboarding.count(s)) + ' done:</p>' +
+          '<div class="home-steps-text">' + BoldOnboarding.listHtml(s, 'your first steps') + '</div>' +
+          '<p class="home-steps-foot"><a href="get-started.html">Get started at BOLD</a> · <a href="boldiquette.html#who-is-bold">Who is BOLD</a>' +
+          (!s.tour ? '<a class="btn-box is-primary home-steps-done" href="get-started.html#tour">Take the tour</a>' : '') + '</p>';
+        box.hidden = false;
+      });
+    });
+  })();
 })();

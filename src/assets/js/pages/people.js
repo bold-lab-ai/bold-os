@@ -8,13 +8,8 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var members = null, unsub = null, staff = false, me = null, picking = '', slackIds = {};
-  var photoObserver = 'IntersectionObserver' in window ? new IntersectionObserver(function(entries){
-    entries.forEach(function(entry){
-      if (!entry.isIntersecting) return;
-      photoObserver.unobserve(entry.target);
-      BOLD.photo.mount(entry.target, entry.target.dataset.id, entry.target.dataset.name);
-    });
-  }, { rootMargin: '200px' }) : null;
+  // PIs and admins: each person's onboarding (Get started), { email: { done, count } }.
+  var onboarding = {};
 
   function links(t){
     return String(t || '').split(/[\s,;]+/).filter(Boolean).map(function(u){
@@ -37,17 +32,31 @@
     var sid = slackIds[String(m.email || '').toLowerCase()];
     var name = sid ? '<a class="proj-title" href="person.html?id=' + encodeURIComponent(sid) + '">' + esc(m.name || m.email) + '</a>' : '<span class="proj-title">' + esc(m.name || m.email) + '</span>';
     var photo = '<span class="member-photo" data-id="' + esc(sid || '') + '" data-name="' + esc(m.name || m.email) + '">' + esc(BOLD.photo.initials(m.name || m.email)) + '</span>';
-    return '<li><div class="pp-person-row">' + photo + '<div>' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag +
+    return '<li><div class="pp-person-row">' + photo + '<div>' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag + (m.test ? ' <span class="badge">Your test account</span>' : '') +
       (meta ? '<span class="proj-meta">' + meta + '</span>' : '') +
       (m.interests ? '<span class="proj-meta">' + esc(m.interests) + '</span>' : '') +
-      (l ? '<span class="proj-meta">' + l + '</span>' : '') + '</div></div></li>';
+      (l ? '<span class="proj-meta">' + l + '</span>' : '') +
+      (staff && onboarding[String(m.email || '').toLowerCase()] ? '<span class="proj-meta pp-onboarding">' + onboarding[String(m.email || '').toLowerCase()] + '</span>' : '') + '</div></div></li>';
   }
+
+  function loadOnboarding(){
+    BoldOnboarding.call({ all: true }).then(function(r){
+      onboarding = {};
+      ((r.data && r.data.people) || []).forEach(function(p){
+        var left = p.steps.filter(function(x){ return !x.done; }).map(function(x){ return x.label; });
+        onboarding[p.email] = p.done ? 'Onboarding done' : 'Onboarding ' + BoldOnboarding.count(p) + ': still to ' + esc(left.map(function(l){ return l.charAt(0).toLowerCase() + l.slice(1); }).join('; '));
+      });
+      render();
+    }).catch(function(err){ console.error('[BOLD People] loading onboarding failed', err); });
+  }
+
+  // A PI's or admin's test account (testAccount): only its owner sees it here, marked Test.
+  function visible(m){ return !m.test || (me && String(m.testOf || '').toLowerCase() === String(me).toLowerCase()); }
 
   function render(){
     if (!members) return;
-    if (photoObserver) photoObserver.disconnect();
     var q = search.value.trim().toLowerCase();
-    var shown = members.filter(function(m){
+    var shown = members.filter(visible).filter(function(m){
       return !q || [m.name, m.institution, m.interests, m.basedIn, m.role, BoldJoin.categoryLabel(BoldJoin.groupOf(m))].join(' ').toLowerCase().indexOf(q) !== -1;
     });
     if (!members.length) { root.innerHTML = '<p class="proj-msg">Nobody has added their details yet.</p>'; return; }
@@ -61,10 +70,7 @@
       var label = r === 'PI' ? 'PIs' : r === 'Staff' || r === 'Other' || r === 'Alumni' ? r : r + 's';
       return '<div class="proj-group"><h3>' + esc(label) + '<span class="proj-count">' + group.length + '</span></h3><ul class="proj-list">' + group.map(personHtml).join('') + '</ul></div>';
     }).join('');
-    Array.prototype.forEach.call(root.querySelectorAll('.member-photo[data-id]'), function(node){
-      if (photoObserver) photoObserver.observe(node);
-      else BOLD.photo.mount(node, node.dataset.id, node.dataset.name);
-    });
+    BOLD.photo.mountMany(root.querySelectorAll('.member-photo[data-id]'));
   }
 
   search.addEventListener('input', render);
@@ -92,7 +98,7 @@
       ps.docs.forEach(function(d){ var e = String(d.data().email || '').toLowerCase(); if (e) slackIds[e] = d.id; });
       render();
     }).catch(function(){});
-    firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(r){ staff = !!(r.data && r.data.fullWrite); render(); }).catch(function(){});
+    firebase.app().functions('europe-west2').httpsCallable('getMyAccess')().then(function(r){ staff = !!(r.data && r.data.fullWrite); render(); if (staff) loadOnboarding(); }).catch(function(){});
     unsub = db.collection('members').onSnapshot(function(s){
       members = s.docs.map(function(d){ return d.data(); })
         .sort(function(a, b){ return String(a.name || a.email).localeCompare(String(b.name || b.email)); });

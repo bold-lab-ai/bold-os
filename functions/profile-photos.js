@@ -4,6 +4,8 @@ const crypto = require('crypto');
 
 const MAX_BYTES = 256 * 1024;
 const MAX_REDIRECTS = 3;
+const DAY = 24 * 60 * 60 * 1000;
+const CACHE_CONTROL = 'public, max-age=31536000, immutable';
 // Slack's user object also documents secure.gravatar.com image URLs.
 const IMAGE_HOST = /(^|\.)(slack-edge\.com|slack\.com)$|^secure\.gravatar\.com$/i;
 
@@ -53,6 +55,7 @@ async function slackImage(fetcher, url) {
 
 function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
   const collection = db.collection('profilePhotos');
+  const signedCache = new Map();
   const pathFor = (id) => 'profile-photos/' + id + '/' + crypto.randomUUID();
   const validId = id => typeof id === 'string' && /^[A-Z0-9]{3,32}$/.test(id);
   async function owner(email) {
@@ -66,8 +69,23 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
     const snap = await collection.doc(id).get();
     const data = snap.data() || {};
     if (!data.path || data.state !== 'active') return { state: data.state || 'missing' };
-    const [bytes] = await bucket.file(data.path).download();
-    return { state: 'active', source: data.source, type: data.type, image: bytes.toString('base64'), updatedAt: data.updatedAt || null };
+    // Both signing times are day-aligned: the same version gets the same URL
+    // throughout a day, while a browser can cache its immutable object.
+    const today = Math.floor(Date.now() / DAY) * DAY;
+    const key = data.path + ':' + today;
+    if (!signedCache.has(key)) {
+      if (signedCache.size > 1000) signedCache.clear();
+      signedCache.set(key, bucket.file(data.path).getSignedUrl({
+        version: 'v4', action: 'read', accessibleAt: new Date(today), expires: new Date(today + 2 * DAY),
+      }).then(urls => urls[0]).catch(err => { signedCache.delete(key); throw err; }));
+    }
+    return { state: 'active', source: data.source, type: data.type, url: await signedCache.get(key), updatedAt: data.updatedAt || null };
+  }
+  async function batch(ids) {
+    if (!Array.isArray(ids) || ids.length > 500 || ids.some(id => !validId(id))) throw new Error('Invalid photo IDs.');
+    const unique = Array.from(new Set(ids));
+    const results = await Promise.all(unique.map(async id => [id, await read(id)]));
+    return Object.fromEntries(results);
   }
   async function claim(id, force) {
     const ref = collection.doc(id); const pending = crypto.randomUUID();
@@ -106,7 +124,7 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
       }
       const image = await slackImage(fetcher, url);
       path = pathFor(id);
-      await bucket.file(path).save(image.bytes, { resumable: false, metadata: { contentType: image.type }, preconditionOpts: { ifGenerationMatch: 0 } });
+      await bucket.file(path).save(image.bytes, { resumable: false, metadata: { contentType: image.type, cacheControl: CACHE_CONTROL }, preconditionOpts: { ifGenerationMatch: 0 } });
       const ref = collection.doc(id);
       const adopted = await db.runTransaction(async tx => {
         const snap = await tx.get(ref); const data = snap.data() || {};
@@ -127,7 +145,7 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
     if (typeof imageBase64 !== 'string' || imageBase64.length > MAX_BYTES * 1.4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(imageBase64)) throw new Error('Invalid photo.');
     const bytes = Buffer.from(imageBase64, 'base64'); const type = checkedImage(bytes);
     const path = pathFor(id);
-    await bucket.file(path).save(bytes, { resumable: false, metadata: { contentType: type }, preconditionOpts: { ifGenerationMatch: 0 } });
+    await bucket.file(path).save(bytes, { resumable: false, metadata: { contentType: type, cacheControl: CACHE_CONTROL }, preconditionOpts: { ifGenerationMatch: 0 } });
     try {
       const ref = collection.doc(id);
       const oldPath = await db.runTransaction(async tx => {
@@ -149,7 +167,7 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
     if (oldPath) await bucket.file(oldPath).delete({ ignoreNotFound: true }).catch(() => {});
     return { state: 'removed' };
   }
-  return { owner, read, importSlack, replace, remove };
+  return { owner, read, batch, importSlack, replace, remove };
 }
 
 module.exports = { createPhotoService, imageType, checkedImage, slackImage, MAX_BYTES };

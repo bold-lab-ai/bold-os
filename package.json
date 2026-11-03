@@ -1,12 +1,13 @@
 {
   "name": "bold-os",
   "version": "1.0.0",
-  "description": "BOLD Lab's tool suite for taking a paper from venue choice to conference presentation — an implementation of BOLDiquette § ML Conference Cycle.",
+  "description": "BOLD Lab's tool suite for taking a paper from venue choice to conference presentation \u2014 an implementation of BOLDiquette \u00a7 ML Conference Cycle.",
   "scripts": {
     "build": "eleventy",
     "start": "eleventy --serve --port=8137",
     "emulators": "sh scripts/emulators.sh",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "test-site": "sh scripts/test-site.sh"
   },
   "keywords": [],
   "devDependencies": {

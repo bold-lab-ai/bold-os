@@ -1,5 +1,7 @@
 // join.html: anyone, signed in or not, asks to join BOLD (requestToJoin, which
 // checks it again). Whoever they name as inviting them decides, on join-requests.html.
+// ?invite=<id>: invited to a project by email (projectInvite, #148): whoever invited them is
+// filled in, and the request carries the invitation, so they're on the project once approved.
 (function(){
   var esc = BOLD.escapeHtml;
   var box = document.getElementById('joinBody');
@@ -7,18 +9,21 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var opt = null, sent = false;
+  var invite = (/[?&]invite=([A-Za-z0-9]+)/.exec(location.search) || [])[1] || '', invited = null;
 
   function render(v){
     if (sent) {
       box.innerHTML = '<p class="jn-notice">Thanks, ' + esc(sent) + '. Your request is with your point of contact; you’ll hear by email.</p>';
       return;
     }
-    box.innerHTML = '<div class="event-form join-form">' + BoldJoin.fieldsHtml(v, opt, { withIdentity: true }) +
+    box.innerHTML = (invited ? '<p class="jn-notice">' + esc(invited.inviter.name) + ' invited you to their project “' + esc(invited.title) + '”. Ask to join BOLD here, and you’ll be on it once ' + esc(invited.inviter.name.split(' ')[0]) + ' approves.</p>' : '') +
+      '<div class="event-form join-form">' + BoldJoin.fieldsHtml(v, opt, { withIdentity: true }) +
       // Hidden from people: a bot fills it in.
       '<label class="jn-trap" aria-hidden="true">Website<input type="text" class="jn-website" tabindex="-1" autocomplete="off"></label>' +
       '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save">Ask to join</button></div></div>';
     box.querySelector('.ev-save').addEventListener('click', send);
     wireInviter();
+    if (invited && invited.inviter.id) { box.querySelector('.jn-inviter').value = invited.inviter.name; box.querySelector('.jn-inviter-id').value = invited.inviter.id; }
   }
 
   // Their point of contact, who invited them: names from the Slack roster, of those who can invite, as they type (joinInviters); choosing
@@ -70,6 +75,7 @@
     showError(p);
     if (p) return;
     delete d.inviterTyped;
+    if (invited) d.invite = invite;
     BOLD.confirmAction({ title: 'Send your request?', go: 'Send', effects: ['Send your point of contact a Slack message, to approve or decline it'] }).then(function(ok){ if (ok) sendRequest(d); });
   }
   function sendRequest(d){
@@ -84,5 +90,10 @@
     });
   }
 
-  BoldJoin.options(db, function(o){ opt = o; render({}); });
+  BoldJoin.options(db, function(o){
+    opt = o;
+    if (!invite) return render({});
+    firebase.app().functions('europe-west2').httpsCallable('projectInvite')({ action: 'peek', invite: invite })
+      .then(function(r){ invited = r.data && r.data.open ? r.data : null; }).catch(function(){ invited = null; }).then(function(){ render({}); });
+  });
 })();

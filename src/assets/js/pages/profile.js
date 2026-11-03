@@ -32,11 +32,9 @@
   BOLD.onAccess(photoButtons);
   function loadPhoto(user){
     if (!user) return;
-    BOLD.photo.mount(el('profilePhoto'), '', user.displayName || '');
-    BOLD.photo.call({ action: 'mine' }).then(function(data){
+    BOLD.photo.mountOwn(el('profilePhoto'), user.displayName || '').then(function(data){
       photoId = data.slackId || '';
       photoState = (data.photo || {}).state || 'missing';
-      BOLD.photo.mount(el('profilePhoto'), photoId, user.displayName || '');
       photoButtons();
     }).catch(function(){
       el('photoMessage').textContent = 'Could not load your photo.';
@@ -48,10 +46,11 @@
     BOLD.photo.call({ action: action, image: image }).then(function(data){
       photoId = data.slackId || photoId;
       BOLD.photo.clear(photoId);
-      return BOLD.photo.call({ action: 'mine' });
+      var user = me();
+      BOLD.photo.mountOwn(document.querySelector('#authRegion .mast-avatar'), (user && user.displayName) || '').catch(function(){});
+      return BOLD.photo.mountOwn(el('profilePhoto'), (user && user.displayName) || '');
     }).then(function(data){
       photoState = (data.photo || {}).state || 'missing';
-      BOLD.photo.mount(el('profilePhoto'), photoId, (me() && me().displayName) || '');
       el('photoMessage').textContent = photoState === 'active' ? 'Photo updated.' : 'Using initials.';
     }).catch(function(err){
       el('photoMessage').textContent = (err && err.message) || 'Could not update photo.';
@@ -71,7 +70,6 @@
   });
   el('removePhoto').addEventListener('click', function(){ photoAction('remove'); });
   el('slackPhoto').addEventListener('click', function(){ photoAction('slack'); });
-  window.addEventListener('bold-photo-updated', function(){ var user = me(); if (user && !photoBusy) { BOLD.photo.clear(photoId); loadPhoto(user); } });
   function cacheClear(){
     try {
       Object.keys(localStorage).forEach(function(k){ if (k.indexOf(CACHE_PREFIX) === 0) localStorage.removeItem(k); });
@@ -352,7 +350,7 @@
     showGithub(user);
     showGoogle(user);
     if (user) renderSlackAccount(null);
-    if (!user) { cacheClear(); BOLD.slackFields = []; photoId = ''; BOLD.photo.mount(el('profilePhoto'), '', ''); photoButtons(); return; }
+    if (!user) { cacheClear(); BOLD.slackFields = []; BOLD.photo.clear(photoId); photoId = ''; BOLD.photo.mount(el('profilePhoto'), '', ''); photoButtons(); return; }
     renderIdentity(user.displayName || '', user.email);
     photoId = ''; photoButtons();
     loadPhoto(user);

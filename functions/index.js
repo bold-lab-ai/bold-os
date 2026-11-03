@@ -1135,6 +1135,7 @@ async function handleBlockSuggestion(payload){
 const PILOTS = {
   'card-comments': 'Comments on board cards',
   'card-done': 'Telling who raised a card it’s done',
+  'project-invites': 'Invitations to a project, and their answers',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -2360,23 +2361,21 @@ exports.getMyAccess = onCall(
   }
 );
 
-// Portrait bytes are returned only through this authenticated callable, never
-// through Storage download tokens. The writer is resolved from Slack sign-in.
+// Short-lived portrait URLs are returned only to authorized callers. The
+// writer is resolved from Slack sign-in, never from a client-supplied ID.
 exports.profilePhoto = onCall(
   { secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 30, memory: '512MiB' },
   async request => {
     const email = signedInEmail(request).toLowerCase();
     const data = request.data || {};
     try {
-      if (data.action === 'get') {
-        const ownId = await photoService.owner(email).catch(() => '');
-        await access.requireAccess(email, data.slackId === ownId ? 'profile' : 'people', 'view');
-        return photoService.read(data.slackId);
+      if (data.action === 'batch') {
+        await access.requireAccess(email, 'people', 'view');
+        return photoService.batch(data.slackIds);
       }
-      await access.requireAccess(email, 'profile', data.action === 'mine' || data.action === 'ensure' ? 'view' : 'edit');
+      await access.requireAccess(email, 'profile', data.action === 'mine' ? 'view' : 'edit');
       const id = await photoService.owner(email);
       if (data.action === 'mine') return { slackId: id, photo: await photoService.read(id) };
-      if (data.action === 'ensure') return { slackId: id, result: await photoService.importSlack(id, false) };
       if (data.action === 'slack') return { slackId: id, result: await photoService.importSlack(id, true) };
       if (data.action === 'replace') return { slackId: id, result: await photoService.replace(id, data.image) };
       if (data.action === 'remove') return { slackId: id, result: await photoService.remove(id) };
@@ -2596,11 +2595,11 @@ async function slackLinksFor(names){
 
 // Pure: the groups as someone with Projects' Edit but not View sees them: the projects
 // they're on (`mine`: pid → true) in full, every other one as its title, to join.
-function projectTitlesOnly(groups, mine){
+function projectTitlesOnly(groups, mine, ask){
   const out = {};
   Object.keys(groups).forEach(function(g){
     out[g] = groups[g].map(function(i){
-      return mine[i.pid] ? i : { pid: i.pid, title: i.title, projectId: i.projectId, cardId: i.cardId, boardId: i.boardId, slackChannel: i.slackChannel, titleOnly: true };
+      return mine[i.pid] ? i : Object.assign({ pid: i.pid, title: i.title, projectId: i.projectId, cardId: i.cardId, boardId: i.boardId, slackChannel: i.slackChannel, titleOnly: true }, ask ? { ask: true } : {});
     });
   });
   return out;
@@ -2634,12 +2633,15 @@ exports.getAllProjects = onCall(
   async (request) => {
     const email = signedInEmail(request).toLowerCase();
     const full = await access.can(email, 'projects', 'view');
-    if (!full) await access.requireAccess(email, 'projects', 'list');   // Who can see what
-    const [boardsSnap, cardsSnap, unassignedSnap, wsSnap] = await Promise.all([
+    // Who can see what: View sees them all and joins any; everyone else signed in (BOLD-associate,
+    // PAN-BOLD) sees the titles and asks to join, which the project's owner accepts (2026-11-02).
+    const askOnly = !full;
+    const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, mineAsked] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
       db.collection('projects').get(),
-      db.collection('projectWorkspaces').get()
+      db.collection('projectWorkspaces').get(),
+      db.collection('projectInvites').where('email', '==', email).get()
     ]);
     const groups = allProjectsFromCards(
       boardsSnap.docs.map(function(d){ return { id: d.id, label: d.data().label, status: d.data().status || 'approved' }; }),
@@ -2650,9 +2652,14 @@ exports.getAllProjects = onCall(
     );
     const mine = {};
     wsSnap.docs.forEach(function(d){ if ((d.data().members || []).indexOf(email) >= 0) mine[d.id] = true; });
-    const shown = full ? groups : projectTitlesOnly(groups, mine);
+    const shown = full ? groups : projectTitlesOnly(groups, mine, askOnly);
     const items = shown.ongoing.concat(shown.submission, shown.completed, shown.planned);
     markJoined(shown, mine);
+    // Their own asks and invitations, on each title: asked (waiting on its lead) or invited (theirs to answer).
+    const pending = {};
+    mineAsked.docs.forEach(function(d){ const v = d.data(); if (v.status === 'asked') pending[v.pid] = { asked: true }; else if (v.status === 'open') pending[v.pid] = { invited: d.id }; });
+    items.forEach(function(i){ if (pending[i.pid] && !i.joined) Object.assign(i, pending[i.pid]); });
+    if (askOnly) shown.askOnly = true;
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
     return shown;
@@ -3813,8 +3820,13 @@ exports.projectWorkspace = onCall(
   { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540 },
   async (request) => {
     const email = callerEmail(request);
-    await access.requireAccess(email, 'projects', 'list');   // Who can see what; a project's own below
+    // Who can see what: Projects' View or Edit for everything; below that, only a project
+    // they're one of the people of (invited to it: projectInvite), checked below.
+    const lists = await access.can(email, 'projects', 'list');
     const data = request.data || {};
+    if (!lists && ['templates', 'mine', 'venues', 'join'].indexOf(data.action) >= 0) await access.requireAccess(email, 'projects', 'list');
+    // Joining straight away is for Projects' View; below it they ask to join, and its owner accepts (projectInvite 'ask').
+    if (data.action === 'join' && !(await access.can(email, 'projects', 'view'))) throw new HttpsError('permission-denied', 'Ask to join it: its owner accepts. (Joining straight away is for ' + 'Projects’ View level.)');
     if (data.action === 'templates') return { templates: await projectTemplates() };
     if (data.action === 'mine'){
       // The caller's projects not yet completed: those whose cards name them (as
@@ -4169,8 +4181,9 @@ function proposalPlace(collection, slug, doc){
   return null;
 }
 
-// The site's proposed changes the caller can see: open, or decided in the last 30 days.
-async function contentWork(email, person){
+// The site's proposed changes the caller can see (level 'view', the default) or propose on ('edit':
+// the Version pill's), open, or decided in the last 30 days.
+async function contentWork(email, person, level){
   const after = Date.now() - WORK_DAYS * 86400000;
   // All of them, filtered here: a few hundred at most, and no collection-group index needed.
   const docs = (await db.collectionGroup('proposals').get()).docs.filter(function(d){
@@ -4190,7 +4203,7 @@ async function contentWork(email, person){
     }
     const place = proposalPlace(collection, slug, titles[parent.path] || (d.data().after || null));
     if (!place) continue;
-    if (!(place.page in mayView)) mayView[place.page] = await access.can(email, place.page, 'view');
+    if (!(place.page in mayView)) mayView[place.page] = await access.can(email, place.page, level === 'edit' ? 'edit' : 'view');
     if (!mayView[place.page]) continue;
     const q = d.data();
     const what = proposalSummary(q).replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
@@ -4226,7 +4239,7 @@ async function requestWork(email, full, person){
   const uniq = function(lists){ const seen = {}; return [].concat.apply([], lists).filter(function(d){ if (seen[d.ref.path]) return false; seen[d.ref.path] = true; return true; }); };
   const [joins, groups, lettersA, lettersB, introsA, introsB, studyA, studyB, tokens, boards] = await Promise.all([
     full ? all('joinRequests') : q('joinRequests', 'invitedBy.email'),
-    full ? all('groupRequests') : Promise.all([q('groupRequests', 'email'), q('groupRequests', 'inviterEmail')]).then(function(x){ return x[0].concat(x[1]); }),
+    full ? all('groupRequests') : q('groupRequests', 'email'),   // PIs and admins decide them (groupRequest)
     q('letterRequests', 'requesterEmail'), q('letterRequests', 'writerEmail'),
     q('introRequests', 'requesterEmail'), q('introRequests', 'offererEmail'),
     access.can(email, 'calendar', 'view').then(function(ok){ return ok ? q('studyRequests', 'email') : []; }),
@@ -4259,8 +4272,8 @@ async function requestWork(email, full, person){
     const r = d.data();
     add({ kind: 'group', ref: d.ref.path, title: 'Change group: ' + (r.name || r.email) + ', ' + (GROUP_LABELS[r.from] || r.from || '?') + ' → ' + (GROUP_LABELS[r.to] || r.to || '?'),
       url: SITE_URL + 'join-requests.html#g=' + d.id, by: person(r.email, r.name),
-      on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : r.status === 'open' && r.inviterEmail ? [person(r.inviterEmail, r.inviterName)] : [],
-      waiting: r.status === 'open' && !r.inviterEmail ? PIS_ADMINS : '', state: r.status },
+      on: r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [],
+      waiting: r.status === 'open' ? PIS_ADMINS : '', state: r.status },
     requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
   });
   uniq([lettersA, lettersB]).forEach(function(d){
@@ -4434,14 +4447,15 @@ function splitRequests(items, email, full){
 // Your requests (requests.html, the account menu's Requests; pages/requests.js): everything on BOLD.OS waiting on
 // the caller to answer, and what they asked that waits on someone else, as BOLD OS's board
 // sees it (requestWork, contentWork). → { forYou, byYou: [{ kind, num, title, url, by, on, waiting, state, since, column }] }
-// Branches (#177; bold.js, the Version pill): every open proposal on the site you can see,
+// Branches (#177; bold.js, the Version pill): every open proposal on a page you can propose on
+// (its Edit level: newcomers in PAN-BOLD get none, 2026-11-02),
 // newest first, each { ref (its path), num, title, url (its page), by, since }, and for one
 // that changes Who can see what, `pages`: the table it would make.
 exports.branches = onCall(
   { timeoutSeconds: 60 },
   async (request) => {
     const email = callerEmail(request);
-    const open = (await contentWork(email, workPerson(await workNames()))).filter((x) => x.state === 'open');
+    const open = (await contentWork(email, workPerson(await workNames()), 'edit')).filter((x) => x.state === 'open');
     const nums = await numbersOf(open.map((x) => x.ref));
     const out = [];
     for (const x of open){
@@ -5704,12 +5718,162 @@ exports.requestToJoin = onCall(
     if (!open.empty) throw new HttpsError('already-exists', 'There’s already a request for this email address, waiting for a PI. You’ll hear by email.');
     const recent = await db.collection('joinRequests').where('at', '>', Date.now() - 3600000).count().get();
     if (recent.data().count >= 30) throw new HttpsError('resource-exhausted', 'Too many requests right now: try again in an hour.');
+    // Asked through an invitation to a project (projectInvite): they're put on it once approved.
+    if (validSlug(String(d.invite || ''))) r.projectInvite = String(d.invite);
     await db.collection('joinRequests').add(Object.assign(r, { status: 'open', at: Date.now() }));
     return { ok: true };
   }
 );
 
 const joinPageUrl = () => SITE_URL + 'join-requests.html';
+
+// ---------- Inviting someone to a project (#148, 2026-11-02) ----------
+// A project's editors (its submitter, authors, PIs and admins: canEditCard) invite someone
+// by email: projectInvites/{id} { pid, cardId, board, title, email, name, by, byName, status:
+// 'open' | 'accepted' | 'declined' | 'withdrawn', at, decidedAt, emailed }. Someone on BOLD.OS
+// gets a Slack message and the project page shows them Join / Decline; someone who isn't
+// gets an email from the lab's account to ask to join BOLD (join.html?invite=<id>), naming
+// whoever invited them, and is put on the project once their request is approved
+// (decideJoinRequest). Accepting makes them one of its people (its workspace's `joined`), so
+// they see that project in full whatever their group (seesProject; the rules hold to the same).
+// Pure: may `who` ({ email, editor }) do `action` to invite `inv`? → '' or why not.
+function inviteRefusal(inv, action, who){
+  if (!inv) return 'That invitation isn’t there.';
+  const mine = String(inv.email || '').toLowerCase() === String(who.email || '').toLowerCase();
+  if (action === 'accept' || action === 'decline') { if (!mine) return 'It’s someone else’s invitation.'; }
+  else if (action === 'withdraw') { if (!(who.editor || String(inv.by || '').toLowerCase() === String(who.email || '').toLowerCase())) return 'Only whoever invited them, or the project’s editors, withdraw it.'; }
+  else return 'Unknown action.';
+  if (inv.status !== 'open' && !(action === 'withdraw' && inv.status === 'asked')) return 'It’s already been ' + inv.status + '.';
+  return '';
+}
+// Pure: the address of an invitation, on the project page.
+function inviteUrl(inv, id){ return projectPageUrl(inv.cardId, inv.board) + '&invite=' + encodeURIComponent(id); }
+// Joins email to the project pid (its workspace's `joined`) and, if it has a channel and they're
+// on Slack, invites them to it. → { slack } (or {}).
+async function joinProjectAs(email, pid, card, slackToo){
+  await db.collection('projectWorkspaces').doc(pid).set({ joined: FieldValue.arrayUnion(email) }, { merge: true });
+  await syncWorkspace(pid);
+  if (!slackToo || !card || !card.slackChannel) return {};
+  try { return { slack: await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, normalizeProjectChannel(card.slackChannel).name) }; }
+  catch (err){ return { slack: { error: err.message || 'Couldn’t add them to the Slack channel.' } }; }
+}
+async function sendLabEmail(to, subject, body){
+  const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST', headers: { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw: mimeMessage(to, subject, body) }),
+  });
+  if (!res.ok) throw new Error(res.status === 403 ? 'The lab’s Google account can’t send email yet (gmail.send): reconnect it.' : 'Gmail refused it (' + res.status + ').');
+}
+// - 'invite' { id, board, email, name }: the project's editors → { id, emailed }.
+// - 'list' { id, board }: its editors → { invites: [...] } (open ones first).
+// - 'accept' | 'decline' { invite }: the invitee; accept → the workspace, as joining does.
+// - 'withdraw' { invite }: whoever invited them, or an editor.
+// - 'peek' { invite }: anyone, signed in or not (join.html): { title, inviter: { id, name } } of an open one.
+// - 'ask' { id, board }: anyone signed in who isn't on it, below Projects' View (BOLD-associate,
+//   PAN-BOLD, from Projects' titles): asks to join: projectInvites/{id} with status 'asked' (by: the
+//   asker, who can withdraw it); its owner (who registered it) gets a Slack message.
+// - 'admit' { invite }: the project's editors accept an ask: the asker is on the project at once (its
+//   workspace, its Slack channel), and told. Declining is 'withdraw'.
+exports.projectInvite = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
+  async (request) => {
+    const d = request.data || {};
+    const col = db.collection('projectInvites');
+    if (d.action === 'peek') {
+      if (!validSlug(String(d.invite || ''))) throw new HttpsError('invalid-argument', 'No invitation given.');
+      const inv = (await col.doc(String(d.invite)).get()).data();
+      if (!inv || inv.status !== 'open') return { open: false };
+      const p = await db.collection('people').where('email', '==', inv.by).limit(1).get();
+      return { open: true, title: inv.title, inviter: { id: p.empty ? '' : p.docs[0].id, name: inv.byName } };
+    }
+    const email = callerEmail(request);
+    const name = request.auth.token.name || email;
+    if (d.action === 'ask') {
+      const id = String(d.id || ''), board = d.board ? String(d.board) : null;
+      if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
+      const snap = await cardRefFor(id, board).get();
+      if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
+      const card = snap.data(), pid = projectIdOf(card, id);
+      const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
+      if ((ws.members || []).map(lowerEmail).indexOf(email) >= 0) throw new HttpsError('already-exists', 'You’re already on it.');
+      const dup = await col.where('pid', '==', pid).where('email', '==', email).get();
+      if (dup.docs.some((x) => x.data().status === 'asked' || x.data().status === 'open')) throw new HttpsError('already-exists', 'You’ve already asked, or been invited.');
+      const lead = String((card.submittedBy || {}).email || '').toLowerCase();
+      const ref = await col.add({ pid, cardId: id, board: board || null, title: String(card.title || 'a project'), email, name, by: email, byName: name, status: 'asked', at: Date.now() });
+      if (lead) await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [lead], headline: '📌 ' + slackText(name) + ' asks to join ' + linkedTitle(String(card.title || 'your project'), projectPageUrl(id, board)) + ': accept or decline, under People on its page.' });
+      return { id: ref.id, status: 'asked' };
+    }
+    if (d.action === 'invite' || d.action === 'list') {
+      const id = String(d.id || ''), board = d.board ? String(d.board) : null;
+      if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
+      const snap = await cardRefFor(id, board).get();
+      if (!snap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
+      const card = snap.data(), pid = projectIdOf(card, id);
+      if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins invite people to it.');
+      if (d.action === 'list') {
+        const all = await col.where('pid', '==', pid).get();
+        return { invites: all.docs.map((x) => Object.assign({ id: x.id }, x.data())).sort((a, b) => (a.status === 'open' ? 0 : 1) - (b.status === 'open' ? 0 : 1) || b.at - a.at).slice(0, 50) };
+      }
+      const to = String(d.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpsError('invalid-argument', 'Give their email address.');
+      const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
+      if ((ws.members || []).map(lowerEmail).indexOf(to) >= 0) throw new HttpsError('already-exists', 'They’re already on the project.');
+      const dups = (await col.where('pid', '==', pid).where('email', '==', to).get()).docs;
+      if (dups.some((x) => x.data().status === 'open')) throw new HttpsError('already-exists', 'They already have an invitation to it.');
+      const member = (await db.collection('members').doc(to).get()).exists;
+      // They asked to join (from Projects): their ask becomes the invitation.
+      const asked = dups.filter((x) => x.data().status === 'asked')[0];
+      const inv = { pid, cardId: id, board: board || null, title: String(card.title || 'a project'), email: to, name: String(d.name || (asked && asked.data().name) || '').trim().slice(0, 120),
+        by: email, byName: name, status: 'open', at: Date.now() };
+      let ref;
+      if (asked) { ref = asked.ref; await ref.set(Object.assign({}, inv, { askedAt: asked.data().at })); }
+      else ref = await col.add(inv);
+      const token = SLACK_BOT_TOKEN.value();
+      if (member) {
+        await sendEvent(token, { key: 'project-invites', emails: [to], headline: '📌 ' + slackText(name) + ' invited you to ' + linkedTitle(inv.title, inviteUrl(inv, ref.id)) + ': join it or decline, from its page.' });
+        return { id: ref.id, emailed: false };
+      }
+      let error = '';
+      try {
+        await sendLabEmail(to, name + ' invited you to a BOLD project',
+          'Hello' + (inv.name ? ' ' + inv.name.split(' ')[0] : '') + ',\n\n' + name + ' invited you to join their project “' + inv.title + '” in BOLD.\n\n' +
+          'Ask to join BOLD here, and you’ll be on the project once your request is approved:\n' + SITE_URL + 'join.html?invite=' + ref.id + '\n\nBOLD');
+      } catch (err){ error = err.message || 'Couldn’t send the email.'; logger.error('projectInvite: email failed', { id: ref.id, error }); }
+      await ref.update({ emailed: error ? { error, at: Date.now() } : { at: Date.now() } });
+      if (error) throw new HttpsError('unavailable', 'The invitation is saved, but the email didn’t go: ' + error);
+      return { id: ref.id, emailed: true };
+    }
+    const iid = String(d.invite || '');
+    if (!validSlug(iid)) throw new HttpsError('invalid-argument', 'No invitation given.');
+    const ref = col.doc(iid);
+    const inv = (await ref.get()).data();
+    if (d.action === 'admit') {
+      if (!inv || inv.status !== 'asked') throw new HttpsError('failed-precondition', inv ? 'It’s already been ' + inv.status + '.' : 'That request isn’t there.');
+      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      if (!snap.exists || !(await canEditCard(email, snap.data()))) throw new HttpsError('permission-denied', 'Only the project’s owner, authors, PIs and admins accept a request to join it.');
+      const out = await joinProjectAs(inv.email, inv.pid, snap.data(), true);
+      await ref.update({ status: 'accepted', decidedAt: Date.now(), decidedBy: email });
+      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [inv.email], headline: '📌 ' + slackText(name) + ' accepted your request to join ' + linkedTitle(inv.title, projectPageUrl(inv.cardId, inv.board)) + ': you’re on it.' });
+      return Object.assign({ status: 'accepted' }, out);
+    }
+    let editor = false;
+    if (d.action === 'withdraw' && inv) {
+      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      editor = snap.exists && await canEditCard(email, snap.data());
+    }
+    const why = inviteRefusal(inv, d.action, { email, editor });
+    if (why) throw new HttpsError('failed-precondition', why);
+    if (d.action === 'accept') {
+      const snap = await cardRefFor(inv.cardId, inv.board).get();
+      const out = await joinProjectAs(email, inv.pid, snap.exists ? snap.data() : null, true);
+      await ref.update({ status: 'accepted', decidedAt: Date.now() });
+      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-invites', emails: [inv.by], headline: '📌 ' + slackText(name) + ' joined ' + linkedTitle(inv.title, projectPageUrl(inv.cardId, inv.board)) + ', as you invited them.' });
+      return Object.assign({ status: 'accepted' }, out);
+    }
+    await ref.update({ status: d.action === 'decline' ? 'declined' : 'withdrawn', decidedAt: Date.now() });
+    return { status: d.action === 'decline' ? 'declined' : 'withdrawn' };
+  }
+);
 
 // Pure: a name folded for matching ("Zoë Lee" → "zoe lee").
 function foldName(s){ return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim(); }
@@ -5870,7 +6034,6 @@ exports.decideJoinRequest = onCall(
     if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
     const ref = db.collection('joinRequests').doc(d.id);
     const name = request.auth.token.name || '';
-    const deciderGroup = await access.groupFor(email);
     const r = await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists) throw new HttpsError('not-found', 'No such request.');
@@ -5888,17 +6051,26 @@ exports.decideJoinRequest = onCall(
       Object.assign(q, confirmed);
       if (d.accept) {
         // Their record in BOLD.OS: what they told us. They keep it up to date on their profile.
-        // Their group, unless a PI or admin already set one: what their role suggests, but
-        // never above the group of whoever approves it (a PI or admin raises it on People).
+        // Their group, unless a PI or admin already set one: PAN-BOLD. Any higher group is a
+        // request PIs and admins decide (groupRequest), or a PI or admin sets it on People.
         const keep = ['name', 'email', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'invitedBy'];
         const rec = {};
         keep.forEach((k) => { if (q[k] !== undefined) rec[k] = q[k]; });
-        if (!(had.exists && GROUPS.indexOf(had.data().category) >= 0)) Object.assign(rec, { category: cappedGroup(roleGroup(q.role), deciderGroup), categoryBy: email, categoryAt: Date.now() });
+        if (!(had.exists && GROUPS.indexOf(had.data().category) >= 0)) Object.assign(rec, { category: 'pan', categoryBy: email, categoryAt: Date.now() });
         tx.set(m, Object.assign(rec, { requestId: d.id, approvedBy: email, approvedAt: Date.now() }), { merge: true });
       }
       return Object.assign({}, q, { status });
     });
     if (r.status !== 'approved') return { status: r.status };
+    // Invited to a project (projectInvite): on it now, as they asked to join through it.
+    const invs = await db.collection('projectInvites').where('email', '==', String(r.email || '').toLowerCase()).where('status', '==', 'open').get();
+    const extra = r.projectInvite && !invs.docs.some((x) => x.id === r.projectInvite) ? [await db.collection('projectInvites').doc(r.projectInvite).get()] : [];
+    for (const x of invs.docs.concat(extra.filter((y) => y.exists && y.data().status === 'open'))) {
+      try {
+        await joinProjectAs(String(r.email).toLowerCase(), x.data().pid, null, false);
+        await x.ref.update({ status: 'accepted', decidedAt: Date.now(), via: 'join' });
+      } catch (err){ logger.error('decideJoinRequest: joining the invited project failed', { invite: x.id, error: String(err) }); }
+    }
     return { status: r.status, welcome: await sendWelcome(d.id) };
   }
 );
@@ -5933,10 +6105,10 @@ exports.retryWelcomeEmails = onSchedule(
 // Every member is in one group, the one a PI or admin set (members' `category`, on the
 // People page, or by approving a request); without one, PAN-BOLD (groupOf; BoldJoin.groupOf
 // on the pages, kept in sync by hand). The group decides what they can see (settings/access),
-// so it never follows anything a member edits: approving a request sets it from their role
-// (roleGroup: PIs BOLD-exec, PhD and Master students BOLD-internal, Staff BOLD-staff, else PAN-BOLD). A member asks for another group on their profile
-// (groupRequests/{id}, through groupRequest); the PIs and admins decide on Join
-// requests. Each group but PAN-BOLD may have Slack channels (settings/groups.channels, set there:
+// so it never follows anything a member edits: approving a request to join puts them in
+// PAN-BOLD. A member asks for another group on group-request.html, accepting what it asks of
+// them (groupRequests/{id}, through groupRequest); only the PIs and admins decide, on Join
+// requests (2026-11-02). Each group but PAN-BOLD may have Slack channels (settings/groups.channels, set there:
 // one or more names, separated by commas, as "bold-internal, all-active-projects"), and each
 // role on the join form may have some too (settings/groups.roleChannels, by role: "PhD student").
 // The groups are ranked (GROUPS, highest first) and each is in the channels of those below
@@ -5961,12 +6133,6 @@ function channelGroupsFor(g){
 function groupOf(m){
   m = m || {};
   return GROUPS.indexOf(m.category) >= 0 ? m.category : 'pan';
-}
-// Pure: a role → the group it suggests, when a request is approved.
-// The lower of two groups (GROUPS runs from the top down).
-function cappedGroup(g, cap){ return GROUPS.indexOf(cap) < 0 ? g : GROUPS[Math.max(GROUPS.indexOf(g), GROUPS.indexOf(cap))]; }
-function roleGroup(role){
-  return role === 'PI' ? 'exec' : role === 'PhD student' || role === 'Master student' ? 'internal' : role === 'Staff' ? 'staff' : 'pan';
 }
 
 function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, '').toLowerCase(); }
@@ -6101,15 +6267,175 @@ exports.onGroupChannels = onDocumentWritten(
   }
 );
 
-// A member's request to be in another group, decided by whoever invited them (as a
-// request to join is: their members doc's invitedBy, unless they said they didn't),
-// or, for someone without an inviter, by the PIs and admins:
-// - 'request': { to, note } → { id }; one open request at a time; DMs whoever decides.
+// ---------- A PI's or admin's test account (2026-11-02) ----------
+// A second account of theirs in the BOLD Slack, signed in to like anyone's (in a private window),
+// linked on their profile (Linked accounts) so they can try BOLD.OS as someone else: testAccounts/
+// {email} { owner, at } (PIs and admins read them; written only here), and its members record
+// marked { test: true, testOf }. It's hidden from People (but for its owner) and from everyone's
+// onboarding; its owner sets its group directly and resets it to a newcomer.
+// - 'get' → { account: { email, name, group } | null }; 'link' { email }; 'unlink';
+// - 'group' { group }: pan, associate, internal or staff; 'reset': its details, onboarding (the
+//   tour, the BOLDiquette read), group requests, project invitations and asks, and the projects
+//   and event series it joined go; it's PAN-BOLD again. Projects it registered stay.
+const TEST_GROUPS = ['pan', 'associate', 'internal', 'staff'];
+exports.testAccount = onCall(
+  async (request) => {
+    const email = callerEmail(request);
+    if (!(await realFullWrite(email))) throw new HttpsError('permission-denied', 'Test accounts are for PIs and admins.');
+    const d = request.data || {};
+    const col = db.collection('testAccounts');
+    const mine = await col.where('owner', '==', email).limit(1).get();
+    const linked = mine.empty ? null : mine.docs[0].id;
+    const view = async (e) => {
+      if (!e) return { account: null };
+      const m = (await db.collection('members').doc(e).get()).data() || {};
+      return { account: { email: e, name: m.name || e, group: groupOf(m) } };
+    };
+    if (d.action === 'get') return view(linked);
+    if (d.action === 'link') {
+      if (linked) throw new HttpsError('already-exists', 'You already have one: unlink it first.');
+      const to = String(d.email || '').trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) throw new HttpsError('invalid-argument', 'Give its email address.');
+      if (to === email) throw new HttpsError('invalid-argument', 'That’s you: give your second account’s address.');
+      if (await realFullWrite(to)) throw new HttpsError('failed-precondition', 'That’s a PI’s or admin’s account.');
+      const p = await db.collection('people').where('email', '==', to).limit(1).get();
+      if (p.empty) throw new HttpsError('failed-precondition', 'No one in the BOLD Slack has that address: join the Slack with it first.');
+      if ((await col.doc(to).get()).exists) throw new HttpsError('already-exists', 'It’s someone else’s test account.');
+      await col.doc(to).set({ owner: email, at: Date.now() });
+      await db.collection('members').doc(to).set({ test: true, testOf: email, name: p.docs[0].data().name || to, email: to }, { merge: true });
+      return view(to);
+    }
+    if (!linked) throw new HttpsError('failed-precondition', 'Link a test account first.');
+    if (d.action === 'unlink') {
+      await col.doc(linked).delete();
+      await db.collection('members').doc(linked).set({ test: FieldValue.delete(), testOf: FieldValue.delete() }, { merge: true });
+      return { account: null };
+    }
+    if (d.action === 'group') {
+      if (TEST_GROUPS.indexOf(d.group) < 0) throw new HttpsError('invalid-argument', 'Choose PAN-BOLD, BOLD-associate, BOLD-internal or BOLD-staff.');
+      await db.collection('members').doc(linked).set({ category: d.group, categoryBy: email, categoryAt: Date.now() }, { merge: true });
+      return view(linked);
+    }
+    if (d.action === 'reset') {
+      const t = linked;
+      const [reqs, invs, readers, wss, series] = await Promise.all([
+        db.collection('groupRequests').where('email', '==', t).get(), db.collection('projectInvites').where('email', '==', t).get(),
+        db.collection('handbook').doc('boldiquette').collection('readers').where('email', '==', t).get(),
+        db.collection('projectWorkspaces').where('joined', 'array-contains', t).get(), db.collection('eventSeries').where('joined', 'array-contains', t).get(),
+      ]);
+      const b = db.batch();
+      reqs.docs.concat(invs.docs, readers.docs).forEach((x) => b.delete(x.ref));
+      b.delete(db.collection('onboarding').doc(t));
+      series.docs.forEach((x) => b.update(x.ref, { joined: FieldValue.arrayRemove(t) }));
+      wss.docs.forEach((x) => b.update(x.ref, { joined: FieldValue.arrayRemove(t) }));
+      const m = (await db.collection('members').doc(t).get()).data() || {};
+      b.set(db.collection('members').doc(t), { name: m.name || t, email: t, test: true, testOf: email, category: 'pan', categoryBy: email, categoryAt: Date.now() });
+      await b.commit();
+      for (const x of wss.docs) { try { await syncWorkspace(x.id); } catch (err){ logger.warn('testAccount reset: syncing a workspace failed', { pid: x.id, error: String(err) }); } }
+      // Its BOLDiquette read point (readPoints/{uid}) goes too, so the page says it's unread.
+      try { const u = await admin.auth().getUserByEmail(t); await db.recursiveDelete(db.collection('readPoints').doc(u.uid)); } catch (err){ /* never signed in */ }
+      return view(t);
+    }
+    throw new HttpsError('invalid-argument', 'Unknown action.');
+  }
+);
+
+// ---------- Onboarding (Get started, 2026-11-02) ----------
+// What each newcomer does, by group (each group also does those of the groups below), each
+// ticked from what BOLD.OS already knows, so nobody ticks their own:
+// - everyone: their details (members/{email}: role, institution, interests, pillars, start
+//   date, and who invited them unless a PI), read the BOLDiquette (its Mark as read, which
+//   lists them in handbook/boldiquette/readers: read-point.js). The tour is optional, not a
+//   step: taking it is marked at its end (onboarding/{email}, server-written), as `tour`;
+// - BOLD-associate: be on a project (join one, or register one);
+// - BOLD-internal and above: own a project (have registered one: its submittedBy), and join every
+//   event series required for their group (eventSeries' requiredFor, set by PIs and admins on
+//   its form: the reading group, the group meeting, Hamming sessions…); one that invites their
+//   whole group counts as joined.
+// Asking for a higher group needs it done (groupRequest). PIs and admins see everyone's on People.
+const ONBOARDING_RANK = { everyone: 0, pan: 0, associate: 1, internal: 2, staff: 3, exec: 4 };
+// Pure: a group and what we know of them → { steps: [{ key, label, done, href }], done }.
+// f: { email, member, marks, read, inProject, owns, series: [{ id, title, requiredFor, invite, joined, hidden }] }.
+function onboardingSteps(group, f){
+  f = f || {};
+  const m = f.member || {}, has = (k) => !!String(m[k] || '').trim();
+  const r = ONBOARDING_RANK[group] || 0, email = String(f.email || '').toLowerCase();
+  const details = !!f.member && has('role') && has('institution') && has('interests') && (m.pillars || []).length > 0 && has('startDate') &&
+    (m.role === 'PI' || has('contact') || !!(m.invitedBy && m.invitedBy.email));
+  const steps = [
+    { key: 'details', label: 'Fill in your details on your profile', done: details, href: 'profile.html#details' },
+    { key: 'read', label: 'Read the BOLDiquette, and mark it as read', done: !!f.read, href: 'boldiquette.html' },
+  ];
+  if (r === 1) steps.push({ key: 'project', label: 'Be on a project: ask to join one on Projects (its owner accepts), or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
+  if (r >= 2) {
+    steps.push({ key: 'own', label: 'Register a project of your own', done: !!f.owns, href: 'projects-register.html' });
+    (f.series || []).filter((x) => !x.hidden && x.requiredFor && r >= (ONBOARDING_RANK[x.requiredFor] || 0))
+      .sort((a, b) => String(a.title).localeCompare(String(b.title)))
+      .forEach((x) => {
+        const inv = x.invite || {};
+        const invited = inv.mode === 'group' && r >= (ONBOARDING_RANK[inv.group] || 0);
+        steps.push({ key: 'series:' + x.id, label: 'Join ' + x.title, done: invited || (x.joined || []).map((e) => String(e).toLowerCase()).indexOf(email) >= 0,
+          href: 'series.html?series=' + encodeURIComponent(x.id) });
+      });
+  }
+  return { steps, done: steps.every((x) => x.done) };
+}
+const seriesFacts = (docs) => docs.map((d) => { const v = d.data(); return { id: d.id, title: v.title || d.id, requiredFor: v.requiredFor || '', invite: v.invite || null, joined: v.joined || [], hidden: !!v.hidden }; });
+// `as`: the steps of another group (asking for it: group-request.html), else their own.
+async function onboardingFor(email, as){
+  email = String(email || '').toLowerCase();
+  const [m, marks, read, ws, owned, ownedCard, series, group] = await Promise.all([
+    db.collection('members').doc(email).get(), db.collection('onboarding').doc(email).get(),
+    db.collection('handbook').doc('boldiquette').collection('readers').where('email', '==', email).limit(1).get(),
+    db.collection('projectWorkspaces').where('members', 'array-contains', email).limit(1).get(),
+    db.collection('projects').where('submittedBy.email', '==', email).limit(1).get(),
+    db.collectionGroup('cards').where('submittedBy.email', '==', email).limit(1).get(),
+    db.collection('eventSeries').where('hidden', '==', false).get(),
+    as && ONBOARDING_RANK[as] !== undefined ? as : access.groupFor(email),
+  ]);
+  return Object.assign({ group, tour: !!(marks.exists && marks.data().tour) }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
+    inProject: !ws.empty, owns: !owned.empty || !ownedCard.empty, series: seriesFacts(series.docs) }));
+}
+// - {}: your own → { group, steps, done, tour }.
+// - { group }: what that group needs of them, checked now (asking for it: group-request.html).
+// - { all: true }: PIs and admins, everyone with a record → { people: [{ email, name, group, steps, done }] }.
+// - { action: 'mark', step: 'tour' }: marks the tour taken (at its end).
+exports.onboarding = onCall(
+  async (request) => {
+    const email = signedInEmail(request).toLowerCase();
+    const d = request.data || {};
+    if (d.action === 'mark') {
+      if (d.step !== 'tour') throw new HttpsError('invalid-argument', 'Unknown step.');
+      await db.collection('onboarding').doc(email).set({ [d.step]: Date.now() }, { merge: true });
+      return onboardingFor(email);
+    }
+    if (!d.all) return onboardingFor(email, ['pan', 'associate', 'internal', 'staff', 'exec'].indexOf(d.group) >= 0 ? d.group : '');
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see everyone’s onboarding.');
+    const [members, marks, readers, wss, series, projects, cards] = await Promise.all([db.collection('members').get(), db.collection('onboarding').get(),
+      db.collection('handbook').doc('boldiquette').collection('readers').get(), db.collection('projectWorkspaces').get(), db.collection('eventSeries').get(),
+      db.collection('projects').get(), db.collectionGroup('cards').get()]);
+    const mark = {}, onProject = {}, read = {}, owns = {};
+    readers.docs.forEach((x) => { read[String(x.data().email || '').toLowerCase()] = true; });
+    marks.docs.forEach((x) => { mark[x.id] = x.data(); });
+    wss.docs.forEach((x) => (x.data().members || []).forEach((e) => { onProject[String(e).toLowerCase()] = true; }));
+    projects.docs.concat(cards.docs).forEach((x) => { const e = String((x.data().submittedBy || {}).email || '').toLowerCase(); if (e) owns[e] = true; });
+    const facts = seriesFacts(series.docs);
+    const people = await Promise.all(members.docs.filter((x) => !x.data().test).map(async (x) => {
+      const e = x.id.toLowerCase(), group = await access.groupFor(e);
+      return Object.assign({ email: e, name: x.data().name || e, group }, onboardingSteps(group, { email: e, member: x.data(), marks: mark[e] || {}, read: !!read[e],
+        inProject: !!onProject[e], owns: !!owns[e], series: facts }));
+    }));
+    return { people };
+  }
+);
+
+// A member's request to be in another group, decided by the PIs and admins only (2026-11-02):
+// - 'request': { to, note, accept: true, terms } → { id }, from group-request.html, where they
+//   read what the group asks of them (its section of Who is BOLD) and tick that they accept it;
+//   the terms they saw are kept on the request (`terms`, `acceptedAt`). One open request at a
+//   time; DMs the PIs and admins.
 // - 'withdraw': { id }: their own open request.
-// - 'decide': { id, accept }: the inviter (inviterEmail on the request), or a PI or admin
-//   when it has none; accepting sets their group. DMs them.
-// - 'request' needs an inviter (a PI or admin asking goes to the PIs and admins): one who
-//   hasn't got one names one in it ({ inviter: email }), which also asks them to confirm it.
+// - 'decide': { id, accept }: a PI or admin; accepting sets their group. DMs them.
 exports.groupRequest = onCall(
   { secrets: [SLACK_BOT_TOKEN] },
   async (request) => {
@@ -6129,29 +6455,18 @@ exports.groupRequest = onCall(
       if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
       const name = m.data().name || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
-      // Whoever invited them decides, so they need one: without one (or one who said they
-      // didn't), they name one here, in the same request (inviter: email), as on their
-      // profile (setMyInviter). PIs and admins, who have nobody, go to the PIs and admins.
-      let inv = m.data().invitedBy, named = false;
-      const hasInviter = (x) => x && x.email && x.status !== 'denied' && String(x.email).toLowerCase() !== email;
-      if (!hasInviter(inv) && !(await isFullWrite(email))) {
-        const to = String(d.inviter || '').trim().toLowerCase();
-        if (!to) throw new HttpsError('failed-precondition', 'Choose your point of contact first: whoever invited you to BOLD decides this.');
-        inv = await inviterFor(email, to);
-        await m.ref.update({ invitedBy: inv });
-        named = true;
-      }
-      const inviter = hasInviter(inv) ? { email: String(inv.email).toLowerCase(), name: String(inv.name || inv.email) } : null;
-      const ref = await col.add(Object.assign({ email, name, from, to, note, status: 'open', at: Date.now() },
-        inviter ? { inviterEmail: inviter.email, inviterName: inviter.name } : {}));
-      const deciders = inviter ? [inviter.email] : (await rolesEmails('pis')).concat(await rolesEmails('admins'));
-      // Named just now: one message for both, confirming they invited them and deciding the move.
-      await sendEvent(token, { key: 'group-requests', emails: deciders, headline: (named
-        ? '👋 ' + await numberTag('members/' + email + '/invite/' + inv.askedAt) + await numberTag(ref.path) + slackText(name) + ' names you as their BOLD point of contact, who invited them, and asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to]
-        : '🏷️ ' + await numberTag(ref.path) + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to]) +
-        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' +
-        (named ? linkedTitle('Confirm you invited them', joinPageUrl() + '#invited') + ', then ' + linkedTitle('approve or decline the move', joinPageUrl() + '#g=' + ref.id)
-          : linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id)) + '.' });
+      // What the group needs, done for real first (its onboarding steps, checked now: a project of
+      // their own, the series it must join…), not just promised.
+      const need = await onboardingFor(email, to);
+      if (!need.done) throw new HttpsError('failed-precondition', 'Before asking for ' + GROUP_LABELS[to] + ': ' + need.steps.filter((x) => !x.done).map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join('; ') + '.');
+      // The contract: what the group asks of them, as they read it, and that they accept it.
+      const terms = String(d.terms || '').trim().slice(0, 20000);
+      if (d.accept !== true || !terms) throw new HttpsError('failed-precondition', 'Read what ' + GROUP_LABELS[to] + ' asks of you and tick that you accept it first.');
+      const ref = await col.add({ email, name, from, to, note, terms, acceptedAt: Date.now(), status: 'open', at: Date.now() });
+      const deciders = (await rolesEmails('pis')).concat(await rolesEmails('admins'));
+      await sendEvent(token, { key: 'group-requests', emails: deciders, headline:
+        '🏷️ ' + await numberTag(ref.path) + slackText(name) + ' asks to move from ' + GROUP_LABELS[from] + ' to ' + GROUP_LABELS[to] + ', and accepts what it asks of them' +
+        (note ? ': “' + slackText(note.slice(0, 300)) + '”' : '') + '. ' + linkedTitle('Approve or decline', joinPageUrl() + '#g=' + ref.id) + '.' });
       return { id: ref.id };
     }
     const id = String(d.id || '');
@@ -6172,17 +6487,15 @@ exports.groupRequest = onCall(
     const r = await db.runTransaction(async function(tx){
       const r = (await tx.get(ref)).data();
       if (!r) throw new HttpsError('not-found', 'That request isn’t there.');
-      // Whoever invited them decides; PIs and admins only when nobody did.
-      if (r.inviterEmail ? r.inviterEmail !== email : !full) {
-        throw new HttpsError('permission-denied', r.inviterEmail ? (r.inviterName || 'Whoever invited them') + ' decides this: they invited them.' : 'Only PIs and admins decide.');
-      }
+      // Only PIs and admins decide a change of group (2026-11-02).
+      if (!full) throw new HttpsError('permission-denied', 'Only PIs and admins decide a change of group.');
       if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
       tx.update(ref, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: request.auth.token.name || email, decidedAt: Date.now() });
       if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now() });
       return r;
     });
     await sendEvent(token, { key: 'group-requests', emails: [r.email], headline: accept
-      ? '🏷️ You’re now ' + GROUP_LABELS[r.to] + ' (' + linkedTitle('Who is BOLD', SITE_URL + 'boldiquette.html#who-is-bold') + ').'
+      ? '🏷️ You’re now ' + GROUP_LABELS[r.to] + ': ' + linkedTitle('what it gives you', SITE_URL + 'boldiquette.html#who-is-bold') + '.'
       : '🏷️ Your request to move to ' + GROUP_LABELS[r.to] + ' was declined. Ask a PI if you’d like to know more.' });
     return { ok: true };
   }
@@ -6926,7 +7239,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
 
 exports._internal = {
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
-  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts, cappedGroup, roleGroup,
+  projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
   newlyAddedAuthorEmails, reviewsOutCandidates, todayIsoLondon, venueUrl, cardUrl, linkedTitle,
   reviewStateEmoji, verifySlackSignatureRaw, nearestChannel, pilotSlack, appliedProposal, proposalSummary, proposalOutcome, proposalClosed, projectAnnouncement, commentQueueDue, commentRecipients, commentDigest, pilotStateOf, sendEvent, cardTalkRecipients, cardTalkDigest, cardDoneText, canAssignReviewer, parseAssignAction,
@@ -6935,5 +7248,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, roleGroup, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
 };

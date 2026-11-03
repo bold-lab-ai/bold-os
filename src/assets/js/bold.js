@@ -11,14 +11,15 @@
   var BOLD = window.BOLD = window.BOLD || {};
 
   BOLD.firebaseConfig = window.BOLD_CONFIG;
-  BOLD.useAuthEmulator = false;
+  // The local test copy (scripts/test-site.sh): Auth, Firestore and Functions in the emulators.
+  BOLD.useAuthEmulator = !!window.BOLD_TEST;
   // Local development (npm start) signs in the way it did before 2026-10-04:
   // popup via Firebase's own auth domain. The live site's setup (self-hosted
   // helper on bold-lab-ai.github.io + redirect, see BOLD.signIn) needs the page
   // to be on bold-lab-ai.github.io; from localhost that hand-off is cross-site,
   // and Firefox, Safari and private windows block it.
   var isLocalDev = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-  if (isLocalDev && BOLD.firebaseConfig) {
+  if (isLocalDev && BOLD.firebaseConfig && !window.BOLD_TEST) {
     BOLD.firebaseConfig = Object.assign({}, BOLD.firebaseConfig, { authDomain: 'bold-d7ff2.firebaseapp.com' });
   }
 
@@ -339,14 +340,30 @@
 
   /* ---------- Firebase + auth ---------- */
 
-  var app = null, auth = null, authReady = false, current = null, listeners = [];
+  var app = null, auth = null, authReady = false, current = null, listeners = [], photoUid = null;
 
   BOLD.getApp = function(){
     if (app) return app;
     try { app = firebase.apps.length ? firebase.app() : firebase.initializeApp(BOLD.firebaseConfig); } catch (e){ app = null; }
+    if (window.BOLD_TEST && app) testEmulators(app);
     viewAsCalls();
     return app;
   };
+
+  // The local test copy only (window.BOLD_TEST, set by a BOLD_TEST=1 build): Firestore and every
+  // region's Functions in the emulators, before anything reads or calls.
+  function testEmulators(a){
+    if (testEmulators.done) return;
+    testEmulators.done = true;
+    try { firebase.firestore(a).useEmulator('127.0.0.1', 8080); } catch (e){ console.warn('[BOLD Test] Firestore emulator', e); }
+    if (typeof a.functions !== 'function') return;
+    var plain = a.functions, seen = {};
+    a.functions = function(region){
+      var f = plain.apply(a, arguments), k = region || '';
+      if (!seen[k]) { seen[k] = true; try { f.useEmulator('127.0.0.1', 5001); } catch (e){} }
+      return f;
+    };
+  }
 
   BOLD.getAuth = function(){
     if (auth) return auth;
@@ -357,20 +374,10 @@
     } catch (e){ auth = null; return null; }
     auth.onAuthStateChanged(function(user){
       current = user; authReady = true; skipConfirm = null;
-      // Import once per signed-in session in the background. Failure remains
-      // retryable on a later page and never blocks the auth gate.
-      if (user && user.uid) {
-        try {
-          var photoKey = 'boldPhotoEnsured:' + user.uid;
-          if (!sessionStorage.getItem(photoKey)) {
-            firebase.app().functions('europe-west2').httpsCallable('profilePhoto')({ action: 'ensure' })
-              .then(function(){ sessionStorage.setItem(photoKey, '1'); window.dispatchEvent(new Event('bold-photo-updated')); })
-              .catch(function(err){ console.info('[BOLD Lab] Photo import will retry later:', err && err.message); });
-          }
-        } catch (e){}
-      }
+      var nextPhotoUid = user && user.uid || null;
+      if (photoUid !== nextPhotoUid) { photoUid = nextPhotoUid; if (BOLD.photo) BOLD.photo.clear(); }
       try {
-        if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '', p: user.photoURL || '' }));
+        if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
         else localStorage.removeItem('boldAuthHint');
       } catch (e){}
       listeners.slice().forEach(function(fn){ fn(user); });
@@ -394,7 +401,7 @@
     if (authReady) fn(current);
   };
 
-  // The last visit's { n: displayName, e: email, p: photoURL }, or null — for painting before auth resolves.
+  // The last visit's { n: displayName, e: email }, or null — for painting before auth resolves.
   BOLD.authHint = function(){ return hint; };
 
   // Sign-in redirects the page to Slack and back rather than using a popup:
@@ -437,11 +444,11 @@
   // PIs and admins only, shown once that's known; Sign out). Signed out: Sign in with Slack.
   function renderAuthRegion(region, user){
     if (user) {
-      // Your Slack photo (initials without one), as GitHub's avatar; your name heads its menu
+      // The shared profile photo (initials without one); your name heads its menu
       // (your email is on your profile; without a name, the email).
       var name = user.displayName || user.email || 'Signed in', who = esc(name);
       var initials = esc(name.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(function(w){ return w[0].toUpperCase(); }).join(''));
-      var face = user.photoURL ? '<img class="mast-avatar" src="' + esc(user.photoURL) + '" alt="" referrerpolicy="no-referrer">' : '<span class="mast-avatar mast-initials">' + initials + '</span>';
+      var face = '<span class="mast-avatar mast-initials">' + initials + '</span>';
       region.innerHTML =
         '<div class="mast-auth mast-menu-wrap">' +
           '<button class="mast-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="mastMenu" aria-label="' + who + '’s menu" title="' + who + '">' + face + '</button>' +
@@ -460,6 +467,7 @@
       document.addEventListener('focusin', function(e){ if (!region.contains(e.target)) open(false); });
       region.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
       region.querySelector('#mastSignOutBtn').addEventListener('click', BOLD.signOut);
+      if (user.uid && BOLD.photo) BOLD.photo.mountOwn(region.querySelector('.mast-avatar'), name).catch(function(){});
     } else {
       region.innerHTML = '<button class="auth-signin" type="button" id="mastSignInBtn">Sign in with Slack</button>';
       region.querySelector('#mastSignInBtn').addEventListener('click', BOLD.signIn);
@@ -591,16 +599,16 @@
   // filtered to you (projects.html#mine, events.html#mine), and your own pages.
   var ICON_MINE = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 2 14 5 8 8 2 5z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/></svg>';
   var MINE = [
-    { label: 'Your projects', href: 'projects.html#mine', area: 'projects' },
-    { label: 'Your events', href: 'events.html#mine', area: 'events' },
+    { label: 'My projects', href: 'projects.html#mine', area: 'projects' },
+    { label: 'My events', href: 'events.html#mine', area: 'events' },
     { sep: true },
-    { label: 'Your letters', href: 'letters.html', area: 'service-desk' },
-    { label: 'Your introductions', href: 'introductions.html', area: 'service-desk' },
+    { label: 'My letters', href: 'letters.html', area: 'service-desk' },
+    { label: 'My introductions', href: 'introductions.html', area: 'service-desk' },
   ];
   function mountMine(){
     var box = document.getElementById('mastMine');
     if (!box) return;
-    box.innerHTML = '<button type="button" class="mast-btn" aria-haspopup="true" aria-expanded="false" aria-controls="mineMenu" title="Yours" aria-label="Yours">' + ICON_MINE + '</button>' +
+    box.innerHTML = '<button type="button" class="mast-btn" aria-haspopup="true" aria-expanded="false" aria-controls="mineMenu" title="Mine" aria-label="Mine">' + ICON_MINE + '</button>' +
       '<ul class="mast-menu mast-mine-menu" id="mineMenu" role="menu" hidden></ul>';
     var btn = box.querySelector('.mast-btn'), menu = box.querySelector('.mast-mine-menu');
     var draw = function(){
@@ -626,13 +634,38 @@
     BOLD.onUser(function(user){ box.hidden = !user; if (!user) open(false); });
   }
 
+  // Light or dark (the dark block in bold.css): the masthead's sun/moon button, showing the theme
+  // in use. The choice is kept in localStorage (boldTheme) and applied before the page paints by
+  // the line at the top of base.njk; other open tabs follow it.
+  function mountTheme(){
+    var btn = document.getElementById('themeToggle'), root = document.documentElement;
+    if (!btn) return;
+    var show = function(){
+      var dark = root.getAttribute('data-theme') === 'dark';
+      btn.setAttribute('aria-pressed', String(dark));
+      btn.title = dark ? 'Switch to the light theme' : 'Switch to the dark theme';
+    };
+    var set = function(dark){
+      if (dark) root.setAttribute('data-theme', 'dark'); else root.removeAttribute('data-theme');
+      show();
+    };
+    show();
+    btn.addEventListener('click', function(){
+      var dark = root.getAttribute('data-theme') !== 'dark';
+      set(dark);
+      try { localStorage.setItem('boldTheme', dark ? 'dark' : 'light'); } catch (e){}
+    });
+    window.addEventListener('storage', function(e){ if (e.key === 'boldTheme') set(e.newValue === 'dark'); });
+  }
+
   // Called right after the masthead markup.
   BOLD.mountMasthead = function(){
+    mountTheme();
     mountCreate();
     mountMine();
     var region = document.getElementById('authRegion');
     // Paint the last visit's name at once; auth stays authoritative.
-    if (hint) renderAuthRegion(region, { displayName: hint.n, email: hint.e, photoURL: hint.p });
+    if (hint) renderAuthRegion(region, { displayName: hint.n, email: hint.e });
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
     // Settings, in the menu, once the viewer is known to be a PI or admin.
     BOLD.onAccess(function(a){
@@ -698,8 +731,12 @@
     var seen = JSON.parse(localStorage.getItem('boldAccess') || 'null');
     if (seen && hint && seen.e === hint.e && (seen.viewAs || null) === viewAs) access = seen;
   } catch (e){}
+  // Read this visit (the table and their group from the database), not the last visit's copy:
+  // what pages check before showing a copy they saved under other access (BOLD.accessSig).
+  var freshAccess = false, freshListeners = [];
   function setAccess(a){
     access = a;
+    if (!freshAccess) { freshAccess = true; var f = freshListeners; freshListeners = []; f.forEach(function(fn){ fn(a); }); }
     try { if (a.e) localStorage.setItem('boldAccess', JSON.stringify(a)); else localStorage.removeItem('boldAccess'); } catch (e){}
     accessListeners.slice().forEach(function(fn){ fn(a); });
   }
@@ -719,6 +756,8 @@
   BOLD.can = function(area, what){
     if (!access) return false;
     if (what === 'list') return BOLD.can(area, 'view') || BOLD.can(area, 'edit');
+    // Projects' titles: everyone signed in (getAllProjects; below View and Edit they ask to join).
+    if (what === 'titles') return area === 'projects' ? !!access.e : BOLD.can(area, 'list');
     var level = levelFor(area, what || 'view');
     return level !== 'none' && rankOf(access.group) >= rankOf(level);
   };
@@ -728,8 +767,25 @@
     return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can see what).';
   };
   BOLD.myGroup = function(){ return access ? access.group : null; };
+  // The event and series levels (`visibleTo`) the viewer sees: from 'public' (anyone, even signed out)
+  // up to their group's (firestore.rules visibleLevels; functions/access.js). Lists query with them.
+  var VIS = ['public', 'everyone', 'associate', 'internal', 'staff', 'exec'];
+  BOLD.visibleLevels = function(){
+    var g = !access || !access.e ? 'out' : access.fullWrite ? 'exec' : access.group;
+    var r = { out: 0, everyone: 1, pan: 1, associate: 2, internal: 3, staff: 4, exec: 5 }[g] || 0;
+    return VIS.slice(0, r + 1);
+  };
   // fn(access) once known and on every change; replayed at once if known.
   BOLD.onAccess = function(fn){ accessListeners.push(fn); if (access) fn(access); };
+  // fn(access) once, when this visit has read it (not the last visit's copy).
+  BOLD.onFreshAccess = function(fn){ if (freshAccess) fn(access); else freshListeners.push(fn); };
+  // What a page's saved copy depends on: who, their group, PI or admin, and `area`'s levels. A copy
+  // saved under another one isn't shown (a change of group, or of Who can see what, 2026-11-02).
+  BOLD.accessSig = function(area){
+    if (!access) return '';
+    var p = ((access.pages || {})[area]) || {};
+    return [access.e, access.group, access.fullWrite ? 1 : 0, p.view || '', p.edit || ''].join('|');
+  };
   function loadAccess(user){
     if (!firebase.firestore) return;
     var db = firebase.firestore(BOLD.getApp());
@@ -750,9 +806,25 @@
           // Asked to view as a group but not a PI or admin: the server ignored it, and so do we.
           if (viewAs && !d.viewAs) { viewAs = null; try { sessionStorage.removeItem('boldViewAs'); } catch (e){} }
           setAccess(Object.assign({ e: user.email || '', group: d.group || r[1], pages: d.pages || r[0], fullWrite: !!d.fullWrite }, d.viewAs ? { viewAs: d.viewAs } : {}));
+          if (!d.viewAs) groupChanged(user.email || '', d.group || r[1]);
         }).catch(function(){});
       });
     });
+  }
+  // In a new group (#152): once, they're sent to Get started, but only if that group's steps
+  // aren't all done (the onboarding callable): someone accepted through Ask for another group did
+  // them before asking; someone a PI or admin placed there may not have. The group last seen is
+  // remembered in this browser, per person; the first time there's none, so nothing happens (the
+  // home page shows the steps anyway). Only from the server's answer (getMyAccess), never while
+  // viewing as a group.
+  function groupChanged(email, group){
+    if (!email || !group) return;
+    var k = 'boldGroup:' + email, was = null;
+    try { was = localStorage.getItem(k); localStorage.setItem(k, group); } catch (e){ return; }
+    if (!was || was === group) return;
+    firebase.app().functions('europe-west2').httpsCallable('onboarding')({}).then(function(r){
+      if (r.data && Array.isArray(r.data.steps) && !r.data.done) location.href = 'get-started.html';
+    }).catch(function(){});
   }
   // fn() once the Functions SDK is there: loaded (same pinned version) if the page hasn't it.
   function withFunctions(fn){
@@ -889,9 +961,12 @@
     // to it waits), and the Version (branches): main, or the site as an open proposal would make it.
     var seeTip = 'Who can see this page: ' + groupName(cur.view) + (waiting ? ' · 1 change waiting' : '');
     var brTip = branch ? 'Version: ' + branchLabel(branch) : 'Version: main. See the site as an open proposal would make it';
+    // The Version button: only for whoever can propose a change somewhere (a reviewed page's Edit
+    // level: not newcomers in PAN-BOLD), or is on a version already.
+    var proposes = !!access.fullWrite || REVIEWED.some(function(a){ return BOLD.can(a, 'edit'); }) || !!branch;
     var html = '<button type="button" class="mast-btn ac-chip' + (waiting ? ' has-dot' : '') + '" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="' + esc(seeTip) + '" aria-label="' + esc(seeTip) + '">' + ICON_EYE + '</button>' +
-      '<button type="button" class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</button>';
-    if (brOpen) {
+      (proposes ? '<button type="button" class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</button>' : '');
+    if (brOpen && proposes) {
       html += '<div class="ac-panel br-panel" id="brPanel" role="dialog" aria-label="Versions of the site"><div class="ac-title">Version</div>' +
         '<p class="ac-note">See the whole site as an open proposal would make it, before anyone accepts it. Only you see it, in this tab.</p>' +
         '<ul class="br-list"><li><button type="button" class="br-item' + (branch ? '' : ' is-on') + '" data-ref=""><span class="br-t">Main</span></button></li>' +
@@ -1038,12 +1113,40 @@
     gate.innerHTML = '<div class="gate-box"><h1>Not open to your group</h1>' +
       '<p>This page is for ' + esc(LEVEL_NAMES[level]) + ' and above; you’re in ' + esc(LEVEL_NAMES[access.group] || 'PAN-BOLD') + '. ' +
       '<a href="boldiquette.html#access">Who can see what</a>.</p>' +
-      '<a class="gate-signup-btn" href="profile.html">Ask for another group on your profile</a></div>';
+      '<a class="gate-signup-btn" href="group-request.html">Ask for another group</a></div>';
     gate.setAttribute('data-level-gate', '');
     gate.hidden = false;
   }
 
   // Called right after the opening <div class="shell">.
+  // The way back to a checklist (onboarding's steps: Ask for another group, Get started, the home
+  // page). Following one of its links (a[data-checklist]) remembers the page, in this tab; every
+  // other page then shows "← Back to <it>" at the bottom right, with × to forget it. Back on the
+  // checklist it hides; sending the request forgets it (BOLD.checklistBack.clear()).
+  BOLD.checklistBack = (function(){
+    var KEY = 'boldChecklist';
+    var here = function(){ return location.pathname.split('/').pop() || 'index.html'; };
+    var read = function(){ try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e){ return null; } };
+    function clear(){ try { sessionStorage.removeItem(KEY); } catch (e){} var b = document.getElementById('checklistBack'); if (b) b.remove(); }
+    document.addEventListener('click', function(e){
+      var a = e.target.closest && e.target.closest('a[data-checklist]');
+      if (!a) return;
+      try { sessionStorage.setItem(KEY, JSON.stringify({ page: here(), url: here() + location.search + location.hash, label: a.getAttribute('data-checklist') })); } catch (err){}
+    }, true);
+    function show(){
+      var c = read();
+      if (!c || !c.url || c.page === here() || document.getElementById('checklistBack')) return;
+      var bar = document.createElement('div');
+      bar.id = 'checklistBack'; bar.className = 'checklist-back'; bar.setAttribute('role', 'navigation'); bar.setAttribute('aria-label', 'Back to the checklist');
+      bar.innerHTML = '<a href="' + BOLD.escapeHtml(c.url) + '">← Back to ' + BOLD.escapeHtml(c.label || 'the checklist') + '</a>' +
+        '<button type="button" aria-label="Close" title="Close">×</button>';
+      bar.querySelector('button').addEventListener('click', clear);
+      document.body.appendChild(bar);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+    return { clear: clear };
+  })();
+
   BOLD.mountShell = function(){
     var shell = document.getElementById('shell');
     // Saved sidebar state, applied before first paint so it doesn't animate in.
@@ -1072,16 +1175,24 @@
       if (gate) gate.hidden = !!user;
       if (!user) shell.hidden = true;
     });
+    // A page whose own data says the viewer may see it lifts the gate (BOLD.allowPage): a
+    // project's page, once the rules let them read the project as one of its people (#148).
+    var allowed = false;
+    BOLD.allowPage = function(){
+      allowed = true; shell.hidden = false;
+      var g = document.getElementById('pageGate');
+      if (g && g.hasAttribute('data-level-gate')) g.hidden = true;
+    };
     BOLD.onAccess(function(a){
       if (!a.e) return;   // signed out: the sign-in gate above
-      var ok = BOLD.can(area, areaWhat);
+      var ok = allowed || BOLD.can(area, areaWhat);
       shell.hidden = !ok;
       // Allowed after all (the server's answer, a PI's say): the gate shown on the first guess goes.
       var shown = document.getElementById('pageGate');
       if (ok && shown && shown.hasAttribute('data-level-gate')) shown.hidden = true;
       if (!ok) {
         // Checked again when it's drawn: the server may have said yes by then.
-        var show = function(){ if (!BOLD.can(area, areaWhat)) showLevelGate(document.getElementById('pageGate'), area, areaWhat); };
+        var show = function(){ if (!allowed && !BOLD.can(area, areaWhat)) showLevelGate(document.getElementById('pageGate'), area, areaWhat); };
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
       }
     });
@@ -1169,8 +1280,8 @@
           .then(function(lists){ return [].concat.apply([], lists); });
       };
       return Promise.all([
-        get(all ? [se] : [se.where('hidden', '==', false)].concat(me ? [se.where('organisers', 'array-contains', me)] : [])),
-        get(all ? [ev] : [ev.where('hidden', '==', false)].concat(me ? [ev.where('createdBy', '==', me)] : [])),
+        get(all ? [se] : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels())].concat(me ? [se.where('organisers', 'array-contains', me)] : [])),
+        get(all ? [ev] : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels())].concat(me ? [ev.where('createdBy', '==', me)] : [])),
       ]).then(function(r){
         var seen = {}, once = function(k){ if (seen[k]) return false; seen[k] = true; return true; };
         var series = r[0].filter(function(x){ return x.id && x.title && once('s:' + x.id); })

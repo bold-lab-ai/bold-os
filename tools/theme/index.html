@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Theme | BOLD.OS</title>
+<script>try { if (localStorage.getItem('boldTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e){}</script>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/bold.css">
+<link rel="stylesheet" href="editor.css">
+<style id="themeEdits"></style>
+</head>
+<body>
+<!-- The theme tool (tools/theme, served by `npm start` only): bold.css's colour roles in light and
+     dark, editable, with the site's components drawn in both; Export gives the two :root blocks
+     with the changes, to paste over bold.css's own. -->
+<header class="masthead te-head">
+  <div class="masthead-left"><div class="masthead-brand"><a class="wordmark" href="../index.html"><strong>BOLD</strong><span>.</span>OS</a><div class="masthead-sub">Theme</div></div></div>
+  <div class="masthead-right">
+    <span class="te-count" id="editCount"></span>
+    <button class="btn-text" type="button" id="resetAll">Reset all</button>
+    <button class="btn-box is-primary" type="button" id="exportBtn">Export</button>
+    <button class="mast-btn mast-theme" id="themeToggle" type="button" aria-label="Dark theme" aria-pressed="false" title="This page's own theme"><svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg><svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z"/></svg></button>
+  </div>
+</header>
+
+<main class="te">
+  <section class="te-intro">
+    <h1>Colours, light and dark</h1>
+    <p>Every colour role in <code>bold.css</code>, as the site draws it in each theme. Click a swatch to pick a colour, or type any CSS colour in its field (<code>#hex</code>, <code>rgba()</code>, <code>var(--ink)</code>, <code>color-mix()</code>). The whole page follows, and nothing changes on the site until you paste the export into <code>bold.css</code>. Your changes stay in this browser until you reset them.</p>
+  </section>
+
+  <section class="te-colours">
+  <div class="te-tools">
+    <label class="te-field">Find<input type="search" id="search" placeholder="A role, a value, a use: ink, #70b5ff, success…"></label>
+    <label class="te-check"><input type="checkbox" id="editedOnly"> Changed only</label>
+  </div>
+
+  <div class="te-columns" aria-hidden="true"><span>Role</span><span>Light</span><span>Dark</span></div>
+  <div id="tokens"><p class="te-loading">Reading bold.css…</p></div>
+  </section>
+
+  <section class="te-section">
+    <h2>Contrast</h2>
+    <p class="te-note">Text on each background, as WCAG measures it: 4.5:1 for body text, 3:1 for large text and marks. Under 4.5 is marked; under 3 more so.</p>
+    <div id="contrast"></div>
+  </section>
+
+  <section class="te-section te-wide">
+    <h2>Components</h2>
+    <p class="te-note">The site's own classes and stylesheets, in a frame per theme. They update as you edit.</p>
+    <div class="te-gallery-bar">
+      <nav class="guide-tabs" id="galleryTabs"><a class="guide-tab is-current" href="#" data-gallery="site">Site</a><a class="guide-tab" href="#" data-gallery="board">Internal Review Board</a></nav>
+      <div class="view-toggle" id="frameLayout"><button class="view-btn" type="button" data-layout="side" aria-pressed="true">Side by side</button><button class="view-btn" type="button" data-layout="stack" aria-pressed="false">One above the other</button></div>
+    </div>
+    <div class="te-frames" id="frames">
+      <figure><figcaption>Light</figcaption><iframe id="frameLight" title="Components in the light theme"></iframe></figure>
+      <figure><figcaption>Dark</figcaption><iframe id="frameDark" title="Components in the dark theme"></iframe></figure>
+    </div>
+  </section>
+</main>
+
+<dialog class="confirm-dialog te-export" id="exportDialog">
+  <h2>Export</h2>
+  <p id="exportNote"></p>
+  <textarea id="exportText" spellcheck="false" readonly></textarea>
+  <div class="confirm-actions">
+    <button class="btn-box" type="button" id="exportClose">Close</button>
+    <button class="btn-box" type="button" id="exportDownload">Download</button>
+    <button class="btn-box is-primary" type="button" id="exportCopy">Copy</button>
+  </div>
+</dialog>
+
+<script src="editor.js"></script>
+</body>
+</html>

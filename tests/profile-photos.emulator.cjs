@@ -8,10 +8,13 @@ if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULAT
 admin.initializeApp({ projectId: 'demo-test', storageBucket: 'demo-test.appspot.com' });
 const db = admin.firestore();
 const files = new Map();
+const metadata = new Map();
+let signOptions;
 const bucket = { file: path => ({
-  save: async bytes => { files.set(path, Buffer.from(bytes)); },
+  save: async (bytes, options) => { files.set(path, Buffer.from(bytes)); metadata.set(path, options.metadata); },
   download: async () => { if (!files.has(path)) throw new Error('Missing file'); return [files.get(path)]; },
   delete: async () => { files.delete(path); },
+  getSignedUrl: async options => { signOptions = options; return ['https://storage.googleapis.com/demo-test/' + path + '?signed=day']; },
 }) };
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
 let mode = 'ok', calls = 0, releaseImage, imageStarted;
@@ -55,7 +58,15 @@ async function ruleRequest(path, method, auth, body) {
   await db.collection('settings').doc('access').set({ pages: { people: { view: 'everyone' } } });
   assert.equal(await service.owner('OWNER@example.test'), 'UOWNER');
   assert.equal((await service.importSlack('UOWNER', false)).state, 'active');
-  assert.equal((await service.read('UOWNER')).image, jpeg.toString('base64'));
+  const firstPhoto = await service.read('UOWNER');
+  assert.match(firstPhoto.url, /^https:\/\/storage\.googleapis\.com\//);
+  assert.equal((await service.read('UOWNER')).url, firstPhoto.url);
+  assert.equal(signOptions.version, 'v4');
+  assert.equal(signOptions.accessibleAt.getUTCHours(), 0);
+  assert.equal(signOptions.expires - signOptions.accessibleAt, 2 * 24 * 60 * 60 * 1000);
+  assert.equal((await service.batch(['UOWNER', 'UOWNER'])).UOWNER.url, firstPhoto.url);
+  await assert.rejects(service.batch(['invalid/id']));
+  assert.equal(Array.from(metadata.values())[0].cacheControl, 'public, max-age=31536000, immutable');
   const firstCalls = calls;
   assert.equal((await service.importSlack('UOWNER', false)).state, 'unchanged');
   assert.equal(calls, firstCalls);

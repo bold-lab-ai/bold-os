@@ -2,20 +2,14 @@
    with the same rules as audit-board.css's "card detail" sections. Keep the two
    in step. */
 :root{
-  --success-text:#256b60;
-  --danger-text:#b42318;
-  --warn-text:#8a5a12;
-  --neutral-text:#4b5563;
   --article-max:640px;
-  --blue:#1a2b4a;
-  --plum:#7d5a99;
 }
 .detail{
   max-width:var(--content-max); margin:0 auto; padding:40px var(--gutter) 88px;
   font-family:var(--serif); font-size:18px; line-height:1.7; color:var(--ink-soft);
 }
 .detail-back{font-family:var(--sans); font-size:13.5px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
-.detail-back:hover{color:var(--accent);}
+.detail-back:hover{color:var(--link);}
 .detail-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
 .detail-msg[hidden], #projectBody[hidden]{display:none;}
 .detail-muted{color:var(--muted);}
@@ -39,7 +33,7 @@
   font-family:var(--sans); font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em;
   border:1px solid currentColor; padding:2px 7px; color:var(--neutral-text);
 }
-.detail .badge-stage{color:var(--accent);}
+.detail .badge-stage{color:var(--link);}
 /* tabs (the Projects page's) */
 .tabs{display:flex; gap:28px; border-bottom:1px solid var(--line); margin-top:20px; overflow-x:auto;}
 .tab{
@@ -80,8 +74,8 @@
 /* edit the abstract, in place: as the board's card page (audit-board.css) */
 .detail input, .detail textarea, .detail select, .detail button{font-family:var(--sans);}
 .detail .btn-text{
-  font-family:var(--sans); font-size:13.5px; color:var(--accent); background:none; border:none; padding:0;
-  cursor:pointer; text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
+  font-family:var(--sans); font-size:13.5px; color:var(--link); background:none; border:none; padding:0;
+  cursor:pointer; text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:2px;
 }
 .detail .btn-text:hover{text-decoration-color:currentColor;}
 .detail .btn-text:disabled{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
@@ -103,8 +97,8 @@
 .channel-status:empty{display:none;}
 .channel-status li{position:relative; padding-left:16px; margin-top:3px; color:var(--ink-soft);}
 .channel-status li::before{content:'\2022'; position:absolute; left:4px; color:var(--muted);}
-.channel-status li.ok::before{content:'\2713'; left:0; color:#256b60;}
-.channel-status li.new::before{content:'+'; left:2px; font-weight:700; color:var(--accent);}
+.channel-status li.ok::before{content:'\2713'; left:0; color:var(--green);}
+.channel-status li.new::before{content:'+'; left:2px; font-weight:700; color:var(--link);}
 .channel-status li.warn{color:var(--danger-text);}
 .channel-status li.pending{color:var(--muted);}
 .kw-entry{position:relative; display:flex; gap:8px;}
@@ -114,7 +108,7 @@
 .kw-add{padding:8px 14px; font-size:16px; line-height:1;}
 .kw-suggest{
   position:absolute; top:100%; left:0; right:0; z-index:5; margin:2px 0 0; padding:4px 0; list-style:none;
-  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:0 14px 44px #1a2b4a1f;
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow);
   max-height:220px; overflow-y:auto;
 }
 .kw-suggest[hidden]{display:none;}
@@ -146,7 +140,7 @@
 }
 .field-error{
   font-family:var(--sans); font-size:12.5px; color:var(--danger-text);
-  background:#fbe6e4; border:1px solid var(--danger-text);
+  background:var(--danger-bg); border:1px solid var(--danger-text);
   border-radius:var(--radius); padding:8px 12px; margin-top:12px;
 }
 .field-error[hidden]{display:none;}
@@ -158,7 +152,7 @@
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
   padding:9px 16px; cursor:pointer; white-space:nowrap;
 }
-.detail .btn:hover:not(:disabled){border-color:var(--blue); color:var(--blue);}
+.detail .btn:hover:not(:disabled){border-color:var(--accent); color:var(--link);}
 .detail .btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
 @media (max-width:560px){
   .detail-grid{grid-template-columns:1fr; gap:2px 0;}
@@ -184,7 +178,7 @@
 
 .wk-top{display:flex; flex-wrap:wrap; align-items:baseline; gap:2px 8px; font-size:11.5px; color:var(--muted);}
 .wk-type{font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em;}
-.wk-type-code{color:var(--blue);}
+.wk-type-code{color:var(--link);}
 .wk-type-content{color:var(--plum);}
 .wk-type-request{color:var(--warn-text);}
 .wk-type-other{color:var(--neutral-text);}
@@ -215,8 +209,8 @@
 .wk-milestone{color:var(--ink-soft); border:1px solid var(--line); padding:0 4px; line-height:1.5;}
 /* Each milestone's colour, in turn by the order they were added: white on the Calendar's
    ochre, blue and green, as its own meetings (projects.css .week-block.is-mine). */
-.wk-milestone[class*="wk-mc-"]{color:#fff; background:var(--mc); border-color:var(--mc);}
-.wk-mc-0{--mc:#8a5a12;} .wk-mc-1{--mc:#1a2b4a;} .wk-mc-2{--mc:#256b60;}
+.wk-milestone[class*="wk-mc-"]{color:var(--on-fill); background:var(--mc); border-color:var(--mc);}
+.wk-mc-0{--mc:var(--brown);} .wk-mc-1{--mc:var(--ink);} .wk-mc-2{--mc:var(--green);}
 .wk-late + .wk-milestone{margin-left:0;}
 /* A milestone's progress (Milestone filter), above the columns. */
 .wk-milestonebar-track{height:6px; border-radius:3px; background:var(--line); overflow:hidden;}
@@ -251,7 +245,7 @@
 .wk-page .detail-back{margin-bottom:14px;}
 .wk-page .detail-head h2.wk-page-title{font-size:clamp(24px, 3.6vw, 32px); line-height:1.2; font-weight:800; color:var(--ink); max-width:none;}
 .wk-page .detail-badges{margin-top:6px;}
-.wk-page .wk-badge-code{color:var(--blue);}
+.wk-page .wk-badge-code{color:var(--link);}
 .wk-page .wk-badge-content{color:var(--plum);}
 .wk-page .wk-badge-request{color:var(--warn-text);}
 .wk-page .detail-grid dd a{color:inherit;}
@@ -286,3 +280,12 @@
 .wk-talk-head{font-family:var(--sans); font-size:14px; margin-bottom:4px;}
 .wk-talk-form textarea, .wk-talk-edit textarea{width:100%; box-sizing:border-box; font:inherit; font-size:15px;}
 .wk-talk-edit{margin-top:4px;}
+/* Inviting someone to the project (project-invite.js, #148): under People, and the invited's banner. */
+.pj-inv{margin-top:6px;}
+.pj-inv-list{list-style:none; margin:4px 0; padding:0; font-family:var(--sans); font-size:14px;}
+.pj-inv-list li{padding:2px 0;}
+.pj-inv-form{max-width:420px; margin-top:6px; font-family:var(--sans); font-size:14px;}
+.pj-inv-form input{display:block; width:100%; box-sizing:border-box; margin-top:4px; font-family:var(--sans); font-size:14px; padding:7px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.pj-inv-banner{margin:0 0 16px; padding:12px 16px; border:1px solid var(--ink); border-radius:var(--radius); background:var(--surface); font-family:var(--sans); font-size:15px;}
+.pj-inv-banner p{margin:0;}
+.pj-inv-banner .event-form-actions{margin-top:10px;}

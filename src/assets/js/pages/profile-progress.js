@@ -1,10 +1,10 @@
 // profile.html's completeness bar, under the name: how much of the profile is filled
-// in, and links to what's left. Counts everything on it: name, email and photo (from
-// Slack), their details and group (members/{email}; who invited them, except for PIs), their studies if they're a PhD or
+// in, and links to what's left. Counts everything on it: name, email and the
+// site-managed photo, their details and group (members/{email}; who invited them, except for PIs), their studies if they're a PhD or
 // Master student (studies/{email}: working title, who supervises them, the meeting and
 // the Slack channel), and their linked GitHub and Google accounts (profile.js says when
 // those change: bold:accounts). A link to something in Your details or Studies opens
-// that tab's form; the photo is changed in Slack. "Profile complete." shows on the
+// that tab's form; the photo links to its controls. "Profile complete." shows on the
 // visit it's complete, then not on the next ones (remembered in this browser).
 (function(){
   var esc = BOLD.escapeHtml;
@@ -13,7 +13,7 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var STUDY_ROLES = ['PhD student', 'Master student'];
-  var me = null, member, studies, unsubs = [], doneBefore = false;
+  var me = null, member, studies, unsubs = [], doneBefore = false, photoActive = false;
   var store = function(k, v){ try { if (v === undefined) return localStorage.getItem(k); if (v) localStorage.setItem(k, '1'); else localStorage.removeItem(k); } catch (e){ return null; } };
 
   function linked(id){
@@ -26,7 +26,7 @@
     var m = member || {}, s = studies || {}, has = function(k){ return !!String(m[k] || '').trim(); };
     var u = BOLD.getAuth().currentUser || {};
     var out = [
-      ['Name', !!u.displayName, ''], ['Email', !!u.email, ''], ['Slack photo', !!u.photoURL, ''],
+      ['Name', !!u.displayName, ''], ['Email', !!u.email, ''], ['Profile photo', photoActive, 'photo'],
       ['Group', !!member, 'details'], ['Pronouns', has('pronouns'), 'details'],
       ['Role', has('role'), 'details'], ['Institution', has('institution'), 'details'],
       // One field since 2026-10-26: who invited them. Not for PIs: nobody invited them.
@@ -74,12 +74,25 @@
     }, 0);
   });
   document.addEventListener('bold:accounts', render);
+  document.addEventListener('bold:photo', function(e){ photoActive = !!(e.detail && e.detail.state === 'active'); render(); });
+
+  // Onboarding (Get started), until it's done: how far they are, and where to carry on.
+  var ob = document.getElementById('pfOnboarding');
+  function onboarding(){
+    if (!ob || !window.BoldOnboarding) return;
+    BoldOnboarding.load(function(s){
+      ob.hidden = !s || s.done;
+      if (!ob.hidden) ob.innerHTML = 'Your first steps at BOLD: ' + esc(BoldOnboarding.count(s)) + ' done. <a href="get-started.html">Carry on</a>';
+    });
+  }
 
   BOLD.onUser(function(user){
     unsubs.forEach(function(u){ u(); }); unsubs = [];
     me = user && user.email ? { email: user.email.toLowerCase() } : null;
-    member = undefined; studies = undefined;
-    if (!me) { box.hidden = true; return; }
+    member = undefined; studies = undefined; photoActive = false;
+    if (!me) { box.hidden = true; if (ob) ob.hidden = true; return; }
+    BOLD.photo.mine().then(function(data){ photoActive = !!(data.photo && data.photo.state === 'active'); render(); }).catch(function(){});
+    onboarding();
     doneBefore = !!store('pfDone:' + me.email);
     unsubs.push(db.collection('members').doc(me.email).onSnapshot(function(s){ member = s.exists ? s.data() : null; render(); },
       function(){ member = null; render(); }));

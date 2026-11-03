@@ -88,8 +88,10 @@
     var off = function(ok, why){ return ok && !busy ? '' : ' disabled title="' + esc(ok ? '' : why) + '"'; };
     var NOT_ORG = 'Only its organisers, PIs and admins can do this';
     if (isEditions(s)) { body.innerHTML = BACK + editionsHtml(off, NOT_ORG); return; }
-    var who = s.invite && s.invite.mode === 'group' ? inviteText(s.invite) + ' (invited)'
-      : 'Whoever joins' + ((s.joined || []).length ? ' · ' + s.joined.length + ' so far' : '');
+    var who = (s.invite && s.invite.mode === 'group' ? inviteText(s.invite) + ' (invited)'
+      : 'Whoever joins' + ((s.joined || []).length ? ' · ' + s.joined.length + ' so far' : '')) +
+      (s.requiredFor ? ' · required for ' + esc({ associate: 'BOLD-associate', internal: 'BOLD-internal', staff: 'BOLD-staff', exec: 'BOLD-exec' }[s.requiredFor] || s.requiredFor) + ' and above' : '') +
+      ' · seen by ' + esc(E.visibleText(s.visibleTo)).replace(/^(Anyone|Everyone)/, function(w){ return w.toLowerCase(); });
     var join = '';
     if (!s.hidden && s.invite && s.invite.mode === 'join') {
       var joined = me && (s.joined || []).indexOf(me.email.toLowerCase()) >= 0;
@@ -174,7 +176,7 @@
 
   // The end of the form when it's a one-off event: no invite, proposals or organisers.
   function onceEnd(){
-    return '<p class="ev-error"' + (editing.error ? '' : ' hidden') + '>' + esc(editing.error || '') + '</p>' +
+    return E.visibleSelectHtml('sr-visible', editing.visibleTo) + '<p class="ev-error"' + (editing.error ? '' : ' hidden') + '>' + esc(editing.error || '') + '</p>' +
       '<div class="event-form-actions"><button type="button" class="ev-save sr-save"' + (busy ? ' disabled' : '') + '>' + (busy ? 'Adding…' : 'Add') + '</button>' +
         '<button type="button" class="sr-cancel"' + (busy ? ' disabled' : '') + '>Cancel</button></div></div>';
   }
@@ -204,7 +206,14 @@
             '<p class="event-form-hint">To each occurrence, once it’s released; each can choose its own.</p>'
           : '<label>When (London time)</label>' + meetingEntryHtml(e.meeting) +
             '<label>Who’s invited<select class="sr-invite">' +
-              INVITE.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.invite ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>') +
+              INVITE.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.invite ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+            // Required (onboarding: each of that group, and those above it, must join it). PIs and admins set it.
+            '<label>Who must join it<select class="sr-required"' + (full ? '' : ' disabled title="Only PIs and admins make one required"') + '>' +
+              [['', 'Nobody: it’s optional'], ['associate', 'BOLD-associate and above'], ['internal', 'BOLD-internal and above'], ['staff', 'BOLD-staff and above'], ['exec', 'BOLD-exec']].map(function(o){
+                return '<option value="' + o[0] + '"' + (o[0] === (e.requiredFor || '') ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
+            '<p class="event-form-hint">A required one is in their first steps at BOLD (Get started).</p>') +
+        // Who sees it, its page and its editions (all kinds; a one-off event's own).
+        E.visibleSelectHtml('sr-visible', e.visibleTo) +
         '<label>Organisers: they change it, and are always invited</label>' +
         '<ul class="sr-orgs">' + e.organisers.map(function(m, i){
           return '<li><span>' + esc(nameOf(m)) + '</span>' + (e.organisers.length > 1 ? '<button type="button" class="btn-text danger sr-org-remove" data-i="' + i + '">Remove</button>' : '') + '</li>';
@@ -227,6 +236,8 @@
     if (q('.sr-title')) editing.title = q('.sr-title').value;
     if (q('.sr-desc')) editing.description = q('.sr-desc').value;
     if (q('.sr-invite')) editing.invite = q('.sr-invite').value;
+    if (q('.sr-required')) editing.requiredFor = q('.sr-required').value;
+    if (q('.sr-visible')) editing.visibleTo = q('.sr-visible').value;
     if (q('.sr-often')) editing.often = q('.sr-often').value;
     if (q('.sr-has-invite') && !q('.sr-has-invite').disabled) editing.hasInvite = q('.sr-has-invite').checked;
     if (q('.sr-proposals')) editing.proposals = q('.sr-proposals').checked;
@@ -241,8 +252,8 @@
 
   function startEditing(){
     editing = s ? { often: isEditions(s) ? oftenKey(s.cadence) : 'w' + ((s.meeting || {}).every || 1), hasInvite: !isEditions(s), title: s.title, description: s.description || '',
-        meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, inviteGroup: s.inviteGroup || 'none', organisers: (s.organisers || []).slice(), error: '' }
-      : { often: 'once', start: '', end: '', place: '', hasInvite: false, title: '', description: '', meeting: null, invite: 'join', proposals: false, inviteGroup: 'internal', organisers: [me.email.toLowerCase()], error: '' };
+        meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, inviteGroup: s.inviteGroup || 'none', requiredFor: s.requiredFor || '', visibleTo: s.visibleTo || 'internal', organisers: (s.organisers || []).slice(), error: '' }
+      : { often: 'once', start: '', end: '', place: '', hasInvite: false, title: '', description: '', meeting: null, invite: 'join', proposals: false, inviteGroup: 'internal', visibleTo: 'internal', organisers: [me.email.toLowerCase()], error: '' };
     loadRoster(); render();
   }
 
@@ -266,8 +277,8 @@
     if (!e.title.trim()) { e.error = 'Give it a title.'; render(); return; }
     if (meeting && meeting.error) { e.error = meeting.error; render(); return; }
     var inv = e.invite.indexOf('group:') === 0 ? { mode: 'group', group: e.invite.slice(6) } : { mode: 'join' };
-    var payload = { action: 'save', id: s ? s.id : undefined, kind: ed ? 'editions' : 'meeting', title: e.title.trim(), description: e.description.trim(), organisers: e.organisers };
-    if (ed) { payload.cadence = { every: every, unit: weekly ? 'week' : 'month' }; payload.proposals = e.proposals; payload.inviteGroup = e.inviteGroup || 'none'; } else { payload.meeting = meeting; payload.invite = inv; }
+    var payload = { action: 'save', id: s ? s.id : undefined, kind: ed ? 'editions' : 'meeting', title: e.title.trim(), description: e.description.trim(), organisers: e.organisers, visibleTo: e.visibleTo || 'internal' };
+    if (ed) { payload.cadence = { every: every, unit: weekly ? 'week' : 'month' }; payload.proposals = e.proposals; payload.inviteGroup = e.inviteGroup || 'none'; } else { payload.meeting = meeting; payload.invite = inv; payload.requiredFor = e.requiredFor || ''; }
     var send = function(){
       busy = true; e.error = ''; render();
       call(payload).then(function(r){
@@ -296,7 +307,7 @@
     var slug = stem + '-' + Math.random().toString(16).slice(2, 8), now = Date.now();
     busy = true; e.error = ''; render();
     db.collection('events').doc(slug).set({ slug: slug, hidden: true, title: title, startDate: e.start, endDate: end, place: e.place.trim(),
-      description: e.description.trim(), inviteGroup: e.inviteGroup || 'none', createdAt: now, createdBy: me.email, updatedAt: now, updatedBy: me.email }).then(function(){
+      description: e.description.trim(), inviteGroup: e.inviteGroup || 'none', visibleTo: e.visibleTo || 'internal', createdAt: now, createdBy: me.email, updatedAt: now, updatedBy: me.email }).then(function(){
       location.replace('event.html?event=' + encodeURIComponent(slug));
     }).catch(function(err){
       console.error('[BOLD Series] adding an event failed', err);
@@ -351,7 +362,7 @@
   function watchEditions(){
     if (editionsUnsub || !isEditions(s)) return;
     var q = db.collection('events').where('series', '==', s.id);
-    if (!full && !isOrganiser()) q = q.where('hidden', '==', false);
+    if (!full && !isOrganiser()) q = q.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels());
     editionsUnsub = q.onSnapshot(function(snap){
       editions = snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.startDate; })
         .sort(function(a, b){ return a.startDate < b.startDate ? -1 : 1; });

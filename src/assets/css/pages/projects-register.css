@@ -1,9 +1,5 @@
 :root{
-  --danger-text:#b42318;
   --article-max:600px;
-  --blue:#1a2b4a;
-  --danger-bg:#fbe6e4;
-  --shadow:0 14px 44px #1a2b4a1f;
 }
 /* Scoped to the content: the masthead and side nav keep bold.css's type. */
 main{font-family:var(--sans); font-size:16px; line-height:1.55;}
@@ -11,7 +7,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 h1{font-family:var(--serif); color:var(--ink); font-weight:800; letter-spacing:-0.005em; margin:0;}
 .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
-.back-link:hover{color:var(--accent);}
+.back-link:hover{color:var(--link);}
 .hero h1{font-size:clamp(27px, 4.4vw, 38px); line-height:1.15; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
 main{max-width:var(--content-max); margin:0 auto; padding:24px var(--gutter) 48px;}
 main > *{max-width:var(--article-max);}
@@ -39,8 +35,8 @@ main > form{max-width:560px;}
 .channel-status:empty{display:none;}
 .channel-status li{position:relative; padding-left:16px; margin-top:3px; color:var(--ink-soft);}
 .channel-status li::before{content:'\2022'; position:absolute; left:4px; color:var(--muted);}
-.channel-status li.ok::before{content:'\2713'; left:0; color:#256b60;}
-.channel-status li.new::before{content:'+'; left:2px; font-weight:700; color:var(--accent);}
+.channel-status li.ok::before{content:'\2713'; left:0; color:var(--green);}
+.channel-status li.new::before{content:'+'; left:2px; font-weight:700; color:var(--link);}
 .channel-status li.warn{color:var(--danger-text);}
 .channel-status li.pending{color:var(--muted);}
 /* ---------- keywords ---------- */
@@ -72,17 +68,17 @@ main > form{max-width:560px;}
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
   padding:9px 16px; cursor:pointer; white-space:nowrap;
 }
-.btn:hover{border-color:var(--blue); color:var(--blue);}
+.btn:hover{border-color:var(--accent); color:var(--link);}
 .btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
 .btn:disabled:hover{border-color:var(--line); color:var(--muted);}
-.btn-primary{background:var(--blue); color:#fff; border-color:var(--blue);}
-.btn-primary:hover{background:#0f1c33; border-color:#0f1c33; color:#fff;}
+.btn-primary{background:var(--accent); color:var(--on-fill); border-color:var(--accent);}
+.btn-primary:hover{background:var(--accent-hover); border-color:var(--accent-hover); color:var(--on-fill);}
 .btn-primary:disabled{background:var(--surface); color:var(--muted); border-color:var(--line); opacity:.5;}
 .btn-primary:disabled:hover{background:var(--surface); border-color:var(--line); color:var(--muted);}
 /* The board's abstract field: text link, live counter, LaTeX preview. */
 main .btn-text{
-  font-family:var(--sans); font-size:13px; color:var(--accent); background:none; border:none; padding:0;
-  cursor:pointer; text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:2px;
+  font-family:var(--sans); font-size:13px; color:var(--link); background:none; border:none; padding:0;
+  cursor:pointer; text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:2px;
 }
 main .btn-text:hover{text-decoration-color:currentColor;}
 .abstract-counter{font-family:var(--sans); font-size:12.5px; color:var(--muted); margin-top:4px; font-variant-numeric:tabular-nums;}

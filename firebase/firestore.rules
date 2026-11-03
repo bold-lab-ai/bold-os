@@ -71,6 +71,22 @@ service cloud.firestore {
       return a == null ? 'internal' : a.data.get('pages', {}).get(page, {}).get(what, 'internal');
     }
     function need(page, what) { return myRank() >= levelRank(level(page, what)); }
+    // Who sees an event series or an event (`visibleTo`, functions/access.js VISIBILITY; 2026-11-02):
+    // the levels the viewer has, from 'public' (anyone, even signed out) up. Pages query with
+    // where('visibleTo', 'in', BOLD.visibleLevels()), which these match.
+    function visibleLevels() {
+      let r = myRank();
+      return r >= 5 ? ['public', 'everyone', 'associate', 'internal', 'staff', 'exec']
+        : r >= 4 ? ['public', 'everyone', 'associate', 'internal', 'staff']
+        : r >= 3 ? ['public', 'everyone', 'associate', 'internal']
+        : r >= 2 ? ['public', 'everyone', 'associate']
+        : r >= 1 ? ['public', 'everyone'] : ['public'];
+    }
+    // A released one the viewer sees: its level is theirs, and, unless it's for anyone, Events is open to them.
+    function seesEvent(d) {
+      return d.hidden == false && d.get('visibleTo', 'internal') in visibleLevels()
+        && (d.get('visibleTo', 'internal') == 'public' || may('events', 'view'));
+    }
     // Signed in (with Slack) and allowed by the table.
     function may(page, what)   { return isSignedIn() && need(page, what); }
     // View or Edit (functions/access.js 'list'): on Projects, Edit without View sees the
@@ -206,9 +222,28 @@ service cloud.firestore {
     }
     // Requests to be in another group: theirs to read, and the PIs' and admins'; all writes
     // through groupRequest.
+    // Invitations to a project (projectInvite in functions/index.js): the person invited reads
+    // their own (the project page's Join / Decline); its editors list them through the callable.
+    match /projectInvites/{id} {
+      allow read: if isSignedIn() && resource.data.email == email().lower();
+      allow write: if false;
+    }
+
+    // PIs' and admins' test accounts (testAccount in functions/index.js): they read them; no client writes.
+    match /testAccounts/{who} {
+      allow read: if hasFullWrite();
+      allow write: if false;
+    }
+
+    // Onboarding marks (the BOLDiquette read, the tour taken): the onboarding callable writes them.
+    match /onboarding/{who} {
+      allow read: if hasFullWrite() || (isLabMember() && who == email().lower());
+      allow write: if false;
+    }
+
     match /groupRequests/{id} {
-      // PIs and admins; who asked; and whoever invited them, who decides it (groupRequest).
-      allow read: if hasFullWrite() || (isLabMember() && (resource.data.email == email().lower() || resource.data.get('inviterEmail', '') == email().lower()));
+      // PIs and admins, who decide it (groupRequest), and who asked.
+      allow read: if hasFullWrite() || (isLabMember() && resource.data.email == email().lower());
       allow write: if false;
     }
 
@@ -525,14 +560,17 @@ service cloud.firestore {
           && email().lower() in get(/databases/$(database)/documents/eventSeries/$(id)).data.get('organisers', []);
       }
       function mine(d) { return addedByMe(d) || organisesIt(d); }
-      allow read: if may('events', 'view') && (resource.data.hidden == false || hasFullWrite() || mine(resource.data));
+      allow read: if seesEvent(resource.data) || (isSignedIn() && (hasFullWrite() || mine(resource.data)));
       allow create: if hasFullWrite() || (may('events', 'edit') && request.resource.data.hidden == true && addedByMe(request.resource.data)
         && request.resource.data.get('series', '') == ''
+        && request.resource.data.get('visibleTo', 'internal') in ['public', 'everyone', 'associate', 'internal', 'staff', 'exec']
         && request.resource.data.get('inviteGroup', 'none') in ['none', 'everyone', 'associate', 'internal', 'staff', 'exec']);
       allow update: if hasFullWrite() || (may('events', 'edit') && mine(resource.data)
         && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '')
         && request.resource.data.get('series', '') == resource.data.get('series', '')
         && request.resource.data.hidden is bool
+        && request.resource.data.get('visibleTo', 'internal') in ['public', 'everyone', 'associate', 'internal', 'staff', 'exec']
+        && (request.resource.data.get('series', '') == '' || request.resource.data.get('visibleTo', 'internal') == resource.data.get('visibleTo', 'internal'))
         && request.resource.data.get('inviteGroup', 'none') in ['none', 'everyone', 'associate', 'internal', 'staff', 'exec']);
       allow delete: if hasFullWrite() || (may('events', 'edit') && mine(resource.data));
     }
@@ -547,7 +585,7 @@ service cloud.firestore {
       allow write: if false;
     }
     match /eventSeries/{id} {
-      allow read: if may('events', 'view') && (resource.data.hidden == false || hasFullWrite() || email().lower() in resource.data.get('organisers', []));
+      allow read: if seesEvent(resource.data) || (isSignedIn() && (hasFullWrite() || email().lower() in resource.data.get('organisers', [])));
       allow write: if false;
     }
 

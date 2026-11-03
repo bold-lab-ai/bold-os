@@ -69,6 +69,16 @@ window.BoldEvents = (function(){
       INVITE_GROUPS.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === (value || 'none') ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
   }
 
+  // Who sees an event or an event series (`visibleTo`; functions/access.js VISIBILITY, 2026-11-02): a
+  // group and those above it, or anyone, even signed out. Without one, BOLD-internal and above.
+  var VISIBLE = [['public', 'Anyone, even signed out'], ['everyone', 'Everyone signed in'], ['associate', 'BOLD-associate and above'],
+    ['internal', 'BOLD-internal and above'], ['staff', 'BOLD-staff and above'], ['exec', 'BOLD-exec']];
+  function visibleText(v){ return (VISIBLE.filter(function(o){ return o[0] === (v || 'internal'); })[0] || VISIBLE[3])[1]; }
+  function visibleSelectHtml(cls, value, why){
+    return '<label>Who can see it<select class="' + cls + '"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' +
+      VISIBLE.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === (value || 'internal') ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>';
+  }
+
   function showError(form, msg){
     var box = form.querySelector('.ev-error');
     box.textContent = msg; box.hidden = !msg;
@@ -82,5 +92,5 @@ window.BoldEvents = (function(){
   }
 
   return { when: when, isPast: isPast, formHtml: formHtml, read: read, showError: showError, access: access, NOT_PI: NOT_PI, visibilityEffects: visibilityEffects,
-    inviteText: inviteText, inviteSelectHtml: inviteSelectHtml };
+    inviteText: inviteText, inviteSelectHtml: inviteSelectHtml, visibleText: visibleText, visibleSelectHtml: visibleSelectHtml };
 })();

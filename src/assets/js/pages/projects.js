@@ -13,8 +13,10 @@
   function cacheGet(key){
     try { return JSON.parse(localStorage.getItem(CACHE_PREFIX + key) || 'null'); } catch (e) { return null; }
   }
+  // Each copy keeps the access it was saved under (BOLD.accessSig): one saved under other access
+  // (a change of group, or of Who can see what) is never shown, so nobody glimpses more than they may.
   function cachePut(key, data){
-    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), d: data })); } catch (e){}
+    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), d: data, s: BOLD.accessSig('projects') })); } catch (e){}
   }
   function cacheClear(){
     try {
@@ -27,6 +29,7 @@
   function loadCached(fn, email, render, onError, usable){
     var key = fn + ':' + email.toLowerCase();
     var hit = cacheGet(key);
+    if (hit && hit.s !== BOLD.accessSig('projects')) hit = null;
     var age = hit ? Math.round((Date.now() - hit.t) / 1000) : 0;
     if (hit) render(hit.d);
     if (hit && Date.now() - hit.t < CACHE_TTL_MS && (!usable || usable(hit.d))) { console.info('[BOLD Lab] ' + fn + ': cache hit (' + age + 's old), no call'); return; }
@@ -68,7 +71,7 @@
       return l;
     };
     if (p.titleOnly) {
-      parts.push(textNode('Join it to see it'));
+      parts.push(textNode(p.ask ? 'Its people see it: ask to join, and its owner decides' : 'Join it to see it'));
     } else if (p.boardId) {
       var inVenue = document.createElement('span');
       inVenue.appendChild(textNode('In: '));
@@ -131,6 +134,18 @@
     msg.className = 'join-msg';
     msg.setAttribute('role', 'status');
     join.addEventListener('click', function(){
+      // An invitation to answer: on its page. Below Projects' View and Edit: ask its lead.
+      if (st.invite) { location.href = 'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '') + '&invite=' + encodeURIComponent(st.invite); return; }
+      if (st.ask) {
+        BOLD.confirmAction({ title: 'Ask to join “' + (p.title || 'this project') + '”?', go: 'Ask', effects: ['Send its owner a Slack message asking to join; once they accept, you’re on it'] }).then(function(ok){
+          if (!ok) return;
+          join.disabled = true; join.textContent = 'Asking…'; msg.textContent = '';
+          firebase.app().functions('europe-west2').httpsCallable('projectInvite')({ action: 'ask', id: p.projectId || p.cardId, board: p.boardId || null })
+            .then(function(){ p.asked = true; join.textContent = 'Asked'; join.title = 'Its owner decides'; cacheClear(); })
+            .catch(function(err){ join.disabled = false; join.textContent = 'Ask to join'; msg.textContent = (err && err.message) || 'Couldn’t ask — try again.'; });
+        });
+        return;
+      }
       BOLD.confirmAlways({ title: 'Join \u201c' + (p.title || 'this project') + '\u201d?', go: 'Join', effects: [
         p.slackChannel ? { key: 'slack', text: 'Invite you to ' + p.slackChannel + ' on Slack' } : '',
         'Add you to its meeting on Google Calendar, if it has one (Google emails you the invitation)',
@@ -236,7 +251,7 @@
       opts.forEach(function(o){ add(o[0], o[1]); });
       sel.value = value;
     };
-    fill(el('projAuthor'), 'All authors', [['mine', 'Yours (an author, or joined)']].concat(authorKeys.map(function(k){ return [k, authors[k]]; })), filters.author);
+    fill(el('projAuthor'), 'All authors', [['mine', 'Mine (an author, or joined)']].concat(authorKeys.map(function(k){ return [k, authors[k]]; })), filters.author);
     fill(el('projKeyword'), 'All keywords', keywordNames.map(function(k){ return [k, k + ' (' + keywords[k] + ')']; }), filters.keyword);
   }
 
@@ -367,22 +382,24 @@
     if (!user) { cacheClear(); return; }
     if (!user.email) return;
     myKey = String(user.email).toLowerCase();
-    loadCached('getAllProjects', user.email, renderProjects, function(){
+    // Once this visit has read their access, so the saved copy is checked against it.
+    BOLD.onFreshAccess(function(){ loadCached('getAllProjects', user.email, renderProjects, function(){
       el('projMsg').textContent = 'Could not load projects.';
-    }, hasAuthors);
+    }, hasAuthors); });
   }
 
   // Last, once everything above is defined: onUser runs its callback at once if
   // auth has already resolved, and it reads the cache constants and helpers.
   BOLD.onUser(renderPage);
 
-  // First paint from the last visit's cache, before Firebase has loaded.
-  try {
-    var hint = BOLD.authHint();
-    if (hint && hint.e) {
-      myKey = hint.e.toLowerCase();
-      var hit = cacheGet('getAllProjects:' + hint.e.toLowerCase());
-      if (hit) renderProjects(hit.d);
-    }
-  } catch (e){}
+  // Registering one is for Projects' Edit level: greyed out, with the reason, below it (PAN-BOLD sees the titles).
+  var add = document.querySelector('.proj-add');
+  if (add) {
+    BOLD.onAccess(function(){
+      var can = BOLD.can('projects', 'edit'), why = can ? '' : BOLD.cannotReason('projects', 'edit');
+      add.classList.toggle('is-off', !can); add.setAttribute('aria-disabled', String(!can)); add.title = why;
+    });
+    add.addEventListener('click', function(e){ if (add.getAttribute('aria-disabled') === 'true') e.preventDefault(); });
+  }
+
 })();

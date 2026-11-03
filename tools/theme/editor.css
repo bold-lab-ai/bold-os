@@ -1,0 +1,78 @@
+/* The theme tool's own layout. Its chrome uses bold.css's roles, so edits restyle it too; the
+   light and dark cells are painted with each theme's own values by editor.js. */
+.te-head{position:sticky; top:0; z-index:20;}
+.te-count{font-family:var(--sans); font-size:12.5px; color:var(--muted); margin-right:6px;}
+.te{max-width:1240px; margin:0 auto; padding:0 var(--gutter) 80px;}
+.te-intro{padding:48px 0 24px; max-width:var(--article-max);}
+.te-intro h1{font-size:clamp(32px, 5vw, 48px); line-height:1.1;}
+.te-intro p{font-size:17px;}
+.te-intro code, .te-note code{font-size:.8em;}
+.te-tools{position:sticky; top:61px; z-index:10; display:flex; flex-wrap:wrap; align-items:flex-end; gap:14px 24px; padding:14px 0; background:var(--paper); border-bottom:1px solid var(--line);}
+.te-field{display:flex; flex-direction:column; gap:4px; flex:1 1 280px; font-family:var(--sans); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
+.te-field input{font:14px var(--sans); letter-spacing:normal; text-transform:none; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px;}
+.te-check{display:flex; gap:6px; align-items:center; font-family:var(--sans); font-size:13px; color:var(--ink-soft); padding-bottom:8px;}
+.te-columns, .te-row{display:grid; grid-template-columns:minmax(200px, 1fr) minmax(0, 1fr) minmax(0, 1fr);}
+.te-columns{font-family:var(--sans); font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--muted); padding:16px 0 8px;}
+.te-columns span + span{padding-left:18px;}
+.te-group{margin:26px 0 8px; font-family:var(--sans); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink);}
+.te-row{border:1px solid var(--line); border-bottom:0;}
+.te-row:last-child, .te-row:has(+ .te-group){border-bottom:1px solid var(--line);}
+.te-row[hidden]{display:none;}
+.te-role{padding:14px 16px 14px 14px; font-family:var(--sans); font-size:13px; color:var(--ink-soft); min-width:0;}
+.te-role h3{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace; font-size:13.5px; font-weight:600; color:var(--ink);}
+.te-role p{margin:4px 0 0; line-height:1.45;}
+.te-role details{margin-top:8px; font-size:12px;}
+.te-role summary{cursor:pointer; color:var(--muted);}
+.te-role ul{margin:4px 0 0; padding-left:16px; color:var(--muted);}
+.te-cell{position:relative; padding:14px 18px; min-width:0; display:flex; flex-direction:column; gap:7px; font-family:var(--sans); font-size:12px;}
+/* No background of its own: a translucent role shows over its theme's page, as on the site. */
+.te-swatch{position:relative; display:block; height:46px; border:1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius:var(--radius); overflow:hidden; cursor:pointer;}
+.te-swatch > span{position:absolute; inset:0;}
+.te-swatch input{position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; border:0; padding:0;}
+.te-swatch:focus-within{outline:2px solid currentColor; outline-offset:2px;}
+.te-shadow{height:46px; display:grid; place-items:center;}
+.te-shadow > span{width:70%; height:26px; border-radius:var(--radius);}
+.te-value{display:flex; gap:6px; align-items:center;}
+.te-value input{flex:1 1 auto; min-width:0; font:12px ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace; color:inherit; background:transparent;
+  border:1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius:var(--radius); padding:5px 7px;}
+.te-value input:focus{outline:none; border-color:currentColor;}
+.te-value input.is-bad{border-color:#e5484d; box-shadow:inset 0 0 0 1px #e5484d;}
+.te-reset{flex:none; border:0; background:none; color:inherit; cursor:pointer; font-size:15px; line-height:1; padding:2px 4px; opacity:.75;}
+.te-reset:hover{opacity:1;}
+.te-meta{font-size:11px; opacity:.72; min-height:1em; overflow-wrap:anywhere;}
+.te-cell.is-edited::before{content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:currentColor;}
+.te-loading, .te-note{font-family:var(--sans); font-size:14px; color:var(--muted);}
+.te-section{margin-top:64px;}
+.te-section h2{font-size:28px; margin-bottom:6px;}
+/* contrast */
+.te-contrast{width:100%; border-collapse:collapse; font-family:var(--sans); font-size:12.5px; margin-top:14px;}
+.te-contrast th{font-weight:600; text-align:left; color:var(--muted); padding:6px 8px; border-bottom:1px solid var(--line); white-space:nowrap;}
+.te-contrast th.te-th-theme{color:var(--ink); text-align:center;}
+.te-contrast td{padding:0; border-bottom:1px solid var(--rule);}
+.te-contrast td:first-child{padding:6px 8px; font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace; color:var(--ink);}
+.te-cr{display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 10px; min-width:96px;}
+.te-cr b{font-family:var(--serif); font-size:17px;}
+.te-cr span{font-variant-numeric:tabular-nums;}
+.te-cr.is-low span::after{content:' ⚠';}
+.te-cr.is-fail span{text-decoration:underline wavy;}
+/* components */
+/* As wide as the window, so each frame gets the room a page would. */
+.te-wide{width:calc(100vw - 2 * var(--gutter)); margin-left:calc(50% - 50vw + var(--gutter));}
+.te-gallery-bar{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px 24px;}
+.te-gallery-bar .guide-tabs{flex:1 1 auto; margin:0;}
+.te-frames{display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;}
+.te-frames.is-stacked{grid-template-columns:1fr;}
+.te-frames figure{margin:0; min-width:0;}
+.te-frames figcaption{font-family:var(--sans); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--muted); margin-bottom:6px;}
+.te-frames iframe{display:block; width:100%; height:600px; border:1px solid var(--line); overflow:hidden;}
+@media (max-width:900px){
+  .te-columns{display:none;}
+  .te-row{grid-template-columns:1fr 1fr;}
+  .te-role{grid-column:1 / -1; border-bottom:1px solid var(--line);}
+  .te-frames{grid-template-columns:1fr;}
+}
+/* export */
+.te-export{max-width:760px;}
+.te-export textarea{display:block; width:100%; height:min(60vh, 520px); margin:10px 0 14px; font:12px/1.5 ui-monospace,'SFMono-Regular',Menlo,Consolas,monospace;
+  color:var(--ink); background:var(--wash); border:1px solid var(--line); border-radius:var(--radius); padding:10px 12px; resize:vertical;}
+.te-export::backdrop{background:color-mix(in srgb, var(--shade) 45%, transparent);}
