@@ -31,6 +31,8 @@ const { onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentWritt
 const { onRequest, onCall: plainOnCall, HttpsError } = require('firebase-functions/v2/https');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onTaskDispatched } = require('firebase-functions/v2/tasks');
+const { getFunctions } = require('firebase-admin/functions');
 const { beforeUserCreated, HttpsError: IdentityHttpsError } = require('firebase-functions/v2/identity');
 const { defineSecret } = require('firebase-functions/params');
 // Who can see what's pure helpers (the table, its rows); `access` below is the instance reading settings/access.
@@ -1131,7 +1133,8 @@ const PILOTS = {
   'card-comments': 'Comments on board cards',
   'card-done': 'Telling who raised a card it’s done',
   'project-invites': 'Invitations to a project, and their answers',
-  'group-ready': 'Ready to ask for BOLD-internal',
+  'group-ready': 'Done what your new group asks',
+  'group-trial': 'A new group’s first week: the reminder, and its end',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -3603,7 +3606,7 @@ exports.onProjectRegistered = onDocumentCreated(
   { document: 'projects/{cardId}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
     const card = event.data && event.data.data();
-    if (card && card.submittedBy && card.submittedBy.email) await checkGroupReady(card.submittedBy.email);   // a project of their own
+    if (card && card.submittedBy && card.submittedBy.email) await checkTrial(card.submittedBy.email);   // a project of their own
     // announce: false, whoever registered it chose not to (its workspace's `skipped`
     // says so, and its page offers to announce it later: projectWorkspace 'announce').
     if (!card || card.announce === false) return;
@@ -6170,9 +6173,11 @@ exports.onMemberGroup = onDocumentWritten(
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
     const g = groupOf(after);
-    // Their details saved, or just made an associate: how far they are towards BOLD-internal.
-    const DETAILS = ['role', 'institution', 'interests', 'pillars', 'startDate', 'contact', 'invitedBy', 'category'];
-    if (g === 'associate' && (!before || DETAILS.some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k])))) await checkGroupReady(event.params.email);
+    // A group up (or their first, PAN-BOLD): its first week starts. Else, their details saved: look again.
+    const email = String(event.params.email).toLowerCase(), up = !before || (GROUP_RANK[g] || 0) > (GROUP_RANK[groupOf(before)] || 0);
+    const DETAILS = ['role', 'institution', 'interests', 'pillars', 'startDate', 'contact', 'invitedBy'];
+    if (up) await startTrial(email, g).catch((err) => logger.warn('Starting a trial failed', { error: String(err && err.message || err) }));
+    else if (DETAILS.some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))) await checkTrial(email);
     const wanted = before && groupOf(before) === g ? [] : channelGroupsFor(g);
     // A new role: its channels too (settings/groups.roleChannels).
     const role = String(after.role || ''), newRole = role && (!before || before.role !== role);
@@ -6366,7 +6371,8 @@ async function onboardingFor(email, as){
     db.collection('eventSeries').where('hidden', '==', false).get(),
     as && ONBOARDING_RANK[as] !== undefined ? as : access.groupFor(email),
   ]);
-  return Object.assign({ group, tour: !!(marks.exists && marks.data().tour) }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
+  const trial = marks.exists && marks.data().trial;
+  return Object.assign({ group, tour: !!(marks.exists && marks.data().tour), trial: trial && trial.group === group && !trial.done ? { endsAt: trial.endsAt, ended: !!trial.ended } : null }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
     inProject: !ws.empty, owns: !owned.empty || !ownedCard.empty, series: seriesFacts(series.docs) }));
 }
 // - {}: your own → { group, steps, done, tour }.
@@ -6402,34 +6408,73 @@ exports.onboarding = onCall(
   }
 );
 
-// "You can now ask for BOLD-internal" (2026-11-03): when a BOLD-associate does one of the things
-// BOLD-internal asks of them (registers a project of their own, joins an event series, marks the
-// BOLDiquette read, saves their details; and joining a project, or becoming an associate), their
-// progress is checked, and once all of it is done a Slack DM says so, once, linking to the request.
-// Not while they have a request open; no schedule. Recorded in onboarding/{email}: `readyFor.internal`
-// once they're told, `readyPilot.internal` once the testers were (in pilot), so going live still tells them.
-// Pure: → whether to tell them now.
-function groupReadyNow(group, steps, told, hasOpenRequest){
-  return group === 'associate' && !hasOpenRequest && !!steps && steps.done === true && !(told || {}).internal;
+// A group's first week (2026-11-03): what a group asks of a newcomer (its onboarding steps) is done
+// after joining it, not before asking. When someone's group goes up (their join approved, as PAN-BOLD;
+// a request accepted; a PI or admin setting it on People), their trial starts: onboarding/{email}.trial
+// { group, startedAt, endsAt, done, doneAt, ended }. Two timers for that person alone (Cloud Tasks,
+// trialCheck; no schedule): on day 5, if any are left, a Slack reminder with what's left; on day 7, if
+// any still are, they're told, and so are the PIs and admins, who decide (nothing changes on its own).
+// Done early, the timers do nothing. Whenever they do one of the things it asks (database triggers
+// below, in the background), checkTrial looks again; all done → "Congratulations", and the trial ends.
+const TRIAL_DAYS = 7, TRIAL_REMIND_DAY = 5, DAY_MS = 86400000;
+const GROUP_RANK = { pan: 0, associate: 1, internal: 2, staff: 3, exec: 4 };
+const stepsLeft = (steps) => ((steps && steps.steps) || []).filter((x) => !x.done).map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1));
+// Pure: what a timer does now → 'nothing' | 'done' (all done: close it quietly) | 'remind' | 'end'.
+function trialAction(stage, trial, data, group, steps){
+  if (!trial || trial.done || trial.ended || trial.startedAt !== data.startedAt || trial.group !== data.group || group !== trial.group) return 'nothing';
+  if (steps && steps.done) return 'done';
+  return stage === 'remind' ? 'remind' : stage === 'end' ? 'end' : 'nothing';
 }
-function groupReadyText(){
-  return '🎉 Congratulations! You’ve done everything BOLD-internal asks of its members, so you can now ask to join it: ' +
-    linkedTitle('read what it asks and send your request', SITE_URL + 'group-request.html?to=internal') + '. The PIs and admins decide.';
+function trialTexts(label, left, name){
+  const list = left.join('; ');
+  return {
+    remind: '⏳ Two days left of your first week in ' + label + '. Still to do: ' + list + '. ' + linkedTitle('Your first steps', SITE_URL + 'onboarding.html') + '.',
+    end: '⌛ Your first week in ' + label + ' is over, with this still to do: ' + list + '. ' + linkedTitle('Your first steps', SITE_URL + 'onboarding.html') + '. The PIs and admins have been told.',
+    staff: '⌛ ' + slackText(name) + '’s first week in ' + label + ' is over, with this still to do: ' + list + '. You decide what happens next: ' + linkedTitle('People', SITE_URL + 'people.html') + '.',
+    done: '🎉 Congratulations! You’ve done everything ' + label + ' asks of you in your first week.',
+  };
 }
+async function startTrial(email, group){
+  const at = Date.now(), trial = { group, startedAt: at, endsAt: at + TRIAL_DAYS * DAY_MS, done: false };
+  if ((await onboardingFor(email)).done) Object.assign(trial, { done: true, doneAt: at });   // nothing left: no week to watch
+  // The whole trial replaced (mergeFields), so nothing of an earlier week (its `ended`, `doneAt`) stays.
+  await db.collection('onboarding').doc(email).set({ trial }, { mergeFields: ['trial'] });
+  if (trial.done) return;
+  // The emulator runs queued tasks at once, whatever their delay: there, the timers are fired by hand.
+  if (process.env.FUNCTIONS_EMULATOR === 'true') { logger.info('Trial timers not queued in the emulator'); return; }
+  const queue = getFunctions().taskQueue('locations/europe-west2/functions/trialCheck');
+  for (const [stage, days] of [['remind', TRIAL_REMIND_DAY], ['end', TRIAL_DAYS]]) {
+    await queue.enqueue({ email, group, startedAt: at, stage }, { scheduleDelaySeconds: days * 86400 })
+      .catch((err) => logger.warn('Scheduling a trial timer failed', { stage, error: String(err && err.message || err) }));
+  }
+}
+exports.trialCheck = onTaskDispatched({ retryConfig: { maxAttempts: 3, minBackoffSeconds: 300 }, secrets: [SLACK_BOT_TOKEN] }, async (req) => {
+  const data = req.data || {}, email = String(data.email || '').toLowerCase();
+  if (!email) return;
+  const ref = db.collection('onboarding').doc(email), [marks, group] = await Promise.all([ref.get(), access.groupFor(email)]);
+  const trial = marks.exists ? marks.data().trial : null;
+  const steps = trial && !trial.done && !trial.ended ? await onboardingFor(email) : null;
+  const what = trialAction(data.stage, trial, data, group, steps);
+  if (what === 'nothing') return;
+  if (what === 'done') { await ref.set({ trial: { done: true, doneAt: Date.now() } }, { merge: true }); return; }
+  const m = await db.collection('members').doc(email).get(), name = (m.exists && m.data().name) || email;
+  const t = trialTexts(GROUP_LABELS[trial.group], stepsLeft(steps), name), token = SLACK_BOT_TOKEN.value();
+  if (what === 'remind') { await sendEvent(token, { key: 'group-trial', emails: [email], headline: t.remind }); return; }
+  await sendEvent(token, { key: 'group-trial', emails: [email], headline: t.end });
+  await sendEvent(token, { key: 'group-trial', emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: t.staff });
+  await ref.set({ trial: { ended: Date.now() } }, { merge: true });
+});
 // In the background, after something they did (database triggers only, so no click waits on it);
 // never fails (logged instead).
-async function checkGroupReady(email){
+async function checkTrial(email){
   try {
     email = String(email || '').toLowerCase();
-    if (!email || (await access.groupFor(email)) !== 'associate') return;
-    const [marks, open, steps, st] = await Promise.all([db.collection('onboarding').doc(email).get(),
-      db.collection('groupRequests').where('email', '==', email).where('status', '==', 'open').limit(1).get(),
-      onboardingFor(email, 'internal'), pilotState('group-ready')]);
-    const field = st.live ? 'readyFor' : 'readyPilot';
-    if (!groupReadyNow('associate', steps, (marks.exists && marks.data()[field]) || {}, !open.empty)) return;
-    await db.collection('onboarding').doc(email).set({ [field]: { internal: Date.now() } }, { merge: true });
-    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'group-ready', emails: [email], headline: groupReadyText() });
-  } catch (err){ logger.warn('checkGroupReady failed', { error: String(err && err.message || err) }); }
+    const ref = db.collection('onboarding').doc(email), marks = await ref.get(), trial = marks.exists ? marks.data().trial : null;
+    if (!trial || trial.done || trial.ended || (await access.groupFor(email)) !== trial.group) return;
+    if (!(await onboardingFor(email)).done) return;
+    await ref.set({ trial: { done: true, doneAt: Date.now() } }, { merge: true });
+    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'group-ready', emails: [email], headline: trialTexts(GROUP_LABELS[trial.group], [], '').done });
+  } catch (err){ logger.warn('checkTrial failed', { error: String(err && err.message || err) }); }
 }
 // Who's newly in a list, between two versions of a document.
 const addedTo = (before, after, key) => {
@@ -6439,16 +6484,16 @@ const addedTo = (before, after, key) => {
 // Joining a project (its workspace's members) or an event series (its `joined`).
 exports.onProjectJoined = onDocumentWritten({ document: 'projectWorkspaces/{pid}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
   const b = event.data.before.exists ? event.data.before.data() : null, a = event.data.after.exists ? event.data.after.data() : null;
-  for (const e of addedTo(b, a, 'members')) await checkGroupReady(e);
+  for (const e of addedTo(b, a, 'members')) await checkTrial(e);
 });
 exports.onSeriesJoined = onDocumentWritten({ document: 'eventSeries/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
   const b = event.data.before.exists ? event.data.before.data() : null, a = event.data.after.exists ? event.data.after.data() : null;
-  for (const e of addedTo(b, a, 'joined')) await checkGroupReady(e);
+  for (const e of addedTo(b, a, 'joined')) await checkTrial(e);
 });
 // Marking the BOLDiquette read (written by the page: handbook/boldiquette/readers/{uid}).
 exports.onBoldiquetteRead = onDocumentCreated(
   { document: 'handbook/boldiquette/readers/{uid}', secrets: [SLACK_BOT_TOKEN] },
-  async (event) => { const d = event.data && event.data.data(); if (d && d.email) await checkGroupReady(d.email); }
+  async (event) => { const d = event.data && event.data.data(); if (d && d.email) await checkTrial(d.email); }
 );
 
 // A member's request to be in another group, decided by the PIs and admins only (2026-11-02):
@@ -6477,10 +6522,7 @@ exports.groupRequest = onCall(
       if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
       const name = m.data().name || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
-      // What the group needs, done for real first (its onboarding steps, checked now: a project of
-      // their own, the series it must join…), not just promised.
-      const need = await onboardingFor(email, to);
-      if (!need.done) throw new HttpsError('failed-precondition', 'Before asking for ' + GROUP_LABELS[to] + ': ' + need.steps.filter((x) => !x.done).map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join('; ') + '.');
+      // What the group asks of a newcomer is done in its first week, after joining (trialCheck), not before.
       // The contract: what the group asks of them, as they read it, and that they accept it.
       const terms = String(d.terms || '').trim().slice(0, 20000);
       if (d.accept !== true || !terms) throw new HttpsError('failed-precondition', 'Read what ' + GROUP_LABELS[to] + ' asks of you and tick that you accept it first.');
@@ -7262,7 +7304,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  groupReadyNow, groupReadyText, addedTo,
+  trialAction, trialTexts, stepsLeft, addedTo,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,

@@ -65,18 +65,24 @@ test('a group\'s terms: its section of Who is BOLD, dedented, "For" headings too
   assert.strictEqual(ctx.BoldJoin.groupSectionOf(body, 'staff'), '');
 });
 
-// "You can now ask for BOLD-internal" (checkGroupReady, 2026-11-03): only an associate, all of
-// BOLD-internal's steps done, not told before, no request open.
-test('an associate who has done all BOLD-internal asks is told once, and only then', () => {
-  const { groupReadyNow, groupReadyText } = require('../functions/index.js')._internal;
-  const done = { done: true }, notYet = { done: false };
-  assert.strictEqual(groupReadyNow('associate', done, {}, false), true);
-  assert.strictEqual(groupReadyNow('associate', notYet, {}, false), false);
-  assert.strictEqual(groupReadyNow('associate', done, { internal: 1 }, false), false, 'told already');
-  assert.strictEqual(groupReadyNow('associate', done, {}, true), false, 'a request open');
-  for (const g of ['pan', 'internal', 'staff', 'exec']) assert.strictEqual(groupReadyNow(g, done, {}, false), false, g);
-  assert.match(groupReadyText(), /group-request\.html\?to=internal/);
+// A group's first week (trialCheck, 2026-11-03): each timer does something only for the trial it
+// was set for, while it's open, the person still in that group and something still left.
+test('a first week’s timers: remind on day 5, end on day 7, nothing once done or superseded', () => {
+  const { trialAction, trialTexts, stepsLeft } = require('../functions/index.js')._internal;
+  const trial = { group: 'internal', startedAt: 100 }, data = { group: 'internal', startedAt: 100 };
+  const left = { done: false, steps: [{ label: 'Join BOLD Reading Group', done: false }, { label: 'Register a project of your own', done: true }] };
+  assert.strictEqual(trialAction('remind', trial, data, 'internal', left), 'remind');
+  assert.strictEqual(trialAction('end', trial, data, 'internal', left), 'end');
+  assert.strictEqual(trialAction('end', trial, data, 'internal', { done: true, steps: [] }), 'done', 'all done: closed quietly');
+  assert.strictEqual(trialAction('end', Object.assign({}, trial, { done: true }), data, 'internal', left), 'nothing', 'done already');
+  assert.strictEqual(trialAction('end', Object.assign({}, trial, { startedAt: 200 }), data, 'internal', left), 'nothing', 'a newer trial');
+  assert.strictEqual(trialAction('end', trial, data, 'staff', left), 'nothing', 'in another group now');
+  assert.strictEqual(trialAction('end', null, data, 'internal', left), 'nothing');
+  assert.deepStrictEqual(stepsLeft(left), ['join BOLD Reading Group']);
+  const t = trialTexts('BOLD-internal', stepsLeft(left), 'Ari');
+  assert.match(t.remind, /Two days left/); assert.match(t.end, /PIs and admins have been told/); assert.match(t.staff, /^⌛ Ari/);
 });
+
 test('only who was newly added to a list counts (onProjectJoined, onSeriesJoined)', () => {
   const { addedTo } = require('../functions/index.js')._internal;
   assert.deepStrictEqual(addedTo({ joined: ['A@x.org'] }, { joined: ['a@x.org', 'B@x.org'] }, 'joined'), ['b@x.org']);
