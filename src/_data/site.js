@@ -13,6 +13,9 @@ export default {
   // Bumping it also means refreshing the self-hosted sign-in helper in the
   // bold-lab-ai.github.io repo and re-testing sign-in — see docs/AGENTS.md "Sign-in".
   firebaseSdkVersion: '10.14.1',
+  // BOLD's Slack workspace (not a secret: it's in every Slack web address). Named on sign-in so
+  // Slack signs returning people straight in, without its consent screen (bold.js BOLD.signIn).
+  slackTeam: 'T0B7DUVFEM8',
   firebase: TEST ? { apiKey: 'demo-key', authDomain: 'localhost', projectId: 'demo-bold-os', storageBucket: 'demo-bold-os.appspot.com', appId: 'demo' } : {
     apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',
     authDomain: 'bold-lab-ai.github.io',

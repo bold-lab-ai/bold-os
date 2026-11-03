@@ -416,6 +416,9 @@
     provider.addScope('openid');
     provider.addScope('profile');
     provider.addScope('email');
+    // BOLD's workspace (site.js slackTeam): Slack then signs a returning person straight in,
+    // without asking for consent every time (Slack's Sign in with Slack: `team`; 2026-11-03).
+    if (window.BOLD_SLACK_TEAM) provider.setCustomParameters({ team: window.BOLD_SLACK_TEAM });
     (isLocalDev ? a.signInWithPopup(provider) : a.signInWithRedirect(provider)).catch(function(err){
       console.error('[BOLD Lab] sign-in failed', err);
       if (typeof onError === 'function') onError(err);
