@@ -64,3 +64,16 @@ test('a group\'s terms: its section of Who is BOLD, dedented, "For" headings too
   assert.strictEqual(ctx.BoldJoin.groupSectionOf(body, 'associate'), '- Contribute');
   assert.strictEqual(ctx.BoldJoin.groupSectionOf(body, 'staff'), '');
 });
+
+// "You can now ask for BOLD-internal" (checkGroupReady, 2026-11-03): only an associate, all of
+// BOLD-internal's steps done, not told before, no request open.
+test('an associate who has done all BOLD-internal asks is told once, and only then', () => {
+  const { groupReadyNow, groupReadyText } = require('../functions/index.js')._internal;
+  const done = { done: true }, notYet = { done: false };
+  assert.strictEqual(groupReadyNow('associate', done, {}, false), true);
+  assert.strictEqual(groupReadyNow('associate', notYet, {}, false), false);
+  assert.strictEqual(groupReadyNow('associate', done, { internal: 1 }, false), false, 'told already');
+  assert.strictEqual(groupReadyNow('associate', done, {}, true), false, 'a request open');
+  for (const g of ['pan', 'internal', 'staff', 'exec']) assert.strictEqual(groupReadyNow(g, done, {}, false), false, g);
+  assert.match(groupReadyText(), /group-request\.html\?to=internal/);
+});

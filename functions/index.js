@@ -1131,6 +1131,7 @@ const PILOTS = {
   'card-comments': 'Comments on board cards',
   'card-done': 'Telling who raised a card it’s done',
   'project-invites': 'Invitations to a project, and their answers',
+  'group-ready': 'Ready to ask for BOLD-internal',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -3602,6 +3603,7 @@ exports.onProjectRegistered = onDocumentCreated(
   { document: 'projects/{cardId}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
     const card = event.data && event.data.data();
+    if (card && card.submittedBy && card.submittedBy.email) await checkGroupReady(card.submittedBy.email);   // a project of their own
     // announce: false, whoever registered it chose not to (its workspace's `skipped`
     // says so, and its page offers to announce it later: projectWorkspace 'announce').
     if (!card || card.announce === false) return;
@@ -3933,6 +3935,7 @@ exports.projectWorkspace = onCall(
         ? FieldValue.arrayUnion(email)
         : FieldValue.arrayRemove(email), slackSkipped: noSlack ? FieldValue.arrayUnion(email) : FieldValue.arrayRemove(email) }, { merge: true });
       const out = workspaceView(await syncWorkspace(pid));
+      if (joining) await checkGroupReady(email);
       // data.slack === false: not invited to the channel (they chose so).
       if (joining && card.slackChannel && data.slack !== false){
         const n = normalizeProjectChannel(card.slackChannel);
@@ -5721,6 +5724,7 @@ function inviteUrl(inv, id){ return projectPageUrl(inv.cardId, inv.board) + '&in
 async function joinProjectAs(email, pid, card, slackToo){
   await db.collection('projectWorkspaces').doc(pid).set({ joined: FieldValue.arrayUnion(email) }, { merge: true });
   await syncWorkspace(pid);
+  await checkGroupReady(email);
   if (!slackToo || !card || !card.slackChannel) return {};
   try { return { slack: await inviteToProjectChannel(SLACK_BOT_TOKEN.value(), email, normalizeProjectChannel(card.slackChannel).name) }; }
   catch (err){ return { slack: { error: err.message || 'Couldn’t add them to the Slack channel.' } }; }
@@ -6168,6 +6172,9 @@ exports.onMemberGroup = onDocumentWritten(
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
     const g = groupOf(after);
+    // Their details saved, or just made an associate: how far they are towards BOLD-internal.
+    const DETAILS = ['role', 'institution', 'interests', 'pillars', 'startDate', 'contact', 'invitedBy', 'category'];
+    if (g === 'associate' && (!before || DETAILS.some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k])))) await checkGroupReady(event.params.email);
     const wanted = before && groupOf(before) === g ? [] : channelGroupsFor(g);
     // A new role: its channels too (settings/groups.roleChannels).
     const role = String(after.role || ''), newRole = role && (!before || before.role !== role);
@@ -6395,6 +6402,40 @@ exports.onboarding = onCall(
     }));
     return { people };
   }
+);
+
+// "You can now ask for BOLD-internal" (2026-11-03): when a BOLD-associate does one of the things
+// BOLD-internal asks of them (registers a project of their own, joins an event series, marks the
+// BOLDiquette read, saves their details; and joining a project, or becoming an associate), their
+// progress is checked, and once all of it is done a Slack DM says so, once, linking to the request.
+// Not while they have a request open; no schedule. Recorded in onboarding/{email}: `readyFor.internal`
+// once they're told, `readyPilot.internal` once the testers were (in pilot), so going live still tells them.
+// Pure: → whether to tell them now.
+function groupReadyNow(group, steps, told, hasOpenRequest){
+  return group === 'associate' && !hasOpenRequest && !!steps && steps.done === true && !(told || {}).internal;
+}
+function groupReadyText(){
+  return '🎉 Congratulations! You’ve done everything BOLD-internal asks of its members, so you can now ask to join it: ' +
+    linkedTitle('read what it asks and send your request', SITE_URL + 'group-request.html?to=internal') + '. The PIs and admins decide.';
+}
+// After something they did: never fails what they did (logged instead).
+async function checkGroupReady(email){
+  try {
+    email = String(email || '').toLowerCase();
+    if (!email || (await access.groupFor(email)) !== 'associate') return;
+    const [marks, open, steps, st] = await Promise.all([db.collection('onboarding').doc(email).get(),
+      db.collection('groupRequests').where('email', '==', email).where('status', '==', 'open').limit(1).get(),
+      onboardingFor(email, 'internal'), pilotState('group-ready')]);
+    const field = st.live ? 'readyFor' : 'readyPilot';
+    if (!groupReadyNow('associate', steps, (marks.exists && marks.data()[field]) || {}, !open.empty)) return;
+    await db.collection('onboarding').doc(email).set({ [field]: { internal: Date.now() } }, { merge: true });
+    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'group-ready', emails: [email], headline: groupReadyText() });
+  } catch (err){ logger.warn('checkGroupReady failed', { error: String(err && err.message || err) }); }
+}
+// Marking the BOLDiquette read (written by the page: handbook/boldiquette/readers/{uid}).
+exports.onBoldiquetteRead = onDocumentCreated(
+  { document: 'handbook/boldiquette/readers/{uid}', secrets: [SLACK_BOT_TOKEN] },
+  async (event) => { const d = event.data && event.data.data(); if (d && d.email) await checkGroupReady(d.email); }
 );
 
 // A member's request to be in another group, decided by the PIs and admins only (2026-11-02):
@@ -7193,7 +7234,7 @@ exports.calendarFeed = agentApi.calendarFeed;
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
   googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
-  onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
+  onSchedule, checkGroupReady, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
@@ -7208,6 +7249,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
+  groupReadyNow, groupReadyText,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
