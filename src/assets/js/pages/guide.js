@@ -123,8 +123,12 @@
   // ---------- tabs (one per section) ----------
 
   var tab = null;
+  // Parts this page leaves out of view (data-hide-parts, ids: Get started's Checklist on the
+  // onboarding page, 2026-11-03). Only what's shown: proposals still carry every part.
+  var hiddenParts = (body.getAttribute('data-hide-parts') || '').split(',').map(function(v){ return v.trim(); }).filter(Boolean);
+  function visible(p){ return hiddenParts.indexOf(p.id) === -1; }
   function sections(){
-    return parts().map(function(p){ return p.section || ''; }).filter(function(v, i, a){ return a.indexOf(v) === i; });
+    return parts().filter(visible).map(function(p){ return p.section || ''; }).filter(function(v, i, a){ return a.indexOf(v) === i; });
   }
   function currentTab(){
     if (!hasSections()) return null;
@@ -133,7 +137,7 @@
   // The parts on show: the current tab's, or all of them.
   function shown(){
     var t = currentTab();
-    return t === null ? parts() : parts().filter(function(p){ return (p.section || '') === t; });
+    return (t === null ? parts() : parts().filter(function(p){ return (p.section || '') === t; })).filter(visible);
   }
   // A comment a #hash names (#c=<id>, as Slack sends), or ''.
   function commentFor(hash){ var m = /^#?c=(.+)$/.exec(String(hash || '')); return m ? decodeURIComponent(m[1]) : ''; }
