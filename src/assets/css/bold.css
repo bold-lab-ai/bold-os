@@ -870,6 +870,10 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .confirm-dialog{max-width:440px; width:calc(100% - 32px); border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); padding:20px 22px; font-family:var(--sans);}
 .confirm-dialog::backdrop{background:rgba(0,0,0,.35);}
 .confirm-dialog h2{font-size:18px; margin:0 0 10px;}
+/* BOLD.slackMessage: a Slack DM from a template (bold.js). */
+.slack-msg-label{display:block; font-size:13px; color:var(--ink-soft);}
+.slack-msg-text{display:block; width:100%; margin-top:6px; font-family:var(--serif, inherit); font-size:15px; line-height:1.45; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px; resize:vertical; box-sizing:border-box;}
+.slack-msg-hint{margin:8px 0 0; font-size:13px; color:var(--muted);}
 .confirm-dialog p{margin:0 0 4px; font-size:14px;}
 .confirm-dialog ul{margin:0 0 14px; padding-left:20px; font-size:14px;}
 .confirm-dialog li{margin:3px 0;}

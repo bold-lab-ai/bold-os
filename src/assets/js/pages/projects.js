@@ -71,7 +71,7 @@
       return l;
     };
     if (p.titleOnly) {
-      parts.push(textNode(p.ask ? 'Its people see it: ask to join, and its owner decides' : 'Join it to see it'));
+      parts.push(textNode(p.talk ? 'Its people see it: talk to its owner, who adds you if it fits' : p.ask ? 'Its people see it: ask to join, and its owner decides' : 'Join it to see it'));
     } else if (p.boardId) {
       var inVenue = document.createElement('span');
       inVenue.appendChild(textNode('In: '));
@@ -136,6 +136,13 @@
     join.addEventListener('click', function(){
       // An invitation to answer: on its page. Below Projects' View and Edit: ask its lead.
       if (st.invite) { location.href = 'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '') + '&invite=' + encodeURIComponent(st.invite); return; }
+      if (st.talk) {
+        var me = BOLD.authHint() || {}, first = String(st.talk.name || '').split(' ')[0] || 'there';
+        BOLD.slackMessage({ title: 'Talk to ' + (st.talk.name || 'its owner'), to: st.talk,
+          note: 'Tell them who you are and how you’d like to help with “' + (p.title || 'this project') + '”. If it fits, they add you to it.',
+          text: 'Hi ' + first + '! I’m ' + (me.n || 'new to BOLD') + '. I saw “' + (p.title || 'your project') + '” on BOLD.OS and I’d love to hear more about it, and whether I could help with it. Would you have time for a quick chat?' });
+        return;
+      }
       if (st.ask) {
         BOLD.confirmAction({ title: 'Ask to join “' + (p.title || 'this project') + '”?', go: 'Ask', effects: ['Send its owner a Slack message asking to join; once they accept, you’re on it'] }).then(function(ok){
           if (!ok) return;

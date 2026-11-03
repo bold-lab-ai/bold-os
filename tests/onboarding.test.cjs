@@ -26,12 +26,28 @@ const series = [
   { id: 'hid', title: 'Hidden one', requiredFor: 'internal', hidden: true },
 ];
 
-test('BOLD-associate: join a project or register one', () => {
+test('BOLD-associate: added to someone else’s project (their own doesn’t count)', () => {
   assert.deepStrictEqual(keys(onboardingSteps('associate', { series })), ['details', 'read', 'project']);
   const step = (f) => onboardingSteps('associate', f).steps.find((s) => s.key === 'project').done;
   assert.strictEqual(step({ inProject: true }), true);
-  assert.strictEqual(step({ owns: true }), true);
+  assert.strictEqual(step({ owns: true }), false);
   assert.strictEqual(step({}), false);
+  const { onOthers } = require('../functions/index.js')._internal;
+  const doc = (id, data) => ({ id, data: () => data || {} });
+  assert.strictEqual(onOthers([doc('mine')], [doc('mine')]), false, 'only on their own');
+  assert.strictEqual(onOthers([doc('w1', { cardId: 'c1' })], [doc('c1')]), false, 'their own, by its card');
+  assert.strictEqual(onOthers([doc('mine'), doc('theirs')], [doc('mine')]), true);
+});
+
+// PIs and admins told someone meets the next group's requirements (checkEligible, 2026-11-03).
+test('meeting the next group: a required series hidden from them doesn’t count against them', () => {
+  const { eligibleSteps, eligibleText } = require('../functions/index.js')._internal;
+  const steps = { steps: [{ key: 'own', label: 'Register a project of your own', done: true }, { key: 'series:rg', label: 'Join BOLD Reading Group', done: false }] };
+  const rg = [{ id: 'rg', visibleTo: 'internal' }];
+  assert.strictEqual(eligibleSteps(steps, rg, 'associate').done, true, 'the reading group is internal-only: joined in their first week');
+  assert.strictEqual(eligibleSteps(steps, [{ id: 'rg', visibleTo: 'associate' }], 'associate').done, false, 'one they can see counts');
+  assert.strictEqual(eligibleSteps({ steps: [] }, [], 'pan').done, false, 'nothing to meet: not eligible');
+  assert.match(eligibleText('Ari', 'BOLD-internal', eligibleSteps(steps, rg, 'associate').steps), /^🏷️ Ari now meets what BOLD-internal asks: a project of their own\. Nothing changes on its own/);
 });
 
 test('BOLD-internal and up: own a project, and join every series required for their group', () => {

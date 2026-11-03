@@ -1135,6 +1135,7 @@ const PILOTS = {
   'project-invites': 'Invitations to a project, and their answers',
   'group-ready': 'Done what your new group asks',
   'group-trial': 'A new group’s first week: the reminder, and its end',
+  'group-eligible': 'Telling PIs someone meets the next group’s requirements',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -2632,6 +2633,19 @@ exports.getAllProjects = onCall(
     mineAsked.docs.forEach(function(d){ const v = d.data(); if (v.status === 'asked') pending[v.pid] = { asked: true }; else if (v.status === 'open') pending[v.pid] = { invited: d.id }; });
     items.forEach(function(i){ if (pending[i.pid] && !i.joined) Object.assign(i, pending[i.pid]); });
     if (askOnly) shown.askOnly = true;
+    // PAN-BOLD: "Talk to its owner" (a Slack DM, from a template) instead of asking to join (2026-11-03).
+    if (!full && (await access.groupFor(email)) === 'pan') {
+      const owner = {};
+      groups.ongoing.concat(groups.submission, groups.completed, groups.planned).forEach(function(i){ owner[i.pid] = { name: i.owner || '', email: i.ownerEmail || '' }; });
+      const ids = {};
+      for (const e of Array.from(new Set(Object.values(owner).map(function(o){ return o.email; }).filter(Boolean)))) ids[e] = await slackIdForEmail(e);
+      items.forEach(function(i){
+        if (i.joined) return;
+        delete i.ask; delete i.asked;
+        const o = owner[i.pid] || {};
+        i.talk = { name: o.name || 'its owner', slackId: ids[o.email] || '' };
+      });
+    }
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
     return shown;
@@ -3606,7 +3620,7 @@ exports.onProjectRegistered = onDocumentCreated(
   { document: 'projects/{cardId}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
     const card = event.data && event.data.data();
-    if (card && card.submittedBy && card.submittedBy.email) await checkTrial(card.submittedBy.email);   // a project of their own
+    if (card && card.submittedBy && card.submittedBy.email) await afterProgress(card.submittedBy.email);   // a project of their own
     // announce: false, whoever registered it chose not to (its workspace's `skipped`
     // says so, and its page offers to announce it later: projectWorkspace 'announce').
     if (!card || card.announce === false) return;
@@ -5762,6 +5776,8 @@ exports.projectInvite = onCall(
     const email = callerEmail(request);
     const name = request.auth.token.name || email;
     if (d.action === 'ask') {
+      // PAN-BOLD talks to its owner first, who adds them (2026-11-03): no asking to join.
+      if ((await access.groupFor(email)) === 'pan') throw new HttpsError('failed-precondition', 'Talk to its owner on Slack first: they add you to it.');
       const id = String(d.id || ''), board = d.board ? String(d.board) : null;
       if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
       const snap = await cardRefFor(id, board).get();
@@ -6177,7 +6193,8 @@ exports.onMemberGroup = onDocumentWritten(
     const email = String(event.params.email).toLowerCase(), up = !before || (GROUP_RANK[g] || 0) > (GROUP_RANK[groupOf(before)] || 0);
     const DETAILS = ['role', 'institution', 'interests', 'pillars', 'startDate', 'contact', 'invitedBy'];
     if (up) await startTrial(email, g).catch((err) => logger.warn('Starting a trial failed', { error: String(err && err.message || err) }));
-    else if (DETAILS.some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))) await checkTrial(email);
+    else if (DETAILS.some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))) await afterProgress(email);
+    if (up) await checkEligible(email);   // a new group: maybe already ready for the next
     const wanted = before && groupOf(before) === g ? [] : channelGroupsFor(g);
     // A new role: its channels too (settings/groups.roleChannels).
     const role = String(after.role || ''), newRole = role && (!before || before.role !== role);
@@ -6344,7 +6361,9 @@ function onboardingSteps(group, f){
     { key: 'details', label: 'Fill in your details on your profile', done: details, href: 'profile.html#details' },
     { key: 'read', label: 'Read the BOLDiquette, and mark it as read', done: !!f.read, href: 'boldiquette.html' },
   ];
-  if (r === 1) steps.push({ key: 'project', label: 'Be on a project: ask to join one on Projects (its owner accepts), or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
+  // BOLD-associate: an active collaborator, added to an ongoing project by its owner (2026-11-03, from the
+  // lab's Slack thread): their own project doesn't count, and PAN-BOLD can't join one themselves.
+  if (r === 1) steps.push({ key: 'project', label: 'Be added to someone’s project: talk to its owner (Projects), who adds you', done: !!f.inProject, href: 'projects.html' });
   if (r >= 2) {
     steps.push({ key: 'own', label: 'Register a project of your own', done: !!f.owns, href: 'projects-register.html' });
     (f.series || []).filter((x) => !x.hidden && x.requiredFor && r >= (ONBOARDING_RANK[x.requiredFor] || 0))
@@ -6358,22 +6377,27 @@ function onboardingSteps(group, f){
   }
   return { steps, done: steps.every((x) => x.done) };
 }
-const seriesFacts = (docs) => docs.map((d) => { const v = d.data(); return { id: d.id, title: v.title || d.id, requiredFor: v.requiredFor || '', invite: v.invite || null, joined: v.joined || [], hidden: !!v.hidden }; });
+const seriesFacts = (docs) => docs.map((d) => { const v = d.data(); return { id: d.id, title: v.title || d.id, requiredFor: v.requiredFor || '', invite: v.invite || null, joined: v.joined || [], hidden: !!v.hidden, visibleTo: v.visibleTo || 'internal' }; });
 // `as`: the steps of another group (asking for it: group-request.html), else their own.
 async function onboardingFor(email, as){
   email = String(email || '').toLowerCase();
   const [m, marks, read, ws, owned, ownedCard, series, group] = await Promise.all([
     db.collection('members').doc(email).get(), db.collection('onboarding').doc(email).get(),
     db.collection('handbook').doc('boldiquette').collection('readers').where('email', '==', email).limit(1).get(),
-    db.collection('projectWorkspaces').where('members', 'array-contains', email).limit(1).get(),
-    db.collection('projects').where('submittedBy.email', '==', email).limit(1).get(),
-    db.collectionGroup('cards').where('submittedBy.email', '==', email).limit(1).get(),
+    db.collection('projectWorkspaces').where('members', 'array-contains', email).get(),
+    db.collection('projects').where('submittedBy.email', '==', email).get(),
+    db.collectionGroup('cards').where('submittedBy.email', '==', email).get(),
     db.collection('eventSeries').where('hidden', '==', false).get(),
     as && ONBOARDING_RANK[as] !== undefined ? as : access.groupFor(email),
   ]);
   const trial = marks.exists && marks.data().trial;
   return Object.assign({ group, tour: !!(marks.exists && marks.data().tour), trial: trial && trial.group === group && !trial.done ? { endsAt: trial.endsAt, ended: !!trial.ended } : null }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
-    inProject: !ws.empty, owns: !owned.empty || !ownedCard.empty, series: seriesFacts(series.docs) }));
+    inProject: onOthers(ws.docs, owned.docs.concat(ownedCard.docs)), owns: !owned.empty || !ownedCard.empty, series: seriesFacts(series.docs) }));
+}
+// On a project someone else registered: one of their workspaces isn't for a card they submitted.
+function onOthers(wsDocs, ownDocs){
+  const own = new Set(ownDocs.map((d) => d.id));
+  return wsDocs.some((w) => !own.has(w.id) && !own.has(String((w.data() || {}).cardId || '')));
 }
 // - {}: your own → { group, steps, done, tour }.
 // - { group }: what that group needs of them, checked now (asking for it: group-request.html).
@@ -6396,8 +6420,10 @@ exports.onboarding = onCall(
     const mark = {}, onProject = {}, read = {}, owns = {};
     readers.docs.forEach((x) => { read[String(x.data().email || '').toLowerCase()] = true; });
     marks.docs.forEach((x) => { mark[x.id] = x.data(); });
-    wss.docs.forEach((x) => (x.data().members || []).forEach((e) => { onProject[String(e).toLowerCase()] = true; }));
-    projects.docs.concat(cards.docs).forEach((x) => { const e = String((x.data().submittedBy || {}).email || '').toLowerCase(); if (e) owns[e] = true; });
+    const submitter = {};
+    projects.docs.concat(cards.docs).forEach((x) => { const e = String((x.data().submittedBy || {}).email || '').toLowerCase(); if (e) { owns[e] = true; submitter[x.id] = e; } });
+    // On someone else's project (BOLD-associate's step): not one they submitted.
+    wss.docs.forEach((x) => (x.data().members || []).forEach((e) => { e = String(e).toLowerCase(); if (submitter[x.id] !== e && submitter[String(x.data().cardId || '')] !== e) onProject[e] = true; }));
     const facts = seriesFacts(series.docs);
     const people = await Promise.all(members.docs.filter((x) => !x.data().test).map(async (x) => {
       const e = x.id.toLowerCase(), group = await access.groupFor(e);
@@ -6464,6 +6490,42 @@ exports.trialCheck = onTaskDispatched({ retryConfig: { maxAttempts: 3, minBackof
   await sendEvent(token, { key: 'group-trial', emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: t.staff });
   await ref.set({ trial: { ended: Date.now() } }, { merge: true });
 });
+// Meeting the next group's requirements (2026-11-03): PIs and admins are told, once per person and
+// group, and decide (on People); nobody is moved up on their own. PAN-BOLD → BOLD-associate (added to
+// someone's project) and BOLD-associate → BOLD-internal; a series they can't see yet doesn't count against
+// them (they join it in their first week). Recorded in onboarding/{email}.eligible.<group>. Pilot group-eligible.
+const NEXT_GROUP = { pan: 'associate', associate: 'internal' };
+// Pure: the steps that count before joining: not a required series hidden from their group.
+function eligibleSteps(steps, series, group){
+  const hidden = new Set((series || []).filter((x) => (VIS_RANK_OF[x.visibleTo || 'internal'] || 0) > (VIS_RANK_OF[group] || 0)).map((x) => 'series:' + x.id));
+  const kept = ((steps && steps.steps) || []).filter((x) => !hidden.has(x.key));
+  return { steps: kept, done: kept.length > 0 && kept.every((x) => x.done) };
+}
+const VIS_RANK_OF = { public: 0, everyone: 1, pan: 1, associate: 2, internal: 3, staff: 4, exec: 5 };
+function eligibleText(name, label, steps){
+  // In their words, not the newcomer's ("fill in your details" → "their details filled in").
+  const said = (x) => ({ details: 'their details filled in', read: 'the BOLDiquette read', project: 'on someone else’s project', own: 'a project of their own' })[x.key] ||
+    (x.key.indexOf('series:') === 0 ? 'joined ' + x.label.replace(/^Join /, '') : x.label);
+  return '🏷️ ' + slackText(name) + ' now meets what ' + label + ' asks: ' + steps.map(said).join(', ') + '. ' +
+    'Nothing changes on its own: if you agree, ' + linkedTitle('set their group on People', SITE_URL + 'people.html') + '.';
+}
+async function checkEligible(email){
+  try {
+    email = String(email || '').toLowerCase();
+    const group = await access.groupFor(email), next = NEXT_GROUP[group];
+    if (!next) return;
+    const ref = db.collection('onboarding').doc(email), marks = await ref.get();
+    if (((marks.exists && marks.data().eligible) || {})[next]) return;
+    const [steps, series, m] = await Promise.all([onboardingFor(email, next), db.collection('eventSeries').where('hidden', '==', false).get(), db.collection('members').doc(email).get()]);
+    const e = eligibleSteps(steps, seriesFacts(series.docs), group);
+    if (!e.done) return;
+    await ref.set({ eligible: { [next]: Date.now() } }, { merge: true });
+    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'group-eligible', emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')),
+      headline: eligibleText((m.exists && m.data().name) || email, GROUP_LABELS[next], e.steps) });
+  } catch (err){ logger.warn('checkEligible failed', { error: String(err && err.message || err) }); }
+}
+// After something they did: their first week, and whether they now meet the next group's requirements.
+async function afterProgress(email){ await checkTrial(email); await checkEligible(email); }
 // In the background, after something they did (database triggers only, so no click waits on it);
 // never fails (logged instead).
 async function checkTrial(email){
@@ -6484,16 +6546,16 @@ const addedTo = (before, after, key) => {
 // Joining a project (its workspace's members) or an event series (its `joined`).
 exports.onProjectJoined = onDocumentWritten({ document: 'projectWorkspaces/{pid}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
   const b = event.data.before.exists ? event.data.before.data() : null, a = event.data.after.exists ? event.data.after.data() : null;
-  for (const e of addedTo(b, a, 'members')) await checkTrial(e);
+  for (const e of addedTo(b, a, 'members')) await afterProgress(e);
 });
 exports.onSeriesJoined = onDocumentWritten({ document: 'eventSeries/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
   const b = event.data.before.exists ? event.data.before.data() : null, a = event.data.after.exists ? event.data.after.data() : null;
-  for (const e of addedTo(b, a, 'joined')) await checkTrial(e);
+  for (const e of addedTo(b, a, 'joined')) await afterProgress(e);
 });
 // Marking the BOLDiquette read (written by the page: handbook/boldiquette/readers/{uid}).
 exports.onBoldiquetteRead = onDocumentCreated(
   { document: 'handbook/boldiquette/readers/{uid}', secrets: [SLACK_BOT_TOKEN] },
-  async (event) => { const d = event.data && event.data.data(); if (d && d.email) await checkTrial(d.email); }
+  async (event) => { const d = event.data && event.data.data(); if (d && d.email) await afterProgress(d.email); }
 );
 
 // A member's request to be in another group, decided by the PIs and admins only (2026-11-02):
@@ -7304,7 +7366,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  trialAction, trialTexts, stepsLeft, addedTo,
+  trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,

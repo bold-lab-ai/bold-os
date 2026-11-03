@@ -218,6 +218,33 @@
   // The same, asked every time ("Don't ask me again" doesn't skip it): for what reaches many
   // people or leaves BOLD.OS (Calendar, Slack or GitHub invitations, emails, a whole group).
   BOLD.confirmAlways = function(o){ return BOLD.confirmAction(Object.assign({}, o, { always: true })); };
+  // A Slack DM to someone, from a template they edit (2026-11-03: PAN-BOLD's "Talk to its owner").
+  // Slack can't prefill a DM from a link, so: the text, editable; Copy and open Slack copies it and opens
+  // their DM in the Slack app (slack://user, BOLD's workspace: site.js slackTeam), where they paste it and
+  // send it themselves. Nothing is sent from here. o: { title, to: { name, slackId }, text, note }.
+  BOLD.slackMessage = function(o){
+    var d = document.createElement('dialog'), team = window.BOLD_SLACK_TEAM || '', id = (o.to && o.to.slackId) || '';
+    var off = !id || !team ? ' disabled title="' + esc((o.to && o.to.name ? o.to.name : 'They') + ' isn’t on the BOLD Slack') + '"' : '';
+    d.className = 'confirm-dialog slack-msg';
+    d.innerHTML = '<h2>' + esc(o.title || 'Message on Slack') + '</h2>' +
+      (o.note ? '<p>' + esc(o.note) + '</p>' : '') +
+      '<label class="slack-msg-label">Your message to ' + esc((o.to && o.to.name) || 'them') + '<textarea class="slack-msg-text no-tags" rows="6">' + esc(o.text || '') + '</textarea></label>' +
+      '<p class="slack-msg-hint">It opens your direct message with them in Slack: paste it there, change it as you like, and send it.</p>' +
+      '<div class="confirm-actions"><button class="btn-box" type="button" data-no>Cancel</button>' +
+      '<button class="btn-box is-primary" type="button" data-yes' + off + '>Copy and open Slack</button></div>';
+    document.body.appendChild(d);
+    var close = function(){ d.close(); d.remove(); };
+    d.querySelector('[data-no]').addEventListener('click', close);
+    d.addEventListener('cancel', function(e){ e.preventDefault(); close(); });
+    d.querySelector('[data-yes]').addEventListener('click', function(){
+      var text = d.querySelector('.slack-msg-text').value;
+      var go = function(){ location.href = 'slack://user?team=' + encodeURIComponent(team) + '&id=' + encodeURIComponent(id); close(); };
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(go, go);
+    });
+    d.showModal();
+    d.querySelector('.slack-msg-text').focus();
+  };
+
   BOLD.confirmAction = function(o){
     // o.always: asked even with "Don't ask me again" (it reaches many people), and not offered.
     return (o.always ? Promise.resolve(false) : BOLD.getSkipConfirm()).then(function(skip){
