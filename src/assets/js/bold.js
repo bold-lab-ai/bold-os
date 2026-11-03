@@ -1170,7 +1170,12 @@
     // Open to anyone signed out (front matter openSignedOut: the Festival's pages, which then show
     // only what's public, public-db.js); signed in, gated as any other page.
     var openSignedOut = shell.hasAttribute('data-open-signed-out');
+    // Signed out there: a visitor's view, without the greyed-out controls or "Internal" (bold.css
+    // .is-public-view), guessed from the last visit until auth says.
+    var publicView = function(on){ document.documentElement.classList.toggle('is-public-view', !!on); };
+    if (openSignedOut && !hint) publicView(true);
     BOLD.onUser(function(user){
+      if (openSignedOut) publicView(!user);
       var gate = document.getElementById('pageGate');
       if (gate) gate.hidden = !!user || openSignedOut;
       if (!user) shell.hidden = !openSignedOut;

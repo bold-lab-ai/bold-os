@@ -935,3 +935,11 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .checklist-back a:hover{text-decoration:underline;}
 .checklist-back button{border:0; background:none; font-size:18px; line-height:1; padding:2px 6px; color:var(--muted); cursor:pointer;}
 .checklist-back button:hover{color:var(--ink);}
+
+/* A visitor's view of a page open to anyone signed out (openSignedOut, signed out: bold.js mountShell):
+   what they can't use isn't shown at all, nor the masthead's "Internal". */
+.is-public-view .masthead-sub,
+.is-public-view #shell button:disabled,
+.is-public-view #shell .is-off,
+.is-public-view #shell .slot-gap,
+.is-public-view #shell .gap-add { display: none; }
