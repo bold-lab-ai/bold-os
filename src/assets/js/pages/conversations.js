@@ -47,14 +47,17 @@
       '<button type="button" class="bs-up bs-down" data-id="' + esc(m.id) + '" data-v="-1" aria-pressed="' + (v < 0) + '" aria-label="Downvote" title="Downvote">▼</button></div>';
   }
   // Who wrote it: someone (or their agent), or, brought in from Slack, its author there.
-  function by(m, posted){
-    if (m.source === 'slack') {
-      var s = m.slack || {};
-      return 'From Slack' + (s.channelName ? ' ' + esc(s.channelName) : '') + ' · ' + esc(m.name) + ' · ' + ago(m.at) +
-        (s.permalink ? ' · <a href="' + esc(s.permalink) + '" target="_blank" rel="noopener">Open in Slack</a>' : '') +
-        (m.broughtBy && m.broughtBy.name ? ' · brought in by ' + esc(m.broughtBy.name) : '');
-    }
-    return (posted ? 'Posted by ' : '') + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + ' · ' + ago(m.at);
+  // Who wrote it, first and clearly, then when. Where a thread came from (Slack) is said after, at the
+  // foot of its post (origin), not here.
+  function by(m){
+    return '<span class="bs-author">' + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + '</span> · ' + ago(m.at);
+  }
+  function origin(m){
+    if (m.source !== 'slack' || !m.slack) return '';
+    var s = m.slack;
+    return '<p class="bs-origin">From ' + (s.channelName ? esc(s.channelName) : 'Slack') +
+      (m.broughtBy && m.broughtBy.name ? ', brought in by ' + esc(m.broughtBy.name) : '') +
+      (s.permalink ? ' · <a href="' + esc(s.permalink) + '" target="_blank" rel="noopener">Open in Slack</a>' : '') + '</p>';
   }
   function acts(m, pid){
     var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
@@ -92,8 +95,8 @@
       var keep = threadEl.querySelector('.bs-replyform');
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
         '<div class="bs-post bs-post-open' + (mine(p) ? ' is-mine' : '') + (about && about.id === p.id ? ' is-about' : '') + '" id="m-' + esc(p.id) + '">' + vote(p) +
-          '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2><p class="bs-by">' + by(p, true) + '</p>' +
-          (p.body && p.body.trim() !== p.title ? md(p.body) : '') + acts(p, p.id) + '</div></div>' +
+          '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2><p class="bs-by">' + by(p) + '</p>' +
+          (p.body && p.body.trim() !== p.title ? md(p.body) : '') + acts(p, p.id) + origin(p) + '</div></div>' +
         '<h3 class="bs-replies-head">' + count(k) + '</h3>' +
         (k ? '<ol class="bs-replies bs-replies-top">' + kids(p.id).map(function(x){ return replyHtml(x, p.id); }).join('') + '</ol>' : '<p class="bs-by">No replies yet.</p>');
       var fresh = threadEl.querySelector('.bs-replyform');
@@ -106,7 +109,7 @@
     postsEl.innerHTML = list.length ? list.map(function(q){
       var at = '#post=' + encodeURIComponent(q.id);
       return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
-        '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q, true) + '</p>' +
+        '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + '</p>' +
           (q.body && q.body.trim() !== q.title ? md(q.body).replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip"') : '') +
           '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
     }).join('') : '<li class="proj-msg">No posts yet: write one, start a chat with your agent, or bring in a Slack thread.</li>';
