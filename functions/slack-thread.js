@@ -1,6 +1,6 @@
 'use strict';
 
-// Slack threads into Conversations (experiment-conversations.html, 2026-11-04), saved as a post
+// Slack threads into Conversations (conversations.html, 2026-11-04), saved as a post
 // (conversations/{id}) with the thread's replies under it (conversations/{id}/messages), by the
 // people who wrote them. Two ways in, the same checks:
 // - slackThread { url }: Import from Slack on the page → { id } (the post; one already brought in
@@ -12,7 +12,7 @@
 // Only a thread its sender can read in Slack themselves: a public channel, or a private channel or
 // group DM they're in; never a one-to-one DM. The bot must be in the channel (Slack's
 // not_in_channel otherwise), and needs channels:history, groups:history, mpim:history and
-// channels:read, groups:read, mpim:read. Who may: Experimental's Edit (bringing one in is posting).
+// channels:read, groups:read, mpim:read. Who may: Conversations' Edit (bringing one in is posting).
 
 // Pure: a Slack message link → { channel, ts, thread } (thread: its thread's ts when the link is
 // to a reply), or null. https://<team>.slack.com/archives/<C…>/p<16 digits>[?thread_ts=…&cid=…]
@@ -63,7 +63,7 @@ function threadOf(messages, names){
 const postIdOf = (channel, thread) => 'slack-' + channel + '-' + String(thread).replace('.', '');
 
 module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL }){
-  const PAGE = SITE_URL + 'experiment-conversations.html';
+  const PAGE = SITE_URL + 'conversations.html';
   async function api(token, method, params){
     const res = await fetch('https://slack.com/api/' + method + '?' + new URLSearchParams(params), { headers: { 'Authorization': 'Bearer ' + token } });
     const json = await res.json();
@@ -140,7 +140,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
 
   const slackThread = onCall({ secrets: [SLACK_BOT_TOKEN] }, async (request) => {
     const email = signedInEmail(request).toLowerCase();
-    await access.requireAccess(email, 'experimental', 'edit');
+    await access.requireAccess(email, 'conversations', 'edit');
     const link = parseSlackLink((request.data || {}).url);
     if (!link) throw new HttpsError('invalid-argument', 'That isn’t a link to a Slack message: in Slack, a message’s ⋯ menu → Copy link.');
     const p = await personFor(email);
@@ -168,7 +168,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       const p = (await db.collection('people').where('slackId', '==', d.slackId).limit(1).get()).docs[0];
       const email = p ? String(p.data().email || '').toLowerCase() : '';
       if (!email) throw new HttpsError('permission-denied', 'BOLD.OS doesn’t know you yet: sign in to BOLD.OS once with Slack.');
-      if (!(await access.can(email, 'experimental', 'edit'))) throw new HttpsError('permission-denied', 'Conversations is open to BOLD-internal and above for now.');
+      if (!(await access.can(email, 'conversations', 'edit'))) throw new HttpsError('permission-denied', 'You can’t post in Conversations yet (BOLDiquette › Who can see what).');
       if (!/^\d{10}\.\d{6}$/.test(d.thread) || !d.channel) throw new HttpsError('invalid-argument', 'That message can’t be sent.');
       const r = await saveThread(SLACK_BOT_TOKEN.value(), { channel: d.channel, ts: d.thread, thread: d.thread }, d.team, { email, name: p.data().name || '', slackId: d.slackId });
       const url = PAGE + '#post=' + encodeURIComponent(r.id);

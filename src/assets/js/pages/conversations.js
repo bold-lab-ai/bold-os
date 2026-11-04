@@ -1,4 +1,4 @@
-// Conversations (conversations.html, below the Calendar in the sidebar; an experiment until 2026-11-04):
+// Conversations (conversations.html, above the Calendar in the sidebar; an experiment until 2026-11-04):
 // Reddit-like threads. A post (conversations/{pid}) and its replies (conversations/{pid}/messages/{mid},
 // each answering the post or another reply: `parent`) are a tree; each can be voted up or down
 // (`votes`, by sign-in id) and replied to. Saved, and seen by whoever may view Conversations

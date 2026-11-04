@@ -29,6 +29,7 @@ const PAGES = [
   ['search', 'Search'],
   ['changelog', 'Changes'],
   ['experimental', 'Experimental'],
+  ['conversations', 'Conversations'],
 ];
 const WHAT = ['view', 'edit'];
 // Pages where every change is a proposal (and commenting is part of it): editing them is proposing.
