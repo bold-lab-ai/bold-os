@@ -2625,11 +2625,13 @@ exports.getAllProjects = onCall(
       wsSnap.docs.filter(function(d){ return d.data().completedAt > 0; }).map(function(d){ return d.id; }),
       wsSnap.docs.filter(function(d){ return workspaceStarted(d.data()); }).map(function(d){ return d.id; })
     );
-    const mine = {};
-    wsSnap.docs.forEach(function(d){ if ((d.data().members || []).indexOf(email) >= 0) mine[d.id] = true; });
+    const mine = {}, health = {};
+    wsSnap.docs.forEach(function(d){ if ((d.data().members || []).indexOf(email) >= 0) mine[d.id] = true; health[d.id] = projectHealth(d.data()); });
     const shown = full ? groups : projectTitlesOnly(groups, mine, askOnly);
     const items = shown.ongoing.concat(shown.submission, shown.completed, shown.planned);
     markJoined(shown, mine);
+    // Its health, for whoever sees the project in full (not a title only).
+    items.forEach(function(i){ if (!i.titleOnly && health[i.pid]) i.health = health[i.pid]; });
     // Their own asks and invitations, on each title: asked (waiting on its lead) or invited (theirs to answer).
     const pending = {};
     mineAsked.docs.forEach(function(d){ const v = d.data(); if (v.status === 'asked') pending[v.pid] = { asked: true }; else if (v.status === 'open') pending[v.pid] = { invited: d.id }; });
@@ -3185,6 +3187,16 @@ function setupMissing(ws){
   ws = ws || {};
   return [['meeting', !!ws.meeting], ['slides', !!(ws.deckId || ws.deckUrl || ws.ownDeckUrl)], ['notes', !!(ws.notesId || ws.notesUrl || ws.ownNotesUrl)],
     ['repo', !!(ws.repoName || ws.ownRepoUrl)]].filter((x) => !x[1]).map((x) => x[0]);
+}
+// Pure: its health (2026-11-04), as src/assets/js/project-health.js (BoldHealth.of) works it out: each of
+// the four 2 when BOLD.OS made it, 1 when it's its own link, 0 when missing; out of 8.
+function projectHealth(ws){
+  ws = ws || {};
+  const m = ws.meeting;
+  const items = [['meeting', !m ? 'none' : m.link ? 'own' : 'os'], ['slides', ws.ownDeckUrl ? 'own' : ws.deckId || ws.deckUrl ? 'os' : 'none'],
+    ['notes', ws.ownNotesUrl ? 'own' : ws.notesId || ws.notesUrl ? 'os' : 'none'], ['repo', ws.repoName ? 'os' : ws.ownRepoUrl ? 'own' : 'none']]
+    .map((x) => ({ key: x[0], how: x[1] }));
+  return { score: items.reduce((n, i) => n + (i.how === 'os' ? 2 : i.how === 'own' ? 1 : 0), 0), max: 8, items };
 }
 const setupMissingText = (missing) => missing.map((k) => SETUP_NAMES[k]).join(', ').replace(/, ([^,]*)$/, ' and $1');
 
@@ -7428,7 +7440,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText,
+  setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,

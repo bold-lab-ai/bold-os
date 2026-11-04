@@ -60,6 +60,9 @@
     a.className = 'proj-title';
     if (!p.titleOnly) a.href = href;
     a.textContent = p.title;
+    // Its health (project-health.js), for whoever sees it in full.
+    var hw = null;
+    if (p.health && window.BoldHealth) { hw = document.createElement('span'); hw.className = 'proj-health'; hw.innerHTML = BoldHealth.html(p.health); }
     var meta = document.createElement('span');
     meta.className = 'proj-meta';
     // In: <venue> (linked to its board) · <Slack channel> (linked, when it can be) · <owner>
@@ -88,7 +91,7 @@
       if (i) meta.appendChild(textNode(' \u00b7 '));
       meta.appendChild(n);
     });
-    main.appendChild(a); main.appendChild(meta);
+    main.appendChild(a); if (hw) main.appendChild(hw); main.appendChild(meta);
     if (p.abstract) {
       var abs = document.createElement('p');
       abs.className = 'proj-abstract';

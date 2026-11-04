@@ -309,6 +309,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     if (OUTCOME_LABELS[card.outcome] && !(card.outcome === 'accepted' && card.status === 'conference')) {
       html += '<span class="badge">' + OUTCOME_LABELS[card.outcome] + '</span>';
     }
+    // Its health (project-health.js): its meeting, slides, notes and repository, BOLD.OS's counting twice.
+    if (ws && window.BoldHealth) html += BoldHealth.html(BoldHealth.of(ws));
     if (ws && ws.completedAt) html += '<span class="badge">Completed</span>';
     else if (ws && !ws.boardId && (ws.group === 'ongoing' || ws.startedAt || !projectSetupMissing(ws).length)) html += '<span class="badge">Ongoing</span>';
     // Marking it completed (or reopening it): its meeting is cancelled (or comes back).

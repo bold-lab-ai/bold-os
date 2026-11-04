@@ -44,3 +44,18 @@ test('the page and the server agree on what’s missing', () => {
     assert.deepStrictEqual([...ctx.projectSetupMissing(ws)], setupMissing(ws), JSON.stringify(ws));
   }
 });
+
+test('health: BOLD.OS’s counts twice its own link, out of 8; the page and the server agree', () => {
+  const { projectHealth } = require('../functions/index.js')._internal;
+  assert.strictEqual(projectHealth(full).score, 8);
+  assert.strictEqual(projectHealth({ meeting: { link: 'https://zoom.us/x' }, ownDeckUrl: 'a', notesId: 'n', ownRepoUrl: 'https://github.com/a/b' }).score, 1 + 1 + 2 + 1);
+  assert.strictEqual(projectHealth({}).score, 0);
+  assert.strictEqual(projectHealth({ deckId: 'd', ownDeckUrl: 'x' }).items.find((i) => i.key === 'slides').how, 'own', 'its own link is the one used');
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/assets/js/project-health.js'), 'utf8');
+  const ctx = {}; require('node:vm').runInNewContext(src, ctx);
+  for (const ws of [{}, full, { meeting: { link: 'x' }, ownNotesUrl: 'y', repoName: 'r' }, null]) {
+    const a = ctx.BoldHealth.of(ws), b = projectHealth(ws);
+    assert.strictEqual(a.score, b.score); assert.deepStrictEqual([...a.items.map((i) => i.how)], b.items.map((i) => i.how));
+  }
+  assert.match(ctx.BoldHealth.html(ctx.BoldHealth.of(full)), /8\/8/);
+});
