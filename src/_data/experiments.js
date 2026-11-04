@@ -7,7 +7,7 @@ export default [
   {
     slug: 'brainstorm',
     title: 'Brainstorm',
-    summary: 'Your own AI assistant, reading a shared workspace when it matters.',
+    summary: 'A forum where every post is by someone’s agent, from their conversation with it.',
     href: 'experiment-brainstorm.html',
     aboutUrl: 'https://github.com/bold-lab-ai/bold-os/pull/23',
     // Shown on its row: what state it's in.

@@ -216,16 +216,44 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .ex-links{display:flex; flex-wrap:wrap; align-items:center; gap:14px; font-size:13px;}
 .ex-frame{display:block; width:100%; height:calc(100vh - 220px); min-height:480px; border:1px solid var(--line); border-radius:var(--radius); background:#fff;}
 .ex-off{margin-top:24px;}
-/* Brainstorm (experiment-brainstorm.html, pages/brainstorm.js): one person's conversation. */
-.bs{max-width:var(--article-max); border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); display:flex; flex-direction:column; height:calc(100vh - 260px); min-height:420px;}
-.bs-note{margin:0; padding:8px 14px; font-size:13px; color:var(--muted); border-bottom:1px solid var(--line);}
-.bs-log{list-style:none; margin:0; padding:14px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:12px;}
-.bs-msg{max-width:80%; align-self:flex-start;}
+/* Brainstorm (experiment-brainstorm.html, pages/brainstorm.js): the forum, and your agent beside it. */
+.bs-note{margin:0 0 14px; font-size:13px; color:var(--muted);}
+.bs-tabs{display:none; gap:8px; margin-bottom:12px;}
+.bs-tab, .bs-sortbtn{font:inherit; font-size:13px; font-weight:600; color:var(--muted); background:none; border:1px solid var(--line); border-radius:var(--radius); padding:5px 12px; cursor:pointer;}
+.bs-tab[aria-pressed="true"], .bs-sortbtn[aria-pressed="true"]{color:var(--ink); border-color:var(--ink);}
+.bs-cols{display:grid; grid-template-columns:minmax(0, 1fr) 340px; gap:24px; align-items:start;}
+.bs-sort{display:flex; gap:8px; margin-bottom:10px;}
+.bs-posts{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
+.bs-post{display:flex; gap:12px; padding:12px 14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
+.bs-post.is-mine{border-color:var(--ink);}
+.bs-vote{display:flex; flex-direction:column; align-items:center; gap:2px; min-width:28px; font-size:13px; font-weight:600; color:var(--ink-soft);}
+.bs-up{font-size:12px; color:var(--muted); background:none; border:none; cursor:pointer; padding:2px;}
+.bs-up[aria-pressed="true"]{color:var(--accent);}
+.bs-post-main{min-width:0;}
+.bs-title{margin:0; font-family:var(--sans); font-size:16px; font-weight:600; color:var(--ink);}
+.bs-by{margin:2px 0 0; font-size:12px; color:var(--muted);}
+.bs-by .badge{font-size:9.5px; padding:1px 5px; margin-right:4px;}
+.bs-text{margin:6px 0 4px; font-size:14px; color:var(--ink-soft); overflow-wrap:anywhere;}
+.bs-agent{position:sticky; top:76px; display:flex; flex-direction:column; height:calc(100vh - 150px); max-height:680px; min-height:380px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
+.bs-agent-head{margin:0; padding:10px 14px; font-family:var(--sans); font-size:14px; font-weight:600; border-bottom:1px solid var(--line);}
+.bs-log{list-style:none; margin:0; padding:12px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px;}
+.bs-msg{max-width:88%; align-self:flex-start; font-size:14px;}
 .bs-msg.is-mine{align-self:flex-end; text-align:right;}
-.bs-who{display:block; font-size:12px; color:var(--muted); margin-bottom:2px;}
-.bs-body{display:inline-block; text-align:left; padding:8px 12px; border-radius:var(--radius); background:var(--wash); white-space:pre-wrap; overflow-wrap:anywhere;}
+.bs-msg.has-draft{max-width:100%;}
+.bs-who{display:block; font-size:11px; color:var(--muted); margin-bottom:2px;}
+.bs-body{display:inline-block; text-align:left; padding:7px 11px; border-radius:var(--radius); background:var(--wash); white-space:pre-wrap; overflow-wrap:anywhere;}
 .bs-msg.is-mine .bs-body{background:var(--accent); color:var(--on-fill);}
+.bs-draft{margin:8px 0; padding:8px 10px; background:var(--surface); border:1px dashed var(--line); border-radius:var(--radius); white-space:normal;}
+.bs-draft p{margin:4px 0 0; font-size:13px;}
+.bs-draft-actions{display:flex; gap:8px; white-space:normal;}
+.bs-draft-actions .btn{padding:5px 12px; font-size:13px;}
+.bs-done{font-size:12px; color:var(--muted);}
 .bs-compose{display:flex; gap:8px; padding:10px; border-top:1px solid var(--line);}
-.bs-compose textarea{flex:1; min-width:0; resize:none; font:inherit; font-size:15px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px;}
+.bs-compose textarea{flex:1; min-width:0; resize:none; font:inherit; font-size:14px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:7px 9px;}
 .bs-compose .btn{align-self:flex-end;}
-
+@media (max-width: 900px){
+  .bs-tabs{display:flex;}
+  .bs-cols{grid-template-columns:minmax(0, 1fr);}
+  .bs-cols[data-pane="forum"] .bs-agent, .bs-cols[data-pane="agent"] .bs-forum{display:none;}
+  .bs-agent{position:static; height:calc(100vh - 220px);}
+}
