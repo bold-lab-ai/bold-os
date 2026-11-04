@@ -1,9 +1,0 @@
-/* Experimental (experimental.html) */
-#experiments{max-width:720px;}
-.ex-item{padding:16px 0; border-bottom:1px solid var(--line); scroll-margin-top:80px;}
-.ex-item.is-target{background:var(--surface); padding-left:12px; padding-right:12px; border-radius:var(--radius);}
-.ex-item h2.ex-title{margin:0 0 6px; font-size:22px;}
-.ex-summary{margin:0 0 10px; white-space:pre-line;}
-.ex-links{display:flex; flex-wrap:wrap; align-items:center; gap:14px; font-family:var(--sans); font-size:13px;}
-.ex-try{font-weight:600;}
-.ex-try.is-off{color:var(--muted); opacity:.6; cursor:default;}

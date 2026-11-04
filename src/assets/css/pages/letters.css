@@ -1,6 +1,6 @@
 /* Recommendation letters (letters.html, pages/letters.js), agents (agents.html), introductions
-   (introductions.html, pages/introductions.js) and comments (comments.html,
-   pages/comments.js), which share it. */
+   (introductions.html, pages/introductions.js), comments (comments.html,
+   pages/comments.js) and Experimental (experimental.html, pages/experimental.js), which share it. */
 .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 10px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
 .back-link:hover{color:var(--link);}
@@ -110,3 +110,12 @@ button.lt-open:hover{color:var(--link); text-decoration:underline; text-decorati
 .ag-what{min-width:0; overflow-wrap:anywhere;}
 .ag-what code{font-size:12.5px; color:var(--ink-soft);}
 @media (max-width:600px){ .ag-log li{flex-direction:column; gap:2px;} .ag-when{flex:none;} }
+
+/* Experimental (experimental.html) */
+.ex-item{max-width:var(--article-max); padding:16px 0; border-bottom:1px solid var(--line); scroll-margin-top:80px;}
+.ex-item.is-target{background:var(--surface); padding-left:12px; padding-right:12px; border-radius:var(--radius);}
+.ex-item h2.ex-title{margin:0 0 6px; font-size:22px;}
+.ex-summary{margin:0 0 10px; white-space:pre-line;}
+.ex-links{display:flex; flex-wrap:wrap; align-items:center; gap:14px; font-family:var(--sans); font-size:13px;}
+.ex-try{font-weight:600;}
+.ex-try.is-off{color:var(--muted); opacity:.6; cursor:default;}
