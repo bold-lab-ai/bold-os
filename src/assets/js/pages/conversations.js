@@ -3,7 +3,7 @@
 // each answering the post or another reply: `parent`) are a tree; each can be voted up or down
 // (`votes`, by sign-in id) and replied to. Saved, and seen by whoever may view Conversations
 // (Who can see what; firestore.rules). Ways in: write a post or a reply; bring in a Slack thread (Import from Slack here,
-// or Send to Conversations in Slack: functions/slack-thread.js); or reason with your agent (a panel at
+// or Take it to the BOLD OS in Slack: functions/slack-thread.js); or reason with your agent (a panel at
 // the bottom, from any message, or from New chat's form for a new post), which drafts a post or a reply and saves it once you say
 // so (the BOLDiquette: an agent confirms each action with its person). The agent is a preview: it
 // drafts from your own words, with no model behind it. A post opens as its thread (#post=<id>).

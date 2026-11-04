@@ -951,8 +951,6 @@ async function mayAddBoard(email, board){
 // A board's milestones ([{ id, name, start, end }]).
 function slashMilestones(ws){ return ((ws && ws.work) || {}).milestones || []; }
 async function handleSlashCommand(token, body){
-  // /chat: a window of the channel's recent threads, to send one to Conversations (functions/slack-thread.js).
-  if (body.command === '/chat') return conversationsSlack.handleChatCommand(body, token);
   const c = SLASH_CARDS[body.command];
   const say = (text) => ({ response_type: 'ephemeral', text });
   if (!c) return say('BOLD.OS doesn’t know ' + body.command + '.');
@@ -1063,10 +1061,8 @@ async function addCardFromSlack(token, payload){
 
 async function handleInteractivity(token, payload){
   if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'work_card') return addCardFromSlack(token, payload);
-  // Send to Conversations, a message shortcut (functions/slack-thread.js).
+  // Take it to the BOLD OS, a message shortcut (functions/slack-thread.js).
   if (payload.type === 'message_action' && payload.callback_id === 'send_to_conversations') return conversationsSlack.handleShortcut(payload);
-  // /chat's window: the thread picked.
-  if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'chat_pick') return conversationsSlack.handlePick(payload);
   if (payload.type !== 'block_actions') return;
   const action = (payload.actions || [])[0];
   if (!action) return;
@@ -7494,9 +7490,8 @@ exports.seriesNudges = labSeries.seriesNudges;
 exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
-// Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Send to Conversations in Slack.
-const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, slackFetch });
-exports.onChatPicker = conversationsSlack.onChatPicker;
+// Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
+const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText });
 exports.slackThread = conversationsSlack.slackThread;
 exports.onConversationImport = conversationsSlack.onConversationImport;
 exports.onConversationMessage = conversationsSlack.onConversationMessage;

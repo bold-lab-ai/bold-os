@@ -87,17 +87,6 @@ module.exports = function install(db){
           { ts: (t + 1500) + '.000300', user: id(2), text: 'Fine by me too, see <https://example.com/poll|the poll>.' },
         ], response_metadata: { next_cursor: '' } });
       }
-      case 'views.open': return ok({ view: { id: 'V-' + Date.now() } });
-      // A channel's history (/chat's window): two threads and a message without replies.
-      case 'conversations.history': {
-        const people = (await db.collection('people').get()).docs.map((d) => d.data()).slice(0, 2), t = Math.floor(Date.now() / 1000);
-        const id = (i) => (people[i % people.length] || {}).slackId || 'U-someone';
-        return ok({ messages: [
-          { ts: (t - 60) + '.000300', user: id(0), text: 'Just a note, no replies' },
-          { ts: (t - 3600) + '.000200', user: id(1), text: 'Who has *GPU* time on Friday?\nWe need two nodes.', reply_count: 3, latest_reply: (t - 120) + '.000900' },
-          { ts: (t - 7200) + '.000100', user: id(0), text: 'Reading group: next paper?', reply_count: 1, latest_reply: (t - 5000) + '.000500' },
-        ] });
-      }
       case 'chat.getPermalink':
         return ok({ permalink: 'https://bold-lab.slack.com/archives/' + (args.channel || 'C') + '/p0' });
       default:

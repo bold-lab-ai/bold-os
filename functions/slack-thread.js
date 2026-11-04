@@ -5,8 +5,7 @@
 // people who wrote them. Two ways in, the same checks:
 // - slackThread { url }: Import from Slack on the page → { id } (the post; one already brought in
 //   keeps its id, so a thread is never in twice: sending it again refreshes it from Slack).
-// - /chat in a channel (handleChatCommand): a window of the channel's recent threads to pick one; then as:
-// - Send to Conversations, a message shortcut in Slack (callback_id send_to_conversations, on any
+// - Take it to the BOLD OS, a message shortcut in Slack (callback_id send_to_conversations, on any
 //   message of the thread): handleShortcut answers Slack at once by writing conversationImports/{id}
 //   (server only); onConversationImport does the work and tells its sender, by the shortcut's
 //   response_url, where it is.
@@ -124,14 +123,8 @@ function threadOf(messages, names){
 
 // Pure: a Slack thread's post id, the same whichever way it came in.
 const postIdOf = (channel, thread) => 'slack-' + channel + '-' + String(thread).replace('.', '');
-// Pure: a channel's recent threads (conversations.history's messages, newest first): messages with
-// replies, not bots' or joins, the ten most recently active.
-function pickThreads(messages){
-  return (messages || []).filter((m) => m && m.ts && (m.reply_count || 0) > 0 && !m.subtype && !m.bot_id)
-    .sort((a, b) => parseFloat(b.latest_reply || b.ts) - parseFloat(a.latest_reply || a.ts)).slice(0, 10);
-}
 
-module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, slackFetch }){
+module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText }){
   const PAGE = SITE_URL + 'conversations.html';
   // A thread newly in Conversations says so in the thread, for everyone in it (pilot conversation-sent;
   // until it's live its testers get it instead). Not when one is refreshed. Never fails the send.
@@ -238,7 +231,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     return r;
   });
 
-  // Send to Conversations (Slack's message_action payload): written down at once, done by onConversationImport.
+  // Take it to the BOLD OS (Slack's message_action payload): written down at once, done by onConversationImport.
   async function handleShortcut(payload){
     const msg = payload.message || {}, channel = (payload.channel || {}).id || '';
     await db.collection('conversationImports').add({
@@ -246,56 +239,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       responseUrl: payload.response_url || '', at: Date.now(),
     });
   }
-  // /chat, in a channel (Slack doesn't let an app's commands run in threads: "not supported in threads"):
-  // a window listing the channel's recent threads; the one picked is sent as the shortcut sends it.
-  // Slack gives 3 seconds to answer and to open the window, so it opens at once ("Loading…") and
-  // chatPickers/{id} (server only) has onChatPicker fill it in. → Slack's answer ({} : nothing more).
-  async function handleChatCommand(body, token){
-    const say = (text) => ({ response_type: 'ephemeral', text });
-    const channel = String(body.channel_id || '');
-    if (!/^[CG]/.test(channel)) return say('`/chat` works in a channel: it lists the channel’s recent threads to send one to Conversations.');
-    const opened = await slackFetch(token, 'views.open', { trigger_id: body.trigger_id, view: pickerView([{ type: 'section', text: { type: 'mrkdwn', text: 'Loading this channel’s recent threads…' } }], false, channel) });
-    if (!opened.ok) { logger.warn('Opening the /chat window failed', { error: opened.error }); return say('Couldn’t open the list of threads: try again.'); }
-    await db.collection('chatPickers').add({ viewId: opened.view.id, channel, slackId: body.user_id || '',
-      team: body.team_domain ? 'https://' + body.team_domain + '.slack.com' : '', at: Date.now() });
-    return {};
-  }
-  const pickerView = (blocks, canSend, channel) => Object.assign({ type: 'modal', callback_id: 'chat_pick', title: { type: 'plain_text', text: 'Send to Conversations' },
-    close: { type: 'plain_text', text: 'Cancel' }, private_metadata: JSON.stringify({ channel }), blocks }, canSend ? { submit: { type: 'plain_text', text: 'Send' } } : {});
-  const onChatPicker = onDocumentCreated({ document: 'chatPickers/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
-    const d = event.data && event.data.data();
-    if (!d || !d.viewId) return;
-    const token = SLACK_BOT_TOKEN.value();
-    const show = (blocks, canSend) => slackFetch(token, 'views.update', { view_id: d.viewId, view: pickerView(blocks, canSend, d.channel) });
-    const note = (text) => show([{ type: 'section', text: { type: 'mrkdwn', text } }], false);
-    const r = await api(token, 'conversations.history', { channel: d.channel, limit: '100' });
-    if (!r.ok) return note(r.error === 'not_in_channel' || r.error === 'channel_not_found' ? 'BOLD OS isn’t in this channel: add it (`/invite @BOLD OS`), then try again.' : 'Couldn’t read this channel (' + r.error + ').');
-    const threads = pickThreads(r.messages);
-    if (!threads.length) return note('No threads here yet: `/chat` lists messages with replies. To send a single message, use its ⋯ menu → Send to Conversations.');
-    const ids = Array.from(new Set(threads.map((m) => m.user).filter(Boolean))), names = {};
-    for (let i = 0; i < ids.length; i += 30) (await db.collection('people').where('slackId', 'in', ids.slice(i, i + 30)).get()).docs.forEach((x) => { names[x.data().slackId] = x.data().name; });
-    const clip = (t, n) => (t.length > n ? t.slice(0, n - 1).replace(/\s+\S*$/, '') + '…' : t) || '…';
-    const ago = (ts) => { const m = Math.round((Date.now() - parseFloat(ts) * 1000) / 60000); return m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; };
-    await show([
-      { type: 'input', block_id: 'pick', label: { type: 'plain_text', text: 'Which thread?' }, element: { type: 'radio_buttons', action_id: 'v',
-        options: threads.map((m) => ({ value: m.ts,
-          text: { type: 'plain_text', text: clip(slackPlain(m.text, names).replace(/(^|\s)[*_~]+|[*_~]+(?=\s|$|[.,!?:;])/g, '$1').split('\n').map((l) => l.trim()).filter(Boolean)[0] || '', 75) },
-          description: { type: 'plain_text', text: clip(((names[m.user]) || 'Someone') + ' · ' + m.reply_count + (m.reply_count === 1 ? ' reply' : ' replies') + ' · ' + ago(m.latest_reply || m.ts), 75) } })) } },
-      { type: 'context', elements: [{ type: 'mrkdwn', text: 'The whole thread goes to Conversations, and a reply in it says so.' }] },
-    ], true);
-  });
-  // Picked: sent as the shortcut sends it, with the outcome to them alone, in the channel.
-  async function handlePick(payload){
-    const meta = JSON.parse((payload.view && payload.view.private_metadata) || '{}');
-    const v = (((payload.view || {}).state || {}).values || {}).pick || {};
-    const ts = ((v.v || {}).selected_option || {}).value || '';
-    if (!meta.channel || !/^\d{10}\.\d{6}$/.test(ts)) return;
-    await db.collection('conversationImports').add({ slackId: (payload.user || {}).id || '', channel: meta.channel, thread: ts,
-      team: payload.team && payload.team.domain ? 'https://' + payload.team.domain + '.slack.com' : '', responseUrl: '', tellIn: meta.channel, at: Date.now(), via: 'command' });
-  }
-  async function tell(url, text, d){
-    // From the /chat window there's no response_url: a note to them alone in the channel instead.
-    if (!url && d && d.tellIn && d.slackId) { await slackFetch(SLACK_BOT_TOKEN.value(), 'chat.postEphemeral', { channel: d.tellIn, user: d.slackId, text }); return; }
+  async function tell(url, text){
     if (!url) return;
     await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ response_type: 'ephemeral', replace_original: false, text }) })
       .catch((e) => logger.warn('Answering a shortcut failed', { error: String(e) }));
@@ -318,7 +262,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     } catch (e) {
       out = { error: String(e && e.message || e), text: 'Not sent to Conversations: ' + String(e && e.message || e) };
     }
-    await tell(d.responseUrl, out.text, d);
+    await tell(d.responseUrl, out.text);
     await event.data.ref.set({ doneAt: Date.now(), postId: out.id || '', error: out.error || '' }, { merge: true });
   });
 
@@ -329,7 +273,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     await db.collection('conversations').doc(event.params.pid).set({ replies: FieldValue.increment(1) }, { merge: true }).catch(() => {});
   });
 
-  return { slackThread, handleShortcut, handleChatCommand, onChatPicker, handlePick, onConversationImport, onConversationMessage };
+  return { slackThread, handleShortcut, onConversationImport, onConversationMessage };
 };
 module.exports.parseSlackLink = parseSlackLink;
 module.exports.slackPlain = slackPlain;
@@ -338,4 +282,3 @@ module.exports.threadOf = threadOf;
 module.exports.slackMarkdown = slackMarkdown;
 module.exports.mrkdwnToMarkdown = mrkdwnToMarkdown;
 module.exports.postIdOf = postIdOf;
-module.exports.pickThreads = pickThreads;
