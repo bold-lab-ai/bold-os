@@ -1139,6 +1139,7 @@ const PILOTS = {
   'group-trial': 'A new group’s first week: the reminder, and its end',
   'group-eligible': 'Telling PIs someone meets the next group’s requirements',
   'project-setup': 'An ongoing project’s setup still missing (once)',
+  'channel-join': 'BOLD OS joins new public channels',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -2153,6 +2154,47 @@ exports.notifyReviewsOut = onSchedule(
   }
 );
 
+// ---------- BOLD OS in the public channels (2026-11-04) ----------
+// So a thread anywhere public can be sent to Conversations (functions/slack-thread.js), BOLD OS joins
+// every public channel: each new one as it's created (Slack's channel_created event, pilot
+// channel-join: until it's live, its testers are told which it would join), and the ones there
+// already, once (a runs/{id} document { action: 'join-public-channels', dryRun? }, server only: its
+// `plan` lists them; dryRun joins none). Needs channels:join and channels:read, and the
+// channel_created event subscription. Private channels can't be: Slack lets only a member invite it.
+async function joinNewChannel(token, ch){
+  if (!ch.id || ch.is_private) return;
+  const st = await pilotState('channel-join');
+  if (!st.live) { await toTesters(token, st, '#' + (ch.name || ch.id), 'BOLD OS would join #' + slackText(ch.name || ch.id) + ', a new public channel.'); return; }
+  const r = await slackFetch(token, 'conversations.join', { channel: ch.id });
+  if (!r.ok) logger.warn('Joining a new channel failed', { channel: ch.id, error: r.error });
+}
+// Pure: the public channels BOLD OS isn't in yet (conversations.list's channels), by name.
+function channelsToJoin(channels){
+  return (channels || []).filter((c) => c && c.id && !c.is_private && !c.is_archived && !c.is_member && !c.is_im && !c.is_mpim)
+    .map((c) => ({ id: c.id, name: c.name || c.id })).sort((a, b) => a.name.localeCompare(b.name));
+}
+exports.onChannelJoinRun = onDocumentCreated({ document: 'runs/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'join-public-channels' || run.doneAt) return;
+  const token = SLACK_BOT_TOKEN.value(), all = [];
+  let cursor = '', error = '';
+  do {
+    const r = await (await fetch('https://slack.com/api/conversations.list?' + new URLSearchParams(Object.assign({ types: 'public_channel', exclude_archived: 'true', limit: '200' }, cursor ? { cursor } : {})),
+      { headers: { 'Authorization': 'Bearer ' + token } })).json();
+    if (!r.ok) { error = r.error + (r.needed ? ' (needs ' + r.needed + ')' : ''); break; }
+    all.push(...(r.channels || []));
+    cursor = (r.response_metadata && r.response_metadata.next_cursor) || '';
+  } while (cursor);
+  const plan = channelsToJoin(all), joined = [], failed = [];
+  if (!error && run.dryRun !== true) {
+    for (const c of plan) {
+      const r = await slackFetch(token, 'conversations.join', { channel: c.id });
+      (r.ok ? joined : failed).push(r.ok ? c.name : c.name + ': ' + r.error);
+    }
+  }
+  await event.data.ref.set({ doneAt: Date.now(), plan: plan.map((c) => c.name), joined, failed, error }, { merge: true });
+});
+
 // ---------- 6. Slack App Home + reviewer assignment ----------
 // One HTTP endpoint doing double duty as both Slack's Events API Request
 // URL (app_home_opened, team_join and user_change for the people roster, plus the
@@ -2277,6 +2319,14 @@ exports.slackEvents = onRequest(
       } catch (err){
         logger.error('handleAppHomeOpened threw', { error: String(err) });
       }
+      res.status(200).send('');
+      return;
+    }
+    // A new public channel: BOLD OS joins it (pilot channel-join), so its threads can be sent to
+    // Conversations. Private channels can't be joined this way: someone /invites it.
+    if (body.type === 'event_callback' && body.event && body.event.type === 'channel_created'){
+      try { await joinNewChannel(token, body.event.channel || {}); }
+      catch (err){ logger.error('joinNewChannel threw', { error: String(err) }); }
       res.status(200).send('');
       return;
     }
@@ -7452,7 +7502,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
+  channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,

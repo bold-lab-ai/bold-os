@@ -42,7 +42,7 @@ module.exports = function install(db){
     await db.collection('slackOutbox').add({ method, args, at: Date.now() });
     switch (method) {
       case 'conversations.list':
-        return ok({ channels: (await channelNames()).map((n) => ({ id: 'C-' + n, name: n })), response_metadata: { next_cursor: '' } });
+        return ok({ channels: (await channelNames()).map((n) => ({ id: 'C-' + n, name: n, is_member: n === 'general' })), response_metadata: { next_cursor: '' } });
       case 'conversations.open': {
         const users = String(args.users || '');
         return ok({ channel: { id: 'D-' + users } });
