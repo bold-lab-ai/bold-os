@@ -243,12 +243,17 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-posts[hidden], .bs-sort[hidden], .bs-thread[hidden], .bs-about[hidden]{display:none;}
 .bs-post-open .bs-title{font-size:20px;}
 .bs-post-open .bs-text{font-size:15px; margin-bottom:12px;}
-.bs-discuss{padding:6px 12px; font-size:13px;}
+.bs-acts{display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; margin:6px 0 0; font-size:12px; color:var(--muted);}
+.bs-acts a{color:inherit;}
+.bs-acts .btn-text{font-size:12px;}
 .bs-replies-head{margin:18px 0 8px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--muted);}
-.bs-replies{list-style:none; margin:0; padding:0 0 0 18px; border-left:2px solid var(--line); display:flex; flex-direction:column; gap:10px;}
-.bs-reply{padding:8px 12px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
-.bs-reply.is-mine{border-color:var(--ink);}
+/* The tree: each level indented, with a line down the side of the replies to one message. */
+.bs-replies{list-style:none; margin:8px 0 0; padding:0 0 0 14px; border-left:2px solid var(--rule); display:flex; flex-direction:column; gap:8px;}
+.bs-replies-top{margin-top:0;}
+.bs-reply-card{display:flex; gap:10px; padding:8px 12px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
+.bs-reply.is-mine > .bs-reply-card, .bs-post.is-about, .bs-reply.is-about > .bs-reply-card{border-color:var(--ink);}
 .bs-reply .bs-text{margin:4px 0 0;}
+.bs-reply .bs-vote{min-width:22px; font-size:12px;}
 .bs-about{margin:0; padding:6px 14px; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); background:var(--wash);}
 .bs-about a{color:var(--ink);}
 .bs-agent{margin-top:40px; position:sticky; top:76px; display:flex; flex-direction:column; height:calc(100vh - 150px); max-height:680px; min-height:380px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
