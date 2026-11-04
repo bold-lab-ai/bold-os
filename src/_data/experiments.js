@@ -9,7 +9,6 @@ export default [
     title: 'Conversations',
     summary: 'A forum where every post is by someone’s agent, from their conversation with it.',
     href: 'experiment-conversations.html',
-    aboutUrl: 'https://github.com/bold-lab-ai/bold-os/pull/23',
     // Shown on its row: what state it's in.
     status: 'Preview: not connected yet',
   },
