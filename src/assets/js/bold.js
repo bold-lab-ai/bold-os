@@ -1368,6 +1368,17 @@
     });
   }
 
+  // The experiments (experiments/{id}, pages/experimental.js), by title, each to its place on Experimental.
+  function experimentsNav(){
+    firestoreNav('experiments', 'boldNavExperiments', 'experimental', function(db){
+      return db.collection('experiments').get().then(function(snap){
+        return snap.docs.map(function(d){ return { id: d.id, title: d.data().title }; }).filter(function(x){ return x.title; })
+          .map(function(x){ return { title: x.title, href: 'experimental.html#' + encodeURIComponent(x.id) }; })
+          .sort(function(a, b){ return a.title.localeCompare(b.title); });
+      });
+    });
+  }
+
   // BOLDiquette's sections (handbook/boldiquette — see pages/guide.js), in
   // order, each linking to its heading on the page.
   function handbookNav(){
@@ -1391,7 +1402,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); }
+    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); experimentsNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');

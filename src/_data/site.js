@@ -65,6 +65,9 @@ export default {
       { label: 'Get started at BOLD', href: 'get-started.html', area: 'get-started' },
       { label: 'Recommendation letters', href: 'letters.html' },
       { label: 'Introductions', href: 'introductions.html' },
-    ] },
+    ], separatorAfter: true },
+    // Experimental features (experiments/{id}, experimental.html, 2026-11-04): anyone who may edit
+    // the page adds one; its sub-pages are the experiments (Firestore), filled in by bold.js.
+    { label: 'Experimental', href: 'experimental.html', links: [], experiments: true, area: 'experimental' },
   ],
 };

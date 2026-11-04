@@ -731,6 +731,26 @@ service cloud.firestore {
 
     // The changelog's content changes (changelog.html), one per version of a
     // tracked document, written only by the server (recordVersions).
+    // Experimental features (experimental.html, 2026-11-04): whoever may view Experimental reads them;
+    // whoever may edit it adds one, as themselves; its author, PIs and admins change or remove it.
+    match /experiments/{id} {
+      function okExperiment(d) {
+        return d.keys().hasOnly(['title', 'summary', 'aboutUrl', 'tryUrl', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt'])
+          && d.title is string && d.title.size() > 0 && d.title.size() <= 80
+          && d.get('summary', '') is string && d.get('summary', '').size() <= 600
+          && d.get('aboutUrl', '') is string && d.get('aboutUrl', '').size() <= 1000
+          && d.get('tryUrl', '') is string && d.get('tryUrl', '').size() <= 1000
+          && d.updatedBy == email().lower() && d.updatedAt == request.time;
+      }
+      allow read: if may('experimental', 'view');
+      allow create: if may('experimental', 'edit') && okExperiment(request.resource.data)
+        && request.resource.data.createdBy == email().lower() && request.resource.data.createdAt == request.time;
+      allow update: if may('experimental', 'edit') && okExperiment(request.resource.data)
+        && (resource.data.createdBy == email().lower() || hasFullWrite())
+        && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if may('experimental', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
+    }
+
     match /changelog/{id} {
       allow read: if may('changelog', 'view');
       allow write: if false;
