@@ -1061,6 +1061,8 @@ async function addCardFromSlack(token, payload){
 
 async function handleInteractivity(token, payload){
   if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'work_card') return addCardFromSlack(token, payload);
+  // Send to Conversations, a message shortcut (functions/slack-thread.js).
+  if (payload.type === 'message_action' && payload.callback_id === 'send_to_conversations') return conversationsSlack.handleShortcut(payload);
   if (payload.type !== 'block_actions') return;
   const action = (payload.actions || [])[0];
   if (!action) return;
@@ -1500,7 +1502,9 @@ function newTags(before, after){
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
 const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
-  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions'];
+  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions',
+  // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
+  'conversations', 'conversationImports'];
 // An event's page: its own (d.page: Collaboration Week, the Festival) or event.html.
 function eventUrl(slug, d){
   return SITE_URL + (d && /^[a-z0-9-]+\.html$/.test(d.page || '') ? d.page : 'event.html?event=' + encodeURIComponent(slug));
@@ -7435,8 +7439,11 @@ exports.seriesNudges = labSeries.seriesNudges;
 exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
-// A Slack thread brought into Conversations (functions/slack-thread.js): only one its caller can read in Slack.
-exports.slackThread = require('./slack-thread')({ db, onCall, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail }).slackThread;
+// Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Send to Conversations in Slack.
+const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL });
+exports.slackThread = conversationsSlack.slackThread;
+exports.onConversationImport = conversationsSlack.onConversationImport;
+exports.onConversationMessage = conversationsSlack.onConversationMessage;
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.

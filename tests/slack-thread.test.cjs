@@ -2,7 +2,7 @@
 // which channels, and what comes back. Run: npm test
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseSlackLink, slackPlain, mayRead, threadOf } = require('../functions/slack-thread.js');
+const { parseSlackLink, slackPlain, mayRead, threadOf, postIdOf } = require('../functions/slack-thread.js');
 
 test('a message link, or a reply’s, points to its thread', () => {
   assert.deepStrictEqual(parseSlackLink('https://bold-lab.slack.com/archives/C0BB6MPNTSS/p1730700000123456'), { channel: 'C0BB6MPNTSS', ts: '1730700000.123456', thread: '1730700000.123456' });
@@ -34,4 +34,11 @@ test('the first message is the post, the rest its replies; joins and leaves are 
   assert.deepStrictEqual(t.post, { who: 'Ari', text: 'Thursdays?', at: 1730700000000 });
   assert.deepStrictEqual(t.replies, [{ who: 'Pat', text: 'Yes @Ari', at: 1730700120000 }]);
   assert.strictEqual(threadOf([], {}), null);
+});
+
+test('a thread has one post, whichever way it came in', () => {
+  assert.strictEqual(postIdOf('C0BB6MPNTSS', '1730700000.123456'), 'slack-C0BB6MPNTSS-1730700000123456');
+  const a = parseSlackLink('https://bold-lab.slack.com/archives/C1/p1730700000123456');
+  const b = parseSlackLink('https://bold-lab.slack.com/archives/C1/p1730700999000001?thread_ts=1730700000.123456&cid=C1');
+  assert.strictEqual(postIdOf(a.channel, a.thread), postIdOf(b.channel, b.thread));
 });

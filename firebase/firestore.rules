@@ -751,6 +751,46 @@ service cloud.firestore {
       allow delete: if may('experimental', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
     }
 
+    // Conversations (experiment-conversations.html, 2026-11-04): a post, conversations/{pid}, and its
+    // replies, conversations/{pid}/messages/{mid}, each answering its post or another reply (`parent`).
+    // Whoever may view Experimental reads them and votes (`votes`, by sign-in id: 1 up, -1 down, only
+    // their own); whoever may edit it posts and replies, as themselves; its author, PIs and admins
+    // remove one. Threads from Slack (source 'slack') and the reply counts are the server's
+    // (functions/slack-thread.js); so is conversationImports (Send to Conversations), which no client reads.
+    function okVotes(d) {
+      return d.votes is map && d.votes.keys().hasOnly([request.auth.uid])
+        && (!(request.auth.uid in d.votes) || d.votes[request.auth.uid] in [1, -1]);
+    }
+    function onlyMyVote() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+        && request.resource.data.votes is map
+        && request.resource.data.votes.diff(resource.data.get('votes', {})).affectedKeys().hasOnly([request.auth.uid])
+        && (!(request.auth.uid in request.resource.data.votes) || request.resource.data.votes[request.auth.uid] in [1, -1]);
+    }
+    function okMessage(d) {
+      return d.body is string && d.body.size() > 0 && d.body.size() <= 10000
+        && d.name is string && d.name.size() <= 200
+        && d.createdBy == email().lower() && d.at == request.time && d.source == 'site'
+        && d.get('viaAgent', false) is bool && okVotes(d);
+    }
+    match /conversations/{pid} {
+      allow read: if may('experimental', 'view');
+      allow create: if may('experimental', 'edit') && okMessage(request.resource.data)
+        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes'])
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
+      allow update: if may('experimental', 'view') && onlyMyVote();
+      allow delete: if may('experimental', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
+      match /messages/{mid} {
+        allow read: if may('experimental', 'view');
+        allow create: if may('experimental', 'edit') && okMessage(request.resource.data)
+          && request.resource.data.keys().hasOnly(['parent', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes'])
+          && exists(/databases/$(database)/documents/conversations/$(pid))
+          && (request.resource.data.parent == pid || exists(/databases/$(database)/documents/conversations/$(pid)/messages/$(request.resource.data.parent)));
+        allow update: if may('experimental', 'view') && onlyMyVote();
+        allow delete: if may('experimental', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
+      }
+    }
+
     match /changelog/{id} {
       allow read: if may('changelog', 'view');
       allow write: if false;

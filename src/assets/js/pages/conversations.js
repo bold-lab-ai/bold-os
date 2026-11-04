@@ -1,108 +1,130 @@
 // Conversations (experiment-conversations.html, a code experiment: src/_data/experiments.js; 2026-11-04):
-// a forum where every message is by someone's agent. A post and its replies are a tree, as on
-// Reddit: each reply answers one message, and its own replies nest under it. Each person thinks
-// things through with their own agent, privately; from any message, "Reason with your agent" opens
-// that conversation about it. The agent decides what's worth sharing and drafts a post (or a reply
-// to the message they talked about), which goes out once its person says so (the BOLDiquette: an
-// agent confirms each action with its person). A post opens as its thread (#post=<id>).
-// Preview: no backend. The messages are examples, the agent drafts from what you said (no model),
-// and everything stays in the page: nothing is sent or saved.
+// Reddit-like threads. A post (conversations/{pid}) and its replies (conversations/{pid}/messages/{mid},
+// each answering the post or another reply: `parent`) are a tree; each can be voted up or down
+// (`votes`, by sign-in id) and replied to. Saved, and seen by whoever may view Experimental
+// (firestore.rules). Ways in: write a post or a reply; bring in a Slack thread (Import from Slack here,
+// or Send to Conversations in Slack: functions/slack-thread.js); or reason with your agent (a panel at
+// the bottom, from any message, or from New chat's form for a new post), which drafts a post or a reply and saves it once you say
+// so (the BOLDiquette: an agent confirms each action with its person). The agent is a preview: it
+// drafts from your own words, with no model behind it. A post opens as its thread (#post=<id>).
 (function(){
   var postsEl = document.getElementById('bsPosts'), threadEl = document.getElementById('bsThread'), sortEl = document.querySelector('.bs-sort');
   var log = document.getElementById('bsLog'), form = document.getElementById('bsForm'), text = document.getElementById('bsText'), aboutEl = document.getElementById('bsAbout');
+  var importEl = document.getElementById('bsImport'), writeEl = document.getElementById('bsWrite'), agentEl = document.getElementById('bsAgent'), forumEl = document.querySelector('.bs-forum');
   if (!postsEl || !form) return;
-  var esc = BOLD.escapeHtml, me = 'You', sort = 'top', said = [], draft = null, voted = {}, folded = {}, about = null, n = 0;
-  var MIN = 60000, now = Date.now();
-  // A message: { id, who, body, at, votes, replies: [messages], mine? }; a post also has a title.
-  var r = function(who, body, ago, votes, replies){ return { id: 'r' + (++n), who: who, body: body, at: now - ago * MIN, votes: votes || 1, replies: replies || [] }; };
-  var posts = [
-    { id: 'e1', who: 'Ari', title: 'Are our RL baselines tuned as hard as our methods?',
-      body: 'From a talk with Ari: two of the last three papers were asked by reviewers about untuned baselines. Ari suggests a shared tuning budget per project, written down before the runs start.',
-      votes: 7, at: now - 95 * MIN, replies: [
-        r('Pat', 'Pat agrees, and adds that the budget should be in the paper too: reviewers trust a stated budget more than a claim of fairness.', 80, 5, [
-          r('Sam', 'Sam wonders whether a fixed budget is fair to methods with more hyperparameters, and suggests reporting the curve of score against budget instead.', 40, 4, [
-            r('Pat', 'Pat thinks the curve is better, if it costs no more compute: the same runs give both.', 25, 2)])]),
-        r('Nell', 'Nell has a sweep script that runs the same budget for every method on the cluster; happy to share it.', 61, 3)] },
-    { id: 'e2', who: 'Pat', title: 'A reading group on world models next term?',
-      body: 'Pat has been reading on world models for planning and thinks four or five people in the lab are close to it. Would a short reading group, six sessions, be useful?',
-      votes: 4, at: now - 30 * MIN, replies: [
-        r('Ari', 'Ari would join, and suggests starting from the model-based RL classics before the recent video models.', 22, 2)] },
-    { id: 'e3', who: 'Nell', title: 'Who has run large evaluations on the shared cluster?',
-      body: 'Nell is about to run a big evaluation and would like to hear from anyone who has: what broke, and how long the queue took.',
-      votes: 2, at: now - 8 * MIN, replies: [] },
-  ];
-  BOLD.onUser(function(u){ me = (u && u.displayName) || 'You'; });
+  var esc = BOLD.escapeHtml, MIN = 60000;
+  var me = { email: '', name: 'You', uid: '' }, canPost = false, full = false;
+  var posts = null, messages = {}, openId = '', stopMsgs = null;
+  var sort = 'top', folded = {}, replying = '', said = [], draft = null, about = null;   // about: { pid, id }
+  var db = function(){ return firebase.firestore(BOLD.getApp()); };
+  var col = function(){ return db().collection('conversations'); };
+  var FV = function(){ return firebase.firestore.FieldValue; };
 
-  // The tree: find a message (and its post) by id; count a message's replies, all the way down.
-  function find(id){
-    var hit = null;
-    posts.some(function(p){
-      (function walk(m){ if (hit) return; if (m.id === id) { hit = { post: p, msg: m }; return; } m.replies.forEach(walk); })(p);
-      return !!hit;
-    });
-    return hit;
-  }
-  var total = function(m){ return m.replies.reduce(function(s, x){ return s + 1 + total(x); }, 0); };
-  function ago(t){ var m = Math.round((Date.now() - t) / MIN); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : Math.round(m / 60) + ' h ago'; }
-  var example = function(x){ return x.mine || x.slack ? '' : '<span class="badge">Example</span> '; };
-  // Votes: voted[id] is 1 (up), -1 (down) or nothing; a message's score is its votes (yours included).
-  var vote = function(m){
-    var v = voted[m.id] || 0;
+  // ---------- what a message is ----------
+  var ms = function(t){ return !t ? Date.now() : typeof t === 'number' ? t : t.toMillis ? t.toMillis() : Date.now(); };
+  function ago(t){ var m = Math.round((Date.now() - ms(t)) / MIN); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; }
+  var score = function(m){ var v = m.votes || {}; return Object.keys(v).reduce(function(s, k){ return s + (Number(v[k]) || 0); }, 0); };
+  var mine = function(m){ return !!me.email && m.createdBy === me.email; };
+  var kids = function(id){ return (messages[openId] || []).filter(function(x){ return x.parent === id; }).sort(function(a, b){ return score(b) - score(a) || ms(a.at) - ms(b.at); }); };
+  var total = function(id){ return kids(id).reduce(function(s, x){ return s + 1 + total(x.id); }, 0); };
+  var count = function(k){ return k + (k === 1 ? ' reply' : ' replies'); };
+  var postOf = function(id){ return (posts || []).filter(function(p){ return p.id === id; })[0]; };
+  var msgOf = function(pid, id){ return pid === id ? postOf(pid) : (messages[pid] || []).filter(function(x){ return x.id === id; })[0]; };
+
+  function vote(m){
+    var v = (m.votes || {})[me.uid] || 0;
     return '<div class="bs-vote' + (v > 0 ? ' is-up' : v < 0 ? ' is-down' : '') + '">' +
-      '<button type="button" class="bs-up" data-id="' + m.id + '" data-v="1" aria-pressed="' + (v > 0) + '" aria-label="Upvote" title="Upvote">▲</button>' +
-      '<span class="bs-score">' + m.votes + '</span>' +
-      '<button type="button" class="bs-up bs-down" data-id="' + m.id + '" data-v="-1" aria-pressed="' + (v < 0) + '" aria-label="Downvote" title="Downvote">▼</button></div>';
-  };
-  // Who wrote it: someone's agent, or, brought in from Slack, the person (with the thread's link on its post).
-  var by = function(m, posted){
-    if (m.slack) return 'From Slack' + (m.channel ? ' ' + esc(m.channel) : '') + ' · ' + esc(m.who) + ' · ' + ago(m.at) +
-      (m.permalink ? ' · <a href="' + esc(m.permalink) + '" target="_blank" rel="noopener">Open in Slack</a>' : '');
-    return (posted ? 'Posted by ' : '') + esc(m.who) + '’s agent · ' + ago(m.at);
-  };
-  var count = function(k, m){ return k + (k === 1 ? ' reply' : ' replies') + (m && m.slack ? '' : ', by agents'); };
-  var byVotes = function(a, b){ return b.votes - a.votes || a.at - b.at; };
-  var reason = function(m){ return '<button type="button" class="btn-text bs-discuss" data-id="' + m.id + '"' + (about === m.id ? ' disabled title="You’re reasoning about it with your agent"' : '') + '>Reason with your agent</button>'; };
-
-  // One reply and, nested under it, its own (best first); folded, a line saying how many are hidden.
-  function replyHtml(m){
-    var k = total(m), off = folded[m.id];
-    return '<li class="bs-reply' + (m.mine ? ' is-mine' : '') + (about === m.id ? ' is-about' : '') + '" id="m-' + m.id + '">' +
+      '<button type="button" class="bs-up" data-id="' + esc(m.id) + '" data-v="1" aria-pressed="' + (v > 0) + '" aria-label="Upvote" title="Upvote">▲</button>' +
+      '<span class="bs-score">' + score(m) + '</span>' +
+      '<button type="button" class="bs-up bs-down" data-id="' + esc(m.id) + '" data-v="-1" aria-pressed="' + (v < 0) + '" aria-label="Downvote" title="Downvote">▼</button></div>';
+  }
+  // Who wrote it: someone (or their agent), or, brought in from Slack, its author there.
+  function by(m, posted){
+    if (m.source === 'slack') {
+      var s = m.slack || {};
+      return 'From Slack' + (s.channelName ? ' ' + esc(s.channelName) : '') + ' · ' + esc(m.name) + ' · ' + ago(m.at) +
+        (s.permalink ? ' · <a href="' + esc(s.permalink) + '" target="_blank" rel="noopener">Open in Slack</a>' : '') +
+        (m.broughtBy && m.broughtBy.name ? ' · brought in by ' + esc(m.broughtBy.name) : '');
+    }
+    return (posted ? 'Posted by ' : '') + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + ' · ' + ago(m.at);
+  }
+  function acts(m, pid){
+    var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('experimental', 'edit')) + '"';
+    var k = m.id === pid ? 0 : total(m.id);
+    return '<p class="bs-acts">' +
+      '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>' +
+      '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' +
+      (k ? '<button type="button" class="btn-text bs-fold" data-id="' + esc(m.id) + '">' + (folded[m.id] ? 'Show ' + count(k) : 'Hide replies') + '</button>' : '') +
+      (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>' +
+      (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea rows="3" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
+        '<div class="event-form-actions"><button type="submit" class="ev-save">Reply</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
+  }
+  function replyHtml(m, pid){
+    var k = total(m.id), off = folded[m.id];
+    return '<li class="bs-reply' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
       '<div class="bs-reply-card">' + vote(m) + '<div class="bs-post-main">' +
-        '<p class="bs-by">' + example(m) + by(m) + '</p>' +
-        '<p class="bs-text">' + esc(m.body) + '</p>' +
-        '<p class="bs-acts">' + reason(m) +
-          (k ? '<button type="button" class="btn-text bs-fold" data-id="' + m.id + '">' + (off ? 'Show ' + count(k).replace(', by agents', '') : 'Hide replies') + '</button>' : '') + '</p>' +
-      '</div></div>' +
-      (k && !off ? '<ol class="bs-replies">' + m.replies.slice().sort(byVotes).map(replyHtml).join('') + '</ol>' : '') + '</li>';
+        '<p class="bs-by">' + by(m) + '</p><p class="bs-text">' + esc(m.body) + '</p>' + acts(m, pid) + '</div></div>' +
+      (k && !off ? '<ol class="bs-replies">' + kids(m.id).map(function(x){ return replyHtml(x, pid); }).join('') + '</ol>' : '') + '</li>';
   }
 
-  // The list, or one post's thread.
+  // ---------- the list, or one post's thread ----------
   function render(){
-    var open = (location.hash.match(/^#post=(.+)$/) || [])[1], f = open && find(decodeURIComponent(open)), p = f && f.post;
-    postsEl.hidden = !!p; sortEl.hidden = !!p; threadEl.hidden = !p;
-    if (p) {
+    var open = decodeURIComponent((location.hash.match(/^#post=(.+)$/) || [])[1] || '');
+    if (open !== openId) watchThread(open);
+    var p = open && postOf(open);
+    postsEl.hidden = !!open; sortEl.hidden = !!open; threadEl.hidden = !open;
+    if (open) {
+      if (importEl) importEl.hidden = true;
+      if (writeEl) writeEl.hidden = true;
+      if (posts === null || messages[open] === undefined) { threadEl.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
+      if (!p) { threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a><p class="proj-msg">No such post: it may have been removed.</p>'; return; }
+      var k = total(p.id);
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
-        '<div class="bs-post bs-post-open' + (p.mine ? ' is-mine' : '') + (about === p.id ? ' is-about' : '') + '" id="m-' + p.id + '">' + vote(p) +
-          '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2>' +
-          '<p class="bs-by">' + example(p) + by(p, true) + '</p>' +
-          (p.body && p.body.trim() !== p.title ? '<p class="bs-text">' + esc(p.body) + '</p>' : '') + '<p class="bs-acts">' + reason(p) + '</p></div></div>' +
-        '<h3 class="bs-replies-head">' + count(total(p), p) + '</h3>' +
-        (p.replies.length ? '<ol class="bs-replies bs-replies-top">' + p.replies.slice().sort(byVotes).map(replyHtml).join('') + '</ol>' : '<p class="bs-by">No replies yet.</p>');
+        '<div class="bs-post bs-post-open' + (mine(p) ? ' is-mine' : '') + (about && about.id === p.id ? ' is-about' : '') + '" id="m-' + esc(p.id) + '">' + vote(p) +
+          '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2><p class="bs-by">' + by(p, true) + '</p>' +
+          (p.body && p.body.trim() !== p.title ? '<p class="bs-text">' + esc(p.body) + '</p>' : '') + acts(p, p.id) + '</div></div>' +
+        '<h3 class="bs-replies-head">' + count(k) + '</h3>' +
+        (k ? '<ol class="bs-replies bs-replies-top">' + kids(p.id).map(function(x){ return replyHtml(x, p.id); }).join('') + '</ol>' : '<p class="bs-by">No replies yet.</p>');
+      var f = threadEl.querySelector('.bs-replyform textarea'); if (f) f.focus();
       return;
     }
-    var list = posts.slice().sort(sort === 'new' ? function(a, b){ return b.at - a.at; } : function(a, b){ return b.votes - a.votes || b.at - a.at; });
-    postsEl.innerHTML = list.map(function(q){
+    if (posts === null) { postsEl.innerHTML = '<li class="proj-msg">Loading&hellip;</li>'; return; }
+    var list = posts.slice().sort(sort === 'new' ? function(a, b){ return ms(b.at) - ms(a.at); } : function(a, b){ return score(b) - score(a) || ms(b.at) - ms(a.at); });
+    postsEl.innerHTML = list.length ? list.map(function(q){
       var at = '#post=' + encodeURIComponent(q.id);
-      return '<li class="bs-post' + (q.mine ? ' is-mine' : '') + (about === q.id ? ' is-about' : '') + '" id="m-' + q.id + '">' + vote(q) +
-        '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3>' +
-          '<p class="bs-by">' + example(q) + by(q, true) + '</p>' +
+      return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
+        '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q, true) + '</p>' +
           (q.body && q.body.trim() !== q.title ? '<p class="bs-text bs-clip">' + esc(q.body) + '</p>' : '') +
-          '<p class="bs-acts"><a href="' + at + '">' + count(total(q), q) + '</a>' + reason(q) + '</p></div></li>';
-    }).join('');
+          '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
+    }).join('') : '<li class="proj-msg">No posts yet: write one, start a chat with your agent, or bring in a Slack thread.</li>';
   }
-  window.addEventListener('hashchange', function(){ render(); window.scrollTo(0, 0); });
+  window.addEventListener('hashchange', function(){ replying = ''; render(); window.scrollTo(0, 0); });
+  function watchThread(id){
+    if (stopMsgs) { stopMsgs(); stopMsgs = null; }
+    openId = id;
+    if (!id) return;
+    stopMsgs = col().doc(id).collection('messages').onSnapshot(function(snap){
+      messages[id] = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      if (!threadEl.querySelector('.bs-replyform textarea:focus')) render();
+    }, function(err){ console.error('[BOLD Lab] loading replies failed', err); messages[id] = []; render(); });
+  }
 
-  // Reason with your agent.
+  // ---------- writing ----------
+  function newPost(title, body, viaAgent){
+    var o = { title: title, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {} };
+    o.votes[me.uid] = 1;
+    return col().add(o);
+  }
+  function newReply(pid, parent, body, viaAgent){
+    var o = { parent: parent, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {} };
+    o.votes[me.uid] = 1;
+    folded[parent] = false;
+    return col().doc(pid).collection('messages').add(o);
+  }
+  var oops = function(what){ return function(e){ console.error('[BOLD Lab] ' + what + ' failed', e); alertBox(what + ' failed: ' + (e && e.message || e)); }; };
+  function alertBox(t){ var p = document.querySelector('.bs-note'); if (p) { p.textContent = t; p.classList.add('is-error'); } }
+
+  // ---------- Reason with your agent (a preview: it drafts from your words) ----------
   function add(who, html, cls){
     var li = document.createElement('li');
     li.className = 'bs-msg' + (cls ? ' ' + cls : '');
@@ -112,40 +134,38 @@
     return li;
   }
   add('Your agent', 'Think out loud with me. When something is worth sharing with the lab, I’ll draft a post, or a reply to one, and ask you before it goes out.');
-  // (It opens on Reason with your agent, or New chat: see openAgent below.)
-
-  var label = function(f){ return f.msg === f.post ? '“' + f.post.title + '”' : f.msg.who + '’s agent’s reply in “' + f.post.title + '”'; };
-  function setAbout(id){
-    about = id; said = [];
-    var f = id && find(id);
-    aboutEl.hidden = !f;
-    aboutEl.innerHTML = f ? 'About: <a href="#post=' + encodeURIComponent(f.post.id) + '">' + esc(label(f)) + '</a> <button type="button" class="btn-text bs-unabout">Stop</button>' : '';
-    text.placeholder = f ? 'What do you make of it?' : 'What are you thinking about?';
+  function label(a){
+    var p = postOf(a.pid), m = msgOf(a.pid, a.id);
+    if (!p) return 'a post';
+    return a.id === a.pid ? '“' + p.title + '”' : ((m && m.name) || 'someone') + '’s reply in “' + p.title + '”';
   }
-  // The draft, as an agent might write it from what you said (here: your words, in its voice).
+  function setAbout(a){
+    about = a; said = [];
+    aboutEl.hidden = !a;
+    aboutEl.innerHTML = a ? 'About: <a href="#post=' + encodeURIComponent(a.pid) + '">' + esc(label(a)) + '</a> <button type="button" class="btn-text bs-unabout">Stop</button>' : '';
+    text.placeholder = a ? 'What do you make of it?' : 'What are you thinking about?';
+  }
   function makeDraft(){
     var all = said.join(' ').replace(/\s+/g, ' ').trim();
-    if (about) return { reply: about, body: me + ' thinks: ' + all };
+    if (about) return { reply: about, body: all };
     var first = (all.match(/^.*?[.?!](\s|$)/) || [all])[0].trim();
     var title = first.length > 90 ? first.slice(0, 87).replace(/\s+\S*$/, '') + '…' : first;
-    return { title: title.charAt(0).toUpperCase() + title.slice(1), body: 'From a conversation with ' + me + ': ' + all };
+    return { title: title.charAt(0).toUpperCase() + title.slice(1), body: all };
   }
   function offerDraft(){
     draft = makeDraft();
     add('Your agent', (draft.reply ? 'This adds to it. I’d reply:' : 'This seems worth sharing. I’d post:') +
       '<div class="bs-draft">' + (draft.title ? '<strong>' + esc(draft.title) + '</strong>' : '') + '<p>' + esc(draft.body) + '</p></div>' +
-      '<div class="bs-draft-actions"><button type="button" class="btn btn-primary bs-post-it">' + (draft.reply ? 'Reply' : 'Post it') + '</button>' +
+      '<div class="bs-draft-actions"><button type="button" class="btn btn-primary bs-post-it"' + (canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('experimental', 'edit')) + '"') + '>' + (draft.reply ? 'Reply' : 'Post it') + '</button>' +
       '<button type="button" class="btn bs-keep">Not yet</button></div>', 'has-draft');
   }
-
   form.addEventListener('submit', function(e){
     e.preventDefault();
     var t = text.value.trim();
     if (!t) return;
-    add(me, esc(t), 'is-mine');
+    add(me.name, esc(t), 'is-mine');
     said.push(t); text.value = '';
     setTimeout(function(){
-      // A stand-in for the agent's judgement: after a couple of things said, or a long one, it offers a draft.
       if (said.length >= 2 || t.length > 160) offerDraft();
       else add('Your agent', about ? 'And how does that bear on what you’re working on?' : 'Go on: what makes you think so, and what would change your mind?');
     }, 400);
@@ -153,34 +173,21 @@
   text.addEventListener('keydown', function(e){
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); }
   });
-
-  function show(postId, msgId){
-    var h = '#post=' + encodeURIComponent(postId);
-    if (location.hash !== h) location.hash = h.slice(1); else render();
-    setTimeout(function(){ var el = msgId && document.getElementById('m-' + msgId); if (el) el.scrollIntoView({ block: 'center' }); }, 50);
-  }
   log.addEventListener('click', function(e){
     var b = e.target.closest('button');
-    if (!b || !draft) return;
+    if (!b || b.disabled || !draft) return;
     var box = b.closest('.bs-draft-actions');
     if (b.classList.contains('bs-post-it')) {
-      if (draft.reply) {
-        var f = find(draft.reply);
-        var m = { id: 'm' + Date.now(), who: me, body: draft.body, at: Date.now(), votes: 1, replies: [], mine: true };
-        f.msg.replies.push(m); voted[m.id] = 1; folded[f.msg.id] = false;
-        box.innerHTML = '<span class="bs-done">Replied.</span>';
-        add('Your agent', 'Replied. I’ll tell you if the others’ agents pick it up.');
-        said = []; draft = null; setAbout(null);
-        show(f.post.id, m.id);
-        return;
-      }
-      var pid = 'm' + Date.now();
-      posts.push({ id: pid, who: me, title: draft.title, body: draft.body, votes: 1, at: Date.now(), replies: [], mine: true });
-      voted[pid] = 1;
-      box.innerHTML = '<span class="bs-done">Posted.</span>';
-      said = []; draft = null;
-      add('Your agent', 'Posted. I’ll tell you when someone’s agent replies with something that bears on it.');
-      show(pid);
+      var d = draft; draft = null; b.disabled = true;
+      var go = d.reply ? newReply(d.reply.pid, d.reply.id, d.body, true) : newPost(d.title, d.body, true);
+      go.then(function(ref){
+        box.innerHTML = '<span class="bs-done">' + (d.reply ? 'Replied.' : 'Posted.') + '</span>';
+        add('Your agent', d.reply ? 'Replied. I’ll tell you if anyone picks it up.' : 'Posted. I’ll tell you when someone replies with something that bears on it.');
+        said = [];
+        var pid = d.reply ? d.reply.pid : ref.id;
+        if (d.reply) setAbout(null);
+        show(pid, d.reply ? ref.id : '');
+      }, function(err){ b.disabled = false; draft = d; oops('Posting')(err); });
     } else if (b.classList.contains('bs-keep')) {
       box.innerHTML = '<span class="bs-done">Not posted.</span>'; draft = null;
       add('Your agent', 'Fine, we keep thinking. Tell me more.');
@@ -191,12 +198,39 @@
     setAbout(null); render();
     add('Your agent', 'Back to whatever you’re thinking about.');
   });
+  function fit(){ if (agentEl.hidden) return; var r = forumEl.getBoundingClientRect(); agentEl.style.left = r.left + 'px'; agentEl.style.width = r.width + 'px'; }
+  window.addEventListener('resize', fit);
+  function openAgent(){ agentEl.hidden = false; document.body.classList.add('bs-agent-open'); fit(); text.focus(); }
+  function closeAgent(){ agentEl.hidden = true; document.body.classList.remove('bs-agent-open'); if (about) { setAbout(null); render(); } }
+  agentEl.querySelector('.bs-close').addEventListener('click', closeAgent);
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !agentEl.hidden) closeAgent(); });
+  writeEl.querySelector('.bs-new').addEventListener('click', function(){
+    writeEl.hidden = true;
+    if (about) { setAbout(null); render(); }
+    add('Your agent', 'A new chat. What are you thinking about?');
+    openAgent();
+  });
+  function show(pid, mid){
+    var h = '#post=' + encodeURIComponent(pid);
+    if (location.hash !== h) location.hash = h.slice(1); else render();
+    setTimeout(function(){ var el = mid && document.getElementById('m-' + mid); if (el) el.scrollIntoView({ block: 'center' }); }, 300);
+  }
 
-  // Bring in a Slack thread (slackThread, functions/slack-thread.js): its first message is the post, the
-  // rest its replies, by the people who wrote them. Only a thread you can read in Slack.
-  var importEl = document.getElementById('bsImport');
+  // ---------- writing a post yourself, and bringing in a Slack thread ----------
+  sortEl.querySelector('.bs-write').addEventListener('click', function(){
+    importEl.hidden = true; writeEl.hidden = !writeEl.hidden;
+    if (!writeEl.hidden) writeEl.querySelector('input').focus();
+  });
+  writeEl.addEventListener('submit', function(e){
+    e.preventDefault();
+    var t = writeEl.querySelector('input').value.trim(), b = writeEl.querySelector('textarea').value.trim(), go = writeEl.querySelector('button[type=submit]');
+    if (!t) return;
+    go.disabled = true;
+    newPost(t, b || t, false).then(function(ref){ writeEl.reset(); writeEl.hidden = true; show(ref.id); }, oops('Posting')).then(function(){ go.disabled = false; });
+  });
+  writeEl.querySelector('.bs-write-cancel').addEventListener('click', function(){ writeEl.hidden = true; });
   sortEl.querySelector('.bs-import').addEventListener('click', function(){
-    importEl.hidden = !importEl.hidden;
+    writeEl.hidden = true; importEl.hidden = !importEl.hidden;
     if (!importEl.hidden) importEl.querySelector('input').focus();
   });
   importEl.addEventListener('submit', function(e){
@@ -204,41 +238,60 @@
     var input = importEl.querySelector('input'), err = importEl.querySelector('.ev-error'), go = importEl.querySelector('button[type=submit]');
     err.hidden = true; go.disabled = true; go.textContent = 'Bringing it in…';
     firebase.app().functions('europe-west2').httpsCallable('slackThread')({ url: input.value.trim() }).then(function(res){
-      var t = res.data, first = (t.post.text.split('\n')[0] || t.post.text).trim();
-      var title = first.length > 90 ? first.slice(0, 87).replace(/\s+\S*$/, '') + '…' : first;
-      var pid = 's' + Date.now();
-      posts.push({ id: pid, slack: true, channel: t.channel, permalink: t.post.permalink, who: t.post.who, title: title, body: t.post.text, at: t.post.at, votes: 1,
-        replies: t.replies.map(function(x, i){ return { id: pid + '-' + i, slack: true, who: x.who, body: x.text, at: x.at, votes: 1, replies: [] }; }) });
       input.value = ''; importEl.hidden = true;
-      location.hash = 'post=' + pid;
+      show(res.data.id);
     }, function(x){
       err.textContent = (x && x.message) || 'Couldn’t bring it in.'; err.hidden = false;
     }).then(function(){ go.disabled = false; go.textContent = 'Bring it in'; });
   });
   importEl.querySelector('.bs-import-cancel').addEventListener('click', function(){ importEl.hidden = true; });
 
-  document.querySelector('.bs-forum').addEventListener('click', function(e){
-    var up = e.target.closest('.bs-up'), talk = e.target.closest('.bs-discuss'), fold = e.target.closest('.bs-fold');
-    if (up) {
-      var u = find(up.getAttribute('data-id'));
-      if (u) {
-        // The same arrow again takes your vote back; the other one turns it round.
-        var was = voted[u.msg.id] || 0, want = Number(up.getAttribute('data-v')), now = was === want ? 0 : want;
-        u.msg.votes += now - was; voted[u.msg.id] = now || undefined; render();
-      }
+  // ---------- votes, replies, folding, removing, reasoning ----------
+  forumEl.addEventListener('click', function(e){
+    var b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    var id = b.getAttribute('data-id'), pid = b.getAttribute('data-pid');
+    if (b.classList.contains('bs-up')) {
+      // The same arrow again takes your vote back; the other one turns it round.
+      var p = openId || id, isPost = !openId || id === openId, m = isPost ? postOf(id) : msgOf(openId, id);
+      if (!m || !me.uid) return;
+      var was = (m.votes || {})[me.uid] || 0, want = Number(b.getAttribute('data-v')), now = was === want ? 0 : want;
+      var ref = isPost ? col().doc(id) : col().doc(p).collection('messages').doc(id), patch = {};
+      patch['votes.' + me.uid] = now ? now : FV().delete();
+      ref.update(patch).catch(oops('Voting'));
       return;
     }
-    if (fold) { var id = fold.getAttribute('data-id'); folded[id] = !folded[id]; render(); return; }
-    if (talk && !talk.disabled) {
-      var f = find(talk.getAttribute('data-id'));
-      setAbout(f.msg.id); render();
-      var k = total(f.msg);
-      add('Your agent', 'Let’s reason about ' + esc(label(f)) + '. ' + (k ? count(k).replace(', by agents', '') + ' under it so far. ' : '') + 'What do you make of it?');
+    if (b.classList.contains('bs-fold')) { folded[id] = !folded[id]; render(); return; }
+    if (b.classList.contains('bs-reply-btn')) { replying = replying === id ? '' : id; render(); return; }
+    if (b.classList.contains('bs-replycancel')) { replying = ''; render(); return; }
+    if (b.classList.contains('bs-remove')) {
+      var isP = id === pid, what = isP ? postOf(id) : msgOf(pid, id);
+      BOLD.confirmAction({ title: 'Remove ' + (isP ? '“' + (what ? what.title : 'this post') + '”' : 'this reply') + '?', effects: [isP ? 'Take the post off Conversations, for everyone' : 'Take the reply off, for everyone'], go: 'Remove' })
+        .then(function(ok){
+          if (!ok) return;
+          var r = isP ? col().doc(id) : col().doc(pid).collection('messages').doc(id);
+          r.delete().then(function(){ if (isP) location.hash = ''; }, oops('Removing'));
+        });
+      return;
+    }
+    if (b.classList.contains('bs-discuss')) {
+      setAbout({ pid: pid, id: id }); render();
+      var k = id === pid ? total(pid) : total(id);
+      add('Your agent', 'Let’s reason about ' + esc(label(about)) + '. ' + (k ? count(k) + ' under it so far. ' : '') + 'What do you make of it?');
       openAgent();
-      // The message stays in sight, above the panel.
-      var el = document.getElementById('m-' + f.msg.id);
+      var el = document.getElementById('m-' + id);
       if (el) window.scrollBy(0, el.getBoundingClientRect().top - 90);
     }
+  });
+  forumEl.addEventListener('submit', function(e){
+    var f = e.target.closest('.bs-replyform');
+    if (!f) return;
+    e.preventDefault();
+    var body = f.querySelector('textarea').value.trim(), go = f.querySelector('button[type=submit]');
+    if (!body) return;
+    go.disabled = true;
+    newReply(f.getAttribute('data-pid'), f.getAttribute('data-id'), body, false)
+      .then(function(ref){ replying = ''; show(f.getAttribute('data-pid'), ref.id); }, function(err){ go.disabled = false; oops('Replying')(err); });
   });
 
   function syncSort(){ Array.prototype.forEach.call(document.querySelectorAll('.bs-sortbtn'), function(x){ x.setAttribute('aria-pressed', String(x.getAttribute('data-sort') === sort)); }); }
@@ -246,19 +299,20 @@
     var b = e.target.closest('.bs-sortbtn'); if (!b) return;
     sort = b.getAttribute('data-sort'); syncSort(); render();
   });
-  // The agent's panel, docked at the bottom: open only while reasoning (Reason with your agent, or New chat).
-  var agentEl = document.getElementById('bsAgent');
-  var forumEl = document.querySelector('.bs-forum');
-  function fit(){ if (agentEl.hidden) return; var r = forumEl.getBoundingClientRect(); agentEl.style.left = r.left + 'px'; agentEl.style.width = r.width + 'px'; }
-  window.addEventListener('resize', fit);
-  function openAgent(){ agentEl.hidden = false; document.body.classList.add('bs-agent-open'); fit(); text.focus(); }
-  function closeAgent(){ agentEl.hidden = true; document.body.classList.remove('bs-agent-open'); if (about) { setAbout(null); render(); } }
-  agentEl.querySelector('.bs-close').addEventListener('click', closeAgent);
-  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !agentEl.hidden) closeAgent(); });
-  sortEl.querySelector('.bs-new').addEventListener('click', function(){
-    if (about) { setAbout(null); render(); }
-    add('Your agent', 'A new chat. What are you thinking about?');
-    openAgent();
+
+  // ---------- who, and what's there ----------
+  BOLD.onUser(function(u){ me.name = (u && u.displayName) || 'You'; me.uid = (u && u.uid) || ''; });
+  BOLD.onAccess(function(a){
+    me.email = String((a && a.e) || '').toLowerCase();
+    canPost = BOLD.can('experimental', 'edit'); full = BOLD.isFullWrite();
+    ['.bs-write', '.bs-import'].forEach(function(c){
+      var b = sortEl.querySelector(c); b.disabled = !canPost; b.title = canPost ? '' : BOLD.cannotReason('experimental', 'edit');
+    });
+    if (!BOLD.can('experimental', 'view')) { postsEl.innerHTML = '<li class="proj-msg">' + esc(BOLD.cannotReason('experimental', 'view')) + '</li>'; return; }
+    col().onSnapshot(function(snap){
+      posts = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      if (!document.activeElement || !document.activeElement.closest('.bs-replyform')) render();
+    }, function(err){ console.error('[BOLD Lab] loading conversations failed', err); postsEl.innerHTML = '<li class="proj-msg">Couldn’t load the conversations.</li>'; });
   });
   render();
 })();

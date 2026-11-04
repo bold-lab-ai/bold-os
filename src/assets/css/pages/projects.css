@@ -223,6 +223,12 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-sort{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
 .bs-import{margin-left:auto; padding:6px 14px; font-size:13px;}
 .bs-new{padding:6px 14px; font-size:13px;}
+.bs-write{padding:6px 14px; font-size:13px;}
+#bsWrite .bs-new{margin-left:auto; align-self:center;}
+.bs-note.is-error{color:var(--danger-text);}
+.bs-replyform{margin:8px 0 0;}
+.bs-replyform textarea{display:block; width:100%; box-sizing:border-box; font:inherit; font-size:14px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:7px 9px; resize:vertical;}
+.bs-replyform .event-form-actions{margin-top:6px;}
 .bs-posts{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
 .bs-post{display:flex; gap:12px; padding:12px 14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
 .bs-post.is-mine{border-color:var(--ink);}
