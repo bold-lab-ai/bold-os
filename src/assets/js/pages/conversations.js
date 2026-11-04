@@ -31,7 +31,9 @@
   function ago(t){ var m = Math.round((Date.now() - ms(t)) / MIN); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : Math.round(m / 1440) + ' d ago'; }
   var score = function(m){ var v = m.votes || {}; return Object.keys(v).reduce(function(s, k){ return s + (Number(v[k]) || 0); }, 0); };
   var mine = function(m){ return !!me.email && m.createdBy === me.email; };
-  var kids = function(id){ return (messages[openId] || []).filter(function(x){ return x.parent === id; }).sort(function(a, b){ return score(b) - score(a) || ms(a.at) - ms(b.at); }); };
+  // A message's replies in the order they were written, whatever their votes: a conversation reads in order.
+  // (Votes order the posts on the list: Top.)
+  var kids = function(id){ return (messages[openId] || []).filter(function(x){ return x.parent === id; }).sort(function(a, b){ return ms(a.at) - ms(b.at); }); };
   var total = function(id){ return kids(id).reduce(function(s, x){ return s + 1 + total(x.id); }, 0); };
   var count = function(k){ return k + (k === 1 ? ' reply' : ' replies'); };
   var postOf = function(id){ return (posts || []).filter(function(p){ return p.id === id; })[0]; };
@@ -295,6 +297,15 @@
       var el = document.getElementById('m-' + id);
       if (el) window.scrollBy(0, el.getBoundingClientRect().top - 90);
     }
+  });
+  // Cmd+Enter (Ctrl+Enter) sends a reply or a new post.
+  forumEl.addEventListener('keydown', function(e){
+    if (e.key !== 'Enter' || !(e.metaKey || e.ctrlKey) || e.isComposing) return;
+    var f = e.target.closest('.bs-replyform, #bsWrite');
+    if (!f || e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'INPUT') return;
+    e.preventDefault();
+    var go = f.querySelector('button[type=submit]');
+    if (go && !go.disabled) f.requestSubmit(go);
   });
   forumEl.addEventListener('submit', function(e){
     var f = e.target.closest('.bs-replyform');
