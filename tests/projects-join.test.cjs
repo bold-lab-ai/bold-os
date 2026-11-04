@@ -55,7 +55,7 @@ test('PAN-BOLD talks to the owner instead of asking to join (2026-11-03)', () =>
   const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../src/assets/js/project-join.js'), 'utf8');
   const ctx = {}; require('node:vm').runInNewContext(src, ctx);
   const st = ctx.BoldProjectJoin.joinState({ talk: { name: 'Ann Lead', slackId: 'U1' } });
-  assert.strictEqual(st.label, 'Talk to its owner');
+  assert.strictEqual(st.label, 'Talk to the lead');
   assert.strictEqual(st.talk.slackId, 'U1');
   assert.strictEqual(ctx.BoldProjectJoin.joinState({ talk: { name: 'Ann' }, joined: true }).label, 'Joined', 'on it already');
 });

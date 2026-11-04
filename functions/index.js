@@ -2633,7 +2633,7 @@ exports.getAllProjects = onCall(
     mineAsked.docs.forEach(function(d){ const v = d.data(); if (v.status === 'asked') pending[v.pid] = { asked: true }; else if (v.status === 'open') pending[v.pid] = { invited: d.id }; });
     items.forEach(function(i){ if (pending[i.pid] && !i.joined) Object.assign(i, pending[i.pid]); });
     if (askOnly) shown.askOnly = true;
-    // PAN-BOLD: "Talk to its owner" (a Slack DM, from a template) instead of asking to join (2026-11-03).
+    // PAN-BOLD: "Talk to the lead" (a Slack DM, from a template) instead of asking to join (2026-11-03).
     if (!full && (await access.groupFor(email)) === 'pan') {
       const owner = {};
       groups.ongoing.concat(groups.submission, groups.completed, groups.planned).forEach(function(i){ owner[i.pid] = { name: i.owner || '', email: i.ownerEmail || '' }; });
@@ -2643,7 +2643,7 @@ exports.getAllProjects = onCall(
         if (i.joined) return;
         delete i.ask; delete i.asked;
         const o = owner[i.pid] || {};
-        i.talk = { name: o.name || 'its owner', slackId: ids[o.email] || '' };
+        i.talk = { name: o.name || 'the lead', slackId: ids[o.email] || '' };
       });
     }
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
@@ -5777,7 +5777,7 @@ exports.projectInvite = onCall(
     const name = request.auth.token.name || email;
     if (d.action === 'ask') {
       // PAN-BOLD talks to its owner first, who adds them (2026-11-03): no asking to join.
-      if ((await access.groupFor(email)) === 'pan') throw new HttpsError('failed-precondition', 'Talk to its owner on Slack first: they add you to it.');
+      if ((await access.groupFor(email)) === 'pan') throw new HttpsError('failed-precondition', 'Talk to the lead on Slack first: they add you to it.');
       const id = String(d.id || ''), board = d.board ? String(d.board) : null;
       if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
       const snap = await cardRefFor(id, board).get();
@@ -6363,7 +6363,7 @@ function onboardingSteps(group, f){
   ];
   // BOLD-associate: an active collaborator, added to an ongoing project by its owner (2026-11-03, from the
   // lab's Slack thread): their own project doesn't count, and PAN-BOLD can't join one themselves.
-  if (r === 1) steps.push({ key: 'project', label: 'Be added to someone’s project: talk to its owner (Projects), who adds you', done: !!f.inProject, href: 'projects.html' });
+  if (r === 1) steps.push({ key: 'project', label: 'Be added to someone’s project: talk to the lead (Projects), who adds you', done: !!f.inProject, href: 'projects.html' });
   if (r >= 2) {
     steps.push({ key: 'own', label: 'Register a project of your own', done: !!f.owns, href: 'projects-register.html' });
     (f.series || []).filter((x) => !x.hidden && x.requiredFor && r >= (ONBOARDING_RANK[x.requiredFor] || 0))

@@ -10,7 +10,7 @@
       if (p && p.joined) return { label: 'Joined', disabled: true, title: 'You’re on this project' };
       if (p && p.invited) return { label: 'You’re invited', disabled: false, title: 'Join it or decline, on its page', invite: p.invited };
       // PAN-BOLD: a conversation with its owner first, who adds them (2026-11-03).
-      if (p && p.talk) return { label: 'Talk to its owner', disabled: false, title: 'A Slack message to ' + (p.talk.name || 'its owner') + ': they add you if it fits', talk: p.talk };
+      if (p && p.talk) return { label: 'Talk to the lead', disabled: false, title: 'A Slack message to ' + (p.talk.name || 'the lead') + ': they add you if it fits', talk: p.talk };
       if (p && p.asked) return { label: 'Asked', disabled: true, title: 'Its owner decides' };
       if (p && p.ask) return { label: 'Ask to join', disabled: false, title: 'Its owner decides', ask: true };
       return { label: 'Join the project', disabled: false, title: '' };

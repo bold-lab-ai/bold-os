@@ -218,7 +218,7 @@
   // The same, asked every time ("Don't ask me again" doesn't skip it): for what reaches many
   // people or leaves BOLD.OS (Calendar, Slack or GitHub invitations, emails, a whole group).
   BOLD.confirmAlways = function(o){ return BOLD.confirmAction(Object.assign({}, o, { always: true })); };
-  // A Slack DM to someone, from a template they edit (2026-11-03: PAN-BOLD's "Talk to its owner").
+  // A Slack DM to someone, from a template they edit (2026-11-03: PAN-BOLD's "Talk to the lead").
   // Slack can't prefill a DM from a link, so: the text, editable; Copy and open Slack copies it and opens
   // their DM in the Slack app (slack://user, BOLD's workspace: site.js slackTeam), where they paste it and
   // send it themselves. Nothing is sent from here. o: { title, to: { name, slackId }, text, note }.
