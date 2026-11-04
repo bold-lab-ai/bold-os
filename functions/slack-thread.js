@@ -5,7 +5,7 @@
 // people who wrote them. Two ways in, the same checks:
 // - slackThread { url }: Import from Slack on the page → { id } (the post; one already brought in
 //   keeps its id, so a thread is never in twice: sending it again refreshes it from Slack).
-// - /chat <link to a message>, a slash command (handleChatCommand), the same way as:
+// - /chat, typed in a thread (handleChatCommand), the same way as:
 // - Send to Conversations, a message shortcut in Slack (callback_id send_to_conversations, on any
 //   message of the thread): handleShortcut answers Slack at once by writing conversationImports/{id}
 //   (server only); onConversationImport does the work and tells its sender, by the shortcut's
@@ -240,17 +240,20 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       responseUrl: payload.response_url || '', at: Date.now(),
     });
   }
-  // /chat <link to a message> (Slack's slash command: it doesn't say which thread it's typed in, so the
-  // link does): as the shortcut, written down at once, done by onConversationImport. → Slack's answer.
+  // /chat, typed in a thread: that whole thread to Conversations, as the shortcut does (written down at
+  // once, done by onConversationImport). Only in a thread: anywhere else it says so. Its thread is the
+  // command's thread_ts; which fields Slack sends with a command is logged (not its text), so it can be
+  // checked when one is refused.
   async function handleChatCommand(body){
     const say = (text) => ({ response_type: 'ephemeral', text });
-    const link = parseSlackLink(String(body.text || '').trim().replace(/^<|>$/g, '').split('|')[0]);
-    if (!link) return say('To send a thread to Conversations: `/chat` and a link to any message in it (its ⋯ menu → Copy link). Or, on the message itself: ⋯ → Send to Conversations.');
+    const thread = String(body.thread_ts || '');
+    logger.info('/chat: what Slack sent', { fields: Object.keys(body || {}).filter((k) => k !== 'text' && k !== 'token').sort(), inThread: !!thread });
+    if (!/^\d{10}\.\d{6}$/.test(thread) || !body.channel_id) return say('`/chat` works inside a thread: open the thread and type `/chat` there. Or, on any message: ⋯ → Send to Conversations.');
     await db.collection('conversationImports').add({
-      slackId: body.user_id || '', channel: link.channel, thread: link.thread, team: body.team_domain ? 'https://' + body.team_domain + '.slack.com' : '',
+      slackId: body.user_id || '', channel: body.channel_id, thread, team: body.team_domain ? 'https://' + body.team_domain + '.slack.com' : '',
       responseUrl: body.response_url || '', at: Date.now(), via: 'command',
     });
-    return say('Sending it to Conversations…');
+    return say('Sending this thread to Conversations…');
   }
   async function tell(url, text){
     if (!url) return;
