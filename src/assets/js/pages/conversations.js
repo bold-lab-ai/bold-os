@@ -1,8 +1,8 @@
-// Conversations (experiment-conversations.html, a code experiment: src/_data/experiments.js; 2026-11-04):
+// Conversations (conversations.html, below the Calendar in the sidebar; an experiment until 2026-11-04):
 // Reddit-like threads. A post (conversations/{pid}) and its replies (conversations/{pid}/messages/{mid},
 // each answering the post or another reply: `parent`) are a tree; each can be voted up or down
-// (`votes`, by sign-in id) and replied to. Saved, and seen by whoever may view Experimental
-// (firestore.rules). Ways in: write a post or a reply; bring in a Slack thread (Import from Slack here,
+// (`votes`, by sign-in id) and replied to. Saved, and seen by whoever may view Conversations
+// (Who can see what; firestore.rules). Ways in: write a post or a reply; bring in a Slack thread (Import from Slack here,
 // or Send to Conversations in Slack: functions/slack-thread.js); or reason with your agent (a panel at
 // the bottom, from any message, or from New chat's form for a new post), which drafts a post or a reply and saves it once you say
 // so (the BOLDiquette: an agent confirms each action with its person). The agent is a preview: it
@@ -49,7 +49,7 @@
     return (posted ? 'Posted by ' : '') + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + ' · ' + ago(m.at);
   }
   function acts(m, pid){
-    var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('experimental', 'edit')) + '"';
+    var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
     var k = m.id === pid ? 0 : total(m.id);
     return '<p class="bs-acts">' +
       '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>' +
@@ -156,7 +156,7 @@
     draft = makeDraft();
     add('Your agent', (draft.reply ? 'This adds to it. I’d reply:' : 'This seems worth sharing. I’d post:') +
       '<div class="bs-draft">' + (draft.title ? '<strong>' + esc(draft.title) + '</strong>' : '') + '<p>' + esc(draft.body) + '</p></div>' +
-      '<div class="bs-draft-actions"><button type="button" class="btn btn-primary bs-post-it"' + (canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('experimental', 'edit')) + '"') + '>' + (draft.reply ? 'Reply' : 'Post it') + '</button>' +
+      '<div class="bs-draft-actions"><button type="button" class="btn btn-primary bs-post-it"' + (canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"') + '>' + (draft.reply ? 'Reply' : 'Post it') + '</button>' +
       '<button type="button" class="btn bs-keep">Not yet</button></div>', 'has-draft');
   }
   form.addEventListener('submit', function(e){
@@ -304,11 +304,11 @@
   BOLD.onUser(function(u){ me.name = (u && u.displayName) || 'You'; me.uid = (u && u.uid) || ''; });
   BOLD.onAccess(function(a){
     me.email = String((a && a.e) || '').toLowerCase();
-    canPost = BOLD.can('experimental', 'edit'); full = BOLD.isFullWrite();
+    canPost = BOLD.can('conversations', 'edit'); full = BOLD.isFullWrite();
     ['.bs-write', '.bs-import'].forEach(function(c){
-      var b = sortEl.querySelector(c); b.disabled = !canPost; b.title = canPost ? '' : BOLD.cannotReason('experimental', 'edit');
+      var b = sortEl.querySelector(c); b.disabled = !canPost; b.title = canPost ? '' : BOLD.cannotReason('conversations', 'edit');
     });
-    if (!BOLD.can('experimental', 'view')) { postsEl.innerHTML = '<li class="proj-msg">' + esc(BOLD.cannotReason('experimental', 'view')) + '</li>'; return; }
+    if (!BOLD.can('conversations', 'view')) { postsEl.innerHTML = '<li class="proj-msg">' + esc(BOLD.cannotReason('conversations', 'view')) + '</li>'; return; }
     col().onSnapshot(function(snap){
       posts = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
       if (!document.activeElement || !document.activeElement.closest('.bs-replyform')) render();

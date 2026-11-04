@@ -751,9 +751,9 @@ service cloud.firestore {
       allow delete: if may('experimental', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
     }
 
-    // Conversations (experiment-conversations.html, 2026-11-04): a post, conversations/{pid}, and its
+    // Conversations (conversations.html, 2026-11-04): a post, conversations/{pid}, and its
     // replies, conversations/{pid}/messages/{mid}, each answering its post or another reply (`parent`).
-    // Whoever may view Experimental reads them and votes (`votes`, by sign-in id: 1 up, -1 down, only
+    // Whoever may view Conversations (Who can see what) reads them and votes (`votes`, by sign-in id: 1 up, -1 down, only
     // their own); whoever may edit it posts and replies, as themselves; its author, PIs and admins
     // remove one. Threads from Slack (source 'slack') and the reply counts are the server's
     // (functions/slack-thread.js); so is conversationImports (Send to Conversations), which no client reads.
@@ -774,20 +774,20 @@ service cloud.firestore {
         && d.get('viaAgent', false) is bool && okVotes(d);
     }
     match /conversations/{pid} {
-      allow read: if may('experimental', 'view');
-      allow create: if may('experimental', 'edit') && okMessage(request.resource.data)
+      allow read: if may('conversations', 'view');
+      allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
         && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes'])
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
-      allow update: if may('experimental', 'view') && onlyMyVote();
-      allow delete: if may('experimental', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
+      allow update: if may('conversations', 'view') && onlyMyVote();
+      allow delete: if may('conversations', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
       match /messages/{mid} {
-        allow read: if may('experimental', 'view');
-        allow create: if may('experimental', 'edit') && okMessage(request.resource.data)
+        allow read: if may('conversations', 'view');
+        allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
           && request.resource.data.keys().hasOnly(['parent', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes'])
           && exists(/databases/$(database)/documents/conversations/$(pid))
           && (request.resource.data.parent == pid || exists(/databases/$(database)/documents/conversations/$(pid)/messages/$(request.resource.data.parent)));
-        allow update: if may('experimental', 'view') && onlyMyVote();
-        allow delete: if may('experimental', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
+        allow update: if may('conversations', 'view') && onlyMyVote();
+        allow delete: if may('conversations', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
       }
     }
 

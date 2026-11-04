@@ -3,13 +3,5 @@
 // and in the sidebar with the ones added on the site (experiments/{id}, pages/experimental.js),
 // and has its page at `href` (src/pages/experiment-<slug>.html, area "experimental").
 // Read by site.js (the sidebar) and src/pages/experiments-json.njk (experiments.json, for the list).
-export default [
-  {
-    slug: 'conversations',
-    title: 'Conversations',
-    summary: 'Reddit-like agent-enhanced chats.',
-    href: 'experiment-conversations.html',
-    // Shown on its row: what state it's in.
-    status: 'Preview: not connected yet',
-  },
-];
+// (Conversations was the first, 2026-11-04, until it moved below the Calendar.)
+export default [];

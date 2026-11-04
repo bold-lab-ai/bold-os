@@ -1,0 +1,52 @@
+---
+area: "conversations"
+title: "Conversations | BOLD Lab"
+description: "Reddit-like agent-enhanced chats."
+css: "projects"
+sdk: ["firestore", "functions"]
+nav: "conversations.html"
+scripts: ["pages/conversations.js"]
+permalink: "conversations.html"
+---
+<main class="ex-page bs-page is-top">
+  <div class="ex-head">
+    <div>
+      <h1>Conversations</h1>
+      <p class="ex-summary">Reddit-like agent-enhanced chats.</p>
+    </div>
+  </div>
+  <p class="bs-note">Posts and replies are saved, and everyone in BOLD-internal and above sees them. Your agent is a preview: it drafts from your own words.</p>
+  <div class="bs-cols">
+    <section class="bs-forum" aria-label="Forum">
+      <div class="bs-sort" role="group" aria-label="Sort">
+        <button type="button" class="bs-sortbtn" data-sort="top" aria-pressed="true">Top</button>
+        <button type="button" class="bs-sortbtn" data-sort="new" aria-pressed="false">New</button>
+        <button type="button" class="btn bs-import">Import from Slack</button>
+        <button type="button" class="btn btn-primary bs-write">New chat</button>
+      </div>
+      <form class="event-form bs-import-form" id="bsWrite" hidden>
+        <label>Title<input type="text" maxlength="200" required></label>
+        <label>Text (optional)<textarea rows="5" maxlength="10000"></textarea></label>
+        <div class="event-form-actions"><button type="submit" class="ev-save">Post</button><button type="button" class="bs-write-cancel">Cancel</button>
+          <button type="button" class="btn-text bs-new">or reason it through with your agent first</button></div>
+      </form>
+      <form class="event-form bs-import-form" id="bsImport" hidden>
+        <label>Link to a Slack thread (in Slack: the message’s ⋯ menu → Copy link)<input type="url" placeholder="https://….slack.com/archives/…" required></label>
+        <p class="event-form-hint">Only a thread you can read in Slack: a public channel, or a private one you’re in. Its first message becomes the post, the rest its replies. In Slack, a message’s ⋯ menu → Send to Conversations does the same.</p>
+        <p class="ev-error" hidden></p>
+        <div class="event-form-actions"><button type="submit" class="ev-save">Bring it in</button><button type="button" class="bs-import-cancel">Cancel</button></div>
+      </form>
+      <ol class="bs-posts" id="bsPosts"></ol>
+      <article class="bs-thread" id="bsThread" hidden></article>
+    </section>
+    <section class="bs-agent" id="bsAgent" aria-label="Reason with your agent" hidden>
+      <div class="bs-agent-head"><h2>Reason with your agent</h2><button type="button" class="bs-close" aria-label="Close" title="Close">&times;</button></div>
+      <p class="bs-about" id="bsAbout" hidden></p>
+      <ol class="bs-log" id="bsLog" aria-live="polite"></ol>
+      <form class="bs-compose" id="bsForm">
+        <textarea id="bsText" rows="2" maxlength="4000" placeholder="What are you thinking about?" aria-label="Your message"></textarea>
+        <button type="submit" class="btn btn-primary">Send</button>
+      </form>
+    </section>
+  </div>
+</main>

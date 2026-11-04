@@ -208,6 +208,7 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .ex-list{margin-top:16px;}
 .ex-new{margin-top:16px;}
 .ex-page{padding-top:28px;}
+.ex-page.is-top{padding-top:64px;}
 .ex-page .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:12px;}
 .ex-page .back-link:hover{color:var(--link);}
 .ex-head{display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:8px 24px; margin-bottom:16px;}

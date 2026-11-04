@@ -46,7 +46,9 @@ export default {
       { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },
     ] },
-    { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true, area: 'calendar' },
+    { label: 'Calendar', href: 'calendar.html', links: [], area: 'calendar' },
+    // Reddit-like threads (conversations.html, 2026-11-04; was an experiment).
+    { label: 'Conversations', href: 'conversations.html', links: [], separatorAfter: true, area: 'conversations' },
     { label: 'People', href: 'people.html', area: 'people', links: [
       { label: 'Members', href: 'people.html' },
       { label: 'Network', href: 'network.html' },
