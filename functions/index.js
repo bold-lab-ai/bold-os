@@ -951,6 +951,8 @@ async function mayAddBoard(email, board){
 // A board's milestones ([{ id, name, start, end }]).
 function slashMilestones(ws){ return ((ws && ws.work) || {}).milestones || []; }
 async function handleSlashCommand(token, body){
+  // /chat <link to a message>: its thread to Conversations (functions/slack-thread.js).
+  if (body.command === '/chat') return conversationsSlack.handleChatCommand(body);
   const c = SLASH_CARDS[body.command];
   const say = (text) => ({ response_type: 'ephemeral', text });
   if (!c) return say('BOLD.OS doesn’t know ' + body.command + '.');

@@ -5,6 +5,7 @@
 // people who wrote them. Two ways in, the same checks:
 // - slackThread { url }: Import from Slack on the page → { id } (the post; one already brought in
 //   keeps its id, so a thread is never in twice: sending it again refreshes it from Slack).
+// - /chat <link to a message>, a slash command (handleChatCommand), the same way as:
 // - Send to Conversations, a message shortcut in Slack (callback_id send_to_conversations, on any
 //   message of the thread): handleShortcut answers Slack at once by writing conversationImports/{id}
 //   (server only); onConversationImport does the work and tells its sender, by the shortcut's
@@ -239,6 +240,18 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       responseUrl: payload.response_url || '', at: Date.now(),
     });
   }
+  // /chat <link to a message> (Slack's slash command: it doesn't say which thread it's typed in, so the
+  // link does): as the shortcut, written down at once, done by onConversationImport. → Slack's answer.
+  async function handleChatCommand(body){
+    const say = (text) => ({ response_type: 'ephemeral', text });
+    const link = parseSlackLink(String(body.text || '').trim().replace(/^<|>$/g, '').split('|')[0]);
+    if (!link) return say('To send a thread to Conversations: `/chat` and a link to any message in it (its ⋯ menu → Copy link). Or, on the message itself: ⋯ → Send to Conversations.');
+    await db.collection('conversationImports').add({
+      slackId: body.user_id || '', channel: link.channel, thread: link.thread, team: body.team_domain ? 'https://' + body.team_domain + '.slack.com' : '',
+      responseUrl: body.response_url || '', at: Date.now(), via: 'command',
+    });
+    return say('Sending it to Conversations…');
+  }
   async function tell(url, text){
     if (!url) return;
     await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ response_type: 'ephemeral', replace_original: false, text }) })
@@ -273,7 +286,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     await db.collection('conversations').doc(event.params.pid).set({ replies: FieldValue.increment(1) }, { merge: true }).catch(() => {});
   });
 
-  return { slackThread, handleShortcut, onConversationImport, onConversationMessage };
+  return { slackThread, handleShortcut, handleChatCommand, onConversationImport, onConversationMessage };
 };
 module.exports.parseSlackLink = parseSlackLink;
 module.exports.slackPlain = slackPlain;
