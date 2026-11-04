@@ -75,7 +75,14 @@ module.exports = function install(db){
         const people = (await db.collection('people').get()).docs.map((d) => d.data()).slice(0, 3);
         const id = (i) => (people[i % people.length] || {}).slackId || 'U-someone', t = Math.floor(Date.now() / 1000) - 7200;
         return ok({ messages: [
-          { ts: t + '.000100', user: id(0), text: 'Should we move the group meeting to Thursdays? Tuesdays clash with two reading groups.' },
+          { ts: t + '.000100', user: id(0), text: 'Should we move the group meeting to Thursdays? Tuesdays clash with two reading groups.', blocks: [{ type: 'rich_text', elements: [
+            { type: 'rich_text_section', elements: [{ type: 'text', text: 'Should we move the group meeting to Thursdays?\nTuesdays clash with ' }, { type: 'text', text: 'two', style: { bold: true } }, { type: 'text', text: ' reading groups:\n' }] },
+            { type: 'rich_text_list', style: 'bullet', indent: 0, elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'RL reading group' }] }, { type: 'rich_text_section', elements: [{ type: 'text', text: 'World models' }] }] },
+            { type: 'rich_text_list', style: 'bullet', indent: 1, elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'run by ' }, { type: 'user', user_id: id(1) }] }] },
+            { type: 'rich_text_section', elements: [{ type: 'text', text: 'Options:\n' }] },
+            { type: 'rich_text_list', style: 'ordered', indent: 0, elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'Thursday 10:00' }] }, { type: 'rich_text_section', elements: [{ type: 'text', text: 'Thursday 14:00' }] }] },
+            { type: 'rich_text_quote', elements: [{ type: 'text', text: 'Mornings are better for most of us' }] },
+          ] }] },
           { ts: (t + 600) + '.000200', user: id(1), text: 'Thursdays work for me, <@' + id(0) + '>. Mornings are better than afternoons.' },
           { ts: (t + 1500) + '.000300', user: id(2), text: 'Fine by me too, see <https://example.com/poll|the poll>.' },
         ], response_metadata: { next_cursor: '' } });

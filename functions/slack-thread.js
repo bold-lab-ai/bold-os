@@ -4,7 +4,7 @@
 // (conversations/{id}) with the thread's replies under it (conversations/{id}/messages), by the
 // people who wrote them. Two ways in, the same checks:
 // - slackThread { url }: Import from Slack on the page → { id } (the post; one already brought in
-//   keeps its id, so a thread is never in twice).
+//   keeps its id, so a thread is never in twice: sending it again refreshes it from Slack).
 // - Send to Conversations, a message shortcut in Slack (callback_id send_to_conversations, on any
 //   message of the thread): handleShortcut answers Slack at once by writing conversationImports/{id}
 //   (server only); onConversationImport does the work and tells its sender, by the shortcut's
@@ -39,6 +39,68 @@ function slackPlain(text, names){
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
 }
 
+// Pure: a Slack message as Markdown (markdown.js renders it, keeping single line breaks): from its
+// rich text (`blocks`: lists with their nesting, numbered or not, quotes, code blocks, bold, italic,
+// struck, code, links, people as tags, emoji), else from its text (Slack's mrkdwn).
+function slackMarkdown(m, names){
+  const blocks = (m && m.blocks || []).filter((b) => b && b.type === 'rich_text');
+  if (!blocks.length) return mrkdwnToMarkdown(m && m.text, names);
+  const out = [];
+  const name = (id) => (names && names[id]) || 'someone';
+  const inline = (els) => (els || []).map((e) => {
+    if (e.type === 'text') {
+      let t = String(e.text || ''), st = e.style || {};
+      if (st.code) return '`' + t.replace(/`/g, "'") + '`';
+      // Markdown marks can't wrap spaces at their ends: put those outside.
+      const lead = t.match(/^\s*/)[0], trail = t.slice(lead.length).match(/\s*$/)[0], core = t.slice(lead.length, t.length - trail.length);
+      if (!core) return t;
+      let c = core;
+      if (st.strike) c = '~~' + c + '~~';
+      if (st.italic) c = '*' + c + '*';
+      if (st.bold) c = '**' + c + '**';
+      return lead + c + trail;
+    }
+    if (e.type === 'link') return e.text && e.text !== e.url ? '[' + e.text + '](' + e.url + ')' : String(e.url || '');
+    if (e.type === 'user') return '@[' + name(e.user_id) + '](' + e.user_id + ')';
+    if (e.type === 'usergroup') return '@group';
+    if (e.type === 'channel') return '#channel';
+    if (e.type === 'broadcast') return '@' + (e.range || 'here');
+    if (e.type === 'emoji') return e.unicode ? String.fromCodePoint(...String(e.unicode).split('-').map((h) => parseInt(h, 16))) : ':' + e.name + ':';
+    if (e.type === 'date') return e.fallback || '';
+    return e.text || '';
+  }).join('');
+  // Blocks are a blank line apart, except a list straight after a list (its nested part).
+  let lastList = false;
+  const push = (text, isList) => {
+    if (isList && lastList) out[out.length - 1] += '\n' + text; else out.push(text);
+    lastList = isList;
+  };
+  for (const b of blocks) for (const el of (b.elements || [])) {
+    if (el.type === 'rich_text_section') push(inline(el.elements).replace(/\n+$/, ''), false);
+    else if (el.type === 'rich_text_list') {
+      const pad = '  '.repeat(el.indent || 0), ordered = el.style === 'ordered';
+      push((el.elements || []).map((it, i) => pad + (ordered ? ((el.offset || 0) + i + 1) + '. ' : '- ') + inline(it.elements).replace(/\n/g, ' ')).join('\n'), true);
+    }
+    else if (el.type === 'rich_text_preformatted') push('```\n' + (el.elements || []).map((e) => e.text || e.url || '').join('').replace(/\n+$/, '') + '\n```', false);
+    else if (el.type === 'rich_text_quote') push(inline(el.elements).replace(/\n+$/, '').split('\n').map((l) => '> ' + l).join('\n'), false);
+  }
+  return out.filter((x) => x.trim()).join('\n\n');
+}
+// Pure: Slack's mrkdwn → Markdown, for a message without rich text (from an app, say).
+function mrkdwnToMarkdown(text, names){
+  return String(text || '')
+    .replace(/<@([A-Z0-9]+)(\|[^>]*)?>/g, (x, id) => '@[' + ((names && names[id]) || 'someone') + '](' + id + ')')
+    .replace(/<#[A-Z0-9]+\|([^>]*)>/g, '#$1')
+    .replace(/<!(here|channel|everyone)[^>]*>/g, '@$1')
+    .replace(/<(https?:[^|>]+)\|([^>]+)>/g, '[$2]($1)')
+    .replace(/<(https?:[^>]+)>/g, '$1')
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1**$2**')
+    .replace(/(^|[\s(])_([^_\n]+)_(?=[\s).,!?:;]|$)/g, '$1*$2*')
+    .replace(/(^|[\s(])~([^~\n]+)~(?=[\s).,!?:;]|$)/g, '$1~~$2~~')
+    .replace(/^(\s*)[•◦▪]\s+/gm, '$1- ')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+
 // Pure: may this person read the channel? info: conversations.info's channel; isMember: whether they're in it.
 function mayRead(info, isMember){
   if (!info || info.is_im) return false;
@@ -54,8 +116,8 @@ function threadOf(messages, names){
   if (!keep.length) return null;
   const [first, ...rest] = keep;
   return {
-    post: { who: who(first), text: slackPlain(first.text, names), at: at(first) },
-    replies: rest.map((m) => ({ who: who(m), text: slackPlain(m.text, names), at: at(m) })).filter((r) => r.text.trim()),
+    post: { who: who(first), text: slackMarkdown(first, names), title: slackPlain(first.text, names), at: at(first) },
+    replies: rest.map((m) => ({ who: who(m), text: slackMarkdown(m, names), at: at(m) })).filter((r) => r.text.trim()),
   };
 }
 
@@ -115,20 +177,30 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     return { t, ch, messages };
   }
 
-  // Saves the thread as a post, once → { id, title, existed }.
+  // Saves the thread as a post → { id, title, existed }. Sent again, it's refreshed: its text and its Slack
+  // replies as they are now (new ones added), its votes and the replies written on BOLD.OS kept.
   async function saveThread(token, link, team, sender){
     const id = postIdOf(link.channel, link.thread), ref = db.collection('conversations').doc(id);
     const had = await ref.get();
-    if (had.exists) return { id, title: had.data().title, existed: true };
     const { t, ch } = await readThread(token, link, sender.slackId);
-    const first = (t.post.text.split('\n')[0] || t.post.text).trim();
+    const first = (t.post.title.split('\n').map((l) => l.replace(/^[\s•◦▪-]+/, '').trim()).filter(Boolean)[0] || 'From Slack');
     const title = first.length > 120 ? first.slice(0, 117).replace(/\s+\S*$/, '') + '…' : first;
     const slack = { channel: link.channel, channelName: ch.name ? '#' + ch.name : '', thread: link.thread,
       permalink: (team || 'https://slack.com') + '/archives/' + link.channel + '/p' + link.thread.replace('.', '') };
     const batch = db.batch();
-    batch.create(ref, { title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, votes: {}, replies: t.replies.length,
+    const reply = (r) => ({ parent: id, body: r.text, name: r.who, createdBy: '', at: r.at, source: 'slack' });
+    if (had.exists) {
+      const old = had.data(), mine = (await ref.collection('messages').where('source', '==', 'slack').get()).size;
+      batch.set(ref, { title, body: t.post.text, slack, slackReplies: t.replies.length,
+        replies: Math.max(0, (old.replies || 0) - (old.slackReplies != null ? old.slackReplies : mine)) + t.replies.length, refreshedAt: FieldValue.serverTimestamp() }, { merge: true });
+      // Each Slack reply keeps its id (its place in the thread), so its votes stay.
+      t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), reply(r), { merge: true }));
+      await batch.commit();
+      return { id, title, existed: true };
+    }
+    batch.create(ref, { title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
       broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() });
-    t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), { parent: id, body: r.text, name: r.who, createdBy: '', at: r.at, source: 'slack', votes: {} }));
+    t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
     try { await batch.commit(); }
     catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
     return { id, title, existed: false };
@@ -172,7 +244,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       if (!/^\d{10}\.\d{6}$/.test(d.thread) || !d.channel) throw new HttpsError('invalid-argument', 'That message can’t be sent.');
       const r = await saveThread(SLACK_BOT_TOKEN.value(), { channel: d.channel, ts: d.thread, thread: d.thread }, d.team, { email, name: p.data().name || '', slackId: d.slackId });
       const url = PAGE + '#post=' + encodeURIComponent(r.id);
-      out = { id: r.id, text: (r.existed ? 'Already in Conversations: ' : 'Sent to Conversations: ') + '<' + url + '|' + String(r.title).replace(/[<>|]/g, '') + '>' };
+      out = { id: r.id, text: (r.existed ? 'Updated in Conversations: ' : 'Sent to Conversations: ') + '<' + url + '|' + String(r.title).replace(/[<>|]/g, '') + '>' };
     } catch (e) {
       out = { error: String(e && e.message || e), text: 'Not sent to Conversations: ' + String(e && e.message || e) };
     }
@@ -193,4 +265,6 @@ module.exports.parseSlackLink = parseSlackLink;
 module.exports.slackPlain = slackPlain;
 module.exports.mayRead = mayRead;
 module.exports.threadOf = threadOf;
+module.exports.slackMarkdown = slackMarkdown;
+module.exports.mrkdwnToMarkdown = mrkdwnToMarkdown;
 module.exports.postIdOf = postIdOf;

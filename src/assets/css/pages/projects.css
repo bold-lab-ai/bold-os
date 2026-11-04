@@ -251,7 +251,9 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-title a{color:inherit; text-decoration:none;}
 .bs-title a:hover{color:var(--link); text-decoration:underline;}
 .bs-by a{color:inherit;}
-.bs-clip{display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;}
+/* On the list, a post's text is cut to about four lines, fading out. */
+.bs-clip{max-height:6.2em; overflow:hidden; -webkit-mask-image:linear-gradient(to bottom, #000 60%, transparent); mask-image:linear-gradient(to bottom, #000 60%, transparent);}
+.bs-text p{margin:0 0 .5em;} .bs-text ul, .bs-text ol{margin:.2em 0 .5em; padding-left:1.4em;} .bs-text pre{white-space:pre-wrap; font-size:13px;} .bs-text blockquote{margin:.3em 0; padding-left:10px; border-left:3px solid var(--line); color:var(--muted);}
 .bs-thread .back-link{margin:0 0 10px;}
 .bs-posts[hidden], .bs-sort[hidden], .bs-thread[hidden], .bs-about[hidden]{display:none;}
 .bs-post-open .bs-title{font-size:20px;}

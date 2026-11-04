@@ -13,6 +13,12 @@
   var importEl = document.getElementById('bsImport'), writeEl = document.getElementById('bsWrite'), agentEl = document.getElementById('bsAgent'), forumEl = document.querySelector('.bs-forum');
   if (!postsEl || !form) return;
   var esc = BOLD.escapeHtml, MIN = 60000;
+  // Reasoning with your agent is off for now (2026-11-04): its button and New chat's link are left out;
+  // the panel's code stays, to turn back on here.
+  var AGENT = false;
+  // A message's text: Markdown (Slack threads come in as it: functions/slack-thread.js), its single
+  // line breaks kept, as in Slack.
+  var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
   var me = { email: '', name: 'You', uid: '' }, canPost = false, full = false;
   var posts = null, messages = {}, openId = '', stopMsgs = null;
   var sort = 'top', folded = {}, replying = '', said = [], draft = null, about = null;   // about: { pid, id }
@@ -53,7 +59,7 @@
     var k = m.id === pid ? 0 : total(m.id);
     return '<p class="bs-acts">' +
       '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>' +
-      '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' +
+      (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
       (k ? '<button type="button" class="btn-text bs-fold" data-id="' + esc(m.id) + '">' + (folded[m.id] ? 'Show ' + count(k) : 'Hide replies') + '</button>' : '') +
       (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>' +
       (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea rows="3" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
@@ -63,7 +69,7 @@
     var k = total(m.id), off = folded[m.id];
     return '<li class="bs-reply' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
       '<div class="bs-reply-card">' + vote(m) + '<div class="bs-post-main">' +
-        '<p class="bs-by">' + by(m) + '</p><p class="bs-text">' + esc(m.body) + '</p>' + acts(m, pid) + '</div></div>' +
+        '<p class="bs-by">' + by(m) + '</p>' + md(m.body) + acts(m, pid) + '</div></div>' +
       (k && !off ? '<ol class="bs-replies">' + kids(m.id).map(function(x){ return replyHtml(x, pid); }).join('') + '</ol>' : '') + '</li>';
   }
 
@@ -82,7 +88,7 @@
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
         '<div class="bs-post bs-post-open' + (mine(p) ? ' is-mine' : '') + (about && about.id === p.id ? ' is-about' : '') + '" id="m-' + esc(p.id) + '">' + vote(p) +
           '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2><p class="bs-by">' + by(p, true) + '</p>' +
-          (p.body && p.body.trim() !== p.title ? '<p class="bs-text">' + esc(p.body) + '</p>' : '') + acts(p, p.id) + '</div></div>' +
+          (p.body && p.body.trim() !== p.title ? md(p.body) : '') + acts(p, p.id) + '</div></div>' +
         '<h3 class="bs-replies-head">' + count(k) + '</h3>' +
         (k ? '<ol class="bs-replies bs-replies-top">' + kids(p.id).map(function(x){ return replyHtml(x, p.id); }).join('') + '</ol>' : '<p class="bs-by">No replies yet.</p>');
       var f = threadEl.querySelector('.bs-replyform textarea'); if (f) f.focus();
@@ -94,7 +100,7 @@
       var at = '#post=' + encodeURIComponent(q.id);
       return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
         '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q, true) + '</p>' +
-          (q.body && q.body.trim() !== q.title ? '<p class="bs-text bs-clip">' + esc(q.body) + '</p>' : '') +
+          (q.body && q.body.trim() !== q.title ? md(q.body).replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip"') : '') +
           '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
     }).join('') : '<li class="proj-msg">No posts yet: write one, start a chat with your agent, or bring in a Slack thread.</li>';
   }
@@ -204,6 +210,7 @@
   function closeAgent(){ agentEl.hidden = true; document.body.classList.remove('bs-agent-open'); if (about) { setAbout(null); render(); } }
   agentEl.querySelector('.bs-close').addEventListener('click', closeAgent);
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !agentEl.hidden) closeAgent(); });
+  writeEl.querySelector('.bs-new').hidden = !AGENT;
   writeEl.querySelector('.bs-new').addEventListener('click', function(){
     writeEl.hidden = true;
     if (about) { setAbout(null); render(); }
