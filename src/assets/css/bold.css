@@ -346,7 +346,10 @@ footer{
 .mast-btn:disabled{opacity:.5; cursor:default; background:none; border-color:var(--line); color:var(--ink-soft);}
 /* The + menu (bold.js mountCreate): + and a caret; its list as the avatar's. */
 .mast-create{position:relative; display:flex;}
-.mast-create[hidden], .mast-bell[hidden], .mast-mine[hidden]{display:none;}
+.mast-create[hidden], .mast-bell[hidden], .mast-mine[hidden], .mast-settings[hidden]{display:none;}
+/* Site settings (bold.js mountSettings): a gear, a link for PIs and admins. */
+.mast-settings{display:flex;}
+.mast-btn[aria-current="page"]{border-color:var(--ink-soft); color:var(--ink);}
 /* Yours (bold.js mountMine): links to what's yours, as the + menu. */
 .mast-mine{position:relative; display:flex;}
 .mast-mine-menu{width:200px;}

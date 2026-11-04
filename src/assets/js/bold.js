@@ -468,8 +468,8 @@
 
   /* ---------- masthead ---------- */
 
-  // Signed in: your name opens a menu (Profile; Requests, yours (requests.html); Settings, for
-  // PIs and admins only, shown once that's known; Sign out). Signed out: Sign in with Slack.
+  // Signed in: your name opens a menu (Profile; Sign out). Your requests are under Mine, site
+  // settings have their own button (mountSettings). Signed out: Sign in with Slack.
   function renderAuthRegion(region, user){
     if (user) {
       // Your Slack photo (initials without one), as GitHub's avatar; your name heads its menu
@@ -483,8 +483,6 @@
           '<ul class="mast-menu" id="mastMenu" role="menu" hidden>' +
             '<li role="none" class="mast-menu-who">Signed in as <strong>' + who + '</strong></li>' +
             '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
-            '<li role="none"><a role="menuitem" href="requests.html">Requests</a></li>' +
-            '<li role="none" class="mast-menu-settings"' + (BOLD.isFullWrite() ? '' : ' hidden') + '><a role="menuitem" href="settings.html">Settings</a></li>' +
             '<li role="none"><button role="menuitem" type="button" id="mastSignOutBtn">Sign out</button></li>' +
           '</ul>' +
         '</div>';
@@ -629,6 +627,7 @@
     { label: 'My projects', href: 'projects.html#mine', area: 'projects' },
     { label: 'My events', href: 'events.html#mine', area: 'events' },
     { sep: true },
+    { label: 'My requests', href: 'requests.html', area: 'profile' },
     { label: 'My letters', href: 'letters.html', area: 'service-desk' },
     { label: 'My introductions', href: 'introductions.html', area: 'service-desk' },
   ];
@@ -661,6 +660,24 @@
     BOLD.onUser(function(user){ box.hidden = !user; if (!user) open(false); });
   }
 
+  // Site settings (settings.html, 2026-11-04): a gear between Mine and the notifications, for everyone
+  // signed in; PIs and admins open it, everyone else sees it greyed out with why.
+  var ICON_SETTINGS = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+  function mountSettings(){
+    var box = document.getElementById('mastSettings');
+    if (!box) return;
+    var draw = function(){
+      var full = BOLD.isFullWrite(), here = /(^|\/)settings\.html$/.test(location.pathname);
+      box.innerHTML = full
+        ? '<a class="mast-btn" href="settings.html" title="Site settings" aria-label="Site settings"' + (here ? ' aria-current="page"' : '') + '>' + ICON_SETTINGS + '</a>'
+        : '<button type="button" class="mast-btn" disabled title="Site settings are for PIs and admins" aria-label="Site settings, for PIs and admins">' + ICON_SETTINGS + '</button>';
+    };
+    draw();
+    box.hidden = !hint;
+    BOLD.onUser(function(user){ box.hidden = !user; });
+    BOLD.onAccess(draw);
+  }
+
   // Light or dark (the dark block in bold.css): the masthead's sun/moon button, showing the theme
   // in use. The choice is kept in localStorage (boldTheme) and applied before the page paints by
   // the line at the top of base.njk; other open tabs follow it.
@@ -690,13 +707,12 @@
     mountTheme();
     mountCreate();
     mountMine();
+    mountSettings();
     var region = document.getElementById('authRegion');
     // Paint the last visit's name at once; auth stays authoritative.
     if (hint) renderAuthRegion(region, { displayName: hint.n, email: hint.e, photoURL: hint.p });
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
-    // Settings, in the menu, once the viewer is known to be a PI or admin.
     BOLD.onAccess(function(a){
-      var g = region.querySelector('.mast-menu-settings'); if (g) g.hidden = !a.fullWrite;
       previewBar();
       if (branch && !branchList) loadBranches();
     });
