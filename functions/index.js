@@ -1140,6 +1140,7 @@ const PILOTS = {
   'group-eligible': 'Telling PIs someone meets the next group’s requirements',
   'project-setup': 'An ongoing project’s setup still missing (once)',
   'channel-join': 'BOLD OS joins new public channels',
+  'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -7490,7 +7491,7 @@ exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Send to Conversations in Slack.
-const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL });
+const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText });
 exports.slackThread = conversationsSlack.slackThread;
 exports.onConversationImport = conversationsSlack.onConversationImport;
 exports.onConversationMessage = conversationsSlack.onConversationMessage;

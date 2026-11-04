@@ -124,8 +124,18 @@ function threadOf(messages, names){
 // Pure: a Slack thread's post id, the same whichever way it came in.
 const postIdOf = (channel, thread) => 'slack-' + channel + '-' + String(thread).replace('.', '');
 
-module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL }){
+module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText }){
   const PAGE = SITE_URL + 'conversations.html';
+  // A thread newly in Conversations says so in the thread, for everyone in it (pilot conversation-sent;
+  // until it's live its testers get it instead). Not when one is refreshed. Never fails the send.
+  async function announce(token, link, channelName, r, who){
+    if (r.existed || !postInChannel) return;
+    const url = PAGE + '#post=' + encodeURIComponent(r.id);
+    await postInChannel(token, 'conversation-sent', link.channel, channelName || link.channel, {
+      thread_ts: link.thread, unfurl_links: false,
+      text: '📌 ' + slackText(who || 'Someone') + ' sent this thread to Conversations: <' + url + '|' + String(r.title).replace(/[<>|]/g, '') + '>. Vote and reply there.',
+    }).catch((e) => logger.warn('Announcing a thread in Conversations failed', { error: String(e && e.message || e) }));
+  }
   async function api(token, method, params){
     const res = await fetch('https://slack.com/api/' + method + '?' + new URLSearchParams(params), { headers: { 'Authorization': 'Bearer ' + token } });
     const json = await res.json();
@@ -203,7 +213,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
     try { await batch.commit(); }
     catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
-    return { id, title, existed: false };
+    return { id, title, existed: false, channelName: ch.name || '' };
   }
   async function personFor(email){
     const s = await db.collection('people').where('email', '==', email).limit(1).get();
@@ -216,7 +226,9 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     const link = parseSlackLink((request.data || {}).url);
     if (!link) throw new HttpsError('invalid-argument', 'That isn’t a link to a Slack message: in Slack, a message’s ⋯ menu → Copy link.');
     const p = await personFor(email);
-    return saveThread(SLACK_BOT_TOKEN.value(), link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) });
+    const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) });
+    await announce(token, link, r.channelName, r, p.name);
+    return r;
   });
 
   // Send to Conversations (Slack's message_action payload): written down at once, done by onConversationImport.
@@ -242,7 +254,9 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       if (!email) throw new HttpsError('permission-denied', 'BOLD.OS doesn’t know you yet: sign in to BOLD.OS once with Slack.');
       if (!(await access.can(email, 'conversations', 'edit'))) throw new HttpsError('permission-denied', 'You can’t post in Conversations yet (BOLDiquette › Who can see what).');
       if (!/^\d{10}\.\d{6}$/.test(d.thread) || !d.channel) throw new HttpsError('invalid-argument', 'That message can’t be sent.');
-      const r = await saveThread(SLACK_BOT_TOKEN.value(), { channel: d.channel, ts: d.thread, thread: d.thread }, d.team, { email, name: p.data().name || '', slackId: d.slackId });
+      const token = SLACK_BOT_TOKEN.value(), link = { channel: d.channel, ts: d.thread, thread: d.thread };
+      const r = await saveThread(token, link, d.team, { email, name: p.data().name || '', slackId: d.slackId });
+      await announce(token, link, r.channelName, r, p.data().name);
       const url = PAGE + '#post=' + encodeURIComponent(r.id);
       out = { id: r.id, text: (r.existed ? 'Updated in Conversations: ' : 'Sent to Conversations: ') + '<' + url + '|' + String(r.title).replace(/[<>|]/g, '') + '>' };
     } catch (e) {
