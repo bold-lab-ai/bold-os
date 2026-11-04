@@ -1255,7 +1255,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         el('projectBody').hidden = true;
         show('Only its people see this project.');
         if (/[#&]invite=/.test(location.hash)) { if (BOLD.allowPage) BOLD.allowPage(); }
-        else el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">' + (BOLD.can('projects', 'edit') ? 'Join it' : 'Ask to join it') + ' from Projects</a>.');
+        else el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">' + (BOLD.can('projects', 'edit') && (BOLD.isFullWrite() || ['internal', 'staff', 'exec'].indexOf(BOLD.myGroup()) >= 0) ? 'Join it' : 'Ask to join it') + ' from Projects</a>.');
         return;
       }
       if (!card) show('Could not load the project.');
