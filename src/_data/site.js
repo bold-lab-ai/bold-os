@@ -2,7 +2,6 @@
 // and navigation are defined — layouts and partials read these, pages never repeat them.
 // A local test copy (scripts/test-site.sh, BOLD_TEST=1): a demo project that only exists in the
 // Firebase emulators, so nothing can reach the real one; never set for the real build.
-import experiments from './experiments.js';
 const TEST = process.env.BOLD_TEST === '1';
 
 export default {
@@ -69,8 +68,8 @@ export default {
     ], separatorAfter: true },
     // Experimental features (experimental.html, 2026-11-04): code ones (src/_data/experiments.js) and
     // ones anyone who may edit the page adds on the site (experiments/{id}, filled in by bold.js).
-    { label: 'Experimental', href: 'experimental.html', experiments: true, area: 'experimental',
-      // The code ones (src/_data/experiments.js) are written in; the ones added on the site follow.
-      links: experiments.map((x) => ({ label: x.title, href: x.href })) },
+    // The code ones (src/_data/experiments.js) are written in by the sidebar partial, from that data (not
+    // imported here: the dev server would keep an old copy); the ones added on the site follow.
+    { label: 'Experimental', href: 'experimental.html', links: [], experiments: true, area: 'experimental' },
   ],
 };

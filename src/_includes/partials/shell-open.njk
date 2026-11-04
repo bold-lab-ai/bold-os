@@ -23,6 +23,9 @@
         <a class="nav-link nav-sub{% if link.active %} active{% endif %}" href="{{ link.href }}"{% if link.area %} data-area="{{ link.area }}"{% endif %}{% if link.areaWhat %} data-area-what="{{ link.areaWhat }}"{% endif %}>{{ link.label }}</a>
 {%- endif %}
 {%- endfor %}
+{%- if group.experiments %}{%- for x in experiments %}
+        <a class="nav-link nav-sub{% if x.href == current %} active{% endif %}" href="{{ x.href }}" data-area="experimental">{{ x.title }}</a>
+{%- endfor %}{%- endif %}
       </div>
 {%- if group.separatorAfter %}
       <hr class="nav-sep">

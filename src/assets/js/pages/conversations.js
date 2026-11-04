@@ -99,7 +99,7 @@
     return li;
   }
   add('Your agent', 'Think out loud with me. When something is worth sharing with the lab, I’ll draft a post, or a reply to one, and ask you before it goes out.');
-  // (It opens on Reason with your agent, or New post: see openAgent below.)
+  // (It opens on Reason with your agent, or New chat: see openAgent below.)
 
   var label = function(f){ return f.msg === f.post ? '“' + f.post.title + '”' : f.msg.who + '’s agent’s reply in “' + f.post.title + '”'; };
   function setAbout(id){
@@ -204,7 +204,7 @@
     var b = e.target.closest('.bs-sortbtn'); if (!b) return;
     sort = b.getAttribute('data-sort'); syncSort(); render();
   });
-  // The agent's panel, docked at the bottom: open only while reasoning (Reason with your agent, or New post).
+  // The agent's panel, docked at the bottom: open only while reasoning (Reason with your agent, or New chat).
   var agentEl = document.getElementById('bsAgent');
   var forumEl = document.querySelector('.bs-forum');
   function fit(){ if (agentEl.hidden) return; var r = forumEl.getBoundingClientRect(); agentEl.style.left = r.left + 'px'; agentEl.style.width = r.width + 'px'; }
@@ -215,7 +215,7 @@
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !agentEl.hidden) closeAgent(); });
   sortEl.querySelector('.bs-new').addEventListener('click', function(){
     if (about) { setAbout(null); render(); }
-    add('Your agent', 'A new post, then. What are you thinking about?');
+    add('Your agent', 'A new chat. What are you thinking about?');
     openAgent();
   });
   render();
