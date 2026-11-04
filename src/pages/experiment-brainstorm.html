@@ -1,0 +1,28 @@
+---
+area: "experimental"
+title: "Brainstorm | BOLD Lab"
+description: "Your own AI assistant, reading a shared workspace when it matters."
+css: "projects"
+sdk: ["firestore"]
+nav: "experiment-brainstorm.html"
+scripts: ["pages/brainstorm.js"]
+permalink: "experiment-brainstorm.html"
+---
+<main class="ex-page">
+  <a class="back-link" href="experimental.html">&larr; Experimental</a>
+  <div class="ex-head">
+    <div>
+      <h1>Brainstorm</h1>
+      <p class="ex-summary">Talk to your own assistant. When what others in the brainstorm have said bears on what you're working on, it tells you, and says who said it.</p>
+    </div>
+    <div class="ex-links"><a href="https://github.com/bold-lab-ai/bold-os/pull/23" target="_blank" rel="noopener">Read about it</a></div>
+  </div>
+  <section class="bs" id="brainstorm" aria-label="Your conversation">
+    <p class="bs-note">Preview: not connected yet. Nothing you type is sent or saved.</p>
+    <ol class="bs-log" id="bsLog" aria-live="polite"></ol>
+    <form class="bs-compose" id="bsForm">
+      <textarea id="bsText" rows="2" maxlength="4000" placeholder="What are you working on?" aria-label="Your message"></textarea>
+      <button type="submit" class="btn btn-primary" id="bsSend">Send</button>
+    </form>
+  </section>
+</main>

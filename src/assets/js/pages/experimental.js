@@ -1,6 +1,7 @@
 // Experimental (2026-11-04): features people in BOLD are trying out, in experiments/{id}
 // { title, summary, aboutUrl, tryUrl, createdBy, createdAt, updatedBy, updatedAt }.
-// - experimental.html (#experiments): the list, as Projects' rows; each opens its page.
+// - experimental.html (#experiments): the list, as Projects' rows; each opens its page. The code
+//   ones (src/_data/experiments.js, from experiments.json) first, then the ones added here.
 // - experiment.html?id=<id> (#experiment): the experiment, its service (tryUrl) open in the page.
 // Whoever may edit Experimental adds one; its author, PIs and admins change or remove it
 // (firestore.rules). The sidebar lists them too (bold.js experimentsNav).
@@ -8,7 +9,7 @@
   var listEl = document.getElementById('experiments'), pageEl = document.getElementById('experiment');
   var main = listEl || pageEl;
   if (!main) return;
-  var esc = BOLD.escapeHtml, me = '', list = null, editing = null;   // editing: an id, 'new', or null
+  var esc = BOLD.escapeHtml, me = '', list = null, code = [], editing = null;   // editing: an id, 'new', or null
   var id = pageEl ? new URLSearchParams(location.search).get('id') || '' : '';
   var safeUrl = function(u){ return /^https:\/\//i.test(String(u || '').trim()) ? String(u).trim() : ''; };
   var col = function(){ return firebase.firestore(BOLD.getApp()).collection('experiments'); };
@@ -38,7 +39,13 @@
       '<div class="actions"><span></span><button type="button" class="btn btn-primary ex-add"' +
         (canAdd ? '' : ' disabled title="' + esc(BOLD.cannotReason('experimental', 'edit')) + '"') + '>+ Add an experiment</button></div>' +
       (editing === 'new' ? '<div class="ex-new">' + formHtml(null) + '</div>' : '') +
-      '<ul class="proj-list ex-list">' + (list.length ? list.map(function(x){
+      '<ul class="proj-list ex-list">' + (code.length + list.length ? code.map(function(x){
+        return '<li><div class="proj-main"><a class="proj-title" href="' + esc(x.href) + '">' + esc(x.title) + '</a>' +
+          (x.summary ? '<span class="proj-meta">' + esc(x.summary) + '</span>' : '') +
+          '<div class="proj-badges"><span class="badge" title="Part of BOLD.OS’s code: changed by a pull request">Code</span>' +
+            (x.status ? '<span class="badge">' + esc(x.status) + '</span>' : '') + '</div></div>' +
+          '<a class="btn" href="' + esc(x.href) + '">Open</a></li>';
+      }).join('') + list.map(function(x){
         return '<li><div class="proj-main"><a class="proj-title" href="' + href(x) + '">' + esc(x.title) + '</a>' +
           (x.summary ? '<span class="proj-meta">' + esc(x.summary) + '</span>' : '') +
           '<div class="proj-badges">' + running(x) + '</div></div>' +
@@ -114,6 +121,8 @@
     if (!BOLD.can('experimental', 'view')) { main.innerHTML = '<p class="proj-msg">' + esc(BOLD.cannotReason('experimental', 'view')) + '</p>'; return; }
     var fail = function(err){ main.innerHTML = '<p class="proj-msg">Couldn’t load the experiments.</p>'; console.error('[BOLD Lab] loading experiments failed', err); };
     if (listEl) {
+      fetch('experiments.json?v=' + Date.now()).then(function(r){ return r.json(); }).then(function(c){ code = c || []; if (list !== null && editing !== 'new') renderList(); })
+        .catch(function(err){ console.error('[BOLD Lab] loading the code experiments failed', err); });
       col().onSnapshot(function(snap){
         list = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
           .sort(function(a, b){ return String(a.title).localeCompare(String(b.title)); });

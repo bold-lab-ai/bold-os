@@ -1,0 +1,16 @@
+// Experiments that are code (2026-11-04): a page in this repo, with its own script and styles,
+// added by a change to the code (a pull request), not on the site. Each is listed on Experimental
+// and in the sidebar with the ones added on the site (experiments/{id}, pages/experimental.js),
+// and has its page at `href` (src/pages/experiment-<slug>.html, area "experimental").
+// Read by site.js (the sidebar) and src/pages/experiments-json.njk (experiments.json, for the list).
+export default [
+  {
+    slug: 'brainstorm',
+    title: 'Brainstorm',
+    summary: 'Your own AI assistant, reading a shared workspace when it matters.',
+    href: 'experiment-brainstorm.html',
+    aboutUrl: 'https://github.com/bold-lab-ai/bold-os/pull/23',
+    // Shown on its row: what state it's in.
+    status: 'Preview: not connected yet',
+  },
+];

@@ -2,6 +2,7 @@
 // and navigation are defined — layouts and partials read these, pages never repeat them.
 // A local test copy (scripts/test-site.sh, BOLD_TEST=1): a demo project that only exists in the
 // Firebase emulators, so nothing can reach the real one; never set for the real build.
+import experiments from './experiments.js';
 const TEST = process.env.BOLD_TEST === '1';
 
 export default {
@@ -66,8 +67,10 @@ export default {
       { label: 'Recommendation letters', href: 'letters.html' },
       { label: 'Introductions', href: 'introductions.html' },
     ], separatorAfter: true },
-    // Experimental features (experiments/{id}, experimental.html, 2026-11-04): anyone who may edit
-    // the page adds one; its sub-pages are the experiments (Firestore), filled in by bold.js.
-    { label: 'Experimental', href: 'experimental.html', links: [], experiments: true, area: 'experimental' },
+    // Experimental features (experimental.html, 2026-11-04): code ones (src/_data/experiments.js) and
+    // ones anyone who may edit the page adds on the site (experiments/{id}, filled in by bold.js).
+    { label: 'Experimental', href: 'experimental.html', experiments: true, area: 'experimental',
+      // The code ones (src/_data/experiments.js) are written in; the ones added on the site follow.
+      links: experiments.map((x) => ({ label: x.title, href: x.href })) },
   ],
 };

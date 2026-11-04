@@ -1289,12 +1289,14 @@
     if (!group) return;
     var page = location.pathname.split('/').pop() || 'index.html';
     function draw(list){
-      Array.prototype.forEach.call(group.querySelectorAll('.nav-sub'), function(a){ a.remove(); });
+      // Only what it filled in before: links written in at build (Experimental's code ones) stay.
+      Array.prototype.forEach.call(group.querySelectorAll('.nav-sub[data-loaded]'), function(a){ a.remove(); });
       var label = group.querySelector('.nav-group-label');
       var anyActive = false;
       list.forEach(function(e){
         var a = document.createElement('a');
         a.className = 'nav-link nav-sub';
+        a.setAttribute('data-loaded', '');
         a.href = e.href;
         a.textContent = e.title;
         a.title = e.title;

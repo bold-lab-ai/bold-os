@@ -216,4 +216,16 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .ex-links{display:flex; flex-wrap:wrap; align-items:center; gap:14px; font-size:13px;}
 .ex-frame{display:block; width:100%; height:calc(100vh - 220px); min-height:480px; border:1px solid var(--line); border-radius:var(--radius); background:#fff;}
 .ex-off{margin-top:24px;}
+/* Brainstorm (experiment-brainstorm.html, pages/brainstorm.js): one person's conversation. */
+.bs{max-width:var(--article-max); border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); display:flex; flex-direction:column; height:calc(100vh - 260px); min-height:420px;}
+.bs-note{margin:0; padding:8px 14px; font-size:13px; color:var(--muted); border-bottom:1px solid var(--line);}
+.bs-log{list-style:none; margin:0; padding:14px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:12px;}
+.bs-msg{max-width:80%; align-self:flex-start;}
+.bs-msg.is-mine{align-self:flex-end; text-align:right;}
+.bs-who{display:block; font-size:12px; color:var(--muted); margin-bottom:2px;}
+.bs-body{display:inline-block; text-align:left; padding:8px 12px; border-radius:var(--radius); background:var(--wash); white-space:pre-wrap; overflow-wrap:anywhere;}
+.bs-msg.is-mine .bs-body{background:var(--accent); color:var(--on-fill);}
+.bs-compose{display:flex; gap:8px; padding:10px; border-top:1px solid var(--line);}
+.bs-compose textarea{flex:1; min-width:0; resize:none; font:inherit; font-size:15px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px;}
+.bs-compose .btn{align-self:flex-end;}
 
