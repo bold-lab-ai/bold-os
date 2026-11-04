@@ -61,6 +61,25 @@ module.exports = function install(db){
       }
       case 'auth.test':
         return ok({ user: 'BOLD OS', user_id: 'U-bold-os', team_id: 'T-bold', url: 'https://bold-lab.slack.com/' });
+      // A thread to bring into Conversations (slack-thread.js): C-private-… is a private channel whose
+      // members are everyone in `people` but those with "outsider" in their email; D… is a DM.
+      case 'conversations.info': {
+        const c = String(args.channel || '');
+        return ok({ channel: { id: c, name: c.replace(/^C-?/, '').toLowerCase() || 'general', is_im: /^D/.test(c), is_private: /^C-?PRIVATE/i.test(c) } });
+      }
+      case 'conversations.members': {
+        const people = (await db.collection('people').get()).docs.map((d) => d.data()).filter((p) => !/outsider/.test(p.email || ''));
+        return ok({ members: people.map((p) => p.slackId || 'U-' + p.email), response_metadata: { next_cursor: '' } });
+      }
+      case 'conversations.replies': {
+        const people = (await db.collection('people').get()).docs.map((d) => d.data()).slice(0, 3);
+        const id = (i) => (people[i % people.length] || {}).slackId || 'U-someone', t = Math.floor(Date.now() / 1000) - 7200;
+        return ok({ messages: [
+          { ts: t + '.000100', user: id(0), text: 'Should we move the group meeting to Thursdays? Tuesdays clash with two reading groups.' },
+          { ts: (t + 600) + '.000200', user: id(1), text: 'Thursdays work for me, <@' + id(0) + '>. Mornings are better than afternoons.' },
+          { ts: (t + 1500) + '.000300', user: id(2), text: 'Fine by me too, see <https://example.com/poll|the poll>.' },
+        ], response_metadata: { next_cursor: '' } });
+      }
       case 'chat.getPermalink':
         return ok({ permalink: 'https://bold-lab.slack.com/archives/' + (args.channel || 'C') + '/p0' });
       default:

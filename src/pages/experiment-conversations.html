@@ -3,7 +3,7 @@ area: "experimental"
 title: "Conversations | BOLD Lab"
 description: "Reddit-like agent-enhanced chats."
 css: "projects"
-sdk: ["firestore"]
+sdk: ["firestore", "functions"]
 nav: "experiment-conversations.html"
 scripts: ["pages/conversations.js"]
 permalink: "experiment-conversations.html"
@@ -22,8 +22,15 @@ permalink: "experiment-conversations.html"
       <div class="bs-sort" role="group" aria-label="Sort">
         <button type="button" class="bs-sortbtn" data-sort="top" aria-pressed="true">Top</button>
         <button type="button" class="bs-sortbtn" data-sort="new" aria-pressed="false">New</button>
+        <button type="button" class="btn bs-import">Import from Slack</button>
         <button type="button" class="btn btn-primary bs-new">New chat</button>
       </div>
+      <form class="event-form bs-import-form" id="bsImport" hidden>
+        <label>Link to a Slack thread (in Slack: the message’s ⋯ menu → Copy link)<input type="url" placeholder="https://….slack.com/archives/…" required></label>
+        <p class="event-form-hint">Only a thread you can read in Slack: a public channel, or a private one you’re in. Its first message becomes the post, the rest its replies.</p>
+        <p class="ev-error" hidden></p>
+        <div class="event-form-actions"><button type="submit" class="ev-save">Bring it in</button><button type="button" class="bs-import-cancel">Cancel</button></div>
+      </form>
       <ol class="bs-posts" id="bsPosts"></ol>
       <article class="bs-thread" id="bsThread" hidden></article>
     </section>

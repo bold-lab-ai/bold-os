@@ -221,13 +221,21 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-sortbtn{font:inherit; font-size:13px; font-weight:600; color:var(--muted); background:none; border:1px solid var(--line); border-radius:var(--radius); padding:5px 12px; cursor:pointer;}
 .bs-sortbtn[aria-pressed="true"]{color:var(--ink); border-color:var(--ink);}
 .bs-sort{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
-.bs-new{margin-left:auto; padding:6px 14px; font-size:13px;}
+.bs-import{margin-left:auto; padding:6px 14px; font-size:13px;}
+.bs-new{padding:6px 14px; font-size:13px;}
 .bs-posts{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
 .bs-post{display:flex; gap:12px; padding:12px 14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
 .bs-post.is-mine{border-color:var(--ink);}
 .bs-vote{display:flex; flex-direction:column; align-items:center; gap:2px; min-width:28px; font-size:13px; font-weight:600; color:var(--ink-soft);}
-.bs-up{font-size:12px; color:var(--muted); background:none; border:none; cursor:pointer; padding:2px;}
-.bs-up[aria-pressed="true"]{color:var(--accent);}
+/* Votes: up in amber, down in plum, filled when it's yours; the score takes the colour of your vote. */
+.bs-up{font-size:12px; line-height:1; color:var(--muted); background:none; border:1px solid transparent; border-radius:4px; cursor:pointer; padding:3px 4px;}
+.bs-up:hover{color:var(--amber); background:color-mix(in srgb, var(--amber) 12%, transparent);}
+.bs-down:hover{color:var(--plum); background:color-mix(in srgb, var(--plum) 12%, transparent);}
+.bs-up[aria-pressed="true"]{color:var(--on-fill); background:var(--amber); border-color:var(--amber);}
+.bs-down[aria-pressed="true"]{color:var(--on-fill); background:var(--plum); border-color:var(--plum);}
+.bs-vote.is-up .bs-score{color:var(--amber);}
+.bs-vote.is-down .bs-score{color:var(--plum);}
+.bs-import-form{max-width:none; margin:0 0 12px;}
 .bs-post-main{min-width:0;}
 .bs-title{margin:0; font-family:var(--sans); font-size:16px; font-weight:600; color:var(--ink);}
 .bs-by{margin:2px 0 0; font-size:12px; color:var(--muted);}

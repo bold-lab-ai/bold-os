@@ -7435,6 +7435,8 @@ exports.seriesNudges = labSeries.seriesNudges;
 exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
+// A Slack thread brought into Conversations (functions/slack-thread.js): only one its caller can read in Slack.
+exports.slackThread = require('./slack-thread')({ db, onCall, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail }).slackThread;
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.
