@@ -299,11 +299,11 @@ function readRepoEntry(){
   return t ? { mode: 'template', template: t } : { error: 'The repository templates haven\u2019t loaded \u2014 reload, or check back shortly.' };
 }
 
-// What a project still needs to be ongoing (2026-11-04): a weekly meeting, slides, notes (BOLD.OS's or
-// its own links) and a GitHub repository (in bold-lab-ai, or linked). The same as setupMissing in
+// What a project still needs to be ongoing (2026-11-04): a weekly meeting, slides and notes (BOLD.OS's or
+// its own links); a GitHub repository isn't required. The same as setupMissing in
 // functions/index.js (tests/project-setup.test.cjs checks they agree).
 function projectSetupMissing(ws){
   ws = ws || {};
-  return [['meeting', !!ws.meeting], ['slides', !!(ws.deckId || ws.deckUrl || ws.ownDeckUrl)], ['notes', !!(ws.notesId || ws.notesUrl || ws.ownNotesUrl)],
-    ['repo', !!(ws.repoName || ws.ownRepoUrl)]].filter(function(x){ return !x[1]; }).map(function(x){ return x[0]; });
+  return [['meeting', !!ws.meeting], ['slides', !!(ws.deckId || ws.deckUrl || ws.ownDeckUrl)], ['notes', !!(ws.notesId || ws.notesUrl || ws.ownNotesUrl)]]
+    .filter(function(x){ return !x[1]; }).map(function(x){ return x[0]; });
 }

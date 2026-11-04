@@ -318,11 +318,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     // Join (or Leave, for whoever joined rather than registered or wrote it).
     html += joinButton();
     // Ongoing (being worked on) or back to planned, before it's on a venue's board (then it's in submission).
-    // (2026-11-04) Ongoing once its meeting, slides, notes and repository are all there, on its own; marking it
+    // (2026-11-04) Ongoing once its meeting, slides and notes are all there, on its own; marking it
     // ongoing first asks for whatever's missing (the "Set it up first" panel). Back to planned does nothing then.
     if (!done && !(ws && ws.boardId)) {
       var complete = !!(ws && !projectSetupMissing(ws).length), back = !!(ws && ws.startedAt) || complete;
-      var off = !canEdit() ? NOT_EDITOR : !wsLoaded || wsBusy ? 'Loading\u2026' : back && complete ? 'Ongoing while it has a meeting, slides, notes and a repository' : '';
+      var off = !canEdit() ? NOT_EDITOR : !wsLoaded || wsBusy ? 'Loading\u2026' : back && complete ? 'Ongoing while it has a meeting, slides and notes' : '';
       html += '<button class="btn-box detail-remove" type="button" id="startProject"' + (off ? ' disabled title="' + esc(off) + '"' : '') + '>' +
         (back ? 'Back to planned' : 'Mark as ongoing') + '</button>';
     }
@@ -1068,8 +1068,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   var SETUP = {
     meeting: { label: 'A weekly meeting', tab: 'presentations', edit: 'meeting', go: 'Set it' },
     slides: { label: 'Slides', tab: 'presentations', ws: 'setUp', go: 'Make them', own: 'deck' },
-    notes: { label: 'Meeting notes', tab: 'presentations', ws: 'setUp', go: 'Make them', own: 'notes' },
-    repo: { label: 'A GitHub repository', tab: 'paper', edit: 'repo', go: 'Choose it' }
+    notes: { label: 'Meeting notes', tab: 'presentations', ws: 'setUp', go: 'Make them', own: 'notes' }
   };
   function setupPanelHtml(){
     var miss = projectSetupMissing(ws);
@@ -1077,7 +1076,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var off = canEdit() && !wsBusy ? '' : ' disabled title="' + esc(canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"';
     if (!miss.length) return '<div class="setup-panel is-done"><p class="setup-head">All set up: it\u2019s ongoing.</p></div>';
     return '<div class="setup-panel"><p class="setup-head">' + (ws.startedAt ? 'Still to set up' : 'To be ongoing, it needs') + '</p><ul class="setup-list">' +
-      ['meeting', 'slides', 'notes', 'repo'].map(function(k){
+      ['meeting', 'slides', 'notes'].map(function(k){
         var it = SETUP[k], left = miss.indexOf(k) >= 0;
         return '<li class="' + (left ? '' : 'is-done') + '"><span class="setup-mark" aria-hidden="true">' + (left ? '\u25cb' : '\u2713') + '</span>' + it.label +
           (!left ? '' : it.ws ? ' <button class="btn-text" type="button" data-ws="' + it.ws + '"' + off + '>' + it.go + '</button> <button class="btn-text" type="button" data-setup="' + it.own + '"' + off + '>Use your own</button>'

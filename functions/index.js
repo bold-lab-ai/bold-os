@@ -2489,7 +2489,7 @@ exports.getMyProjects = onCall(
 // completed on its project page (`completed`: its workspace's completedAt);
 // In submission (`submission`) = on a venue's board (`onBoard`), with no outcome yet;
 // Ongoing = being worked on: marked so on its project page (which needs its setup first), or with its whole setup
-// (a meeting, slides, notes and a repository: workspaceStarted, 2026-11-04)
+// (a meeting, slides and notes: workspaceStarted, 2026-11-04)
 // (`started`: workspaceStarted), or rejected or withdrawn at a venue (the project goes on);
 // Planned = the rest.
 function projectGroupForCard(card, completed, onBoard, started){
@@ -3176,17 +3176,17 @@ async function projectCards(pid){
 }
 
 // Pure: whether a workspace counts as being worked on: marked ongoing, or it has a weekly meeting.
-// (2026-11-04) Its practical setup all there makes it ongoing on its own; marking it ongoing needs that
+// (2026-11-04) Its practical setup (a meeting, slides and notes) all there makes it ongoing on its own; marking it ongoing needs that
 // setup first ('start' refuses otherwise). A meeting alone no longer does. Projects marked ongoing before
 // keep `startedAt`, whatever they miss.
 function workspaceStarted(ws){ return !!(ws && (ws.startedAt || setupMissing(ws).length === 0)); }
-// Pure: what a project still needs to be ongoing: a weekly meeting, slides, notes (made by BOLD.OS or its
-// own links) and a GitHub repository (one in bold-lab-ai, or a link to any).
-const SETUP_NAMES = { meeting: 'a weekly meeting', slides: 'slides', notes: 'meeting notes', repo: 'a GitHub repository' };
+// Pure: what a project still needs to be ongoing: a weekly meeting, slides and notes (made by BOLD.OS or its
+// own links). A GitHub repository isn't required (not every project needs one); it counts towards its health.
+const SETUP_NAMES = { meeting: 'a weekly meeting', slides: 'slides', notes: 'meeting notes' };
 function setupMissing(ws){
   ws = ws || {};
-  return [['meeting', !!ws.meeting], ['slides', !!(ws.deckId || ws.deckUrl || ws.ownDeckUrl)], ['notes', !!(ws.notesId || ws.notesUrl || ws.ownNotesUrl)],
-    ['repo', !!(ws.repoName || ws.ownRepoUrl)]].filter((x) => !x[1]).map((x) => x[0]);
+  return [['meeting', !!ws.meeting], ['slides', !!(ws.deckId || ws.deckUrl || ws.ownDeckUrl)], ['notes', !!(ws.notesId || ws.notesUrl || ws.ownNotesUrl)]]
+    .filter((x) => !x[1]).map((x) => x[0]);
 }
 // Pure: its health (2026-11-04), as src/assets/js/project-health.js (BoldHealth.of) works it out: each of
 // the four 2 when BOLD.OS made it, 1 when it's its own link, 0 when missing; out of 8.
