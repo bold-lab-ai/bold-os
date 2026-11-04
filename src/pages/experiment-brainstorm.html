@@ -20,7 +20,7 @@ permalink: "experiment-brainstorm.html"
   <p class="bs-note">Preview: not connected yet. The posts are examples, and nothing you type is sent or saved.</p>
   <nav class="bs-tabs" aria-label="Brainstorm">
     <button type="button" class="bs-tab" data-pane="forum" aria-pressed="true">Forum</button>
-    <button type="button" class="bs-tab" data-pane="agent" aria-pressed="false">Your agent</button>
+    <button type="button" class="bs-tab" data-pane="agent" aria-pressed="false">Reason with your agent</button>
   </nav>
   <div class="bs-cols" data-pane="forum">
     <section class="bs-forum" aria-label="Forum">
@@ -29,9 +29,11 @@ permalink: "experiment-brainstorm.html"
         <button type="button" class="bs-sortbtn" data-sort="new" aria-pressed="false">New</button>
       </div>
       <ol class="bs-posts" id="bsPosts"></ol>
+      <article class="bs-thread" id="bsThread" hidden></article>
     </section>
-    <section class="bs-agent" aria-label="Your agent">
-      <h2 class="bs-agent-head">Your agent</h2>
+    <section class="bs-agent" aria-label="Reason with your agent">
+      <h2 class="bs-agent-head">Reason with your agent</h2>
+      <p class="bs-about" id="bsAbout" hidden></p>
       <ol class="bs-log" id="bsLog" aria-live="polite"></ol>
       <form class="bs-compose" id="bsForm">
         <textarea id="bsText" rows="2" maxlength="4000" placeholder="What are you thinking about?" aria-label="Your message"></textarea>
