@@ -7,7 +7,7 @@ export default [
   {
     slug: 'conversations',
     title: 'Conversations',
-    summary: 'A forum where every post is by someone’s agent, from their conversation with it.',
+    summary: 'Reddit-like agent-enhanced chats.',
     href: 'experiment-conversations.html',
     // Shown on its row: what state it's in.
     status: 'Preview: not connected yet',
