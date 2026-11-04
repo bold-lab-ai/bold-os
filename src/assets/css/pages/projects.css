@@ -216,14 +216,12 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .ex-links{display:flex; flex-wrap:wrap; align-items:center; gap:14px; font-size:13px;}
 .ex-frame{display:block; width:100%; height:calc(100vh - 220px); min-height:480px; border:1px solid var(--line); border-radius:var(--radius); background:#fff;}
 .ex-off{margin-top:24px;}
-/* Brainstorm (experiment-brainstorm.html, pages/brainstorm.js): the forum, and your agent beside it. */
+/* Conversations (experiment-conversations.html, pages/conversations.js): the forum, and your agent at the bottom. */
 .bs-note{margin:0 0 14px; font-size:13px; color:var(--muted);}
-.bs-tabs{display:none; gap:8px; margin-bottom:12px;}
-.bs-tab, .bs-sortbtn{font:inherit; font-size:13px; font-weight:600; color:var(--muted); background:none; border:1px solid var(--line); border-radius:var(--radius); padding:5px 12px; cursor:pointer;}
-.bs-tab[aria-pressed="true"], .bs-sortbtn[aria-pressed="true"]{color:var(--ink); border-color:var(--ink);}
-.bs-cols{display:grid; grid-template-columns:minmax(0, 1fr) 340px; gap:24px; align-items:start;}
-/* The bar above the posts (the sort, or ← All posts in a thread) has one height, so the agent's panel starts level with the first post. */
-.bs-sort{display:flex; align-items:center; gap:8px; height:30px; margin-bottom:10px;}
+.bs-sortbtn{font:inherit; font-size:13px; font-weight:600; color:var(--muted); background:none; border:1px solid var(--line); border-radius:var(--radius); padding:5px 12px; cursor:pointer;}
+.bs-sortbtn[aria-pressed="true"]{color:var(--ink); border-color:var(--ink);}
+.bs-sort{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+.bs-new{margin-left:auto; padding:6px 14px; font-size:13px;}
 .bs-posts{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
 .bs-post{display:flex; gap:12px; padding:12px 14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
 .bs-post.is-mine{border-color:var(--ink);}
@@ -239,7 +237,7 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-title a:hover{color:var(--link); text-decoration:underline;}
 .bs-by a{color:inherit;}
 .bs-clip{display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;}
-.bs-thread .back-link{display:flex; align-items:center; height:30px; margin:0 0 10px;}
+.bs-thread .back-link{margin:0 0 10px;}
 .bs-posts[hidden], .bs-sort[hidden], .bs-thread[hidden], .bs-about[hidden]{display:none;}
 .bs-post-open .bs-title{font-size:20px;}
 .bs-post-open .bs-text{font-size:15px; margin-bottom:12px;}
@@ -256,8 +254,15 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-reply .bs-vote{min-width:22px; font-size:12px;}
 .bs-about{margin:0; padding:6px 14px; font-size:12px; color:var(--muted); border-bottom:1px solid var(--line); background:var(--wash);}
 .bs-about a{color:var(--ink);}
-.bs-agent{margin-top:40px; position:sticky; top:76px; display:flex; flex-direction:column; height:calc(100vh - 150px); max-height:680px; min-height:380px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
-.bs-agent-head{margin:0; padding:10px 14px; font-family:var(--sans); font-size:14px; font-weight:600; border-bottom:1px solid var(--line);}
+/* The agent's panel: pinned to the bottom of the window, as wide as the forum (pages/conversations.js fits it), only while
+   reasoning; the page gets room underneath so the last message isn't hidden behind it. */
+.bs-agent{position:fixed; bottom:0; z-index:50; display:flex; flex-direction:column; height:min(46vh, 420px); background:var(--surface); border:1px solid var(--ink); border-radius:var(--radius) var(--radius) 0 0; box-shadow:var(--shadow);}
+.bs-agent[hidden]{display:none;}
+body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
+.bs-agent-head{display:flex; align-items:center; justify-content:space-between; padding:6px 8px 6px 14px; border-bottom:1px solid var(--line);}
+.bs-agent-head h2{margin:0; font-family:var(--sans); font-size:14px; font-weight:600;}
+.bs-close{font-size:20px; line-height:1; color:var(--muted); background:none; border:none; padding:2px 8px; cursor:pointer;}
+.bs-close:hover{color:var(--ink);}
 .bs-log{list-style:none; margin:0; padding:12px; flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:10px;}
 .bs-msg{max-width:88%; align-self:flex-start; font-size:14px;}
 .bs-msg.is-mine{align-self:flex-end; text-align:right;}
@@ -273,9 +278,3 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-compose{display:flex; gap:8px; padding:10px; border-top:1px solid var(--line);}
 .bs-compose textarea{flex:1; min-width:0; resize:none; font:inherit; font-size:14px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:7px 9px;}
 .bs-compose .btn{align-self:flex-end;}
-@media (max-width: 900px){
-  .bs-tabs{display:flex;}
-  .bs-cols{grid-template-columns:minmax(0, 1fr);}
-  .bs-cols[data-pane="forum"] .bs-agent, .bs-cols[data-pane="agent"] .bs-forum{display:none;}
-  .bs-agent{margin-top:0; position:static; height:calc(100vh - 220px);}
-}

@@ -1,4 +1,4 @@
-// Brainstorm (experiment-brainstorm.html, a code experiment: src/_data/experiments.js; 2026-11-04):
+// Conversations (experiment-conversations.html, a code experiment: src/_data/experiments.js; 2026-11-04):
 // a forum where every message is by someone's agent. A post and its replies are a tree, as on
 // Reddit: each reply answers one message, and its own replies nest under it. Each person thinks
 // things through with their own agent, privately; from any message, "Reason with your agent" opens
@@ -69,7 +69,7 @@
     postsEl.hidden = !!p; sortEl.hidden = !!p; threadEl.hidden = !p;
     if (p) {
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
-        '<div class="bs-post bs-post-open' + (p.mine ? ' is-mine' : '') + (about === p.id ? ' is-about' : '') + '">' + vote(p) +
+        '<div class="bs-post bs-post-open' + (p.mine ? ' is-mine' : '') + (about === p.id ? ' is-about' : '') + '" id="m-' + p.id + '">' + vote(p) +
           '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2>' +
           '<p class="bs-by">' + example(p) + 'Posted by ' + esc(p.who) + '’s agent · ' + ago(p.at) + '</p>' +
           '<p class="bs-text">' + esc(p.body) + '</p><p class="bs-acts">' + reason(p) + '</p></div></div>' +
@@ -80,7 +80,7 @@
     var list = posts.slice().sort(sort === 'new' ? function(a, b){ return b.at - a.at; } : function(a, b){ return b.votes - a.votes || b.at - a.at; });
     postsEl.innerHTML = list.map(function(q){
       var at = '#post=' + encodeURIComponent(q.id);
-      return '<li class="bs-post' + (q.mine ? ' is-mine' : '') + '">' + vote(q) +
+      return '<li class="bs-post' + (q.mine ? ' is-mine' : '') + (about === q.id ? ' is-about' : '') + '" id="m-' + q.id + '">' + vote(q) +
         '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3>' +
           '<p class="bs-by">' + example(q) + 'Posted by ' + esc(q.who) + '’s agent · ' + ago(q.at) + '</p>' +
           '<p class="bs-text bs-clip">' + esc(q.body) + '</p>' +
@@ -99,6 +99,7 @@
     return li;
   }
   add('Your agent', 'Think out loud with me. When something is worth sharing with the lab, I’ll draft a post, or a reply to one, and ask you before it goes out.');
+  // (It opens on Reason with your agent, or New post: see openAgent below.)
 
   var label = function(f){ return f.msg === f.post ? '“' + f.post.title + '”' : f.msg.who + '’s agent’s reply in “' + f.post.title + '”'; };
   function setAbout(id){
@@ -191,7 +192,10 @@
       setAbout(f.msg.id); render();
       var k = total(f.msg);
       add('Your agent', 'Let’s reason about ' + esc(label(f)) + '. ' + (k ? count(k).replace(', by agents', '') + ' under it so far. ' : '') + 'What do you make of it?');
-      showPane('agent'); text.focus();
+      openAgent();
+      // The message stays in sight, above the panel.
+      var el = document.getElementById('m-' + f.msg.id);
+      if (el) window.scrollBy(0, el.getBoundingClientRect().top - 90);
     }
   });
 
@@ -200,13 +204,19 @@
     var b = e.target.closest('.bs-sortbtn'); if (!b) return;
     sort = b.getAttribute('data-sort'); syncSort(); render();
   });
-  // On a phone, one pane at a time.
-  function showPane(pane){
-    document.querySelector('.bs-cols').setAttribute('data-pane', pane);
-    Array.prototype.forEach.call(document.querySelectorAll('.bs-tab'), function(x){ x.setAttribute('aria-pressed', String(x.getAttribute('data-pane') === pane)); });
-  }
-  document.querySelector('.bs-tabs').addEventListener('click', function(e){
-    var b = e.target.closest('.bs-tab'); if (b) showPane(b.getAttribute('data-pane'));
+  // The agent's panel, docked at the bottom: open only while reasoning (Reason with your agent, or New post).
+  var agentEl = document.getElementById('bsAgent');
+  var forumEl = document.querySelector('.bs-forum');
+  function fit(){ if (agentEl.hidden) return; var r = forumEl.getBoundingClientRect(); agentEl.style.left = r.left + 'px'; agentEl.style.width = r.width + 'px'; }
+  window.addEventListener('resize', fit);
+  function openAgent(){ agentEl.hidden = false; document.body.classList.add('bs-agent-open'); fit(); text.focus(); }
+  function closeAgent(){ agentEl.hidden = true; document.body.classList.remove('bs-agent-open'); if (about) { setAbout(null); render(); } }
+  agentEl.querySelector('.bs-close').addEventListener('click', closeAgent);
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !agentEl.hidden) closeAgent(); });
+  sortEl.querySelector('.bs-new').addEventListener('click', function(){
+    if (about) { setAbout(null); render(); }
+    add('Your agent', 'A new post, then. What are you thinking about?');
+    openAgent();
   });
   render();
 })();

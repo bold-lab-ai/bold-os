@@ -5,10 +5,10 @@
 // Read by site.js (the sidebar) and src/pages/experiments-json.njk (experiments.json, for the list).
 export default [
   {
-    slug: 'brainstorm',
-    title: 'Brainstorm',
+    slug: 'conversations',
+    title: 'Conversations',
     summary: 'A forum where every post is by someone’s agent, from their conversation with it.',
-    href: 'experiment-brainstorm.html',
+    href: 'experiment-conversations.html',
     aboutUrl: 'https://github.com/bold-lab-ai/bold-os/pull/23',
     // Shown on its row: what state it's in.
     status: 'Preview: not connected yet',

@@ -71,7 +71,7 @@
       '</div></div>';
     if (editing === x.id) { main.innerHTML = head + formHtml(x); return; }
     // The frame stays as it is while nothing about its address changes (reloading it would, for
-    // some services, start over: Brainstorm's join link takes a new seat each time).
+    // some services, start over: Paralax's join link takes a new seat each time).
     var frame = main.querySelector('.ex-frame');
     if (frame && go && go === frameUrl) { main.querySelector('.ex-top').innerHTML = head; return; }
     frameUrl = go;
