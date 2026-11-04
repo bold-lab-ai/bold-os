@@ -6480,7 +6480,7 @@ exports.onboarding = onCall(
 // Once (2026-11-04), when runs/{id} is created (admin access only: the rules let no client read or write it) with
 // { action: 'project-setup-nudge' }: projects ongoing only through their weekly meeting are marked ongoing
 // (startedAt, startedBy 'migration-2026-11-04'), so the new rule (workspaceStarted) keeps them so; then
-// each ongoing project still missing some of its setup tells its people once, on Slack (pilot
+// each ongoing project still missing some of its setup tells its lead (whoever registered it) once, on Slack (pilot
 // project-setup). { dryRun: true }: nothing is written or sent; the run lists what would be, in `plan`.
 // Projects on a venue's board, and completed ones, are left alone. The run records `doneAt` and `plan`.
 function setupNudgeText(title, missing, url){
@@ -6496,12 +6496,15 @@ exports.onSetupNudgeRun = onDocumentCreated({ document: 'runs/{id}', secrets: [S
     const migrate = !ws.startedAt && !!ws.meeting && setupMissing(ws).length > 0;
     const missing = setupMissing(ws);
     if (!migrate && !missing.length) continue;
-    const to = ws.setupNudgedAt ? [] : (ws.members || []).map(lowerEmail);
-    plan.push({ pid: d.id, title: ws.title || '', migrate, missing, to });
+    // Its lead only: whoever registered it (its card's submittedBy).
+    const card = await cardRefFor(ws.cardId || d.id, ws.boardId || null).get().catch(() => null);
+    const lead = card && card.exists ? lowerEmail((card.data().submittedBy || {}).email) : '';
+    const to = ws.setupNudgedAt || !lead ? [] : [lead];
+    plan.push({ pid: d.id, title: ws.title || (card && card.exists && card.data().title) || '', migrate, missing, to });
     if (dry) continue;
     if (migrate) await d.ref.set({ startedAt: Date.now(), startedBy: 'migration-2026-11-04' }, { merge: true });
     if (missing.length && to.length) {
-      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-setup', emails: to, headline: setupNudgeText(ws.title || 'Your project', missing, projectPageUrl(ws.cardId || d.id, ws.boardId)) });
+      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-setup', emails: to, headline: setupNudgeText(ws.title || (card && card.exists && card.data().title) || 'Your project', missing, projectPageUrl(ws.cardId || d.id, ws.boardId)) });
       await d.ref.set({ setupNudgedAt: Date.now() }, { merge: true });
     }
   }
