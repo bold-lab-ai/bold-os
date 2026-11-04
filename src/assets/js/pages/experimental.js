@@ -111,7 +111,7 @@
     if (t.classList.contains('ex-cancel')) { editing = null; render(); return; }
     if (t.classList.contains('ex-save')) { save(t.closest('.ex-form')); return; }
     if (t.classList.contains('ex-remove')) {
-      BOLD.confirmAction({ title: 'Remove ' + (current ? current.title : 'this experiment') + '?', effects: ['Take it off Experimental and the sidebar, for everyone'], go: 'Remove' })
+      BOLD.confirmAlways({ title: 'Remove ' + (current ? current.title : 'this experiment') + '?', effects: ['Take it off Experimental and the sidebar, for everyone', 'This can’t be undone'], go: 'Remove' })
         .then(function(ok){ if (ok) col().doc(tid).delete().then(function(){ location.href = 'experimental.html'; }, function(err){ console.error('[BOLD Lab] removing an experiment failed', err); }); });
     }
   });

@@ -266,7 +266,8 @@
     if (b.classList.contains('bs-replycancel')) { replying = ''; render(); return; }
     if (b.classList.contains('bs-remove')) {
       var isP = id === pid, what = isP ? postOf(id) : msgOf(pid, id);
-      BOLD.confirmAction({ title: 'Remove ' + (isP ? '“' + (what ? what.title : 'this post') + '”' : 'this reply') + '?', effects: [isP ? 'Take the post off Conversations, for everyone' : 'Take the reply off, for everyone'], go: 'Remove' })
+      // Always asked, even with Don't ask me again: it can't be undone.
+      BOLD.confirmAlways({ title: 'Remove ' + (isP ? '“' + (what ? what.title : 'this post') + '”' : 'this reply') + '?', effects: [isP ? 'Take the post and all its replies off Conversations, for everyone' : 'Take the reply off Conversations, for everyone', 'This can’t be undone'], go: 'Remove' })
         .then(function(ok){
           if (!ok) return;
           var r = isP ? col().doc(id) : col().doc(pid).collection('messages').doc(id);
