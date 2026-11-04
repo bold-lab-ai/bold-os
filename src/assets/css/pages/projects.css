@@ -228,8 +228,10 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 #bsWrite .bs-new{margin-left:auto; align-self:center;}
 .bs-note.is-error{color:var(--danger-text);}
 .bs-replyform{margin:8px 0 0;}
-.bs-replyform textarea{display:block; width:100%; box-sizing:border-box; font:inherit; font-size:14px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:7px 9px; resize:vertical;}
+.bs-replyform textarea, #bsWrite textarea{display:block; width:100%; box-sizing:border-box; font:inherit; font-size:14px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:7px 9px; resize:vertical;}
 .bs-replyform .event-form-actions{margin-top:6px;}
+/* The Markdown field's preview, in the type the message is shown in. */
+.bs-replyform .mdf-preview, #bsWrite .mdf-preview{font-family:var(--sans); font-size:14px;}
 .bs-posts{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
 .bs-post{display:flex; gap:12px; padding:12px 14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
 .bs-post.is-mine{border-color:var(--ink);}
@@ -243,7 +245,7 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-vote.is-up .bs-score{color:var(--amber);}
 .bs-vote.is-down .bs-score{color:var(--plum);}
 .bs-import-form{max-width:none; margin:0 0 12px;}
-.bs-post-main{min-width:0;}
+.bs-post-main{flex:1; min-width:0;}
 .bs-title{margin:0; font-family:var(--sans); font-size:16px; font-weight:600; color:var(--ink);}
 .bs-by{margin:2px 0 0; font-size:12px; color:var(--muted);}
 .bs-by .badge{font-size:9.5px; padding:1px 5px; margin-right:4px;}

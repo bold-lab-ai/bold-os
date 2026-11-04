@@ -62,7 +62,7 @@
       (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
       (k ? '<button type="button" class="btn-text bs-fold" data-id="' + esc(m.id) + '">' + (folded[m.id] ? 'Show ' + count(k) : 'Hide replies') + '</button>' : '') +
       (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>' +
-      (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea rows="3" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
+      (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
         '<div class="event-form-actions"><button type="submit" class="ev-save">Reply</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
   }
   function replyHtml(m, pid){
@@ -85,13 +85,18 @@
       if (posts === null || messages[open] === undefined) { threadEl.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
       if (!p) { threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a><p class="proj-msg">No such post: it may have been removed.</p>'; return; }
       var k = total(p.id);
+      // An open reply box is carried across the redraw (a reply or a vote arriving), with what's typed in it
+      // and its Write | Preview tab.
+      var keep = threadEl.querySelector('.bs-replyform');
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
         '<div class="bs-post bs-post-open' + (mine(p) ? ' is-mine' : '') + (about && about.id === p.id ? ' is-about' : '') + '" id="m-' + esc(p.id) + '">' + vote(p) +
           '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2><p class="bs-by">' + by(p, true) + '</p>' +
           (p.body && p.body.trim() !== p.title ? md(p.body) : '') + acts(p, p.id) + '</div></div>' +
         '<h3 class="bs-replies-head">' + count(k) + '</h3>' +
         (k ? '<ol class="bs-replies bs-replies-top">' + kids(p.id).map(function(x){ return replyHtml(x, p.id); }).join('') + '</ol>' : '<p class="bs-by">No replies yet.</p>');
-      var f = threadEl.querySelector('.bs-replyform textarea'); if (f) f.focus();
+      var fresh = threadEl.querySelector('.bs-replyform');
+      if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id')) fresh.replaceWith(keep);
+      else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
       return;
     }
     if (posts === null) { postsEl.innerHTML = '<li class="proj-msg">Loading&hellip;</li>'; return; }
@@ -111,7 +116,7 @@
     if (!id) return;
     stopMsgs = col().doc(id).collection('messages').onSnapshot(function(snap){
       messages[id] = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
-      if (!threadEl.querySelector('.bs-replyform textarea:focus')) render();
+      if (!threadEl.querySelector('.bs-replyform textarea:focus')) render();   // typing: wait (the box is kept anyway)
     }, function(err){ console.error('[BOLD Lab] loading replies failed', err); messages[id] = []; render(); });
   }
 
