@@ -1368,12 +1368,12 @@
     });
   }
 
-  // The experiments (experiments/{id}, pages/experimental.js), by title, each to its place on Experimental.
+  // The experiments (experiments/{id}, pages/experimental.js), by title, each to its page (experiment.html).
   function experimentsNav(){
     firestoreNav('experiments', 'boldNavExperiments', 'experimental', function(db){
       return db.collection('experiments').get().then(function(snap){
         return snap.docs.map(function(d){ return { id: d.id, title: d.data().title }; }).filter(function(x){ return x.title; })
-          .map(function(x){ return { title: x.title, href: 'experimental.html#' + encodeURIComponent(x.id) }; })
+          .map(function(x){ return { title: x.title, href: 'experiment.html?id=' + encodeURIComponent(x.id) }; })
           .sort(function(a, b){ return a.title.localeCompare(b.title); });
       });
     });

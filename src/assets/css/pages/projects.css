@@ -202,3 +202,18 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .cal-sub-panel .copy-box code{word-break:break-all; white-space:pre-wrap;}
 @media (max-width:560px){ .cal-sub-panel{margin-left:0;} }
 .cal-sub-panel .muted{color:var(--muted);}
+
+/* ---------- Experimental (experimental.html, experiment.html; pages/experimental.js) ---------- */
+.hero-note{margin:16px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
+.ex-list{margin-top:16px;}
+.ex-new{margin-top:16px;}
+.ex-page{padding-top:28px;}
+.ex-page .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:12px;}
+.ex-page .back-link:hover{color:var(--link);}
+.ex-head{display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:8px 24px; margin-bottom:16px;}
+.ex-head h1{font-size:clamp(26px, 4vw, 36px); line-height:1.15; margin:0;}
+.ex-summary{margin:6px 0 0; color:var(--ink-soft); max-width:var(--article-max); white-space:pre-line;}
+.ex-links{display:flex; flex-wrap:wrap; align-items:center; gap:14px; font-size:13px;}
+.ex-frame{display:block; width:100%; height:calc(100vh - 220px); min-height:480px; border:1px solid var(--line); border-radius:var(--radius); background:#fff;}
+.ex-off{margin-top:24px;}
+
