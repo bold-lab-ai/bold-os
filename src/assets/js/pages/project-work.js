@@ -70,6 +70,10 @@ var ProjectWork = (function(){
   // A card moved to Done tells whoever raised it on Slack (onWorkCardDone), unless it's you:
   // asked first, with the message a box to untick (then doneQuiet: true on the card).
   // → Promise of the fields to save with the move ({} or { doneQuiet }), or null to stay put.
+  // Hand-made cards never wait for review (2026-11-04): nobody is asked to review them, so moving one
+  // there puts it in Done (asked first, as Done is). Waiting for review is for pull requests,
+  // proposals and requests, which have someone to review them.
+  function handColumn(column){ return column === 'review' ? 'done' : column; }
   function confirmDone(c, column){
     var by = c.by || {}, mine = String(by.email || '').toLowerCase() === me();
     if (column !== 'done' || c.column === 'done' || !by.email || mine) return Promise.resolve(column === 'done' && c.column !== 'done' ? { doneQuiet: true } : {});
@@ -290,7 +294,7 @@ var ProjectWork = (function(){
     return '<form class="wk-editor" novalidate>' +
       '<label>Title<input type="text" class="wk-f-title" maxlength="200" value="' + esc(c ? c.title : '') + '" required></label>' +
       '<label>Description<textarea class="wk-f-notes md-field" maxlength="' + MAX_NOTES + '" rows="3">' + esc(c ? c.notes || '' : '') + '</textarea></label>' +
-      (c ? '<label>Column<select class="wk-f-col">' + COLUMNS.map(function(k){
+      (c ? '<label>Column<select class="wk-f-col">' + COLUMNS.filter(function(k){ return k[0] !== 'review' || c.column === 'review'; }).map(function(k){
         return '<option value="' + k[0] + '"' + (k[0] === c.column ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></label>' : '') +
       '<label>Type<select class="wk-f-kind"><option value="">From its links</option>' + TYPES.map(function(y){
         return '<option value="' + y[0] + '"' + (c && c.kind === y[0] ? ' selected' : '') + '>' + y[1] + '</option>'; }).join('') + '</select></label>' +
@@ -578,7 +582,7 @@ var ProjectWork = (function(){
       var all = shown.filter(function(x){ return x.column === c[0]; }).sort(function(a, b){ return (b.since || 0) - (a.since || 0); });
       // 20 at a time (BoldBoard.paged); Load more shows the next 20.
       var page = BoldBoard.paged(scopeOf(c[0]), c[0], all), list = page.items;
-      var add = c[0] !== 'done' ? '<button class="btn-text wk-add" type="button" data-col="' + c[0] + '"' +
+      var add = c[0] !== 'done' && c[0] !== 'review' ? '<button class="btn-text wk-add" type="button" data-col="' + c[0] + '"' +
         (canAdd() ? '' : ' disabled title="' + esc(BOLD.cannotReason('projects', 'edit')) + '"') + '>+ Add a card</button>' : '';
       var newSlot = editing === 'new:' + c[0] ? '<div class="wk-new-slot"></div>' : '';
       return { id: c[0], label: c[0] === 'done' && archive ? 'Done, archived' : c[1], count: all.length, more: page.more,
@@ -726,6 +730,7 @@ var ProjectWork = (function(){
       busy = true;
       var job;
       var col = form.querySelector('.wk-f-col') ? form.querySelector('.wk-f-col').value : c && c.column;
+      if (c && col !== c.column) col = handColumn(col);
       // Images added since the editor opened are kept.
       var now2 = c && (cards.filter(function(k){ return k.id === c.id; })[0] || c);
       if (now2 && now2.images) data.images = now2.images;
@@ -734,7 +739,7 @@ var ProjectWork = (function(){
         return cardsRef().doc(c.id).set(Object.assign({}, data, done, { column: col, by: c.by, at: c.at, movedAt: col !== c.column ? now : c.movedAt || c.at }));
       });
       else {
-        var column = form.querySelector('.wk-f-column').value;
+        var column = handColumn(form.querySelector('.wk-f-column').value);
         job = confirmNewCard(data.title).then(function(go){
           if (!go) throw { cancelled: true };
           return cardsRef().add(Object.assign(data, { column: column, announce: go.announce, by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now }));
@@ -973,6 +978,7 @@ var ProjectWork = (function(){
   }
 
   function moveCard(c, column){
+    column = handColumn(column);
     if (column === c.column) return;
     // Shown in its new column at once; the live listener confirms it (or puts it back).
     var was = c.column;

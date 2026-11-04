@@ -464,11 +464,13 @@ service cloud.firestore {
       }
       match /work/{id} {
         allow read: if seesProject(cardId);
+        // Hand-made cards never wait for review (2026-11-04): none goes there, and one already there can stay.
         allow create: if may('projects', 'edit') && seesProject(cardId) && boardOn() &&
-          request.resource.data.by.email == email() && validWork(request.resource.data);
+          request.resource.data.by.email == email() && validWork(request.resource.data) && request.resource.data.column != 'review';
         allow update: if may('projects', 'edit') &&
           (isProjectMember() || hasFullWrite() || resource.data.by.email == email() || email() in resource.data.assigneeEmails) &&
-          request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at && validWork(request.resource.data);
+          request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at && validWork(request.resource.data) &&
+          (request.resource.data.column != 'review' || resource.data.column == 'review');
         allow delete: if may('projects', 'edit') && (isProjectMember() || hasFullWrite() || resource.data.by.email == email());
 
         // Its conversation (card-talk.js): whoever sees the board reads it and comments, as

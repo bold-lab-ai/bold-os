@@ -334,6 +334,8 @@ module.exports = function(ctx){
       return g ? { type: g[3].toLowerCase() === 'pull' ? 'pr' : 'issue', ref: (g[1] + '/' + g[2] + '#' + g[4]).toLowerCase(), url: g[0], label: g[1] + '/' + g[2] + '#' + g[4] } : { type: 'url', url: u, label: u };
     });
     if (a.column !== undefined && !WORK_COLUMNS[a.column]) throw httpError(400, 'The column is one of todo, doing, review, done.');
+    // Hand-made cards never wait for review (2026-11-04): nobody reviews them, so review is done.
+    if (a.column === 'review') a.column = 'done';
     // Its milestone, by name or id ("" for none), from the board's milestones (Board settings).
     let milestone;
     if (a.milestone !== undefined) {
@@ -725,7 +727,7 @@ module.exports = function(ctx){
     { name: 'work', run: work,
       description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card, or read (comments) and add to (comment) a card’s conversation. A card can be in one of the board’s milestones (set in Board settings), whose progress the board shows. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false. A comment sends whoever made the card, its assignees and whoever has commented a Slack message, and moving a card to done tells whoever raised it: tell your person first. Move the cards you work on as you go: doing when you start, review while it waits on someone, done once it’s live.',
       inputSchema: S({ post_in_channel: { type: 'boolean', description: 'add: post it in the project’s Slack channel (default true)' }, action: ACTIONS(['list', 'add', 'update', 'move', 'remove', 'comments', 'comment']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove, comments, comment (list gives it).'), text: str('comment: what you say (Markdown).'),
-        title: str('add, update'), description: str('add, update: what it is (Markdown), shown on the card’s page.'), type: ACTIONS(['code', 'content', 'request', 'other']), column: ACTIONS(['todo', 'doing', 'review', 'done']), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
+        title: str('add, update'), description: str('add, update: what it is (Markdown), shown on the card’s page.'), type: ACTIONS(['code', 'content', 'request', 'other']), column: Object.assign(ACTIONS(['todo', 'doing', 'review', 'done']), { description: 'add, update, move: a card made on the board never waits for review: review puts it in done.' }), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
         milestone: str('add, update: the milestone it’s in, by name (list gives the board’s milestones; "" for none).'),
         links: { type: 'array', items: { type: 'string' }, description: 'add, update: https://… links: a GitHub pull request or issue, a proposal, anything.' } }, ['action', 'project_id']) },
     { name: 'presentations', run: presentations,
