@@ -310,21 +310,25 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       html += '<span class="badge">' + OUTCOME_LABELS[card.outcome] + '</span>';
     }
     if (ws && ws.completedAt) html += '<span class="badge">Completed</span>';
-    else if (ws && ws.group === 'ongoing' && !ws.boardId) html += '<span class="badge">Ongoing</span>';
+    else if (ws && !ws.boardId && (ws.group === 'ongoing' || ws.startedAt || !projectSetupMissing(ws).length)) html += '<span class="badge">Ongoing</span>';
     // Marking it completed (or reopening it): its meeting is cancelled (or comes back).
     var done = !!(ws && ws.completedAt);
     // Join (or Leave, for whoever joined rather than registered or wrote it).
     html += joinButton();
     // Ongoing (being worked on) or back to planned, before it's on a venue's board (then it's in submission).
-    // A weekly meeting makes it ongoing anyway.
-    if (!done && !(ws && (ws.boardId || ws.meeting))) {
-      html += '<button class="btn-box detail-remove" type="button" id="startProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
-        (ws && ws.startedAt ? 'Back to planned' : 'Mark as ongoing') + '</button>';
+    // (2026-11-04) Ongoing once its meeting, slides, notes and repository are all there, on its own; marking it
+    // ongoing first asks for whatever's missing (the "Set it up first" panel). Back to planned does nothing then.
+    if (!done && !(ws && ws.boardId)) {
+      var complete = !!(ws && !projectSetupMissing(ws).length), back = !!(ws && ws.startedAt) || complete;
+      var off = !canEdit() ? NOT_EDITOR : !wsLoaded || wsBusy ? 'Loading\u2026' : back && complete ? 'Ongoing while it has a meeting, slides, notes and a repository' : '';
+      html += '<button class="btn-box detail-remove" type="button" id="startProject"' + (off ? ' disabled title="' + esc(off) + '"' : '') + '>' +
+        (back ? 'Back to planned' : 'Mark as ongoing') + '</button>';
     }
     html += '<button class="btn-box detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
       (done ? 'Reopen project' : 'Mark as completed') + '</button>';
     html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
     html += '</div></div>';
+    html += setupPanelHtml();
     html += '<div class="tabs" role="tablist" aria-label="Project">' + tabs().map(function(t){
       var on = t[0] === tab;
       return '<button class="tab' + (on ? ' active' : '') + '" type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + on + '"' +
@@ -485,8 +489,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // Its GitHub repository: a link once there is one; until then editors choose its
   // template, as on the register form.
   function repoRow(){
-    var linked = ws && ws.repoUrl;
-    var value = linked ? '<a href="' + esc(ws.repoUrl) + '" target="_blank" rel="noopener">' + esc(ws.repoUrl.replace(/^https:\/\/github\.com\//, '')) + '</a>'
+    var linked = ws && (ws.repoUrl || ws.ownRepoUrl), url = linked ? (ws.repoUrl || ws.ownRepoUrl) : '';
+    var value = linked ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(url.replace(/^https:\/\/github\.com\//, '')) + '</a>' +
+        (ws.ownRepoUrl && !ws.repoUrl ? ' <span class="detail-muted">\u00b7 linked</span>' : '')
       : !wsLoaded ? '<span class="detail-muted">Loading\u2026</span>'
       : ws && ws.repoError ? '<span class="detail-muted">' + esc(ws.repoError) + '</span>'
       : ws && ws.repo && ws.syncing ? '<span class="detail-muted">Setting up\u2026</span>'
@@ -501,6 +506,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function saveRepo(){
     var fail = failer(), repo = readRepoEntry();
     if (repo.error) return fail(repo.error);
+    if (repo.mode === 'link') return sendRepo(repo, fail);   // only linked: nobody is told or given access
     BOLD.confirmAlways(repo.mode === 'existing'
       ? { title: 'Link the repository?', go: 'Link it', effects: [
         'Link bold-lab-ai/' + repo.name.replace(/^.*\//, '') + ' as the project\u2019s repository',
@@ -942,6 +948,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     Array.prototype.forEach.call(document.querySelectorAll('[data-ws]'), function(btn){
       btn.addEventListener('click', function(){ workspaceAction(btn.getAttribute('data-ws')); });
     });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-setup]'), function(btn){
+      btn.addEventListener('click', function(){ openSetup(btn.getAttribute('data-setup')); });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function(btn){
       btn.addEventListener('click', function(){
         if (!canEdit()) return;
@@ -1051,8 +1060,40 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : { title: 'Mark \u201c' + card.title + '\u201d as completed?', go: 'Mark completed', effects: meeting ? ['Cancel its meeting on Google Calendar: Google tells everyone on it'] : [] })
       .then(function(ok){ if (ok) sendComplete(reopen); });
   }
+  // What a project needs to be ongoing (2026-11-04, projectSetupMissing in project-fields.js), each with the
+  // control that sets it up: shown once Mark as ongoing is pressed, and to an ongoing project missing some.
+  var setupWanted = false;
+  var SETUP = {
+    meeting: { label: 'A weekly meeting', tab: 'presentations', edit: 'meeting', go: 'Set it' },
+    slides: { label: 'Slides', tab: 'presentations', ws: 'setUp', go: 'Make them', own: 'deck' },
+    notes: { label: 'Meeting notes', tab: 'presentations', ws: 'setUp', go: 'Make them', own: 'notes' },
+    repo: { label: 'A GitHub repository', tab: 'paper', edit: 'repo', go: 'Choose it' }
+  };
+  function setupPanelHtml(){
+    var miss = projectSetupMissing(ws);
+    if (!ws || ws.boardId || ws.completedAt || !(setupWanted || (ws.startedAt && miss.length))) return '';
+    var off = canEdit() && !wsBusy ? '' : ' disabled title="' + esc(canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"';
+    if (!miss.length) return '<div class="setup-panel is-done"><p class="setup-head">All set up: it\u2019s ongoing.</p></div>';
+    return '<div class="setup-panel"><p class="setup-head">' + (ws.startedAt ? 'Still to set up' : 'To be ongoing, it needs') + '</p><ul class="setup-list">' +
+      ['meeting', 'slides', 'notes', 'repo'].map(function(k){
+        var it = SETUP[k], left = miss.indexOf(k) >= 0;
+        return '<li class="' + (left ? '' : 'is-done') + '"><span class="setup-mark" aria-hidden="true">' + (left ? '\u25cb' : '\u2713') + '</span>' + it.label +
+          (!left ? '' : it.ws ? ' <button class="btn-text" type="button" data-ws="' + it.ws + '"' + off + '>' + it.go + '</button> <button class="btn-text" type="button" data-setup="' + it.own + '"' + off + '>Use your own</button>'
+            : ' <button class="btn-text" type="button" data-setup="' + k + '"' + off + '>' + it.go + '</button>') + '</li>';
+      }).join('') + '</ul></div>';
+  }
+  // Opens what sets it up, on its tab.
+  function openSetup(key){
+    if (!canEdit()) return;
+    var t = { meeting: 'presentations', deck: 'presentations', notes: 'presentations', repo: 'paper' }[key];
+    tab = t; editing = key; render();
+    var f = document.querySelector('.detail-grid input, .detail-grid select');
+    if (f) f.focus();
+  }
   function startProject(){
     var back = !!(ws && ws.startedAt);
+    // Something missing: ask for it first; the server would refuse anyway.
+    if (!back && ws && projectSetupMissing(ws).length) { setupWanted = true; render(); return; }
     wsBusy = true; render();
     callWorkspace({ action: back ? 'plan' : 'start' }).then(function(){
       wsBusy = false;

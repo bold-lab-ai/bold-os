@@ -1136,6 +1136,7 @@ const PILOTS = {
   'group-ready': 'Done what your new group asks',
   'group-trial': 'A new group’s first week: the reminder, and its end',
   'group-eligible': 'Telling PIs someone meets the next group’s requirements',
+  'project-setup': 'An ongoing project’s setup still missing (once)',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -2487,7 +2488,8 @@ exports.getMyProjects = onCall(
 // accepted at a venue (the last column, or the outcome Accepted), or marked
 // completed on its project page (`completed`: its workspace's completedAt);
 // In submission (`submission`) = on a venue's board (`onBoard`), with no outcome yet;
-// Ongoing = being worked on: marked so on its project page, or with a weekly meeting
+// Ongoing = being worked on: marked so on its project page (which needs its setup first), or with its whole setup
+// (a meeting, slides, notes and a repository: workspaceStarted, 2026-11-04)
 // (`started`: workspaceStarted), or rejected or withdrawn at a venue (the project goes on);
 // Planned = the rest.
 function projectGroupForCard(card, completed, onBoard, started){
@@ -3172,7 +3174,19 @@ async function projectCards(pid){
 }
 
 // Pure: whether a workspace counts as being worked on: marked ongoing, or it has a weekly meeting.
-function workspaceStarted(ws){ return !!(ws && (ws.startedAt || ws.meeting)); }
+// (2026-11-04) Its practical setup all there makes it ongoing on its own; marking it ongoing needs that
+// setup first ('start' refuses otherwise). A meeting alone no longer does. Projects marked ongoing before
+// keep `startedAt`, whatever they miss.
+function workspaceStarted(ws){ return !!(ws && (ws.startedAt || setupMissing(ws).length === 0)); }
+// Pure: what a project still needs to be ongoing: a weekly meeting, slides, notes (made by BOLD.OS or its
+// own links) and a GitHub repository (one in bold-lab-ai, or a link to any).
+const SETUP_NAMES = { meeting: 'a weekly meeting', slides: 'slides', notes: 'meeting notes', repo: 'a GitHub repository' };
+function setupMissing(ws){
+  ws = ws || {};
+  return [['meeting', !!ws.meeting], ['slides', !!(ws.deckId || ws.deckUrl || ws.ownDeckUrl)], ['notes', !!(ws.notesId || ws.notesUrl || ws.ownNotesUrl)],
+    ['repo', !!(ws.repoName || ws.ownRepoUrl)]].filter((x) => !x[1]).map((x) => x[0]);
+}
+const setupMissingText = (missing) => missing.map((k) => SETUP_NAMES[k]).join(', ').replace(/, ([^,]*)$/, ' and $1');
 
 // Pure: a project's group from its cards ([{ data, boardId }], oldest first): completed
 // if marked so or accepted at any venue; otherwise its latest card's.
@@ -3186,7 +3200,8 @@ function projectGroupForCards(cards, completed, started){
 function workspaceView(ws){
   const out = {};
   ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'startedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
-    'deckUrl', 'notesUrl', 'ownDeckUrl', 'ownNotesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'repoError', 'work'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
+    'deckUrl', 'notesUrl', 'ownDeckUrl', 'ownNotesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'ownRepoUrl', 'repoError', 'work'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
+  out.setupMissing = setupMissing(ws);
   return out;
 }
 
@@ -3216,6 +3231,11 @@ function normalizeRepo(r){
   if (r.mode === 'template'){
     const t = String(r.template || '');
     return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/.test(t) ? { mode: 'template', template: t } : { error: 'Choose a template.' };
+  }
+  // Any repository on GitHub, by its address (2026-11-04): only linked, so nobody is invited to it.
+  if (r.mode === 'link'){
+    const u = String(r.url || '').trim().replace(/\/+$/, '').replace(/\.git$/, '');
+    return /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(u) ? { mode: 'link', url: u } : { error: 'Give the repository’s GitHub address, as https://github.com/owner/name.' };
   }
   // One the lab already has: its name in bold-lab-ai (or its github.com address).
   if (r.mode === 'existing'){
@@ -3485,7 +3505,9 @@ async function syncWorkspace(id, changes){
         }
         patch.repoName = r.name; patch.repoUrl = r.html_url; await save();
       }
-      if (ws.repo && ws.repo.mode !== 'existing' && !ws.repoName){
+      // Any GitHub repository, linked (2026-11-04): kept as its address, nothing made or shared.
+      if (ws.repo && ws.repo.mode === 'link' && !ws.ownRepoUrl && !ws.repoName){ patch.ownRepoUrl = ws.repo.url; await save(); }
+      if (ws.repo && ws.repo.mode === 'template' && !ws.repoName){
         if (!(await projectTemplates()).some(function(t){ return t.name === ws.repo.template; })) {
           throw new HttpsError('invalid-argument', ws.repo.template + ' isn\u2019t one of the lab\u2019s templates.');
         }
@@ -3650,7 +3672,8 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'complete' / 'reopen': marks the project completed (its meeting is cancelled) or
 //   not; editors only.
 // - 'start' / 'plan': marks the project ongoing (being worked on) or back to planned;
-//   editors only. On a venue's board it's in submission either way; with a weekly meeting, ongoing.
+//   editors only. On a venue's board it's in submission either way. 'start' needs its setup first
+//   (setupMissing); with all of it, it's ongoing anyway.
 // - 'pause' / 'resume': pauses its meeting (its upcoming dates come off Google Calendar;
 //   the same event, invitation and Meet link stay) or brings it back; editors only. Completion by acceptance at a venue needs neither.
 // - 'submit': submits the project to another venue ({ venue, card }: a card the page
@@ -3873,6 +3896,8 @@ exports.projectWorkspace = onCall(
         if (changes.repo.error) throw new HttpsError('invalid-argument', changes.repo.error);
         const ws = (await wsRef.get()).data() || {};
         if (ws.repoName) throw new HttpsError('failed-precondition', 'It already has ' + GITHUB_ORG + '/' + ws.repoName + '.');
+        // A link to any repository: kept as it is (ownRepoUrl), nothing made on GitHub.
+        if (changes.repo.mode === 'link') { await wsRef.set({ ownRepoUrl: changes.repo.url }, { merge: true }); return workspaceView(await syncWorkspace(pid)); }
       }
       return workspaceView(await syncWorkspace(pid, changes));
     }
@@ -3888,6 +3913,8 @@ exports.projectWorkspace = onCall(
         if (v && (v.length > 500 || !/^https:\/\/[^\s<>"]+$/.test(v))) throw new HttpsError('invalid-argument', 'The link to the ' + k[2] + ' must be a web address starting https://.');
         set[k[1]] = v || FieldValue.delete();
       });
+      // A linked repository (repo action, mode 'link'): '' unlinks it.
+      if ('repo' in data && !String(data.repo || '').trim()) set.ownRepoUrl = FieldValue.delete();
       if (!Object.keys(set).length) throw new HttpsError('invalid-argument', 'No link given.');
       await wsRef.set(set, { merge: true });
       return workspaceView(await syncWorkspace(pid));
@@ -3904,6 +3931,10 @@ exports.projectWorkspace = onCall(
     // Ongoing (being worked on) or back to planned; a project on a venue's board is in submission either way.
     if (data.action === 'start' || data.action === 'plan'){
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
+      if (data.action === 'start') {
+        const missing = setupMissing((await wsRef.get()).data());
+        if (missing.length) throw new HttpsError('failed-precondition', 'Set up ' + setupMissingText(missing) + ' first: then it’s ongoing.');
+      }
       await wsRef.set(data.action === 'start'
         ? { startedAt: Date.now(), startedBy: email }
         : { startedAt: FieldValue.delete(), startedBy: FieldValue.delete() }, { merge: true });
@@ -6434,6 +6465,37 @@ exports.onboarding = onCall(
   }
 );
 
+// Once (2026-11-04), when runs/{id} is created (admin access only: the rules let no client read or write it) with
+// { action: 'project-setup-nudge' }: projects ongoing only through their weekly meeting are marked ongoing
+// (startedAt, startedBy 'migration-2026-11-04'), so the new rule (workspaceStarted) keeps them so; then
+// each ongoing project still missing some of its setup tells its people once, on Slack (pilot
+// project-setup). { dryRun: true }: nothing is written or sent; the run lists what would be, in `plan`.
+// Projects on a venue's board, and completed ones, are left alone. The run records `doneAt` and `plan`.
+function setupNudgeText(title, missing, url){
+  return '🛠️ “' + slackText(title) + '” is ongoing but still needs ' + setupMissingText(missing) + '. ' + linkedTitle('Set it up on its page', url) + ', so everyone on it has what they need.';
+}
+exports.onSetupNudgeRun = onDocumentCreated({ document: 'runs/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'project-setup-nudge' || run.doneAt) return;
+  const dry = run.dryRun === true, plan = [];
+  for (const d of (await db.collection('projectWorkspaces').get()).docs) {
+    const ws = d.data();
+    if (ws.boardId || ws.completedAt || !(ws.startedAt || ws.meeting)) continue;   // ongoing by the old rule, not on a venue's board
+    const migrate = !ws.startedAt && !!ws.meeting && setupMissing(ws).length > 0;
+    const missing = setupMissing(ws);
+    if (!migrate && !missing.length) continue;
+    const to = ws.setupNudgedAt ? [] : (ws.members || []).map(lowerEmail);
+    plan.push({ pid: d.id, title: ws.title || '', migrate, missing, to });
+    if (dry) continue;
+    if (migrate) await d.ref.set({ startedAt: Date.now(), startedBy: 'migration-2026-11-04' }, { merge: true });
+    if (missing.length && to.length) {
+      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-setup', emails: to, headline: setupNudgeText(ws.title || 'Your project', missing, projectPageUrl(ws.cardId || d.id, ws.boardId)) });
+      await d.ref.set({ setupNudgedAt: Date.now() }, { merge: true });
+    }
+  }
+  await event.data.ref.set({ doneAt: Date.now(), plan }, { merge: true });
+});
+
 // A group's first week (2026-11-03): what a group asks of a newcomer (its onboarding steps) is done
 // after joining it, not before asking. When someone's group goes up (their join approved, as PAN-BOLD;
 // a request accepted; a PI or admin setting it on People), their trial starts: onboarding/{email}.trial
@@ -7366,6 +7428,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
+  setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,
