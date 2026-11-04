@@ -59,3 +59,16 @@ test('Slack’s formatting comes in as Markdown: lines, lists and their nesting,
   assert.strictEqual(mrkdwnToMarkdown('*Bold* and _it_ ~gone~\n• a\n• <https://x.org|b>\nhi <@U1>', { U1: 'Ari' }),
     '**Bold** and *it* ~~gone~~\n- a\n- [b](https://x.org)\nhi @[Ari](U1)');
 });
+
+test('/chat lists a channel’s recent threads: with replies, not bots’ or joins, the most recently active first, ten at most', () => {
+  const { pickThreads } = require('../functions/slack-thread.js');
+  const msgs = [
+    { ts: '1.000001', text: 'no replies' },
+    { ts: '2.000001', text: 'old thread', reply_count: 2, latest_reply: '3.000001' },
+    { ts: '4.000001', text: 'new thread', reply_count: 1, latest_reply: '9.000001' },
+    { ts: '5.000001', text: 'a bot', reply_count: 4, bot_id: 'B1' },
+    { ts: '6.000001', subtype: 'channel_join', reply_count: 1 },
+  ];
+  assert.deepStrictEqual(pickThreads(msgs).map((m) => m.text), ['new thread', 'old thread']);
+  assert.strictEqual(pickThreads(Array.from({ length: 30 }, (x, i) => ({ ts: i + '.000001', reply_count: 1 }))).length, 10);
+});
