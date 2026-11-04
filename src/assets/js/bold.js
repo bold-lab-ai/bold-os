@@ -23,6 +23,10 @@
     BOLD.firebaseConfig = Object.assign({}, BOLD.firebaseConfig, { authDomain: 'bold-d7ff2.firebaseapp.com' });
   }
 
+  // Under every field where someone adds a link to something outside BOLD.OS (BOLDiquette › Who can
+  // do what: everyone signed in sees everything, links too; what's behind one is whoever added it's to share).
+  BOLD.LINK_NOTE = 'Everyone signed in to BOLD.OS sees this link. Who can open what it points to is up to you.';
+  BOLD.linkNote = function(){ return '<p class="event-form-hint link-note">' + BOLD.LINK_NOTE + '</p>'; };
   BOLD.escapeHtml = function(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
       return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
@@ -585,9 +589,9 @@
     { label: 'Agent skill', href: 'skill.html?new', can: pi },
     { label: 'Agent tool', href: 'tool.html?new', can: may('tools', 'edit') },
     { head: 'Ask or offer' },
-    { label: 'Ask for a letter', href: 'letters.html#ask', can: may('service-desk', 'view') },
-    { label: 'Offer an introduction', href: 'introductions.html#offer', can: may('service-desk', 'view') },
-    { label: 'A paper for internal review', href: 'audit-board.html', can: may('ml-cycle', 'view') },
+    { label: 'Ask for a letter', href: 'letters.html#ask', can: may('service-desk', 'edit') },
+    { label: 'Offer an introduction', href: 'introductions.html#offer', can: may('service-desk', 'edit') },
+    { label: 'A paper for internal review', href: 'audit-board.html', can: may('ml-cycle', 'edit') },
   ];
   var ICON_PLUS = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>';
   var ICON_DOWN = '<svg viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg>';
@@ -807,7 +811,7 @@
   // Why not, for a disabled control's tooltip.
   BOLD.cannotReason = function(area, what){
     var level = levelFor(area, what || 'view');
-    return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can see what).';
+    return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can do what).';
   };
   BOLD.myGroup = function(){ return access ? access.group : null; };
   // The event and series levels (`visibleTo`) the viewer sees: from 'public' (anyone, even signed out)
@@ -816,6 +820,8 @@
   BOLD.visibleLevels = function(){
     var g = !access || !access.e ? 'out' : access.fullWrite ? 'exec' : access.group;
     var r = { out: 0, everyone: 1, pan: 1, associate: 2, internal: 3, staff: 4, exec: 5 }[g] || 0;
+    // Events open to Everyone (the table headed Page | Edit): everyone signed in sees every event.
+    if (r > 0 && ((access.pages || {}).events || {}).view === 'everyone') r = 5;
     return VIS.slice(0, r + 1);
   };
   // fn(access) once known and on every change; replayed at once if known.
@@ -890,8 +896,15 @@
   // The pages, as the table names them (functions/access.js PAGES, kept in sync by hand).
   var AREA_NAMES = { boldiquette: 'BOLDiquette', projects: 'Projects', profile: 'Your profile', calendar: 'Calendar', 'ml-cycle': 'ML Conference Cycle',
     people: 'People', requests: 'Requests', events: 'Events', agents: 'Agents', tools: 'Tools', skills: 'Skills', guides: 'How to',
-    'service-desk': 'Service desk', 'get-started': 'Get started', search: 'Search', changelog: 'Changes' };
+    'service-desk': 'Service desk', 'get-started': 'Get started', search: 'Search', changelog: 'Changes',
+    experimental: 'Experimental', conversations: 'Conversations' };
   var WHAT = ['view', 'edit'];
+  // Everyone signed in sees everything (the table headed Page | Edit, 2026-11-04): only who acts is chosen.
+  function isOpen(){
+    var p = (branch && branch.pages) || (access && access.pages) || {}, keys = Object.keys(p);
+    return keys.length > 0 && keys.every(function(k){ return (p[k] || {}).view === 'everyone'; });
+  }
+  function rowsShown(){ return isOpen() ? ['edit'] : WHAT; }
   var WHAT_ROW = { view: 'View', edit: 'Edit' };
   var WHAT_VERB = { view: 'view', edit: 'edit' };
   var LADDER = ['everyone', 'associate', 'internal', 'staff', 'exec', 'none'];
@@ -908,6 +921,7 @@
   function who(l){ return l === 'everyone' ? 'Everyone' : l === 'none' ? 'Nobody' : l === 'exec' ? 'BOLD-exec' : LEVEL_NAMES[l] + ' and above'; }
   // One sentence for the ladder: "BOLD-internal and above can view and edit it."
   function sentence(lv){
+    if (isOpen()) return 'Everyone signed in sees it; ' + (lv.edit === 'everyone' ? 'everyone' : who(lv.edit)) + ' can act on it.';
     if (lv.view === lv.edit) return who(lv.view) + ' can view and edit it.';
     var low = function(l){ var s = who(l); return l === 'none' || l === 'everyone' ? s.charAt(0).toLowerCase() + s.slice(1) : s; };
     return who(lv.view) + ' can view it; ' + low(lv.edit) + ' can edit it.';
@@ -926,12 +940,14 @@
       var cells = l.trim().replace(/^\||\|$/g, '').split('|');
       if (norm(cells[0]) !== norm(AREA_NAMES[area])) return;
       // View | Edit; a row as the table first was (View | Edit | Propose) reads as functions/access.js reads it.
-      var old = cells.length >= 4, lv = { view: levelOfCell(cells[1]), edit: levelOfCell(cells[old ? (REVIEWED.indexOf(area) >= 0 ? 3 : 2) : 2]) };
+      // Page | Edit (everyone sees everything): View is Everyone.
+      var old = cells.length >= 4, lv = cells.length === 2 ? { view: 'everyone', edit: levelOfCell(cells[1]) }
+        : { view: levelOfCell(cells[1]), edit: levelOfCell(cells[old ? (REVIEWED.indexOf(area) >= 0 ? 3 : 2) : 2]) };
       if (lv.view && lv.edit) out = lv;
     });
     return out;
   }
-  function accessRow(area, lv){ return '| ' + AREA_NAMES[area] + ' | ' + WHAT.map(function(w){ return lv[w] === 'none' ? '—' : groupName(lv[w]); }).join(' | ') + ' |'; }
+  function accessRow(area, lv){ return '| ' + AREA_NAMES[area] + ' | ' + rowsShown().map(function(w){ return lv[w] === 'none' ? '—' : groupName(lv[w]); }).join(' | ') + ' |'; }
   // The part's new body: this page's row replaced (or added), the rest as it is.
   function accessBody(body, area, lv){
     if (!body) {
@@ -980,7 +996,7 @@
   }
   function ladderHtml(lv, ghost, editable){
     var head = '<div class="ac-row ac-head"><span></span>' + LADDER.map(function(l){ return '<span' + (l === 'everyone' ? ' title="Everyone signed in (PAN-BOLD and above)"' : '') + '>' + esc(LADDER_HEAD[l]) + '</span>'; }).join('') + '</div>';
-    return '<div class="ac-ladder" role="group" aria-label="Who can see this page">' + head + WHAT.map(function(w){
+    return '<div class="ac-ladder" role="group" aria-label="Who can see this page">' + head + rowsShown().map(function(w){
       var at = LADDER.indexOf(lv[w]), ghostAt = ghost ? LADDER.indexOf(ghost[w]) : -1;
       return '<div class="ac-row" role="radiogroup" aria-label="' + esc(WHAT_ROW[w]) + '"><span class="ac-what">' + esc(WHAT_ROW[w]) + '</span>' + LADDER.map(function(l, i){
         var on = lv[w] === 'none' ? l === 'none' : (l !== 'none' && i >= at);
@@ -1002,7 +1018,7 @@
     var row = !!(area && AREA_NAMES[area]), cur = row ? currentLevels(area) : { view: 'everyone', edit: 'everyone' };
     // In the masthead, as GitHub's icon buttons: who can see this page (a dot while a change
     // to it waits), and the Version (branches): main, or the site as an open proposal would make it.
-    var seeTip = 'Who can see this page: ' + groupName(cur.view) + (waiting ? ' · 1 change waiting' : '');
+    var seeTip = (isOpen() ? 'Who can act on this page: ' + groupName(cur.edit) : 'Who can see this page: ' + groupName(cur.view)) + (waiting ? ' · 1 change waiting' : '');
     var brTip = branch ? 'Version: ' + branchLabel(branch) : 'Version: main. See the site as an open proposal would make it';
     // The Version button: only for whoever can propose a change somewhere (a reviewed page's Edit
     // level: not newcomers in PAN-BOLD), or is on a version already.
@@ -1026,7 +1042,7 @@
         viewAsHtml() + '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div></div>';
     } else if (panel) {
       var can = !!access.fullWrite, lv = panel.lv, changed = !sameLevels(lv, cur);
-      html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">Who can see ' + esc(AREA_NAMES[area]) + '</div>';
+      html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">' + (isOpen() ? 'Who can act on ' : 'Who can see ') + esc(AREA_NAMES[area]) + '</div>';
       if (panel.done) html += '<p class="ac-sentence">Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposal-' + esc(panel.done) + '">the BOLDiquette</a>.</p>' +
         '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
       else {

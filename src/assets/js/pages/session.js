@@ -95,7 +95,7 @@
     { key: 'background', label: 'Background', input: 'area' },
     { key: 'keyQuestions', label: 'Key questions', input: 'area', list: true, hint: 'One question per line.' },
     { key: 'aim', label: 'Aim', input: 'area' },
-    { key: 'links', label: 'Links', input: 'area', list: true, hint: 'One per line: Label | https://…' },
+    { key: 'links', label: 'Links', input: 'area', list: true, hint: 'One per line: Label | https://…. Everyone signed in sees them; who can open what they point to is up to you.' },
     { key: 'agenda', label: 'Schedule', input: 'area', list: true, hint: 'One per line: time | activity' }
   ];
 

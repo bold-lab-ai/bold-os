@@ -67,17 +67,27 @@ window.BoldConnections = (function(){
   }
 
   // The interactions of one person (theirs and those involving them), newest first.
+  // Those from letters, introductions, supervision and join requests (privateInteractions) only
+  // when they're the viewer's own, or the viewer is a PI or admin (BOLDiquette › Who can do what).
+  function viewer(){ return firebase.auth().currentUser && String(firebase.auth().currentUser.email || '').toLowerCase(); }
+  function seesPrivate(email){ return BOLD.isFullWrite() || (!!email && email === viewer()); }
   function loadFor(email){
-    var col = db().collection('interactions');
-    return Promise.all([col.where('from', '==', email).get(), col.where('to', '==', email).get()]).then(function(r){
+    var cols = ['interactions'].concat(seesPrivate(email) ? ['privateInteractions'] : []);
+    return Promise.all(cols.map(function(c){
+      var col = db().collection(c);
+      return Promise.all([col.where('from', '==', email).get(), col.where('to', '==', email).get()]);
+    })).then(function(rs){
       var seen = {}, out = [];
-      r[0].docs.concat(r[1].docs).forEach(function(d){ if (!seen[d.id]) { seen[d.id] = 1; out.push(Object.assign({ id: d.id }, d.data())); } });
+      rs.forEach(function(r){ r[0].docs.concat(r[1].docs).forEach(function(d){ if (!seen[d.id]) { seen[d.id] = 1; out.push(Object.assign({ id: d.id }, d.data())); } }); });
       return out.sort(function(a, b){ return b.at - a.at; });
     });
   }
-  // Every interaction.
+  // Every interaction (the private ones for PIs and admins).
   function loadAll(){
-    return db().collection('interactions').get().then(function(s){ return s.docs.map(function(d){ return d.data(); }); });
+    var cols = ['interactions'].concat(BOLD.isFullWrite() ? ['privateInteractions'] : []);
+    return Promise.all(cols.map(function(c){ return db().collection(c).get(); })).then(function(rs){
+      var out = []; rs.forEach(function(s){ s.docs.forEach(function(d){ out.push(d.data()); }); }); return out;
+    });
   }
 
   // Interactions → { nodes: [{ id, thing?, type?, title?, href? }], edges: [{ a, b, n, groups, main }], byId }.

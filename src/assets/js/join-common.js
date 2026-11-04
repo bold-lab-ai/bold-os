@@ -99,7 +99,7 @@ window.BoldJoin = (function(){
       t('jn-pronouns', 'Pronouns', v.pronouns, 'e.g. she/her, they/them', 40) +
       t('jn-institution', 'Home institution', v.institution, 'e.g. UCL, Oxford, Imperial', 120) +
       t('jn-based', 'Primarily based in (for events and socials)', v.basedIn, 'e.g. London', 120) +
-      t('jn-links', 'Links (website, X, Google Scholar)', v.links, 'https://…', 500)) +
+      t('jn-links', 'Links (website, X, Google Scholar)', v.links, 'https://…', 500) + (window.BOLD && BOLD.linkNote ? BOLD.linkNote() : '')) +
     group('At BOLD',
       '<label>Role at BOLD<select class="jn-role"><option value="">Choose…</option>' + opt.roles.map(function(r){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';

@@ -205,7 +205,7 @@ function meetingEntryHtml(m){
       '<select id="pmEvery" aria-label="How often">' + [1, 2, 3, 4].map(function(n){ return opt(n, n === 1 ? 'Every week' : 'Every ' + n + ' weeks', m.every); }).join('') + '</select>' +
       '<label class="meeting-until">Until (optional) <input type="date" id="pmUntil" aria-label="Until (leave empty for no end)" value="' + BOLD.escapeHtml(m.until || '') + '"></label>' +
       '<label class="meeting-link">Own link (optional) <input type="url" id="pmLink" maxlength="500" placeholder="Empty: a new Google Meet" aria-label="Your own meeting link (leave empty for a new Google Meet)" value="' + BOLD.escapeHtml(m.link || '') + '"></label>' +
-    '</div>';
+    '</div>' + BOLD.linkNote();
 }
 
 // → { day, time, minutes, every, until?, link? } or { error }.

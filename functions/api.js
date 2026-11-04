@@ -131,9 +131,10 @@ module.exports = function(deps){
       return { ok: true };
     }
     if (d.action === 'activity') {
-      // agents.html: your tokens and what they did; with `all`, everyone's (whoever can view Agents).
+      // agents.html: your tokens and what they did; with `all`, everyone's (PIs and admins: private
+      // whoever's group, BOLDiquette › Who can do what).
       const all = d.all === true;
-      if (all) await access.requireAccess(email, 'agents', 'view');
+      if (all && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see everyone’s agents.');
       const [tokenDocs, logDocs] = await Promise.all([
         all ? db.collection('apiTokens').get().then((x) => x.docs) : mine(),
         (all ? db.collection('apiLog').orderBy('at', 'desc').limit(LOG_SHOWN) : db.collection('apiLog').where('email', '==', email)).get().then((x) => x.docs),
@@ -214,8 +215,8 @@ module.exports = function(deps){
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
     series: () => cached('series', async () => docs(await db.collection('eventSeries').get())),
     // Only the events and series `email` sees (their visibleTo; access.seesEvent), for everything that lists them.
-    eventsFor: async (email) => { const g = await access.groupFor(email); return (await lab.events()).filter((x) => seesEvent(g, x)); },
-    seriesFor: async (email) => { const g = await access.groupFor(email); return (await lab.series()).filter((x) => seesEvent(g, x)); },
+    eventsFor: async (email) => { const g = await access.eventGroup(email); return (await lab.events()).filter((x) => seesEvent(g, x)); },
+    seriesFor: async (email) => { const g = await access.eventGroup(email); return (await lab.series()).filter((x) => seesEvent(g, x)); },
     skills: () => cached('skills', async () => docs(await db.collection('skills').get())),
     guides: () => cached('guides', async () => docs(await db.collection('guides').get())),
     handbook: () => cached('handbook', async () => docs(await db.collection('handbook').get())),

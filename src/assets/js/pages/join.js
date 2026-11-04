@@ -13,7 +13,9 @@
 
   function render(v){
     if (sent) {
-      box.innerHTML = '<p class="jn-notice">Thanks, ' + esc(sent) + '. Your request is with your point of contact; you’ll hear by email.</p>';
+      box.innerHTML = '<p class="jn-notice">Thanks, ' + esc(sent) + '. Your request is with your point of contact; you’ll hear by email.</p>' +
+        // Another group is a second request, to the PIs and admins (groupRequest), not part of this one.
+        '<p class="jn-notice">You join as PAN-BOLD. To be in another group, <a href="group-request.html">ask for it too</a>: the PIs and admins decide that separately.</p>';
       return;
     }
     box.innerHTML = (invited ? '<p class="jn-notice">' + esc(invited.inviter.name) + ' invited you to their project “' + esc(invited.title) + '”. Ask to join BOLD here, and you’ll be on it once ' + esc(invited.inviter.name.split(' ')[0]) + ' approves.</p>' : '') +

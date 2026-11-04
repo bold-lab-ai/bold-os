@@ -310,7 +310,7 @@ var ProjectWork = (function(){
         '<select class="wk-f-pick" aria-label="Link a pull request, issue or proposal"><option value="">Link a pull request, issue or proposed change…</option>' +
           options.filter(function(x){ return x.source !== 'request'; }).map(function(x){ return '<option value="' + esc(x.ref) + '">' + esc((refLabel(x) + ': ' + x.title).slice(0, 140)) + '</option>'; }).join('') +
         '</select>' +
-        '<div class="wk-f-urlrow"><input type="url" class="wk-f-url" placeholder="Or paste a link" aria-label="A link"><button class="btn-text wk-f-add" type="button">Add</button></div>' +
+        '<div class="wk-f-urlrow"><input type="url" class="wk-f-url" placeholder="Or paste a link" aria-label="A link"><button class="btn-text wk-f-add" type="button">Add</button></div>' + BOLD.linkNote() +
       '</div>' +
       '<div class="field-error wk-f-error" hidden></div>' +
       '<div class="stage-fields-actions"><button class="btn" type="submit">' + (c ? 'Save' : 'Add') + '</button>' +

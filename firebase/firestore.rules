@@ -74,8 +74,10 @@ service cloud.firestore {
     // Who sees an event series or an event (`visibleTo`, functions/access.js VISIBILITY; 2026-11-02):
     // the levels the viewer has, from 'public' (anyone, even signed out) up. Pages query with
     // where('visibleTo', 'in', BOLD.visibleLevels()), which these match.
+    // Once Events is open to Everyone (the table headed Page | Edit, 2026-11-04: everyone signed in
+    // sees everything), everyone signed in sees every event, whatever its visibleTo.
     function visibleLevels() {
-      let r = myRank();
+      let r = isSignedIn() && level('events', 'view') == 'everyone' ? 5 : myRank();
       return r >= 5 ? ['public', 'everyone', 'associate', 'internal', 'staff', 'exec']
         : r >= 4 ? ['public', 'everyone', 'associate', 'internal', 'staff']
         : r >= 3 ? ['public', 'everyone', 'associate', 'internal']
@@ -212,6 +214,12 @@ service cloud.firestore {
     // Connections on a profile and the Network page; only the server writes them.
     match /interactions/{id} {
       allow read: if may('people', 'view');
+      allow write: if false;
+    }
+    // The ones from letters, introductions, supervision requests and requests to join: private
+    // whoever's group (BOLDiquette › Who can do what), to the two people in each, PIs and admins.
+    match /privateInteractions/{id} {
+      allow read: if hasFullWrite() || (isSignedIn() && (resource.data.from == email().lower() || resource.data.to == email().lower()));
       allow write: if false;
     }
     // Requests to be in another group: theirs to read, and the PIs' and admins'; all writes
@@ -507,7 +515,7 @@ service cloud.firestore {
     // Sessions, talks and proposals exist only for Collaboration Week (BOLD-associate and above)
     // and the Festival (anyone): read directly from BOLD-associate up; a public event's are served,
     // cut down, to everyone else by publicEvent (functions/public-event.js). (2026-11-03)
-    function eventContent() { return may('events', 'view') && myRank() >= 2; }
+    function eventContent() { return may('events', 'view') && (myRank() >= 2 || level('events', 'view') == 'everyone'); }
     match /collabWeekProposals/{proposalId} {
       allow read: if eventContent();
       allow create: if may('events', 'edit') && request.resource.data.email == email()
@@ -778,7 +786,7 @@ service cloud.firestore {
       allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
         && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes'])
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
-      allow update: if may('conversations', 'view') && onlyMyVote();
+      allow update: if may('conversations', 'edit') && onlyMyVote();
       allow delete: if may('conversations', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
       match /messages/{mid} {
         allow read: if may('conversations', 'view');
@@ -786,7 +794,7 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['parent', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes'])
           && exists(/databases/$(database)/documents/conversations/$(pid))
           && (request.resource.data.parent == pid || exists(/databases/$(database)/documents/conversations/$(pid)/messages/$(request.resource.data.parent)));
-        allow update: if may('conversations', 'view') && onlyMyVote();
+        allow update: if may('conversations', 'edit') && onlyMyVote();
         allow delete: if may('conversations', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
       }
     }

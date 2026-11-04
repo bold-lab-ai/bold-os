@@ -67,7 +67,7 @@
   // Once access is known (and again as it changes: PIs and admins are known a moment later).
   BOLD.onAccess(function(a){
     if (!a.e) return;
-    full = BOLD.isFullWrite(); canAll = full || BOLD.can('agents', 'view');
+    full = BOLD.isFullWrite(); canAll = full;   // everyone's agents: PIs and admins only (private whoever's group)
     load();
   });
 })();

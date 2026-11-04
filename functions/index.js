@@ -1504,7 +1504,7 @@ function newTags(before, after){
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
 const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
-  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions',
+  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
   'conversations', 'conversationImports'];
 // An event's page: its own (d.page: Collaboration Week, the Festival) or event.html.
@@ -2663,9 +2663,11 @@ exports.getAllProjects = onCall(
   async (request) => {
     const email = signedInEmail(request).toLowerCase();
     const full = await access.can(email, 'projects', 'view');
-    // Who can see what: View sees them all and joins any; everyone else signed in (BOLD-associate,
-    // PAN-BOLD) sees the titles and asks to join, which the project's owner accepts (2026-11-02).
-    const askOnly = !full;
+    // Who can do what: View sees them all in full (everyone signed in, once the table is Page | Edit,
+    // 2026-11-04); below it, the titles. Edit joins any straight away; below it (PAN-BOLD) they
+    // talk to its lead, who adds them.
+    const joins = await access.can(email, 'projects', 'edit');
+    const askOnly = !joins;
     const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, mineAsked] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
@@ -2693,7 +2695,7 @@ exports.getAllProjects = onCall(
     items.forEach(function(i){ if (pending[i.pid] && !i.joined) Object.assign(i, pending[i.pid]); });
     if (askOnly) shown.askOnly = true;
     // PAN-BOLD: "Talk to the lead" (a Slack DM, from a template) instead of asking to join (2026-11-03).
-    if (!full && (await access.groupFor(email)) === 'pan') {
+    if (!joins && (await access.groupFor(email)) === 'pan') {
       const owner = {};
       groups.ongoing.concat(groups.submission, groups.completed, groups.planned).forEach(function(i){ owner[i.pid] = { name: i.owner || '', email: i.ownerEmail || '' }; });
       const ids = {};
@@ -3902,8 +3904,8 @@ exports.projectWorkspace = onCall(
     const lists = await access.can(email, 'projects', 'list');
     const data = request.data || {};
     if (!lists && ['templates', 'mine', 'venues', 'join'].indexOf(data.action) >= 0) await access.requireAccess(email, 'projects', 'list');
-    // Joining straight away is for Projects' View; below it they ask to join, and its owner accepts (projectInvite 'ask').
-    if (data.action === 'join' && !(await access.can(email, 'projects', 'view'))) throw new HttpsError('permission-denied', 'Ask to join it: its owner accepts. (Joining straight away is for ' + 'Projects’ View level.)');
+    // Joining straight away is for Projects' Edit; below it they ask its lead, who adds them.
+    if (data.action === 'join' && !(await access.can(email, 'projects', 'edit'))) throw new HttpsError('permission-denied', 'Ask its lead to add you. (Joining straight away is for Projects’ Edit level.)');
     if (data.action === 'templates') return { templates: await projectTemplates() };
     if (data.action === 'mine'){
       // The caller's projects not yet completed: those whose cards name them (as
@@ -6148,7 +6150,12 @@ exports.decideJoinRequest = onCall(
       }
       return Object.assign({}, q, { status });
     });
-    if (r.status !== 'approved') return { status: r.status };
+    if (r.status !== 'approved') {
+      // Declined: a request for another group sent with it goes too.
+      const g = await db.collection('groupRequests').where('email', '==', String(r.email || '').toLowerCase()).where('status', '==', 'open').get();
+      for (const x of g.docs) await x.ref.update({ status: 'withdrawn', decidedAt: Date.now(), why: 'joining declined' });
+      return { status: r.status };
+    }
     // Invited to a project (projectInvite): on it now, as they asked to join through it.
     const invs = await db.collection('projectInvites').where('email', '==', String(r.email || '').toLowerCase()).where('status', '==', 'open').get();
     const extra = r.projectInvite && !invs.docs.some((x) => x.id === r.projectInvite) ? [await db.collection('projectInvites').doc(r.projectInvite).get()] : [];
@@ -6707,14 +6714,17 @@ exports.groupRequest = onCall(
     const token = SLACK_BOT_TOKEN.value();
     if (d.action === 'request'){
       const m = await db.collection('members').doc(email).get();
-      if (!m.exists) throw new HttpsError('failed-precondition', 'Add your details first.');
+      // Right after asking to join (join.html), before whoever invited them approves it: a second,
+      // separate request, to the PIs and admins (2026-11-04). They join as PAN-BOLD meanwhile.
+      const joining = m.exists ? null : (await db.collection('joinRequests').where('email', '==', email).where('status', '==', 'open').limit(1).get()).docs[0];
+      if (!m.exists && !joining) throw new HttpsError('failed-precondition', 'Ask to join BOLD first.');
       const to = String(d.to || '');
       if (GROUPS.indexOf(to) < 0) throw new HttpsError('invalid-argument', 'Choose a group.');
-      const from = groupOf(m.data());
+      const from = m.exists ? groupOf(m.data()) : 'pan';
       if (to === from) throw new HttpsError('invalid-argument', 'You’re already in ' + GROUP_LABELS[to] + '.');
       const open = await col.where('email', '==', email).where('status', '==', 'open').limit(1).get();
       if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
-      const name = m.data().name || request.auth.token.name || email;
+      const name = (m.exists ? m.data().name : joining.data().name) || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
       // What the group asks of a newcomer is done in its first week, after joining (trialCheck), not before.
       // The contract: what the group asks of them, as they read it, and that they accept it.
@@ -6748,6 +6758,8 @@ exports.groupRequest = onCall(
       // Only PIs and admins decide a change of group (2026-11-02).
       if (!full) throw new HttpsError('permission-denied', 'Only PIs and admins decide a change of group.');
       if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+      // Asked for with their request to join: that one first (whoever invited them approves it).
+      if (accept && !(await tx.get(db.collection('members').doc(r.email))).exists) throw new HttpsError('failed-precondition', 'Their request to join BOLD isn’t approved yet: whoever invited them approves it first.');
       tx.update(ref, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: request.auth.token.name || email, decidedAt: Date.now() });
       if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now() });
       return r;
@@ -7370,10 +7382,16 @@ async function interactionRecords(path, data, slackEmails){
   return out;
 }
 
-// Writes `want` ({ id: record }) in place of `have` ({ id: record }): sets what's new or
-// changed, deletes the rest.
-async function replaceInteractions(have, want){
-  const col = db.collection('interactions');
+// Interactions that come from what's private whoever's group (BOLDiquette › Who can do what:
+// letters, introductions, supervision requests, requests to join) are kept apart, in
+// privateInteractions, which only the two people in each, PIs and admins read (firestore.rules).
+const PRIVATE_INTERACTION_SOURCES = ['joinRequests', 'studyRequests', 'introRequests', 'letterRequests'];
+const interactionsCol = (source) => PRIVATE_INTERACTION_SOURCES.indexOf(String(source || '').split('/')[0]) >= 0 ? 'privateInteractions' : 'interactions';
+
+// Writes `want` ({ id: record }) in place of `have` ({ id: record }) in collection `name`:
+// sets what's new or changed, deletes the rest.
+async function replaceInteractions(have, want, name){
+  const col = db.collection(name || 'interactions');
   let batch = db.batch(), n = 0;
   const step = async function(){ if (++n >= 400){ await batch.commit(); batch = db.batch(); n = 0; } };
   for (const id of Object.keys(have)) if (!want[id]) { batch.delete(col.doc(id)); await step(); }
@@ -7382,9 +7400,9 @@ async function replaceInteractions(have, want){
 }
 
 async function syncInteractions(path, data){
-  const have = {};
-  (await db.collection('interactions').where('source', '==', path).get()).docs.forEach(function(s){ have[s.id] = s.data(); });
-  await replaceInteractions(have, await interactionRecords(path, data, {}));
+  const name = interactionsCol(path), have = {};
+  (await db.collection(name).where('source', '==', path).get()).docs.forEach(function(s){ have[s.id] = s.data(); });
+  await replaceInteractions(have, await interactionRecords(path, data, {}), name);
 }
 
 function onInteractionSource(document){
@@ -7436,15 +7454,17 @@ exports.rebuildInteractions = onCall(
     for (const c of INTERACTION_TOP) (await db.collection(c).get()).docs.forEach(function(s){ docs.push(s); });
     for (const g of ['cards', 'versions', 'readers', 'comments', 'proposals', 'presentations'])
       (await db.collectionGroup(g).get()).docs.forEach(function(s){ if (isInteractionSource(s.ref.path)) docs.push(s); });
-    const want = {}, slackEmails = {};
-    for (const s of docs) Object.assign(want, await interactionRecords(s.ref.path, s.data(), slackEmails));
-    const have = {};
-    (await db.collection('interactions').get()).docs.forEach(function(s){
-      const src = String(s.data().source || '');
-      if (src.indexOf('auth/') === 0 || /#tags$/.test(src)) return;
-      have[s.id] = s.data();
-    });
-    await replaceInteractions(have, want);
+    const want = { interactions: {}, privateInteractions: {} }, slackEmails = {};
+    for (const s of docs) Object.assign(want[interactionsCol(s.ref.path)], await interactionRecords(s.ref.path, s.data(), slackEmails));
+    for (const name of Object.keys(want)){
+      const have = {};
+      (await db.collection(name).get()).docs.forEach(function(s){
+        const src = String(s.data().source || '');
+        if (src.indexOf('auth/') === 0 || /#tags$/.test(src)) return;
+        have[s.id] = s.data();
+      });
+      await replaceInteractions(have, want[name], name);
+    }
     // First sign-ins, from Firebase Auth.
     try {
       let page;
@@ -7453,7 +7473,7 @@ exports.rebuildInteractions = onCall(
         for (const u of page.users) if (u.email) await recordSignUp(u.uid, String(u.email).toLowerCase());
       } while (page.pageToken);
     } catch (err){ logger.warn('Listing first sign-ins failed', { error: String(err && err.message || err) }); }
-    return { count: Object.keys(want).length, sources: docs.length };
+    return { count: Object.keys(want.interactions).length + Object.keys(want.privateInteractions).length, sources: docs.length };
   }
 );
 

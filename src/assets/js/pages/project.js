@@ -378,7 +378,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function linkEntryHtml(key){
     var k = LINKS[key], cur = ws && ws[k.own] || '';
     return '<input type="url" id="linkInput" value="' + esc(cur) + '" placeholder="https://\u2026 your own ' + k.what + ' (Google Slides, Overleaf, Notion…)">' +
-      '<p class="event-form-hint">' + (ws && ws[k.made] ? 'Leave it empty to use the ' + k.what + ' BOLD.OS made.' : ws && ws.noDocs ? 'Leave it empty for none.' : 'Leave it empty and BOLD.OS makes them, shared with the project\u2019s members.') + '</p>';
+      '<p class="event-form-hint">' + (ws && ws[k.made] ? 'Leave it empty to use the ' + k.what + ' BOLD.OS made.' : ws && ws.noDocs ? 'Leave it empty for none.' : 'Leave it empty and BOLD.OS makes them, shared with the project\u2019s members.') + '</p>' + BOLD.linkNote();
   }
   function saveLink(){
     var key = editing, k = LINKS[key], fail = failer(), v = el('linkInput').value.trim();
@@ -826,7 +826,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       row('Date', input('talkDate', 'date', t.date)) +
       row('Slides', input('talkSlides', 'url', t.slidesUrl, 'https://\u2026') +
         BoldPresentationUpload.html('detail-hint')) +
-      row('Recording', input('talkRecording', 'url', t.recordingUrl, 'https://\u2026 (optional)')) +
+      row('Recording', input('talkRecording', 'url', t.recordingUrl, 'https://\u2026 (optional)') + BOLD.linkNote()) +
       '</dl>' + saveCancelHtml('talkSave');
   }
 
@@ -1255,7 +1255,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         el('projectBody').hidden = true;
         show('Only its people see this project.');
         if (/[#&]invite=/.test(location.hash)) { if (BOLD.allowPage) BOLD.allowPage(); }
-        else el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">' + (BOLD.can('projects', 'view') ? 'Join it' : 'Ask to join it') + ' from Projects</a>.');
+        else el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">' + (BOLD.can('projects', 'edit') ? 'Join it' : 'Ask to join it') + ' from Projects</a>.');
         return;
       }
       if (!card) show('Could not load the project.');

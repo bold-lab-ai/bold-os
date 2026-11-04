@@ -62,11 +62,14 @@ PAGES.forEach(([key]) => { if (!DEFAULT_PAGES[key]) DEFAULT_PAGES[key] = { view:
 const norm = (s) => String(s || '').replace(/[*_`]/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim().toLowerCase();
 
 // Pure: the table's Markdown → { <page>: { view, edit } }, or throws an Error saying
-// which row is wrong. Read: the table headed | Page | View | Edit |; other text, and other
-// tables (the part also shows the groups' ranks and the role → group suggestions), are
-// ignored. A row as the table first was (| Page | View | Edit | Propose |) reads as View,
+// which row is wrong. Read: the table headed | Page | …; other text, and other tables (the
+// part also shows the groups' ranks), are ignored. Headed | Page | Edit | (2026-11-04: everyone
+// signed in sees everything; groups differ in what they can do), every page's View is
+// Everyone, and a page left out is Edit BOLD-internal. Headed | Page | View | Edit |, as
+// written. A row as the table first was (| Page | View | Edit | Propose |) reads as View,
 // and Edit from Propose on a REVIEWED page and from Edit elsewhere.
 function parseAccessTable(body){
+  if (accessColumns(body) === 1) return parseEditTable(body);
   const byName = {}; PAGES.forEach(([key, name]) => { byName[norm(name)] = key; });
   const byLevel = {}; LEVELS.forEach((l) => { byLevel[norm(LEVEL_NAMES[l])] = l; });
   byLevel['-'] = byLevel['–'] = byLevel[''] = 'none';
@@ -96,6 +99,44 @@ function parseAccessTable(body){
   return out;
 }
 
+// Pure: how many level columns the table headed Page has: 1 (| Page | Edit |), 2 or more
+// (| Page | View | Edit |…), or 0 without one.
+function accessColumns(body){
+  const head = String(body || '').split('\n').map((l) => l.trim()).filter((l) => /^\|/.test(l))
+    .map((l) => l.replace(/^\||\|$/g, '').split('|').map((c) => c.trim()))
+    .filter((cells) => norm(cells[0]) === 'page')[0];
+  return head ? head.length - 1 : 0;
+}
+// Pure: everyone sees everything (2026-11-04): | Page | Edit | → { <page>: { view: 'everyone', edit } },
+// every page of PAGES in it (a page left out: Edit BOLD-internal).
+function parseEditTable(body){
+  const byName = {}; PAGES.forEach(([key, name]) => { byName[norm(name)] = key; });
+  const byLevel = {}; LEVELS.forEach((l) => { byLevel[norm(LEVEL_NAMES[l])] = l; });
+  byLevel['-'] = byLevel['–'] = byLevel[''] = 'none';
+  const out = {}, seen = {};
+  let inTable = false;
+  String(body || '').split('\n').forEach((line) => {
+    if (!/^\s*\|/.test(line)) { inTable = false; return; }
+    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim());
+    if (cells.every((c) => /^:?-+:?$/.test(c))) return;
+    if (norm(cells[0]) === 'page') { inTable = true; return; }
+    if (!inTable) return;
+    const key = byName[norm(cells[0])];
+    if (!key) throw new Error('“' + cells[0] + '” isn’t a page (the pages: ' + PAGES.map((p) => p[1]).join(', ') + ').');
+    if (seen[key]) throw new Error(cells[0] + ' is in the table twice.');
+    seen[key] = true;
+    if (cells.length < 2) throw new Error(cells[0] + ' needs who can edit it.');
+    const level = byLevel[norm(cells[1])];
+    if (!level) throw new Error(cells[0] + ': “' + cells[1] + '” isn’t a group (' + LEVELS.map((l) => LEVEL_NAMES[l]).join(', ') + ').');
+    out[key] = { view: 'everyone', edit: level };
+  });
+  if (!Object.keys(seen).length) throw new Error('The table has no pages.');
+  PAGES.forEach(([key]) => { if (!out[key]) out[key] = { view: 'everyone', edit: DEFAULT_LEVEL }; });
+  // Their profile is where people ask for another group, so everyone edits it.
+  if (rank(out.profile.edit) > rank('pan')) throw new Error('Your profile must stay editable by Everyone: it’s where people ask for another group.');
+  return out;
+}
+
 // A proposal from a page's eye chip (bold.js) changes one row: { kind: 'access', area,
 // before: { view, edit }, after: { view, edit } }, applied when it's accepted to the table as
 // it is then (setAccessRow), so it never undoes another change to the part. Without the part
@@ -103,10 +144,11 @@ function parseAccessTable(body){
 const ACCESS_INTRO = 'Who can view each page of BOLD.OS, and who can edit it (on the BOLDiquette, How to, Skills and Tools, by proposing). Everyone means everyone signed in; each group can do everything the groups below it can; — is nobody. Only PIs and admins change this table, and who is in which group.';
 const pageName = (key) => (PAGES.filter((p) => p[0] === key)[0] || [key, key])[1];
 const levelCell = (l) => l === 'none' ? '—' : LEVEL_NAMES[l];
-const accessRowMarkdown = (area, lv) => '| ' + pageName(area) + ' | ' + WHAT.map((w) => levelCell(lv[w])).join(' | ') + ' |';
+const accessRowMarkdown = (area, lv, editOnly) => '| ' + pageName(area) + ' | ' + (editOnly ? ['edit'] : WHAT).map((w) => levelCell(lv[w])).join(' | ') + ' |';
 // Pure: the part's body with one page's row set: replaced in the table headed Page, or added
 // at its end (or a table added); everything else as it is.
 function setAccessRow(body, area, lv){
+  const editOnly = accessColumns(body) === 1;
   let inTable = false, last = -1, done = false;
   const lines = String(body || '').split('\n').map((line, i) => {
     if (!/^\s*\|/.test(line)) { inTable = false; return line; }
@@ -114,12 +156,12 @@ function setAccessRow(body, area, lv){
     if (norm(first) === 'page') { inTable = true; last = i; return line; }
     if (!inTable) return line;
     last = i;
-    if (norm(first) === norm(pageName(area))) { done = true; return accessRowMarkdown(area, lv); }
+    if (norm(first) === norm(pageName(area))) { done = true; return accessRowMarkdown(area, lv, editOnly); }
     return line;
   });
   if (!done) {
     if (last === -1) lines.push('', '| Page | View | Edit |', '|---|---|---|', accessRowMarkdown(area, lv));
-    else lines.splice(last + 1, 0, accessRowMarkdown(area, lv));
+    else lines.splice(last + 1, 0, accessRowMarkdown(area, lv, editOnly));
   }
   return lines.join('\n');
 }
@@ -201,7 +243,7 @@ module.exports = function access({ db, groupOf, isFullWrite, viewingAs, viewingT
     const level = what === 'list' ? await lowerOf(page) : await levelOf(page, what);
     const name = (PAGES.filter((p) => p[0] === page)[0] || [page, page])[1];
     throw new HttpsError('permission-denied', level === 'none' ? 'Nobody can do this on ' + name + '.'
-      : name + ' is for ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can see what).');
+      : name + ' is for ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can do what).');
   }
   // For decideProposal: a BOLDiquette proposal changing the table. `before` and `after`
   // are the BOLDiquette's parts; → the new table to save, or null if it didn't change.
@@ -215,8 +257,13 @@ module.exports = function access({ db, groupOf, isFullWrite, viewingAs, viewingT
     catch (err) { throw new HttpsError('failed-precondition', 'Who can see what can’t be read: ' + err.message); }
   }
   // Whether `email` (null: signed out) sees event or series x (its visibleTo).
-  async function seesIt(email, x){ return seesEvent(await groupFor(email), x); }
-  return { table, groupFor, can, requireAccess, checkTableChange, seesIt, forget(){ cache = null; } };
+  // Events open to Everyone (the table headed Page | Edit): everyone signed in sees every event.
+  async function eventGroup(email){
+    if (email && (await levelOf('events', 'view')) === 'everyone') return 'exec';
+    return groupFor(email);
+  }
+  async function seesIt(email, x){ return seesEvent(await eventGroup(email), x); }
+  return { table, groupFor, can, requireAccess, checkTableChange, seesIt, eventGroup, forget(){ cache = null; } };
 };
 // Who sees an event series or an event (eventSeries' and events' `visibleTo`, 2026-11-02): that
 // group and those above; 'public' is anyone, even signed out. Without one, BOLD-internal (what every
@@ -230,4 +277,4 @@ const visibleLevels = (group) => VISIBILITY.filter((l) => VIS_RANK[l] <= (VIS_RA
 const VISIBILITY_NAMES = { public: 'Anyone, even signed out', everyone: 'Everyone signed in', associate: 'BOLD-associate and above',
   internal: 'BOLD-internal and above', staff: 'BOLD-staff and above', exec: 'BOLD-exec' };
 
-Object.assign(module.exports, { VISIBILITY, VIS_RANK, visibilityOf, seesEvent, visibleLevels, VISIBILITY_NAMES, ACCESS_PART, ACCESS_INTRO, setAccessRow, accessPartBody, accessChangeText, accessRowsChanged, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, GUIDE_AREAS, guideArea, parseAccessTable, accessTableMarkdown, rank });
+Object.assign(module.exports, { accessColumns, parseEditTable, VISIBILITY, VIS_RANK, visibilityOf, seesEvent, visibleLevels, VISIBILITY_NAMES, ACCESS_PART, ACCESS_INTRO, setAccessRow, accessPartBody, accessChangeText, accessRowsChanged, PAGES, LEVELS, LEVEL_NAMES, DEFAULT_PAGES, REVIEWED, GUIDE_AREAS, guideArea, parseAccessTable, accessTableMarkdown, rank });

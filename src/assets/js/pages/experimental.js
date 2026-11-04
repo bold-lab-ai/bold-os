@@ -25,7 +25,7 @@
       '<label>Name<input type="text" class="ex-title" maxlength="80" value="' + esc(x.title || '') + '"></label>' +
       '<label>What it is<textarea class="ex-summary no-tags" rows="3" maxlength="600">' + esc(x.summary || '') + '</textarea></label>' +
       '<label>Its address (https://…, empty while it isn’t running)<input type="url" class="ex-try" maxlength="1000" value="' + esc(x.tryUrl || '') + '" placeholder="https://…"></label>' +
-      '<label>Read about it (link, optional)<input type="url" class="ex-about" maxlength="1000" value="' + esc(x.aboutUrl || '') + '" placeholder="https://…"></label>' +
+      '<label>Read about it (link, optional)<input type="url" class="ex-about" maxlength="1000" value="' + esc(x.aboutUrl || '') + '" placeholder="https://…"></label>' + BOLD.linkNote() +
       '<p class="ev-error" hidden></p><div class="event-form-actions">' +
         '<button type="button" class="ev-save ex-save">' + (x.id ? 'Save' : 'Add') + '</button>' +
         '<button type="button" class="ex-cancel">Cancel</button></div></div>';
