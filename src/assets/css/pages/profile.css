@@ -187,3 +187,6 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .nt-push{font-family:var(--sans); font-size:13px; margin:0 0 12px; padding:8px 10px; border:1px solid var(--line);}
 .nt-push-label{font-weight:600; margin-right:6px;}
 .nt-devices{list-style:none; margin:6px 0 0; padding:0;}
+/* Settings: what saving is doing, beside its button (Saving…, Saved at 10:52). */
+.st-saving{font-family:var(--sans); font-size:13px; color:var(--muted); align-self:center;}
+.st-saving.is-saved{color:var(--success-text, var(--ink-soft));}

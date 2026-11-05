@@ -12,6 +12,20 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var me = null, staff = null, invite = null, form = null, groups = {}, webPush = {}, unsubs = [], editing = false;
+  // What saving is doing, shown beside its button and kept across redraws: busy ('Checking…',
+  // 'Saving…') or when it last saved. One for the Slack, Join form and Notifications tabs, one for Features.
+  var saving = { settings: { busy: '', at: 0 }, pilot: { busy: '', at: 0 } };
+  function savedNote(k){
+    var x = saving[k];
+    if (x.busy) return '<span class="st-saving" role="status">' + esc(x.busy) + '</span>';
+    if (!x.at) return '<span class="st-saving" role="status"></span>';
+    return '<span class="st-saving is-saved" role="status">Saved at ' + new Date(x.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) + '</span>';
+  }
+  // While saving, the button and its note say so (without redrawing the form, which would lose what's typed).
+  function busyNow(btn, k, text){
+    saving[k].busy = text; btn.disabled = true; btn.textContent = text;
+    var n = btn.parentNode.querySelector('.st-saving'); if (n) { n.textContent = ''; n.classList.remove('is-saved'); }
+  }
   // Pilots: a new Slack feature only messages its testers until it's switched live here.
   // pilotDraft: the form's testers and switches.
   var pilot = null, pilotDraft = null, pilotError = '', roster = [];
@@ -67,7 +81,7 @@
   function settingsHtml(){
     var inv = invite || {}, f = form || {};
     var group = function(title){ return '<fieldset class="md-group"><legend>' + title + '</legend>'; };
-    var save = '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div>';
+    var save = '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save"' + (saving.settings.busy ? ' disabled' : '') + '>' + (saving.settings.busy || 'Save settings') + '</button>' + savedNote('settings') + '</div>';
     var row = function(label, inner, err){ return '<div class="st-row"><span class="st-row-label">' + esc(label) + '</span>' + inner + (err ? '<p class="st-error">' + esc(err) + '</p>' : '') + '</div>'; };
     // Each tab its own box; the Slack and Join form tabs are one form (.jr-settings).
     return '<nav class="guide-tabs profile-tabs" id="stTabs" aria-label="Settings">' + TABS.map(function(t){ return '<a class="guide-tab" href="#' + t[0] + '">' + t[1] + '</a>'; }).join('') + '</nav>' +
@@ -149,8 +163,8 @@
         return mine.length ? '<h3 class="jr-feature-group">' + esc(g[0]) + '</h3>' + mine.map(function(k){ return featureHtml(k, g[0]); }).join('') : '';
       }).join('') : '<p class="proj-meta">None yet: a feature appears here once it’s deployed.</p>') +
       '</fieldset>' + (pilotError ? '<p class="ev-error">' + esc(pilotError) + '</p>' : '') +
-      '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (pilotDraft ? '' : ' disabled title="Nothing changed"') + '>Save features</button>' +
-        (pilotDraft ? '<button type="button" class="jr-pilot-cancel">Cancel</button>' : '') + '</div></div>';
+      '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (saving.pilot.busy ? ' disabled' : pilotDraft ? '' : ' disabled title="Nothing changed"') + '>' + (saving.pilot.busy || 'Save features') + '</button>' +
+        (pilotDraft && !saving.pilot.busy ? '<button type="button" class="jr-pilot-cancel">Cancel</button>' : '') + savedNote('pilot') + '</div></div>';
     function featureHtml(k, group){
         var label = known[k].indexOf(group + ': ') === 0 ? known[k].slice(group.length + 2) : known[k];
         label = label.charAt(0).toUpperCase() + label.slice(1);
@@ -165,10 +179,10 @@
     (goingLive.length ? BOLD.confirmAlways({ title: 'Make ' + (goingLive.length === 1 ? 'it' : 'them') + ' live?', go: 'Make live',
       effects: goingLive.map(function(k){ return 'Let ' + (known[k] || k) + ' message everyone it’s for on Slack, not just the testers'; }) }) : Promise.resolve(true)).then(function(ok){
       if (!ok) return;
-      btn.disabled = true; pilotError = '';
+      pilotError = ''; busyNow(btn, 'pilot', 'Saving…');
       db.collection('settings').doc('pilot').set({ testers: d.testers, pilotTesters: d.pilotTesters, live: d.live, updatedAt: Date.now(), updatedBy: me.email }, { merge: true }).then(function(){
-        pilotDraft = null; render();
-      }).catch(function(err){ console.error('[BOLD Settings] saving the pilots failed', err); pilotError = 'Couldn’t save — try again.'; render(); });
+        pilotDraft = null; saving.pilot = { busy: '', at: Date.now() }; render();
+      }).catch(function(err){ console.error('[BOLD Settings] saving the pilots failed', err); saving.pilot.busy = ''; pilotError = 'Couldn’t save — try again.'; render(); });
     });
   }
 
@@ -234,15 +248,15 @@
     });
     // A channel the bot can't see (a typo, or a private one it isn't in) isn't saved: nobody
     // would be added to it, and nobody would know (checkGroupChannels).
-    btn.disabled = true; err.hidden = true;
+    err.hidden = true; busyNow(btn, 'settings', newNames.length ? 'Checking the channels…' : 'Saving…');
+    var idle = function(){ saving.settings.busy = ''; btn.disabled = false; btn.textContent = 'Save settings'; };
     checkChannels(newNames).then(function(missing){
-      btn.disabled = false;
-      if (missing) { err.textContent = missing; err.hidden = false; return; }
+      if (missing) { idle(); err.textContent = missing; err.hidden = false; return; }
       (added.length ? BOLD.confirmAlways({ title: 'Save the settings?', go: 'Save', effects: added }) : Promise.resolve(true)).then(function(ok){
-        if (ok) writeSettings(btn, err, mine);
+        if (ok) writeSettings(btn, err, mine); else idle();
       });
     }).catch(function(e){
-      btn.disabled = false;
+      idle();
       console.error('[BOLD Settings] checking the channels failed', e);
       err.textContent = 'Couldn’t check the channels on Slack — try again.'; err.hidden = false;
     });
@@ -279,7 +293,7 @@
     // A channel that failed is tried again by saving (onGroupChannels), even with nothing changed.
     var failed = Object.keys(groups.channelErrors || {}).length || Object.keys(groups.roleChannelErrors || {}).length;
     if (failed && keys.indexOf('groups') < 0) keys.push('groups');
-    btn.disabled = true; err.hidden = true;
+    err.hidden = true; busyNow(btn, 'settings', 'Saving…');
     db.runTransaction(function(tx){
       var refs = keys.map(function(k){ return db.collection('settings').doc(SETTINGS_DOCS[k]); });
       return Promise.all(refs.map(function(r){ return tx.get(r); })).then(function(snaps){
@@ -293,11 +307,12 @@
         });
       });
     }).then(function(){
-      editing = false; btn.disabled = false; btn.textContent = 'Saved'; setTimeout(function(){ btn.textContent = 'Save settings'; }, 1500);
+      editing = false; saving.settings = { busy: '', at: Date.now() };
       render();
     }).catch(function(e){
       console.error('[BOLD Settings] saving the settings failed', e);
-      err.textContent = 'Couldn’t save — try again.'; err.hidden = false; btn.disabled = false;
+      saving.settings.busy = ''; btn.disabled = false; btn.textContent = 'Save settings';
+      err.textContent = 'Couldn’t save — try again.'; err.hidden = false;
     });
   }
 
