@@ -973,7 +973,7 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .proj-group h3{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-soft); margin:0 0 2px;}
 .proj-count{margin-left:6px; font-weight:400; color:var(--muted);}
 .proj-list{list-style:none; margin:0; padding:0;}
-.proj-list li{padding:12px 0; border-bottom:1px solid var(--rule);}
+.proj-list li{padding:12px 0; border-bottom:1px solid var(--rule); line-height:1.55;}
 .proj-title{font-family:var(--sans); font-size:16px; font-weight:600;}
 .proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .proj-meta a{color:inherit;}
