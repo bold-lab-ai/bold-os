@@ -16,9 +16,8 @@ export default {
   // BOLD's Slack workspace (not a secret: it's in every Slack web address). Named on sign-in so
   // Slack signs returning people straight in, without its consent screen (bold.js BOLD.signIn).
   slackTeam: 'T0B7DUVFEM8',
-  // Desktop notifications (Web Push, notifications.html): the public half of the project's Web Push
-  // certificate (Firebase console › Project settings › Cloud Messaging › Web configuration). Public by
-  // design: browsers hand it to the push service. Empty: desktop notifications aren't offered yet.
+  // Desktop notifications' Web Push key: set on the site (Settings › Notifications, settings/webPush);
+  // this one only if that's empty (e.g. the local test copy).
   webPushKey: '',
   firebase: TEST ? { apiKey: 'demo-key', authDomain: 'localhost', projectId: 'demo-bold-os', storageBucket: 'demo-bold-os.appspot.com', appId: 'demo' } : {
     apiKey: 'AIzaSyDNKEMYuV0gehbKoM2acafzVbBQL489yDY',

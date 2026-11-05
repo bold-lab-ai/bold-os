@@ -11,7 +11,7 @@
   if (!main || !BOLD.getAuth()) return;
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
-  var me = null, staff = null, invite = null, form = null, groups = {}, unsubs = [], editing = false;
+  var me = null, staff = null, invite = null, form = null, groups = {}, webPush = {}, unsubs = [], editing = false;
   // Pilots: a new Slack feature only messages its testers until it's switched live here.
   // pilotDraft: the form's testers and switches.
   var pilot = null, pilotDraft = null, pilotError = '', roster = [];
@@ -27,7 +27,8 @@
   // Join form (#join: its choices and the welcome email) and Features (#features: each Slack
   // feature's switch and testers, the pilots; #pilots, its old name, opens it). The first two
   // are one form, saved from either.
-  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['features', 'Features']];
+  // Notifications (#notifications): the Web Push key desktop notifications use (settings/webPush).
+  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['features', 'Features']];
   // A list typed in one at a time, as keywords are on the register form: type, Enter or +,
   // × to remove (project.css .kw-*). kind: 'chan' (Slack channels, shown with #), 'role',
   // 'pillar'; key: the group's or role's for channels.
@@ -86,6 +87,10 @@
       row('Research pillars', chipsHtml('pillar', '', f.pillars || BoldJoin.PILLARS)) + '</fieldset>' +
       group('Welcome email') + '<label>Subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
       '<label>Text ({name}: their first name, {slackInvite}: the invite link, on the Slack tab, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label></fieldset>' +
+      save + '</div></section>' +
+      '<section class="profile-panel" id="notifications"><div class="event-form join-form">' + group('Desktop notifications') +
+      '<p class="proj-meta">The public key of the project’s Web Push certificate (Firebase console › Project settings › Cloud Messaging › Web Push certificates). Public: browsers hand it to their push service. Empty: Notifications doesn’t offer desktop notifications.</p>' +
+      '<label>Web Push key<input type="text" class="jr-push-key" maxlength="200" spellcheck="false" autocomplete="off" value="' + esc((webPush || {}).publicKey || '') + '" placeholder="B…"></label></fieldset>' +
       save + '</div></section></div>' +
       '<section class="profile-panel" id="features">' + pilotHtml() + '</section>';
   }
@@ -203,7 +208,8 @@
     return {
       invite: { slackInviteUrl: url, slackInviteExpires: v('.jr-expires'), subject: v('.jr-subject').trim() || SUBJECT, body: v('.jr-body') || BODY },
       form: { roles: roles, pillars: pillars },
-      groups: { channels: channels, roleChannels: roleChannels }
+      groups: { channels: channels, roleChannels: roleChannels },
+      push: { publicKey: v('.jr-push-key').trim() }
     };
   }
   // What the form showed when it was drawn: saving writes only what was changed since.
@@ -255,7 +261,7 @@
   // Each settings document is written only if something in it was changed, and then
   // only the fields (and, in a map, the entries) that were: the rest is kept as saved
   // now, so two people saving different settings at once both keep theirs.
-  var SETTINGS_DOCS = { invite: 'joinInvite', form: 'joinForm', groups: 'groups' };
+  var SETTINGS_DOCS = { invite: 'joinInvite', form: 'joinForm', groups: 'groups', push: 'webPush' };
   function writeSettings(btn, err, mine){
     var from = settingsFrom || mine;
     var same = function(a, b){ return JSON.stringify(a) === JSON.stringify(b); };
@@ -333,6 +339,7 @@
       watch('joinForm', function(x){ form = x; });
       watch('groups', function(x){ groups = x; });
       watch('pilot', function(x){ pilot = x; });
+      watch('webPush', function(x){ webPush = x; });
     }).catch(function(err){ console.error('[BOLD Settings] checking access failed', err); staff = false; render(); });
   });
 })();

@@ -2740,7 +2740,9 @@ function badgesForCard(card){
 // Pure: gatherDashboard()'s sections → the profile page's three lists.
 function projectsFromDashboard(sections){
   const item = function(i, role){
-    const out = { boardId: i.boardId, boardLabel: i.boardLabel, cardId: i.cardId, title: i.title, badges: badgesForCard(i.card) };
+    // Its Internal Review stage only while it's in submission (on a venue's board, no outcome yet; 2026-11-05).
+    const inSubmission = !!i.boardId && projectGroupForCard(i.card || {}, false, true, false) === 'submission';
+    const out = { boardId: i.boardId, boardLabel: i.boardLabel, cardId: i.cardId, title: i.title, badges: inSubmission ? badgesForCard(i.card) : [] };
     if (role) out.role = role;
     return out;
   };
@@ -2772,7 +2774,8 @@ exports.getMyProjects = onCall(
       db.collection('projectWorkspaces').where('members', 'array-contains', email).get(),
     ]);
     const out = projectsFromDashboard(sections);
-    const loose = (d) => ({ boardId: null, boardLabel: 'No venue yet', cardId: d.id, title: d.data().title || 'Untitled', badges: badgesForCard(d.data()) });
+    // No venue yet: not in submission, so no Internal Review stage.
+    const loose = (d) => ({ boardId: null, boardLabel: 'No venue yet', cardId: d.id, title: d.data().title || 'Untitled', badges: [] });
     out.owner = out.owner.concat(ownSnap.docs.map(loose));
     out.author = out.author.concat(authSnap.docs.map(loose));
     const listed = new Set(out.owner.concat(out.author).map((i) => i.cardId));

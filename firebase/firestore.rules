@@ -272,6 +272,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Desktop notifications' Web Push key (Settings › Notifications): public, read by everyone signed in
+    // (notifications.html), set by PIs and admins.
+    match /settings/webPush {
+      allow read: if isSignedIn();
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['publicKey', 'updatedAt', 'updatedBy'])
+        && request.resource.data.get('publicKey', '') is string && request.resource.data.get('publicKey', '').size() <= 200;
+    }
     match /settings/joinInvite {
       allow read: if hasFullWrite();
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['slackInviteUrl', 'slackInviteExpires', 'subject', 'body', 'updatedAt', 'updatedBy'])

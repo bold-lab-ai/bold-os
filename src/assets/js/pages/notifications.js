@@ -22,18 +22,20 @@
   // Turned on per browser: the browser asks permission, Firebase Cloud Messaging gives it a token
   // (through firebase-messaging-sw.js, the site's service worker), and pushDevices keeps it for you;
   // every notification then shows on this computer too, even with BOLD.OS closed. Your devices are
-  // listed, each can be removed. Not offered without the site's key (site.js webPushKey) or in a
+  // listed, each can be removed. Not offered without the key (Settings › Notifications) or in a
   // browser without push.
-  var push = { devices: null, busy: false, msg: '', mine: '' };
+  var push = { devices: null, busy: false, msg: '', mine: '', key: '' };
+  // The key, from Settings › Notifications (settings/webPush), or site.js's if it has one.
+  function pushKey(){ return push.key || window.BOLD_WEB_PUSH_KEY || ''; }
   try { push.mine = localStorage.getItem('boldPushToken') || ''; } catch (e){}
-  function pushSupported(){ return !!(window.BOLD_WEB_PUSH_KEY && 'Notification' in window && 'serviceWorker' in navigator && window.PushManager && firebase.messaging); }
+  function pushSupported(){ return !!(pushKey() && 'Notification' in window && 'serviceWorker' in navigator && window.PushManager && firebase.messaging); }
   function deviceLabel(){
     var ua = navigator.userAgent, b = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'A browser';
     var os = /Mac OS X/.test(ua) ? (/iPhone|iPad/.test(ua) ? 'iOS' : 'Mac') : /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /Linux/.test(ua) ? 'Linux' : '';
     return b + (os ? ' on ' + os : '');
   }
   function pushHtml(){
-    if (!window.BOLD_WEB_PUSH_KEY) return '';
+    if (!pushKey()) return '';
     var head = '<div class="nt-push"><span class="nt-push-label">Desktop notifications</span> ';
     if (!pushSupported()) return head + '<span class="detail-muted">This browser can’t show them.</span></div>';
     var on = push.mine && (push.devices || []).some(function(d){ return d.current; });
@@ -48,7 +50,7 @@
       }).join('') + '</ul>' : '') + '</div>';
   }
   function loadDevices(){
-    if (!window.BOLD_WEB_PUSH_KEY) return;
+    if (!pushKey()) return;
     call('pushDevices', { action: 'list', token: push.mine }).then(function(r){ push.devices = (r.data || {}).devices || []; draw(); })
       .catch(function(err){ console.error('[BOLD Notifications] loading your devices failed', err); });
   }
@@ -58,7 +60,7 @@
       if (p !== 'granted') throw { quiet: true, msg: p === 'denied' ? 'Blocked: allow notifications for this site in the browser’s settings.' : '' };
       return navigator.serviceWorker.register('firebase-messaging-sw.js');
     }).then(function(reg){
-      return firebase.messaging().getToken({ vapidKey: window.BOLD_WEB_PUSH_KEY, serviceWorkerRegistration: reg });
+      return firebase.messaging().getToken({ vapidKey: pushKey(), serviceWorkerRegistration: reg });
     }).then(function(token){
       if (!token) throw { msg: 'The browser gave no token — try again.' };
       push.mine = token;
@@ -100,7 +102,7 @@
   function noteHtml(n){
     var label = SOURCE_LABEL[n.source] || 'BOLD.OS';
     return '<li class="nt-item' + (n.read ? '' : ' is-unread') + '" data-id="' + esc(n.id) + '">' +
-      (n.href ? '<a class="nt-text" href="' + esc(n.href) + '" data-open="' + esc(n.id) + '">' + esc(n.text) + '</a>' : '<span class="nt-text">' + esc(n.text) + '</span>') +
+      (n.href ? '<a class="proj-title nt-text" href="' + esc(n.href) + '" data-open="' + esc(n.id) + '">' + esc(n.text) + '</a>' : '<span class="proj-title nt-text">' + esc(n.text) + '</span>') +
       '<span class="proj-meta">' + esc(label + ' · ' + ago(n.at)) + ' · <button type="button" class="btn-text nt-toggle" data-id="' + esc(n.id) + '">' + (n.read ? 'Mark unread' : 'Mark read') + '</button></span></li>';
   }
   function draw(){
@@ -172,7 +174,8 @@
     if (!user) return;
     me = String(user.email || '').toLowerCase();
     draw();
-    loadDevices();
+    db().collection('settings').doc('webPush').get().then(function(x){ push.key = (x.exists && x.data().publicKey) || ''; draw(); loadDevices(); })
+      .catch(function(){ loadDevices(); });
     firebase.app().functions('europe-west2').httpsCallable('myRequests')().then(function(r){
       if (mine !== asked) return;
       reqs = r.data || {};
