@@ -455,7 +455,9 @@ service cloud.firestore {
         // announce: false when whoever added it chose not to post it in the project's channel;
         // doneQuiet: true when whoever moved it to Done chose not to tell whoever raised it.
         // milestone: the id of one of the board's milestones (work.milestones on the workspace), or ''.
-        return d.keys().hasOnly(['title', 'notes', 'kind', 'column', 'assignees', 'assigneeEmails', 'links', 'images', 'announce', 'doneQuiet', 'milestone', 'by', 'at', 'updatedAt', 'updatedBy', 'movedAt']) &&
+        // labels: names, several a card ("Good first issue", 2026-11-05), unlike its one milestone.
+        return d.keys().hasOnly(['title', 'notes', 'kind', 'column', 'assignees', 'assigneeEmails', 'links', 'images', 'announce', 'doneQuiet', 'milestone', 'labels', 'by', 'at', 'updatedAt', 'updatedBy', 'movedAt']) &&
+          d.get('labels', []) is list && d.get('labels', []).size() <= 10 &&
           d.get('announce', true) is bool && d.get('doneQuiet', false) is bool &&
           d.get('milestone', '') is string && d.get('milestone', '').size() <= 20 &&
           d.title is string && d.title.size() > 0 && d.title.size() <= 200 &&
