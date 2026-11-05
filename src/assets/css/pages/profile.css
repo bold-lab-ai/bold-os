@@ -182,7 +182,6 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .nt-item .nt-text{font-weight:400;}
 .nt-item.is-unread .nt-text{font-weight:600;}
 .nt-item.is-unread .nt-text::before{content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent); margin-right:8px; vertical-align:2px;}
-.nt-unread-count{font-size:11px; color:var(--accent); margin-left:4px;}
 /* Desktop notifications, above the Inbox: on or off in this browser, and your other devices. */
 .nt-push{font-family:var(--sans); font-size:13px; margin:0 0 12px; padding:8px 10px; border:1px solid var(--line);}
 .nt-push-label{font-weight:600; margin-right:6px;}

@@ -147,7 +147,7 @@
           }).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>') + '</section>';
     };
     body.innerHTML = '<nav class="guide-tabs profile-tabs" aria-label="Notifications">' +
-        '<a class="guide-tab" href="#inbox">Inbox' + (unread ? ' <span class="nt-unread-count">' + unread + ' unread</span>' : '') + '</a>' +
+        '<a class="guide-tab" href="#inbox">Inbox' + n(unread) + '</a>' +   // (N): unread, as To do's and Waiting's counts
         '<a class="guide-tab" href="#todo">To do' + n(forYou.length) + '</a>' +
         '<a class="guide-tab" href="#waiting">Waiting' + n(byYou.length) + '</a></nav>' +
       '<section class="profile-panel" id="inbox">' + pushHtml() +
