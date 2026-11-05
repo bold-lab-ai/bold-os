@@ -89,8 +89,9 @@
   function msgHtml(m, pid){
     // A leaf (nobody has answered it yet: where the conversation goes on) is marked.
     return '<li class="bs-line' + (kids(m.id).length ? '' : ' is-leaf') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
-      '<p class="bs-by">' + by(m) + '</p>' + md(m.body) +
-      '<div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div>' + replyForm(m, pid) + '</li>';
+      // The author, and on the same line, on the right, its vote and buttons.
+      '<div class="bs-line-head"><p class="bs-by">' + by(m) + '</p><div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div></div>' +
+      md(m.body) + replyForm(m, pid) + '</li>';
   }
   var lastAt = function(id){ return kids(id).reduce(function(t, x){ return Math.max(t, ms(x.at), lastAt(x.id)); }, 0); };
   // A column: a message, then its first reply (made while it was a leaf: the conversation going on), and
