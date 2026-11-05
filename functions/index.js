@@ -2647,7 +2647,7 @@ function markJoined(shown, mine){
 }
 
 // Whether `email` joins a project straight away (BOLDiquette › Who can do what, 2026-11-04):
-// BOLD-internal and above, with Projects' Edit. Below, they ask to join (projectInvite 'ask').
+// BOLD-internal and above, with Projects' Edit. BOLD-associate asks to join; PAN-BOLD talks to its lead.
 async function joinsStraightAway(email){
   return (await access.can(email, 'projects', 'edit')) && accessLib.rank(await access.groupFor(email)) >= accessLib.rank('internal');
 }
@@ -2671,7 +2671,8 @@ exports.getAllProjects = onCall(
     const full = await access.can(email, 'projects', 'view');
     // Who can do what: View sees them all in full (everyone signed in, once the table is Page | Edit,
     // 2026-11-04); below it, the titles. Joining: BOLD-internal and above straight away; BOLD-associate
-    // and PAN-BOLD ask, and its lead accepts.
+    // asks, and its lead accepts; PAN-BOLD talks to its lead, who adds them.
+    const group = await access.groupFor(email);
     const joins = await joinsStraightAway(email);
     const askOnly = !joins;
     const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, mineAsked] = await Promise.all([
@@ -2698,10 +2699,23 @@ exports.getAllProjects = onCall(
     // Their own asks and invitations, on each title: asked (waiting on its lead) or invited (theirs to answer).
     const pending = {};
     mineAsked.docs.forEach(function(d){ const v = d.data(); if (v.status === 'asked') pending[v.pid] = { asked: true }; else if (v.status === 'open') pending[v.pid] = { invited: d.id }; });
-    // Seen in full but not joined straight away (BOLD-associate and PAN-BOLD, 2026-11-05): Ask to join, which its lead accepts.
-    if (!joins) items.forEach(function(i){ if (!i.joined && !i.titleOnly) i.ask = true; });
+    // Seen in full but not joined straight away (BOLD-associate): Ask to join, which its lead accepts.
+    if (!joins && group !== 'pan') items.forEach(function(i){ if (!i.joined && !i.titleOnly) i.ask = true; });
     items.forEach(function(i){ if (pending[i.pid] && !i.joined) Object.assign(i, pending[i.pid]); });
     if (askOnly) shown.askOnly = true;
+    // PAN-BOLD: "Talk to the lead" (a Slack DM, from a template) instead of asking to join (2026-11-03).
+    if (!joins && group === 'pan') {
+      const owner = {};
+      groups.ongoing.concat(groups.submission, groups.completed, groups.planned).forEach(function(i){ owner[i.pid] = { name: i.owner || '', email: i.ownerEmail || '' }; });
+      const ids = {};
+      for (const e of Array.from(new Set(Object.values(owner).map(function(o){ return o.email; }).filter(Boolean)))) ids[e] = await slackIdForEmail(e);
+      items.forEach(function(i){
+        if (i.joined) return;
+        delete i.ask; delete i.asked;
+        const o = owner[i.pid] || {};
+        i.talk = { name: o.name || 'the lead', slackId: ids[o.email] || '' };
+      });
+    }
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
     return shown;
@@ -3899,7 +3913,7 @@ exports.projectWorkspace = onCall(
     const lists = await access.can(email, 'projects', 'list');
     const data = request.data || {};
     if (!lists && ['templates', 'mine', 'venues', 'join'].indexOf(data.action) >= 0) await access.requireAccess(email, 'projects', 'list');
-    // Joining straight away is for BOLD-internal and above; below, they ask, and its lead accepts.
+    // Joining straight away is for BOLD-internal and above; BOLD-associate asks, PAN-BOLD talks to its lead.
     if (data.action === 'join' && !(await joinsStraightAway(email))) throw new HttpsError('permission-denied', 'Ask to join it: its lead accepts. (Joining straight away is for BOLD-internal and above.)');
     if (data.action === 'templates') return { templates: await projectTemplates() };
     if (data.action === 'mine'){
@@ -5871,6 +5885,8 @@ exports.projectInvite = onCall(
     const email = callerEmail(request);
     const name = request.auth.token.name || email;
     if (d.action === 'ask') {
+      // PAN-BOLD talks to its owner first, who adds them (2026-11-03): no asking to join.
+      if ((await access.groupFor(email)) === 'pan') throw new HttpsError('failed-precondition', 'Talk to the lead on Slack first: they add you to it.');
       const id = String(d.id || ''), board = d.board ? String(d.board) : null;
       if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
       const snap = await cardRefFor(id, board).get();
