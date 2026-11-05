@@ -74,7 +74,8 @@
   // message's own replies are collapsed under it ("3 replies · last 2 h ago"); opened, they're a
   // block of their own, indented, where a run (each answering the one before) reads on in the block.
   function msgHtml(m, pid){
-    return '<li class="bs-line' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
+    // A leaf (nobody has answered it yet) is where the conversation goes on: marked.
+    return '<li class="bs-line' + (kids(m.id).length ? '' : ' is-leaf') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
       '<p class="bs-by">' + by(m) + '</p>' + md(m.body) +
       '<div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div>' + replyForm(m, pid) + '</li>';
   }
