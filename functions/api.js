@@ -131,10 +131,10 @@ module.exports = function(deps){
       return { ok: true };
     }
     if (d.action === 'activity') {
-      // agents.html: your tokens and what they did; with `all`, everyone's (PIs and admins: private
-      // whoever's group, BOLDiquette › Who can do what).
+      // agents.html: your tokens and what they did; with `all`, everyone's (whoever can view Agents:
+      // everyone signed in once the table is Page | Edit, 2026-11-05).
       const all = d.all === true;
-      if (all && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins see everyone’s agents.');
+      if (all) await access.requireAccess(email, 'agents', 'view');
       const [tokenDocs, logDocs] = await Promise.all([
         all ? db.collection('apiTokens').get().then((x) => x.docs) : mine(),
         (all ? db.collection('apiLog').orderBy('at', 'desc').limit(LOG_SHOWN) : db.collection('apiLog').where('email', '==', email)).get().then((x) => x.docs),
