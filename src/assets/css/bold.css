@@ -974,7 +974,7 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .proj-count{margin-left:6px; font-weight:400; color:var(--muted);}
 .proj-list{list-style:none; margin:0; padding:0;}
 .proj-list li{padding:12px 0; border-bottom:1px solid var(--rule);}
-.proj-title{font-size:16px; font-weight:600;}
+.proj-title{font-family:var(--sans); font-size:16px; font-weight:600;}
 .proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .proj-meta a{color:inherit;}
 .proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
