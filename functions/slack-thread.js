@@ -126,6 +126,32 @@ function threadOf(messages, names){
 // Pure: a Slack thread's post id, the same whichever way it came in.
 const postIdOf = (channel, thread) => 'slack-' + channel + '-' + String(thread).replace('.', '');
 
+// Pure: the card a moved thread gets, in Slack (an attachment with a coloured edge, Block Kit inside),
+// like an app's notification rather than a bot's line. kind 'moved': in the thread, for everyone in it;
+// 'nudge': to someone who replied there afterwards, only them. o: { title, url, byId, byName, replies,
+// channelName, private } → { text (the fallback, for notifications), attachments }.
+const CARD_COLOR = '#1f3a5f';
+function movedCard(kind, o){
+  o = o || {};
+  const clean = (t) => String(t || '').replace(/[<>|]/g, '');
+  const title = clean(o.title).slice(0, 280);
+  const who = o.byId ? '<@' + o.byId + '>' : clean(o.byName) || 'Someone';
+  const nudge = kind === 'nudge';
+  const head = nudge ? 'This thread lives on BOLD.OS now' : 'Thread moved to BOLD.OS';
+  const fields = [{ type: 'mrkdwn', text: '*MOVED BY*\n' + who }];
+  if (o.replies != null) fields.push({ type: 'mrkdwn', text: '*REPLIES*\n' + Number(o.replies || 0) });
+  if (o.private) fields.push({ type: 'mrkdwn', text: '*WHO SEES IT*\n' + (o.channelName ? clean(o.channelName) + '’s members' : 'This channel’s members') });
+  const blocks = [
+    { type: 'section', text: { type: 'mrkdwn', text: '*' + head + '*' + (title ? '\n“' + title + '”' : '') } },
+    { type: 'section', fields },
+    { type: 'actions', elements: [{ type: 'button', style: 'primary', text: { type: 'plain_text', text: nudge ? 'Reply on BOLD.OS' : 'Open on BOLD.OS' }, url: o.url, action_id: 'open_conversation' }] },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: nudge
+      ? 'Only you can see this. Your reply stays here, but it isn’t copied to BOLD.OS.'
+      : 'The thread stays writable. Anyone who replies here gets a private note pointing to BOLD.OS.' }] },
+  ];
+  return { text: head + (title ? ': “' + title + '”' : ''), attachments: [{ color: CARD_COLOR, blocks }] };
+}
+
 // Pure: whether Slack message event `e` is someone's reply in a thread (not its first message, not
 // a bot's, not an edit, a join or anything else with a subtype) → its thread's ts, or ''.
 function threadReplyOf(e){
@@ -138,13 +164,12 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
   const PAGE = SITE_URL + 'conversations.html';
   // A thread newly in Conversations says so in the thread, for everyone in it (pilot conversation-sent;
   // until it's live its testers get it instead). Not when one is refreshed. Never fails the send.
-  async function announce(token, link, channelName, r, who){
+  async function announce(token, link, channelName, r, who, whoId){
     if (r.existed || !postInChannel) return;
     const url = PAGE + '#post=' + encodeURIComponent(r.id);
-    await postInChannel(token, 'conversation-sent', link.channel, channelName || link.channel, {
-      thread_ts: link.thread, unfurl_links: false,
-      text: '📌 ' + slackText(who || 'Someone') + ' sent this thread to Conversations: <' + url + '|' + String(r.title).replace(/[<>|]/g, '') + '>. Vote and reply there.',
-    }).catch((e) => logger.warn('Announcing a thread in Conversations failed', { error: String(e && e.message || e) }));
+    const card = movedCard('moved', { title: r.title, url, byId: whoId, byName: who, replies: r.replies, channelName: r.channelName ? '#' + r.channelName : '', private: r.private });
+    await postInChannel(token, 'conversation-sent', link.channel, channelName || link.channel, Object.assign({ thread_ts: link.thread, unfurl_links: false }, card))
+      .catch((e) => logger.warn('Announcing a thread in Conversations failed', { error: String(e && e.message || e) }));
   }
   async function api(token, method, params){
     const res = await fetch('https://slack.com/api/' + method + '?' + new URLSearchParams(params), { headers: { 'Authorization': 'Bearer ' + token } });
@@ -243,7 +268,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
     try { await batch.commit(); }
     catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
-    return { id, title, existed: false, channelName: ch.name || '' };
+    return { id, title, existed: false, channelName: ch.name || '', replies: t.replies.length, private: vis.private };
   }
   async function personFor(email){
     const s = await db.collection('people').where('email', '==', email).limit(1).get();
@@ -262,7 +287,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     if (!link) throw new HttpsError('invalid-argument', 'That isn’t a link to a Slack message: in Slack, a message’s ⋯ menu → Copy link.');
     const p = await personFor(email);
     const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) });
-    await announce(token, link, r.channelName, r, p.name);
+    await announce(token, link, r.channelName, r, p.name, p.slackId || '');
     return r;
   });
 
@@ -291,7 +316,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       if (!/^\d{10}\.\d{6}$/.test(d.thread) || !d.channel) throw new HttpsError('invalid-argument', 'That message can’t be sent.');
       const token = SLACK_BOT_TOKEN.value(), link = { channel: d.channel, ts: d.thread, thread: d.thread };
       const r = await saveThread(token, link, d.team, { email, name: p.data().name || '', slackId: d.slackId });
-      await announce(token, link, r.channelName, r, p.data().name);
+      await announce(token, link, r.channelName, r, p.data().name, d.slackId);
       const url = PAGE + '#post=' + encodeURIComponent(r.id);
       out = { id: r.id, text: (r.existed ? 'Updated in Conversations: ' : 'Sent to Conversations: ') + '<' + url + '|' + String(r.title).replace(/[<>|]/g, '') + '>' };
     } catch (e) {
@@ -317,8 +342,9 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     const id = postIdOf(e.channel, thread), d = (await db.collection('conversations').doc(id).get()).data();
     if (!d || d.source !== 'slack') return false;
     const url = PAGE + '#post=' + encodeURIComponent(id);
-    await nudgeInThread(token, 'conversation-moved', { channel: e.channel, user: e.user, thread_ts: thread,
-      text: '📌 This thread has moved to BOLD.OS: <' + url + '|reply there>, where everyone in it can see and vote on replies.' });
+    const card = movedCard('nudge', { title: d.title, url, byName: (d.broughtBy || {}).name, replies: d.replies,
+      channelName: (d.slack || {}).channelName, private: d.private === true });
+    await nudgeInThread(token, 'conversation-moved', Object.assign({ channel: e.channel, user: e.user, thread_ts: thread }, card));
     return true;
   }
 
@@ -329,6 +355,7 @@ module.exports.slackPlain = slackPlain;
 module.exports.mayRead = mayRead;
 module.exports.isPrivate = isPrivate;
 module.exports.threadReplyOf = threadReplyOf;
+module.exports.movedCard = movedCard;
 module.exports.threadOf = threadOf;
 module.exports.slackMarkdown = slackMarkdown;
 module.exports.mrkdwnToMarkdown = mrkdwnToMarkdown;

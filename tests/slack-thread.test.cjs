@@ -2,7 +2,7 @@
 // which channels, and what comes back. Run: npm test
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseSlackLink, slackPlain, mayRead, isPrivate, threadReplyOf, threadOf, postIdOf } = require('../functions/slack-thread.js');
+const { parseSlackLink, slackPlain, mayRead, isPrivate, threadReplyOf, movedCard, threadOf, postIdOf } = require('../functions/slack-thread.js');
 
 test('a message link, or a reply’s, points to its thread', () => {
   assert.deepStrictEqual(parseSlackLink('https://bold-lab.slack.com/archives/C0BB6MPNTSS/p1730700000123456'), { channel: 'C0BB6MPNTSS', ts: '1730700000.123456', thread: '1730700000.123456' });
@@ -75,4 +75,18 @@ test('only someone’s reply in a thread is nudged: not its first message, a bot
   assert.strictEqual(threadReplyOf(Object.assign({}, r, { bot_id: 'B1' })), '');
   assert.strictEqual(threadReplyOf(Object.assign({}, r, { subtype: 'message_changed' })), '');
   assert.strictEqual(threadReplyOf(Object.assign({}, r, { subtype: 'channel_join' })), '');
+});
+
+test('a moved thread’s card: a title, who moved it, its replies, who sees it if private, and a button to BOLD.OS', () => {
+  const c = movedCard('moved', { title: 'Tiers <b>', url: 'https://x/c#post=1', byId: 'U1', replies: 3 });
+  assert.match(c.text, /^Thread moved to BOLD.OS: “Tiers b”$/);
+  const blocks = c.attachments[0].blocks, all = JSON.stringify(blocks);
+  assert.match(all, /<@U1>/);
+  assert.match(all, /REPLIES\*\\n3/);
+  assert.doesNotMatch(all, /WHO SEES IT/);
+  assert.strictEqual(blocks[2].elements[0].url, 'https://x/c#post=1');
+  const n = movedCard('nudge', { title: 'T', url: 'u', byName: 'Pat', private: true, channelName: '#core' });
+  assert.match(JSON.stringify(n.attachments[0].blocks), /#core’s members/);
+  assert.match(JSON.stringify(n.attachments[0].blocks), /Only you can see this/);
+  assert.strictEqual(n.attachments[0].blocks[2].elements[0].text.text, 'Reply on BOLD.OS');
 });

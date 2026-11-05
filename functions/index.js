@@ -1204,21 +1204,23 @@ async function nameForEmail(e){
   return (p && p.data().name) || String(e).split('@')[0];
 }
 // A message for whom it's for, in pilot: to each tester instead, marked. → true.
-async function toTesters(token, st, forWhom, text, blocks){
+async function toTesters(token, st, forWhom, text, blocks, attachments){
   const note = pilotNote(st.label, forWhom);
   for (const t of st.testers) {
     const id = await slackIdForEmail(t);
     if (!id) continue;
     const open = await slackFetch(token, 'conversations.open', { users: id });
     if (open.ok) await slackFetch(token, 'chat.postMessage', Object.assign({ channel: open.channel.id, text: note + '\n' + text, unfurl_links: false },
-      blocks ? { blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }].concat(blocks) } : {}));
+      blocks ? { blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }].concat(blocks) } : {},
+      // A card (attachments): the note above it, the card as they'd see it.
+      attachments ? { blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }], attachments } : {}));
   }
   return true;
 }
 // A post in a channel (by id; name for the pilot's note), as feature `key`. → Slack's answer.
 async function postInChannel(token, key, channelId, name, args){
   const st = await pilotState(key);
-  if (!st.live) { await toTesters(token, st, '#' + String(name || channelId).replace(/^#/, ''), args.text || '', args.blocks); return { ok: true, pilot: true }; }
+  if (!st.live) { await toTesters(token, st, '#' + String(name || channelId).replace(/^#/, ''), args.text || '', args.blocks, args.attachments); return { ok: true, pilot: true }; }
   return slackFetch(token, 'chat.postMessage', Object.assign({ channel: channelId }, args));
 }
 // A message only `user` sees, in a channel or one of its threads (chat.postEphemeral), as feature `key`;
@@ -1227,7 +1229,7 @@ async function nudgeInThread(token, key, args){
   const st = await pilotState(key);
   if (!st.live) {
     const p = (await db.collection('people').where('slackId', '==', String(args.user || '')).limit(1).get()).docs[0];
-    await toTesters(token, st, (p && p.data().name) || 'someone', args.text || '');
+    await toTesters(token, st, (p && p.data().name) || 'someone', args.text || '', null, args.attachments);
     return { ok: true, pilot: true };
   }
   const res = await slackFetch(token, 'chat.postEphemeral', Object.assign({ unfurl_links: false }, args));
