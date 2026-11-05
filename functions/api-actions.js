@@ -347,6 +347,8 @@ module.exports = function(ctx){
     // Its labels (several, e.g. Good first issue): the whole list, as given ([] for none).
     let labels;
     if (a.labels !== undefined) {
+      // A client with the tool's older description sends the list as text: JSON, or names split by commas.
+      if (typeof a.labels === 'string') { try { a.labels = JSON.parse(a.labels); } catch (e) { a.labels = a.labels.split(','); } }
       if (!Array.isArray(a.labels)) throw httpError(400, 'labels is a list of names.');
       labels = Array.from(new Set(a.labels.map((l) => String(l || '').trim().slice(0, 40)).filter(Boolean))).slice(0, 10);
     }
