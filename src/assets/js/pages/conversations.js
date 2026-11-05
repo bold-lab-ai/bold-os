@@ -81,6 +81,7 @@
       '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(leaf) + '"' + (why || (leaf === m.id ? '' : ' title="Reply at the end of this conversation"')) + '>Reply</button>' +
       '<button type="button" class="btn-text bs-reply-btn" data-branch="1" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (why || ' title="Start a new branch from this message"') + '>Branch out</button>' +
       (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
+      '<button type="button" class="btn-text bs-link" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '" title="Copy a link to this message">Copy link</button>' +
       (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>';
   }
   function replyForm(m, pid){
@@ -226,8 +227,27 @@
   }
 
   // ---------- the list, or one post's thread ----------
+  // The address: #post=<post id>, and &msg=<message id> for a link to one message in it.
+  function route(){
+    var m = location.hash.match(/^#post=([^&]+)(?:&msg=([^&]+))?$/) || [];
+    return { post: decodeURIComponent(m[1] || ''), msg: decodeURIComponent(m[2] || '') };
+  }
+  var linkedMsg = route().msg;   // a link to a message: shown once its thread is in
+  function msgLink(pid, id){
+    return location.origin + location.pathname + '#post=' + encodeURIComponent(pid) + (id && id !== pid ? '&msg=' + encodeURIComponent(id) : '');
+  }
+  // The linked message: its branches unfolded down to it, selected (as from the tree), in view.
+  function showLinked(pid){
+    var id = linkedMsg, m = msgOf(pid, id), n = 0;
+    linkedMsg = '';
+    if (!m) return;
+    while (m && parentOf(m) && n++ < 500) { opened[parentOf(m)] = true; m = msgOf(pid, parentOf(m)); }
+    treeSel = id;
+    render();
+    var el = document.getElementById('m-' + id); if (el) el.scrollIntoView({ block: 'center' });
+  }
   function render(){
-    var open = decodeURIComponent((location.hash.match(/^#post=(.+)$/) || [])[1] || '');
+    var open = route().post;
     if (open !== openId) watchThread(open);
     var p = open && postOf(open);
     postsEl.hidden = !!open; sortEl.hidden = !!open; threadEl.hidden = !open;
@@ -246,6 +266,7 @@
         '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + columnHtml(p, p.id, head);
       clampLong();
       drawTree(p);
+      if (linkedMsg) { setTimeout(function(){ showLinked(p.id); }, 0); }
       var fresh = threadEl.querySelector('.bs-replyform');
       if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id') && keep.getAttribute('data-branch') === fresh.getAttribute('data-branch')) fresh.replaceWith(keep);
       else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
@@ -262,7 +283,7 @@
           '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
     }).join('') : '<li class="proj-msg">No posts yet: write one, start a chat with your agent, or bring in a Slack thread.</li>';
   }
-  window.addEventListener('hashchange', function(){ replying = ''; render(); window.scrollTo(0, 0); });
+  window.addEventListener('hashchange', function(){ replying = ''; linkedMsg = route().msg; render(); if (!linkedMsg) window.scrollTo(0, 0); });
   function watchThread(id){
     if (stopMsgs) { stopMsgs(); stopMsgs = null; }
     openId = id;
@@ -425,6 +446,12 @@
     var b = e.target.closest('button');
     if (!b || b.disabled) return;
     var id = b.getAttribute('data-id'), pid = b.getAttribute('data-pid');
+    if (b.classList.contains('bs-link')) {
+      var url = msgLink(pid, id), done = function(t){ b.textContent = t; setTimeout(function(){ b.textContent = 'Copy link'; }, 1500); };
+      if (navigator.clipboard) navigator.clipboard.writeText(url).then(function(){ done('Copied'); }, function(){ done('Couldn’t copy'); });
+      else done('Couldn’t copy');
+      return;
+    }
     if (b.classList.contains('bs-more')) {
       unfolded[id] = !unfolded[id]; render();
       // Folding it again: back to the message, not left far below it.
