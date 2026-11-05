@@ -2,7 +2,7 @@
 // which channels, and what comes back. Run: npm test
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseSlackLink, slackPlain, mayRead, threadOf, postIdOf } = require('../functions/slack-thread.js');
+const { parseSlackLink, slackPlain, mayRead, isPrivate, threadOf, postIdOf } = require('../functions/slack-thread.js');
 
 test('a message link, or a reply’s, points to its thread', () => {
   assert.deepStrictEqual(parseSlackLink('https://bold-lab.slack.com/archives/C0BB6MPNTSS/p1730700000123456'), { channel: 'C0BB6MPNTSS', ts: '1730700000.123456', thread: '1730700000.123456' });
@@ -58,4 +58,11 @@ test('Slack’s formatting comes in as Markdown: lines, lists and their nesting,
     'Plan for **Thursday**:\nfirst line\nsecond line\n\n- room [booked](https://x.org)\n  - @[Ari](U1) brings `snacks`\n1. one\n2. two\n\n> quoted\n\n```\nx = 1\n```\n\n👍');
   assert.strictEqual(mrkdwnToMarkdown('*Bold* and _it_ ~gone~\n• a\n• <https://x.org|b>\nhi <@U1>', { U1: 'Ari' }),
     '**Bold** and *it* ~~gone~~\n- a\n- [b](https://x.org)\nhi @[Ari](U1)');
+});
+
+test('a private channel or group DM is private; a public channel and a DM aren’t', () => {
+  assert.strictEqual(isPrivate({ is_private: true }), true);
+  assert.strictEqual(isPrivate({ is_mpim: true }), true);
+  assert.strictEqual(isPrivate({ is_private: false }), false);
+  assert.strictEqual(isPrivate({ is_im: true }), false);
 });

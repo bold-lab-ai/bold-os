@@ -55,7 +55,7 @@
   function origin(m){
     if (m.source !== 'slack' || !m.slack) return '';
     var s = m.slack;
-    return '<p class="bs-origin">From ' + (s.channelName ? esc(s.channelName) : 'Slack') +
+    return '<p class="bs-origin">' + (m.private ? '<span class="bs-private" title="Brought in from a private Slack channel: only its members see it here">Private: ' + (s.channelName ? esc(s.channelName) + '’s' : 'the channel’s') + ' members</span> · ' : '') + 'From ' + (s.channelName ? esc(s.channelName) : 'Slack') +
       (m.broughtBy && m.broughtBy.name ? ', brought in by ' + esc(m.broughtBy.name) : '') +
       (s.permalink ? ' · <a href="' + esc(s.permalink) + '" target="_blank" rel="noopener">Open in Slack</a>' : '') + '</p>';
   }
@@ -109,7 +109,7 @@
     postsEl.innerHTML = list.length ? list.map(function(q){
       var at = '#post=' + encodeURIComponent(q.id);
       return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
-        '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + '</p>' +
+        '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="Brought in from a private Slack channel: only its members see it here">Private</span>' : '') + '</p>' +
           (q.body && q.body.trim() !== q.title ? md(q.body).replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip"') : '') +
           '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
     }).join('') : '<li class="proj-msg">No posts yet: write one, start a chat with your agent, or bring in a Slack thread.</li>';
@@ -127,7 +127,7 @@
 
   // ---------- writing ----------
   function newPost(title, body, viaAgent){
-    var o = { title: title, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {} };
+    var o = { title: title, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, private: false };
     o.votes[me.uid] = 1;
     return col().add(o);
   }
@@ -339,10 +339,22 @@
       var b = sortEl.querySelector(c); b.disabled = !canStart; b.title = canStart ? '' : startWhy;
     });
     if (!BOLD.can('conversations', 'view')) { postsEl.innerHTML = '<li class="proj-msg">' + esc(BOLD.cannotReason('conversations', 'view')) + '</li>'; return; }
-    col().onSnapshot(function(snap){
-      posts = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+    // Open ones, and those brought in from a private Slack channel the viewer is in (readers: Slack user
+    // ids; firestore.rules seesConversation): two queries, as the rules allow no list mixing them.
+    var u = firebase.auth().currentUser, slackId = '';
+    ((u && u.providerData) || []).forEach(function(p){ if (p.providerId === 'oidc.slack') slackId = p.uid; });
+    var parts = { open: [], mine: [] };
+    var fail = function(err){ console.error('[BOLD Lab] loading conversations failed', err); postsEl.innerHTML = '<li class="proj-msg">Couldn’t load the conversations.</li>'; };
+    var merge = function(){
+      var seen = {}; posts = [];
+      parts.open.concat(parts.mine).forEach(function(p){ if (!seen[p.id]) { seen[p.id] = 1; posts.push(p); } });
       if (!document.activeElement || !document.activeElement.closest('.bs-replyform')) render();
-    }, function(err){ console.error('[BOLD Lab] loading conversations failed', err); postsEl.innerHTML = '<li class="proj-msg">Couldn’t load the conversations.</li>'; });
+    };
+    var watch = function(q, key){
+      q.onSnapshot(function(snap){ parts[key] = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); merge(); }, fail);
+    };
+    watch(col().where('private', '==', false), 'open');
+    if (slackId) watch(col().where('readers', 'array-contains', slackId), 'mine');
   });
   render();
 })();

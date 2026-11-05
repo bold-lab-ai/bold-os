@@ -2331,6 +2331,17 @@ exports.slackEvents = onRequest(
       res.status(200).send('');
       return;
     }
+    // Someone joins or leaves a private channel: the conversations brought in from it follow its
+    // members (slack-thread.js syncReaders). Needs the member_joined_channel and member_left_channel
+    // event subscriptions; sending a thread again refreshes them too.
+    if (body.type === 'event_callback' && body.event && (body.event.type === 'member_joined_channel' || body.event.type === 'member_left_channel')){
+      if (body.event.channel_type !== 'C') {
+        try { await conversationsSlack.syncReaders(token, body.event.channel); }
+        catch (err){ logger.error('syncReaders threw', { channel: body.event.channel, error: String(err) }); }
+      }
+      res.status(200).send('');
+      return;
+    }
     // Someone joins the Slack, or changes their name or email, or is deactivated: just
     // their entry in the people roster (the daily syncPeople catches anything missed).
     if (body.type === 'event_callback' && body.event && (body.event.type === 'team_join' || body.event.type === 'user_change')){

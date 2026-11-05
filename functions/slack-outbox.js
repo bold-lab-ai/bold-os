@@ -67,8 +67,10 @@ module.exports = function install(db){
         const c = String(args.channel || '');
         return ok({ channel: { id: c, name: c.replace(/^C-?/, '').toLowerCase() || 'general', is_im: /^D/.test(c), is_private: /^C-?PRIVATE/i.test(c) } });
       }
+      // …WITHOUT<Slack id> at its end leaves that person out (a private channel someone isn’t in).
       case 'conversations.members': {
-        const people = (await db.collection('people').get()).docs.map((d) => d.data()).filter((p) => !/outsider/.test(p.email || ''));
+        const without = (/WITHOUT(U[A-Z0-9]+)$/i.exec(String(args.channel || '')) || [])[1] || '';
+        const people = (await db.collection('people').get()).docs.map((d) => d.data()).filter((p) => !/outsider/.test(p.email || '') && p.slackId !== without);
         return ok({ members: people.map((p) => p.slackId || 'U-' + p.email), response_metadata: { next_cursor: '' } });
       }
       case 'conversations.replies': {

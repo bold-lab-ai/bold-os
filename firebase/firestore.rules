@@ -781,21 +781,30 @@ service cloud.firestore {
         && d.createdBy == email().lower() && d.at == request.time && d.source == 'site'
         && d.get('viaAgent', false) is bool && okVotes(d);
     }
+    // A conversation brought in from a private Slack channel or group DM keeps that channel's
+    // visibility: only its members (readers, Slack user ids, as the sign-in carries) read it and
+    // its replies, PIs and admins included only if they're in it (slack-thread.js saveThread).
+    function slackUid() { return request.auth.token.firebase.identities['oidc.slack'][0]; }
+    // `private` is on every conversation (no default: a list must filter on it, or on readers, to be allowed).
+    function seesConversation(d) { return may('conversations', 'view') && (d.private == false || slackUid() in d.readers); }
+    function seesConversationId(pid) { return seesConversation(get(/databases/$(database)/documents/conversations/$(pid)).data); }
     match /conversations/{pid} {
-      allow read: if may('conversations', 'view');
+      allow read: if seesConversation(resource.data);
+      // Started on the site: always open to everyone who sees Conversations (private: false).
       allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
-        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes'])
+        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'private'])
+        && request.resource.data.private == false
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
-      allow update: if may('conversations', 'edit') && onlyMyVote();
-      allow delete: if may('conversations', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
+      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && onlyMyVote();
+      allow delete: if may('conversations', 'edit') && seesConversation(resource.data) && (resource.data.createdBy == email().lower() || hasFullWrite());
       match /messages/{mid} {
-        allow read: if may('conversations', 'view');
-        allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
+        allow read: if seesConversationId(pid);
+        allow create: if may('conversations', 'edit') && seesConversationId(pid) && okMessage(request.resource.data)
           && request.resource.data.keys().hasOnly(['parent', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes'])
           && exists(/databases/$(database)/documents/conversations/$(pid))
           && (request.resource.data.parent == pid || exists(/databases/$(database)/documents/conversations/$(pid)/messages/$(request.resource.data.parent)));
-        allow update: if may('conversations', 'edit') && onlyMyVote();
-        allow delete: if may('conversations', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
+        allow update: if may('conversations', 'edit') && seesConversationId(pid) && onlyMyVote();
+        allow delete: if may('conversations', 'edit') && seesConversationId(pid) && (resource.data.createdBy == email().lower() || hasFullWrite());
       }
     }
 

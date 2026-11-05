@@ -102,6 +102,8 @@ function mrkdwnToMarkdown(text, names){
 }
 
 // Pure: may this person read the channel? info: conversations.info's channel; isMember: whether they're in it.
+// Pure: a private channel or a group DM (not a direct message: those are never brought in).
+function isPrivate(ch){ return !!(ch && (ch.is_private || ch.is_mpim || ch.is_group)); }
 function mayRead(info, isMember){
   if (!info || info.is_im) return false;
   if (info.is_private || info.is_mpim || info.is_group) return !!isMember;
@@ -156,16 +158,9 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     if (!info.ok) refuse(info, 'channels');
     const ch = info.channel || {};
     if (ch.is_im) throw new HttpsError('permission-denied', 'Direct messages can’t be brought in.');
-    let member = false;
-    if (ch.is_private || ch.is_mpim || ch.is_group) {
-      let cursor = '';
-      do {
-        const r = await api(token, 'conversations.members', Object.assign({ channel: link.channel, limit: '1000' }, cursor ? { cursor } : {}));
-        if (!r.ok) refuse(r, 'who is in a channel');
-        if (slackId && (r.members || []).indexOf(slackId) >= 0) { member = true; break; }
-        cursor = (r.response_metadata && r.response_metadata.next_cursor) || '';
-      } while (cursor);
-    }
+    // A private channel's or group DM's members: who may bring it in, and who reads it on BOLD.OS (readers).
+    const members = isPrivate(ch) ? await membersOf(token, link.channel) : null;
+    const member = !!(members && slackId && members.indexOf(slackId) >= 0);
     if (!mayRead(ch, member)) throw new HttpsError('permission-denied', 'Only a thread you can read in Slack: you aren’t in that channel.');
     const messages = [];
     let cursor = '';
@@ -184,7 +179,30 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     }
     const t = threadOf(messages, names);
     if (!t) throw new HttpsError('not-found', 'That thread is empty.');
-    return { t, ch, messages };
+    return { t, ch, messages, members };
+  }
+  // Every member of channel `channel` (Slack user ids).
+  async function membersOf(token, channel){
+    const out = [];
+    let cursor = '';
+    do {
+      const r = await api(token, 'conversations.members', Object.assign({ channel, limit: '1000' }, cursor ? { cursor } : {}));
+      if (!r.ok) refuse(r, 'who is in a channel');
+      out.push(...(r.members || []));
+      cursor = (r.response_metadata && r.response_metadata.next_cursor) || '';
+    } while (cursor);
+    return out;
+  }
+  // Someone joined or left a private channel (Slack's member_joined_channel / member_left_channel):
+  // the conversations brought in from it follow its members (readers). → how many were updated.
+  async function syncReaders(token, channel){
+    const posts = (await db.collection('conversations').where('slack.channel', '==', String(channel || '')).get()).docs.filter((d) => d.data().private === true);
+    if (!posts.length) return 0;
+    const readers = await membersOf(token, channel);
+    const batch = db.batch();
+    posts.forEach((d) => batch.update(d.ref, { readers }));
+    await batch.commit();
+    return posts.length;
   }
 
   // Saves the thread as a post → { id, title, existed }. Sent again, it's refreshed: its text and its Slack
@@ -192,7 +210,11 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
   async function saveThread(token, link, team, sender){
     const id = postIdOf(link.channel, link.thread), ref = db.collection('conversations').doc(id);
     const had = await ref.get();
-    const { t, ch } = await readThread(token, link, sender.slackId);
+    const { t, ch, members } = await readThread(token, link, sender.slackId);
+    // Its Slack channel's visibility, inherited: a private channel's or group DM's conversation is read only by
+    // that channel's members (readers: Slack user ids, as the sign-in carries; firestore.rules), PIs and admins
+    // included only if they're in it. A public channel's, by everyone who sees Conversations.
+    const vis = { private: !!members, readers: members || [] };
     const first = (t.post.title.split('\n').map((l) => l.replace(/^[\s•◦▪-]+/, '').trim()).filter(Boolean)[0] || 'From Slack');
     const title = first.length > 120 ? first.slice(0, 117).replace(/\s+\S*$/, '') + '…' : first;
     const slack = { channel: link.channel, channelName: ch.name ? '#' + ch.name : '', thread: link.thread,
@@ -201,14 +223,14 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     const reply = (r) => ({ parent: id, body: r.text, name: r.who, createdBy: '', at: r.at, source: 'slack' });
     if (had.exists) {
       const old = had.data(), mine = (await ref.collection('messages').where('source', '==', 'slack').get()).size;
-      batch.set(ref, { title, body: t.post.text, slack, slackReplies: t.replies.length,
+      batch.set(ref, { title, body: t.post.text, slack, private: vis.private, readers: vis.readers, slackReplies: t.replies.length,
         replies: Math.max(0, (old.replies || 0) - (old.slackReplies != null ? old.slackReplies : mine)) + t.replies.length, refreshedAt: FieldValue.serverTimestamp() }, { merge: true });
       // Each Slack reply keeps its id (its place in the thread), so its votes stay.
       t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), reply(r), { merge: true }));
       await batch.commit();
       return { id, title, existed: true };
     }
-    batch.create(ref, { title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
+    batch.create(ref, { title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, private: vis.private, readers: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
       broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() });
     t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
     try { await batch.commit(); }
@@ -278,11 +300,12 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     await db.collection('conversations').doc(event.params.pid).set({ replies: FieldValue.increment(1) }, { merge: true }).catch(() => {});
   });
 
-  return { slackThread, handleShortcut, onConversationImport, onConversationMessage };
+  return { slackThread, handleShortcut, onConversationImport, onConversationMessage, syncReaders };
 };
 module.exports.parseSlackLink = parseSlackLink;
 module.exports.slackPlain = slackPlain;
 module.exports.mayRead = mayRead;
+module.exports.isPrivate = isPrivate;
 module.exports.threadOf = threadOf;
 module.exports.slackMarkdown = slackMarkdown;
 module.exports.mrkdwnToMarkdown = mrkdwnToMarkdown;
