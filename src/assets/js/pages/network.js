@@ -82,7 +82,7 @@
 
   function drawLineage(){
     var html = C.lineageHtml(all, dir, me);
-    el('nwMsg').textContent = html ? 'Who brought whom into BOLD: whoever invited them, else their point of contact, else a supervisor, else who approved them.' : 'Nobody’s lineage is known yet.';
+    el('nwMsg').textContent = html ? 'Who brought whom into BOLD: whoever invited them, else their point of contact, else a supervisor, else who approved them. Then their moves between groups.' : 'Nobody’s lineage is known yet.';
     graph.hidden = !html;
     graph.innerHTML = html;
     el('nwLegend').innerHTML = '';
@@ -144,7 +144,7 @@
   });
 
   function load(){
-    return Promise.all([C.loadAll(), dir ? dir : C.directory()]).then(function(r){ all = r[0]; dir = r[1]; build(); });
+    return Promise.all([C.loadAll(), dir ? dir : C.directory()]).then(function(r){ dir = r[1]; all = C.withoutTests(r[0], dir); build(); });
   }
 
   BOLD.onUser(function(user){

@@ -134,9 +134,11 @@ service cloud.firestore {
       allow read: if isSignedIn() && (email().lower() == memberEmail || may('people', 'view') || may('projects', 'view'));
       allow create, update: if may('profile', 'edit') && email().lower() == memberEmail
         && request.resource.data.email == memberEmail
-        && request.resource.data.keys().hasOnly(['name', 'email', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'bookingUrl', 'startDate', 'endDate', 'updatedAt', 'requestId', 'approvedBy', 'approvedAt', 'category', 'categoryBy', 'categoryAt', 'invitedBy'])
+        && request.resource.data.keys().hasOnly(['name', 'email', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'bookingUrl', 'startDate', 'endDate', 'updatedAt', 'requestId', 'approvedBy', 'approvedAt', 'category', 'categoryBy', 'categoryAt', 'categoryVia', 'invitedBy', 'test', 'testOf'])
+        // categoryVia (an accepted group request), test and testOf (a test account) are the server's: kept, never set here.
         && (resource == null
           ? !('approvedBy' in request.resource.data) && !('requestId' in request.resource.data) && !('approvedAt' in request.resource.data) && !('category' in request.resource.data) && !('invitedBy' in request.resource.data)
+            && !('categoryVia' in request.resource.data) && !('test' in request.resource.data) && !('testOf' in request.resource.data)
           : request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'bookingUrl', 'startDate', 'endDate', 'updatedAt']))
         && request.resource.data.name is string && request.resource.data.name.size() <= 120
         && request.resource.data.get('links', '').size() <= 500 && request.resource.data.get('interests', '').size() <= 300
@@ -195,7 +197,7 @@ service cloud.firestore {
     match /settings/groups {
       allow read: if may('people', 'view');
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['channels', 'roleChannels', 'updatedAt', 'updatedBy'])
-        && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'staff'])
+        && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'staff', 'pan'])
         && request.resource.data.get('roleChannels', {}) is map && request.resource.data.get('roleChannels', {}).size() <= 30;
     }
     // Pilots (functions/index.js pilotSlack): a new Slack feature reaches only its testers

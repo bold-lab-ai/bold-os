@@ -2642,6 +2642,12 @@ async function upsertPerson(u, teamId){
   if (was && was.name === p.name && was.email === p.email && (was.slackEmail || '') === (typeof p.slackEmail === 'string' ? p.slackEmail : '')) return;
   await ref.set(p, { merge: true });
   logger.info('upsertPerson: ' + (was ? 'updated' : 'added'), { slackId: u.id });
+  // New on the BOLD Slack: PAN-BOLD's channels (Settings › Slack channels), before any record of theirs.
+  if (!was) await invitePanChannels(p.email).catch((err) => logger.warn('Adding someone to PAN-BOLD\u2019s channels failed', { error: String(err && err.message || err) }));
+}
+async function invitePanChannels(email){
+  const set = (await db.collection('settings').doc('groups').get()).data() || {};
+  for (const name of groupChannelNames((set.channels || {}).pan)) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [email], name);
 }
 
 // ---------- Profile page: the caller's own Slack profile fields ----------
@@ -3694,13 +3700,15 @@ async function projectTemplates(){
 }
 
 // Where each of `emails` (Slack emails) gets the project's Google invitations and
-// files: the Google account they linked (googleLinks), or the email itself.
+// files: the addresses they ticked on their profile (googleLinks inviteTo, #178), else the
+// Google account they linked, else the email itself.
 async function googleAddressesFor(emails){
   const out = [];
   for (const e of emails){
     const snap = await db.collection('googleLinks').doc(e).get();
-    const a = snap.exists && snap.data().google ? String(snap.data().google).toLowerCase() : e;
-    if (out.indexOf(a) < 0) out.push(a);
+    const d = snap.exists ? snap.data() : {};
+    const list = Array.isArray(d.inviteTo) && d.inviteTo.length ? d.inviteTo : [d.google ? String(d.google).toLowerCase() : e];
+    list.forEach(function(a){ if (out.indexOf(a) < 0) out.push(a); });
   }
   return out;
 }
@@ -5170,7 +5178,21 @@ exports.onMemberGithub = onDocumentWritten(
 // projects' meeting invitations and slides and notes then go to it instead of
 // their Slack email (googleAddressesFor). Called again after unlinking, it forgets
 // the link and moves them back. Its Google account never signs anyone in: only
-// Slack accounts count (onlySlackSignUps, isSignedIn()). → { link: { google } | null }.
+// Slack accounts count (onlySlackSignUps, isSignedIn()).
+// With a Google account linked, they choose which of their own addresses get them (#178):
+// { inviteTo: [address] }, one or more of `choices` (their BOLD.OS email, their Slack one if
+// it's another, the Google account: each proven theirs, never one typed in), kept as
+// googleLinks inviteTo; none chosen, the Google account. A new Google account starts again.
+// → { link: { google, inviteTo, choices } | null }.
+// Pure: what they may choose from, and what they chose, made valid ([] for the default).
+function inviteChoices(email, slackEmail, google){
+  const out = [];
+  [email, slackEmail, google].forEach(function(a){ a = String(a || '').toLowerCase(); if (a && out.indexOf(a) < 0) out.push(a); });
+  return out;
+}
+function validInviteTo(list, choices){
+  return Array.isArray(list) ? list.map(function(a){ return String(a || '').toLowerCase(); }).filter(function(a, i, all){ return choices.indexOf(a) >= 0 && all.indexOf(a) === i; }) : [];
+}
 exports.linkGoogle = onCall(
   { secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
   async (request) => {
@@ -5181,17 +5203,32 @@ exports.linkGoogle = onCall(
     const google = g && g.email ? g.email.toLowerCase() : '';
     const ref = db.collection('googleLinks').doc(email);
     const prev = (await ref.get()).data();
+    const person = (await db.collection('people').where('email', '==', email).limit(1).get()).docs[0];
+    const choices = google ? inviteChoices(email, person && person.data().slackEmail, google) : [];
+    let moved = false, inviteTo = prev && prev.google === google ? validInviteTo(prev.inviteTo, choices) : [];
     if ((prev && prev.google || '') !== google){
       if (google) await ref.set({ email, google, linkedAt: Date.now() });
       else await ref.delete();
-      // Their projects: invitations and files move to the new address.
+      moved = true;
+    } else if (google && request.data && request.data.inviteTo !== undefined){
+      const want = validInviteTo(request.data.inviteTo, choices);
+      if (!want.length) throw new HttpsError('invalid-argument', 'Choose at least one address.');
+      // Only the Google account is the default: kept as [] so a new default follows.
+      const keep = want.length === 1 && want[0] === google ? [] : want;
+      if (JSON.stringify(keep) !== JSON.stringify(inviteTo)){
+        await ref.set({ inviteTo: keep.length ? keep : FieldValue.delete() }, { merge: true });
+        inviteTo = keep; moved = true;
+      }
+    }
+    if (moved){
+      // Their projects: invitations and files move to the new addresses.
       const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
       for (const d of mine.docs) await syncWorkspace(d.id);
       // And the study meetings they're in.
       const studies = await db.collection('studies').where('everyone', 'array-contains', email).get();
       for (const d of studies.docs) await syncStudyMeeting(d.id);
     }
-    return { link: google ? { google } : null };
+    return { link: google ? { google, inviteTo: inviteTo.length ? inviteTo : [google], choices } : null };
   }
 );
 
@@ -6525,7 +6562,8 @@ exports.retryWelcomeEmails = onSchedule(
 // change to the ranking reaches the channels already set). Nobody is removed from a channel.
 const GROUPS = ['exec', 'staff', 'internal', 'associate', 'pan'];
 const GROUP_LABELS = { exec: 'BOLD-exec', internal: 'BOLD-internal', associate: 'BOLD-associate', staff: 'BOLD-staff', pan: 'PAN-BOLD' };
-const CHANNEL_GROUPS = GROUPS.filter(function(g){ return g !== 'pan'; });
+// PAN-BOLD's too (2026-11-05): everyone on the BOLD Slack, a record or not.
+const CHANNEL_GROUPS = GROUPS.slice();
 // Bump when the ranking changes: every channel is then filled again.
 const GROUP_RANKING_VERSION = 2;
 
@@ -6654,6 +6692,8 @@ exports.onGroupChannels = onDocumentWritten(
     const changedRoles = Object.keys(roleChannels).filter(function(r){ return freshIn(roleChannels[r], beforeRoles[r]).length; });
     if (!changed.length && !changedRoles.length) return;
     const members = (await db.collection('members').get()).docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); });
+    // PAN-BOLD's channels: everyone on the roster too (on the Slack, no record yet: PAN-BOLD, groupOf).
+    const roster = changed.indexOf('pan') >= 0 ? (await db.collection('people').get()).docs.map(function(d){ return String(d.data().email || '').toLowerCase(); }).filter(Boolean) : [];
     const errors = Object.assign({}, after.channelErrors || {}), roleErrors = Object.assign({}, after.roleChannelErrors || {});
     const fill = async function(emails, names){
       let err = '';
@@ -6661,7 +6701,9 @@ exports.onGroupChannels = onDocumentWritten(
       return err;
     };
     for (const g of changed){
-      const err = await fill(members.filter(function(m){ return channelGroupsFor(groupOf(m)).indexOf(g) >= 0; }).map(function(m){ return m.email; }), freshIn(channels[g], before[g]));
+      const emails = members.filter(function(m){ return channelGroupsFor(groupOf(m)).indexOf(g) >= 0; }).map(function(m){ return m.email; });
+      if (g === 'pan') roster.forEach(function(e){ if (emails.indexOf(e) < 0) emails.push(e); });
+      const err = await fill(emails, freshIn(channels[g], before[g]));
       if (err) errors[g] = err; else delete errors[g];
     }
     for (const r of changedRoles){
@@ -7611,7 +7653,7 @@ exports.checkVenueCalls = onSchedule(
 // (onTagged, source '<path>#tags'), and first sign-ins by getMyAccess (source
 // 'auth/<uid>'). The lab reads them; nobody writes them but the server.
 const INTERACTION_GROUPS = {
-  asked: 'joining', invited: 'joining', approved: 'joining', contact: 'joining', supervises: 'joining', 'signed-up': 'joining',
+  asked: 'joining', invited: 'joining', approved: 'joining', contact: 'joining', supervises: 'joining', 'signed-up': 'joining', moved: 'joining',
   coauthor: 'working', project: 'working', reviewed: 'working', meeting: 'working', introduced: 'working', letter: 'working',
   tagged: 'talking', replied: 'talking', decided: 'talking',
   registered: 'site', added: 'site', edited: 'site', proposed: 'site', commented: 'site', read: 'site',
@@ -7619,7 +7661,9 @@ const INTERACTION_GROUPS = {
   presented: 'related', 'part-of': 'related',
 };
 const INTERACTION_TOP = ['joinRequests', 'members', 'studies', 'projects', 'projectWorkspaces', 'studyRequests', 'introRequests', 'letterRequests',
-  'skills', 'guides', 'events', 'collabWeekSessions'];
+  'skills', 'guides', 'events', 'collabWeekSessions', 'groupRequests', 'groupMoves'];
+// A move between groups, as its interaction's title: 'PAN-BOLD → BOLD-associate', or the new group alone.
+const groupMoveTitle = (from, to) => (GROUP_LABELS[from] ? GROUP_LABELS[from] + ' → ' : '') + (GROUP_LABELS[to] || to);
 
 const lowerEmail = (v) => String((v && typeof v === 'object' ? v.email : v) || '').trim().toLowerCase();
 
@@ -7652,6 +7696,12 @@ async function interactionsFor(path, d, lookup){
     // Once they're a member, their record says who invited them (it may change there).
     if (d.status !== 'approved' && d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, d.email, d.invitedBy.at || d.at, title, href);
     if (d.status === 'approved') add('approved', d.decidedBy, d.email, d.decidedAt, title, href);
+  } else if (n === 2 && top === 'groupRequests'){
+    // A move someone asked for, by whoever approved it.
+    if (d.status === 'approved') add('moved', d.decidedBy, d.email, d.decidedAt, groupMoveTitle(d.from, d.to), SITE_URL + 'boldiquette.html#who-is-bold');
+  } else if (n === 2 && top === 'groupMoves'){
+    // A PI or admin setting someone's group on People (a request's own move is the request's).
+    if (d.via !== 'request') add('moved', d.by, d.email, d.at, groupMoveTitle(d.from, d.to), SITE_URL + 'boldiquette.html#who-is-bold');
   } else if (n === 2 && top === 'members'){
     add('contact', d.contactEmail, seg[1], d.approvedAt || d.updatedAt, 'Point of contact', SITE_URL + 'people.html');
     if (d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, seg[1], d.invitedBy.at || d.approvedAt, 'Joining BOLD', SITE_URL + 'people.html');
@@ -7804,6 +7854,34 @@ function onInteractionSource(document){
 exports.onInteractionSource = onInteractionSource('{c1}/{d1}');
 exports.onInteractionSourceNested = onInteractionSource('{c1}/{d1}/{c2}/{d2}');
 
+// Moves between groups (Network › Lineage): groupMoves/{id} { email, from, to, by, at, via } (server
+// only), one for each change of a member's group, whoever made it: on People, by a request
+// (via 'request': its interaction is the request's), an agent, or a test account's owner. Joining
+// (their first group) isn't a move. id: their email and when, so the backfill (rebuildInteractions,
+// from members' current group) and this trigger write the same document.
+const groupMoveId = (email, at) => crypto.createHash('sha1').update(String(email) + '|' + String(at)).digest('hex').slice(0, 28);
+// Pure: a member's record before and after → the move, or null.
+function groupMoveOf(email, b, a){
+  b = b || {}; a = a || {};
+  if (!b.category || !a.category || b.category === a.category) return null;
+  const viaRequest = /^request/.test(String(a.categoryVia || '')) && a.categoryVia !== b.categoryVia;
+  return { email: String(email).toLowerCase(), from: b.category, to: a.category, by: String(a.categoryBy || '').toLowerCase(), at: Number(a.categoryAt) || Date.now(), via: viaRequest ? 'request' : '' };
+}
+// Pure: the move a member's current group records, for those set before groupMoves (from
+// unknown); null for PAN-BOLD on joining, or a request's (approved groupRequests have those).
+function currentGroupMove(email, m){
+  m = m || {};
+  const at = Number(m.categoryAt) || 0, by = String(m.categoryBy || '').toLowerCase();
+  if (!m.category || !at || !by || by === String(email).toLowerCase() || m.category === 'pan') return null;
+  const via = /^request-(\d+)$/.exec(String(m.categoryVia || ''));
+  if (via && Math.abs(Number(via[1]) - at) < 5000) return null;
+  return { email: String(email).toLowerCase(), from: '', to: m.category, by, at, via: '' };
+}
+exports.onGroupMove = onDocumentUpdated('members/{email}', async (event) => {
+  const mv = groupMoveOf(event.params.email, event.data.before.data(), event.data.after.data());
+  if (mv) await db.collection('groupMoves').doc(groupMoveId(mv.email, mv.at)).set(mv);
+});
+
 // Tags the documents above don't cover (onTagged): added as they happen, kept.
 async function recordTags(path, by, emails, at, place, data){
   if (isInteractionSource(path) || !by) return;
@@ -7838,6 +7916,11 @@ exports.rebuildInteractions = onCall(
     const email = callerEmail(request);
     await access.requireAccess(email, 'people', 'view');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    // Moves made before groupMoves: each member's current group, if someone set it (create: never over a logged one).
+    for (const m of (await db.collection('members').get()).docs){
+      const mv = currentGroupMove(m.id, m.data());
+      if (mv) await db.collection('groupMoves').doc(groupMoveId(mv.email, mv.at)).create(mv).catch(function(){});
+    }
     const docs = [];
     for (const c of INTERACTION_TOP) (await db.collection(c).get()).docs.forEach(function(s){ docs.push(s); });
     for (const g of ['cards', 'versions', 'readers', 'comments', 'proposals', 'presentations'])
@@ -8005,5 +8088,5 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, groupMoveOf, currentGroupMove, groupMoveTitle, inviteChoices, validInviteTo
 };

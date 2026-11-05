@@ -8,14 +8,15 @@
 //   connected at the middle.
 // - Over time (Connections): a row for each person or thing, from the first interaction to
 //   the last, a mark for each.
-// - Lineage (Network): who brought whom into BOLD, as a tree.
+// - Lineage (Network): who brought whom into BOLD, as a tree, with each person's moves
+//   between groups (moved: who moved them, from and to, as its title).
 // Nothing here needs a library.
 window.BoldConnections = (function(){
   var esc = BOLD.escapeHtml;
   var GROUPS = [['joining', 'Joining'], ['working', 'Working together'], ['talking', 'Talking'], ['site', 'On the site']];
   // kind → what it says, with {a} who did it, {b} the other person ({bs}: theirs), {t} where.
   var SAYS = {
-    asked: '{a} asked to join BOLD', 'signed-up': '{a} first signed in to BOLD.OS',
+    asked: '{a} asked to join BOLD', 'signed-up': '{a} first signed in to BOLD.OS', moved: '{a} moved {b} ({t})',
     invited: '{a} invited {b} to the BOLD Slack', approved: '{a} approved {bs} request to join',
     contact: '{a} is {bs} point of contact', supervises: '{a} supervises {b}',
     coauthor: '{a} and {b} work together on {t}', project: '{a} joined {b} on {t}', reviewed: '{a} reviewed {bs} {t}',
@@ -50,10 +51,16 @@ window.BoldConnections = (function(){
       r[0].docs.forEach(function(d){ var p = d.data(), e = lower(p.email); if (e) out[e] = { name: p.name || e, id: d.id, group: 'pan', member: true }; });
       r[1].docs.forEach(function(d){
         var m = d.data(), e = lower(d.id);
-        out[e] = Object.assign(out[e] || { id: '' }, { name: (out[e] && out[e].name) || m.name || e, group: BoldJoin.groupOf(m), member: true });
+        out[e] = Object.assign(out[e] || { id: '' }, { name: (out[e] && out[e].name) || m.name || e, group: BoldJoin.groupOf(m), member: true, test: !!m.test });
       });
       return out;
     });
+  }
+  // Without test accounts' interactions (Linked accounts), as People hides them: but for the
+  // test account itself, signed in.
+  function withoutTests(list, dir){
+    var me = viewer(), test = function(e){ return !!e && e !== me && !!(dir[e] && dir[e].test); };
+    return list.filter(function(x){ return !test(x.from) && !test(x.to); });
   }
   function isThing(id){ return String(id).indexOf('thing:') === 0; }
   function nameOf(dir, e, g){
@@ -483,7 +490,21 @@ window.BoldConnections = (function(){
     var kids = {};
     Object.keys(parent).forEach(function(c){ (kids[parent[c].from] = kids[parent[c].from] || []).push(c); });
     var size = function(id){ return 1 + (kids[id] || []).reduce(function(s, c){ return s + size(c); }, 0); };
-    var roots = Object.keys(kids).filter(function(id){ return !parent[id]; }).sort(function(a, b){ return size(b) - size(a) || nameOf(dir, a).localeCompare(nameOf(dir, b)); });
+    // Moves between groups, oldest first: 'PAN-BOLD → BOLD-associate', or the group alone.
+    var moves = {};
+    all.forEach(function(x){ if (x.kind === 'moved' && x.to) (moves[x.to] = moves[x.to] || []).push(x); });
+    Object.keys(moves).forEach(function(e){ moves[e].sort(function(a, b){ return a.at - b.at; }); });
+    var pathOf = function(id){
+      var m = moves[id];
+      if (!m) return '';
+      var parts = String(m[0].title).split(' \u2192 ');
+      m.slice(1).forEach(function(x){ var t = String(x.title).split(' \u2192 ').pop(); if (t !== parts[parts.length - 1]) parts.push(t); });
+      return parts.join(' \u2192 ');
+    };
+    var movedBy = function(id){ return (moves[id] || []).map(function(x){ return ' · moved to ' + String(x.title).split(' \u2192 ').pop() + ' by ' + nameOf(dir, x.from) + ' on ' + day(x.at); }).join(''); };
+    var tops = {};
+    Object.keys(kids).concat(Object.keys(moves)).forEach(function(id){ if (!parent[id]) tops[id] = 1; });
+    var roots = Object.keys(tops).sort(function(a, b){ return size(b) - size(a) || nameOf(dir, a).localeCompare(nameOf(dir, b)); });
     if (!roots.length) return '';
     var rows = [];
     var walk = function(id, depth){
@@ -492,7 +513,7 @@ window.BoldConnections = (function(){
     };
     roots.forEach(function(r){ walk(r, 0); });
     var COL = 150, ROW = 26, TOP = 14, depth = Math.max.apply(null, rows.map(function(r){ return r.depth; }));
-    var W = Math.max(760, 40 + depth * COL + 260), H = TOP + rows.length * ROW + 10, at = {};
+    var W = Math.max(760, 40 + depth * COL + 480), H = TOP + rows.length * ROW + 10, at = {};
     rows.forEach(function(r, i){ r.x = 24 + r.depth * COL; r.y = TOP + i * ROW + ROW / 2; at[r.id] = r; });
     return '<div class="cx-graph cx-scroll"><svg class="cx-svg cx-lineage" viewBox="0 0 ' + W + ' ' + H + '" style="min-width:' + Math.min(W, 1100) + 'px" role="img" aria-label="Who brought whom into BOLD">' +
       rows.map(function(r){
@@ -502,10 +523,10 @@ window.BoldConnections = (function(){
       }).join('') +
       rows.map(function(r){
         var v = { id: r.id }, href = hrefOf(dir, r.id, me), name = r.id === me ? 'You' : nameOf(dir, r.id);
-        var how = parent[r.id] ? parent[r.id].how : '';
+        var how = parent[r.id] ? parent[r.id].how : '', path = pathOf(r.id);
         return '<g class="cx-node ' + nodeClass(dir, v) + '" data-id="' + esc(r.id) + '" data-href="' + esc(href) + '" transform="translate(' + r.x + ',' + r.y + ')" tabindex="0">' + mark(v, 5) +
-          '<text class="cx-label" x="10" y="4">' + esc(name) + (how ? '<tspan class="cx-how" dx="8">' + esc(how) + '</tspan>' : '') + '</text>' +
-          '<title>' + esc(name + (how ? ' · ' + how + (how.indexOf('via') === 0 ? ' ' : ' by ') + nameOf(dir, parent[r.id].from) : '') + (kids[r.id] ? ' · brought in ' + (size(r.id) - 1) : '')) + '</title></g>';
+          '<text class="cx-label" x="10" y="4">' + esc(name) + (how ? '<tspan class="cx-how" dx="8">' + esc(how) + '</tspan>' : '') + (path ? '<tspan class="cx-moves" dx="8">' + esc(path) + '</tspan>' : '') + '</text>' +
+          '<title>' + esc(name + (how ? ' · ' + how + (how.indexOf('via') === 0 ? ' ' : ' by ') + nameOf(dir, parent[r.id].from) : '') + (kids[r.id] ? ' · brought in ' + (size(r.id) - 1) : '') + movedBy(r.id)) + '</title></g>';
       }).join('') + '</svg></div>';
   }
 
@@ -517,9 +538,9 @@ window.BoldConnections = (function(){
     // steps: 2, or 1 if everyone's interactions couldn't be loaded.
     var shown = 30, why = '', on = { joining: true, working: true, talking: true, site: true }, steps = 2, everyone = null, view = 'graph', things = true, g = null;
     Promise.all([loadFor(email), directory()]).then(function(r){
-      var list = r[0], dir = r[1];
+      var dir = r[1], list = withoutTests(r[0], dir);
       function graphHtml(){
-        if (steps === 2 && !everyone) { loadAll().then(function(a){ everyone = a; draw(); }).catch(function(err){ console.error('[BOLD Connections] loading everyone failed', err); steps = 1; draw(); }); }
+        if (steps === 2 && !everyone) { loadAll().then(function(a){ everyone = withoutTests(a, dir); draw(); }).catch(function(err){ console.error('[BOLD Connections] loading everyone failed', err); steps = 1; draw(); }); }
         var kind = function(x){ return (x.to || (things && x.thing)) && on[x.group]; };
         var direct = list.filter(kind);
         g = graphOf(direct, things);
@@ -585,6 +606,6 @@ window.BoldConnections = (function(){
     });
   }
 
-  return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, graphOf: graphOf, concentric: concentric, svg: svg, legendHtml: legendHtml, bindHover: bindHover,
+  return { GROUPS: GROUPS, directory: directory, loadAll: loadAll, withoutTests: withoutTests, graphOf: graphOf, concentric: concentric, svg: svg, legendHtml: legendHtml, bindHover: bindHover,
     lineageHtml: lineageHtml, bar: bar, seg: seg, chips: chips, pair: pair, reasons: reasons, reasonsHtml: reasonsHtml, rowHtml: rowHtml, edgeOf: edgeOf, nameOf: nameOf, hrefOf: hrefOf, isThing: isThing, mountPerson: mountPerson };
 })();

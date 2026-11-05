@@ -90,7 +90,7 @@
       group('Slack invite') + '<label>Link (in Slack: Invite people → Copy invite link; replace it when it expires)<input type="url" class="jr-invite" maxlength="300" value="' + esc(inv.slackInviteUrl || '') + '" placeholder="https://join.slack.com/t/…"></label>' +
       '<label>Expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label></fieldset>' +
       group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channels (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>). None: nobody is added.</p>' +
-        BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== 'pan'; }).map(function(c){
+        BoldJoin.CATEGORIES.map(function(c){
           return row(c[1], chipsHtml('chan', c[0], chanList((groups.channels || {})[c[0]]), 'group'), (groups.channelErrors || {})[c[0]]);
         }).join('') + '</fieldset>' + group('Slack channels by role') + '<p class="proj-meta">Everyone with a role (on their details) is added to its channels. The roles are the join form’s (<a href="#join">Join form</a>).</p>' +
         (f.roles || BoldJoin.ROLES).map(function(r){
@@ -239,7 +239,7 @@
     var added = [], newNames = [];
     Object.keys(channels).forEach(function(g){
       var before = String(had[g] || '').split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); });
-      channels[g].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) { added.push('Invite everyone in ' + BoldJoin.categoryLabel(g) + ' and the groups above it to #' + n + ' on Slack'); newNames.push(n); } });
+      channels[g].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) { added.push(g === 'pan' ? 'Invite everyone on the BOLD Slack to #' + n + ', and whoever joins it later' : 'Invite everyone in ' + BoldJoin.categoryLabel(g) + ' and the groups above it to #' + n + ' on Slack'); newNames.push(n); } });
     });
     var hadRoles = (groups && groups.roleChannels) || {};
     Object.keys(roleChannels).forEach(function(r){

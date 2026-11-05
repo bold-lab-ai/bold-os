@@ -197,9 +197,27 @@
       return;
     }
     var p = providerOf(me(), 'google.com');
-    box.innerHTML = accountHtml({ name: (p && p.displayName) || link.google, handle: '', note: escapeHtml(link.google) + ' \u00b7 your projects\u2019 meeting invitations, slides and notes go here' }) + err +
+    var choices = link.choices || [], to = link.inviteTo || [link.google];
+    // Which of their addresses get them (#178): one at least, so the last ticked is greyed.
+    var pick = choices.length > 1 ? '<fieldset class="g-invite-to"><legend>Meeting invitations, slides and notes go to</legend>' + choices.map(function(a){
+      var on = to.indexOf(a) >= 0, last = on && to.length === 1;
+      return '<label' + (last ? ' title="At least one address gets them"' : '') + '><input type="checkbox" class="g-to" value="' + escapeHtml(a) + '"' + (on ? ' checked' : '') + (gBusy || last ? ' disabled' : '') + '> ' + escapeHtml(a) + (a === link.google ? ' (Google)' : '') + '</label>';
+    }).join('') + '</fieldset>' : '';
+    box.innerHTML = accountHtml({ name: (p && p.displayName) || link.google, handle: '', note: escapeHtml(link.google) + (pick ? '' : ' \u00b7 your projects\u2019 meeting invitations, slides and notes go here') }) + pick + err +
       '<span class="gh-actions"><button type="button" class="btn-box g-unlink"' + off + '>Unlink Google</button></span>';
   }
+  el('googleBody').addEventListener('change', function(e){
+    if (!e.target.classList.contains('g-to')) return;
+    var to = Array.prototype.slice.call(el('googleBody').querySelectorAll('.g-to:checked')).map(function(i){ return i.value; });
+    gBusy = true; gError = '';
+    el('googleBody').querySelectorAll('.g-to').forEach(function(i){ i.disabled = true; });
+    firebase.app().functions('europe-west2').httpsCallable('linkGoogle')({ inviteTo: to }).then(function(res){
+      gBusy = false; renderGoogle((res.data || {}).link || null);
+    }).catch(function(err){
+      console.error('[BOLD Lab] saving where invitations go failed', err);
+      gBusy = false; gError = 'Couldn\u2019t save that \u2014 try again.'; loadGoogle();
+    });
+  });
   // Tells linkGoogle what's linked now (it moves their projects over if that changed).
   function loadGoogle(){
     gBusy = true;
