@@ -4064,7 +4064,7 @@ async function syncWorkspace(id, changes){
 // title, channel, submitter, authors or stage change; when a project's last card
 // is removed, its meeting is cancelled.
 function onProjectCard(document){
-  return onDocumentWritten({ document, secrets: [GOOGLE_OAUTH, GITHUB_APP] }, async function(event){
+  return onDocumentWritten({ document, secrets: [GOOGLE_OAUTH, GITHUB_APP, SLACK_BOT_TOKEN] }, async function(event){
     const before = event.data.before.exists ? event.data.before.data() : null;
     const after = event.data.after.exists ? event.data.after.data() : null;
     const id = event.params.cardId;
@@ -4092,7 +4092,33 @@ function onProjectCard(document){
     const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails, d.status, d.outcome]); };
     if (key(before) === key(after)) return;
     if ((await wsRef.get()).exists) await syncWorkspace(pid);
+    // Its channel changed (on its page, which says so first): everyone on the project is invited to the new one.
+    const moved = projectChannelChange(before, after);
+    if (moved && !proposalPending(after)) await inviteProjectToChannel(pid, moved);
   });
+}
+// Pure: the channel a project's card moved to (its name, no #), or '' when it didn't change or was cleared.
+function projectChannelChange(before, after){
+  const name = (d) => { const n = normalizeProjectChannel(String((d && d.slackChannel) || '')); return n.error ? '' : n.name; };
+  const was = name(before), now = name(after);
+  return now && now !== was ? now : '';
+}
+// Invites everyone on project `pid` (its workspace's members) to Slack channel `name`. Someone not
+// on Slack, or already in it, is passed over; what failed is logged, and kept on the workspace
+// (channelInvite: { channel, at, failed: [emails] }) for the page.
+async function inviteProjectToChannel(pid, name){
+  const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
+  const token = SLACK_BOT_TOKEN.value(), failed = [];
+  for (const e of ws.members || []){
+    if (!(await slackIdForEmail(e))) continue;
+    try { await inviteToProjectChannel(token, e, name); }
+    catch (err){
+      logger.warn('Inviting a project\u2019s people to its new channel failed', { pid, channel: name, error: String(err.message) });
+      failed.push(e);
+      if (/can.t see|can.t manage/.test(err.message)) break;   // the same for everyone after
+    }
+  }
+  await db.collection('projectWorkspaces').doc(pid).set({ channelInvite: { channel: '#' + name, at: Date.now(), failed } }, { merge: true });
 }
 // A new project's workspace, as its proposer asked (its card's setUp*): its meeting, slides, notes, repository.
 async function setUpProject(pid, after){
@@ -8327,5 +8353,5 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange
 };

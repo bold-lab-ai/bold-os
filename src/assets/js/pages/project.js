@@ -1235,6 +1235,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var fail = failer(), n = normalizeProjectChannel(el('pfChannel').value), btn = el('slackSave');
     if (n.error) return fail(n.error);
     var effects = channelField.effects(n.name);
+    // A different channel: the server invites everyone on the project to it (functions/index.js inviteProjectToChannel).
+    if ('#' + n.name !== (card.slackChannel || '')) effects = effects.concat(['Invite everyone on the project to #' + n.name + ' on Slack']);
     (effects.length ? BOLD.confirmAlways({ title: 'Change the Slack channel?', go: 'Save', effects: effects }) : Promise.resolve(true)).then(function(ok){
       if (ok) sendSlack(n, btn, fail);
     });
