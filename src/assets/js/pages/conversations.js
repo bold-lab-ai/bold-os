@@ -160,7 +160,8 @@
     if (!treeEl) return;
     var on = {}, m = treeSel && msgOf(openId, treeSel), k = 0;
     while (m && k++ < 500) { on[m.id] = 1; m = parentOf(m) && parentOf(m) !== openId ? msgOf(openId, parentOf(m)) : null; }
-    Array.prototype.forEach.call(treeEl.querySelectorAll('circle'), function(c){ c.classList.toggle('is-selected', c.getAttribute('data-id') === treeSel); });
+    var svg = treeEl.querySelector('svg'); if (svg) svg.classList.toggle('has-sel', !!treeSel);
+    Array.prototype.forEach.call(treeEl.querySelectorAll('circle'), function(c){ var id = c.getAttribute('data-id'); c.classList.toggle('is-selected', id === treeSel); c.classList.toggle('is-path', !!on[id] || (!!treeSel && id === openId)); });
     Array.prototype.forEach.call(treeEl.querySelectorAll('path[data-to]'), function(x){ x.classList.toggle('is-path', !!on[x.getAttribute('data-to')]); });
     Array.prototype.forEach.call(threadEl.querySelectorAll('.bs-line'), function(el){ el.classList.toggle('is-selected', !!treeSel && el.id === 'm-' + treeSel); });
   }

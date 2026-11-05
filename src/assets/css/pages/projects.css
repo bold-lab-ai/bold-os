@@ -348,8 +348,12 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-tree circle.is-here{stroke:var(--ink); stroke-width:2.5;}
 .bs-tree circle:hover{stroke:var(--ink);}
 /* The message clicked: its dot, the lines down to it, and the message. */
-.bs-tree circle.is-selected{fill:var(--ink); stroke:var(--ink); r:4.5;}
-.bs-tree-lines path.is-path{stroke:var(--ink); stroke-width:2;}
+/* With one selected, the rest fades; its line from the post is the accent colour, thicker, and its dot has a halo. */
+.bs-tree svg.has-sel circle, .bs-tree svg.has-sel .bs-tree-lines path{opacity:.3;}
+.bs-tree svg.has-sel circle.is-path, .bs-tree svg.has-sel .bs-tree-lines path.is-path{opacity:1;}
+.bs-tree-lines path.is-path{stroke:var(--accent); stroke-width:2.5;}
+.bs-tree circle.is-path{stroke:var(--accent);}
+.bs-tree circle.is-selected{fill:var(--accent); stroke:color-mix(in srgb, var(--accent) 35%, transparent); stroke-width:6; paint-order:stroke;}
 .bs-line{cursor:default;}
 .bs-line.is-selected{background:color-mix(in srgb, var(--ink) 6%, transparent);}
 @media (max-width:900px){ .bs-tree{display:none;} }
