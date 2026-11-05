@@ -220,12 +220,9 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     return s.empty ? {} : s.docs[0].data();
   }
 
-  // Starting a chat (a Slack thread brought in is one): Conversations' Edit and BOLD-internal and above;
-  // BOLD-associate replies and votes (BOLDiquette › Who can do what, 2026-11-05).
-  const STARTS = 'Starting a chat is for BOLD-internal and above (BOLDiquette › Who can do what).';
-  async function startsChats(email){
-    return (await access.can(email, 'conversations', 'edit')) && require('./access').rank(await access.groupFor(email)) >= require('./access').rank('internal');
-  }
+  // Starting a chat (a Slack thread brought in is one): Conversations' Edit, as replying and voting.
+  const STARTS = 'You can’t post in Conversations yet (BOLDiquette › Who can do what).';
+  async function startsChats(email){ return access.can(email, 'conversations', 'edit'); }
 
   const slackThread = onCall({ secrets: [SLACK_BOT_TOKEN] }, async (request) => {
     const email = signedInEmail(request).toLowerCase();

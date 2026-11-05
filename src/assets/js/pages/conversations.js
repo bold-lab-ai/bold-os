@@ -332,9 +332,9 @@
   BOLD.onAccess(function(a){
     me.email = String((a && a.e) || '').toLowerCase();
     canPost = BOLD.can('conversations', 'edit'); full = BOLD.isFullWrite();
-    // Replying and voting: Conversations' Edit. Starting a chat (New chat, Import from Slack): BOLD-internal and above too.
-    canStart = canPost && (full || ['internal', 'staff', 'exec'].indexOf(BOLD.myGroup()) >= 0);
-    var startWhy = !canPost ? BOLD.cannotReason('conversations', 'edit') : 'Starting a chat is for BOLD-internal and above; you can reply to any.';
+    // Starting a chat (New chat, Import from Slack), replying and voting: all Conversations' Edit.
+    canStart = canPost;
+    var startWhy = BOLD.cannotReason('conversations', 'edit');
     ['.bs-write', '.bs-import'].forEach(function(c){
       var b = sortEl.querySelector(c); b.disabled = !canStart; b.title = canStart ? '' : startWhy;
     });
