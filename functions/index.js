@@ -6860,6 +6860,82 @@ exports.onboarding = onCall(
 function setupNudgeText(title, missing, url){
   return '🛠️ “' + slackText(title) + '” is ongoing but still needs ' + setupMissingText(missing) + '. ' + linkedTitle('Set it up on its page', url) + ', so everyone on it has what they need.';
 }
+// Moving someone to another email (2026-11-05: Yaser signed up with one, Slack has another): a runs/{id}
+// document { action: 'move-account', from, to, dryRun } (made from the console or an admin tool; clients
+// can't write runs). Changes their sign-in account's email, then every document: `from` → `to` wherever it
+// is a value, in an array or a map key, and a document named after it moves to `to`'s id. What Google
+// has (a workspace's `shared`, an invitation's `synced`) keeps the old one, so the syncs after (their
+// projects', series' and study meetings) share and invite the new address and drop the old. Logs and
+// caches are left. dryRun: only says what it would change, in the run's `plan`.
+const MOVE_SKIP_COLLECTIONS = ['apiLog', 'meta', 'runs', 'imageHashes', 'meetingReminders'];
+const MOVE_KEEP_FIELDS = { projectWorkspaces: ['shared'], eventInvites: ['synced'] };
+// Pure: `v` with every `from` (any case) → `to`, in values, arrays and map keys; { value, n } (n: how many).
+function replaceEmail(v, from, to){
+  let n = 0;
+  const f = String(from).toLowerCase();
+  const walk = function(x){
+    if (typeof x === 'string') { if (x.toLowerCase() === f) { n++; return to; } return x; }
+    if (Array.isArray(x)) return x.map(walk);
+    if (x && typeof x === 'object' && Object.getPrototypeOf(x) === Object.prototype) {
+      const out = {};
+      Object.keys(x).forEach(function(k){ const nk = k.toLowerCase() === f ? (n++, to) : k; out[nk] = walk(x[k]); });
+      return out;
+    }
+    return x;   // Timestamps, references, FieldValues
+  };
+  return { value: walk(v), n };
+}
+exports.onAccountMoveRun = onDocumentCreated({ document: 'runs/{id}', secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540, memory: '1GiB' }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'move-account' || run.doneAt) return;
+  const from = lowerEmail(run.from), to = lowerEmail(run.to), dry = run.dryRun !== false;
+  const report = { changed: [], moved: [], skipped: [], errors: [] };
+  const done = (extra) => event.data.ref.set(Object.assign({ doneAt: Date.now(), dryRun: dry, plan: report }, extra || {}), { merge: true });
+  if (!from || !to || from === to) return done({ error: 'Give from and to.' });
+  let user = null;
+  try { user = await admin.auth().getUserByEmail(from); } catch (err){ return done({ error: 'No account with ' + from + '.' }); }
+  try { await admin.auth().getUserByEmail(to); return done({ error: 'An account already has ' + to + '.' }); } catch (err){ /* none: good */ }
+  if (!dry) await admin.auth().updateUser(user.uid, { email: to });
+  report.account = user.uid;
+  const touched = { projectWorkspaces: [], eventSeries: [], studies: [], eventInvites: [] };
+  async function walk(col){
+    const name = col.id;
+    if (MOVE_SKIP_COLLECTIONS.indexOf(name) >= 0) return;
+    for (const d of (await col.get()).docs){
+      const data = d.data(), keep = MOVE_KEEP_FIELDS[name] || [];
+      const kept = {}; keep.forEach((k) => { if (k in data) { kept[k] = data[k]; delete data[k]; } });
+      const r = replaceEmail(data, from, to);
+      if (r.n) Object.assign(r.value, kept);
+      if (d.id.toLowerCase() === from){
+        const subs = await d.ref.listCollections();
+        if (subs.length) report.skipped.push(d.ref.path + ' (has subcollections)');
+        else {
+          report.moved.push(d.ref.path);
+          if (!dry) { await col.doc(to).set(r.n ? r.value : Object.assign(data, kept)); await d.ref.delete(); }
+          continue;
+        }
+      }
+      if (r.n){
+        report.changed.push(d.ref.path + ' (' + r.n + ')');
+        if (touched[name]) touched[name].push(d.id);
+        if (!dry) await d.ref.set(r.value);
+      }
+      for (const sub of await d.ref.listCollections()) await walk(sub);
+    }
+  }
+  try { for (const col of await db.listCollections()) await walk(col); }
+  catch (err){ report.errors.push(String(err && err.message || err)); }
+  // Google and GitHub, in line with the new address.
+  if (!dry){
+    for (const id of touched.projectWorkspaces) await syncWorkspace(id).catch((e) => report.errors.push('workspace ' + id + ': ' + e.message));
+    for (const id of touched.eventSeries) await labSeries.syncSeries(id).catch((e) => report.errors.push('series ' + id + ': ' + e.message));
+    if (touched.studies.length || report.moved.some((p) => p.indexOf('studies/') === 0)) await syncStudyMeeting(to).catch((e) => report.errors.push('studies: ' + e.message));
+    for (const id of touched.eventInvites) await labSeries.syncOccurrence(id).catch((e) => report.errors.push('invite ' + id + ': ' + e.message));
+  }
+  logger.info('Account move', { dry, changed: report.changed.length, moved: report.moved.length, errors: report.errors.length });
+  return done();
+});
+
 exports.onSetupNudgeRun = onDocumentCreated({ document: 'runs/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
   const run = event.data && event.data.data();
   if (!run || run.action !== 'project-setup-nudge' || run.doneAt) return;
@@ -7915,7 +7991,7 @@ const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
 
-exports._internal = { accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetingStartsSoon,
+exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetingStartsSoon,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,

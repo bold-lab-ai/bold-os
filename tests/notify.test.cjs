@@ -53,3 +53,10 @@ test('someone signed in with Slack is on the roster under their account’s emai
   ];
   assert.deepStrictEqual(accountEmailsBySlackId(users), { U1: 'y@x' });
 });
+
+test('moving someone to another email: values, arrays and map keys, any case', () => {
+  const { replaceEmail } = require('../functions/index.js')._internal;
+  const r = replaceEmail({ to: 'Old@x', members: ['a@x', 'old@x'], by: { email: 'old@x', name: 'Y' }, seen: { 'old@x': 1 }, n: 3, note: 'old@x said' }, 'old@x', 'new@x');
+  assert.strictEqual(r.n, 4);
+  assert.deepStrictEqual(r.value, { to: 'new@x', members: ['a@x', 'new@x'], by: { email: 'new@x', name: 'Y' }, seen: { 'new@x': 1 }, n: 3, note: 'old@x said' });
+});
