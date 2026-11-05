@@ -2598,15 +2598,48 @@ exports.slackEvents = onRequest(
 // people/{slackId}: written if they have an email, removed once deactivated. Someone from
 // another workspace (in a channel shared with it: their team_id isn't ours) isn't one of
 // the lab's people, and their id can't be invited to our channels (user_not_found).
+// Someone whose BOLD.OS account has another email than their Slack profile (signed up with one,
+// Slack on another; 2026-11-05) is on the roster under their account's: everything finds people by
+// it (links to their page, notifications, DMs). Their Slack one is kept as slackEmail.
+// Pure: Firebase Auth users → { slackId: account email } for the accounts signed in with Slack.
+function accountEmailsBySlackId(users){
+  const out = {};
+  (users || []).forEach(function(u){
+    const s = (u.providerData || []).filter(function(p){ return p.providerId === 'oidc.slack'; })[0];
+    if (s && s.uid && u.email) out[s.uid] = String(u.email).toLowerCase();
+  });
+  return out;
+}
+// Pure: a roster entry with its account's email (and its Slack one, if they differ).
+function withAccountEmail(p, account){
+  if (!account || account === p.email) return Object.assign({}, p, { slackEmail: FieldValue.delete() });
+  return Object.assign({}, p, { email: account, slackEmail: p.email });
+}
+async function allAccountEmails(){
+  const out = {};
+  let page;
+  do {
+    page = await admin.auth().listUsers(1000, page && page.pageToken);
+    Object.assign(out, accountEmailsBySlackId(page.users));
+  } while (page.pageToken);
+  return out;
+}
+async function accountEmailFor(slackId){
+  try {
+    const r = await admin.auth().getUsers([{ providerId: 'oidc.slack', providerUid: slackId }]);
+    return accountEmailsBySlackId(r.users)[slackId] || '';
+  } catch (err){ logger.warn('Looking up an account by Slack id failed', { error: String(err && err.message || err) }); return ''; }
+}
+
 async function upsertPerson(u, teamId){
   if (!u || !u.id || u.is_bot || u.id === 'USLACKBOT') return;
   const ref = db.collection('people').doc(u.id);
   if (u.deleted || (teamId && u.team_id && u.team_id !== teamId)) { if ((await ref.get()).exists) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); } return; }
   if (!u.profile || !u.profile.email) { logger.warn('upsertPerson: no email (users:read.email?)', { slackId: u.id }); return; }
   // Emails lower case, as everywhere else on BOLD.OS (Slack keeps whatever case was typed).
-  const p = { slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email };
+  const p = withAccountEmail({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }, await accountEmailFor(u.id));
   const was = (await ref.get()).data();
-  if (was && was.name === p.name && was.email === p.email) return;
+  if (was && was.name === p.name && was.email === p.email && (was.slackEmail || '') === (typeof p.slackEmail === 'string' ? p.slackEmail : '')) return;
   await ref.set(p, { merge: true });
   logger.info('upsertPerson: ' + (was ? 'updated' : 'added'), { slackId: u.id });
 }
@@ -5503,6 +5536,8 @@ async function syncPeopleFromSlack(token){
     logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
     throw new Error('Slack returned nobody with an email (is users:read.email granted?)');
   }
+  const accounts = await allAccountEmails();
+  for (let i = 0; i < people.length; i++) people[i] = withAccountEmail(people[i], accounts[people[i].slackId]);
   const gone = members.filter(u => u.deleted || !ours(u)).map(u => u.id);
   const existing = await db.collection('people').get();
   const current = {};
@@ -5511,7 +5546,8 @@ async function syncPeopleFromSlack(token){
   const writes = [];
   people.forEach(p => {
     const was = current[p.slackId];
-    if (!was || was.name !== p.name || was.email !== p.email) writes.push({ id: p.slackId, data: p, added: !was });
+    const slackEmail = typeof p.slackEmail === 'string' ? p.slackEmail : '';
+    if (!was || was.name !== p.name || was.email !== p.email || (was.slackEmail || '') !== slackEmail) writes.push({ id: p.slackId, data: p, added: !was });
   });
   const deletes = gone.filter(id => current[id]);
   const ops = writes.map(w => batch => batch.set(db.collection('people').doc(w.id), w.data, { merge: true }))
@@ -7879,7 +7915,7 @@ const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
 
-exports._internal = { calendarUpdates, isCalendarLimit, meetingStartsSoon,
+exports._internal = { accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetingStartsSoon,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,

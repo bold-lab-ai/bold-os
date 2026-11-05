@@ -44,3 +44,12 @@ test('the ping says how many, and links to them', () => {
   assert.strictEqual(pingText(1, 'u'), '🔔 You have a new notification on BOLD.OS: <u|open it>.');
   assert.match(pingText(4, 'u'), /4 new notifications/);
 });
+
+test('someone signed in with Slack is on the roster under their account’s email', () => {
+  const { accountEmailsBySlackId } = require('../functions/index.js')._internal;
+  const users = [
+    { email: 'Y@x', providerData: [{ providerId: 'oidc.slack', uid: 'U1', email: 'other@x' }, { providerId: 'github.com', uid: '9' }] },
+    { email: 'g@x', providerData: [{ providerId: 'google.com', uid: '7' }] },
+  ];
+  assert.deepStrictEqual(accountEmailsBySlackId(users), { U1: 'y@x' });
+});
