@@ -279,7 +279,9 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-line.is-about{box-shadow:inset 3px 0 0 var(--ink);}
 .bs-line .bs-text{margin:2px 0 0; font-size:14px;}
 .bs-line .bs-text > :last-child{margin-bottom:0;}
-.bs-branches{padding:6px 10px 10px 24px; background:var(--wash);}
+/* An opened thread reads on in the conversation, as its messages: only indented. */
+.bs-branches{padding:0 0 0 24px; background:none;}
+.bs-branches > .bs-run > .bs-line:first-child{border-top:1px solid var(--rule);}
 .bs-thread-toggle{padding:0 12px 6px; margin-top:-2px;}
 /* A thread's toggle: a pill in the accent colour (light blue in dark mode), not text like the rest. */
 .bs-thread-toggle .bs-open{display:inline-flex; align-items:center; gap:6px; font:inherit; font-family:var(--sans); font-size:12px; font-weight:600; color:var(--accent); text-decoration:none;
