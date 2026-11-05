@@ -4995,15 +4995,15 @@ function splitRequests(items, email, full){
 // Your requests (requests.html, the account menu's Requests; pages/requests.js): everything on BOLD.OS waiting on
 // the caller to answer, and what they asked that waits on someone else, as BOLD OS's board
 // sees it (requestWork, contentWork). → { forYou, byYou: [{ kind, num, title, url, by, on, waiting, state, since, column }] }
-// Branches (#177; bold.js, the Version pill): every open proposal on a page you can propose on
-// (its Edit level: newcomers in PAN-BOLD get none, 2026-11-02),
+// Branches (#177; bold.js, the Version pill): every open proposal on a page you can see (its View
+// level: the pill is where proposals are seen, 2026-11-05),
 // newest first, each { ref (its path), num, title, url (its page), by, since }, and for one
 // that changes Who can see what, `pages`: the table it would make.
 exports.branches = onCall(
   { timeoutSeconds: 60 },
   async (request) => {
     const email = callerEmail(request);
-    const open = (await contentWork(email, workPerson(await workNames()), 'edit')).filter((x) => x.state === 'open');
+    const open = (await contentWork(email, workPerson(await workNames()), 'view')).filter((x) => x.state === 'open');
     const nums = await numbersOf(open.map((x) => x.ref));
     const out = [];
     for (const x of open){

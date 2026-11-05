@@ -334,11 +334,15 @@
     branch = b && BRANCH_REF.test(b.ref || '') ? { ref: b.ref, num: b.num || 0, title: b.title || '', url: b.url || '', pages: b.pages || null } : null;
     try { if (branch) sessionStorage.setItem('boldBranch', JSON.stringify(branch)); else sessionStorage.removeItem('boldBranch'); } catch (e){}
     // Quiet: no reload (a page showing its own proposal); its details from `branches`, unless they're from there.
+    if (!branch) try { sessionStorage.removeItem('boldBranches'); } catch (e){}
     if (o && o.quiet) { drawAccess(); previewBar(); if (branch && !o.known && access && access.e) loadBranches(); return; }
     dropCaches();
+    // A link to a proposal (#proposal-<id>) would open it again: left out. The same address with
+    // a #hash only scrolls, so the page is reloaded instead.
     var here = location.pathname + location.search.replace(/([?&])branch=[^&]*&?/, '$1').replace(/[?&]$/, '');
-    if (o && o.go && branch && branch.url) location.href = pageOf(branch.url);
-    else location.replace(here + location.hash);
+    var to = here + (/^#proposals?(-|$)/.test(location.hash) ? '' : location.hash);
+    if (o && o.go && branch && branch.url && pageOf(branch.url) !== location.pathname.split('/').pop() + location.search) { location.href = pageOf(branch.url); return; }
+    if (to === location.pathname + location.search + location.hash) location.reload(); else location.replace(to);
   };
   // A page of this site from its full address (as the server gives it), so it opens here
   // whether the site is served from GitHub Pages or a preview.
@@ -1056,6 +1060,16 @@
     }).join('') + '</div>';
   }
   var brOpen = false;   // the Version pill's list is open
+  // Opens the branch icon's list of open proposals (a page's "N proposed changes", #proposals).
+  // After the click that asked, which would otherwise close it again.
+  BOLD.openBranches = function(){
+    setTimeout(function(){
+      if (!document.querySelector('#pageAccess .br-chip')) return;
+      brOpen = true; panel = null; loadBranches(); drawAccess();
+      window.scrollTo({ top: 0 });
+      var bc = document.querySelector('#pageAccess .br-chip'); if (bc) bc.focus();
+    }, 0);
+  };
   var ICON_BRANCH = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="5.5" r="1.6"/><path d="M4.5 5.1v5.8M11.5 7.1c0 2.6-2.2 3.4-5.4 4.4"/></svg>';
   function drawAccess(){
     var el = document.getElementById('pageAccess'), area = pageArea();
@@ -1068,9 +1082,9 @@
     // to it waits), and the Version (branches): main, or the site as an open proposal would make it.
     var seeTip = (isOpen() ? 'Who can act on this page: ' + groupName(cur.edit) : 'Who can see this page: ' + groupName(cur.view)) + (waiting ? ' · 1 change waiting' : '');
     var brTip = branch ? 'Version: ' + branchLabel(branch) : 'Version: main. See the site as an open proposal would make it';
-    // The Version button: only for whoever can propose a change somewhere (a reviewed page's Edit
-    // level: not newcomers in PAN-BOLD), or is on a version already.
-    var proposes = !!access.fullWrite || REVIEWED.some(function(a){ return BOLD.can(a, 'edit'); }) || !!branch;
+    // The Version button, for everyone signed in: it's where the open proposals are seen (the
+    // BOLDiquette's and guides' "Proposed changes" are there, 2026-11-05).
+    var proposes = true;
     var html = '<button type="button" class="mast-btn ac-chip' + (waiting ? ' has-dot' : '') + '" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="' + esc(seeTip) + '" aria-label="' + esc(seeTip) + '">' + ICON_EYE + '</button>' +
       (proposes ? '<button type="button" class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</button>' : '');
     if (brOpen && proposes) {
