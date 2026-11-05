@@ -257,11 +257,6 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-posts[hidden], .bs-sort[hidden], .bs-thread[hidden], .bs-about[hidden]{display:none;}
 .bs-post-open .bs-title{font-size:20px;}
 .bs-thread-title{font-size:20px; margin:0 0 6px;}
-.bs-thread-bar{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;}
-.bs-thread-bar .back-link{margin:0;}
-/* Focus mode: the other branches at a branch point, each a button to its line. */
-.bs-switch{display:flex; flex-direction:column; align-items:flex-start; gap:4px; margin:6px 0 0 18px;}
-.bs-switch .btn-text{font-size:13px; text-align:left;}
 .bs-post-open .bs-text{font-size:15px; margin-bottom:12px;}
 .bs-acts{display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; margin:0; font-size:12px; color:var(--muted);}
 /* Byline left, its buttons right, one row (wrapping under it on a narrow screen). */

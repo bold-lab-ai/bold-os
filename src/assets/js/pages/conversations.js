@@ -21,7 +21,7 @@
   var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
   var me = { email: '', name: 'You', uid: '' }, canPost = false, canStart = false, full = false;
   var posts = null, messages = {}, openId = '', stopMsgs = null;
-  var sort = 'top', opened = {}, focus = false, focusOn = {}, replying = '', said = [], draft = null, about = null;   // about: { pid, id }
+  var sort = 'top', opened = {}, replying = '', said = [], draft = null, about = null;   // about: { pid, id }
   var db = function(){ return firebase.firestore(BOLD.getApp()); };
   var col = function(){ return db().collection('conversations'); };
   var FV = function(){ return firebase.firestore.FieldValue; };
@@ -71,7 +71,6 @@
     return '<p class="bs-acts">' +
       '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>' +
       (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
-      (!focus && m.id !== pid && !kids(m.id).length ? '<button type="button" class="btn-text bs-focus-here" data-id="' + esc(m.id) + '" title="Show only this line of the conversation">Focus</button>' : '') +
       (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>';
   }
   function replyForm(m, pid){
@@ -108,35 +107,6 @@
     }
     return '<ol class="bs-run">' + out + '</ol>';
   }
-  // Focus mode: one line of the conversation, from the post to a leaf (focusOn[post]: the message it
-  // goes through, else the newest leaf), in one column; where it passes a branch point, the other
-  // branches are a toggle, each a button that switches to its line.
-  function newestLeaf(id){
-    var ks = kids(id);
-    if (!ks.length) return msgOf(openId, id) || postOf(id);
-    return ks.map(function(c){ return newestLeaf(c.id); }).reduce(function(a, b){ return ms(b.at) > ms(a.at) ? b : a; });
-  }
-  function focusHtml(p, head){
-    var target = (focusOn[p.id] && msgOf(p.id, focusOn[p.id])) || newestLeaf(p.id);
-    var up = [], m = target, n = 0;
-    while (m && m.id !== p.id && n++ < 500) { up.unshift(m); m = msgOf(p.id, parentOf(m)); }
-    var line = [p].concat(up), last = line[line.length - 1];
-    for (var ks = kids(last.id); ks.length && n++ < 1000; ks = kids(last.id)) { last = ks[0]; line.push(last); }   // on to its leaf
-    var out = '';
-    line.forEach(function(x, i){
-      out += i === 0 ? head : msgHtml(x, p.id);
-      var next = line[i + 1], others = kids(x.id).filter(function(c){ return !next || c.id !== next.id; });
-      if (!others.length) return;
-      var on = !!opened['f:' + x.id];
-      out += '<li class="bs-thread-toggle"><button type="button" class="btn-text bs-open" data-id="f:' + esc(x.id) + '" aria-expanded="' + on + '"><span class="bs-caret" aria-hidden="true">' + (on ? '\u25be' : '\u25b8') + '</span>' +
-        others.length + (others.length === 1 ? ' other branch' : ' other branches') + '</button>' +
-        (on ? '<span class="bs-switch">' + others.map(function(c){
-          var t = String(c.body || '').replace(/\s+/g, ' ').trim();
-          return '<button type="button" class="btn-text bs-focus-here" data-id="' + esc(c.id) + '">' + esc(c.name || 'someone') + ': ' + esc(t.length > 60 ? t.slice(0, 57) + '\u2026' : t) + '</button>';
-        }).join('') + '</span>' : '') + '</li>';
-    });
-    return '<ol class="bs-run">' + out + '</ol>';
-  }
 
   // ---------- the list, or one post's thread ----------
   function render(){
@@ -155,9 +125,8 @@
       // The post is the tree's root: the first message of the conversation's column, under its title.
       var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
       var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
-      threadEl.innerHTML = '<div class="bs-thread-bar"><a class="back-link" href="#">&larr; All posts</a>' +
-        '<button type="button" class="bs-sortbtn bs-focus" aria-pressed="' + focus + '" title="Show only one line of the conversation, from the post to a leaf">Focus</button></div>' +
-        '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + (focus ? focusHtml(p, head) : columnHtml(p, p.id, head));
+      threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
+        '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + columnHtml(p, p.id, head);
       var fresh = threadEl.querySelector('.bs-replyform');
       if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id')) fresh.replaceWith(keep);
       else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
@@ -345,8 +314,6 @@
       return;
     }
     if (b.classList.contains('bs-open')) { opened[id] = !opened[id]; render(); return; }
-    if (b.classList.contains('bs-focus')) { setFocus(!focus); render(); return; }
-    if (b.classList.contains('bs-focus-here')) { focusOn[openId] = id; setFocus(true); render(); return; }
     if (b.classList.contains('bs-reply-btn')) { replying = replying === id ? '' : id; render(); return; }
     if (b.classList.contains('bs-replycancel')) { replying = ''; render(); return; }
     if (b.classList.contains('bs-remove')) {
@@ -386,12 +353,9 @@
     if (!body) return;
     go.disabled = true;
     newReply(f.getAttribute('data-pid'), f.getAttribute('data-id'), body, false)
-      .then(function(ref){ replying = ''; focusOn[f.getAttribute('data-pid')] = ref.id; show(f.getAttribute('data-pid'), ref.id); }, function(err){ go.disabled = false; oops('Replying')(err); });
+      .then(function(ref){ replying = ''; show(f.getAttribute('data-pid'), ref.id); }, function(err){ go.disabled = false; oops('Replying')(err); });
   });
 
-  // Focus mode is kept for next time (this browser only).
-  function setFocus(on){ focus = !!on; try { localStorage.setItem('boldConversations:focus', focus ? '1' : ''); } catch (e){} }
-  try { focus = localStorage.getItem('boldConversations:focus') === '1'; } catch (e){}
   function syncSort(){ Array.prototype.forEach.call(document.querySelectorAll('.bs-sortbtn'), function(x){ x.setAttribute('aria-pressed', String(x.getAttribute('data-sort') === sort)); }); }
   sortEl.addEventListener('click', function(e){
     var b = e.target.closest('.bs-sortbtn'); if (!b) return;
