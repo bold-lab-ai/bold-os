@@ -82,6 +82,9 @@
       // A project submitted to more than one venue shows its latest.
       if (p.earlier) inVenue.appendChild(textNode(' (+' + p.earlier + ' earlier)'));
       parts.push(inVenue);
+    } else if (p.proposal && p.proposal.status !== 'approved') {
+      // Proposed (#226): its budget, and whether it waits or was declined.
+      parts.push(textNode((p.proposal.status === 'declined' ? 'Declined' : 'Waiting for a PI or admin') + ' \u00b7 ' + (p.proposal.gpuHours || 0).toLocaleString('en-GB') + ' GPU hours'));
     } else {
       parts.push(textNode('No venue yet'));
     }
@@ -212,7 +215,7 @@
 
   // Older cached lists have no `authors`, no `submission` group or no `joined` (`v` 2); refetch those.
   function hasAuthors(d){
-    return d.v >= 2 && Array.isArray(d.submission) && ['ongoing', 'submission', 'completed', 'planned'].every(function(g){
+    return d.v >= 3 && Array.isArray(d.submission) && ['ongoing', 'submission', 'completed', 'planned'].every(function(g){
       // …and lists from before projects spanned venues (no `pid`): refetch those too.
       return (d[g] || []).every(function(p){ return (p.titleOnly || Array.isArray(p.authors)) && p.pid; });
     });
@@ -245,7 +248,7 @@
   // Options for the two selects, from every project (not only the visible ones).
   function fillOptions(){
     var authors = {}, keywords = {};
-    ['ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
+    ['proposed', 'ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
       ((current && current[g]) || []).forEach(function(p){
         people(p).forEach(function(o){ authors[o.key] = o.name; });
         (p.keywords || []).forEach(function(k){ keywords[k] = (keywords[k] || 0) + 1; });
@@ -300,7 +303,7 @@
 
   function renderLists(){
     if (!current) return;
-    var groups = [['projOngoing', current.ongoing, 'cntOngoing', 'ongoing'], ['projSubmission', current.submission, 'cntSubmission', 'submission'], ['projCompleted', current.completed, 'cntCompleted', 'completed'], ['projPlanned', current.planned, 'cntPlanned', 'planned']];
+    var groups = [['projOngoing', current.ongoing, 'cntOngoing', 'ongoing'], ['projSubmission', current.submission, 'cntSubmission', 'submission'], ['projCompleted', current.completed, 'cntCompleted', 'completed'], ['projPlanned', current.planned, 'cntPlanned', 'planned'], ['projProposed', current.proposed || [], 'cntProposed', 'proposed']];
     var shown = {};
     groups.forEach(function(g){
       var ul = el(g[0]); ul.innerHTML = '';
@@ -320,7 +323,7 @@
       autoTab = false;
       var active = tabs.filter(function(t){ return t.classList.contains('active'); })[0];
       if (!active || !shown[active.getAttribute('data-tab')]) {
-        var first = ['ongoing', 'submission', 'planned', 'completed'].filter(function(n){ return shown[n]; })[0];
+        var first = ['ongoing', 'submission', 'planned', 'completed', 'proposed'].filter(function(n){ return shown[n]; })[0];
         if (first) { setTab(first); syncHash(); }
       }
     }

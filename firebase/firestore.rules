@@ -373,13 +373,17 @@ service cloud.firestore {
     // submitter or a PI/admin.
     match /projects/{projectId} {
       allow read: if seesProject(resource.data.get('projectId', projectId));
+      // A new project is proposed (#226), with its compute budget in GPU hours; projectProposal decides it.
       allow create: if may('projects', 'edit') && request.resource.data.submittedBy.email == email() &&
-        request.resource.data.get('projectId', projectId) == projectId;
+        request.resource.data.get('projectId', projectId) == projectId &&
+        request.resource.data.proposal.status == 'proposed' &&
+        request.resource.data.proposal.gpuHours is number && request.resource.data.proposal.gpuHours > 0 && request.resource.data.proposal.gpuHours <= 10000000;
       allow update: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email ||
         email() in resource.data.get('authorEmails', []) ||
         hasFullWrite()
-      ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
+      ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
+        (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null));
       allow delete: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email || hasFullWrite()
       );

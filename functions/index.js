@@ -2884,7 +2884,8 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds, startedId
       owner: (d.submittedBy && d.submittedBy.name) || '',
       ownerEmail: (d.submittedBy && d.submittedBy.email) || '',
       authors: (Array.isArray(d.authors) ? d.authors : []).map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '' }; }),
-      badges: badgesForCard(d)
+      badges: badgesForCard(d),
+      proposal: d.proposal ? { status: d.proposal.status || 'proposed', gpuHours: Number(d.proposal.gpuHours) || 0 } : null
     };
   };
   cards.forEach(function(c){
@@ -2904,7 +2905,7 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds, startedId
     last.item.pid = pid;
     return { group: projectGroupForCards(list.map(function(e){ return { data: e.d, boardId: e.boardId || null }; }), done.has(pid), started.has(pid)), updatedAt: Math.max.apply(null, list.map(function(e){ return e.d.updatedAt || 0; })), item: last.item };
   });
-  const out = { ongoing: [], submission: [], completed: [], planned: [] };
+  const out = { proposed: [], ongoing: [], submission: [], completed: [], planned: [] };
   rows
     .sort(function(a, b){ return b.updatedAt - a.updatedAt; })
     .forEach(function(r){ out[r.group].push(r.item); });
@@ -2948,10 +2949,10 @@ function projectTitlesOnly(groups, mine, ask){
 // `joined`, for the Projects page's join button and its Yours filter; `v` 2 marks a list that
 // has them, so the page refetches an older cached one (tests/projects-join.test.cjs).
 function markJoined(shown, mine){
-  ['ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
+  ['proposed', 'ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
     (shown[g] || []).forEach(function(i){ if (mine[i.pid]) i.joined = true; });
   });
-  shown.v = 2;
+  shown.v = 3;   // 3: with `proposed` (#226)
   return shown;
 }
 
@@ -3222,25 +3223,27 @@ exports.projectChannel = onCall(
     }
     if (out.exists || (data.mode !== 'ensure' && data.mode !== 'rename')) return out;
 
-    const created = await slackFetch(token, 'conversations.create', { name: n.name, is_private: true });
-    channelNamesCache = null;
-    if (!created.ok){
-      if (created.error === 'name_taken') return Object.assign(out, { exists: true });
-      throw slackChannelError(created.error);
-    }
-    out.created = true;
-    out.invited = false;
-    out.url = await slackChannelUrl(token, created.channel.id);
-    const slackId = await slackIdForEmail(email);
-    if (slackId){
-      const invited = await slackFetch(token, 'conversations.invite', { channel: created.channel.id, users: slackId });
-      out.invited = !!invited.ok;
-    } else {
-      logger.info('No Slack id for the submitter \u2014 channel created, nobody invited', { email });
-    }
-    return out;
+    return Object.assign(out, await makeProjectChannel(token, n.name, email));
   }
 );
+// A new private channel `name`, with the bot and `email` in it → { created, invited, url } ({ exists: true } if taken).
+async function makeProjectChannel(token, name, email){
+  const created = await slackFetch(token, 'conversations.create', { name, is_private: true });
+  channelNamesCache = null;
+  if (!created.ok){
+    if (created.error === 'name_taken') return { exists: true };
+    throw slackChannelError(created.error);
+  }
+  const out = { created: true, invited: false, url: await slackChannelUrl(token, created.channel.id) };
+  const slackId = await slackIdForEmail(email);
+  if (slackId){
+    const invited = await slackFetch(token, 'conversations.invite', { channel: created.channel.id, users: slackId });
+    out.invited = !!invited.ok;
+  } else {
+    logger.info('No Slack id for the submitter \u2014 channel created, nobody invited', { email });
+  }
+  return out;
+}
 
 // The "Join the project" button: invites the caller (their own verified email →
 // Slack id via the `people` roster, never a parameter) to a project's channel.
@@ -3591,7 +3594,12 @@ const setupMissingText = (missing) => missing.map((k) => SETUP_NAMES[k]).join(',
 
 // Pure: a project's group from its cards ([{ data, boardId }], oldest first): completed
 // if marked so or accepted at any venue; otherwise its latest card's.
+// A project proposed and not yet approved (2026-11-05, #226): `proposal` { status: 'proposed' | 'approved' |
+// 'declined', gpuHours, at, by, decidedBy, decidedByName, decidedAt, note } on the card it was registered
+// with. Without one (every project from before), it's approved.
+const proposalPending = (d) => !!(d && d.proposal && d.proposal.status !== 'approved');
 function projectGroupForCards(cards, completed, started){
+  if (cards.length && proposalPending(cards[0].data)) return 'proposed';
   if (completed || cards.some(function(c){ return projectGroupForCard(c.data) === 'completed'; })) return 'completed';
   const last = cards[cards.length - 1];
   return projectGroupForCard(last.data, false, !!last.boardId, started);
@@ -4042,16 +4050,21 @@ function onProjectCard(document){
     }
     if (!before){
       if (pid !== id) { await syncWorkspace(pid); return; }
-      const m = after.setUpMeeting ? normalizeMeeting(after.setUpMeeting) : null;
-      const r = after.setUpRepo ? normalizeRepo(after.setUpRepo) : null;
-      await syncWorkspace(pid, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined, docs: after.setUpDocs === false ? false : undefined,
-        skipped: Array.isArray(after.setUpSkipped) ? after.setUpSkipped.filter(function(k){ return ['channel', 'announce', 'meeting', 'docs', 'repo'].indexOf(k) >= 0; }) : undefined });
+      if (proposalPending(after)) return;   // set up once approved (projectProposal)
+      await setUpProject(pid, after);
       return;
     }
     const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails, d.status, d.outcome]); };
     if (key(before) === key(after)) return;
     if ((await wsRef.get()).exists) await syncWorkspace(pid);
   });
+}
+// A new project's workspace, as its proposer asked (its card's setUp*): its meeting, slides, notes, repository.
+async function setUpProject(pid, after){
+  const m = after.setUpMeeting ? normalizeMeeting(after.setUpMeeting) : null;
+  const r = after.setUpRepo ? normalizeRepo(after.setUpRepo) : null;
+  await syncWorkspace(pid, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined, docs: after.setUpDocs === false ? false : undefined,
+    skipped: Array.isArray(after.setUpSkipped) ? after.setUpSkipped.filter(function(k){ return ['channel', 'announce', 'meeting', 'docs', 'repo'].indexOf(k) >= 0; }) : undefined });
 }
 // A new project, registered on the Projects page, announced in
 // #all-active-projects: the channel is read-only for people (BOLDiquette §
@@ -4082,7 +4095,75 @@ exports.onProjectRegistered = onDocumentCreated(
     // announce: false, whoever registered it chose not to (its workspace's `skipped`
     // says so, and its page offers to announce it later: projectWorkspace 'announce').
     if (!card || card.announce === false) return;
+    if (proposalPending(card)) { await tellProposal(card, event.params.cardId); return; }   // announced once approved
     await announceProject(card, event.params.cardId).catch(function(err){ logger.warn('Announcing a new project failed', { error: String(err.message) }); });
+  }
+);
+// A project proposed (#226): PIs and admins hear (their Inbox, To do); decided with projectProposal.
+async function tellProposal(card, cardId){
+  const by = (card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone', hours = Number(card.proposal && card.proposal.gpuHours) || 0;
+  const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).filter((e) => e !== lowerEmail(card.submittedBy));
+  await deliver(staff, { text: by + ' proposes a project: \u201c' + (card.title || 'Untitled') + '\u201d, ' + hours.toLocaleString('en-GB') + ' GPU hours. Approve or decline it on its page.',
+    href: projectPageUrl(cardId), feature: 'project-proposals', source: 'bold', about: 'project:' + cardId });
+}
+// Pure: a proposal's compute budget, in GPU hours → the number, or { error }.
+function normalizeGpuHours(v){
+  const n = typeof v === 'string' ? Number(v.replace(/[,\s]/g, '')) : Number(v);
+  if (!isFinite(n) || n <= 0) return { error: 'Give its compute budget, in GPU hours.' };
+  if (n > 10000000) return { error: 'That\u2019s more GPU hours than BOLD has.' };
+  return Math.round(n);
+}
+// A proposed project, decided (#226): { id, accept, note? } by a PI or admin other than whoever proposed it
+// (as every change on the site); { id, action: 'resubmit', gpuHours? } by whoever proposed it, after a
+// decline. Approving sets it up as its proposer asked (its channel, meeting, slides, notes, repository),
+// announces it if they asked, and tells them; declining tells them, with the note.
+exports.projectProposal = onCall(
+  { secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 },
+  async (request) => {
+    const email = callerEmail(request), d = request.data || {};
+    await access.requireAccess(email, 'projects', 'list');   // Who can see what
+    const id = String(d.id || '');
+    if (!validSlug(id)) throw new HttpsError('invalid-argument', 'No project given.');
+    const ref = db.collection('projects').doc(id), snap = await ref.get();
+    if (!snap.exists || !snap.data().proposal) throw new HttpsError('not-found', 'That proposal isn\u2019t there.');
+    const card = snap.data(), prop = card.proposal, mine = lowerEmail(card.submittedBy) === email;
+    if (d.action === 'resubmit'){
+      if (!mine) throw new HttpsError('permission-denied', 'Only whoever proposed it can send it again.');
+      if (prop.status !== 'declined') throw new HttpsError('failed-precondition', 'It isn\u2019t declined.');
+      const hours = d.gpuHours === undefined ? prop.gpuHours : normalizeGpuHours(d.gpuHours);
+      if (hours && hours.error) throw new HttpsError('invalid-argument', hours.error);
+      const next = { status: 'proposed', gpuHours: hours, at: Date.now(), by: email };
+      await ref.update({ proposal: next, updatedAt: Date.now() });
+      await tellProposal(Object.assign({}, card, { proposal: next }), id);
+      return { ok: true };
+    }
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins decide a proposed project.');
+    if (mine) throw new HttpsError('failed-precondition', 'Another PI or admin decides your own proposal.');
+    if (prop.status !== 'proposed') throw new HttpsError('failed-precondition', 'It\u2019s already been decided.');
+    const accept = !!d.accept, note = String(d.note || '').trim().slice(0, 1000), name = request.auth.token.name || email;
+    const decided = Object.assign({}, prop, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: name, decidedAt: Date.now(), note });
+    await ref.update({ proposal: decided, updatedAt: Date.now() });
+    const to = lowerEmail(card.submittedBy), title = card.title || 'Your project';
+    if (!accept){
+      await deliver([to], { text: name + ' declined your proposed project \u201c' + title + '\u201d' + (note ? ': \u201c' + note + '\u201d' : '.') + ' You can change it and send it again from its page.',
+        href: projectPageUrl(id), feature: 'project-proposals', source: 'bold', about: 'project:' + id });
+      return { ok: true };
+    }
+    // Its channel, now (the proposer's name for it), with them in it.
+    let channel = '';
+    const want = normalizeProjectChannel(card.setUpChannel || '');
+    if (card.setUpChannel && !want.error){
+      const token = SLACK_BOT_TOKEN.value();
+      const r = (await slackChannelId(token, want.name)) ? { exists: true } : await makeProjectChannel(token, want.name, to).catch((err) => { logger.warn('Making a proposed project\u2019s channel failed', { error: String(err.message) }); return null; });
+      if (r) channel = '#' + want.name;
+    }
+    const now = Object.assign({}, card, { proposal: decided }, channel ? { slackChannel: channel } : {});
+    if (channel) await ref.update({ slackChannel: channel });
+    await setUpProject(projectIdOf(card, id), now);
+    if (card.announce !== false) await announceProject(now, id).catch((err) => logger.warn('Announcing a new project failed', { error: String(err.message) }));
+    await deliver([to], { text: name + ' approved your project \u201c' + title + '\u201d (' + (Number(prop.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours): it\u2019s being set up.' + (note ? ' \u201c' + note + '\u201d' : ''),
+      href: projectPageUrl(id), feature: 'project-proposals', source: 'bold', about: 'project:' + id });
+    return { ok: true, slackChannel: channel };
   }
 );
 async function announceProject(card, cardId){
@@ -4314,6 +4395,8 @@ exports.projectWorkspace = onCall(
     const cardSnap = await cardRefFor(id, boardId).get();
     if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
     const card = cardSnap.data();
+    // Proposed (#226): nothing is set up, joined or changed until a PI or admin approves it (projectProposal).
+    if (proposalPending(card)) throw new HttpsError('failed-precondition', card.proposal.status === 'declined' ? 'It was declined: change it and send it again first.' : 'It\u2019s waiting for a PI or admin to approve it.');
     const pid = projectIdOf(card, id);
     const wsRef = db.collection('projectWorkspaces').doc(pid);
     // Edit without View: joining, and then everything its people do.
@@ -4701,6 +4784,17 @@ async function requestWork(email, full, person){
     full ? all('apiTokens') : q('apiTokens', 'email'),
     full ? all('boards') : Promise.resolve([])
   ]);
+  // Projects proposed (#226): PIs and admins decide; whoever proposed one waits.
+  const proposals = (await (full ? db.collection('projects').where('proposal.status', 'in', ['proposed', 'declined']) : db.collection('projects').where('submittedBy.email', '==', email)).get()).docs
+    .filter(function(d){ return d.data().proposal && d.data().proposal.status !== 'approved'; });
+  proposals.forEach(function(d){
+    const r = d.data(), p = r.proposal, open = p.status === 'proposed';
+    if (!open && !(lowerEmail(r.submittedBy) === email)) return;
+    add({ kind: 'project-proposal', ref: d.ref.path, title: 'Proposed project: ' + (r.title || 'Untitled') + ' (' + (Number(p.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours)' + (open ? '' : ', declined'),
+      url: projectPageUrl(d.id), by: person(lowerEmail(r.submittedBy), r.submittedBy && r.submittedBy.name),
+      on: p.decidedBy ? [person(p.decidedBy, p.decidedByName)] : [], waiting: open ? PIS_ADMINS : '', state: p.status },
+    requestColumn(open, false, p.decidedAt, p.at, now));
+  });
   // Papers in Internal Review (ML Conference Cycle's view), people to confirm as having
   // invited them (the inviter; PIs and admins), events and series waiting to be
   // released (on whoever added the event or organises the series, who release them; PIs
@@ -8198,5 +8292,5 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, inviteChoices, validInviteTo
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo
 };

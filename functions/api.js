@@ -375,9 +375,9 @@ module.exports = function(deps){
     },
     {
       name: 'list_projects',
-      description: 'The lab’s research projects, as on the Projects page: planned, ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
+      description: 'The lab’s research projects, as on the Projects page: proposed (waiting for a PI or admin to approve them), planned, ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
       inputSchema: { type: 'object', properties: {
-        group: { type: 'string', enum: ['planned', 'ongoing', 'submission', 'completed'] },
+        group: { type: 'string', enum: ['proposed', 'planned', 'ongoing', 'submission', 'completed'] },
         keyword: { type: 'string', description: 'A project keyword, e.g. "reinforcement learning".' },
         query: { type: 'string', description: 'Words in the title, abstract, keywords or people.' },
         mine: { type: 'boolean', description: 'Only projects you are a member of.' },
@@ -512,7 +512,7 @@ module.exports = function(deps){
       ss.forEach((x) => item('events', x.title, 'Session', talk(x), 'session.html?session=' + encodeURIComponent(x._id)));
       ts.forEach((x) => item('events', x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(x._id)));
     }));
-    if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
+    if (want('projects')) jobs.push(allProjects().then((g) => [].concat(g.proposed || [], g.ongoing, g.submission, g.planned, g.completed).forEach((p) =>
       item('projects', p.title, 'Project' + (p.owner ? ' · ' + p.owner : ''), [p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), projectHref(p.projectId || p.cardId, p.boardId)))));
     if (want('people')) jobs.push(Promise.all([lab.members(), profileUrlOf()]).then(([ms, profile]) => ms.forEach((x) => {
       const p = profile(x.email || x._id);
@@ -565,9 +565,9 @@ module.exports = function(deps){
     workspaces.forEach((w) => { members[w._id] = w.members || []; });
     const ws = words(a.query), kw = fold(a.keyword);
     let rows = [];
-    ['ongoing', 'submission', 'planned', 'completed'].forEach((group) => {
+    ['proposed', 'ongoing', 'submission', 'planned', 'completed'].forEach((group) => {
       if (a.group && a.group !== group) return;
-      g[group].forEach((p) => {
+      (g[group] || []).forEach((p) => {
         const id = p.pid || p.projectId || p.cardId;
         if (kw && !(p.keywords || []).some((k) => fold(k) === kw)) return;
         if (ws.length && !matches([p.title, p.abstract, (p.keywords || []).join(' '), p.owner, (p.authors || []).map((x) => x.name).filter((n) => n !== p.owner).join(' ')].join(' '), ws)) return;

@@ -29,7 +29,7 @@ test('getAllProjects marks every project the caller joined, in every group', () 
   assert.strictEqual(out.completed[0].joined, true);
   assert.ok(!out.ongoing[1].joined);
   assert.ok(!out.planned[0].joined);
-  assert.strictEqual(out.v, 2, 'v 2 makes the page refetch a list cached before `joined` existed');
+  assert.strictEqual(out.v, 3, 'v 3 makes the page refetch a list cached before `proposed` existed');
 });
 
 test('a viewer who sees titles only still gets their own projects in full, marked joined', () => {
@@ -48,7 +48,7 @@ test('the page offers to join only a project the viewer is not on', () => {
 
 test('the page refetches a cached list from before `joined` (no v 2)', () => {
   const src = fs.readFileSync(path.join(__dirname, '../src/assets/js/pages/projects.js'), 'utf8');
-  assert.match(src, /function hasAuthors\(d\)\{\s*return d\.v >= 2 &&/);
+  assert.match(src, /function hasAuthors\(d\)\{\s*return d\.v >= 3 &&/);
 });
 
 test('PAN-BOLD talks to the owner instead of asking to join (2026-11-03)', () => {

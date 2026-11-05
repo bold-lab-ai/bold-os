@@ -313,3 +313,9 @@
 .setup-list li.is-done{color:var(--muted);}
 .setup-mark{width:1em; color:var(--muted);}
 .setup-list li.is-done .setup-mark{color:var(--accent);}
+/* A proposed project (#226): its budget, and Approve / Decline or Send it again. */
+.proposal-panel{margin:4px 0 18px; padding:12px 14px; border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--surface); font-family:var(--sans); font-size:14px;}
+.proposal-panel p{margin:0 0 8px;}
+.proposal-actions{display:flex; flex-wrap:wrap; align-items:center; gap:8px;}
+.proposal-actions input[type=text]{flex:1 1 260px; min-width:0; font:inherit; padding:5px 8px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}
+.proposal-actions input[type=number]{width:120px; font:inherit; padding:4px 6px; margin-left:6px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}

@@ -306,6 +306,19 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     if (OUTCOME_LABELS[card.outcome] && !(card.outcome === 'accepted' && card.status === 'conference')) {
       html += '<span class="badge">' + OUTCOME_LABELS[card.outcome] + '</span>';
     }
+    // Proposed (#226): nothing else until a PI or admin decides; the decision, or sending it again, below.
+    var pending = card.proposal && card.proposal.status !== 'approved';
+    if (pending) {
+      html += '<span class="badge">' + (card.proposal.status === 'declined' ? 'Declined' : 'Proposed') + '</span>';
+      html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
+      html += '</div></div>' + proposalHtml();
+      html += '<div class="tab-panel" id="projectPanel">' + PANELS.overview() + '</div>';
+      el('projectBody').innerHTML = html; el('projectBody').hidden = false; el('detailMsg').hidden = true;
+      document.title = card.title + ' | BOLD Lab';
+      wireAbstract(); wireProposal();
+      el('removeProject').addEventListener('click', removeProject);
+      return;
+    }
     // Its health (project-health.js): its meeting, slides, notes and repository, BOLD.OS's counting twice.
     if (ws && window.BoldHealth) html += BoldHealth.html(BoldHealth.of(ws));
     if (ws && ws.completedAt) html += '<span class="badge">Completed</span>';
@@ -358,6 +371,47 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         e.preventDefault();
         setTab(all[(i + d + all.length) % all.length].getAttribute('data-tab'), true);
       });
+    });
+  }
+
+  // A proposed project's panel (#226): its budget and where it stands; Approve and Decline for a PI or admin
+  // other than whoever proposed it, greyed with the reason for everyone else; after a decline, its proposer
+  // sends it again (its budget changed if need be).
+  function proposalHtml(){
+    var p = card.proposal, hours = (Number(p.gpuHours) || 0).toLocaleString('en-GB');
+    var mine = !!me && String((card.submittedBy || {}).email || '').toLowerCase() === String(me.email || '').toLowerCase();
+    var who = esc((card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone');
+    if (p.status === 'declined') {
+      return '<div class="proposal-panel"><p><strong>Declined</strong> by ' + esc(p.decidedByName || p.decidedBy || 'a PI or admin') + (p.note ? ': \u201c' + esc(p.note) + '\u201d' : '.') + ' It asked for ' + hours + ' GPU hours.</p>' +
+        (mine ? '<div class="proposal-actions"><label>Compute budget (GPU hours) <input type="number" id="propHours" min="1" step="1" value="' + esc(String(p.gpuHours || '')) + '"></label>' +
+          '<button type="button" class="btn-box is-primary" id="propResubmit">Send it again</button></div>' : '') + '<p class="field-error" id="propError" hidden></p></div>';
+    }
+    var why = !fullWrite ? 'Only PIs and admins decide a proposed project' : mine ? 'Another PI or admin decides your own proposal' : '';
+    return '<div class="proposal-panel"><p><strong>Proposed</strong> by ' + who + ' \u00b7 <strong>' + hours + ' GPU hours</strong> \u00b7 waiting for a PI or admin to approve it. Once approved, its channel, meeting, slides, notes and repository are made.</p>' +
+      '<div class="proposal-actions"><input type="text" id="propNote" maxlength="1000" placeholder="A note to ' + who + ' (optional)"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' +
+      '<button type="button" class="btn-box is-primary" id="propApprove"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Approve</button>' +
+      '<button type="button" class="btn-box" id="propDecline"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Decline</button></div>' +
+      '<p class="field-error" id="propError" hidden></p></div>';
+  }
+  function wireProposal(){
+    var call = function(args, btn){
+      btn.disabled = true; btn.textContent = btn.id === 'propApprove' ? 'Approving\u2026' : btn.id === 'propDecline' ? 'Declining\u2026' : 'Sending\u2026';
+      firebase.app().functions('europe-west2').httpsCallable('projectProposal')(Object.assign({ id: projectId }, args)).then(function(){ location.reload(); }, function(err){
+        console.error('[BOLD Lab] deciding the proposal failed', err);
+        render();
+        var e = el('propError'); if (e) { e.textContent = (err && err.message) || 'Couldn\u2019t do that \u2014 try again.'; e.hidden = false; }
+      });
+    };
+    var note = function(){ return el('propNote') ? el('propNote').value.trim() : ''; };
+    if (el('propApprove')) el('propApprove').addEventListener('click', function(){
+      BOLD.confirmAlways({ title: 'Approve \u201c' + card.title + '\u201d?', go: 'Approve', effects: ['Approve its budget of ' + (Number(card.proposal.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours',
+        'Make its Slack channel, meeting, slides, notes and repository, as its proposer asked', 'Tell them, on BOLD.OS'] }).then(function(ok){ if (ok) call({ accept: true, note: note() }, el('propApprove')); });
+    });
+    if (el('propDecline')) el('propDecline').addEventListener('click', function(){
+      BOLD.confirmAlways({ title: 'Decline \u201c' + card.title + '\u201d?', go: 'Decline', effects: ['Tell its proposer, on BOLD.OS' + (note() ? ', with your note' : '')] }).then(function(ok){ if (ok) call({ accept: false, note: note() }, el('propDecline')); });
+    });
+    if (el('propResubmit')) el('propResubmit').addEventListener('click', function(){
+      BOLD.confirmAlways({ title: 'Send \u201c' + card.title + '\u201d again?', go: 'Send', effects: ['Send it to the PIs and admins to approve'] }).then(function(ok){ if (ok) call({ action: 'resubmit', gpuHours: el('propHours').value }, el('propResubmit')); });
     });
   }
 
