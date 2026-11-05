@@ -182,7 +182,7 @@ exports.onlySlackSignUps = beforeUserCreated({ secrets: [SLACK_BOT_TOKEN] }, asy
     .then((r) => r.json()).catch(() => null);
   const auth = await slackAuthInfo(token).catch(() => null), team = auth && auth.teamId;
   const u = info && info.ok && info.user;
-  if (!u || u.deleted || !team || (u.team_id && u.team_id !== team) || slackExternal(u, team)) {
+  if (!u || u.deleted || u.is_bot || !team || u.team_id !== team || slackExternal(u, team) || !(u.profile && u.profile.email)) {
     logger.warn('onlySlackSignUps: refused a Slack account not of the BOLD Slack', { slackId: id });
     throw new IdentityHttpsError('permission-denied', NOT_BOLD_SLACK);
   }
