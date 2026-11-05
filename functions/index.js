@@ -1021,8 +1021,6 @@ async function handleSlashCommand(token, body){
 // /bug's form (2026-11-05): a proper report, in sections. Only the title and What happened are needed.
 const BUG_SEVERITY = { blocks: 'blocks me', annoying: 'annoying', cosmetic: 'cosmetic' };
 const BUG_BLOCKS = [
-  { type: 'input', block_id: 'where', optional: true, label: { type: 'plain_text', text: 'Where' },
-    element: { type: 'plain_text_input', action_id: 'v', max_length: 300, placeholder: { type: 'plain_text', text: 'The page or feature, e.g. a project’s Board tab, or its link' } } },
   { type: 'input', block_id: 'happened', label: { type: 'plain_text', text: 'What happened' },
     element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: 'What you saw, with any error message' } } },
   { type: 'input', block_id: 'expected', optional: true, label: { type: 'plain_text', text: 'What you expected' },

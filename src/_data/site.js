@@ -36,6 +36,8 @@ export default {
   nav: [
     // Its sub-pages are BOLDiquette's sections (Firestore), filled in by bold.js.
     { label: 'BOLDiquette', href: 'boldiquette.html', links: [], handbook: true, area: 'boldiquette' },
+    // Reddit-like threads (conversations.html, 2026-11-04; was an experiment).
+    { label: 'Conversations', href: 'conversations.html', links: [], area: 'conversations' },
     // Research: the projects and their papers' internal review. Shown with Projects (the
     // lower of the two; areaWhat titles: everyone signed in sees the projects' titles, and
     // below Projects' View and Edit asks to join one, 2026-11-02); Internal review has its own area.
@@ -46,8 +48,6 @@ export default {
       { label: 'Projects', href: 'projects.html', area: 'projects', areaWhat: 'titles' },
       { label: 'Internal review', href: 'audit-board.html', area: 'ml-cycle' },
     ] },
-    // Reddit-like threads (conversations.html, 2026-11-04; was an experiment).
-    { label: 'Conversations', href: 'conversations.html', links: [], area: 'conversations' },
     { label: 'Calendar', href: 'calendar.html', links: [], separatorAfter: true, area: 'calendar' },
     { label: 'People', href: 'people.html', area: 'people', links: [
       { label: 'Members', href: 'people.html' },
