@@ -301,7 +301,7 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-last{font-weight:400; color:var(--muted);}
 .bs-run > .bs-thread-toggle + .bs-branches{border-top:0;}
 /* Under the message: its votes, then Reply and Remove. */
-.bs-right{display:flex; align-items:center; gap:12px; margin-top:3px;}
+.bs-right{display:flex; align-items:center; justify-content:flex-end; gap:12px; margin-top:3px;}
 .bs-line > .bs-by{margin:0;}
 .bs-vote-inline{flex-direction:row; min-width:0; gap:1px; font-size:12px;}
 .bs-vote-inline .bs-up{padding:1px 3px; font-size:10px;}
