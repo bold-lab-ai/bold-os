@@ -52,6 +52,15 @@ const LEVEL = (v, e) => ({ view: v, edit: e });
     if (role === 'PI') { delete m.invitedBy; m.contact = ''; }
     set('members/' + email, m);
   }
+  // Moves between groups, for Network's Lineage: Ines asked for BOLD-associate, then a PI moved her up on People.
+  const day = 86400000, t0 = Date.now() - 30 * day;
+  set('groupRequests/seed-ines', { email: 'internal@example.com', name: 'Ines Internal', from: 'pan', to: 'associate', note: '', terms: 'Stand-in terms.', acceptedAt: t0, status: 'approved', at: t0, decidedBy: 'pi@example.com', decidedByName: 'Pat PI', decidedAt: t0 + day });
+  set('groupMoves/seed-ines', { email: 'internal@example.com', from: 'associate', to: 'internal', by: 'pi@example.com', at: t0 + 10 * day, via: '' });
+  set('groupRequests/seed-ari', { email: 'associate@example.com', name: 'Ari Associate', from: 'pan', to: 'associate', note: '', terms: 'Stand-in terms.', acceptedAt: t0, status: 'approved', at: t0, decidedBy: 'pi@example.com', decidedByName: 'Pat PI', decidedAt: t0 + 2 * day });
+  // A test account (Linked accounts) of Pat's: on no graph (#227).
+  set('people/UTESTTA', { name: 'Pat PI (test)', email: 'pat.test@example.com', slackId: 'UTESTTA' });
+  set('members/pat.test@example.com', { name: 'Pat PI (test)', email: 'pat.test@example.com', test: true, testOf: 'pi@example.com', category: 'pan', categoryBy: 'pi@example.com', categoryAt: t0,
+    invitedBy: { email: 'pi@example.com', name: 'Pat PI', status: 'confirmed' } });
   let parts = [{ id: 'who-is-bold', section: 'People', title: 'Who is BOLD', body: STAND_IN_WHO }];
   if (process.env.BOLDIQUETTE_PARTS) {
     const j = JSON.parse(fs.readFileSync(process.env.BOLDIQUETTE_PARTS, 'utf8'));

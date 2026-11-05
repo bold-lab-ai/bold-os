@@ -8,6 +8,8 @@ test('a change of group is a move; joining and saving details are not', () => {
   assert.deepStrictEqual(groupMoveOf('A@x.org', { category: 'associate' }, { category: 'internal', categoryBy: 'PI@x.org', categoryAt: 5 }),
     { email: 'a@x.org', from: 'associate', to: 'internal', by: 'pi@x.org', at: 5, via: '' });
   assert.strictEqual(groupMoveOf('a@x.org', {}, { category: 'pan' }), null);
+  // No group on the record is PAN-BOLD: moving up from it is a move.
+  assert.strictEqual(groupMoveOf('a@x.org', { name: 'A' }, { name: 'A', category: 'associate', categoryBy: 'p@x.org', categoryAt: 2 }).from, 'pan');
   assert.strictEqual(groupMoveOf('a@x.org', { category: 'pan', name: 'A' }, { category: 'pan', name: 'B' }), null);
 });
 

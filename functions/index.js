@@ -7863,9 +7863,11 @@ const groupMoveId = (email, at) => crypto.createHash('sha1').update(String(email
 // Pure: a member's record before and after → the move, or null.
 function groupMoveOf(email, b, a){
   b = b || {}; a = a || {};
-  if (!b.category || !a.category || b.category === a.category) return null;
+  // No group on the record is PAN-BOLD (groupOf), so PAN-BOLD on joining is no move.
+  const from = groupOf(b), to = groupOf(a);
+  if (from === to) return null;
   const viaRequest = /^request/.test(String(a.categoryVia || '')) && a.categoryVia !== b.categoryVia;
-  return { email: String(email).toLowerCase(), from: b.category, to: a.category, by: String(a.categoryBy || '').toLowerCase(), at: Number(a.categoryAt) || Date.now(), via: viaRequest ? 'request' : '' };
+  return { email: String(email).toLowerCase(), from, to, by: String(a.categoryBy || '').toLowerCase(), at: Number(a.categoryAt) || Date.now(), via: viaRequest ? 'request' : '' };
 }
 // Pure: the move a member's current group records, for those set before groupMoves (from
 // unknown); null for PAN-BOLD on joining, or a request's (approved groupRequests have those).
