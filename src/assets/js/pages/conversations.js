@@ -59,6 +59,8 @@
       (m.broughtBy && m.broughtBy.name ? ', brought in by ' + esc(m.broughtBy.name) : '') +
       (s.permalink ? ' · <a href="' + esc(s.permalink) + '" target="_blank" rel="noopener">Open in Slack</a>' : '') + '</p>';
   }
+  // A message's buttons, on its byline's row at the right (bs-head), so a reply takes two lines, not three.
+  function head(m, pid){ return '<div class="bs-head"><p class="bs-by">' + by(m) + '</p>' + acts(m, pid) + '</div>'; }
   function acts(m, pid){
     var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
     var k = m.id === pid ? 0 : total(m.id);
@@ -66,15 +68,17 @@
       '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>' +
       (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
       (k ? '<button type="button" class="btn-text bs-fold" data-id="' + esc(m.id) + '">' + (folded[m.id] ? 'Show ' + count(k) : 'Hide replies') + '</button>' : '') +
-      (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>' +
-      (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
+      (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>';
+  }
+  function replyForm(m, pid){
+    return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
         '<div class="event-form-actions"><button type="submit" class="ev-save">Reply</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
   }
   function replyHtml(m, pid){
     var k = total(m.id), off = folded[m.id];
     return '<li class="bs-reply' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
       '<div class="bs-reply-card">' + vote(m) + '<div class="bs-post-main">' +
-        '<p class="bs-by">' + by(m) + '</p>' + md(m.body) + acts(m, pid) + '</div></div>' +
+        head(m, pid) + md(m.body) + replyForm(m, pid) + '</div></div>' +
       (k && !off ? '<ol class="bs-replies">' + kids(m.id).map(function(x){ return replyHtml(x, pid); }).join('') + '</ol>' : '') + '</li>';
   }
 
@@ -95,8 +99,8 @@
       var keep = threadEl.querySelector('.bs-replyform');
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
         '<div class="bs-post bs-post-open' + (mine(p) ? ' is-mine' : '') + (about && about.id === p.id ? ' is-about' : '') + '" id="m-' + esc(p.id) + '">' + vote(p) +
-          '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2><p class="bs-by">' + by(p) + '</p>' +
-          (p.body && p.body.trim() !== p.title ? md(p.body) : '') + acts(p, p.id) + origin(p) + '</div></div>' +
+          '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2>' + head(p, p.id) +
+          (p.body && p.body.trim() !== p.title ? md(p.body) : '') + replyForm(p, p.id) + origin(p) + '</div></div>' +
         '<h3 class="bs-replies-head">' + count(k) + '</h3>' +
         (k ? '<ol class="bs-replies bs-replies-top">' + kids(p.id).map(function(x){ return replyHtml(x, p.id); }).join('') + '</ol>' : '<p class="bs-by">No replies yet.</p>');
       var fresh = threadEl.querySelector('.bs-replyform');

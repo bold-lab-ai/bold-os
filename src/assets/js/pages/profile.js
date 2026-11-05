@@ -199,11 +199,14 @@
     var p = providerOf(me(), 'google.com');
     var choices = link.choices || [], to = link.inviteTo || [link.google];
     // Which of their addresses get them (#178): one at least, so the last ticked is greyed.
-    var pick = choices.length > 1 ? '<fieldset class="g-invite-to"><legend>Meeting invitations, slides and notes go to</legend>' + choices.map(function(a){
-      var on = to.indexOf(a) >= 0, last = on && to.length === 1;
-      return '<label' + (last ? ' title="At least one address gets them"' : '') + '><input type="checkbox" class="g-to" value="' + escapeHtml(a) + '"' + (on ? ' checked' : '') + (gBusy || last ? ' disabled' : '') + '> ' + escapeHtml(a) + (a === link.google ? ' (Google)' : '') + '</label>';
-    }).join('') + '</fieldset>' : '';
-    box.innerHTML = accountHtml({ name: (p && p.displayName) || link.google, handle: '', note: escapeHtml(link.google) + (pick ? '' : ' \u00b7 your projects\u2019 meeting invitations, slides and notes go here') }) + pick + err +
+    // With one address (BOLD.OS, Slack and Google all the same), it's ticked and greyed, saying why.
+    var only = choices.length < 2 ? 'Your only address: your BOLD.OS, Slack and Google accounts all use it' : '';
+    var pick = '<fieldset class="g-invite-to"><legend>Meeting invitations, slides and notes go to</legend>' + (choices.length ? choices : [link.google]).map(function(a){
+      var on = only || to.indexOf(a) >= 0, last = !only && on && to.length === 1;
+      var why = only || (last ? 'At least one address gets them' : '');
+      return '<label' + (why ? ' title="' + escapeHtml(why) + '"' : '') + '><input type="checkbox" class="g-to" value="' + escapeHtml(a) + '"' + (on ? ' checked' : '') + (gBusy || why ? ' disabled' : '') + '> ' + escapeHtml(a) + (a === link.google && !only ? ' (Google)' : '') + '</label>';
+    }).join('') + (only ? '<span class="g-why">' + escapeHtml(only) + '.</span>' : '') + '</fieldset>';
+    box.innerHTML = accountHtml({ name: (p && p.displayName) || link.google, handle: '', note: escapeHtml(link.google) }) + pick + err +
       '<span class="gh-actions"><button type="button" class="btn-box g-unlink"' + off + '>Unlink Google</button></span>';
   }
   el('googleBody').addEventListener('change', function(e){
