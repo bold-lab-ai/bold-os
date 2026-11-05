@@ -15,6 +15,22 @@ self.addEventListener('notificationclick', function(event){
   event.notification.close();
   if (/^https:\/\//.test(url)) event.waitUntil(clients.openWindow(url));
 });
+// With a BOLD.OS tab visible, Firebase shows nothing (it hands the message to the page, which doesn't
+// draw it), so it's shown here then; with none, Firebase shows it, so it's never shown twice. Its data
+// is Firebase's own shape (FCM_MSG), so a click opens its link (Firebase's listener) or Join (above).
+self.addEventListener('push', function(event){
+  var payload;
+  try { payload = event.data && event.data.json(); } catch (e){ return; }
+  if (!payload || !payload.notification) return;
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list){
+    var visible = list.some(function(c){ return c.visibilityState === 'visible' && c.url !== 'about:blank'; });
+    if (!visible) return;
+    var n = payload.notification;
+    var opts = { body: n.body || '', icon: n.icon, badge: n.badge, data: { FCM_MSG: payload }, requireInteraction: !!n.requireInteraction };
+    if (Array.isArray(n.actions)) opts.actions = n.actions;
+    return self.registration.showNotification(n.title || 'BOLD.OS', opts);
+  }));
+});
 importScripts('https://www.gstatic.com/firebasejs/{{ site.firebaseSdkVersion }}/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/{{ site.firebaseSdkVersion }}/firebase-messaging-compat.js');
 firebase.initializeApp({{ site.firebase | dump | safe }});
