@@ -286,7 +286,8 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-branches > .bs-run > .bs-line:first-child{border-top:1px solid var(--rule);}
 /* Lines from a message to its branches, as a tree: one down the left from the toggle, an elbow into
    each branch's first message, stopping at the last. */
-.bs-branches > .bs-run{position:relative;}
+.bs-branches > .bs-run{position:relative; background:color-mix(in srgb, var(--accent) 6%, transparent);}
+/* Each level deeper a little darker: the tints stack (6%, ~12%, ~17%…), so a change of nesting shows. */
 .bs-branches > .bs-run::before{content:''; position:absolute; left:-14px; top:-6px; width:10px; height:24px; border-left:2px solid var(--line); border-bottom:2px solid var(--line); border-bottom-left-radius:6px;}
 .bs-branches > .bs-run:not(:last-child)::after{content:''; position:absolute; left:-14px; top:16px; bottom:-8px; border-left:2px solid var(--line);}
 .bs-branches > .bs-run:first-child::before{top:-4px;}
