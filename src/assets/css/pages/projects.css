@@ -272,11 +272,13 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-blocks, .bs-run, .bs-branches > ol{list-style:none; margin:0; padding:0;}
 .bs-blocks, .bs-branches > ol{display:flex; flex-direction:column; gap:8px;}
 .bs-run{background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); overflow:hidden;}
-.bs-msg{padding:6px 12px 7px;}
-.bs-msg + .bs-msg, .bs-run > .bs-branches{border-top:1px solid var(--rule);}
-.bs-msg.is-mine, .bs-msg.is-about{box-shadow:inset 3px 0 0 var(--ink);}
-.bs-msg .bs-text{margin:2px 0 0; font-size:14px;}
-.bs-msg .bs-text > :last-child{margin-bottom:0;}
+.bs-line{padding:6px 12px 7px;}
+.bs-line + .bs-line, .bs-run > .bs-branches{border-top:1px solid var(--rule);}
+/* Yours: a thin accent bar; the one you're reasoning about with your agent: the ink one. */
+.bs-line.is-mine{box-shadow:inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);}
+.bs-line.is-about{box-shadow:inset 3px 0 0 var(--ink);}
+.bs-line .bs-text{margin:2px 0 0; font-size:14px;}
+.bs-line .bs-text > :last-child{margin-bottom:0;}
 .bs-branches{padding:8px 10px 10px 24px; background:var(--wash);}
 .bs-right{display:flex; align-items:center; gap:10px; margin-left:auto;}
 .bs-vote-inline{flex-direction:row; min-width:0; gap:1px; font-size:12px;}

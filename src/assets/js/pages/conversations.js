@@ -78,7 +78,7 @@
   // Replies as in Slack: one block for a run of messages each answering the one before, a hairline
   // between them; where one has two or more replies, each starts a block of its own, indented under it.
   function msgHtml(m, pid){
-    return '<li class="bs-msg' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
+    return '<li class="bs-line' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
       '<div class="bs-head"><p class="bs-by">' + by(m) + '</p><div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div></div>' +
       md(m.body) + replyForm(m, pid) + '</li>';
   }
