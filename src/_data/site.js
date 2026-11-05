@@ -67,11 +67,14 @@ export default {
       { label: 'Get started at BOLD', href: 'get-started.html', area: 'get-started' },
       { label: 'Recommendation letters', href: 'letters.html' },
       { label: 'Introductions', href: 'introductions.html' },
-    ], separatorAfter: true },
+    ] },
+    // Hidden from the sidebar for now (2026-11-05: Conversations, its only experiment, has its own
+    // place); experimental.html still works. To bring it back, uncomment it and put
+    // separatorAfter: true back on the Service desk.
     // Experimental features (experimental.html, 2026-11-04): code ones (src/_data/experiments.js) and
     // ones anyone who may edit the page adds on the site (experiments/{id}, filled in by bold.js).
     // The code ones (src/_data/experiments.js) are written in by the sidebar partial, from that data (not
     // imported here: the dev server would keep an old copy); the ones added on the site follow.
-    { label: 'Experimental', href: 'experimental.html', links: [], experiments: true, area: 'experimental' },
+    // { label: 'Experimental', href: 'experimental.html', links: [], experiments: true, area: 'experimental' },
   ],
 };

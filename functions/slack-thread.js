@@ -220,9 +220,17 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     return s.empty ? {} : s.docs[0].data();
   }
 
+  // Starting a chat (a Slack thread brought in is one): Conversations' Edit and BOLD-internal and above;
+  // BOLD-associate replies and votes (BOLDiquette › Who can do what, 2026-11-05).
+  const STARTS = 'Starting a chat is for BOLD-internal and above (BOLDiquette › Who can do what).';
+  async function startsChats(email){
+    return (await access.can(email, 'conversations', 'edit')) && require('./access').rank(await access.groupFor(email)) >= require('./access').rank('internal');
+  }
+
   const slackThread = onCall({ secrets: [SLACK_BOT_TOKEN] }, async (request) => {
     const email = signedInEmail(request).toLowerCase();
     await access.requireAccess(email, 'conversations', 'edit');
+    if (!(await startsChats(email))) throw new HttpsError('permission-denied', STARTS);
     const link = parseSlackLink((request.data || {}).url);
     if (!link) throw new HttpsError('invalid-argument', 'That isn’t a link to a Slack message: in Slack, a message’s ⋯ menu → Copy link.');
     const p = await personFor(email);
@@ -252,7 +260,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       const p = (await db.collection('people').where('slackId', '==', d.slackId).limit(1).get()).docs[0];
       const email = p ? String(p.data().email || '').toLowerCase() : '';
       if (!email) throw new HttpsError('permission-denied', 'BOLD.OS doesn’t know you yet: sign in to BOLD.OS once with Slack.');
-      if (!(await access.can(email, 'conversations', 'edit'))) throw new HttpsError('permission-denied', 'You can’t post in Conversations yet (BOLDiquette › Who can see what).');
+      if (!(await startsChats(email))) throw new HttpsError('permission-denied', STARTS);
       if (!/^\d{10}\.\d{6}$/.test(d.thread) || !d.channel) throw new HttpsError('invalid-argument', 'That message can’t be sent.');
       const token = SLACK_BOT_TOKEN.value(), link = { channel: d.channel, ts: d.thread, thread: d.thread };
       const r = await saveThread(token, link, d.team, { email, name: p.data().name || '', slackId: d.slackId });

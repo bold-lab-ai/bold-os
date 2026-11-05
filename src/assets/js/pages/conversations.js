@@ -19,7 +19,7 @@
   // A message's text: Markdown (Slack threads come in as it: functions/slack-thread.js), its single
   // line breaks kept, as in Slack.
   var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
-  var me = { email: '', name: 'You', uid: '' }, canPost = false, full = false;
+  var me = { email: '', name: 'You', uid: '' }, canPost = false, canStart = false, full = false;
   var posts = null, messages = {}, openId = '', stopMsgs = null;
   var sort = 'top', folded = {}, replying = '', said = [], draft = null, about = null;   // about: { pid, id }
   var db = function(){ return firebase.firestore(BOLD.getApp()); };
@@ -332,8 +332,11 @@
   BOLD.onAccess(function(a){
     me.email = String((a && a.e) || '').toLowerCase();
     canPost = BOLD.can('conversations', 'edit'); full = BOLD.isFullWrite();
+    // Replying and voting: Conversations' Edit. Starting a chat (New chat, Import from Slack): BOLD-internal and above too.
+    canStart = canPost && (full || ['internal', 'staff', 'exec'].indexOf(BOLD.myGroup()) >= 0);
+    var startWhy = !canPost ? BOLD.cannotReason('conversations', 'edit') : 'Starting a chat is for BOLD-internal and above; you can reply to any.';
     ['.bs-write', '.bs-import'].forEach(function(c){
-      var b = sortEl.querySelector(c); b.disabled = !canPost; b.title = canPost ? '' : BOLD.cannotReason('conversations', 'edit');
+      var b = sortEl.querySelector(c); b.disabled = !canStart; b.title = canStart ? '' : startWhy;
     });
     if (!BOLD.can('conversations', 'view')) { postsEl.innerHTML = '<li class="proj-msg">' + esc(BOLD.cannotReason('conversations', 'view')) + '</li>'; return; }
     col().onSnapshot(function(snap){
