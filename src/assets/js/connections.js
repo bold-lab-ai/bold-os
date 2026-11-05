@@ -494,12 +494,16 @@ window.BoldConnections = (function(){
     var moves = {};
     all.forEach(function(x){ if (x.kind === 'moved' && x.to) (moves[x.to] = moves[x.to] || []).push(x); });
     Object.keys(moves).forEach(function(e){ moves[e].sort(function(a, b){ return a.at - b.at; }); });
+    // Each step says who made it: 'PAN-BOLD → BOLD-associate (by Pat PI) → BOLD-internal (by you)'.
     var pathOf = function(id){
       var m = moves[id];
       if (!m) return '';
-      var parts = String(m[0].title).split(' \u2192 ');
-      m.slice(1).forEach(function(x){ var t = String(x.title).split(' \u2192 ').pop(); if (t !== parts[parts.length - 1]) parts.push(t); });
-      return parts.join(' \u2192 ');
+      var first = String(m[0].title).split(' \u2192 '), out = first.length > 1 ? first[0] : '';
+      m.forEach(function(x){
+        var by = x.from === me ? 'you' : nameOf(dir, x.from);
+        out += (out ? ' \u2192 ' : '') + String(x.title).split(' \u2192 ').pop() + ' (by ' + by + ')';
+      });
+      return out;
     };
     var movedBy = function(id){ return (moves[id] || []).map(function(x){ return ' · moved to ' + String(x.title).split(' \u2192 ').pop() + ' by ' + nameOf(dir, x.from) + ' on ' + day(x.at); }).join(''); };
     var tops = {};
@@ -513,7 +517,12 @@ window.BoldConnections = (function(){
     };
     roots.forEach(function(r){ walk(r, 0); });
     var COL = 150, ROW = 26, TOP = 14, depth = Math.max.apply(null, rows.map(function(r){ return r.depth; }));
-    var W = Math.max(760, 40 + depth * COL + 480), H = TOP + rows.length * ROW + 10, at = {};
+    // As wide as its longest line (name, how, moves), roughly: names ~8px a letter, the rest ~6.5.
+    var longest = rows.reduce(function(w, r){
+      var how = parent[r.id] ? parent[r.id].how : '';
+      return Math.max(w, 24 + r.depth * COL + 10 + nameOf(dir, r.id).length * 8 + (how ? 8 + how.length * 7.5 : 0) + (moves[r.id] ? 8 + pathOf(r.id).length * 6.5 : 0));
+    }, 0);
+    var W = Math.max(760, Math.ceil(longest) + 20), H = TOP + rows.length * ROW + 10, at = {};
     rows.forEach(function(r, i){ r.x = 24 + r.depth * COL; r.y = TOP + i * ROW + ROW / 2; at[r.id] = r; });
     return '<div class="cx-graph cx-scroll"><svg class="cx-svg cx-lineage" viewBox="0 0 ' + W + ' ' + H + '" style="min-width:' + Math.min(W, 1100) + 'px" role="img" aria-label="Who brought whom into BOLD">' +
       rows.map(function(r){
