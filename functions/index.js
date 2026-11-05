@@ -2443,6 +2443,41 @@ exports.onChannelJoinRun = onDocumentCreated({ document: 'runs/{id}', secrets: [
   await event.data.ref.set({ doneAt: Date.now(), plan: plan.map((c) => c.name), joined, failed, error }, { merge: true });
 });
 
+// #174's preview (2026-11-05): who is in each group and project channel, as the bot sees them, so
+// they can be checked against BOLD.OS before anything is removed. Read only: it changes nothing on
+// Slack. On creating runs/{id} { action: 'channel-audit' } (admin access only), it writes
+// { doneAt, channels: { <name>: { id, members: [Slack ids] } | { error } }, error }: every group's
+// and role's channel (settings/groups), every project's (projectWorkspaces' slackChannel), and every
+// other proj-… channel the bot can see.
+exports.onChannelAuditRun = onDocumentCreated({ document: 'runs/{id}', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 300 }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'channel-audit' || run.doneAt) return;
+  const token = SLACK_BOT_TOKEN.value(), names = new Set();
+  const add = (v) => groupChannelNames(v).forEach((n) => names.add(n));
+  const set = (await db.collection('settings').doc('groups').get()).data() || {};
+  Object.values(set.channels || {}).forEach(add); Object.values(set.roleChannels || {}).forEach(add);
+  (await db.collection('projectWorkspaces').get()).docs.forEach((d) => add(d.data().slackChannel));
+  let error = '';
+  try { await slackChannelId(token, '-'); } catch (err) { error = String(err.message || err); }
+  if (channelNamesCache) Array.from(channelNamesCache.names.keys()).filter((n) => /^proj-/.test(n)).forEach((n) => names.add(n));
+  const channels = {};
+  for (const name of Array.from(names).sort()) {
+    const id = error ? null : await slackChannelId(token, name).catch(() => null);
+    if (!id) { channels[name] = { error: 'the bot can’t see it' }; continue; }
+    const members = [];
+    let cursor = '', bad = '';
+    do {
+      const r = await (await fetch('https://slack.com/api/conversations.members?' + new URLSearchParams(Object.assign({ channel: id, limit: '1000' }, cursor ? { cursor } : {})),
+        { headers: { 'Authorization': 'Bearer ' + token } })).json();
+      if (!r.ok) { bad = r.error + (r.needed ? ' (needs ' + r.needed + ')' : ''); break; }
+      members.push(...(r.members || []));
+      cursor = (r.response_metadata && r.response_metadata.next_cursor) || '';
+    } while (cursor);
+    channels[name] = bad ? { id, error: bad } : { id, members };
+  }
+  await event.data.ref.set({ doneAt: Date.now(), channels, error }, { merge: true });
+});
+
 // ---------- 6. Slack App Home + reviewer assignment ----------
 // One HTTP endpoint doing double duty as both Slack's Events API Request
 // URL (app_home_opened, team_join and user_change for the people roster, plus the
