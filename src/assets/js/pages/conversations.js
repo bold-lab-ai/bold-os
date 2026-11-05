@@ -113,7 +113,7 @@
   // and each message, in the order they were written, top to bottom. A line of the conversation goes
   // straight down its lane; a branch steps out to a lane of its own. Leaves are filled; the message in
   // view has a ring. A dot opens its message (its branches unfolded) and scrolls to it.
-  var treeEl = null, treeSeen = null, treeAt = '';
+  var treeEl = null, treeSeen = null, treeAt = '', treeSel = '';
   function drawTree(p){
     if (!p) { if (treeEl) treeEl.hidden = true; return; }
     if (!treeEl) {
@@ -145,15 +145,32 @@
       var par = m.id === p.id ? null : parentOf(m);
       if (par && row[par] !== undefined) {
         var x0 = X(par), y0 = Y(par), x1 = X(m.id), y1 = Y(m.id);
-        paths += '<path d="M' + x0 + ' ' + y0 + (x0 === x1 ? 'V' + y1 : 'V' + (y1 - 4) + 'Q' + x0 + ' ' + y1 + ' ' + (x0 + 4) + ' ' + y1 + 'H' + x1) + '"/>';
+        paths += '<path data-to="' + esc(m.id) + '" d="M' + x0 + ' ' + y0 + (x0 === x1 ? 'V' + y1 : 'V' + (y1 - 4) + 'Q' + x0 + ' ' + y1 + ' ' + (x0 + 4) + ' ' + y1 + 'H' + x1) + '"/>';
       }
       var leaf = !kids(m.id).length;
       dots += '<circle data-id="' + esc(m.id) + '" class="' + (leaf ? 'is-leaf' : '') + '" cx="' + X(m.id) + '" cy="' + Y(m.id) + '" r="3.5"><title>' + esc((m.name || 'someone') + ': ' + String(m.id === p.id ? p.title : m.body || '').replace(/\s+/g, ' ').slice(0, 80)) + '</title></circle>';
     });
     treeEl.innerHTML = '<p class="bs-tree-head">Tree · ' + all.length + (all.length === 1 ? ' message' : ' messages') + '</p><svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '"><g class="bs-tree-lines">' + paths + '</g>' + dots + '</svg>';
     treeEl.hidden = false;
-    place(); watchSeen();
+    place(); watchSeen(); markSelected();
   }
+  // The message clicked: its dot and the lines from the post down to it, and the message itself.
+  function markSelected(){
+    if (!treeEl) return;
+    var on = {}, m = treeSel && msgOf(openId, treeSel), k = 0;
+    while (m && k++ < 500) { on[m.id] = 1; m = parentOf(m) && parentOf(m) !== openId ? msgOf(openId, parentOf(m)) : null; }
+    Array.prototype.forEach.call(treeEl.querySelectorAll('circle'), function(c){ c.classList.toggle('is-selected', c.getAttribute('data-id') === treeSel); });
+    Array.prototype.forEach.call(treeEl.querySelectorAll('path[data-to]'), function(x){ x.classList.toggle('is-path', !!on[x.getAttribute('data-to')]); });
+    Array.prototype.forEach.call(threadEl.querySelectorAll('.bs-line'), function(el){ el.classList.toggle('is-selected', !!treeSel && el.id === 'm-' + treeSel); });
+  }
+  threadEl.addEventListener('click', function(e){
+    if (e.target.closest('button, a, input, textarea, select, label, form')) return;
+    var li = e.target.closest('.bs-line[id^="m-"]');
+    if (!li) return;
+    var id = li.id.slice(2);
+    treeSel = treeSel === id ? '' : id;
+    markSelected();
+  });
   // Left of the thread, if there's room between it and the sidebar.
   function place(){
     if (!treeEl || treeEl.hidden && !openId) return;

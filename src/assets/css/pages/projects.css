@@ -347,4 +347,9 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-tree circle.is-leaf{fill:var(--accent); stroke:var(--accent);}
 .bs-tree circle.is-here{stroke:var(--ink); stroke-width:2.5;}
 .bs-tree circle:hover{stroke:var(--ink);}
+/* The message clicked: its dot, the lines down to it, and the message. */
+.bs-tree circle.is-selected{fill:var(--ink); stroke:var(--ink); r:4.5;}
+.bs-tree-lines path.is-path{stroke:var(--ink); stroke-width:2;}
+.bs-line{cursor:default;}
+.bs-line.is-selected{background:color-mix(in srgb, var(--ink) 6%, transparent);}
 @media (max-width:900px){ .bs-tree{display:none;} }
