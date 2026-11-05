@@ -161,13 +161,32 @@ function signedInEmail(request){
   return token.email;
 }
 
-exports.onlySlackSignUps = beforeUserCreated((event) => {
+// And only the BOLD Slack's own people (2026-11-05): not someone from another organisation in a
+// channel shared with ours (Slack Connect), who isn't on the roster (syncPeopleFromSlack). Someone who
+// just joined the Slack and isn't on it yet is looked up on Slack, and added if they're ours.
+const NOT_BOLD_SLACK = 'BOLD.OS is for the BOLD Slack’s members: this Slack account belongs to another organisation.';
+exports.onlySlackSignUps = beforeUserCreated({ secrets: [SLACK_BOT_TOKEN] }, async (event) => {
   const provider = (event.additionalUserInfo && event.additionalUserInfo.providerId) ||
     (event.credential && event.credential.providerId) || '';
   if (provider !== SIGN_IN_PROVIDER) {
     logger.warn('onlySlackSignUps: refused a sign-up', { provider });
     throw new IdentityHttpsError('permission-denied', 'BOLD.OS is for the BOLD Slack: sign in with Slack.');
   }
+  const slack = ((event.data && event.data.providerData) || []).filter((p) => p.providerId === SIGN_IN_PROVIDER)[0];
+  const id = slack && slack.uid;
+  if (!id || !/^U[A-Z0-9]+$/.test(id)) throw new IdentityHttpsError('permission-denied', NOT_BOLD_SLACK);
+  if ((await db.collection('people').doc(id).get()).exists) return;
+  // Not on the roster (yet): ask Slack.
+  const token = SLACK_BOT_TOKEN.value();
+  const info = await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: id }), { headers: { Authorization: 'Bearer ' + token } })
+    .then((r) => r.json()).catch(() => null);
+  const auth = await slackAuthInfo(token).catch(() => null), team = auth && auth.teamId;
+  const u = info && info.ok && info.user;
+  if (!u || u.deleted || !team || (u.team_id && u.team_id !== team) || slackExternal(u, team)) {
+    logger.warn('onlySlackSignUps: refused a Slack account not of the BOLD Slack', { slackId: id });
+    throw new IdentityHttpsError('permission-denied', NOT_BOLD_SLACK);
+  }
+  await upsertPerson(u, team);
 });
 
 // Deep links (2026-09-12) — mirrors audit-board.html's stateUrl(): a hash,
@@ -2634,16 +2653,16 @@ async function accountEmailFor(slackId){
 async function upsertPerson(u, teamId){
   if (!u || !u.id || u.is_bot || u.id === 'USLACKBOT') return;
   const ref = db.collection('people').doc(u.id);
-  if (u.deleted || (teamId && u.team_id && u.team_id !== teamId)) { if ((await ref.get()).exists) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); } return; }
+  if (u.deleted || (teamId && u.team_id && u.team_id !== teamId) || slackExternal(u, teamId)) { if ((await ref.get()).exists) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); } return; }
   if (!u.profile || !u.profile.email) { logger.warn('upsertPerson: no email (users:read.email?)', { slackId: u.id }); return; }
   // Emails lower case, as everywhere else on BOLD.OS (Slack keeps whatever case was typed).
-  const p = withAccountEmail({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email, external: slackExternal(u, teamId) }, await accountEmailFor(u.id));
+  const p = withAccountEmail({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }, await accountEmailFor(u.id));
   const was = (await ref.get()).data();
-  if (was && was.name === p.name && was.email === p.email && (was.slackEmail || '') === (typeof p.slackEmail === 'string' ? p.slackEmail : '') && !!was.external === p.external) return;
+  if (was && was.name === p.name && was.email === p.email && (was.slackEmail || '') === (typeof p.slackEmail === 'string' ? p.slackEmail : '')) return;
   await ref.set(p, { merge: true });
   logger.info('upsertPerson: ' + (was ? 'updated' : 'added'), { slackId: u.id });
   // New on the BOLD Slack: PAN-BOLD's channels (Settings › Slack channels), before any record of theirs.
-  if (!was && !p.external) await invitePanChannels(p.email).catch((err) => logger.warn('Adding someone to PAN-BOLD\u2019s channels failed', { error: String(err && err.message || err) }));
+  if (!was) await invitePanChannels(p.email).catch((err) => logger.warn('Adding someone to PAN-BOLD\u2019s channels failed', { error: String(err && err.message || err) }));
 }
 async function invitePanChannels(email){
   const set = (await db.collection('settings').doc('groups').get()).data() || {};
@@ -5591,9 +5610,9 @@ async function slackMembers(token){
 }
 
 // Pure: whether Slack user `u` is from another organisation, in a channel shared with ours (Slack
-// Connect): their account or profile is another workspace's, or Slack calls them a stranger. They stay
-// on the roster (their profiles, notifications and projects work) as `external`, but no picker or tag
-// offers them (people.external, 2026-11-05).
+// Connect): their account or profile is another workspace's, or Slack calls them a stranger. They aren't
+// BOLD.OS users (2026-11-05): off the roster (syncPeopleFromSlack, upsertPerson), and they can't sign up
+// (onlySlackSignUps).
 function slackExternal(u, team){
   if (!u || !team) return false;
   const p = u.profile || {};
@@ -5605,10 +5624,11 @@ async function syncPeopleFromSlack(token){
   // Only our workspace's people: users.list also has those from other workspaces in
   // channels shared with ours (upsertPerson).
   const auth = await slackAuthInfo(token), team = auth && auth.teamId;
-  const ours = u => !team || !u.team_id || u.team_id === team;
+  // Ours: not from another organisation in a channel shared with ours (Slack Connect), who aren't BOLD.OS users.
+  const ours = u => !team || ((!u.team_id || u.team_id === team) && !slackExternal(u, team));
   const people = members
     .filter(u => !u.deleted && ours(u) && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
-    .map(u => ({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email, external: slackExternal(u, team) }));
+    .map(u => ({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
   if (!people.length) {
     logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
     throw new Error('Slack returned nobody with an email (is users:read.email granted?)');
@@ -5624,11 +5644,14 @@ async function syncPeopleFromSlack(token){
   people.forEach(p => {
     const was = current[p.slackId];
     const slackEmail = typeof p.slackEmail === 'string' ? p.slackEmail : '';
-    if (!was || was.name !== p.name || was.email !== p.email || (was.slackEmail || '') !== slackEmail || !!was.external !== p.external) writes.push({ id: p.slackId, data: p, added: !was });
+    if (!was || was.name !== p.name || was.email !== p.email || (was.slackEmail || '') !== slackEmail) writes.push({ id: p.slackId, data: p, added: !was });
   });
-  // On the roster but no longer on Slack's list (out of every channel shared with us): external too.
+  // On the roster but not on Slack's list at all (someone from elsewhere, out of every shared channel):
+  // gone too, unless Slack's list looks short (then nobody is removed this way, and it's logged).
   const listed = new Set(members.map(u => u.id));
-  existing.docs.forEach(d => { if (!listed.has(d.id) && !d.data().external) writes.push({ id: d.id, data: { external: true }, added: false }); });
+  const missing = existing.docs.map(d => d.id).filter(id => !listed.has(id) && gone.indexOf(id) < 0);
+  if (members.length >= existing.size * 0.8) gone.push(...missing);
+  else if (missing.length) logger.warn('syncPeople: Slack’s list looks short, not removing those missing from it', { members: members.length, roster: existing.size, missing: missing.length });
   const deletes = gone.filter(id => current[id]);
   const ops = writes.map(w => batch => batch.set(db.collection('people').doc(w.id), w.data, { merge: true }))
     .concat(deletes.map(id => batch => batch.delete(db.collection('people').doc(id))));

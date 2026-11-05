@@ -14,8 +14,7 @@
     var db;
     try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return null; }
     loading = db.collection('people').get().then(function(snap){
-      // Not those from other organisations in shared channels (people.external).
-      people = snap.docs.filter(function(d){ return !d.data().external; }).map(function(d){ var p = d.data(); return { name: p.name || '', id: p.slackId || d.id }; })
+      people = snap.docs.map(function(d){ var p = d.data(); return { name: p.name || '', id: p.slackId || d.id }; })
         .filter(function(p){ return p.name && /^U[A-Z0-9]+$/.test(p.id); })
         .sort(function(a, b){ return a.name.localeCompare(b.name); });
     }).catch(function(err){ console.error('[BOLD Mentions] loading people failed', err); people = []; });

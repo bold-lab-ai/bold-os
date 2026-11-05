@@ -490,7 +490,7 @@
         ? '<input type="text" class="lead-name" data-i="' + i + '" value="' + esc(r.name) + '" placeholder="Name (not on Slack)">' +
           '<button type="button" class="btn-text lead-roster" data-i="' + i + '">Pick from list</button>'
         : '<select class="lead-select" data-i="' + i + '"><option value="">Choose a person…</option>' +
-          people.filter(function(p){ return !p.external || p.email === r.email; }).map(function(p){
+          people.map(function(p){
             return '<option value="' + esc(p.email) + '"' + (p.email === r.email ? ' selected' : '') + '>' + esc(p.name) + '</option>';
           }).join('') + '<option value="__free__">Someone not on Slack…</option></select>';
       return '<div class="lead-row">' + control +

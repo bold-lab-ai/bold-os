@@ -76,7 +76,7 @@
 
   function formHtml(){
     var e = editing;
-    var options = (roster || []).filter(function(p){ return !p.external && p.email !== me.email && !e.people.some(function(x){ return x.email === p.email; }); })
+    var options = (roster || []).filter(function(p){ return p.email !== me.email && !e.people.some(function(x){ return x.email === p.email; }); })
       .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('');
     return '<div class="event-form join-form">' +
       '<label>Working title<input type="text" class="st-title" maxlength="200" value="' + esc(e.title) + '" placeholder="Your thesis or project, as it stands"></label>' +
@@ -117,7 +117,7 @@
   function loadRoster(){
     if (roster) return;
     db.collection('people').get().then(function(s){
-      roster = s.docs.map(function(d){ var x = d.data(); return { name: x.name || x.email, email: String(x.email || '').toLowerCase(), external: !!x.external }; })
+      roster = s.docs.map(function(d){ var x = d.data(); return { name: x.name || x.email, email: String(x.email || '').toLowerCase() }; })
         .filter(function(p){ return p.email; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
       keep(); render();
     }).catch(function(err){ console.error('[BOLD Studies] loading the people failed', err); roster = []; keep(); render(); });

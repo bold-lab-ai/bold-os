@@ -144,7 +144,7 @@
     return '<ul class="jr-testers">' + (list.length ? list.map(function(e, i){
         return '<li>' + esc(nameOf(e)) + ' <button type="button" class="btn-text danger jr-tester-remove" data-for="' + esc(key) + '" data-i="' + i + '">Remove</button></li>';
       }).join('') : '<li class="proj-meta">' + none + '</li>') + '</ul>' +
-      '<select class="jr-tester-add" data-for="' + esc(key) + '" aria-label="Add a tester"><option value="">Add a tester…</option>' + roster.filter(function(p){ return !p.external && list.indexOf(p.email) < 0; })
+      '<select class="jr-tester-add" data-for="' + esc(key) + '" aria-label="Add a tester"><option value="">Add a tester…</option>' + roster.filter(function(p){ return list.indexOf(p.email) < 0; })
         .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</select>';
   }
   function testersOf(d, key){ return key ? (d.pilotTesters[key] = d.pilotTesters[key] || []) : d.testers; }
@@ -342,7 +342,7 @@
     if (!user) return;
     render();
     db.collection('people').get().then(function(ps){
-      roster = ps.docs.map(function(d){ return { email: String(d.data().email || '').toLowerCase(), name: d.data().name || '', external: !!d.data().external }; })
+      roster = ps.docs.map(function(d){ return { email: String(d.data().email || '').toLowerCase(), name: d.data().name || '' }; })
         .filter(function(p){ return p.email && p.name; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
       render();
     }).catch(function(){});
