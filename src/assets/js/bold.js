@@ -602,20 +602,35 @@
     box.innerHTML = '<button type="button" class="mast-btn mast-btn-wide" aria-haspopup="true" aria-expanded="false" aria-controls="createMenu" title="Create new…" aria-label="Create new…">' + ICON_PLUS + ICON_DOWN + '</button>' +
       '<ul class="mast-menu mast-create-menu" id="createMenu" role="menu" hidden></ul>';
     // Notifications (notifications.html), as GitHub's inbox: the number is what's waiting on you
-    // (myRequests' forYou), kept a few minutes in the tab (sessionStorage) so a page isn't a call.
+    // (myRequests' forYou), kept a few minutes in the tab (sessionStorage) so a page isn't a call;
+    // a dot, anything unread in the Inbox (one unread notification of theirs, followed live).
     var bell = document.getElementById('mastBell');
     if (bell) {
-      bell.innerHTML = '<a class="mast-btn mast-bell-btn" href="notifications.html" title="Notifications" aria-label="Notifications">' + ICON_BELL + '<span class="mast-count" hidden></span></a>';
-      var countEl = bell.querySelector('.mast-count'), link = bell.querySelector('a');
+      bell.innerHTML = '<a class="mast-btn mast-bell-btn" href="notifications.html" title="Notifications" aria-label="Notifications">' + ICON_BELL + '<span class="mast-count" hidden></span><span class="mast-dot" hidden></span></a>';
+      var countEl = bell.querySelector('.mast-count'), dotEl = bell.querySelector('.mast-dot'), link = bell.querySelector('a');
+      var todo = 0, unread = false, unreadUnsub = null;
+      var label = function(){
+        var t = [todo ? todo + ' waiting on you' : '', unread ? 'unread in your inbox' : ''].filter(Boolean).join(', ');
+        t = t ? 'Notifications: ' + t : 'Notifications';
+        link.title = t; link.setAttribute('aria-label', t);
+      };
       BOLD.setTodoCount = function(n){
         n = Number(n) || 0;
         try { sessionStorage.setItem('boldTodo', JSON.stringify({ n: n, t: Date.now() })); } catch (e){}
-        countEl.hidden = !n; countEl.textContent = n > 99 ? '99+' : String(n);
-        var label = n ? 'Notifications: ' + n + ' waiting on you' : 'Notifications';
-        link.title = label; link.setAttribute('aria-label', label);
+        todo = n; countEl.hidden = !n; countEl.textContent = n > 99 ? '99+' : String(n);
+        label();
       };
+      var setUnread = function(on){ unread = !!on; dotEl.hidden = !unread; label(); };
       BOLD.onUser(function(user){
-        if (!user) { BOLD.setTodoCount(0); return; }
+        if (unreadUnsub) { unreadUnsub(); unreadUnsub = null; }
+        if (!user) { BOLD.setTodoCount(0); setUnread(false); return; }
+        if (firebase.firestore && user.email) {
+          try {
+            unreadUnsub = firebase.firestore(BOLD.getApp()).collection('notifications')
+              .where('to', '==', String(user.email).toLowerCase()).where('read', '==', false).limit(1)
+              .onSnapshot(function(s){ setUnread(!s.empty); }, function(err){ console.warn('[BOLD Lab] checking for unread notifications failed', err); });
+          } catch (e){}
+        }
         var c = null;
         try { c = JSON.parse(sessionStorage.getItem('boldTodo') || 'null'); } catch (e){}
         if (c) BOLD.setTodoCount(c.n);
