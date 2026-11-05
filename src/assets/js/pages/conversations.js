@@ -39,9 +39,9 @@
   var postOf = function(id){ return (posts || []).filter(function(p){ return p.id === id; })[0]; };
   var msgOf = function(pid, id){ return pid === id ? postOf(pid) : (messages[pid] || []).filter(function(x){ return x.id === id; })[0]; };
 
-  function vote(m){
+  function vote(m, inline){
     var v = (m.votes || {})[me.uid] || 0;
-    return '<div class="bs-vote' + (v > 0 ? ' is-up' : v < 0 ? ' is-down' : '') + '">' +
+    return '<div class="bs-vote' + (inline ? ' bs-vote-inline' : '') + (v > 0 ? ' is-up' : v < 0 ? ' is-down' : '') + '">' +
       '<button type="button" class="bs-up" data-id="' + esc(m.id) + '" data-v="1" aria-pressed="' + (v > 0) + '" aria-label="Upvote" title="Upvote">▲</button>' +
       '<span class="bs-score">' + score(m) + '</span>' +
       '<button type="button" class="bs-up bs-down" data-id="' + esc(m.id) + '" data-v="-1" aria-pressed="' + (v < 0) + '" aria-label="Downvote" title="Downvote">▼</button></div>';
@@ -63,7 +63,8 @@
   function head(m, pid){ return '<div class="bs-head"><p class="bs-by">' + by(m) + '</p>' + acts(m, pid) + '</div>'; }
   function acts(m, pid){
     var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
-    var k = m.id === pid ? 0 : total(m.id);
+    // Hide replies only where it branches: a run reads on in one block.
+    var k = m.id === pid || kids(m.id).length < 2 ? 0 : total(m.id);
     return '<p class="bs-acts">' +
       '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>' +
       (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
@@ -74,12 +75,23 @@
     return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
         '<div class="event-form-actions"><button type="submit" class="ev-save">Reply</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
   }
-  function replyHtml(m, pid){
-    var k = total(m.id), off = folded[m.id];
-    return '<li class="bs-reply' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
-      '<div class="bs-reply-card">' + vote(m) + '<div class="bs-post-main">' +
-        head(m, pid) + md(m.body) + replyForm(m, pid) + '</div></div>' +
-      (k && !off ? '<ol class="bs-replies">' + kids(m.id).map(function(x){ return replyHtml(x, pid); }).join('') + '</ol>' : '') + '</li>';
+  // Replies as in Slack: one block for a run of messages each answering the one before, a hairline
+  // between them; where one has two or more replies, each starts a block of its own, indented under it.
+  function msgHtml(m, pid){
+    return '<li class="bs-msg' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
+      '<div class="bs-head"><p class="bs-by">' + by(m) + '</p><div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div></div>' +
+      md(m.body) + replyForm(m, pid) + '</li>';
+  }
+  function blockHtml(first, pid){
+    var out = '', m = first;
+    while (m) {
+      out += msgHtml(m, pid);
+      var ks = kids(m.id);
+      if (ks.length === 1) { m = ks[0]; continue; }
+      if (ks.length > 1 && !folded[m.id]) out += '<li class="bs-branches"><ol>' + ks.map(function(x){ return blockHtml(x, pid); }).join('') + '</ol></li>';
+      m = null;
+    }
+    return '<li><ol class="bs-run">' + out + '</ol></li>';
   }
 
   // ---------- the list, or one post's thread ----------
@@ -102,7 +114,7 @@
           '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2>' + head(p, p.id) +
           (p.body && p.body.trim() !== p.title ? md(p.body) : '') + replyForm(p, p.id) + origin(p) + '</div></div>' +
         '<h3 class="bs-replies-head">' + count(k) + '</h3>' +
-        (k ? '<ol class="bs-replies bs-replies-top">' + kids(p.id).map(function(x){ return replyHtml(x, p.id); }).join('') + '</ol>' : '<p class="bs-by">No replies yet.</p>');
+        (k ? '<ol class="bs-blocks">' + kids(p.id).map(function(x){ return blockHtml(x, p.id); }).join('') + '</ol>' : '<p class="bs-by">No replies yet.</p>');
       var fresh = threadEl.querySelector('.bs-replyform');
       if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id')) fresh.replaceWith(keep);
       else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
