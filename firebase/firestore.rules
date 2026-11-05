@@ -216,6 +216,15 @@ service cloud.firestore {
       allow read: if may('people', 'view');
       allow write: if false;
     }
+    // Notifications (notifications.html): each person's own, written by the server (functions/index.js
+    // noteFor); they read theirs and mark them read or unread, nothing else.
+    match /notifications/{id} {
+      allow read: if isSignedIn() && resource.data.to == email().lower();
+      allow update: if isSignedIn() && resource.data.to == email().lower()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+        && request.resource.data.read is bool;
+      allow create, delete: if false;
+    }
     // The ones from letters, introductions, supervision requests and requests to join: private
     // whoever's group (BOLDiquette › Who can do what), to the two people in each, PIs and admins.
     match /privateInteractions/{id} {

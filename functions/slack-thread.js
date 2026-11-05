@@ -160,7 +160,7 @@ function threadReplyOf(e){
   return String(e.thread_ts);
 }
 
-module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread }){
+module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails }){
   const PAGE = SITE_URL + 'conversations.html';
   // A thread newly in Conversations says so in the thread, for everyone in it (pilot conversation-sent;
   // until it's live its testers get it instead). Not when one is refreshed. Never fails the send.
@@ -327,10 +327,57 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
   });
 
   // A reply's post keeps count of its replies (clients can't change it: firestore.rules).
-  const onConversationMessage = onDocumentCreated('conversations/{pid}/messages/{mid}', async (event) => {
+  // Who's in a conversation: whoever started it (or brought it in from Slack), and whoever replied on BOLD.OS.
+  async function peopleIn(pid, post){
+    const out = new Set([String(post.createdBy || (post.broughtBy || {}).email || '').toLowerCase()]);
+    (await db.collection('conversations').doc(pid).collection('messages').where('source', '==', 'site').get()).docs
+      .forEach((m) => out.add(String(m.data().createdBy || '').toLowerCase()));
+    out.delete('');
+    return Array.from(out);
+  }
+  // A reply on BOLD.OS: counted, and everyone else in the conversation told: on their Notifications page, and
+  // by a Slack DM (pilot conversation-replies).
+  const onConversationMessage = onDocumentCreated({ document: 'conversations/{pid}/messages/{mid}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
     const d = event.data && event.data.data();
     if (!d || d.source === 'slack') return;   // a thread brought in is counted as it's saved
-    await db.collection('conversations').doc(event.params.pid).set({ replies: FieldValue.increment(1) }, { merge: true }).catch(() => {});
+    const pid = event.params.pid, ref = db.collection('conversations').doc(pid);
+    await ref.set({ replies: FieldValue.increment(1) }, { merge: true }).catch(() => {});
+    if (!noteFor) return;
+    try {
+      const post = (await ref.get()).data() || {};
+      const who = String(d.createdBy || '').toLowerCase();
+      const to = (await peopleIn(pid, post)).filter((e) => e !== who);
+      if (!to.length) return;
+      const url = PAGE + '#post=' + encodeURIComponent(pid);
+      const text = '💬 ' + (d.name || 'Someone') + ' replied in “' + String(post.title || 'a conversation').replace(/[<>|]/g, '') + '”: <' + url + '|read it>.';
+      await noteFor(to, { text, href: url, feature: 'conversation-replies', source: 'conversations', about: 'conversation:' + pid });
+      for (const e of to) await dmByEmail(SLACK_BOT_TOKEN.value(), e, text, 'conversation-replies', { noNote: true });
+    } catch (err){ logger.warn('Telling a conversation’s people of a reply failed', { pid, error: String(err && err.message || err) }); }
+  });
+  // A new conversation: everyone who can see it is told on their Notifications page (not on Slack): all who see
+  // Conversations, or a private channel's members alone; not whoever started it.
+  const onConversationCreated = onDocumentCreated('conversations/{pid}', async (event) => {
+    const d = event.data && event.data.data();
+    if (!d || !noteFor) return;
+    try {
+      const pid = event.params.pid, starter = String(d.createdBy || (d.broughtBy || {}).email || '').toLowerCase();
+      let to = [];
+      if (d.private === true) {
+        const ids = d.readers || [];
+        for (let i = 0; i < ids.length; i += 30) {
+          (await db.collection('people').where('slackId', 'in', ids.slice(i, i + 30)).get()).docs.forEach((p) => to.push(String(p.data().email || '').toLowerCase()));
+        }
+      } else {
+        const all = new Set((await db.collection('members').get()).docs.map((m) => m.id.toLowerCase()));
+        ((await rolesEmails('pis')) || []).concat((await rolesEmails('admins')) || []).forEach((e) => all.add(String(e).toLowerCase()));
+        for (const e of all) if (await access.can(e, 'conversations', 'view')) to.push(e);
+      }
+      to = to.filter((e) => e && e !== starter);
+      const url = PAGE + '#post=' + encodeURIComponent(pid);
+      const by = d.source === 'slack' ? (d.broughtBy || {}).name || 'Someone' : d.name || 'Someone';
+      const text = '🗨️ New conversation: “' + String(d.title || '').replace(/[<>|]/g, '') + '”, ' + (d.source === 'slack' ? 'brought in from ' + ((d.slack || {}).channelName || 'Slack') + ' by ' : 'started by ') + by + '.';
+      await noteFor(to, { text, href: url, feature: 'conversation-new', source: 'conversations', about: 'conversation:' + pid });
+    } catch (err){ logger.warn('Telling people of a new conversation failed', { error: String(err && err.message || err) }); }
   });
 
   // A reply in Slack to a thread already moved to Conversations: Slack can't lock a thread, so whoever
@@ -348,7 +395,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     return true;
   }
 
-  return { slackThread, handleShortcut, onConversationImport, onConversationMessage, syncReaders, nudgeMoved };
+  return { slackThread, handleShortcut, onConversationImport, onConversationMessage, onConversationCreated, syncReaders, nudgeMoved };
 };
 module.exports.parseSlackLink = parseSlackLink;
 module.exports.slackPlain = slackPlain;

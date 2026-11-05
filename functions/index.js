@@ -758,12 +758,43 @@ async function slackIdForEmail(email){
   return snap.docs[0].data().slackId || null;
 }
 
+// ---------- Notifications (notifications.html, 2026-11-05) ----------
+// notifications/{id} (server only; each person reads and marks read their own, firestore.rules):
+// { to: email, source: 'slack' | 'conversations', feature, text, href, at, read }. Every DM and
+// note-to-one BOLD OS sends on Slack is kept here for whom it's for (not a pilot's copies to its
+// testers), and so are the Conversations ones (replies where they are, new conversations). Kept for good.
+// Pure: Slack's mrkdwn → plain text and its first link: <url|label> → label, *bold* → bold.
+function slackToPlain(text){
+  const t = String(text || '');
+  const first = /<(https?:\/\/[^|>]+)(?:\|[^>]*)?>/.exec(t);
+  const plain = t.replace(/<(https?:\/\/[^|>]+)\|([^>]*)>/g, '$2').replace(/<(https?:\/\/[^>]+)>/g, '$1')
+    .replace(/<@[A-Z0-9]+(?:\|([^>]*))?>/g, (m, n) => '@' + (n || 'someone')).replace(/<#[A-Z0-9]+\|([^>]*)>/g, '#$1').replace(/<![^>]*>/g, '')
+    .replace(/(^|\s)\*([^*\n]+)\*(?=\s|$|[.,:;!?])/g, '$1$2').replace(/(^|\s)_([^_\n]+)_(?=\s|$|[.,:;!?])/g, '$1$2')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim();
+  return { text: plain.slice(0, 2000), href: first ? first[1] : '' };
+}
+// Keeps a notification for each of `emails` (never fails what sent it). n: { text (mrkdwn or plain),
+// href?, feature, source, about? (what it's on, e.g. 'conversation:<id>') }.
+async function noteFor(emails, n){
+  try {
+    const list = Array.from(new Set((emails || []).map((e) => String(e || '').toLowerCase()).filter(Boolean)));
+    if (!list.length) return;
+    const p = slackToPlain(n.text);
+    const base = { source: n.source || 'slack', feature: n.feature || '', text: p.text, href: n.href || p.href || '', about: n.about || '', at: Date.now(), read: false };
+    for (let i = 0; i < list.length; i += 400) {
+      const b = db.batch();
+      list.slice(i, i + 400).forEach((to) => b.set(db.collection('notifications').doc(), Object.assign({ to }, base)));
+      await b.commit();
+    }
+  } catch (err){ logger.warn('Keeping a notification failed', { feature: n.feature, error: String(err && err.message || err) }); }
+}
+
 // Opens (or reuses) a DM channel and posts one message. Never throws —
 // logs and resolves false on any failure, so one bad recipient (no Slack
 // id, a transient API error) can't take the rest of a batch down with it,
 // and a retry of the whole trigger isn't forced by one skipped DM.
 // With a feature's key (LIVE_FEATURES, PILOTS), a feature in pilot sends to its testers instead.
-async function dmBySlackId(token, slackId, text, key){
+async function dmBySlackId(token, slackId, text, key, opts){
   try {
     if (key) {
       const st = await pilotState(key);
@@ -775,6 +806,8 @@ async function dmBySlackId(token, slackId, text, key){
     const opened = await slackFetch(token, 'conversations.open', { users: slackId });
     if (!opened.ok) return false;
     const posted = await slackFetch(token, 'chat.postMessage', { channel: opened.channel.id, text: text });
+    // Kept on their Notifications page (unless whoever sent it keeps its own: opts.noNote).
+    if (posted.ok && !(opts && opts.noNote)) await noteFor([await emailForSlackId(slackId)], { text, feature: key || '', source: 'slack' });
     return !!posted.ok;
   } catch (err){
     logger.error('dmBySlackId threw', { slackId, error: String(err) });
@@ -782,7 +815,7 @@ async function dmBySlackId(token, slackId, text, key){
   }
 }
 
-async function dmByEmail(token, email, text, key){
+async function dmByEmail(token, email, text, key, opts){
   if (key) {
     const st = await pilotState(key);
     if (!st.live) return toTesters(token, st, await nameForEmail(email), text);
@@ -792,7 +825,7 @@ async function dmByEmail(token, email, text, key){
     logger.info('No Slack id for email — skipping DM', { email });
     return false;
   }
-  return dmBySlackId(token, slackId, text);
+  return dmBySlackId(token, slackId, text, key && (await pilotState(key)).live ? key : '', opts);
 }
 
 async function rolesEmails(name){
@@ -1246,6 +1279,7 @@ const PILOTS = {
   'channel-join': 'BOLD OS joins new public channels',
   'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
   'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
+  'conversation-replies': 'A reply in a conversation you’re in: a DM',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -1338,6 +1372,7 @@ async function nudgeInThread(token, key, args){
   }
   const res = await slackFetch(token, 'chat.postEphemeral', Object.assign({ unfurl_links: false }, args));
   if (!res.ok) logger.warn('Slack ephemeral message failed', { feature: key, error: res.error });
+  else await noteFor([await emailForSlackId(args.user)], { text: args.text || '', href: ((((args.attachments || [])[0] || {}).blocks || []).map((b) => ((b.elements || [])[0] || {}).url).filter(Boolean)[0]) || '', feature: key, source: 'slack' });
   return res;
 }
 async function pilotSlack(token, key, label, m){
@@ -1353,7 +1388,7 @@ async function pilotSlack(token, key, label, m){
     const id = await slackIdForEmail(email);
     if (!id) return;
     const open = await slackFetch(token, 'conversations.open', { users: id });
-    if (open.ok) await send(open.channel.id, text, blocks);
+    if (open.ok) { await send(open.channel.id, text, blocks); await noteFor([email], { text, feature: key, source: 'slack' }); }
   };
   if (st.live) {
     for (const e of Array.from(new Set(m.emails || []))) await dm(e, m.text, m.blocks);
@@ -1626,7 +1661,7 @@ function newTags(before, after){
 const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
   'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
-  'conversations', 'conversationImports', 'cardImageImports'];
+  'conversations', 'conversationImports', 'cardImageImports', 'notifications'];
 // An event's page: its own (d.page: Collaboration Week, the Festival) or event.html.
 function eventUrl(slug, d){
   return SITE_URL + (d && /^[a-z0-9-]+\.html$/.test(d.page || '') ? d.page : 'event.html?event=' + encodeURIComponent(slug));
@@ -7660,10 +7695,11 @@ exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
-const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread });
+const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails });
 exports.slackThread = conversationsSlack.slackThread;
 exports.onConversationImport = conversationsSlack.onConversationImport;
 exports.onConversationMessage = conversationsSlack.onConversationMessage;
+exports.onConversationCreated = conversationsSlack.onConversationCreated;
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.
@@ -7672,7 +7708,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  slackImagesOf, bugReportOf, bugNotes, bugTitle,
+  slackImagesOf, slackToPlain, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,

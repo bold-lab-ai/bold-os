@@ -601,9 +601,30 @@
     if (!box) return;
     box.innerHTML = '<button type="button" class="mast-btn mast-btn-wide" aria-haspopup="true" aria-expanded="false" aria-controls="createMenu" title="Create new…" aria-label="Create new…">' + ICON_PLUS + ICON_DOWN + '</button>' +
       '<ul class="mast-menu mast-create-menu" id="createMenu" role="menu" hidden></ul>';
-    // Notifications, as GitHub's inbox: a placeholder until they exist.
+    // Notifications (notifications.html), as GitHub's inbox: the number is what's waiting on you
+    // (myRequests' forYou), kept a few minutes in the tab (sessionStorage) so a page isn't a call.
     var bell = document.getElementById('mastBell');
-    if (bell) bell.innerHTML = '<button type="button" class="mast-btn" disabled title="Notifications: coming soon" aria-label="Notifications: coming soon">' + ICON_BELL + '</button>';
+    if (bell) {
+      bell.innerHTML = '<a class="mast-btn mast-bell-btn" href="notifications.html" title="Notifications" aria-label="Notifications">' + ICON_BELL + '<span class="mast-count" hidden></span></a>';
+      var countEl = bell.querySelector('.mast-count'), link = bell.querySelector('a');
+      BOLD.setTodoCount = function(n){
+        n = Number(n) || 0;
+        try { sessionStorage.setItem('boldTodo', JSON.stringify({ n: n, t: Date.now() })); } catch (e){}
+        countEl.hidden = !n; countEl.textContent = n > 99 ? '99+' : String(n);
+        var label = n ? 'Notifications: ' + n + ' waiting on you' : 'Notifications';
+        link.title = label; link.setAttribute('aria-label', label);
+      };
+      BOLD.onUser(function(user){
+        if (!user) { BOLD.setTodoCount(0); return; }
+        var c = null;
+        try { c = JSON.parse(sessionStorage.getItem('boldTodo') || 'null'); } catch (e){}
+        if (c) BOLD.setTodoCount(c.n);
+        if (c && Date.now() - c.t < 3 * 60 * 1000) return;
+        if (/notifications\.html$/.test(location.pathname) || !firebase.functions) return;   // the page asks, and sets it
+        firebase.app().functions('europe-west2').httpsCallable('myRequests')().then(function(r){ BOLD.setTodoCount(((r.data || {}).forYou || []).length); })
+          .catch(function(err){ console.warn('[BOLD Lab] counting what waits on you failed', err); });
+      });
+    }
     var btn = box.querySelector('.mast-btn'), menu = box.querySelector('.mast-create-menu');
     var draw = function(){
       menu.innerHTML = CREATE.map(function(c){
@@ -631,7 +652,7 @@
     { label: 'My projects', href: 'projects.html#mine', area: 'projects' },
     { label: 'My events', href: 'events.html#mine', area: 'events' },
     { sep: true },
-    { label: 'My requests', href: 'requests.html', area: 'profile' },
+    { label: 'My notifications', href: 'notifications.html', area: 'profile' },
     { label: 'My letters', href: 'letters.html', area: 'service-desk' },
     { label: 'My introductions', href: 'introductions.html', area: 'service-desk' },
   ];

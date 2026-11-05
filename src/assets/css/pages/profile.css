@@ -181,3 +181,14 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .ta-form input{display:block; width:100%; box-sizing:border-box; margin-top:4px; font-family:var(--sans); font-size:14px; padding:7px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 .ta-group{display:block; margin-top:6px; font-family:var(--sans); font-size:14px;}
 .ta-group select{margin-left:6px; font-family:var(--sans); font-size:14px;}
+
+/* Notifications (notifications.html): the Messages tab. Unread ones stand out; the filter and Mark all read above. */
+.nt-bar{display:flex; justify-content:space-between; align-items:center; gap:12px; margin:0 0 8px;}
+.nt-filter{display:flex; gap:10px;}
+.nt-src.is-on{color:var(--ink); font-weight:600; text-decoration:underline; text-underline-offset:3px;}
+.nt-item{padding:8px 10px; border-left:3px solid transparent;}
+.nt-item.is-unread{border-left-color:var(--accent); background:color-mix(in srgb, var(--accent) 6%, transparent);}
+.nt-item.is-unread .nt-text{font-weight:600;}
+.nt-text{display:block; color:var(--ink);}
+a.nt-text:hover{color:var(--link);}
+.nt-unread-count{font-size:11px; color:var(--accent); margin-left:4px;}

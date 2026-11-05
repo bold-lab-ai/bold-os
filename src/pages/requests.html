@@ -1,16 +1,17 @@
 ---
-area: "profile"
-title: "Your requests | BOLD Lab"
-description: "The requests you have to answer, and the ones you made that wait on someone else."
-sdk: ["functions"]
-css: "profile"
-scripts: ["pages/requests.js"]
 permalink: "requests.html"
-nav: "requests.html"
+layout: false
+eleventyExcludeFromCollections: true
 ---
-<div class="hero">
-  <h1>Requests</h1>
-  <p class="hero-note">The requests you have to answer, and the ones you made that wait on someone else.</p>
-</div>
-
-<main id="requestsBody"><p class="proj-msg">Loading&hellip;</p></main>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<title>Notifications | BOLD Lab</title>
+<!-- Requests became part of Notifications (2026-11-05): old links (#to-answer, #yours) keep working. -->
+<script>location.replace('notifications.html' + (location.hash === '#yours' ? '#waiting' : '#todo'));</script>
+<meta http-equiv="refresh" content="0; url=notifications.html">
+</head>
+<body><p><a href="notifications.html">Notifications</a> has replaced Requests.</p></body>
+</html>

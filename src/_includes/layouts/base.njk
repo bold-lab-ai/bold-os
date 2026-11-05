@@ -12,7 +12,7 @@
 {% endif %}<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="{{ site.fonts }}" rel="stylesheet">
-{% for name in [ 'app', 'auth', 'firestore' ] | concat(sdk or []) | concat(['functions'] if site.testMode else []) | uniq %}<script src="https://www.gstatic.com/firebasejs/{{ site.firebaseSdkVersion }}/firebase-{{ name }}-compat.js"></script>
+{% for name in [ 'app', 'auth', 'firestore', 'functions' ] | concat(sdk or []) | concat(['functions'] if site.testMode else []) | uniq %}<script src="https://www.gstatic.com/firebasejs/{{ site.firebaseSdkVersion }}/firebase-{{ name }}-compat.js"></script>
 {% endfor %}<link rel="stylesheet" href="assets/css/bold.css?v={{ build.stamp }}">
 {% if headExtra %}{{ headExtra | safe }}
 {% endif %}{% for name in styles or [] %}<link rel="stylesheet" href="assets/css/{{ name }}.css?v={{ build.stamp }}">
