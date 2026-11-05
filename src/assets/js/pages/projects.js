@@ -49,7 +49,7 @@
   }
 
   // Same row as the profile page's project list.
-  function renderProject(p){
+  function renderProject(p, group){
     var li = document.createElement('li');
     var main = document.createElement('div');
     main.className = 'proj-main';
@@ -111,7 +111,8 @@
       });
       main.appendChild(kws);
     }
-    if (p.badges && p.badges.length) {
+    // Its Internal Review stage (Registered, Abstract, Paper…) only while it's in submission (2026-11-05).
+    if (group === 'submission' && p.badges && p.badges.length) {
       var row = document.createElement('div');
       row.className = 'proj-badges';
       p.badges.forEach(function(b){
@@ -312,7 +313,7 @@
         li.innerHTML = '<p class="proj-empty">' + (filtering() ? 'No projects match.' : 'None') + '</p>';
         ul.appendChild(li);
       }
-      items.forEach(function(p){ ul.appendChild(renderProject(p)); });
+      items.forEach(function(p){ ul.appendChild(renderProject(p, g[3])); });
     });
     el('projClear').hidden = !filtering();
     if (autoTab) {
