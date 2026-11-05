@@ -982,9 +982,10 @@ async function handleSlashCommand(token, body){
   const blocks = [
     { type: 'input', block_id: 'title', label: { type: 'plain_text', text: 'Title' },
       element: { type: 'plain_text_input', action_id: 'v', max_length: 200, initial_value: (c.prefix + typed).slice(0, 200) } },
+  ].concat(c.what === 'bug' ? BUG_BLOCKS : [
     { type: 'input', block_id: 'notes', optional: true, label: { type: 'plain_text', text: 'Description' },
       element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: c.kind === 'code' ? 'What happens, what you expected, and how to make it happen again (a link, a command, a config)' : 'What it’s for, and who’d use it' } } },
-  ];
+  ]);
   // Screenshots or images (#…, 2026-11-05): Slack's own upload field; attached to the card after it's added
   // (onCardImageImport), as on its page.
   blocks.push({ type: 'input', block_id: 'images', optional: true, label: { type: 'plain_text', text: 'Images' },
@@ -1005,7 +1006,7 @@ async function handleSlashCommand(token, body){
   const view = (bl) => ({ trigger_id: body.trigger_id, view: {
     type: 'modal', callback_id: 'work_card', title: { type: 'plain_text', text: c.what === 'bug' ? 'Report a bug' : 'Request a feature' },
     submit: { type: 'plain_text', text: 'Add it' }, close: { type: 'plain_text', text: 'Cancel' },
-    private_metadata: JSON.stringify({ pid: board.id, kind: c.kind, channel: body.channel_id || '', addBoard }), blocks: bl } });
+    private_metadata: JSON.stringify({ pid: board.id, kind: c.kind, what: c.what, channel: body.channel_id || '', addBoard }), blocks: bl } });
   let opened = await slackFetch(token, 'views.open', view(blocks));
   // Slack refusing the images field (its upload field, or the app without files:read): the form without it.
   if (!opened.ok && /invalid|block|scope/.test(String(opened.error || ''))) {
@@ -1017,6 +1018,48 @@ async function handleSlashCommand(token, body){
 }
 // The form submitted: the card, as the page would add it (firestore.rules validWork), then a
 // note to them alone with its number and link. onWorkCardAdded posts it in the channel.
+// /bug's form (2026-11-05): a proper report, in sections. Only the title and What happened are needed.
+const BUG_SEVERITY = { blocks: 'blocks me', annoying: 'annoying', cosmetic: 'cosmetic' };
+const BUG_BLOCKS = [
+  { type: 'input', block_id: 'where', optional: true, label: { type: 'plain_text', text: 'Where' },
+    element: { type: 'plain_text_input', action_id: 'v', max_length: 300, placeholder: { type: 'plain_text', text: 'The page or feature, e.g. a project’s Board tab, or its link' } } },
+  { type: 'input', block_id: 'happened', label: { type: 'plain_text', text: 'What happened' },
+    element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: 'What you saw, with any error message' } } },
+  { type: 'input', block_id: 'expected', optional: true, label: { type: 'plain_text', text: 'What you expected' },
+    element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 2000 } },
+  { type: 'input', block_id: 'steps', optional: true, label: { type: 'plain_text', text: 'Steps to reproduce' },
+    element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: '1. Open …\n2. Click …\n3. See …' } } },
+  { type: 'input', block_id: 'severity', optional: true, label: { type: 'plain_text', text: 'How bad is it?' },
+    element: { type: 'radio_buttons', action_id: 'v', options: [
+      { text: { type: 'plain_text', text: 'Blocks me' }, description: { type: 'plain_text', text: 'I can’t do what I need' }, value: 'blocks' },
+      { text: { type: 'plain_text', text: 'Annoying' }, description: { type: 'plain_text', text: 'There’s a workaround' }, value: 'annoying' },
+      { text: { type: 'plain_text', text: 'Cosmetic' }, description: { type: 'plain_text', text: 'It looks wrong, but works' }, value: 'cosmetic' }] } },
+  { type: 'input', block_id: 'device', optional: true, label: { type: 'plain_text', text: 'Device and browser' },
+    element: { type: 'plain_text_input', action_id: 'v', max_length: 120, placeholder: { type: 'plain_text', text: 'e.g. Chrome, Mac, or Safari, iPhone' } } },
+];
+// Pure: the form's values (view.state.values) → { where, happened, expected, steps, severity, device }.
+function bugReportOf(values){
+  const v = values || {}, text = (b) => String(((v[b] || {}).v || {}).value || '').trim();
+  const sev = (((v.severity || {}).v || {}).selected_option || {}).value || '';
+  return { where: text('where'), happened: text('happened'), expected: text('expected'), steps: text('steps'),
+    severity: BUG_SEVERITY[sev] ? sev : '', device: text('device') };
+}
+// Pure: a report → its description (Markdown, a heading per section given).
+function bugNotes(r){
+  const out = [];
+  if (r.severity) out.push('**Severity:** ' + BUG_SEVERITY[r.severity].charAt(0).toUpperCase() + BUG_SEVERITY[r.severity].slice(1));
+  [['Where', r.where], ['What happened', r.happened], ['What I expected', r.expected], ['Steps to reproduce', r.steps], ['Device and browser', r.device]]
+    .forEach(function(x){ if (x[1]) out.push('### ' + x[0] + '\n' + x[1]); });
+  return out.join('\n\n');
+}
+// Pure: the card's title with its severity: "Bug: x" → "Bug (blocks me): x"; another title gets it in front.
+function bugTitle(title, severity){
+  const t = String(title || '').trim();
+  if (!BUG_SEVERITY[severity]) return t;
+  const tag = 'Bug (' + BUG_SEVERITY[severity] + ')';
+  return (/^bug\s*:/i.test(t) ? tag + ':' + t.replace(/^bug\s*:/i, '') : tag + ': ' + t).slice(0, 200);
+}
+
 // Images on a card added from Slack (/bug, /feature-request): what Slack's upload field gives, kept to
 // images within the limits a card's page has (PNG, JPEG, GIF, WebP; 10 MB; 20 a card).
 const SLACK_IMAGE_TYPES = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
@@ -1078,10 +1121,16 @@ async function addCardFromSlack(token, payload){
   }
   const person = (await db.collection('people').where('email', '==', email).limit(1).get()).docs[0];
   const name = (person && person.data().name) || email.split('@')[0];
-  const title = String(val('title').value || '').trim().slice(0, 200);
+  let title = String(val('title').value || '').trim().slice(0, 200);
   if (!title) return;
   const now = Date.now();
   let notes = String(val('notes').value || '').trim();
+  // A bug report (/bug): its sections as the description, its severity in its title.
+  if (meta.what === 'bug') {
+    const r = bugReportOf(v);
+    notes = bugNotes(r);
+    title = bugTitle(title, r.severity);
+  }
   // Its milestone: one picked, or a new one named (one of the same name is that one).
   const ms = slashMilestones(wsSnap.data());
   const picked = (val('milestone').selected_option || {}).value || '';
@@ -7625,7 +7674,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  slackImagesOf,
+  slackImagesOf, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
