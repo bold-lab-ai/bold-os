@@ -44,7 +44,6 @@
   function proposeOff(p){
     if (!me) return 'Sign in to suggest a change';
     if (!BOLD.can(AREA, 'propose')) return BOLD.cannotReason(AREA, 'propose');
-    if (p && p.id === 'access' && COLLECTION === 'handbook' && !fullWrite) return 'Only PIs and admins change who can see what';
     return '';
   }
 

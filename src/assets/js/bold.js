@@ -919,7 +919,7 @@
   var WHAT_VERB = { view: 'view', edit: 'edit' };
   var LADDER = ['everyone', 'associate', 'internal', 'staff', 'exec', 'none'];
   var LADDER_HEAD = { everyone: 'Everyone', pan: 'PAN-BOLD', associate: 'Associate', internal: 'Internal', staff: 'Staff', exec: 'Exec', none: 'Nobody' };
-  var ACCESS_INTRO = 'Who can view each page of BOLD.OS, and who can edit it (on the BOLDiquette, How to, Skills and Tools, by proposing). Everyone means everyone signed in; each group can do everything the groups below it can; — is nobody. Only PIs and admins change this table, and who is in which group.';
+  var ACCESS_INTRO = 'Who can view each page of BOLD.OS, and who can edit it (on the BOLDiquette, How to, Skills and Tools, by proposing). Everyone means everyone signed in; each group can do everything the groups below it can; — is nobody. Whoever can propose changes to the BOLDiquette proposes changes to this table; only PIs and admins change who is in which group.';
   var ICON_EYE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8z"/><circle cx="8" cy="8" r="2"/></svg>';
   var panel = null;      // open: { lv: {view, edit, propose}, note, busy, error, done }
   var waiting = null;    // this page's row in an open proposal: { id, lv } | null
@@ -1051,7 +1051,7 @@
         '<p class="ac-sentence">Everyone signed in. It isn’t one of the pages in the BOLDiquette’s <a href="boldiquette.html#access">Who can see what</a>.</p>' +
         viewAsHtml() + '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div></div>';
     } else if (panel) {
-      var can = !!access.fullWrite, lv = panel.lv, changed = !sameLevels(lv, cur);
+      var can = !!access.fullWrite || BOLD.can('boldiquette', 'edit'), lv = panel.lv, changed = !sameLevels(lv, cur);
       html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">' + (isOpen() ? 'Who can act on ' : 'Who can see ') + esc(AREA_NAMES[area]) + '</div>';
       if (panel.done) html += '<p class="ac-sentence">Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposal-' + esc(panel.done) + '">the BOLDiquette</a>.</p>' +
         '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
@@ -1061,7 +1061,7 @@
           (REVIEWED.indexOf(area) >= 0 ? '<p class="ac-note">Edits here are proposals that a PI or admin reviews.</p>' : '') +
           (waiting && !changed ? '<p class="ac-note">Waiting: ' + esc(sentence(waiting.lv)) + ' <a href="boldiquette.html#proposal-' + esc(waiting.id) + '">See it on the BOLDiquette</a>.</p>' : '');
         html += viewAsHtml();
-        if (!can) html += (access.viewAs ? '' : '<p class="ac-note">Only PIs and admins change this.</p>') + '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
+        if (!can) html += (access.viewAs ? '' : '<p class="ac-note">' + esc(BOLD.cannotReason('boldiquette', 'edit')) + '</p>') + '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
         else html += (changed ? '<label class="ac-why">Why?<textarea class="ac-note-input" maxlength="1000" rows="2">' + esc(panel.note || '') + '</textarea></label>' : '') +
           '<p class="ev-error"' + (panel.error ? '' : ' hidden') + '>' + esc(panel.error || '') + '</p>' +
           '<div class="ac-actions"><button type="button" class="btn-text ac-close">' + (changed ? 'Cancel' : 'Close') + '</button>' +

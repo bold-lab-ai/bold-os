@@ -141,7 +141,7 @@ function parseEditTable(body){
 // before: { view, edit }, after: { view, edit } }, applied when it's accepted to the table as
 // it is then (setAccessRow), so it never undoes another change to the part. Without the part
 // yet, accepting it adds the part (accessPartBody), from the table in force.
-const ACCESS_INTRO = 'Who can view each page of BOLD.OS, and who can edit it (on the BOLDiquette, How to, Skills and Tools, by proposing). Everyone means everyone signed in; each group can do everything the groups below it can; — is nobody. Only PIs and admins change this table, and who is in which group.';
+const ACCESS_INTRO = 'Who can view each page of BOLD.OS, and who can edit it (on the BOLDiquette, How to, Skills and Tools, by proposing). Everyone means everyone signed in; each group can do everything the groups below it can; — is nobody. Whoever can propose changes to the BOLDiquette proposes changes to this table; only PIs and admins change who is in which group.';
 const pageName = (key) => (PAGES.filter((p) => p[0] === key)[0] || [key, key])[1];
 const levelCell = (l) => l === 'none' ? '—' : LEVEL_NAMES[l];
 const accessRowMarkdown = (area, lv, editOnly) => '| ' + pageName(area) + ' | ' + (editOnly ? ['edit'] : WHAT).map((w) => levelCell(lv[w])).join(' | ') + ' |';
@@ -251,7 +251,8 @@ module.exports = function access({ db, groupOf, isFullWrite, viewingAs, viewingT
     const part = (parts) => (parts || []).filter((p) => p && p.id === ACCESS_PART)[0] || null;
     const a = part(before), b = part(after);
     if (JSON.stringify(a) === JSON.stringify(b)) return null;
-    if (!(await isFullWrite(proposerEmail))) throw new HttpsError('permission-denied', 'Only PIs and admins can change who can see what.');
+    // Proposed by whoever can propose on the BOLDiquette (2026-11-05: BOLD-internal and above; PIs and admins only before).
+    if (!(await can(proposerEmail, 'boldiquette', 'edit'))) throw new HttpsError('permission-denied', 'Only whoever can propose changes to the BOLDiquette can change who can do what.');
     if (!b) throw new HttpsError('failed-precondition', 'Who can see what can’t be removed: the site uses it.');
     try { return parseAccessTable(b.body); }
     catch (err) { throw new HttpsError('failed-precondition', 'Who can see what can’t be read: ' + err.message); }
