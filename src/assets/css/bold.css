@@ -592,6 +592,8 @@ body:has(#viewAsBar){padding-bottom:72px;}
 .pp-associate{color:var(--plum);}
 .pp-staff{color:var(--brown);}
 .pp-pan{color:var(--neutral-text);}
+/* The masthead's group word (bold.js), in its group's colour, at full strength. */
+.masthead-sub[class*="pp-"]{opacity:1;}
 button.type-badge{background:none; cursor:pointer;}
 button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);}
 .type-pitch{color:var(--plum);}

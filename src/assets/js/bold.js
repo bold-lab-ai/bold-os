@@ -848,7 +848,7 @@
   // fn(access) once known and on every change; replayed at once if known.
   BOLD.onAccess = function(fn){ accessListeners.push(fn); if (access) fn(access); };
   // The masthead's word beside BOLD.OS: the viewer's group (Exec, Staff, Internal, Associate; PIs and
-  // admins Exec, or the group they view as), nothing for PAN-BOLD or signed out.
+  // admins Exec, or the group they view as), nothing for PAN-BOLD or signed out; in the group's colour.
   var GROUP_WORD = { exec: 'Exec', staff: 'Staff', internal: 'Internal', associate: 'Associate' };
   BOLD.onAccess(function(a){
     var el = document.querySelector('.masthead-sub');
@@ -856,6 +856,8 @@
     var g = !a || !a.e ? '' : a.viewAs ? a.viewAs : a.fullWrite ? 'exec' : a.group;
     el.textContent = GROUP_WORD[g] || '';
     el.hidden = !GROUP_WORD[g];
+    // In its group's colour, as on People (.pp-<group>, bold.css).
+    el.className = 'masthead-sub' + (GROUP_WORD[g] ? ' pp-' + g : '');
   });
   // fn(access) once, when this visit has read it (not the last visit's copy).
   BOLD.onFreshAccess = function(fn){ if (freshAccess) fn(access); else freshListeners.push(fn); };
