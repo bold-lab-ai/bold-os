@@ -127,6 +127,8 @@
         var el = document.getElementById('m-' + id); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
       });
       window.addEventListener('resize', place);
+      var ticking = false;
+      window.addEventListener('scroll', function(){ if (ticking) return; ticking = true; requestAnimationFrame(function(){ ticking = false; place(); }); }, { passive: true });
     }
     var all = [p].concat((messages[p.id] || []).slice().sort(function(a, b){ return ms(a.at) - ms(b.at); }));
     var row = {}, lane = {}, next = 1;
@@ -148,7 +150,7 @@
       var leaf = !kids(m.id).length;
       dots += '<circle data-id="' + esc(m.id) + '" class="' + (leaf ? 'is-leaf' : '') + '" cx="' + X(m.id) + '" cy="' + Y(m.id) + '" r="3.5"><title>' + esc((m.name || 'someone') + ': ' + String(m.id === p.id ? p.title : m.body || '').replace(/\s+/g, ' ').slice(0, 80)) + '</title></circle>';
     });
-    treeEl.innerHTML = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '"><g class="bs-tree-lines">' + paths + '</g>' + dots + '</svg>';
+    treeEl.innerHTML = '<p class="bs-tree-head">Tree · ' + all.length + (all.length === 1 ? ' message' : ' messages') + '</p><svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '"><g class="bs-tree-lines">' + paths + '</g>' + dots + '</svg>';
     treeEl.hidden = false;
     place(); watchSeen();
   }
@@ -160,6 +162,11 @@
     var room = t.left - from - 32 >= w && !threadEl.hidden;
     treeEl.style.visibility = room ? 'visible' : 'hidden';
     treeEl.style.left = Math.max(from + 16, t.left - w - 24) + 'px';
+    // Level with the thread's title, then held under the masthead as the page scrolls.
+    var title = threadEl.querySelector('.bs-thread-title'), mast = document.querySelector('.masthead');
+    var floor = mast ? Math.max(0, mast.getBoundingClientRect().bottom) + 12 : 72;
+    treeEl.style.top = Math.max(floor, title ? title.getBoundingClientRect().top : t.top) + 'px';
+    treeEl.style.maxHeight = 'calc(100vh - ' + (parseFloat(treeEl.style.top) + 24) + 'px)';
   }
   // The message in view: its dot gets a ring.
   function watchSeen(){
