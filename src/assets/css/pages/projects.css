@@ -281,7 +281,13 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-line .bs-text > :last-child{margin-bottom:0;}
 .bs-branches{padding:6px 10px 10px 24px; background:var(--wash);}
 .bs-thread-toggle{padding:0 12px 6px; margin-top:-2px;}
-.bs-thread-toggle .btn-text{font-size:12px; font-weight:600;}
+/* A thread's toggle: a pill in the link colour, not text like the rest. */
+.bs-thread-toggle .bs-open{display:inline-flex; align-items:center; gap:6px; font:inherit; font-family:var(--sans); font-size:12px; font-weight:600; color:var(--link); text-decoration:none;
+  background:color-mix(in srgb, var(--link) 12%, transparent); border:1px solid color-mix(in srgb, var(--link) 35%, transparent); border-radius:999px; padding:2px 10px; cursor:pointer;}
+.bs-thread-toggle .bs-open:hover{background:color-mix(in srgb, var(--link) 22%, transparent);}
+.bs-thread-toggle .bs-open:focus-visible{outline:2px solid var(--link); outline-offset:2px;}
+.bs-caret{font-size:10px;}
+.bs-last{font-weight:400; color:var(--muted);}
 .bs-run > .bs-thread-toggle + .bs-branches{border-top:0;}
 /* Under the message: its votes, then Reply and Remove. */
 .bs-right{display:flex; align-items:center; gap:12px; margin-top:3px;}

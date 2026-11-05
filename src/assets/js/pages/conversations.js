@@ -84,7 +84,7 @@
   function threadToggle(m){
     var k = total(m.id), on = !!opened[m.id];
     return '<li class="bs-thread-toggle"><button type="button" class="btn-text bs-open" data-id="' + esc(m.id) + '" aria-expanded="' + on + '">' +
-      (on ? 'Hide ' + count(k) : count(k) + ' · last ' + ago(lastAt(m.id))) + '</button></li>';
+      '<span class="bs-caret" aria-hidden="true">' + (on ? '\u25be' : '\u25b8') + '</span>' + (on ? 'Hide ' + count(k) : count(k) + '<span class="bs-last"> · last ' + ago(lastAt(m.id)) + '</span>') + '</button></li>';
   }
   function threadHtml(parentId, pid, nested){
     var out = '';
