@@ -122,6 +122,7 @@
       treeEl.addEventListener('click', function(e){
         var n = e.target.closest('[data-id]'); if (!n) return;
         var id = n.getAttribute('data-id'), m = msgOf(openId, id), k = 0;
+        treeSel = id;
         while (m && parentOf(m) && k++ < 500) { opened[parentOf(m)] = true; m = msgOf(openId, parentOf(m)); }
         render();
         var el = document.getElementById('m-' + id); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
