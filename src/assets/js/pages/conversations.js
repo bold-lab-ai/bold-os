@@ -205,6 +205,21 @@
     Array.prototype.forEach.call(threadEl.querySelectorAll('.bs-line[id^="m-"]'), function(el){ treeSeen.observe(el); });
   }
 
+  // A long message (over about 10 lines as shown) is folded, with Show more; opened, Show less.
+  // Which are open is kept while the page is (`unfolded`, by message id).
+  var unfolded = {}, CLAMP_LINES = 10;
+  function clampLong(){
+    Array.prototype.forEach.call(threadEl.querySelectorAll('.bs-line[id^="m-"]'), function(li){
+      var text = li.querySelector(':scope > .bs-text'), id = li.id.slice(2);
+      if (!text) return;
+      var line = parseFloat(getComputedStyle(text).lineHeight) || 21;
+      // A little over the limit isn't folded: it would hide only a line or two.
+      if (text.scrollHeight <= line * CLAMP_LINES * 1.3) return;
+      if (!unfolded[id]) { text.classList.add('is-clamped'); text.style.maxHeight = (line * CLAMP_LINES) + 'px'; }
+      text.insertAdjacentHTML('afterend', '<button type="button" class="btn-text bs-more" data-id="' + esc(id) + '" aria-expanded="' + !!unfolded[id] + '">' + (unfolded[id] ? 'Show less' : 'Show more') + '</button>');
+    });
+  }
+
   // ---------- the list, or one post's thread ----------
   function render(){
     var open = decodeURIComponent((location.hash.match(/^#post=(.+)$/) || [])[1] || '');
@@ -224,6 +239,7 @@
       var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
         '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + columnHtml(p, p.id, head);
+      clampLong();
       drawTree(p);
       var fresh = threadEl.querySelector('.bs-replyform');
       if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id')) fresh.replaceWith(keep);
@@ -402,6 +418,12 @@
     var b = e.target.closest('button');
     if (!b || b.disabled) return;
     var id = b.getAttribute('data-id'), pid = b.getAttribute('data-pid');
+    if (b.classList.contains('bs-more')) {
+      unfolded[id] = !unfolded[id]; render();
+      // Folding it again: back to the message, not left far below it.
+      if (!unfolded[id]) { var mel = document.getElementById('m-' + id); if (mel && mel.getBoundingClientRect().top < 0) mel.scrollIntoView({ block: 'start' }); }
+      return;
+    }
     if (b.classList.contains('bs-up')) {
       // The same arrow again takes your vote back; the other one turns it round.
       var p = openId || id, isPost = !openId || id === openId, m = isPost ? postOf(id) : msgOf(openId, id);
