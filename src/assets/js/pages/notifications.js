@@ -16,6 +16,70 @@
   var SOURCE_LABEL = { bold: 'BOLD.OS', conversations: 'Conversations', slack: 'Slack' };
   var reqs = null, reqError = false, notes = null, noteError = false, source = '', me = '';
   var db = function(){ return firebase.firestore(BOLD.getApp()); };
+  var call = function(name, data){ return firebase.app().functions('europe-west2').httpsCallable(name)(data || {}); };
+
+  // ---------- Desktop notifications (Web Push) ----------
+  // Turned on per browser: the browser asks permission, Firebase Cloud Messaging gives it a token
+  // (through firebase-messaging-sw.js, the site's service worker), and pushDevices keeps it for you;
+  // every notification then shows on this computer too, even with BOLD.OS closed. Your devices are
+  // listed, each can be removed. Not offered without the site's key (site.js webPushKey) or in a
+  // browser without push.
+  var push = { devices: null, busy: false, msg: '', mine: '' };
+  try { push.mine = localStorage.getItem('boldPushToken') || ''; } catch (e){}
+  function pushSupported(){ return !!(window.BOLD_WEB_PUSH_KEY && 'Notification' in window && 'serviceWorker' in navigator && window.PushManager && firebase.messaging); }
+  function deviceLabel(){
+    var ua = navigator.userAgent, b = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'A browser';
+    var os = /Mac OS X/.test(ua) ? (/iPhone|iPad/.test(ua) ? 'iOS' : 'Mac') : /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /Linux/.test(ua) ? 'Linux' : '';
+    return b + (os ? ' on ' + os : '');
+  }
+  function pushHtml(){
+    if (!window.BOLD_WEB_PUSH_KEY) return '';
+    var head = '<div class="nt-push"><span class="nt-push-label">Desktop notifications</span> ';
+    if (!pushSupported()) return head + '<span class="detail-muted">This browser can’t show them.</span></div>';
+    var on = push.mine && (push.devices || []).some(function(d){ return d.current; });
+    var denied = Notification.permission === 'denied';
+    var ctl = denied ? '<span class="detail-muted">Blocked in this browser’s settings for this site.</span>'
+      : on ? '<span>On in this browser.</span> <button type="button" class="btn-text nt-push-off"' + (push.busy ? ' disabled' : '') + '>Turn off</button>'
+      : '<button type="button" class="btn-text nt-push-on"' + (push.busy ? ' disabled' : '') + '>Turn on in this browser</button>';
+    var list = (push.devices || []).filter(function(d){ return !d.current; });
+    return head + ctl + (push.msg ? ' <span class="detail-muted">' + esc(push.msg) + '</span>' : '') +
+      (list.length ? '<ul class="nt-devices">' + list.map(function(d){
+        return '<li>' + esc(d.label || 'A device') + ' <span class="detail-muted">· since ' + esc(when(d.at)) + '</span> <button type="button" class="btn-text nt-push-rm" data-id="' + esc(d.id) + '">Remove</button></li>';
+      }).join('') + '</ul>' : '') + '</div>';
+  }
+  function loadDevices(){
+    if (!window.BOLD_WEB_PUSH_KEY) return;
+    call('pushDevices', { action: 'list', token: push.mine }).then(function(r){ push.devices = (r.data || {}).devices || []; draw(); })
+      .catch(function(err){ console.error('[BOLD Notifications] loading your devices failed', err); });
+  }
+  function pushOn(){
+    push.busy = true; push.msg = ''; draw();
+    Notification.requestPermission().then(function(p){
+      if (p !== 'granted') throw { quiet: true, msg: p === 'denied' ? 'Blocked: allow notifications for this site in the browser’s settings.' : '' };
+      return navigator.serviceWorker.register('firebase-messaging-sw.js');
+    }).then(function(reg){
+      return firebase.messaging().getToken({ vapidKey: window.BOLD_WEB_PUSH_KEY, serviceWorkerRegistration: reg });
+    }).then(function(token){
+      if (!token) throw { msg: 'The browser gave no token — try again.' };
+      push.mine = token;
+      try { localStorage.setItem('boldPushToken', token); } catch (e){}
+      return call('pushDevices', { action: 'add', token: token, label: deviceLabel() });
+    }).then(function(r){ push.busy = false; push.devices = (r.data || {}).devices || []; push.msg = ''; draw(); })
+      .catch(function(err){
+        if (!err || !err.quiet) console.error('[BOLD Notifications] turning on desktop notifications failed', err);
+        push.busy = false; push.msg = (err && err.msg) || (err && err.quiet ? '' : 'Couldn’t turn them on — try again.'); draw();
+      });
+  }
+  function pushOff(id){
+    push.busy = true; draw();
+    var mine = !id;
+    (mine && firebase.messaging ? firebase.messaging().deleteToken().catch(function(){}) : Promise.resolve()).then(function(){
+      return call('pushDevices', { action: 'remove', token: mine ? push.mine : '', id: id || '' });
+    }).then(function(r){
+      if (mine) { push.mine = ''; try { localStorage.removeItem('boldPushToken'); } catch (e){} }
+      push.busy = false; push.devices = (r.data || {}).devices || []; draw();
+    }).catch(function(err){ console.error('[BOLD Notifications] removing a device failed', err); push.busy = false; push.msg = 'Couldn’t — try again.'; draw(); });
+  }
 
   function when(t){ return t ? new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : ''; }
   function ago(t){
@@ -53,7 +117,7 @@
         '<a class="guide-tab" href="#inbox">Inbox' + (unread ? ' <span class="nt-unread-count">' + unread + ' unread</span>' : '') + '</a>' +
         '<a class="guide-tab" href="#todo">To do' + n(forYou.length) + '</a>' +
         '<a class="guide-tab" href="#waiting">Waiting' + n(byYou.length) + '</a></nav>' +
-      '<section class="profile-panel" id="inbox">' +
+      '<section class="profile-panel" id="inbox">' + pushHtml() +
         '<div class="nt-bar"><span class="nt-filter" role="group" aria-label="Show">' + SOURCES.map(function(s){
           return '<button type="button" class="btn-text nt-src' + (source === s[0] ? ' is-on' : '') + '" data-src="' + s[0] + '" aria-pressed="' + (source === s[0]) + '">' + esc(s[1]) + '</button>';
         }).join('') + '</span>' +
@@ -84,6 +148,10 @@
     return b.commit().catch(function(err){ console.error('[BOLD Notifications] marking read failed', err); });
   }
   body.addEventListener('click', function(e){
+    if (e.target.closest('.nt-push-on')) { pushOn(); return; }
+    if (e.target.closest('.nt-push-off')) { pushOff(''); return; }
+    var rm = e.target.closest('.nt-push-rm');
+    if (rm) { pushOff(rm.getAttribute('data-id')); return; }
     var src = e.target.closest('.nt-src');
     if (src) { source = src.getAttribute('data-src'); draw(); return; }
     var t = e.target.closest('.nt-toggle');
@@ -104,6 +172,7 @@
     if (!user) return;
     me = String(user.email || '').toLowerCase();
     draw();
+    loadDevices();
     firebase.app().functions('europe-west2').httpsCallable('myRequests')().then(function(r){
       if (mine !== asked) return;
       reqs = r.data || {};

@@ -192,3 +192,7 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .nt-text{display:block; color:var(--ink);}
 a.nt-text:hover{color:var(--link);}
 .nt-unread-count{font-size:11px; color:var(--accent); margin-left:4px;}
+/* Desktop notifications, above the Inbox: on or off in this browser, and your other devices. */
+.nt-push{font-family:var(--sans); font-size:13px; margin:0 0 12px; padding:8px 10px; border:1px solid var(--line);}
+.nt-push-label{font-weight:600; margin-right:6px;}
+.nt-devices{list-style:none; margin:6px 0 0; padding:0;}
