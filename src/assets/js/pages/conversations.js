@@ -33,7 +33,14 @@
   var mine = function(m){ return !!me.email && m.createdBy === me.email; };
   // A message's replies in the order they were written, whatever their votes: a conversation reads in order.
   // (Votes order the posts on the list: Top.)
-  var kids = function(id){ return (messages[openId] || []).filter(function(x){ return x.parent === id; }).sort(function(a, b){ return ms(a.at) - ms(b.at); }); };
+  // A thread is a tree: each message answers its parent. A Slack thread came in as replies to the post,
+  // one after another: each is read as answering the one before (slack-<n> → slack-<n-1>).
+  var parentOf = function(x){
+    var k = x.source === 'slack' && x.parent === openId && /^slack-(\d+)$/.exec(x.id);
+    if (k && +k[1] > 0 && (messages[openId] || []).some(function(y){ return y.id === 'slack-' + (k[1] - 1); })) return 'slack-' + (k[1] - 1);
+    return x.parent;
+  };
+  var kids = function(id){ return (messages[openId] || []).filter(function(x){ return parentOf(x) === id; }).sort(function(a, b){ return ms(a.at) - ms(b.at); }); };
   var total = function(id){ return kids(id).reduce(function(s, x){ return s + 1 + total(x.id); }, 0); };
   var count = function(k){ return k + (k === 1 ? ' reply' : ' replies'); };
   var postOf = function(id){ return (posts || []).filter(function(p){ return p.id === id; })[0]; };
@@ -74,28 +81,30 @@
   // message's own replies are collapsed under it ("3 replies · last 2 h ago"); opened, they're a
   // block of their own, indented, where a run (each answering the one before) reads on in the block.
   function msgHtml(m, pid){
-    // One that has replies (a branch the conversation goes on from) is marked.
-    return '<li class="bs-line' + (kids(m.id).length ? ' is-branch' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
+    // A leaf (nobody has answered it yet: where the conversation goes on) is marked.
+    return '<li class="bs-line' + (kids(m.id).length ? '' : ' is-leaf') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
       '<p class="bs-by">' + by(m) + '</p>' + md(m.body) +
       '<div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div>' + replyForm(m, pid) + '</li>';
   }
   var lastAt = function(id){ return kids(id).reduce(function(t, x){ return Math.max(t, ms(x.at), lastAt(x.id)); }, 0); };
-  function threadToggle(m){
-    var k = total(m.id), on = !!opened[m.id];
+  // A column: a message, then its first reply (made while it was a leaf: the conversation going on), and
+  // so on. Every later reply to a message branches from it: a column of its own, indented under that
+  // message, folded behind a toggle ("2 branches · 5 messages · last 2 h ago").
+  function branchToggle(m, bs){
+    var k = bs.reduce(function(t, c){ return t + 1 + total(c.id); }, 0), on = !!opened[m.id];
+    var last = bs.reduce(function(t, c){ return Math.max(t, ms(c.at), lastAt(c.id)); }, 0);
+    var what = bs.length + (bs.length === 1 ? ' branch' : ' branches') + ' · ' + k + (k === 1 ? ' message' : ' messages');
     return '<li class="bs-thread-toggle"><button type="button" class="btn-text bs-open" data-id="' + esc(m.id) + '" aria-expanded="' + on + '">' +
-      '<span class="bs-caret" aria-hidden="true">' + (on ? '\u25be' : '\u25b8') + '</span>' + (on ? 'Hide ' + count(k) : count(k) + '<span class="bs-last"> · last ' + ago(lastAt(m.id)) + '</span>') + '</button></li>';
+      '<span class="bs-caret" aria-hidden="true">' + (on ? '\u25be' : '\u25b8') + '</span>' + (on ? 'Hide ' + what : what + '<span class="bs-last"> · last ' + ago(last) + '</span>') + '</button></li>';
   }
-  function threadHtml(parentId, pid, nested){
-    var out = '';
-    kids(parentId).forEach(function(m){
-      for (;;) {
-        out += msgHtml(m, pid);
-        var ks = kids(m.id);
-        if (nested && ks.length === 1) { m = ks[0]; continue; }   // a run, in this block
-        if (ks.length) out += threadToggle(m) + (opened[m.id] ? '<li class="bs-branches">' + threadHtml(m.id, pid, true) + '</li>' : '');
-        break;
-      }
-    });
+  function columnHtml(first, pid, head){
+    var out = '', m = first;
+    while (m) {
+      out += head && m === first ? head : msgHtml(m, pid);
+      var ks = kids(m.id), bs = ks.slice(1);
+      if (bs.length) out += branchToggle(m, bs) + (opened[m.id] ? '<li class="bs-branches">' + bs.map(function(c){ return columnHtml(c, pid); }).join('') + '</li>' : '');
+      m = ks[0] || null;
+    }
     return '<ol class="bs-run">' + out + '</ol>';
   }
 
@@ -110,17 +119,14 @@
       if (writeEl) writeEl.hidden = true;
       if (posts === null || messages[open] === undefined) { threadEl.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
       if (!p) { threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a><p class="proj-msg">No such post: it may have been removed.</p>'; return; }
-      var k = total(p.id);
       // An open reply box is carried across the redraw (a reply or a vote arriving), with what's typed in it
       // and its Write | Preview tab.
       var keep = threadEl.querySelector('.bs-replyform');
-      // The post is a message like the others, under its title; its replies a thread under it, open to start with.
-      if (opened[p.id] === undefined) opened[p.id] = true;
+      // The post is the tree's root: the first message of the conversation's column, under its title.
       var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
+      var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
-        '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' +
-        '<ol class="bs-run">' + (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id)) +
-          (k ? threadToggle(p) + (opened[p.id] ? '<li class="bs-branches">' + threadHtml(p.id, p.id, false) + '</li>' : '') : '') + '</ol>';
+        '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + columnHtml(p, p.id, head);
       var fresh = threadEl.querySelector('.bs-replyform');
       if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id')) fresh.replaceWith(keep);
       else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
@@ -255,7 +261,8 @@
     // Its thread open, all the way up, so it's in sight.
     setTimeout(function(){
       var m = mid && msgOf(pid, mid), n = 0;
-      while (m && m.parent && m.parent !== pid && n++ < 50) { opened[m.parent] = true; m = msgOf(pid, m.parent); }
+      while (m && parentOf(m) && parentOf(m) !== pid && n++ < 50) { opened[parentOf(m)] = true; m = msgOf(pid, parentOf(m)); }
+      opened[pid] = true;
       if (n) render();
       var el = mid && document.getElementById('m-' + mid); if (el) el.scrollIntoView({ block: 'center' });
     }, 300);

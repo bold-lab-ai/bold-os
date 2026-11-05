@@ -275,8 +275,9 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-run{background:none; border:0;}
 .bs-line{padding:6px 12px 7px;}
 .bs-line + .bs-line, .bs-thread-toggle + .bs-line, .bs-branches + .bs-line{border-top:1px solid var(--rule);}
-/* One with replies: a thin accent bar; the one you're reasoning about with your agent: the ink one. */
-.bs-line.is-branch{box-shadow:inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);}
+.bs-branches > .bs-run + .bs-run{margin-top:6px; border-top:1px solid var(--rule);}
+/* A leaf (nobody has answered it yet): a thin accent bar; the one you're reasoning about with your agent: the ink one. */
+.bs-line.is-leaf{box-shadow:inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);}
 .bs-line.is-about{box-shadow:inset 3px 0 0 var(--ink);}
 .bs-line .bs-text{margin:2px 0 0; font-size:14px;}
 .bs-line .bs-text > :last-child{margin-bottom:0;}
