@@ -2839,7 +2839,7 @@ exports.getMyProjects = onCall(
     out.owner = out.owner.concat(ownSnap.docs.map(loose));
     out.author = out.author.concat(authSnap.docs.map(loose));
     const listed = new Set(out.owner.concat(out.author).map((i) => i.cardId));
-    const GROUP = { planned: 'Planned', ongoing: 'Ongoing', submission: 'In submission', completed: 'Completed' };
+    const GROUP = { proposed: 'Proposed', planned: 'Approved', ongoing: 'Ongoing', submission: 'In submission', completed: 'Completed' };
     out.member = wsSnap.docs.map((d) => d.data()).filter((w) => w.cardId && !listed.has(w.cardId) &&
       !(w.venues || []).some((v) => listed.has(v.cardId)))
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))

@@ -334,7 +334,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       var complete = !!(ws && !projectSetupMissing(ws).length), back = !!(ws && ws.startedAt) || complete;
       var off = !canEdit() ? NOT_EDITOR : !wsLoaded || wsBusy ? 'Loading\u2026' : back && complete ? 'Ongoing while it has a meeting, slides and notes' : '';
       html += '<button class="btn-box detail-remove" type="button" id="startProject"' + (off ? ' disabled title="' + esc(off) + '"' : '') + '>' +
-        (back ? 'Back to planned' : 'Mark as ongoing') + '</button>';
+        (back ? 'Back to approved' : 'Mark as ongoing') + '</button>';
     }
     html += '<button class="btn-box detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
       (done ? 'Reopen project' : 'Mark as completed') + '</button>';

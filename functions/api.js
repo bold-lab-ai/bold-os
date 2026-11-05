@@ -375,7 +375,7 @@ module.exports = function(deps){
     },
     {
       name: 'list_projects',
-      description: 'The lab’s research projects, as on the Projects page: proposed (waiting for a PI or admin to approve them), planned, ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
+      description: 'The lab’s research projects, as on the Projects page: proposed (waiting for a PI or admin to approve them), approved (planned: not started yet), ongoing (being worked on), in submission (on a venue’s board) and completed, most recently updated first. Filter by group, keyword, words, or only yours.',
       inputSchema: { type: 'object', properties: {
         group: { type: 'string', enum: ['proposed', 'planned', 'ongoing', 'submission', 'completed'] },
         keyword: { type: 'string', description: 'A project keyword, e.g. "reinforcement learning".' },
