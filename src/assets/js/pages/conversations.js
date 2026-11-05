@@ -81,8 +81,12 @@
       '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(leaf) + '"' + (why || (leaf === m.id ? '' : ' title="Reply at the end of this conversation"')) + '>Reply</button>' +
       '<button type="button" class="btn-text bs-reply-btn" data-branch="1" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (why || ' title="Start a new branch from this message"') + '>Branch out</button>' +
       (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
-      '<button type="button" class="btn-text bs-link" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '" title="Copy a link to this message">Copy link</button>' +
-      (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>';
+      // Copy, Copy link and Remove: in its ⋯ menu (BOLD.moreMenuHtml).
+      BOLD.moreMenuHtml([
+        { label: 'Copy', cls: 'bs-copy', attrs: ' data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' },
+        { label: 'Copy link', cls: 'bs-link', attrs: ' data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' },
+        { label: 'Remove', cls: 'bs-remove', danger: true, attrs: ' data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"', off: mine(m) || full ? '' : 'Only whoever wrote it, PIs and admins remove it' },
+      ], 'More') + '</p>';
   }
   function replyForm(m, pid){
     return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '" data-branch="' + (branching ? '1' : '') + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
@@ -446,9 +450,13 @@
     var b = e.target.closest('button');
     if (!b || b.disabled) return;
     var id = b.getAttribute('data-id'), pid = b.getAttribute('data-pid');
-    if (b.classList.contains('bs-link')) {
-      var url = msgLink(pid, id), done = function(t){ b.textContent = t; setTimeout(function(){ b.textContent = 'Copy link'; }, 1500); };
-      if (navigator.clipboard) navigator.clipboard.writeText(url).then(function(){ done('Copied'); }, function(){ done('Couldn’t copy'); });
+    // Copy (its text, as written) and Copy link, from its ⋯ menu: the menu's button says it's done.
+    if (b.classList.contains('bs-link') || b.classList.contains('bs-copy')) {
+      var cm = id === pid ? postOf(pid) : msgOf(pid, id);
+      var text = b.classList.contains('bs-link') ? msgLink(pid, id) : cm ? (id === pid ? [cm.title, cm.body && cm.body.trim() !== cm.title ? cm.body : ''].filter(Boolean).join('\n\n') : cm.body || '') : '';
+      var mb = b.closest('.more-menu') && b.closest('.more-menu').querySelector('.more-menu-btn');
+      var done = function(t){ if (!mb) return; mb.textContent = t; setTimeout(function(){ mb.textContent = '\u22ef'; }, 1500); };
+      if (navigator.clipboard && text) navigator.clipboard.writeText(text).then(function(){ done(b.classList.contains('bs-link') ? 'Link copied' : 'Copied'); }, function(){ done('Couldn’t copy'); });
       else done('Couldn’t copy');
       return;
     }

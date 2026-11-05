@@ -156,6 +156,30 @@
     // Instant: the page scrolls smoothly (bold.css), which would show a jump and a glide back.
     window.scrollTo({ top: Math.max(0, y), behavior: 'instant' });
   };
+  // A ⋯ menu (shared): a button opening a short list of actions, styled as the masthead's menus.
+  // items: [{ label, cls, attrs (an HTML attribute string), danger, off (the reason it's greyed out) }].
+  // The page handles the items' clicks by their class, as for any button; choosing one closes the menu.
+  BOLD.moreMenuHtml = function(items, label){
+    return '<span class="more-menu"><button type="button" class="more-menu-btn" aria-haspopup="true" aria-expanded="false" title="' + esc(label || 'More') + '" aria-label="' + esc(label || 'More') + '">\u22ef</button>' +
+      '<ul class="mast-menu more-menu-list" role="menu" hidden>' + items.filter(Boolean).map(function(i){
+        return '<li role="none"><button type="button" role="menuitem" class="' + esc(i.cls || '') + (i.danger ? ' is-danger' : '') + '"' + (i.attrs || '') +
+          (i.off ? ' disabled title="' + esc(i.off) + '"' : '') + '>' + esc(i.label) + '</button></li>';
+      }).join('') + '</ul></span>';
+  };
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest && e.target.closest('.more-menu-btn');
+    Array.prototype.forEach.call(document.querySelectorAll('.more-menu-list:not([hidden])'), function(l){
+      if (btn && l.previousElementSibling === btn) return;
+      l.hidden = true; if (l.previousElementSibling) l.previousElementSibling.setAttribute('aria-expanded', 'false');
+    });
+    if (!btn) return;
+    var list = btn.nextElementSibling, open = list.hidden;
+    list.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'Escape') return;
+    Array.prototype.forEach.call(document.querySelectorAll('.more-menu-list:not([hidden])'), function(l){ l.hidden = true; l.previousElementSibling.setAttribute('aria-expanded', 'false'); l.previousElementSibling.focus(); });
+  });
   BOLD.copyBoxHtml = function(text){
     return '<div class="copy-box"><pre><code>' + esc(text) + '</code></pre>' +
       '<button type="button" class="copy-btn" aria-label="Copy" title="Copy">' + ICON_COPY + '</button></div>';

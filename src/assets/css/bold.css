@@ -411,6 +411,13 @@ footer{
 .mast-menu a, .mast-menu button{display:block; width:100%; box-sizing:border-box; padding:7px 10px; border:0; background:none; text-align:left;
   font:inherit; color:var(--ink); text-decoration:none; cursor:pointer;}
 .mast-menu a:hover, .mast-menu button:hover, .mast-menu a:focus-visible, .mast-menu button:focus-visible{background:var(--surface); outline:none;}
+/* A ⋯ menu (BOLD.moreMenuHtml): its list is a .mast-menu, opening under the button. */
+.more-menu{position:relative; display:inline-flex;}
+.more-menu-btn{padding:0 6px; border:0; border-radius:0; background:none; color:var(--muted); font:inherit; font-size:16px; line-height:1; cursor:pointer;}
+.more-menu-btn:hover, .more-menu-btn[aria-expanded="true"]{color:var(--ink); background:var(--surface);}
+.more-menu-list{width:160px;}
+.mast-menu button.is-danger{color:var(--danger-text);}
+.mast-menu button[disabled]{color:var(--muted); cursor:default; background:none;}
 /* View as (bold.js): while a PI or admin views the site as a group. */
 .viewas-bar{position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:1300; display:flex; gap:12px; align-items:center;
   padding:8px 14px; border-radius:999px; background:var(--ink); color:var(--surface); font-family:var(--sans); font-size:13.5px; box-shadow:0 6px 18px color-mix(in srgb, var(--shade) 25%, transparent); max-width:calc(100vw - 32px);}
