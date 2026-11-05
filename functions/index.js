@@ -2637,13 +2637,13 @@ async function upsertPerson(u, teamId){
   if (u.deleted || (teamId && u.team_id && u.team_id !== teamId)) { if ((await ref.get()).exists) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); } return; }
   if (!u.profile || !u.profile.email) { logger.warn('upsertPerson: no email (users:read.email?)', { slackId: u.id }); return; }
   // Emails lower case, as everywhere else on BOLD.OS (Slack keeps whatever case was typed).
-  const p = withAccountEmail({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }, await accountEmailFor(u.id));
+  const p = withAccountEmail({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email, external: slackExternal(u, teamId) }, await accountEmailFor(u.id));
   const was = (await ref.get()).data();
-  if (was && was.name === p.name && was.email === p.email && (was.slackEmail || '') === (typeof p.slackEmail === 'string' ? p.slackEmail : '')) return;
+  if (was && was.name === p.name && was.email === p.email && (was.slackEmail || '') === (typeof p.slackEmail === 'string' ? p.slackEmail : '') && !!was.external === p.external) return;
   await ref.set(p, { merge: true });
   logger.info('upsertPerson: ' + (was ? 'updated' : 'added'), { slackId: u.id });
   // New on the BOLD Slack: PAN-BOLD's channels (Settings › Slack channels), before any record of theirs.
-  if (!was) await invitePanChannels(p.email).catch((err) => logger.warn('Adding someone to PAN-BOLD\u2019s channels failed', { error: String(err && err.message || err) }));
+  if (!was && !p.external) await invitePanChannels(p.email).catch((err) => logger.warn('Adding someone to PAN-BOLD\u2019s channels failed', { error: String(err && err.message || err) }));
 }
 async function invitePanChannels(email){
   const set = (await db.collection('settings').doc('groups').get()).data() || {};
@@ -5590,6 +5590,15 @@ async function slackMembers(token){
   return members;
 }
 
+// Pure: whether Slack user `u` is from another organisation, in a channel shared with ours (Slack
+// Connect): their account or profile is another workspace's, or Slack calls them a stranger. They stay
+// on the roster (their profiles, notifications and projects work) as `external`, but no picker or tag
+// offers them (people.external, 2026-11-05).
+function slackExternal(u, team){
+  if (!u || !team) return false;
+  const p = u.profile || {};
+  return !!u.is_stranger || !!(u.team_id && u.team_id !== team) || !!(p.team && p.team !== team);
+}
 // → { added, updated, removed }
 async function syncPeopleFromSlack(token){
   const members = await slackMembers(token);
@@ -5599,7 +5608,7 @@ async function syncPeopleFromSlack(token){
   const ours = u => !team || !u.team_id || u.team_id === team;
   const people = members
     .filter(u => !u.deleted && ours(u) && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
-    .map(u => ({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
+    .map(u => ({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email, external: slackExternal(u, team) }));
   if (!people.length) {
     logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
     throw new Error('Slack returned nobody with an email (is users:read.email granted?)');
@@ -5615,8 +5624,11 @@ async function syncPeopleFromSlack(token){
   people.forEach(p => {
     const was = current[p.slackId];
     const slackEmail = typeof p.slackEmail === 'string' ? p.slackEmail : '';
-    if (!was || was.name !== p.name || was.email !== p.email || (was.slackEmail || '') !== slackEmail) writes.push({ id: p.slackId, data: p, added: !was });
+    if (!was || was.name !== p.name || was.email !== p.email || (was.slackEmail || '') !== slackEmail || !!was.external !== p.external) writes.push({ id: p.slackId, data: p, added: !was });
   });
+  // On the roster but no longer on Slack's list (out of every channel shared with us): external too.
+  const listed = new Set(members.map(u => u.id));
+  existing.docs.forEach(d => { if (!listed.has(d.id) && !d.data().external) writes.push({ id: d.id, data: { external: true }, added: false }); });
   const deletes = gone.filter(id => current[id]);
   const ops = writes.map(w => batch => batch.set(db.collection('people').doc(w.id), w.data, { merge: true }))
     .concat(deletes.map(id => batch => batch.delete(db.collection('people').doc(id))));
@@ -8163,5 +8175,5 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, groupMoveOf, currentGroupMove, groupMoveTitle, inviteChoices, validInviteTo
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, inviteChoices, validInviteTo
 };

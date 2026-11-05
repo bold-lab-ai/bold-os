@@ -52,3 +52,12 @@ test('invitations go only to their own proven addresses', () => {
   assert.deepStrictEqual(validInviteTo(['A@X.org', 'evil@y.org', 'a@gmail.com', 'a@x.org'], choices), ['a@x.org', 'a@gmail.com']);
   assert.deepStrictEqual(validInviteTo('a@x.org', choices), []);
 });
+
+test('people from other organisations in shared channels are external', () => {
+  const { slackExternal } = require('../functions/index.js')._internal;
+  assert.strictEqual(slackExternal({ team_id: 'T1', profile: { team: 'T1' } }, 'T1'), false);
+  assert.strictEqual(slackExternal({ team_id: 'T1', profile: { team: 'T2' } }, 'T1'), true);
+  assert.strictEqual(slackExternal({ team_id: 'T2', profile: {} }, 'T1'), true);
+  assert.strictEqual(slackExternal({ team_id: 'T1', is_stranger: true }, 'T1'), true);
+  assert.strictEqual(slackExternal({ team_id: 'T1' }, ''), false);   // our team unknown: nobody is
+});

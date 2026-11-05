@@ -23,7 +23,7 @@ window.CollabWeekSpeakers = (function(){
     if (!words.length) return [];
     return people.filter(function(p){
       var hay = fold(p.name) + ' ' + fold(p.email);
-      return p.email && words.every(function(w){ return hay.indexOf(w) >= 0; });
+      return p.email && !p.external && words.every(function(w){ return hay.indexOf(w) >= 0; });
     }).slice(0, MAX_RESULTS);
   }
 

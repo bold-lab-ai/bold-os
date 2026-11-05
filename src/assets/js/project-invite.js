@@ -42,7 +42,7 @@ window.BoldProjectInvite = (function(){
           ' <button type="button" class="btn-text pj-inv-withdraw" data-invite="' + esc(i.id) + '"' + (busy ? ' disabled' : '') + '>Withdraw</button></li>';
       }).join('') + '</ul>' : '') +
       (open && can ? '<div class="pj-inv-form"><label>Their email<input type="email" class="pj-inv-email" list="pjInvPeople" autocomplete="off" placeholder="Name or email"></label>' +
-          '<datalist id="pjInvPeople">' + people.map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</datalist>' +
+          '<datalist id="pjInvPeople">' + people.filter(function(p){ return !p.external; }).map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</datalist>' +
           (msg ? '<p class="st-error">' + esc(msg) + '</p>' : '') +
           '<div class="event-form-actions"><button type="button" class="btn-box is-primary pj-inv-send"' + (busy ? ' disabled' : '') + '>Invite</button><button type="button" class="btn-box pj-inv-cancel">Cancel</button></div></div>'
         : '<button type="button" class="btn-text pj-inv-open"' + (can ? '' : ' disabled title="' + esc(o.notEditor || 'Only the project’s submitter, authors, PIs and admins invite people') + '"') + '>Invite someone</button>' +

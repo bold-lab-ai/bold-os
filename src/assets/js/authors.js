@@ -36,7 +36,7 @@
           '<input type="email" class="author-input author-new-email" data-author-idx="' + i + '" value="' + escapeHtml(row.email) + '" placeholder="Email" aria-label="' + label + ' email"' + lockAttr + '>' +
           (locked ? '' : '<button type="button" class="btn-text author-use-roster" data-author-idx="' + i + '">Pick from list instead</button>');
       } else {
-        var options = '<option value="">Choose a person…</option>' + state.people.map(function(p){
+        var options = '<option value="">Choose a person…</option>' + state.people.filter(function(p){ return !p.external || p.email === row.email; }).map(function(p){
           return '<option value="' + escapeHtml(p.email) + '"' + (p.email === row.email ? ' selected' : '') + '>' + escapeHtml(p.name) + '</option>';
         }).join('') + '<option value="__new__">+ New author (not in the workspace)…</option>';
         html += '<select class="author-input author-select" data-author-idx="' + i + '" aria-label="' + label + '"' + lockAttr + '>' + options + '</select>';

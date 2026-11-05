@@ -182,7 +182,7 @@
   }
   function formHtml(){
     var e = editing;
-    var opts = (roster || []).filter(function(p){ return e.organisers.indexOf(p.email) < 0; })
+    var opts = (roster || []).filter(function(p){ return !p.external && e.organisers.indexOf(p.email) < 0; })
       .map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('');
     var once = e.often === 'once', weekly = e.often.charAt(0) === 'w', invite = weekly && e.hasInvite, ed = !invite;
     var oftens = s ? OFTEN : [['once', 'Once']].concat(OFTEN);   // a recurring one stays recurring
@@ -260,7 +260,7 @@
   function loadRoster(){
     if (roster) return;
     db.collection('people').get().then(function(snap){
-      roster = snap.docs.map(function(d){ var x = d.data(); return { name: x.name || x.email, email: String(x.email || '').toLowerCase() }; })
+      roster = snap.docs.map(function(d){ var x = d.data(); return { name: x.name || x.email, email: String(x.email || '').toLowerCase(), external: !!x.external }; })
         .filter(function(p){ return p.email; }).sort(function(a, b){ return a.name.localeCompare(b.name); });
       roster.forEach(function(p){ names[p.email] = p.name; });
       keep(); render();
