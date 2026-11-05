@@ -21,7 +21,7 @@
   var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
   var me = { email: '', name: 'You', uid: '' }, canPost = false, canStart = false, full = false;
   var posts = null, messages = {}, openId = '', stopMsgs = null;
-  var sort = 'top', folded = {}, replying = '', said = [], draft = null, about = null;   // about: { pid, id }
+  var sort = 'top', opened = {}, replying = '', said = [], draft = null, about = null;   // about: { pid, id }
   var db = function(){ return firebase.firestore(BOLD.getApp()); };
   var col = function(){ return db().collection('conversations'); };
   var FV = function(){ return firebase.firestore.FieldValue; };
@@ -63,35 +63,41 @@
   function head(m, pid){ return '<div class="bs-head"><p class="bs-by">' + by(m) + '</p>' + acts(m, pid) + '</div>'; }
   function acts(m, pid){
     var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
-    // Hide replies only where it branches: a run reads on in one block.
-    var k = m.id === pid || kids(m.id).length < 2 ? 0 : total(m.id);
     return '<p class="bs-acts">' +
       '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>' +
       (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
-      (k ? '<button type="button" class="btn-text bs-fold" data-id="' + esc(m.id) + '">' + (folded[m.id] ? 'Show ' + count(k) : 'Hide replies') + '</button>' : '') +
       (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>';
   }
   function replyForm(m, pid){
     return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
         '<div class="event-form-actions"><button type="submit" class="ev-save">Reply</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
   }
-  // Replies as in Slack: one block for a run of messages each answering the one before, a hairline
-  // between them; where one has two or more replies, each starts a block of its own, indented under it.
+  // Replies as in Slack: the post's replies are one block, in order, a hairline between them. A
+  // message's own replies are collapsed under it ("3 replies · last 2 h ago"); opened, they're a
+  // block of their own, indented, where a run (each answering the one before) reads on in the block.
   function msgHtml(m, pid){
     return '<li class="bs-line' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
       '<div class="bs-head"><p class="bs-by">' + by(m) + '</p><div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div></div>' +
       md(m.body) + replyForm(m, pid) + '</li>';
   }
-  function blockHtml(first, pid){
-    var out = '', m = first;
-    while (m) {
-      out += msgHtml(m, pid);
-      var ks = kids(m.id);
-      if (ks.length === 1) { m = ks[0]; continue; }
-      if (ks.length > 1 && !folded[m.id]) out += '<li class="bs-branches"><ol>' + ks.map(function(x){ return blockHtml(x, pid); }).join('') + '</ol></li>';
-      m = null;
-    }
-    return '<li><ol class="bs-run">' + out + '</ol></li>';
+  var lastAt = function(id){ return kids(id).reduce(function(t, x){ return Math.max(t, ms(x.at), lastAt(x.id)); }, 0); };
+  function threadToggle(m){
+    var k = total(m.id), on = !!opened[m.id];
+    return '<li class="bs-thread-toggle"><button type="button" class="btn-text bs-open" data-id="' + esc(m.id) + '" aria-expanded="' + on + '">' +
+      (on ? 'Hide ' + count(k) : count(k) + ' · last ' + ago(lastAt(m.id))) + '</button></li>';
+  }
+  function threadHtml(parentId, pid, nested){
+    var out = '';
+    kids(parentId).forEach(function(m){
+      for (;;) {
+        out += msgHtml(m, pid);
+        var ks = kids(m.id);
+        if (nested && ks.length === 1) { m = ks[0]; continue; }   // a run, in this block
+        if (ks.length) out += threadToggle(m) + (opened[m.id] ? '<li class="bs-branches">' + threadHtml(m.id, pid, true) + '</li>' : '');
+        break;
+      }
+    });
+    return '<ol class="bs-run">' + out + '</ol>';
   }
 
   // ---------- the list, or one post's thread ----------
@@ -114,7 +120,7 @@
           '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2>' + head(p, p.id) +
           (p.body && p.body.trim() !== p.title ? md(p.body) : '') + replyForm(p, p.id) + origin(p) + '</div></div>' +
         '<h3 class="bs-replies-head">' + count(k) + '</h3>' +
-        (k ? '<ol class="bs-blocks">' + kids(p.id).map(function(x){ return blockHtml(x, p.id); }).join('') + '</ol>' : '<p class="bs-by">No replies yet.</p>');
+        (k ? threadHtml(p.id, p.id, false) : '<p class="bs-by">No replies yet.</p>');
       var fresh = threadEl.querySelector('.bs-replyform');
       if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id')) fresh.replaceWith(keep);
       else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
@@ -150,7 +156,7 @@
   function newReply(pid, parent, body, viaAgent){
     var o = { parent: parent, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {} };
     o.votes[me.uid] = 1;
-    folded[parent] = false;
+    opened[parent] = true;
     return col().doc(pid).collection('messages').add(o);
   }
   var oops = function(what){ return function(e){ console.error('[BOLD Lab] ' + what + ' failed', e); alertBox(what + ' failed: ' + (e && e.message || e)); }; };
@@ -246,7 +252,13 @@
   function show(pid, mid){
     var h = '#post=' + encodeURIComponent(pid);
     if (location.hash !== h) location.hash = h.slice(1); else render();
-    setTimeout(function(){ var el = mid && document.getElementById('m-' + mid); if (el) el.scrollIntoView({ block: 'center' }); }, 300);
+    // Its thread open, all the way up, so it's in sight.
+    setTimeout(function(){
+      var m = mid && msgOf(pid, mid), n = 0;
+      while (m && m.parent && m.parent !== pid && n++ < 50) { opened[m.parent] = true; m = msgOf(pid, m.parent); }
+      if (n) render();
+      var el = mid && document.getElementById('m-' + mid); if (el) el.scrollIntoView({ block: 'center' });
+    }, 300);
   }
 
   // ---------- writing a post yourself, and bringing in a Slack thread ----------
@@ -294,7 +306,7 @@
       ref.update(patch).catch(oops('Voting'));
       return;
     }
-    if (b.classList.contains('bs-fold')) { folded[id] = !folded[id]; render(); return; }
+    if (b.classList.contains('bs-open')) { opened[id] = !opened[id]; render(); return; }
     if (b.classList.contains('bs-reply-btn')) { replying = replying === id ? '' : id; render(); return; }
     if (b.classList.contains('bs-replycancel')) { replying = ''; render(); return; }
     if (b.classList.contains('bs-remove')) {
