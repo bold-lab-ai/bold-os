@@ -12,7 +12,8 @@
   var esc = BOLD.escapeHtml;
   var KINDS = { join: 'Joining BOLD', group: 'Changing group', letter: 'Recommendation letter', introduction: 'Introduction', supervision: 'Supervision meetings',
     agent: 'Agent acting', invite: 'Invitation', review: 'Internal Review', event: 'Event', hackathon: 'Hackathon', venue: 'Venue', proposal: 'Proposed change' };
-  var SOURCES = [['', 'All'], ['slack', 'Slack'], ['conversations', 'Conversations']];
+  var SOURCES = [['', 'All'], ['bold', 'BOLD.OS'], ['conversations', 'Conversations'], ['slack', 'Slack']];
+  var SOURCE_LABEL = { bold: 'BOLD.OS', conversations: 'Conversations', slack: 'Slack' };
   var reqs = null, reqError = false, notes = null, noteError = false, source = '', me = '';
   var db = function(){ return firebase.firestore(BOLD.getApp()); };
 
@@ -33,7 +34,7 @@
       '<span class="proj-meta">' + esc(meta) + '</span></li>';
   }
   function noteHtml(n){
-    var label = n.source === 'conversations' ? 'Conversations' : 'Slack';
+    var label = SOURCE_LABEL[n.source] || 'BOLD.OS';
     return '<li class="nt-item' + (n.read ? '' : ' is-unread') + '" data-id="' + esc(n.id) + '">' +
       (n.href ? '<a class="nt-text" href="' + esc(n.href) + '" data-open="' + esc(n.id) + '">' + esc(n.text) + '</a>' : '<span class="nt-text">' + esc(n.text) + '</span>') +
       '<span class="proj-meta">' + esc(label + ' · ' + ago(n.at)) + ' · <button type="button" class="btn-text nt-toggle" data-id="' + esc(n.id) + '">' + (n.read ? 'Mark unread' : 'Mark read') + '</button></span></li>';

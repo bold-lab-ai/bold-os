@@ -795,7 +795,19 @@ async function noteFor(emails, n){
 // and a retry of the whole trigger isn't forced by one skipped DM.
 // With a feature's key (LIVE_FEATURES, PILOTS), a feature in pilot sends to its testers instead.
 async function dmBySlackId(token, slackId, text, key, opts){
+  opts = opts || {};
   try {
+    // Everything for someone is in their Notifications Inbox first; whoever's on pings (pilot
+    // notification-pings: its testers, then everyone) gets a "new notifications" ping on Slack
+    // instead of the message itself. opts.raw: a message that's an answer to what they just did, sent as is.
+    if (!opts.raw) {
+      const email = await emailForSlackId(slackId);
+      if (email) {
+        if (!opts.noNote) await noteFor([email], { text, feature: key || '', source: 'slack' });
+        opts = Object.assign({}, opts, { noNote: true });
+        if (await pingsFor(email)) { await queuePing(email); return true; }
+      }
+    }
     if (key) {
       const st = await pilotState(key);
       if (!st.live) {
@@ -806,8 +818,6 @@ async function dmBySlackId(token, slackId, text, key, opts){
     const opened = await slackFetch(token, 'conversations.open', { users: slackId });
     if (!opened.ok) return false;
     const posted = await slackFetch(token, 'chat.postMessage', { channel: opened.channel.id, text: text });
-    // Kept on their Notifications page (unless whoever sent it keeps its own: opts.noNote).
-    if (posted.ok && !(opts && opts.noNote)) await noteFor([await emailForSlackId(slackId)], { text, feature: key || '', source: 'slack' });
     return !!posted.ok;
   } catch (err){
     logger.error('dmBySlackId threw', { slackId, error: String(err) });
@@ -816,6 +826,10 @@ async function dmBySlackId(token, slackId, text, key, opts){
 }
 
 async function dmByEmail(token, email, text, key, opts){
+  opts = opts || {};
+  // Their Inbox first, whatever happens on Slack (a feature in pilot too); then a ping, or the message.
+  if (!opts.noNote) await noteFor([email], { text, feature: key || '', source: 'slack' });
+  if (await pingsFor(email)) { await queuePing(email); return true; }
   if (key) {
     const st = await pilotState(key);
     if (!st.live) return toTesters(token, st, await nameForEmail(email), text);
@@ -825,8 +839,51 @@ async function dmByEmail(token, email, text, key, opts){
     logger.info('No Slack id for email — skipping DM', { email });
     return false;
   }
-  return dmBySlackId(token, slackId, text, key && (await pilotState(key)).live ? key : '', opts);
+  return dmBySlackId(token, slackId, text, '', { raw: true });
 }
+
+// ---------- Pings: "You have new notifications" (pilot notification-pings, 2026-11-05) ----------
+// Whoever is on pings (the pilot's testers; everyone once it's live) gets no message-by-message DMs:
+// each notification goes to their Inbox, and slackPings/{email} (server only: { pending, firstAt,
+// lastPingAt }) counts what's new; sendNotificationPings, every 5 minutes, DMs them once that they
+// have new notifications, at most every 30 minutes, if any is still unread.
+const PING_GAP = 30 * 60 * 1000;
+async function pingsFor(email){
+  if (!email) return false;
+  const st = await pilotState('notification-pings');
+  return st.live || st.testers.map((t) => String(t).toLowerCase()).indexOf(String(email).toLowerCase()) >= 0;
+}
+async function queuePing(email){
+  const ref = db.collection('slackPings').doc(String(email).toLowerCase());
+  await ref.set({ pending: FieldValue.increment(1), firstAt: FieldValue.serverTimestamp() }, { merge: true })
+    .catch((err) => logger.warn('Queueing a ping failed', { error: String(err && err.message || err) }));
+}
+// Everyone in `emails` told (their Inbox), and pinged if they're on pings. n: noteFor's.
+async function deliver(emails, n){
+  const list = Array.from(new Set((emails || []).map((e) => String(e || '').toLowerCase()).filter(Boolean)));
+  if (!list.length) return;
+  await noteFor(list, n);
+  if (n.ping === false) return;
+  for (const e of list) if (await pingsFor(e)) await queuePing(e);
+}
+// Pure: the ping's text.
+function pingText(n, url){ return '🔔 You have ' + (n === 1 ? 'a new notification' : n + ' new notifications') + ' on BOLD.OS: <' + url + '|' + (n === 1 ? 'open it' : 'open them') + '>.'; }
+exports.sendNotificationPings = onSchedule({ schedule: 'every 5 minutes', secrets: [SLACK_BOT_TOKEN] }, async function(){
+  const due = (await db.collection('slackPings').where('pending', '>', 0).get()).docs;
+  const now = Date.now(), url = SITE_URL + 'notifications.html';
+  for (const d of due) {
+    const p = d.data();
+    if (p.lastPingAt && now - p.lastPingAt < PING_GAP) continue;
+    try {
+      const unread = (await db.collection('notifications').where('to', '==', d.id).where('read', '==', false).count().get()).data().count;
+      if (unread) {
+        const id = await slackIdForEmail(d.id);
+        if (id) await dmBySlackId(SLACK_BOT_TOKEN.value(), id, pingText(unread, url), '', { raw: true });
+      }
+      await d.ref.set({ pending: 0, lastPingAt: now }, { merge: true });
+    } catch (err){ logger.warn('Sending a ping failed', { error: String(err && err.message || err) }); }
+  }
+});
 
 async function rolesEmails(name){
   const doc = await db.collection('roles').doc(name).get();
@@ -1193,7 +1250,7 @@ async function addCardFromSlack(token, payload){
     (made ? ', in the new milestone ' + slackText(made) : mName ? ', in ' + slackText(mName) : '') + '.' +
     (proposed ? ' Milestone ' + slackText(proposed) + ' is proposed in its description: the project’s people add milestones.' : '');
   const sent = meta.channel ? await slackFetch(token, 'chat.postEphemeral', { channel: meta.channel, user: payload.user.id, text }) : { ok: false };
-  if (!sent.ok) await dmBySlackId(token, payload.user.id, text);
+  if (!sent.ok) await dmBySlackId(token, payload.user.id, text, '', { raw: true });
 }
 
 async function handleInteractivity(token, payload){
@@ -1280,6 +1337,7 @@ const PILOTS = {
   'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
   'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
   'conversation-replies': 'A reply in a conversation you’re in: a DM',
+  'notification-pings': 'Notifications: a ping on Slack that there are new ones, instead of each message',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -1388,10 +1446,18 @@ async function pilotSlack(token, key, label, m){
     const id = await slackIdForEmail(email);
     if (!id) return;
     const open = await slackFetch(token, 'conversations.open', { users: id });
-    if (open.ok) { await send(open.channel.id, text, blocks); await noteFor([email], { text, feature: key, source: 'slack' }); }
+    if (open.ok) await send(open.channel.id, text, blocks);
   };
+  // Their Inbox first, in pilot too; whoever's on pings gets a ping instead of the message.
+  const emails = [];
+  for (const e of Array.from(new Set((m.emails || []).map((x) => String(x).toLowerCase())))) {
+    await noteFor([e], { text: m.text, feature: key, source: 'slack' });
+    if (await pingsFor(e)) await queuePing(e); else emails.push(e);
+  }
+  m = Object.assign({}, m, { emails });
+  if (!emails.length && !m.channel) return { pilot: !st.live, pinged: true };
   if (st.live) {
-    for (const e of Array.from(new Set(m.emails || []))) await dm(e, m.text, m.blocks);
+    for (const e of emails) await dm(e, m.text, m.blocks);
     if (m.channel) { const id = await slackChannelId(token, String(m.channel).replace(/^#/, '')); if (id) await send(id, m.text, m.blocks); }
     return { pilot: false };
   }
@@ -2010,7 +2076,7 @@ function appliedProposal(doc, q, ctx){
     const out = {};
     changes.forEach((c) => {
       if (!c || c.kind === 'batch' || c.kind === 'restore') throw new HttpsError('invalid-argument', 'Unknown kind of change.');
-      const r = appliedProposal(cur, c, ctx);
+      const r = appliedProposal(cur, Object.assign({ by: q.by }, c), ctx);
       cur = Object.assign({}, cur, r);
       Object.assign(out, r);
     });
@@ -2059,7 +2125,8 @@ function appliedProposal(doc, q, ctx){
     // Never the same part twice (two proposals adding one, the second accepted later).
     if (parts.some((p) => p.id === q.partId)) throw new HttpsError('failed-precondition', 'That part is there already: propose a change to it instead.');
     // At the end of its section, if it names one that's there; else at the end.
-    const part = Object.assign({ id: q.partId }, after);
+    // changedBy: whoever proposed its last accepted change (2026-11-05), told of comments and proposals on it.
+    const part = Object.assign({ id: q.partId }, after, (q.by || {}).email ? { changedBy: String(q.by.email).toLowerCase() } : {});
     let at = -1;
     parts.forEach((p, i) => { if (part.section && p.section === part.section) at = i; });
     if (at === -1) parts.push(part); else parts.splice(at + 1, 0, part);
@@ -2071,6 +2138,7 @@ function appliedProposal(doc, q, ctx){
     if (!p) throw new HttpsError('failed-precondition', 'That part has since been removed.');
     // Merged with any change to the part since it was proposed, rather than overwriting it (#177).
     Object.assign(p, mergedEdit(p, q.before, after));
+    if ((q.by || {}).email) p.changedBy = String(q.by.email).toLowerCase();
     return { parts };
   }
   if (q.kind === 'move') {
@@ -6945,7 +7013,7 @@ exports.groupRequest = onCall(
       // Asked for with their request to join: that one first (whoever invited them approves it).
       if (accept && !(await tx.get(db.collection('members').doc(r.email))).exists) throw new HttpsError('failed-precondition', 'Their request to join BOLD isn’t approved yet: whoever invited them approves it first.');
       tx.update(ref, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: request.auth.token.name || email, decidedAt: Date.now() });
-      if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now() });
+      if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now(), categoryVia: 'request-' + Date.now() });
       return r;
     });
     await sendEvent(token, { key: 'group-requests', emails: [r.email], headline: accept
@@ -7700,6 +7768,9 @@ exports.slackThread = conversationsSlack.slackThread;
 exports.onConversationImport = conversationsSlack.onConversationImport;
 exports.onConversationMessage = conversationsSlack.onConversationMessage;
 exports.onConversationCreated = conversationsSlack.onConversationCreated;
+// Notifications for what someone is part of (functions/notify.js): projects, cards, parts, skills and tools, editions, their group.
+const partNotes = require('./notify')({ db, onDocumentWritten, onDocumentUpdated, onDocumentCreated, deliver, logger, SITE_URL, projectPageUrl, guideUrl, handbookUrl, skillUrl, toolUrl, eventUrl, GROUP_LABELS, numberTag });
+Object.keys(partNotes).forEach((k) => { exports[k] = partNotes[k]; });
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.
@@ -7708,7 +7779,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
-  slackImagesOf, slackToPlain, bugReportOf, bugNotes, bugTitle,
+  slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
