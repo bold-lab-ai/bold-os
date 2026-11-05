@@ -80,10 +80,18 @@
     picking = '';
     var m = members.filter(function(x){ return x.email === email; })[0];
     if (m && BoldJoin.groupOf(m) === cat) { render(); return; }
-    if (m) m.category = cat;
-    render();
-    db.collection('members').doc(email).update({ category: cat, categoryBy: me, categoryAt: Date.now() })
-      .catch(function(err){ console.error('[BOLD People] setting the group failed', err); });
+    // Crossing BOLD-internal changes their GitHub write access (functions/index.js, #214): ask first.
+    var order = BoldJoin.CATEGORIES.map(function(c){ return c[0]; }), high = function(g){ return order.indexOf(g) <= order.indexOf('internal'); };
+    var was = m ? BoldJoin.groupOf(m) : 'pan', name = (m && m.name) || email;
+    var ask = high(was) === high(cat) ? Promise.resolve(true) : BOLD.confirmAction({ title: 'Move ' + name + ' to ' + BoldJoin.categoryLabel(cat) + '?', go: 'Move',
+      effects: [high(cat) ? 'Give their linked GitHub account write access to every bold-lab-ai repository' : 'Take away their GitHub write access to every repository but their projects\u2019 (they still read them all)'] });
+    ask.then(function(go){
+      if (!go) { render(); return; }
+      if (m) m.category = cat;
+      render();
+      db.collection('members').doc(email).update({ category: cat, categoryBy: me, categoryAt: Date.now() })
+        .catch(function(err){ console.error('[BOLD People] setting the group failed', err); });
+    });
   });
 
   BOLD.onUser(function(user){

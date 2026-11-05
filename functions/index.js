@@ -3713,20 +3713,51 @@ async function googleAddressesFor(emails){
   return out;
 }
 
-// The GitHub logins of `emails` who have linked their account (githubLinks).
-// Whether `email`'s GitHub account belongs in the bold-lab-ai organisation: BOLD-internal
-// and above (Who is BOLD). Everyone else gets their projects' repositories alone.
-async function inGithubOrg(email){
+// GitHub access, as the BOLDiquette's transparency asks (2026-11-05, #214): everyone in BOLD who links
+// GitHub joins bold-lab-ai, whose base permission (read) lets them see every repository. Writing differs:
+// BOLD-internal and above write to every repository (the bold-internal team, INTERNAL_TEAM, which has
+// write on all of them); everyone else writes to their projects' repositories alone (each project's team).
+// Whether `email` writes to every repository (the bold-internal team): BOLD-internal and above.
+async function writesEverywhere(email){
   return accessLib.rank(await access.groupFor(email)) >= accessLib.rank('internal');
 }
-// The linked GitHub accounts of `emails` → { team: [login] (in the org: the project's team),
-// outside: [login] (outside collaborators on its repository) }.
+// The linked GitHub accounts of `emails` → { team: [login] (the project's team), outside: [login]
+// (outside collaborators on its repository: kept while they haven't accepted the org's invitation, so
+// nobody loses their project's repository meanwhile) }.
 async function githubLoginsFor(emails){
   const out = { team: [], outside: [] };
   for (const e of emails){
     const snap = await db.collection('githubLinks').doc(e).get();
     const d = snap.exists ? snap.data() : null;
-    if (d && d.github && d.status !== 'failed') out[(await inGithubOrg(e)) ? 'team' : 'outside'].push(d.github.toLowerCase());
+    if (!d || !d.github || d.status === 'failed') continue;
+    out.team.push(d.github.toLowerCase());
+    if (d.status !== 'active') out.outside.push(d.github.toLowerCase());
+  }
+  return out;
+}
+const INTERNAL_TEAM = 'bold-internal';
+// The bold-internal team (made if it isn't there) → its slug.
+async function internalTeam(){
+  try { return (await githubApp('GET', '/orgs/' + GITHUB_ORG + '/teams/' + INTERNAL_TEAM)).slug; }
+  catch (err){
+    if (err.status !== 404) throw err;
+    return (await githubApp('POST', '/orgs/' + GITHUB_ORG + '/teams', { name: INTERNAL_TEAM, privacy: 'closed',
+      description: 'BOLD-internal and above (BOLD.OS keeps it): write access to every repository' })).slug;
+  }
+}
+// `login` in or out of the bold-internal team (adding someone invites them to the org, if need be).
+async function setInternalWrite(login, on){
+  const slug = await internalTeam(), path = '/orgs/' + GITHUB_ORG + '/teams/' + slug + '/memberships/' + login;
+  if (on) await githubApp('PUT', path, { role: 'member' });
+  else await githubApp('DELETE', path).catch(function(err){ if (err.status !== 404) throw err; });
+}
+// Every page of a GitHub list.
+async function githubAll(path){
+  const out = [];
+  for (let page = 1; page < 50; page++){
+    const list = await githubApp('GET', path + (path.indexOf('?') < 0 ? '?' : '&') + 'per_page=100&page=' + page);
+    out.push.apply(out, list || []);
+    if (!list || list.length < 100) break;
   }
   return out;
 }
@@ -3914,11 +3945,12 @@ async function syncWorkspace(id, changes){
           try { team = await githubApp('POST', '/orgs/' + GITHUB_ORG + '/teams', { name: ws.repoName, privacy: 'closed', description: 'People on ' + ws.title.slice(0, 200) }); }
           catch (err){ if (err.status !== 422) throw err; team = await githubApp('GET', '/orgs/' + GITHUB_ORG + '/teams/' + ws.repoName); }
           await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + team.slug + '/repos/' + GITHUB_ORG + '/' + ws.repoName, { permission: 'push' });
+          // BOLD-internal and above write to it too.
+          await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + (await internalTeam()) + '/repos/' + GITHUB_ORG + '/' + ws.repoName, { permission: 'push' });
           patch.teamSlug = team.slug; patch.teamMembers = []; await save();
         }
-        // BOLD-internal and above through the team (adding someone to a team invites them
-        // to the org, so nobody else goes in it); everyone else as an outside collaborator
-        // on this repository alone, with write access (GitHub emails them an invitation).
+        // Everyone on it through the team (adding someone to a team invites them to the org); while
+        // they haven't accepted that, as an outside collaborator too, with write access.
         const want = await githubLoginsFor(ws.members);
         const have = ws.teamMembers || [];
         for (const login of want.team.filter(function(l){ return have.indexOf(l) < 0; })){
@@ -5053,9 +5085,9 @@ exports.approveHackathonJoins = onCall(
 // On their profile (profile.html) a signed-in person links their GitHub account
 // to their BOLD.OS sign-in (Firebase Auth's GitHub provider), which proves the
 // account is theirs. linkGithub then invites that account to the bold-lab-ai
-// organisation, with no approval, if they're BOLD-internal or above (inGithubOrg);
-// everyone else is 'outside': an outside collaborator on the repositories of the
-// projects they're on, and nothing else of the org's (syncWorkspace). The
+// organisation, with no approval, whatever their group (read on every repository); BOLD-internal and
+// above also go in the bold-internal team (write on every repository), everyone else writes to their
+// projects' repositories alone, through each one's team (syncWorkspace). 'outside' is a link from before. The
 // GitHub account is read from Firebase Auth, never from the client, so nobody
 // can have someone else's account invited. GitHub emails the invitation; the
 // person is "pending" until they accept it, then "active". Kept in
@@ -5129,8 +5161,9 @@ exports.linkGithub = onCall(
       throw new HttpsError('unavailable', 'Couldn’t reach GitHub — try again.');
     }
     const login = (await who.json()).login;
-    // BOLD-internal and above join the org; everyone else gets their projects' repositories alone.
-    const r = (await inGithubOrg(email)) ? await joinOrg(login, gh.uid) : { status: 'outside', error: '' };
+    // Everyone joins the org (read on everything); BOLD-internal and above write to everything.
+    const r = await joinOrg(login, gh.uid);
+    if (r.status !== 'failed' && await writesEverywhere(email)) await setInternalWrite(login.toLowerCase(), true).catch((err) => logger.warn('Adding to bold-internal failed', { error: String(err.message) }));
     const now = Date.now();
     const doc = { email, name: request.auth.token.name || '', github: login, githubId: gh.uid,
       status: r.status, error: r.error, linkedAt: (prev && prev.githubId === gh.uid && prev.linkedAt) || now, updatedAt: now };
@@ -5146,9 +5179,8 @@ exports.linkGithub = onCall(
   }
 );
 
-// A member's group crossing BOLD-internal (Who is BOLD): a linked GitHub account joins the
-// org on the way up; either way their projects' repositories move between the team and
-// outside collaborators. Going down doesn't take them out of the org: an owner does that on GitHub.
+// A member's group crossing BOLD-internal (Who is BOLD): their linked GitHub account goes in or out of
+// the bold-internal team (write on every repository). They stay in the org, reading everything.
 exports.onMemberGithub = onDocumentWritten(
   { document: 'members/{email}', secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 },
   async function(event){
@@ -5160,13 +5192,12 @@ exports.onMemberGithub = onDocumentWritten(
     const ref = db.collection('githubLinks').doc(email);
     const link = (await ref.get()).data();
     if (!link || !link.github) return;
-    if ((await inGithubOrg(email)) && link.status === 'outside'){
+    if (link.status === 'outside'){
       const r = await joinOrg(link.github, link.githubId);
       await ref.set({ status: r.status, error: r.error, updatedAt: Date.now() }, { merge: true });
       if (r.status === 'failed') return;
     }
-    const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
-    for (const d of mine.docs) if (d.data().teamSlug) await syncWorkspace(d.id);
+    await setInternalWrite(String(link.github).toLowerCase(), high(after));
   }
 );
 
@@ -6976,6 +7007,48 @@ exports.onAccountMoveRun = onDocumentCreated({ document: 'runs/{id}', secrets: [
   }
   logger.info('Account move', { dry, changed: report.changed.length, moved: report.moved.length, errors: report.errors.length });
   return done();
+});
+
+// GitHub access by the new rule, once (#214): runs/{id} { action: 'github-access', dryRun? } (admin
+// access only). Makes the bold-internal team and gives it write on every repository; puts BOLD-internal
+// and above with a linked GitHub account in it and takes out those below (never anyone who hasn't
+// linked theirs: an owner looks after them); invites to the org everyone linked who isn't in it (their
+// project repositories as outside collaborators until they accept); then syncs every project's team.
+// Its `plan` says what it did (or, dry, would do). Safe to run again: it only adds what's missing.
+exports.onGithubAccessRun = onDocumentCreated({ document: 'runs/{id}', secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 540, memory: '512MiB' }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'github-access' || run.doneAt) return;
+  const dry = run.dryRun === true, plan = { repos: [], addWrite: [], removeWrite: [], invite: [], errors: [] };
+  try {
+    let slug = INTERNAL_TEAM;
+    if (!dry) slug = await internalTeam();
+    const haveRepos = dry ? await githubAll('/orgs/' + GITHUB_ORG + '/teams/' + INTERNAL_TEAM + '/repos').catch(() => []) : await githubAll('/orgs/' + GITHUB_ORG + '/teams/' + slug + '/repos');
+    const had = new Set(haveRepos.filter((r) => r.permissions && r.permissions.push).map((r) => r.name));
+    for (const r of await githubAll('/orgs/' + GITHUB_ORG + '/repos?type=all')){
+      if (r.archived || had.has(r.name)) continue;
+      plan.repos.push(r.name);
+      if (!dry) await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + slug + '/repos/' + GITHUB_ORG + '/' + r.name, { permission: 'push' }).catch((err) => plan.errors.push(r.name + ': ' + err.message));
+    }
+    const inTeam = new Set((await githubAll('/orgs/' + GITHUB_ORG + '/teams/' + INTERNAL_TEAM + '/members').catch(() => [])).map((m) => String(m.login).toLowerCase()));
+    for (const d of (await db.collection('githubLinks').get()).docs){
+      const l = d.data(), login = String(l.github || '').toLowerCase();
+      if (!login || l.status === 'failed') continue;
+      const high = await writesEverywhere(d.id), who = (l.name || d.id) + ' (' + login + ')';
+      if (high && !inTeam.has(login)) plan.addWrite.push(who);
+      if (!high && inTeam.has(login)) plan.removeWrite.push(who);
+      if (l.status === 'outside') plan.invite.push(who);
+      if (dry) continue;
+      try {
+        if (l.status === 'outside'){
+          const r = await joinOrg(l.github, l.githubId);
+          await d.ref.set({ status: r.status, error: r.error, updatedAt: Date.now() }, { merge: true });
+        }
+        if (high !== inTeam.has(login)) await setInternalWrite(login, high);
+      } catch (err){ plan.errors.push(who + ': ' + err.message); }
+    }
+    if (!dry) for (const w of (await db.collection('projectWorkspaces').get()).docs) if (w.data().teamSlug) await syncWorkspace(w.id).catch((err) => plan.errors.push(w.id + ': ' + err.message));
+  } catch (err){ plan.errors.push(String(err && err.message || err)); }
+  await event.data.ref.set({ doneAt: Date.now(), plan }, { merge: true });
 });
 
 exports.onSetupNudgeRun = onDocumentCreated({ document: 'runs/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
