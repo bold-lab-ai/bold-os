@@ -241,7 +241,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         : (card.authors && card.authors.length
             ? card.authors.map(function(a){ return esc(a.name || a.email || '?'); }).join(', ')
             : missing()) + editButton('authors')) + '</dd>';
-      html += peopleRows();
+      html += peopleRows() + repoRow();
       html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
         '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
       html += row('Submitted by', card.submittedBy && card.submittedBy.name
@@ -271,7 +271,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     // The write-up and its submission.
     paper: function(){
       return '<dl class="detail-grid">' + row('Venues', venuesHtml()) +
-        repoRow() + simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') + '</dl>';
+        simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') + '</dl>';
     },
     // Its work board: the board keeps its own drawing (project-work.js), put back in here on each render.
     work: function(){ return '<div id="workMount"></div>'; }
@@ -1086,7 +1086,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // Opens what sets it up, on its tab.
   function openSetup(key){
     if (!canEdit()) return;
-    var t = { meeting: 'presentations', deck: 'presentations', notes: 'presentations', repo: 'paper' }[key];
+    var t = { meeting: 'presentations', deck: 'presentations', notes: 'presentations', repo: 'overview' }[key];
     tab = t; editing = key; render();
     var f = document.querySelector('.detail-grid input, .detail-grid select');
     if (f) f.focus();
