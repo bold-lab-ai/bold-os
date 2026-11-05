@@ -21,7 +21,7 @@
   var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
   var me = { email: '', name: 'You', uid: '' }, canPost = false, canStart = false, full = false;
   var posts = null, messages = {}, openId = '', stopMsgs = null;
-  var sort = 'top', opened = {}, replying = '', said = [], draft = null, about = null;   // about: { pid, id }
+  var sort = 'top', opened = {}, replying = '', branching = false, said = [], draft = null, about = null;   // about: { pid, id }
   var db = function(){ return firebase.firestore(BOLD.getApp()); };
   var col = function(){ return db().collection('conversations'); };
   var FV = function(){ return firebase.firestore.FieldValue; };
@@ -42,7 +42,11 @@
   };
   var kids = function(id){ return (messages[openId] || []).filter(function(x){ return parentOf(x) === id; }).sort(function(a, b){ return ms(a.at) - ms(b.at); }); };
   // Where a message's column ends: its first reply, that one's first reply, … (each first reply continues the column).
-  var leafOf = function(id){ var k = kids(id); return k.length ? leafOf(k[0].id) : id; };
+  // A message's reply that goes on with its column: its first, unless that one branched out
+  // (`branch`, Branch out); every other reply is a branch.
+  var goesOn = function(id){ return kids(id).filter(function(x){ return !x.branch; })[0] || null; };
+  var branchesOf = function(id){ var g = goesOn(id); return kids(id).filter(function(x){ return x !== g; }); };
+  var leafOf = function(id){ var g = goesOn(id); return g ? leafOf(g.id) : id; };
   var total = function(id){ return kids(id).reduce(function(s, x){ return s + 1 + total(x.id); }, 0); };
   var count = function(k){ return k + (k === 1 ? ' reply' : ' replies'); };
   var postOf = function(id){ return (posts || []).filter(function(p){ return p.id === id; })[0]; };
@@ -70,25 +74,25 @@
   }
   function acts(m, pid){
     var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
-    // Reply goes on with the conversation, at the end of this message's column (its leaf); on a
-    // message already answered, Branch out also starts a new branch from it.
-    var leaf = leafOf(m.id), here = esc(m.id);
+    // Reply goes on with the conversation, at the end of this message's column (its leaf); Branch
+    // out, on any message, leaves are included, starts a new branch from it.
+    var leaf = leafOf(m.id);
     return '<p class="bs-acts">' +
       '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(leaf) + '"' + (why || (leaf === m.id ? '' : ' title="Reply at the end of this conversation"')) + '>Reply</button>' +
-      (leaf === m.id ? '' : '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + here + '"' + (why || ' title="Start a new branch from this message"') + '>Branch out</button>') +
+      '<button type="button" class="btn-text bs-reply-btn" data-branch="1" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (why || ' title="Start a new branch from this message"') + '>Branch out</button>' +
       (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
       (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>';
   }
   function replyForm(m, pid){
-    return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
-        '<div class="event-form-actions"><button type="submit" class="ev-save">' + (kids(m.id).length ? 'Branch out' : 'Reply') + '</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
+    return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '" data-branch="' + (branching ? '1' : '') + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
+        '<div class="event-form-actions"><button type="submit" class="ev-save">' + (branching ? 'Branch out' : 'Reply') + '</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
   }
   // Replies as in Slack: the post's replies are one block, in order, a hairline between them. A
   // message's own replies are collapsed under it ("3 replies · last 2 h ago"); opened, they're a
   // block of their own, indented, where a run (each answering the one before) reads on in the block.
   function msgHtml(m, pid){
     // A leaf (nobody has answered it yet: where the conversation goes on) is marked.
-    return '<li class="bs-line' + (kids(m.id).length ? '' : ' is-leaf') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
+    return '<li class="bs-line' + (goesOn(m.id) ? '' : ' is-leaf') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
       // The author, and on the same line, on the right, its vote and buttons.
       '<div class="bs-line-head"><p class="bs-by">' + by(m) + '</p><div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div></div>' +
       md(m.body) + replyForm(m, pid) + '</li>';
@@ -108,9 +112,9 @@
     var out = '', m = first;
     while (m) {
       out += head && m === first ? head : msgHtml(m, pid);
-      var ks = kids(m.id), bs = ks.slice(1);
+      var bs = branchesOf(m.id);
       if (bs.length) out += branchToggle(m, bs) + (opened[m.id] ? '<li class="bs-branches">' + bs.map(function(c){ return columnHtml(c, pid); }).join('') + '</li>' : '');
-      m = ks[0] || null;
+      m = goesOn(m.id);
     }
     return '<ol class="bs-run">' + out + '</ol>';
   }
@@ -144,7 +148,8 @@
     // Lanes: a message's first reply keeps its lane, later ones take new lanes.
     (function walk(id, l){
       lane[id] = l;
-      kids(id).forEach(function(c, i){ walk(c.id, i === 0 ? l : next++); });
+      var g = goesOn(id);
+      kids(id).forEach(function(c){ walk(c.id, c === g ? l : next++); });
     })(p.id, 0);
     var R = all.length > 60 ? 8 : 12, L = 12, X = function(id){ return 8 + (lane[id] || 0) * L; }, Y = function(id){ return 8 + row[id] * R; };
     var W = 16 + (next - 1) * L, H = 16 + (all.length - 1) * R;
@@ -155,7 +160,7 @@
         var x0 = X(par), y0 = Y(par), x1 = X(m.id), y1 = Y(m.id);
         paths += '<path data-to="' + esc(m.id) + '" d="M' + x0 + ' ' + y0 + (x0 === x1 ? 'V' + y1 : 'V' + (y1 - 4) + 'Q' + x0 + ' ' + y1 + ' ' + (x0 + 4) + ' ' + y1 + 'H' + x1) + '"/>';
       }
-      var leaf = !kids(m.id).length;
+      var leaf = !goesOn(m.id);
       dots += '<circle data-id="' + esc(m.id) + '" class="' + (leaf ? 'is-leaf' : '') + '" cx="' + X(m.id) + '" cy="' + Y(m.id) + '" r="3.5"><title>' + esc((m.name || 'someone') + ': ' + String(m.id === p.id ? p.title : m.body || '').replace(/\s+/g, ' ').slice(0, 80)) + '</title></circle>';
     });
     treeEl.innerHTML = '<p class="bs-tree-head">Tree · ' + all.length + (all.length === 1 ? ' message' : ' messages') + '</p><svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '"><g class="bs-tree-lines">' + paths + '</g>' + dots + '</svg>';
@@ -242,7 +247,7 @@
       clampLong();
       drawTree(p);
       var fresh = threadEl.querySelector('.bs-replyform');
-      if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id')) fresh.replaceWith(keep);
+      if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id') && keep.getAttribute('data-branch') === fresh.getAttribute('data-branch')) fresh.replaceWith(keep);
       else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
       return;
     }
@@ -274,8 +279,10 @@
     o.votes[me.uid] = 1;
     return col().add(o);
   }
-  function newReply(pid, parent, body, viaAgent){
+  // branch: it starts a new branch from `parent` rather than going on with its column (Branch out).
+  function newReply(pid, parent, body, viaAgent, branch){
     var o = { parent: parent, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {} };
+    if (branch) o.branch = true;
     o.votes[me.uid] = 1;
     opened[parent] = true;
     return col().doc(pid).collection('messages').add(o);
@@ -436,7 +443,9 @@
     }
     if (b.classList.contains('bs-open')) { opened[id] = !opened[id]; render(); return; }
     if (b.classList.contains('bs-reply-btn')) {
-      replying = replying === id ? '' : id; render();
+      var br = b.getAttribute('data-branch') === '1';
+      if (replying === id && branching === br) replying = ''; else { replying = id; branching = br; }
+      render();
       // Reply on a message further up: the box is at the column's end.
       var box = replying && threadEl.querySelector('.bs-replyform textarea');
       if (box) { box.scrollIntoView({ block: 'center' }); box.focus(); }
@@ -479,7 +488,7 @@
     var body = f.querySelector('textarea').value.trim(), go = f.querySelector('button[type=submit]');
     if (!body) return;
     go.disabled = true;
-    newReply(f.getAttribute('data-pid'), f.getAttribute('data-id'), body, false)
+    newReply(f.getAttribute('data-pid'), f.getAttribute('data-id'), body, false, f.getAttribute('data-branch') === '1')
       .then(function(ref){ replying = ''; show(f.getAttribute('data-pid'), ref.id); }, function(err){ go.disabled = false; oops('Replying')(err); });
   });
 

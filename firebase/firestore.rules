@@ -826,7 +826,8 @@ service cloud.firestore {
       match /messages/{mid} {
         allow read: if seesConversationId(pid);
         allow create: if may('conversations', 'edit') && seesConversationId(pid) && okMessage(request.resource.data)
-          && request.resource.data.keys().hasOnly(['parent', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes'])
+          && request.resource.data.keys().hasOnly(['parent', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'branch'])
+          && request.resource.data.get('branch', false) is bool
           && exists(/databases/$(database)/documents/conversations/$(pid))
           && (request.resource.data.parent == pid || exists(/databases/$(database)/documents/conversations/$(pid)/messages/$(request.resource.data.parent)));
         allow update: if may('conversations', 'edit') && seesConversationId(pid) && onlyMyVote();
