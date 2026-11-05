@@ -59,8 +59,6 @@
       (m.broughtBy && m.broughtBy.name ? ', brought in by ' + esc(m.broughtBy.name) : '') +
       (s.permalink ? ' · <a href="' + esc(s.permalink) + '" target="_blank" rel="noopener">Open in Slack</a>' : '') + '</p>';
   }
-  // A message's buttons, on its byline's row at the right (bs-head), so a reply takes two lines, not three.
-  function head(m, pid){ return '<div class="bs-head"><p class="bs-by">' + by(m) + '</p>' + acts(m, pid) + '</div>'; }
   function acts(m, pid){
     var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
     return '<p class="bs-acts">' +
@@ -115,12 +113,13 @@
       // An open reply box is carried across the redraw (a reply or a vote arriving), with what's typed in it
       // and its Write | Preview tab.
       var keep = threadEl.querySelector('.bs-replyform');
+      // The post is a message like the others, under its title; its replies a thread under it, open to start with.
+      if (opened[p.id] === undefined) opened[p.id] = true;
+      var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
-        '<div class="bs-post bs-post-open' + (mine(p) ? ' is-mine' : '') + (about && about.id === p.id ? ' is-about' : '') + '" id="m-' + esc(p.id) + '">' + vote(p) +
-          '<div class="bs-post-main"><h2 class="bs-title">' + esc(p.title) + '</h2>' + head(p, p.id) +
-          (p.body && p.body.trim() !== p.title ? md(p.body) : '') + replyForm(p, p.id) + origin(p) + '</div></div>' +
-        '<h3 class="bs-replies-head">' + count(k) + '</h3>' +
-        (k ? threadHtml(p.id, p.id, false) : '<p class="bs-by">No replies yet.</p>');
+        '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' +
+        '<ol class="bs-run">' + (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id)) +
+          (k ? threadToggle(p) + (opened[p.id] ? '<li class="bs-branches">' + threadHtml(p.id, p.id, false) + '</li>' : '') : '') + '</ol>';
       var fresh = threadEl.querySelector('.bs-replyform');
       if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id')) fresh.replaceWith(keep);
       else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }

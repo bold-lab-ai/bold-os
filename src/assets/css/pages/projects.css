@@ -256,6 +256,7 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .bs-thread .back-link{margin:0 0 10px;}
 .bs-posts[hidden], .bs-sort[hidden], .bs-thread[hidden], .bs-about[hidden]{display:none;}
 .bs-post-open .bs-title{font-size:20px;}
+.bs-thread-title{font-size:20px; margin:0 0 6px;}
 .bs-post-open .bs-text{font-size:15px; margin-bottom:12px;}
 .bs-acts{display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; margin:0; font-size:12px; color:var(--muted);}
 /* Byline left, its buttons right, one row (wrapping under it on a narrow screen). */
