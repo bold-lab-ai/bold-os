@@ -114,9 +114,12 @@
     var unread = (notes || []).filter(function(n){ return !n.read; }).length;
     var n = function(k){ return k ? ' (' + k + ')' : ''; };
     var reqPanel = function(id, items, toAnswer, none){
-      return '<section class="profile-panel" id="' + id + '">' + (reqError ? '<p class="proj-msg">Couldn’t load these — try reloading the page.</p>'
+      return '<section class="profile-panel" id="' + id + '">' + (reqError ? '<p class="proj-msg">Couldn’t load these' + (reqError !== true ? ' (' + esc(reqError) + ')' : '') + ' — try reloading the page.</p>'
         : !reqs ? '<p class="proj-msg">Loading&hellip;</p>'
-        : items.length ? '<ul class="proj-list">' + items.map(function(x){ return reqHtml(x, toAnswer); }).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>') + '</section>';
+        // One item that can't be drawn is left out (and logged), not the whole list.
+        : items.length ? '<ul class="proj-list">' + items.map(function(x){
+            try { return reqHtml(x, toAnswer); } catch (e){ console.error('[BOLD Notifications] drawing a request failed', x, e); return ''; }
+          }).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>') + '</section>';
     };
     body.innerHTML = '<nav class="guide-tabs profile-tabs" aria-label="Notifications">' +
         '<a class="guide-tab" href="#inbox">Inbox' + (unread ? ' <span class="nt-unread-count">' + unread + ' unread</span>' : '') + '</a>' +
@@ -179,12 +182,18 @@
     draw();
     db().collection('settings').doc('webPush').get().then(function(x){ push.key = (x.exists && x.data().publicKey) || ''; draw(); loadDevices(); })
       .catch(function(){ loadDevices(); });
+    // A failure to load says why; one while drawing what loaded isn't a failure to load.
     firebase.app().functions('europe-west2').httpsCallable('myRequests')().then(function(r){
       if (mine !== asked) return;
       reqs = r.data || {};
-      if (BOLD.setTodoCount) BOLD.setTodoCount((reqs.forYou || []).length);
+      try { if (BOLD.setTodoCount) BOLD.setTodoCount((reqs.forYou || []).length); draw(); }
+      catch (e){ console.error('[BOLD Notifications] drawing your requests failed', e); }
+    }, function(err){
+      if (mine !== asked) return;
+      console.error('[BOLD Notifications] loading your requests failed', err);
+      reqError = (err && (err.code || err.message)) ? String(err.code || '') + (err.message ? ': ' + err.message : '') : true;
       draw();
-    }).catch(function(err){ if (mine !== asked) return; console.error('[BOLD Notifications] loading your requests failed', err); reqError = true; draw(); });
+    });
     // Theirs, newest first (sorted here: the query needs no index of its own).
     unsub = db().collection('notifications').where('to', '==', me).onSnapshot(function(s){
       notes = s.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return (b.at || 0) - (a.at || 0); });
