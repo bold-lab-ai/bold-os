@@ -335,3 +335,14 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-compose{display:flex; gap:8px; padding:10px; border-top:1px solid var(--line);}
 .bs-compose textarea{flex:1; min-width:0; resize:none; font:inherit; font-size:14px; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:7px 9px;}
 .bs-compose .btn{align-self:flex-end;}
+
+/* The thread's tree, fixed left of it (conversations.js drawTree). */
+.bs-tree{position:fixed; top:140px; z-index:5; max-height:calc(100vh - 180px); overflow-y:auto; padding:6px; background:var(--paper);}
+.bs-tree[hidden]{display:none;}
+.bs-tree svg{display:block;}
+.bs-tree-lines path{fill:none; stroke:var(--line); stroke-width:1.5;}
+.bs-tree circle{fill:var(--paper); stroke:var(--muted); stroke-width:1.5; cursor:pointer;}
+.bs-tree circle.is-leaf{fill:var(--accent); stroke:var(--accent);}
+.bs-tree circle.is-here{stroke:var(--ink); stroke-width:2.5;}
+.bs-tree circle:hover{stroke:var(--ink);}
+@media (max-width:900px){ .bs-tree{display:none;} }

@@ -108,6 +108,70 @@
     return '<ol class="bs-run">' + out + '</ol>';
   }
 
+  // ---------- the thread's tree, beside it ----------
+  // Fixed in the blank space left of the thread (left out where there isn't room): a dot for the post
+  // and each message, in the order they were written, top to bottom. A line of the conversation goes
+  // straight down its lane; a branch steps out to a lane of its own. Leaves are filled; the message in
+  // view has a ring. A dot opens its message (its branches unfolded) and scrolls to it.
+  var treeEl = null, treeSeen = null, treeAt = '';
+  function drawTree(p){
+    if (!p) { if (treeEl) treeEl.hidden = true; return; }
+    if (!treeEl) {
+      treeEl = document.createElement('nav'); treeEl.className = 'bs-tree'; treeEl.setAttribute('aria-label', 'The conversation as a tree');
+      document.body.appendChild(treeEl);
+      treeEl.addEventListener('click', function(e){
+        var n = e.target.closest('[data-id]'); if (!n) return;
+        var id = n.getAttribute('data-id'), m = msgOf(openId, id), k = 0;
+        while (m && parentOf(m) && k++ < 500) { opened[parentOf(m)] = true; m = msgOf(openId, parentOf(m)); }
+        render();
+        var el = document.getElementById('m-' + id); if (el) el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+      window.addEventListener('resize', place);
+    }
+    var all = [p].concat((messages[p.id] || []).slice().sort(function(a, b){ return ms(a.at) - ms(b.at); }));
+    var row = {}, lane = {}, next = 1;
+    all.forEach(function(m, i){ row[m.id] = i; });
+    // Lanes: a message's first reply keeps its lane, later ones take new lanes.
+    (function walk(id, l){
+      lane[id] = l;
+      kids(id).forEach(function(c, i){ walk(c.id, i === 0 ? l : next++); });
+    })(p.id, 0);
+    var R = all.length > 60 ? 8 : 12, L = 12, X = function(id){ return 8 + (lane[id] || 0) * L; }, Y = function(id){ return 8 + row[id] * R; };
+    var W = 16 + (next - 1) * L, H = 16 + (all.length - 1) * R;
+    var paths = '', dots = '';
+    all.forEach(function(m){
+      var par = m.id === p.id ? null : parentOf(m);
+      if (par && row[par] !== undefined) {
+        var x0 = X(par), y0 = Y(par), x1 = X(m.id), y1 = Y(m.id);
+        paths += '<path d="M' + x0 + ' ' + y0 + (x0 === x1 ? 'V' + y1 : 'V' + (y1 - 4) + 'Q' + x0 + ' ' + y1 + ' ' + (x0 + 4) + ' ' + y1 + 'H' + x1) + '"/>';
+      }
+      var leaf = !kids(m.id).length;
+      dots += '<circle data-id="' + esc(m.id) + '" class="' + (leaf ? 'is-leaf' : '') + '" cx="' + X(m.id) + '" cy="' + Y(m.id) + '" r="3.5"><title>' + esc((m.name || 'someone') + ': ' + String(m.id === p.id ? p.title : m.body || '').replace(/\s+/g, ' ').slice(0, 80)) + '</title></circle>';
+    });
+    treeEl.innerHTML = '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '"><g class="bs-tree-lines">' + paths + '</g>' + dots + '</svg>';
+    treeEl.hidden = false;
+    place(); watchSeen();
+  }
+  // Left of the thread, if there's room between it and the sidebar.
+  function place(){
+    if (!treeEl || treeEl.hidden && !openId) return;
+    var t = threadEl.getBoundingClientRect(), side = document.getElementById('sidebar'), s = side ? side.getBoundingClientRect() : null;
+    var from = s && s.width && s.right < t.left ? s.right : 0, w = treeEl.offsetWidth || 40;
+    var room = t.left - from - 32 >= w && !threadEl.hidden;
+    treeEl.style.visibility = room ? 'visible' : 'hidden';
+    treeEl.style.left = Math.max(from + 16, t.left - w - 24) + 'px';
+  }
+  // The message in view: its dot gets a ring.
+  function watchSeen(){
+    if (treeSeen) treeSeen.disconnect();
+    if (!('IntersectionObserver' in window)) return;
+    treeSeen = new IntersectionObserver(function(es){
+      es.forEach(function(x){ if (x.isIntersecting) treeAt = x.target.id.slice(2); });
+      Array.prototype.forEach.call(treeEl.querySelectorAll('circle'), function(c){ c.classList.toggle('is-here', c.getAttribute('data-id') === treeAt); });
+    }, { rootMargin: '-40% 0px -50% 0px' });
+    Array.prototype.forEach.call(threadEl.querySelectorAll('.bs-line[id^="m-"]'), function(el){ treeSeen.observe(el); });
+  }
+
   // ---------- the list, or one post's thread ----------
   function render(){
     var open = decodeURIComponent((location.hash.match(/^#post=(.+)$/) || [])[1] || '');
@@ -127,11 +191,13 @@
       var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
         '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + columnHtml(p, p.id, head);
+      drawTree(p);
       var fresh = threadEl.querySelector('.bs-replyform');
       if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id')) fresh.replaceWith(keep);
       else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
       return;
     }
+    drawTree(null);
     if (posts === null) { postsEl.innerHTML = '<li class="proj-msg">Loading&hellip;</li>'; return; }
     var list = posts.slice().sort(sort === 'new' ? function(a, b){ return ms(b.at) - ms(a.at); } : function(a, b){ return score(b) - score(a) || ms(b.at) - ms(a.at); });
     postsEl.innerHTML = list.length ? list.map(function(q){
