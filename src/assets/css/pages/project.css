@@ -43,6 +43,13 @@
 }
 .tab:hover{color:var(--ink);}
 .tab.active{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
+.tab-add{
+  font-family:var(--sans); font-size:14px; font-weight:500; color:var(--muted);
+  background:none; border:none; border-bottom:2px solid transparent;
+  padding:10px 2px; margin-bottom:-1px; cursor:pointer; white-space:nowrap;
+}
+.tab-add:hover:not(:disabled){color:var(--ink);}
+.tab-add:disabled{opacity:.5; cursor:default;}
 .tab-panel .detail-grid{border-top:none; padding-top:0;}
 /* venues (Paper tab) */
 .venue-list{list-style:none; margin:0 0 6px; padding:0;}

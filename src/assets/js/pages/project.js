@@ -248,7 +248,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
         : missing());
       html += row('Registered', card.createdAt ? formatDate(card.createdAt) : missing());
-      html += row('Board', workBoardHtml());
       html += '</dl>';
       if (editing === 'abstract') {
         // Same editor as the registration form, with Save and Cancel.
@@ -277,13 +276,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     work: function(){ return '<div id="workMount"></div>'; }
   };
 
-  // Overview's Board row: the tab, or adding one (optional, for any project).
-  function workBoardHtml(){
-    if (hasBoard()) return '<a href="#" id="workTabLink">On the Board tab</a>';
-    if (!wsLoaded) return '<span class="detail-muted">Loading\u2026</span>';
-    return missing() + ' <button class="btn-text detail-inline-edit" type="button" id="workAdd"' +
-      (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Add one</button>' +
-      '<div class="detail-hint">One place for its to-dos, issues and pull requests, and who\u2019s on each.</div>';
+  // + Board, after the tabs: adds the project's work board (optional, for any project), then opens it.
+  function addBoardTabHtml(){
+    if (!wsLoaded || hasBoard()) return '';
+    var off = !canEdit() ? NOT_EDITOR : wsBusy ? 'Loading\u2026' : '';
+    return '<button class="tab-add" type="button" id="workAdd" title="' + esc(off || 'One place for its to-dos, issues and pull requests, and who\u2019s on each') + '"' + (off ? ' disabled' : '') + '>+ Board</button>';
   }
   function addWorkBoard(){
     if (wsBusy) return;
@@ -335,7 +332,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       var on = t[0] === tab;
       return '<button class="tab' + (on ? ' active' : '') + '" type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + on + '"' +
         (on ? '' : ' tabindex="-1"') + ' aria-controls="projectPanel">' + t[1] + '</button>';
-    }).join('') + '</div>';
+    }).join('') + addBoardTabHtml() + '</div>';
     html += '<div class="tab-panel" id="projectPanel" role="tabpanel">' + PANELS[tab]() + '</div>';
 
     el('projectBody').innerHTML = html;
@@ -346,7 +343,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       ProjectWork.attach(el('workMount'));
     }
     if (el('workAdd')) el('workAdd').addEventListener('click', addWorkBoard);
-    if (el('workTabLink')) el('workTabLink').addEventListener('click', function(e){ e.preventDefault(); setTab('work'); });
     el('detailMsg').hidden = true;
     document.title = card.title + ' | BOLD Lab';
     linkSlackChannel();
