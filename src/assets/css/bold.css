@@ -962,3 +962,19 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .health-seg.is-os{background:var(--accent);}
 .health-seg.is-own{background:linear-gradient(90deg, var(--accent) 50%, color-mix(in srgb, var(--ink) 12%, transparent) 50%);}
 .proj-health{display:block; margin:2px 0;}
+
+/* ---------- Lists of things (shared, 2026-11-05) ----------
+   One look for every list of rows, as Projects': Projects, People, Events, Notifications (To do,
+   Waiting, Inbox), a profile's lists. A row: its title (a link), then a line of details below.
+   Grouped under small caps headings with a count. Pages add their own layout on top (Projects
+   puts a button at the row's end), never their own copy of these. */
+.proj-group{margin-top:34px;}
+.proj-group:first-child{margin-top:22px;}
+.proj-group h3{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-soft); margin:0 0 2px;}
+.proj-count{margin-left:6px; font-weight:400; color:var(--muted);}
+.proj-list{list-style:none; margin:0; padding:0;}
+.proj-list li{padding:12px 0; border-bottom:1px solid var(--rule);}
+.proj-title{font-size:16px; font-weight:600;}
+.proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.proj-meta a{color:inherit;}
+.proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
