@@ -28,7 +28,31 @@
   // The key, from Settings › Notifications (settings/webPush), or site.js's if it has one.
   function pushKey(){ return push.key || window.BOLD_WEB_PUSH_KEY || ''; }
   try { push.mine = localStorage.getItem('boldPushToken') || ''; } catch (e){}
-  function pushSupported(){ return !!(pushKey() && 'Notification' in window && 'serviceWorker' in navigator && window.PushManager && firebase.messaging); }
+  function pushSupported(){ return !!(pushKey() && 'Notification' in window && 'serviceWorker' in navigator && window.PushManager); }
+  // The messaging SDK, loaded only for this, and always with the site's own service worker
+  // (firebase-messaging-sw.js beside this page, under /bold-os/). Loaded with the page, it would
+  // look for one at the domain's root on every server call once notifications are allowed, fail,
+  // and take the call down with it (2026-11-05: To do and Waiting didn't load).
+  var messagingReady = null;
+  function messagingReg(){
+    if (messagingReady) return messagingReady;
+    messagingReady = new Promise(function(ok, no){
+      if (firebase.messaging) return ok();
+      var app = document.querySelector('script[src*="firebase-app-compat.js"]');
+      var x = document.createElement('script');
+      x.src = app ? app.src.replace('firebase-app-compat.js', 'firebase-messaging-compat.js') : '';
+      x.onload = function(){ ok(); }; x.onerror = function(){ no(new Error('The messaging SDK didn’t load.')); };
+      document.head.appendChild(x);
+    }).then(function(){ return navigator.serviceWorker.register('firebase-messaging-sw.js'); });
+    messagingReady.catch(function(){ messagingReady = null; });
+    return messagingReady;
+  }
+  // This browser's token, if notifications are allowed here ('' otherwise; never asks).
+  function currentToken(){
+    if (!pushSupported() || Notification.permission !== 'granted') return Promise.resolve('');
+    return messagingReg().then(function(reg){ return firebase.messaging().getToken({ vapidKey: pushKey(), serviceWorkerRegistration: reg }); })
+      .catch(function(err){ console.error('[BOLD Notifications] reading this browser’s token failed', err); return ''; });
+  }
   function deviceLabel(){
     var ua = navigator.userAgent, b = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'A browser';
     var os = /Mac OS X/.test(ua) ? (/iPhone|iPad/.test(ua) ? 'iOS' : 'Mac') : /Windows/.test(ua) ? 'Windows' : /Android/.test(ua) ? 'Android' : /Linux/.test(ua) ? 'Linux' : '';
@@ -51,14 +75,15 @@
   }
   function loadDevices(){
     if (!pushKey()) return;
-    call('pushDevices', { action: 'list', token: push.mine }).then(function(r){ push.devices = (r.data || {}).devices || []; draw(); })
+    currentToken().then(function(t){ if (t) push.mine = t; return call('pushDevices', { action: 'list', token: push.mine }); })
+      .then(function(r){ push.devices = (r.data || {}).devices || []; draw(); })
       .catch(function(err){ console.error('[BOLD Notifications] loading your devices failed', err); });
   }
   function pushOn(){
     push.busy = true; push.msg = ''; draw();
     Notification.requestPermission().then(function(p){
       if (p !== 'granted') throw { quiet: true, msg: p === 'denied' ? 'Blocked: allow notifications for this site in the browser’s settings.' : '' };
-      return navigator.serviceWorker.register('firebase-messaging-sw.js');
+      return messagingReg();
     }).then(function(reg){
       return firebase.messaging().getToken({ vapidKey: pushKey(), serviceWorkerRegistration: reg });
     }).then(function(token){
@@ -75,7 +100,7 @@
   function pushOff(id){
     push.busy = true; draw();
     var mine = !id;
-    (mine && firebase.messaging ? firebase.messaging().deleteToken().catch(function(){}) : Promise.resolve()).then(function(){
+    (mine && pushSupported() ? messagingReg().then(function(){ return firebase.messaging().deleteToken(); }).catch(function(){}) : Promise.resolve()).then(function(){
       return call('pushDevices', { action: 'remove', token: mine ? push.mine : '', id: id || '' });
     }).then(function(r){
       if (mine) { push.mine = ''; try { localStorage.removeItem('boldPushToken'); } catch (e){} }

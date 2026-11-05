@@ -691,7 +691,9 @@ service cloud.firestore {
     match /guides/{slug} {
       // Its page in Who can see what: Get started sits on the Service desk (bold.js BOLD.GUIDE_AREAS).
       function guideArea(slug){ return slug == 'get-started-at-bold' ? 'get-started' : 'guides'; }
-      allow read: if may(guideArea(slug), 'view');
+      allow get: if may(guideArea(slug), 'view');
+      // A list (the sidebar's, the Guides page's) can't depend on each guide's id: whoever sees both.
+      allow list: if may('guides', 'view') && may('get-started', 'view');
       // updatedBy is who the version history (functions/index.js) credits.
       allow create: if hasFullWrite() && request.resource.data.slug == slug
         && request.resource.data.updatedBy == email() && request.resource.data.parts.size() == 0;
