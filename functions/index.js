@@ -3390,6 +3390,20 @@ async function googleFetch(method, url, body, contentType){
 }
 
 const CAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+// Google caps how many events and invitation emails the lab's (Gmail) account sends; past it,
+// Calendar writes fail for a few hours (2026-11-05). So guests are emailed only for what they
+// need to know (an invitation, a new time, who's on it; a cancellation), not for a new title,
+// description or Meet link; and a sync stopped by the cap is marked (`calendarLimitAt`) and
+// tried again every hour by retryCalendarLimits.
+// Pure: a Calendar PATCH's changes → its sendUpdates.
+function calendarUpdates(change){
+  return ['attendees', 'start', 'end', 'recurrence'].some(function(k){ return change && change[k] !== undefined; }) ? 'all' : 'none';
+}
+// Pure: whether a Google error is that cap (or Calendar's rate limits).
+function isCalendarLimit(err){
+  return !!err && (['quotaExceeded', 'rateLimitExceeded', 'userRateLimitExceeded'].indexOf(err.reason) >= 0 || /usage limits exceeded/i.test(String(err.message || '')));
+}
+const CALENDAR_LIMIT_MSG = 'Google\u2019s limit for the lab\u2019s calendar was reached: BOLD.OS tries again by itself every hour.';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
 
 // The Drive folder every project's files go in, made once (drive.file can only
@@ -3809,16 +3823,17 @@ async function syncWorkspace(id, changes){
         Object.assign(change, conferenceChange(ev, ws.meeting, 'bold-' + id + '-' + Date.now()));
         let now = ev;
         if (Object.keys(change).length){
-          now = await googleFetch('PATCH', CAL + '/' + ws.eventId + '?conferenceDataVersion=1&sendUpdates=all', change) || ev;
+          now = await googleFetch('PATCH', CAL + '/' + ws.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
           patch.eventMeeting = ws.meeting; patch.eventPausedAt = ws.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now); await save();
         } else if (!ws.eventStart && seriesStart(ev)){ patch.eventStart = seriesStart(ev); await save(); }
         const url = ws.meeting.link || now.hangoutLink || '';
         if (url !== (ws.meetUrl || '')){ patch.meetUrl = url; await save(); }
       }
-      patch.error = FieldValue.delete();
+      patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
     } catch (err){
       logger.error('Setting up the project\u2019s meeting, slides and notes failed', { id, error: String(err && err.message || err) });
-      patch.error = err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the meeting, slides and notes.';
+      if (isCalendarLimit(err)) { patch.error = CALENDAR_LIMIT_MSG; patch.calendarLimitAt = Date.now(); }
+      else patch.error = err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the meeting, slides and notes.';
     }
     await save();
 
@@ -5291,16 +5306,17 @@ async function syncStudyMeeting(email){
       Object.assign(change, conferenceChange(ev, s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')));
       let now = ev;
       if (Object.keys(change).length){
-        now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=all', change) || ev;
+        now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
         patch.eventMeeting = s.meeting; patch.eventPausedAt = s.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now);
       } else if (!s.eventStart && seriesStart(ev)) patch.eventStart = seriesStart(ev);
       const url = s.meeting.link || now.hangoutLink || '';
       if (url !== (s.meetUrl || '')) patch.meetUrl = url;
     }
-    patch.error = FieldValue.delete();
+    patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
   } catch (err){
     logger.error('Setting up a study meeting failed', { error: String(err && err.message || err) });
-    patch.error = err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting in Google Calendar.';
+    if (isCalendarLimit(err)) { patch.error = CALENDAR_LIMIT_MSG; patch.calendarLimitAt = Date.now(); }
+    else patch.error = err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting in Google Calendar.';
   }
   await ref.set(patch, { merge: true });
   return (await ref.get()).data();
@@ -7759,13 +7775,38 @@ exports.boldApi = agentApi.boldApi;
 exports.calendarFeed = agentApi.calendarFeed;
 // Recurring lab meetings (series.html, Events): functions/series.js.
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-  googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
+  googleFetch, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
   onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
 exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
+
+// Every hour: the syncs Google's calendar limit stopped (calendarLimitAt; see isCalendarLimit), oldest
+// first, a few at a time; a run stops at the first still refused, the limit not lifted yet.
+const CALENDAR_RETRIES = [
+  ['projectWorkspaces', (id) => syncWorkspace(id)],
+  ['studies', (id) => syncStudyMeeting(id)],
+  ['eventSeries', (id) => labSeries.syncSeries(id)],
+  ['eventInvites', (id) => labSeries.syncOccurrence(id)],
+];
+exports.retryCalendarLimits = onSchedule({ schedule: 'every 60 minutes', secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540 }, async function(){
+  const todo = [];
+  for (const [col, sync] of CALENDAR_RETRIES){
+    const snap = await db.collection(col).where('calendarLimitAt', '>', 0).get();
+    snap.docs.forEach((d) => todo.push({ col, sync, id: d.id, at: d.data().calendarLimitAt }));
+  }
+  todo.sort((a, b) => a.at - b.at);
+  let done = 0;
+  for (const t of todo.slice(0, 10)){
+    try { await t.sync(t.id); } catch (err){ logger.warn('Retrying a calendar sync failed', { col: t.col, id: t.id, error: String(err && err.message || err) }); }
+    const after = (await db.collection(t.col).doc(t.id).get()).data() || {};
+    if (after.calendarLimitAt) { logger.info('Google\u2019s calendar limit is still on', { left: todo.length - done }); break; }
+    done++;
+  }
+  if (todo.length) logger.info('Calendar retries', { waiting: todo.length, done });
+});
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
@@ -7788,7 +7829,7 @@ const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
 
-exports._internal = {
+exports._internal = { calendarUpdates, isCalendarLimit,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,

@@ -36,7 +36,7 @@
 
 module.exports = function series(deps){
   const { db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-    googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
+    googleFetch, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
     normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL,
     GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto, onSchedule, tellPeople } = deps;
   const { rank, VISIBILITY, VIS_RANK, VISIBILITY_NAMES } = require('./access');
@@ -172,17 +172,18 @@ module.exports = function series(deps){
         Object.assign(change, conferenceChange(ev, s.meeting, 'bold-series-' + crypto.randomBytes(6).toString('hex')));
         let now = ev;
         if (Object.keys(change).length) {
-          now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=all', change) || ev;
+          now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
           Object.assign(patch, { eventMeeting: s.meeting, eventPausedAt: s.pausedAt || FieldValue.delete(), eventStart: seriesStart(now) });
         }
         const url = s.meeting.link || now.hangoutLink || '';
         if (url !== (s.meetUrl || '')) patch.meetUrl = url;
         patch.guests = guests;
       }
-      patch.error = FieldValue.delete();
+      patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
     } catch (err) {
       logger.error('Setting up a recurring event failed', { id, error: String(err && err.message || err) });
-      patch.error = err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting in Google Calendar.';
+      if (isCalendarLimit(err)) { patch.error = CALENDAR_LIMIT_MSG; patch.calendarLimitAt = Date.now(); }
+      else patch.error = err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting in Google Calendar.';
     }
     await ref.set(patch, { merge: true });
     return (await ref.get()).data();
@@ -344,12 +345,16 @@ module.exports = function series(deps){
         const ev = await googleFetch('GET', CAL + '/' + inv.eventId);
         const kept = (ev.attendees || []).filter((a) => a.organizer || a.self || addrs.indexOf(lower(a.email)) >= 0);
         const attendees = kept.concat(addrs.filter((m) => !kept.some((a) => lower(a.email) === m)).map((m) => ({ email: m })));
-        await googleFetch('PATCH', CAL + '/' + inv.eventId + '?sendUpdates=all', Object.assign({ attendees }, body));
+        // Guests hear of a new day or who's invited; a new title, place or description goes quietly.
+        const old = inv.synced || {};
+        const tell = old.start !== synced.start || old.end !== synced.end || JSON.stringify(old.guests || []) !== JSON.stringify(addrs);
+        await googleFetch('PATCH', CAL + '/' + inv.eventId + '?sendUpdates=' + (tell ? 'all' : 'none'), Object.assign({ attendees }, body));
       } else return;
-      Object.assign(patch, { synced, guests, error: FieldValue.delete(), at: Date.now() });
+      Object.assign(patch, { synced, guests, error: FieldValue.delete(), calendarLimitAt: FieldValue.delete(), at: Date.now() });
     } catch (err) {
       logger.error('An occurrence’s invitation failed', { slug, error: String(err && err.message || err) });
-      patch.error = 'Couldn’t send the Google Calendar invitation.';
+      if (isCalendarLimit(err)) { patch.error = CALENDAR_LIMIT_MSG; patch.calendarLimitAt = Date.now(); }
+      else patch.error = 'Couldn’t send the Google Calendar invitation.';
     }
     await iref.set(patch, { merge: true });
   }
@@ -399,5 +404,5 @@ module.exports = function series(deps){
     }
   });
 
-  return { eventSeries, onMemberGroupChanged, onOccurrenceWritten, seriesNudges, _internal: { normalizeSeries, inviteesOf, addMonths, addPeriod, nextDue } };
+  return { eventSeries, onMemberGroupChanged, onOccurrenceWritten, seriesNudges, syncSeries, syncOccurrence, _internal: { normalizeSeries, inviteesOf, addMonths, addPeriod, nextDue } };
 };
