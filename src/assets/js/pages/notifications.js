@@ -1,11 +1,11 @@
 // notifications.html (the masthead's bell; was requests.html, 2026-11-05). Three tabs, by #hash:
-// - To do (#todo, the default): everything on BOLD.OS waiting on you, from myRequests (functions/index.js),
-//   each linking to where it's answered. It stays until it's done; the bell counts these.
-// - Waiting (#waiting): what you asked that waits on someone else.
-// - Messages (#messages): everything BOLD.OS told you, newest first: every Slack DM and note-to-you it sent,
+// - Inbox (#inbox, the default; #messages too): everything BOLD.OS told you, newest first: every Slack DM and note-to-you it sent,
 //   and Conversations' (a reply where you are, a new conversation). notifications/{id}, yours alone
 //   (firestore.rules); unread ones are highlighted. Opening one marks it read; each can be marked read or
 //   unread, and all read at once. Kept for good.
+// - To do (#todo): everything on BOLD.OS waiting on you, from myRequests (functions/index.js),
+//   each linking to where it's answered. It stays until it's done; the bell counts these.
+// - Waiting (#waiting): what you asked that waits on someone else.
 (function(){
   var body = document.getElementById('notificationsBody');
   if (!body || !BOLD.getAuth()) return;
@@ -49,26 +49,26 @@
         : items.length ? '<ul class="proj-list">' + items.map(function(x){ return reqHtml(x, toAnswer); }).join('') + '</ul>' : '<p class="proj-msg">' + none + '</p>') + '</section>';
     };
     body.innerHTML = '<nav class="guide-tabs profile-tabs" aria-label="Notifications">' +
+        '<a class="guide-tab" href="#inbox">Inbox' + (unread ? ' <span class="nt-unread-count">' + unread + ' unread</span>' : '') + '</a>' +
         '<a class="guide-tab" href="#todo">To do' + n(forYou.length) + '</a>' +
-        '<a class="guide-tab" href="#waiting">Waiting' + n(byYou.length) + '</a>' +
-        '<a class="guide-tab" href="#messages">Messages' + (unread ? ' <span class="nt-unread-count">' + unread + ' unread</span>' : '') + '</a></nav>' +
-      reqPanel('todo', forYou, true, 'Nothing waiting on you.') +
-      reqPanel('waiting', byYou, false, 'Nothing you asked is waiting.') +
-      '<section class="profile-panel" id="messages">' +
+        '<a class="guide-tab" href="#waiting">Waiting' + n(byYou.length) + '</a></nav>' +
+      '<section class="profile-panel" id="inbox">' +
         '<div class="nt-bar"><span class="nt-filter" role="group" aria-label="Show">' + SOURCES.map(function(s){
           return '<button type="button" class="btn-text nt-src' + (source === s[0] ? ' is-on' : '') + '" data-src="' + s[0] + '" aria-pressed="' + (source === s[0]) + '">' + esc(s[1]) + '</button>';
         }).join('') + '</span>' +
         '<button type="button" class="btn-text nt-all"' + (unread ? '' : ' disabled title="Nothing unread"') + '>Mark all read</button></div>' +
-        (noteError ? '<p class="proj-msg">Couldn’t load your messages — try reloading the page.</p>'
+        (noteError ? '<p class="proj-msg">Couldn’t load your inbox — try reloading the page.</p>'
           : !notes ? '<p class="proj-msg">Loading&hellip;</p>'
           : list.length ? '<ul class="proj-list nt-list">' + list.map(noteHtml).join('') + '</ul>'
           : '<p class="proj-msg">' + (source ? 'Nothing here yet.' : 'Nothing yet: what BOLD.OS tells you on Slack, and in Conversations, shows here from now on.') + '</p>') +
-      '</section>';
+      '</section>' +
+      reqPanel('todo', forYou, true, 'Nothing waiting on you.') +
+      reqPanel('waiting', byYou, false, 'Nothing you asked is waiting.');
     showTab();
   }
   function showTab(){
-    var want = ['#waiting', '#messages'].indexOf(location.hash) >= 0 ? location.hash.slice(1) : 'todo';
-    ['todo', 'waiting', 'messages'].forEach(function(id){ var x = document.getElementById(id); if (x) x.hidden = id !== want; });
+    var want = ['#todo', '#waiting'].indexOf(location.hash) >= 0 ? location.hash.slice(1) : 'inbox';
+    ['inbox', 'todo', 'waiting'].forEach(function(id){ var x = document.getElementById(id); if (x) x.hidden = id !== want; });
     Array.prototype.forEach.call(body.querySelectorAll('.guide-tab'), function(a){
       var on = a.getAttribute('href') === '#' + want;
       a.classList.toggle('is-current', on);
