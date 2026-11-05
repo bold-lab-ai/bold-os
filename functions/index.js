@@ -985,6 +985,11 @@ async function handleSlashCommand(token, body){
     { type: 'input', block_id: 'notes', optional: true, label: { type: 'plain_text', text: 'Description' },
       element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: c.kind === 'code' ? 'What happens, what you expected, and how to make it happen again (a link, a command, a config)' : 'What it’s for, and who’d use it' } } },
   ];
+  // Screenshots or images (#…, 2026-11-05): Slack's own upload field; attached to the card after it's added
+  // (onCardImageImport), as on its page.
+  blocks.push({ type: 'input', block_id: 'images', optional: true, label: { type: 'plain_text', text: 'Images' },
+    element: { type: 'file_input', action_id: 'v', filetypes: SLACK_IMAGE_TYPES, max_files: SLACK_IMAGES_MAX },
+    hint: { type: 'plain_text', text: 'Screenshots or other images: PNG, JPEG, GIF or WebP, up to 10 MB each.' } });
   if (open.length) blocks.push({ type: 'input', block_id: 'milestone', optional: true, label: { type: 'plain_text', text: 'Milestone' },
     element: { type: 'static_select', action_id: 'v', placeholder: { type: 'plain_text', text: 'None' },
       options: open.map((m) => ({ text: { type: 'plain_text', text: (m.name + (m.end ? ' (until ' + m.end + ')' : '')).slice(0, 75) }, value: m.id })) } });
@@ -997,15 +1002,64 @@ async function handleSlashCommand(token, body){
   blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: addBoard
     ? slackText(board.ws.title || 'This project') + ' has no board yet: adding the card adds one, on its project page, with the card in To do.'
     : 'Adds it to ' + slackText(board.ws.title || 'BOLD OS') + '’s board, in To do.' }] });
-  const opened = await slackFetch(token, 'views.open', { trigger_id: body.trigger_id, view: {
+  const view = (bl) => ({ trigger_id: body.trigger_id, view: {
     type: 'modal', callback_id: 'work_card', title: { type: 'plain_text', text: c.what === 'bug' ? 'Report a bug' : 'Request a feature' },
     submit: { type: 'plain_text', text: 'Add it' }, close: { type: 'plain_text', text: 'Cancel' },
-    private_metadata: JSON.stringify({ pid: board.id, kind: c.kind, channel: body.channel_id || '', addBoard }), blocks } });
+    private_metadata: JSON.stringify({ pid: board.id, kind: c.kind, channel: body.channel_id || '', addBoard }), blocks: bl } });
+  let opened = await slackFetch(token, 'views.open', view(blocks));
+  // Slack refusing the images field (its upload field, or the app without files:read): the form without it.
+  if (!opened.ok && /invalid|block|scope/.test(String(opened.error || ''))) {
+    logger.warn('The card form with images was refused; opening it without', { error: opened.error, details: opened.response_metadata });
+    opened = await slackFetch(token, 'views.open', view(blocks.filter((b) => b.block_id !== 'images')));
+  }
   if (!opened.ok) { logger.warn('Opening the card form failed', { error: opened.error }); return say('Couldn’t open the form — try again.'); }
   return {};
 }
 // The form submitted: the card, as the page would add it (firestore.rules validWork), then a
 // note to them alone with its number and link. onWorkCardAdded posts it in the channel.
+// Images on a card added from Slack (/bug, /feature-request): what Slack's upload field gives, kept to
+// images within the limits a card's page has (PNG, JPEG, GIF, WebP; 10 MB; 20 a card).
+const SLACK_IMAGE_TYPES = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+const SLACK_IMAGES_MAX = 5;
+const CARD_IMAGE_MIME = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+// Pure: Slack's files → [{ id, name, mimetype, size, url }] of the images to fetch.
+function slackImagesOf(files){
+  return (Array.isArray(files) ? files : []).filter(function(f){
+    return f && CARD_IMAGE_MIME[f.mimetype] && Number(f.size) > 0 && Number(f.size) <= 10 * 1024 * 1024 && /^https:\/\/files\.slack\.com\//.test(String(f.url_private_download || f.url_private || ''));
+  }).slice(0, SLACK_IMAGES_MAX).map(function(f){
+    return { id: String(f.id || ''), name: String(f.name || 'image').slice(0, 200), mimetype: f.mimetype, size: Number(f.size), url: String(f.url_private_download || f.url_private) };
+  });
+}
+// cardImageImports/{id} (server only): { ws, card, files, email, at } → each image fetched from Slack (as the
+// bot: files:read) and put where the card's page puts its own (Storage, work/<ws>/<card>/…), then on the card.
+exports.onCardImageImport = onDocumentCreated({ document: 'cardImageImports/{id}', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 120 }, async (event) => {
+  const d = event.data && event.data.data();
+  if (!d || d.doneAt) return;
+  const cardRef = db.collection('projectWorkspaces').doc(String(d.ws)).collection('work').doc(String(d.card));
+  const added = [], failed = [];
+  const bucket = admin.storage().bucket();
+  for (const f of slackImagesOf(d.files)) {
+    try {
+      const res = await fetch(f.url, { headers: { Authorization: 'Bearer ' + SLACK_BOT_TOKEN.value() } });
+      const type = String(res.headers.get('content-type') || '').split(';')[0];
+      if (!res.ok || !CARD_IMAGE_MIME[type]) throw new Error('Slack gave ' + res.status + ' ' + type);
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length > 10 * 1024 * 1024) throw new Error('too big');
+      const path = 'work/' + d.ws + '/' + d.card + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + CARD_IMAGE_MIME[type];
+      const token = crypto.randomUUID();
+      await bucket.file(path).save(buf, { contentType: type, metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
+      added.push({ path, url: 'https://firebasestorage.googleapis.com/v0/b/' + bucket.name + '/o/' + encodeURIComponent(path) + '?alt=media&token=' + token,
+        name: f.name, by: d.email, at: Date.now() });
+    } catch (err){ failed.push(f.name); logger.warn('Attaching an image from Slack failed', { file: f.id, error: String(err && err.message || err) }); }
+  }
+  if (added.length) await db.runTransaction(async function(tx){
+    const c = await tx.get(cardRef);
+    if (!c.exists) return;
+    tx.update(cardRef, { images: (c.data().images || []).concat(added).slice(0, 20) });
+  });
+  await event.data.ref.set({ doneAt: Date.now(), added: added.length, failed }, { merge: true });
+});
+
 async function addCardFromSlack(token, payload){
   const meta = JSON.parse(payload.view.private_metadata || '{}');
   const v = payload.view.state && payload.view.state.values || {};
@@ -1050,6 +1104,9 @@ async function addCardFromSlack(token, payload){
     by: { email, name }, at: now, movedAt: now, updatedAt: now, updatedBy: email,
   }, milestone ? { milestone } : {}));
   const num = await numberFor(ref.path);
+  // Its images, from Slack: fetched and attached by onCardImageImport (Slack waits 3 seconds for this answer).
+  const files = slackImagesOf(val('images').files);
+  if (files.length) await db.collection('cardImageImports').add({ ws: wsSnap.id, card: ref.id, files, email, at: now });
   const url = projectPageUrl(wsSnap.data().cardId || wsSnap.id, wsSnap.data().boardId) + '&tab=work&card=' + encodeURIComponent(ref.id);
   const mName = milestone && ((ms.find((m) => m.id === milestone) || {}).name || made);
   const text = '✅ Added #' + num + ' to the board: ' + linkedTitle(slackText(title), url) +
@@ -1522,7 +1579,7 @@ function newTags(before, after){
 const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
   'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
-  'conversations', 'conversationImports'];
+  'conversations', 'conversationImports', 'cardImageImports'];
 // An event's page: its own (d.page: Collaboration Week, the Festival) or event.html.
 function eventUrl(slug, d){
   return SITE_URL + (d && /^[a-z0-9-]+\.html$/.test(d.page || '') ? d.page : 'event.html?event=' + encodeURIComponent(slug));
@@ -7568,6 +7625,7 @@ exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger,
   tellStaff }).reviewMcpChange;
 
 exports._internal = {
+  slackImagesOf,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
