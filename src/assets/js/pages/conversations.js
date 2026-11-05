@@ -41,6 +41,8 @@
     return x.parent;
   };
   var kids = function(id){ return (messages[openId] || []).filter(function(x){ return parentOf(x) === id; }).sort(function(a, b){ return ms(a.at) - ms(b.at); }); };
+  // Where a message's column ends: its first reply, that one's first reply, … (each first reply continues the column).
+  var leafOf = function(id){ var k = kids(id); return k.length ? leafOf(k[0].id) : id; };
   var total = function(id){ return kids(id).reduce(function(s, x){ return s + 1 + total(x.id); }, 0); };
   var count = function(k){ return k + (k === 1 ? ' reply' : ' replies'); };
   var postOf = function(id){ return (posts || []).filter(function(p){ return p.id === id; })[0]; };
@@ -68,14 +70,18 @@
   }
   function acts(m, pid){
     var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
+    // Reply goes on with the conversation, at the end of this message's column (its leaf); on a
+    // message already answered, Branch out also starts a new branch from it.
+    var leaf = leafOf(m.id), here = esc(m.id);
     return '<p class="bs-acts">' +
-      '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>' +
+      '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(leaf) + '"' + (why || (leaf === m.id ? '' : ' title="Reply at the end of this conversation"')) + '>Reply</button>' +
+      (leaf === m.id ? '' : '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + here + '"' + (why || ' title="Start a new branch from this message"') + '>Branch out</button>') +
       (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
       (mine(m) || full ? '<button type="button" class="btn-text danger bs-remove" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '">Remove</button>' : '') + '</p>';
   }
   function replyForm(m, pid){
     return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
-        '<div class="event-form-actions"><button type="submit" class="ev-save">Reply</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
+        '<div class="event-form-actions"><button type="submit" class="ev-save">' + (kids(m.id).length ? 'Branch out' : 'Reply') + '</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
   }
   // Replies as in Slack: the post's replies are one block, in order, a hairline between them. A
   // message's own replies are collapsed under it ("3 replies · last 2 h ago"); opened, they're a
@@ -406,7 +412,13 @@
       return;
     }
     if (b.classList.contains('bs-open')) { opened[id] = !opened[id]; render(); return; }
-    if (b.classList.contains('bs-reply-btn')) { replying = replying === id ? '' : id; render(); return; }
+    if (b.classList.contains('bs-reply-btn')) {
+      replying = replying === id ? '' : id; render();
+      // Reply on a message further up: the box is at the column's end.
+      var box = replying && threadEl.querySelector('.bs-replyform textarea');
+      if (box) { box.scrollIntoView({ block: 'center' }); box.focus(); }
+      return;
+    }
     if (b.classList.contains('bs-replycancel')) { replying = ''; render(); return; }
     if (b.classList.contains('bs-remove')) {
       var isP = id === pid, what = isP ? postOf(id) : msgOf(pid, id);
