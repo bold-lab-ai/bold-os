@@ -781,6 +781,8 @@ async function noteFor(emails, n){
     if (!list.length) return;
     const p = slackToPlain(n.text);
     const base = { source: n.source || 'slack', feature: n.feature || '', text: p.text, href: n.href || p.href || '', about: n.about || '', at: Date.now(), read: false };
+    // A meeting about to start (meetingReminders): its link, offered as Join until it ends.
+    if (n.join) { base.join = n.join; base.endsAt = n.endsAt || 0; }
     for (let i = 0; i < list.length; i += 400) {
       const b = db.batch();
       list.slice(i, i + 400).forEach((to) => b.set(db.collection('notifications').doc(), Object.assign({ to }, base)));
@@ -788,7 +790,7 @@ async function noteFor(emails, n){
     }
     // On their computers too, where they turned desktop notifications on (functions/push.js); not what
     // reaches everyone (n.ping false: a new conversation).
-    if (n.ping !== false) await webPush.pushTo(list, base.text, base.href);
+    if (n.ping !== false) await webPush.pushTo(list, base.text, base.href, n.join ? { join: n.join } : undefined);
   } catch (err){ logger.warn('Keeping a notification failed', { feature: n.feature, error: String(err && err.message || err) }); }
 }
 
@@ -7807,6 +7809,54 @@ exports.retryCalendarLimits = onSchedule({ schedule: 'every 60 minutes', secrets
   }
   if (todo.length) logger.info('Calendar retries', { waiting: todo.length, done });
 });
+
+// Meetings about to start (2026-11-05): 5 minutes before a project's meeting, a study meeting or a
+// recurring event's, everyone it invites gets a notification (Inbox and desktop, not Slack) with Join.
+// Only meetings in Google Calendar (eventId), not paused, not past their end date, and on their week
+// for one every N weeks (from eventStart, as calendar.html places it). Each once: meetingReminders/{key}.
+// Pure: minutes until `m` starts if that's 1–5 from now (London's `todayIso` and `nowHm`), else 0.
+function meetingStartsSoon(m, start, todayIso, nowHm){
+  if (!m || !m.day || !m.time) return 0;
+  const d = new Date(todayIso + 'T00:00:00Z');
+  if (WEEKDAYS[(d.getUTCDay() + 6) % 7] !== m.day) return 0;
+  if (m.until && m.until < todayIso) return 0;
+  if (start){
+    if (todayIso < start) return 0;
+    const weeks = Math.round((Date.parse(todayIso) - Date.parse(start)) / (7 * 86400000));
+    if (weeks % (m.every || 1) !== 0) return 0;
+  }
+  const mins = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
+  const left = mins(m.time) - mins(nowHm);
+  return left >= 1 && left <= 5 ? left : 0;
+}
+exports.meetingReminders = onSchedule({ schedule: '*/5 * * * *', timeZone: PROJECT_TZ }, async function(){
+  const today = todayIsoLondon(), now = nowHmLondon();
+  const code = WEEKDAYS[(new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7];
+  const [wsSnap, seriesSnap, studySnap] = await Promise.all([
+    db.collection('projectWorkspaces').where('meeting.day', '==', code).get(),
+    db.collection('eventSeries').where('meeting.day', '==', code).get(),
+    db.collection('studies').where('meeting.day', '==', code).get(),
+  ]);
+  const due = [];
+  wsSnap.docs.forEach((d) => { const w = d.data();
+    if (w.eventId && !w.pausedAt && w.group !== 'completed') due.push({ key: 'project-' + d.id, m: w.meeting, start: w.eventStart, title: w.title || 'Your project', to: w.members || [], join: w.meetUrl || w.eventLink || '', href: projectPageUrl(w.cardId || d.id, w.boardId) });
+  });
+  seriesSnap.docs.forEach((d) => { const x = d.data();
+    if (x.eventId && !x.pausedAt && !x.hidden && x.kind !== 'editions') due.push({ key: 'series-' + d.id, m: x.meeting, start: x.eventStart, title: x.title || 'A meeting', to: x.guests || [], join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'series.html?series=' + encodeURIComponent(d.id) });
+  });
+  studySnap.docs.forEach((d) => { const x = d.data();
+    if (x.eventId && !x.pausedAt) due.push({ key: 'study-' + d.id, m: x.meeting, start: x.eventStart, title: (x.name || d.id) + '\u2019s ' + (x.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting', to: [d.id].concat((x.people || []).map((p) => p.email)), join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'calendar.html' });
+  });
+  for (const x of due){
+    const left = meetingStartsSoon(x.m, x.start, today, now);
+    if (!left || !x.to.length) continue;
+    // Once per meeting and day, however many runs see it.
+    try { await db.collection('meetingReminders').doc(x.key + '-' + today + '-' + x.m.time.replace(':', '')).create({ at: Date.now(), to: x.to.length }); }
+    catch (err){ continue; }
+    const endsAt = Date.now() + (left + (x.m.minutes || 60)) * 60000;
+    await noteFor(x.to, { source: 'bold', feature: 'meeting-soon', text: '\u201c' + x.title + '\u201d starts in ' + left + ' minute' + (left === 1 ? '' : 's') + '.', href: x.join || x.href, join: x.join, endsAt });
+  }
+});
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
@@ -7829,7 +7879,7 @@ const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
 
-exports._internal = { calendarUpdates, isCalendarLimit,
+exports._internal = { calendarUpdates, isCalendarLimit, meetingStartsSoon,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
   channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
   trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,

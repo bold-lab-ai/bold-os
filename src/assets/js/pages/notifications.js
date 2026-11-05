@@ -103,7 +103,10 @@
     var label = SOURCE_LABEL[n.source] || 'BOLD.OS';
     return '<li class="nt-item' + (n.read ? '' : ' is-unread') + '" data-id="' + esc(n.id) + '">' +
       (n.href ? '<a class="proj-title nt-text" href="' + esc(n.href) + '" data-open="' + esc(n.id) + '">' + esc(n.text) + '</a>' : '<span class="proj-title nt-text">' + esc(n.text) + '</span>') +
-      '<span class="proj-meta">' + esc(label + ' · ' + ago(n.at)) + ' · <button type="button" class="btn-text nt-toggle" data-id="' + esc(n.id) + '">' + (n.read ? 'Mark unread' : 'Mark read') + '</button></span></li>';
+      '<span class="proj-meta">' + esc(label + ' · ' + ago(n.at)) +
+      // A meeting about to start: Join, until it ends.
+      (n.join && /^https:\/\//.test(n.join) && Date.now() < (n.endsAt || 0) ? ' · <a class="btn-text" href="' + esc(n.join) + '" target="_blank" rel="noopener">Join</a>' : '') +
+      ' · <button type="button" class="btn-text nt-toggle" data-id="' + esc(n.id) + '">' + (n.read ? 'Mark unread' : 'Mark read') + '</button></span></li>';
   }
   function draw(){
     var forYou = (reqs && reqs.forYou) || [], byYou = (reqs && reqs.byYou) || [];

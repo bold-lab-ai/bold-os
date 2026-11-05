@@ -18,3 +18,11 @@ test('a token the push service has forgotten is removed; others are kept', () =>
   assert.ok(!goneToken('messaging/internal-error'));
   assert.match(idOf('abc'), /^[0-9a-f]{40}$/);
 });
+
+test('a meeting about to start pushes with a Join button opening its link', () => {
+  const { pushMessage } = require('../functions/push.js');
+  const m = pushMessage('“P” starts in 5 minutes.', 'https://meet.google.com/x', 'https://s/', { join: 'https://meet.google.com/x' });
+  require('node:assert').deepStrictEqual(m.webpush.notification.actions, [{ action: 'join', title: 'Join' }]);
+  require('node:assert').strictEqual(m.webpush.data.join, 'https://meet.google.com/x');
+  require('node:assert').strictEqual(pushMessage('hi', '', 'https://s/').webpush.data, undefined);
+});

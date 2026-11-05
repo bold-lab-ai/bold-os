@@ -10,14 +10,15 @@ const idOf = (token) => crypto.createHash('sha256').update(String(token)).digest
 const lower = (e) => String(e || '').trim().toLowerCase();
 
 // Pure: the push for a notification (FCM's webpush message, without its tokens).
-function pushMessage(text, href, siteUrl){
+// extra.join: a meeting's link, offered as a Join button (firebase-messaging-sw.js opens it).
+function pushMessage(text, href, siteUrl, extra){
   const body = String(text || '').replace(/\s+/g, ' ').trim();
-  return {
-    webpush: {
-      notification: { title: 'BOLD.OS', body: body.length > 240 ? body.slice(0, 237) + '…' : body, icon: siteUrl + 'assets/img/icon-192.png', badge: siteUrl + 'assets/img/icon-192.png' },
-      fcmOptions: { link: /^https:\/\//.test(href || '') ? href : siteUrl + 'notifications.html' },
-    },
-  };
+  const join = extra && /^https:\/\//.test(extra.join || '') ? extra.join : '';
+  const notification = { title: 'BOLD.OS', body: body.length > 240 ? body.slice(0, 237) + '…' : body, icon: siteUrl + 'assets/img/icon-192.png', badge: siteUrl + 'assets/img/icon-192.png' };
+  if (join) { notification.actions = [{ action: 'join', title: 'Join' }]; notification.requireInteraction = true; }
+  const out = { webpush: { notification, fcmOptions: { link: /^https:\/\//.test(href || '') ? href : siteUrl + 'notifications.html' } } };
+  if (join) out.webpush.data = { join };
+  return out;
 }
 // Pure: whether an FCM error means the token is gone for good.
 const goneToken = (code) => ['messaging/registration-token-not-registered', 'messaging/invalid-registration-token', 'messaging/invalid-argument'].indexOf(code) >= 0;
@@ -48,13 +49,13 @@ module.exports = function({ db, admin, onCall, HttpsError, signedInEmail, logger
     return { devices: await devicesOf(email, token) };
   });
   // Shows `text` (linking `href`) on each of `emails`' devices. Never fails what called it.
-  async function pushTo(emails, text, href){
+  async function pushTo(emails, text, href, extra){
     try {
       const list = Array.from(new Set((emails || []).map(lower).filter(Boolean)));
       const docs = [];
       for (let i = 0; i < list.length; i += 30) docs.push(...(await col.where('email', 'in', list.slice(i, i + 30)).get()).docs);
       if (!docs.length) return;
-      const msg = pushMessage(text, href, SITE_URL);
+      const msg = pushMessage(text, href, SITE_URL, extra);
       for (let i = 0; i < docs.length; i += 500) {
         const part = docs.slice(i, i + 500);
         const res = await admin.messaging().sendEachForMulticast(Object.assign({ tokens: part.map((d) => d.data().token) }, msg));

@@ -6,6 +6,15 @@ eleventyExcludeFromCollections: true
 // Desktop notifications (Web Push, 2026-11-05): the service worker Firebase Cloud Messaging uses,
 // at the site's root so its scope is the whole site. A push from noteFor (functions/index.js) has a
 // notification (title, body, icon) and a link: the browser shows it, and a click opens the link.
+// A meeting about to start has a Join button: Firebase leaves action clicks to us, so it opens the meeting's link
+// (registered before Firebase's own listener, which opens the notification's link on a plain click).
+self.addEventListener('notificationclick', function(event){
+  if (event.action !== 'join') return;
+  var d = event.notification.data || {}, msg = d.FCM_MSG || {};
+  var url = (msg.data && msg.data.join) || (msg.fcmOptions && msg.fcmOptions.link) || '';
+  event.notification.close();
+  if (/^https:\/\//.test(url)) event.waitUntil(clients.openWindow(url));
+});
 importScripts('https://www.gstatic.com/firebasejs/{{ site.firebaseSdkVersion }}/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/{{ site.firebaseSdkVersion }}/firebase-messaging-compat.js');
 firebase.initializeApp({{ site.firebase | dump | safe }});
