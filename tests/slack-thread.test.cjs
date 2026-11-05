@@ -2,7 +2,7 @@
 // which channels, and what comes back. Run: npm test
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseSlackLink, slackPlain, mayRead, isPrivate, threadOf, postIdOf } = require('../functions/slack-thread.js');
+const { parseSlackLink, slackPlain, mayRead, isPrivate, threadReplyOf, threadOf, postIdOf } = require('../functions/slack-thread.js');
 
 test('a message link, or a reply’s, points to its thread', () => {
   assert.deepStrictEqual(parseSlackLink('https://bold-lab.slack.com/archives/C0BB6MPNTSS/p1730700000123456'), { channel: 'C0BB6MPNTSS', ts: '1730700000.123456', thread: '1730700000.123456' });
@@ -65,4 +65,14 @@ test('a private channel or group DM is private; a public channel and a DM aren�
   assert.strictEqual(isPrivate({ is_mpim: true }), true);
   assert.strictEqual(isPrivate({ is_private: false }), false);
   assert.strictEqual(isPrivate({ is_im: true }), false);
+});
+
+test('only someone’s reply in a thread is nudged: not its first message, a bot’s, an edit or a join', () => {
+  const r = { type: 'message', user: 'U1', channel: 'C1', ts: '2.000002', thread_ts: '1.000001' };
+  assert.strictEqual(threadReplyOf(r), '1.000001');
+  assert.strictEqual(threadReplyOf(Object.assign({}, r, { ts: '1.000001' })), '');
+  assert.strictEqual(threadReplyOf(Object.assign({}, r, { thread_ts: undefined })), '');
+  assert.strictEqual(threadReplyOf(Object.assign({}, r, { bot_id: 'B1' })), '');
+  assert.strictEqual(threadReplyOf(Object.assign({}, r, { subtype: 'message_changed' })), '');
+  assert.strictEqual(threadReplyOf(Object.assign({}, r, { subtype: 'channel_join' })), '');
 });

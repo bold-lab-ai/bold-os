@@ -126,7 +126,15 @@ function threadOf(messages, names){
 // Pure: a Slack thread's post id, the same whichever way it came in.
 const postIdOf = (channel, thread) => 'slack-' + channel + '-' + String(thread).replace('.', '');
 
-module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText }){
+// Pure: whether Slack message event `e` is someone's reply in a thread (not its first message, not
+// a bot's, not an edit, a join or anything else with a subtype) → its thread's ts, or ''.
+function threadReplyOf(e){
+  if (!e || e.type !== 'message' || e.subtype || e.bot_id || !e.user) return '';
+  if (!e.thread_ts || e.thread_ts === e.ts) return '';
+  return String(e.thread_ts);
+}
+
+module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread }){
   const PAGE = SITE_URL + 'conversations.html';
   // A thread newly in Conversations says so in the thread, for everyone in it (pilot conversation-sent;
   // until it's live its testers get it instead). Not when one is refreshed. Never fails the send.
@@ -300,12 +308,27 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     await db.collection('conversations').doc(event.params.pid).set({ replies: FieldValue.increment(1) }, { merge: true }).catch(() => {});
   });
 
-  return { slackThread, handleShortcut, onConversationImport, onConversationMessage, syncReaders };
+  // A reply in Slack to a thread already moved to Conversations: Slack can't lock a thread, so whoever
+  // replied is told, privately, that it lives on BOLD.OS now (pilot conversation-moved). Their reply
+  // stays in Slack and isn't copied over. → true if it was such a thread.
+  async function nudgeMoved(token, e){
+    const thread = threadReplyOf(e);
+    if (!thread || !nudgeInThread) return false;
+    const id = postIdOf(e.channel, thread), d = (await db.collection('conversations').doc(id).get()).data();
+    if (!d || d.source !== 'slack') return false;
+    const url = PAGE + '#post=' + encodeURIComponent(id);
+    await nudgeInThread(token, 'conversation-moved', { channel: e.channel, user: e.user, thread_ts: thread,
+      text: '📌 This thread has moved to BOLD.OS: <' + url + '|reply there>, where everyone in it can see and vote on replies.' });
+    return true;
+  }
+
+  return { slackThread, handleShortcut, onConversationImport, onConversationMessage, syncReaders, nudgeMoved };
 };
 module.exports.parseSlackLink = parseSlackLink;
 module.exports.slackPlain = slackPlain;
 module.exports.mayRead = mayRead;
 module.exports.isPrivate = isPrivate;
+module.exports.threadReplyOf = threadReplyOf;
 module.exports.threadOf = threadOf;
 module.exports.slackMarkdown = slackMarkdown;
 module.exports.mrkdwnToMarkdown = mrkdwnToMarkdown;

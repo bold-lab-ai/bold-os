@@ -1141,6 +1141,7 @@ const PILOTS = {
   'project-setup': 'An ongoing project’s setup still missing (once)',
   'channel-join': 'BOLD OS joins new public channels',
   'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
+  'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -1219,6 +1220,19 @@ async function postInChannel(token, key, channelId, name, args){
   const st = await pilotState(key);
   if (!st.live) { await toTesters(token, st, '#' + String(name || channelId).replace(/^#/, ''), args.text || '', args.blocks); return { ok: true, pilot: true }; }
   return slackFetch(token, 'chat.postMessage', Object.assign({ channel: channelId }, args));
+}
+// A message only `user` sees, in a channel or one of its threads (chat.postEphemeral), as feature `key`;
+// in pilot, to its testers instead. args: { channel, user, thread_ts, text }.
+async function nudgeInThread(token, key, args){
+  const st = await pilotState(key);
+  if (!st.live) {
+    const p = (await db.collection('people').where('slackId', '==', String(args.user || '')).limit(1).get()).docs[0];
+    await toTesters(token, st, (p && p.data().name) || 'someone', args.text || '');
+    return { ok: true, pilot: true };
+  }
+  const res = await slackFetch(token, 'chat.postEphemeral', Object.assign({ unfurl_links: false }, args));
+  if (!res.ok) logger.warn('Slack ephemeral message failed', { feature: key, error: res.error });
+  return res;
 }
 async function pilotSlack(token, key, label, m){
   const ref = db.collection('settings').doc('pilot');
@@ -2328,6 +2342,15 @@ exports.slackEvents = onRequest(
     if (body.type === 'event_callback' && body.event && body.event.type === 'channel_created'){
       try { await joinNewChannel(token, body.event.channel || {}); }
       catch (err){ logger.error('joinNewChannel threw', { error: String(err) }); }
+      res.status(200).send('');
+      return;
+    }
+    // A reply in Slack to a thread moved to Conversations: a note to whoever wrote it to reply there
+    // (slack-thread.js nudgeMoved, pilot conversation-moved). Needs the message.channels and
+    // message.groups event subscriptions. Every other message: nothing.
+    if (body.type === 'event_callback' && body.event && body.event.type === 'message'){
+      try { await conversationsSlack.nudgeMoved(token, body.event); }
+      catch (err){ logger.error('nudgeMoved threw', { channel: body.event.channel, error: String(err) }); }
       res.status(200).send('');
       return;
     }
@@ -7531,7 +7554,7 @@ exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
-const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText });
+const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread });
 exports.slackThread = conversationsSlack.slackThread;
 exports.onConversationImport = conversationsSlack.onConversationImport;
 exports.onConversationMessage = conversationsSlack.onConversationMessage;
