@@ -77,8 +77,8 @@
   // block of their own, indented, where a run (each answering the one before) reads on in the block.
   function msgHtml(m, pid){
     return '<li class="bs-line' + (mine(m) ? ' is-mine' : '') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
-      '<div class="bs-head"><p class="bs-by">' + by(m) + '</p><div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div></div>' +
-      md(m.body) + replyForm(m, pid) + '</li>';
+      '<p class="bs-by">' + by(m) + '</p>' + md(m.body) +
+      '<div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div>' + replyForm(m, pid) + '</li>';
   }
   var lastAt = function(id){ return kids(id).reduce(function(t, x){ return Math.max(t, ms(x.at), lastAt(x.id)); }, 0); };
   function threadToggle(m){
