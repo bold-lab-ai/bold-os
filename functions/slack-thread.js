@@ -376,7 +376,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       const url = PAGE + '#post=' + encodeURIComponent(pid);
       const by = d.source === 'slack' ? (d.broughtBy || {}).name || 'Someone' : d.name || 'Someone';
       const text = '🗨️ New conversation: “' + String(d.title || '').replace(/[<>|]/g, '') + '”, ' + (d.source === 'slack' ? 'brought in from ' + ((d.slack || {}).channelName || 'Slack') + ' by ' : 'started by ') + by + '.';
-      await noteFor(to, { text, href: url, feature: 'conversation-new', source: 'conversations', about: 'conversation:' + pid });
+      await noteFor(to, { text, href: url, feature: 'conversation-new', source: 'conversations', about: 'conversation:' + pid, ping: false });
     } catch (err){ logger.warn('Telling people of a new conversation failed', { error: String(err && err.message || err) }); }
   });
 

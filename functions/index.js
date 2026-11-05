@@ -786,6 +786,9 @@ async function noteFor(emails, n){
       list.slice(i, i + 400).forEach((to) => b.set(db.collection('notifications').doc(), Object.assign({ to }, base)));
       await b.commit();
     }
+    // On their computers too, where they turned desktop notifications on (functions/push.js); not what
+    // reaches everyone (n.ping false: a new conversation).
+    if (n.ping !== false) await webPush.pushTo(list, base.text, base.href);
   } catch (err){ logger.warn('Keeping a notification failed', { feature: n.feature, error: String(err && err.message || err) }); }
 }
 
@@ -7768,6 +7771,10 @@ exports.slackThread = conversationsSlack.slackThread;
 exports.onConversationImport = conversationsSlack.onConversationImport;
 exports.onConversationMessage = conversationsSlack.onConversationMessage;
 exports.onConversationCreated = conversationsSlack.onConversationCreated;
+// Desktop notifications (functions/push.js): each person's devices, and a push with each notification
+// (noteFor calls webPush.pushTo, once everything above is defined).
+const webPush = require('./push')({ db, admin, onCall, HttpsError, signedInEmail, logger, SITE_URL });
+exports.pushDevices = webPush.pushDevices;
 // Notifications for what someone is part of (functions/notify.js): projects, cards, parts, skills and tools, editions, their group.
 const partNotes = require('./notify')({ db, onDocumentWritten, onDocumentUpdated, onDocumentCreated, deliver, logger, SITE_URL, projectPageUrl, guideUrl, handbookUrl, skillUrl, toolUrl, eventUrl, GROUP_LABELS, numberTag });
 Object.keys(partNotes).forEach((k) => { exports[k] = partNotes[k]; });
