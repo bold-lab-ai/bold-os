@@ -351,54 +351,41 @@
   addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1'); });
   // For search (pages/search.js: `red pill`).
   // 01:24. Idle for 30 minutes or more, on any page, the conversation opens by itself; otherwise, on
-  // the homepage, hints (below), and a click on the title goes straight into the Matrix.
+  // the homepage, hints (below), and searching with the hint in the box goes into the Matrix.
   // From 01:24 to 01:29 (a background tab's timers may run only once a minute), once a page.
   var IDLE = 30 * 60e3, lastActive = Date.now(), called = false;
   ['pointermove', 'pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function(t){
     addEventListener(t, function(){ lastActive = Date.now(); }, { passive: true, capture: true });
   });
   function isHome(){ var p = location.pathname; return /\/$/.test(p) || /\/index\.html$/.test(p); }
-  // Hints, as the film gives them, on the homepage until you follow them: the title buzzes left and
-  // right, now and then the screen drops a frame of the rain, and the search box types
-  // "Follow the white rabbit." Meanwhile a click on the title goes straight into the Matrix.
+  // Hints, as the film gives them, on the homepage until you follow them: now and then the screen drops a
+  // frame of the rain, and the search box types "Follow the white rabbit." and keeps it. Searching then, with
+  // the hint in the box (Enter on it empty, or a search with "rabbit" in it), goes into the Matrix; any
+  // other search is an ordinary one.
   var hinting = null;
   function hints(){
     if (hinting || root.classList.contains('is-matrix')) return;
-    var title = document.getElementById('homeHeroTitle') || document.querySelector('.wordmark');
-    if (!title) return;
-    var still = matchMedia('(prefers-reduced-motion: reduce)').matches, timers = [];
+    var still = matchMedia('(prefers-reduced-motion: reduce)').matches, timers = [], box = null, was = '', ready = false;
     var later = function(f, ms){ timers.push(setTimeout(f, ms)); };
-    hinting = { stop: function(){ timers.forEach(clearTimeout); title.classList.remove('is-hinted', 'is-glitch'); title.style.transform = ''; title.querySelectorAll('.mx-ghost').forEach(function(g){ g.remove(); }); title.removeEventListener('click', follow, true); title.removeAttribute('title'); hinting = null; } };
-    title.classList.add('is-hinted');
-    title.title = 'Follow it.';
-    // The title, while hinting: into the Matrix (before its own click, which shows the sidebar).
-    function follow(e){ e.preventDefault(); e.stopImmediatePropagation(); hinting.stop(); matrix(true, true); }
-    title.addEventListener('click', follow, true);
-    // 1. The title buzzes: two or three short bursts in which it jolts sideways, and slices of a green
-    // copy and a dim copy of it (laid exactly over it) are pulled the other way. It stays legible.
-    function glitch(){
-      if (!hinting) return;
-      if (still) { later(glitch, 10000); return; }
-      var ghosts = ['mx-ghost is-a', 'mx-ghost is-b'].map(function(c){
-        var g = document.createElement('span'); g.className = c; g.setAttribute('aria-hidden', 'true'); g.innerHTML = title.innerHTML;
-        title.appendChild(g); return g;
-      });
-      title.classList.add('is-glitch');
-      var bursts = 2 + Math.floor(Math.random() * 2), frames = 0;
-      (function frame(){
-        var on = frames % 9 < 6;   // six frames of buzz, three of rest, per burst
-        var j = function(n){ return Math.round((Math.random() * 2 - 1) * n); };
-        title.style.transform = on ? 'translateX(' + j(4) + 'px)' : '';
-        ghosts.forEach(function(g, i){
-          var top = Math.floor(Math.random() * 70), h = 8 + Math.floor(Math.random() * 30);
-          g.style.clipPath = on ? 'inset(' + top + '% 0 ' + Math.max(0, 100 - top - h) + '% 0)' : 'inset(100% 0 0 0)';
-          g.style.transform = on ? 'translateX(' + (i ? -1 : 1) * (3 + Math.abs(j(9))) + 'px)' : '';
-        });
-        if (++frames < bursts * 9) later(frame, 40 + Math.random() * 30);
-        else { title.style.transform = ''; title.classList.remove('is-glitch'); ghosts.forEach(function(g){ g.remove(); }); later(glitch, 6000 + Math.random() * 6000); }
-      })();
+    hinting = { stop: function(){
+      timers.forEach(clearTimeout);
+      if (box) box.placeholder = was;
+      document.removeEventListener('keydown', follow, true); document.removeEventListener('submit', follow, true);
+      hinting = null;
+    } };
+    // Before the search box's own Enter (search-box.js), as the page's first listener.
+    function follow(e){
+      if (!ready || !box || e.target !== box && e.target !== box.form) return;
+      if (e.type === 'keydown' && e.key !== 'Enter') return;
+      var q = box.value.trim();
+      if (q && !/rabbit/i.test(q)) return;   // an ordinary search
+      e.preventDefault(); e.stopImmediatePropagation();
+      box.value = ''; box.blur();
+      hinting.stop(); matrix(true, true);
     }
-    // 2. A dropped frame: for a tenth of a second, twice, the whole screen is a still of the rain mid-fall
+    document.addEventListener('keydown', follow, true);
+    document.addEventListener('submit', follow, true);
+    // 1. A dropped frame: for a tenth of a second, twice, the whole screen is a still of the rain mid-fall
     // (the second a little off, like a skipped frame), then the page again. Two dark flashes, under the
     // three-a-second limit for flashing; none with reduced motion.
     function flicker(){
@@ -413,19 +400,20 @@
       }
       later(flicker, 20000 + Math.random() * 20000);
     }
-    // 3. The search box (signed in) types the hint, holds it, and gives its placeholder back.
+    // 2. The search box (shown when signed in) types the hint once and keeps it.
     function whisper(){
       if (!hinting) return;
-      var box = document.querySelector('.home-search .ms-input') || document.querySelector('.ms-input');
-      if (!box || !box.offsetParent) { later(whisper, 15000); return; }
-      var was = box.placeholder, line = 'Follow the white rabbit.', i = 0;
+      box = document.querySelector('.home-search .ms-input') || document.querySelector('.ms-input');
+      if (!box || !box.offsetParent) { box = null; later(whisper, 5000); return; }
+      was = box.placeholder;
+      var line = 'Follow the white rabbit.', i = 0;
       (function key(){
         box.placeholder = line.slice(0, ++i);
         if (i < line.length) later(key, still ? 0 : 90 + Math.random() * 90);
-        else later(function(){ box.placeholder = was; later(whisper, 30000); }, 6000);
+        else ready = true;
       })();
     }
-    glitch(); later(whisper, 3000); later(flicker, 6000);
+    later(whisper, 3000); later(flicker, 6000);
   }
   function wakeCheck(){
     if (called || root.classList.contains('is-matrix')) return;
