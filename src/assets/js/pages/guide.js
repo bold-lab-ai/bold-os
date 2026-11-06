@@ -592,6 +592,7 @@
     document.title = x.title + ' | BOLD Lab';
     if (viewing && !viewed()) { // decided or withdrawn meanwhile: back to main
       viewing = null;
+      if (/^#proposal-/.test(location.hash)) setHash('');
       if (branchHere()) { if (BOLD.branch().pages) { BOLD.setBranch(null); return; } BOLD.setBranch(null, { quiet: true }); }
     }
     if (viewing) { renderViewing(); return; }
@@ -895,14 +896,19 @@
     if (bq && branchHere() !== id) BOLD.setBranch({ ref: branchPrefix() + id, title: doc().title + ': ' + whatText(bq), url: location.pathname.split('/').pop() + location.search }, { quiet: true });
     if (!viewing) tabBefore = tab;
     viewing = id; form = null; notice = '';
+    // Its address (#proposal-<id>) in the URL, to copy and share; a comment's link (#c=…) is kept.
+    if (bq && !commentFor(location.hash)) setHash('#proposal-' + encodeURIComponent(id));
     var q = viewed(), ids = changedIds(q), target = parts().filter(function(p){ return ids.indexOf(p.id) !== -1; })[0];
     if (target && hasSections()) tab = target.section || '';
     render();
     var el = target && document.getElementById(anchor(target));
     (el || body).scrollIntoView({ block: 'start' });
   }
+  // The URL's #hash, without a new history entry or a jump.
+  function setHash(h){ try { history.replaceState(history.state, '', location.pathname + location.search + h); } catch (e){} }
   function stopViewing(){
     var id = viewing;
+    if (/^#proposal-/.test(location.hash)) setHash('');
     if (id !== VERSION && branchHere()) {
       // A branch that changes who can see what: the page is drawn again without it.
       if (BOLD.branch().pages) { BOLD.setBranch(null); return; }
@@ -1206,6 +1212,9 @@
   // The sidebar's section links (and Back) change the #hash.
   window.addEventListener('hashchange', function(){
     if (!x || form) return;
+    // A proposal's link followed on its own page.
+    var pm = /^#proposal-(.+)$/.exec(location.hash);
+    if (pm) { if (viewing !== decodeURIComponent(pm[1])) goTo(location.hash); return; }
     var t = tabFor(location.hash);
     if (t === null) return;
     tab = t;
