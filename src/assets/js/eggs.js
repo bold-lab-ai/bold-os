@@ -125,9 +125,8 @@
       return R(['(You’re supposed to say: who’s there?)']);
     }
     if (st.stage === 'knock2') {
-      st.stage = 'choice';
-      if (/reviewer 2 who|reviewer two who|who$/.test(w)) return R(['Reviewer 2, who thinks you should have cited [47].', 'Now. Red pill, or blue pill?']);
-      return R(['Reviewer 2 doesn’t wait for the punchline either.', 'Red pill, or blue pill?']);
+      st.stage = 'choice';   // whatever they say: the punchline, and on
+      return R(['Reviewer 2, who thinks you should have cited [47].', 'Now. Red pill, or blue pill?']);
     }
     if (st.stage === 'retry') {
       if (/^(y|yes|again|ok|okay|sure)$/.test(w)) { st.stage = 'game'; return R(['Again. Faster.'], 'game'); }
@@ -315,10 +314,11 @@
       term.classList.add('is-gone'); setTimeout(function(){ term.remove(); }, 600);
     }
     // As in the film: each line alone on the screen, typed at a person's uneven pace, the block cursor on
-    // it, left until you click or press a key (stir), when the screen clears for the next. The last is held,
-    // then the prompt. A line is its text, or [text, ms]: how long the last one is held (the cursor blinking
-    // on it). opts.lead: a blank screen with only the cursor first; opts.instant: shown at once, one
-    // under another, without waiting (the game's words).
+    // it, then the screen clears for the next. The last is held, then the prompt. A line is its text, or
+    // [text, ms]: how long it's held (the cursor blinking on it). opts.lead: a blank screen with only the
+    // cursor first; opts.wait: each line but the last left until you click or press a key (stir), for the
+    // opening; otherwise they move on by themselves, once there's been time to read them; opts.instant:
+    // shown at once, one under another, without waiting (the game's words).
     function say(lines, then, opts){ queue.push({ lines: lines, then: then, opts: opts || {} }); if (!busy) next(); }
     function next(){
       var job = queue.shift();
@@ -340,9 +340,13 @@
           p.textContent = text.slice(0, ++i);
           if (text[i - 1] !== ' ') tick();
           if (i >= text.length) {
-            // The last line: held, then the prompt (or what comes next). Any other: it waits for you, from
-            // the moment it's typed (a click during a hold isn't lost).
-            if (k + 1 >= job.lines.length) setTimeout(function(){ line(k + 1); }, hold); else waiting = function(){ line(k + 1); };
+            // The last line: held, then the prompt (or what comes next). Any other, in the opening: it waits
+            // for you, from the moment it's typed (a click during a hold isn't lost); in replies, it's held
+            // long enough to read (nothing to answer), then the next.
+            var go = function(){ line(k + 1); };
+            if (k + 1 >= job.lines.length) setTimeout(go, hold);
+            else if (job.opts.wait) waiting = go;
+            else setTimeout(go, typeof l === 'string' ? Math.max(1400, text.length * 50) : hold);
             return;
           }
           var c = text[i - 1], n = text[i];
@@ -403,7 +407,7 @@
     // The film's beats: a blank screen first, each line left to sink in; after the knock, it's your turn.
     function opening(){
       if (audioCtx()) { if (audio.state === 'suspended') audio.resume(); loadKnock(); }   // the knock's sound loads now, well before it
-      say([['Wake up, ' + who + '...', 3500], ['The BOLD.OS has you...', 3500], ['Follow the white rabbit.', 3000], ['Knock, knock, ' + who + '.', 400]], knock, { lead: 1500 });
+      say([['Wake up, ' + who + '...', 3500], ['The BOLD.OS has you...', 3500], ['Follow the white rabbit.', 3000], ['Knock, knock, ' + who + '.', 400]], knock, { lead: 1500, wait: true });
     }
     // Always a blank screen first, only the cursor blinking, until you click or press a key: then
     // "Wake up". That click or key also lets the browser play sound, so every blip and knock is heard.
