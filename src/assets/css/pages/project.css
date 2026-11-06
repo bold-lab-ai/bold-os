@@ -339,8 +339,11 @@
 .detail-grid dd .detail-act .btn-text, .detail-abstract-label .detail-act .btn-text{color:var(--muted);}
 .detail-grid dd:hover .detail-act .btn-text:not(:disabled), .detail-abstract:hover .detail-abstract-label .detail-act .btn-text:not(:disabled),
 .detail-act .btn-text:focus-visible{color:var(--link); text-decoration-color:var(--underline);}
+.detail-abstract-label:hover .detail-act .btn-text:not(:disabled){color:var(--link); text-decoration-color:var(--underline);}
 .detail-act .btn-text:not(:disabled):hover{color:var(--link); text-decoration-color:currentColor;}
 /* Invite someone alone (nothing listed, no form): no room of its own under the names. */
 .detail-grid dd .pj-inv:not(:has(.pj-inv-list, .pj-inv-form, .detail-hint)){margin-top:0;}
 /* The venues, a row like the others (no room of their own around the list). */
 .detail-grid .venue-list{margin:0;}
+/* Between a row's actions: "Set up or Edit", the "or" plain. */
+.detail-or{margin:0 6px; color:var(--muted); font-family:var(--sans); font-size:13px;}

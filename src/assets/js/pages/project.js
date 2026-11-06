@@ -161,7 +161,15 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function keywordLink(k){ return '<a href="projects.html#keyword=' + encodeURIComponent(k) + '">' + esc(k) + '</a>'; }
 
   function missing(){ return '<span class="detail-muted">Not set</span>'; }
-  function row(label, valueHtml, ddAttrs){ return '<dt>' + label + '</dt><dd' + (ddAttrs || '') + '>' + valueHtml + '</dd>'; }
+  // A row; its actions (detail-act: Edit, Set up, Pause, Invite someone, …), wherever in the value they're made,
+  // go together, in order, on its right (project.css), as one choice: "Set up or Edit".
+  function act(html){ return '<span class="detail-act">' + html + '</span>'; }
+  function row(label, valueHtml, ddAttrs){
+    var acts = [];
+    var value = String(valueHtml).replace(/\s*<span class="detail-act">([\s\S]*?)<\/span>/g, function(m, inner){ acts.push(inner.trim()); return ''; });
+    // Several: one choice, "Set up or Edit".
+    return '<dt>' + label + '</dt><dd' + (ddAttrs || '') + '>' + value + (acts.length ? act(acts.join('<span class="detail-or">or</span>')) : '') + '</dd>';
+  }
 
   // The rows edited as a single field: label, the card field, how it shows, and its checks.
   var openLink = function(url){ return '<a href="' + esc(url) + '" target="_blank" rel="noopener">Open</a>'; };
@@ -195,8 +203,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function editButton(what){
     var off = !canEdit() ? NOT_EDITOR : what === 'authors' && authorsLocked() ? AUTHORS_LOCKED : '';
     // A row's action (detail-act): on the right of its row (project.css).
-    return ' <span class="detail-act"><button class="btn-text detail-inline-edit" type="button" data-edit="' + what + '"' +
-      (off ? ' disabled title="' + off + '"' : '') + '>Edit</button></span>';
+    return ' ' + act('<button class="btn-text detail-inline-edit" type="button" data-edit="' + what + '"' +
+      (off ? ' disabled title="' + off + '"' : '') + '>Edit</button>');
   }
 
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
@@ -429,7 +437,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     return ws && (ws.skipped || []).indexOf(key) >= 0 ? ' <span class="detail-muted">\u00b7 skipped when it was registered</span>' : '';
   }
   function wsButton(action, label){
-    return ' <button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (wsBusy || !wsLoaded ? ' disabled' : '') + '>' + label + '</button>';
+    return act('<button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (wsBusy || !wsLoaded ? ' disabled' : '') + '>' + label + '</button>');
   }
 
   // Editing the slides' or notes' link: yours, or (empty) the one BOLD.OS makes.
@@ -467,13 +475,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : missing();
     var deck = ws && (ws.ownDeckUrl || ws.deckUrl), notes = ws && (ws.ownNotesUrl || ws.notesUrl);
     var retry = wsLoaded && !setting && (failed || !ws || !deck)
-      ? ' <button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (failed ? 'Try again' : 'Set up') + '</button>'
+      ? act('<button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (failed ? 'Try again' : 'Set up') + '</button>')
       : '';
     var m = ws && ws.meeting;
     // Chosen but not in Google Calendar yet (the lab's Google account isn't connected, say).
     // Pausing cancels it in Google Calendar and keeps the time; resuming sends a new invitation.
     var pauseBtn = function(action){
-      return ' <button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (action === 'pause' ? 'Pause' : 'Resume') + '</button>';
+      return act('<button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (action === 'pause' ? 'Pause' : 'Resume') + '</button>');
     };
     var meeting = m && ws.pausedAt && ws.group !== 'completed' ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 paused</span>' + pauseBtn('resume')
       : m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 ' + (ws.group === 'completed' ? 'ended with the project' : 'not set up yet') + '</span>'
@@ -916,7 +924,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function presentationsHtml(){
     var off = canTalk() ? '' : ' disabled title="' + NOT_MEMBER + '"';
     var html = '<div class="detail-abstract-label">Presentations' +
-      (editing === 'talk:new' ? '' : ' <button class="btn-text detail-inline-edit" type="button" data-talk="new"' + off + '>+ Add presentation</button>') + '</div>';
+      (editing === 'talk:new' ? '' : act('<button class="btn-text detail-inline-edit" type="button" data-talk="new"' + off + '>+ Add presentation</button>')) + '</div>';
     if (editing === 'talk:new') html += talkFormHtml();
     if (!talks.length && editing !== 'talk:new') return html + missing();
     html += '<ul class="talk-list">' + talks.map(function(t){
