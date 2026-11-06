@@ -119,6 +119,9 @@ fieldset.md-group:first-child{margin-top:0;}
 #people[data-view="grid"] .pp-person-row .member-photo{width:56px; height:56px; margin-top:0; font-size:17px;}
 #people[data-view="grid"] .pp-head{display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 #people[data-view="grid"] .pp-head:has(.pp-choices){white-space:normal;}
+/* The group badge in the same place on every card: the top right, level with the portrait. */
+#people[data-view="grid"] .proj-list li{position:relative;}
+#people[data-view="grid"] .pp-head > .type-badge{position:absolute; top:14px; right:16px; margin:0;}
 #people[data-view="grid"] .proj-meta{display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:1; line-clamp:1; overflow:hidden;}
 #people[data-view="grid"] .proj-meta.pp-interests{-webkit-line-clamp:2; line-clamp:2;}
 #people[data-view="grid"] .pp-links, #people[data-view="grid"] .pp-onboarding{display:none;}
