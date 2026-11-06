@@ -348,7 +348,8 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       const who = String(d.createdBy || '').toLowerCase();
       const to = (await peopleIn(pid, post)).filter((e) => e !== who);
       if (!to.length) return;
-      const url = PAGE + '#post=' + encodeURIComponent(pid);
+      // The reply itself (conversations.js: #post=<post>&msg=<message> opens it, its branches unfolded).
+      const url = PAGE + '#post=' + encodeURIComponent(pid) + '&msg=' + encodeURIComponent(event.params.mid);
       const text = '💬 ' + (d.name || 'Someone') + ' replied in “' + String(post.title || 'a conversation').replace(/[<>|]/g, '') + '”: <' + url + '|read it>.';
       await noteFor(to, { text, href: url, feature: 'conversation-replies', source: 'conversations', about: 'conversation:' + pid });
       for (const e of to) await dmByEmail(SLACK_BOT_TOKEN.value(), e, text, 'conversation-replies', { noNote: true });

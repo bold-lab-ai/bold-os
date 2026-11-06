@@ -346,8 +346,6 @@ footer{
   background:var(--accent); color:var(--on-fill); font-family:var(--sans); font-size:10px; font-weight:600; line-height:16px; text-align:center;}
 .mast-count[hidden]{display:none;}
 /* The bell's dot: something unread in the Inbox (bottom right, so it never covers the number). */
-.mast-dot{position:absolute; bottom:-1px; right:-3px; width:8px; height:8px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 2px var(--paper);}
-.mast-dot[hidden]{display:none;}
 /* A change to this page's row waits. */
 .mast-btn.has-dot::after{content:''; position:absolute; top:-3px; right:-3px; width:8px; height:8px; border-radius:50%; background:var(--accent); border:2px solid var(--paper);}
 .mast-btn:disabled{opacity:.5; cursor:default; background:none; border-color:var(--line); color:var(--ink-soft);}

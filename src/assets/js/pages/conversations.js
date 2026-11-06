@@ -124,6 +124,15 @@
     return '<ol class="bs-run">' + out + '</ol>';
   }
 
+  // Expand all / Collapse all: every message's branches (opened), over the thread; shown when it has any.
+  function branching(p){ return [p].concat(messages[p.id] || []).filter(function(m){ return branchesOf(m.id).length; }).map(function(m){ return m.id; }); }
+  function foldAllHtml(p){
+    var ids = branching(p);
+    if (!ids.length) return '';
+    var all = ids.every(function(id){ return opened[id]; });
+    return '<p class="bs-fold-all"><button type="button" class="btn-text bs-fold-all-btn" data-open="' + (all ? '0' : '1') + '">' + (all ? 'Collapse all' : 'Expand all') + '</button></p>';
+  }
+
   // ---------- the thread's tree, beside it ----------
   // Fixed in the blank space left of the thread (left out where there isn't room): a dot for the post
   // and each message, in the order they were written, top to bottom. A line of the conversation goes
@@ -267,7 +276,7 @@
       var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
       var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
-        '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + columnHtml(p, p.id, head);
+        '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + foldAllHtml(p) + columnHtml(p, p.id, head);
       clampLong();
       drawTree(p);
       if (linkedMsg) { setTimeout(function(){ showLinked(p.id); }, 0); }
@@ -477,6 +486,11 @@
       return;
     }
     if (b.classList.contains('bs-open')) { opened[id] = !opened[id]; render(); return; }
+    if (b.classList.contains('bs-fold-all-btn')) {
+      var on = b.getAttribute('data-open') === '1', fp = postOf(openId);
+      if (fp) branching(fp).forEach(function(x){ opened[x] = on; });
+      render(); return;
+    }
     if (b.classList.contains('bs-reply-btn')) {
       var br = b.getAttribute('data-branch') === '1';
       if (replying === id && branching === br) replying = ''; else { replying = id; branching = br; }

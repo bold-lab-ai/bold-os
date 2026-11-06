@@ -362,3 +362,6 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-line{cursor:default;}
 .bs-line.is-selected{background:color-mix(in srgb, var(--ink) 6%, transparent);}
 @media (max-width:900px){ .bs-tree{display:none;} }
+/* Expand all / Collapse all, under a thread's title (conversations.js foldAllHtml). */
+.bs-fold-all{margin:-4px 0 8px; font-size:12px;}
+.bs-fold-all .btn-text{font-size:12px;}
