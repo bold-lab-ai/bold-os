@@ -729,6 +729,8 @@ service cloud.firestore {
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
           && ('parent' in request.resource.data
             ? request.resource.data.parent is string && exists(/databases/$(database)/documents/guides/$(slug)/comments/$(request.resource.data.parent))
+              // A thread made a conversation goes on there (comment-conversation.js).
+              && !('conversation' in get(/databases/$(database)/documents/guides/$(slug)/comments/$(request.resource.data.parent)).data)
             // On a proposed change: its discussion.
             : 'proposalId' in request.resource.data
             ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/guides/$(slug)/proposals/$(request.resource.data.proposalId))
@@ -908,6 +910,8 @@ service cloud.firestore {
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
           && ('parent' in request.resource.data
             ? request.resource.data.parent is string && exists(/databases/$(database)/documents/handbook/$(slug)/comments/$(request.resource.data.parent))
+              // A thread made a conversation goes on there (comment-conversation.js).
+              && !('conversation' in get(/databases/$(database)/documents/handbook/$(slug)/comments/$(request.resource.data.parent)).data)
             // On a proposed change: its discussion.
             : 'proposalId' in request.resource.data
             ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/handbook/$(slug)/proposals/$(request.resource.data.proposalId))

@@ -34,10 +34,12 @@
   // A message's replies in the order they were written, whatever their votes: a conversation reads in order.
   // (Votes order the posts on the list: Top.)
   // A thread is a tree: each message answers its parent. A Slack thread came in as replies to the post,
-  // one after another: each is read as answering the one before (slack-<n> → slack-<n-1>).
+  // one after another: each is read as answering the one before (slack-<n> → slack-<n-1>); so did a
+  // comment thread made a conversation (cm-<n>, functions/comment-conversation.js).
+  var CHAINED = { slack: 'slack-', comment: 'cm-' };
   var parentOf = function(x){
-    var k = x.source === 'slack' && x.parent === openId && /^slack-(\d+)$/.exec(x.id);
-    if (k && +k[1] > 0 && (messages[openId] || []).some(function(y){ return y.id === 'slack-' + (k[1] - 1); })) return 'slack-' + (k[1] - 1);
+    var pre = CHAINED[x.source], k = pre && x.parent === openId && new RegExp('^' + pre + '(\\d+)$').exec(x.id);
+    if (k && +k[1] > 0 && (messages[openId] || []).some(function(y){ return y.id === pre + (k[1] - 1); })) return pre + (k[1] - 1);
     return x.parent;
   };
   var kids = function(id){ return (messages[openId] || []).filter(function(x){ return parentOf(x) === id; }).sort(function(a, b){ return ms(a.at) - ms(b.at); }); };
@@ -66,6 +68,13 @@
     return '<span class="bs-author">' + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + '</span> · ' + ago(m.at);
   }
   function origin(m){
+    // Made from a comment thread on the BOLDiquette or a guide: where, and a link back to the passage.
+    if (m.source === 'comment' && m.from) {
+      var f = m.from;
+      return '<p class="bs-origin">From a comment thread on ' + esc(f.page || 'a page') + (f.part ? ' › ' + esc(f.part) : '') +
+        (m.broughtBy && m.broughtBy.name ? ', made a conversation by ' + esc(m.broughtBy.name) : '') +
+        (f.url ? ' · <a href="' + esc(f.url) + '">See the passage</a>' : '') + '</p>';
+    }
     if (m.source !== 'slack' || !m.slack) return '';
     var s = m.slack;
     return '<p class="bs-origin">' + (m.private ? '<span class="bs-private" title="Brought in from a private Slack channel: only its members see it here">Private: ' + (s.channelName ? esc(s.channelName) + '’s' : 'the channel’s') + ' members</span> · ' : '') + 'From ' + (s.channelName ? esc(s.channelName) : 'Slack') +

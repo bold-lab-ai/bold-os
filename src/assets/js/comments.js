@@ -251,10 +251,14 @@ window.BoldComments = (function(){
         (row.lost ? '<p class="cm-lost">The text this was on has since changed.</p>' : moved[id] ? '<p class="cm-lost">The text has been edited since; the comment was on:</p>' : '') +
         '<blockquote class="cm-quote">' + esc(String(c.quote || '').length > 160 ? c.quote.slice(0, 160) + '…' : String(c.quote || '')) + '</blockquote>' +
         (id === 'new' ? '' : commentHtml(c) + replies(id).map(function(r){ return commentHtml(r); }).join('')) +
+        // Made a conversation: it goes on there (functions/comment-conversation.js), with no reply box here.
+        (c.conversation ? '<p class="cm-moved">This thread goes on in Conversations. <a href="conversations.html#post=' + encodeURIComponent(c.conversation) + '">Open the conversation</a></p>' +
+          (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') :
         '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
         (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
         '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-send"' + (busy ? ' disabled' : '') + '>' + (id === 'new' ? 'Comment' : 'Reply') + '</button>' +
-          '<button type="button" class="btn-text cm-cancel">Cancel</button></div>' +
+          '<button type="button" class="btn-text cm-cancel">Cancel</button>' +
+          (id === 'new' ? '' : convoButton()) + '</div>') +
         (others.length ? '<p class="cm-more">' + others.length + ' more on this line: ' + others.map(function(o, i){
           return '<button type="button" class="btn-text cm-switch" data-id="' + esc(o) + '">' + (i + 1) + '</button>'; }).join(' ') + '</p>' : '');
       return el;
@@ -351,6 +355,27 @@ window.BoldComments = (function(){
       else if (k === open) send();
     });
 
+    // Make it a conversation: the thread, copied to Conversations with its replies (each by whoever wrote it),
+    // goes on there. Asked first: everyone who sees Conversations hears of it.
+    function convoButton(){
+      if (!BOLD.can('conversations', 'edit')) return '';
+      return '<button type="button" class="btn-text cm-convo"' + (busy ? ' disabled' : '') + ' title="Copy this thread to Conversations, where it goes on">Make it a conversation</button>';
+    }
+    function toConversation(id){
+      var n = replies(id).length;
+      BOLD.confirmAction({ title: 'Make this thread a conversation?', go: 'Make it a conversation', effects: [
+        'Copy it to Conversations' + (n ? ', with its ' + (n === 1 ? 'reply' : n + ' replies') : '') + ', each by whoever wrote it',
+        'Tell everyone who sees Conversations, on their Notifications page',
+        'Close it to replies here: it goes on there'] }).then(function(go){
+        if (!go) return;
+        busy = true; error = ''; changed();
+        return firebase.app().functions('europe-west2').httpsCallable('commentConversation')({ on: opts.ref.parent.id + '/' + opts.ref.id, id: id })
+          .then(function(){ busy = false; changed(); });
+      }).catch(function(err){
+        console.error('[BOLD Comments] making a conversation failed', err);
+        busy = false; error = (err && err.code && err.code !== 'functions/internal' && err.message) || 'Couldn’t make it a conversation — try again.'; changed();
+      });
+    }
     function resolve(id){
       col.doc(id).update({ resolved: true, resolvedBy: me.email, resolvedByName: me.name, resolvedAt: Date.now() }).then(function(){ if (open === id) open = null; changed(); })
         .catch(function(err){ console.error('[BOLD Comments] resolving failed', err); error = 'Couldn’t resolve it — try again.'; changed(); });
@@ -366,7 +391,7 @@ window.BoldComments = (function(){
     }
 
     function click(e){
-      var t = e.target.closest('.cm-icon, .cm-mark, .cm-close, .cm-cancel, .cm-send, .cm-resolve, .cm-delete, .cm-switch, .cm-p-open, .cm-p-send, .cm-p-cancel, .cm-edit, .cm-e-save, .cm-e-cancel');
+      var t = e.target.closest('.cm-icon, .cm-mark, .cm-close, .cm-cancel, .cm-send, .cm-resolve, .cm-delete, .cm-switch, .cm-p-open, .cm-p-send, .cm-p-cancel, .cm-edit, .cm-e-save, .cm-e-cancel, .cm-convo');
       if (!t) return false;
       var pid = t.getAttribute('data-pid');
       if (t.classList.contains('cm-edit')) {
@@ -388,6 +413,7 @@ window.BoldComments = (function(){
       else if (t.classList.contains('cm-mark')) { open = t.getAttribute('data-thread'); error = ''; changed(); }
       else if (t.classList.contains('cm-close') || t.classList.contains('cm-cancel')) { if (open === 'new') pending = null; open = null; error = ''; changed(); }
       else if (t.classList.contains('cm-send')) send();
+      else if (t.classList.contains('cm-convo')) toConversation(open);
       else if (t.classList.contains('cm-resolve')) resolve(t.getAttribute('data-id'));
       else if (t.classList.contains('cm-delete')) remove(t.getAttribute('data-id'));
       else if (t.classList.contains('cm-switch')) { open = t.getAttribute('data-id'); changed(); }

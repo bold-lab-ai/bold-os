@@ -152,6 +152,12 @@ module.exports = function(ctx){
         const id = await asUser(who, 'create', col, { partId: '', proposalId: pid, text: text(), by, at: now });
         return { id };
       }
+      // Make it a conversation (commentConversation): the whole thread, copied to Conversations; it goes on there.
+      case 'to_conversation': {
+        const c = await existing();
+        const r = await act(who, 'commentConversation', { on: pg.col + '/' + pg.slug, id: c.parent || c.id });
+        return Object.assign({}, r, { url: url('conversations.html#post=' + encodeURIComponent(r.id)) });
+      }
       case 'edit': { const c = await existing(); await asUser(who, 'update', col + '/' + c.id, { text: text(), editedAt: now }); return { ok: true }; }
       case 'resolve': { const c = await existing(); await asUser(who, 'update', col + '/' + c.id, { resolved: true, resolvedBy: who.email, resolvedByName: nameOfMe(who), resolvedAt: now }); return { ok: true }; }
       case 'delete': {
@@ -719,9 +725,9 @@ module.exports = function(ctx){
   ];
   const WRITE = [
     { name: 'comments', run: comments,
-      description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change), edit or delete your own, resolve. People tagged or replied to get Slack messages.',
-      inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
-        quote: str('add: words from the part, exactly as written.'), text: str('The comment (Markdown, @Name to tag).'), comment_id: str('reply, edit, resolve, delete.'), proposal_id: str('on_proposal.') }, ['action', 'page']) },
+      description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
+      inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
+        quote: str('add: words from the part, exactly as written.'), text: str('The comment (Markdown, @Name to tag).'), comment_id: str('reply, edit, resolve, delete, to_conversation.'), proposal_id: str('on_proposal.') }, ['action', 'page']) },
     { name: 'proposals', run: proposals,
       description: 'Propose a change to the BOLDiquette, a guide, a skill or a tool: this is how BOLD.OS, and the MCP with it, improves itself (every change is a proposal; a PI or admin other than you accepts it). Actions: propose (with a note on why), withdraw your own, or, for PIs and admins, accept or decline someone else’s. ' +
         'For the BOLDiquette or a guide: kind add, edit or remove a part (read_page). For a skill (page "skill:<name>", get_skill): its new title, description or body (SKILL.md’s instructions), and its files (set_files, remove_files, or all of them in files); a new name proposes a new skill. ' +

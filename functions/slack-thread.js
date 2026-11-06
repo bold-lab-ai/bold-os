@@ -327,10 +327,11 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
   });
 
   // A reply's post keeps count of its replies (clients can't change it: firestore.rules).
-  // Who's in a conversation: whoever started it (or brought it in from Slack), and whoever replied on BOLD.OS.
+  // Who's in a conversation: whoever started it (or brought it in), and whoever replied on BOLD.OS, or in the
+  // comment thread it was made from (comment-conversation.js).
   async function peopleIn(pid, post){
     const out = new Set([String(post.createdBy || (post.broughtBy || {}).email || '').toLowerCase()]);
-    (await db.collection('conversations').doc(pid).collection('messages').where('source', '==', 'site').get()).docs
+    (await db.collection('conversations').doc(pid).collection('messages').where('source', 'in', ['site', 'comment']).get()).docs
       .forEach((m) => out.add(String(m.data().createdBy || '').toLowerCase()));
     out.delete('');
     return Array.from(out);
@@ -339,7 +340,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
   // by a Slack DM (pilot conversation-replies).
   const onConversationMessage = onDocumentCreated({ document: 'conversations/{pid}/messages/{mid}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
     const d = event.data && event.data.data();
-    if (!d || d.source === 'slack') return;   // a thread brought in is counted as it's saved
+    if (!d || d.source === 'slack' || d.source === 'comment') return;   // a thread brought in is counted as it's saved
     const pid = event.params.pid, ref = db.collection('conversations').doc(pid);
     await ref.set({ replies: FieldValue.increment(1) }, { merge: true }).catch(() => {});
     if (!noteFor) return;
@@ -383,10 +384,13 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
         ((await rolesEmails('pis')) || []).concat((await rolesEmails('admins')) || []).forEach((e) => all.add(String(e).toLowerCase()));
         for (const e of all) if (await access.can(e, 'conversations', 'view')) to.push(e);
       }
-      to = to.filter((e) => e && e !== starter);
+      const bringer = String((d.broughtBy || {}).email || '').toLowerCase();
+      to = to.filter((e) => e && e !== starter && e !== bringer);
       const url = PAGE + '#post=' + encodeURIComponent(pid);
-      const by = d.source === 'slack' ? (d.broughtBy || {}).name || 'Someone' : d.name || 'Someone';
-      const text = '🗨️ New conversation: “' + String(d.title || '').replace(/[<>|]/g, '') + '”, ' + (d.source === 'slack' ? 'brought in from ' + ((d.slack || {}).channelName || 'Slack') + ' by ' : 'started by ') + by + '.';
+      const by = d.source === 'slack' || d.source === 'comment' ? (d.broughtBy || {}).name || 'Someone' : d.name || 'Someone';
+      const whence = d.source === 'slack' ? 'brought in from ' + ((d.slack || {}).channelName || 'Slack') + ' by '
+        : d.source === 'comment' ? 'made from a comment thread on ' + String((d.from || {}).page || 'a page').replace(/[<>|]/g, '') + ' by ' : 'started by ';
+      const text = '🗨️ New conversation: “' + String(d.title || '').replace(/[<>|]/g, '') + '”, ' + whence + by + '.';
       await noteFor(to, { text, href: url, feature: 'conversation-new', source: 'conversations', about: 'conversation:' + pid, ping: false });
     } catch (err){ logger.warn('Telling people of a new conversation failed', { error: String(err && err.message || err) }); }
   });
