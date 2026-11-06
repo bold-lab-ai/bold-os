@@ -756,9 +756,9 @@
     var btn = document.getElementById('themeToggle'), root = document.documentElement;
     if (!btn) return;
     var show = function(){
-      var dark = root.getAttribute('data-theme') === 'dark';
+      var dark = root.getAttribute('data-theme') === 'dark', lamp = root.getAttribute('data-theme') === 'lamp';
       btn.setAttribute('aria-pressed', String(dark));
-      btn.title = dark ? 'Switch to the light theme' : 'Switch to the dark theme';
+      btn.title = lamp ? 'Paper under a lamp. Click to go back.' : dark ? 'Switch to the light theme' : 'Switch to the dark theme';
     };
     var set = function(dark){
       if (dark) root.setAttribute('data-theme', 'dark'); else root.removeAttribute('data-theme');
@@ -768,18 +768,19 @@
     var clicks = [];
     btn.addEventListener('click', function(e){
       clicks = clicks.filter(function(t){ return e.timeStamp - t < 4000; }).concat(e.timeStamp);
-      if (clicks.length >= 10) {   // easter egg (eggs.js): paper under a lamp, until the next click
+      if (clicks.length >= 10) {   // easter egg (eggs.js): paper under a lamp, kept until the next click
         clicks = [];
         root.setAttribute('data-theme', 'lamp');
-        btn.setAttribute('aria-pressed', 'false');
-        btn.title = 'Paper under a lamp. Click to go back.';
+        show();
+        try { localStorage.setItem('boldTheme', 'lamp'); } catch (e){}
         return;
       }
-      var dark = root.getAttribute('data-theme') !== 'dark';
+      // From the lamp, back to light.
+      var dark = root.getAttribute('data-theme') !== 'dark' && root.getAttribute('data-theme') !== 'lamp';
       set(dark);
       try { localStorage.setItem('boldTheme', dark ? 'dark' : 'light'); } catch (e){}
     });
-    window.addEventListener('storage', function(e){ if (e.key === 'boldTheme') set(e.newValue === 'dark'); });
+    window.addEventListener('storage', function(e){ if (e.key !== 'boldTheme') return; if (e.newValue === 'lamp') { root.setAttribute('data-theme', 'lamp'); show(); } else set(e.newValue === 'dark'); });
   }
 
   // Called right after the masthead markup.
