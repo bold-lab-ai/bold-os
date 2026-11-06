@@ -203,7 +203,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // The second tab is named for what it holds (the project's meeting, slides and notes, and
   // its talks); its hash stays #presentations, so links keep working.
   // Conversations: Conversations' own forum (conversations-forum.js), only those about this project.
-  var TABS = [['overview', 'Overview'], ['presentations', 'Meetings'], ['paper', 'Papers'], ['conversations', 'Conversations']];
+  // (Papers, its venues, Overleaf and arXiv, is on Overview since 2026-11-06: &tab=paper opens Overview.)
+  var TABS = [['overview', 'Overview'], ['presentations', 'Meetings'], ['conversations', 'Conversations']];
   // A fourth, Board, on a project with a board (pages/project-work.js).
   function hasBoard(){ return !!(ws && ws.work && ws.work.on); }
   // Named Board; its hash stays #…&tab=work (links keep working), and &tab=board works too.
@@ -248,6 +249,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
         '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
       html += simpleRow('compute');
+      // The write-up and its submission (once the Papers tab); not while it's only proposed (#226).
+      if (!(card.proposal && card.proposal.status !== 'approved')) html += row('Venues', venuesHtml()) + simpleRow('overleaf') + simpleRow('arxiv');
       html += row('Submitted by', card.submittedBy && card.submittedBy.name
         ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
         : missing());
@@ -270,11 +273,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     // Its meeting, slides and notes; talks about the project; the pitch deck is the card's own (the board uses it).
     presentations: function(){
       return '<dl class="detail-grid">' + workspaceRows() + simpleRow('pitch') + '</dl>' + presentationsHtml();
-    },
-    // The write-up and its submission.
-    paper: function(){
-      return '<dl class="detail-grid">' + row('Venues', venuesHtml()) +
-        simpleRow('overleaf') + simpleRow('arxiv') + '</dl>';
     },
     // Its work board: the board keeps its own drawing (project-work.js), put back in here on each render.
     work: function(){ return '<div id="workMount"></div>'; },
