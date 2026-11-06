@@ -96,14 +96,70 @@
     }
     if (!rain) rain = startRain();
   }
-  // `redpill` first opens a terminal that talks: a few lines, then the choice, answered at a prompt.
-  // red enters the Matrix, blue (or exit, or Esc) closes it; a few other words have answers of their own.
+  // The conversation's brain: what it says back to what you type. Scripted for now, and made to be
+  // swapped for a model later (BOLD-LLM): set BoldEggs.brain = function(said, st){ … } returning a reply,
+  // or a Promise of one. A reply is { lines: [...], then: 'prompt' | 'game' | 'matrix' | 'close' | 'rabbit' };
+  // st is the conversation's memory (stage, name, turns), kept between turns.
+  var REPLIES = ['Denied by the Firestore rules of this reality.', 'The Oracle is in a meeting. Try the Service desk.',
+    'That is a hyperparameter, not a choice.', 'Interesting. Reviewer 2 disagrees.', 'Your request has been numbered. Nobody will read it.',
+    'Have you tried a larger batch size?', 'I can only show you the door.'];
+  var WORDS = ['gradient', 'softmax', 'dropout', 'baseline', 'ablation', 'tensor', 'epoch', 'rebuttal', 'arxiv', 'seed', 'attention', 'kernel'];
+  function pick(a){ return a[Math.floor(Math.random() * a.length)]; }
+  function scripted(said, st){
+    var w = said.toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+    var R = function(lines, then){ return { lines: lines, then: then || 'prompt' }; };
+    var name = st.name || 'BOLD';
+    st.turns = (st.turns || 0) + 1;
+    if (/^(exit|quit|bye|logout)$/.test(w)) return R(['There is no exit.', 'Fine. There is.'], 'close');
+    if (w === 'help') return R(['Try: who’s there · red · blue · why me · who are you · where am i · what time is it · rabbit · spoon · exit']);
+    if (/^(red|red pill|the red one|take the red pill|i take the red pill)$/.test(w)) {
+      st.stage = 'game';
+      return R(['Good.', 'Before you go in, show me you can move.', 'Type each word before it fades. Three of them.'], 'game');
+    }
+    if (/^(blue|blue pill|the blue one|take the blue pill|i take the blue pill)$/.test(w)) return R(['Back to your desk, then.', 'The deadline is still real.'], 'close');
+    if (st.stage === 'knock') {
+      if (/whos there|who is there|who is it|who/.test(w)) { st.stage = 'knock2'; return R(['Reviewer 2.']); }
+      return R(['(You’re supposed to say: who’s there?)']);
+    }
+    if (st.stage === 'knock2') {
+      st.stage = 'choice';
+      if (/reviewer 2 who|reviewer two who|who$/.test(w)) return R(['Reviewer 2, who thinks you should have cited [47].', 'Now. Red pill, or blue pill?']);
+      return R(['Reviewer 2 doesn’t wait for the punchline either.', 'Red pill, or blue pill?']);
+    }
+    if (st.stage === 'retry') {
+      if (/^(y|yes|again|ok|okay|sure)$/.test(w)) { st.stage = 'game'; return R(['Again. Faster.'], 'game'); }
+      return R(['Then wake up at your desk.'], 'close');
+    }
+    if (st.stage === 'seed') {
+      st.stage = 'choice';
+      if (/^(y|yes|i do|of course)/.test(w)) return R(['Then you’ll never reproduce anything.', 'Red, or blue?']);
+      if (/^(n|no|i dont|never)/.test(w)) return R(['Good. Neither does Reviewer 2.', 'Red, or blue?']);
+      return R(['That wasn’t a yes or a no. Red, or blue?']);
+    }
+    if (/^(whoami|who am i)$/.test(w)) return R([st.name ? 'You are ' + st.name + '. Or so the Slack sign-in says.' : 'Nobody. You aren’t signed in.']);
+    if (/who are you/.test(w)) return R(['Someone who has been reading your reviews for a long time.', 'Some call me BOLD-LLM. Not yet.']);
+    if (/why me|why/.test(w)) return R(['Because it’s ' + clock() + ', and you’re still on BOLD.OS.']);
+    if (/where am i|where is this/.test(w)) return R(['On ' + document.title.replace(/ \| BOLD.*$/, '') + '.', 'Or that’s what it looks like.']);
+    if (/time/.test(w)) return R([clock() + '.', 'Of course it is.']);
+    if (/what is (this|the matrix|bold ?os)|matrix/.test(w)) return R(['A website. A lab. A loss function you can’t see.', 'Red pill, and you’ll see it.']);
+    if (/rabbit/.test(w)) return R(['Follow it.'], 'rabbit');
+    if (/spoon/.test(w)) return R(['There is no baseline.']);
+    if (/^(hi|hello|hey)\b/.test(w)) return R(['Hello, ' + name + '.', 'We don’t have much time.']);
+    // Every so often it asks something back, and it keeps you coming back to the choice.
+    if (!st.asked && st.turns >= 3) { st.asked = true; st.stage = 'seed'; return R(['Do you believe in random seeds, ' + name + '?']); }
+    st.lost = (st.lost || 0) + 1;
+    return R(st.lost % 3 === 0 ? ['Focus, ' + name + '.', 'Red pill, or blue pill?'] : [pick(REPLIES)]);
+  }
+  function clock(){ var d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+  function gameOutcome(hits, st){
+    if (hits === 3) return { lines: ['Faster than Reviewer 2.', 'Loading the construct...'], then: 'matrix' };
+    if (hits) return { lines: [hits + ' of 3. Not bad. Not fast.', 'Loading the construct anyway...'], then: 'matrix' };
+    st.stage = 'retry';
+    return { lines: ['Too slow.', 'Again? (yes / no)'], then: 'prompt' };
+  }
   function firstName(){
     try { var u = BOLD.getAuth() && BOLD.getAuth().currentUser; return u && u.displayName ? u.displayName.split(' ')[0] : ''; } catch (e){ return ''; }
   }
-  var REPLIES = ['Denied by the Firestore rules of this reality.', 'The Oracle is in a meeting. Try the Service desk.',
-    'That is a hyperparameter, not a choice.', 'Interesting. Reviewer 2 disagrees.', 'Your request has been numbered. Nobody will read it.',
-    'Have you tried a larger batch size?', 'I can only show you the door. Red or blue?'];
   function converse(){
     if (document.querySelector('.mx-term')) return;
     var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -113,26 +169,28 @@
       '<input type="text" autocomplete="off" spellcheck="false" aria-label="Your answer"></form>';
     document.body.appendChild(term);
     var log = term.querySelector('.mx-log'), form = term.querySelector('.mx-prompt'), input = form.querySelector('input'), queue = [], busy = false;
-    function close(){ term.classList.add('is-gone'); setTimeout(function(){ term.remove(); }, 600); }
+    var st = { stage: 'knock', name: firstName() }, game = null, thinking = false;
+    function close(){ if (game && game.timer) clearTimeout(game.timer); term.classList.add('is-gone'); setTimeout(function(){ term.remove(); }, 600); }
     // As in the film: lines typed one under another at a person's uneven pace, the block cursor on the
     // line being typed; each message clears the screen first. Then the prompt. A line is its text, or
-    // [text, ms] to hold it that long before the next (the cursor blinking on it); opts.lead is a blank
-    // screen with only the cursor before the first line.
+    // [text, ms] to hold it that long before the next (the cursor blinking on it). opts.lead: a blank
+    // screen with only the cursor first; opts.instant: shown at once (the game's words).
     function say(lines, then, opts){ queue.push({ lines: lines, then: then, opts: opts || {} }); if (!busy) next(); }
     function next(){
       var job = queue.shift();
       if (!job) { busy = false; form.hidden = false; input.focus(); return; }
       busy = true; form.hidden = true;
       log.innerHTML = '';
-      var first = null;
-      if (job.opts.lead && !still) { first = document.createElement('p'); log.appendChild(first); }   // only the cursor, blinking
-      setTimeout(function(){ line(0); }, still ? 0 : job.opts.lead || 0);
+      var quick = still || job.opts.instant, first = null;
+      if (job.opts.lead && !quick) { first = document.createElement('p'); log.appendChild(first); }   // only the cursor, blinking
+      setTimeout(function(){ line(0); }, quick ? 0 : job.opts.lead || 0);
       function line(k){
-        if (k >= job.lines.length) { setTimeout(function(){ if (job.then) job.then(); else next(); }, still ? 0 : 900); return; }
+        // Done: hand over to `then` (free to say more, or to show the prompt with next()), else the prompt.
+        if (k >= job.lines.length) { setTimeout(function(){ if (job.then) { busy = false; job.then(); } else next(); }, quick ? 0 : 900); return; }
         var l = job.lines[k], text = typeof l === 'string' ? l : l[0], hold = typeof l === 'string' ? 1100 : l[1], i = 0;
         var p = k === 0 && first ? first : document.createElement('p');
         if (!p.parentNode) log.appendChild(p);
-        if (still) { p.textContent = text; line(k + 1); return; }
+        if (quick) { p.textContent = text; line(k + 1); return; }
         (function key(){
           p.textContent = text.slice(0, ++i);
           if (i >= text.length) { setTimeout(function(){ line(k + 1); }, hold); return; }
@@ -142,28 +200,57 @@
         })();
       }
     }
-    function echo(){}
+    // What a reply's `then` does once its lines are typed.
+    function reply(r){
+      var after = { game: play, matrix: function(){ close(); matrix(true); }, close: close,
+        rabbit: function(){ location.href = '404.html#rabbit'; } }[r.then];   // the loss curve; served locally too
+      say(r.lines || [], after || null);
+    }
+    // The reflex test: three words, each to be typed before it fades.
+    var LIMIT = still ? 8000 : 4000;
+    function play(){
+      var pool = WORDS.slice(), words = [];
+      while (words.length < 3) words.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
+      game = { words: words, i: 0, hits: 0 };
+      round();
+    }
+    function round(){
+      if (game.i >= game.words.length) { var h = game.hits; game = null; reply(gameOutcome(h, st)); return; }
+      var word = game.words[game.i];
+      say([word], function(){
+        var p = log.lastChild;
+        if (p) { p.classList.add('mx-word'); p.style.animationDuration = LIMIT + 'ms'; }
+        game.word = word;
+        game.timer = setTimeout(function(){ if (game && game.word === word) { game.word = null; game.i++; say(['missed'], function(){ setTimeout(round, 500); }, { instant: true }); } }, LIMIT);
+        next();
+      }, { instant: true });
+    }
     form.addEventListener('submit', function(e){
       e.preventDefault();
-      var said = input.value.trim(), w = said.toLowerCase().replace(/[^a-z ]/g, '').trim();
+      var said = input.value.trim();
       input.value = '';
-      if (!said) return;
-      echo(said);
-      if (/^(red|red pill|the red one|take the red pill)$/.test(w)) say(['Good.', 'Loading the construct...'], function(){ close(); matrix(true); });
-      else if (/^(blue|blue pill|the blue one|take the blue pill)$/.test(w)) say(['Back to your desk, then. The deadline is still real.'], close);
-      else if (/^(exit|quit|bye|wake up|logout)$/.test(w)) say(['There is no exit. Fine, there is.'], close);
-      else if (w === 'help') say(['red · blue · whoami · rabbit · spoon · exit']);
-      else if (w === 'whoami') { var n = firstName(); say([n ? 'You are ' + n + '. Or so the Slack sign-in says.' : 'Nobody. You aren’t signed in.']); }
-      else if (/rabbit/.test(w)) say(['Follow it.'], function(){ location.href = '404.html#rabbit';   // the loss curve; served locally too });
-      else if (/spoon/.test(w)) say(['There is no baseline.']);
-      else say([REPLIES[Math.floor(Math.random() * REPLIES.length)]]);
+      if (!said || thinking) return;
+      if (game) {
+        if (!game.word) return;
+        clearTimeout(game.timer);
+        var hit = said.toLowerCase() === game.word;
+        if (hit) game.hits++;
+        game.word = null; game.i++;
+        say([hit ? 'yes' : 'no'], function(){ setTimeout(round, 500); }, { instant: true });
+        return;
+      }
+      // The brain may answer at once or later (a model): the prompt waits on it.
+      var brain = (window.BoldEggs && BoldEggs.brain) || scripted;
+      thinking = true; form.hidden = true;
+      Promise.resolve().then(function(){ return brain(said, st); }).then(function(r){ thinking = false; reply(r || { lines: ['...'] }); },
+        function(err){ thinking = false; try { console.warn('[BOLD] brain', err); } catch (x){} reply({ lines: ['The signal is breaking up. Try again.'] }); });
     });
     term.addEventListener('keydown', function(e){ if (e.key === 'Escape') { e.stopPropagation(); close(); } });
-    var n = firstName();
-    var who = n || 'BOLD';
-    // The film's beats: a blank screen first, each line left to sink in, a short one after the knock.
-    say([['Wake up, ' + who + '...', 3500], ['BOLD.OS has you...', 3500], ['Follow the white rabbit.', 3000], ['Knock, knock, ' + who + '.', 2500]], null, { lead: 1500 });
-    say(['Red pill, or blue pill?', '(red, blue, or help)']);
+    // A knock at the door: the screen thuds twice.
+    function knock(){ if (!still) { term.classList.add('is-knocked'); setTimeout(function(){ term.classList.remove('is-knocked'); }, 700); } next(); }
+    var who = st.name || 'BOLD';
+    // The film's beats: a blank screen first, each line left to sink in; after the knock, it's your turn.
+    say([['Wake up, ' + who + '...', 3500], ['BOLD.OS has you...', 3500], ['Follow the white rabbit.', 3000], ['Knock, knock, ' + who + '.', 400]], knock, { lead: 1500 });
   }
   function startRain(){
     var cv = document.createElement('canvas'), cx = cv.getContext('2d');
@@ -235,7 +322,7 @@
   }
   setInterval(wakeCheck, 5000);
   // To try it at another hour, in the console: BoldEggs.wake('dot') or BoldEggs.wake('idle').
-  window.BoldEggs = { wake: function(how){ if (how === 'idle') converse(); else callDot(); } };
+  window.BoldEggs = { wake: function(how){ if (how === 'idle') converse(); else callDot(); }, brain: null };
 
   function start(){ watch(); birthday(); if (root.classList.contains('is-matrix')) matrix(true); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
