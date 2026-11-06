@@ -114,31 +114,35 @@
     document.body.appendChild(term);
     var log = term.querySelector('.mx-log'), form = term.querySelector('.mx-prompt'), input = form.querySelector('input'), queue = [], busy = false;
     function close(){ term.classList.add('is-gone'); setTimeout(function(){ term.remove(); }, 600); }
-    // Lines type themselves out, one after another; then the prompt.
-    function say(lines, then){ queue.push({ lines: lines, then: then }); if (!busy) next(); }
+    // As in the film: lines typed one under another at a person's uneven pace, the block cursor on the
+    // line being typed; each message clears the screen first. Then the prompt.
+    function say(lines, then, keep){ queue.push({ lines: lines, then: then, keep: keep }); if (!busy) next(); }
     function next(){
       var job = queue.shift();
       if (!job) { busy = false; form.hidden = false; input.focus(); return; }
       busy = true; form.hidden = true;
+      if (!job.keep) log.innerHTML = '';
       (function line(k){
-        if (k >= job.lines.length) { if (job.then) job.then(); else next(); return; }
+        if (k >= job.lines.length) { setTimeout(function(){ if (job.then) job.then(); else next(); }, still ? 0 : 900); return; }
         var p = document.createElement('p'), text = job.lines[k], i = 0;
         log.appendChild(p);
-        if (still) { p.textContent = text; setTimeout(function(){ line(k + 1); }, 250); return; }
-        var t = setInterval(function(){
+        if (still) { p.textContent = text; line(k + 1); return; }
+        (function key(){
           p.textContent = text.slice(0, ++i);
-          if (i >= text.length) { clearInterval(t); setTimeout(function(){ line(k + 1); }, 550); }
-        }, 45);
+          if (i >= text.length) { setTimeout(function(){ line(k + 1); }, 1100); return; }
+          var c = text[i - 1];
+          setTimeout(key, /[.,?]/.test(c) ? 260 + Math.random() * 200 : c === ' ' ? 90 + Math.random() * 80 : 45 + Math.random() * 90);
+        })();
       })(0);
     }
-    function echo(text){ var p = document.createElement('p'); p.className = 'mx-you'; p.textContent = '> ' + text; log.appendChild(p); }
+    function echo(){}
     form.addEventListener('submit', function(e){
       e.preventDefault();
       var said = input.value.trim(), w = said.toLowerCase().replace(/[^a-z ]/g, '').trim();
       input.value = '';
       if (!said) return;
       echo(said);
-      if (/^(red|red pill|the red one|take the red pill)$/.test(w)) say(['Good.', 'Loading the construct…'], function(){ close(); matrix(true); });
+      if (/^(red|red pill|the red one|take the red pill)$/.test(w)) say(['Good.', 'Loading the construct...'], function(){ close(); matrix(true); });
       else if (/^(blue|blue pill|the blue one|take the blue pill)$/.test(w)) say(['Back to your desk, then. The deadline is still real.'], close);
       else if (/^(exit|quit|bye|wake up|logout)$/.test(w)) say(['There is no exit. Fine, there is.'], close);
       else if (w === 'help') say(['red · blue · whoami · rabbit · spoon · exit']);
@@ -149,8 +153,9 @@
     });
     term.addEventListener('keydown', function(e){ if (e.key === 'Escape') { e.stopPropagation(); close(); } });
     var n = firstName();
-    say(['Wake up, ' + (n || 'BOLD') + '…', 'You’ve been training in a simulation.', 'Your loss isn’t real. Your reviewers are.',
-      'Red pill: see how deep the gradient goes. Blue pill: back to your desk.', '(Type red or blue. Or help.)']);
+    var who = n || 'BOLD';
+    say(['Wake up, ' + who + '...', 'BOLD.OS has you...', 'Follow the white rabbit.', 'Knock, knock, ' + who + '.']);
+    say(['Red pill, or blue pill?', '(red, blue, or help)']);
   }
   function startRain(){
     var cv = document.createElement('canvas'), cx = cv.getContext('2d');

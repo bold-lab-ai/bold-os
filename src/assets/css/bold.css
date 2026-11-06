@@ -1069,15 +1069,24 @@ html:root.is-matrix img, html:root.is-matrix video{filter:grayscale(1) sepia(1) 
   font:clamp(22px, 4vw, 40px) ui-monospace, Menlo, monospace; text-shadow:0 0 8px #3cff7a; transition:opacity .8s; pointer-events:none;}
 .mx-wake::after{content:'▋'; animation:mx-blink 1s steps(1) infinite; margin-left:4px;}
 .mx-wake.is-gone{opacity:0;}
-.mx-term{display:block; padding:max(12vh, 48px) 16px 32px; pointer-events:auto; overflow:auto; font-size:clamp(16px, 2.2vw, 20px); line-height:1.6;}
+/* The conversation, as the film's screen: dark green-black, bold Courier in pale phosphor green with a soft
+   glow, a left-aligned block in the upper middle, faint scanlines. */
+.mx-term{display:block; pointer-events:auto; overflow:auto; padding:min(30vh, 220px) 16px 32px max(16px, 16vw);
+  background:radial-gradient(ellipse at 40% 40%, #0f2219 0%, #08140e 70%, #040a07 100%); color:#b4f0bd;
+  font:700 clamp(18px, 2.6vw, 30px)/1.5 'Courier New', Courier, monospace; letter-spacing:.02em;
+  text-shadow:0 0 2px rgba(180,240,189,.9), 0 0 10px rgba(110,230,140,.45);}
+.mx-term::before{content:''; position:fixed; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);}
 .mx-term::after{content:none;}
-.mx-log, .mx-prompt{max-width:680px; margin:0 auto;}
-.mx-log p{margin:0 0 6px;}
-.mx-log p:last-child:not(.mx-you)::after{content:'▋'; animation:mx-blink 1s steps(1) infinite; margin-left:3px;}
-.mx-you{color:#9dffbd;}
-.mx-prompt{display:flex; gap:10px; margin-top:12px;}
+.mx-log, .mx-prompt{max-width:900px;}
+.mx-log p{margin:0; white-space:pre-wrap;}
+.mx-log p:last-child::after{content:''; display:inline-block; width:.6em; height:1.05em; margin-left:2px; vertical-align:-.15em;
+  background:#b4f0bd; box-shadow:0 0 8px rgba(110,230,140,.6); animation:mx-blink 1s steps(1) infinite;}
+/* With the prompt showing, its caret is the cursor. */
+.mx-term:has(.mx-prompt:not([hidden])) .mx-log p:last-child::after{display:none;}
+.mx-prompt{display:flex; gap:.6em; margin-top:1em;}
 .mx-prompt[hidden]{display:none;}
-.mx-prompt input{flex:1; min-width:0; background:transparent; border:0; outline:0; color:#3cff7a; font:inherit; text-shadow:inherit; caret-color:#3cff7a;}
+.mx-prompt input{flex:1; min-width:0; background:transparent; border:0; outline:0; color:inherit; font:inherit; letter-spacing:inherit; text-shadow:inherit; caret-color:#b4f0bd;}
 @keyframes mx-blink{50%{opacity:0;}}
 /* 01:24 on the homepage: the wordmark's dot calls you. */
 .wordmark span.is-calling, .home-dot.is-calling{color:#2bd65f; opacity:1; cursor:pointer; text-shadow:0 0 6px #3cff7a; animation:mx-call 1.1s ease-in-out infinite;}
