@@ -31,8 +31,8 @@ canvas{display:block; width:100%; height:240px; margin:28px 0 8px; cursor:pointe
 a{color:var(--accent);}
 </style>
 </head><body><main>
-<p class="kicker">404 · Not found</p>
-<h1>You’ve converged to a page that doesn’t exist.</h1>
+<p class="kicker" id="kicker">404 · Not found</p>
+<h1 id="title">You’ve converged to a page that doesn’t exist.</h1>
 <p>Try a higher learning rate, or start again from <a href="index.html" id="home">BOLD.OS</a>.</p>
 <canvas id="loss" aria-label="A ball rolling down a loss curve into a local minimum" role="img"></canvas>
 <p class="hint" id="hint">Click the curve to drop the ball somewhere else.</p>
@@ -43,6 +43,12 @@ a{color:var(--accent);}
   var p = location.pathname, i = p.indexOf('/bold-os/');
   document.getElementById('home').href = i >= 0 ? p.slice(0, i + 9) + 'index.html' : '/';
 
+  // Followed the white rabbit (the Matrix conversation, eggs.js): the same curve, its own words.
+  if (location.hash === '#rabbit') {
+    document.getElementById('kicker').textContent = 'Down the rabbit hole';
+    document.getElementById('title').textContent = 'You followed the rabbit. It went all the way down.';
+    document.title = 'Down the rabbit hole | BOLD Lab';
+  }
   var cv = document.getElementById('loss'), cx = cv.getContext('2d'), hint = document.getElementById('hint');
   var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
   // A loss with several minima on [0, 1] (local ones near 0.18, 0.68 and the right edge); GLOBAL is the lowest.

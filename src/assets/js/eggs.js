@@ -154,7 +154,7 @@
       else if (/^(exit|quit|bye|wake up|logout)$/.test(w)) say(['There is no exit. Fine, there is.'], close);
       else if (w === 'help') say(['red · blue · whoami · rabbit · spoon · exit']);
       else if (w === 'whoami') { var n = firstName(); say([n ? 'You are ' + n + '. Or so the Slack sign-in says.' : 'Nobody. You aren’t signed in.']); }
-      else if (/rabbit/.test(w)) say(['Follow it.'], function(){ location.href = 'down-the-rabbit-hole.html'; });
+      else if (/rabbit/.test(w)) say(['Follow it.'], function(){ location.href = '404.html#rabbit';   // the loss curve; served locally too });
       else if (/spoon/.test(w)) say(['There is no baseline.']);
       else say([REPLIES[Math.floor(Math.random() * REPLIES.length)]]);
     });
