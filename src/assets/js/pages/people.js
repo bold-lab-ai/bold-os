@@ -34,10 +34,11 @@
     var sid = slackIds[String(m.email || '').toLowerCase()];
     var name = sid ? '<a class="proj-title" href="person.html?id=' + encodeURIComponent(sid) + '">' + esc(m.name || m.email) + '</a>' : '<span class="proj-title">' + esc(m.name || m.email) + '</span>';
     var photo = '<span class="member-photo" data-id="' + esc(sid || '') + '" data-name="' + esc(m.name || m.email) + '">' + esc(BOLD.photo.initials(m.name || m.email)) + '</span>';
-    return '<li><div class="pp-person-row">' + photo + '<div>' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag + (m.test ? ' <span class="badge">Your test account</span>' : '') +
-      (meta ? '<span class="proj-meta">' + meta + '</span>' : '') +
+    // pp-head: the name line; pp-meta, pp-interests, pp-links: the lines under it (the grid's cards show the first two).
+    return '<li><div class="pp-person-row">' + photo + '<div><span class="pp-head">' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag + (m.test ? ' <span class="badge">Your test account</span>' : '') + '</span>' +
+      (meta ? '<span class="proj-meta pp-meta" title="' + esc([m.institution, m.basedIn, m.contact ? 'with ' + m.contact : ''].filter(Boolean).join(' · ')) + '">' + meta + '</span>' : '') +
       (m.interests ? '<span class="proj-meta pp-interests" title="' + esc(m.interests) + '">' + esc(m.interests) + '</span>' : '') +
-      (l ? '<span class="proj-meta">' + l + '</span>' : '') +
+      (l ? '<span class="proj-meta pp-links">' + l + '</span>' : '') +
       (staff && onboarding[String(m.email || '').toLowerCase()] ? '<span class="proj-meta pp-onboarding">' + onboarding[String(m.email || '').toLowerCase()] + '</span>' : '') + '</div></div></li>';
   }
 
