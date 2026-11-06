@@ -22,6 +22,8 @@
 {% endif %}<script src="assets/js/bold.js?v={{ build.stamp }}"></script>
 {% if site.testMode %}<script src="assets/js/test-mode.js?v={{ build.stamp }}"></script>
 {% endif %}
+{% if not bare %}<script src="assets/js/profile-photo.js?v={{ build.stamp }}"></script>
+{% endif %}
 </head>
 <body>
 {% if emulatorWarning %}

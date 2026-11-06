@@ -118,6 +118,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Portrait metadata is server-managed. Its visibility follows People.
+    match /profilePhotos/{slackId} {
+      allow read: if may('people', 'view');
+      allow write: if false;
+    }
+
     // Joining BOLD (functions/index.js "Joining BOLD"): requests come in through
     // requestToJoin and are decided through decideJoinRequest, so clients write
     // neither; PIs and admins read them (join-requests.html).

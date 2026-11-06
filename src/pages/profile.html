@@ -9,8 +9,15 @@ permalink: "profile.html"
 ---
 <div class="hero">
   <div class="profile-head">
-    <img class="profile-photo" id="profilePhoto" alt="" hidden>
+    <span class="member-photo profile-photo" id="profilePhoto" aria-label="Profile picture"></span>
     <h1 id="profileName">Profile</h1>
+  </div>
+  <div class="photo-controls" id="photo">
+    <input type="file" id="photoFile" accept="image/jpeg,image/png,image/webp" hidden>
+    <button type="button" class="btn-text" id="replacePhoto" disabled title="Checking your access">Replace photo</button>
+    <button type="button" class="btn-text" id="removePhoto" disabled title="Checking your access">Remove photo</button>
+    <button type="button" class="btn-text" id="slackPhoto" disabled title="Checking your access">Use my Slack photo</button>
+    <span id="photoMessage" role="status"></span>
   </div>
   <div class="pf-progress" id="pfProgress" hidden></div>
   <p class="pf-text pf-onboarding" id="pfOnboarding" hidden></p>

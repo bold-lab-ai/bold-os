@@ -401,7 +401,7 @@
 
   /* ---------- Firebase + auth ---------- */
 
-  var app = null, auth = null, authReady = false, current = null, listeners = [];
+  var app = null, auth = null, authReady = false, current = null, listeners = [], photoUid = null;
 
   BOLD.getApp = function(){
     if (app) return app;
@@ -435,8 +435,10 @@
     } catch (e){ auth = null; return null; }
     auth.onAuthStateChanged(function(user){
       current = user; authReady = true; skipConfirm = null;
+      var nextPhotoUid = user && user.uid || null;
+      if (photoUid !== nextPhotoUid) { photoUid = nextPhotoUid; if (BOLD.photo) BOLD.photo.reset(); }
       try {
-        if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '', p: user.photoURL || '' }));
+        if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
         else localStorage.removeItem('boldAuthHint');
       } catch (e){}
       listeners.slice().forEach(function(fn){ fn(user); });
@@ -460,7 +462,7 @@
     if (authReady) fn(current);
   };
 
-  // The last visit's { n: displayName, e: email, p: photoURL }, or null — for painting before auth resolves.
+  // The last visit's { n: displayName, e: email }, or null — for painting before auth resolves.
   BOLD.authHint = function(){ return hint; };
 
   // Sign-in redirects the page to Slack and back rather than using a popup:
@@ -506,11 +508,11 @@
   // settings have their own button (mountSettings). Signed out: Sign in with Slack.
   function renderAuthRegion(region, user){
     if (user) {
-      // Your Slack photo (initials without one), as GitHub's avatar; your name heads its menu
+      // The shared profile photo (initials without one); your name heads its menu
       // (your email is on your profile; without a name, the email).
       var name = user.displayName || user.email || 'Signed in', who = esc(name);
       var initials = esc(name.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(function(w){ return w[0].toUpperCase(); }).join(''));
-      var face = user.photoURL ? '<img class="mast-avatar" src="' + esc(user.photoURL) + '" alt="" referrerpolicy="no-referrer">' : '<span class="mast-avatar mast-initials">' + initials + '</span>';
+      var face = '<span class="mast-avatar mast-initials">' + initials + '</span>';
       region.innerHTML =
         '<div class="mast-auth mast-menu-wrap">' +
           '<button class="mast-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="mastMenu" aria-label="' + who + '’s menu" title="' + who + '">' + face + '</button>' +
@@ -527,6 +529,8 @@
       document.addEventListener('focusin', function(e){ if (!region.contains(e.target)) open(false); });
       region.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
       region.querySelector('#mastSignOutBtn').addEventListener('click', BOLD.signOut);
+      // Painted at once from this browser's copy (also before sign-in resolves), else after one call.
+      if (BOLD.photo) BOLD.photo.mountOwn(region.querySelector('.mast-avatar'), name).catch(function(){});
     } else {
       region.innerHTML = '<button class="auth-signin" type="button" id="mastSignInBtn">Sign in with Slack</button>';
       region.querySelector('#mastSignInBtn').addEventListener('click', BOLD.signIn);
@@ -795,7 +799,7 @@
     mountSettings();
     var region = document.getElementById('authRegion');
     // Paint the last visit's name at once; auth stays authoritative.
-    if (hint) renderAuthRegion(region, { displayName: hint.n, email: hint.e, photoURL: hint.p });
+    if (hint) renderAuthRegion(region, { displayName: hint.n, email: hint.e });
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
     BOLD.onAccess(function(a){
       previewBar();

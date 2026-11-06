@@ -501,7 +501,7 @@
     if (auth){
       BOLD.onUser(function(user){
         bootMark('auth resolved (' + (user ? 'signed in' : 'signed out') + ')');
-        state.currentUser = user ? { email: user.email, name: user.displayName, photoURL: user.photoURL } : null;
+        state.currentUser = user ? { email: user.email, name: user.displayName } : null;
         updateNewVenueButtonState();
         loadInitialData();
       });

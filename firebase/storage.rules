@@ -12,6 +12,11 @@ rules_version = '2';
 // underlying data, same "PI or admin" check, just spelled out again here.
 service firebase.storage {
   match /b/{bucket}/o {
+    // Portraits are read only through the authenticated callable; Storage
+    // download tokens would otherwise turn them into public bearer URLs.
+    match /profile-photos/{slackId}/{version} {
+      allow read, write: if false;
+    }
     match /venues/{boardId}/feed.ics {
       allow read: if true;
       // A Slack account, as firestore.rules' isSignedIn() requires.

@@ -19,13 +19,67 @@
   function cachePut(key, data){
     try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), d: data })); } catch (e){}
   }
-  function cacheClearKey(key){
-    try { localStorage.removeItem(CACHE_PREFIX + key); } catch (e){}
+  var photoId = '', photoBusy = false, photoState = 'missing';
+  function photoButtons(){
+    var allowed = BOLD.can('profile', 'edit');
+    [['replacePhoto', !!photoId, 'Your Slack account is not in the member roster'],
+     ['removePhoto', !!photoId && photoState === 'active', 'No photo to remove'],
+     ['slackPhoto', !!photoId, 'Your Slack account is not in the member roster']].forEach(function(x){
+      var b = el(x[0]); b.disabled = photoBusy || !allowed || !x[1];
+      b.title = photoBusy ? 'Photo update in progress' : !allowed ? BOLD.cannotReason('profile', 'edit') : x[1] ? '' : x[2];
+    });
   }
-  function showPhoto(url){
-    var photo = el('profilePhoto');
-    if (url) { if (photo.getAttribute('src') !== url) photo.src = url; photo.hidden = false; } else { photo.hidden = true; }
+  BOLD.onAccess(photoButtons);
+  function loadPhoto(user){
+    if (!user) return;
+    BOLD.photo.mountOwn(el('profilePhoto'), user.displayName || '').then(function(data){
+      photoId = data.slackId || '';
+      photoState = (data.photo || {}).state || 'missing';
+      photoButtons();
+    }).catch(function(){
+      el('photoMessage').textContent = 'Could not load your photo.';
+      photoButtons();
+    });
   }
+  function photoMessage(action, result, state){
+    if (action === 'slack' && result === 'no-slack-photo') return 'Your Slack profile has no photo of its own' + (state === 'active' ? ': your photo here stays.' : ', so your initials stay.');
+    if (action === 'slack' && result === 'active') return 'Now using your Slack photo.';
+    if (action === 'replace' && result === 'active') return 'Photo updated.';
+    if (action === 'remove') return 'Photo removed. Your initials show instead.';
+    return state === 'active' ? 'Photo unchanged.' : 'Using initials.';
+  }
+  function photoAction(action, image){
+    photoBusy = true; photoButtons(); el('photoMessage').textContent = 'Updating photo…';
+    var result = '';
+    BOLD.photo.call({ action: action, image: image }).then(function(data){
+      photoId = data.slackId || photoId;
+      result = (data.result || {}).state || '';
+      BOLD.photo.clear(photoId);
+      var user = me();
+      BOLD.photo.mountOwn(document.querySelector('#authRegion .mast-avatar'), (user && user.displayName) || '').catch(function(){});
+      return BOLD.photo.mountOwn(el('profilePhoto'), (user && user.displayName) || '');
+    }).then(function(data){
+      photoState = (data.photo || {}).state || 'missing';
+      // What the server did (result), not only what's there now.
+      el('photoMessage').textContent = photoMessage(action, result, photoState);
+    }).catch(function(err){
+      el('photoMessage').textContent = (err && err.message) || 'Could not update photo.';
+    }).finally(function(){ photoBusy = false; photoButtons(); });
+  }
+  el('replacePhoto').addEventListener('click', function(){ el('photoFile').click(); });
+  el('photoFile').addEventListener('change', function(){
+    var file = this.files && this.files[0]; this.value = '';
+    if (!file) return;
+    if (file.size > 256 * 1024 || !/^image\/(jpeg|png|webp)$/.test(file.type)) {
+      el('photoMessage').textContent = 'Choose a JPEG, PNG or WebP image up to 256 KB.'; return;
+    }
+    var reader = new FileReader();
+    reader.onload = function(){ photoAction('replace', String(reader.result).split(',')[1]); };
+    reader.onerror = function(){ el('photoMessage').textContent = 'Could not read that file.'; };
+    reader.readAsDataURL(file);
+  });
+  el('removePhoto').addEventListener('click', function(){ photoAction('remove'); });
+  el('slackPhoto').addEventListener('click', function(){ photoAction('slack'); });
   function cacheClear(){
     try {
       Object.keys(localStorage).forEach(function(k){ if (k.indexOf(CACHE_PREFIX) === 0) localStorage.removeItem(k); });
@@ -328,10 +382,10 @@
     showGithub(user);
     showGoogle(user);
     if (user) renderSlackAccount(null);
-    if (!user) { cacheClear(); BOLD.slackFields = []; return; }
+    if (!user) { cacheClear(); BOLD.slackFields = []; BOLD.photo.clear(photoId); photoId = ''; BOLD.photo.mount(el('profilePhoto'), '', ''); photoButtons(); return; }
     renderIdentity(user.displayName || '', user.email);
-    showPhoto(user.photoURL);
-    if (user.photoURL) cachePut('photo', user.photoURL); else cacheClearKey('photo');
+    photoId = ''; photoButtons();
+    loadPhoto(user);
 
     if (!user.email) return;
     loadCached('getMyProfile', user.email, renderSlackFacts, function(){});
@@ -391,8 +445,6 @@
     var hint = BOLD.authHint();
     if (hint && hint.e) {
       renderIdentity(hint.n || '', hint.e);
-      var ph = cacheGet('photo');
-      if (ph && ph.d) showPhoto(ph.d);
       [['getMyProfile', renderSlackFacts], ['getMyProjects', renderProjects]].forEach(function(p){
         var hit = cacheGet(p[0] + ':' + hint.e.toLowerCase());
         if (hit) p[1](hit.d);

@@ -356,3 +356,40 @@ The old "Subscribable deadline feed" TODO item was blocked for as long as this w
 
 Every rule that let any signed-in member read or write (`isLabMember()`) now asks the BOLDiquette's table first: `may(area, what)` (`firebase/firestore.rules`), with the viewer's group from `members/{email}.category` (PIs and admins: BOLD-exec) and the table from `settings/access`, which only `decideProposal` writes, from the BOLDiquette's `access` part. Each check costs up to two extra document reads per request (the member and the table; repeated reads of the same document in one request count once). Nothing is readable without signing in; Everyone in the table means everyone signed in (the same as PAN-BOLD). Collection-group rules (`{path=**}/…`) are no more open than the page that lists them, since rules that match the same document add up. Callables check the same through `functions/access.js` (`requireAccess`), and so does the agents' API. Details: `docs/REFERENCE.md`, "Who can see what".
 
+## Shared profile pictures
+
+`profilePhotos/{slackId}` is server-managed metadata: `state` (`active` or
+`removed`), `path`, `type`, `source` (`slack` or `manual`), and `updatedAt`.
+The server may also hold a short-lived `pending` import claim. Objects live at
+`profile-photos/{slackId}/{random version}` in Storage. Neither path contains
+a name or email address. Metadata is readable when Who can see what permits
+People; client writes are denied. Storage denies client reads and writes. The
+authenticated `profilePhoto` callable returns short-lived V4 signed URLs for
+authorized viewers, in one batch for the People list. Their signing and expiry
+times are rounded to UTC days so URLs stay stable during a day, and the
+versioned objects have a long `Cache-Control`. The callable resolves the writer
+from verified Slack identity and the `people` roster. It checks Profile
+view/edit for own operations and People view for another member's photo.
+Manual files are JPEG, PNG or WebP up to
+256 KB. Slack files (including bounded GIFs) are fetched on the server from
+Slack HTTPS hosts or Slack-documented `secure.gravatar.com` with
+bounded redirects and size. An import claim plus versioned Storage path
+prevents concurrent imports or a racing manual replacement from overwriting
+the chosen photo. By default a member shows their Slack picture: the first time
+their photo is needed (People, their page, the masthead) and they have never
+chosen one, the server imports it (at most 40 a call, only members in `people`);
+Slack with only its default picture, or a failure, is tried again a day later
+(`checkedAt`). They can also choose **Use my Slack photo** on Profile (or their
+agent's `profile` tool) at any time. Removal keeps initials,
+and `state: removed`, until that import succeeds or a manual replacement; if
+Slack has only its default photo the import returns `no-slack-photo` and
+changes nothing. Slack changes never overwrite a site photo automatically.
+A People batch reads every photo in one `getAll`; an id that isn't a Slack id
+comes back without a photo rather than failing the batch. Errors the member can
+act on keep their message and code; anything else is logged and returned as
+`internal`. The browser keeps the member's own photo for an hour (`boldPhoto`,
+by email) so the masthead paints it at once and calls `profilePhoto` at most
+once an hour; a change on Profile or signing out forgets it.
+The deployed function's service account needs Storage object read access and
+`iam.serviceAccounts.signBlob` to create V4 URLs; the Firebase maintainer checks
+those permissions during the release smoke test.

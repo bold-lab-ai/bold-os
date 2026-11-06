@@ -929,6 +929,11 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .ed-form{margin-top:14px;}
 .ed-plan{font-family:var(--sans); font-size:15px; line-height:1; width:22px; height:22px; padding:0; border:1px solid var(--line); background:var(--surface); color:var(--link); cursor:pointer; align-self:center;}
 .ed-plan:hover{border-color:var(--accent);}
+/* Shared portrait; initials remain visible when an image is absent or fails. */
+.member-photo{display:inline-flex;align-items:center;justify-content:center;flex:none;position:relative;width:44px;height:44px;border-radius:50%;background:var(--wash);color:var(--ink);font:600 15px var(--sans);overflow:hidden;vertical-align:middle;}
+.member-photo img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;opacity:0;}
+.member-photo img.is-loaded{opacity:1;}
+.mast-avatar.member-photo{width:32px;height:32px;font-size:12px;}
 /* The tour of BOLD.OS (tour.js): the item lit up, everything else dimmed, and a note beside it. */
 .tour-spot{position:fixed; z-index:1400; pointer-events:none; border:2px solid var(--accent); border-radius:var(--radius);
   box-shadow:0 0 0 9999px color-mix(in srgb, var(--shade) 45%, transparent); transition:top .2s ease, left .2s ease, width .2s ease, height .2s ease;}

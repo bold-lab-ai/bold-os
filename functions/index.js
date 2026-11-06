@@ -43,9 +43,14 @@ const { setGlobalOptions } = require('firebase-functions/v2');
 const logger = require('firebase-functions/logger');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const { createPhotoService } = require('./profile-photos');
 
 admin.initializeApp();
 const db = admin.firestore();
+const photoService = createPhotoService({
+  db, bucket: { file: path => admin.storage().bucket().file(path) }, fetcher: fetch,
+  token: () => SLACK_BOT_TOKEN.value(), FieldValue: require('firebase-admin/firestore').FieldValue,
+});
 
 // ---------- View as (#172) and branches (#177): a PI or admin previews the site ----------
 // The browser (bold.js) adds `viewAs` (a group: the eye chip's View as) and `branch` (an
@@ -2967,6 +2972,36 @@ exports.getMyAccess = onCall(
     // viewAs: the group a PI or admin is viewing the site as (View as), so the page says so.
     const as = viewingAs(email);
     return Object.assign({ fullWrite, group, pages }, as ? { viewAs: as } : {});
+  }
+);
+
+// Short-lived portrait URLs are returned only to authorized callers. The
+// writer is resolved from Slack sign-in, never from a client-supplied ID.
+exports.profilePhoto = onCall(
+  { secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 30, memory: '512MiB' },
+  async request => {
+    const email = signedInEmail(request).toLowerCase();
+    const data = request.data || {};
+    try {
+      if (data.action === 'batch') {
+        await access.requireAccess(email, 'people', 'view');
+        return photoService.batch(data.slackIds);
+      }
+      await access.requireAccess(email, 'profile', data.action === 'mine' ? 'view' : 'edit');
+      const id = await photoService.owner(email);
+      if (data.action === 'mine') return { slackId: id, photo: await photoService.read(id) };
+      if (data.action === 'slack') return { slackId: id, result: await photoService.importSlack(id) };
+      if (data.action === 'replace') return { slackId: id, result: await photoService.replace(id, data.image) };
+      if (data.action === 'remove') return { slackId: id, result: await photoService.remove(id) };
+      throw new HttpsError('invalid-argument', 'Unknown photo action.');
+    } catch (err) {
+      if (err instanceof HttpsError) throw err;
+      // What the member can act on keeps its message; anything else (IAM, Storage,
+      // Firestore) is logged here and reported as internal, its details kept back.
+      if (err && err.photoCode) throw new HttpsError(err.photoCode, err.message);
+      logger.error('profilePhoto failed', { action: data.action, error: String(err && err.stack || err) });
+      throw new HttpsError('internal', 'Could not update the photo. Try again.');
+    }
   }
 );
 
@@ -8461,7 +8496,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
-    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, eventSeries: exports.eventSeries }) });
+    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
 // Subscribing to the Calendar: one private .ics link a person (calendar.html; served by boldApi).

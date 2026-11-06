@@ -66,6 +66,7 @@
       if (email === String(user.email || '').toLowerCase()) { location.replace('profile.html' + location.hash); return; }
       personEmail = email; viewer = String(user.email || '').toLowerCase(); showTab();
       document.getElementById('personName').textContent = person.name || email;
+      BOLD.photo.mount(document.getElementById('personPhoto'), id, person.name || 'Member');
       document.title = (person.name || 'Person') + ' | BOLD Lab';
       return Promise.all([
         db.collection('members').doc(email).get(),

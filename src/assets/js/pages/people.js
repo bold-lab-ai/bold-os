@@ -1,7 +1,8 @@
 // People (people.html): BOLD's members (members/{email}, each edited on its owner's
 // profile), in two tabs: By role (PIs, adjuncts, postdocs and students first, then the
 // join form's other roles, BoldJoin.ROLES; Alumni last) and By group (#by-group: Who is BOLD's
-// groups, BOLD-exec first, BoldJoin.CATEGORIES); searchable by name, institution or interest.
+// groups, BOLD-exec first, BoldJoin.CATEGORIES); searchable by name, institution or interest;
+// as a list or a grid of cards (List | Grid, as on Projects; kept in this browser, boldPeopleView).
 (function(){
   var esc = BOLD.escapeHtml;
   var root = document.getElementById('people'), search = document.getElementById('ppSearch');
@@ -32,11 +33,13 @@
       : '<button type="button" class="type-badge pp-' + cat + ' pp-open" data-email="' + esc(m.email) + '" title="Change ' + esc(m.name || m.email) + '’s group">' + esc(BoldJoin.categoryLabel(cat)) + '</button>';
     var sid = slackIds[String(m.email || '').toLowerCase()];
     var name = sid ? '<a class="proj-title" href="person.html?id=' + encodeURIComponent(sid) + '">' + esc(m.name || m.email) + '</a>' : '<span class="proj-title">' + esc(m.name || m.email) + '</span>';
-    return '<li><div>' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag + (m.test ? ' <span class="badge">Your test account</span>' : '') +
-      (meta ? '<span class="proj-meta">' + meta + '</span>' : '') +
-      (m.interests ? '<span class="proj-meta">' + esc(m.interests) + '</span>' : '') +
-      (l ? '<span class="proj-meta">' + l + '</span>' : '') +
-      (staff && onboarding[String(m.email || '').toLowerCase()] ? '<span class="proj-meta pp-onboarding">' + onboarding[String(m.email || '').toLowerCase()] + '</span>' : '') + '</div></li>';
+    var photo = '<span class="member-photo" data-id="' + esc(sid || '') + '" data-name="' + esc(m.name || m.email) + '">' + esc(BOLD.photo.initials(m.name || m.email)) + '</span>';
+    // pp-head: the name line; pp-meta, pp-interests, pp-links: the lines under it (the grid's cards show the first two).
+    return '<li><div class="pp-person-row">' + photo + '<div><span class="pp-head">' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag + (m.test ? ' <span class="badge">Your test account</span>' : '') + '</span>' +
+      (meta ? '<span class="proj-meta pp-meta" title="' + esc([m.institution, m.basedIn, m.contact ? 'with ' + m.contact : ''].filter(Boolean).join(' · ')) + '">' + meta + '</span>' : '') +
+      (m.interests ? '<span class="proj-meta pp-interests" title="' + esc(m.interests) + '">' + esc(m.interests) + '</span>' : '') +
+      (l ? '<span class="proj-meta pp-links">' + l + '</span>' : '') +
+      (staff && onboarding[String(m.email || '').toLowerCase()] ? '<span class="proj-meta pp-onboarding">' + onboarding[String(m.email || '').toLowerCase()] + '</span>' : '') + '</div></div></li>';
   }
 
   function loadOnboarding(){
@@ -68,6 +71,7 @@
       root.innerHTML = BoldJoin.CATEGORIES.map(function(c){
         return section(c[1], shown.filter(function(m){ return BoldJoin.groupOf(m) === c[0]; }));
       }).join('');
+      BOLD.photo.mountMany(root.querySelectorAll('.member-photo[data-id]'));
       return;
     }
     var first = ['PI', 'Adjunct', 'Postdoc', 'PhD student', 'Master student'];
@@ -77,6 +81,7 @@
       var label = r === 'PI' ? 'PIs' : r === 'Staff' || r === 'Other' || r === 'Alumni' ? r : r + 's';
       return section(label, shown.filter(function(m){ return roleOf(m) === r; }));
     }).join('');
+    BOLD.photo.mountMany(root.querySelectorAll('.member-photo[data-id]'));
   }
 
   // The tab: By role (people.html, #by-role) or By group (#by-group).
@@ -92,6 +97,21 @@
   drawTabs();
 
   search.addEventListener('input', render);
+
+  // List or Grid: only how the cards are laid out (people.css's #people[data-view="grid"]).
+  var VIEW_KEY = 'boldPeopleView';
+  function setLayout(v){
+    if (v !== 'grid') v = 'list';
+    root.setAttribute('data-view', v);
+    Array.prototype.forEach.call(document.querySelectorAll('.pp-bar .view-btn'), function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === v)); });
+    try { localStorage.setItem(VIEW_KEY, v); } catch (e){}
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.pp-bar .view-btn'), function(b){
+    b.addEventListener('click', function(){ setLayout(b.getAttribute('data-view')); });
+  });
+  var savedLayout = null;
+  try { savedLayout = localStorage.getItem(VIEW_KEY); } catch (e){}
+  setLayout(savedLayout);
   root.addEventListener('click', function(e){
     var open = e.target.closest('.pp-open'), pick = e.target.closest('.pp-choose');
     if (open) { picking = open.getAttribute('data-email'); render(); return; }
