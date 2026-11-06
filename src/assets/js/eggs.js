@@ -115,25 +115,32 @@
     var log = term.querySelector('.mx-log'), form = term.querySelector('.mx-prompt'), input = form.querySelector('input'), queue = [], busy = false;
     function close(){ term.classList.add('is-gone'); setTimeout(function(){ term.remove(); }, 600); }
     // As in the film: lines typed one under another at a person's uneven pace, the block cursor on the
-    // line being typed; each message clears the screen first. Then the prompt.
-    function say(lines, then, keep){ queue.push({ lines: lines, then: then, keep: keep }); if (!busy) next(); }
+    // line being typed; each message clears the screen first. Then the prompt. A line is its text, or
+    // [text, ms] to hold it that long before the next (the cursor blinking on it); opts.lead is a blank
+    // screen with only the cursor before the first line.
+    function say(lines, then, opts){ queue.push({ lines: lines, then: then, opts: opts || {} }); if (!busy) next(); }
     function next(){
       var job = queue.shift();
       if (!job) { busy = false; form.hidden = false; input.focus(); return; }
       busy = true; form.hidden = true;
-      if (!job.keep) log.innerHTML = '';
-      (function line(k){
+      log.innerHTML = '';
+      var first = null;
+      if (job.opts.lead && !still) { first = document.createElement('p'); log.appendChild(first); }   // only the cursor, blinking
+      setTimeout(function(){ line(0); }, still ? 0 : job.opts.lead || 0);
+      function line(k){
         if (k >= job.lines.length) { setTimeout(function(){ if (job.then) job.then(); else next(); }, still ? 0 : 900); return; }
-        var p = document.createElement('p'), text = job.lines[k], i = 0;
-        log.appendChild(p);
+        var l = job.lines[k], text = typeof l === 'string' ? l : l[0], hold = typeof l === 'string' ? 1100 : l[1], i = 0;
+        var p = k === 0 && first ? first : document.createElement('p');
+        if (!p.parentNode) log.appendChild(p);
         if (still) { p.textContent = text; line(k + 1); return; }
         (function key(){
           p.textContent = text.slice(0, ++i);
-          if (i >= text.length) { setTimeout(function(){ line(k + 1); }, 1100); return; }
-          var c = text[i - 1];
-          setTimeout(key, /[.,?]/.test(c) ? 260 + Math.random() * 200 : c === ' ' ? 90 + Math.random() * 80 : 45 + Math.random() * 90);
+          if (i >= text.length) { setTimeout(function(){ line(k + 1); }, hold); return; }
+          var c = text[i - 1], n = text[i];
+          // Trailing dots come one by one; other punctuation is a beat; spaces a little longer than letters.
+          setTimeout(key, c === '.' && n === '.' ? 420 + Math.random() * 160 : /[.,?]/.test(c) ? 260 + Math.random() * 200 : c === ' ' ? 90 + Math.random() * 80 : 45 + Math.random() * 90);
         })();
-      })(0);
+      }
     }
     function echo(){}
     form.addEventListener('submit', function(e){
@@ -154,7 +161,8 @@
     term.addEventListener('keydown', function(e){ if (e.key === 'Escape') { e.stopPropagation(); close(); } });
     var n = firstName();
     var who = n || 'BOLD';
-    say(['Wake up, ' + who + '...', 'BOLD.OS has you...', 'Follow the white rabbit.', 'Knock, knock, ' + who + '.']);
+    // The film's beats: a blank screen first, each line left to sink in, a short one after the knock.
+    say([['Wake up, ' + who + '...', 3500], ['BOLD.OS has you...', 3500], ['Follow the white rabbit.', 3000], ['Knock, knock, ' + who + '.', 2500]], null, { lead: 1500 });
     say(['Red pill, or blue pill?', '(red, blue, or help)']);
   }
   function startRain(){
