@@ -198,16 +198,19 @@
     addEventListener(t, function(){ lastActive = Date.now(); }, { passive: true, capture: true });
   });
   function isHome(){ var p = location.pathname; return /\/$/.test(p) || /\/index\.html$/.test(p); }
+  // Every BOLD.OS dot: the homepage's title (its masthead is hidden until signed in) and the masthead's.
   function callDot(){
-    var dot = document.querySelector('.wordmark span');
-    if (!dot || dot.classList.contains('is-calling')) return;
-    dot.classList.add('is-calling');
-    dot.title = 'Click me.';
-    dot.addEventListener('click', function(e){
-      if (!dot.classList.contains('is-calling')) return;
-      e.preventDefault(); e.stopPropagation();   // the wordmark is a link home
-      dot.classList.remove('is-calling'); dot.removeAttribute('title');
-      converse();
+    var dots = document.querySelectorAll('#homeHeroTitle .home-dot, .wordmark span');
+    Array.prototype.forEach.call(dots, function(dot){
+      if (dot.classList.contains('is-calling')) return;
+      dot.classList.add('is-calling');
+      dot.title = 'Click me.';
+      dot.addEventListener('click', function(e){
+        if (!dot.classList.contains('is-calling')) return;
+        e.preventDefault(); e.stopPropagation();   // the wordmark is a link home; the title shows the sidebar
+        Array.prototype.forEach.call(dots, function(d){ d.classList.remove('is-calling'); d.removeAttribute('title'); });
+        converse();
+      });
     });
   }
   function wakeCheck(){
