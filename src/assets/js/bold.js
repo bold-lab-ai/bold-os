@@ -638,13 +638,16 @@
     if (bell) {
       bell.innerHTML = '<a class="mast-btn mast-bell-btn" href="notifications.html" title="Notifications" aria-label="Notifications">' + ICON_BELL + '<span class="mast-count" hidden></span></a>';
       var countEl = bell.querySelector('.mast-count'), link = bell.querySelector('a');
-      var todo = 0, unread = 0, unreadUnsub = null;
+      var todo = 0, unread = 0, unreadUnsub = null, heard = false;
       var drawBell = function(){
         var n = todo + unread;
         countEl.hidden = !n; countEl.textContent = n > 99 ? '99+' : String(n);
         var t = [todo ? todo + ' waiting on you' : '', unread ? (unread >= 100 ? '100+' : unread) + ' unread' : ''].filter(Boolean).join(', ');
         t = t ? 'Notifications: ' + t : 'Notifications';
         link.title = t; link.setAttribute('aria-label', t);
+        // For the masthead's cat (eggs.js): the count, and whether it's known yet (the inbox heard from).
+        BOLD.bell = { n: n, ready: heard };
+        try { document.dispatchEvent(new CustomEvent('bold:bell', { detail: BOLD.bell })); } catch (e){}
       };
       BOLD.setTodoCount = function(n){
         n = Number(n) || 0;
@@ -654,12 +657,13 @@
       var setUnread = function(n){ unread = Number(n) || 0; drawBell(); };
       BOLD.onUser(function(user){
         if (unreadUnsub) { unreadUnsub(); unreadUnsub = null; }
+        heard = false;
         if (!user) { BOLD.setTodoCount(0); setUnread(0); return; }
         if (firebase.firestore && user.email) {
           try {
             unreadUnsub = firebase.firestore(BOLD.getApp()).collection('notifications')
               .where('to', '==', String(user.email).toLowerCase()).where('read', '==', false).limit(100)
-              .onSnapshot(function(s){ setUnread(s.size); }, function(err){ console.warn('[BOLD Lab] checking for unread notifications failed', err); });
+              .onSnapshot(function(s){ heard = true; setUnread(s.size); }, function(err){ console.warn('[BOLD Lab] checking for unread notifications failed', err); });
           } catch (e){}
         }
         var c = null;

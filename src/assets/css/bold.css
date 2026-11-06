@@ -1033,9 +1033,18 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .cx-graph.is-engraving .cx-edge{stroke:var(--egg-ink); stroke-width:1.3; stroke-dasharray:none; opacity:1;}
 .cx-graph.is-engraving .cx-node > :not(text):not(title){fill:var(--egg-paper) !important; stroke:var(--egg-ink) !important; stroke-width:1.4;}
 /* Inbox zero's cat. */
-.nt-zero{display:block; margin:22px 0 0; color:var(--muted);}
-.nt-zero-cap{font-family:var(--serif); font-style:italic; font-size:15px; color:var(--muted); margin:4px 0 4px;}
-.nt-zero-more{margin:0 0 8px;}
+/* The masthead's cat (eggs.js): pixel art on a canvas, walking along the masthead's floor in its own
+   lane (clipped to the masthead, never taking a click); zzz while asleep. Not on phones. */
+.mast-cat-lane{position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:1;}
+.mast-cat{position:absolute; bottom:1px; left:0; image-rendering:pixelated; transition:opacity .6s ease;}
+.mast-cat canvas{display:block; image-rendering:pixelated;}
+.mast-cat.is-left canvas{transform:scaleX(-1);}
+.mast-cat-z{position:absolute; left:34px; bottom:20px; font-family:var(--sans); font-size:10px; font-weight:600; color:var(--muted);
+  opacity:0; animation:mast-cat-z 2.4s ease-in-out infinite;}
+.mast-cat-z:nth-child(3){animation-delay:.8s; font-size:12px;} .mast-cat-z:nth-child(4){animation-delay:1.6s; font-size:14px;}
+@keyframes mast-cat-z{0%{opacity:0; transform:translate(0,0);} 30%{opacity:1;} 100%{opacity:0; transform:translate(10px,-16px);}}
+@media (prefers-reduced-motion: reduce){ .mast-cat-z{animation:none; opacity:.8;} .mast-cat-z:nth-child(n+3){display:none;} }
+@media (max-width: 700px){ .mast-cat-lane{display:none;} }
 /* \bold in KaTeX (card-model.js): the wordmark, as the masthead's. */
 .katex .bold-mark, .katex .bold-mark *{font-family:var(--sans) !important; font-style:normal; font-weight:500; letter-spacing:-0.01em;}
 .katex .bold-mark .textbf, .katex .bold-mark .textbf *{font-weight:700;}
@@ -1098,9 +1107,10 @@ html:root.is-matrix ::selection{background:#b4f0bd; color:#06100a; text-shadow:n
 .mx-log p.mx-word::after{display:none;}
 @keyframes mx-fade{from{opacity:1;} to{opacity:0;}}
 /* A knock at the door: two thuds. */
-.mx-term.is-knocked{animation:mx-knock .7s ease-out;}
-@keyframes mx-knock{0%,100%{transform:none;} 10%{transform:translate(2px,1px);} 20%{transform:translate(-2px,-1px);} 30%{transform:none;}
-  55%{transform:translate(2px,1px);} 65%{transform:translate(-2px,-1px);} 75%{transform:none;}}
+/* KNOCK KNOCK: two shakes, nearly as strong as each other, as the knocks are (eggs.js KNOCKS). */
+.mx-term.is-knocked{animation:mx-knock .8s ease-out;}
+@keyframes mx-knock{0%,100%{transform:none;} 9%{transform:translate(3px,1px);} 17%{transform:translate(-3px,-1px);} 25%{transform:none;}
+  50%{transform:translate(3px,1px);} 58%{transform:translate(-3px,-1px);} 66%{transform:none;}}
 /* With the prompt showing, its caret is the cursor. */
 .mx-term:has(.mx-prompt:not([hidden])) .mx-log p:last-child::after{display:none;}
 .mx-prompt{display:flex; gap:.6em; margin-top:1em;}

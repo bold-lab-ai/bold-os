@@ -2,15 +2,16 @@
 // they only change what this page shows, until it's reloaded. The others live where they
 // belong: the 404 page (404.njk), `sudo` in search (pages/search.js), the lamp theme
 // (mountTheme, bold.js), the deadline's shiver (markdown.js), the Lineage engraving
-// (pages/network.js), \bold in KaTeX (card-model.js) and the inbox's cat (pages/notifications.js).
-// Here: the console, Reviewer 2, milestone numbers, the birthday and the Matrix (`redpill`).
+// (pages/network.js) and \bold in KaTeX (card-model.js).
+// Here: the console, Reviewer 2, milestone numbers, the birthday, the Matrix (`redpill`) and the masthead's
+// cat at inbox zero.
 // Their styles are at the end of bold.css.
 (function(){
   var root = document.documentElement;
 
   // Devtools: a hello for whoever reads the source.
   try {
-    console.log('%c\n ██████   ██████  ██      ██████ \n ██   ██ ██    ██ ██      ██   ██\n ██████  ██    ██ ██      ██   ██\n ██   ██ ██    ██ ██      ██   ██\n ██████   ██████  ███████ ██████ .OS\n',
+    console.log('%c\n ██████  ███████     ██████   ██████  ██      ██████\n ██   ██ ██          ██   ██ ██    ██ ██      ██   ██\n ██████  █████       ██████  ██    ██ ██      ██   ██\n ██   ██ ██          ██   ██ ██    ██ ██      ██   ██\n ██████  ███████     ██████   ██████  ███████ ██████\n',
       'color:#1a2b4a;font-family:monospace;font-weight:bold');
     console.log('Like reading source? It’s public, and pull requests are welcome: https://github.com/bold-lab-ai/bold-os');
   } catch (e){}
@@ -162,6 +163,137 @@
   function firstName(){
     try { var u = BOLD.getAuth() && BOLD.getAuth().currentUser; return u && u.displayName ? u.displayName.split(' ')[0] : ''; } catch (e){ return ''; }
   }
+  // Knocks on a wooden door, one at each of `at` ([seconds from now, strength]), made here (synthThuds, KNOCK);
+  // KNOCK.recorded > 0 adds a recorded one over it (assets/audio/knock.mp3, cut from Freesound #256513, CC0;
+  // on, at 1). Silent until the page has had a click or a key (audioCtx).
+  var audio = null, knockBuf = null, knockLoad = null;
+  function loadKnock(){
+    if (knockLoad || !audio) return knockLoad || Promise.resolve(null);
+    knockLoad = fetch('assets/audio/knock.mp3').then(function(r){ if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then(function(b){ return new Promise(function(ok, no){ audio.decodeAudioData(b, ok, no); }); })
+      .then(function(buf){ knockBuf = buf; return buf; }, function(){ return null; });
+    return knockLoad;
+  }
+  // The page's audio, made only once the page has had a click or a key (browsers refuse it before:
+  // the 01:24 call, or BoldEggs.wake from the console), else null; the first one after makes it.
+  function audioCtx(){
+    if (audio) return audio;
+    var AC = window.AudioContext || window.webkitAudioContext, ua = navigator.userActivation;
+    if (!AC || (ua && !ua.hasBeenActive)) return null;
+    try { audio = new AC(); } catch (e){ return null; }
+    return audio;
+  }
+  ['pointerdown', 'keydown'].forEach(function(t){
+    addEventListener(t, function(){
+      if (!document.querySelector('.mx-term')) return;
+      var a = audioCtx();
+      if (a) { if (a.state === 'suspended') a.resume(); loadKnock(); }
+    }, { capture: true, passive: true });
+  });
+  // The blip of each letter as it appears, as on the film's screen: a very short, high chirp, made here
+  // from a few pure tones (strongest near 9.2 and 5.7 kHz, fainter ones between), an even rise, a
+  // short peak, then a fade, gone in ~15 ms, with a touch of noise around the same pitches (noise). Each letter's a little different (level, length; the pitch barely), as
+  // a real one is; the pitch holds steady. Only once sound is allowed (audioCtx), never before. BLIP.tones: [Hz, relative level];
+  // BLIP.noise: how much of the noise, against the tones;
+  // BLIP.hold: how much of it stays at full level before it ends (0.3: fades away, 0.9: stops dead).
+  var BLIP = { tones: [[9250, 1], [5700, 0.75], [6350, 0.3], [6950, 0.25], [10000, 0.3]], s: 0.015, level: 0.08, noise: 0.2, hold: 0.4, attack: 0.003 };
+  var blipNoise = null;
+  function tick(){
+    try {
+      if (!audio || audio.state !== 'running') return;
+      var t = audio.currentTime, len = BLIP.s * (0.95 + Math.random() * 0.1), lv = BLIP.level * (0.9 + Math.random() * 0.2);
+      var pitch = 1 + (Math.random() - 0.5) * 0.008, g = audio.createGain();
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lv, t + BLIP.attack);   // an even rise, as the clip's (~3 ms)
+      g.gain.setValueAtTime(lv, t + len * BLIP.hold); g.gain.exponentialRampToValueAtTime(0.0001, t + len);   // the peak, then the fade
+      g.connect(audio.destination);
+      BLIP.tones.forEach(function(x){
+        var o = audio.createOscillator(), v = audio.createGain(), hz = x[0] * pitch;
+        o.type = 'sine'; o.frequency.value = hz;
+        v.gain.value = x[1] * (1 - BLIP.noise * 0.5);
+        o.connect(v); v.connect(g); o.start(t); o.stop(t + len + 0.01);
+      });
+      if (BLIP.noise > 0) {
+        if (!blipNoise) {
+          blipNoise = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.06), audio.sampleRate);
+          var d = blipNoise.getChannelData(0);
+          for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        }
+        [[9250, 1], [5700, 0.7]].forEach(function(x){
+          var n = audio.createBufferSource(), f = audio.createBiquadFilter(), v = audio.createGain();
+          n.buffer = blipNoise; f.type = 'bandpass'; f.frequency.value = x[0] * pitch; f.Q.value = 6; v.gain.value = x[1] * BLIP.noise * 6;
+          n.connect(f); f.connect(v); v.connect(g); n.start(t, Math.random() * 0.03, len + 0.01);
+        });
+      }
+    } catch (e){}
+  }
+  // The two knocks, KNOCK KNOCK: [seconds from the start, strength], 330 ms apart and the second ~1 dB softer, as in the reference, on mx-knock's 9% and 50% of .8s (bold.css).
+  var KNOCKS = [[0.072, 1], [0.402, 0.9]];
+  function thuds(at){
+    try {
+      if (!audioCtx() || audio.state !== 'running') return;
+      var now = audio.currentTime;
+      var play = function(buf){
+        var base = Math.max(now, audio.currentTime);   // late (still loading): both knocks move, keeping their gap
+        synthThuds(at, base, KNOCK.level);
+        if (!buf || !KNOCK.recorded) return;
+        var g = audio.createGain(); g.gain.value = KNOCK.recorded; g.connect(audio.destination);
+        at.forEach(function(k){ var n = audio.createBufferSource(), v = audio.createGain(); v.gain.value = k[1]; n.buffer = buf; n.connect(v); v.connect(g); n.start(base + k[0]); });
+      };
+      if (knockBuf) play(knockBuf); else loadKnock().then(play);
+    } catch (e){}
+  }
+  // Made here, from a reference knock's measurements (2026-11-06): the body low, 100-250 Hz (strongest near
+  // 150-200), dying away over ~150 ms; the wood, a band around 600-900 Hz, gone sooner; a touch up to
+  // ~1.6 kHz; a hit: at full at once (attack, 0.5 ms). KNOCK.body: [from Hz, to Hz, decay s, level]; KNOCK.wood: [Hz, Q, decay s, level].
+  var KNOCK = { body: [[220, 140, 0.15, 1], [150, 105, 0.2, 0.7]], wood: [[750, 1.8, 0.06, 0.5], [1500, 1.5, 0.025, 0.15]], attack: 0.0005, level: 0.9, recorded: 1, room: 0.3, roomS: 0.6 };
+  // The room: its echo made here (fading noise, the highs fading first), roomS long, mixed in at `room`.
+  var roomIr = null;
+  function roomOf(){
+    if (roomIr && roomIr.s === KNOCK.roomS) return roomIr.buf;
+    var len = Math.floor(audio.sampleRate * KNOCK.roomS), buf = audio.createBuffer(2, len, audio.sampleRate);
+    for (var c = 0; c < 2; c++) {
+      var d = buf.getChannelData(c), last = 0;
+      for (var i = 0; i < len; i++) {
+        var x = i / len, soft = 0.3 + 0.65 * x;   // later, duller: a gentle low-pass that closes over the tail
+        last = last * soft + (Math.random() * 2 - 1) * (1 - soft);
+        d[i] = last * Math.pow(1 - x, 2.5) * 3;
+      }
+    }
+    roomIr = { s: KNOCK.roomS, buf: buf };
+    return buf;
+  }
+  function synthThuds(at, now, level){
+    try {
+      var out = audio.createGain();
+      out.gain.value = level; out.connect(audio.destination);
+      if (KNOCK.room > 0) {
+        var verb = audio.createConvolver(), wet = audio.createGain();
+        verb.buffer = roomOf(); wet.gain.value = KNOCK.room;
+        out.connect(verb); verb.connect(wet); wet.connect(audio.destination);
+      }
+      var noise = audio.createBuffer(1, Math.floor(audio.sampleRate * 0.1), audio.sampleRate), d = noise.getChannelData(0);
+      for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      var env = function(g, peak, t, decay){
+        g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(peak, t + KNOCK.attack);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + KNOCK.attack + decay);
+      };
+      at.forEach(function(k){
+        var t = now + k[0];
+        KNOCK.body.forEach(function(b){
+          var o = audio.createOscillator(), g = audio.createGain();
+          o.type = 'sine'; o.frequency.setValueAtTime(b[0], t); o.frequency.exponentialRampToValueAtTime(b[1], t + b[2]);
+          env(g, b[3] * k[1], t, b[2]);
+          o.connect(g); g.connect(out); o.start(t); o.stop(t + KNOCK.attack + b[2] + 0.02);
+        });
+        KNOCK.wood.forEach(function(w){
+          var n = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
+          n.buffer = noise; f.type = 'bandpass'; f.frequency.value = w[0]; f.Q.value = w[1];
+          env(g, w[3] * k[1] * 4, t, w[2]);   // a narrow band of noise is quiet: brought up to sit with the body
+          n.connect(f); f.connect(g); g.connect(out); n.start(t, 0, KNOCK.attack + w[2] + 0.02);
+        });
+      });
+    } catch (e){}
+  }
   function converse(){
     if (document.querySelector('.mx-term')) return;
     var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -172,11 +304,21 @@
     document.body.appendChild(term);
     var log = term.querySelector('.mx-log'), form = term.querySelector('.mx-prompt'), input = form.querySelector('input'), queue = [], busy = false;
     var st = { stage: 'knock', name: firstName() }, game = null, thinking = false;
-    function close(){ if (game && game.timer) clearTimeout(game.timer); term.classList.add('is-gone'); setTimeout(function(){ term.remove(); }, 600); }
-    // As in the film: lines typed one under another at a person's uneven pace, the block cursor on the
-    // line being typed; each message clears the screen first. Then the prompt. A line is its text, or
-    // [text, ms] to hold it that long before the next (the cursor blinking on it). opts.lead: a blank
-    // screen with only the cursor first; opts.instant: shown at once (the game's words).
+    // The next line waits for you: a click, a tap or a key, once its line has been held.
+    var waiting = null;
+    function stir(){ if (waiting) { var go = waiting; waiting = null; setTimeout(go, 300 + Math.random() * 300); } }   // a beat first, 0.3-0.6 s
+    ['pointerdown', 'keydown'].forEach(function(t){ addEventListener(t, stir, { passive: true }); });
+    function close(){
+      if (game && game.timer) clearTimeout(game.timer);
+      waiting = null;
+      ['pointerdown', 'keydown'].forEach(function(t){ removeEventListener(t, stir); });
+      term.classList.add('is-gone'); setTimeout(function(){ term.remove(); }, 600);
+    }
+    // As in the film: each line alone on the screen, typed at a person's uneven pace, the block cursor on
+    // it, left until you click or press a key (stir), when the screen clears for the next. The last is held,
+    // then the prompt. A line is its text, or [text, ms]: how long the last one is held (the cursor blinking
+    // on it). opts.lead: a blank screen with only the cursor first; opts.instant: shown at once, one
+    // under another, without waiting (the game's words).
     function say(lines, then, opts){ queue.push({ lines: lines, then: then, opts: opts || {} }); if (!busy) next(); }
     function next(){
       var job = queue.shift();
@@ -190,12 +332,19 @@
         // Done: hand over to `then` (free to say more, or to show the prompt with next()), else the prompt.
         if (k >= job.lines.length) { setTimeout(function(){ if (job.then) { busy = false; job.then(); } else next(); }, quick ? 0 : 900); return; }
         var l = job.lines[k], text = typeof l === 'string' ? l : l[0], hold = typeof l === 'string' ? 1100 : l[1], i = 0;
+        if (k > 0 && !quick) log.innerHTML = '';   // alone on the screen
         var p = k === 0 && first ? first : document.createElement('p');
         if (!p.parentNode) log.appendChild(p);
         if (quick) { p.textContent = text; line(k + 1); return; }
         (function key(){
           p.textContent = text.slice(0, ++i);
-          if (i >= text.length) { setTimeout(function(){ line(k + 1); }, hold); return; }
+          if (text[i - 1] !== ' ') tick();
+          if (i >= text.length) {
+            // The last line: held, then the prompt (or what comes next). Any other: it waits for you, from
+            // the moment it's typed (a click during a hold isn't lost).
+            if (k + 1 >= job.lines.length) setTimeout(function(){ line(k + 1); }, hold); else waiting = function(){ line(k + 1); };
+            return;
+          }
           var c = text[i - 1], n = text[i];
           // Trailing dots come one by one; other punctuation is a beat; spaces a little longer than letters.
           setTimeout(key, c === '.' && n === '.' ? 420 + Math.random() * 160 : /[.,?]/.test(c) ? 260 + Math.random() * 200 : c === ' ' ? 90 + Math.random() * 80 : 45 + Math.random() * 90);
@@ -248,11 +397,18 @@
         function(err){ thinking = false; try { console.warn('[BOLD] brain', err); } catch (x){} reply({ lines: ['The signal is breaking up. Try again.'] }); });
     });
     term.addEventListener('keydown', function(e){ if (e.key === 'Escape') { e.stopPropagation(); close(); } });
-    // A knock at the door: the screen thuds twice.
-    function knock(){ if (!still) { term.classList.add('is-knocked'); setTimeout(function(){ term.classList.remove('is-knocked'); }, 700); } next(); }
+    // A knock at the door: the screen thuds twice, and two knocks are heard with the thuds (KNOCKS).
+    function knock(){ thuds(KNOCKS); if (!still) { term.classList.add('is-knocked'); setTimeout(function(){ term.classList.remove('is-knocked'); }, 800); } next(); }
     var who = st.name || 'BOLD';
     // The film's beats: a blank screen first, each line left to sink in; after the knock, it's your turn.
-    say([['Wake up, ' + who + '...', 3500], ['BOLD.OS has you...', 3500], ['Follow the white rabbit.', 3000], ['Knock, knock, ' + who + '.', 400]], knock, { lead: 1500 });
+    function opening(){
+      if (audioCtx()) { if (audio.state === 'suspended') audio.resume(); loadKnock(); }   // the knock's sound loads now, well before it
+      say([['Wake up, ' + who + '...', 3500], ['The BOLD.OS has you...', 3500], ['Follow the white rabbit.', 3000], ['Knock, knock, ' + who + '.', 400]], knock, { lead: 1500 });
+    }
+    // Always a blank screen first, only the cursor blinking, until you click or press a key: then
+    // "Wake up". That click or key also lets the browser play sound, so every blip and knock is heard.
+    // Armed a moment later, so the key that opened it (redpill's last letter, still on its way) isn't it.
+    log.innerHTML = '<p></p>'; setTimeout(function(){ waiting = opening; }, 0);
   }
   // The film's digital rain. Glyphs sit in fixed cells; nothing slides. A stream is a head moving down a
   // column: each cell it reaches lights up near-white with a fresh glyph, then fades where it is, so a trail
@@ -425,9 +581,121 @@
   }
   setInterval(wakeCheck, 5000);
   // To try it at another hour, in the console: BoldEggs.wake('hints') or BoldEggs.wake('idle').
-  window.BoldEggs = { wake: function(how){ if (how === 'idle') converse(); else hints(); }, brain: null };
+  // BoldEggs.knock(): the knock's two knocks alone (click the page once first: browsers want that for sound).
+  window.BoldEggs = { wake: function(how){ if (how === 'idle') converse(); else hints(); }, brain: null,
+    // BoldEggs.blip(): one letter's blip; BoldEggs.blip({ s: 0.03, level: 0.12, noise: 0.8, hold: 0.9, attack: 0.005 }) changes it first.
+    blip: function(o){ if (o) Object.assign(BLIP, o); var a = audioCtx(); if (!a) return 'Click the page once first.'; (a.state === 'suspended' ? a.resume() : Promise.resolve()).then(tick); return BLIP; },
+    // BoldEggs.knock(): the two knocks; BoldEggs.knock({ level: 1, room: 0.5, roomS: 0.9 }) changes them first (KNOCK).
+    cat: function(){ catVisit(true); return 'Here, kitty.'; },
+    knock: function(o){
+      if (o) Object.assign(KNOCK, o);
+      var a = audioCtx();
+      if (!a) return 'Click the page once first: browsers play sound only after a click or a key.';
+      (a.state === 'suspended' ? a.resume() : Promise.resolve()).then(function(){ return loadKnock(); }).then(function(){ thuds(KNOCKS); });
+      return 'Knock, knock.';
+    } };
 
-  function start(){ watch(); birthday(); if (root.classList.contains('is-matrix')) matrix(true); }
+  // Inbox zero: a cat in the masthead. Now and then, when nothing is waiting or unread, it walks in along the
+  // masthead's floor, sits, curls up asleep for a while, then walks off; it leaves early if something comes
+  // in. Our own pixel art (16x7, drawn on a canvas in the theme's colours); it never takes a click. At most
+  // once every 10 minutes, half the times it could. BoldEggs.cat() calls it now.
+  var CAT_ART = {
+    walk1: ['............k..k', '............kkkk', '.k..........kekk', '..k.kkkkkkkkkkkk', '...kkkkkkkkkkkk.', '....kkkkkkkkkkk.', '....k.k....k.k..'],
+    walk2: ['............k..k', '............kkkk', '.k..........kekk', '..k.kkkkkkkkkkkk', '...kkkkkkkkkkkk.', '....kkkkkkkkkkk.', '.....k.k..k.k...'],
+    sit: ['..........k..k..', '..........kkkk..', '..........kekk..', '........kkkkkk..', '.k.....kkkkkkk..', '..k...kkkkkkkk..', '...kkkkkkkk.kk..'],
+    blink: ['..........k..k..', '..........kkkk..', '..........kkkk..', '........kkkkkk..', '.k.....kkkkkkk..', '..k...kkkkkkkk..', '...kkkkkkkk.kk..'],
+    sleep: ['................', '................', '..........k..k..', '..........kkkk..', '....kkkkkkkkkkk.', '..kkkkkkkkkkkkk.', '.kkkkkkkkkkkkkk.'],
+    sleep2: ['................', '................', '..........k..k..', '..........kkkk..', '....kkkkkkkkkkk.', '..kkkkkkkkkkkkk.', 'kkkkkkkkkkkkkkk.'],
+  };
+  var CAT_PX = 3, catOn = false, catLast = 0;
+  try { catLast = Number(localStorage.getItem('boldCatAt')) || 0; } catch (e){}
+  function catVisit(force){
+    var mast = document.getElementById('masthead');
+    if (catOn || !mast || mast.hidden || root.classList.contains('is-matrix')) return;
+    if (!force && (Date.now() - catLast < 10 * 60e3)) return;
+    catOn = true; catLast = Date.now();
+    try { localStorage.setItem('boldCatAt', String(catLast)); } catch (e){}
+    var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var lane = document.createElement('div'), el = document.createElement('div'), cv = document.createElement('canvas');
+    lane.className = 'mast-cat-lane'; lane.setAttribute('aria-hidden', 'true');
+    el.className = 'mast-cat'; cv.width = 16 * CAT_PX; cv.height = 7 * CAT_PX;
+    el.appendChild(cv); lane.appendChild(el); mast.appendChild(lane);
+    var ctx = cv.getContext('2d'), css = getComputedStyle(root);
+    function draw(name){
+      var ink = css.getPropertyValue('--muted').trim() || '#888', eye = css.getPropertyValue('--paper').trim() || '#fff';
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      CAT_ART[name].forEach(function(row, y){
+        for (var x = 0; x < row.length; x++) {
+          var c = row[x]; if (c === '.') continue;
+          ctx.fillStyle = c === 'e' ? eye : ink; ctx.fillRect(x * CAT_PX, y * CAT_PX, CAT_PX, CAT_PX);
+        }
+      });
+    }
+    var W = lane.clientWidth, w = cv.width, fromLeft = Math.random() < 0.5;
+    // A short walk in: it settles 40-220 px from the side it came from.
+    var walkIn = Math.round(Math.min(220, Math.max(40, W * (0.04 + Math.random() * 0.14))));
+    var x = fromLeft ? -w : W, spot = fromLeft ? walkIn : W - w - walkIn, step = 0, timer = null, zs = null, leaving = false;
+    function place(){ el.style.transform = 'translateX(' + Math.round(x) + 'px)'; }
+    function face(left){ el.classList.toggle('is-left', left); }
+    function zzz(on){
+      if (on && !zs) { zs = ['z', 'z', 'Z'].map(function(t){ var z = document.createElement('span'); z.className = 'mast-cat-z'; z.textContent = t; el.appendChild(z); return z; }); }
+      if (!on && zs) { zs.forEach(function(z){ z.remove(); }); zs = null; }
+    }
+    // Walks to `to`, then does `then`; a step every 140 ms, 4 px a step (twice as fast leaving in a hurry).
+    function walk(to, then, hurry){
+      clearTimeout(timer); zzz(false); face(to < x);
+      if (still) { x = to; place(); return then(); }
+      (function go(){
+        var d = to - x, v = (hurry ? 8 : 4) * Math.sign(d);
+        if (Math.abs(d) <= Math.abs(v)) { x = to; place(); return then(); }
+        x += v; place(); draw(step++ % 2 ? 'walk2' : 'walk1');
+        timer = setTimeout(go, 140);
+      })();
+    }
+    function gone(){ clearTimeout(timer); document.removeEventListener('bold:bell', onBell); lane.remove(); catOn = false; }
+    function leave(hurry){
+      if (leaving) return; leaving = true;
+      var out = x + w / 2 < W / 2 ? -w : W;
+      if (still) { el.style.opacity = '0'; return setTimeout(gone, 700); }
+      walk(out, gone, hurry);
+    }
+    function onBell(e){ if (e.detail && e.detail.n > 0) leave(true); }   // something came in: off it goes
+    document.addEventListener('bold:bell', onBell);
+    // Sits a few seconds (blinking now and then), sleeps 10-20 s (breathing, zzz), sits up, leaves.
+    function sit(ms, then){
+      draw('sit'); var end = Date.now() + ms;
+      (function look(){
+        if (leaving) return;
+        if (Date.now() >= end) return then();
+        draw(Math.random() < 0.15 ? 'blink' : 'sit');
+        timer = setTimeout(function(){ draw('sit'); timer = setTimeout(look, 600 + Math.random() * 900); }, 160);
+      })();
+    }
+    function sleep(ms, then){
+      zzz(true); var end = Date.now() + ms, n = 0;
+      (function breathe(){
+        if (leaving) return;
+        if (Date.now() >= end) { zzz(false); return then(); }
+        draw(n++ % 2 ? 'sleep2' : 'sleep'); timer = setTimeout(breathe, 1100);
+      })();
+    }
+    if (still) { el.style.opacity = '0'; x = spot; place(); draw('sleep'); requestAnimationFrame(function(){ el.style.opacity = '1'; }); }
+    else place();
+    walk(spot, function(){ sit(2500 + Math.random() * 2500, function(){ sleep(10000 + Math.random() * 10000, function(){ sit(1500, function(){ leave(false); }); }); }); });
+  }
+  // Called when the inbox is empty: half the time, 5-25 s later, if it's still empty then.
+  var catPending = null;
+  function catCheck(){
+    var b = window.BOLD && BOLD.bell;
+    if (!b || !b.ready || b.n > 0) { clearTimeout(catPending); catPending = null; return; }
+    if (catPending || catOn || Date.now() - catLast < 10 * 60e3 || catCheck.rolled) return;
+    catCheck.rolled = true;
+    if (Math.random() >= 0.5) return;
+    catPending = setTimeout(function(){ catPending = null; var b2 = BOLD.bell; if (b2 && b2.ready && !b2.n) catVisit(); }, 5000 + Math.random() * 20000);
+  }
+  document.addEventListener('bold:bell', catCheck);
+
+  function start(){ watch(); birthday(); catCheck(); if (root.classList.contains("is-matrix")) matrix(true); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();
