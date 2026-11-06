@@ -200,7 +200,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
   // The second tab is named for what it holds (the project's meeting, slides and notes, and
   // its talks); its hash stays #presentations, so links keep working.
-  var TABS = [['overview', 'Overview'], ['presentations', 'Meetings'], ['paper', 'Papers']];
+  // Conversations (project-talk.js): the conversations about it, and starting one.
+  var TABS = [['overview', 'Overview'], ['presentations', 'Meetings'], ['paper', 'Papers'], ['conversations', 'Conversations']];
   // A fourth, Board, on a project with a board (pages/project-work.js).
   function hasBoard(){ return !!(ws && ws.work && ws.work.on); }
   // Named Board; its hash stays #…&tab=work (links keep working), and &tab=board works too.
@@ -273,7 +274,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') + '</dl>';
     },
     // Its work board: the board keeps its own drawing (project-work.js), put back in here on each render.
-    work: function(){ return '<div id="workMount"></div>'; }
+    work: function(){ return '<div id="workMount"></div>'; },
+    // Its conversations: kept by project-talk.js, put back in here on each render.
+    conversations: function(){ return wsKey ? '<div id="talkMount"></div>' : '<p class="detail-muted">Loading\u2026</p>'; }
   };
 
   // + Board, after the tabs: adds the project's work board (optional, for any project), then opens it.
@@ -354,6 +357,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       ProjectWork.start({ db: db, pid: wsKey, me: function(){ return me; }, ws: function(){ return ws; }, fullWrite: function(){ return fullWrite; },
         canEdit: canEdit, members: memberEmails, callWorkspace: callWorkspace });
       ProjectWork.attach(el('workMount'));
+    }
+    if (tab === 'conversations' && wsKey && window.ProjectTalk) {
+      ProjectTalk.start({ pid: wsKey, title: function(){ return card.title || ''; } });
+      ProjectTalk.attach(el('talkMount'));
     }
     if (el('workAdd')) el('workAdd').addEventListener('click', addWorkBoard);
     el('detailMsg').hidden = true;

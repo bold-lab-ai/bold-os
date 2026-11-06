@@ -342,7 +342,8 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     const d = event.data && event.data.data();
     if (!d || d.source === 'slack' || d.source === 'comment') return;   // a thread brought in is counted as it's saved
     const pid = event.params.pid, ref = db.collection('conversations').doc(pid);
-    await ref.set({ replies: FieldValue.increment(1) }, { merge: true }).catch(() => {});
+    // lastAt: its latest reply, for the lists that order by activity (project-talk.js).
+    await ref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
     if (!noteFor) return;
     try {
       const post = (await ref.get()).data() || {};
@@ -366,7 +367,8 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       await tell(to.filter((e) => e !== mine), '💬 ' + (d.name || 'Someone') + ' replied in “' + title + '”: <' + url + '|read it>.', 'conversation-replies');
     } catch (err){ logger.warn('Telling a conversation’s people of a reply failed', { pid, error: String(err && err.message || err) }); }
   });
-  // A new conversation: everyone who can see it is told on their Notifications page (not on Slack): all who see
+  // A new conversation: everyone who can see it is told on their Notifications page (not on Slack): one about a
+  // project, its people (project-talk.js, card-talk.js); otherwise all who see
   // Conversations, or a private channel's members alone; not whoever started it.
   const onConversationCreated = onDocumentCreated('conversations/{pid}', async (event) => {
     const d = event.data && event.data.data();
@@ -374,7 +376,10 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     try {
       const pid = event.params.pid, starter = String(d.createdBy || (d.broughtBy || {}).email || '').toLowerCase();
       let to = [];
-      if (d.private === true) {
+      // About a project (its Conversations tab, or a card's comments): its people, not the whole lab.
+      if (d.project) {
+        to = (((await db.collection('projectWorkspaces').doc(String(d.project)).get()).data() || {}).members || []).map((e) => String(e).toLowerCase());
+      } else if (d.private === true) {
         const ids = d.readers || [];
         for (let i = 0; i < ids.length; i += 30) {
           (await db.collection('people').where('slackId', 'in', ids.slice(i, i + 30)).get()).docs.forEach((p) => to.push(String(p.data().email || '').toLowerCase()));
@@ -389,7 +394,8 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       const url = PAGE + '#post=' + encodeURIComponent(pid);
       const by = d.source === 'slack' || d.source === 'comment' ? (d.broughtBy || {}).name || 'Someone' : d.name || 'Someone';
       const whence = d.source === 'slack' ? 'brought in from ' + ((d.slack || {}).channelName || 'Slack') + ' by '
-        : d.source === 'comment' ? 'made from a comment thread on ' + String((d.from || {}).page || 'a page').replace(/[<>|]/g, '') + ' by ' : 'started by ';
+        : d.source === 'comment' ? 'made from ' + ((d.from || {}).kind === 'card' ? 'a card’s comments in ' : 'a comment thread on ') + String((d.from || {}).page || 'a page').replace(/[<>|]/g, '') + ' by '
+        : d.project ? 'about ' + String(d.projectTitle || 'your project').replace(/[<>|]/g, '') + ', started by ' : 'started by ';
       const text = '🗨️ New conversation: “' + String(d.title || '').replace(/[<>|]/g, '') + '”, ' + whence + by + '.';
       await noteFor(to, { text, href: url, feature: 'conversation-new', source: 'conversations', about: 'conversation:' + pid, ping: false });
     } catch (err){ logger.warn('Telling people of a new conversation failed', { error: String(err && err.message || err) }); }

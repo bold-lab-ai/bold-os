@@ -830,8 +830,11 @@ service cloud.firestore {
       allow get: if resource == null && may('conversations', 'view');
       // Started on the site: always open to everyone who sees Conversations (private: false).
       allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
-        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'private'])
+        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'private', 'project', 'projectTitle'])
         && request.resource.data.private == false
+        // About a project (its Conversations tab, project-talk.js): one its poster sees.
+        && (!('project' in request.resource.data) || (request.resource.data.project is string && request.resource.data.project.size() <= 80
+          && seesProject(request.resource.data.project) && request.resource.data.get('projectTitle', '') is string && request.resource.data.get('projectTitle', '').size() <= 300))
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
       allow update: if may('conversations', 'edit') && seesConversation(resource.data) && onlyMyVote();
       allow delete: if may('conversations', 'edit') && seesConversation(resource.data) && (resource.data.createdBy == email().lower() || hasFullWrite());

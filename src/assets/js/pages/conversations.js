@@ -68,6 +68,10 @@
     return '<span class="bs-author">' + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + '</span> · ' + ago(m.at);
   }
   function origin(m){
+    // Started on a project's Conversations tab (project-talk.js): which project, linked.
+    if (m.source === 'site' && m.project) {
+      return '<p class="bs-origin">About <a href="project.html#id=' + encodeURIComponent(m.project) + '&tab=conversations">' + esc(m.projectTitle || 'a project') + '</a></p>';
+    }
     // Made from a comment thread on the BOLDiquette or a guide, or a card's comments: where, and a link back.
     if (m.source === 'comment' && m.from) {
       var f = m.from, card = f.kind === 'card';
