@@ -1,6 +1,7 @@
 // People (people.html): BOLD's members (members/{email}, each edited on its owner's
-// profile), grouped by role (PIs, adjuncts, postdocs and students first, then the
-// join form's other roles, BoldJoin.ROLES; Alumni last), and searchable by name, institution or interest.
+// profile), in two tabs: By role (PIs, adjuncts, postdocs and students first, then the
+// join form's other roles, BoldJoin.ROLES; Alumni last) and By group (#by-group: Who is BOLD's
+// groups, BOLD-exec first, BoldJoin.CATEGORIES); searchable by name, institution or interest.
 (function(){
   var esc = BOLD.escapeHtml;
   var root = document.getElementById('people'), search = document.getElementById('ppSearch');
@@ -60,16 +61,35 @@
     });
     if (!members.length) { root.innerHTML = '<p class="proj-msg">Nobody has added their details yet.</p>'; return; }
     if (!shown.length) { root.innerHTML = '<p class="proj-msg">Nobody matches.</p>'; return; }
+    var section = function(label, group){
+      return group.length ? '<div class="proj-group"><h3>' + esc(label) + '<span class="proj-count">' + group.length + '</span></h3><ul class="proj-list">' + group.map(personHtml).join('') + '</ul></div>' : '';
+    };
+    if (view() === 'group') {
+      root.innerHTML = BoldJoin.CATEGORIES.map(function(c){
+        return section(c[1], shown.filter(function(m){ return BoldJoin.groupOf(m) === c[0]; }));
+      }).join('');
+      return;
+    }
     var first = ['PI', 'Adjunct', 'Postdoc', 'PhD student', 'Master student'];
     var order = first.concat(BoldJoin.ROLES.filter(function(r){ return first.indexOf(r) === -1 && r !== 'Other' && r !== 'Alumni'; }), ['Other', 'Alumni']);
     var roleOf = function(m){ return order.indexOf(m.role) === -1 ? 'Other' : m.role; };
     root.innerHTML = order.map(function(r){
-      var group = shown.filter(function(m){ return roleOf(m) === r; });
-      if (!group.length) return '';
       var label = r === 'PI' ? 'PIs' : r === 'Staff' || r === 'Other' || r === 'Alumni' ? r : r + 's';
-      return '<div class="proj-group"><h3>' + esc(label) + '<span class="proj-count">' + group.length + '</span></h3><ul class="proj-list">' + group.map(personHtml).join('') + '</ul></div>';
+      return section(label, shown.filter(function(m){ return roleOf(m) === r; }));
     }).join('');
   }
+
+  // The tab: By role (people.html, #by-role) or By group (#by-group).
+  function view(){ return location.hash === '#by-group' ? 'group' : 'role'; }
+  function drawTabs(){
+    Array.prototype.forEach.call(document.querySelectorAll('#ppTabs .guide-tab'), function(a){
+      var on = a.getAttribute('href') === (view() === 'group' ? '#by-group' : '#by-role');
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+  window.addEventListener('hashchange', function(){ drawTabs(); render(); });
+  drawTabs();
 
   search.addEventListener('input', render);
   root.addEventListener('click', function(e){
