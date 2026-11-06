@@ -323,10 +323,11 @@
 .wk-talk .stage-fields-actions .wk-talk-convo{margin-left:auto;}
 .wk-talk-moved{margin:12px 0 0; padding:8px 10px; border-radius:6px; background:var(--wash); color:var(--muted); font-size:.92em;}
 .wk-talk-moved a{color:var(--accent); font-weight:600;}
-/* A row's action (project.js actsOut, an experiment): in the right margin, outside the content, joined to its
-   row by a thin line; the row ends in a matching border. Without room, after its value as before. */
-.acts-out .detail-grid dd:has(.detail-act), .acts-out .detail-abstract:has(.detail-act){position:relative; border-right:1px solid var(--line); padding-right:14px;}
-.acts-out .detail-grid dd .detail-act, .acts-out .detail-abstract .detail-act{position:absolute; top:0; left:calc(100% + var(--act-gap, 28px)); white-space:nowrap; font-family:var(--sans); font-size:13px; line-height:24.8px;}
-.acts-out .detail-grid dd .detail-act::before, .acts-out .detail-abstract .detail-act::before{content:''; position:absolute; top:50%; right:100%; width:calc(var(--act-gap, 28px) - 8px); margin-right:8px; border-top:1px solid var(--line);}
-.acts-out .detail-grid dd .detail-act .detail-inline-edit, .acts-out .detail-abstract .detail-act .detail-inline-edit{margin-left:0;}
-.acts-out .detail-abstract .detail-abstract-label .detail-act{top:0;}
+/* A row's action (Edit, Invite someone: detail-act): on the right of its row, level with its first line, so a
+   page's actions line up in one column; the value keeps clear of it. The abstract's, at the end of its label. */
+.detail-grid dd:has(.detail-act){position:relative; padding-right:120px;}
+.detail-grid dd .detail-act{position:absolute; top:0; right:0; line-height:24.8px; font-family:var(--sans); font-size:13px; white-space:nowrap;}
+.detail-grid dd .detail-act .detail-inline-edit{margin-left:0;}
+.detail-abstract-label:has(.detail-act){display:flex; align-items:baseline;}
+.detail-abstract-label .detail-act{margin-left:auto;}
+.detail-abstract-label .detail-act .detail-inline-edit{margin-left:0;}
