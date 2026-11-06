@@ -314,11 +314,6 @@
 .setup-mark{width:1em; color:var(--muted);}
 .setup-list li.is-done .setup-mark{color:var(--accent);}
 /* A proposed project (#226): its budget, and Approve / Decline or Send it again. */
-.proposal-panel{margin:4px 0 18px; padding:12px 14px; border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--surface); font-family:var(--sans); font-size:14px;}
-.proposal-panel p{margin:0 0 8px;}
-.proposal-actions{display:flex; flex-wrap:wrap; align-items:center; gap:8px;}
-.proposal-actions input[type=text]{flex:1 1 260px; min-width:0; font:inherit; padding:5px 8px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}
-.proposal-actions input[type=number]{width:120px; font:inherit; padding:4px 6px; margin-left:6px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}
 /* A card's comments made a conversation (card-talk.js). */
 .wk-talk .stage-fields-actions .wk-talk-convo{margin-left:auto;}
 .wk-talk-moved{margin:12px 0 0; padding:8px 10px; border-radius:6px; background:var(--wash); color:var(--muted); font-size:.92em;}
@@ -347,3 +342,8 @@
 .detail-grid .venue-list{margin:0;}
 /* Between a row's actions: "Set up or Edit", the "or" plain. */
 .detail-or{margin:0 6px; color:var(--muted); font-family:var(--sans); font-size:13px;}
+/* A proposed project: where it is, one line; its conversation below its details (project.js). */
+.proposal-status{margin:4px 0 18px; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+.proposal-hours{display:inline-flex; align-items:center; gap:6px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.proposal-hours input{width:90px; font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.proposal-talk{margin-top:28px;}

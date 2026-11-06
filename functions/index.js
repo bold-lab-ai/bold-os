@@ -4458,6 +4458,30 @@ function normalizeGpuHours(v){
 // (as every change on the site); { id, action: 'resubmit', gpuHours? } by whoever proposed it, after a
 // decline. Approving sets it up as its proposer asked (its channel, meeting, slides, notes, repository),
 // announces it if they asked, and tells them; declining tells them, with the note.
+// A proposed project's conversation (2026-11-06): conversations/cm-proposal-<card id>, about the project, started as
+// its proposer (its budget and abstract); where the proposer and the PIs and admins discuss it, and where each
+// decision (approved, declined, sent again) is written. Made when first needed, so older proposals have one too.
+// Its decisions are source 'proposal' (onConversationMessage leaves them: the proposer is told by deliver).
+async function proposalThread(id, card){
+  const pid = 'cm-proposal-' + id, ref = db.collection('conversations').doc(pid);
+  if ((await ref.get()).exists) return pid;
+  const prop = card.proposal || {}, by = card.submittedBy || {}, abstract = String(card.abstractText || '').trim();
+  const post = { title: ('Proposal: ' + String(card.title || 'a project')).slice(0, 200),
+    body: '**' + String(card.title || 'A project') + '**, with a compute budget of ' + (Number(prop.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours.' + (abstract ? '\n\n' + abstract : ''),
+    name: String(by.name || by.email || 'Someone').slice(0, 200), createdBy: String(by.email || '').toLowerCase(), at: prop.at || card.createdAt || Date.now(),
+    source: 'proposal', project: projectIdOf(card, id), projectTitle: String(card.title || '').slice(0, 300), private: false, readers: [], votes: {}, replies: 0 };
+  await ref.create(post).catch((e) => { if (e.code !== 6) throw e; });   // 6: made meanwhile
+  return pid;
+}
+async function proposalNote(id, card, text, email, name){
+  const pid = await proposalThread(id, card), ref = db.collection('conversations').doc(pid);
+  // It goes on with the conversation: an answer to its latest message (as Reply does), not a branch from the post.
+  const last = (await ref.collection('messages').orderBy('at', 'desc').limit(1).get()).docs[0];
+  // `at` a timestamp, as the site's replies' are (one order: Firestore sorts numbers before timestamps).
+  await ref.collection('messages').add({ parent: last ? last.id : pid, body: text, name: String(name || email), createdBy: email, at: FieldValue.serverTimestamp(), source: 'proposal', votes: {} });
+  await ref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true });
+}
+
 exports.projectProposal = onCall(
   { secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 },
   async (request) => {
@@ -4468,6 +4492,8 @@ exports.projectProposal = onCall(
     const ref = db.collection('projects').doc(id), snap = await ref.get();
     if (!snap.exists || !snap.data().proposal) throw new HttpsError('not-found', 'That proposal isn\u2019t there.');
     const card = snap.data(), prop = card.proposal, mine = lowerEmail(card.submittedBy) === email;
+    // Its conversation (made if it isn't yet), for its page.
+    if (d.action === 'thread') return { id: await proposalThread(id, card) };
     if (d.action === 'resubmit'){
       if (!mine) throw new HttpsError('permission-denied', 'Only whoever proposed it can send it again.');
       if (prop.status !== 'declined') throw new HttpsError('failed-precondition', 'It isn\u2019t declined.');
@@ -4476,6 +4502,8 @@ exports.projectProposal = onCall(
       const next = { status: 'proposed', gpuHours: hours, at: Date.now(), by: email };
       await ref.update({ proposal: next, updatedAt: Date.now() });
       await tellProposal(Object.assign({}, card, { proposal: next }), id);
+      await proposalNote(id, card, 'Sent it again, with a budget of ' + (Number(hours) || 0).toLocaleString('en-GB') + ' GPU hours.', email, request.auth.token.name || email)
+        .catch((err) => logger.warn('Writing to a proposal’s conversation failed', { error: String(err.message) }));
       return { ok: true };
     }
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins decide a proposed project.');
@@ -4484,6 +4512,8 @@ exports.projectProposal = onCall(
     const accept = !!d.accept, note = String(d.note || '').trim().slice(0, 1000), name = request.auth.token.name || email;
     const decided = Object.assign({}, prop, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: name, decidedAt: Date.now(), note });
     await ref.update({ proposal: decided, updatedAt: Date.now() });
+    await proposalNote(id, card, (accept ? '**Approved**' : '**Declined**') + (note ? ': ' + note : '.'), email, name)
+      .catch((err) => logger.warn('Writing to a proposal’s conversation failed', { error: String(err.message) }));
     const to = lowerEmail(card.submittedBy), title = card.title || 'Your project';
     if (!accept){
       await deliver([to], { text: name + ' declined your proposed project \u201c' + title + '\u201d' + (note ? ': \u201c' + note + '\u201d' : '.') + ' You can change it and send it again from its page.',

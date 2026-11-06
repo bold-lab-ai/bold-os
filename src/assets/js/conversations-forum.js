@@ -12,7 +12,8 @@
 // Conversations tab (project.js) mount this same one, so they look and work alike. In a project, only the
 // conversations about it (`project`), new ones about it too, and its address is the project page's own
 // (#id=…&tab=conversations&post=<id>).
-// BoldConversations.create({ project?: { id, title: () => its title }, note? }) → { el (kept: put it back after a redraw), away() }.
+// A page can show one conversation alone (thread: its id; no list, no All posts): a proposed project's.
+// BoldConversations.create({ project?: { id, title: () => its title }, thread?, note? }) → { el (kept: put it back after a redraw), away() }.
 window.BoldConversations = (function(){
   // The forum's markup (once Conversations' page's).
   function shell(note){
@@ -107,6 +108,10 @@ window.BoldConversations = (function(){
       return '<span class="bs-author">' + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + '</span> · ' + ago(m.at);
     }
     function origin(m){
+      // A proposed project's conversation (functions/index.js proposalThread): the project, linked (not on its own page).
+      if (m.source === 'proposal' && m.project && !opts.thread) {
+        return '<p class="bs-origin">A proposed project · <a href="project.html#id=' + encodeURIComponent(m.project) + '">' + esc(m.projectTitle || 'Open it') + '</a></p>';
+      }
       // Started in a project's Conversations tab (project.js): which project, linked.
       if (m.source === 'site' && m.project) {
         return '<p class="bs-origin">About <a href="project.html#id=' + encodeURIComponent(m.project) + '&tab=conversations">' + esc(m.projectTitle || 'a project') + '</a></p>';
@@ -302,11 +307,14 @@ window.BoldConversations = (function(){
     // the project page's own (#id=…&tab=conversations&post=…).
     function route(){
       var h = location.hash, p = /[#&]post=([^&]+)/.exec(h), m = /[#&]msg=([^&]+)/.exec(h);
+      if (opts.thread) return { post: opts.thread, msg: decodeURIComponent((m && m[1]) || '') };
       return { post: decodeURIComponent((p && p[1]) || ''), msg: decodeURIComponent((m && m[1]) || '') };
     }
     // The address without a post: the list.
     function base(){ return project ? location.hash.replace(/&(post|msg)=[^&]*/g, '') : ''; }
     function postHash(pid, mid){
+      // One conversation alone: its messages' links are the page's own address, with &msg=.
+      if (opts.thread) return location.hash.replace(/&msg=[^&]*/g, '') + (mid && mid !== pid ? '&msg=' + encodeURIComponent(mid) : '');
       var b = base();
       return (b ? b + '&' : '#') + 'post=' + encodeURIComponent(pid) + (mid && mid !== pid ? '&msg=' + encodeURIComponent(mid) : '');
     }
@@ -339,7 +347,7 @@ window.BoldConversations = (function(){
         // The post is the tree's root: the first message of the conversation's column, under its title.
         var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
         var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
-        threadEl.innerHTML = '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a>' +
+        threadEl.innerHTML = (opts.thread ? '' : '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a>') +
           '<div class="bs-thread-head"><h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + foldAllHtml(p) + '</div>' + columnHtml(p, p.id, head);
         clampLong();
         drawTree(p);

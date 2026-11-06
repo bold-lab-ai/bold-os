@@ -322,12 +322,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var pending = card.proposal && card.proposal.status !== 'approved';
     if (pending) {
       html += '<span class="badge">' + (card.proposal.status === 'declined' ? 'Declined' : 'Proposed') + '</span>';
+      html += proposalActionsHtml();
       html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
-      html += '</div></div>' + proposalHtml();
-      html += '<div class="tab-panel" id="projectPanel">' + PANELS.overview() + '</div>';
+      html += '</div></div>' + proposalStatusHtml();
+      html += '<div class="tab-panel" id="projectPanel">' + PANELS.overview() + '<div class="proposal-talk" id="proposalTalk"></div></div>';
       el('projectBody').innerHTML = html; el('projectBody').hidden = false; el('detailMsg').hidden = true;
       document.title = card.title + ' | BOLD Lab';
-      wireAbstract(); wireProposal();
+      wireAbstract(); wireProposal(); mountProposalTalk();
       el('removeProject').addEventListener('click', removeProject);
       return;
     }
@@ -394,21 +395,42 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // A proposed project's panel (#226): its budget and where it stands; Approve and Decline for a PI or admin
   // other than whoever proposed it, greyed with the reason for everyone else; after a decline, its proposer
   // sends it again (its budget changed if need be).
-  function proposalHtml(){
+  // A proposed project (#226; its conversation since 2026-11-06): one line of where it is, the decision as
+  // buttons in the header (PIs and admins: Approve, Decline; its proposer, declined: Send it again), and below,
+  // its conversation (functions/index.js proposalThread), where it's discussed and each decision is written.
+  function proposalStatusHtml(){
     var p = card.proposal, hours = (Number(p.gpuHours) || 0).toLocaleString('en-GB');
-    var mine = !!me && String((card.submittedBy || {}).email || '').toLowerCase() === String(me.email || '').toLowerCase();
     var who = esc((card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone');
+    return '<p class="proposal-status">' + (p.status === 'declined'
+      ? '<strong>Declined</strong> by ' + esc(p.decidedByName || p.decidedBy || 'a PI or admin') + '. It asked for ' + hours + ' GPU hours.'
+      : '<strong>Proposed</strong> by ' + who + ' \u00b7 <strong>' + hours + ' GPU hours</strong> \u00b7 waiting for a PI or admin. Once approved, its channel, meeting, slides, notes and repository are made.') +
+      '</p><p class="field-error" id="propError" hidden></p>';
+  }
+  function proposalActionsHtml(){
+    var p = card.proposal;
+    var mine = !!me && String((card.submittedBy || {}).email || '').toLowerCase() === String(me.email || '').toLowerCase();
     if (p.status === 'declined') {
-      return '<div class="proposal-panel"><p><strong>Declined</strong> by ' + esc(p.decidedByName || p.decidedBy || 'a PI or admin') + (p.note ? ': \u201c' + esc(p.note) + '\u201d' : '.') + ' It asked for ' + hours + ' GPU hours.</p>' +
-        (mine ? '<div class="proposal-actions"><label>Compute budget (GPU hours) <input type="number" id="propHours" min="1" step="1" value="' + esc(String(p.gpuHours || '')) + '"></label>' +
-          '<button type="button" class="btn-box is-primary" id="propResubmit">Send it again</button></div>' : '') + '<p class="field-error" id="propError" hidden></p></div>';
+      return mine ? '<label class="proposal-hours">GPU hours <input type="number" id="propHours" min="1" step="1" value="' + esc(String(p.gpuHours || '')) + '"></label>' +
+        '<button type="button" class="btn-box is-primary" id="propResubmit">Send it again</button>' : '';
     }
     var why = !fullWrite ? 'Only PIs and admins decide a proposed project' : mine ? 'Another PI or admin decides your own proposal' : '';
-    return '<div class="proposal-panel"><p><strong>Proposed</strong> by ' + who + ' \u00b7 <strong>' + hours + ' GPU hours</strong> \u00b7 waiting for a PI or admin to approve it. Once approved, its channel, meeting, slides, notes and repository are made.</p>' +
-      '<div class="proposal-actions"><input type="text" id="propNote" maxlength="1000" placeholder="A note to ' + who + ' (optional)"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' +
-      '<button type="button" class="btn-box is-primary" id="propApprove"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Approve</button>' +
-      '<button type="button" class="btn-box" id="propDecline"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Decline</button></div>' +
-      '<p class="field-error" id="propError" hidden></p></div>';
+    var off = why ? ' disabled title="' + esc(why) + '"' : '';
+    return '<button type="button" class="btn-box is-primary" id="propApprove"' + off + '>Approve</button>' +
+      '<button type="button" class="btn-box" id="propDecline"' + off + '>Decline</button>';
+  }
+  // Its conversation, the forum's own (conversations-forum.js), that one thread alone.
+  var proposalTalk = null;
+  function mountProposalTalk(){
+    var at = el('proposalTalk');
+    if (!at || !window.BoldConversations) return;
+    if (proposalTalk && proposalTalk.f) { at.appendChild(proposalTalk.f.el); return; }
+    if (proposalTalk) return;   // asked for already
+    proposalTalk = { f: null };
+    firebase.app().functions('europe-west2').httpsCallable('projectProposal')({ id: projectId, action: 'thread' }).then(function(r){
+      var pid = card.projectId || projectId;
+      proposalTalk.f = BoldConversations.create({ note: 'Its conversation: say what you think of it here.', thread: r.data.id, project: { id: pid, title: function(){ return card.title || ''; } } });
+      var at2 = el('proposalTalk'); if (at2) at2.appendChild(proposalTalk.f.el);
+    }, function(err){ console.error('[BOLD Lab] loading the proposal’s conversation failed', err); proposalTalk = null; });
   }
   function wireProposal(){
     var call = function(args, btn){
@@ -419,13 +441,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         var e = el('propError'); if (e) { e.textContent = (err && err.message) || 'Couldn\u2019t do that \u2014 try again.'; e.hidden = false; }
       });
     };
-    var note = function(){ return el('propNote') ? el('propNote').value.trim() : ''; };
+    var note = function(){ return ''; };   // a reason: in its conversation
     if (el('propApprove')) el('propApprove').addEventListener('click', function(){
       BOLD.confirmAlways({ title: 'Approve \u201c' + card.title + '\u201d?', go: 'Approve', effects: ['Approve its budget of ' + (Number(card.proposal.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours',
-        'Make its Slack channel, meeting, slides, notes and repository, as its proposer asked', 'Tell them, on BOLD.OS'] }).then(function(ok){ if (ok) call({ accept: true, note: note() }, el('propApprove')); });
+        'Make its Slack channel, meeting, slides, notes and repository, as its proposer asked', 'Tell them, on BOLD.OS, and write it in its conversation'] }).then(function(ok){ if (ok) call({ accept: true, note: note() }, el('propApprove')); });
     });
     if (el('propDecline')) el('propDecline').addEventListener('click', function(){
-      BOLD.confirmAlways({ title: 'Decline \u201c' + card.title + '\u201d?', go: 'Decline', effects: ['Tell its proposer, on BOLD.OS' + (note() ? ', with your note' : '')] }).then(function(ok){ if (ok) call({ accept: false, note: note() }, el('propDecline')); });
+      BOLD.confirmAlways({ title: 'Decline \u201c' + card.title + '\u201d?', go: 'Decline', effects: ['Tell its proposer, on BOLD.OS, and write it in its conversation'] }).then(function(ok){ if (ok) call({ accept: false, note: note() }, el('propDecline')); });
     });
     if (el('propResubmit')) el('propResubmit').addEventListener('click', function(){
       BOLD.confirmAlways({ title: 'Send \u201c' + card.title + '\u201d again?', go: 'Send', effects: ['Send it to the PIs and admins to approve'] }).then(function(ok){ if (ok) call({ action: 'resubmit', gpuHours: el('propHours').value }, el('propResubmit')); });
