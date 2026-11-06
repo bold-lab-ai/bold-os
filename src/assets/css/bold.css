@@ -1044,3 +1044,29 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .is-birthday .masthead{border-bottom:0; background-image:repeating-linear-gradient(90deg, var(--green) 0 14px, var(--amber) 14px 28px, var(--plum) 28px 42px, var(--teal) 42px 56px, var(--danger-text) 56px 70px);
   background-size:100% 3px; background-repeat:no-repeat; background-position:bottom;}
 @media (prefers-reduced-motion: reduce){ .egg-panic{animation:none;} }
+/* `redpill`: the Matrix. Every role green on black, every font monospace; html:root wins over any theme. */
+html:root.is-matrix{
+  --ink:#3cff7a; --ink-soft:#2ee068; --muted:#1fa850; --paper:#000; --surface:#020f06; --wash:#04210d;
+  --accent:#3cff7a; --accent-hover:#9dffbd; --accent-dim:#06301a; --link:#9dffbd; --on-fill:#000; --hover-mix:#fff; --shade:#000;
+  --green:#3cff7a; --brown:#7dd98f; --amber:#b6ff5c; --plum:#5cffb0; --teal:#2ee0a0;
+  --success-text:#3cff7a; --success-bg:#06301a; --success-line:#0e5a2c;
+  --warn-text:#b6ff5c; --warn-bg:#1d2a06; --warn-line:#41600e;
+  --danger-text:#ff5c5c; --danger-bg:#2a0606; --danger-line:#601010;
+  --neutral-text:#7dd98f; --neutral-bg:#04210d;
+  --highlight:rgba(60,255,122,.22); --highlight-strong:rgba(60,255,122,.4); --highlight-line:rgba(60,255,122,.6);
+  --label-fade:1;
+  --serif:ui-monospace, 'SF Mono', Menlo, 'Courier New', monospace; --sans:ui-monospace, 'SF Mono', Menlo, 'Courier New', monospace;
+  background:#000; color-scheme:dark;
+}
+html:root.is-matrix body{background:transparent; text-shadow:0 0 5px color-mix(in srgb, #3cff7a 45%, transparent);}
+html:root.is-matrix img, html:root.is-matrix video{filter:grayscale(1) sepia(1) hue-rotate(75deg) saturate(4) brightness(.85);}
+/* Over the page, faint and screened (black adds nothing), so it shows through every panel and takes no clicks. */
+.mx-rain{position:fixed; inset:0; width:100vw; height:100vh; z-index:9997; opacity:.2; mix-blend-mode:screen; pointer-events:none;}
+.mx-pill{position:fixed; right:16px; bottom:16px; z-index:9999; font:600 12px ui-monospace, Menlo, monospace; letter-spacing:.04em;
+  color:#fff; background:#2557d6; border:0; border-radius:999px; padding:8px 14px; cursor:pointer; box-shadow:0 0 14px rgba(37,87,214,.7);}
+.mx-pill:hover{background:#3a6cf0;}
+.mx-wake{position:fixed; inset:0; z-index:9998; background:#000; color:#3cff7a; display:flex; align-items:center; justify-content:center;
+  font:clamp(22px, 4vw, 40px) ui-monospace, Menlo, monospace; text-shadow:0 0 8px #3cff7a; transition:opacity .8s; pointer-events:none;}
+.mx-wake::after{content:'▋'; animation:mx-blink 1s steps(1) infinite; margin-left:4px;}
+.mx-wake.is-gone{opacity:0;}
+@keyframes mx-blink{50%{opacity:0;}}

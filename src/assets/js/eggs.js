@@ -3,6 +3,7 @@
 // belong: the 404 page (404.njk), `sudo` in search (pages/search.js), the lamp theme
 // (mountTheme, bold.js), the deadline's shiver (markdown.js), the Lineage engraving
 // (pages/network.js), \bold in KaTeX (card-model.js) and the inbox's cat (pages/notifications.js).
+// Here: the console, Reviewer 2, milestone numbers, the birthday and the Matrix (`redpill`).
 // Their styles are at the end of bold.css.
 (function(){
   var root = document.documentElement;
@@ -75,6 +76,74 @@
     if (mast) mast.title = 'Happy birthday, BOLD.';
   }
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function(){ watch(); birthday(); });
-  else { watch(); birthday(); }
+  // Type `redpill` (not in a field): the whole site in green on black, glyphs raining behind it.
+  // `bluepill`, or the pill at the bottom right, wakes you up. Kept across pages (boldMatrix).
+  var typed = '', rain = null;
+  function matrix(on, intro){
+    root.classList.toggle('is-matrix', on);
+    try { if (on) localStorage.setItem('boldMatrix', '1'); else localStorage.removeItem('boldMatrix'); } catch (e){}
+    if (!on) {
+      if (rain) { rain.stop(); rain = null; }
+      document.querySelectorAll('.mx-pill, .mx-wake').forEach(function(n){ n.remove(); });
+      return;
+    }
+    if (!document.querySelector('.mx-pill')) {
+      var pill = document.createElement('button');
+      pill.type = 'button'; pill.className = 'mx-pill'; pill.textContent = 'Take the blue pill';
+      pill.addEventListener('click', function(){ matrix(false); });
+      document.body.appendChild(pill);
+    }
+    if (!rain) rain = startRain();
+    if (intro) wake();
+  }
+  function wake(){
+    var w = document.createElement('div'), line = 'Wake up, BOLD…', i = 0;
+    w.className = 'mx-wake'; w.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(w);
+    var t = setInterval(function(){
+      w.textContent = line.slice(0, ++i);
+      if (i >= line.length) { clearInterval(t); setTimeout(function(){ w.classList.add('is-gone'); setTimeout(function(){ w.remove(); }, 800); }, 1200); }
+    }, 90);
+  }
+  function startRain(){
+    var cv = document.createElement('canvas'), cx = cv.getContext('2d');
+    cv.className = 'mx-rain'; cv.setAttribute('aria-hidden', 'true');
+    document.body.insertBefore(cv, document.body.firstChild);
+    var GLYPHS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789BOLD∇∑∂λθ', S = 16, drops = [], frame = 0, last = 0;
+    var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function size(){
+      var d = window.devicePixelRatio || 1;
+      cv.width = innerWidth * d; cv.height = innerHeight * d; cx.setTransform(d, 0, 0, d, 0, 0);
+      drops = []; for (var c = 0; c < Math.ceil(innerWidth / S); c++) drops.push(Math.random() * -innerHeight / S);
+      cx.fillStyle = '#000'; cx.fillRect(0, 0, innerWidth, innerHeight);
+    }
+    function draw(){
+      cx.fillStyle = 'rgba(0,0,0,0.08)'; cx.fillRect(0, 0, innerWidth, innerHeight);
+      cx.font = S + 'px ui-monospace, Menlo, monospace';
+      drops.forEach(function(y, c){
+        var ch = GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
+        cx.fillStyle = Math.random() < 0.04 ? '#d8ffe4' : '#2bff6a';
+        cx.fillText(ch, c * S, y * S);
+        drops[c] = y * S > innerHeight && Math.random() > 0.975 ? 0 : y + 1;
+      });
+    }
+    function loop(t){ frame = requestAnimationFrame(loop); if (t - last < 50) return; last = t; draw(); }
+    size();
+    if (still) { for (var k = 0; k < 60; k++) draw(); } else frame = requestAnimationFrame(loop);
+    addEventListener('resize', size);
+    return { stop: function(){ cancelAnimationFrame(frame); removeEventListener('resize', size); cv.remove(); } };
+  }
+  document.addEventListener('keydown', function(e){
+    var t = e.target;
+    if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+    if (e.key.length !== 1) return;
+    typed = (typed + e.key.toLowerCase()).slice(-8);
+    if (/redpill$/.test(typed) && !root.classList.contains('is-matrix')) { typed = ''; matrix(true, true); }
+    else if (/bluepill$/.test(typed) && root.classList.contains('is-matrix')) { typed = ''; matrix(false); }
+  });
+  addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1', false); });
+
+  function start(){ watch(); birthday(); if (root.classList.contains('is-matrix')) matrix(true, false); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
+  else start();
 })();
