@@ -79,7 +79,7 @@
   // Type `redpill` (not in a field): the whole site in green on black, glyphs raining behind it.
   // `bluepill`, or the pill at the bottom right, wakes you up. Kept across pages (boldMatrix).
   var typed = '', rain = null;
-  function matrix(on, intro){
+  function matrix(on){
     try { console.log(on ? '[BOLD] Wake up.' : '[BOLD] Blue pill.'); } catch (e){}
     root.classList.toggle('is-matrix', on);
     try { if (on) localStorage.setItem('boldMatrix', '1'); else localStorage.removeItem('boldMatrix'); } catch (e){}
@@ -95,16 +95,62 @@
       document.body.appendChild(pill);
     }
     if (!rain) rain = startRain();
-    if (intro) wake();
   }
-  function wake(){
-    var w = document.createElement('div'), line = 'Wake up, BOLD…', i = 0;
-    w.className = 'mx-wake'; w.setAttribute('aria-hidden', 'true');
-    document.body.appendChild(w);
-    var t = setInterval(function(){
-      w.textContent = line.slice(0, ++i);
-      if (i >= line.length) { clearInterval(t); setTimeout(function(){ w.classList.add('is-gone'); setTimeout(function(){ w.remove(); }, 800); }, 1200); }
-    }, 90);
+  // `redpill` first opens a terminal that talks: a few lines, then the choice, answered at a prompt.
+  // red enters the Matrix, blue (or exit, or Esc) closes it; a few other words have answers of their own.
+  function firstName(){
+    try { var u = BOLD.getAuth() && BOLD.getAuth().currentUser; return u && u.displayName ? u.displayName.split(' ')[0] : ''; } catch (e){ return ''; }
+  }
+  var REPLIES = ['Denied by the Firestore rules of this reality.', 'The Oracle is in a meeting. Try the Service desk.',
+    'That is a hyperparameter, not a choice.', 'Interesting. Reviewer 2 disagrees.', 'Your request has been numbered. Nobody will read it.',
+    'Have you tried a larger batch size?', 'I can only show you the door. Red or blue?'];
+  function converse(){
+    if (document.querySelector('.mx-term')) return;
+    var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var term = document.createElement('div');
+    term.className = 'mx-wake mx-term'; term.setAttribute('role', 'dialog'); term.setAttribute('aria-label', 'Wake up');
+    term.innerHTML = '<div class="mx-log" aria-live="polite"></div><form class="mx-prompt" hidden><span aria-hidden="true">&gt;</span>' +
+      '<input type="text" autocomplete="off" spellcheck="false" aria-label="Your answer"></form>';
+    document.body.appendChild(term);
+    var log = term.querySelector('.mx-log'), form = term.querySelector('.mx-prompt'), input = form.querySelector('input'), queue = [], busy = false;
+    function close(){ term.classList.add('is-gone'); setTimeout(function(){ term.remove(); }, 600); }
+    // Lines type themselves out, one after another; then the prompt.
+    function say(lines, then){ queue.push({ lines: lines, then: then }); if (!busy) next(); }
+    function next(){
+      var job = queue.shift();
+      if (!job) { busy = false; form.hidden = false; input.focus(); return; }
+      busy = true; form.hidden = true;
+      (function line(k){
+        if (k >= job.lines.length) { if (job.then) job.then(); else next(); return; }
+        var p = document.createElement('p'), text = job.lines[k], i = 0;
+        log.appendChild(p);
+        if (still) { p.textContent = text; setTimeout(function(){ line(k + 1); }, 250); return; }
+        var t = setInterval(function(){
+          p.textContent = text.slice(0, ++i);
+          if (i >= text.length) { clearInterval(t); setTimeout(function(){ line(k + 1); }, 550); }
+        }, 45);
+      })(0);
+    }
+    function echo(text){ var p = document.createElement('p'); p.className = 'mx-you'; p.textContent = '> ' + text; log.appendChild(p); }
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var said = input.value.trim(), w = said.toLowerCase().replace(/[^a-z ]/g, '').trim();
+      input.value = '';
+      if (!said) return;
+      echo(said);
+      if (/^(red|red pill|the red one|take the red pill)$/.test(w)) say(['Good.', 'Loading the construct…'], function(){ close(); matrix(true); });
+      else if (/^(blue|blue pill|the blue one|take the blue pill)$/.test(w)) say(['Back to your desk, then. The deadline is still real.'], close);
+      else if (/^(exit|quit|bye|wake up|logout)$/.test(w)) say(['There is no exit. Fine, there is.'], close);
+      else if (w === 'help') say(['red · blue · whoami · rabbit · spoon · exit']);
+      else if (w === 'whoami') { var n = firstName(); say([n ? 'You are ' + n + '. Or so the Slack sign-in says.' : 'Nobody. You aren’t signed in.']); }
+      else if (/rabbit/.test(w)) say(['Follow it.'], function(){ location.href = 'down-the-rabbit-hole.html'; });
+      else if (/spoon/.test(w)) say(['There is no baseline.']);
+      else say([REPLIES[Math.floor(Math.random() * REPLIES.length)]]);
+    });
+    term.addEventListener('keydown', function(e){ if (e.key === 'Escape') { e.stopPropagation(); close(); } });
+    var n = firstName();
+    say(['Wake up, ' + (n || 'BOLD') + '…', 'You’ve been training in a simulation.', 'Your loss isn’t real. Your reviewers are.',
+      'Red pill: see how deep the gradient goes. Blue pill: back to your desk.', '(Type red or blue. Or help.)']);
   }
   function startRain(){
     var cv = document.createElement('canvas'), cx = cv.getContext('2d');
@@ -139,14 +185,14 @@
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
     if (e.key.length !== 1 || e.metaKey || e.ctrlKey || e.altKey || e.key === ' ') return;   // "red pill" counts too
     typed = (typed + e.key.toLowerCase()).slice(-8);
-    if (/redpill$/.test(typed) && !root.classList.contains('is-matrix')) { typed = ''; matrix(true, true); }
+    if (/redpill$/.test(typed) && !root.classList.contains('is-matrix')) { typed = ''; converse(); }
     else if (/bluepill$/.test(typed) && root.classList.contains('is-matrix')) { typed = ''; matrix(false); }
   });
-  addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1', false); });
+  addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1'); });
   // For search (pages/search.js: `red pill`).
-  window.BoldEggs = { matrix: function(on){ if (on !== root.classList.contains('is-matrix')) matrix(on, on); } };
+  window.BoldEggs = { matrix: function(on){ if (on !== root.classList.contains('is-matrix')) matrix(on); } };
 
-  function start(){ watch(); birthday(); if (root.classList.contains('is-matrix')) matrix(true, false); }
+  function start(){ watch(); birthday(); if (root.classList.contains('is-matrix')) matrix(true); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();

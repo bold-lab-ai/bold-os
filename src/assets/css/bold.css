@@ -1069,4 +1069,13 @@ html:root.is-matrix img, html:root.is-matrix video{filter:grayscale(1) sepia(1) 
   font:clamp(22px, 4vw, 40px) ui-monospace, Menlo, monospace; text-shadow:0 0 8px #3cff7a; transition:opacity .8s; pointer-events:none;}
 .mx-wake::after{content:'▋'; animation:mx-blink 1s steps(1) infinite; margin-left:4px;}
 .mx-wake.is-gone{opacity:0;}
+.mx-term{display:block; padding:max(12vh, 48px) 16px 32px; pointer-events:auto; overflow:auto; font-size:clamp(16px, 2.2vw, 20px); line-height:1.6;}
+.mx-term::after{content:none;}
+.mx-log, .mx-prompt{max-width:680px; margin:0 auto;}
+.mx-log p{margin:0 0 6px;}
+.mx-log p:last-child:not(.mx-you)::after{content:'▋'; animation:mx-blink 1s steps(1) infinite; margin-left:3px;}
+.mx-you{color:#9dffbd;}
+.mx-prompt{display:flex; gap:10px; margin-top:12px;}
+.mx-prompt[hidden]{display:none;}
+.mx-prompt input{flex:1; min-width:0; background:transparent; border:0; outline:0; color:#3cff7a; font:inherit; text-shadow:inherit; caret-color:#3cff7a;}
 @keyframes mx-blink{50%{opacity:0;}}
