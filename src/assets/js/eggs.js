@@ -90,7 +90,8 @@
     }
     if (!document.querySelector('.mx-pill')) {
       var pill = document.createElement('button');
-      pill.type = 'button'; pill.className = 'mx-pill'; pill.textContent = 'Take the blue pill';
+      pill.type = 'button'; pill.className = 'mx-pill';
+      pill.setAttribute('aria-label', 'Take the blue pill'); pill.title = 'Take the blue pill';   // just the pill, no words
       pill.addEventListener('click', function(){ matrix(false); });
       document.body.appendChild(pill);
     }

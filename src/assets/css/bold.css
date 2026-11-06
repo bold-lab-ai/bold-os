@@ -1069,10 +1069,13 @@ html:root.is-matrix ::selection{background:#b4f0bd; color:#06100a; text-shadow:n
 /* The rain: over the page, screened, taking no clicks; on the way in, a full-screen downpour first. */
 .mx-rain{position:fixed; inset:0; width:100vw; height:100vh; z-index:9997; opacity:.22; mix-blend-mode:screen; pointer-events:none; transition:opacity 1.6s ease;}
 .mx-rain.is-full{opacity:1; mix-blend-mode:normal; transition:none;}
-.mx-pill{position:fixed; right:16px; bottom:16px; z-index:9999; font:700 13px 'Courier New', Courier, monospace; letter-spacing:.03em;
-  color:#e6efff; background:#1b3fa8; border:1px solid #6f95ff; border-radius:999px; padding:8px 16px; cursor:pointer;
-  text-shadow:0 0 6px rgba(150,180,255,.8); box-shadow:0 0 16px rgba(60,110,255,.55);}
-.mx-pill:hover{background:#2552cf;}
+/* The blue pill: a glossy capsule, tilted, glowing; no words (its name is its label and tooltip). */
+.mx-pill{position:fixed; right:22px; bottom:26px; z-index:9999; width:46px; height:20px; padding:0; border:0; border-radius:999px; cursor:pointer;
+  transform:rotate(-28deg); transition:transform .2s ease, box-shadow .2s ease;
+  background:radial-gradient(ellipse 60% 40% at 35% 28%, rgba(255,255,255,.75), transparent 70%), linear-gradient(160deg, #6f9bff 0%, #2a5be0 45%, #10308f 100%);
+  box-shadow:inset 0 -3px 5px rgba(0,0,30,.45), inset 0 2px 2px rgba(255,255,255,.35), 0 0 14px rgba(70,120,255,.65), 0 3px 6px rgba(0,0,0,.6);}
+.mx-pill:hover{transform:rotate(-28deg) scale(1.12); box-shadow:inset 0 -3px 5px rgba(0,0,30,.45), inset 0 2px 2px rgba(255,255,255,.35), 0 0 22px rgba(90,140,255,.9), 0 3px 6px rgba(0,0,0,.6);}
+.mx-pill:focus-visible{outline:2px solid #9dbcff; outline-offset:4px;}
 .mx-wake{position:fixed; inset:0; z-index:9998; background:#000; color:#3cff7a; display:flex; align-items:center; justify-content:center;
   font:clamp(22px, 4vw, 40px) ui-monospace, Menlo, monospace; text-shadow:0 0 8px #3cff7a; transition:opacity .8s; pointer-events:none;}
 .mx-wake::after{content:'▋'; animation:mx-blink 1s steps(1) infinite; margin-left:4px;}
