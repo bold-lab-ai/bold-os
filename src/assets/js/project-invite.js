@@ -45,7 +45,8 @@ window.BoldProjectInvite = (function(){
           '<datalist id="pjInvPeople">' + people.map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</datalist>' +
           (msg ? '<p class="st-error">' + esc(msg) + '</p>' : '') +
           '<div class="event-form-actions"><button type="button" class="btn-box is-primary pj-inv-send"' + (busy ? ' disabled' : '') + '>Invite</button><button type="button" class="btn-box pj-inv-cancel">Cancel</button></div></div>'
-        : '<button type="button" class="btn-text pj-inv-open"' + (can ? '' : ' disabled title="' + esc(o.notEditor || 'Only the project’s submitter, authors, PIs and admins invite people') + '"') + '>Invite someone</button>' +
+        // The People row's action (project.js detail-act: in the right margin where there's room).
+        : '<span class="detail-act"><button type="button" class="btn-text pj-inv-open"' + (can ? '' : ' disabled title="' + esc(o.notEditor || 'Only the project’s submitter, authors, PIs and admins invite people') + '"') + '>Invite someone</button></span>' +
           (msg && !open ? '<span class="detail-hint">' + esc(msg) + '</span>' : '')) +
       '</div>';
   }

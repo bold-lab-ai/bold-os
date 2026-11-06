@@ -194,8 +194,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
 
   function editButton(what){
     var off = !canEdit() ? NOT_EDITOR : what === 'authors' && authorsLocked() ? AUTHORS_LOCKED : '';
-    return ' <button class="btn-text detail-inline-edit" type="button" data-edit="' + what + '"' +
-      (off ? ' disabled title="' + off + '"' : '') + '>Edit</button>';
+    // A row's action (detail-act): in the right margin where there's room (actsOut), else after its value.
+    return ' <span class="detail-act"><button class="btn-text detail-inline-edit" type="button" data-edit="' + what + '"' +
+      (off ? ' disabled title="' + off + '"' : '') + '>Edit</button></span>';
   }
 
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
@@ -246,6 +247,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       html += peopleRows() + repoRow();
       html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
         '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
+      html += simpleRow('compute');
       html += row('Submitted by', card.submittedBy && card.submittedBy.name
         ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
         : missing());
@@ -272,7 +274,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     // The write-up and its submission.
     paper: function(){
       return '<dl class="detail-grid">' + row('Venues', venuesHtml()) +
-        simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') + '</dl>';
+        simpleRow('overleaf') + simpleRow('arxiv') + '</dl>';
     },
     // Its work board: the board keeps its own drawing (project-work.js), put back in here on each render.
     work: function(){ return '<div id="workMount"></div>'; },
@@ -296,6 +298,20 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       wsBusy = false; wsMsg = esc((err && err.message) || 'That didn\u2019t work \u2014 try again.'); render();
     });
   }
+
+  // A row's action (Edit, Invite someone) in the right margin, outside the content, joined to its row by a
+  // thin line, the row ending in a matching border (2026-11-06, an experiment): where the margin has room
+  // for it; otherwise after its value, as before. --act-gap: from the rows' right edge to past the content's.
+  var ACT_ROOM = 130;
+  function actsOut(){
+    var body = el('projectBody'), panel = el('projectPanel');
+    if (!body || !panel) return;
+    var r = panel.getBoundingClientRect(), grid = panel.querySelector('.detail-grid, .detail-abstract');
+    var out = window.innerWidth - r.right >= ACT_ROOM;
+    body.classList.toggle('acts-out', out);
+    if (out && grid) body.style.setProperty('--act-gap', Math.round(r.right - grid.getBoundingClientRect().right + 28) + 'px');
+  }
+  window.addEventListener('resize', function(){ actsOut(); });
 
   function render(){
     if (tab === 'work' && wsLoaded && !hasBoard()) tab = 'overview';
@@ -365,6 +381,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       el('talkMount').appendChild(forum.f.el);
     } else if (forum) forum.f.away();
     if (el('workAdd')) el('workAdd').addEventListener('click', addWorkBoard);
+    actsOut();
     el('detailMsg').hidden = true;
     document.title = card.title + ' | BOLD Lab';
     linkSlackChannel();
