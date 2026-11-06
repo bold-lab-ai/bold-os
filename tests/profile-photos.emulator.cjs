@@ -119,6 +119,29 @@ async function ruleRequest(path, method, auth, body) {
   assert.equal((await service.read('UOTHER')).source, 'manual');
   mode = 'ok';
 
+  // By default: a member who never chose gets their Slack picture the first time it's needed.
+  await db.collection('people').doc('UAUTO').set({ email: 'auto@example.test', name: 'Auto', slackId: 'UAUTO' });
+  await db.collection('people').doc('UDEF').set({ email: 'def@example.test', name: 'Def', slackId: 'UDEF' });
+  mode = 'ok';
+  const auto = await service.batch(['UAUTO', 'UNOTONROSTER']);
+  assert.equal(auto.UAUTO.state, 'active');
+  assert.equal((await db.collection('profilePhotos').doc('UAUTO').get()).data().source, 'slack');
+  assert.equal(auto.UNOTONROSTER.state, 'missing');
+  assert.equal((await db.collection('profilePhotos').doc('UNOTONROSTER').get()).exists, false);
+  // Removed: initials, never imported again by default.
+  await service.remove('UAUTO');
+  const afterRemove = calls;
+  assert.equal((await service.batch(['UAUTO'])).UAUTO.state, 'removed');
+  assert.equal(calls, afterRemove);
+  // Slack's default picture: initials, and not asked again for a day.
+  mode = 'default';
+  assert.equal((await service.batch(['UDEF'])).UDEF.state, 'missing');
+  assert.ok((await db.collection('profilePhotos').doc('UDEF').get()).data().checkedAt);
+  const afterDefault = calls;
+  await service.batch(['UDEF']); await service.read('UDEF');
+  assert.equal(calls, afterDefault);
+  mode = 'ok';
+
   const owner = jwt('owner@example.test', true), other = jwt('other@example.test', true), google = jwt('owner@example.test', false);
   const path = 'profilePhotos/UOWNER';
   assert.equal((await ruleRequest(path, 'GET')).status, 403);

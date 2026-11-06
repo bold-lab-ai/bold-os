@@ -72,9 +72,31 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
     if (!validId(id)) throw userError('Your Slack account is not in the member roster.', 'failed-precondition');
     return id;
   }
+  // By default a member shows their Slack picture: the first time their photo is
+  // needed and they have never chosen one (no state: not imported, replaced or
+  // removed), it's imported from Slack as "Use my Slack photo" would. Slack with
+  // only its default picture, or a failure, is tried again a day later (checkedAt).
+  // Only members on the roster (people), and at most AUTO_MAX in one call.
+  const AUTO_MAX = 40, AUTO_AT_ONCE = 6;
+  const due = data => !data.state && !(data.pending && Date.now() - (data.pendingAt || 0) < 60 * 1000) &&
+    !(data.checkedAt && Date.now() - data.checkedAt < DAY);
+  async function autoFill(ids, datas) {
+    const want = ids.filter((id, i) => due(datas[i])).slice(0, AUTO_MAX);
+    if (!want.length) return datas;
+    const onRoster = await db.getAll(...want.map(id => db.collection('people').doc(id)));
+    const queue = want.filter((id, i) => onRoster[i].exists);
+    const workers = Array.from({ length: Math.min(AUTO_AT_ONCE, queue.length) }, async () => {
+      for (let id; (id = queue.shift());) await importSlack(id, { auto: true }).catch(() => null);
+    });
+    await Promise.all(workers);
+    const again = await db.getAll(...want.map(id => collection.doc(id)));
+    const fresh = Object.fromEntries(want.map((id, i) => [id, again[i].data() || {}]));
+    return ids.map((id, i) => fresh[id] || datas[i]);
+  }
   async function read(id) {
     if (!validId(id)) return { state: 'missing' };
-    return signed((await collection.doc(id).get()).data() || {});
+    const [data] = await autoFill([id], [(await collection.doc(id).get()).data() || {}]);
+    return signed(data);
   }
   async function signed(data) {
     if (!data.path || data.state !== 'active') return { state: data.state || 'missing' };
@@ -97,17 +119,32 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
     const unique = Array.from(new Set(ids.filter(id => typeof id === 'string')));
     const valid = unique.filter(validId);
     const snaps = valid.length ? await db.getAll(...valid.map(id => collection.doc(id))) : [];
-    const results = await Promise.all(snaps.map(async (snap, i) => [valid[i], await signed(snap.data() || {})]));
+    const datas = await autoFill(valid, snaps.map(snap => snap.data() || {}));
+    const results = await Promise.all(datas.map(async (data, i) => [valid[i], await signed(data)]));
     const out = Object.fromEntries(unique.filter(id => !validId(id)).map(id => [id, { state: 'missing' }]));
     return Object.assign(out, Object.fromEntries(results));
   }
   // Marks an import as under way. A later one takes over (its mark replaces this
   // one's, and only the latest is adopted); the state, 'removed' included, changes
-  // only when an import succeeds.
-  async function claim(id) {
-    const pending = crypto.randomUUID();
-    await collection.doc(id).set({ pending, pendingAt: Date.now() }, { merge: true });
-    return pending;
+  // only when an import succeeds. An automatic one claims only a photo still due
+  // (never chosen, nothing under way): '' otherwise.
+  async function claim(id, auto) {
+    const pending = crypto.randomUUID(), ref = collection.doc(id);
+    if (!auto) { await ref.set({ pending, pendingAt: Date.now() }, { merge: true }); return pending; }
+    return db.runTransaction(async tx => {
+      const snap = await tx.get(ref);
+      if (!due(snap.data() || {})) return '';
+      tx.set(ref, { pending, pendingAt: Date.now() }, { merge: true });
+      return pending;
+    });
+  }
+  // An automatic import that found nothing to use, or failed: tried again a day later.
+  async function checked(id, pending) {
+    const ref = collection.doc(id);
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(ref);
+      if ((snap.data() || {}).pending === pending) tx.set(ref, { checkedAt: Date.now(), pending: FieldValue.delete(), pendingAt: FieldValue.delete() }, { merge: true });
+    });
   }
   async function clearPending(id, pending) {
     const ref = collection.doc(id);
@@ -116,10 +153,13 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
       if ((snap.data() || {}).pending === pending) tx.update(ref, { pending: FieldValue.delete(), pendingAt: FieldValue.delete() });
     });
   }
-  // The member's choice to use their Slack photo. 'no-slack-photo': Slack has only
-  // its default for them, and whatever they had stays.
-  async function importSlack(id) {
-    const pending = await claim(id);
+  // The member's choice to use their Slack photo (or, with auto, the default for a
+  // member who never chose: autoFill). 'no-slack-photo': Slack has only its default
+  // for them, and whatever they had stays.
+  async function importSlack(id, opts) {
+    const auto = !!(opts && opts.auto);
+    const pending = await claim(id, auto);
+    if (!pending) return { state: 'unchanged' };
     let path = '';
     try {
       const response = await fetcher('https://slack.com/api/users.info?user=' + encodeURIComponent(id), {
@@ -130,7 +170,7 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
       const profile = (json.user && json.user.profile) || {};
       const url = profile.image_192 || profile.image_72 || profile.image_512 || '';
       if (!url || profile.is_custom_image === false || /_default\./i.test(url)) {
-        await clearPending(id, pending);
+        await (auto ? checked(id, pending) : clearPending(id, pending));
         return { state: 'no-slack-photo' };
       }
       const image = await slackImage(fetcher, url);
@@ -148,7 +188,7 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
       return { state: 'active' };
     } catch (err) {
       if (path) await bucket.file(path).delete({ ignoreNotFound: true }).catch(() => {});
-      await clearPending(id, pending);
+      await (auto ? checked(id, pending) : clearPending(id, pending)).catch(() => {});
       throw err;
     }
   }

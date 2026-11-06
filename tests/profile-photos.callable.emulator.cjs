@@ -31,9 +31,10 @@ async function signedOutCall(action) {
   await db.collection('people').doc('UOUT').set({slackId:'UOUT',email:'out@example.test',name:'Out'});
   await db.collection('people').doc('UNEW').set({slackId:'UNEW',email:'new@example.test',name:'New'});
   await db.collection('members').doc('other@example.test').set({category:'exec'});
-  const beforeConsent = await call('mine','new@example.test',true);
-  assert.equal(beforeConsent.body.result.photo.state,'missing',JSON.stringify(beforeConsent));
-  assert.equal((await db.collection('profilePhotos').doc('UNEW').get()).exists,false);
+  // By default, a member who never chose shows their Slack picture: imported the first time it's needed.
+  const byDefault = await call('mine','new@example.test',true);
+  assert.equal(byDefault.body.result.photo.state,'active',JSON.stringify(byDefault));
+  assert.equal((await db.collection('profilePhotos').doc('UNEW').get()).data().source,'slack');
   const imported = await call('slack','new@example.test',true);
   assert.equal(imported.body.result.result.state,'active',JSON.stringify(imported));
   assert.equal((await db.collection('profilePhotos').doc('UNEW').get()).data().source,'slack');
@@ -42,7 +43,7 @@ async function signedOutCall(action) {
   const mine = await call('mine','owner@example.test',true);
   assert.equal(mine.status,200,JSON.stringify(mine));
   assert.equal(mine.body.result.slackId,'UOWNER');
-  assert.equal(mine.body.result.photo.state,'missing');
+  assert.equal(mine.body.result.photo.state,'active');
   const signedOut = await signedOutCall('mine');
   assert.equal(signedOut.body.error.status,'UNAUTHENTICATED',JSON.stringify(signedOut));
   const replaced = await call('replace','owner@example.test',true,{image:jpeg.toString('base64')});

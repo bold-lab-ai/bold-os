@@ -375,8 +375,12 @@ Manual files are JPEG, PNG or WebP up to
 Slack HTTPS hosts or Slack-documented `secure.gravatar.com` with
 bounded redirects and size. An import claim plus versioned Storage path
 prevents concurrent imports or a racing manual replacement from overwriting
-the chosen photo. Import happens only when its owner chooses **Use my Slack
-photo** on Profile (or their agent's `profile` tool). Removal keeps initials,
+the chosen photo. By default a member shows their Slack picture: the first time
+their photo is needed (People, their page, the masthead) and they have never
+chosen one, the server imports it (at most 40 a call, only members in `people`);
+Slack with only its default picture, or a failure, is tried again a day later
+(`checkedAt`). They can also choose **Use my Slack photo** on Profile (or their
+agent's `profile` tool) at any time. Removal keeps initials,
 and `state: removed`, until that import succeeds or a manual replacement; if
 Slack has only its default photo the import returns `no-slack-photo` and
 changes nothing. Slack changes never overwrite a site photo automatically.
