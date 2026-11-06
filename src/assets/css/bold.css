@@ -190,7 +190,7 @@ footer{
   width:22px; height:22px; color:var(--muted); cursor:pointer; font-size:12px; line-height:1; flex:none;
 }
 .sidebar-collapse:hover{border-color:var(--accent); color:var(--link);}
-.nav-group{margin:18px 0;}
+.nav-group{margin:8px 0;}
 .nav-group:first-child{margin-top:0;}
 .nav-sep{border:0; border-top:1px solid var(--line); margin:18px 0;}
 .shell.is-collapsed .nav-sep{display:none;}
@@ -341,12 +341,20 @@ footer{
 .mast-btn:hover, .mast-btn[aria-expanded="true"]{background:var(--wash); border-color:var(--ink-soft); color:var(--ink);}
 .mast-btn:focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
 .mast-btn svg{width:16px; height:16px;}
+/* The bell's number: what's waiting on you (notifications.html). */
+.mast-count{position:absolute; top:-4px; right:-6px; min-width:16px; height:16px; padding:0 4px; box-sizing:border-box; border-radius:8px;
+  background:var(--accent); color:var(--on-fill); font-family:var(--sans); font-size:10px; font-weight:600; line-height:16px; text-align:center;}
+.mast-count[hidden]{display:none;}
+/* The bell's dot: something unread in the Inbox (bottom right, so it never covers the number). */
 /* A change to this page's row waits. */
 .mast-btn.has-dot::after{content:''; position:absolute; top:-3px; right:-3px; width:8px; height:8px; border-radius:50%; background:var(--accent); border:2px solid var(--paper);}
 .mast-btn:disabled{opacity:.5; cursor:default; background:none; border-color:var(--line); color:var(--ink-soft);}
 /* The + menu (bold.js mountCreate): + and a caret; its list as the avatar's. */
 .mast-create{position:relative; display:flex;}
-.mast-create[hidden], .mast-bell[hidden], .mast-mine[hidden]{display:none;}
+.mast-create[hidden], .mast-bell[hidden], .mast-mine[hidden], .mast-settings[hidden]{display:none;}
+/* Site settings (bold.js mountSettings): a gear, a link for PIs and admins. */
+.mast-settings{display:flex;}
+.mast-btn[aria-current="page"]{border-color:var(--ink-soft); color:var(--ink);}
 /* Yours (bold.js mountMine): links to what's yours, as the + menu. */
 .mast-mine{position:relative; display:flex;}
 .mast-mine-menu{width:200px;}
@@ -401,6 +409,13 @@ footer{
 .mast-menu a, .mast-menu button{display:block; width:100%; box-sizing:border-box; padding:7px 10px; border:0; background:none; text-align:left;
   font:inherit; color:var(--ink); text-decoration:none; cursor:pointer;}
 .mast-menu a:hover, .mast-menu button:hover, .mast-menu a:focus-visible, .mast-menu button:focus-visible{background:var(--surface); outline:none;}
+/* A ⋯ menu (BOLD.moreMenuHtml): its list is a .mast-menu, opening under the button. */
+.more-menu{position:relative; display:inline-flex;}
+.more-menu-btn{padding:0 6px; border:0; border-radius:0; background:none; color:var(--muted); font:inherit; font-size:16px; line-height:1; cursor:pointer;}
+.more-menu-btn:hover, .more-menu-btn[aria-expanded="true"]{color:var(--ink); background:var(--surface);}
+.more-menu-list{width:160px;}
+.mast-menu button.is-danger{color:var(--danger-text);}
+.mast-menu button[disabled]{color:var(--muted); cursor:default; background:none;}
 /* View as (bold.js): while a PI or admin views the site as a group. */
 .viewas-bar{position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:1300; display:flex; gap:12px; align-items:center;
   padding:8px 14px; border-radius:999px; background:var(--ink); color:var(--surface); font-family:var(--sans); font-size:13.5px; box-shadow:0 6px 18px color-mix(in srgb, var(--shade) 25%, transparent); max-width:calc(100vw - 32px);}
@@ -585,6 +600,8 @@ body:has(#viewAsBar){padding-bottom:72px;}
 .pp-associate{color:var(--plum);}
 .pp-staff{color:var(--brown);}
 .pp-pan{color:var(--neutral-text);}
+/* The masthead's group word (bold.js), in its group's colour, at full strength. */
+.masthead-sub[class*="pp-"]{opacity:1;}
 button.type-badge{background:none; cursor:pointer;}
 button.type-badge:hover, button.type-badge:focus-visible{background:var(--wash);}
 .type-pitch{color:var(--plum);}
@@ -856,6 +873,7 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .cx-scroll{overflow-x:auto;}
 .cx-lineage .cx-elbow{opacity:.45; stroke-width:1;}
 .cx-how{font-family:var(--sans); font-size:10px; letter-spacing:.08em; text-transform:uppercase; fill:var(--muted);}
+.cx-moves{font-family:var(--sans); font-size:11px; fill:var(--muted);}
 .cx-timeline{list-style:none; margin:0; padding:0;}
 .cx-row{display:flex; align-items:baseline; gap:14px; padding:9px 0; border-bottom:1px solid var(--line);}
 .cx-when{flex:0 0 92px; font-family:var(--sans); font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted);}
@@ -870,6 +888,10 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .confirm-dialog{max-width:440px; width:calc(100% - 32px); border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink); padding:20px 22px; font-family:var(--sans);}
 .confirm-dialog::backdrop{background:rgba(0,0,0,.35);}
 .confirm-dialog h2{font-size:18px; margin:0 0 10px;}
+/* BOLD.slackMessage: a Slack DM from a template (bold.js). */
+.slack-msg-label{display:block; font-size:13px; color:var(--ink-soft);}
+.slack-msg-text{display:block; width:100%; margin-top:6px; font-family:var(--serif, inherit); font-size:15px; line-height:1.45; color:var(--ink); background:var(--paper); border:1px solid var(--line); border-radius:var(--radius); padding:8px 10px; resize:vertical; box-sizing:border-box;}
+.slack-msg-hint{margin:8px 0 0; font-size:13px; color:var(--muted);}
 .confirm-dialog p{margin:0 0 4px; font-size:14px;}
 .confirm-dialog ul{margin:0 0 14px; padding-left:20px; font-size:14px;}
 .confirm-dialog li{margin:3px 0;}
@@ -940,3 +962,180 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .checklist-back a:hover{text-decoration:underline;}
 .checklist-back button{border:0; background:none; font-size:18px; line-height:1; padding:2px 6px; color:var(--muted); cursor:pointer;}
 .checklist-back button:hover{color:var(--ink);}
+
+/* A visitor's view of a page open to anyone signed out (openSignedOut, signed out: bold.js mountShell):
+   what they can't use isn't shown at all, nor the masthead's "Internal". */
+.is-public-view .masthead-sub,
+.is-public-view #shell button:disabled,
+.is-public-view #shell .is-off,
+.is-public-view #shell .slot-gap,
+.is-public-view #shell .gap-add { display: none; }
+
+/* A project's health (project-health.js): four segments, full when BOLD.OS made it, half when its own link. */
+.health{display:inline-flex; align-items:center; gap:6px; font-family:var(--sans); font-size:12px; color:var(--muted); vertical-align:middle;}
+.health-bar{display:inline-flex; gap:2px;}
+.health-seg{width:14px; height:6px; border-radius:2px; background:color-mix(in srgb, var(--ink) 12%, transparent);}
+.health-seg.is-os{background:var(--accent);}
+.health-seg.is-own{background:linear-gradient(90deg, var(--accent) 50%, color-mix(in srgb, var(--ink) 12%, transparent) 50%);}
+.proj-health{display:block; margin:2px 0;}
+
+/* ---------- Lists of things (shared, 2026-11-05) ----------
+   One look for every list of rows, as Projects': Projects, People, Events, Notifications (To do,
+   Waiting, Inbox), a profile's lists. A row: its title (a link), then a line of details below.
+   Grouped under small caps headings with a count. Pages add their own layout on top (Projects
+   puts a button at the row's end), never their own copy of these. */
+.proj-group{margin-top:34px;}
+.proj-group:first-child{margin-top:22px;}
+.proj-group h3{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-soft); margin:0 0 2px;}
+.proj-count{margin-left:6px; font-weight:400; color:var(--muted);}
+.proj-list{list-style:none; margin:0; padding:0;}
+.proj-list li{padding:12px 0; border-bottom:1px solid var(--rule); line-height:1.55;}
+.proj-title{font-family:var(--sans); font-size:16px; font-weight:600;}
+.proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.proj-meta a{color:inherit;}
+.proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
+
+/* ---------- Easter eggs (eggs.js; none of them writes or tells anyone) ---------- */
+/* Ten clicks on the sun/moon: paper under a lamp. Light roles, warmed; not kept. */
+:root[data-theme="lamp"]{
+  --ink:#3b2a14; --ink-soft:#4e3a20; --muted:#806c4e;
+  --paper:#efe2c4; --surface:#f7eed8; --wash:#e5d4ae;
+  --accent:#7a4a12; --accent-hover:#5c370c; --accent-dim:#e8d7b2;
+  --shade:#3b2a14;
+}
+:root[data-theme="lamp"] body{background-image:radial-gradient(ellipse at 50% 28%, transparent 45%, color-mix(in srgb, var(--shade) 20%, transparent) 100%); background-attachment:fixed;}
+/* The Konami code: Reviewer 2's notes beside each heading. */
+.r2-note{display:inline-block; margin-left:14px; padding:1px 8px; font-family:var(--serif); font-style:italic; font-weight:400; font-size:15px; letter-spacing:0; text-transform:none;
+  color:var(--danger-text); border:1px solid var(--danger-line); background:var(--danger-bg); transform:rotate(var(--tilt, -1deg)); vertical-align:middle;}
+/* A milestone number on a card: #42, #404, #1337. */
+.badge.is-milestone{background:var(--highlight-strong); border-color:var(--highlight-line); cursor:help;}
+/* The last three days before a venue's paper deadline (Internal Review Board): it shivers. */
+.egg-panic{display:inline-block; color:var(--danger-text); animation:egg-shiver .35s ease-in-out infinite; cursor:help;}
+@keyframes egg-shiver{0%,100%{transform:translateX(0);} 25%{transform:translateX(-1.5px);} 75%{transform:translateX(1.5px);}}
+/* `sudo` in search. */
+.sr-sudo{font-family:ui-monospace, Menlo, monospace; font-size:14px; color:var(--danger-text); margin:14px 0 0;}
+/* Shift-click Lineage: a Victorian genealogy, engraved on foxed paper, the same in either theme
+   (an engraving is ink on paper), so its colours are its own. */
+.cx-graph.is-engraving{--egg-ink:#3a2814; --egg-paper:#f1e6cc; --egg-fox:#c9a872;
+  position:relative; color:var(--egg-ink); padding:84px 34px 46px; margin-top:8px;
+  background-color:var(--egg-paper);
+  background-image:
+    radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--egg-fox) 35%, transparent) 0 3px, transparent 9px),
+    radial-gradient(circle at 83% 71%, color-mix(in srgb, var(--egg-fox) 30%, transparent) 0 4px, transparent 12px),
+    radial-gradient(circle at 64% 9%, color-mix(in srgb, var(--egg-fox) 25%, transparent) 0 2px, transparent 7px),
+    radial-gradient(ellipse at 50% 45%, transparent 55%, color-mix(in srgb, var(--egg-fox) 45%, transparent) 100%),
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--egg-ink) 4%, transparent) 0 1px, transparent 1px 4px);
+  border:1px solid var(--egg-ink); outline:5px double var(--egg-ink); outline-offset:6px;
+  box-shadow:0 0 0 12px var(--egg-paper), 0 0 0 13px var(--egg-ink), 0 18px 40px color-mix(in srgb, #000 25%, transparent);}
+.cx-graph.is-engraving::before{content:'The Genealogy of the House of BOLD'; position:absolute; top:22px; left:0; right:0; text-align:center;
+  font-family:var(--serif); font-variant:small-caps; font-size:26px; letter-spacing:.08em; color:var(--egg-ink);}
+.cx-graph.is-engraving::after{content:'❦  Who brought whom, set down faithfully  ❦'; position:absolute; top:56px; left:0; right:0; text-align:center;
+  font-family:var(--serif); font-style:italic; font-size:14px; color:color-mix(in srgb, var(--egg-ink) 75%, transparent);}
+.cx-graph.is-engraving .cx-graph{background:none; border:0;}
+.cx-graph.is-engraving svg text, .cx-graph.is-engraving svg tspan{font-family:var(--serif); fill:var(--egg-ink);}
+.cx-graph.is-engraving .cx-label{font-style:italic; font-size:15px; stroke:var(--egg-paper);}   /* its halo: the paper's, not the theme's */
+.cx-graph.is-engraving .cx-how, .cx-graph.is-engraving .cx-moves{font-family:var(--serif); font-style:normal; font-variant:small-caps; text-transform:none; font-size:13px; letter-spacing:.03em; fill:#6b5434;}
+.cx-graph.is-engraving .cx-edge{stroke:var(--egg-ink); stroke-width:1.3; stroke-dasharray:none; opacity:1;}
+.cx-graph.is-engraving .cx-node > :not(text):not(title){fill:var(--egg-paper) !important; stroke:var(--egg-ink) !important; stroke-width:1.4;}
+/* Inbox zero's cat. */
+/* The masthead's cat (eggs.js): pixel art on a canvas, walking along the masthead's floor in its own
+   lane (clipped to the masthead, never taking a click); zzz while asleep. Not on phones. */
+.mast-cat-lane{position:absolute; inset:0; overflow:hidden; pointer-events:none; z-index:1;}
+.mast-cat{position:absolute; bottom:1px; left:0; image-rendering:pixelated; transition:opacity .6s ease;}
+.mast-cat canvas{display:block; image-rendering:pixelated;}
+.mast-cat.is-left canvas{transform:scaleX(-1);}
+.mast-cat-z{position:absolute; left:34px; bottom:20px; font-family:var(--sans); font-size:10px; font-weight:600; color:var(--muted);
+  opacity:0; animation:mast-cat-z 2.4s ease-in-out infinite;}
+.mast-cat-z:nth-child(3){animation-delay:.8s; font-size:12px;} .mast-cat-z:nth-child(4){animation-delay:1.6s; font-size:14px;}
+@keyframes mast-cat-z{0%{opacity:0; transform:translate(0,0);} 30%{opacity:1;} 100%{opacity:0; transform:translate(10px,-16px);}}
+@media (prefers-reduced-motion: reduce){ .mast-cat-z{animation:none; opacity:.8;} .mast-cat-z:nth-child(n+3){display:none;} }
+@media (max-width: 700px){ .mast-cat-lane{display:none;} }
+/* \bold in KaTeX (card-model.js): the wordmark, as the masthead's. */
+.katex .bold-mark, .katex .bold-mark *{font-family:var(--sans) !important; font-style:normal; font-weight:500; letter-spacing:-0.01em;}
+.katex .bold-mark .textbf, .katex .bold-mark .textbf *{font-weight:700;}
+.katex .bold-dot, .katex .bold-dot *{color:var(--link); opacity:.55;}
+/* The lab's birthday (site.founded): confetti under the masthead. */
+.is-birthday .masthead{border-bottom:0; background-image:repeating-linear-gradient(90deg, var(--green) 0 14px, var(--amber) 14px 28px, var(--plum) 28px 42px, var(--teal) 42px 56px, var(--danger-text) 56px 70px);
+  background-size:100% 3px; background-repeat:no-repeat; background-position:bottom;}
+@media (prefers-reduced-motion: reduce){ .egg-panic{animation:none;} }
+/* The Matrix (eggs.js): the site as the conversation's terminal. Dark green-black, pale phosphor green with
+   its glow, Courier (bold for headings and controls), scanlines and a vignette; html:root wins over any theme. */
+html:root.is-matrix{
+  --ink:#b4f0bd; --ink-soft:#9fdcaa; --muted:#5f9e70; --paper:#08140e; --surface:#0c1d14; --wash:#10261a;
+  --accent:#b4f0bd; --accent-hover:#e2ffe8; --accent-dim:#123321; --link:#d8ffe0; --on-fill:#06100a; --hover-mix:#fff; --shade:#000;
+  --line:rgba(150,240,170,.18); --rule:rgba(150,240,170,.09); --underline:rgba(180,240,189,.4);
+  --green:#7dff9c; --brown:#a6d98f; --amber:#c8f07a; --plum:#8affc8; --teal:#6fe0b4;
+  --success-text:#7dff9c; --success-bg:#0f2a19; --success-line:#1d4d2e;
+  --warn-text:#c8f07a; --warn-bg:#1c2410; --warn-line:#3a4a18;
+  --danger-text:#ff7b6b; --danger-bg:#2a0d0a; --danger-line:#5a1c16;
+  --neutral-text:#9fdcaa; --neutral-bg:#10261a;
+  --highlight:rgba(180,240,189,.2); --highlight-strong:rgba(180,240,189,.38); --highlight-line:rgba(180,240,189,.6);
+  --label-fade:1;
+  --serif:'Courier New', Courier, monospace; --sans:'Courier New', Courier, monospace;
+  background:radial-gradient(ellipse at 45% 35%, #0f2219 0%, #08140e 65%, #030805 100%) fixed #08140e; color-scheme:dark;
+}
+html:root.is-matrix body{background:transparent; text-shadow:0 0 1px rgba(180,240,189,.8), 0 0 8px rgba(110,230,140,.35);}
+html:root.is-matrix h1, html:root.is-matrix h2, html:root.is-matrix h3, html:root.is-matrix strong, html:root.is-matrix b,
+html:root.is-matrix button, html:root.is-matrix .btn-text{font-weight:700;}
+html:root.is-matrix img, html:root.is-matrix video{filter:grayscale(1) sepia(1) hue-rotate(75deg) saturate(2.2) brightness(.8) contrast(1.1);}
+html:root.is-matrix ::selection{background:#b4f0bd; color:#06100a; text-shadow:none;}
+.mx-scan{position:fixed; inset:0; z-index:9996; pointer-events:none; background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px);}
+/* The rain: over the page, screened, taking no clicks; on the way in, a full-screen downpour first. */
+.mx-rain{position:fixed; inset:0; width:100vw; height:100vh; z-index:9997; opacity:.22; mix-blend-mode:screen; pointer-events:none; transition:opacity 1.6s ease;}
+.mx-rain.is-full{opacity:1; mix-blend-mode:normal; transition:none;}
+/* The blue pill: a glossy capsule, tilted, glowing; no words (its name is its label and tooltip). */
+.mx-pill{position:fixed; right:22px; bottom:26px; z-index:9999; width:46px; height:20px; padding:0; border:0; border-radius:999px; cursor:pointer;
+  transform:rotate(-28deg); transition:transform .2s ease, box-shadow .2s ease;
+  background:radial-gradient(ellipse 60% 40% at 35% 28%, rgba(255,255,255,.75), transparent 70%), linear-gradient(160deg, #6f9bff 0%, #2a5be0 45%, #10308f 100%);
+  box-shadow:inset 0 -3px 5px rgba(0,0,30,.45), inset 0 2px 2px rgba(255,255,255,.35), 0 0 14px rgba(70,120,255,.65), 0 3px 6px rgba(0,0,0,.6);}
+.mx-pill:hover{transform:rotate(-28deg) scale(1.12); box-shadow:inset 0 -3px 5px rgba(0,0,30,.45), inset 0 2px 2px rgba(255,255,255,.35), 0 0 22px rgba(90,140,255,.9), 0 3px 6px rgba(0,0,0,.6);}
+.mx-pill:focus-visible{outline:2px solid #9dbcff; outline-offset:4px;}
+.mx-wake{position:fixed; inset:0; z-index:9998; background:#000; color:#3cff7a; display:flex; align-items:center; justify-content:center;
+  font:clamp(22px, 4vw, 40px) ui-monospace, Menlo, monospace; text-shadow:0 0 8px #3cff7a; transition:opacity .8s; pointer-events:none;}
+.mx-wake::after{content:'▋'; animation:mx-blink 1s steps(1) infinite; margin-left:4px;}
+.mx-wake.is-gone{opacity:0;}
+/* The conversation, as the film's screen: dark green-black, bold Courier in pale phosphor green with a soft
+   glow, a left-aligned block in the upper middle, faint scanlines. */
+.mx-term{display:block; pointer-events:auto; overflow:auto; padding:min(30vh, 220px) 16px 32px max(16px, 16vw);
+  background:radial-gradient(ellipse at 40% 40%, #0f2219 0%, #08140e 70%, #040a07 100%); color:#b4f0bd;
+  font:700 clamp(18px, 2.6vw, 30px)/1.5 'Courier New', Courier, monospace; letter-spacing:.02em;
+  text-shadow:0 0 2px rgba(180,240,189,.9), 0 0 10px rgba(110,230,140,.45);}
+.mx-term::before{content:''; position:fixed; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);}
+.mx-term::after{content:none;}
+.mx-log, .mx-prompt{max-width:900px;}
+.mx-log p{margin:0; white-space:pre-wrap;}
+.mx-log p:last-child::after{content:''; display:inline-block; width:.6em; height:1.05em; margin-left:2px; vertical-align:-.15em;
+  background:#b4f0bd; box-shadow:0 0 8px rgba(110,230,140,.6); animation:mx-blink 1s steps(1) infinite;}
+/* The reflex test's word fades out over its time limit (its duration set by eggs.js). */
+.mx-log p.mx-word{font-size:1.6em; animation:mx-fade 4s linear forwards;}
+.mx-log p.mx-word::after{display:none;}
+@keyframes mx-fade{from{opacity:1;} to{opacity:0;}}
+/* A knock at the door: two thuds. */
+/* KNOCK KNOCK: two shakes, nearly as strong as each other, as the knocks are (eggs.js KNOCKS). */
+.mx-term.is-knocked{animation:mx-knock .8s ease-out;}
+@keyframes mx-knock{0%,100%{transform:none;} 9%{transform:translate(3px,1px);} 17%{transform:translate(-3px,-1px);} 25%{transform:none;}
+  50%{transform:translate(3px,1px);} 58%{transform:translate(-3px,-1px);} 66%{transform:none;}}
+/* With the prompt showing, its caret is the cursor. */
+.mx-term:has(.mx-prompt:not([hidden])) .mx-log p:last-child::after{display:none;}
+.mx-prompt{display:flex; gap:.6em; margin-top:1em;}
+.mx-prompt[hidden]{display:none;}
+.mx-prompt input{flex:1; min-width:0; background:transparent; border:0; outline:0; color:inherit; font:inherit; letter-spacing:inherit; text-shadow:inherit; caret-color:#b4f0bd;}
+@keyframes mx-blink{50%{opacity:0;}}
+/* 01:24 on the homepage, a hint (eggs.js): a dropped frame, a still of the rain over everything for a tenth of a second. */
+.mx-frame{position:fixed; inset:0; width:100vw; height:100vh; z-index:9995; pointer-events:none;}
+/* eXit (eggs.js, `exit`): the Matrix's screen (.mx-term): dark green-black, bold Courier in pale phosphor
+   green with a soft glow, faint scanlines; a log that scrolls, as the Python script's does. */
+.ex-term{position:fixed; inset:0; z-index:9999; overflow:auto; padding:min(12vh, 96px) 16px 40px max(16px, 12vw);
+  background:radial-gradient(ellipse at 40% 40%, #0f2219 0%, #08140e 70%, #040a07 100%); color:#b4f0bd;
+  font:700 clamp(15px, 1.8vw, 21px)/1.5 'Courier New', Courier, monospace; letter-spacing:.02em;
+  text-shadow:0 0 2px rgba(180,240,189,.9), 0 0 10px rgba(110,230,140,.45);}
+.ex-term::before{content:''; position:fixed; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);}
+.ex-log, .ex-prompt{max-width:900px;}
+.ex-log p{margin:0; white-space:pre-wrap; min-height:1.5em;}
+.ex-log p.ex-logo{white-space:pre; line-height:1.2; min-height:1.2em;}
+.ex-log p.ex-said{opacity:.75;}
+.ex-prompt{display:flex; gap:.6em;}
+.ex-ps:empty{display:none;}
+.ex-prompt input{flex:1; min-width:0; background:transparent; border:0; outline:0; color:inherit; font:inherit; letter-spacing:inherit; text-shadow:inherit; caret-color:#b4f0bd;}

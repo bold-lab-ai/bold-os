@@ -43,6 +43,13 @@
 }
 .tab:hover{color:var(--ink);}
 .tab.active{color:var(--ink); font-weight:600; border-bottom-color:var(--accent);}
+.tab-add{
+  font-family:var(--sans); font-size:14px; font-weight:500; color:var(--muted);
+  background:none; border:none; border-bottom:2px solid transparent;
+  padding:10px 2px; margin-bottom:-1px; cursor:pointer; white-space:nowrap;
+}
+.tab-add:hover:not(:disabled){color:var(--ink);}
+.tab-add:disabled{opacity:.5; cursor:default;}
 .tab-panel .detail-grid{border-top:none; padding-top:0;}
 /* venues (Paper tab) */
 .venue-list{list-style:none; margin:0 0 6px; padding:0;}
@@ -212,6 +219,13 @@
 .wk-milestone[class*="wk-mc-"]{color:var(--on-fill); background:var(--mc); border-color:var(--mc);}
 .wk-mc-0{--mc:var(--brown);} .wk-mc-1{--mc:var(--ink);} .wk-mc-2{--mc:var(--green);}
 .wk-late + .wk-milestone{margin-left:0;}
+/* Labels (several a card, e.g. Good first issue): small pills, on the board's cards and a card's page. */
+.wk-labels{display:flex; flex-wrap:wrap; gap:4px; margin-top:4px;}
+.wk-label{display:inline-flex; align-items:center; gap:2px; font-family:var(--sans); font-size:11px; line-height:1.6; padding:0 6px; border-radius:999px;
+  color:var(--accent); border:1px solid color-mix(in srgb, var(--accent) 40%, transparent); background:color-mix(in srgb, var(--accent) 8%, transparent);}
+.wk-label-x{border:0; background:none; color:inherit; cursor:pointer; padding:0 0 0 2px; font-size:12px; line-height:1;}
+.wk-label-add{display:inline-block; margin-left:6px;}
+.wk-label-add input{font:inherit; font-size:13px; width:12em; padding:1px 6px;}
 /* A milestone's progress (Milestone filter), above the columns. */
 .wk-milestonebar-track{height:6px; border-radius:3px; background:var(--line); overflow:hidden;}
 .wk-milestonebar-track span{display:block; height:100%; background:var(--accent);}
@@ -289,3 +303,19 @@
 .pj-inv-banner{margin:0 0 16px; padding:12px 16px; border:1px solid var(--ink); border-radius:var(--radius); background:var(--surface); font-family:var(--sans); font-size:15px;}
 .pj-inv-banner p{margin:0;}
 .pj-inv-banner .event-form-actions{margin-top:10px;}
+
+/* What a project needs to be ongoing (pages/project.js setupPanelHtml, 2026-11-04). */
+.setup-panel{margin:14px 0 4px; padding:12px 16px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); font-family:var(--sans);}
+.setup-panel.is-done{border-color:color-mix(in srgb, var(--accent) 40%, var(--line));}
+.setup-head{margin:0 0 6px; font-size:14px; font-weight:600; color:var(--ink);}
+.setup-list{list-style:none; margin:0; padding:0;}
+.setup-list li{display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; padding:4px 0; font-size:14px; color:var(--ink);}
+.setup-list li.is-done{color:var(--muted);}
+.setup-mark{width:1em; color:var(--muted);}
+.setup-list li.is-done .setup-mark{color:var(--accent);}
+/* A proposed project (#226): its budget, and Approve / Decline or Send it again. */
+.proposal-panel{margin:4px 0 18px; padding:12px 14px; border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--surface); font-family:var(--sans); font-size:14px;}
+.proposal-panel p{margin:0 0 8px;}
+.proposal-actions{display:flex; flex-wrap:wrap; align-items:center; gap:8px;}
+.proposal-actions input[type=text]{flex:1 1 260px; min-width:0; font:inherit; padding:5px 8px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}
+.proposal-actions input[type=number]{width:120px; font:inherit; padding:4px 6px; margin-left:6px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}

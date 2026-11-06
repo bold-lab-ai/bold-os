@@ -37,7 +37,7 @@ window.EventProposals = (function(){
   }
 
   function mount(el, slug){
-    var db = firebase.firestore(BOLD.getApp()), me = null, docs = [], unsub = null;
+    var db = (BOLD.eventDb ? BOLD.eventDb() : firebase.firestore(BOLD.getApp())), me = null, docs = [], unsub = null;
     function render(){
       el.innerHTML = docs.length ? docs.map(function(p){ return cardHtml(p, me); }).join('')
         : '<p class="proposal-empty">Nothing proposed yet &mdash; be the first.</p>';
@@ -56,7 +56,8 @@ window.EventProposals = (function(){
       update: function(user){
         me = user ? { email: user.email } : null;
         if (unsub) { unsub(); unsub = null; }
-        if (!user) return;
+        // Signed out, a public event's (public-db.js).
+        if (!user && !BOLD.eventDbPublic) return;
         el.innerHTML = '<p class="proposal-empty">Loading&hellip;</p>';
         unsub = db.collection('collabWeekProposals').orderBy('createdAt', 'desc').onSnapshot(function(snap){
           docs = [];

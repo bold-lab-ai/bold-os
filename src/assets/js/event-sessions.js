@@ -30,7 +30,7 @@ window.EventSessions = (function(){
   // host: where the days go; eventSlug; types: badge labels (collabWeekTypes).
   // → { update(event, fullWrite, me) } — called with the event doc as it changes.
   function mount(host, eventSlug, types){
-    var db = firebase.firestore(BOLD.getApp());
+    var db = (BOLD.eventDb ? BOLD.eventDb() : firebase.firestore(BOLD.getApp()));
     var event = null, docs = {}, talksBySession = {}, fullWrite = false, me = null;
     var sessionsLoaded = false, talksLoaded = false, unsubscribers = [];
 
@@ -215,7 +215,7 @@ window.EventSessions = (function(){
 
     return {
       update: function(ev, canWrite, user){
-        var signedIn = !!user;
+        var signedIn = !!user || !!BOLD.eventDbPublic;   // signed out: a public event's (public-db.js)
         if (!signedIn) { unsubscribers.forEach(function(u){ u(); }); unsubscribers = []; }
         else if (!unsubscribers.length) watch();
         event = ev; fullWrite = !!canWrite; me = user;

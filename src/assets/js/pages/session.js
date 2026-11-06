@@ -30,7 +30,7 @@
   var NOT_EDITOR = 'Only the session’s leads, PIs and admins can edit it';
   var db = null, ref = null;
   try {
-    db = firebase.firestore(BOLD.getApp());
+    db = (BOLD.eventDb ? BOLD.eventDb() : firebase.firestore(BOLD.getApp()));
     ref = base.slug ? db.collection('collabWeekSessions').doc(base.slug) : null;
   } catch (e){}
   if (!ref) missing = true;
@@ -95,7 +95,7 @@
     { key: 'background', label: 'Background', input: 'area' },
     { key: 'keyQuestions', label: 'Key questions', input: 'area', list: true, hint: 'One question per line.' },
     { key: 'aim', label: 'Aim', input: 'area' },
-    { key: 'links', label: 'Links', input: 'area', list: true, hint: 'One per line: Label | https://…' },
+    { key: 'links', label: 'Links', input: 'area', list: true, hint: 'One per line: Label | https://…. Everyone signed in sees them; who can open what they point to is up to you.' },
     { key: 'agenda', label: 'Schedule', input: 'area', list: true, hint: 'One per line: time | activity' }
   ];
 
@@ -862,8 +862,9 @@
     join = { mine: null, canApprove: false, all: [] };
     renderJoin();
     loadJoin();
-    if (!user || !ref) { render(); return; }
-    loadAccess();
+    // Signed out: a public event's session, read-only (public-db.js).
+    if ((!user && !BOLD.eventDbPublic) || !ref) { render(); return; }
+    if (user) loadAccess();
     talkEdits = {};
     loadTalkEdits();
     unsubscribe = ref.onSnapshot(function(snap){

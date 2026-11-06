@@ -1,6 +1,7 @@
 // People (people.html): BOLD's members (members/{email}, each edited on its owner's
-// profile), grouped by role (PIs, adjuncts, postdocs and students first, then the
-// join form's other roles, BoldJoin.ROLES; Alumni last), and searchable by name, institution or interest.
+// profile), in two tabs: By role (PIs, adjuncts, postdocs and students first, then the
+// join form's other roles, BoldJoin.ROLES; Alumni last) and By group (#by-group: Who is BOLD's
+// groups, BOLD-exec first, BoldJoin.CATEGORIES); searchable by name, institution or interest.
 (function(){
   var esc = BOLD.escapeHtml;
   var root = document.getElementById('people'), search = document.getElementById('ppSearch');
@@ -61,17 +62,36 @@
     });
     if (!members.length) { root.innerHTML = '<p class="proj-msg">Nobody has added their details yet.</p>'; return; }
     if (!shown.length) { root.innerHTML = '<p class="proj-msg">Nobody matches.</p>'; return; }
+    var section = function(label, group){
+      return group.length ? '<div class="proj-group"><h3>' + esc(label) + '<span class="proj-count">' + group.length + '</span></h3><ul class="proj-list">' + group.map(personHtml).join('') + '</ul></div>' : '';
+    };
+    if (view() === 'group') {
+      root.innerHTML = BoldJoin.CATEGORIES.map(function(c){
+        return section(c[1], shown.filter(function(m){ return BoldJoin.groupOf(m) === c[0]; }));
+      }).join('');
+      return;
+    }
     var first = ['PI', 'Adjunct', 'Postdoc', 'PhD student', 'Master student'];
     var order = first.concat(BoldJoin.ROLES.filter(function(r){ return first.indexOf(r) === -1 && r !== 'Other' && r !== 'Alumni'; }), ['Other', 'Alumni']);
     var roleOf = function(m){ return order.indexOf(m.role) === -1 ? 'Other' : m.role; };
     root.innerHTML = order.map(function(r){
-      var group = shown.filter(function(m){ return roleOf(m) === r; });
-      if (!group.length) return '';
       var label = r === 'PI' ? 'PIs' : r === 'Staff' || r === 'Other' || r === 'Alumni' ? r : r + 's';
-      return '<div class="proj-group"><h3>' + esc(label) + '<span class="proj-count">' + group.length + '</span></h3><ul class="proj-list">' + group.map(personHtml).join('') + '</ul></div>';
+      return section(label, shown.filter(function(m){ return roleOf(m) === r; }));
     }).join('');
     BOLD.photo.mountMany(root.querySelectorAll('.member-photo[data-id]'));
   }
+
+  // The tab: By role (people.html, #by-role) or By group (#by-group).
+  function view(){ return location.hash === '#by-group' ? 'group' : 'role'; }
+  function drawTabs(){
+    Array.prototype.forEach.call(document.querySelectorAll('#ppTabs .guide-tab'), function(a){
+      var on = a.getAttribute('href') === (view() === 'group' ? '#by-group' : '#by-role');
+      a.classList.toggle('is-current', on);
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+  }
+  window.addEventListener('hashchange', function(){ drawTabs(); render(); });
+  drawTabs();
 
   search.addEventListener('input', render);
   root.addEventListener('click', function(e){
@@ -82,10 +102,18 @@
     picking = '';
     var m = members.filter(function(x){ return x.email === email; })[0];
     if (m && BoldJoin.groupOf(m) === cat) { render(); return; }
-    if (m) m.category = cat;
-    render();
-    db.collection('members').doc(email).update({ category: cat, categoryBy: me, categoryAt: Date.now() })
-      .catch(function(err){ console.error('[BOLD People] setting the group failed', err); });
+    // Crossing BOLD-internal changes their GitHub write access (functions/index.js, #214): ask first.
+    var order = BoldJoin.CATEGORIES.map(function(c){ return c[0]; }), high = function(g){ return order.indexOf(g) <= order.indexOf('internal'); };
+    var was = m ? BoldJoin.groupOf(m) : 'pan', name = (m && m.name) || email;
+    var ask = high(was) === high(cat) ? Promise.resolve(true) : BOLD.confirmAction({ title: 'Move ' + name + ' to ' + BoldJoin.categoryLabel(cat) + '?', go: 'Move',
+      effects: [high(cat) ? 'Give their linked GitHub account write access to every bold-lab-ai repository' : 'Take away their GitHub write access to every repository but their projects\u2019 (they still read them all)'] });
+    ask.then(function(go){
+      if (!go) { render(); return; }
+      if (m) m.category = cat;
+      render();
+      db.collection('members').doc(email).update({ category: cat, categoryBy: me, categoryAt: Date.now() })
+        .catch(function(err){ console.error('[BOLD People] setting the group failed', err); });
+    });
   });
 
   BOLD.onUser(function(user){

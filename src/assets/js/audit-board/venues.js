@@ -42,6 +42,9 @@
     if (approved.length){
       html += sortByCreated(approved).map(function(b){
         var sub = b.deadline ? 'Paper deadline ' + formatDate(b.deadline) : 'No paper deadline set';
+        // Easter egg (eggs.js): the last three days before a paper deadline, it shivers.
+        var left = b.deadline ? Math.round((new Date(b.deadline + 'T00:00:00') - new Date(new Date().toDateString())) / 864e5) : -1;
+        if (left >= 0 && left <= 3) sub = '<span class="egg-panic" title="' + (left ? left + (left === 1 ? ' day' : ' days') + ' left. Don’t panic.' : 'Today. Panic.') + '">' + sub + '</span>';
         if (b.location) sub += ' · ' + escapeHtml(b.location);
         return '<button class="venue-row" type="button" data-open-venue="' + escapeHtml(b.id) + '">' +
           '<span class="venue-name">' + escapeHtml(b.label) + '</span>' +

@@ -205,7 +205,7 @@ function meetingEntryHtml(m){
       '<select id="pmEvery" aria-label="How often">' + [1, 2, 3, 4].map(function(n){ return opt(n, n === 1 ? 'Every week' : 'Every ' + n + ' weeks', m.every); }).join('') + '</select>' +
       '<label class="meeting-until">Until (optional) <input type="date" id="pmUntil" aria-label="Until (leave empty for no end)" value="' + BOLD.escapeHtml(m.until || '') + '"></label>' +
       '<label class="meeting-link">Own link (optional) <input type="url" id="pmLink" maxlength="500" placeholder="Empty: a new Google Meet" aria-label="Your own meeting link (leave empty for a new Google Meet)" value="' + BOLD.escapeHtml(m.link || '') + '"></label>' +
-    '</div>';
+    '</div>' + BOLD.linkNote();
 }
 
 // → { day, time, minutes, every, until?, link? } or { error }.
@@ -244,6 +244,7 @@ function repoEntryHtml(optional){
   return '<select id="prMode" aria-label="Repository">' +
       '<option value="" id="prLoading">Loading templates\u2026</option>' +
       '<option value="=existing">Link an existing repository</option>' +
+      '<option value="=link">Link any GitHub repository</option>' +
       (optional ? '<option value="=none">No repository</option>' : '') +
     '</select>' +
     '<input type="text" id="prExisting" maxlength="200" placeholder="bold-lab-ai/\u2026 or its GitHub address" aria-label="Existing repository" hidden>' +
@@ -255,10 +256,11 @@ function wireRepoEntry(){
   var mode = document.getElementById('prMode'), hint = document.getElementById('prHint'), existing = document.getElementById('prExisting');
   var templates = [];
   function update(){
-    var linking = mode.value === '=existing';
-    existing.hidden = !linking;
+    var linking = mode.value === '=existing', other = mode.value === '=link';
+    existing.hidden = !linking && !other;
+    existing.placeholder = other ? 'https://github.com/owner/name' : 'bold-lab-ai/\u2026 or its GitHub address';
     var t = templates.filter(function(x){ return x.name === mode.value; })[0];
-    hint.textContent = linking ? 'One in bold-lab-ai. The project\u2019s people with GitHub get write access to it.' : mode.value === '=none' ? 'You can add one later, from the project\u2019s page.' : t ? (t.description || '') : '';
+    hint.textContent = other ? 'Anywhere on GitHub. It\u2019s only linked: BOLD.OS doesn\u2019t give anyone access to it.' : linking ? 'One in bold-lab-ai. The project\u2019s people with GitHub get write access to it.' : mode.value === '=none' ? 'You can add one later, from the project\u2019s page.' : t ? (t.description || '') : '';
   }
   mode.addEventListener('change', update);
   try {
@@ -266,14 +268,14 @@ function wireRepoEntry(){
       templates = (r.data && r.data.templates) || [];
       var loading = document.getElementById('prLoading');
       if (!templates.length) { loading.textContent = 'No templates yet \u2014 ask an admin'; return; }
-      var linking = mode.value === '=existing', none = mode.value === '=none';
+      var linking = mode.value === '=existing', other = mode.value === '=link', none = mode.value === '=none';
       loading.remove();
       templates.slice().reverse().forEach(function(t){
         var o = document.createElement('option');
         o.value = t.name; o.textContent = 'From the template ' + t.name;
         mode.insertBefore(o, mode.firstChild);
       });
-      mode.value = linking ? '=existing' : none ? '=none' : templates[0].name;
+      mode.value = linking ? '=existing' : other ? '=link' : none ? '=none' : templates[0].name;
       update();
     }).catch(function(err){
       console.error('[BOLD Lab] loading the repository templates failed', err);
@@ -282,13 +284,26 @@ function wireRepoEntry(){
   } catch (e){}
 }
 
-// → { mode: 'template', template }, { mode: 'existing', name }, null (No repository) or { error }.
+// → { mode: 'template', template }, { mode: 'existing', name }, { mode: 'link', url }, null (No repository) or { error }.
 function readRepoEntry(){
   var t = document.getElementById('prMode').value;
   if (t === '=none') return null;
+  if (t === '=link') {
+    var u = document.getElementById('prExisting').value.trim();
+    return /^https:\/\/github\.com\/[^\/\s]+\/[^\/\s]+/.test(u) ? { mode: 'link', url: u } : { error: 'Give the repository\u2019s GitHub address, as https://github.com/owner/name.' };
+  }
   if (t === '=existing') {
     var n = document.getElementById('prExisting').value.trim();
     return n ? { mode: 'existing', name: n } : { error: 'Give the repository: its name in bold-lab-ai, or its GitHub address.' };
   }
   return t ? { mode: 'template', template: t } : { error: 'The repository templates haven\u2019t loaded \u2014 reload, or check back shortly.' };
+}
+
+// What a project still needs to be ongoing (2026-11-04): a weekly meeting, slides and notes (BOLD.OS's or
+// its own links); a GitHub repository isn't required. The same as setupMissing in
+// functions/index.js (tests/project-setup.test.cjs checks they agree).
+function projectSetupMissing(ws){
+  ws = ws || {};
+  return [['meeting', !!ws.meeting], ['slides', !!(ws.deckId || ws.deckUrl || ws.ownDeckUrl)], ['notes', !!(ws.notesId || ws.notesUrl || ws.ownNotesUrl)]]
+    .filter(function(x){ return !x[1]; }).map(function(x){ return x[0]; });
 }

@@ -306,7 +306,7 @@ module.exports = function(ctx){
       const milestones = milestonesOf(ws), milestoneName = (id) => ((milestones.find((s) => s.id === id) || {}).name || '');
       return {
         milestones: milestones.map((s) => ({ name: s.name, start: s.start || '', end: s.end || '' })),
-        cards: snap.docs.map((d) => { const x = d.data(); return { card_id: d.id, number: r.cardNumbers && r.cardNumbers[d.id] ? '#' + r.cardNumbers[d.id] : '', title: x.title, type: x.kind || '', description: x.notes || '', column: WORK_COLUMNS[x.column], milestone: milestoneName(x.milestone), assigned_to: (x.assignees || []).map((p) => p.name), links: (x.links || []).map((l) => l.url),
+        cards: snap.docs.map((d) => { const x = d.data(); return { card_id: d.id, number: r.cardNumbers && r.cardNumbers[d.id] ? '#' + r.cardNumbers[d.id] : '', title: x.title, type: x.kind || '', description: x.notes || '', column: WORK_COLUMNS[x.column], milestone: milestoneName(x.milestone), labels: x.labels || [], assigned_to: (x.assignees || []).map((p) => p.name), links: (x.links || []).map((l) => l.url),
           images: (x.images || []).map((i) => i.url), url: url(pageOf(d.id)) }; }),
         elsewhere: (r.items || []).map((x) => ({ number: x.num ? '#' + x.num : x.source === 'github' ? x.repo + '#' + x.number : '', kind: x.kind === 'pr' ? 'pull request' : x.kind === 'proposal' ? 'proposed change' : x.kind, title: x.title, url: x.url,
           type: x.type, column: WORK_COLUMNS[x.column], state: x.state, from: x.by ? x.by.name || x.by.login || '' : '', on_it: (x.on || []).map((p) => p.name || p.login), waiting_for: x.waiting || '', since: x.since ? new Date(x.since).toISOString().slice(0, 10) : '' })),
@@ -334,6 +334,8 @@ module.exports = function(ctx){
       return g ? { type: g[3].toLowerCase() === 'pull' ? 'pr' : 'issue', ref: (g[1] + '/' + g[2] + '#' + g[4]).toLowerCase(), url: g[0], label: g[1] + '/' + g[2] + '#' + g[4] } : { type: 'url', url: u, label: u };
     });
     if (a.column !== undefined && !WORK_COLUMNS[a.column]) throw httpError(400, 'The column is one of todo, doing, review, done.');
+    // Hand-made cards never wait for review (2026-11-04): nobody reviews them, so review is done.
+    if (a.column === 'review') a.column = 'done';
     // Its milestone, by name or id ("" for none), from the board's milestones (Board settings).
     let milestone;
     if (a.milestone !== undefined) {
@@ -342,9 +344,17 @@ module.exports = function(ctx){
       if (q && !s) throw httpError(404, 'No milestone called “' + q + '” on this board: add it in Board settings.');
       milestone = s ? s.id : '';
     }
+    // Its labels (several, e.g. Good first issue): the whole list, as given ([] for none).
+    let labels;
+    if (a.labels !== undefined) {
+      // A client with the tool's older description sends the list as text: JSON, or names split by commas.
+      if (typeof a.labels === 'string') { try { a.labels = JSON.parse(a.labels); } catch (e) { a.labels = a.labels.split(','); } }
+      if (!Array.isArray(a.labels)) throw httpError(400, 'labels is a list of names.');
+      labels = Array.from(new Set(a.labels.map((l) => String(l || '').trim().slice(0, 40)).filter(Boolean))).slice(0, 10);
+    }
     if (a.action === 'add') {
       const d = { title: need(a.title, 'a title').slice(0, 200), notes: String(a.description !== undefined ? a.description : a.notes || '').slice(0, 20000), kind: a.type || '', column: a.column || 'todo',
-        assignees: assignees || [], assigneeEmails: (assignees || []).map((x) => x.email), links: links || [], ...(milestone ? { milestone } : {}),
+        assignees: assignees || [], assigneeEmails: (assignees || []).map((x) => x.email), links: links || [], ...(milestone ? { milestone } : {}), ...(labels && labels.length ? { labels } : {}),
         // Posted in the project's Slack channel (onWorkCardAdded) unless post_in_channel is false.
         announce: a.post_in_channel !== false,
         by: { email: who.email, name: nameOfMe(who) }, at: now, movedAt: now, updatedAt: now, updatedBy: who.email };
@@ -368,7 +378,8 @@ module.exports = function(ctx){
     }
     const x = cur.data();
     const next = { title: x.title, notes: x.notes || '', kind: a.type !== undefined ? String(a.type) : x.kind || '', column: x.column, assignees: x.assignees || [], assigneeEmails: x.assigneeEmails || [], links: x.links || [],
-      ...(x.images ? { images: x.images } : {}), ...(x.milestone ? { milestone: x.milestone } : {}), by: x.by, at: x.at, movedAt: x.movedAt || x.at, updatedAt: now, updatedBy: who.email };
+      ...(x.images ? { images: x.images } : {}), ...(x.milestone ? { milestone: x.milestone } : {}), ...(x.labels ? { labels: x.labels } : {}),
+      ...(x.announce !== undefined ? { announce: x.announce } : {}), ...(x.doneQuiet !== undefined ? { doneQuiet: x.doneQuiet } : {}), by: x.by, at: x.at, movedAt: x.movedAt || x.at, updatedAt: now, updatedBy: who.email };
     if (a.action === 'move') { next.column = need(a.column, 'the column'); next.movedAt = now; }
     else {
       if (a.title !== undefined) next.title = need(a.title, 'a title').slice(0, 200);
@@ -377,6 +388,7 @@ module.exports = function(ctx){
       if (assignees) { next.assignees = assignees; next.assigneeEmails = assignees.map((p) => p.email); }
       if (links) next.links = links;
       if (milestone !== undefined) { if (milestone) next.milestone = milestone; else delete next.milestone; }
+      if (labels !== undefined) next.labels = labels;
       if (a.column !== undefined && a.column !== x.column) { next.column = a.column; next.movedAt = now; }
     }
     await asUser(who, 'set', col + '/' + id, next);
@@ -389,12 +401,17 @@ module.exports = function(ctx){
     const user = { name: nameOfMe(who), email: who.email };
     if (a.action === 'register') {
       const title = need(a.title, 'a title'), abstract = need(a.abstract, 'an abstract or pitch');
-      const ch = await act(who, 'projectChannel', { name: need(a.slack_channel, 'its Slack channel (proj-…)'), mode: 'ensure' });
-      const card = makeRegisteredCard(user, { title, abstractText: abstract, keywords: (a.keywords || []).map(String), slackChannel: '#' + ch.name });
+      // Proposed (#226): a PI or admin approves it, then its channel, meeting, slides and notes are made.
+      const hours = Number(String(a.gpu_hours === undefined ? '' : a.gpu_hours).replace(/[,\s]/g, ''));
+      if (!isFinite(hours) || hours <= 0) throw httpError(400, 'Give its compute budget, in GPU hours (gpu_hours).');
+      const ch = await act(who, 'projectChannel', { name: need(a.slack_channel, 'its Slack channel (proj-…)'), mode: 'check' });
+      const card = makeRegisteredCard(user, { title, abstractText: abstract, keywords: (a.keywords || []).map(String), slackChannel: '' });
+      card.setUpChannel = '#' + ch.name;
+      card.proposal = { status: 'proposed', gpuHours: Math.round(hours), at: Date.now(), by: who.email };
       if (a.meeting) card.setUpMeeting = a.meeting;
       const id = card.id; delete card.id;
       await asUser(who, 'create', 'projects', card, id);
-      return { id, url: url('project.html#id=' + encodeURIComponent(id)), slack_channel: '#' + ch.name, note: 'Its meeting, slides and notes are being set up.' };
+      return { id, url: url('project.html#id=' + encodeURIComponent(id)), slack_channel: '#' + ch.name, note: 'Proposed: a PI or admin approves it; then its channel, meeting, slides and notes are set up.' };
     }
     const c = await cardOf(a.id);
     const ws = { id: c.id, board: c.boardId };
@@ -716,17 +733,18 @@ module.exports = function(ctx){
         remove: { type: 'boolean', description: 'A tool: propose removing it.' },
         note: str('propose: what you changed and why.'), proposal_id: str('withdraw, accept, decline.') }, ['action', 'page']) },
     { name: 'projects', run: projects,
-      description: 'Projects, as on the Projects page and a project’s page: register a new one (with its Slack channel, created if new), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to planned (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
+      description: 'Projects, as on the Projects page and a project’s page: propose a new one (register: with its compute budget in GPU hours and its Slack channel; once a PI or admin approves it, the channel, created if new, its meeting, slides and notes are made), update its fields (a new Slack channel name renames the old channel), remove it, join or leave it, mark it ongoing (start: being worked on) or back to approved, not started (plan), mark it complete or reopen it, set, remove, pause or resume its weekly meeting, or submit it to a venue on the board.',
       inputSchema: S({ action: ACTIONS(['register', 'update', 'remove', 'join', 'leave', 'start', 'plan', 'complete', 'reopen', 'set_meeting', 'remove_meeting', 'pause_meeting', 'resume_meeting', 'submit_to_venue']),
         id: str('The project id (list_projects), for all but register.'), title: str(''), abstract: str(''), keywords: { type: 'array', items: { type: 'string' } },
-        slack_channel: str('register, update: "proj-…".'), overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
+        slack_channel: str('register, update: "proj-…".'), gpu_hours: { type: 'number', description: 'register: its compute budget, in GPU hours (a project is proposed, and a PI or admin approves it)' }, overleaf: str('update'), arxiv: str('update'), pitch: str('update: the pitch deck link'), compute: str('update: the compute estimate'),
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'work', run: work,
-      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card, or read (comments) and add to (comment) a card’s conversation. A card can be in one of the board’s milestones (set in Board settings), whose progress the board shows. Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false. A comment sends whoever made the card, its assignees and whoever has commented a Slack message, and moving a card to done tells whoever raised it: tell your person first. Move the cards you work on as you go: doing when you start, review while it waits on someone, done once it’s live.',
+      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card, or read (comments) and add to (comment) a card’s conversation. A card can be in one of the board’s milestones (set in Board settings), whose progress the board shows, and have labels, several (e.g. Good first issue: something someone new can take on by themselves). Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false. A comment sends whoever made the card, its assignees and whoever has commented a Slack message, and moving a card to done tells whoever raised it: tell your person first. Move the cards you work on as you go: doing when you start, review while it waits on someone, done once it’s live.',
       inputSchema: S({ post_in_channel: { type: 'boolean', description: 'add: post it in the project’s Slack channel (default true)' }, action: ACTIONS(['list', 'add', 'update', 'move', 'remove', 'comments', 'comment']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove, comments, comment (list gives it).'), text: str('comment: what you say (Markdown).'),
-        title: str('add, update'), description: str('add, update: what it is (Markdown), shown on the card’s page.'), type: ACTIONS(['code', 'content', 'request', 'other']), column: ACTIONS(['todo', 'doing', 'review', 'done']), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
+        title: str('add, update'), description: str('add, update: what it is (Markdown), shown on the card’s page.'), type: ACTIONS(['code', 'content', 'request', 'other']), column: Object.assign(ACTIONS(['todo', 'doing', 'review', 'done']), { description: 'add, update, move: a card made on the board never waits for review: review puts it in done.' }), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
         milestone: str('add, update: the milestone it’s in, by name (list gives the board’s milestones; "" for none).'),
+        labels: { type: 'array', items: { type: 'string' }, description: 'add, update: its labels, the whole list (several a card, unlike its one milestone; e.g. "Good first issue"; [] for none).' },
         links: { type: 'array', items: { type: 'string' }, description: 'add, update: https://… links: a GitHub pull request or issue, a proposal, anything.' } }, ['action', 'project_id']) },
     { name: 'presentations', run: presentations,
       description: 'A project’s presentations (its Meetings tab): add, update or remove a talk about it, with where it was given (one of the site’s events, a venue, or a name) and its slides and recording links.',

@@ -42,7 +42,7 @@ module.exports = function install(db){
     await db.collection('slackOutbox').add({ method, args, at: Date.now() });
     switch (method) {
       case 'conversations.list':
-        return ok({ channels: (await channelNames()).map((n) => ({ id: 'C-' + n, name: n })), response_metadata: { next_cursor: '' } });
+        return ok({ channels: (await channelNames()).map((n) => ({ id: 'C-' + n, name: n, is_member: n === 'general' })), response_metadata: { next_cursor: '' } });
       case 'conversations.open': {
         const users = String(args.users || '');
         return ok({ channel: { id: 'D-' + users } });
@@ -61,6 +61,34 @@ module.exports = function install(db){
       }
       case 'auth.test':
         return ok({ user: 'BOLD OS', user_id: 'U-bold-os', team_id: 'T-bold', url: 'https://bold-lab.slack.com/' });
+      // A thread to bring into Conversations (slack-thread.js): C-private-… is a private channel whose
+      // members are everyone in `people` but those with "outsider" in their email; D… is a DM.
+      case 'conversations.info': {
+        const c = String(args.channel || '');
+        return ok({ channel: { id: c, name: c.replace(/^C-?/, '').toLowerCase() || 'general', is_im: /^D/.test(c), is_private: /^C-?PRIVATE/i.test(c) } });
+      }
+      // …WITHOUT<Slack id> at its end leaves that person out (a private channel someone isn’t in).
+      case 'conversations.members': {
+        const without = (/WITHOUT(U[A-Z0-9]+)$/i.exec(String(args.channel || '')) || [])[1] || '';
+        const people = (await db.collection('people').get()).docs.map((d) => d.data()).filter((p) => !/outsider/.test(p.email || '') && p.slackId !== without);
+        return ok({ members: people.map((p) => p.slackId || 'U-' + p.email), response_metadata: { next_cursor: '' } });
+      }
+      case 'conversations.replies': {
+        const people = (await db.collection('people').get()).docs.map((d) => d.data()).slice(0, 3);
+        const id = (i) => (people[i % people.length] || {}).slackId || 'U-someone', t = Math.floor(Date.now() / 1000) - 7200;
+        return ok({ messages: [
+          { ts: t + '.000100', user: id(0), text: 'Should we move the group meeting to Thursdays? Tuesdays clash with two reading groups.', blocks: [{ type: 'rich_text', elements: [
+            { type: 'rich_text_section', elements: [{ type: 'text', text: 'Should we move the group meeting to Thursdays?\nTuesdays clash with ' }, { type: 'text', text: 'two', style: { bold: true } }, { type: 'text', text: ' reading groups:\n' }] },
+            { type: 'rich_text_list', style: 'bullet', indent: 0, elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'RL reading group' }] }, { type: 'rich_text_section', elements: [{ type: 'text', text: 'World models' }] }] },
+            { type: 'rich_text_list', style: 'bullet', indent: 1, elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'run by ' }, { type: 'user', user_id: id(1) }] }] },
+            { type: 'rich_text_section', elements: [{ type: 'text', text: 'Options:\n' }] },
+            { type: 'rich_text_list', style: 'ordered', indent: 0, elements: [{ type: 'rich_text_section', elements: [{ type: 'text', text: 'Thursday 10:00' }] }, { type: 'rich_text_section', elements: [{ type: 'text', text: 'Thursday 14:00' }] }] },
+            { type: 'rich_text_quote', elements: [{ type: 'text', text: 'Mornings are better for most of us' }] },
+          ] }] },
+          { ts: (t + 600) + '.000200', user: id(1), text: 'Thursdays work for me, <@' + id(0) + '>. Mornings are better than afternoons.' },
+          { ts: (t + 1500) + '.000300', user: id(2), text: 'Fine by me too, see <https://example.com/poll|the poll>.' },
+        ], response_metadata: { next_cursor: '' } });
+      }
       case 'chat.getPermalink':
         return ok({ permalink: 'https://bold-lab.slack.com/archives/' + (args.channel || 'C') + '/p0' });
       default:

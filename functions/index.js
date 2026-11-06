@@ -31,6 +31,8 @@ const { onDocumentCreated, onDocumentUpdated, onDocumentWritten, onDocumentWritt
 const { onRequest, onCall: plainOnCall, HttpsError } = require('firebase-functions/v2/https');
 const { AsyncLocalStorage } = require('node:async_hooks');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onTaskDispatched } = require('firebase-functions/v2/tasks');
+const { getFunctions } = require('firebase-admin/functions');
 const { beforeUserCreated, HttpsError: IdentityHttpsError } = require('firebase-functions/v2/identity');
 const { defineSecret } = require('firebase-functions/params');
 // Who can see what's pure helpers (the table, its rows); `access` below is the instance reading settings/access.
@@ -164,13 +166,32 @@ function signedInEmail(request){
   return token.email;
 }
 
-exports.onlySlackSignUps = beforeUserCreated((event) => {
+// And only the BOLD Slack's own people (2026-11-05): not someone from another organisation in a
+// channel shared with ours (Slack Connect), who isn't on the roster (syncPeopleFromSlack). Someone who
+// just joined the Slack and isn't on it yet is looked up on Slack, and added if they're ours.
+const NOT_BOLD_SLACK = 'BOLD.OS is for the BOLD Slack’s members: this Slack account belongs to another organisation.';
+exports.onlySlackSignUps = beforeUserCreated({ secrets: [SLACK_BOT_TOKEN] }, async (event) => {
   const provider = (event.additionalUserInfo && event.additionalUserInfo.providerId) ||
     (event.credential && event.credential.providerId) || '';
   if (provider !== SIGN_IN_PROVIDER) {
     logger.warn('onlySlackSignUps: refused a sign-up', { provider });
     throw new IdentityHttpsError('permission-denied', 'BOLD.OS is for the BOLD Slack: sign in with Slack.');
   }
+  const slack = ((event.data && event.data.providerData) || []).filter((p) => p.providerId === SIGN_IN_PROVIDER)[0];
+  const id = slack && slack.uid;
+  if (!id || !/^U[A-Z0-9]+$/.test(id)) throw new IdentityHttpsError('permission-denied', NOT_BOLD_SLACK);
+  if ((await db.collection('people').doc(id).get()).exists) return;
+  // Not on the roster (yet): ask Slack.
+  const token = SLACK_BOT_TOKEN.value();
+  const info = await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: id }), { headers: { Authorization: 'Bearer ' + token } })
+    .then((r) => r.json()).catch(() => null);
+  const auth = await slackAuthInfo(token).catch(() => null), team = auth && auth.teamId;
+  const u = info && info.ok && info.user;
+  if (!u || u.deleted || u.is_bot || !team || u.team_id !== team || slackExternal(u, team) || !(u.profile && u.profile.email)) {
+    logger.warn('onlySlackSignUps: refused a Slack account not of the BOLD Slack', { slackId: id });
+    throw new IdentityHttpsError('permission-denied', NOT_BOLD_SLACK);
+  }
+  await upsertPerson(u, team);
 });
 
 // Deep links (2026-09-12) — mirrors audit-board.html's stateUrl(): a hash,
@@ -761,13 +782,61 @@ async function slackIdForEmail(email){
   return snap.docs[0].data().slackId || null;
 }
 
+// ---------- Notifications (notifications.html, 2026-11-05) ----------
+// notifications/{id} (server only; each person reads and marks read their own, firestore.rules):
+// { to: email, source: 'slack' | 'conversations', feature, text, href, at, read }. Every DM and
+// note-to-one BOLD OS sends on Slack is kept here for whom it's for (not a pilot's copies to its
+// testers), and so are the Conversations ones (replies where they are, new conversations). Kept for good.
+// Pure: Slack's mrkdwn → plain text and its first link: <url|label> → label, *bold* → bold.
+function slackToPlain(text){
+  const t = String(text || '');
+  const first = /<(https?:\/\/[^|>]+)(?:\|[^>]*)?>/.exec(t);
+  const plain = t.replace(/<(https?:\/\/[^|>]+)\|([^>]*)>/g, '$2').replace(/<(https?:\/\/[^>]+)>/g, '$1')
+    .replace(/<@[A-Z0-9]+(?:\|([^>]*))?>/g, (m, n) => '@' + (n || 'someone')).replace(/<#[A-Z0-9]+\|([^>]*)>/g, '#$1').replace(/<![^>]*>/g, '')
+    .replace(/(^|\s)\*([^*\n]+)\*(?=\s|$|[.,:;!?])/g, '$1$2').replace(/(^|\s)_([^_\n]+)_(?=\s|$|[.,:;!?])/g, '$1$2')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&').trim();
+  return { text: plain.slice(0, 2000), href: first ? first[1] : '' };
+}
+// Keeps a notification for each of `emails` (never fails what sent it). n: { text (mrkdwn or plain),
+// href?, feature, source, about? (what it's on, e.g. 'conversation:<id>') }.
+async function noteFor(emails, n){
+  try {
+    const list = Array.from(new Set((emails || []).map((e) => String(e || '').toLowerCase()).filter(Boolean)));
+    if (!list.length) return;
+    const p = slackToPlain(n.text);
+    const base = { source: n.source || 'slack', feature: n.feature || '', text: p.text, href: n.href || p.href || '', about: n.about || '', at: Date.now(), read: false };
+    // A meeting about to start (meetingReminders): its link, offered as Join until it ends.
+    if (n.join) { base.join = n.join; base.endsAt = n.endsAt || 0; }
+    for (let i = 0; i < list.length; i += 400) {
+      const b = db.batch();
+      list.slice(i, i + 400).forEach((to) => b.set(db.collection('notifications').doc(), Object.assign({ to }, base)));
+      await b.commit();
+    }
+    // On their computers too, where they turned desktop notifications on (functions/push.js); not what
+    // reaches everyone (n.ping false: a new conversation).
+    if (n.ping !== false) await webPush.pushTo(list, base.text, base.href, n.join ? { join: n.join } : undefined);
+  } catch (err){ logger.warn('Keeping a notification failed', { feature: n.feature, error: String(err && err.message || err) }); }
+}
+
 // Opens (or reuses) a DM channel and posts one message. Never throws —
 // logs and resolves false on any failure, so one bad recipient (no Slack
 // id, a transient API error) can't take the rest of a batch down with it,
 // and a retry of the whole trigger isn't forced by one skipped DM.
 // With a feature's key (LIVE_FEATURES, PILOTS), a feature in pilot sends to its testers instead.
-async function dmBySlackId(token, slackId, text, key){
+async function dmBySlackId(token, slackId, text, key, opts){
+  opts = opts || {};
   try {
+    // Everything for someone is in their Notifications Inbox first; whoever's on pings (pilot
+    // notification-pings: its testers, then everyone) gets a "new notifications" ping on Slack
+    // instead of the message itself. opts.raw: a message that's an answer to what they just did, sent as is.
+    if (!opts.raw) {
+      const email = await emailForSlackId(slackId);
+      if (email) {
+        if (!opts.noNote) await noteFor([email], { text, feature: key || '', source: 'slack' });
+        opts = Object.assign({}, opts, { noNote: true });
+        if (await pingsFor(email)) { await queuePing(email); return true; }
+      }
+    }
     if (key) {
       const st = await pilotState(key);
       if (!st.live) {
@@ -785,7 +854,11 @@ async function dmBySlackId(token, slackId, text, key){
   }
 }
 
-async function dmByEmail(token, email, text, key){
+async function dmByEmail(token, email, text, key, opts){
+  opts = opts || {};
+  // Their Inbox first, whatever happens on Slack (a feature in pilot too); then a ping, or the message.
+  if (!opts.noNote) await noteFor([email], { text, feature: key || '', source: 'slack' });
+  if (await pingsFor(email)) { await queuePing(email); return true; }
   if (key) {
     const st = await pilotState(key);
     if (!st.live) return toTesters(token, st, await nameForEmail(email), text);
@@ -795,8 +868,51 @@ async function dmByEmail(token, email, text, key){
     logger.info('No Slack id for email — skipping DM', { email });
     return false;
   }
-  return dmBySlackId(token, slackId, text);
+  return dmBySlackId(token, slackId, text, '', { raw: true });
 }
+
+// ---------- Pings: "You have new notifications" (pilot notification-pings, 2026-11-05) ----------
+// Whoever is on pings (the pilot's testers; everyone once it's live) gets no message-by-message DMs:
+// each notification goes to their Inbox, and slackPings/{email} (server only: { pending, firstAt,
+// lastPingAt }) counts what's new; sendNotificationPings, every 5 minutes, DMs them once that they
+// have new notifications, at most every 30 minutes, if any is still unread.
+const PING_GAP = 30 * 60 * 1000;
+async function pingsFor(email){
+  if (!email) return false;
+  const st = await pilotState('notification-pings');
+  return st.live || st.testers.map((t) => String(t).toLowerCase()).indexOf(String(email).toLowerCase()) >= 0;
+}
+async function queuePing(email){
+  const ref = db.collection('slackPings').doc(String(email).toLowerCase());
+  await ref.set({ pending: FieldValue.increment(1), firstAt: FieldValue.serverTimestamp() }, { merge: true })
+    .catch((err) => logger.warn('Queueing a ping failed', { error: String(err && err.message || err) }));
+}
+// Everyone in `emails` told (their Inbox), and pinged if they're on pings. n: noteFor's.
+async function deliver(emails, n){
+  const list = Array.from(new Set((emails || []).map((e) => String(e || '').toLowerCase()).filter(Boolean)));
+  if (!list.length) return;
+  await noteFor(list, n);
+  if (n.ping === false) return;
+  for (const e of list) if (await pingsFor(e)) await queuePing(e);
+}
+// Pure: the ping's text.
+function pingText(n, url){ return '🔔 You have ' + (n === 1 ? 'a new notification' : n + ' new notifications') + ' on BOLD.OS: <' + url + '|' + (n === 1 ? 'open it' : 'open them') + '>.'; }
+exports.sendNotificationPings = onSchedule({ schedule: 'every 5 minutes', secrets: [SLACK_BOT_TOKEN] }, async function(){
+  const due = (await db.collection('slackPings').where('pending', '>', 0).get()).docs;
+  const now = Date.now(), url = SITE_URL + 'notifications.html';
+  for (const d of due) {
+    const p = d.data();
+    if (p.lastPingAt && now - p.lastPingAt < PING_GAP) continue;
+    try {
+      const unread = (await db.collection('notifications').where('to', '==', d.id).where('read', '==', false).count().get()).data().count;
+      if (unread) {
+        const id = await slackIdForEmail(d.id);
+        if (id) await dmBySlackId(SLACK_BOT_TOKEN.value(), id, pingText(unread, url), '', { raw: true });
+      }
+      await d.ref.set({ pending: 0, lastPingAt: now }, { merge: true });
+    } catch (err){ logger.warn('Sending a ping failed', { error: String(err && err.message || err) }); }
+  }
+});
 
 async function rolesEmails(name){
   const doc = await db.collection('roles').doc(name).get();
@@ -985,9 +1101,15 @@ async function handleSlashCommand(token, body){
   const blocks = [
     { type: 'input', block_id: 'title', label: { type: 'plain_text', text: 'Title' },
       element: { type: 'plain_text_input', action_id: 'v', max_length: 200, initial_value: (c.prefix + typed).slice(0, 200) } },
+  ].concat(c.what === 'bug' ? BUG_BLOCKS : [
     { type: 'input', block_id: 'notes', optional: true, label: { type: 'plain_text', text: 'Description' },
       element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: c.kind === 'code' ? 'What happens, what you expected, and how to make it happen again (a link, a command, a config)' : 'What it’s for, and who’d use it' } } },
-  ];
+  ]);
+  // Screenshots or images (#…, 2026-11-05): Slack's own upload field; attached to the card after it's added
+  // (onCardImageImport), as on its page.
+  blocks.push({ type: 'input', block_id: 'images', optional: true, label: { type: 'plain_text', text: 'Images' },
+    element: { type: 'file_input', action_id: 'v', filetypes: SLACK_IMAGE_TYPES, max_files: SLACK_IMAGES_MAX },
+    hint: { type: 'plain_text', text: 'Screenshots or other images: PNG, JPEG, GIF or WebP, up to 10 MB each.' } });
   if (open.length) blocks.push({ type: 'input', block_id: 'milestone', optional: true, label: { type: 'plain_text', text: 'Milestone' },
     element: { type: 'static_select', action_id: 'v', placeholder: { type: 'plain_text', text: 'None' },
       options: open.map((m) => ({ text: { type: 'plain_text', text: (m.name + (m.end ? ' (until ' + m.end + ')' : '')).slice(0, 75) }, value: m.id })) } });
@@ -1000,15 +1122,104 @@ async function handleSlashCommand(token, body){
   blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: addBoard
     ? slackText(board.ws.title || 'This project') + ' has no board yet: adding the card adds one, on its project page, with the card in To do.'
     : 'Adds it to ' + slackText(board.ws.title || 'BOLD OS') + '’s board, in To do.' }] });
-  const opened = await slackFetch(token, 'views.open', { trigger_id: body.trigger_id, view: {
+  const view = (bl) => ({ trigger_id: body.trigger_id, view: {
     type: 'modal', callback_id: 'work_card', title: { type: 'plain_text', text: c.what === 'bug' ? 'Report a bug' : 'Request a feature' },
     submit: { type: 'plain_text', text: 'Add it' }, close: { type: 'plain_text', text: 'Cancel' },
-    private_metadata: JSON.stringify({ pid: board.id, kind: c.kind, channel: body.channel_id || '', addBoard }), blocks } });
+    private_metadata: JSON.stringify({ pid: board.id, kind: c.kind, what: c.what, channel: body.channel_id || '', addBoard }), blocks: bl } });
+  let opened = await slackFetch(token, 'views.open', view(blocks));
+  // Slack refusing the images field (its upload field, or the app without files:read): the form without it.
+  if (!opened.ok && /invalid|block|scope/.test(String(opened.error || ''))) {
+    logger.warn('The card form with images was refused; opening it without', { error: opened.error, details: opened.response_metadata });
+    opened = await slackFetch(token, 'views.open', view(blocks.filter((b) => b.block_id !== 'images')));
+  }
   if (!opened.ok) { logger.warn('Opening the card form failed', { error: opened.error }); return say('Couldn’t open the form — try again.'); }
   return {};
 }
 // The form submitted: the card, as the page would add it (firestore.rules validWork), then a
 // note to them alone with its number and link. onWorkCardAdded posts it in the channel.
+// /bug's form (2026-11-05): a proper report, in sections. Only the title and What happened are needed.
+const BUG_SEVERITY = { blocks: 'blocks me', annoying: 'annoying', cosmetic: 'cosmetic' };
+const BUG_BLOCKS = [
+  { type: 'input', block_id: 'happened', label: { type: 'plain_text', text: 'What happened' },
+    element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: 'What you saw, with any error message' } } },
+  { type: 'input', block_id: 'expected', optional: true, label: { type: 'plain_text', text: 'What you expected' },
+    element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 2000 } },
+  { type: 'input', block_id: 'steps', optional: true, label: { type: 'plain_text', text: 'Steps to reproduce' },
+    element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: '1. Open …\n2. Click …\n3. See …' } } },
+  { type: 'input', block_id: 'severity', optional: true, label: { type: 'plain_text', text: 'How bad is it?' },
+    element: { type: 'radio_buttons', action_id: 'v', options: [
+      { text: { type: 'plain_text', text: 'Blocks me' }, description: { type: 'plain_text', text: 'I can’t do what I need' }, value: 'blocks' },
+      { text: { type: 'plain_text', text: 'Annoying' }, description: { type: 'plain_text', text: 'There’s a workaround' }, value: 'annoying' },
+      { text: { type: 'plain_text', text: 'Cosmetic' }, description: { type: 'plain_text', text: 'It looks wrong, but works' }, value: 'cosmetic' }] } },
+  { type: 'input', block_id: 'device', optional: true, label: { type: 'plain_text', text: 'Device and browser' },
+    element: { type: 'plain_text_input', action_id: 'v', max_length: 120, placeholder: { type: 'plain_text', text: 'e.g. Chrome, Mac, or Safari, iPhone' } } },
+];
+// Pure: the form's values (view.state.values) → { where, happened, expected, steps, severity, device }.
+function bugReportOf(values){
+  const v = values || {}, text = (b) => String(((v[b] || {}).v || {}).value || '').trim();
+  const sev = (((v.severity || {}).v || {}).selected_option || {}).value || '';
+  return { where: text('where'), happened: text('happened'), expected: text('expected'), steps: text('steps'),
+    severity: BUG_SEVERITY[sev] ? sev : '', device: text('device') };
+}
+// Pure: a report → its description (Markdown, a heading per section given).
+function bugNotes(r){
+  const out = [];
+  if (r.severity) out.push('**Severity:** ' + BUG_SEVERITY[r.severity].charAt(0).toUpperCase() + BUG_SEVERITY[r.severity].slice(1));
+  [['Where', r.where], ['What happened', r.happened], ['What I expected', r.expected], ['Steps to reproduce', r.steps], ['Device and browser', r.device]]
+    .forEach(function(x){ if (x[1]) out.push('### ' + x[0] + '\n' + x[1]); });
+  return out.join('\n\n');
+}
+// Pure: the card's title with its severity: "Bug: x" → "Bug (blocks me): x"; another title gets it in front.
+function bugTitle(title, severity){
+  const t = String(title || '').trim();
+  if (!BUG_SEVERITY[severity]) return t;
+  const tag = 'Bug (' + BUG_SEVERITY[severity] + ')';
+  return (/^bug\s*:/i.test(t) ? tag + ':' + t.replace(/^bug\s*:/i, '') : tag + ': ' + t).slice(0, 200);
+}
+
+// Images on a card added from Slack (/bug, /feature-request): what Slack's upload field gives, kept to
+// images within the limits a card's page has (PNG, JPEG, GIF, WebP; 10 MB; 20 a card).
+const SLACK_IMAGE_TYPES = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
+const SLACK_IMAGES_MAX = 5;
+const CARD_IMAGE_MIME = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
+// Pure: Slack's files → [{ id, name, mimetype, size, url }] of the images to fetch.
+function slackImagesOf(files){
+  return (Array.isArray(files) ? files : []).filter(function(f){
+    return f && CARD_IMAGE_MIME[f.mimetype] && Number(f.size) > 0 && Number(f.size) <= 10 * 1024 * 1024 && /^https:\/\/files\.slack\.com\//.test(String(f.url_private_download || f.url_private || ''));
+  }).slice(0, SLACK_IMAGES_MAX).map(function(f){
+    return { id: String(f.id || ''), name: String(f.name || 'image').slice(0, 200), mimetype: f.mimetype, size: Number(f.size), url: String(f.url_private_download || f.url_private) };
+  });
+}
+// cardImageImports/{id} (server only): { ws, card, files, email, at } → each image fetched from Slack (as the
+// bot: files:read) and put where the card's page puts its own (Storage, work/<ws>/<card>/…), then on the card.
+exports.onCardImageImport = onDocumentCreated({ document: 'cardImageImports/{id}', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 120 }, async (event) => {
+  const d = event.data && event.data.data();
+  if (!d || d.doneAt) return;
+  const cardRef = db.collection('projectWorkspaces').doc(String(d.ws)).collection('work').doc(String(d.card));
+  const added = [], failed = [];
+  const bucket = admin.storage().bucket();
+  for (const f of slackImagesOf(d.files)) {
+    try {
+      const res = await fetch(f.url, { headers: { Authorization: 'Bearer ' + SLACK_BOT_TOKEN.value() } });
+      const type = String(res.headers.get('content-type') || '').split(';')[0];
+      if (!res.ok || !CARD_IMAGE_MIME[type]) throw new Error('Slack gave ' + res.status + ' ' + type);
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length > 10 * 1024 * 1024) throw new Error('too big');
+      const path = 'work/' + d.ws + '/' + d.card + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + CARD_IMAGE_MIME[type];
+      const token = crypto.randomUUID();
+      await bucket.file(path).save(buf, { contentType: type, metadata: { metadata: { firebaseStorageDownloadTokens: token } } });
+      added.push({ path, url: 'https://firebasestorage.googleapis.com/v0/b/' + bucket.name + '/o/' + encodeURIComponent(path) + '?alt=media&token=' + token,
+        name: f.name, by: d.email, at: Date.now() });
+    } catch (err){ failed.push(f.name); logger.warn('Attaching an image from Slack failed', { file: f.id, error: String(err && err.message || err) }); }
+  }
+  if (added.length) await db.runTransaction(async function(tx){
+    const c = await tx.get(cardRef);
+    if (!c.exists) return;
+    tx.update(cardRef, { images: (c.data().images || []).concat(added).slice(0, 20) });
+  });
+  await event.data.ref.set({ doneAt: Date.now(), added: added.length, failed }, { merge: true });
+});
+
 async function addCardFromSlack(token, payload){
   const meta = JSON.parse(payload.view.private_metadata || '{}');
   const v = payload.view.state && payload.view.state.values || {};
@@ -1027,10 +1238,16 @@ async function addCardFromSlack(token, payload){
   }
   const person = (await db.collection('people').where('email', '==', email).limit(1).get()).docs[0];
   const name = (person && person.data().name) || email.split('@')[0];
-  const title = String(val('title').value || '').trim().slice(0, 200);
+  let title = String(val('title').value || '').trim().slice(0, 200);
   if (!title) return;
   const now = Date.now();
   let notes = String(val('notes').value || '').trim();
+  // A bug report (/bug): its sections as the description, its severity in its title.
+  if (meta.what === 'bug') {
+    const r = bugReportOf(v);
+    notes = bugNotes(r);
+    title = bugTitle(title, r.severity);
+  }
   // Its milestone: one picked, or a new one named (one of the same name is that one).
   const ms = slashMilestones(wsSnap.data());
   const picked = (val('milestone').selected_option || {}).value || '';
@@ -1053,17 +1270,22 @@ async function addCardFromSlack(token, payload){
     by: { email, name }, at: now, movedAt: now, updatedAt: now, updatedBy: email,
   }, milestone ? { milestone } : {}));
   const num = await numberFor(ref.path);
+  // Its images, from Slack: fetched and attached by onCardImageImport (Slack waits 3 seconds for this answer).
+  const files = slackImagesOf(val('images').files);
+  if (files.length) await db.collection('cardImageImports').add({ ws: wsSnap.id, card: ref.id, files, email, at: now });
   const url = projectPageUrl(wsSnap.data().cardId || wsSnap.id, wsSnap.data().boardId) + '&tab=work&card=' + encodeURIComponent(ref.id);
   const mName = milestone && ((ms.find((m) => m.id === milestone) || {}).name || made);
   const text = '✅ Added #' + num + ' to the board: ' + linkedTitle(slackText(title), url) +
     (made ? ', in the new milestone ' + slackText(made) : mName ? ', in ' + slackText(mName) : '') + '.' +
     (proposed ? ' Milestone ' + slackText(proposed) + ' is proposed in its description: the project’s people add milestones.' : '');
   const sent = meta.channel ? await slackFetch(token, 'chat.postEphemeral', { channel: meta.channel, user: payload.user.id, text }) : { ok: false };
-  if (!sent.ok) await dmBySlackId(token, payload.user.id, text);
+  if (!sent.ok) await dmBySlackId(token, payload.user.id, text, '', { raw: true });
 }
 
 async function handleInteractivity(token, payload){
   if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'work_card') return addCardFromSlack(token, payload);
+  // Take it to the BOLD OS, a message shortcut (functions/slack-thread.js).
+  if (payload.type === 'message_action' && payload.callback_id === 'send_to_conversations') return conversationsSlack.handleShortcut(payload);
   if (payload.type !== 'block_actions') return;
   const action = (payload.actions || [])[0];
   if (!action) return;
@@ -1136,6 +1358,16 @@ const PILOTS = {
   'card-comments': 'Comments on board cards',
   'card-done': 'Telling who raised a card it’s done',
   'project-invites': 'Invitations to a project, and their answers',
+  'group-ready': 'Done what your new group asks',
+  'group-trial': 'A new group’s first week: the reminder, and its end',
+  'group-eligible': 'Telling PIs someone meets the next group’s requirements',
+  'project-setup': 'An ongoing project’s setup still missing (once)',
+  'channel-join': 'BOLD OS joins new public channels',
+  'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
+  'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
+  'conversation-replies': 'A reply in a conversation you’re in: a DM',
+  'notification-pings': 'Notifications: a ping on Slack that there are new ones, instead of each message',
+  'channel-alignment': 'Slack channels follow BOLD.OS: removing whoever isn’t meant to be in one, and telling them',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -1198,22 +1430,38 @@ async function nameForEmail(e){
   return (p && p.data().name) || String(e).split('@')[0];
 }
 // A message for whom it's for, in pilot: to each tester instead, marked. → true.
-async function toTesters(token, st, forWhom, text, blocks){
+async function toTesters(token, st, forWhom, text, blocks, attachments){
   const note = pilotNote(st.label, forWhom);
   for (const t of st.testers) {
     const id = await slackIdForEmail(t);
     if (!id) continue;
     const open = await slackFetch(token, 'conversations.open', { users: id });
     if (open.ok) await slackFetch(token, 'chat.postMessage', Object.assign({ channel: open.channel.id, text: note + '\n' + text, unfurl_links: false },
-      blocks ? { blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }].concat(blocks) } : {}));
+      blocks ? { blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }].concat(blocks) } : {},
+      // A card (attachments): the note above it, the card as they'd see it.
+      attachments ? { blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: note }] }], attachments } : {}));
   }
   return true;
 }
 // A post in a channel (by id; name for the pilot's note), as feature `key`. → Slack's answer.
 async function postInChannel(token, key, channelId, name, args){
   const st = await pilotState(key);
-  if (!st.live) { await toTesters(token, st, '#' + String(name || channelId).replace(/^#/, ''), args.text || '', args.blocks); return { ok: true, pilot: true }; }
+  if (!st.live) { await toTesters(token, st, '#' + String(name || channelId).replace(/^#/, ''), args.text || '', args.blocks, args.attachments); return { ok: true, pilot: true }; }
   return slackFetch(token, 'chat.postMessage', Object.assign({ channel: channelId }, args));
+}
+// A message only `user` sees, in a channel or one of its threads (chat.postEphemeral), as feature `key`;
+// in pilot, to its testers instead. args: { channel, user, thread_ts, text }.
+async function nudgeInThread(token, key, args){
+  const st = await pilotState(key);
+  if (!st.live) {
+    const p = (await db.collection('people').where('slackId', '==', String(args.user || '')).limit(1).get()).docs[0];
+    await toTesters(token, st, (p && p.data().name) || 'someone', args.text || '', null, args.attachments);
+    return { ok: true, pilot: true };
+  }
+  const res = await slackFetch(token, 'chat.postEphemeral', Object.assign({ unfurl_links: false }, args));
+  if (!res.ok) logger.warn('Slack ephemeral message failed', { feature: key, error: res.error });
+  else await noteFor([await emailForSlackId(args.user)], { text: args.text || '', href: ((((args.attachments || [])[0] || {}).blocks || []).map((b) => ((b.elements || [])[0] || {}).url).filter(Boolean)[0]) || '', feature: key, source: 'slack' });
+  return res;
 }
 async function pilotSlack(token, key, label, m){
   const ref = db.collection('settings').doc('pilot');
@@ -1230,8 +1478,16 @@ async function pilotSlack(token, key, label, m){
     const open = await slackFetch(token, 'conversations.open', { users: id });
     if (open.ok) await send(open.channel.id, text, blocks);
   };
+  // Their Inbox first, in pilot too; whoever's on pings gets a ping instead of the message.
+  const emails = [];
+  for (const e of Array.from(new Set((m.emails || []).map((x) => String(x).toLowerCase())))) {
+    await noteFor([e], { text: m.text, feature: key, source: 'slack' });
+    if (await pingsFor(e)) await queuePing(e); else emails.push(e);
+  }
+  m = Object.assign({}, m, { emails });
+  if (!emails.length && !m.channel) return { pilot: !st.live, pinged: true };
   if (st.live) {
-    for (const e of Array.from(new Set(m.emails || []))) await dm(e, m.text, m.blocks);
+    for (const e of emails) await dm(e, m.text, m.blocks);
     if (m.channel) { const id = await slackChannelId(token, String(m.channel).replace(/^#/, '')); if (id) await send(id, m.text, m.blocks); }
     return { pilot: false };
   }
@@ -1499,7 +1755,9 @@ function newTags(before, after){
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
 const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
-  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions'];
+  'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
+  // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
+  'conversations', 'conversationImports', 'cardImageImports', 'notifications'];
 // An event's page: its own (d.page: Collaboration Week, the Festival) or event.html.
 function eventUrl(slug, d){
   return SITE_URL + (d && /^[a-z0-9-]+\.html$/.test(d.page || '') ? d.page : 'event.html?event=' + encodeURIComponent(slug));
@@ -1848,7 +2106,7 @@ function appliedProposal(doc, q, ctx){
     const out = {};
     changes.forEach((c) => {
       if (!c || c.kind === 'batch' || c.kind === 'restore') throw new HttpsError('invalid-argument', 'Unknown kind of change.');
-      const r = appliedProposal(cur, c, ctx);
+      const r = appliedProposal(cur, Object.assign({ by: q.by }, c), ctx);
       cur = Object.assign({}, cur, r);
       Object.assign(out, r);
     });
@@ -1897,7 +2155,8 @@ function appliedProposal(doc, q, ctx){
     // Never the same part twice (two proposals adding one, the second accepted later).
     if (parts.some((p) => p.id === q.partId)) throw new HttpsError('failed-precondition', 'That part is there already: propose a change to it instead.');
     // At the end of its section, if it names one that's there; else at the end.
-    const part = Object.assign({ id: q.partId }, after);
+    // changedBy: whoever proposed its last accepted change (2026-11-05), told of comments and proposals on it.
+    const part = Object.assign({ id: q.partId }, after, (q.by || {}).email ? { changedBy: String(q.by.email).toLowerCase() } : {});
     let at = -1;
     parts.forEach((p, i) => { if (part.section && p.section === part.section) at = i; });
     if (at === -1) parts.push(part); else parts.splice(at + 1, 0, part);
@@ -1909,6 +2168,7 @@ function appliedProposal(doc, q, ctx){
     if (!p) throw new HttpsError('failed-precondition', 'That part has since been removed.');
     // Merged with any change to the part since it was proposed, rather than overwriting it (#177).
     Object.assign(p, mergedEdit(p, q.before, after));
+    if ((q.by || {}).email) p.changedBy = String(q.by.email).toLowerCase();
     return { parts };
   }
   if (q.kind === 'move') {
@@ -2148,6 +2408,293 @@ exports.notifyReviewsOut = onSchedule(
   }
 );
 
+// ---------- BOLD OS in the public channels (2026-11-04) ----------
+// So a thread anywhere public can be sent to Conversations (functions/slack-thread.js), BOLD OS joins
+// every public channel: each new one as it's created (Slack's channel_created event, pilot
+// channel-join: until it's live, its testers are told which it would join), and the ones there
+// already, once (a runs/{id} document { action: 'join-public-channels', dryRun? }, server only: its
+// `plan` lists them; dryRun joins none). Needs channels:join and channels:read, and the
+// channel_created event subscription. Private channels can't be: Slack lets only a member invite it.
+async function joinNewChannel(token, ch){
+  if (!ch.id || ch.is_private) return;
+  const st = await pilotState('channel-join');
+  if (!st.live) { await toTesters(token, st, '#' + (ch.name || ch.id), 'BOLD OS would join #' + slackText(ch.name || ch.id) + ', a new public channel.'); return; }
+  const r = await slackFetch(token, 'conversations.join', { channel: ch.id });
+  if (!r.ok) logger.warn('Joining a new channel failed', { channel: ch.id, error: r.error });
+}
+// Pure: the public channels BOLD OS isn't in yet (conversations.list's channels), by name.
+function channelsToJoin(channels){
+  return (channels || []).filter((c) => c && c.id && !c.is_private && !c.is_archived && !c.is_member && !c.is_im && !c.is_mpim)
+    .map((c) => ({ id: c.id, name: c.name || c.id })).sort((a, b) => a.name.localeCompare(b.name));
+}
+exports.onChannelJoinRun = onDocumentCreated({ document: 'runs/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'join-public-channels' || run.doneAt) return;
+  const token = SLACK_BOT_TOKEN.value(), all = [];
+  let cursor = '', error = '';
+  do {
+    const r = await (await fetch('https://slack.com/api/conversations.list?' + new URLSearchParams(Object.assign({ types: 'public_channel', exclude_archived: 'true', limit: '200' }, cursor ? { cursor } : {})),
+      { headers: { 'Authorization': 'Bearer ' + token } })).json();
+    if (!r.ok) { error = r.error + (r.needed ? ' (needs ' + r.needed + ')' : ''); break; }
+    all.push(...(r.channels || []));
+    cursor = (r.response_metadata && r.response_metadata.next_cursor) || '';
+  } while (cursor);
+  const plan = channelsToJoin(all), joined = [], failed = [];
+  if (!error && run.dryRun !== true) {
+    for (const c of plan) {
+      const r = await slackFetch(token, 'conversations.join', { channel: c.id });
+      (r.ok ? joined : failed).push(r.ok ? c.name : c.name + ': ' + r.error);
+    }
+  }
+  await event.data.ref.set({ doneAt: Date.now(), plan: plan.map((c) => c.name), joined, failed, error }, { merge: true });
+});
+
+// #174's preview (2026-11-05): who is in each group and project channel, as the bot sees them, so
+// they can be checked against BOLD.OS before anything is removed. Read only: it changes nothing on
+// Slack. On creating runs/{id} { action: 'channel-audit' } (admin access only), it writes
+// { doneAt, channels: { <name>: { id, members: [Slack ids] } | { error } }, error }: every group's
+// and role's channel (settings/groups), every project's (projectWorkspaces' slackChannel), and every
+// other proj-… channel the bot can see.
+exports.onChannelAuditRun = onDocumentCreated({ document: 'runs/{id}', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 300 }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'channel-audit' || run.doneAt) return;
+  const token = SLACK_BOT_TOKEN.value(), names = new Set();
+  const add = (v) => groupChannelNames(v).forEach((n) => names.add(n));
+  const set = (await db.collection('settings').doc('groups').get()).data() || {};
+  Object.values(set.channels || {}).forEach(add); Object.values(set.roleChannels || {}).forEach(add);
+  (await db.collection('projectWorkspaces').get()).docs.forEach((d) => add(d.data().slackChannel));
+  let error = '';
+  try { await slackChannelId(token, '-'); } catch (err) { error = String(err.message || err); }
+  if (channelNamesCache) Array.from(channelNamesCache.names.keys()).filter((n) => /^proj-/.test(n)).forEach((n) => names.add(n));
+  const channels = {};
+  for (const name of Array.from(names).sort()) {
+    const id = error ? null : await slackChannelId(token, name).catch(() => null);
+    if (!id) { channels[name] = { error: 'the bot can’t see it' }; continue; }
+    const members = [];
+    let cursor = '', bad = '';
+    do {
+      const r = await (await fetch('https://slack.com/api/conversations.members?' + new URLSearchParams(Object.assign({ channel: id, limit: '1000' }, cursor ? { cursor } : {})),
+        { headers: { 'Authorization': 'Bearer ' + token } })).json();
+      if (!r.ok) { bad = r.error + (r.needed ? ' (needs ' + r.needed + ')' : ''); break; }
+      members.push(...(r.members || []));
+      cursor = (r.response_metadata && r.response_metadata.next_cursor) || '';
+    } while (cursor);
+    channels[name] = bad ? { id, error: bad } : { id, members };
+  }
+  await event.data.ref.set({ doneAt: Date.now(), channels, error }, { merge: true });
+});
+
+// ---------- #174: Slack channels follow BOLD.OS (2026-11-06) ----------
+// Each group's and role's channel (settings/groups) is for that group and the groups above it
+// (groupChannelsFor), each project's (its workspace's slackChannel) for the people on it (its
+// workspace's members); PIs and admins stay in every one, as do bots. Everyone else is removed,
+// and told once, by BOLD OS, where from, why and how to get back in (pilot `channel-alignment`:
+// the run refuses to remove anyone while it isn't live, so nobody is removed untold).
+// PIs and admins preview it, schedule it (one run at a time) and cancel it on Settings › Slack
+// (channelAlignment); runAlignments carries out the one that's due, working it out again then.
+const ALIGN_KEY = 'channel-alignment';
+
+// Pure. in: { channels: { <name>: [Slack ids] }, people: { <Slack id>: { email, name } },
+// members: { <email>: members record }, full: [emails], groups: settings/groups,
+// projects: [{ channel, pid, title, url, people: [emails] }], bots: [Slack ids], exclude: [names] }
+// → [{ slackId, name, email, channels: [{ name, why: 'no-record' | 'group' | 'project' | 'outside', group?, title?, url? }] }].
+function alignmentPlan(x){
+  const groupCh = allGroupChannels(x.groups || {}), byCh = {}, bots = new Set(x.bots || []), full = new Set((x.full || []).map((e) => String(e).toLowerCase()));
+  (x.projects || []).forEach(function(p){ const n = String(p.channel || '').replace(/^#/, '').toLowerCase(); if (n) byCh[n] = p; });
+  const out = {};
+  Object.keys(x.channels || {}).sort().forEach(function(name){
+    if ((x.exclude || []).indexOf(name) >= 0) return;
+    const proj = byCh[name], isGroup = !!groupCh[name];
+    if (!proj && !isGroup) return;
+    (x.channels[name] || []).forEach(function(id){
+      if (bots.has(id)) return;
+      const p = (x.people || {})[id], email = p ? String(p.email || '').toLowerCase() : '';
+      if (email && full.has(email)) return;
+      const m = email ? (x.members || {})[email] || null : null;
+      let why = '';
+      if (!p) why = 'outside';
+      else if (proj) { if ((proj.people || []).map((e) => String(e).toLowerCase()).indexOf(email) < 0) why = 'project'; }
+      else if (groupChannelsFor(m || {}, x.groups || {}).indexOf(name) < 0) why = m ? 'group' : 'no-record';
+      if (!why) return;
+      const o = out[id] = out[id] || { slackId: id, name: (p && p.name) || (x.outside || {})[id] || '', email, channels: [] };
+      o.channels.push(Object.assign({ name, why }, why === 'group' ? { group: GROUP_LABELS[groupOf(m)] } : {}, proj ? { title: proj.title, url: proj.url } : { for: groupCh[name].join(', ') }));
+    });
+  });
+  return Object.values(out).sort(function(a, b){ return a.name.localeCompare(b.name); });
+}
+// Pure: what BOLD OS tells someone removed from `channels` (as in alignmentPlan), in Slack's mrkdwn.
+function alignmentMessage(name, channels){
+  const first = String(name || '').trim().split(/\s+/)[0] || 'there';
+  const line = function(c){
+    if (c.why === 'project') return '• #' + c.name + ': it’s for the people on <' + c.url + '|' + slackText(c.title || 'its project') + '> on BOLD.OS';
+    if (c.why === 'group') return '• #' + c.name + ': it’s for ' + c.for + ' and above; you’re ' + c.group + ' on BOLD.OS';
+    if (c.why === 'no-record') return '• #' + c.name + ': it’s for ' + c.for + ' and above, and you haven’t joined BOLD.OS yet';
+    return '• #' + c.name + ': your account isn’t on BOLD’s Slack roster';
+  };
+  const has = (w) => channels.some((c) => c.why === w);
+  const back = [];
+  if (has('no-record') || has('outside')) back.push('• Join BOLD.OS: sign in with your BOLD Slack account at <' + SITE_URL + '|BOLD.OS> and fill in your profile. Your group’s channels follow.');
+  if (has('group')) back.push('• In the wrong group? Ask for another on <' + SITE_URL + 'group-request.html|BOLD.OS>.');
+  channels.filter((c) => c.why === 'project').forEach(function(c){ back.push('• Working on <' + c.url + '|' + slackText(c.title || 'the project') + '>? Ask to join it on its page on BOLD.OS; once you’re on it, you’re invited back to #' + c.name + '.'); });
+  return 'Hi ' + first + ', BOLD’s Slack channels now follow BOLD.OS, the lab’s site, so you’ve been removed from:\n' + channels.map(line).join('\n') +
+    '\n\nTo get back in:\n' + back.join('\n') + '\n\nYou’re still on BOLD’s Slack, in every other channel. Questions? Ask a PI or admin.';
+}
+
+// What alignmentPlan needs, from Firestore and Slack (as the bot sees each channel). → { input, unseen: [channel names] }.
+async function alignmentInput(token, exclude){
+  const [peopleSnap, membersSnap, groupsSnap, wsSnap, pis, admins] = await Promise.all([db.collection('people').get(), db.collection('members').get(),
+    db.collection('settings').doc('groups').get(), db.collection('projectWorkspaces').get(), rolesEmails('pis'), rolesEmails('admins')]);
+  const people = {}, members = {};
+  peopleSnap.docs.forEach((d) => { const p = d.data(); people[d.id] = { email: String(p.email || '').toLowerCase(), name: p.name || '' }; });
+  membersSnap.docs.forEach((d) => { members[d.id.toLowerCase()] = d.data(); });
+  const groups = groupsSnap.data() || {};
+  const projects = wsSnap.docs.map((d) => { const w = d.data(); return { channel: w.slackChannel || '', pid: d.id, title: w.title || '', url: projectPageUrl(w.cardId || d.id, w.boardId || null), people: w.members || [] }; }).filter((p) => p.channel);
+  const names = new Set(Object.keys(allGroupChannels(groups)));
+  projects.forEach((p) => names.add(String(p.channel).replace(/^#/, '').toLowerCase()));
+  const channels = {}, unseen = [];
+  for (const name of Array.from(names).sort()){
+    if ((exclude || []).indexOf(name) >= 0) continue;
+    const id = await slackChannelId(token, name).catch(() => null);
+    const ids = id ? await groupChannelMemberIds(token, id) : null;
+    if (!ids) { unseen.push(name); continue; }
+    channels[name] = ids;
+  }
+  // Bots and apps (and deleted accounts): anyone not on the roster is looked up once.
+  const bots = [], seen = new Set(), outside = {};
+  const auth = await slackFetch(token, 'auth.test', {});
+  if (auth.ok && auth.user_id) bots.push(auth.user_id);
+  for (const ids of Object.values(channels)) for (const id of ids){
+    if (people[id] || seen.has(id)) continue;
+    seen.add(id);
+    const u = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: id }), { headers: { Authorization: 'Bearer ' + token } })).json().catch(() => null);
+    // A bot, an app or a deleted account stays out of it; anyone else not on the roster (an account
+    // from another workspace) is 'outside', named from Slack.
+    if (!u || !u.ok || (u.user && (u.user.is_bot || u.user.deleted || u.user.id === 'USLACKBOT'))) bots.push(id);
+    else outside[id] = (u.user.profile && (u.user.profile.real_name || u.user.profile.display_name)) || u.user.name || '';
+  }
+  return { input: { channels, people, members, full: pis.concat(admins), groups, projects, bots, outside, exclude: exclude || [] }, unseen };
+}
+// A channel's members' Slack ids (the bot must be in it), or null when it can't read them.
+async function groupChannelMemberIds(token, channelId){
+  const ids = [];
+  let cursor = '';
+  do {
+    const q = new URLSearchParams(Object.assign({ channel: channelId, limit: '1000' }, cursor ? { cursor } : {}));
+    const json = await (await fetch('https://slack.com/api/conversations.members?' + q, { headers: { Authorization: 'Bearer ' + token } })).json();
+    if (!json.ok) { logger.warn('Reading a channel’s members failed', { error: json.error }); return null; }
+    (json.members || []).forEach(function(id){ ids.push(id); });
+    cursor = (json.response_metadata && json.response_metadata.next_cursor) || '';
+  } while (cursor);
+  return ids;
+}
+// The plan for now: alignmentInput, then alignmentPlan, each person with the message they'd get.
+async function alignmentNow(token, exclude){
+  const got = await alignmentInput(token, exclude);
+  const plan = alignmentPlan(got.input).map((p) => Object.assign(p, { message: alignmentMessage(p.name, p.channels) }));
+  return { plan, unseen: got.unseen, channels: Object.keys(got.input.channels).length };
+}
+// A Slack call that waits and tries again while Slack says to slow down (ratelimited), up to a minute.
+async function slackPatient(token, method, body){
+  let r;
+  for (let i = 0; i < 12; i++){
+    r = await slackFetch(token, method, body);
+    if (r.ok || r.error !== 'ratelimited') return r;
+    await new Promise((ok) => setTimeout(ok, 5000));
+  }
+  return r;
+}
+// Carries it out, in batches (about 6 minutes each, then the next tick of runAlignments goes on): the
+// plan is worked out once, when it starts (`plan`), then each person in it removed from their channels
+// and told of those it removed (`results`, one per person, in the plan's order).
+async function runAlignment(ref, run){
+  const token = SLACK_BOT_TOKEN.value(), started = Date.now();
+  const st = await pilotState(ALIGN_KEY);
+  if (!st.live) { await ref.set({ doneAt: Date.now(), error: '“' + st.label + '” isn’t live on Settings › Features, so nobody was removed.' }, { merge: true }); return; }
+  let plan = run.plan, unseen = run.unseen || [];
+  if (!plan){
+    const now = await alignmentNow(token, run.exclude || []);
+    plan = now.plan.map((p) => ({ slackId: p.slackId, name: p.name, email: p.email, channels: p.channels }));
+    unseen = now.unseen;
+    await ref.set({ plan, unseen, results: [] }, { merge: true });
+  }
+  const results = (run.results || []).slice();
+  for (let k = results.length; k < plan.length; k++){
+    if (Date.now() - started > 360000) { await ref.set({ results, leaseUntil: 0 }, { merge: true }); return; }   // the next tick goes on
+    const p = plan[k], removed = [], failed = [];
+    for (const c of p.channels){
+      const id = await slackChannelId(token, c.name).catch(() => null);
+      const r = id ? await slackPatient(token, 'conversations.kick', { channel: id, user: p.slackId }) : { ok: false, error: 'channel_not_found' };
+      if (r.ok || r.error === 'not_in_channel') removed.push(c); else failed.push({ name: c.name, error: r.error || 'unknown' });
+    }
+    let told = false;
+    if (removed.length){
+      const open = await slackPatient(token, 'conversations.open', { users: p.slackId });
+      const sent = open.ok ? await slackPatient(token, 'chat.postMessage', { channel: open.channel.id, text: alignmentMessage(p.name, removed), unfurl_links: false }) : open;
+      told = !!sent.ok;
+      if (p.email) await noteFor([p.email], { text: 'BOLD’s Slack channels now follow BOLD.OS: you were removed from ' + removed.map((c) => '#' + c.name).join(', ') + '.', feature: ALIGN_KEY, source: 'slack' }).catch(() => {});
+    }
+    results.push({ slackId: p.slackId, name: p.name, removed: removed.map((c) => c.name), failed, told });
+    if (results.length % 10 === 0) await ref.set({ results }, { merge: true });
+  }
+  await ref.set({ results, doneAt: Date.now(), leaseUntil: 0,
+    removed: results.reduce((n, r) => n + r.removed.length, 0), people: results.filter((r) => r.removed.length).length }, { merge: true });
+}
+
+// Settings › Slack: { action: 'preview' } → { plan, unseen, channels, live, runs }; 'schedule' { at (ms), exclude? }
+// → { id }; 'cancel' { id }; 'status' → { live, runs: [the last few, newest first] }. PIs and admins.
+exports.channelAlignment = onCall({ secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 300 }, async (request) => {
+  const email = signedInEmail(request);
+  if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins align the channels.');
+  const d = request.data || {}, col = db.collection('runs');
+  const runs = async () => (await col.where('action', '==', ALIGN_KEY).get()).docs.map((x) => Object.assign({ id: x.id }, x.data()))
+    .sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 5)
+    .map((r) => ({ id: r.id, scheduledFor: r.scheduledFor || 0, by: r.byName || r.by || '', at: r.at || 0, cancelledAt: r.cancelledAt || 0, startedAt: r.startedAt || 0, doneAt: r.doneAt || 0,
+      error: r.error || '', removed: r.removed || 0, people: r.people || 0, planned: (r.plan || []).length, done: (r.results || []).length, failed: (r.results || []).filter((x) => x.failed && x.failed.length).length, untold: (r.results || []).filter((x) => x.removed && x.removed.length && !x.told).length }));
+  const live = (await pilotState(ALIGN_KEY)).live;
+  if (d.action === 'status') return { live, runs: await runs() };
+  if (d.action === 'preview'){
+    const now = await alignmentNow(SLACK_BOT_TOKEN.value(), Array.isArray(d.exclude) ? d.exclude.map(String) : []);
+    return Object.assign(now, { live, runs: await runs() });
+  }
+  if (d.action === 'schedule'){
+    const at = Number(d.at);
+    if (!(at > Date.now() - 60000) || at > Date.now() + 30 * 86400000) throw new HttpsError('invalid-argument', 'Pick a time in the next 30 days.');
+    const pending = (await runs()).filter((r) => !r.cancelledAt && !r.doneAt);
+    if (pending.length) throw new HttpsError('failed-precondition', 'One is scheduled already: cancel it first.');
+    const ref = await col.add({ action: ALIGN_KEY, scheduledFor: at, exclude: Array.isArray(d.exclude) ? d.exclude.map(String).slice(0, 100) : [], by: email, byName: await nameForEmail(email), at: Date.now() });
+    return { id: ref.id };
+  }
+  if (d.action === 'cancel'){
+    const ref = col.doc(String(d.id || ''));
+    const ok = await db.runTransaction(async (tx) => {
+      const r = await tx.get(ref);
+      if (!r.exists || r.data().action !== ALIGN_KEY || r.data().startedAt || r.data().cancelledAt) return false;
+      tx.update(ref, { cancelledAt: Date.now(), cancelledBy: email });
+      return true;
+    });
+    if (!ok) throw new HttpsError('failed-precondition', 'It has started already, or isn’t scheduled.');
+    return { ok: true };
+  }
+  throw new HttpsError('invalid-argument', 'Unknown action.');
+});
+// Every 5 minutes: the scheduled run that's due, claimed once (startedAt), carried out.
+// A run is held by one tick at a time (leaseUntil); one cut short is taken up by a later tick.
+exports.runAlignments = onSchedule({ schedule: 'every 5 minutes', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 540 }, async function(){
+  const due = (await db.collection('runs').where('action', '==', ALIGN_KEY).get()).docs
+    .filter((x) => { const r = x.data(); return !r.cancelledAt && !r.doneAt && (r.scheduledFor || 0) <= Date.now() && (r.leaseUntil || 0) < Date.now(); });
+  for (const x of due){
+    const claimed = await db.runTransaction(async (tx) => {
+      const r = await tx.get(x.ref), d = r.data();
+      if (d.doneAt || d.cancelledAt || (d.leaseUntil || 0) >= Date.now()) return null;
+      tx.update(x.ref, Object.assign({ leaseUntil: Date.now() + 520000 }, d.startedAt ? {} : { startedAt: Date.now() }));
+      return d;
+    });
+    if (!claimed) continue;
+    try { await runAlignment(x.ref, claimed); }
+    catch (err){ logger.error('Aligning the channels failed', { error: String(err && err.message || err) }); await x.ref.set({ doneAt: Date.now(), error: String(err && err.message || err) }, { merge: true }); }
+  }
+});
+
 // ---------- 6. Slack App Home + reviewer assignment ----------
 // One HTTP endpoint doing double duty as both Slack's Events API Request
 // URL (app_home_opened, team_join and user_change for the people roster, plus the
@@ -2275,6 +2822,34 @@ exports.slackEvents = onRequest(
       res.status(200).send('');
       return;
     }
+    // A new public channel: BOLD OS joins it (pilot channel-join), so its threads can be sent to
+    // Conversations. Private channels can't be joined this way: someone /invites it.
+    if (body.type === 'event_callback' && body.event && body.event.type === 'channel_created'){
+      try { await joinNewChannel(token, body.event.channel || {}); }
+      catch (err){ logger.error('joinNewChannel threw', { error: String(err) }); }
+      res.status(200).send('');
+      return;
+    }
+    // A reply in Slack to a thread moved to Conversations: a note to whoever wrote it to reply there
+    // (slack-thread.js nudgeMoved, pilot conversation-moved). Needs the message.channels and
+    // message.groups event subscriptions. Every other message: nothing.
+    if (body.type === 'event_callback' && body.event && body.event.type === 'message'){
+      try { await conversationsSlack.nudgeMoved(token, body.event); }
+      catch (err){ logger.error('nudgeMoved threw', { channel: body.event.channel, error: String(err) }); }
+      res.status(200).send('');
+      return;
+    }
+    // Someone joins or leaves a private channel: the conversations brought in from it follow its
+    // members (slack-thread.js syncReaders). Needs the member_joined_channel and member_left_channel
+    // event subscriptions; sending a thread again refreshes them too.
+    if (body.type === 'event_callback' && body.event && (body.event.type === 'member_joined_channel' || body.event.type === 'member_left_channel')){
+      if (body.event.channel_type !== 'C') {
+        try { await conversationsSlack.syncReaders(token, body.event.channel); }
+        catch (err){ logger.error('syncReaders threw', { channel: body.event.channel, error: String(err) }); }
+      }
+      res.status(200).send('');
+      return;
+    }
     // Someone joins the Slack, or changes their name or email, or is deactivated: just
     // their entry in the people roster (the daily syncPeople catches anything missed).
     if (body.type === 'event_callback' && body.event && (body.event.type === 'team_join' || body.event.type === 'user_change')){
@@ -2294,17 +2869,56 @@ exports.slackEvents = onRequest(
 // people/{slackId}: written if they have an email, removed once deactivated. Someone from
 // another workspace (in a channel shared with it: their team_id isn't ours) isn't one of
 // the lab's people, and their id can't be invited to our channels (user_not_found).
+// Someone whose BOLD.OS account has another email than their Slack profile (signed up with one,
+// Slack on another; 2026-11-05) is on the roster under their account's: everything finds people by
+// it (links to their page, notifications, DMs). Their Slack one is kept as slackEmail.
+// Pure: Firebase Auth users → { slackId: account email } for the accounts signed in with Slack.
+function accountEmailsBySlackId(users){
+  const out = {};
+  (users || []).forEach(function(u){
+    const s = (u.providerData || []).filter(function(p){ return p.providerId === 'oidc.slack'; })[0];
+    if (s && s.uid && u.email) out[s.uid] = String(u.email).toLowerCase();
+  });
+  return out;
+}
+// Pure: a roster entry with its account's email (and its Slack one, if they differ).
+function withAccountEmail(p, account){
+  if (!account || account === p.email) return Object.assign({}, p, { slackEmail: FieldValue.delete() });
+  return Object.assign({}, p, { email: account, slackEmail: p.email });
+}
+async function allAccountEmails(){
+  const out = {};
+  let page;
+  do {
+    page = await admin.auth().listUsers(1000, page && page.pageToken);
+    Object.assign(out, accountEmailsBySlackId(page.users));
+  } while (page.pageToken);
+  return out;
+}
+async function accountEmailFor(slackId){
+  try {
+    const r = await admin.auth().getUsers([{ providerId: 'oidc.slack', providerUid: slackId }]);
+    return accountEmailsBySlackId(r.users)[slackId] || '';
+  } catch (err){ logger.warn('Looking up an account by Slack id failed', { error: String(err && err.message || err) }); return ''; }
+}
+
 async function upsertPerson(u, teamId){
   if (!u || !u.id || u.is_bot || u.id === 'USLACKBOT') return;
   const ref = db.collection('people').doc(u.id);
-  if (u.deleted || (teamId && u.team_id && u.team_id !== teamId)) { if ((await ref.get()).exists) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); } return; }
+  if (u.deleted || (teamId && u.team_id && u.team_id !== teamId) || slackExternal(u, teamId)) { if ((await ref.get()).exists) { await ref.delete(); logger.info('upsertPerson: removed', { slackId: u.id }); } return; }
   if (!u.profile || !u.profile.email) { logger.warn('upsertPerson: no email (users:read.email?)', { slackId: u.id }); return; }
   // Emails lower case, as everywhere else on BOLD.OS (Slack keeps whatever case was typed).
-  const p = { slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email };
+  const p = withAccountEmail({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }, await accountEmailFor(u.id));
   const was = (await ref.get()).data();
-  if (was && was.name === p.name && was.email === p.email) return;
+  if (was && was.name === p.name && was.email === p.email && (was.slackEmail || '') === (typeof p.slackEmail === 'string' ? p.slackEmail : '')) return;
   await ref.set(p, { merge: true });
   logger.info('upsertPerson: ' + (was ? 'updated' : 'added'), { slackId: u.id });
+  // New on the BOLD Slack: PAN-BOLD's channels (Settings › Slack channels), before any record of theirs.
+  if (!was) await invitePanChannels(p.email).catch((err) => logger.warn('Adding someone to PAN-BOLD\u2019s channels failed', { error: String(err && err.message || err) }));
+}
+async function invitePanChannels(email){
+  const set = (await db.collection('settings').doc('groups').get()).data() || {};
+  for (const name of groupChannelNames((set.channels || {}).pan)) await inviteToGroupChannel(SLACK_BOT_TOKEN.value(), [email], name);
 }
 
 // ---------- Profile page: the caller's own Slack profile fields ----------
@@ -2465,7 +3079,9 @@ function badgesForCard(card){
 // Pure: gatherDashboard()'s sections → the profile page's three lists.
 function projectsFromDashboard(sections){
   const item = function(i, role){
-    const out = { boardId: i.boardId, boardLabel: i.boardLabel, cardId: i.cardId, title: i.title, badges: badgesForCard(i.card) };
+    // Its Internal Review stage only while it's in submission (on a venue's board, no outcome yet; 2026-11-05).
+    const inSubmission = !!i.boardId && projectGroupForCard(i.card || {}, false, true, false) === 'submission';
+    const out = { boardId: i.boardId, boardLabel: i.boardLabel, cardId: i.cardId, title: i.title, badges: inSubmission ? badgesForCard(i.card) : [] };
     if (role) out.role = role;
     return out;
   };
@@ -2497,11 +3113,12 @@ exports.getMyProjects = onCall(
       db.collection('projectWorkspaces').where('members', 'array-contains', email).get(),
     ]);
     const out = projectsFromDashboard(sections);
-    const loose = (d) => ({ boardId: null, boardLabel: 'No venue yet', cardId: d.id, title: d.data().title || 'Untitled', badges: badgesForCard(d.data()) });
+    // No venue yet: not in submission, so no Internal Review stage.
+    const loose = (d) => ({ boardId: null, boardLabel: 'No venue yet', cardId: d.id, title: d.data().title || 'Untitled', badges: [] });
     out.owner = out.owner.concat(ownSnap.docs.map(loose));
     out.author = out.author.concat(authSnap.docs.map(loose));
     const listed = new Set(out.owner.concat(out.author).map((i) => i.cardId));
-    const GROUP = { planned: 'Planned', ongoing: 'Ongoing', submission: 'In submission', completed: 'Completed' };
+    const GROUP = { proposed: 'Proposed', planned: 'Approved', ongoing: 'Ongoing', submission: 'In submission', completed: 'Completed' };
     out.member = wsSnap.docs.map((d) => d.data()).filter((w) => w.cardId && !listed.has(w.cardId) &&
       !(w.venues || []).some((v) => listed.has(v.cardId)))
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
@@ -2514,7 +3131,8 @@ exports.getMyProjects = onCall(
 // accepted at a venue (the last column, or the outcome Accepted), or marked
 // completed on its project page (`completed`: its workspace's completedAt);
 // In submission (`submission`) = on a venue's board (`onBoard`), with no outcome yet;
-// Ongoing = being worked on: marked so on its project page, or with a weekly meeting
+// Ongoing = being worked on: marked so on its project page (which needs its setup first), or with its whole setup
+// (a meeting, slides and notes: workspaceStarted, 2026-11-04)
 // (`started`: workspaceStarted), or rejected or withdrawn at a venue (the project goes on);
 // Planned = the rest.
 function projectGroupForCard(card, completed, onBoard, started){
@@ -2545,7 +3163,8 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds, startedId
       owner: (d.submittedBy && d.submittedBy.name) || '',
       ownerEmail: (d.submittedBy && d.submittedBy.email) || '',
       authors: (Array.isArray(d.authors) ? d.authors : []).map(function(a){ return { name: (a && a.name) || '', email: (a && a.email) || '' }; }),
-      badges: badgesForCard(d)
+      badges: badgesForCard(d),
+      proposal: d.proposal ? { status: d.proposal.status || 'proposed', gpuHours: Number(d.proposal.gpuHours) || 0 } : null
     };
   };
   cards.forEach(function(c){
@@ -2565,7 +3184,7 @@ function allProjectsFromCards(boards, cards, unassigned, completedIds, startedId
     last.item.pid = pid;
     return { group: projectGroupForCards(list.map(function(e){ return { data: e.d, boardId: e.boardId || null }; }), done.has(pid), started.has(pid)), updatedAt: Math.max.apply(null, list.map(function(e){ return e.d.updatedAt || 0; })), item: last.item };
   });
-  const out = { ongoing: [], submission: [], completed: [], planned: [] };
+  const out = { proposed: [], ongoing: [], submission: [], completed: [], planned: [] };
   rows
     .sort(function(a, b){ return b.updatedAt - a.updatedAt; })
     .forEach(function(r){ out[r.group].push(r.item); });
@@ -2609,11 +3228,17 @@ function projectTitlesOnly(groups, mine, ask){
 // `joined`, for the Projects page's join button and its Yours filter; `v` 2 marks a list that
 // has them, so the page refetches an older cached one (tests/projects-join.test.cjs).
 function markJoined(shown, mine){
-  ['ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
+  ['proposed', 'ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
     (shown[g] || []).forEach(function(i){ if (mine[i.pid]) i.joined = true; });
   });
-  shown.v = 2;
+  shown.v = 3;   // 3: with `proposed` (#226)
   return shown;
+}
+
+// Whether `email` joins a project straight away (BOLDiquette › Who can do what, 2026-11-04):
+// BOLD-internal and above, with Projects' Edit. BOLD-associate asks to join; PAN-BOLD talks to its lead.
+async function joinsStraightAway(email){
+  return (await access.can(email, 'projects', 'edit')) && accessLib.rank(await access.groupFor(email)) >= accessLib.rank('internal');
 }
 
 // Who sees a project in full (BOLDiquette › Who can see what › Projects): whoever has its
@@ -2633,9 +3258,12 @@ exports.getAllProjects = onCall(
   async (request) => {
     const email = signedInEmail(request).toLowerCase();
     const full = await access.can(email, 'projects', 'view');
-    // Who can see what: View sees them all and joins any; everyone else signed in (BOLD-associate,
-    // PAN-BOLD) sees the titles and asks to join, which the project's owner accepts (2026-11-02).
-    const askOnly = !full;
+    // Who can do what: View sees them all in full (everyone signed in, once the table is Page | Edit,
+    // 2026-11-04); below it, the titles. Joining: BOLD-internal and above straight away; BOLD-associate
+    // asks, and its lead accepts; PAN-BOLD talks to its lead, who adds them.
+    const group = await access.groupFor(email);
+    const joins = await joinsStraightAway(email);
+    const askOnly = !joins;
     const [boardsSnap, cardsSnap, unassignedSnap, wsSnap, mineAsked] = await Promise.all([
       db.collection('boards').get(),
       db.collectionGroup('cards').get(),
@@ -2650,16 +3278,33 @@ exports.getAllProjects = onCall(
       wsSnap.docs.filter(function(d){ return d.data().completedAt > 0; }).map(function(d){ return d.id; }),
       wsSnap.docs.filter(function(d){ return workspaceStarted(d.data()); }).map(function(d){ return d.id; })
     );
-    const mine = {};
-    wsSnap.docs.forEach(function(d){ if ((d.data().members || []).indexOf(email) >= 0) mine[d.id] = true; });
+    const mine = {}, health = {};
+    wsSnap.docs.forEach(function(d){ if ((d.data().members || []).indexOf(email) >= 0) mine[d.id] = true; health[d.id] = projectHealth(d.data()); });
     const shown = full ? groups : projectTitlesOnly(groups, mine, askOnly);
     const items = shown.ongoing.concat(shown.submission, shown.completed, shown.planned);
     markJoined(shown, mine);
+    // Its health, for whoever sees the project in full (not a title only).
+    items.forEach(function(i){ if (!i.titleOnly && health[i.pid]) i.health = health[i.pid]; });
     // Their own asks and invitations, on each title: asked (waiting on its lead) or invited (theirs to answer).
     const pending = {};
     mineAsked.docs.forEach(function(d){ const v = d.data(); if (v.status === 'asked') pending[v.pid] = { asked: true }; else if (v.status === 'open') pending[v.pid] = { invited: d.id }; });
+    // Seen in full but not joined straight away (BOLD-associate): Ask to join, which its lead accepts.
+    if (!joins && group !== 'pan') items.forEach(function(i){ if (!i.joined && !i.titleOnly) i.ask = true; });
     items.forEach(function(i){ if (pending[i.pid] && !i.joined) Object.assign(i, pending[i.pid]); });
     if (askOnly) shown.askOnly = true;
+    // PAN-BOLD: "Talk to the lead" (a Slack DM, from a template) instead of asking to join (2026-11-03).
+    if (!joins && group === 'pan') {
+      const owner = {};
+      groups.ongoing.concat(groups.submission, groups.completed, groups.planned).forEach(function(i){ owner[i.pid] = { name: i.owner || '', email: i.ownerEmail || '' }; });
+      const ids = {};
+      for (const e of Array.from(new Set(Object.values(owner).map(function(o){ return o.email; }).filter(Boolean)))) ids[e] = await slackIdForEmail(e);
+      items.forEach(function(i){
+        if (i.joined) return;
+        delete i.ask; delete i.asked;
+        const o = owner[i.pid] || {};
+        i.talk = { name: o.name || 'the lead', slackId: ids[o.email] || '' };
+      });
+    }
     const links = await slackLinksFor(Array.from(new Set(items.map(function(i){ return i.slackChannel; }).filter(Boolean))));
     items.forEach(function(i){ if (links[i.slackChannel]) i.slackUrl = links[i.slackChannel]; });
     return shown;
@@ -2857,25 +3502,27 @@ exports.projectChannel = onCall(
     }
     if (out.exists || (data.mode !== 'ensure' && data.mode !== 'rename')) return out;
 
-    const created = await slackFetch(token, 'conversations.create', { name: n.name, is_private: true });
-    channelNamesCache = null;
-    if (!created.ok){
-      if (created.error === 'name_taken') return Object.assign(out, { exists: true });
-      throw slackChannelError(created.error);
-    }
-    out.created = true;
-    out.invited = false;
-    out.url = await slackChannelUrl(token, created.channel.id);
-    const slackId = await slackIdForEmail(email);
-    if (slackId){
-      const invited = await slackFetch(token, 'conversations.invite', { channel: created.channel.id, users: slackId });
-      out.invited = !!invited.ok;
-    } else {
-      logger.info('No Slack id for the submitter \u2014 channel created, nobody invited', { email });
-    }
-    return out;
+    return Object.assign(out, await makeProjectChannel(token, n.name, email));
   }
 );
+// A new private channel `name`, with the bot and `email` in it → { created, invited, url } ({ exists: true } if taken).
+async function makeProjectChannel(token, name, email){
+  const created = await slackFetch(token, 'conversations.create', { name, is_private: true });
+  channelNamesCache = null;
+  if (!created.ok){
+    if (created.error === 'name_taken') return { exists: true };
+    throw slackChannelError(created.error);
+  }
+  const out = { created: true, invited: false, url: await slackChannelUrl(token, created.channel.id) };
+  const slackId = await slackIdForEmail(email);
+  if (slackId){
+    const invited = await slackFetch(token, 'conversations.invite', { channel: created.channel.id, users: slackId });
+    out.invited = !!invited.ok;
+  } else {
+    logger.info('No Slack id for the submitter \u2014 channel created, nobody invited', { email });
+  }
+  return out;
+}
 
 // The "Join the project" button: invites the caller (their own verified email →
 // Slack id via the `people` roster, never a parameter) to a project's channel.
@@ -3085,6 +3732,20 @@ async function googleFetch(method, url, body, contentType){
 }
 
 const CAL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+// Google caps how many events and invitation emails the lab's (Gmail) account sends; past it,
+// Calendar writes fail for a few hours (2026-11-05). So guests are emailed only for what they
+// need to know (an invitation, a new time, who's on it; a cancellation), not for a new title,
+// description or Meet link; and a sync stopped by the cap is marked (`calendarLimitAt`) and
+// tried again every hour by retryCalendarLimits.
+// Pure: a Calendar PATCH's changes → its sendUpdates.
+function calendarUpdates(change){
+  return ['attendees', 'start', 'end', 'recurrence'].some(function(k){ return change && change[k] !== undefined; }) ? 'all' : 'none';
+}
+// Pure: whether a Google error is that cap (or Calendar's rate limits).
+function isCalendarLimit(err){
+  return !!err && (['quotaExceeded', 'rateLimitExceeded', 'userRateLimitExceeded'].indexOf(err.reason) >= 0 || /usage limits exceeded/i.test(String(err.message || '')));
+}
+const CALENDAR_LIMIT_MSG = 'Google\u2019s limit for the lab\u2019s calendar was reached: BOLD.OS tries again by itself every hour.';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
 
 // The Drive folder every project's files go in, made once (drive.file can only
@@ -3186,11 +3847,38 @@ async function projectCards(pid){
 }
 
 // Pure: whether a workspace counts as being worked on: marked ongoing, or it has a weekly meeting.
-function workspaceStarted(ws){ return !!(ws && (ws.startedAt || ws.meeting)); }
+// (2026-11-04) Its practical setup (a meeting, slides and notes) all there makes it ongoing on its own; marking it ongoing needs that
+// setup first ('start' refuses otherwise). A meeting alone no longer does. Projects marked ongoing before
+// keep `startedAt`, whatever they miss.
+function workspaceStarted(ws){ return !!(ws && (ws.startedAt || setupMissing(ws).length === 0)); }
+// Pure: what a project still needs to be ongoing: a weekly meeting, slides and notes (made by BOLD.OS or its
+// own links). A GitHub repository isn't required (not every project needs one); it counts towards its health.
+const SETUP_NAMES = { meeting: 'a weekly meeting', slides: 'slides', notes: 'meeting notes' };
+function setupMissing(ws){
+  ws = ws || {};
+  return [['meeting', !!ws.meeting], ['slides', !!(ws.deckId || ws.deckUrl || ws.ownDeckUrl)], ['notes', !!(ws.notesId || ws.notesUrl || ws.ownNotesUrl)]]
+    .filter((x) => !x[1]).map((x) => x[0]);
+}
+// Pure: its health (2026-11-04), as src/assets/js/project-health.js (BoldHealth.of) works it out: each of
+// the four 2 when BOLD.OS made it, 1 when it's its own link, 0 when missing; out of 8.
+function projectHealth(ws){
+  ws = ws || {};
+  const m = ws.meeting;
+  const items = [['meeting', !m ? 'none' : m.link ? 'own' : 'os'], ['slides', ws.ownDeckUrl ? 'own' : ws.deckId || ws.deckUrl ? 'os' : 'none'],
+    ['notes', ws.ownNotesUrl ? 'own' : ws.notesId || ws.notesUrl ? 'os' : 'none'], ['repo', ws.repoName ? 'os' : ws.ownRepoUrl ? 'own' : 'none']]
+    .map((x) => ({ key: x[0], how: x[1] }));
+  return { score: items.reduce((n, i) => n + (i.how === 'os' ? 2 : i.how === 'own' ? 1 : 0), 0), max: 8, items };
+}
+const setupMissingText = (missing) => missing.map((k) => SETUP_NAMES[k]).join(', ').replace(/, ([^,]*)$/, ' and $1');
 
 // Pure: a project's group from its cards ([{ data, boardId }], oldest first): completed
 // if marked so or accepted at any venue; otherwise its latest card's.
+// A project proposed and not yet approved (2026-11-05, #226): `proposal` { status: 'proposed' | 'approved' |
+// 'declined', gpuHours, at, by, decidedBy, decidedByName, decidedAt, note } on the card it was registered
+// with. Without one (every project from before), it's approved.
+const proposalPending = (d) => !!(d && d.proposal && d.proposal.status !== 'approved');
 function projectGroupForCards(cards, completed, started){
+  if (cards.length && proposalPending(cards[0].data)) return 'proposed';
   if (completed || cards.some(function(c){ return projectGroupForCard(c.data) === 'completed'; })) return 'completed';
   const last = cards[cards.length - 1];
   return projectGroupForCard(last.data, false, !!last.boardId, started);
@@ -3200,7 +3888,8 @@ function projectGroupForCards(cards, completed, started){
 function workspaceView(ws){
   const out = {};
   ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'startedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
-    'deckUrl', 'notesUrl', 'ownDeckUrl', 'ownNotesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'repoError', 'work'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
+    'deckUrl', 'notesUrl', 'ownDeckUrl', 'ownNotesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'ownRepoUrl', 'repoError', 'work'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
+  out.setupMissing = setupMissing(ws);
   return out;
 }
 
@@ -3230,6 +3919,11 @@ function normalizeRepo(r){
   if (r.mode === 'template'){
     const t = String(r.template || '');
     return /^[A-Za-z0-9_-][A-Za-z0-9._-]{0,99}$/.test(t) ? { mode: 'template', template: t } : { error: 'Choose a template.' };
+  }
+  // Any repository on GitHub, by its address (2026-11-04): only linked, so nobody is invited to it.
+  if (r.mode === 'link'){
+    const u = String(r.url || '').trim().replace(/\/+$/, '').replace(/\.git$/, '');
+    return /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(u) ? { mode: 'link', url: u } : { error: 'Give the repository’s GitHub address, as https://github.com/owner/name.' };
   }
   // One the lab already has: its name in bold-lab-ai (or its github.com address).
   if (r.mode === 'existing'){
@@ -3312,31 +4006,64 @@ async function projectTemplates(){
 }
 
 // Where each of `emails` (Slack emails) gets the project's Google invitations and
-// files: the Google account they linked (googleLinks), or the email itself.
+// files: the addresses they ticked on their profile (googleLinks inviteTo, #178), else the
+// Google account they linked, else the email itself.
 async function googleAddressesFor(emails){
   const out = [];
   for (const e of emails){
     const snap = await db.collection('googleLinks').doc(e).get();
-    const a = snap.exists && snap.data().google ? String(snap.data().google).toLowerCase() : e;
-    if (out.indexOf(a) < 0) out.push(a);
+    const d = snap.exists ? snap.data() : {};
+    const list = Array.isArray(d.inviteTo) && d.inviteTo.length ? d.inviteTo : [d.google ? String(d.google).toLowerCase() : e];
+    list.forEach(function(a){ if (out.indexOf(a) < 0) out.push(a); });
   }
   return out;
 }
 
-// The GitHub logins of `emails` who have linked their account (githubLinks).
-// Whether `email`'s GitHub account belongs in the bold-lab-ai organisation: BOLD-internal
-// and above (Who is BOLD). Everyone else gets their projects' repositories alone.
-async function inGithubOrg(email){
+// GitHub access, as the BOLDiquette's transparency asks (2026-11-05, #214): everyone in BOLD who links
+// GitHub joins bold-lab-ai, whose base permission (read) lets them see every repository. Writing differs:
+// BOLD-internal and above write to every repository (the bold-internal team, INTERNAL_TEAM, which has
+// write on all of them); everyone else writes to their projects' repositories alone (each project's team).
+// Whether `email` writes to every repository (the bold-internal team): BOLD-internal and above.
+async function writesEverywhere(email){
   return accessLib.rank(await access.groupFor(email)) >= accessLib.rank('internal');
 }
-// The linked GitHub accounts of `emails` → { team: [login] (in the org: the project's team),
-// outside: [login] (outside collaborators on its repository) }.
+// The linked GitHub accounts of `emails` → { team: [login] (the project's team), outside: [login]
+// (outside collaborators on its repository: kept while they haven't accepted the org's invitation, so
+// nobody loses their project's repository meanwhile) }.
 async function githubLoginsFor(emails){
   const out = { team: [], outside: [] };
   for (const e of emails){
     const snap = await db.collection('githubLinks').doc(e).get();
     const d = snap.exists ? snap.data() : null;
-    if (d && d.github && d.status !== 'failed') out[(await inGithubOrg(e)) ? 'team' : 'outside'].push(d.github.toLowerCase());
+    if (!d || !d.github || d.status === 'failed') continue;
+    out.team.push(d.github.toLowerCase());
+    if (d.status !== 'active') out.outside.push(d.github.toLowerCase());
+  }
+  return out;
+}
+const INTERNAL_TEAM = 'bold-internal';
+// The bold-internal team (made if it isn't there) → its slug.
+async function internalTeam(){
+  try { return (await githubApp('GET', '/orgs/' + GITHUB_ORG + '/teams/' + INTERNAL_TEAM)).slug; }
+  catch (err){
+    if (err.status !== 404) throw err;
+    return (await githubApp('POST', '/orgs/' + GITHUB_ORG + '/teams', { name: INTERNAL_TEAM, privacy: 'closed',
+      description: 'BOLD-internal and above (BOLD.OS keeps it): write access to every repository' })).slug;
+  }
+}
+// `login` in or out of the bold-internal team (adding someone invites them to the org, if need be).
+async function setInternalWrite(login, on){
+  const slug = await internalTeam(), path = '/orgs/' + GITHUB_ORG + '/teams/' + slug + '/memberships/' + login;
+  if (on) await githubApp('PUT', path, { role: 'member' });
+  else await githubApp('DELETE', path).catch(function(err){ if (err.status !== 404) throw err; });
+}
+// Every page of a GitHub list.
+async function githubAll(path){
+  const out = [];
+  for (let page = 1; page < 50; page++){
+    const list = await githubApp('GET', path + (path.indexOf('?') < 0 ? '?' : '&') + 'per_page=100&page=' + page);
+    out.push.apply(out, list || []);
+    if (!list || list.length < 100) break;
   }
   return out;
 }
@@ -3476,16 +4203,17 @@ async function syncWorkspace(id, changes){
         Object.assign(change, conferenceChange(ev, ws.meeting, 'bold-' + id + '-' + Date.now()));
         let now = ev;
         if (Object.keys(change).length){
-          now = await googleFetch('PATCH', CAL + '/' + ws.eventId + '?conferenceDataVersion=1&sendUpdates=all', change) || ev;
+          now = await googleFetch('PATCH', CAL + '/' + ws.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
           patch.eventMeeting = ws.meeting; patch.eventPausedAt = ws.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now); await save();
         } else if (!ws.eventStart && seriesStart(ev)){ patch.eventStart = seriesStart(ev); await save(); }
         const url = ws.meeting.link || now.hangoutLink || '';
         if (url !== (ws.meetUrl || '')){ patch.meetUrl = url; await save(); }
       }
-      patch.error = FieldValue.delete();
+      patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
     } catch (err){
       logger.error('Setting up the project\u2019s meeting, slides and notes failed', { id, error: String(err && err.message || err) });
-      patch.error = err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the meeting, slides and notes.';
+      if (isCalendarLimit(err)) { patch.error = CALENDAR_LIMIT_MSG; patch.calendarLimitAt = Date.now(); }
+      else patch.error = err instanceof HttpsError ? err.message : 'Couldn\u2019t set up the meeting, slides and notes.';
     }
     await save();
 
@@ -3499,7 +4227,9 @@ async function syncWorkspace(id, changes){
         }
         patch.repoName = r.name; patch.repoUrl = r.html_url; await save();
       }
-      if (ws.repo && ws.repo.mode !== 'existing' && !ws.repoName){
+      // Any GitHub repository, linked (2026-11-04): kept as its address, nothing made or shared.
+      if (ws.repo && ws.repo.mode === 'link' && !ws.ownRepoUrl && !ws.repoName){ patch.ownRepoUrl = ws.repo.url; await save(); }
+      if (ws.repo && ws.repo.mode === 'template' && !ws.repoName){
         if (!(await projectTemplates()).some(function(t){ return t.name === ws.repo.template; })) {
           throw new HttpsError('invalid-argument', ws.repo.template + ' isn\u2019t one of the lab\u2019s templates.');
         }
@@ -3521,11 +4251,12 @@ async function syncWorkspace(id, changes){
           try { team = await githubApp('POST', '/orgs/' + GITHUB_ORG + '/teams', { name: ws.repoName, privacy: 'closed', description: 'People on ' + ws.title.slice(0, 200) }); }
           catch (err){ if (err.status !== 422) throw err; team = await githubApp('GET', '/orgs/' + GITHUB_ORG + '/teams/' + ws.repoName); }
           await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + team.slug + '/repos/' + GITHUB_ORG + '/' + ws.repoName, { permission: 'push' });
+          // BOLD-internal and above write to it too.
+          await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + (await internalTeam()) + '/repos/' + GITHUB_ORG + '/' + ws.repoName, { permission: 'push' });
           patch.teamSlug = team.slug; patch.teamMembers = []; await save();
         }
-        // BOLD-internal and above through the team (adding someone to a team invites them
-        // to the org, so nobody else goes in it); everyone else as an outside collaborator
-        // on this repository alone, with write access (GitHub emails them an invitation).
+        // Everyone on it through the team (adding someone to a team invites them to the org); while
+        // they haven't accepted that, as an outside collaborator too, with write access.
         const want = await githubLoginsFor(ws.members);
         const have = ws.teamMembers || [];
         for (const login of want.team.filter(function(l){ return have.indexOf(l) < 0; })){
@@ -3577,7 +4308,7 @@ async function syncWorkspace(id, changes){
 // title, channel, submitter, authors or stage change; when a project's last card
 // is removed, its meeting is cancelled.
 function onProjectCard(document){
-  return onDocumentWritten({ document, secrets: [GOOGLE_OAUTH, GITHUB_APP] }, async function(event){
+  return onDocumentWritten({ document, secrets: [GOOGLE_OAUTH, GITHUB_APP, SLACK_BOT_TOKEN] }, async function(event){
     const before = event.data.before.exists ? event.data.before.data() : null;
     const after = event.data.after.exists ? event.data.after.data() : null;
     const id = event.params.cardId;
@@ -3598,16 +4329,47 @@ function onProjectCard(document){
     }
     if (!before){
       if (pid !== id) { await syncWorkspace(pid); return; }
-      const m = after.setUpMeeting ? normalizeMeeting(after.setUpMeeting) : null;
-      const r = after.setUpRepo ? normalizeRepo(after.setUpRepo) : null;
-      await syncWorkspace(pid, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined, docs: after.setUpDocs === false ? false : undefined,
-        skipped: Array.isArray(after.setUpSkipped) ? after.setUpSkipped.filter(function(k){ return ['channel', 'announce', 'meeting', 'docs', 'repo'].indexOf(k) >= 0; }) : undefined });
+      if (proposalPending(after)) return;   // set up once approved (projectProposal)
+      await setUpProject(pid, after);
       return;
     }
     const key = function(d){ return JSON.stringify([d.title, d.slackChannel, d.submittedBy && d.submittedBy.email, d.authorEmails, d.status, d.outcome]); };
     if (key(before) === key(after)) return;
     if ((await wsRef.get()).exists) await syncWorkspace(pid);
+    // Its channel changed (on its page, which says so first): everyone on the project is invited to the new one.
+    const moved = projectChannelChange(before, after);
+    if (moved && !proposalPending(after)) await inviteProjectToChannel(pid, moved);
   });
+}
+// Pure: the channel a project's card moved to (its name, no #), or '' when it didn't change or was cleared.
+function projectChannelChange(before, after){
+  const name = (d) => { const n = normalizeProjectChannel(String((d && d.slackChannel) || '')); return n.error ? '' : n.name; };
+  const was = name(before), now = name(after);
+  return now && now !== was ? now : '';
+}
+// Invites everyone on project `pid` (its workspace's members) to Slack channel `name`. Someone not
+// on Slack, or already in it, is passed over; what failed is logged, and kept on the workspace
+// (channelInvite: { channel, at, failed: [emails] }) for the page.
+async function inviteProjectToChannel(pid, name){
+  const ws = (await db.collection('projectWorkspaces').doc(pid).get()).data() || {};
+  const token = SLACK_BOT_TOKEN.value(), failed = [];
+  for (const e of ws.members || []){
+    if (!(await slackIdForEmail(e))) continue;
+    try { await inviteToProjectChannel(token, e, name); }
+    catch (err){
+      logger.warn('Inviting a project\u2019s people to its new channel failed', { pid, channel: name, error: String(err.message) });
+      failed.push(e);
+      if (/can.t see|can.t manage/.test(err.message)) break;   // the same for everyone after
+    }
+  }
+  await db.collection('projectWorkspaces').doc(pid).set({ channelInvite: { channel: '#' + name, at: Date.now(), failed } }, { merge: true });
+}
+// A new project's workspace, as its proposer asked (its card's setUp*): its meeting, slides, notes, repository.
+async function setUpProject(pid, after){
+  const m = after.setUpMeeting ? normalizeMeeting(after.setUpMeeting) : null;
+  const r = after.setUpRepo ? normalizeRepo(after.setUpRepo) : null;
+  await syncWorkspace(pid, { meeting: m && !m.error ? m : undefined, repo: r && !r.error ? r : undefined, docs: after.setUpDocs === false ? false : undefined,
+    skipped: Array.isArray(after.setUpSkipped) ? after.setUpSkipped.filter(function(k){ return ['channel', 'announce', 'meeting', 'docs', 'repo'].indexOf(k) >= 0; }) : undefined });
 }
 // A new project, registered on the Projects page, announced in
 // #all-active-projects: the channel is read-only for people (BOLDiquette §
@@ -3634,10 +4396,79 @@ exports.onProjectRegistered = onDocumentCreated(
   { document: 'projects/{cardId}', secrets: [SLACK_BOT_TOKEN] },
   async function(event){
     const card = event.data && event.data.data();
+    if (card && card.submittedBy && card.submittedBy.email) await afterProgress(card.submittedBy.email);   // a project of their own
     // announce: false, whoever registered it chose not to (its workspace's `skipped`
     // says so, and its page offers to announce it later: projectWorkspace 'announce').
     if (!card || card.announce === false) return;
+    if (proposalPending(card)) { await tellProposal(card, event.params.cardId); return; }   // announced once approved
     await announceProject(card, event.params.cardId).catch(function(err){ logger.warn('Announcing a new project failed', { error: String(err.message) }); });
+  }
+);
+// A project proposed (#226): PIs and admins hear (their Inbox, To do); decided with projectProposal.
+async function tellProposal(card, cardId){
+  const by = (card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone', hours = Number(card.proposal && card.proposal.gpuHours) || 0;
+  const staff = (await rolesEmails('pis')).concat(await rolesEmails('admins')).filter((e) => e !== lowerEmail(card.submittedBy));
+  await deliver(staff, { text: by + ' proposes a project: \u201c' + (card.title || 'Untitled') + '\u201d, ' + hours.toLocaleString('en-GB') + ' GPU hours. Approve or decline it on its page.',
+    href: projectPageUrl(cardId), feature: 'project-proposals', source: 'bold', about: 'project:' + cardId });
+}
+// Pure: a proposal's compute budget, in GPU hours → the number, or { error }.
+function normalizeGpuHours(v){
+  const n = typeof v === 'string' ? Number(v.replace(/[,\s]/g, '')) : Number(v);
+  if (!isFinite(n) || n <= 0) return { error: 'Give its compute budget, in GPU hours.' };
+  if (n > 10000000) return { error: 'That\u2019s more GPU hours than BOLD has.' };
+  return Math.round(n);
+}
+// A proposed project, decided (#226): { id, accept, note? } by a PI or admin other than whoever proposed it
+// (as every change on the site); { id, action: 'resubmit', gpuHours? } by whoever proposed it, after a
+// decline. Approving sets it up as its proposer asked (its channel, meeting, slides, notes, repository),
+// announces it if they asked, and tells them; declining tells them, with the note.
+exports.projectProposal = onCall(
+  { secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 },
+  async (request) => {
+    const email = callerEmail(request), d = request.data || {};
+    await access.requireAccess(email, 'projects', 'list');   // Who can see what
+    const id = String(d.id || '');
+    if (!validSlug(id)) throw new HttpsError('invalid-argument', 'No project given.');
+    const ref = db.collection('projects').doc(id), snap = await ref.get();
+    if (!snap.exists || !snap.data().proposal) throw new HttpsError('not-found', 'That proposal isn\u2019t there.');
+    const card = snap.data(), prop = card.proposal, mine = lowerEmail(card.submittedBy) === email;
+    if (d.action === 'resubmit'){
+      if (!mine) throw new HttpsError('permission-denied', 'Only whoever proposed it can send it again.');
+      if (prop.status !== 'declined') throw new HttpsError('failed-precondition', 'It isn\u2019t declined.');
+      const hours = d.gpuHours === undefined ? prop.gpuHours : normalizeGpuHours(d.gpuHours);
+      if (hours && hours.error) throw new HttpsError('invalid-argument', hours.error);
+      const next = { status: 'proposed', gpuHours: hours, at: Date.now(), by: email };
+      await ref.update({ proposal: next, updatedAt: Date.now() });
+      await tellProposal(Object.assign({}, card, { proposal: next }), id);
+      return { ok: true };
+    }
+    if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins decide a proposed project.');
+    if (mine) throw new HttpsError('failed-precondition', 'Another PI or admin decides your own proposal.');
+    if (prop.status !== 'proposed') throw new HttpsError('failed-precondition', 'It\u2019s already been decided.');
+    const accept = !!d.accept, note = String(d.note || '').trim().slice(0, 1000), name = request.auth.token.name || email;
+    const decided = Object.assign({}, prop, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: name, decidedAt: Date.now(), note });
+    await ref.update({ proposal: decided, updatedAt: Date.now() });
+    const to = lowerEmail(card.submittedBy), title = card.title || 'Your project';
+    if (!accept){
+      await deliver([to], { text: name + ' declined your proposed project \u201c' + title + '\u201d' + (note ? ': \u201c' + note + '\u201d' : '.') + ' You can change it and send it again from its page.',
+        href: projectPageUrl(id), feature: 'project-proposals', source: 'bold', about: 'project:' + id });
+      return { ok: true };
+    }
+    // Its channel, now (the proposer's name for it), with them in it.
+    let channel = '';
+    const want = normalizeProjectChannel(card.setUpChannel || '');
+    if (card.setUpChannel && !want.error){
+      const token = SLACK_BOT_TOKEN.value();
+      const r = (await slackChannelId(token, want.name)) ? { exists: true } : await makeProjectChannel(token, want.name, to).catch((err) => { logger.warn('Making a proposed project\u2019s channel failed', { error: String(err.message) }); return null; });
+      if (r) channel = '#' + want.name;
+    }
+    const now = Object.assign({}, card, { proposal: decided }, channel ? { slackChannel: channel } : {});
+    if (channel) await ref.update({ slackChannel: channel });
+    await setUpProject(projectIdOf(card, id), now);
+    if (card.announce !== false) await announceProject(now, id).catch((err) => logger.warn('Announcing a new project failed', { error: String(err.message) }));
+    await deliver([to], { text: name + ' approved your project \u201c' + title + '\u201d (' + (Number(prop.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours): it\u2019s being set up.' + (note ? ' \u201c' + note + '\u201d' : ''),
+      href: projectPageUrl(id), feature: 'project-proposals', source: 'bold', about: 'project:' + id });
+    return { ok: true, slackChannel: channel };
   }
 );
 async function announceProject(card, cardId){
@@ -3663,7 +4494,8 @@ exports.onVenueCardWritten = onProjectCard('boards/{boardId}/cards/{cardId}');
 // - 'complete' / 'reopen': marks the project completed (its meeting is cancelled) or
 //   not; editors only.
 // - 'start' / 'plan': marks the project ongoing (being worked on) or back to planned;
-//   editors only. On a venue's board it's in submission either way; with a weekly meeting, ongoing.
+//   editors only. On a venue's board it's in submission either way. 'start' needs its setup first
+//   (setupMissing); with all of it, it's ongoing anyway.
 // - 'pause' / 'resume': pauses its meeting (its upcoming dates come off Google Calendar;
 //   the same event, invitation and Meet link stay) or brings it back; editors only. Completion by acceptance at a venue needs neither.
 // - 'submit': submits the project to another venue ({ venue, card }: a card the page
@@ -3825,8 +4657,8 @@ exports.projectWorkspace = onCall(
     const lists = await access.can(email, 'projects', 'list');
     const data = request.data || {};
     if (!lists && ['templates', 'mine', 'venues', 'join'].indexOf(data.action) >= 0) await access.requireAccess(email, 'projects', 'list');
-    // Joining straight away is for Projects' View; below it they ask to join, and its owner accepts (projectInvite 'ask').
-    if (data.action === 'join' && !(await access.can(email, 'projects', 'view'))) throw new HttpsError('permission-denied', 'Ask to join it: its owner accepts. (Joining straight away is for ' + 'Projects’ View level.)');
+    // Joining straight away is for BOLD-internal and above; BOLD-associate asks, PAN-BOLD talks to its lead.
+    if (data.action === 'join' && !(await joinsStraightAway(email))) throw new HttpsError('permission-denied', 'Ask to join it: its lead accepts. (Joining straight away is for BOLD-internal and above.)');
     if (data.action === 'templates') return { templates: await projectTemplates() };
     if (data.action === 'mine'){
       // The caller's projects not yet completed: those whose cards name them (as
@@ -3868,6 +4700,8 @@ exports.projectWorkspace = onCall(
     const cardSnap = await cardRefFor(id, boardId).get();
     if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
     const card = cardSnap.data();
+    // Proposed (#226): nothing is set up, joined or changed until a PI or admin approves it (projectProposal).
+    if (proposalPending(card)) throw new HttpsError('failed-precondition', card.proposal.status === 'declined' ? 'It was declined: change it and send it again first.' : 'It\u2019s waiting for a PI or admin to approve it.');
     const pid = projectIdOf(card, id);
     const wsRef = db.collection('projectWorkspaces').doc(pid);
     // Edit without View: joining, and then everything its people do.
@@ -3886,6 +4720,8 @@ exports.projectWorkspace = onCall(
         if (changes.repo.error) throw new HttpsError('invalid-argument', changes.repo.error);
         const ws = (await wsRef.get()).data() || {};
         if (ws.repoName) throw new HttpsError('failed-precondition', 'It already has ' + GITHUB_ORG + '/' + ws.repoName + '.');
+        // A link to any repository: kept as it is (ownRepoUrl), nothing made on GitHub.
+        if (changes.repo.mode === 'link') { await wsRef.set({ ownRepoUrl: changes.repo.url }, { merge: true }); return workspaceView(await syncWorkspace(pid)); }
       }
       return workspaceView(await syncWorkspace(pid, changes));
     }
@@ -3901,6 +4737,8 @@ exports.projectWorkspace = onCall(
         if (v && (v.length > 500 || !/^https:\/\/[^\s<>"]+$/.test(v))) throw new HttpsError('invalid-argument', 'The link to the ' + k[2] + ' must be a web address starting https://.');
         set[k[1]] = v || FieldValue.delete();
       });
+      // A linked repository (repo action, mode 'link'): '' unlinks it.
+      if ('repo' in data && !String(data.repo || '').trim()) set.ownRepoUrl = FieldValue.delete();
       if (!Object.keys(set).length) throw new HttpsError('invalid-argument', 'No link given.');
       await wsRef.set(set, { merge: true });
       return workspaceView(await syncWorkspace(pid));
@@ -3917,6 +4755,10 @@ exports.projectWorkspace = onCall(
     // Ongoing (being worked on) or back to planned; a project on a venue's board is in submission either way.
     if (data.action === 'start' || data.action === 'plan'){
       if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project\u2019s submitter, authors, PIs and admins can do this.');
+      if (data.action === 'start') {
+        const missing = setupMissing((await wsRef.get()).data());
+        if (missing.length) throw new HttpsError('failed-precondition', 'Set up ' + setupMissingText(missing) + ' first: then it’s ongoing.');
+      }
       await wsRef.set(data.action === 'start'
         ? { startedAt: Date.now(), startedBy: email }
         : { startedAt: FieldValue.delete(), startedBy: FieldValue.delete() }, { merge: true });
@@ -4247,6 +5089,17 @@ async function requestWork(email, full, person){
     full ? all('apiTokens') : q('apiTokens', 'email'),
     full ? all('boards') : Promise.resolve([])
   ]);
+  // Projects proposed (#226): PIs and admins decide; whoever proposed one waits.
+  const proposals = (await (full ? db.collection('projects').where('proposal.status', 'in', ['proposed', 'declined']) : db.collection('projects').where('submittedBy.email', '==', email)).get()).docs
+    .filter(function(d){ return d.data().proposal && d.data().proposal.status !== 'approved'; });
+  proposals.forEach(function(d){
+    const r = d.data(), p = r.proposal, open = p.status === 'proposed';
+    if (!open && !(lowerEmail(r.submittedBy) === email)) return;
+    add({ kind: 'project-proposal', ref: d.ref.path, title: 'Proposed project: ' + (r.title || 'Untitled') + ' (' + (Number(p.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours)' + (open ? '' : ', declined'),
+      url: projectPageUrl(d.id), by: person(lowerEmail(r.submittedBy), r.submittedBy && r.submittedBy.name),
+      on: p.decidedBy ? [person(p.decidedBy, p.decidedByName)] : [], waiting: open ? PIS_ADMINS : '', state: p.status },
+    requestColumn(open, false, p.decidedAt, p.at, now));
+  });
   // Papers in Internal Review (ML Conference Cycle's view), people to confirm as having
   // invited them (the inviter; PIs and admins), events and series waiting to be
   // released (on whoever added the event or organises the series, who release them; PIs
@@ -4447,15 +5300,15 @@ function splitRequests(items, email, full){
 // Your requests (requests.html, the account menu's Requests; pages/requests.js): everything on BOLD.OS waiting on
 // the caller to answer, and what they asked that waits on someone else, as BOLD OS's board
 // sees it (requestWork, contentWork). → { forYou, byYou: [{ kind, num, title, url, by, on, waiting, state, since, column }] }
-// Branches (#177; bold.js, the Version pill): every open proposal on a page you can propose on
-// (its Edit level: newcomers in PAN-BOLD get none, 2026-11-02),
+// Branches (#177; bold.js, the Version pill): every open proposal on a page you can see (its View
+// level: the pill is where proposals are seen, 2026-11-05),
 // newest first, each { ref (its path), num, title, url (its page), by, since }, and for one
 // that changes Who can see what, `pages`: the table it would make.
 exports.branches = onCall(
   { timeoutSeconds: 60 },
   async (request) => {
     const email = callerEmail(request);
-    const open = (await contentWork(email, workPerson(await workNames()), 'edit')).filter((x) => x.state === 'open');
+    const open = (await contentWork(email, workPerson(await workNames()), 'view')).filter((x) => x.state === 'open');
     const nums = await numbersOf(open.map((x) => x.ref));
     const out = [];
     for (const x of open){
@@ -4650,9 +5503,9 @@ exports.approveHackathonJoins = onCall(
 // On their profile (profile.html) a signed-in person links their GitHub account
 // to their BOLD.OS sign-in (Firebase Auth's GitHub provider), which proves the
 // account is theirs. linkGithub then invites that account to the bold-lab-ai
-// organisation, with no approval, if they're BOLD-internal or above (inGithubOrg);
-// everyone else is 'outside': an outside collaborator on the repositories of the
-// projects they're on, and nothing else of the org's (syncWorkspace). The
+// organisation, with no approval, whatever their group (read on every repository); BOLD-internal and
+// above also go in the bold-internal team (write on every repository), everyone else writes to their
+// projects' repositories alone, through each one's team (syncWorkspace). 'outside' is a link from before. The
 // GitHub account is read from Firebase Auth, never from the client, so nobody
 // can have someone else's account invited. GitHub emails the invitation; the
 // person is "pending" until they accept it, then "active". Kept in
@@ -4726,8 +5579,9 @@ exports.linkGithub = onCall(
       throw new HttpsError('unavailable', 'Couldn’t reach GitHub — try again.');
     }
     const login = (await who.json()).login;
-    // BOLD-internal and above join the org; everyone else gets their projects' repositories alone.
-    const r = (await inGithubOrg(email)) ? await joinOrg(login, gh.uid) : { status: 'outside', error: '' };
+    // Everyone joins the org (read on everything); BOLD-internal and above write to everything.
+    const r = await joinOrg(login, gh.uid);
+    if (r.status !== 'failed' && await writesEverywhere(email)) await setInternalWrite(login.toLowerCase(), true).catch((err) => logger.warn('Adding to bold-internal failed', { error: String(err.message) }));
     const now = Date.now();
     const doc = { email, name: request.auth.token.name || '', github: login, githubId: gh.uid,
       status: r.status, error: r.error, linkedAt: (prev && prev.githubId === gh.uid && prev.linkedAt) || now, updatedAt: now };
@@ -4743,9 +5597,8 @@ exports.linkGithub = onCall(
   }
 );
 
-// A member's group crossing BOLD-internal (Who is BOLD): a linked GitHub account joins the
-// org on the way up; either way their projects' repositories move between the team and
-// outside collaborators. Going down doesn't take them out of the org: an owner does that on GitHub.
+// A member's group crossing BOLD-internal (Who is BOLD): their linked GitHub account goes in or out of
+// the bold-internal team (write on every repository). They stay in the org, reading everything.
 exports.onMemberGithub = onDocumentWritten(
   { document: 'members/{email}', secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 },
   async function(event){
@@ -4757,13 +5610,12 @@ exports.onMemberGithub = onDocumentWritten(
     const ref = db.collection('githubLinks').doc(email);
     const link = (await ref.get()).data();
     if (!link || !link.github) return;
-    if ((await inGithubOrg(email)) && link.status === 'outside'){
+    if (link.status === 'outside'){
       const r = await joinOrg(link.github, link.githubId);
       await ref.set({ status: r.status, error: r.error, updatedAt: Date.now() }, { merge: true });
       if (r.status === 'failed') return;
     }
-    const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
-    for (const d of mine.docs) if (d.data().teamSlug) await syncWorkspace(d.id);
+    await setInternalWrite(String(link.github).toLowerCase(), high(after));
   }
 );
 
@@ -4775,7 +5627,21 @@ exports.onMemberGithub = onDocumentWritten(
 // projects' meeting invitations and slides and notes then go to it instead of
 // their Slack email (googleAddressesFor). Called again after unlinking, it forgets
 // the link and moves them back. Its Google account never signs anyone in: only
-// Slack accounts count (onlySlackSignUps, isSignedIn()). → { link: { google } | null }.
+// Slack accounts count (onlySlackSignUps, isSignedIn()).
+// With a Google account linked, they choose which of their own addresses get them (#178):
+// { inviteTo: [address] }, one or more of `choices` (their BOLD.OS email, their Slack one if
+// it's another, the Google account: each proven theirs, never one typed in), kept as
+// googleLinks inviteTo; none chosen, the Google account. A new Google account starts again.
+// → { link: { google, inviteTo, choices } | null }.
+// Pure: what they may choose from, and what they chose, made valid ([] for the default).
+function inviteChoices(email, slackEmail, google){
+  const out = [];
+  [email, slackEmail, google].forEach(function(a){ a = String(a || '').toLowerCase(); if (a && out.indexOf(a) < 0) out.push(a); });
+  return out;
+}
+function validInviteTo(list, choices){
+  return Array.isArray(list) ? list.map(function(a){ return String(a || '').toLowerCase(); }).filter(function(a, i, all){ return choices.indexOf(a) >= 0 && all.indexOf(a) === i; }) : [];
+}
 exports.linkGoogle = onCall(
   { secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 120 },
   async (request) => {
@@ -4786,17 +5652,32 @@ exports.linkGoogle = onCall(
     const google = g && g.email ? g.email.toLowerCase() : '';
     const ref = db.collection('googleLinks').doc(email);
     const prev = (await ref.get()).data();
+    const person = (await db.collection('people').where('email', '==', email).limit(1).get()).docs[0];
+    const choices = google ? inviteChoices(email, person && person.data().slackEmail, google) : [];
+    let moved = false, inviteTo = prev && prev.google === google ? validInviteTo(prev.inviteTo, choices) : [];
     if ((prev && prev.google || '') !== google){
       if (google) await ref.set({ email, google, linkedAt: Date.now() });
       else await ref.delete();
-      // Their projects: invitations and files move to the new address.
+      moved = true;
+    } else if (google && request.data && request.data.inviteTo !== undefined){
+      const want = validInviteTo(request.data.inviteTo, choices);
+      if (!want.length) throw new HttpsError('invalid-argument', 'Choose at least one address.');
+      // Only the Google account is the default: kept as [] so a new default follows.
+      const keep = want.length === 1 && want[0] === google ? [] : want;
+      if (JSON.stringify(keep) !== JSON.stringify(inviteTo)){
+        await ref.set({ inviteTo: keep.length ? keep : FieldValue.delete() }, { merge: true });
+        inviteTo = keep; moved = true;
+      }
+    }
+    if (moved){
+      // Their projects: invitations and files move to the new addresses.
       const mine = await db.collection('projectWorkspaces').where('members', 'array-contains', email).get();
       for (const d of mine.docs) await syncWorkspace(d.id);
       // And the study meetings they're in.
       const studies = await db.collection('studies').where('everyone', 'array-contains', email).get();
       for (const d of studies.docs) await syncStudyMeeting(d.id);
     }
-    return { link: google ? { google } : null };
+    return { link: google ? { google, inviteTo: inviteTo.length ? inviteTo : [google], choices } : null };
   }
 );
 
@@ -4946,16 +5827,17 @@ async function syncStudyMeeting(email){
       Object.assign(change, conferenceChange(ev, s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')));
       let now = ev;
       if (Object.keys(change).length){
-        now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=all', change) || ev;
+        now = await googleFetch('PATCH', CAL + '/' + s.eventId + '?conferenceDataVersion=1&sendUpdates=' + calendarUpdates(change), change) || ev;
         patch.eventMeeting = s.meeting; patch.eventPausedAt = s.pausedAt || FieldValue.delete(); patch.eventStart = seriesStart(now);
       } else if (!s.eventStart && seriesStart(ev)) patch.eventStart = seriesStart(ev);
       const url = s.meeting.link || now.hangoutLink || '';
       if (url !== (s.meetUrl || '')) patch.meetUrl = url;
     }
-    patch.error = FieldValue.delete();
+    patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
   } catch (err){
     logger.error('Setting up a study meeting failed', { error: String(err && err.message || err) });
-    patch.error = err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting in Google Calendar.';
+    if (isCalendarLimit(err)) { patch.error = CALENDAR_LIMIT_MSG; patch.calendarLimitAt = Date.now(); }
+    else patch.error = err instanceof HttpsError ? err.message : 'Couldn’t set up the meeting in Google Calendar.';
   }
   await ref.set(patch, { merge: true });
   return (await ref.get()).data();
@@ -5126,13 +6008,23 @@ async function slackMembers(token){
   return members;
 }
 
+// Pure: whether Slack user `u` is from another organisation, in a channel shared with ours (Slack
+// Connect): their account or profile is another workspace's, or Slack calls them a stranger. They aren't
+// BOLD.OS users (2026-11-05): off the roster (syncPeopleFromSlack, upsertPerson), and they can't sign up
+// (onlySlackSignUps).
+function slackExternal(u, team){
+  if (!u || !team) return false;
+  const p = u.profile || {};
+  return !!u.is_stranger || !!(u.team_id && u.team_id !== team) || !!(p.team && p.team !== team);
+}
 // → { added, updated, removed }
 async function syncPeopleFromSlack(token){
   const members = await slackMembers(token);
   // Only our workspace's people: users.list also has those from other workspaces in
   // channels shared with ours (upsertPerson).
   const auth = await slackAuthInfo(token), team = auth && auth.teamId;
-  const ours = u => !team || !u.team_id || u.team_id === team;
+  // Ours: not from another organisation in a channel shared with ours (Slack Connect), who aren't BOLD.OS users.
+  const ours = u => !team || ((!u.team_id || u.team_id === team) && !slackExternal(u, team));
   const people = members
     .filter(u => !u.deleted && ours(u) && !u.is_bot && u.id !== 'USLACKBOT' && u.profile && u.profile.email)
     .map(u => ({ slackId: u.id, email: String(u.profile.email).toLowerCase(), name: u.profile.real_name || u.real_name || u.name || u.profile.email }));
@@ -5140,6 +6032,8 @@ async function syncPeopleFromSlack(token){
     logger.error('syncPeople: Slack returned nobody with an email — is users:read.email granted? Nothing written.', { members: members.length });
     throw new Error('Slack returned nobody with an email (is users:read.email granted?)');
   }
+  const accounts = await allAccountEmails();
+  for (let i = 0; i < people.length; i++) people[i] = withAccountEmail(people[i], accounts[people[i].slackId]);
   const gone = members.filter(u => u.deleted || !ours(u)).map(u => u.id);
   const existing = await db.collection('people').get();
   const current = {};
@@ -5148,8 +6042,15 @@ async function syncPeopleFromSlack(token){
   const writes = [];
   people.forEach(p => {
     const was = current[p.slackId];
-    if (!was || was.name !== p.name || was.email !== p.email) writes.push({ id: p.slackId, data: p, added: !was });
+    const slackEmail = typeof p.slackEmail === 'string' ? p.slackEmail : '';
+    if (!was || was.name !== p.name || was.email !== p.email || (was.slackEmail || '') !== slackEmail) writes.push({ id: p.slackId, data: p, added: !was });
   });
+  // On the roster but not on Slack's list at all (someone from elsewhere, out of every shared channel):
+  // gone too, unless Slack's list looks short (then nobody is removed this way, and it's logged).
+  const listed = new Set(members.map(u => u.id));
+  const missing = existing.docs.map(d => d.id).filter(id => !listed.has(id) && gone.indexOf(id) < 0);
+  if (members.length >= existing.size * 0.8) gone.push(...missing);
+  else if (missing.length) logger.warn('syncPeople: Slack’s list looks short, not removing those missing from it', { members: members.length, roster: existing.size, missing: missing.length });
   const deletes = gone.filter(id => current[id]);
   const ops = writes.map(w => batch => batch.set(db.collection('people').doc(w.id), w.data, { merge: true }))
     .concat(deletes.map(id => batch => batch.delete(db.collection('people').doc(id))));
@@ -5789,6 +6690,8 @@ exports.projectInvite = onCall(
     const email = callerEmail(request);
     const name = request.auth.token.name || email;
     if (d.action === 'ask') {
+      // PAN-BOLD talks to its owner first, who adds them (2026-11-03): no asking to join.
+      if ((await access.groupFor(email)) === 'pan') throw new HttpsError('failed-precondition', 'Talk to the lead on Slack first: they add you to it.');
       const id = String(d.id || ''), board = d.board ? String(d.board) : null;
       if (!validSlug(id) || (board && !validSlug(board))) throw new HttpsError('invalid-argument', 'No project given.');
       const snap = await cardRefFor(id, board).get();
@@ -6061,7 +6964,12 @@ exports.decideJoinRequest = onCall(
       }
       return Object.assign({}, q, { status });
     });
-    if (r.status !== 'approved') return { status: r.status };
+    if (r.status !== 'approved') {
+      // Declined: a request for another group sent with it goes too.
+      const g = await db.collection('groupRequests').where('email', '==', String(r.email || '').toLowerCase()).where('status', '==', 'open').get();
+      for (const x of g.docs) await x.ref.update({ status: 'withdrawn', decidedAt: Date.now(), why: 'joining declined' });
+      return { status: r.status };
+    }
     // Invited to a project (projectInvite): on it now, as they asked to join through it.
     const invs = await db.collection('projectInvites').where('email', '==', String(r.email || '').toLowerCase()).where('status', '==', 'open').get();
     const extra = r.projectInvite && !invs.docs.some((x) => x.id === r.projectInvite) ? [await db.collection('projectInvites').doc(r.projectInvite).get()] : [];
@@ -6119,7 +7027,8 @@ exports.retryWelcomeEmails = onSchedule(
 // change to the ranking reaches the channels already set). Nobody is removed from a channel.
 const GROUPS = ['exec', 'staff', 'internal', 'associate', 'pan'];
 const GROUP_LABELS = { exec: 'BOLD-exec', internal: 'BOLD-internal', associate: 'BOLD-associate', staff: 'BOLD-staff', pan: 'PAN-BOLD' };
-const CHANNEL_GROUPS = GROUPS.filter(function(g){ return g !== 'pan'; });
+// PAN-BOLD's too (2026-11-05): everyone on the BOLD Slack, a record or not.
+const CHANNEL_GROUPS = GROUPS.slice();
 // Bump when the ranking changes: every channel is then filled again.
 const GROUP_RANKING_VERSION = 2;
 
@@ -6138,6 +7047,25 @@ function groupOf(m){
 function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, '').toLowerCase(); }
 // A group's channels, as saved ("#a, b c") → ['a', 'b', 'c'].
 function groupChannelNames(raw){ return String(raw || '').split(/[\s,]+/).map(groupChannelName).filter(Boolean); }
+
+// Pure: the group (and role) channels a member record is meant to be in, given settings/groups (#174).
+function groupChannelsFor(m, set){
+  set = set || {};
+  const out = [];
+  const add = function(v){ groupChannelNames(v).forEach(function(n){ if (out.indexOf(n) < 0) out.push(n); }); };
+  channelGroupsFor(groupOf(m)).forEach(function(h){ add((set.channels || {})[h]); });
+  if (m && m.role) add((set.roleChannels || {})[m.role]);
+  return out;
+}
+// Pure: every group and role channel, each with the groups and roles it's for ("BOLD-internal").
+function allGroupChannels(set){
+  set = set || {};
+  const out = {};
+  const add = function(v, what){ groupChannelNames(v).forEach(function(n){ (out[n] = out[n] || []).push(what); }); };
+  CHANNEL_GROUPS.forEach(function(g){ add((set.channels || {})[g], GROUP_LABELS[g]); });
+  Object.keys(set.roleChannels || {}).forEach(function(r){ add(set.roleChannels[r], r); });
+  return out;
+}
 
 // Invites each of `emails` to group channel `name`; → the first error, or ''. One about a
 // person says who, and why, and that the rest were added (the loop goes on past them).
@@ -6200,6 +7128,12 @@ exports.onMemberGroup = onDocumentWritten(
     const after = event.data.after.exists ? event.data.after.data() : null;
     if (!after) return;
     const g = groupOf(after);
+    // A group up (or their first, PAN-BOLD): its first week starts. Else, their details saved: look again.
+    const email = String(event.params.email).toLowerCase(), up = !before || (GROUP_RANK[g] || 0) > (GROUP_RANK[groupOf(before)] || 0);
+    const DETAILS = ['role', 'institution', 'interests', 'pillars', 'startDate', 'contact', 'invitedBy'];
+    if (up) await startTrial(email, g).catch((err) => logger.warn('Starting a trial failed', { error: String(err && err.message || err) }));
+    else if (DETAILS.some((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))) await afterProgress(email);
+    if (up) await checkEligible(email);   // a new group: maybe already ready for the next
     const wanted = before && groupOf(before) === g ? [] : channelGroupsFor(g);
     // A new role: its channels too (settings/groups.roleChannels).
     const role = String(after.role || ''), newRole = role && (!before || before.role !== role);
@@ -6242,6 +7176,8 @@ exports.onGroupChannels = onDocumentWritten(
     const changedRoles = Object.keys(roleChannels).filter(function(r){ return freshIn(roleChannels[r], beforeRoles[r]).length; });
     if (!changed.length && !changedRoles.length) return;
     const members = (await db.collection('members').get()).docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); });
+    // PAN-BOLD's channels: everyone on the roster too (on the Slack, no record yet: PAN-BOLD, groupOf).
+    const roster = changed.indexOf('pan') >= 0 ? (await db.collection('people').get()).docs.map(function(d){ return String(d.data().email || '').toLowerCase(); }).filter(Boolean) : [];
     const errors = Object.assign({}, after.channelErrors || {}), roleErrors = Object.assign({}, after.roleChannelErrors || {});
     const fill = async function(emails, names){
       let err = '';
@@ -6249,7 +7185,9 @@ exports.onGroupChannels = onDocumentWritten(
       return err;
     };
     for (const g of changed){
-      const err = await fill(members.filter(function(m){ return channelGroupsFor(groupOf(m)).indexOf(g) >= 0; }).map(function(m){ return m.email; }), freshIn(channels[g], before[g]));
+      const emails = members.filter(function(m){ return channelGroupsFor(groupOf(m)).indexOf(g) >= 0; }).map(function(m){ return m.email; });
+      if (g === 'pan') roster.forEach(function(e){ if (emails.indexOf(e) < 0) emails.push(e); });
+      const err = await fill(emails, freshIn(channels[g], before[g]));
       if (err) errors[g] = err; else delete errors[g];
     }
     for (const r of changedRoles){
@@ -6366,7 +7304,9 @@ function onboardingSteps(group, f){
     { key: 'details', label: 'Fill in your details on your profile', done: details, href: 'profile.html#details' },
     { key: 'read', label: 'Read the BOLDiquette, and mark it as read', done: !!f.read, href: 'boldiquette.html' },
   ];
-  if (r === 1) steps.push({ key: 'project', label: 'Be on a project: ask to join one on Projects (its owner accepts), or register yours', done: !!(f.inProject || f.owns), href: 'projects.html' });
+  // BOLD-associate: an active collaborator, added to an ongoing project by its owner (2026-11-03, from the
+  // lab's Slack thread): their own project doesn't count, and PAN-BOLD can't join one themselves.
+  if (r === 1) steps.push({ key: 'project', label: 'Be added to someone’s project: talk to the lead (Projects), who adds you', done: !!f.inProject, href: 'projects.html' });
   if (r >= 2) {
     steps.push({ key: 'own', label: 'Register a project of your own', done: !!f.owns, href: 'projects-register.html' });
     (f.series || []).filter((x) => !x.hidden && x.requiredFor && r >= (ONBOARDING_RANK[x.requiredFor] || 0))
@@ -6380,21 +7320,27 @@ function onboardingSteps(group, f){
   }
   return { steps, done: steps.every((x) => x.done) };
 }
-const seriesFacts = (docs) => docs.map((d) => { const v = d.data(); return { id: d.id, title: v.title || d.id, requiredFor: v.requiredFor || '', invite: v.invite || null, joined: v.joined || [], hidden: !!v.hidden }; });
+const seriesFacts = (docs) => docs.map((d) => { const v = d.data(); return { id: d.id, title: v.title || d.id, requiredFor: v.requiredFor || '', invite: v.invite || null, joined: v.joined || [], hidden: !!v.hidden, visibleTo: v.visibleTo || 'internal' }; });
 // `as`: the steps of another group (asking for it: group-request.html), else their own.
 async function onboardingFor(email, as){
   email = String(email || '').toLowerCase();
   const [m, marks, read, ws, owned, ownedCard, series, group] = await Promise.all([
     db.collection('members').doc(email).get(), db.collection('onboarding').doc(email).get(),
     db.collection('handbook').doc('boldiquette').collection('readers').where('email', '==', email).limit(1).get(),
-    db.collection('projectWorkspaces').where('members', 'array-contains', email).limit(1).get(),
-    db.collection('projects').where('submittedBy.email', '==', email).limit(1).get(),
-    db.collectionGroup('cards').where('submittedBy.email', '==', email).limit(1).get(),
+    db.collection('projectWorkspaces').where('members', 'array-contains', email).get(),
+    db.collection('projects').where('submittedBy.email', '==', email).get(),
+    db.collectionGroup('cards').where('submittedBy.email', '==', email).get(),
     db.collection('eventSeries').where('hidden', '==', false).get(),
     as && ONBOARDING_RANK[as] !== undefined ? as : access.groupFor(email),
   ]);
-  return Object.assign({ group, tour: !!(marks.exists && marks.data().tour) }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
-    inProject: !ws.empty, owns: !owned.empty || !ownedCard.empty, series: seriesFacts(series.docs) }));
+  const trial = marks.exists && marks.data().trial;
+  return Object.assign({ group, tour: !!(marks.exists && marks.data().tour), trial: trial && trial.group === group && !trial.done ? { endsAt: trial.endsAt, ended: !!trial.ended } : null }, onboardingSteps(group, { email, member: m.exists ? m.data() : null, marks: marks.exists ? marks.data() : {}, read: !read.empty,
+    inProject: onOthers(ws.docs, owned.docs.concat(ownedCard.docs)), owns: !owned.empty || !ownedCard.empty, series: seriesFacts(series.docs) }));
+}
+// On a project someone else registered: one of their workspaces isn't for a card they submitted.
+function onOthers(wsDocs, ownDocs){
+  const own = new Set(ownDocs.map((d) => d.id));
+  return wsDocs.some((w) => !own.has(w.id) && !own.has(String((w.data() || {}).cardId || '')));
 }
 // - {}: your own → { group, steps, done, tour }.
 // - { group }: what that group needs of them, checked now (asking for it: group-request.html).
@@ -6417,8 +7363,10 @@ exports.onboarding = onCall(
     const mark = {}, onProject = {}, read = {}, owns = {};
     readers.docs.forEach((x) => { read[String(x.data().email || '').toLowerCase()] = true; });
     marks.docs.forEach((x) => { mark[x.id] = x.data(); });
-    wss.docs.forEach((x) => (x.data().members || []).forEach((e) => { onProject[String(e).toLowerCase()] = true; }));
-    projects.docs.concat(cards.docs).forEach((x) => { const e = String((x.data().submittedBy || {}).email || '').toLowerCase(); if (e) owns[e] = true; });
+    const submitter = {};
+    projects.docs.concat(cards.docs).forEach((x) => { const e = String((x.data().submittedBy || {}).email || '').toLowerCase(); if (e) { owns[e] = true; submitter[x.id] = e; } });
+    // On someone else's project (BOLD-associate's step): not one they submitted.
+    wss.docs.forEach((x) => (x.data().members || []).forEach((e) => { e = String(e).toLowerCase(); if (submitter[x.id] !== e && submitter[String(x.data().cardId || '')] !== e) onProject[e] = true; }));
     const facts = seriesFacts(series.docs);
     const people = await Promise.all(members.docs.filter((x) => !x.data().test).map(async (x) => {
       const e = x.id.toLowerCase(), group = await access.groupFor(e);
@@ -6427,6 +7375,282 @@ exports.onboarding = onCall(
     }));
     return { people };
   }
+);
+
+// Once (2026-11-04), when runs/{id} is created (admin access only: the rules let no client read or write it) with
+// { action: 'project-setup-nudge' }: projects ongoing only through their weekly meeting are marked ongoing
+// (startedAt, startedBy 'migration-2026-11-04'), so the new rule (workspaceStarted) keeps them so; then
+// each ongoing project still missing some of its setup tells its lead (whoever registered it) once, on Slack (pilot
+// project-setup). { dryRun: true }: nothing is written or sent; the run lists what would be, in `plan`.
+// Projects on a venue's board, and completed ones, are left alone. The run records `doneAt` and `plan`.
+function setupNudgeText(title, missing, url){
+  return '🛠️ “' + slackText(title) + '” is ongoing but still needs ' + setupMissingText(missing) + '. ' + linkedTitle('Set it up on its page', url) + ', so everyone on it has what they need.';
+}
+// Moving someone to another email (2026-11-05: Yaser signed up with one, Slack has another): a runs/{id}
+// document { action: 'move-account', from, to, dryRun } (made from the console or an admin tool; clients
+// can't write runs). Changes their sign-in account's email, then every document: `from` → `to` wherever it
+// is a value, in an array or a map key, and a document named after it moves to `to`'s id. What Google
+// has (a workspace's `shared`, an invitation's `synced`) keeps the old one, so the syncs after (their
+// projects', series' and study meetings) share and invite the new address and drop the old. Logs and
+// caches are left. dryRun: only says what it would change, in the run's `plan`.
+const MOVE_SKIP_COLLECTIONS = ['apiLog', 'meta', 'runs', 'imageHashes', 'meetingReminders'];
+const MOVE_KEEP_FIELDS = { projectWorkspaces: ['shared'], eventInvites: ['synced'] };
+// Pure: `v` with every `from` (any case) → `to`, in values, arrays and map keys; { value, n } (n: how many).
+function replaceEmail(v, from, to){
+  let n = 0;
+  const f = String(from).toLowerCase();
+  const walk = function(x){
+    if (typeof x === 'string') { if (x.toLowerCase() === f) { n++; return to; } return x; }
+    if (Array.isArray(x)) return x.map(walk);
+    if (x && typeof x === 'object' && Object.getPrototypeOf(x) === Object.prototype) {
+      const out = {};
+      Object.keys(x).forEach(function(k){ const nk = k.toLowerCase() === f ? (n++, to) : k; out[nk] = walk(x[k]); });
+      return out;
+    }
+    return x;   // Timestamps, references, FieldValues
+  };
+  return { value: walk(v), n };
+}
+exports.onAccountMoveRun = onDocumentCreated({ document: 'runs/{id}', secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540, memory: '1GiB' }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'move-account' || run.doneAt) return;
+  const from = lowerEmail(run.from), to = lowerEmail(run.to), dry = run.dryRun !== false;
+  const report = { changed: [], moved: [], skipped: [], errors: [] };
+  const done = (extra) => event.data.ref.set(Object.assign({ doneAt: Date.now(), dryRun: dry, plan: report }, extra || {}), { merge: true });
+  if (!from || !to || from === to) return done({ error: 'Give from and to.' });
+  let user = null;
+  try { user = await admin.auth().getUserByEmail(from); } catch (err){ return done({ error: 'No account with ' + from + '.' }); }
+  try { await admin.auth().getUserByEmail(to); return done({ error: 'An account already has ' + to + '.' }); } catch (err){ /* none: good */ }
+  if (!dry) await admin.auth().updateUser(user.uid, { email: to });
+  report.account = user.uid;
+  const touched = { projectWorkspaces: [], eventSeries: [], studies: [], eventInvites: [] };
+  async function walk(col){
+    const name = col.id;
+    if (MOVE_SKIP_COLLECTIONS.indexOf(name) >= 0) return;
+    for (const d of (await col.get()).docs){
+      const data = d.data(), keep = MOVE_KEEP_FIELDS[name] || [];
+      const kept = {}; keep.forEach((k) => { if (k in data) { kept[k] = data[k]; delete data[k]; } });
+      const r = replaceEmail(data, from, to);
+      if (r.n) Object.assign(r.value, kept);
+      if (d.id.toLowerCase() === from){
+        const subs = await d.ref.listCollections();
+        if (subs.length) report.skipped.push(d.ref.path + ' (has subcollections)');
+        else {
+          report.moved.push(d.ref.path);
+          if (!dry) { await col.doc(to).set(r.n ? r.value : Object.assign(data, kept)); await d.ref.delete(); }
+          continue;
+        }
+      }
+      if (r.n){
+        report.changed.push(d.ref.path + ' (' + r.n + ')');
+        if (touched[name]) touched[name].push(d.id);
+        if (!dry) await d.ref.set(r.value);
+      }
+      for (const sub of await d.ref.listCollections()) await walk(sub);
+    }
+  }
+  try { for (const col of await db.listCollections()) await walk(col); }
+  catch (err){ report.errors.push(String(err && err.message || err)); }
+  // Google and GitHub, in line with the new address.
+  if (!dry){
+    for (const id of touched.projectWorkspaces) await syncWorkspace(id).catch((e) => report.errors.push('workspace ' + id + ': ' + e.message));
+    for (const id of touched.eventSeries) await labSeries.syncSeries(id).catch((e) => report.errors.push('series ' + id + ': ' + e.message));
+    if (touched.studies.length || report.moved.some((p) => p.indexOf('studies/') === 0)) await syncStudyMeeting(to).catch((e) => report.errors.push('studies: ' + e.message));
+    for (const id of touched.eventInvites) await labSeries.syncOccurrence(id).catch((e) => report.errors.push('invite ' + id + ': ' + e.message));
+  }
+  logger.info('Account move', { dry, changed: report.changed.length, moved: report.moved.length, errors: report.errors.length });
+  return done();
+});
+
+// GitHub access by the new rule, once (#214): runs/{id} { action: 'github-access', dryRun? } (admin
+// access only). Makes the bold-internal team and gives it write on every repository; puts BOLD-internal
+// and above with a linked GitHub account in it and takes out those below (never anyone who hasn't
+// linked theirs: an owner looks after them); invites to the org everyone linked who isn't in it (their
+// project repositories as outside collaborators until they accept); then syncs every project's team.
+// Its `plan` says what it did (or, dry, would do). Safe to run again: it only adds what's missing.
+exports.onGithubAccessRun = onDocumentCreated({ document: 'runs/{id}', secrets: [GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 540, memory: '512MiB' }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'github-access' || run.doneAt) return;
+  const dry = run.dryRun === true, plan = { repos: [], addWrite: [], removeWrite: [], invite: [], errors: [] };
+  try {
+    let slug = INTERNAL_TEAM;
+    if (!dry) slug = await internalTeam();
+    const haveRepos = dry ? await githubAll('/orgs/' + GITHUB_ORG + '/teams/' + INTERNAL_TEAM + '/repos').catch(() => []) : await githubAll('/orgs/' + GITHUB_ORG + '/teams/' + slug + '/repos');
+    const had = new Set(haveRepos.filter((r) => r.permissions && r.permissions.push).map((r) => r.name));
+    for (const r of await githubAll('/orgs/' + GITHUB_ORG + '/repos?type=all')){
+      if (r.archived || had.has(r.name)) continue;
+      plan.repos.push(r.name);
+      if (!dry) await githubApp('PUT', '/orgs/' + GITHUB_ORG + '/teams/' + slug + '/repos/' + GITHUB_ORG + '/' + r.name, { permission: 'push' }).catch((err) => plan.errors.push(r.name + ': ' + err.message));
+    }
+    const inTeam = new Set((await githubAll('/orgs/' + GITHUB_ORG + '/teams/' + INTERNAL_TEAM + '/members').catch(() => [])).map((m) => String(m.login).toLowerCase()));
+    for (const d of (await db.collection('githubLinks').get()).docs){
+      const l = d.data(), login = String(l.github || '').toLowerCase();
+      if (!login || l.status === 'failed') continue;
+      const high = await writesEverywhere(d.id), who = (l.name || d.id) + ' (' + login + ')';
+      if (high && !inTeam.has(login)) plan.addWrite.push(who);
+      if (!high && inTeam.has(login)) plan.removeWrite.push(who);
+      if (l.status === 'outside') plan.invite.push(who);
+      if (dry) continue;
+      try {
+        if (l.status === 'outside'){
+          const r = await joinOrg(l.github, l.githubId);
+          await d.ref.set({ status: r.status, error: r.error, updatedAt: Date.now() }, { merge: true });
+        }
+        if (high !== inTeam.has(login)) await setInternalWrite(login, high);
+      } catch (err){ plan.errors.push(who + ': ' + err.message); }
+    }
+    if (!dry) for (const w of (await db.collection('projectWorkspaces').get()).docs) if (w.data().teamSlug) await syncWorkspace(w.id).catch((err) => plan.errors.push(w.id + ': ' + err.message));
+  } catch (err){ plan.errors.push(String(err && err.message || err)); }
+  await event.data.ref.set({ doneAt: Date.now(), plan }, { merge: true });
+});
+
+exports.onSetupNudgeRun = onDocumentCreated({ document: 'runs/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const run = event.data && event.data.data();
+  if (!run || run.action !== 'project-setup-nudge' || run.doneAt) return;
+  const dry = run.dryRun === true, plan = [];
+  for (const d of (await db.collection('projectWorkspaces').get()).docs) {
+    const ws = d.data();
+    if (ws.boardId || ws.completedAt || !(ws.startedAt || ws.meeting)) continue;   // ongoing by the old rule, not on a venue's board
+    const migrate = !ws.startedAt && !!ws.meeting && setupMissing(ws).length > 0;
+    const missing = setupMissing(ws);
+    if (!migrate && !missing.length) continue;
+    // Its lead only: whoever registered it (its card's submittedBy).
+    const card = await cardRefFor(ws.cardId || d.id, ws.boardId || null).get().catch(() => null);
+    const lead = card && card.exists ? lowerEmail((card.data().submittedBy || {}).email) : '';
+    const to = ws.setupNudgedAt || !lead ? [] : [lead];
+    plan.push({ pid: d.id, title: ws.title || (card && card.exists && card.data().title) || '', migrate, missing, to });
+    if (dry) continue;
+    if (migrate) await d.ref.set({ startedAt: Date.now(), startedBy: 'migration-2026-11-04' }, { merge: true });
+    if (missing.length && to.length) {
+      await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'project-setup', emails: to, headline: setupNudgeText(ws.title || (card && card.exists && card.data().title) || 'Your project', missing, projectPageUrl(ws.cardId || d.id, ws.boardId)) });
+      await d.ref.set({ setupNudgedAt: Date.now() }, { merge: true });
+    }
+  }
+  await event.data.ref.set({ doneAt: Date.now(), plan }, { merge: true });
+});
+
+// A group's first week (2026-11-03): what a group asks of a newcomer (its onboarding steps) is done
+// after joining it, not before asking. When someone's group goes up (their join approved, as PAN-BOLD;
+// a request accepted; a PI or admin setting it on People), their trial starts: onboarding/{email}.trial
+// { group, startedAt, endsAt, done, doneAt, ended }. Two timers for that person alone (Cloud Tasks,
+// trialCheck; no schedule): on day 5, if any are left, a Slack reminder with what's left; on day 7, if
+// any still are, they're told, and so are the PIs and admins, who decide (nothing changes on its own).
+// Done early, the timers do nothing. Whenever they do one of the things it asks (database triggers
+// below, in the background), checkTrial looks again; all done → "Congratulations", and the trial ends.
+const TRIAL_DAYS = 7, TRIAL_REMIND_DAY = 5, DAY_MS = 86400000;
+const GROUP_RANK = { pan: 0, associate: 1, internal: 2, staff: 3, exec: 4 };
+const stepsLeft = (steps) => ((steps && steps.steps) || []).filter((x) => !x.done).map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1));
+// Pure: what a timer does now → 'nothing' | 'done' (all done: close it quietly) | 'remind' | 'end'.
+function trialAction(stage, trial, data, group, steps){
+  if (!trial || trial.done || trial.ended || trial.startedAt !== data.startedAt || trial.group !== data.group || group !== trial.group) return 'nothing';
+  if (steps && steps.done) return 'done';
+  return stage === 'remind' ? 'remind' : stage === 'end' ? 'end' : 'nothing';
+}
+function trialTexts(label, left, name){
+  const list = left.join('; ');
+  return {
+    remind: '⏳ Two days left of your first week in ' + label + '. Still to do: ' + list + '. ' + linkedTitle('Your first steps', SITE_URL + 'onboarding.html') + '.',
+    end: '⌛ Your first week in ' + label + ' is over, with this still to do: ' + list + '. ' + linkedTitle('Your first steps', SITE_URL + 'onboarding.html') + '. The PIs and admins have been told.',
+    staff: '⌛ ' + slackText(name) + '’s first week in ' + label + ' is over, with this still to do: ' + list + '. You decide what happens next: ' + linkedTitle('People', SITE_URL + 'people.html') + '.',
+    done: '🎉 Congratulations! You’ve done everything ' + label + ' asks of you in your first week.',
+  };
+}
+async function startTrial(email, group){
+  const at = Date.now(), trial = { group, startedAt: at, endsAt: at + TRIAL_DAYS * DAY_MS, done: false };
+  if ((await onboardingFor(email)).done) Object.assign(trial, { done: true, doneAt: at });   // nothing left: no week to watch
+  // The whole trial replaced (mergeFields), so nothing of an earlier week (its `ended`, `doneAt`) stays.
+  await db.collection('onboarding').doc(email).set({ trial }, { mergeFields: ['trial'] });
+  if (trial.done) return;
+  // The emulator runs queued tasks at once, whatever their delay: there, the timers are fired by hand.
+  if (process.env.FUNCTIONS_EMULATOR === 'true') { logger.info('Trial timers not queued in the emulator'); return; }
+  const queue = getFunctions().taskQueue('locations/europe-west2/functions/trialCheck');
+  for (const [stage, days] of [['remind', TRIAL_REMIND_DAY], ['end', TRIAL_DAYS]]) {
+    await queue.enqueue({ email, group, startedAt: at, stage }, { scheduleDelaySeconds: days * 86400 })
+      .catch((err) => logger.warn('Scheduling a trial timer failed', { stage, error: String(err && err.message || err) }));
+  }
+}
+exports.trialCheck = onTaskDispatched({ retryConfig: { maxAttempts: 3, minBackoffSeconds: 300 }, secrets: [SLACK_BOT_TOKEN] }, async (req) => {
+  const data = req.data || {}, email = String(data.email || '').toLowerCase();
+  if (!email) return;
+  const ref = db.collection('onboarding').doc(email), [marks, group] = await Promise.all([ref.get(), access.groupFor(email)]);
+  const trial = marks.exists ? marks.data().trial : null;
+  const steps = trial && !trial.done && !trial.ended ? await onboardingFor(email) : null;
+  const what = trialAction(data.stage, trial, data, group, steps);
+  if (what === 'nothing') return;
+  if (what === 'done') { await ref.set({ trial: { done: true, doneAt: Date.now() } }, { merge: true }); return; }
+  const m = await db.collection('members').doc(email).get(), name = (m.exists && m.data().name) || email;
+  const t = trialTexts(GROUP_LABELS[trial.group], stepsLeft(steps), name), token = SLACK_BOT_TOKEN.value();
+  if (what === 'remind') { await sendEvent(token, { key: 'group-trial', emails: [email], headline: t.remind }); return; }
+  await sendEvent(token, { key: 'group-trial', emails: [email], headline: t.end });
+  await sendEvent(token, { key: 'group-trial', emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')), headline: t.staff });
+  await ref.set({ trial: { ended: Date.now() } }, { merge: true });
+});
+// Meeting the next group's requirements (2026-11-03): PIs and admins are told, once per person and
+// group, and decide (on People); nobody is moved up on their own. PAN-BOLD → BOLD-associate (added to
+// someone's project) and BOLD-associate → BOLD-internal; a series they can't see yet doesn't count against
+// them (they join it in their first week). Recorded in onboarding/{email}.eligible.<group>. Pilot group-eligible.
+const NEXT_GROUP = { pan: 'associate', associate: 'internal' };
+// Pure: the steps that count before joining: not a required series hidden from their group.
+function eligibleSteps(steps, series, group){
+  const hidden = new Set((series || []).filter((x) => (VIS_RANK_OF[x.visibleTo || 'internal'] || 0) > (VIS_RANK_OF[group] || 0)).map((x) => 'series:' + x.id));
+  const kept = ((steps && steps.steps) || []).filter((x) => !hidden.has(x.key));
+  return { steps: kept, done: kept.length > 0 && kept.every((x) => x.done) };
+}
+const VIS_RANK_OF = { public: 0, everyone: 1, pan: 1, associate: 2, internal: 3, staff: 4, exec: 5 };
+function eligibleText(name, label, steps){
+  // In their words, not the newcomer's ("fill in your details" → "their details filled in").
+  const said = (x) => ({ details: 'their details filled in', read: 'the BOLDiquette read', project: 'on someone else’s project', own: 'a project of their own' })[x.key] ||
+    (x.key.indexOf('series:') === 0 ? 'joined ' + x.label.replace(/^Join /, '') : x.label);
+  return '🏷️ ' + slackText(name) + ' now meets what ' + label + ' asks: ' + steps.map(said).join(', ') + '. ' +
+    'Nothing changes on its own: if you agree, ' + linkedTitle('set their group on People', SITE_URL + 'people.html') + '.';
+}
+async function checkEligible(email){
+  try {
+    email = String(email || '').toLowerCase();
+    const group = await access.groupFor(email), next = NEXT_GROUP[group];
+    if (!next) return;
+    const ref = db.collection('onboarding').doc(email), marks = await ref.get();
+    if (((marks.exists && marks.data().eligible) || {})[next]) return;
+    const [steps, series, m] = await Promise.all([onboardingFor(email, next), db.collection('eventSeries').where('hidden', '==', false).get(), db.collection('members').doc(email).get()]);
+    const e = eligibleSteps(steps, seriesFacts(series.docs), group);
+    if (!e.done) return;
+    await ref.set({ eligible: { [next]: Date.now() } }, { merge: true });
+    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'group-eligible', emails: (await rolesEmails('pis')).concat(await rolesEmails('admins')),
+      headline: eligibleText((m.exists && m.data().name) || email, GROUP_LABELS[next], e.steps) });
+  } catch (err){ logger.warn('checkEligible failed', { error: String(err && err.message || err) }); }
+}
+// After something they did: their first week, and whether they now meet the next group's requirements.
+async function afterProgress(email){ await checkTrial(email); await checkEligible(email); }
+// In the background, after something they did (database triggers only, so no click waits on it);
+// never fails (logged instead).
+async function checkTrial(email){
+  try {
+    email = String(email || '').toLowerCase();
+    const ref = db.collection('onboarding').doc(email), marks = await ref.get(), trial = marks.exists ? marks.data().trial : null;
+    if (!trial || trial.done || trial.ended || (await access.groupFor(email)) !== trial.group) return;
+    if (!(await onboardingFor(email)).done) return;
+    await ref.set({ trial: { done: true, doneAt: Date.now() } }, { merge: true });
+    await sendEvent(SLACK_BOT_TOKEN.value(), { key: 'group-ready', emails: [email], headline: trialTexts(GROUP_LABELS[trial.group], [], '').done });
+  } catch (err){ logger.warn('checkTrial failed', { error: String(err && err.message || err) }); }
+}
+// Who's newly in a list, between two versions of a document.
+const addedTo = (before, after, key) => {
+  const was = new Set(((before && before[key]) || []).map((e) => String(e).toLowerCase()));
+  return ((after && after[key]) || []).map((e) => String(e).toLowerCase()).filter((e) => !was.has(e));
+};
+// Joining a project (its workspace's members) or an event series (its `joined`).
+exports.onProjectJoined = onDocumentWritten({ document: 'projectWorkspaces/{pid}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const b = event.data.before.exists ? event.data.before.data() : null, a = event.data.after.exists ? event.data.after.data() : null;
+  for (const e of addedTo(b, a, 'members')) await afterProgress(e);
+});
+exports.onSeriesJoined = onDocumentWritten({ document: 'eventSeries/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const b = event.data.before.exists ? event.data.before.data() : null, a = event.data.after.exists ? event.data.after.data() : null;
+  for (const e of addedTo(b, a, 'joined')) await afterProgress(e);
+});
+// Marking the BOLDiquette read (written by the page: handbook/boldiquette/readers/{uid}).
+exports.onBoldiquetteRead = onDocumentCreated(
+  { document: 'handbook/boldiquette/readers/{uid}', secrets: [SLACK_BOT_TOKEN] },
+  async (event) => { const d = event.data && event.data.data(); if (d && d.email) await afterProgress(d.email); }
 );
 
 // A member's request to be in another group, decided by the PIs and admins only (2026-11-02):
@@ -6446,19 +7670,19 @@ exports.groupRequest = onCall(
     const token = SLACK_BOT_TOKEN.value();
     if (d.action === 'request'){
       const m = await db.collection('members').doc(email).get();
-      if (!m.exists) throw new HttpsError('failed-precondition', 'Add your details first.');
+      // Right after asking to join (join.html), before whoever invited them approves it: a second,
+      // separate request, to the PIs and admins (2026-11-04). They join as PAN-BOLD meanwhile.
+      const joining = m.exists ? null : (await db.collection('joinRequests').where('email', '==', email).where('status', '==', 'open').limit(1).get()).docs[0];
+      if (!m.exists && !joining) throw new HttpsError('failed-precondition', 'Ask to join BOLD first.');
       const to = String(d.to || '');
       if (GROUPS.indexOf(to) < 0) throw new HttpsError('invalid-argument', 'Choose a group.');
-      const from = groupOf(m.data());
+      const from = m.exists ? groupOf(m.data()) : 'pan';
       if (to === from) throw new HttpsError('invalid-argument', 'You’re already in ' + GROUP_LABELS[to] + '.');
       const open = await col.where('email', '==', email).where('status', '==', 'open').limit(1).get();
       if (!open.empty) throw new HttpsError('already-exists', 'You already have a request waiting.');
-      const name = m.data().name || request.auth.token.name || email;
+      const name = (m.exists ? m.data().name : joining.data().name) || request.auth.token.name || email;
       const note = String(d.note || '').trim().slice(0, 1000);
-      // What the group needs, done for real first (its onboarding steps, checked now: a project of
-      // their own, the series it must join…), not just promised.
-      const need = await onboardingFor(email, to);
-      if (!need.done) throw new HttpsError('failed-precondition', 'Before asking for ' + GROUP_LABELS[to] + ': ' + need.steps.filter((x) => !x.done).map((x) => x.label.charAt(0).toLowerCase() + x.label.slice(1)).join('; ') + '.');
+      // What the group asks of a newcomer is done in its first week, after joining (trialCheck), not before.
       // The contract: what the group asks of them, as they read it, and that they accept it.
       const terms = String(d.terms || '').trim().slice(0, 20000);
       if (d.accept !== true || !terms) throw new HttpsError('failed-precondition', 'Read what ' + GROUP_LABELS[to] + ' asks of you and tick that you accept it first.');
@@ -6490,8 +7714,10 @@ exports.groupRequest = onCall(
       // Only PIs and admins decide a change of group (2026-11-02).
       if (!full) throw new HttpsError('permission-denied', 'Only PIs and admins decide a change of group.');
       if (r.status !== 'open') throw new HttpsError('failed-precondition', 'It’s already been decided.');
+      // Asked for with their request to join: that one first (whoever invited them approves it).
+      if (accept && !(await tx.get(db.collection('members').doc(r.email))).exists) throw new HttpsError('failed-precondition', 'Their request to join BOLD isn’t approved yet: whoever invited them approves it first.');
       tx.update(ref, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: request.auth.token.name || email, decidedAt: Date.now() });
-      if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now() });
+      if (accept) tx.update(db.collection('members').doc(r.email), { category: r.to, categoryBy: email, categoryAt: Date.now(), categoryVia: 'request-' + Date.now() });
       return r;
     });
     await sendEvent(token, { key: 'group-requests', emails: [r.email], headline: accept
@@ -6953,7 +8179,7 @@ exports.checkVenueCalls = onSchedule(
 // (onTagged, source '<path>#tags'), and first sign-ins by getMyAccess (source
 // 'auth/<uid>'). The lab reads them; nobody writes them but the server.
 const INTERACTION_GROUPS = {
-  asked: 'joining', invited: 'joining', approved: 'joining', contact: 'joining', supervises: 'joining', 'signed-up': 'joining',
+  asked: 'joining', invited: 'joining', approved: 'joining', contact: 'joining', supervises: 'joining', 'signed-up': 'joining', moved: 'joining',
   coauthor: 'working', project: 'working', reviewed: 'working', meeting: 'working', introduced: 'working', letter: 'working',
   tagged: 'talking', replied: 'talking', decided: 'talking',
   registered: 'site', added: 'site', edited: 'site', proposed: 'site', commented: 'site', read: 'site',
@@ -6961,7 +8187,9 @@ const INTERACTION_GROUPS = {
   presented: 'related', 'part-of': 'related',
 };
 const INTERACTION_TOP = ['joinRequests', 'members', 'studies', 'projects', 'projectWorkspaces', 'studyRequests', 'introRequests', 'letterRequests',
-  'skills', 'guides', 'events', 'collabWeekSessions'];
+  'skills', 'guides', 'events', 'collabWeekSessions', 'groupRequests', 'groupMoves'];
+// A move between groups, as its interaction's title: 'PAN-BOLD → BOLD-associate', or the new group alone.
+const groupMoveTitle = (from, to) => (GROUP_LABELS[from] ? GROUP_LABELS[from] + ' → ' : '') + (GROUP_LABELS[to] || to);
 
 const lowerEmail = (v) => String((v && typeof v === 'object' ? v.email : v) || '').trim().toLowerCase();
 
@@ -6994,6 +8222,12 @@ async function interactionsFor(path, d, lookup){
     // Once they're a member, their record says who invited them (it may change there).
     if (d.status !== 'approved' && d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, d.email, d.invitedBy.at || d.at, title, href);
     if (d.status === 'approved') add('approved', d.decidedBy, d.email, d.decidedAt, title, href);
+  } else if (n === 2 && top === 'groupRequests'){
+    // A move someone asked for, by whoever approved it.
+    if (d.status === 'approved') add('moved', d.decidedBy, d.email, d.decidedAt, groupMoveTitle(d.from, d.to), SITE_URL + 'boldiquette.html#who-is-bold');
+  } else if (n === 2 && top === 'groupMoves'){
+    // A PI or admin setting someone's group on People (a request's own move is the request's).
+    if (d.via !== 'request') add('moved', d.by, d.email, d.at, groupMoveTitle(d.from, d.to), SITE_URL + 'boldiquette.html#who-is-bold');
   } else if (n === 2 && top === 'members'){
     add('contact', d.contactEmail, seg[1], d.approvedAt || d.updatedAt, 'Point of contact', SITE_URL + 'people.html');
     if (d.invitedBy && d.invitedBy.status === 'confirmed') add('invited', d.invitedBy.email, seg[1], d.invitedBy.at || d.approvedAt, 'Joining BOLD', SITE_URL + 'people.html');
@@ -7112,10 +8346,16 @@ async function interactionRecords(path, data, slackEmails){
   return out;
 }
 
-// Writes `want` ({ id: record }) in place of `have` ({ id: record }): sets what's new or
-// changed, deletes the rest.
-async function replaceInteractions(have, want){
-  const col = db.collection('interactions');
+// Interactions that come from what's private whoever's group (BOLDiquette › Who can do what:
+// letters, introductions, supervision requests, requests to join) are kept apart, in
+// privateInteractions, which only the two people in each, PIs and admins read (firestore.rules).
+const PRIVATE_INTERACTION_SOURCES = ['joinRequests', 'studyRequests', 'introRequests', 'letterRequests'];
+const interactionsCol = (source) => PRIVATE_INTERACTION_SOURCES.indexOf(String(source || '').split('/')[0]) >= 0 ? 'privateInteractions' : 'interactions';
+
+// Writes `want` ({ id: record }) in place of `have` ({ id: record }) in collection `name`:
+// sets what's new or changed, deletes the rest.
+async function replaceInteractions(have, want, name){
+  const col = db.collection(name || 'interactions');
   let batch = db.batch(), n = 0;
   const step = async function(){ if (++n >= 400){ await batch.commit(); batch = db.batch(); n = 0; } };
   for (const id of Object.keys(have)) if (!want[id]) { batch.delete(col.doc(id)); await step(); }
@@ -7124,9 +8364,9 @@ async function replaceInteractions(have, want){
 }
 
 async function syncInteractions(path, data){
-  const have = {};
-  (await db.collection('interactions').where('source', '==', path).get()).docs.forEach(function(s){ have[s.id] = s.data(); });
-  await replaceInteractions(have, await interactionRecords(path, data, {}));
+  const name = interactionsCol(path), have = {};
+  (await db.collection(name).where('source', '==', path).get()).docs.forEach(function(s){ have[s.id] = s.data(); });
+  await replaceInteractions(have, await interactionRecords(path, data, {}), name);
 }
 
 function onInteractionSource(document){
@@ -7139,6 +8379,36 @@ function onInteractionSource(document){
 }
 exports.onInteractionSource = onInteractionSource('{c1}/{d1}');
 exports.onInteractionSourceNested = onInteractionSource('{c1}/{d1}/{c2}/{d2}');
+
+// Moves between groups (Network › Lineage): groupMoves/{id} { email, from, to, by, at, via } (server
+// only), one for each change of a member's group, whoever made it: on People, by a request
+// (via 'request': its interaction is the request's), an agent, or a test account's owner. Joining
+// (their first group) isn't a move. id: their email and when, so the backfill (rebuildInteractions,
+// from members' current group) and this trigger write the same document.
+const groupMoveId = (email, at) => crypto.createHash('sha1').update(String(email) + '|' + String(at)).digest('hex').slice(0, 28);
+// Pure: a member's record before and after → the move, or null.
+function groupMoveOf(email, b, a){
+  b = b || {}; a = a || {};
+  // No group on the record is PAN-BOLD (groupOf), so PAN-BOLD on joining is no move.
+  const from = groupOf(b), to = groupOf(a);
+  if (from === to) return null;
+  const viaRequest = /^request/.test(String(a.categoryVia || '')) && a.categoryVia !== b.categoryVia;
+  return { email: String(email).toLowerCase(), from, to, by: String(a.categoryBy || '').toLowerCase(), at: Number(a.categoryAt) || Date.now(), via: viaRequest ? 'request' : '' };
+}
+// Pure: the move a member's current group records, for those set before groupMoves (from
+// unknown); null for PAN-BOLD on joining, or a request's (approved groupRequests have those).
+function currentGroupMove(email, m){
+  m = m || {};
+  const at = Number(m.categoryAt) || 0, by = String(m.categoryBy || '').toLowerCase();
+  if (!m.category || !at || !by || by === String(email).toLowerCase() || m.category === 'pan') return null;
+  const via = /^request-(\d+)$/.exec(String(m.categoryVia || ''));
+  if (via && Math.abs(Number(via[1]) - at) < 5000) return null;
+  return { email: String(email).toLowerCase(), from: '', to: m.category, by, at, via: '' };
+}
+exports.onGroupMove = onDocumentUpdated('members/{email}', async (event) => {
+  const mv = groupMoveOf(event.params.email, event.data.before.data(), event.data.after.data());
+  if (mv) await db.collection('groupMoves').doc(groupMoveId(mv.email, mv.at)).set(mv);
+});
 
 // Tags the documents above don't cover (onTagged): added as they happen, kept.
 async function recordTags(path, by, emails, at, place, data){
@@ -7174,19 +8444,26 @@ exports.rebuildInteractions = onCall(
     const email = callerEmail(request);
     await access.requireAccess(email, 'people', 'view');   // Who can see what
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins can do this.');
+    // Moves made before groupMoves: each member's current group, if someone set it (create: never over a logged one).
+    for (const m of (await db.collection('members').get()).docs){
+      const mv = currentGroupMove(m.id, m.data());
+      if (mv) await db.collection('groupMoves').doc(groupMoveId(mv.email, mv.at)).create(mv).catch(function(){});
+    }
     const docs = [];
     for (const c of INTERACTION_TOP) (await db.collection(c).get()).docs.forEach(function(s){ docs.push(s); });
     for (const g of ['cards', 'versions', 'readers', 'comments', 'proposals', 'presentations'])
       (await db.collectionGroup(g).get()).docs.forEach(function(s){ if (isInteractionSource(s.ref.path)) docs.push(s); });
-    const want = {}, slackEmails = {};
-    for (const s of docs) Object.assign(want, await interactionRecords(s.ref.path, s.data(), slackEmails));
-    const have = {};
-    (await db.collection('interactions').get()).docs.forEach(function(s){
-      const src = String(s.data().source || '');
-      if (src.indexOf('auth/') === 0 || /#tags$/.test(src)) return;
-      have[s.id] = s.data();
-    });
-    await replaceInteractions(have, want);
+    const want = { interactions: {}, privateInteractions: {} }, slackEmails = {};
+    for (const s of docs) Object.assign(want[interactionsCol(s.ref.path)], await interactionRecords(s.ref.path, s.data(), slackEmails));
+    for (const name of Object.keys(want)){
+      const have = {};
+      (await db.collection(name).get()).docs.forEach(function(s){
+        const src = String(s.data().source || '');
+        if (src.indexOf('auth/') === 0 || /#tags$/.test(src)) return;
+        have[s.id] = s.data();
+      });
+      await replaceInteractions(have, want[name], name);
+    }
     // First sign-ins, from Firebase Auth.
     try {
       let page;
@@ -7195,7 +8472,7 @@ exports.rebuildInteractions = onCall(
         for (const u of page.users) if (u.email) await recordSignUp(u.uid, String(u.email).toLowerCase());
       } while (page.pageToken);
     } catch (err){ logger.warn('Listing first sign-ins failed', { error: String(err && err.message || err) }); }
-    return { count: Object.keys(want).length, sources: docs.length };
+    return { count: Object.keys(want.interactions).length + Object.keys(want.privateInteractions).length, sources: docs.length };
   }
 );
 
@@ -7223,13 +8500,101 @@ exports.boldApi = agentApi.boldApi;
 exports.calendarFeed = agentApi.calendarFeed;
 // Recurring lab meetings (series.html, Events): functions/series.js.
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-  googleFetch, CAL, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
+  googleFetch, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
   onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
 exports.onMemberGroupChanged = labSeries.onMemberGroupChanged;
 exports.seriesNudges = labSeries.seriesNudges;
 exports.onOccurrenceWritten = labSeries.onOccurrenceWritten;
+
+// Every hour: the syncs Google's calendar limit stopped (calendarLimitAt; see isCalendarLimit), oldest
+// first, a few at a time; a run stops at the first still refused, the limit not lifted yet.
+const CALENDAR_RETRIES = [
+  ['projectWorkspaces', (id) => syncWorkspace(id)],
+  ['studies', (id) => syncStudyMeeting(id)],
+  ['eventSeries', (id) => labSeries.syncSeries(id)],
+  ['eventInvites', (id) => labSeries.syncOccurrence(id)],
+];
+exports.retryCalendarLimits = onSchedule({ schedule: 'every 60 minutes', secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN, GITHUB_APP], timeoutSeconds: 540 }, async function(){
+  const todo = [];
+  for (const [col, sync] of CALENDAR_RETRIES){
+    const snap = await db.collection(col).where('calendarLimitAt', '>', 0).get();
+    snap.docs.forEach((d) => todo.push({ col, sync, id: d.id, at: d.data().calendarLimitAt }));
+  }
+  todo.sort((a, b) => a.at - b.at);
+  let done = 0;
+  for (const t of todo.slice(0, 10)){
+    try { await t.sync(t.id); } catch (err){ logger.warn('Retrying a calendar sync failed', { col: t.col, id: t.id, error: String(err && err.message || err) }); }
+    const after = (await db.collection(t.col).doc(t.id).get()).data() || {};
+    if (after.calendarLimitAt) { logger.info('Google\u2019s calendar limit is still on', { left: todo.length - done }); break; }
+    done++;
+  }
+  if (todo.length) logger.info('Calendar retries', { waiting: todo.length, done });
+});
+
+// Meetings about to start (2026-11-05): 5 minutes before a project's meeting, a study meeting or a
+// recurring event's, everyone it invites gets a notification (Inbox and desktop, not Slack) with Join.
+// Only meetings in Google Calendar (eventId), not paused, not past their end date, and on their week
+// for one every N weeks (from eventStart, as calendar.html places it). Each once: meetingReminders/{key}.
+// Pure: minutes until `m` starts if that's 1–5 from now (London's `todayIso` and `nowHm`), else 0.
+function meetingStartsSoon(m, start, todayIso, nowHm){
+  if (!m || !m.day || !m.time) return 0;
+  const d = new Date(todayIso + 'T00:00:00Z');
+  if (WEEKDAYS[(d.getUTCDay() + 6) % 7] !== m.day) return 0;
+  if (m.until && m.until < todayIso) return 0;
+  if (start){
+    if (todayIso < start) return 0;
+    const weeks = Math.round((Date.parse(todayIso) - Date.parse(start)) / (7 * 86400000));
+    if (weeks % (m.every || 1) !== 0) return 0;
+  }
+  const mins = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
+  const left = mins(m.time) - mins(nowHm);
+  return left >= 1 && left <= 5 ? left : 0;
+}
+exports.meetingReminders = onSchedule({ schedule: '*/5 * * * *', timeZone: PROJECT_TZ }, async function(){
+  const today = todayIsoLondon(), now = nowHmLondon();
+  const code = WEEKDAYS[(new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7];
+  const [wsSnap, seriesSnap, studySnap] = await Promise.all([
+    db.collection('projectWorkspaces').where('meeting.day', '==', code).get(),
+    db.collection('eventSeries').where('meeting.day', '==', code).get(),
+    db.collection('studies').where('meeting.day', '==', code).get(),
+  ]);
+  const due = [];
+  wsSnap.docs.forEach((d) => { const w = d.data();
+    if (w.eventId && !w.pausedAt && w.group !== 'completed') due.push({ key: 'project-' + d.id, m: w.meeting, start: w.eventStart, title: w.title || 'Your project', to: w.members || [], join: w.meetUrl || w.eventLink || '', href: projectPageUrl(w.cardId || d.id, w.boardId) });
+  });
+  seriesSnap.docs.forEach((d) => { const x = d.data();
+    if (x.eventId && !x.pausedAt && !x.hidden && x.kind !== 'editions') due.push({ key: 'series-' + d.id, m: x.meeting, start: x.eventStart, title: x.title || 'A meeting', to: x.guests || [], join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'series.html?series=' + encodeURIComponent(d.id) });
+  });
+  studySnap.docs.forEach((d) => { const x = d.data();
+    if (x.eventId && !x.pausedAt) due.push({ key: 'study-' + d.id, m: x.meeting, start: x.eventStart, title: (x.name || d.id) + '\u2019s ' + (x.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting', to: [d.id].concat((x.people || []).map((p) => p.email)), join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'calendar.html' });
+  });
+  for (const x of due){
+    const left = meetingStartsSoon(x.m, x.start, today, now);
+    if (!left || !x.to.length) continue;
+    // Once per meeting and day, however many runs see it.
+    try { await db.collection('meetingReminders').doc(x.key + '-' + today + '-' + x.m.time.replace(':', '')).create({ at: Date.now(), to: x.to.length }); }
+    catch (err){ continue; }
+    const endsAt = Date.now() + (left + (x.m.minutes || 60)) * 60000;
+    await noteFor(x.to, { source: 'bold', feature: 'meeting-soon', text: '\u201c' + x.title + '\u201d starts in ' + left + ' minute' + (left === 1 ? '' : 's') + '.', href: x.join || x.href, join: x.join, endsAt });
+  }
+});
+// A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
+exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
+// Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
+const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails });
+exports.slackThread = conversationsSlack.slackThread;
+exports.onConversationImport = conversationsSlack.onConversationImport;
+exports.onConversationMessage = conversationsSlack.onConversationMessage;
+exports.onConversationCreated = conversationsSlack.onConversationCreated;
+// Desktop notifications (functions/push.js): each person's devices, and a push with each notification
+// (noteFor calls webPush.pushTo, once everything above is defined).
+const webPush = require('./push')({ db, admin, onCall, HttpsError, signedInEmail, logger, SITE_URL });
+exports.pushDevices = webPush.pushDevices;
+// Notifications for what someone is part of (functions/notify.js): projects, cards, parts, skills and tools, editions, their group.
+const partNotes = require('./notify')({ db, onDocumentWritten, onDocumentUpdated, onDocumentCreated, deliver, logger, SITE_URL, projectPageUrl, guideUrl, handbookUrl, skillUrl, toolUrl, eventUrl, GROUP_LABELS, numberTag });
+Object.keys(partNotes).forEach((k) => { exports[k] = partNotes[k]; });
 // Where the tools agents add run: no credentials, as whoever calls them (functions/sandbox.js).
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.
@@ -7237,7 +8602,10 @@ const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
 
-exports._internal = {
+exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetingStartsSoon,
+  slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
+  channelsToJoin, setupMissing, setupMissingText, workspaceStarted, normalizeRepo, setupNudgeText, projectHealth,
+  trialAction, trialTexts, stepsLeft, addedTo, eligibleSteps, eligibleText, onOthers,
   projectTitlesOnly, markJoined, projectTitleDoc, githubLoginsFor, mergedEdit,
   projectGroupForCard, allProjectsFromCards, closesIssues, githubWorkItem, requestColumn, proposalPlace, workRole, splitRequests, numberKey, repoNameOf, normalizeRepo, normalizeProjectChannel, keywordCounts,
   flattenMessages, newMessages, cardEventsToNotify, homeRefreshTargetsForReviewers,
@@ -7248,5 +8616,5 @@ exports._internal = {
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
 };

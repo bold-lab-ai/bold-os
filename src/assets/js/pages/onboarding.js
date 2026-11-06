@@ -1,7 +1,6 @@
-// Get started (get-started.html) as onboarding (2026-11-02): under the guide's title (its
-// data-slot), the viewer's steps for their group, each ticked when BOLD.OS sees it done
+// Onboarding (onboarding.html; on Get started until 2026-11-03): the viewer's steps for their group, each ticked when BOLD.OS sees it done
 // (onboarding-common.js), and the tour of BOLD.OS (tour.js; its steps are the guide's part
-// `tour`, else the tour's own). The rest of the page is the guide, as before.
+// `tour`, else the tour's own).
 // #tour starts the tour (the home page's and the steps' link); finishing it marks it done.
 (function(){
   var esc = BOLD.escapeHtml;
@@ -16,10 +15,17 @@
         '<span class="ob-count">' + esc(BoldOnboarding.count(status)) + ' done</span></div>' +
       '<p class="ob-note">' + (done ? 'Everything ' + esc(BoldJoinLabel(status.group)) + ' asks of a newcomer is done.' +
           (status.group !== 'exec' ? ' To do more in BOLD, <a href="group-request.html">ask for another group</a>.' : '')
-        : 'What everyone in ' + esc(BoldJoinLabel(status.group)) + ' does first. Each is ticked when BOLD.OS sees it done.') + '</p>' +
+        : 'What everyone in ' + esc(BoldJoinLabel(status.group)) + ' does first' + dueText() + '. Each is ticked when BOLD.OS sees it done.') + '</p>' +
       BoldOnboarding.listHtml(status, 'your first steps') +
       '<div class="event-form-actions"><button type="button" class="btn-box' + (!status.tour ? ' is-primary' : '') + ' ob-tour">Take the tour</button></div>';
     box.hidden = false;
+  }
+  // Their first week in the group (the server's trial): by when.
+  function dueText(){
+    var t = status.trial;
+    if (!t || !t.endsAt) return '';
+    var d = new Date(t.endsAt).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+    return t.ended ? ', and your first week ended on ' + d : ', within your first week: by ' + d;
   }
   function BoldJoinLabel(g){ return { exec: 'BOLD-exec', staff: 'BOLD-staff', internal: 'BOLD-internal', associate: 'BOLD-associate' }[g] || 'PAN-BOLD'; }
 

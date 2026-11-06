@@ -35,4 +35,10 @@ test('the pages ask for the same levels the server allows', () => {
     vm.runInNewContext(body, ctx);
     assert.deepStrictEqual([...ctx.BOLD.visibleLevels()], visibleLevels(full ? 'exec' : group), group + (full ? ' (PI)' : ''));
   }
+  // Events open to Everyone (the table headed Page | Edit, 2026-11-04): every event, to everyone signed in.
+  for (const group of ['out', 'pan', 'associate']) {
+    const ctx = { BOLD: {}, access: group === 'out' ? null : { e: 'x@y.z', group, fullWrite: false, pages: { events: { view: 'everyone', edit: 'internal' } } } };
+    vm.runInNewContext(body, ctx);
+    assert.deepStrictEqual([...ctx.BOLD.visibleLevels()], visibleLevels(group === 'out' ? 'out' : 'exec'), group + ' (open)');
+  }
 });

@@ -1,0 +1,12 @@
+/* Onboarding (onboarding.html, pages/onboarding.js): a newcomer's first steps and the tour. */
+.hero{max-width:var(--content-max); margin:0 auto; padding:64px var(--gutter) 10px;}
+.hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
+.hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
+main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px;}
+.ob-box{padding:16px 20px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);}
+.ob-head{display:flex; align-items:baseline; gap:12px;}
+.ob-head h2{margin:0; font-family:var(--sans); font-size:18px; color:var(--ink);}
+.ob-count{margin-left:auto; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.ob-note{margin:4px 0 8px; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+.back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
+.back-link:hover{color:var(--link);}

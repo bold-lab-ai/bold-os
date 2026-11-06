@@ -44,7 +44,6 @@
   function proposeOff(p){
     if (!me) return 'Sign in to suggest a change';
     if (!BOLD.can(AREA, 'propose')) return BOLD.cannotReason(AREA, 'propose');
-    if (p && p.id === 'access' && COLLECTION === 'handbook' && !fullWrite) return 'Only PIs and admins change who can see what';
     return '';
   }
 
@@ -123,8 +122,12 @@
   // ---------- tabs (one per section) ----------
 
   var tab = null;
+  // Parts this page leaves out of view (data-hide-parts, ids: Get started's Checklist on the
+  // onboarding page, 2026-11-03). Only what's shown: proposals still carry every part.
+  var hiddenParts = (body.getAttribute('data-hide-parts') || '').split(',').map(function(v){ return v.trim(); }).filter(Boolean);
+  function visible(p){ return hiddenParts.indexOf(p.id) === -1; }
   function sections(){
-    return parts().map(function(p){ return p.section || ''; }).filter(function(v, i, a){ return a.indexOf(v) === i; });
+    return parts().filter(visible).map(function(p){ return p.section || ''; }).filter(function(v, i, a){ return a.indexOf(v) === i; });
   }
   function currentTab(){
     if (!hasSections()) return null;
@@ -133,7 +136,7 @@
   // The parts on show: the current tab's, or all of them.
   function shown(){
     var t = currentTab();
-    return t === null ? parts() : parts().filter(function(p){ return (p.section || '') === t; });
+    return (t === null ? parts() : parts().filter(function(p){ return (p.section || '') === t; })).filter(visible);
   }
   // A comment a #hash names (#c=<id>, as Slack sends), or ''.
   function commentFor(hash){ var m = /^#?c=(.+)$/.exec(String(hash || '')); return m ? decodeURIComponent(m[1]) : ''; }
@@ -517,7 +520,7 @@
         (q.kind === 'edit' && st === 'behind' ? (function(lp){ return BoldHistory.changesHtml(sideText('edit', partSide(lp)), sideText('edit', Object.assign(partSide(lp), BoldMerge.mergeEdit(lp, q.before, q.after || {}).fields)), {}); })(livePart(q.partId)) :
         BoldHistory.changesHtml(q.kind === 'restore' ? flatten(x) : sideText(q.kind, q.before), sideText(q.kind, q.after), {}))) +
       '<div class="event-controls">' +
-        '<button type="button" class="btn-text gd-view">View as proposed</button>' +
+        (canCommit(q) && !q.version ? '<button type="button" class="btn-text gd-commit">Add to it</button>' : '') +
         '<button type="button" class="btn-text gd-accept"' + off + ((q.kind !== 'add' && q.kind !== 'about' && q.kind !== 'restore' && q.kind !== 'batch' && q.kind !== 'access' && !cur) || (q.kind === 'add' && cur) ? ' disabled' : '') + '>Accept</button>' +
         '<button type="button" class="btn-text danger gd-decline"' + off + '>Decline</button>' +
         // A restore, or a row of Who can see what, stays as it is: withdraw it and propose again instead.
@@ -530,16 +533,16 @@
   // the proposed changes open, and the open comment threads (on the Comments page).
   function statusHtml(){
     var n = proposals.length, c = comments ? comments.openCount() : 0, bits = [];
-    if (n) bits.push('<a href="#proposals">' + n + ' proposed change' + (n === 1 ? '' : 's') + '</a>');
+    if (n) bits.push('<button type="button" class="btn-text gd-proposals-open" title="Choose one on the branch icon, top right">' + n + ' proposed change' + (n === 1 ? '' : 's') + '</button>');
     if (c) bits.push('<a href="comments.html?on=' + encodeURIComponent(COLLECTION + '/' + slug) + '">' + c + ' open comment' + (c === 1 ? '' : 's') + '</a>');
     var inner = (readPoint ? readPoint.inner(x) : '') + (bits.length ? '<p class="rp-line rp-activity">' + bits.join(' · ') + '</p>' : '');
     return inner ? '<aside class="read-point" aria-label="What’s new">' + inner + '</aside>' : '';
   }
 
-  function proposalsHtml(){
-    if (!proposals.length) return '';
-    return '<section class="block guide-proposals" id="proposals"><div class="block-head"><h2>Proposed changes</h2></div>' +
-      '<ul class="gd-proposal-list">' + proposals.map(proposalHtml).join('') + '</ul></section>';
+  // The proposal on show (its branch, from the masthead's branch icon): what it changes, and
+  // Accept, Decline, Edit, Withdraw and its comments, above the page as it would make it.
+  function onShowHtml(q){
+    return '<section class="block guide-proposals gd-on-show" id="proposals" aria-label="The proposed change"><ul class="gd-proposal-list">' + proposalHtml(q) + '</ul></section>';
   }
 
   // Applied by the server, which checks who decides it.
@@ -559,7 +562,7 @@
   function add(change){
     return ref.collection('proposals').add(Object.assign({}, change, {
       by: { email: me.email, name: me.name }, at: Date.now(), status: 'open',
-    })).then(function(){ notice = 'Thanks — your change is under “Proposed changes” until ' + (fullWrite ? 'another' : 'a') + ' PI or admin reviews it.'; });
+    })).then(function(){ notice = 'Thanks — your change is on the branch icon, top right, until ' + (fullWrite ? 'another' : 'a') + ' PI or admin reviews it.'; });
   }
 
   // ---------- page ----------
@@ -587,7 +590,10 @@
       return;
     }
     document.title = x.title + ' | BOLD Lab';
-    if (viewing && !viewed()) viewing = null; // decided or withdrawn meanwhile
+    if (viewing && !viewed()) { // decided or withdrawn meanwhile: back to main
+      viewing = null;
+      if (branchHere()) { if (BOLD.branch().pages) { BOLD.setBranch(null); return; } BOLD.setBranch(null, { quiet: true }); }
+    }
     if (viewing) { renderViewing(); return; }
     var off = fullWrite ? '' : ' disabled title="' + G.NOT_PI + '"';
     var hero = '<div class="hero">' + BACK + EYEBROW_HTML;
@@ -607,7 +613,7 @@
       (adding && form.newTab ? '<section class="guide-part">' + partFormHtml(null) + '</section>' : foldAllHtml() + shown().map(partHtml).join('') +
       (adding ? '<section class="guide-part">' + partFormHtml(null) + '</section>' :
         '<button type="button" class="event-add gd-add"' + (proposeOff() ? ' disabled title="' + esc(proposeOff()) + '"' : '') + '>' + '+ Suggest a new part' + '</button>')) +
-      proposalsHtml() + (readPoint ? readPoint.readersHtml() : '') + '</div>' + contentsHtml() + '</div></main>';
+      (readPoint ? readPoint.readersHtml() : '') + '</div>' + contentsHtml() + '</div></main>';
     keepSlot();
     var open = body.querySelector('.guide-form');
     if (open) bindForm(open);
@@ -634,7 +640,7 @@
       '<strong>Your draft:</strong> ' + n + ', not proposed yet. It shows here only for you.';
     return '<aside class="gd-draft" aria-label="Your draft">' +
       '<p class="gd-draft-head"><span>' + head + '</span>' +
-        '<span class="gd-draft-actions">' + (draft.length ? '<button type="button" class="btn-text gd-draft-toggle">' + (draftOpen ? 'Hide' : 'Review') + '</button>' : '') +
+        '<span class="gd-draft-actions">' + (commitTo && !draft.length ? '<button type="button" class="btn-text gd-commit-done">Back to the proposal</button>' : '') + (draft.length ? '<button type="button" class="btn-text gd-draft-toggle">' + (draftOpen ? 'Hide' : 'Review') + '</button>' : '') +
         (draft.length || !commitTo ? '<button type="button" class="btn-text danger gd-draft-discard">' + (draftEditing ? 'Cancel editing' : commitTo ? 'Discard them' : 'Discard') + '</button>' : '') + '</span></p>' +
       (draftOpen && draft.length ? '<ol class="gd-draft-list">' + draft.map(function(c, i){
         return '<li><span>' + changeLabel(c) + (c.note ? ' · ' + esc(c.note) : '') + '</span>' +
@@ -645,7 +651,7 @@
         (draftError ? '<p class="ev-error">' + esc(draftError) + '</p>' : '') +
         '<div class="event-form-actions"><button type="button" class="ev-save gd-draft-propose"' + (draftBusy ? ' disabled' : '') + '>' +
           (commitTo ? 'Add to the proposal' : draftEditing ? 'Update proposed change' : 'Propose ' + (draft.length === 1 ? 'it' : 'all ' + draft.length)) + '</button></div></div>' :
-        commitTo ? '' : '<p class="gd-draft-empty">No changes left. To drop the proposal, withdraw it under “Proposed changes”.</p>') +
+        commitTo ? '' : '<p class="gd-draft-empty">No changes left. To drop the proposal, withdraw it from the branch icon, top right.</p>') +
       '</aside>';
   }
   // A change as a proposal stores it (a draft's changes keep their own notes).
@@ -863,7 +869,7 @@
         '<button type="button" class="btn-text gd-view-exit">Back to the current page</button></div>' : '') +
       '<div class="hero">' + BACK + EYEBROW_HTML + '<h1' + (q.kind === 'about' || (q.kind === 'batch' && (q.changes || []).some(function(c){ return c.kind === 'about'; })) ? ' class="gd-proposed"' : '') + '>' + esc(d.title) + '</h1>' +
         (d.description ? '<p class="hero-note">' + esc(d.description) + '</p>' : '') + '</div>' +
-      '<main>' + tabsHtml() + '<div class="guide-layout"><div class="guide-main">' + shown().map(partHtml).join('') + '</div>' + contentsHtml() + '</div></main>';
+      '<main>' + (q.version ? '' : (notice ? '<p class="gd-notice">' + esc(notice) + '</p>' : '') + onShowHtml(q)) + tabsHtml() + '<div class="guide-layout"><div class="guide-main">' + shown().map(partHtml).join('') + '</div>' + contentsHtml() + '</div></main>';
     watchContents();
   }
 
@@ -887,7 +893,6 @@
   function view(id){
     var bq = id !== VERSION && proposals.filter(function(q){ return q.id === id; })[0];
     if (bq && branchHere() !== id) BOLD.setBranch({ ref: branchPrefix() + id, title: doc().title + ': ' + whatText(bq), url: location.pathname.split('/').pop() + location.search }, { quiet: true });
-    if (canCommit(bq)) { enterCommit(id); return; }
     if (!viewing) tabBefore = tab;
     viewing = id; form = null; notice = '';
     var q = viewed(), ids = changedIds(q), target = parts().filter(function(p){ return ids.indexOf(p.id) !== -1; })[0];
@@ -1024,6 +1029,8 @@
     var t = e.target.closest('button');
     if (!t || t.disabled || !x) return;
     if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
+    if (t.classList.contains('gd-proposals-open')) { BOLD.openBranches(); return; }
+    if (t.classList.contains('gd-commit-done')) { var cid0 = commitTo; commitTo = null; loadDraft(); draftOpen = !!draft.length; view(cid0); return; }
     if (t.classList.contains('gd-fold') && !me) {
       var ofid = t.getAttribute('data-id');
       keepInPlace(ofid, function(){ folded[ofid] = !folded[ofid]; saveFolded(); render(); });
@@ -1085,7 +1092,7 @@
       var li = t.closest('.gd-proposal');
       var q = li && proposals.filter(function(p){ return p.id === li.getAttribute('data-id'); })[0];
       if (!q) return;
-      if (t.classList.contains('gd-view')) { view(q.id); return; }
+      if (t.classList.contains('gd-commit')) { enterCommit(q.id); return; }
       if (t.classList.contains('gd-revise')) { editProposal(q); return; }
       if (t.classList.contains('gd-rebase')) { notice = ''; startRebase(q); return; }
       if (t.classList.contains('gd-r-go')) { continueRebase(); return; }
@@ -1164,11 +1171,15 @@
       var at = comments && comments.show(cid), p = at && !at.proposalId ? part(at.partId) : null;
       if (p && folded[p.id]) { folded[p.id] = false; saveFolded(); }
       render();
+      if (at && at.proposalId && viewing !== at.proposalId && proposals.some(function(q){ return q.id === at.proposalId; })) view(at.proposalId);
       var el = body.querySelector('.cm-comment[data-cid="' + CSS.escape(cid) + '"]') || (p && document.getElementById(anchor(p))) || (at && at.proposalId && document.getElementById('proposals'));
       if (el) el.scrollIntoView({ block: 'center' });
       return;
     }
     var id = decodeURIComponent(String(hash).replace(/^#/, ''));
+    if (id === 'proposals') { BOLD.openBranches(); return; }
+    var pm = /^proposal-(.+)$/.exec(id);
+    if (pm) { if (proposals.some(function(q){ return q.id === pm[1]; })) view(pm[1]); else BOLD.openBranches(); return; }
     var fp = parts().filter(function(q){ return anchor(q) === id; })[0];
     if (fp && folded[fp.id]) { folded[fp.id] = false; saveFolded(); render(); }
     var target = document.getElementById(id);

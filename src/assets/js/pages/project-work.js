@@ -36,6 +36,7 @@ var ProjectWork = (function(){
   var who = '';            // the person filter: an email or a GitHub login ('' all)
   var type = '';           // the type filter: code, content, request ('' all)
   var query = '';          // the search box's text
+  var label = '';             // the label filter: a label's name ('' all)
   var milestone = '';         // the milestone filter: a milestone's id, '-' for none ('' all)
   var plan = { editing: null, form: null, adding: null, picked: {}, find: '', msg: '' }; // the Milestones view: a milestone being edited ('new' a new one), or having cards added
   var TYPES = [['code', 'Code'], ['content', 'Content'], ['request', 'Request'], ['other', 'Other']];
@@ -70,6 +71,10 @@ var ProjectWork = (function(){
   // A card moved to Done tells whoever raised it on Slack (onWorkCardDone), unless it's you:
   // asked first, with the message a box to untick (then doneQuiet: true on the card).
   // → Promise of the fields to save with the move ({} or { doneQuiet }), or null to stay put.
+  // Hand-made cards never wait for review (2026-11-04): nobody is asked to review them, so moving one
+  // there puts it in Done (asked first, as Done is). Waiting for review is for pull requests,
+  // proposals and requests, which have someone to review them.
+  function handColumn(column){ return column === 'review' ? 'done' : column; }
   function confirmDone(c, column){
     var by = c.by || {}, mine = String(by.email || '').toLowerCase() === me();
     if (column !== 'done' || c.column === 'done' || !by.email || mine) return Promise.resolve(column === 'done' && c.column !== 'done' ? { doneQuiet: true } : {});
@@ -92,6 +97,16 @@ var ProjectWork = (function(){
   // The board's milestones, and how they read: "1 Nov – 14 Nov".
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function milestones(){ return ((ctx.ws() && ctx.ws().work) || {}).milestones || []; }
+  // Labels: a card's names (`labels`, several, e.g. Good first issue), unlike its one milestone. The
+  // board's are those its cards have, for the filter and to pick from.
+  var MAX_LABELS = 10, MAX_LABEL = 40;
+  function labelsOf(c){ return ((c && c.labels) || []).filter(function(l){ return typeof l === 'string' && l.trim(); }); }
+  function boardLabels(){
+    var seen = {}, out = [];
+    cards.forEach(function(c){ labelsOf(c).forEach(function(l){ var k = l.toLowerCase(); if (!seen[k]) { seen[k] = 1; out.push(l); } }); });
+    return out.sort(function(a, b){ return a.localeCompare(b); });
+  }
+  function labelChips(list){ return (list || []).map(function(l){ return '<span class="wk-label">' + esc(l) + '</span>'; }).join(''); }
   function milestoneOf(id){ return id ? milestones().filter(function(s){ return s.id === id; })[0] || null : null; }
   function today(){ var d = new Date(); return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function dayLabel(v){ var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v || ''); return m ? Number(m[3]) + ' ' + MONTHS[Number(m[2]) - 1] : ''; }
@@ -198,7 +213,7 @@ var ProjectWork = (function(){
       var t = c.kind || (linked.some(function(x){ return x.type === 'code'; }) || (c.links || []).some(function(l){ return l.type === 'pr' || l.type === 'issue'; }) ? 'code'
         : (c.links || []).some(function(l){ return l.type === 'proposal'; }) || linked.some(function(x){ return x.type === 'content'; }) ? 'content' : 'other');
       var waiting = on.length ? '' : linked.map(function(x){ return x.waiting; }).filter(Boolean)[0] || '';
-      return { key: 'card:' + c.id, card: c, source: 'card', num: (remote.cardNumbers || {})[c.id], type: t, title: c.title, notes: c.notes, column: column, since: since, milestone: milestoneOf(c.milestone) ? c.milestone : '',
+      return { key: 'card:' + c.id, card: c, source: 'card', num: (remote.cardNumbers || {})[c.id], type: t, title: c.title, notes: c.notes, column: column, since: since, milestone: milestoneOf(c.milestone) ? c.milestone : '', labels: labelsOf(c),
         by: c.by ? { name: c.by.name, email: String(c.by.email || '').toLowerCase() } : null, on: dedupe(on), waiting: waiting, linked: linked, auto: column !== c.column };
     });
     remote.items.forEach(function(x){
@@ -272,6 +287,7 @@ var ProjectWork = (function(){
         (late ? '<span class="wk-late">' + n + ' days</span>' : '') +
         (x.milestone && milestone !== x.milestone ? '<span class="wk-milestone wk-mc-' + (milestones().map(function(s){ return s.id; }).indexOf(x.milestone) % 3) + '">' + esc(milestoneOf(x.milestone).name) + '</span>' : '') + '</div>' +
       '<div class="wk-title">' + title + '</div>' +
+      ((x.labels || []).length ? '<div class="wk-labels">' + labelChips(x.labels) + '</div>' : '') +
       whoHtml(x);
     if (x.card) {
       var ok = canChange(x.card);
@@ -290,7 +306,7 @@ var ProjectWork = (function(){
     return '<form class="wk-editor" novalidate>' +
       '<label>Title<input type="text" class="wk-f-title" maxlength="200" value="' + esc(c ? c.title : '') + '" required></label>' +
       '<label>Description<textarea class="wk-f-notes md-field" maxlength="' + MAX_NOTES + '" rows="3">' + esc(c ? c.notes || '' : '') + '</textarea></label>' +
-      (c ? '<label>Column<select class="wk-f-col">' + COLUMNS.map(function(k){
+      (c ? '<label>Column<select class="wk-f-col">' + COLUMNS.filter(function(k){ return k[0] !== 'review' || c.column === 'review'; }).map(function(k){
         return '<option value="' + k[0] + '"' + (k[0] === c.column ? ' selected' : '') + '>' + k[1] + '</option>'; }).join('') + '</select></label>' : '') +
       '<label>Type<select class="wk-f-kind"><option value="">From its links</option>' + TYPES.map(function(y){
         return '<option value="' + y[0] + '"' + (c && c.kind === y[0] ? ' selected' : '') + '>' + y[1] + '</option>'; }).join('') + '</select></label>' +
@@ -306,7 +322,7 @@ var ProjectWork = (function(){
         '<select class="wk-f-pick" aria-label="Link a pull request, issue or proposal"><option value="">Link a pull request, issue or proposed change…</option>' +
           options.filter(function(x){ return x.source !== 'request'; }).map(function(x){ return '<option value="' + esc(x.ref) + '">' + esc((refLabel(x) + ': ' + x.title).slice(0, 140)) + '</option>'; }).join('') +
         '</select>' +
-        '<div class="wk-f-urlrow"><input type="url" class="wk-f-url" placeholder="Or paste a link" aria-label="A link"><button class="btn-text wk-f-add" type="button">Add</button></div>' +
+        '<div class="wk-f-urlrow"><input type="url" class="wk-f-url" placeholder="Or paste a link" aria-label="A link"><button class="btn-text wk-f-add" type="button">Add</button></div>' + BOLD.linkNote() +
       '</div>' +
       '<div class="field-error wk-f-error" hidden></div>' +
       '<div class="stage-fields-actions"><button class="btn" type="submit">' + (c ? 'Save' : 'Add') + '</button>' +
@@ -543,12 +559,13 @@ var ProjectWork = (function(){
     var words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
     var matches = function(x){
       if (!words.length) return true;
-      var hay = [x.title, x.notes || (x.card && x.card.notes) || '', refLabel(x), x.num ? String(x.num) : '', x.by && (x.by.name || x.by.login)].concat((x.on || []).map(function(p){ return p.name || p.login; })).join(' ').toLowerCase();
+      var hay = [x.title, x.notes || (x.card && x.card.notes) || '', refLabel(x), x.num ? String(x.num) : '', x.by && (x.by.name || x.by.login)].concat((x.on || []).map(function(p){ return p.name || p.login; })).concat(x.labels || []).join(' ').toLowerCase();
       return words.every(function(w){ return hay.indexOf(w) >= 0; });
     };
     if (milestone && milestone !== '-' && !milestoneOf(milestone)) milestone = '';
     var inMilestone = function(x){ return !milestone || (milestone === '-' ? !x.milestone : x.milestone === milestone); };
-    var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type) && inMilestone(x) && matches(x); });
+    var hasLabel = function(x){ return !label || (x.labels || []).some(function(l){ return l.toLowerCase() === label.toLowerCase(); }); };
+    var shown = all.filter(function(x){ return (!who || involves(x, who)) && (!type || x.type === type) && inMilestone(x) && hasLabel(x) && matches(x); });
     var personOptions = [['', 'Everyone']].concat(me() ? [[me(), 'Mine']] : []).concat(Object.keys(people).filter(function(k){ return k !== me(); })
       .sort(function(a, b){ return (people[b].doing + people[b].review) - (people[a].doing + people[a].review) || String(people[a].p.name).localeCompare(String(people[b].p.name)); })
       .map(function(k){
@@ -561,12 +578,15 @@ var ProjectWork = (function(){
       .map(function(y){ return [y[0], y[1] + ' (' + all.filter(function(x){ return x.type === y[0]; }).length + ')']; }));
     var milestoneOptions = [['', 'All milestones']].concat(milestones().map(function(s){
       return [s.id, s.name + (milestoneNow(s) ? ' (now)' : '')]; })).concat([['-', 'No milestone']]);
-    var filtering = words.length || who || type || milestone;
+    var labelOptions = [['', 'All labels']].concat(boardLabels().map(function(l){
+      return [l, l + ' (' + all.filter(function(x){ return (x.labels || []).indexOf(l) >= 0; }).length + ')']; }));
+    var filtering = words.length || who || type || milestone || label;
     // The shared board's search bar (BoldBoard.searchHtml), as on the Internal Review Board.
     var head = BoldBoard.searchHtml({ query: query, placeholder: 'Search by title, description, #number or person\u2026', label: 'Search the board',
       count: filtering ? shown.length + ' of ' + all.length : all.length + ' item' + (all.length === 1 ? '' : 's'),
       filters: [{ key: 'type', label: 'Type', value: type, options: typeOptions }, { key: 'who', label: 'Person', value: who, options: personOptions }]
-        .concat(milestones().length ? [{ key: 'milestone', label: 'Milestone', value: milestone, options: milestoneOptions }] : []),
+        .concat(milestones().length ? [{ key: 'milestone', label: 'Milestone', value: milestone, options: milestoneOptions }] : [])
+        .concat(boardLabels().length ? [{ key: 'label', label: 'Label', value: label, options: labelOptions }] : []),
       extra: '<span class="wk-tools"><span class="detail-muted">' + (remote.loading ? 'Updating\u2026' : remote.at ? 'Updated ' + new Date(remote.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '') + '</span>' +
         '<button class="btn-text" type="button" data-wk="refresh"' + (remote.loading ? ' disabled' : '') + '>Refresh</button>' +
         '<a class="btn-text wk-open" href="' + esc(hrefOf({ milestones: true })) + '">Milestones</a>' +
@@ -578,7 +598,7 @@ var ProjectWork = (function(){
       var all = shown.filter(function(x){ return x.column === c[0]; }).sort(function(a, b){ return (b.since || 0) - (a.since || 0); });
       // 20 at a time (BoldBoard.paged); Load more shows the next 20.
       var page = BoldBoard.paged(scopeOf(c[0]), c[0], all), list = page.items;
-      var add = c[0] !== 'done' ? '<button class="btn-text wk-add" type="button" data-col="' + c[0] + '"' +
+      var add = c[0] !== 'done' && c[0] !== 'review' ? '<button class="btn-text wk-add" type="button" data-col="' + c[0] + '"' +
         (canAdd() ? '' : ' disabled title="' + esc(BOLD.cannotReason('projects', 'edit')) + '"') + '>+ Add a card</button>' : '';
       var newSlot = editing === 'new:' + c[0] ? '<div class="wk-new-slot"></div>' : '';
       return { id: c[0], label: c[0] === 'done' && archive ? 'Done, archived' : c[1], count: all.length, more: page.more,
@@ -627,7 +647,7 @@ var ProjectWork = (function(){
     });
     BoldBoard.wireSearch(root, {
       query: function(v){ query = v; draw(); },
-      filter: function(key, v){ if (key === 'type') type = v; else if (key === 'who') who = v; else if (key === 'milestone') milestone = v; draw(); }
+      filter: function(key, v){ if (key === 'type') type = v; else if (key === 'who') who = v; else if (key === 'milestone') milestone = v; else if (key === 'label') label = v; draw(); }
     });
     Array.prototype.forEach.call(root.querySelectorAll('.wk-add'), function(b){
       b.addEventListener('click', function(){ if (editing) return; editing = 'new:' + b.getAttribute('data-col'); draftLinks = []; draw(); focusTitle(); });
@@ -726,6 +746,7 @@ var ProjectWork = (function(){
       busy = true;
       var job;
       var col = form.querySelector('.wk-f-col') ? form.querySelector('.wk-f-col').value : c && c.column;
+      if (c && col !== c.column) col = handColumn(col);
       // Images added since the editor opened are kept.
       var now2 = c && (cards.filter(function(k){ return k.id === c.id; })[0] || c);
       if (now2 && now2.images) data.images = now2.images;
@@ -734,7 +755,7 @@ var ProjectWork = (function(){
         return cardsRef().doc(c.id).set(Object.assign({}, data, done, { column: col, by: c.by, at: c.at, movedAt: col !== c.column ? now : c.movedAt || c.at }));
       });
       else {
-        var column = form.querySelector('.wk-f-column').value;
+        var column = handColumn(form.querySelector('.wk-f-column').value);
         job = confirmNewCard(data.title).then(function(go){
           if (!go) throw { cancelled: true };
           return cardsRef().add(Object.assign(data, { column: column, announce: go.announce, by: { email: m.email, name: m.displayName || m.email }, at: now, movedAt: now }));
@@ -804,6 +825,15 @@ var ProjectWork = (function(){
           return '<option value="' + esc(s.id) + '"' + (s.id === x.milestone ? ' selected' : '') + '>' + esc(s.name + (milestoneDates(s) ? ' (' + milestoneDates(s) + ')' : '')) + '</option>';
         }).join('') + '</select>'
       : '<span class="detail-muted">None yet: <a class="wk-open" href="' + esc(hrefOf({ milestones: true })) + '">add one in Milestones</a></span>');
+    // Its labels: each with × to take it off, and a box to add one (the board's offered), saved at once.
+    if (c) {
+      var mine = labelsOf(c);
+      rows += row('Labels', '<span class="wk-labels">' + mine.map(function(l){
+          return '<span class="wk-label">' + esc(l) + (ok ? '<button type="button" class="wk-label-x" data-label="' + esc(l) + '" aria-label="Remove ' + esc(l) + '">×</button>' : '') + '</span>';
+        }).join('') + '</span>' +
+        (mine.length < MAX_LABELS ? '<form class="wk-label-add"><input type="text" class="wk-label-in" maxlength="' + MAX_LABEL + '" list="wkLabels" placeholder="Add a label"' + off + '>' +
+          '<datalist id="wkLabels">' + boardLabels().filter(function(l){ return mine.indexOf(l) < 0; }).map(function(l){ return '<option value="' + esc(l) + '">'; }).join('') + '</datalist></form>' : ''));
+    }
     if (x.by && (x.by.name || x.by.login || x.by.email)) rows += row('From', name(x.by));
     var roles = [], byRole = {};
     (x.on || []).forEach(function(p){ var r = p.role || x.role || 'On it'; if (!byRole[r]) { byRole[r] = []; roles.push(r); } byRole[r].push(p); });
@@ -878,6 +908,22 @@ var ProjectWork = (function(){
     wireOpen();
     var edit = el('.wk-edit');
     if (edit) edit.addEventListener('click', function(){ if (editing) return; editing = c.id; draftLinks = (c.links || []).slice(); draw(); });
+    var la = el('.wk-label-add');
+    if (la) la.addEventListener('submit', function(e){
+      e.preventDefault();
+      var v = la.querySelector('.wk-label-in').value.trim().slice(0, MAX_LABEL), have = labelsOf(c);
+      // The board's spelling of a label it has already.
+      var same = boardLabels().filter(function(l){ return l.toLowerCase() === v.toLowerCase(); })[0];
+      if (same) v = same;
+      if (!v || have.some(function(l){ return l.toLowerCase() === v.toLowerCase(); })) return;
+      cardChange(c, { labels: have.concat([v]).slice(0, MAX_LABELS) }).catch(function(err){ console.error('[BOLD Lab] adding a label failed', err); msg = 'Couldn’t save — try again.'; draw(); });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.wk-label-x'), function(b){
+      b.addEventListener('click', function(){
+        var l = b.getAttribute('data-label');
+        cardChange(c, { labels: labelsOf(c).filter(function(x){ return x !== l; }) }).catch(function(err){ console.error('[BOLD Lab] removing a label failed', err); msg = 'Couldn’t save — try again.'; draw(); });
+      });
+    });
     var pm = el('.wk-p-milestone');
     if (pm) pm.addEventListener('change', function(){
       cardChange(c, { milestone: pm.value }).catch(function(err){ console.error('[BOLD Lab] setting a card’s milestone failed', err); msg = 'Couldn’t save — try again.'; draw(); });
@@ -973,6 +1019,7 @@ var ProjectWork = (function(){
   }
 
   function moveCard(c, column){
+    column = handColumn(column);
     if (column === c.column) return;
     // Shown in its new column at once; the live listener confirms it (or puts it back).
     var was = c.column;

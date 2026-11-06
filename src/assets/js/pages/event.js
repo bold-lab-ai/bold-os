@@ -13,7 +13,7 @@
   var body = document.getElementById('eventBody');
   if (!body || !BOLD.getAuth()) return;
   var db = null;
-  try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
+  try { db = (BOLD.eventDb ? BOLD.eventDb() : firebase.firestore(BOLD.getApp())); } catch (e){ return; }
   var slug = body.getAttribute('data-event') || new URLSearchParams(location.search).get('event') || '';
   var ref = slug ? db.collection('events').doc(slug) : null;
   var rest = document.querySelector('main');
@@ -161,10 +161,13 @@
     if (unsubscribe) { unsubscribe(); unsubscribe = null; }
     me = user ? { email: user.email || '' } : null;
     fullWrite = false;
-    if (!user) { if (schedule) schedule.update(x, false, null); return; }
+    // Signed out: a public event only, read-only (public-db.js); anything else is "not found".
+    if (!user && !BOLD.eventDbPublic) { if (schedule) schedule.update(x, false, null); return; }
     if (!ref) { loaded = true; render(); return; }
-    E.access(function(ok){ fullWrite = ok; render(); drawSchedule(); });
-    BOLD.onAccess(function(){ if (!editing) render(); });
+    if (user) {
+      E.access(function(ok){ fullWrite = ok; render(); drawSchedule(); });
+      BOLD.onAccess(function(){ if (!editing) render(); });
+    }
     if (links) links.load(user);
     unsubscribe = ref.onSnapshot(function(doc){
       x = doc.exists ? doc.data() : null;

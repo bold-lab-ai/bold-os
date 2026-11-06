@@ -173,10 +173,11 @@
     var box = el('githubBody');
     var off = ghBusy ? ' disabled' : '';
     var err = ghError ? '<span class="gh-error">' + escapeHtml(ghError) + '</span>' : '';
-    // BOLD-internal and above join the org; everyone else gets their projects' repositories (linkGithub).
-    var inOrg = ['internal', 'staff', 'exec'].indexOf(BOLD.myGroup()) >= 0;
+    // Everyone joins the org and reads every repository; BOLD-internal and above write to all of them,
+    // everyone else to their projects' (linkGithub, #214).
+    var writesAll = ['internal', 'staff', 'exec'].indexOf(BOLD.myGroup()) >= 0;
     if (!link) {
-      box.innerHTML = '<span class="gh-line">Not linked. Linking it ' + (inOrg ? 'invites you to the bold-lab-ai organisation' : 'gives you the repositories of the projects you’re on') + '.</span>' + err +
+      box.innerHTML = '<span class="gh-line">Not linked. Linking it invites you to bold-lab-ai: you read every repository, and write to ' + (writesAll ? 'all of them' : 'your projects\u2019') + '.</span>' + err +
         '<span class="gh-actions"><button type="button" class="btn-box is-primary gh-link"' + off + '>Link GitHub</button></span>';
       return;
     }
@@ -184,7 +185,7 @@
     var login = link.github || (p && ghLogin[p.uid]) || '';
     var status = link.status === 'active' ? 'Member of bold-lab-ai' :
       link.status === 'pending' ? 'Invited to bold-lab-ai: <a href="' + ORG + '/invitation" target="_blank" rel="noopener">accept the invitation</a>' :
-      link.status === 'outside' ? 'Linked: you get the repositories of the projects you’re on' :
+      link.status === 'outside' ? 'Linked: your projects\u2019 repositories; an invitation to bold-lab-ai is on its way' :
       link.status === 'unchecked' ? 'Linked, but couldn’t check bold-lab-ai' :
       'Not invited to bold-lab-ai: ' + escapeHtml(link.error || 'GitHub refused.');
     box.innerHTML = accountHtml({
@@ -241,9 +242,30 @@
       return;
     }
     var p = providerOf(me(), 'google.com');
-    box.innerHTML = accountHtml({ name: (p && p.displayName) || link.google, handle: '', note: escapeHtml(link.google) + ' \u00b7 your projects\u2019 meeting invitations, slides and notes go here' }) + err +
+    var choices = link.choices || [], to = link.inviteTo || [link.google];
+    // Which of their addresses get them (#178): one at least, so the last ticked is greyed.
+    // With one address (BOLD.OS, Slack and Google all the same), it's ticked and greyed, saying why.
+    var only = choices.length < 2 ? 'Your only address: your BOLD.OS, Slack and Google accounts all use it' : '';
+    var pick = '<fieldset class="g-invite-to"><legend>Meeting invitations, slides and notes go to</legend>' + (choices.length ? choices : [link.google]).map(function(a){
+      var on = only || to.indexOf(a) >= 0, last = !only && on && to.length === 1;
+      var why = only || (last ? 'At least one address gets them' : '');
+      return '<label' + (why ? ' title="' + escapeHtml(why) + '"' : '') + '><input type="checkbox" class="g-to" value="' + escapeHtml(a) + '"' + (on ? ' checked' : '') + (gBusy || why ? ' disabled' : '') + '> ' + escapeHtml(a) + (a === link.google && !only ? ' (Google)' : '') + '</label>';
+    }).join('') + (only ? '<span class="g-why">' + escapeHtml(only) + '.</span>' : '') + '</fieldset>';
+    box.innerHTML = accountHtml({ name: (p && p.displayName) || link.google, handle: '', note: escapeHtml(link.google) }) + pick + err +
       '<span class="gh-actions"><button type="button" class="btn-box g-unlink"' + off + '>Unlink Google</button></span>';
   }
+  el('googleBody').addEventListener('change', function(e){
+    if (!e.target.classList.contains('g-to')) return;
+    var to = Array.prototype.slice.call(el('googleBody').querySelectorAll('.g-to:checked')).map(function(i){ return i.value; });
+    gBusy = true; gError = '';
+    el('googleBody').querySelectorAll('.g-to').forEach(function(i){ i.disabled = true; });
+    firebase.app().functions('europe-west2').httpsCallable('linkGoogle')({ inviteTo: to }).then(function(res){
+      gBusy = false; renderGoogle((res.data || {}).link || null);
+    }).catch(function(err){
+      console.error('[BOLD Lab] saving where invitations go failed', err);
+      gBusy = false; gError = 'Couldn\u2019t save that \u2014 try again.'; loadGoogle();
+    });
+  });
   // Tells linkGoogle what's linked now (it moves their projects over if that changed).
   function loadGoogle(){
     gBusy = true;

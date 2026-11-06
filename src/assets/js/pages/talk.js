@@ -25,7 +25,7 @@
   var TYPES = JSON.parse(el('talkTypes').textContent) || {};
 
   var db = null;
-  try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
+  try { db = (BOLD.eventDb ? BOLD.eventDb() : firebase.firestore(BOLD.getApp())); } catch (e){}
   function editTalk(data){ return firebase.app().functions('europe-west2').httpsCallable('editTalk')(data); }
 
   var NOT_EDITOR = 'Only the talk’s presenters, the session’s leads, PIs and admins can edit it';
@@ -281,7 +281,8 @@
   });
   BOLD.onUser(function(user){
     canEdit = false; canSetPresenters = false; editing = false;
-    if (!user || !db) { render(); return; }
+    // Signed out: a public event's talk, read-only (public-db.js).
+    if ((!user && !BOLD.eventDbPublic) || !db) { render(); return; }
     if (missing) { render(); return; }
     links.load(user);
     db.collection('collabWeekTalks').doc(slug).get().then(function(snap){
@@ -290,7 +291,7 @@
       if (saved) loadSession(saved.sessionSlug);
       if (!editing) render();
     }).catch(function(err){ console.error('[BOLD Events] loading the talk failed', err); });
-    editTalk({ slug: slug }).then(function(r){
+    if (user) editTalk({ slug: slug }).then(function(r){
       canEdit = !!r.data.canEdit;
       canSetPresenters = !!r.data.canSetPresenters;
       if (!editing) render();

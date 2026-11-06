@@ -9,6 +9,8 @@
 //   renderAbstractHtml) rather than Markdown (markdown.js).
 // - data-preview-class: the preview's classes, so it looks as the text will where it's
 //   shown (default md-desc; guide-text on a guide).
+// - data-md-breaks="true": a single line break kept as one, as where it's shown (Conversations,
+//   markdown.js render(text, { breaks: true })), so the preview matches.
 // A disabled or read-only box greys out its image button, with the reason.
 //
 // Images (#193): pasting or dropping an image or an SVG (a file, or an SVG's own text),
@@ -25,7 +27,7 @@ window.BoldMdField = (function(){
     abstract: 'Plain text, with $inline$ or $$block$$ LaTeX.'
   };
   var RENDER = {
-    markdown: function(t){ return window.BoldMarkdown ? BoldMarkdown.render(t) : '<p>' + esc(t) + '</p>'; },
+    markdown: function(t, ta){ return window.BoldMarkdown ? BoldMarkdown.render(t, { breaks: !!(ta && ta.getAttribute('data-md-breaks') === 'true') }) : '<p>' + esc(t) + '</p>'; },
     abstract: function(t){ return typeof renderAbstractHtml === 'function' ? renderAbstractHtml(t) : esc(t); }
   };
   function kind(ta){ return RENDER[ta.getAttribute('data-md')] ? ta.getAttribute('data-md') : 'markdown'; }
@@ -59,7 +61,7 @@ window.BoldMdField = (function(){
   }
   function draw(ta){
     var p = partsOf(ta);
-    if (p) p.preview.innerHTML = ta.value.trim() ? RENDER[kind(ta)](ta.value) : '<p class="mdf-empty">Nothing to preview.</p>';
+    if (p) p.preview.innerHTML = ta.value.trim() ? RENDER[kind(ta)](ta.value, ta) : '<p class="mdf-empty">Nothing to preview.</p>';
   }
   function mode(ta, previewing){
     var p = partsOf(ta);

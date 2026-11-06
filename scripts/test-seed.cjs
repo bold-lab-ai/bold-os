@@ -52,6 +52,25 @@ const LEVEL = (v, e) => ({ view: v, edit: e });
     if (role === 'PI') { delete m.invitedBy; m.contact = ''; }
     set('members/' + email, m);
   }
+  // Moves between groups, for Network's Lineage: Ines asked for BOLD-associate, then a PI moved her up on People.
+  const day = 86400000, t0 = Date.now() - 30 * day;
+  set('groupRequests/seed-ines', { email: 'internal@example.com', name: 'Ines Internal', from: 'pan', to: 'associate', note: '', terms: 'Stand-in terms.', acceptedAt: t0, status: 'approved', at: t0, decidedBy: 'pi@example.com', decidedByName: 'Pat PI', decidedAt: t0 + day });
+  set('groupMoves/seed-ines', { email: 'internal@example.com', from: 'associate', to: 'internal', by: 'pi@example.com', at: t0 + 10 * day, via: '' });
+  set('groupRequests/seed-ari', { email: 'associate@example.com', name: 'Ari Associate', from: 'pan', to: 'associate', note: '', terms: 'Stand-in terms.', acceptedAt: t0, status: 'approved', at: t0, decidedBy: 'pi@example.com', decidedByName: 'Pat PI', decidedAt: t0 + 2 * day });
+  // A test account (Linked accounts) of Pat's: on no graph (#227).
+  set('people/UTESTTA', { name: 'Pat PI (test)', email: 'pat.test@example.com', slackId: 'UTESTTA' });
+  set('members/pat.test@example.com', { name: 'Pat PI (test)', email: 'pat.test@example.com', test: true, testOf: 'pi@example.com', category: 'pan', categoryBy: 'pi@example.com', categoryAt: t0,
+    invitedBy: { email: 'pi@example.com', name: 'Pat PI', status: 'confirmed' } });
+  // A conversation that runs on, then branches (Conversations' blocks).
+  const msg = (id, parent, who, name, body, mins) => set('conversations/seed-chat/messages/' + id, { parent, body, name, createdBy: who, at: Date.now() - mins * 60000, source: 'bold', viaAgent: false, votes: {}, private: false });
+  set('conversations/seed-chat', { title: 'Should we pool compute for the Q1 runs?', body: 'Three projects need big runs in January. One booking, or each their own?', name: 'Ines Internal', createdBy: 'internal@example.com',
+    at: Date.now() - 300 * 60000, source: 'bold', viaAgent: false, votes: {}, replies: 6, private: false });
+  msg('m1', 'seed-chat', 'pi@example.com', 'Pat PI', 'One booking: it’s cheaper, and we can share the queue.', 290);
+  msg('m2', 'm1', 'associate@example.com', 'Ari Associate', 'Who decides the order of the runs, then?', 280);
+  msg('m3', 'm2', 'internal@example.com', 'Ines Internal', 'Deadlines first, then whoever booked earliest.', 270);
+  msg('m4', 'm3', 'pi@example.com', 'Pat PI', 'Fine by me. And for runs with no deadline?', 260);
+  msg('m5', 'm4', 'associate@example.com', 'Ari Associate', 'Round robin, a day each.', 250);
+  msg('m6', 'm4', 'internal@example.com', 'Ines Internal', 'Or by how long they’ve waited.', 240);
   let parts = [{ id: 'who-is-bold', section: 'People', title: 'Who is BOLD', body: STAND_IN_WHO }];
   if (process.env.BOLDIQUETTE_PARTS) {
     const j = JSON.parse(fs.readFileSync(process.env.BOLDIQUETTE_PARTS, 'utf8'));

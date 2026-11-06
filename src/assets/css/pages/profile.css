@@ -32,14 +32,6 @@ section.block:first-of-type{margin-top:28px;}
 .fact{display:flex; gap:24px; padding:3px 0; border-bottom:1px solid var(--rule);}
 .fact dt{flex:0 0 150px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); padding-top:5px;}
 .fact dd{margin:0; font-size:16px; color:var(--ink); overflow-wrap:anywhere;}
-.proj-group{margin-top:34px;}
-.proj-group:first-child{margin-top:22px;}
-.proj-group h3{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--ink-soft); margin:0 0 2px;}
-.proj-count{margin-left:6px; font-weight:400; color:var(--muted);}
-.proj-list{list-style:none; margin:0; padding:0;}
-.proj-list li{padding:12px 0; border-bottom:1px solid var(--rule);}
-.proj-title{font-size:18px; font-weight:500;}
-.proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 /* Same badges as the board's card page (audit-board.css .detail .badge):
    outlined, small caps, colour by meaning. */
 .proj-badges{display:flex; flex-wrap:wrap; gap:6px 8px; margin-top:8px;}
@@ -53,7 +45,6 @@ section.block:first-of-type{margin-top:28px;}
 .badge-review-in_review, .badge-rebuttal-writing{color:var(--warn-text);}
 .badge-rebuttal-waiting, .badge-outcome-withdrawn{color:var(--neutral-text);}
 .proj-empty{margin:0; font-family:var(--sans); font-size:14px; color:var(--muted);}
-.proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
 .gh-line{display:block;}
 /* A linked account: its name and handle (linking to the profile there), and a note. */
 .acct-text{display:flex; flex-direction:column; min-width:0;}
@@ -186,3 +177,33 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .ta-form input{display:block; width:100%; box-sizing:border-box; margin-top:4px; font-family:var(--sans); font-size:14px; padding:7px 9px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 .ta-group{display:block; margin-top:6px; font-family:var(--sans); font-size:14px;}
 .ta-group select{margin-left:6px; font-family:var(--sans); font-size:14px;}
+
+/* Notifications (notifications.html): the Messages tab. Unread ones stand out; the filter and Mark all read above. */
+.nt-bar{display:flex; justify-content:space-between; align-items:center; gap:12px; margin:0 0 8px;}
+.nt-filter{display:flex; gap:10px;}
+.nt-src.is-on{color:var(--ink); font-weight:600; text-decoration:underline; text-underline-offset:3px;}
+/* Each one a row of the shared lists (bold.css .proj-list): read ones in the regular weight, unread
+   ones semi-bold with a dot before them. */
+.nt-item .nt-text{font-weight:400;}
+.nt-item.is-unread .nt-text{font-weight:600;}
+.nt-item.is-unread .nt-text::before{content:''; display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--accent); margin-right:8px; vertical-align:2px;}
+/* Desktop notifications, above the Inbox: on or off in this browser, and your other devices. */
+.nt-push{font-family:var(--sans); font-size:13px; margin:0 0 12px; padding:8px 10px; border:1px solid var(--line);}
+.nt-push-label{font-weight:600; margin-right:6px;}
+.nt-devices{list-style:none; margin:6px 0 0; padding:0;}
+/* Settings: what saving is doing, beside its button (Saving…, Saved at 10:52). */
+.st-saving{font-family:var(--sans); font-size:13px; color:var(--muted); align-self:center;}
+.st-saving.is-saved{color:var(--success-text, var(--ink-soft));}
+/* Google: which of their addresses get invitations and files (#178). */
+.g-invite-to{flex:1 0 100%; order:2; margin:4px 0 8px; padding:0; border:0; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+.g-invite-to legend{padding:0; margin-bottom:4px; color:var(--muted);}
+.g-invite-to .g-why{display:block; font-size:13px; color:var(--muted);}
+.g-invite-to label{display:flex; align-items:center; gap:8px; margin:2px 0; overflow-wrap:anywhere;}
+/* Settings › Slack: aligning the channels with BOLD.OS (settings.js alignHtml). */
+.st-align{margin-top:24px;}
+.st-align-list{list-style:none; margin:8px 0 12px; padding:0; max-height:420px; overflow-y:auto; border-top:1px solid var(--rule);}
+.st-align-list li{padding:6px 0; border-bottom:1px solid var(--rule); font-size:13.5px;}
+.st-align-list summary{cursor:pointer;}
+.st-align-msg{white-space:pre-wrap; margin:6px 0 2px; padding:8px 10px; background:var(--wash); font-size:12.5px;}
+.st-align-schedule{display:flex; flex-wrap:wrap; align-items:flex-end; gap:8px 12px; margin-top:8px;}
+.st-align-schedule label{margin:0;}

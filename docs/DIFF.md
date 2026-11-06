@@ -146,6 +146,32 @@ Every point where the site differs from BOLDiquette: the paper-submission toolin
 
 ---
 
+## 16. What each group asks, and when — PROPOSED (implementation is ahead of BOLDiquette)
+
+**BOLDiquette (Who is BOLD):** each group's **Requirements**, in words (PAN-BOLD: follow Collaboration Etiquette and Conflict of Interest; BOLD-associate: contribute to research, operations or funding; BOLD-internal: take an active part in running BOLD, present at the group meeting when it's your turn). No checks, no deadline.
+
+**Implementation** (agreed in the lab's Slack, 2026-11-03), what BOLD.OS checks:
+
+- **PAN-BOLD:** their details on their profile; the BOLDiquette marked read.
+- **BOLD-associate:** added to someone else's ongoing project by its owner. PAN-BOLD can't join or ask to join a project: they talk to the lead on Slack (Projects' **Talk to the lead**), who adds them.
+- **BOLD-internal:** a project of their own; every event series required for BOLD-internal joined (the Reading Group; Hamming Sessions invites them all). Attending the group meeting in person isn't checked: BOLD.OS can't measure it.
+- **When:** in their first week after joining the group, not before asking. A reminder on day 5; on day 7, if anything is left, the PIs and admins are told and decide.
+- **Who moves them:** PIs and admins only. When someone meets the next group's requirements (a required series hidden from them doesn't count), the PIs and admins are told on Slack; nobody is moved automatically.
+
+**Proposed BOLDiquette change:** write these as Who is BOLD's measurable Requirements, with the first week, once the BOLDiquette's own discussion of it is possible.
+
+---
+
+## 17. Everyone signed in sees everything; groups differ in what they can do — PROPOSED (implementation ready, waiting on the BOLDiquette)
+
+**BOLDiquette (Who can see what):** each page has a View and an Edit level; below a page's View, people don't see it (associates see project titles only, for example).
+
+**Implementation** (decided 2026-11-04), ready for the BOLDiquette's table headed **Page | Edit**: once it is, every page is open to everyone signed in, and each page's level says only who can act on it. Private whoever's group: letters, introductions, supervision requests, requests to join or change group (and the Network links that come from them, kept in `privateInteractions`). The Internal Review Board is open like the rest. Fields for outside links say that everyone signed in sees the link, and whoever added it decides who can open it. GitHub repositories, Slack channels and Drive files still follow projects and groups. Until the table changes, BOLD.OS keeps the View column as written.
+
+**Proposed BOLDiquette change:** the part becomes **Who can do what**, with the table headed Page | Edit.
+
+---
+
 ## Reconciled — no longer a difference
 
 - **arXiv affiliation.** Guide now uses "BOLD, {University of Oxford / Imperial College / UCL}", matching BOLDiquette exactly (was Oxford-only). *Fixed 2026-09-10.*

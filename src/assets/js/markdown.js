@@ -8,7 +8,8 @@
 // Phases: a heading ending " · 8w", " · 10d" or " · after" (weeks or days before a deadline,
 // or after it) is a phase; with two or more, a timeline of them, each linking to its heading,
 // comes before the first (the BOLDiquette's ML Conference Cycle).
-// BoldMarkdown.render(text) → HTML; BoldMarkdown.plain(text) → plain text, escaped,
+// BoldMarkdown.render(text, { breaks: true }) → HTML, a single line break kept as one (as in Slack:
+// Conversations); without it a paragraph's lines join, as in Markdown. BoldMarkdown.plain(text) → plain text, escaped,
 // with its tags and web addresses as links (comments).
 window.BoldMarkdown = (function(){
   var esc = BOLD.escapeHtml;
@@ -121,7 +122,13 @@ window.BoldMarkdown = (function(){
         '<span class="tl-wk">' + esc(p.when) + '</span></a></li>';
     }).join('') + '</ol></nav>';
   }
-  function render(text){
+  var breaks = false;
+  function render(text, opts){
+    var was = breaks;
+    if (opts) breaks = !!opts.breaks;
+    try { return renderLines(text); } finally { breaks = was; }
+  }
+  function renderLines(text){
     var lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
     var out = '', i = 0;
     var phases = [];
@@ -175,7 +182,7 @@ window.BoldMarkdown = (function(){
       // under it, say) can't stop the loop from moving on.
       var para = [line.trim()];
       for (i++; i < lines.length && lines[i].trim() && !/^(```|#{1,4}\s|>|\s*\|)/.test(lines[i]) && !ITEM.test(lines[i]); i++) para.push(lines[i].trim());
-      out += '<p>' + para.map(inline).join(' ') + '</p>';
+      out += '<p>' + para.map(inline).join(breaks ? '<br>' : ' ') + '</p>';
     }
     return out;
   }
