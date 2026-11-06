@@ -1104,13 +1104,12 @@ html:root.is-matrix ::selection{background:#b4f0bd; color:#06100a; text-shadow:n
 .mx-prompt[hidden]{display:none;}
 .mx-prompt input{flex:1; min-width:0; background:transparent; border:0; outline:0; color:inherit; font:inherit; letter-spacing:inherit; text-shadow:inherit; caret-color:#b4f0bd;}
 @keyframes mx-blink{50%{opacity:0;}}
-/* 01:24 on the homepage: the Matrix's hints (eggs.js). The title glitches into glowing green glyphs and back;
-   a single stream of rain falls down one column now and then. */
+/* 01:24 on the homepage: the Matrix's hints (eggs.js). The title buzzes left and right: copies of it laid
+   exactly over it, a green one and a dim one, show in slices pulled sideways; a single stream of rain (a
+   canvas one column wide) is lit down one column now and then. */
 .is-hinted{cursor:pointer;}
-.is-glitch, .is-glitch *{color:#2bd65f !important; text-shadow:0 0 6px #3cff7a, 0 0 14px rgba(60,255,122,.4);}
-.mx-trickle{position:fixed; top:0; z-index:9990; pointer-events:none; display:flex; flex-direction:column; align-items:center;
-  font:600 18px/1.05 "MS Gothic", "Hiragino Kaku Gothic Pro", ui-monospace, monospace; color:#2bd65f; animation:mx-trickle 5s linear forwards;
-  -webkit-mask-image:linear-gradient(to bottom, transparent, #000 70%); mask-image:linear-gradient(to bottom, transparent, #000 70%);}
-.mx-trickle span{transform:scaleX(-1);}
-.mx-trickle span:last-child{color:#e1ffe8; text-shadow:0 0 8px #bfffd0;}
-@keyframes mx-trickle{from{transform:translateY(-100%);} to{transform:translateY(100vh);}}
+.is-glitch{position:relative;}
+.mx-ghost{position:absolute; inset:0; pointer-events:none; clip-path:inset(100% 0 0 0);}
+.mx-ghost.is-a, .mx-ghost.is-a *{color:#2bd65f !important; text-shadow:0 0 6px rgba(60,255,122,.6);}
+.mx-ghost.is-b, .mx-ghost.is-b *{color:color-mix(in srgb, var(--ink) 45%, transparent) !important;}
+.mx-trickle{position:fixed; top:0; z-index:9990; pointer-events:none;}

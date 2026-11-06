@@ -253,67 +253,71 @@
     // The film's beats: a blank screen first, each line left to sink in; after the knock, it's your turn.
     say([['Wake up, ' + who + '...', 3500], ['BOLD.OS has you...', 3500], ['Follow the white rabbit.', 3000], ['Knock, knock, ' + who + '.', 400]], knock, { lead: 1500 });
   }
-  // The film's digital rain. Each column carries streams falling at their own speed: a bright, nearly
-  // white head glyph with a glow, and behind it a green trail that fades and whose glyphs keep changing.
-  // Mirrored half-width katakana, digits and a few Latin letters; some columns dimmer and smaller, for
-  // depth. Drawn over the page, screened (dark adds nothing), taking no clicks. `entering`: a full-screen
-  // downpour for a moment, then it settles behind the page (.mx-rain.is-full, bold.css).
+  // The film's digital rain. Glyphs sit in fixed cells; nothing slides. A stream is a head moving down a
+  // column: each cell it reaches lights up near-white with a fresh glyph, then fades where it is, so a trail
+  // is the cells it has passed, fading at their column's rate. Lit glyphs change now and then. Mirrored
+  // half-width katakana and digits; some columns dimmer, smaller and slower, for depth.
+  var RAIN_GLYPHS = 'ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ012345789Z:.=*+-<>¦|';
+  function rainGlyph(){ return RAIN_GLYPHS[Math.floor(Math.random() * RAIN_GLYPHS.length)]; }
+  function rainColumn(rows, depth){
+    var c = { depth: depth, rows: rows, cells: [], heads: [], decay: 0.9 + Math.random() * 0.06 };
+    for (var r = 0; r < rows; r++) c.cells.push({ g: rainGlyph(), b: 0 });
+    return c;
+  }
+  function rainHead(c, top){ return { y: top ? Math.random() * c.rows : -Math.random() * c.rows * 0.8, speed: (0.3 + Math.random() * 0.5) * (c.depth < 1 ? 0.7 : 1), row: -1 }; }
+  // One step of a column: heads move; a cell a head reaches lights up; every lit cell fades.
+  function rainStep(c, respawn){
+    c.cells.forEach(function(cell){ if (cell.b > 0) { cell.b *= c.decay; if (cell.b < 0.03) cell.b = 0; else if (Math.random() < 0.02) cell.g = rainGlyph(); } });
+    c.heads = c.heads.filter(function(h){
+      h.y += h.speed;
+      var r = Math.floor(h.y);
+      if (r !== h.row && r >= 0 && r < c.rows) { h.row = r; c.cells[r].g = rainGlyph(); c.cells[r].b = 1; }
+      if (r >= c.rows) return respawn ? (Object.assign(h, rainHead(c, false)), true) : false;
+      return true;
+    });
+  }
+  function rainDraw(cx, c, x, S){
+    var fs = Math.round(S * (c.depth < 1 ? 0.8 : 1)), dim = c.depth < 1 ? 0.45 : 1;
+    cx.font = '600 ' + fs + 'px "MS Gothic", "Hiragino Kaku Gothic Pro", "Noto Sans JP", ui-monospace, monospace';
+    var heads = {}; c.heads.forEach(function(h){ heads[h.row] = true; });
+    c.cells.forEach(function(cell, r){
+      if (!cell.b) return;
+      cx.save();
+      cx.translate(x + S / 2, r * S);
+      cx.scale(-1, 1);   // mirrored, as in the film
+      if (heads[r]) { cx.shadowColor = '#bfffd0'; cx.shadowBlur = 12; cx.fillStyle = 'rgba(225,255,232,' + dim + ')'; }
+      else { cx.shadowBlur = 0; cx.fillStyle = cell.b > 0.75 ? 'rgba(150,255,170,' + cell.b * dim + ')' : 'rgba(40,215,90,' + Math.min(1, cell.b * 1.3) * dim + ')'; }
+      cx.fillText(cell.g, 0, 0);
+      cx.restore();
+    });
+  }
+  // The whole screen of it (the Matrix). Drawn over the page, screened (dark adds nothing), taking no
+  // clicks. `entering`: a full-screen downpour for a moment, then it settles behind the page (.mx-rain.is-full).
   function startRain(entering){
     var cv = document.createElement('canvas'), cx = cv.getContext('2d');
     cv.className = 'mx-rain' + (entering ? ' is-full' : ''); cv.setAttribute('aria-hidden', 'true');
     document.body.appendChild(cv);
-    var GLYPHS = 'ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ012345789Z:.=*+-<>¦|';
-    var S = 18, cols = [], frame = 0, last = 0, W = 0, H = 0, rows = 0;
+    var S = 18, cols = [], frame = 0, last = 0, W = 0, H = 0;
     var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    function glyph(){ return GLYPHS[Math.floor(Math.random() * GLYPHS.length)]; }
-    function stream(c, top){
-      return { y: top ? Math.random() * rows : -Math.random() * rows, speed: (0.25 + Math.random() * 0.55) * c.depth,
-        len: 8 + Math.floor(Math.random() * 22) };
-    }
     function size(){
       var d = window.devicePixelRatio || 1;
       W = innerWidth; H = innerHeight; cv.width = W * d; cv.height = H * d; cx.setTransform(d, 0, 0, d, 0, 0);
-      rows = Math.ceil(H / S) + 1; cols = [];
+      var rows = Math.ceil(H / S) + 1; cols = [];
       for (var x = 0; x < Math.ceil(W / S); x++){
-        var c = { depth: Math.random() < 0.3 ? 0.55 : 1, cells: [] };
-        for (var r = 0; r < rows; r++) c.cells.push(glyph());
-        c.streams = [stream(c, true)];
-        if (Math.random() < 0.35) c.streams.push(stream(c, false));
+        var c = rainColumn(rows, Math.random() < 0.3 ? 0.55 : 1);
+        c.heads.push(rainHead(c, true));
+        if (Math.random() < 0.35) c.heads.push(rainHead(c, false));
         cols.push(c);
       }
     }
     function draw(){
-      cx.globalCompositeOperation = 'source-over';
       cx.fillStyle = '#030a06'; cx.fillRect(0, 0, W, H);
       cx.textBaseline = 'top'; cx.textAlign = 'center';
-      cols.forEach(function(c, x){
-        var fs = Math.round(S * (c.depth < 1 ? 0.8 : 1));
-        cx.font = '600 ' + fs + 'px "MS Gothic", "Hiragino Kaku Gothic Pro", "Noto Sans JP", ui-monospace, monospace';
-        // A few of the column's glyphs change every frame, as they do on the screen.
-        for (var m = 0; m < 2; m++) if (Math.random() < 0.5) c.cells[Math.floor(Math.random() * rows)] = glyph();
-        c.streams.forEach(function(s, si){
-          s.y += s.speed;
-          var head = Math.floor(s.y);
-          for (var k = 0; k < s.len; k++){
-            var r = head - k;
-            if (r < 0 || r >= rows) continue;
-            var fade = 1 - k / s.len, a = (k === 0 ? 1 : 0.15 + 0.75 * fade * fade) * (c.depth < 1 ? 0.45 : 1);
-            cx.save();
-            cx.translate(x * S + S / 2, r * S);
-            cx.scale(-1, 1);   // mirrored, as in the film
-            if (k === 0) { cx.shadowColor = '#bfffd0'; cx.shadowBlur = 12; cx.fillStyle = 'rgba(225,255,232,' + a + ')'; }
-            else if (k < 3) { cx.shadowBlur = 0; cx.fillStyle = 'rgba(150,255,170,' + a + ')'; }
-            else { cx.shadowBlur = 0; cx.fillStyle = 'rgba(40,215,90,' + a + ')'; }
-            cx.fillText(c.cells[r], 0, 0);
-            cx.restore();
-          }
-          if (head - s.len > rows) c.streams[si] = stream(c, false);
-        });
-      });
+      cols.forEach(function(c, x){ rainStep(c, true); rainDraw(cx, c, x * S, S); });
     }
     function loop(t){ frame = requestAnimationFrame(loop); if (t - last < 33) return; last = t; draw(); }
     size();
-    if (still) draw(); else frame = requestAnimationFrame(loop);
+    if (still) { for (var k = 0; k < 40; k++) cols.forEach(function(c){ rainStep(c, true); }); draw(); } else frame = requestAnimationFrame(loop);
     addEventListener('resize', size);
     if (entering) setTimeout(function(){ cv.classList.remove('is-full'); }, 2600);
     return { stop: function(){ cancelAnimationFrame(frame); removeEventListener('resize', size); cv.remove(); } };
@@ -336,50 +340,63 @@
     addEventListener(t, function(){ lastActive = Date.now(); }, { passive: true, capture: true });
   });
   function isHome(){ var p = location.pathname; return /\/$/.test(p) || /\/index\.html$/.test(p); }
-  // Hints, as the film gives them, on the homepage until you follow them: the title glitches into glyphs
-  // and decodes back, a single stream of rain falls down the page now and then, and the search box types
+  // Hints, as the film gives them, on the homepage until you follow them: the title buzzes left and
+  // right, a single stream of rain falls down the page now and then, and the search box types
   // "Follow the white rabbit." Meanwhile a click on the title goes straight into the Matrix.
   var hinting = null;
-  var HINT_GLYPHS = 'ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ012345789';
   function hints(){
     if (hinting || root.classList.contains('is-matrix')) return;
     var title = document.getElementById('homeHeroTitle') || document.querySelector('.wordmark');
     if (!title) return;
     var still = matchMedia('(prefers-reduced-motion: reduce)').matches, timers = [];
     var later = function(f, ms){ timers.push(setTimeout(f, ms)); };
-    hinting = { stop: function(){ timers.forEach(clearTimeout); title.classList.remove('is-hinted', 'is-glitch'); title.removeEventListener('click', follow, true); title.removeAttribute('title'); hinting = null; } };
+    hinting = { stop: function(){ timers.forEach(clearTimeout); title.classList.remove('is-hinted', 'is-glitch'); title.style.transform = ''; title.querySelectorAll('.mx-ghost').forEach(function(g){ g.remove(); }); title.removeEventListener('click', follow, true); title.removeAttribute('title'); hinting = null; } };
     title.classList.add('is-hinted');
     title.title = 'Follow it.';
     // The title, while hinting: into the Matrix (before its own click, which shows the sidebar).
     function follow(e){ e.preventDefault(); e.stopImmediatePropagation(); hinting.stop(); matrix(true, true); }
     title.addEventListener('click', follow, true);
-    // 1. The title's letters scramble into glyphs, then settle back, left to right; its markup kept.
+    // 1. The title buzzes: two or three short bursts in which it jolts sideways, and slices of a green
+    // copy and a dim copy of it (laid exactly over it) are pulled the other way. It stays legible.
     function glitch(){
       if (!hinting) return;
-      var nodes = [], walk = document.createTreeWalker(title, NodeFilter.SHOW_TEXT), n;
-      while ((n = walk.nextNode())) nodes.push({ node: n, text: n.nodeValue });
-      var total = nodes.reduce(function(s, x){ return s + x.text.length; }, 0), step = 0, STEPS = still ? 1 : 14;
+      if (still) { later(glitch, 10000); return; }
+      var ghosts = ['mx-ghost is-a', 'mx-ghost is-b'].map(function(c){
+        var g = document.createElement('span'); g.className = c; g.setAttribute('aria-hidden', 'true'); g.innerHTML = title.innerHTML;
+        title.appendChild(g); return g;
+      });
       title.classList.add('is-glitch');
+      var bursts = 2 + Math.floor(Math.random() * 2), frames = 0;
       (function frame(){
-        var settled = Math.floor(total * step / STEPS), at = 0;
-        nodes.forEach(function(x){
-          x.node.nodeValue = x.text.split('').map(function(c){ var i = at++; return i < settled || c === ' ' ? c : HINT_GLYPHS[Math.floor(Math.random() * HINT_GLYPHS.length)]; }).join('');
+        var on = frames % 9 < 6;   // six frames of buzz, three of rest, per burst
+        var j = function(n){ return Math.round((Math.random() * 2 - 1) * n); };
+        title.style.transform = on ? 'translateX(' + j(4) + 'px)' : '';
+        ghosts.forEach(function(g, i){
+          var top = Math.floor(Math.random() * 70), h = 8 + Math.floor(Math.random() * 30);
+          g.style.clipPath = on ? 'inset(' + top + '% 0 ' + Math.max(0, 100 - top - h) + '% 0)' : 'inset(100% 0 0 0)';
+          g.style.transform = on ? 'translateX(' + (i ? -1 : 1) * (3 + Math.abs(j(9))) + 'px)' : '';
         });
-        if (step++ < STEPS) later(frame, still ? 900 : 55);
-        else { nodes.forEach(function(x){ x.node.nodeValue = x.text; }); title.classList.remove('is-glitch'); later(glitch, 7000 + Math.random() * 5000); }
+        if (++frames < bursts * 9) later(frame, 40 + Math.random() * 30);
+        else { title.style.transform = ''; title.classList.remove('is-glitch'); ghosts.forEach(function(g){ g.remove(); }); later(glitch, 6000 + Math.random() * 6000); }
       })();
     }
-    // 2. One stream of rain, down one column of the page.
+    // 2. One stream of rain down one column of the page, as the Matrix's: fixed cells lit by the head.
     function trickle(){
       if (!hinting) return;
       if (!still) {
-        var s = document.createElement('div'), len = 10 + Math.floor(Math.random() * 12), g = '';
-        for (var i = 0; i < len; i++) g += '<span>' + HINT_GLYPHS[Math.floor(Math.random() * HINT_GLYPHS.length)] + '</span>';
-        s.className = 'mx-trickle'; s.setAttribute('aria-hidden', 'true'); s.innerHTML = g;
-        s.style.left = Math.round(5 + Math.random() * 90) + 'vw';
-        s.style.animationDuration = (3.5 + Math.random() * 3) + 's';
-        document.body.appendChild(s);
-        s.addEventListener('animationend', function(){ s.remove(); });
+        var S = 20, rows = Math.ceil(innerHeight / S) + 1, cv = document.createElement('canvas'), cx = cv.getContext('2d'), d = window.devicePixelRatio || 1;
+        cv.className = 'mx-trickle'; cv.setAttribute('aria-hidden', 'true');
+        cv.width = S * d; cv.height = rows * S * d; cv.style.width = S + 'px'; cv.style.height = rows * S + 'px';
+        cv.style.left = Math.round(Math.random() * (innerWidth - S)) + 'px';
+        cx.setTransform(d, 0, 0, d, 0, 0); cx.textBaseline = 'top'; cx.textAlign = 'center';
+        document.body.appendChild(cv);
+        var c = rainColumn(rows, 1); c.decay = 0.93; c.heads.push({ y: 0, speed: 0.45 + Math.random() * 0.3, row: -1 });
+        (function tick(){
+          rainStep(c, false);
+          cx.clearRect(0, 0, S, rows * S);
+          rainDraw(cx, c, 0, S);
+          if (c.heads.length || c.cells.some(function(x){ return x.b; })) later(tick, 33); else cv.remove();
+        })();
       }
       later(trickle, 4000 + Math.random() * 6000);
     }
