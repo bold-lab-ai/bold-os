@@ -125,9 +125,9 @@
   }
 
   // Expand all / Collapse all: every message's branches (opened), over the thread; shown when it has any.
-  function branching(p){ return [p].concat(messages[p.id] || []).filter(function(m){ return branchesOf(m.id).length; }).map(function(m){ return m.id; }); }
+  function branchingIds(p){ return [p].concat(messages[p.id] || []).filter(function(m){ return branchesOf(m.id).length; }).map(function(m){ return m.id; }); }
   function foldAllHtml(p){
-    var ids = branching(p);
+    var ids = branchingIds(p);
     if (!ids.length) return '';
     var all = ids.every(function(id){ return opened[id]; });
     return '<p class="bs-fold-all"><button type="button" class="btn-text bs-fold-all-btn" data-open="' + (all ? '0' : '1') + '">' + (all ? 'Collapse all' : 'Expand all') + '</button></p>';
@@ -488,7 +488,7 @@
     if (b.classList.contains('bs-open')) { opened[id] = !opened[id]; render(); return; }
     if (b.classList.contains('bs-fold-all-btn')) {
       var on = b.getAttribute('data-open') === '1', fp = postOf(openId);
-      if (fp) branching(fp).forEach(function(x){ opened[x] = on; });
+      if (fp) branchingIds(fp).forEach(function(x){ opened[x] = on; });
       render(); return;
     }
     if (b.classList.contains('bs-reply-btn')) {

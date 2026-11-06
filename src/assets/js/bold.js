@@ -639,7 +639,7 @@
       bell.innerHTML = '<a class="mast-btn mast-bell-btn" href="notifications.html" title="Notifications" aria-label="Notifications">' + ICON_BELL + '<span class="mast-count" hidden></span></a>';
       var countEl = bell.querySelector('.mast-count'), link = bell.querySelector('a');
       var todo = 0, unread = 0, unreadUnsub = null;
-      var draw = function(){
+      var drawBell = function(){
         var n = todo + unread;
         countEl.hidden = !n; countEl.textContent = n > 99 ? '99+' : String(n);
         var t = [todo ? todo + ' waiting on you' : '', unread ? (unread >= 100 ? '100+' : unread) + ' unread' : ''].filter(Boolean).join(', ');
@@ -649,9 +649,9 @@
       BOLD.setTodoCount = function(n){
         n = Number(n) || 0;
         try { sessionStorage.setItem('boldTodo', JSON.stringify({ n: n, t: Date.now() })); } catch (e){}
-        todo = n; draw();
+        todo = n; drawBell();
       };
-      var setUnread = function(n){ unread = Number(n) || 0; draw(); };
+      var setUnread = function(n){ unread = Number(n) || 0; drawBell(); };
       BOLD.onUser(function(user){
         if (unreadUnsub) { unreadUnsub(); unreadUnsub = null; }
         if (!user) { BOLD.setTodoCount(0); setUnread(0); return; }
