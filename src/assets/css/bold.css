@@ -934,6 +934,13 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .member-photo img{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:cover;opacity:0;}
 .member-photo img.is-loaded{opacity:1;}
 .mast-avatar.member-photo{width:32px;height:32px;font-size:12px;}
+/* Photos in the site's colours: in greyscale, washed in the accent (its own in each theme), as an
+   engraving; their own colours come back under the pointer. Initials are left as they are. */
+.member-photo img{filter:grayscale(1) contrast(1.08); transition:filter .25s ease, opacity .25s ease;}
+.member-photo:has(img.is-loaded)::after{content:''; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+  background:var(--accent); mix-blend-mode:color; opacity:.9; transition:opacity .25s ease;}
+.member-photo:hover img{filter:none;}
+.member-photo:hover::after{opacity:0;}
 /* The tour of BOLD.OS (tour.js): the item lit up, everything else dimmed, and a note beside it. */
 .tour-spot{position:fixed; z-index:1400; pointer-events:none; border:2px solid var(--accent); border-radius:var(--radius);
   box-shadow:0 0 0 9999px color-mix(in srgb, var(--shade) 45%, transparent); transition:top .2s ease, left .2s ease, width .2s ease, height .2s ease;}
