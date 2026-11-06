@@ -291,6 +291,24 @@
       cx.restore();
     });
   }
+  // A still of the whole screen's rain mid-fall (the hints' dropped frame): columns run on, then drawn once.
+  function rainFrame(){
+    var cv = document.createElement('canvas'), cx = cv.getContext('2d'), d = window.devicePixelRatio || 1, S = 18;
+    var W = innerWidth, H = innerHeight, rows = Math.ceil(H / S) + 1, cols = [];
+    cv.className = 'mx-frame'; cv.setAttribute('aria-hidden', 'true');
+    cv.width = W * d; cv.height = H * d; cx.setTransform(d, 0, 0, d, 0, 0);
+    for (var x = 0; x < Math.ceil(W / S); x++){
+      var c = rainColumn(rows, Math.random() < 0.3 ? 0.55 : 1);
+      c.heads.push(rainHead(c, true)); if (Math.random() < 0.35) c.heads.push(rainHead(c, true));
+      for (var k = 0; k < 50; k++) rainStep(c, true);
+      cols.push(c);
+    }
+    cx.fillStyle = '#030a06'; cx.fillRect(0, 0, W, H);
+    cx.textBaseline = 'top'; cx.textAlign = 'center';
+    cols.forEach(function(c, x){ rainDraw(cx, c, x * S, S); });
+    document.body.appendChild(cv);
+    return cv;
+  }
   // The whole screen of it (the Matrix). Drawn over the page, screened (dark adds nothing), taking no
   // clicks. `entering`: a full-screen downpour for a moment, then it settles behind the page (.mx-rain.is-full).
   function startRain(entering){
@@ -341,7 +359,7 @@
   });
   function isHome(){ var p = location.pathname; return /\/$/.test(p) || /\/index\.html$/.test(p); }
   // Hints, as the film gives them, on the homepage until you follow them: the title buzzes left and
-  // right, and the search box types
+  // right, now and then the screen drops a frame of the rain, and the search box types
   // "Follow the white rabbit." Meanwhile a click on the title goes straight into the Matrix.
   var hinting = null;
   function hints(){
@@ -380,7 +398,22 @@
         else { title.style.transform = ''; title.classList.remove('is-glitch'); ghosts.forEach(function(g){ g.remove(); }); later(glitch, 6000 + Math.random() * 6000); }
       })();
     }
-    // 2. The search box (signed in) types the hint, holds it, and gives its placeholder back.
+    // 2. A dropped frame: for a tenth of a second, twice, the whole screen is a still of the rain mid-fall
+    // (the second a little off, like a skipped frame), then the page again. Two dark flashes, under the
+    // three-a-second limit for flashing; none with reduced motion.
+    function flicker(){
+      if (!hinting) return;
+      if (!still) {
+        var cv = rainFrame();
+        var show = function(on, dx){ cv.style.visibility = on ? 'visible' : 'hidden'; cv.style.transform = dx ? 'translateX(' + dx + 'px)' : ''; };
+        show(true, 0);
+        later(function(){ show(false); }, 90);
+        later(function(){ show(true, -6); }, 170);
+        later(function(){ cv.remove(); }, 230);
+      }
+      later(flicker, 20000 + Math.random() * 20000);
+    }
+    // 3. The search box (signed in) types the hint, holds it, and gives its placeholder back.
     function whisper(){
       if (!hinting) return;
       var box = document.querySelector('.home-search .ms-input') || document.querySelector('.ms-input');
@@ -392,7 +425,7 @@
         else later(function(){ box.placeholder = was; later(whisper, 30000); }, 6000);
       })();
     }
-    glitch(); later(whisper, 3000);
+    glitch(); later(whisper, 3000); later(flicker, 6000);
   }
   function wakeCheck(){
     if (called || root.classList.contains('is-matrix')) return;

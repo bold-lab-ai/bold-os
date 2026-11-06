@@ -1109,5 +1109,7 @@ html:root.is-matrix ::selection{background:#b4f0bd; color:#06100a; text-shadow:n
 .is-hinted{cursor:pointer;}
 .is-glitch{position:relative;}
 .mx-ghost{position:absolute; inset:0; pointer-events:none; clip-path:inset(100% 0 0 0);}
+/* The dropped frame: a still of the rain over everything, for a tenth of a second. */
+.mx-frame{position:fixed; inset:0; width:100vw; height:100vh; z-index:9995; pointer-events:none;}
 .mx-ghost.is-a, .mx-ghost.is-a *{color:#2bd65f !important; text-shadow:0 0 6px rgba(60,255,122,.6);}
 .mx-ghost.is-b, .mx-ghost.is-b *{color:color-mix(in srgb, var(--ink) 45%, transparent) !important;}
