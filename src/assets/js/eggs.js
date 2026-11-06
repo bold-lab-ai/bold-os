@@ -190,7 +190,8 @@
   });
   addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1'); });
   // For search (pages/search.js: `red pill`).
-  window.BoldEggs = { matrix: function(on){ if (on !== root.classList.contains('is-matrix')) matrix(on); } };
+  // Search's `red pill` opens the same conversation; `blue pill` wakes you at once.
+  window.BoldEggs = { matrix: function(on){ if (on === root.classList.contains('is-matrix')) return; if (on) converse(); else matrix(false); } };
 
   function start(){ watch(); birthday(); if (root.classList.contains('is-matrix')) matrix(true); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
