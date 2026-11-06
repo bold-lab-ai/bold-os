@@ -113,8 +113,7 @@
     var R = function(lines, then){ return { lines: lines, then: then || 'prompt' }; };
     var name = st.name || 'BOLD';
     st.turns = (st.turns || 0) + 1;
-    if (w === 'exit') return R(['There is no exit.', 'Fine. There is.'], 'exit');
-    if (/^(quit|bye|logout)$/.test(w)) return R(['There is no exit.', 'Fine. There is.'], 'close');
+    if (/^(exit|quit|bye|logout)$/.test(w)) return R(['There is no exit.', 'Fine. There is.'], 'close');
     if (w === 'help') return R(['Try: who’s there · red · blue · why me · who are you · where am i · what time is it · rabbit · spoon · exit']);
     if (/^(red|red pill|the red one|take the red pill|i take the red pill)$/.test(w)) {
       st.stage = 'game';
@@ -359,7 +358,6 @@
     // What a reply's `then` does once its lines are typed.
     function reply(r){
       var after = { game: play, matrix: function(){ close(); matrix(true, true); }, close: close,
-        exit: function(){ close(); setTimeout(playExit, 650); },
         rabbit: function(){ location.href = '404.html#rabbit'; } }[r.then];   // the loss curve; served locally too
       say(r.lines || [], after || null);
     }
@@ -514,7 +512,7 @@
   });
   addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1'); });
 
-  // Type `exit` (not in a field), or `exit` in the Matrix's conversation: eXit 1.2.2, Murat Erdemir's
+  // Type `exit` (not in a field): eXit 1.2.2, Murat Erdemir's
   // text adventure (2022), played as his Python script plays, in a console over the page. His branches as
   // they are, quirks included; only two typos fixed, answers read by their words (exitMatches), and an answer a step doesn't know gets its question again.
   // Each step: what it prints, then [answers, next step]. A step with no answers is an ending.
