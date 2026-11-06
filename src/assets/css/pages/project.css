@@ -331,3 +331,14 @@
 .detail-abstract-label:has(.detail-act){display:flex; align-items:baseline;}
 .detail-abstract-label .detail-act{margin-left:auto;}
 .detail-abstract-label .detail-act .detail-inline-edit{margin-left:0;}
+
+/* They end where the page does (the tabs' line, the buttons above), not at the reading width; the abstract's
+   text keeps that width. Quiet until wanted: muted, darker on their row's hover or their own. */
+.detail-grid:has(.detail-act), .detail-abstract:has(.detail-act){max-width:none;}
+.detail-abstract .abstract-render, .detail-abstract > .detail-muted{max-width:var(--article-max);}
+.detail-grid dd .detail-act .btn-text, .detail-abstract-label .detail-act .btn-text{color:var(--muted);}
+.detail-grid dd:hover .detail-act .btn-text:not(:disabled), .detail-abstract:hover .detail-abstract-label .detail-act .btn-text:not(:disabled),
+.detail-act .btn-text:focus-visible{color:var(--link); text-decoration-color:var(--underline);}
+.detail-act .btn-text:not(:disabled):hover{color:var(--link); text-decoration-color:currentColor;}
+/* Invite someone alone (nothing listed, no form): no room of its own under the names. */
+.detail-grid dd .pj-inv:not(:has(.pj-inv-list, .pj-inv-form, .detail-hint)){margin-top:0;}
