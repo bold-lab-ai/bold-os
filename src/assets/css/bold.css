@@ -1119,13 +1119,18 @@ html:root.is-matrix ::selection{background:#b4f0bd; color:#06100a; text-shadow:n
 @keyframes mx-blink{50%{opacity:0;}}
 /* 01:24 on the homepage, a hint (eggs.js): a dropped frame, a still of the rain over everything for a tenth of a second. */
 .mx-frame{position:fixed; inset:0; width:100vw; height:100vh; z-index:9995; pointer-events:none;}
-/* eXit (eggs.js, `exit`): a plain terminal, as the Python script runs in one; it scrolls, nothing is animated. */
-.ex-term{position:fixed; inset:0; z-index:9999; overflow:auto; padding:24px max(16px, 8vw) 40px; background:#0c0c0c; color:#d4d4d4;
-  font:15px/1.45 ui-monospace, Menlo, Consolas, monospace;}
-.ex-log, .ex-prompt{max-width:760px;}
-.ex-log p{margin:0; white-space:pre-wrap; min-height:1.45em;}
-.ex-log p.ex-logo{color:#f2f2f2; font-weight:700; white-space:pre;}
-.ex-log p.ex-said{color:#8fd18f;}
+/* eXit (eggs.js, `exit`): the Matrix's screen (.mx-term): dark green-black, bold Courier in pale phosphor
+   green with a soft glow, faint scanlines; a log that scrolls, as the Python script's does. */
+.ex-term{position:fixed; inset:0; z-index:9999; overflow:auto; padding:min(12vh, 96px) 16px 40px max(16px, 12vw);
+  background:radial-gradient(ellipse at 40% 40%, #0f2219 0%, #08140e 70%, #040a07 100%); color:#b4f0bd;
+  font:700 clamp(15px, 1.8vw, 21px)/1.5 'Courier New', Courier, monospace; letter-spacing:.02em;
+  text-shadow:0 0 2px rgba(180,240,189,.9), 0 0 10px rgba(110,230,140,.45);}
+.ex-term::before{content:''; position:fixed; inset:0; pointer-events:none;
+  background:repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);}
+.ex-log, .ex-prompt{max-width:900px;}
+.ex-log p{margin:0; white-space:pre-wrap; min-height:1.5em;}
+.ex-log p.ex-logo{white-space:pre; line-height:1.2; min-height:1.2em;}
+.ex-log p.ex-said{opacity:.75;}
 .ex-prompt{display:flex; gap:.6em;}
 .ex-ps:empty{display:none;}
-.ex-prompt input{flex:1; min-width:0; background:transparent; border:0; outline:0; color:#8fd18f; font:inherit; caret-color:#d4d4d4;}
+.ex-prompt input{flex:1; min-width:0; background:transparent; border:0; outline:0; color:inherit; font:inherit; letter-spacing:inherit; text-shadow:inherit; caret-color:#b4f0bd;}
