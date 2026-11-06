@@ -513,7 +513,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
           '<div class="detail-hint">A new card there, registered by you, with this project\u2019s title, abstract, authors and links; its meeting, repository and people stay as they are.</div>';
       html += saveCancelHtml('submitSave');
     } else {
-      html += '<button class="btn-text" type="button" data-edit="submit"' + (canEdit() ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Submit to a venue</button>';
+      // The Venues row's action, on its right with the others (detail-act).
+      html += '<span class="detail-act"><button class="btn-text detail-inline-edit" type="button" data-edit="submit"' + (canEdit() ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Submit to a venue</button></span>';
     }
     return html;
   }
