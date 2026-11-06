@@ -765,7 +765,16 @@
       show();
     };
     show();
-    btn.addEventListener('click', function(){
+    var clicks = [];
+    btn.addEventListener('click', function(e){
+      clicks = clicks.filter(function(t){ return e.timeStamp - t < 4000; }).concat(e.timeStamp);
+      if (clicks.length >= 10) {   // easter egg (eggs.js): paper under a lamp, until the next click
+        clicks = [];
+        root.setAttribute('data-theme', 'lamp');
+        btn.setAttribute('aria-pressed', 'false');
+        btn.title = 'Paper under a lamp. Click to go back.';
+        return;
+      }
       var dark = root.getAttribute('data-theme') !== 'dark';
       set(dark);
       try { localStorage.setItem('boldTheme', dark ? 'dark' : 'light'); } catch (e){}

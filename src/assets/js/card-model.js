@@ -77,7 +77,7 @@
       var isBlock = m[1] !== undefined;
       var src = isBlock ? m[1] : m[2];
       try {
-        out += katex.renderToString(src, { throwOnError: false, displayMode: isBlock });
+        out += katex.renderToString(src, { throwOnError: false, displayMode: isBlock, macros: { '\\bold': '\\textbf{BOLD}.\\text{OS}' } });
       } catch (err){
         out += BOLD.escapeHtml(m[0]);
       }

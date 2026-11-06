@@ -91,7 +91,7 @@
 
   document.addEventListener('click', function(e){
     var k = e.target.closest('[data-kind]'), gr = e.target.closest('[data-group]'), v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]'), n = e.target.closest('.cx-node');
-    if (v) { view = v.getAttribute('data-view'); controls(); build(); }
+    if (v) { view = v.getAttribute('data-view'); graph.classList.toggle('is-engraving', !!e.shiftKey && view === 'lineage'); controls(); build(); }
     else if (t) { things = t.getAttribute('data-things') === '1'; controls(); build(); }
     else if (k) { kinds[k.getAttribute('data-kind')] = !kinds[k.getAttribute('data-kind')]; controls(); build(); }
     else if (gr) { groups[gr.getAttribute('data-group')] = !groups[gr.getAttribute('data-group')]; controls(); build(); }

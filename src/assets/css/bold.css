@@ -989,3 +989,32 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .proj-meta{display:block; margin-top:2px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .proj-meta a{color:inherit;}
 .proj-msg{font-family:var(--sans); font-size:14px; color:var(--muted); margin:14px 0 0;}
+
+/* ---------- Easter eggs (eggs.js; none of them writes or tells anyone) ---------- */
+/* Ten clicks on the sun/moon: paper under a lamp. Light roles, warmed; not kept. */
+:root[data-theme="lamp"]{
+  --ink:#3b2a14; --ink-soft:#4e3a20; --muted:#806c4e;
+  --paper:#efe2c4; --surface:#f7eed8; --wash:#e5d4ae;
+  --accent:#7a4a12; --accent-hover:#5c370c; --accent-dim:#e8d7b2;
+  --shade:#3b2a14;
+}
+:root[data-theme="lamp"] body{background-image:radial-gradient(ellipse at 50% 28%, transparent 45%, color-mix(in srgb, var(--shade) 20%, transparent) 100%); background-attachment:fixed;}
+/* The Konami code: Reviewer 2's notes beside each heading. */
+.r2-note{display:inline-block; margin-left:14px; padding:1px 8px; font-family:var(--serif); font-style:italic; font-weight:400; font-size:15px; letter-spacing:0; text-transform:none;
+  color:var(--danger-text); border:1px solid var(--danger-line); background:var(--danger-bg); transform:rotate(var(--tilt, -1deg)); vertical-align:middle;}
+/* A milestone number on a card: #42, #404, #1337. */
+.badge.is-milestone{background:var(--highlight-strong); border-color:var(--highlight-line); cursor:help;}
+/* A phase due today (· 0d) shivers. */
+.md-timeline li.is-now .tl-dot{animation:egg-shiver .35s ease-in-out infinite; background:var(--danger-text); border-color:var(--danger-text);}
+@keyframes egg-shiver{0%,100%{transform:translateX(0);} 25%{transform:translateX(-1.5px);} 75%{transform:translateX(1.5px);}}
+/* `sudo` in search. */
+.sr-sudo{font-family:ui-monospace, Menlo, monospace; font-size:14px; color:var(--danger-text); margin:14px 0 0;}
+/* Shift-click Lineage: a Victorian family tree. */
+.cx-graph.is-engraving{font-family:var(--serif); border:4px double var(--ink); padding:18px; filter:sepia(.55) contrast(1.05);
+  background-image:repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 5%, transparent) 0 1px, transparent 1px 5px);}
+/* An empty inbox's cat. */
+.nt-zero{display:block; margin:22px 0 0; color:var(--muted);}
+/* The lab's birthday (site.founded): confetti under the masthead. */
+.is-birthday .masthead{border-bottom:0; background-image:repeating-linear-gradient(90deg, var(--green) 0 14px, var(--amber) 14px 28px, var(--plum) 28px 42px, var(--teal) 42px 56px, var(--danger-text) 56px 70px);
+  background-size:100% 3px; background-repeat:no-repeat; background-position:bottom;}
+@media (prefers-reduced-motion: reduce){ .md-timeline li.is-now .tl-dot{animation:none;} }
