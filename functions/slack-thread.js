@@ -348,11 +348,21 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       const who = String(d.createdBy || '').toLowerCase();
       const to = (await peopleIn(pid, post)).filter((e) => e !== who);
       if (!to.length) return;
+      // Whose message it answers (the post's, or a reply's): they're told it's a reply to theirs, a kind of
+      // its own (conversation-reply-mine, notify-kinds.js); everyone else, that someone replied.
+      const parent = String(d.parent || pid);
+      const pm = parent === pid ? post : ((await ref.collection('messages').doc(parent).get()).data() || {});
+      const mine = String(pm.createdBy || (parent === pid ? (post.broughtBy || {}).email : '') || '').toLowerCase();
       // The reply itself (conversations.js: #post=<post>&msg=<message> opens it, its branches unfolded).
       const url = PAGE + '#post=' + encodeURIComponent(pid) + '&msg=' + encodeURIComponent(event.params.mid);
-      const text = '💬 ' + (d.name || 'Someone') + ' replied in “' + String(post.title || 'a conversation').replace(/[<>|]/g, '') + '”: <' + url + '|read it>.';
-      await noteFor(to, { text, href: url, feature: 'conversation-replies', source: 'conversations', about: 'conversation:' + pid });
-      for (const e of to) await dmByEmail(SLACK_BOT_TOKEN.value(), e, text, 'conversation-replies', { noNote: true });
+      const title = String(post.title || 'a conversation').replace(/[<>|]/g, '');
+      const tell = async (list, text, kind) => {
+        if (!list.length) return;
+        await noteFor(list, { text, href: url, feature: kind, source: 'conversations', about: 'conversation:' + pid });
+        for (const e of list) await dmByEmail(SLACK_BOT_TOKEN.value(), e, text, 'conversation-replies', { noNote: true, kind });
+      };
+      await tell(to.filter((e) => e === mine), '💬 ' + (d.name || 'Someone') + ' replied to your message in “' + title + '”: <' + url + '|read it>.', 'conversation-reply-mine');
+      await tell(to.filter((e) => e !== mine), '💬 ' + (d.name || 'Someone') + ' replied in “' + title + '”: <' + url + '|read it>.', 'conversation-replies');
     } catch (err){ logger.warn('Telling a conversation’s people of a reply failed', { pid, error: String(err && err.message || err) }); }
   });
   // A new conversation: everyone who can see it is told on their Notifications page (not on Slack): all who see

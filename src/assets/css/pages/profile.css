@@ -211,6 +211,16 @@ a.btn-box{text-decoration:none; display:inline-block;}
 /* Desktop notifications, above the Inbox: on or off in this browser, and your other devices. */
 .nt-push{font-family:var(--sans); font-size:13px; margin:0 0 12px; padding:8px 10px; border:1px solid var(--line);}
 .nt-push-label{font-weight:600; margin-right:6px;}
+.nt-slack-way{font:inherit; font-size:14px; padding:4px 6px; max-width:100%;}
+.nt-set{margin:0 0 26px;}
+.nt-set .nt-push{margin:0;}
+.nt-h{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:0 0 8px;}
+.nt-set .detail-muted{font-family:var(--sans); font-size:13px; margin:6px 0 10px;}
+.nt-kinds{border:0; margin:0 0 14px; padding:0;}
+.nt-kinds legend{font-family:var(--sans); font-size:14px; font-weight:600; padding:0; margin:0 0 4px;}
+.nt-kind{display:flex; gap:8px; align-items:flex-start; font-family:var(--sans); font-size:14px; padding:3px 0;}
+.nt-kind input{margin-top:3px; flex:none;}
+.nt-saved{position:sticky; bottom:12px; display:inline-block; font-family:var(--sans); font-size:13px; padding:4px 10px; background:var(--wash); border-radius:6px;}
 .nt-devices{list-style:none; margin:6px 0 0; padding:0;}
 /* Settings: what saving is doing, beside its button (Saving…, Saved at 10:52). */
 .st-saving{font-family:var(--sans); font-size:13px; color:var(--muted); align-self:center;}

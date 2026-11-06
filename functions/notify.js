@@ -18,13 +18,18 @@ const emailsOf = (list) => (list || []).map(lower).filter(Boolean);
 const minus = (list, who) => Array.from(new Set(emailsOf(list))).filter((e) => e !== lower(who));
 const q = (t) => '“' + String(t || '').replace(/\s+/g, ' ').trim().slice(0, 120) + '”';
 
-// Pure: a project's workspace before → after → [{ to, text, kind }].
-function projectChanges(b, a, names){
+// Pure: a project's workspace before → after → [{ to, text, kind }]. leads: whose project it is (its card's
+// submitter): someone joining or leaving it is a kind of its own for them (project-joined-mine, notify-kinds.js).
+function projectChanges(b, a, names, leads){
   b = b || {}; a = a || {};
   const out = [], title = q(a.title || b.title || 'your project'), name = (e) => (names && names[e]) || e.split('@')[0];
   const was = emailsOf(b.members), now = emailsOf(a.members);
-  now.filter((e) => was.indexOf(e) < 0).forEach((e) => out.push({ to: minus(now, e), text: name(e) + ' joined ' + title + '.', kind: 'project-joined' }));
-  was.filter((e) => now.indexOf(e) < 0).forEach((e) => out.push({ to: minus(now, e), text: name(e) + ' left ' + title + '.', kind: 'project-left' }));
+  const lead = emailsOf(leads), split = (to, text, kind) => {
+    out.push({ to: to.filter((e) => lead.indexOf(e) >= 0), text, kind: kind + '-mine' });
+    out.push({ to: to.filter((e) => lead.indexOf(e) < 0), text, kind });
+  };
+  now.filter((e) => was.indexOf(e) < 0).forEach((e) => split(minus(now, e), name(e) + ' joined ' + title + '.', 'project-joined'));
+  was.filter((e) => now.indexOf(e) < 0).forEach((e) => split(minus(now, e), name(e) + ' left ' + title + '.', 'project-left'));
   if (!b.startedAt && a.startedAt) out.push({ to: minus(now, a.startedBy), text: title + ' is ongoing now.', kind: 'project-status' });
   if (!b.completedAt && a.completedAt) out.push({ to: minus(now, a.completedBy), text: title + ' is completed.', kind: 'project-status' });
   const same = (x, y) => JSON.stringify(x || null) === JSON.stringify(y || null);
@@ -89,7 +94,13 @@ module.exports = function({ db, onDocumentWritten, onDocumentUpdated, onDocument
   const onWorkspaceNotify = onDocumentUpdated('projectWorkspaces/{pid}', safe('a project', async (event) => {
     const b = event.data.before.data(), a = event.data.after.data();
     const names = await namesOf(emailsOf(b.members).concat(emailsOf(a.members)));
-    await send(projectChanges(b, a, names), projectPageUrl(a.cardId || event.params.pid, a.boardId), 'project:' + event.params.pid);
+    // Whose project it is: its card's submitter, only looked up when someone joined or left.
+    let leads = [];
+    if (JSON.stringify(emailsOf(b.members).sort()) !== JSON.stringify(emailsOf(a.members).sort()) && a.boardId && a.cardId) {
+      const card = (await db.collection('boards').doc(a.boardId).collection('cards').doc(a.cardId).get()).data() || {};
+      leads = [(card.submittedBy || {}).email];
+    }
+    await send(projectChanges(b, a, names, leads), projectPageUrl(a.cardId || event.params.pid, a.boardId), 'project:' + event.params.pid);
   }));
   const onPresentationNotify = onDocumentCreated('projectWorkspaces/{pid}/presentations/{id}', safe('a presentation', async (event) => {
     const t = event.data.data() || {}, ws = (await db.collection('projectWorkspaces').doc(event.params.pid).get()).data() || {};

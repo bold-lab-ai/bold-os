@@ -846,6 +846,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // What a person hears of outside their Inbox (Notifications › Settings; functions/index.js slackWayFor):
+    // slack (how, on Slack) and off (the kinds unticked: functions/notify-kinds.js). Theirs alone, by email.
+    match /notifyPrefs/{who} {
+      allow read: if isSignedIn() && email().lower() == who;
+      allow create, update: if isSignedIn() && email().lower() == who
+        && request.resource.data.keys().hasOnly(['slack', 'off', 'at'])
+        && (!('slack' in request.resource.data) || request.resource.data.slack in ['all', 'pings', 'off'])
+        && (!('off' in request.resource.data) || (request.resource.data.off is list && request.resource.data.off.size() <= 50))
+        && request.resource.data.at is number;
+      allow delete: if false;
+    }
+
     // A person's settings (bold.js): skipConfirm, whether to skip the confirmation
     // before actions that reach outside BOLD.OS. Theirs alone, keyed by their uid.
     match /prefs/{userId} {

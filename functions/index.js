@@ -814,7 +814,12 @@ async function noteFor(emails, n){
     }
     // On their computers too, where they turned desktop notifications on (functions/push.js); not what
     // reaches everyone (n.ping false: a new conversation).
-    if (n.ping !== false) await webPush.pushTo(list, base.text, base.href, n.join ? { join: n.join } : undefined);
+    // Not to whoever unticked its kind (Notifications › Settings).
+    if (n.ping !== false) {
+      const want = [];
+      for (const e of list) if (notifyKinds.wants((await notifyPrefsOf(e)).off, base.feature)) want.push(e);
+      if (want.length) await webPush.pushTo(want, base.text, base.href, n.join ? { join: n.join } : undefined);
+    }
   } catch (err){ logger.warn('Keeping a notification failed', { feature: n.feature, error: String(err && err.message || err) }); }
 }
 
@@ -832,9 +837,11 @@ async function dmBySlackId(token, slackId, text, key, opts){
     if (!opts.raw) {
       const email = await emailForSlackId(slackId);
       if (email) {
-        if (!opts.noNote) await noteFor([email], { text, feature: key || '', source: 'slack' });
+        if (!opts.noNote) await noteFor([email], { text, feature: opts.kind || key || '', source: 'slack' });
         opts = Object.assign({}, opts, { noNote: true });
-        if (await pingsFor(email)) { await queuePing(email); return true; }
+        const way = await slackWayFor(email, opts.kind || key);
+        if (way === 'off') return true;
+        if (way === 'pings') { await queuePing(email); return true; }
       }
     }
     if (key) {
@@ -857,8 +864,11 @@ async function dmBySlackId(token, slackId, text, key, opts){
 async function dmByEmail(token, email, text, key, opts){
   opts = opts || {};
   // Their Inbox first, whatever happens on Slack (a feature in pilot too); then a ping, or the message.
-  if (!opts.noNote) await noteFor([email], { text, feature: key || '', source: 'slack' });
-  if (await pingsFor(email)) { await queuePing(email); return true; }
+  // opts.kind: what it's about, when that's finer than its feature's key (a reply to your own message).
+  if (!opts.noNote) await noteFor([email], { text, feature: opts.kind || key || '', source: 'slack' });
+  const way = await slackWayFor(email, opts.kind || key);
+  if (way === 'off') return true;
+  if (way === 'pings') { await queuePing(email); return true; }
   if (key) {
     const st = await pilotState(key);
     if (!st.live) return toTesters(token, st, await nameForEmail(email), text);
@@ -882,6 +892,26 @@ async function pingsFor(email){
   const st = await pilotState('notification-pings');
   return st.live || st.testers.map((t) => String(t).toLowerCase()).indexOf(String(email).toLowerCase()) >= 0;
 }
+// What someone hears of outside their Inbox (Notifications › Settings, 2026-11-06): notifyPrefs/{email}
+// { slack, off, at }, theirs to set (firestore.rules). slack: 'all' (each message), 'pings' (a ping that there are
+// new ones; the default while pilot notification-pings is live, or they test it) or 'off' (nothing on Slack).
+// off: the kinds they unticked (notify-kinds.js): those reach their Inbox only, neither Slack nor their computers.
+// Answers to what they just did (opts.raw) and channel posts aren't theirs to turn off here.
+const SLACK_WAYS = ['all', 'pings', 'off'];
+const notifyKinds = require('./notify-kinds');
+async function notifyPrefsOf(email){
+  if (!email) return {};
+  const d = await db.collection('notifyPrefs').doc(String(email).toLowerCase()).get().catch(() => null);
+  return d && d.exists ? d.data() : {};
+}
+// → 'all' | 'pings' | 'off' for a notification of `feature` (none: Slack messages' choice alone).
+async function slackWayFor(email, feature){
+  if (!email) return 'all';
+  const pref = await notifyPrefsOf(email);
+  if (feature && !notifyKinds.wants(pref.off, feature)) return 'off';
+  if (SLACK_WAYS.indexOf(pref.slack) >= 0) return pref.slack;
+  return (await pingsFor(email)) ? 'pings' : 'all';
+}
 async function queuePing(email){
   const ref = db.collection('slackPings').doc(String(email).toLowerCase());
   await ref.set({ pending: FieldValue.increment(1), firstAt: FieldValue.serverTimestamp() }, { merge: true })
@@ -893,10 +923,10 @@ async function deliver(emails, n){
   if (!list.length) return;
   await noteFor(list, n);
   if (n.ping === false) return;
-  for (const e of list) if (await pingsFor(e)) await queuePing(e);
+  for (const e of list) if ((await slackWayFor(e, n.feature)) === 'pings') await queuePing(e);
 }
 // Pure: the ping's text.
-function pingText(n, url){ return '🔔 You have ' + (n === 1 ? 'a new notification' : n + ' new notifications') + ' on BOLD.OS: <' + url + '|' + (n === 1 ? 'open it' : 'open them') + '>.'; }
+function pingText(n, url){ return '🔔 You have ' + (n === 1 ? 'a new notification' : n + ' new notifications') + ' on BOLD.OS: <' + url + '|' + (n === 1 ? 'open it' : 'open them') + '>. _<' + url + '#settings|Change what you get on Slack>_'; }
 exports.sendNotificationPings = onSchedule({ schedule: 'every 5 minutes', secrets: [SLACK_BOT_TOKEN] }, async function(){
   const due = (await db.collection('slackPings').where('pending', '>', 0).get()).docs;
   const now = Date.now(), url = SITE_URL + 'notifications.html';
@@ -904,6 +934,8 @@ exports.sendNotificationPings = onSchedule({ schedule: 'every 5 minutes', secret
     const p = d.data();
     if (p.lastPingAt && now - p.lastPingAt < PING_GAP) continue;
     try {
+      // Turned off since it was queued: nothing on Slack.
+      if ((await slackWayFor(d.id)) === 'off') { await d.ref.set({ pending: 0 }, { merge: true }); continue; }
       const unread = (await db.collection('notifications').where('to', '==', d.id).where('read', '==', false).count().get()).data().count;
       if (unread) {
         const id = await slackIdForEmail(d.id);
@@ -1482,7 +1514,8 @@ async function pilotSlack(token, key, label, m){
   const emails = [];
   for (const e of Array.from(new Set((m.emails || []).map((x) => String(x).toLowerCase())))) {
     await noteFor([e], { text: m.text, feature: key, source: 'slack' });
-    if (await pingsFor(e)) await queuePing(e); else emails.push(e);
+    const way = await slackWayFor(e, key);
+    if (way === 'pings') await queuePing(e); else if (way === 'all') emails.push(e);
   }
   m = Object.assign({}, m, { emails });
   if (!emails.length && !m.channel) return { pilot: !st.live, pinged: true };

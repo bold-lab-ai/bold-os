@@ -6,6 +6,7 @@
 // - To do (#todo): everything on BOLD.OS waiting on you, from myRequests (functions/index.js),
 //   each linking to where it's answered. It stays until it's done; the bell counts these.
 // - Waiting (#waiting): what you asked that waits on someone else.
+// - Settings (#settings): what you hear of outside the Inbox: on Slack, on your computers, and kind by kind.
 (function(){
   var body = document.getElementById('notificationsBody');
   if (!body || !BOLD.getAuth()) return;
@@ -73,6 +74,46 @@
       (list.length ? '<ul class="nt-devices">' + list.map(function(d){
         return '<li>' + esc(d.label || 'A device') + ' <span class="detail-muted">· since ' + esc(when(d.at)) + '</span> <button type="button" class="btn-text nt-push-rm" data-id="' + esc(d.id) + '">Remove</button></li>';
       }).join('') + '</ul>' : '') + '</div>';
+  }
+  // ---------- Settings (#settings; 2026-11-06) ----------
+  // What you hear of outside this Inbox: on Slack, each message, a ping that there are new ones (the
+  // default: pilot notification-pings is live) or nothing; and, kind by kind, what you're told about at all
+  // (unticked: here only, neither on Slack nor your computers). notifyPrefs/{your email} { slack, off, at },
+  // yours alone (firestore.rules; functions/index.js slackWayFor). The kinds are functions/notify-kinds.js's
+  // (in the page: #notifyKinds), so the page and the server agree.
+  var SLACK_WAYS = [['pings', 'A ping when there’s something new (at most every 30 minutes)'], ['all', 'Every message'], ['off', 'Nothing']];
+  var KINDS = []; try { KINDS = JSON.parse((document.getElementById('notifyKinds') || {}).textContent || '[]') || []; } catch (e){}
+  var prefs = { slack: '', off: [], loaded: false, busy: false, msg: '' }, isPi = false;
+  function settingsHtml(){
+    if (!prefs.loaded) return '<p class="proj-msg">Loading&hellip;</p>';
+    var way = prefs.slack || 'pings', off = prefs.off || [];
+    var kinds = KINDS.filter(function(sec){ return !sec.pi || isPi; }).map(function(sec){
+      return '<fieldset class="nt-kinds"><legend>' + esc(sec.section) + '</legend>' + sec.items.map(function(k){
+        return '<label class="nt-kind"><input type="checkbox" class="nt-kind-on" value="' + esc(k.id) + '"' + (off.indexOf(k.id) < 0 ? ' checked' : '') + (prefs.busy ? ' disabled' : '') + '> ' + esc(k.label) + '</label>';
+      }).join('') + '</fieldset>';
+    }).join('');
+    return (pushKey() ? '<div class="nt-set"><h2 class="nt-h">On your computers</h2>' + pushHtml() + '</div>' : '') +
+      '<div class="nt-set"><h2 class="nt-h">On Slack</h2>' +
+        '<label class="nt-slack"><select id="ntSlack" class="nt-slack-way" aria-label="Slack messages"' + (prefs.busy ? ' disabled' : '') + '>' + SLACK_WAYS.map(function(w){
+          return '<option value="' + w[0] + '"' + (w[0] === way ? ' selected' : '') + '>' + esc(w[1]) + (w[0] === 'pings' ? ' (the default)' : '') + '</option>';
+        }).join('') + '</select></label>' +
+        '<p class="detail-muted">' + (way === 'off' ? 'BOLD.OS sends you nothing on Slack; it’s all in your Inbox.' : 'What you’ve ticked below. Everything is in your Inbox too.') + '</p></div>' +
+      '<div class="nt-set"><h2 class="nt-h">Tell me about</h2><p class="detail-muted">Unticked: still in your Inbox, but not on Slack or your computers.</p>' + kinds + '</div>' +
+      (prefs.msg ? '<p class="nt-saved" role="status">' + esc(prefs.msg) + '</p>' : '');
+  }
+  function loadPrefs(){
+    db().collection('notifyPrefs').doc(me).get().then(function(d){
+      var x = d.exists ? d.data() : {};
+      prefs.slack = x.slack || ''; prefs.off = Array.isArray(x.off) ? x.off : []; prefs.loaded = true; draw();
+    }).catch(function(err){ console.error('[BOLD Notifications] loading your settings failed', err); prefs.loaded = true; draw(); });
+  }
+  function savePrefs(patch){
+    var was = { slack: prefs.slack, off: prefs.off.slice() };
+    Object.assign(prefs, patch, { busy: true, msg: '' }); draw();
+    var data = { off: prefs.off, at: Date.now() };
+    if (prefs.slack) data.slack = prefs.slack;
+    db().collection('notifyPrefs').doc(me).set(data).then(function(){ prefs.busy = false; prefs.msg = 'Saved.'; draw(); })
+      .catch(function(err){ console.error('[BOLD Notifications] saving your settings failed', err); Object.assign(prefs, was, { busy: false, msg: 'Couldn’t save it — try again.' }); draw(); });
   }
   function loadDevices(){
     if (!pushKey()) return;
@@ -150,8 +191,9 @@
     body.innerHTML = '<nav class="guide-tabs profile-tabs" aria-label="Notifications">' +
         '<a class="guide-tab" href="#inbox">Inbox' + n(unread) + '</a>' +   // (N): unread, as To do's and Waiting's counts
         '<a class="guide-tab" href="#todo">To do' + n(forYou.length) + '</a>' +
-        '<a class="guide-tab" href="#waiting">Waiting' + n(byYou.length) + '</a></nav>' +
-      '<section class="profile-panel" id="inbox">' + pushHtml() +
+        '<a class="guide-tab" href="#waiting">Waiting' + n(byYou.length) + '</a>' +
+        '<a class="guide-tab" href="#settings">Settings</a></nav>' +
+      '<section class="profile-panel" id="inbox">' +
         '<div class="nt-bar"><span class="nt-filter" role="group" aria-label="Show">' + SOURCES.map(function(s){
           return '<button type="button" class="btn-text nt-src' + (source === s[0] ? ' is-on' : '') + '" data-src="' + s[0] + '" aria-pressed="' + (source === s[0]) + '">' + esc(s[1]) + '</button>';
         }).join('') + '</span>' +
@@ -162,12 +204,13 @@
           : '<p class="proj-msg">' + (source ? 'Nothing here yet.' : 'Nothing yet: what BOLD.OS tells you on Slack, and in Conversations, shows here from now on.') + '</p>')) +
       '</section>' +
       reqPanel('todo', forYou, true, 'Nothing waiting on you.') +
-      reqPanel('waiting', byYou, false, 'Nothing you asked is waiting.');
+      reqPanel('waiting', byYou, false, 'Nothing you asked is waiting.') +
+      '<section class="profile-panel" id="settings">' + settingsHtml() + '</section>';
     showTab();
   }
   function showTab(){
-    var want = ['#todo', '#waiting'].indexOf(location.hash) >= 0 ? location.hash.slice(1) : 'inbox';
-    ['inbox', 'todo', 'waiting'].forEach(function(id){ var x = document.getElementById(id); if (x) x.hidden = id !== want; });
+    var want = ['#todo', '#waiting', '#settings'].indexOf(location.hash) >= 0 ? location.hash.slice(1) : 'inbox';
+    ['inbox', 'todo', 'waiting', 'settings'].forEach(function(id){ var x = document.getElementById(id); if (x) x.hidden = id !== want; });
     Array.prototype.forEach.call(body.querySelectorAll('.guide-tab'), function(a){
       var on = a.getAttribute('href') === '#' + want;
       a.classList.toggle('is-current', on);
@@ -181,6 +224,16 @@
     ids.forEach(function(id){ b.update(db().collection('notifications').doc(id), { read: read, readAt: Date.now() }); });
     return b.commit().catch(function(err){ console.error('[BOLD Notifications] marking read failed', err); });
   }
+  body.addEventListener('change', function(e){
+    var c = e.target.classList;
+    if (!c) return;
+    if (c.contains('nt-slack-way')) savePrefs({ slack: e.target.value });
+    else if (c.contains('nt-kind-on')) {
+      var id = e.target.value, off = prefs.off.filter(function(k){ return k !== id; });
+      if (!e.target.checked) off.push(id);
+      savePrefs({ off: off });
+    }
+  });
   body.addEventListener('click', function(e){
     if (e.target.closest('.nt-push-on')) { pushOn(); return; }
     if (e.target.closest('.nt-push-off')) { pushOff(''); return; }
@@ -198,13 +251,18 @@
     }
   });
 
+  // The section for PIs and admins only to them.
+  BOLD.onAccess(function(a){ var pi = !!(a && a.fullWrite); if (pi !== isPi) { isPi = pi; draw(); } });
   var unsub = null, asked = 0;
   BOLD.onUser(function(user){
     var mine = ++asked;
     if (unsub) { unsub(); unsub = null; }
     reqs = null; notes = null; reqError = noteError = false;
     if (!user) return;
+    var was = me;
     me = String(user.email || '').toLowerCase();
+    // Only another account's is loaded afresh: the same one signed in again keeps a choice being saved.
+    if (me !== was) { prefs = { slack: '', off: [], loaded: false, busy: false, msg: '' }; loadPrefs(); }
     draw();
     db().collection('settings').doc('webPush').get().then(function(x){ push.key = (x.exists && x.data().publicKey) || ''; draw(); loadDevices(); })
       .catch(function(){ loadDevices(); });

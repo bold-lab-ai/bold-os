@@ -41,7 +41,7 @@ test('an edition: released, moved or cancelled', () => {
 });
 
 test('the ping says how many, and links to them', () => {
-  assert.strictEqual(pingText(1, 'u'), '🔔 You have a new notification on BOLD.OS: <u|open it>.');
+  assert.strictEqual(pingText(1, 'u'), '🔔 You have a new notification on BOLD.OS: <u|open it>. _<u#settings|Change what you get on Slack>_');
   assert.match(pingText(4, 'u'), /4 new notifications/);
 });
 
@@ -59,4 +59,27 @@ test('moving someone to another email: values, arrays and map keys, any case', (
   const r = replaceEmail({ to: 'Old@x', members: ['a@x', 'old@x'], by: { email: 'old@x', name: 'Y' }, seen: { 'old@x': 1 }, n: 3, note: 'old@x said' }, 'old@x', 'new@x');
   assert.strictEqual(r.n, 4);
   assert.deepStrictEqual(r.value, { to: 'new@x', members: ['a@x', 'new@x'], by: { email: 'new@x', name: 'Y' }, seen: { 'new@x': 1 }, n: 3, note: 'old@x said' });
+});
+
+test('someone joining or leaving: whose project it is hears of it as a kind of its own', () => {
+  const b = { title: 'P', members: ['lead@x', 'a@x'] }, a = { title: 'P', members: ['lead@x', 'a@x', 'c@x'] };
+  const out = projectChanges(b, a, { 'c@x': 'Cara' }, ['Lead@x']);
+  assert.deepStrictEqual(out.find((x) => x.kind === 'project-joined-mine').to, ['lead@x']);
+  assert.deepStrictEqual(out.find((x) => x.kind === 'project-joined').to, ['a@x']);
+  // With nobody leading it, as before.
+  assert.strictEqual(projectChanges(b, a, {}).some((x) => /-mine$/.test(x.kind)), false);
+});
+
+const kinds = require('../functions/notify-kinds');
+test('what people can turn off: each feature in one kind, each kind with an id of its own', () => {
+  const ids = kinds.IDS, features = kinds.KINDS.flatMap((s) => s.items.flatMap((i) => i.features));
+  assert.strictEqual(new Set(ids).size, ids.length);
+  assert.strictEqual(new Set(features).size, features.length);
+});
+test('an unticked kind is heard of in the Inbox only; a feature in no kind, always', () => {
+  assert.strictEqual(kinds.kindOf('conversation-reply-mine'), 'conv-mine');
+  assert.strictEqual(kinds.wants(['conv-mine'], 'conversation-reply-mine'), false);
+  assert.strictEqual(kinds.wants(['conv-mine'], 'conversation-replies'), true);
+  assert.strictEqual(kinds.wants(['conv-mine'], 'channel-alignment'), true);
+  assert.strictEqual(kinds.wants(undefined, 'project-joined'), true);
 });
