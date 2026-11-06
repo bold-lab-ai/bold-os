@@ -328,8 +328,8 @@
   });
   addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1'); });
   // For search (pages/search.js: `red pill`).
-  // 01:24 on the homepage. Idle for 30 minutes or more, the conversation opens by itself; otherwise
-  // the wordmark's dot turns green and blinks, and a click on it opens the conversation.
+  // 01:24. Idle for 30 minutes or more, on any page, the conversation opens by itself; otherwise, on
+  // the homepage, the wordmark's dot turns green and blinks, and a click on it opens the conversation.
   // From 01:24 to 01:29 (a background tab's timers may run only once a minute), once a page.
   var IDLE = 30 * 60e3, lastActive = Date.now(), called = false;
   ['pointermove', 'pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function(t){
@@ -352,11 +352,11 @@
     });
   }
   function wakeCheck(){
-    if (called || !isHome() || root.classList.contains('is-matrix')) return;
+    if (called || root.classList.contains('is-matrix')) return;
     var d = new Date();
     if (d.getHours() !== 1 || d.getMinutes() < 24 || d.getMinutes() > 29) return;
     called = true;
-    if (Date.now() - lastActive >= IDLE) converse(); else callDot();
+    if (Date.now() - lastActive >= IDLE) converse(); else if (isHome()) callDot();
   }
   setInterval(wakeCheck, 5000);
   // To try it at another hour, in the console: BoldEggs.wake('dot') or BoldEggs.wake('idle').
