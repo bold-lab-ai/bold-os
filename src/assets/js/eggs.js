@@ -341,7 +341,7 @@
   });
   function isHome(){ var p = location.pathname; return /\/$/.test(p) || /\/index\.html$/.test(p); }
   // Hints, as the film gives them, on the homepage until you follow them: the title buzzes left and
-  // right, a single stream of rain falls down the page now and then, and the search box types
+  // right, and the search box types
   // "Follow the white rabbit." Meanwhile a click on the title goes straight into the Matrix.
   var hinting = null;
   function hints(){
@@ -380,28 +380,7 @@
         else { title.style.transform = ''; title.classList.remove('is-glitch'); ghosts.forEach(function(g){ g.remove(); }); later(glitch, 6000 + Math.random() * 6000); }
       })();
     }
-    // 2. One stream of rain down one column of the page, as the Matrix's: fixed cells lit by the head.
-    function trickle(){
-      if (!hinting) return;
-      if (!still) {
-        var S = 20, rows = Math.ceil(innerHeight / S) + 1, cv = document.createElement('canvas'), cx = cv.getContext('2d'), d = window.devicePixelRatio || 1;
-        cv.className = 'mx-trickle'; cv.setAttribute('aria-hidden', 'true');
-        cv.width = S * d; cv.height = rows * S * d; cv.style.width = S + 'px'; cv.style.height = rows * S + 'px';
-        cv.style.left = Math.round(Math.random() * (innerWidth - S)) + 'px';
-        cx.setTransform(d, 0, 0, d, 0, 0); cx.textBaseline = 'top'; cx.textAlign = 'center';
-        document.body.appendChild(cv);
-        // Slow, as a hint: 4-6 cells a second, its trail fading slowly to match.
-        var c = rainColumn(rows, 1); c.decay = 0.982; c.heads.push({ y: 0, speed: 0.13 + Math.random() * 0.06, row: -1 });
-        (function tick(){
-          rainStep(c, false);
-          cx.clearRect(0, 0, S, rows * S);
-          rainDraw(cx, c, 0, S);
-          if (c.heads.length || c.cells.some(function(x){ return x.b; })) later(tick, 33); else cv.remove();
-        })();
-      }
-      later(trickle, 15000 + Math.random() * 15000);   // rarely: one every 15-30 s
-    }
-    // 3. The search box (signed in) types the hint, holds it, and gives its placeholder back.
+    // 2. The search box (signed in) types the hint, holds it, and gives its placeholder back.
     function whisper(){
       if (!hinting) return;
       var box = document.querySelector('.home-search .ms-input') || document.querySelector('.ms-input');
@@ -413,7 +392,7 @@
         else later(function(){ box.placeholder = was; later(whisper, 30000); }, 6000);
       })();
     }
-    glitch(); later(trickle, 4000); later(whisper, 3000);
+    glitch(); later(whisper, 3000);
   }
   function wakeCheck(){
     if (called || root.classList.contains('is-matrix')) return;
