@@ -3,8 +3,8 @@
 // belong: the 404 page (404.njk), `sudo` in search (pages/search.js), the lamp theme
 // (mountTheme, bold.js), the deadline's shiver (markdown.js), the Lineage engraving
 // (pages/network.js) and \bold in KaTeX (card-model.js).
-// Here: the console, Reviewer 2, milestone numbers, the birthday, the Matrix (`redpill`) and the masthead's
-// cat at inbox zero.
+// Here: the console, Reviewer 2, milestone numbers, the birthday, the Matrix (`redpill`), eXit (`exit`) and
+// the masthead's cat at inbox zero.
 // Their styles are at the end of bold.css.
 (function(){
   var root = document.documentElement;
@@ -113,7 +113,8 @@
     var R = function(lines, then){ return { lines: lines, then: then || 'prompt' }; };
     var name = st.name || 'BOLD';
     st.turns = (st.turns || 0) + 1;
-    if (/^(exit|quit|bye|logout)$/.test(w)) return R(['There is no exit.', 'Fine. There is.'], 'close');
+    if (w === 'exit') return R(['There is no exit.', 'Fine. There is.'], 'exit');
+    if (/^(quit|bye|logout)$/.test(w)) return R(['There is no exit.', 'Fine. There is.'], 'close');
     if (w === 'help') return R(['Try: who’s there · red · blue · why me · who are you · where am i · what time is it · rabbit · spoon · exit']);
     if (/^(red|red pill|the red one|take the red pill|i take the red pill)$/.test(w)) {
       st.stage = 'game';
@@ -358,6 +359,7 @@
     // What a reply's `then` does once its lines are typed.
     function reply(r){
       var after = { game: play, matrix: function(){ close(); matrix(true, true); }, close: close,
+        exit: function(){ close(); setTimeout(playExit, 650); },
         rabbit: function(){ location.href = '404.html#rabbit'; } }[r.then];   // the loss curve; served locally too
       say(r.lines || [], after || null);
     }
@@ -508,8 +510,120 @@
     typed = (typed + e.key.toLowerCase()).slice(-8);
     if (/redpill$/.test(typed) && !root.classList.contains('is-matrix')) { typed = ''; converse(); }
     else if (/bluepill$/.test(typed) && root.classList.contains('is-matrix')) { typed = ''; matrix(false); }
+    else if (/exit$/.test(typed) && !document.querySelector('.mx-term')) { typed = ''; e.preventDefault(); playExit(); }
   });
   addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1'); });
+
+  // Type `exit` (not in a field), or `exit` in the Matrix's conversation: eXit 1.2.2, Murat Erdemir's
+  // text adventure (2022), played as his Python script plays, in a console over the page. His branches as
+  // they are, quirks included; only two typos fixed, answers read by their words (exitMatches), and an answer a step doesn't know gets its question again.
+  // Each step: what it prints, then [answers, next step]. A step with no answers is an ending.
+  var EXIT_LOGO = ['     __  ___ _    ', '  ___\\ \\/ (_) |_  ', ' / _ \\\\  /| | __| ', '|  __//  \\| | |_  ', ' \\___/_/\\_\\_|\\__| '];
+  var EXIT_NOTE = 'The note says, "Don’t leave me here."', EXIT_AGAIN = 'The note says, "Don’t leave me here again."';
+  var EXIT_STAY = ['Dungeon is collapsed.', 'You didn’t leave your friend.'], EXIT_LEFT = ['You left your friend.'];
+  function exitBeach(back){
+    return { say: ['You crawl through the tunnel and the tunnel leads you to a beach.', 'What do you do?'],
+      go: [[['leave', 'examine', 'look'], 'boat'], [['stay'], back]] };
+  }
+  var EXIT = {
+    start: { say: ['You’re trapped in a dungeon with your friend.', 'You see a barrel. What do you do?'],
+      go: [[['interact', 'move the barrel'], 'tunnel'], [['stay', 'sit down next to my friend'], 'handed'], [['examine'], 'beam']] },
+    beam: { say: ['There is a light beam visible behind the barrel.', 'What do you do?'],
+      go: [[['interact', 'move the barrel'], 'tunnel'], [['stay', 'sit down next to my friend'], 'handed'], [['examine'], 'beam']] },
+    handed: { say: ['Your friend hands you a note.', 'What do you do?'],
+      go: [[['interact', 'take', 'read', 'stay', 'light a match'], 'note'], [['leave'], 'left']] },
+    tunnel: { say: ['The barrel rolls aside and you find a secret tunnel.', 'What do you do?'],
+      go: [[['interact', 'leave', 'enter tunnel'], 'weak'], [['stay'], 'handed2']] },
+    weak: { say: ['You start to escape but your friend is too weak to go with you.', 'They hand you a note.', 'What do you do?'],
+      go: [[['interact', 'read', 'take', 'read note'], 'dark'], [['examine', 'stay'], 'takeNote']] },
+    dark: { say: ['It is too dark to read the note.', 'What do you do?'],
+      go: [[['leave', 'light a match'], 'beach'], [['examine', 'stay'], 'match']] },
+    handed2: { say: ['Your friend hands you a note.', 'What do you do?'],
+      go: [[['interact', 'take', 'stay'], 'dark2'], [['leave'], 'left']] },
+    dark2: { say: ['It is too dark to read the note.', 'What do you do?'], go: [[['examine', 'stay', 'light a match'], 'match']] },
+    match: { say: ['You found a match on the ground.', 'Do you light the match?'],
+      go: [[['interact', 'light', 'yes'], 'note'], [['leave', 'no'], 'beach2']] },
+    takeNote: { say: ['Do you take the note?'], go: [[['interact', 'stay', 'yes'], 'note'], [['leave', 'no'], 'beach2']] },
+    note: { say: [EXIT_NOTE, 'Do you leave your friend or stay?'], go: [[['stay', 'no'], 'stayed'], [['leave', 'yes'], 'left']] },
+    beach: exitBeach('back'),
+    beach2: exitBeach('back2'),
+    boat: { say: ['In the water you see a boat.', 'What do you do?'],
+      go: [[['leave', 'interact', 'get on the boat'], 'newWorld'], [['stay'], 'collapsed']] },
+    back: { say: ['You came back! Your friend hands you a note.', 'What do you do?'],
+      go: [[['interact', 'take', 'read', 'stay'], 'noteAgain'], [['leave', 'yes'], 'left']] },
+    back2: { say: ['You came back! Your friend hands you a note.', 'What do you do?'],
+      go: [[['interact', 'take', 'read', 'stay'], 'noteAgain'], [['leave', 'yes'], 'cannotLeave']] },
+    noteAgain: { say: [EXIT_AGAIN, 'Do you leave your friend or stay?'], go: [[['stay', 'no'], 'stayed']] },
+    newWorld: { say: ['Congratulations, you’re heading to a new world!'] },
+    collapsed: { say: ['Tunnel is collapsed, you cannot come back!', 'You left your friend.'] },
+    cannotLeave: { say: ['Tunnel is collapsed, you cannot leave again!'] },
+    stayed: { say: EXIT_STAY },
+    left: { say: EXIT_LEFT },
+  };
+  // Answers are read by their words, not to the letter: case, punctuation and small words are dropped
+  // (EXIT_STOP), a few synonyms become the script's word (EXIT_SAME), and an answer matches a step's phrase
+  // when it has all the phrase's words ("enter the secret tunnel" for "enter tunnel"), or is the phrase's
+  // first words ("enter" for it). The step's phrases are tried in order, the first that matches wins. With
+  // a "not" in it, only the exact phrase counts, so "don't leave" is never "leave".
+  var EXIT_STOP = { the: 1, a: 1, an: 1, to: 1, at: 1, into: 1, in: 1, my: 1, your: 1, i: 1, will: 1, please: 1, secret: 1, it: 1, through: 1, on: 1, up: 1, around: 1, me: 1, him: 1, her: 1, them: 1, then: 1, and: 1 };
+  var EXIT_SAME = { y: 'yes', yeah: 'yes', yep: 'yes', ok: 'yes', okay: 'yes', sure: 'yes', n: 'no', nope: 'no',
+    grab: 'take', pick: 'take', accept: 'take', look: 'examine', inspect: 'examine', search: 'examine', check: 'examine',
+    push: 'move', roll: 'move', shift: 'move', go: 'enter', crawl: 'enter', strike: 'light', ignite: 'light',
+    board: 'get', escape: 'leave', run: 'leave', wait: 'stay', remain: 'stay' };
+  var EXIT_NOT = /\b(not|no+t|dont|wont|cant|never|without)\b/;
+  function exitWords(t){
+    return String(t).toLowerCase().replace(/[’']/g, '').replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+      .filter(function(x){ return x && !EXIT_STOP[x]; }).map(function(x){ return EXIT_SAME[x] || x; });
+  }
+  function exitMatches(said, phrase){
+    var s = exitWords(said), p = exitWords(phrase);
+    if (!s.length) return false;
+    if (s.join(' ') === p.join(' ')) return true;
+    if (EXIT_NOT.test(String(said).toLowerCase().replace(/[’']/g, ''))) return false;
+    if (p.every(function(x){ return s.indexOf(x) >= 0; })) return true;
+    return s.length < p.length && s.every(function(x, i){ return x === p[i]; });
+  }
+  // Where an answer leads from a step: its next step's name, or null (its question again).
+  function exitNext(step, said){
+    var go = (EXIT[step] && EXIT[step].go) || [];
+    for (var i = 0; i < go.length; i++) for (var j = 0; j < go[i][0].length; j++) if (exitMatches(said, go[i][0][j])) return go[i][1];
+    return null;
+  }
+  function playExit(){
+    if (document.querySelector('.ex-term')) return;
+    var term = document.createElement('div'), back = document.activeElement;
+    term.className = 'ex-term'; term.setAttribute('role', 'dialog'); term.setAttribute('aria-label', 'eXit');
+    term.innerHTML = '<div class="ex-log" aria-live="polite"></div><form class="ex-prompt"><span class="ex-ps" aria-hidden="true"></span>' +
+      '<input type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Your answer"></form>';
+    document.body.appendChild(term);
+    var log = term.querySelector('.ex-log'), form = term.querySelector('.ex-prompt'), ps = form.querySelector('.ex-ps'), input = form.querySelector('input');
+    var step = null;   // 'over': the end, Enter closes
+    function out(lines, cls){
+      lines.forEach(function(l){ var p = document.createElement('p'); if (cls) p.className = cls; p.textContent = l; log.appendChild(p); });
+      term.scrollTop = term.scrollHeight;
+    }
+    function prompt(text){ ps.textContent = text; input.focus(); term.scrollTop = term.scrollHeight; }
+    function close(){ term.remove(); if (back && back.focus) try { back.focus(); } catch (e){} }
+    function enter(name){
+      step = name; out(['']); out(EXIT[name].say);
+      if (EXIT[name].go) prompt('>');
+      else { step = 'over'; out(['', 'Press enter to exit the game.']); prompt(''); }
+    }
+    out(EXIT_LOGO, 'ex-logo');
+    out(['running eXit version 1.2.2 · coded by Murat Erdemir']);
+    enter('start');
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var said = input.value; input.value = '';
+      if (step === 'over') { close(); return; }
+      out(['> ' + said], 'ex-said');
+      var to = exitNext(step, said);
+      if (to) { enter(to); return; }
+      var say = EXIT[step].say; out(['', say[say.length - 1]]); prompt('>');   // not an answer here: the question again
+    });
+    term.addEventListener('keydown', function(e){ if (e.key === 'Escape') { e.stopPropagation(); close(); } });
+    term.addEventListener('pointerup', function(){ if (!getSelection().toString()) input.focus(); });
+  }
   // For search (pages/search.js: `red pill`).
   // 01:24. Idle for 30 minutes or more, on any page, the conversation opens by itself; otherwise, on
   // the homepage, hints (below), and searching with the hint in the box goes into the Matrix.
@@ -591,6 +705,7 @@
     blip: function(o){ if (o) Object.assign(BLIP, o); var a = audioCtx(); if (!a) return 'Click the page once first.'; (a.state === 'suspended' ? a.resume() : Promise.resolve()).then(tick); return BLIP; },
     // BoldEggs.knock(): the two knocks; BoldEggs.knock({ level: 1, room: 0.5, roomS: 0.9 }) changes them first (KNOCK).
     cat: function(){ catVisit(true); return 'Here, kitty.'; },
+    exit: function(){ playExit(); return 'Running eXit 1.2.2.'; }, _exitNext: exitNext,
     knock: function(o){
       if (o) Object.assign(KNOCK, o);
       var a = audioCtx();
