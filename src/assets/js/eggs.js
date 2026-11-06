@@ -329,7 +329,7 @@
   addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1'); });
   // For search (pages/search.js: `red pill`).
   // 01:24. Idle for 30 minutes or more, on any page, the conversation opens by itself; otherwise, on
-  // the homepage, the wordmark's dot turns green and blinks, and a click on it opens the conversation.
+  // the homepage, the wordmark's dot turns green and blinks, and a click on it goes straight into the Matrix.
   // From 01:24 to 01:29 (a background tab's timers may run only once a minute), once a page.
   var IDLE = 30 * 60e3, lastActive = Date.now(), called = false;
   ['pointermove', 'pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function(t){
@@ -347,7 +347,7 @@
         if (!dot.classList.contains('is-calling')) return;
         e.preventDefault(); e.stopPropagation();   // the wordmark is a link home; the title shows the sidebar
         Array.prototype.forEach.call(dots, function(d){ d.classList.remove('is-calling'); d.removeAttribute('title'); });
-        converse();
+        matrix(true, true);   // the downpour, then the Matrix
       });
     });
   }
