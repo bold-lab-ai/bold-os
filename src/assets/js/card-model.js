@@ -65,6 +65,8 @@
     while ((m = re.exec(text))){ out += BOLD.escapeHtml(text.slice(last, m.index)) + BOLD.imageHtml(m[1], m[2]); last = re.lastIndex; }
     return out + BOLD.escapeHtml(text.slice(last));
   }
+  // Easter egg (eggs.js): \\bold is the wordmark, drawn as the masthead's (bold.css .katex .bold-mark).
+  var BOLD_MACROS = { '\\bold': '\\htmlClass{bold-mark}{\\text{\\textbf{BOLD}}\\htmlClass{bold-dot}{\\text{.}}\\text{OS}}' };
   function renderAbstractHtml(text){
     if (!text) return '';
     if (typeof katex === 'undefined') return abstractPlain(text);
@@ -77,7 +79,7 @@
       var isBlock = m[1] !== undefined;
       var src = isBlock ? m[1] : m[2];
       try {
-        out += katex.renderToString(src, { throwOnError: false, displayMode: isBlock, macros: { '\\bold': '\\textbf{BOLD}.\\text{OS}' } });
+        out += katex.renderToString(src, { throwOnError: false, displayMode: isBlock, macros: BOLD_MACROS, trust: function(c){ return c.command === '\\htmlClass' && /^bold-(mark|dot)$/.test(c.class); } });
       } catch (err){
         out += BOLD.escapeHtml(m[0]);
       }

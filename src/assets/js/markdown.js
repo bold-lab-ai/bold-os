@@ -118,7 +118,7 @@ window.BoldMarkdown = (function(){
     // The last phase before the deadline (the submission) stands out.
     var pivot = -1; phases.forEach(function(p, i){ if (p.when !== 'after') pivot = i; });
     return '<nav class="md-timeline" aria-label="Phases at a glance"><ol style="--n:' + phases.length + '">' + phases.map(function(p, i){
-      return '<li' + (p.when === 'after' ? ' class="is-after"' : i === pivot ? ' class="is-pivot' + (p.when === '0d' ? ' is-now' : '') + '"' : p.when === '0d' ? ' class="is-now"' : '') + '><a href="#' + p.id + '"><span class="tl-dot"></span><span class="tl-name">' + esc(p.name) + '</span>' +
+      return '<li' + (p.when === 'after' ? ' class="is-after"' : i === pivot ? ' class="is-pivot"' : '') + '><a href="#' + p.id + '"><span class="tl-dot"></span><span class="tl-name">' + esc(p.name) + '</span>' +
         '<span class="tl-wk">' + esc(p.when) + '</span></a></li>';
     }).join('') + '</ol></nav>';
   }

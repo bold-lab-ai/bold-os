@@ -1004,17 +1004,42 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
   color:var(--danger-text); border:1px solid var(--danger-line); background:var(--danger-bg); transform:rotate(var(--tilt, -1deg)); vertical-align:middle;}
 /* A milestone number on a card: #42, #404, #1337. */
 .badge.is-milestone{background:var(--highlight-strong); border-color:var(--highlight-line); cursor:help;}
-/* A phase due today (· 0d) shivers. */
-.md-timeline li.is-now .tl-dot{animation:egg-shiver .35s ease-in-out infinite; background:var(--danger-text); border-color:var(--danger-text);}
+/* The last three days before a venue's paper deadline (Internal Review Board): it shivers. */
+.egg-panic{display:inline-block; color:var(--danger-text); animation:egg-shiver .35s ease-in-out infinite; cursor:help;}
 @keyframes egg-shiver{0%,100%{transform:translateX(0);} 25%{transform:translateX(-1.5px);} 75%{transform:translateX(1.5px);}}
 /* `sudo` in search. */
 .sr-sudo{font-family:ui-monospace, Menlo, monospace; font-size:14px; color:var(--danger-text); margin:14px 0 0;}
-/* Shift-click Lineage: a Victorian family tree. */
-.cx-graph.is-engraving{font-family:var(--serif); border:4px double var(--ink); padding:18px; filter:sepia(.55) contrast(1.05);
-  background-image:repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 5%, transparent) 0 1px, transparent 1px 5px);}
-/* An empty inbox's cat. */
+/* Shift-click Lineage: a Victorian genealogy, engraved on foxed paper, the same in either theme
+   (an engraving is ink on paper), so its colours are its own. */
+.cx-graph.is-engraving{--egg-ink:#3a2814; --egg-paper:#f1e6cc; --egg-fox:#c9a872;
+  position:relative; color:var(--egg-ink); padding:84px 34px 46px; margin-top:8px;
+  background-color:var(--egg-paper);
+  background-image:
+    radial-gradient(circle at 12% 18%, color-mix(in srgb, var(--egg-fox) 35%, transparent) 0 3px, transparent 9px),
+    radial-gradient(circle at 83% 71%, color-mix(in srgb, var(--egg-fox) 30%, transparent) 0 4px, transparent 12px),
+    radial-gradient(circle at 64% 9%, color-mix(in srgb, var(--egg-fox) 25%, transparent) 0 2px, transparent 7px),
+    radial-gradient(ellipse at 50% 45%, transparent 55%, color-mix(in srgb, var(--egg-fox) 45%, transparent) 100%),
+    repeating-linear-gradient(135deg, color-mix(in srgb, var(--egg-ink) 4%, transparent) 0 1px, transparent 1px 4px);
+  border:1px solid var(--egg-ink); outline:5px double var(--egg-ink); outline-offset:6px;
+  box-shadow:0 0 0 12px var(--egg-paper), 0 0 0 13px var(--egg-ink), 0 18px 40px color-mix(in srgb, #000 25%, transparent);}
+.cx-graph.is-engraving::before{content:'The Genealogy of the House of BOLD'; position:absolute; top:22px; left:0; right:0; text-align:center;
+  font-family:var(--serif); font-variant:small-caps; font-size:26px; letter-spacing:.08em; color:var(--egg-ink);}
+.cx-graph.is-engraving::after{content:'❦  Who brought whom, set down faithfully  ❦'; position:absolute; top:56px; left:0; right:0; text-align:center;
+  font-family:var(--serif); font-style:italic; font-size:14px; color:color-mix(in srgb, var(--egg-ink) 75%, transparent);}
+.cx-graph.is-engraving .cx-graph{background:none; border:0;}
+.cx-graph.is-engraving svg text, .cx-graph.is-engraving svg tspan{font-family:var(--serif); fill:var(--egg-ink);}
+.cx-graph.is-engraving .cx-label{font-style:italic; font-size:15px;}
+.cx-graph.is-engraving .cx-how, .cx-graph.is-engraving .cx-moves{font-style:normal; font-variant:small-caps; letter-spacing:.04em; fill:color-mix(in srgb, var(--egg-ink) 70%, transparent);}
+.cx-graph.is-engraving .cx-edge{stroke:var(--egg-ink); stroke-width:1.3; stroke-dasharray:none; opacity:1;}
+.cx-graph.is-engraving .cx-node > :not(text):not(title){fill:var(--egg-paper) !important; stroke:var(--egg-ink) !important; stroke-width:1.4;}
+/* Inbox zero's cat. */
 .nt-zero{display:block; margin:22px 0 0; color:var(--muted);}
+.nt-zero-cap{font-family:var(--serif); font-style:italic; font-size:15px; color:var(--muted); margin:4px 0 8px;}
+/* \bold in KaTeX (card-model.js): the wordmark, as the masthead's. */
+.katex .bold-mark, .katex .bold-mark *{font-family:var(--sans) !important; font-style:normal; font-weight:500; letter-spacing:-0.01em;}
+.katex .bold-mark .textbf, .katex .bold-mark .textbf *{font-weight:700;}
+.katex .bold-dot, .katex .bold-dot *{color:var(--link); opacity:.55;}
 /* The lab's birthday (site.founded): confetti under the masthead. */
 .is-birthday .masthead{border-bottom:0; background-image:repeating-linear-gradient(90deg, var(--green) 0 14px, var(--amber) 14px 28px, var(--plum) 28px 42px, var(--teal) 42px 56px, var(--danger-text) 56px 70px);
   background-size:100% 3px; background-repeat:no-repeat; background-position:bottom;}
-@media (prefers-reduced-motion: reduce){ .md-timeline li.is-now .tl-dot{animation:none;} }
+@media (prefers-reduced-motion: reduce){ .egg-panic{animation:none;} }
