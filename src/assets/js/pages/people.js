@@ -36,7 +36,7 @@
     var photo = '<span class="member-photo" data-id="' + esc(sid || '') + '" data-name="' + esc(m.name || m.email) + '">' + esc(BOLD.photo.initials(m.name || m.email)) + '</span>';
     return '<li><div class="pp-person-row">' + photo + '<div>' + name + (m.pronouns ? ' <span class="acct-handle">' + esc(m.pronouns) + '</span>' : '') + ' ' + tag + (m.test ? ' <span class="badge">Your test account</span>' : '') +
       (meta ? '<span class="proj-meta">' + meta + '</span>' : '') +
-      (m.interests ? '<span class="proj-meta">' + esc(m.interests) + '</span>' : '') +
+      (m.interests ? '<span class="proj-meta pp-interests" title="' + esc(m.interests) + '">' + esc(m.interests) + '</span>' : '') +
       (l ? '<span class="proj-meta">' + l + '</span>' : '') +
       (staff && onboarding[String(m.email || '').toLowerCase()] ? '<span class="proj-meta pp-onboarding">' + onboarding[String(m.email || '').toLowerCase()] + '</span>' : '') + '</div></div></li>';
   }
