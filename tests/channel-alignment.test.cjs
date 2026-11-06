@@ -31,8 +31,9 @@ test('the message says where from, why and how to get back', () => {
     { name: 'proj-a', why: 'project', title: 'Project A', url: 'https://x/project.html#id=a' }]);
   assert.match(t, /^Hi Ari,/);
   assert.match(t, /#bold-internal: it’s for BOLD-internal and above; you’re BOLD-associate/);
-  assert.match(t, /#proj-a: it’s for the people on Project A/);
+  assert.match(t, /#proj-a: it’s for the people on <https:\/\/x\/project\.html#id=a\|Project A> on BOLD\.OS/);
   assert.match(t, /group-request\.html/);
-  assert.match(t, /Ask to join it on <https:\/\/x\/project\.html#id=a\|its page>/);
+  assert.match(t, /Working on <https:\/\/x\/project\.html#id=a\|Project A>\? Ask to join it on its page on BOLD\.OS; once you’re on it, you’re invited back to #proj-a\./);
+  assert.match(t, /still on BOLD’s Slack, in every other channel/);
   assert.doesNotMatch(t, /Join BOLD\.OS/);
 });

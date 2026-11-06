@@ -2521,7 +2521,7 @@ function alignmentPlan(x){
 function alignmentMessage(name, channels){
   const first = String(name || '').trim().split(/\s+/)[0] || 'there';
   const line = function(c){
-    if (c.why === 'project') return '• #' + c.name + ': it’s for the people on ' + slackText(c.title || 'its project') + ' on BOLD.OS';
+    if (c.why === 'project') return '• #' + c.name + ': it’s for the people on <' + c.url + '|' + slackText(c.title || 'its project') + '> on BOLD.OS';
     if (c.why === 'group') return '• #' + c.name + ': it’s for ' + c.for + ' and above; you’re ' + c.group + ' on BOLD.OS';
     if (c.why === 'no-record') return '• #' + c.name + ': it’s for ' + c.for + ' and above, and you haven’t joined BOLD.OS yet';
     return '• #' + c.name + ': your account isn’t on BOLD’s Slack roster';
@@ -2530,9 +2530,9 @@ function alignmentMessage(name, channels){
   const back = [];
   if (has('no-record') || has('outside')) back.push('• Join BOLD.OS: sign in with your BOLD Slack account at <' + SITE_URL + '|BOLD.OS> and fill in your profile. Your group’s channels follow.');
   if (has('group')) back.push('• In the wrong group? Ask for another on <' + SITE_URL + 'group-request.html|BOLD.OS>.');
-  channels.filter((c) => c.why === 'project').forEach(function(c){ back.push('• On ' + slackText(c.title || 'a project') + '? Ask to join it on <' + c.url + '|its page>; once you’re on it, you’re invited back.'); });
+  channels.filter((c) => c.why === 'project').forEach(function(c){ back.push('• Working on <' + c.url + '|' + slackText(c.title || 'the project') + '>? Ask to join it on its page on BOLD.OS; once you’re on it, you’re invited back to #' + c.name + '.'); });
   return 'Hi ' + first + ', BOLD’s Slack channels now follow BOLD.OS, the lab’s site, so you’ve been removed from:\n' + channels.map(line).join('\n') +
-    '\n\nTo get back in:\n' + back.join('\n') + '\n\nNothing else has changed. Questions? Ask a PI or admin.';
+    '\n\nTo get back in:\n' + back.join('\n') + '\n\nYou’re still on BOLD’s Slack, in every other channel. Questions? Ask a PI or admin.';
 }
 
 // What alignmentPlan needs, from Firestore and Slack (as the bot sees each channel). → { input, unseen: [channel names] }.
