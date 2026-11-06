@@ -12,7 +12,9 @@
 // margin level with it; either opens the thread as a card. A thread whose text has
 // since changed shows at the top of its part, marked so. Resolved threads don't show.
 //
-// BoldComments.create({ ref, root, fullWrite: () => bool, onChange })
+// Commenting is the page's Edit (Who can do what: on the BOLDiquette and guides, editing is proposing and
+// commenting; firestore.rules): whoever hasn't it reads the threads, but gets no Comment button nor reply box.
+// BoldComments.create({ ref, root, area: the page's (BOLD.can), fullWrite: () => bool, onChange })
 // → { start(user), stop(), decorate(), click(event) → true if it handled it, ready(), show(id), openCount() }.
 // A link to a comment (#c=<id>, as Slack sends; pages/guide.js) opens its thread and marks it.
 window.BoldComments = (function(){
@@ -131,9 +133,11 @@ window.BoldComments = (function(){
       var text = el && el.closest && el.closest('.guide-part[data-pid] .guide-text');
       return text ? { text: text, partId: text.closest('.guide-part').getAttribute('data-pid') } : null;
     }
+    function canComment(){ return !opts.area || BOLD.can(opts.area, 'edit'); }
+    function cannotNote(){ return '<p class="cm-moved">' + esc(BOLD.cannotReason(opts.area, 'edit')) + '</p>'; }
     function onSelect(){
       var sel = window.getSelection();
-      if (!me || !sel || sel.isCollapsed || !sel.rangeCount) { hideButton(); return; }
+      if (!me || !canComment() || !sel || sel.isCollapsed || !sel.rangeCount) { hideButton(); return; }
       var r = sel.getRangeAt(0), a = partOf(r.startContainer), b = partOf(r.endContainer);
       if (!a || !b || a.text !== b.text || opts.root.querySelector('.guide-form, .gd-viewing')) { hideButton(); return; }
       var quote = sel.toString();
@@ -254,6 +258,7 @@ window.BoldComments = (function(){
         // Made a conversation: it goes on there (functions/comment-conversation.js), with no reply box here.
         (c.conversation ? '<p class="cm-moved">This thread goes on in Conversations. <a href="conversations.html#post=' + encodeURIComponent(c.conversation) + '">Open the conversation</a></p>' +
           (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') :
+        !canComment() ? cannotNote() + (id === 'new' ? '' : '<div class="cm-buttons">' + convoButton() + '</div>') + (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') :
         '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
         (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
         '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-send"' + (busy ? ' disabled' : '') + '>' + (id === 'new' ? 'Comment' : 'Reply') + '</button>' +
@@ -279,7 +284,7 @@ window.BoldComments = (function(){
           (error && open === key ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
           '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-p-send" data-pid="' + esc(pid) + '"' + (busy ? ' disabled' : '') + '>Comment</button>' +
           '<button type="button" class="btn-text cm-p-cancel" data-pid="' + esc(pid) + '">Cancel</button></div>' :
-          '<button type="button" class="btn-text cm-p-open" data-pid="' + esc(pid) + '">' + (list.length ? 'Reply' : 'Comment') + '</button>') +
+          canComment() ? '<button type="button" class="btn-text cm-p-open" data-pid="' + esc(pid) + '">' + (list.length ? 'Reply' : 'Comment') + '</button>' : '') +
         '</div>';
     }
     // What's typed survives the page re-rendering.

@@ -60,7 +60,7 @@
   }) : null;
   // Comments on selected text (comments.js).
   var comments = ref && window.BoldComments ? BoldComments.create({
-    ref: ref, root: body, fullWrite: function(){ return fullWrite; }, onChange: function(){ refresh(); },
+    ref: ref, root: body, area: AREA, fullWrite: function(){ return fullWrite; }, onChange: function(){ refresh(); },
   }) : null;
 
   // The proposal whose result is on show ("View as proposed"), or null.
