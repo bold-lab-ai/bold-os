@@ -104,6 +104,16 @@ fieldset.md-group:first-child{margin-top:0;}
 .st-channel-hint{margin:-4px 0 10px; font-family:var(--sans); font-size:13px; color:var(--muted); min-height:1em;}
 /* People (people.js): the search box above the groups. */
 .pp-filter{max-width:var(--article-max); margin-top:16px;}
+/* The search, and List | Grid beside it (as on Projects). */
+.pp-bar{display:flex; align-items:center; gap:16px; margin-top:16px;}
+.pp-bar .pp-filter{flex:1; min-width:0; margin-top:0;}
+/* Grid: each person a card, the portrait above their name. */
+#people[data-view="grid"] .proj-list{display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:16px;}
+#people[data-view="grid"] .proj-list li{padding:16px; border:1px solid var(--line); min-width:0;}
+#people[data-view="grid"] .pp-person-row{flex-direction:column; gap:10px;}
+#people[data-view="grid"] .pp-person-row > div{min-width:0; overflow-wrap:anywhere;}
+#people[data-view="grid"] .pp-person-row .member-photo{width:84px; height:84px; margin-top:0; font-size:22px;}
+#people[data-view="grid"] .proj-group h3{margin-bottom:10px;}
 .pp-filter input{width:100%; font-family:var(--sans); font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 /* A person's group (Who is BOLD): the talks' type badges (bold.css .type-badge). For
    PIs and admins the badge is a button that shows the groups to choose from. */

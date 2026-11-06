@@ -1,7 +1,8 @@
 // People (people.html): BOLD's members (members/{email}, each edited on its owner's
 // profile), in two tabs: By role (PIs, adjuncts, postdocs and students first, then the
 // join form's other roles, BoldJoin.ROLES; Alumni last) and By group (#by-group: Who is BOLD's
-// groups, BOLD-exec first, BoldJoin.CATEGORIES); searchable by name, institution or interest.
+// groups, BOLD-exec first, BoldJoin.CATEGORIES); searchable by name, institution or interest;
+// as a list or a grid of cards (List | Grid, as on Projects; kept in this browser, boldPeopleView).
 (function(){
   var esc = BOLD.escapeHtml;
   var root = document.getElementById('people'), search = document.getElementById('ppSearch');
@@ -69,6 +70,7 @@
       root.innerHTML = BoldJoin.CATEGORIES.map(function(c){
         return section(c[1], shown.filter(function(m){ return BoldJoin.groupOf(m) === c[0]; }));
       }).join('');
+      BOLD.photo.mountMany(root.querySelectorAll('.member-photo[data-id]'));
       return;
     }
     var first = ['PI', 'Adjunct', 'Postdoc', 'PhD student', 'Master student'];
@@ -94,6 +96,21 @@
   drawTabs();
 
   search.addEventListener('input', render);
+
+  // List or Grid: only how the cards are laid out (people.css's #people[data-view="grid"]).
+  var VIEW_KEY = 'boldPeopleView';
+  function setLayout(v){
+    if (v !== 'grid') v = 'list';
+    root.setAttribute('data-view', v);
+    Array.prototype.forEach.call(document.querySelectorAll('.pp-bar .view-btn'), function(b){ b.setAttribute('aria-pressed', String(b.getAttribute('data-view') === v)); });
+    try { localStorage.setItem(VIEW_KEY, v); } catch (e){}
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('.pp-bar .view-btn'), function(b){
+    b.addEventListener('click', function(){ setLayout(b.getAttribute('data-view')); });
+  });
+  var savedLayout = null;
+  try { savedLayout = localStorage.getItem(VIEW_KEY); } catch (e){}
+  setLayout(savedLayout);
   root.addEventListener('click', function(e){
     var open = e.target.closest('.pp-open'), pick = e.target.closest('.pp-choose');
     if (open) { picking = open.getAttribute('data-email'); render(); return; }

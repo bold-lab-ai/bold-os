@@ -18,6 +18,12 @@ nav: "people.html"
     <a class="guide-tab is-current" href="#by-role" aria-current="page">By role</a>
     <a class="guide-tab" href="#by-group">By group</a>
   </nav>
-  <div class="pp-filter"><input type="search" id="ppSearch" placeholder="Search by name, institution or interest" aria-label="Search people" autocomplete="off"></div>
+  <div class="pp-bar">
+    <div class="pp-filter"><input type="search" id="ppSearch" placeholder="Search by name, institution or interest" aria-label="Search people" autocomplete="off"></div>
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
+      <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+    </div>
+  </div>
   <div id="people"><p class="proj-msg">Loading&hellip;</p></div>
 </main>
