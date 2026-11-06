@@ -130,7 +130,10 @@
     var ids = branchingIds(p);
     if (!ids.length) return '';
     var all = ids.every(function(id){ return opened[id]; });
-    return '<p class="bs-fold-all"><button type="button" class="btn-text bs-fold-all-btn" data-open="' + (all ? '0' : '1') + '">' + (all ? 'Collapse all' : 'Expand all') + '</button></p>';
+    // The guides' look (guide.js foldAllButton): arrows, then the words, on the title's line.
+    var icon = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      (all ? '<path d="M4 7.5 8 3.5l4 4M4 12.5l4-4 4 4"/>' : '<path d="M4 3.5 8 7.5l4-4M4 8.5l4 4 4-4"/>') + '</svg>';
+    return '<button type="button" class="bs-fold-all-btn" data-open="' + (all ? '0' : '1') + '">' + icon + (all ? 'Collapse all' : 'Expand all') + '</button>';
   }
 
   // ---------- the thread's tree, beside it ----------
@@ -276,7 +279,7 @@
       var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
       var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
       threadEl.innerHTML = '<a class="back-link" href="#">&larr; All posts</a>' +
-        '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + foldAllHtml(p) + columnHtml(p, p.id, head);
+        '<div class="bs-thread-head"><h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + foldAllHtml(p) + '</div>' + columnHtml(p, p.id, head);
       clampLong();
       drawTree(p);
       if (linkedMsg) { setTimeout(function(){ showLinked(p.id); }, 0); }
