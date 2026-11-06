@@ -63,7 +63,8 @@ async function ruleRequest(path, method, auth, body) {
   assert.equal((await service.read('UOWNER')).url, firstPhoto.url);
   assert.equal(signOptions.version, 'v4');
   assert.equal(signOptions.accessibleAt.getUTCHours(), 0);
-  assert.equal(signOptions.expires - signOptions.accessibleAt, 2 * 24 * 60 * 60 * 1000);
+  assert.equal(signOptions.expires - signOptions.accessibleAt, 7 * 24 * 60 * 60 * 1000);
+  assert.equal(firstPhoto.expiresAt, signOptions.expires.getTime());
   assert.equal((await service.batch(['UOWNER', 'UOWNER'])).UOWNER.url, firstPhoto.url);
   // An odd id is only without a photo; the others still come back.
   const mixed = await service.batch(['invalid/id', 'UOWNER']);

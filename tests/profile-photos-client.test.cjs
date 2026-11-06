@@ -91,3 +91,38 @@ test('your own photo is kept for the next page, and forgotten after a change', a
   await t.BOLD.photo.mine();
   assert.equal(t.calls.length, 2);
 });
+
+test('others\' photos are kept for the next page: none asked for again for 6 hours, then refreshed', async () => {
+  const later = Date.now() + 7 * 24 * 3600e3;
+  const t = setup(async d => Object.fromEntries(d.slackIds.map(id => [id, { state: 'active', url: 'https://x/' + id + '?v=' + t.calls.length, expiresAt: later }])));
+  t.BOLD.photo.mountMany([t.node('UONE', 'One'), t.node('UTWO', 'Two')]);
+  await tick();
+  assert.equal(t.calls.length, 1);
+  t.load();   // a reload
+  const a = t.node('UONE', 'One');
+  t.BOLD.photo.mountMany([a, t.node('UTWO', 'Two')]);
+  assert.equal(a.children[0].src, 'https://x/UONE?v=1');   // at once, from this browser
+  await tick();
+  assert.equal(t.calls.length, 1);   // and no request
+  // Seven hours on: still shown at once, and asked for again (one batch) for the next page.
+  const saved = JSON.parse(t.store.boldPhotos);
+  Object.values(saved.items).forEach(x => { x.at -= 7 * 3600e3; });
+  t.store.boldPhotos = JSON.stringify(saved);
+  t.load();
+  const b = t.node('UONE', 'One');
+  t.BOLD.photo.mountMany([b]);
+  assert.equal(b.children[0].src, 'https://x/UONE?v=1');
+  await tick();
+  assert.equal(t.calls.length, 2);
+  assert.equal(JSON.parse(t.store.boldPhotos).items.UONE.photo.url, 'https://x/UONE?v=2');
+});
+
+test('a kept photo whose link is about to expire is asked for again', async () => {
+  const t = setup(async d => Object.fromEntries(d.slackIds.map(id => [id, { state: 'active', url: 'https://x/' + id, expiresAt: Date.now() + 60e3 }])));
+  t.BOLD.photo.mountMany([t.node('UONE', 'One')]);
+  await tick();
+  t.load();
+  t.BOLD.photo.mountMany([t.node('UONE', 'One')]);
+  await tick();
+  assert.equal(t.calls.length, 2);
+});

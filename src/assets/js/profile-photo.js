@@ -1,10 +1,12 @@
-/* Shared member portrait. Signed URLs are short lived; objects are immutable.
-   Your own photo is kept in this browser for an hour (boldPhoto, by email), so the
-   masthead paints it at once and calls profilePhoto at most once an hour; changing
-   it on Profile, or signing out, forgets it. Others' photos are fetched once a page,
-   in batches; a failed batch is not retried until the next page. */
+/* Shared member portrait. Signed URLs last a week (the same link all week, so the
+   browser keeps each immutable image and downloads it at most once a week).
+   Photos are kept in this browser, by the viewer's email: your own (boldPhoto) and
+   everyone else's (boldPhotos). One kept for under FRESH is shown with no request;
+   an older one is shown at once and refreshed in the background, for the next
+   page. Changing yours on Profile, or signing out, forgets it. A failed batch is
+   not retried until the next page. */
 (function(){
-  var HOUR = 60 * 60 * 1000, KEY = 'boldPhoto';
+  var HOUR = 60 * 60 * 1000, FRESH = 6 * HOUR, KEY = 'boldPhoto', SAVED = 'boldPhotos', SAVED_MAX = 600;
   var cache = Object.create(null), known = Object.create(null), ownPromise = null;
   function initials(name){
     var words = String(name || '').trim().split(/\s+/).filter(Boolean);
@@ -17,11 +19,32 @@
     var h = BOLD.authHint && BOLD.authHint();
     return String((u && u.email) || (h && h.e) || '').toLowerCase();
   }
+  // A photo whose link still has an hour to run (or no photo: initials).
+  function usable(p){ return !!p && (p.state !== 'active' || (!!p.url && (!p.expiresAt || p.expiresAt - Date.now() > HOUR))); }
   function stored(){
     try {
       var s = JSON.parse(localStorage.getItem(KEY) || 'null');
-      return s && s.email && s.email === myEmail() && Date.now() - s.at < HOUR ? s.data : null;
+      return s && s.email && s.email === myEmail() && Date.now() - s.at < FRESH && usable(s.data && s.data.photo) ? s.data : null;
     } catch (e){ return null; }
+  }
+  // Everyone else's: { email, items: { id: { photo, at } } }.
+  function savedRead(){
+    try {
+      var s = JSON.parse(localStorage.getItem(SAVED) || 'null');
+      return s && s.email === myEmail() && s.items ? s.items : {};
+    } catch (e){ return {}; }
+  }
+  function savedWrite(results){
+    try {
+      var items = savedRead(), now = Date.now();
+      Object.keys(results).forEach(function(id){ items[id] = { photo: results[id], at: now }; });
+      var ids = Object.keys(items);
+      if (ids.length > SAVED_MAX) ids.sort(function(a, b){ return items[a].at - items[b].at; }).slice(0, ids.length - SAVED_MAX).forEach(function(id){ delete items[id]; });
+      localStorage.setItem(SAVED, JSON.stringify({ email: myEmail(), items: items }));
+    } catch (e){}
+  }
+  function savedForget(id){
+    try { var items = savedRead(); delete items[id]; localStorage.setItem(SAVED, JSON.stringify({ email: myEmail(), items: items })); } catch (e){}
   }
   function store(data){ try { localStorage.setItem(KEY, JSON.stringify({ email: myEmail(), at: Date.now(), data: data })); } catch (e){} }
   function start(node, name){
@@ -45,10 +68,21 @@
     node.appendChild(img);
     img.src = photo.url;
   }
+  // Kept photos first: fresh ones need no request; stale ones are shown now and
+  // asked for again with the missing ones, in the one batch.
   function batch(ids){
-    var missing = Array.from(new Set(ids.filter(function(id){ return id && !cache[id]; })));
-    if (missing.length) {
-      var request = call({ action: 'batch', slackIds: missing });
+    var saved = savedRead(), now = Date.now(), missing = [], stale = [];
+    Array.from(new Set(ids.filter(function(id){ return id && !cache[id]; }))).forEach(function(id){
+      var s = saved[id];
+      if (s && usable(s.photo)) {
+        known[id] = s.photo; cache[id] = Promise.resolve(s.photo);
+        if (now - s.at > FRESH) stale.push(id);
+      } else missing.push(id);
+    });
+    var ask = missing.concat(stale);
+    if (ask.length) {
+      var request = call({ action: 'batch', slackIds: ask }).then(function(results){ savedWrite(results); return results; });
+      stale.forEach(function(id){ request.then(function(results){ if (results[id]) known[id] = results[id]; }, function(){}); });
       missing.forEach(function(id){
         cache[id] = request.then(function(results){ return results[id] || { state: 'missing' }; }, function(){ return { state: 'missing' }; })
           .then(function(photo){ known[id] = photo; return photo; });
@@ -58,14 +92,16 @@
       .then(function(pairs){ return Object.fromEntries(pairs); });
   }
   function mountMany(nodes){
-    var later = [];
-    Array.prototype.forEach.call(nodes, function(node){
+    nodes = Array.prototype.slice.call(nodes);
+    // batch() takes in the kept photos at once (known), and asks for the rest.
+    var pending = batch(nodes.map(function(node){ return node.dataset.id; }).filter(Boolean)), later = [];
+    nodes.forEach(function(node){
       var id = node.dataset.id, version = start(node, node.dataset.name);
       if (id && known[id]) show(node, version, known[id], true);
       else if (id) later.push({ node: node, id: id, version: version });
     });
     if (!later.length) return;
-    batch(later.map(function(e){ return e.id; })).then(function(photos){
+    pending.then(function(photos){
       later.forEach(function(e){ show(e.node, e.version, photos[e.id]); });
     });
   }
@@ -97,11 +133,11 @@
   }
   // After a change: this page's copy of the photo, and the browser's, are dropped.
   function clear(id){
-    if (id) { delete cache[String(id)]; delete known[String(id)]; }
+    if (id) { delete cache[String(id)]; delete known[String(id)]; savedForget(String(id)); }
     ownPromise = null;
     try { localStorage.removeItem(KEY); } catch (e){}
   }
   // Another account (or none): only this page's copy; the stored one is checked against the email.
-  function reset(){ ownPromise = null; if (!signedIn()) try { localStorage.removeItem(KEY); } catch (e){} }
+  function reset(){ ownPromise = null; if (!signedIn()) try { localStorage.removeItem(KEY); localStorage.removeItem(SAVED); } catch (e){} }
   BOLD.photo = { mount: mount, mountMany: mountMany, mountOwn: mountOwn, mine: mine, clear: clear, reset: reset, call: call, initials: initials };
 })();

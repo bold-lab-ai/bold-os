@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const MAX_BYTES = 256 * 1024;
 const MAX_REDIRECTS = 3;
 const DAY = 24 * 60 * 60 * 1000;
+const WEEK = 7 * DAY;
 const CACHE_CONTROL = 'public, max-age=31536000, immutable';
 // Slack's user object also documents secure.gravatar.com image URLs.
 const IMAGE_HOST = /(^|\.)(slack-edge\.com|slack\.com)$|^secure\.gravatar\.com$/i;
@@ -100,17 +101,18 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
   }
   async function signed(data) {
     if (!data.path || data.state !== 'active') return { state: data.state || 'missing' };
-    // Both signing times are day-aligned: the same version gets the same URL
-    // throughout a day, while a browser can cache its immutable object.
-    const today = Math.floor(Date.now() / DAY) * DAY;
+    // Both signing times are week-aligned (V4's longest, 7 days): the same version
+    // gets the same URL all week, so a browser keeps its immutable object and
+    // downloads it at most once a week (expiresAt tells the page when to refresh it).
+    const today = Math.floor(Date.now() / WEEK) * WEEK;
     const key = data.path + ':' + today;
     if (!signedCache.has(key)) {
       if (signedCache.size > 1000) signedCache.clear();
       signedCache.set(key, bucket.file(data.path).getSignedUrl({
-        version: 'v4', action: 'read', accessibleAt: new Date(today), expires: new Date(today + 2 * DAY),
+        version: 'v4', action: 'read', accessibleAt: new Date(today), expires: new Date(today + WEEK),
       }).then(urls => urls[0]).catch(err => { signedCache.delete(key); throw err; }));
     }
-    return { state: 'active', source: data.source, type: data.type, url: await signedCache.get(key), updatedAt: data.updatedAt || null };
+    return { state: 'active', source: data.source, type: data.type, url: await signedCache.get(key), expiresAt: today + WEEK, updatedAt: data.updatedAt || null };
   }
   // Many members' photos in one Firestore read; an id that isn't a Slack id is
   // just without a photo, so one odd roster entry doesn't hide everyone's.
