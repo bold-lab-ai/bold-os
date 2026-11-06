@@ -240,7 +240,8 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
 
   // Saves the thread as a post → { id, title, existed }. Sent again, it's refreshed: its text and its Slack
   // replies as they are now (new ones added), its votes and the replies written on BOLD.OS kept.
-  async function saveThread(token, link, team, sender){
+  // about: { project, projectTitle } when brought in from a project's Conversations tab (a new, open thread only).
+  async function saveThread(token, link, team, sender, about){
     const id = postIdOf(link.channel, link.thread), ref = db.collection('conversations').doc(id);
     const had = await ref.get();
     const { t, ch, members } = await readThread(token, link, sender.slackId);
@@ -263,8 +264,8 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       await batch.commit();
       return { id, title, existed: true };
     }
-    batch.create(ref, { title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, private: vis.private, readers: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
-      broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() });
+    batch.create(ref, Object.assign({ title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, private: vis.private, readers: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
+      broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() }, about && !vis.private ? about : {}));
     t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
     try { await batch.commit(); }
     catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
@@ -285,8 +286,18 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     if (!(await startsChats(email))) throw new HttpsError('permission-denied', STARTS);
     const link = parseSlackLink((request.data || {}).url);
     if (!link) throw new HttpsError('invalid-argument', 'That isn’t a link to a Slack message: in Slack, a message’s ⋯ menu → Copy link.');
+    // From a project's Conversations tab: about that project, if they see it (its people, or Projects' View).
+    let about = null;
+    if (request.data.project) {
+      const pid = String(request.data.project);
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(pid)) throw new HttpsError('invalid-argument', 'Which project?');
+      const ws = await db.collection('projectWorkspaces').doc(pid).get();
+      const sees = ws.exists && ((ws.data().members || []).map((e) => String(e).toLowerCase()).indexOf(email) >= 0 || await access.can(email, 'projects', 'view'));
+      if (!sees) throw new HttpsError('permission-denied', 'You can’t see that project.');
+      about = { project: pid, projectTitle: String(ws.data().title || '').slice(0, 300) };
+    }
     const p = await personFor(email);
-    const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) });
+    const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) }, about);
     await announce(token, link, r.channelName, r, p.name, p.slackId || '');
     return r;
   });
@@ -342,7 +353,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     const d = event.data && event.data.data();
     if (!d || d.source === 'slack' || d.source === 'comment') return;   // a thread brought in is counted as it's saved
     const pid = event.params.pid, ref = db.collection('conversations').doc(pid);
-    // lastAt: its latest reply, for the lists that order by activity (project-talk.js).
+    // lastAt: when its latest reply came.
     await ref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
     if (!noteFor) return;
     try {
@@ -368,7 +379,7 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     } catch (err){ logger.warn('Telling a conversation’s people of a reply failed', { pid, error: String(err && err.message || err) }); }
   });
   // A new conversation: everyone who can see it is told on their Notifications page (not on Slack): one about a
-  // project, its people (project-talk.js, card-talk.js); otherwise all who see
+  // project, its people (its Conversations tab, a card's comments); otherwise all who see
   // Conversations, or a private channel's members alone; not whoever started it.
   const onConversationCreated = onDocumentCreated('conversations/{pid}', async (event) => {
     const d = event.data && event.data.data();

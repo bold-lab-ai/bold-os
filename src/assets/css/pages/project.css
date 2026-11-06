@@ -323,13 +323,3 @@
 .wk-talk .stage-fields-actions .wk-talk-convo{margin-left:auto;}
 .wk-talk-moved{margin:12px 0 0; padding:8px 10px; border-radius:6px; background:var(--wash); color:var(--muted); font-size:.92em;}
 .wk-talk-moved a{color:var(--accent); font-weight:600;}
-/* A project's Conversations tab (project-talk.js). */
-.pt-head{display:flex; gap:16px; align-items:center; justify-content:space-between; flex-wrap:wrap; margin:18px 0 14px;}
-.pt-head .detail-muted{margin:0;}
-.pt-form{display:flex; flex-direction:column; gap:8px; margin:0 0 18px;}
-.pt-form input, .pt-form textarea{width:100%; box-sizing:border-box; font:inherit; font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface, transparent); color:inherit;}
-.pt-list{list-style:none; margin:0; padding:0;}
-.pt-list li{padding:10px 0; border-bottom:1px solid var(--line);}
-.pt-title{display:block; font-weight:600; color:var(--ink); text-decoration:none;}
-.pt-title:hover{color:var(--link, var(--accent)); text-decoration:underline;}
-.pt-meta{display:block; font-size:13px; margin-top:2px;}
