@@ -319,3 +319,7 @@
 .proposal-actions{display:flex; flex-wrap:wrap; align-items:center; gap:8px;}
 .proposal-actions input[type=text]{flex:1 1 260px; min-width:0; font:inherit; padding:5px 8px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}
 .proposal-actions input[type=number]{width:120px; font:inherit; padding:4px 6px; margin-left:6px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}
+/* A card's comments made a conversation (card-talk.js). */
+.wk-talk .stage-fields-actions .wk-talk-convo{margin-left:auto;}
+.wk-talk-moved{margin:12px 0 0; padding:8px 10px; border-radius:6px; background:var(--wash); color:var(--muted); font-size:.92em;}
+.wk-talk-moved a{color:var(--accent); font-weight:600;}

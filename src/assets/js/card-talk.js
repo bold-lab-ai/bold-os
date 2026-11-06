@@ -5,6 +5,9 @@
 // admins delete any. onCardCommented (functions/index.js) tells whoever made the card, its
 // assignees and whoever has commented, one Slack message each a few minutes later; so
 // posting asks first. &c=<id> in the address (as Slack sends) scrolls to that comment.
+// Make it a conversation (2026-11-06; functions/comment-conversation.js): the card's comments, copied to
+// Conversations (conversations/cm-card-<project>-<card>), go on there; once that post exists, the card shows a
+// link to it in place of the box, and the rules take no more comments here.
 // BoldCardTalk.create(ref, { me: () => user, fullWrite: () => bool, card: () => card })
 // → { el, stop() }; el is kept between the page's redraws, so a comment being written stays.
 window.BoldCardTalk = (function(){
@@ -20,8 +23,12 @@ window.BoldCardTalk = (function(){
       '<form class="wk-talk-form" novalidate>' +
       '<textarea aria-label="Add a comment" class="wk-talk-text md-field" rows="3" maxlength="' + MAX + '" placeholder="Add a comment: Markdown, @ to tag someone"></textarea>' +
       '<div class="field-error wk-talk-error" hidden></div>' +
-      '<div class="stage-fields-actions"><button class="btn" type="submit">Comment</button></div></form>';
+      '<div class="stage-fields-actions"><button class="btn" type="submit">Comment</button>' +
+        '<button class="btn-text wk-talk-convo" type="button" hidden title="Copy these comments to Conversations, where they go on">Make it a conversation</button></div></form>' +
+      '<p class="wk-talk-moved" hidden></p>';
     var listEl = el.querySelector('.wk-talk-list'), form = el.querySelector('.wk-talk-form'), box = form.querySelector('textarea'), error = form.querySelector('.wk-talk-error');
+    var convoBtn = form.querySelector('.wk-talk-convo'), movedEl = el.querySelector('.wk-talk-moved');
+    var pid = ref.parent.parent.id, postId = 'cm-card-' + pid + '-' + ref.id, moved = false, unsubPost = null;
     var list = [], loaded = false, editing = null, busy = false, marked = (/[#&]c=([^&]+)/.exec(location.hash) || [])[1] || '';
     marked = marked ? decodeURIComponent(marked) : '';
 
@@ -45,6 +52,7 @@ window.BoldCardTalk = (function(){
       var draft = editing && listEl.querySelector('.wk-talk-edit textarea');
       var kept = draft ? draft.value : null;
       if (!loaded) { listEl.innerHTML = '<li class="detail-muted">Loading…</li>'; return; }
+      showMoved();
       if (!list.length) { listEl.innerHTML = '<li class="detail-muted wk-none">No comments yet.</li>'; return; }
       listEl.innerHTML = list.map(function(x){
         var mine = x.by && String(x.by.email || '').toLowerCase() === me();
@@ -70,6 +78,32 @@ window.BoldCardTalk = (function(){
       loaded = true; list = []; listEl.innerHTML = '<li class="detail-muted">Couldn’t load the conversation.</li>';
     });
 
+    // Where it goes on: the box, or a link to its conversation.
+    function showMoved(){
+      form.hidden = moved;
+      movedEl.hidden = !moved;
+      if (moved) movedEl.innerHTML = 'This conversation goes on in Conversations. <a href="conversations.html#post=' + encodeURIComponent(postId) + '">Open it</a>';
+      convoBtn.hidden = moved || !list.length || !BOLD.can('conversations', 'edit');
+    }
+    // Whoever can't see Conversations isn't told (the read is refused): they keep the box, which the rules close.
+    try {
+      unsubPost = firebase.firestore(BOLD.getApp()).collection('conversations').doc(postId).onSnapshot(function(d){ moved = d.exists; showMoved(); }, function(){});
+    } catch (e){}
+    convoBtn.addEventListener('click', function(){
+      if (busy) return;
+      BOLD.confirmAction({ title: 'Make these comments a conversation?', go: 'Make it a conversation', effects: [
+        'Copy the card’s ' + (list.length === 1 ? 'comment' : list.length + ' comments') + ' to Conversations, each by whoever wrote it',
+        'Tell everyone who sees Conversations, on their Notifications page',
+        'Close the card to comments: it goes on there'] }).then(function(go){
+        if (!go) return;
+        busy = true; convoBtn.disabled = true; error.hidden = true;
+        return firebase.app().functions('europe-west2').httpsCallable('commentConversation')({ on: 'card/' + pid + '/' + ref.id }).then(function(){ busy = false; convoBtn.disabled = false; });
+      }).catch(function(err){
+        console.error('[BOLD Lab] making a conversation failed', err);
+        busy = false; convoBtn.disabled = false;
+        fail((err && err.code && err.code !== 'functions/internal' && err.message) || 'Couldn’t make it a conversation — try again.');
+      });
+    });
     function fail(msg){ error.textContent = msg; error.hidden = false; }
     form.addEventListener('submit', function(e){
       e.preventDefault();
@@ -111,7 +145,7 @@ window.BoldCardTalk = (function(){
     });
 
     render();
-    return { el: el, stop: function(){ if (unsub) unsub(); unsub = null; } };
+    return { el: el, stop: function(){ if (unsub) unsub(); unsub = null; if (unsubPost) unsubPost(); unsubPost = null; } };
   }
   return { create: create };
 })();

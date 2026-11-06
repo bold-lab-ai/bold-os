@@ -68,12 +68,13 @@
     return '<span class="bs-author">' + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + '</span> · ' + ago(m.at);
   }
   function origin(m){
-    // Made from a comment thread on the BOLDiquette or a guide: where, and a link back to the passage.
+    // Made from a comment thread on the BOLDiquette or a guide, or a card's comments: where, and a link back.
     if (m.source === 'comment' && m.from) {
-      var f = m.from;
-      return '<p class="bs-origin">From a comment thread on ' + esc(f.page || 'a page') + (f.part ? ' › ' + esc(f.part) : '') +
+      var f = m.from, card = f.kind === 'card';
+      return '<p class="bs-origin">' + (card ? 'From the comments on the card ' + esc(f.part || '') + ', in ' + esc(f.page || 'a project')
+          : 'From a comment thread on ' + esc(f.page || 'a page') + (f.part ? ' › ' + esc(f.part) : '')) +
         (m.broughtBy && m.broughtBy.name ? ', made a conversation by ' + esc(m.broughtBy.name) : '') +
-        (f.url ? ' · <a href="' + esc(f.url) + '">See the passage</a>' : '') + '</p>';
+        (f.url ? ' · <a href="' + esc(f.url) + '">' + (card ? 'Open the card' : 'See the passage') + '</a>' : '') + '</p>';
     }
     if (m.source !== 'slack' || !m.slack) return '';
     var s = m.slack;

@@ -521,7 +521,9 @@ service cloud.firestore {
         }
         match /comments/{cid} {
           allow read: if seesProject(cardId);
+          // Made a conversation (functions/comment-conversation.js): it goes on there.
           allow create: if seesProject(cardId) && exists(/databases/$(database)/documents/projectWorkspaces/$(cardId)/work/$(id)) &&
+            !exists(/databases/$(database)/documents/conversations/$('cm-card-' + cardId + '-' + id)) &&
             request.resource.data.by.email == email() && !('editedAt' in request.resource.data) && validTalk(request.resource.data);
           allow update: if resource.data.by.email == email() && request.resource.data.by == resource.data.by &&
             request.resource.data.at == resource.data.at && request.resource.data.editedAt is number && validTalk(request.resource.data);
@@ -824,6 +826,8 @@ service cloud.firestore {
     function seesConversationId(pid) { return seesConversation(get(/databases/$(database)/documents/conversations/$(pid)).data); }
     match /conversations/{pid} {
       allow read: if seesConversation(resource.data);
+      // One that isn't there yet, to whoever sees Conversations: a card watches for its own (card-talk.js).
+      allow get: if resource == null && may('conversations', 'view');
       // Started on the site: always open to everyone who sees Conversations (private: false).
       allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
         && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'private'])

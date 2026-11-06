@@ -25,3 +25,10 @@ test('only the BOLDiquette and guides, each with its area and page', () => {
   assert.strictEqual(pageOf('members/x', guideArea), null);
   assert.strictEqual(pageOf('guides/../x', guideArea), null);
 });
+const { cardOf } = require('../functions/comment-conversation');
+test('a card’s comments: its project and card, and the one post they become', () => {
+  assert.deepStrictEqual(cardOf('card/card-1789-ab/w9X'), { pid: 'card-1789-ab', card: 'w9X', id: 'cm-card-card-1789-ab-w9X' });
+  assert.strictEqual(cardOf('card/a'), null);
+  assert.strictEqual(cardOf('card/a/b/c'), null);
+  assert.strictEqual(cardOf('card/../b'), null);
+});
