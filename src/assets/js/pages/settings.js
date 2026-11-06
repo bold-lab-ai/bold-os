@@ -29,6 +29,9 @@
   // Pilots: a new Slack feature only messages its testers until it's switched live here.
   // pilotDraft: the form's testers and switches.
   var pilot = null, pilotDraft = null, pilotError = '', roster = [];
+  // #174: aligning the Slack channels with BOLD.OS (functions/index.js channelAlignment): the
+  // runs (status), the last preview, what's being done and why it failed. Drawn in #stAlign alone.
+  var align = { status: null, preview: null, busy: '', error: '', at: '' };
 
   var SUBJECT = 'Welcome to BOLD';
   var BODY = ['Hi {name},', '', 'Welcome to BOLD! Your request to join has been approved. Here are your next steps:', '',
@@ -95,7 +98,7 @@
         }).join('') + '</fieldset>' + group('Slack channels by role') + '<p class="proj-meta">Everyone with a role (on their details) is added to its channels. The roles are the join form’s (<a href="#join">Join form</a>).</p>' +
         (f.roles || BoldJoin.ROLES).map(function(r){
           return row(r, chipsHtml('chan', r, chanList((groups.roleChannels || {})[r]), 'role'), (groups.roleChannelErrors || {})[r]);
-        }).join('') + '</fieldset>' + save + '</div></section>' +
+        }).join('') + '</fieldset>' + save + '</div><div id="stAlign" class="event-form join-form st-align">' + alignHtml() + '</div></section>' +
       '<section class="profile-panel" id="join"><div class="event-form join-form">' + group('Join form') +
       row('Roles', chipsHtml('role', '', f.roles || BoldJoin.ROLES)) +
       row('Research pillars', chipsHtml('pillar', '', f.pillars || BoldJoin.PILLARS)) + '</fieldset>' +
@@ -183,6 +186,79 @@
       db.collection('settings').doc('pilot').set({ testers: d.testers, pilotTesters: d.pilotTesters, live: d.live, updatedAt: Date.now(), updatedBy: me.email }, { merge: true }).then(function(){
         pilotDraft = null; saving.pilot = { busy: '', at: Date.now() }; render();
       }).catch(function(err){ console.error('[BOLD Settings] saving the pilots failed', err); saving.pilot.busy = ''; pilotError = 'Couldn’t save — try again.'; render(); });
+    });
+  }
+
+  // ---------- Align channels with BOLD.OS ----------
+  function when(ms){ return new Date(ms).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); }
+  function tomorrowAt10(){
+    var d = new Date(Date.now() + 86400000), z = function(n){ return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T10:00';
+  }
+  var WHY = { group: function(c){ return 'for ' + c.for + '; they’re ' + c.group; }, 'no-record': function(){ return 'never joined BOLD.OS'; },
+    project: function(c){ return 'not on ' + c.title; }, outside: function(){ return 'an account from another workspace'; } };
+  function alignHtml(){
+    var st = align.status, pv = align.preview, live = st ? st.live : null;
+    var pending = st && st.runs.filter(function(r){ return !r.cancelledAt && !r.doneAt; })[0];
+    var h = '<fieldset class="md-group"><legend>Align channels with BOLD.OS</legend>' +
+      '<p class="proj-meta">Removes whoever isn’t meant to be in a group’s channel (above) or a project’s, and BOLD OS tells each of them where from, why and how to get back in. PIs, admins and bots stay. It’s worked out again when it runs.</p>';
+    if (live === false) h += '<p class="st-error">Make “Slack channels follow BOLD.OS” live on the <a href="#features">Features</a> tab first: until then, a run removes nobody.</p>';
+    h += '<div class="event-controls"><button type="button" class="btn-text st-align-preview"' + (align.busy ? ' disabled' : '') + '>' + (align.busy === 'preview' ? 'Working it out…' : pv ? 'Preview again' : 'Preview') + '</button></div>';
+    if (pv) {
+      var n = pv.plan.reduce(function(t, p){ return t + p.channels.length; }, 0);
+      h += '<p class="proj-meta">' + pv.plan.length + ' people would leave ' + n + ' channel memberships, across the ' + pv.channels + ' channels checked.' +
+        (pv.unseen.length ? ' Not checked (the bot isn’t in them): ' + pv.unseen.map(function(c){ return '#' + esc(c); }).join(', ') + '.' : '') + '</p>' +
+        '<ul class="st-align-list">' + pv.plan.map(function(p){
+          return '<li><details><summary><strong>' + esc(p.name || p.slackId) + '</strong>: ' + p.channels.map(function(c){ return '#' + esc(c.name) + ' <span class="proj-meta">(' + esc(WHY[c.why](c)) + ')</span>'; }).join(', ') + '</summary>' +
+            '<pre class="st-align-msg">' + esc(p.message) + '</pre></details></li>';
+        }).join('') + '</ul>';
+    }
+    if (pending && pending.startedAt) {
+      h += '<p class="st-align-when"><strong>Running since ' + esc(when(pending.startedAt)) + '</strong>: ' + (pending.planned ? pending.done + ' of ' + pending.planned + ' people done.' : 'working out who leaves.') +
+        ' <button type="button" class="btn-text st-align-refresh">Refresh</button></p>';
+    } else if (pending) {
+      h += '<p class="st-align-when"><strong>Scheduled for ' + esc(when(pending.scheduledFor)) + '</strong>, by ' + esc(pending.by) + '. ' +
+        '<button type="button" class="btn-text danger st-align-cancel" data-id="' + esc(pending.id) + '"' + (align.busy ? ' disabled' : '') + '>Cancel it</button></p>';
+    } else {
+      h += '<div class="st-align-schedule"><label>Run it at (your time)<input type="datetime-local" class="st-align-at" value="' + esc(align.at || tomorrowAt10()) + '"></label>' +
+        '<button type="button" class="ev-save st-align-go"' + (align.busy || !st ? ' disabled' : '') + (pv ? '' : ' title="Preview it first"') + '>' + (align.busy === 'schedule' ? 'Scheduling…' : 'Schedule') + '</button></div>';
+    }
+    var done = st ? st.runs.filter(function(r){ return r.doneAt || r.cancelledAt; }) : [];
+    if (done.length) h += '<p class="proj-meta">Before: ' + done.map(function(r){
+      return r.cancelledAt ? 'one for ' + esc(when(r.scheduledFor)) + ', cancelled' : esc(when(r.doneAt)) + ': ' + (r.error ? esc(r.error) : r.removed + ' removals, ' + r.people + ' people told' +
+        (r.failed ? ', ' + r.failed + ' with some not removed' : '') + (r.untold ? ', ' + r.untold + ' not told' : ''));
+    }).join('; ') + '.</p>';
+    return h + (align.error ? '<p class="ev-error">' + esc(align.error) + '</p>' : '') + '</fieldset>';
+  }
+  function drawAlign(){ var el = document.getElementById('stAlign'); if (el) el.innerHTML = alignHtml(); }
+  function callAlign(data){ return firebase.app().functions('europe-west2').httpsCallable('channelAlignment', { timeout: 300000 })(data).then(function(r){ return r.data; }); }
+  function loadAlign(){ callAlign({ action: 'status' }).then(function(d){ align.status = d; drawAlign(); }, function(err){ console.error('[BOLD Settings] channel alignment status failed', err); align.error = 'Couldn’t load the channel alignment — reload to try again.'; drawAlign(); }); }
+  function previewAlign(){
+    align.busy = 'preview'; align.error = ''; drawAlign();
+    callAlign({ action: 'preview' }).then(function(d){ align.preview = d; align.status = { live: d.live, runs: d.runs }; align.busy = ''; drawAlign(); },
+      function(err){ console.error('[BOLD Settings] previewing the alignment failed', err); align.busy = ''; align.error = 'Couldn’t work it out: ' + (err.message || 'try again') + '.'; drawAlign(); });
+  }
+  function scheduleAlign(){
+    var v = (document.querySelector('.st-align-at') || {}).value || '', at = new Date(v).getTime();
+    align.at = v;
+    if (!v || !(at > Date.now())) { align.error = 'Pick a time from now on.'; drawAlign(); return; }
+    var pv = align.preview, n = pv ? pv.plan.length : 0, live = align.status && align.status.live;
+    BOLD.confirmAlways({ title: 'Schedule it for ' + when(at) + '?', go: 'Schedule', effects: [
+      'At ' + when(at) + ', remove from Slack channels whoever isn’t meant to be in them' + (pv ? ' (' + n + ' people, as previewed, worked out again then)' : ''),
+      'Send each of them a message from BOLD OS: where from, why, and how to get back in',
+      live ? '' : 'Nothing happens unless “Slack channels follow BOLD.OS” is live on the Features tab by then',
+    ].filter(Boolean) }).then(function(ok){
+      if (!ok) return;
+      align.busy = 'schedule'; align.error = ''; drawAlign();
+      callAlign({ action: 'schedule', at: at }).then(function(){ align.busy = ''; loadAlign(); },
+        function(err){ align.busy = ''; align.error = err.message || 'Couldn’t schedule it — try again.'; drawAlign(); });
+    });
+  }
+  function cancelAlign(id){
+    BOLD.confirmAlways({ title: 'Cancel it?', go: 'Cancel it', effects: ['Nobody is removed from a channel, and nobody is messaged'] }).then(function(ok){
+      if (!ok) return;
+      align.busy = 'cancel'; drawAlign();
+      callAlign({ action: 'cancel', id: id }).then(function(){ align.busy = ''; loadAlign(); }, function(err){ align.busy = ''; align.error = err.message || 'Couldn’t cancel it.'; drawAlign(); });
     });
   }
 
@@ -321,6 +397,7 @@
     if (t.classList.contains('jr-tester-add') && t.value) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).push(t.value); render(); return; }
     if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.checked; render(); }
   });
+  main.addEventListener('input', function(e){ if (e.target.classList.contains('st-align-at')) align.at = e.target.value; });
   main.addEventListener('keydown', function(e){
     if (e.key === 'Enter' && e.target.classList.contains('st-chip-in')) { e.preventDefault(); addChip(e.target.closest('.st-chips')); }
   });
@@ -330,6 +407,10 @@
     if (t.classList.contains('st-chip-add')) { addChip(t.closest('.st-chips')); return; }
     if (t.classList.contains('st-chip-x')) { t.closest('.kw-chip').remove(); editing = true; return; }
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
+    if (t.classList.contains('st-align-preview')) { previewAlign(); return; }
+    if (t.classList.contains('st-align-refresh')) { loadAlign(); return; }
+    if (t.classList.contains('st-align-go')) { scheduleAlign(); return; }
+    if (t.classList.contains('st-align-cancel')) { cancelAlign(t.getAttribute('data-id')); return; }
     if (t.classList.contains('jr-pilot-save')) { savePilot(t); return; }
     if (t.classList.contains('jr-pilot-cancel')) { pilotDraft = null; pilotError = ''; render(); return; }
     if (t.classList.contains('jr-tester-remove')) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).splice(+t.getAttribute('data-i'), 1); render(); }
@@ -353,8 +434,9 @@
       watch('joinInvite', function(x){ invite = x; });
       watch('joinForm', function(x){ form = x; });
       watch('groups', function(x){ groups = x; });
-      watch('pilot', function(x){ pilot = x; });
+      watch('pilot', function(x){ var was = pilot && (pilot.live || {})['channel-alignment']; pilot = x; if (align.status && was !== (x.live || {})['channel-alignment']) loadAlign(); });
       watch('webPush', function(x){ webPush = x; });
+      loadAlign();
     }).catch(function(err){ console.error('[BOLD Settings] checking access failed', err); staff = false; render(); });
   });
 })();

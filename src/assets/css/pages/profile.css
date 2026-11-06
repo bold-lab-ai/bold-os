@@ -194,3 +194,11 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .g-invite-to legend{padding:0; margin-bottom:4px; color:var(--muted);}
 .g-invite-to .g-why{display:block; font-size:13px; color:var(--muted);}
 .g-invite-to label{display:flex; align-items:center; gap:8px; margin:2px 0; overflow-wrap:anywhere;}
+/* Settings › Slack: aligning the channels with BOLD.OS (settings.js alignHtml). */
+.st-align{margin-top:24px;}
+.st-align-list{list-style:none; margin:8px 0 12px; padding:0; max-height:420px; overflow-y:auto; border-top:1px solid var(--rule);}
+.st-align-list li{padding:6px 0; border-bottom:1px solid var(--rule); font-size:13.5px;}
+.st-align-list summary{cursor:pointer;}
+.st-align-msg{white-space:pre-wrap; margin:6px 0 2px; padding:8px 10px; background:var(--wash); font-size:12.5px;}
+.st-align-schedule{display:flex; flex-wrap:wrap; align-items:flex-end; gap:8px 12px; margin-top:8px;}
+.st-align-schedule label{margin:0;}

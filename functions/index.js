@@ -1362,6 +1362,7 @@ const PILOTS = {
   'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
   'conversation-replies': 'A reply in a conversation you’re in: a DM',
   'notification-pings': 'Notifications: a ping on Slack that there are new ones, instead of each message',
+  'channel-alignment': 'Slack channels follow BOLD.OS: removing whoever isn’t meant to be in one, and telling them',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -2476,6 +2477,217 @@ exports.onChannelAuditRun = onDocumentCreated({ document: 'runs/{id}', secrets: 
     channels[name] = bad ? { id, error: bad } : { id, members };
   }
   await event.data.ref.set({ doneAt: Date.now(), channels, error }, { merge: true });
+});
+
+// ---------- #174: Slack channels follow BOLD.OS (2026-11-06) ----------
+// Each group's and role's channel (settings/groups) is for that group and the groups above it
+// (groupChannelsFor), each project's (its workspace's slackChannel) for the people on it (its
+// workspace's members); PIs and admins stay in every one, as do bots. Everyone else is removed,
+// and told once, by BOLD OS, where from, why and how to get back in (pilot `channel-alignment`:
+// the run refuses to remove anyone while it isn't live, so nobody is removed untold).
+// PIs and admins preview it, schedule it (one run at a time) and cancel it on Settings › Slack
+// (channelAlignment); runAlignments carries out the one that's due, working it out again then.
+const ALIGN_KEY = 'channel-alignment';
+
+// Pure. in: { channels: { <name>: [Slack ids] }, people: { <Slack id>: { email, name } },
+// members: { <email>: members record }, full: [emails], groups: settings/groups,
+// projects: [{ channel, pid, title, url, people: [emails] }], bots: [Slack ids], exclude: [names] }
+// → [{ slackId, name, email, channels: [{ name, why: 'no-record' | 'group' | 'project' | 'outside', group?, title?, url? }] }].
+function alignmentPlan(x){
+  const groupCh = allGroupChannels(x.groups || {}), byCh = {}, bots = new Set(x.bots || []), full = new Set((x.full || []).map((e) => String(e).toLowerCase()));
+  (x.projects || []).forEach(function(p){ const n = String(p.channel || '').replace(/^#/, '').toLowerCase(); if (n) byCh[n] = p; });
+  const out = {};
+  Object.keys(x.channels || {}).sort().forEach(function(name){
+    if ((x.exclude || []).indexOf(name) >= 0) return;
+    const proj = byCh[name], isGroup = !!groupCh[name];
+    if (!proj && !isGroup) return;
+    (x.channels[name] || []).forEach(function(id){
+      if (bots.has(id)) return;
+      const p = (x.people || {})[id], email = p ? String(p.email || '').toLowerCase() : '';
+      if (email && full.has(email)) return;
+      const m = email ? (x.members || {})[email] || null : null;
+      let why = '';
+      if (!p) why = 'outside';
+      else if (proj) { if ((proj.people || []).map((e) => String(e).toLowerCase()).indexOf(email) < 0) why = 'project'; }
+      else if (groupChannelsFor(m || {}, x.groups || {}).indexOf(name) < 0) why = m ? 'group' : 'no-record';
+      if (!why) return;
+      const o = out[id] = out[id] || { slackId: id, name: (p && p.name) || (x.outside || {})[id] || '', email, channels: [] };
+      o.channels.push(Object.assign({ name, why }, why === 'group' ? { group: GROUP_LABELS[groupOf(m)] } : {}, proj ? { title: proj.title, url: proj.url } : { for: groupCh[name].join(', ') }));
+    });
+  });
+  return Object.values(out).sort(function(a, b){ return a.name.localeCompare(b.name); });
+}
+// Pure: what BOLD OS tells someone removed from `channels` (as in alignmentPlan), in Slack's mrkdwn.
+function alignmentMessage(name, channels){
+  const first = String(name || '').trim().split(/\s+/)[0] || 'there';
+  const line = function(c){
+    if (c.why === 'project') return '• #' + c.name + ': it’s for the people on ' + slackText(c.title || 'its project') + ' on BOLD.OS';
+    if (c.why === 'group') return '• #' + c.name + ': it’s for ' + c.for + ' and above; you’re ' + c.group + ' on BOLD.OS';
+    if (c.why === 'no-record') return '• #' + c.name + ': it’s for ' + c.for + ' and above, and you haven’t joined BOLD.OS yet';
+    return '• #' + c.name + ': your account isn’t on BOLD’s Slack roster';
+  };
+  const has = (w) => channels.some((c) => c.why === w);
+  const back = [];
+  if (has('no-record') || has('outside')) back.push('• Join BOLD.OS: sign in with your BOLD Slack account at <' + SITE_URL + '|BOLD.OS> and fill in your profile. Your group’s channels follow.');
+  if (has('group')) back.push('• In the wrong group? Ask for another on <' + SITE_URL + 'group-request.html|BOLD.OS>.');
+  channels.filter((c) => c.why === 'project').forEach(function(c){ back.push('• On ' + slackText(c.title || 'a project') + '? Ask to join it on <' + c.url + '|its page>; once you’re on it, you’re invited back.'); });
+  return 'Hi ' + first + ', BOLD’s Slack channels now follow BOLD.OS, the lab’s site, so you’ve been removed from:\n' + channels.map(line).join('\n') +
+    '\n\nTo get back in:\n' + back.join('\n') + '\n\nNothing else has changed. Questions? Ask a PI or admin.';
+}
+
+// What alignmentPlan needs, from Firestore and Slack (as the bot sees each channel). → { input, unseen: [channel names] }.
+async function alignmentInput(token, exclude){
+  const [peopleSnap, membersSnap, groupsSnap, wsSnap, pis, admins] = await Promise.all([db.collection('people').get(), db.collection('members').get(),
+    db.collection('settings').doc('groups').get(), db.collection('projectWorkspaces').get(), rolesEmails('pis'), rolesEmails('admins')]);
+  const people = {}, members = {};
+  peopleSnap.docs.forEach((d) => { const p = d.data(); people[d.id] = { email: String(p.email || '').toLowerCase(), name: p.name || '' }; });
+  membersSnap.docs.forEach((d) => { members[d.id.toLowerCase()] = d.data(); });
+  const groups = groupsSnap.data() || {};
+  const projects = wsSnap.docs.map((d) => { const w = d.data(); return { channel: w.slackChannel || '', pid: d.id, title: w.title || '', url: projectPageUrl(w.cardId || d.id, w.boardId || null), people: w.members || [] }; }).filter((p) => p.channel);
+  const names = new Set(Object.keys(allGroupChannels(groups)));
+  projects.forEach((p) => names.add(String(p.channel).replace(/^#/, '').toLowerCase()));
+  const channels = {}, unseen = [];
+  for (const name of Array.from(names).sort()){
+    if ((exclude || []).indexOf(name) >= 0) continue;
+    const id = await slackChannelId(token, name).catch(() => null);
+    const ids = id ? await groupChannelMemberIds(token, id) : null;
+    if (!ids) { unseen.push(name); continue; }
+    channels[name] = ids;
+  }
+  // Bots and apps (and deleted accounts): anyone not on the roster is looked up once.
+  const bots = [], seen = new Set(), outside = {};
+  const auth = await slackFetch(token, 'auth.test', {});
+  if (auth.ok && auth.user_id) bots.push(auth.user_id);
+  for (const ids of Object.values(channels)) for (const id of ids){
+    if (people[id] || seen.has(id)) continue;
+    seen.add(id);
+    const u = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: id }), { headers: { Authorization: 'Bearer ' + token } })).json().catch(() => null);
+    // A bot, an app or a deleted account stays out of it; anyone else not on the roster (an account
+    // from another workspace) is 'outside', named from Slack.
+    if (!u || !u.ok || (u.user && (u.user.is_bot || u.user.deleted || u.user.id === 'USLACKBOT'))) bots.push(id);
+    else outside[id] = (u.user.profile && (u.user.profile.real_name || u.user.profile.display_name)) || u.user.name || '';
+  }
+  return { input: { channels, people, members, full: pis.concat(admins), groups, projects, bots, outside, exclude: exclude || [] }, unseen };
+}
+// A channel's members' Slack ids (the bot must be in it), or null when it can't read them.
+async function groupChannelMemberIds(token, channelId){
+  const ids = [];
+  let cursor = '';
+  do {
+    const q = new URLSearchParams(Object.assign({ channel: channelId, limit: '1000' }, cursor ? { cursor } : {}));
+    const json = await (await fetch('https://slack.com/api/conversations.members?' + q, { headers: { Authorization: 'Bearer ' + token } })).json();
+    if (!json.ok) { logger.warn('Reading a channel’s members failed', { error: json.error }); return null; }
+    (json.members || []).forEach(function(id){ ids.push(id); });
+    cursor = (json.response_metadata && json.response_metadata.next_cursor) || '';
+  } while (cursor);
+  return ids;
+}
+// The plan for now: alignmentInput, then alignmentPlan, each person with the message they'd get.
+async function alignmentNow(token, exclude){
+  const got = await alignmentInput(token, exclude);
+  const plan = alignmentPlan(got.input).map((p) => Object.assign(p, { message: alignmentMessage(p.name, p.channels) }));
+  return { plan, unseen: got.unseen, channels: Object.keys(got.input.channels).length };
+}
+// A Slack call that waits and tries again while Slack says to slow down (ratelimited), up to a minute.
+async function slackPatient(token, method, body){
+  let r;
+  for (let i = 0; i < 12; i++){
+    r = await slackFetch(token, method, body);
+    if (r.ok || r.error !== 'ratelimited') return r;
+    await new Promise((ok) => setTimeout(ok, 5000));
+  }
+  return r;
+}
+// Carries it out, in batches (about 6 minutes each, then the next tick of runAlignments goes on): the
+// plan is worked out once, when it starts (`plan`), then each person in it removed from their channels
+// and told of those it removed (`results`, one per person, in the plan's order).
+async function runAlignment(ref, run){
+  const token = SLACK_BOT_TOKEN.value(), started = Date.now();
+  const st = await pilotState(ALIGN_KEY);
+  if (!st.live) { await ref.set({ doneAt: Date.now(), error: '“' + st.label + '” isn’t live on Settings › Features, so nobody was removed.' }, { merge: true }); return; }
+  let plan = run.plan, unseen = run.unseen || [];
+  if (!plan){
+    const now = await alignmentNow(token, run.exclude || []);
+    plan = now.plan.map((p) => ({ slackId: p.slackId, name: p.name, email: p.email, channels: p.channels }));
+    unseen = now.unseen;
+    await ref.set({ plan, unseen, results: [] }, { merge: true });
+  }
+  const results = (run.results || []).slice();
+  for (let k = results.length; k < plan.length; k++){
+    if (Date.now() - started > 360000) { await ref.set({ results, leaseUntil: 0 }, { merge: true }); return; }   // the next tick goes on
+    const p = plan[k], removed = [], failed = [];
+    for (const c of p.channels){
+      const id = await slackChannelId(token, c.name).catch(() => null);
+      const r = id ? await slackPatient(token, 'conversations.kick', { channel: id, user: p.slackId }) : { ok: false, error: 'channel_not_found' };
+      if (r.ok || r.error === 'not_in_channel') removed.push(c); else failed.push({ name: c.name, error: r.error || 'unknown' });
+    }
+    let told = false;
+    if (removed.length){
+      const open = await slackPatient(token, 'conversations.open', { users: p.slackId });
+      const sent = open.ok ? await slackPatient(token, 'chat.postMessage', { channel: open.channel.id, text: alignmentMessage(p.name, removed), unfurl_links: false }) : open;
+      told = !!sent.ok;
+      if (p.email) await noteFor([p.email], { text: 'BOLD’s Slack channels now follow BOLD.OS: you were removed from ' + removed.map((c) => '#' + c.name).join(', ') + '.', feature: ALIGN_KEY, source: 'slack' }).catch(() => {});
+    }
+    results.push({ slackId: p.slackId, name: p.name, removed: removed.map((c) => c.name), failed, told });
+    if (results.length % 10 === 0) await ref.set({ results }, { merge: true });
+  }
+  await ref.set({ results, doneAt: Date.now(), leaseUntil: 0,
+    removed: results.reduce((n, r) => n + r.removed.length, 0), people: results.filter((r) => r.removed.length).length }, { merge: true });
+}
+
+// Settings › Slack: { action: 'preview' } → { plan, unseen, channels, live, runs }; 'schedule' { at (ms), exclude? }
+// → { id }; 'cancel' { id }; 'status' → { live, runs: [the last few, newest first] }. PIs and admins.
+exports.channelAlignment = onCall({ secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 300 }, async (request) => {
+  const email = signedInEmail(request);
+  if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins align the channels.');
+  const d = request.data || {}, col = db.collection('runs');
+  const runs = async () => (await col.where('action', '==', ALIGN_KEY).get()).docs.map((x) => Object.assign({ id: x.id }, x.data()))
+    .sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 5)
+    .map((r) => ({ id: r.id, scheduledFor: r.scheduledFor || 0, by: r.byName || r.by || '', at: r.at || 0, cancelledAt: r.cancelledAt || 0, startedAt: r.startedAt || 0, doneAt: r.doneAt || 0,
+      error: r.error || '', removed: r.removed || 0, people: r.people || 0, planned: (r.plan || []).length, done: (r.results || []).length, failed: (r.results || []).filter((x) => x.failed && x.failed.length).length, untold: (r.results || []).filter((x) => x.removed && x.removed.length && !x.told).length }));
+  const live = (await pilotState(ALIGN_KEY)).live;
+  if (d.action === 'status') return { live, runs: await runs() };
+  if (d.action === 'preview'){
+    const now = await alignmentNow(SLACK_BOT_TOKEN.value(), Array.isArray(d.exclude) ? d.exclude.map(String) : []);
+    return Object.assign(now, { live, runs: await runs() });
+  }
+  if (d.action === 'schedule'){
+    const at = Number(d.at);
+    if (!(at > Date.now() - 60000) || at > Date.now() + 30 * 86400000) throw new HttpsError('invalid-argument', 'Pick a time in the next 30 days.');
+    const pending = (await runs()).filter((r) => !r.cancelledAt && !r.doneAt);
+    if (pending.length) throw new HttpsError('failed-precondition', 'One is scheduled already: cancel it first.');
+    const ref = await col.add({ action: ALIGN_KEY, scheduledFor: at, exclude: Array.isArray(d.exclude) ? d.exclude.map(String).slice(0, 100) : [], by: email, byName: await nameForEmail(email), at: Date.now() });
+    return { id: ref.id };
+  }
+  if (d.action === 'cancel'){
+    const ref = col.doc(String(d.id || ''));
+    const ok = await db.runTransaction(async (tx) => {
+      const r = await tx.get(ref);
+      if (!r.exists || r.data().action !== ALIGN_KEY || r.data().startedAt || r.data().cancelledAt) return false;
+      tx.update(ref, { cancelledAt: Date.now(), cancelledBy: email });
+      return true;
+    });
+    if (!ok) throw new HttpsError('failed-precondition', 'It has started already, or isn’t scheduled.');
+    return { ok: true };
+  }
+  throw new HttpsError('invalid-argument', 'Unknown action.');
+});
+// Every 5 minutes: the scheduled run that's due, claimed once (startedAt), carried out.
+// A run is held by one tick at a time (leaseUntil); one cut short is taken up by a later tick.
+exports.runAlignments = onSchedule({ schedule: 'every 5 minutes', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 540 }, async function(){
+  const due = (await db.collection('runs').where('action', '==', ALIGN_KEY).get()).docs
+    .filter((x) => { const r = x.data(); return !r.cancelledAt && !r.doneAt && (r.scheduledFor || 0) <= Date.now() && (r.leaseUntil || 0) < Date.now(); });
+  for (const x of due){
+    const claimed = await db.runTransaction(async (tx) => {
+      const r = await tx.get(x.ref), d = r.data();
+      if (d.doneAt || d.cancelledAt || (d.leaseUntil || 0) >= Date.now()) return null;
+      tx.update(x.ref, Object.assign({ leaseUntil: Date.now() + 520000 }, d.startedAt ? {} : { startedAt: Date.now() }));
+      return d;
+    });
+    if (!claimed) continue;
+    try { await runAlignment(x.ref, claimed); }
+    catch (err){ logger.error('Aligning the channels failed', { error: String(err && err.message || err) }); await x.ref.set({ doneAt: Date.now(), error: String(err && err.message || err) }, { merge: true }); }
+  }
 });
 
 // ---------- 6. Slack App Home + reviewer assignment ----------
@@ -6804,6 +7016,25 @@ function groupChannelName(raw){ return String(raw || '').trim().replace(/^#/, ''
 // A group's channels, as saved ("#a, b c") → ['a', 'b', 'c'].
 function groupChannelNames(raw){ return String(raw || '').split(/[\s,]+/).map(groupChannelName).filter(Boolean); }
 
+// Pure: the group (and role) channels a member record is meant to be in, given settings/groups (#174).
+function groupChannelsFor(m, set){
+  set = set || {};
+  const out = [];
+  const add = function(v){ groupChannelNames(v).forEach(function(n){ if (out.indexOf(n) < 0) out.push(n); }); };
+  channelGroupsFor(groupOf(m)).forEach(function(h){ add((set.channels || {})[h]); });
+  if (m && m.role) add((set.roleChannels || {})[m.role]);
+  return out;
+}
+// Pure: every group and role channel, each with the groups and roles it's for ("BOLD-internal").
+function allGroupChannels(set){
+  set = set || {};
+  const out = {};
+  const add = function(v, what){ groupChannelNames(v).forEach(function(n){ (out[n] = out[n] || []).push(what); }); };
+  CHANNEL_GROUPS.forEach(function(g){ add((set.channels || {})[g], GROUP_LABELS[g]); });
+  Object.keys(set.roleChannels || {}).forEach(function(r){ add(set.roleChannels[r], r); });
+  return out;
+}
+
 // Invites each of `emails` to group channel `name`; → the first error, or ''. One about a
 // person says who, and why, and that the rest were added (the loop goes on past them).
 async function inviteToGroupChannel(token, emails, name){
@@ -8353,5 +8584,5 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
-  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange
+  onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
 };
