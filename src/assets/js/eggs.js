@@ -390,7 +390,8 @@
         cv.style.left = Math.round(Math.random() * (innerWidth - S)) + 'px';
         cx.setTransform(d, 0, 0, d, 0, 0); cx.textBaseline = 'top'; cx.textAlign = 'center';
         document.body.appendChild(cv);
-        var c = rainColumn(rows, 1); c.decay = 0.93; c.heads.push({ y: 0, speed: 0.45 + Math.random() * 0.3, row: -1 });
+        // Slow, as a hint: 4-6 cells a second, its trail fading slowly to match.
+        var c = rainColumn(rows, 1); c.decay = 0.982; c.heads.push({ y: 0, speed: 0.13 + Math.random() * 0.06, row: -1 });
         (function tick(){
           rainStep(c, false);
           cx.clearRect(0, 0, S, rows * S);
@@ -398,7 +399,7 @@
           if (c.heads.length || c.cells.some(function(x){ return x.b; })) later(tick, 33); else cv.remove();
         })();
       }
-      later(trickle, 4000 + Math.random() * 6000);
+      later(trickle, 15000 + Math.random() * 15000);   // rarely: one every 15-30 s
     }
     // 3. The search box (signed in) types the hint, holds it, and gives its placeholder back.
     function whisper(){
@@ -412,7 +413,7 @@
         else later(function(){ box.placeholder = was; later(whisper, 30000); }, 6000);
       })();
     }
-    glitch(); later(trickle, 1500); later(whisper, 3000);
+    glitch(); later(trickle, 4000); later(whisper, 3000);
   }
   function wakeCheck(){
     if (called || root.classList.contains('is-matrix')) return;
