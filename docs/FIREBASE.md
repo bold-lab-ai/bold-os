@@ -376,8 +376,16 @@ Slack HTTPS hosts or Slack-documented `secure.gravatar.com` with
 bounded redirects and size. An import claim plus versioned Storage path
 prevents concurrent imports or a racing manual replacement from overwriting
 the chosen photo. Import happens only when its owner chooses **Use my Slack
-photo** on Profile. Removal keeps initials until that deliberate import or a
-manual replacement. Slack changes never overwrite a site photo automatically.
+photo** on Profile (or their agent's `profile` tool). Removal keeps initials,
+and `state: removed`, until that import succeeds or a manual replacement; if
+Slack has only its default photo the import returns `no-slack-photo` and
+changes nothing. Slack changes never overwrite a site photo automatically.
+A People batch reads every photo in one `getAll`; an id that isn't a Slack id
+comes back without a photo rather than failing the batch. Errors the member can
+act on keep their message and code; anything else is logged and returned as
+`internal`. The browser keeps the member's own photo for an hour (`boldPhoto`,
+by email) so the masthead paints it at once and calls `profilePhoto` at most
+once an hour; a change on Profile or signing out forgets it.
 The deployed function's service account needs Storage object read access and
 `iam.serviceAccounts.signBlob` to create V4 URLs; the Firebase maintainer checks
 those permissions during the release smoke test.

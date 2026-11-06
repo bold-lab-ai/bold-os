@@ -49,7 +49,7 @@ async function signedOutCall(action) {
   assert.equal(replaced.body.result.result.state,'active',JSON.stringify(replaced));
   assert.equal((await db.collection('profilePhotos').doc('UOWNER').get()).data().source,'manual');
   const invalid = await call('replace','owner@example.test',true,{image:'not-base64'});
-  assert.equal(invalid.body.error.status,'FAILED_PRECONDITION',JSON.stringify(invalid));
+  assert.equal(invalid.body.error.status,'INVALID_ARGUMENT',JSON.stringify(invalid));
   assert.equal((await db.collection('profilePhotos').doc('UOWNER').get()).data().source,'manual');
   const read = await call('batch','other@example.test',true,{slackIds:['UOWNER','UNEW']});
   assert.match(read.body.result.UOWNER.url,/signed=day/,JSON.stringify(read));

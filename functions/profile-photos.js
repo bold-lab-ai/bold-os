@@ -9,6 +9,14 @@ const CACHE_CONTROL = 'public, max-age=31536000, immutable';
 // Slack's user object also documents secure.gravatar.com image URLs.
 const IMAGE_HOST = /(^|\.)(slack-edge\.com|slack\.com)$|^secure\.gravatar\.com$/i;
 
+// An error the member can act on: its message is shown, with its callable code
+// (profilePhoto in index.js); any other error is logged and reported as internal.
+function userError(message, code) {
+  const err = new Error(message);
+  err.photoCode = code || 'invalid-argument';
+  return err;
+}
+
 function imageType(bytes) {
   if (bytes.length >= 3 && bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg';
   if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
@@ -18,34 +26,34 @@ function imageType(bytes) {
 }
 
 function checkedImage(bytes, advertisedType, allowGif) {
-  if (!bytes || !bytes.length || bytes.length > MAX_BYTES) throw new Error('Photo must be 256 KB or smaller.');
+  if (!bytes || !bytes.length || bytes.length > MAX_BYTES) throw userError('Photo must be 256 KB or smaller.');
   const type = imageType(bytes);
-  if (!type || (!allowGif && type === 'image/gif') || (advertisedType && advertisedType.split(';')[0].trim().toLowerCase() !== type)) throw new Error('Use a JPEG, PNG or WebP image.');
+  if (!type || (!allowGif && type === 'image/gif') || (advertisedType && advertisedType.split(';')[0].trim().toLowerCase() !== type)) throw userError('Use a JPEG, PNG or WebP image.');
   return type;
 }
 
 async function slackImage(fetcher, url) {
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
     const parsed = new URL(url);
-    if (parsed.protocol !== 'https:' || !IMAGE_HOST.test(parsed.hostname) || parsed.username || parsed.password) throw new Error('Invalid Slack image URL.');
+    if (parsed.protocol !== 'https:' || !IMAGE_HOST.test(parsed.hostname) || parsed.username || parsed.password) throw userError('Slack’s photo link is not one we can use.', 'failed-precondition');
     const response = await fetcher(url, { redirect: 'manual', signal: AbortSignal.timeout(8000) });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
-      if (i === MAX_REDIRECTS) throw new Error('Too many image redirects.');
+      if (i === MAX_REDIRECTS) throw userError('Slack’s photo link redirects too many times.', 'unavailable');
       url = new URL(response.headers.get('location') || '', url).href;
       continue;
     }
-    if (!response.ok) throw new Error('Slack image unavailable.');
+    if (!response.ok) throw userError('Slack’s photo is unavailable right now. Try again later.', 'unavailable');
     const length = Number(response.headers.get('content-length') || 0);
-    if (length > MAX_BYTES) throw new Error('Slack image too large.');
+    if (length > MAX_BYTES) throw userError('Your Slack photo is larger than 256 KB.', 'failed-precondition');
     const advertised = response.headers.get('content-type') || '';
-    if (!/^image\/(jpeg|png|webp|gif)(;|$)/i.test(advertised)) throw new Error('Slack did not return an image.');
+    if (!/^image\/(jpeg|png|webp|gif)(;|$)/i.test(advertised)) throw userError('Slack did not return an image.', 'unavailable');
     const reader = response.body.getReader();
     const chunks = []; let size = 0;
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > MAX_BYTES) { await reader.cancel(); throw new Error('Slack image too large.'); }
+      if (size > MAX_BYTES) { await reader.cancel(); throw userError('Your Slack photo is larger than 256 KB.', 'failed-precondition'); }
       chunks.push(Buffer.from(value));
     }
     const bytes = Buffer.concat(chunks);
@@ -61,13 +69,14 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
   async function owner(email) {
     const snap = await db.collection('people').where('email', '==', email.toLowerCase()).limit(1).get();
     const id = snap.empty ? '' : snap.docs[0].id;
-    if (!validId(id)) throw new Error('Your Slack account is not in the member roster.');
+    if (!validId(id)) throw userError('Your Slack account is not in the member roster.', 'failed-precondition');
     return id;
   }
   async function read(id) {
     if (!validId(id)) return { state: 'missing' };
-    const snap = await collection.doc(id).get();
-    const data = snap.data() || {};
+    return signed((await collection.doc(id).get()).data() || {});
+  }
+  async function signed(data) {
     if (!data.path || data.state !== 'active') return { state: data.state || 'missing' };
     // Both signing times are day-aligned: the same version gets the same URL
     // throughout a day, while a browser can cache its immutable object.
@@ -81,23 +90,24 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
     }
     return { state: 'active', source: data.source, type: data.type, url: await signedCache.get(key), updatedAt: data.updatedAt || null };
   }
+  // Many members' photos in one Firestore read; an id that isn't a Slack id is
+  // just without a photo, so one odd roster entry doesn't hide everyone's.
   async function batch(ids) {
-    if (!Array.isArray(ids) || ids.length > 500 || ids.some(id => !validId(id))) throw new Error('Invalid photo IDs.');
-    const unique = Array.from(new Set(ids));
-    const results = await Promise.all(unique.map(async id => [id, await read(id)]));
-    return Object.fromEntries(results);
+    if (!Array.isArray(ids) || ids.length > 500) throw userError('Ask for at most 500 photos at a time.');
+    const unique = Array.from(new Set(ids.filter(id => typeof id === 'string')));
+    const valid = unique.filter(validId);
+    const snaps = valid.length ? await db.getAll(...valid.map(id => collection.doc(id))) : [];
+    const results = await Promise.all(snaps.map(async (snap, i) => [valid[i], await signed(snap.data() || {})]));
+    const out = Object.fromEntries(unique.filter(id => !validId(id)).map(id => [id, { state: 'missing' }]));
+    return Object.assign(out, Object.fromEntries(results));
   }
-  async function claim(id, force) {
-    const ref = collection.doc(id); const pending = crypto.randomUUID();
-    const claimed = await db.runTransaction(async tx => {
-      const snap = await tx.get(ref); const data = snap.data() || {};
-      if (!force && (data.state === 'active' || data.state === 'removed' ||
-        (data.pending && Date.now() - (data.pendingAt || 0) < 60 * 1000))) return false;
-      tx.set(ref, Object.assign({ pending, pendingAt: Date.now() },
-        force && data.state === 'removed' ? { state: 'missing' } : {}), { merge: true });
-      return true;
-    });
-    return claimed ? pending : '';
+  // Marks an import as under way. A later one takes over (its mark replaces this
+  // one's, and only the latest is adopted); the state, 'removed' included, changes
+  // only when an import succeeds.
+  async function claim(id) {
+    const pending = crypto.randomUUID();
+    await collection.doc(id).set({ pending, pendingAt: Date.now() }, { merge: true });
+    return pending;
   }
   async function clearPending(id, pending) {
     const ref = collection.doc(id);
@@ -106,21 +116,22 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
       if ((snap.data() || {}).pending === pending) tx.update(ref, { pending: FieldValue.delete(), pendingAt: FieldValue.delete() });
     });
   }
-  async function importSlack(id, force) {
-    const pending = await claim(id, force);
-    if (!pending) return { state: 'unchanged' };
+  // The member's choice to use their Slack photo. 'no-slack-photo': Slack has only
+  // its default for them, and whatever they had stays.
+  async function importSlack(id) {
+    const pending = await claim(id);
     let path = '';
     try {
       const response = await fetcher('https://slack.com/api/users.info?user=' + encodeURIComponent(id), {
         headers: { Authorization: 'Bearer ' + token() }, signal: AbortSignal.timeout(8000),
       });
       const json = await response.json();
-      if (!json.ok) throw new Error('Slack profile unavailable.');
+      if (!json.ok) throw userError('Your Slack profile is unavailable right now. Try again later.', 'unavailable');
       const profile = (json.user && json.user.profile) || {};
       const url = profile.image_192 || profile.image_72 || profile.image_512 || '';
       if (!url || profile.is_custom_image === false || /_default\./i.test(url)) {
         await clearPending(id, pending);
-        return { state: 'missing' };
+        return { state: 'no-slack-photo' };
       }
       const image = await slackImage(fetcher, url);
       path = pathFor(id);
@@ -142,7 +153,7 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
     }
   }
   async function replace(id, imageBase64) {
-    if (typeof imageBase64 !== 'string' || imageBase64.length > MAX_BYTES * 1.4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(imageBase64)) throw new Error('Invalid photo.');
+    if (typeof imageBase64 !== 'string' || imageBase64.length > MAX_BYTES * 1.4 || !/^[A-Za-z0-9+/]+={0,2}$/.test(imageBase64)) throw userError('Invalid photo.');
     const bytes = Buffer.from(imageBase64, 'base64'); const type = checkedImage(bytes);
     const path = pathFor(id);
     await bucket.file(path).save(bytes, { resumable: false, metadata: { contentType: type, cacheControl: CACHE_CONTROL }, preconditionOpts: { ifGenerationMatch: 0 } });
@@ -170,4 +181,4 @@ function createPhotoService({ db, bucket, fetcher, token, FieldValue }) {
   return { owner, read, batch, importSlack, replace, remove };
 }
 
-module.exports = { createPhotoService, imageType, checkedImage, slackImage, MAX_BYTES };
+module.exports = { createPhotoService, imageType, checkedImage, slackImage, userError, MAX_BYTES };

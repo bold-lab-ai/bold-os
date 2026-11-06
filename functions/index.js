@@ -2990,14 +2990,17 @@ exports.profilePhoto = onCall(
       await access.requireAccess(email, 'profile', data.action === 'mine' ? 'view' : 'edit');
       const id = await photoService.owner(email);
       if (data.action === 'mine') return { slackId: id, photo: await photoService.read(id) };
-      if (data.action === 'slack') return { slackId: id, result: await photoService.importSlack(id, true) };
+      if (data.action === 'slack') return { slackId: id, result: await photoService.importSlack(id) };
       if (data.action === 'replace') return { slackId: id, result: await photoService.replace(id, data.image) };
       if (data.action === 'remove') return { slackId: id, result: await photoService.remove(id) };
       throw new HttpsError('invalid-argument', 'Unknown photo action.');
     } catch (err) {
       if (err instanceof HttpsError) throw err;
-      logger.warn('profilePhoto failed', { action: data.action, error: String(err && err.message || err) });
-      throw new HttpsError('failed-precondition', String(err && err.message || 'Could not update photo.'));
+      // What the member can act on keeps its message; anything else (IAM, Storage,
+      // Firestore) is logged here and reported as internal, its details kept back.
+      if (err && err.photoCode) throw new HttpsError(err.photoCode, err.message);
+      logger.error('profilePhoto failed', { action: data.action, error: String(err && err.stack || err) });
+      throw new HttpsError('internal', 'Could not update the photo. Try again.');
     }
   }
 );
@@ -8493,7 +8496,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
-    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, eventSeries: exports.eventSeries }) });
+    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
 // Subscribing to the Calendar: one private .ics link a person (calendar.html; served by boldApi).

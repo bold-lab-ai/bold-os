@@ -65,6 +65,14 @@
     var a = e.target.closest('a[data-tab]');
     if (!a) return;
     var tab = a.getAttribute('data-tab'), edit = { details: '.md-edit', studies: '.st-edit' }[tab];
+    // The photo's controls are above the tabs: scrolled to, leaving the tab as it is.
+    if (tab === 'photo') {
+      e.preventDefault();
+      var ctl = document.getElementById('photo'), btn = document.getElementById('replacePhoto');
+      if (ctl) ctl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (btn && !btn.disabled) btn.focus({ preventScroll: true });
+      return;
+    }
     if (!edit) return;
     setTimeout(function(){
       var b = document.querySelector('#' + tab + ' ' + edit);

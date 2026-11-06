@@ -614,6 +614,10 @@ module.exports = function(ctx){
         if (a.inviter) email = resolve((await lab.people()).map((p) => ({ email: p.email, name: p.name || '' })), a.inviter, 'people in BOLD');
         return act(who, 'setMyInviter', { email });
       }
+      // The profile photo, as on Profile (profilePhoto): Slack's, a new one (base64 JPEG, PNG or WebP, 256 KB at most), or none.
+      case 'use_slack_photo': return act(who, 'profilePhoto', { action: 'slack' });
+      case 'set_photo': return act(who, 'profilePhoto', { action: 'replace', image: need(a.image, 'the image, base64 (JPEG, PNG or WebP, 256 KB at most)') });
+      case 'remove_photo': return act(who, 'profilePhoto', { action: 'remove' });
       case 'confirm_invite': case 'deny_invite':
         return act(who, 'confirmJoinInvite', Object.assign({ confirm: a.action === 'confirm_invite' }, a.request_id ? { id: a.request_id } : { member: resolve((await lab.members()).map((m) => ({ email: m.email || m._id, name: m.name || '' })), a.member, 'members') }));
     }
@@ -771,10 +775,10 @@ module.exports = function(ctx){
         every: { type: 'integer', description: 'Every N weeks, 1–4 (default 1)' }, until: str('YYYY-MM-DD, optional last day'), link: str('Its own meeting link (https), instead of a new Google Meet'),
         invite: ACTIONS(['join', 'everyone', 'associate', 'internal', 'staff', 'exec']), visible: ACTIONS(['public', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
     { name: 'profile', run: profile,
-      description: 'Your profile and place in BOLD: update your details, ask to move to another group (Who is BOLD: gives the page where your person accepts what the group asks of them and sends it; the PIs and admins decide), withdraw that request, say who invited you to the BOLD Slack, and confirm (or deny) that you invited someone who says you did.',
-      inputSchema: S(Object.assign({ action: ACTIONS(['update', 'ask_group', 'withdraw_group_request', 'set_inviter', 'confirm_invite', 'deny_invite']) },
+      description: 'Your profile and place in BOLD: update your details, ask to move to another group (Who is BOLD: gives the page where your person accepts what the group asks of them and sends it; the PIs and admins decide), withdraw that request, say who invited you to the BOLD Slack, confirm (or deny) that you invited someone who says you did, and set your profile photo (your Slack photo, a new image, or none: your initials).',
+      inputSchema: S(Object.assign({ action: ACTIONS(['update', 'ask_group', 'withdraw_group_request', 'set_inviter', 'confirm_invite', 'deny_invite', 'use_slack_photo', 'set_photo', 'remove_photo']) },
         ...Object.keys(PROFILE).map((k) => ({ [k]: k === 'pillars' ? { type: 'array', items: { type: 'string' } } : k === 'list_on_website' ? { type: 'boolean' } : str('update') })),
-        { group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']), note: str(''), request_id: str(''), inviter: str('set_inviter: their name ("" for nobody)'), member: str('confirm_invite, deny_invite: the member’s name') })) },
+        { group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']), note: str(''), request_id: str(''), inviter: str('set_inviter: their name ("" for nobody)'), member: str('confirm_invite, deny_invite: the member’s name'), image: str('set_photo: the image, base64 (JPEG, PNG or WebP, 256 KB at most)') })) },
     { name: 'events', run: events,
       description: 'The lab’s events: add one (it starts hidden, until you release it), update, release, hide or delete one you added or whose series you organise (PIs and admins: any). Releasing one has Google Calendar invite its group: tell your person that, and who, before you do it.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str(''), visible: ACTIONS(['public', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },

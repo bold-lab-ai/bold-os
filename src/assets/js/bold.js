@@ -436,7 +436,7 @@
     auth.onAuthStateChanged(function(user){
       current = user; authReady = true; skipConfirm = null;
       var nextPhotoUid = user && user.uid || null;
-      if (photoUid !== nextPhotoUid) { photoUid = nextPhotoUid; if (BOLD.photo) BOLD.photo.clear(); }
+      if (photoUid !== nextPhotoUid) { photoUid = nextPhotoUid; if (BOLD.photo) BOLD.photo.reset(); }
       try {
         if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
         else localStorage.removeItem('boldAuthHint');
@@ -529,7 +529,8 @@
       document.addEventListener('focusin', function(e){ if (!region.contains(e.target)) open(false); });
       region.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
       region.querySelector('#mastSignOutBtn').addEventListener('click', BOLD.signOut);
-      if (user.uid && BOLD.photo) BOLD.photo.mountOwn(region.querySelector('.mast-avatar'), name).catch(function(){});
+      // Painted at once from this browser's copy (also before sign-in resolves), else after one call.
+      if (BOLD.photo) BOLD.photo.mountOwn(region.querySelector('.mast-avatar'), name).catch(function(){});
     } else {
       region.innerHTML = '<button class="auth-signin" type="button" id="mastSignInBtn">Sign in with Slack</button>';
       region.querySelector('#mastSignInBtn').addEventListener('click', BOLD.signIn);

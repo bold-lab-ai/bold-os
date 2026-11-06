@@ -41,17 +41,27 @@
       photoButtons();
     });
   }
+  function photoMessage(action, result, state){
+    if (action === 'slack' && result === 'no-slack-photo') return 'Your Slack profile has no photo of its own' + (state === 'active' ? ': your photo here stays.' : ', so your initials stay.');
+    if (action === 'slack' && result === 'active') return 'Now using your Slack photo.';
+    if (action === 'replace' && result === 'active') return 'Photo updated.';
+    if (action === 'remove') return 'Photo removed. Your initials show instead.';
+    return state === 'active' ? 'Photo unchanged.' : 'Using initials.';
+  }
   function photoAction(action, image){
     photoBusy = true; photoButtons(); el('photoMessage').textContent = 'Updating photo…';
+    var result = '';
     BOLD.photo.call({ action: action, image: image }).then(function(data){
       photoId = data.slackId || photoId;
+      result = (data.result || {}).state || '';
       BOLD.photo.clear(photoId);
       var user = me();
       BOLD.photo.mountOwn(document.querySelector('#authRegion .mast-avatar'), (user && user.displayName) || '').catch(function(){});
       return BOLD.photo.mountOwn(el('profilePhoto'), (user && user.displayName) || '');
     }).then(function(data){
       photoState = (data.photo || {}).state || 'missing';
-      el('photoMessage').textContent = photoState === 'active' ? 'Photo updated.' : 'Using initials.';
+      // What the server did (result), not only what's there now.
+      el('photoMessage').textContent = photoMessage(action, result, photoState);
     }).catch(function(err){
       el('photoMessage').textContent = (err && err.message) || 'Could not update photo.';
     }).finally(function(){ photoBusy = false; photoButtons(); });
