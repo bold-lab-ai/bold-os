@@ -329,38 +329,84 @@
   addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1'); });
   // For search (pages/search.js: `red pill`).
   // 01:24. Idle for 30 minutes or more, on any page, the conversation opens by itself; otherwise, on
-  // the homepage, the wordmark's dot turns green and blinks, and a click on it goes straight into the Matrix.
+  // the homepage, hints (below), and a click on the title goes straight into the Matrix.
   // From 01:24 to 01:29 (a background tab's timers may run only once a minute), once a page.
   var IDLE = 30 * 60e3, lastActive = Date.now(), called = false;
   ['pointermove', 'pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function(t){
     addEventListener(t, function(){ lastActive = Date.now(); }, { passive: true, capture: true });
   });
   function isHome(){ var p = location.pathname; return /\/$/.test(p) || /\/index\.html$/.test(p); }
-  // Every BOLD.OS dot: the homepage's title (its masthead is hidden until signed in) and the masthead's.
-  function callDot(){
-    var dots = document.querySelectorAll('#homeHeroTitle .home-dot, .wordmark span');
-    Array.prototype.forEach.call(dots, function(dot){
-      if (dot.classList.contains('is-calling')) return;
-      dot.classList.add('is-calling');
-      dot.title = 'Click me.';
-      dot.addEventListener('click', function(e){
-        if (!dot.classList.contains('is-calling')) return;
-        e.preventDefault(); e.stopPropagation();   // the wordmark is a link home; the title shows the sidebar
-        Array.prototype.forEach.call(dots, function(d){ d.classList.remove('is-calling'); d.removeAttribute('title'); });
-        matrix(true, true);   // the downpour, then the Matrix
-      });
-    });
+  // Hints, as the film gives them, on the homepage until you follow them: the title glitches into glyphs
+  // and decodes back, a single stream of rain falls down the page now and then, and the search box types
+  // "Follow the white rabbit." Meanwhile a click on the title goes straight into the Matrix.
+  var hinting = null;
+  var HINT_GLYPHS = 'ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ012345789';
+  function hints(){
+    if (hinting || root.classList.contains('is-matrix')) return;
+    var title = document.getElementById('homeHeroTitle') || document.querySelector('.wordmark');
+    if (!title) return;
+    var still = matchMedia('(prefers-reduced-motion: reduce)').matches, timers = [];
+    var later = function(f, ms){ timers.push(setTimeout(f, ms)); };
+    hinting = { stop: function(){ timers.forEach(clearTimeout); title.classList.remove('is-hinted', 'is-glitch'); title.removeEventListener('click', follow, true); title.removeAttribute('title'); hinting = null; } };
+    title.classList.add('is-hinted');
+    title.title = 'Follow it.';
+    // The title, while hinting: into the Matrix (before its own click, which shows the sidebar).
+    function follow(e){ e.preventDefault(); e.stopImmediatePropagation(); hinting.stop(); matrix(true, true); }
+    title.addEventListener('click', follow, true);
+    // 1. The title's letters scramble into glyphs, then settle back, left to right; its markup kept.
+    function glitch(){
+      if (!hinting) return;
+      var nodes = [], walk = document.createTreeWalker(title, NodeFilter.SHOW_TEXT), n;
+      while ((n = walk.nextNode())) nodes.push({ node: n, text: n.nodeValue });
+      var total = nodes.reduce(function(s, x){ return s + x.text.length; }, 0), step = 0, STEPS = still ? 1 : 14;
+      title.classList.add('is-glitch');
+      (function frame(){
+        var settled = Math.floor(total * step / STEPS), at = 0;
+        nodes.forEach(function(x){
+          x.node.nodeValue = x.text.split('').map(function(c){ var i = at++; return i < settled || c === ' ' ? c : HINT_GLYPHS[Math.floor(Math.random() * HINT_GLYPHS.length)]; }).join('');
+        });
+        if (step++ < STEPS) later(frame, still ? 900 : 55);
+        else { nodes.forEach(function(x){ x.node.nodeValue = x.text; }); title.classList.remove('is-glitch'); later(glitch, 7000 + Math.random() * 5000); }
+      })();
+    }
+    // 2. One stream of rain, down one column of the page.
+    function trickle(){
+      if (!hinting) return;
+      if (!still) {
+        var s = document.createElement('div'), len = 10 + Math.floor(Math.random() * 12), g = '';
+        for (var i = 0; i < len; i++) g += '<span>' + HINT_GLYPHS[Math.floor(Math.random() * HINT_GLYPHS.length)] + '</span>';
+        s.className = 'mx-trickle'; s.setAttribute('aria-hidden', 'true'); s.innerHTML = g;
+        s.style.left = Math.round(5 + Math.random() * 90) + 'vw';
+        s.style.animationDuration = (3.5 + Math.random() * 3) + 's';
+        document.body.appendChild(s);
+        s.addEventListener('animationend', function(){ s.remove(); });
+      }
+      later(trickle, 4000 + Math.random() * 6000);
+    }
+    // 3. The search box (signed in) types the hint, holds it, and gives its placeholder back.
+    function whisper(){
+      if (!hinting) return;
+      var box = document.querySelector('.home-search .ms-input') || document.querySelector('.ms-input');
+      if (!box || !box.offsetParent) { later(whisper, 15000); return; }
+      var was = box.placeholder, line = 'Follow the white rabbit.', i = 0;
+      (function key(){
+        box.placeholder = line.slice(0, ++i);
+        if (i < line.length) later(key, still ? 0 : 90 + Math.random() * 90);
+        else later(function(){ box.placeholder = was; later(whisper, 30000); }, 6000);
+      })();
+    }
+    glitch(); later(trickle, 1500); later(whisper, 3000);
   }
   function wakeCheck(){
     if (called || root.classList.contains('is-matrix')) return;
     var d = new Date();
     if (d.getHours() !== 1 || d.getMinutes() < 24 || d.getMinutes() > 29) return;
     called = true;
-    if (Date.now() - lastActive >= IDLE) converse(); else if (isHome()) callDot();
+    if (Date.now() - lastActive >= IDLE) converse(); else if (isHome()) hints();
   }
   setInterval(wakeCheck, 5000);
-  // To try it at another hour, in the console: BoldEggs.wake('dot') or BoldEggs.wake('idle').
-  window.BoldEggs = { wake: function(how){ if (how === 'idle') converse(); else callDot(); }, brain: null };
+  // To try it at another hour, in the console: BoldEggs.wake('hints') or BoldEggs.wake('idle').
+  window.BoldEggs = { wake: function(how){ if (how === 'idle') converse(); else hints(); }, brain: null };
 
   function start(){ watch(); birthday(); if (root.classList.contains('is-matrix')) matrix(true); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);

@@ -1104,7 +1104,13 @@ html:root.is-matrix ::selection{background:#b4f0bd; color:#06100a; text-shadow:n
 .mx-prompt[hidden]{display:none;}
 .mx-prompt input{flex:1; min-width:0; background:transparent; border:0; outline:0; color:inherit; font:inherit; letter-spacing:inherit; text-shadow:inherit; caret-color:#b4f0bd;}
 @keyframes mx-blink{50%{opacity:0;}}
-/* 01:24 on the homepage: the wordmark's dot calls you. */
-.wordmark span.is-calling, .home-dot.is-calling{color:#2bd65f; opacity:1; cursor:pointer; text-shadow:0 0 6px #3cff7a; animation:mx-call 1.1s ease-in-out infinite;}
-@keyframes mx-call{50%{opacity:.25; text-shadow:none;}}
-@media (prefers-reduced-motion: reduce){ .wordmark span.is-calling, .home-dot.is-calling{animation:none;} }
+/* 01:24 on the homepage: the Matrix's hints (eggs.js). The title glitches into glowing green glyphs and back;
+   a single stream of rain falls down one column now and then. */
+.is-hinted{cursor:pointer;}
+.is-glitch, .is-glitch *{color:#2bd65f !important; text-shadow:0 0 6px #3cff7a, 0 0 14px rgba(60,255,122,.4);}
+.mx-trickle{position:fixed; top:0; z-index:9990; pointer-events:none; display:flex; flex-direction:column; align-items:center;
+  font:600 18px/1.05 "MS Gothic", "Hiragino Kaku Gothic Pro", ui-monospace, monospace; color:#2bd65f; animation:mx-trickle 5s linear forwards;
+  -webkit-mask-image:linear-gradient(to bottom, transparent, #000 70%); mask-image:linear-gradient(to bottom, transparent, #000 70%);}
+.mx-trickle span{transform:scaleX(-1);}
+.mx-trickle span:last-child{color:#e1ffe8; text-shadow:0 0 8px #bfffd0;}
+@keyframes mx-trickle{from{transform:translateY(-100%);} to{transform:translateY(100vh);}}
