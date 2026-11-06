@@ -157,7 +157,6 @@
     var partial = all.length && all[0].partial;
     var broke = want.filter(function(k){ return failed[k]; }).map(function(k){ return BoldSearch.scope(k).label; });
     // Easter egg (eggs.js): sudo. Nothing is logged; the rules decide, as ever.
-    if (/^(red|blue) ?pill$/i.test(q) && window.BoldEggs) BoldEggs.matrix(/^red/i.test(q));   // the Matrix (eggs.js)
     var sudo = /^sudo\b/i.test(q) ? '<p class="sr-sudo">You are not in the sudoers file. This incident will be reported.</p>' : '';
     list.innerHTML = sudo + (partial && !loading ? '<p class="proj-msg">Nothing has every word; these have most of them.</p>' : '') +
       (all.length ? '<ul class="sr-list">' + all.slice(0, MAX).map(function(h){
