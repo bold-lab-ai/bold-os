@@ -79,13 +79,13 @@
   // Type `redpill` (not in a field): the whole site in green on black, glyphs raining behind it.
   // `bluepill`, or the pill at the bottom right, wakes you up. Kept across pages (boldMatrix).
   var typed = '', rain = null;
-  function matrix(on){
+  function matrix(on, entering){
     try { console.log(on ? '[BOLD] Wake up.' : '[BOLD] Blue pill.'); } catch (e){}
     root.classList.toggle('is-matrix', on);
     try { if (on) localStorage.setItem('boldMatrix', '1'); else localStorage.removeItem('boldMatrix'); } catch (e){}
     if (!on) {
       if (rain) { rain.stop(); rain = null; }
-      document.querySelectorAll('.mx-pill, .mx-wake').forEach(function(n){ n.remove(); });
+      document.querySelectorAll('.mx-pill, .mx-wake, .mx-scan').forEach(function(n){ n.remove(); });
       return;
     }
     if (!document.querySelector('.mx-pill')) {
@@ -94,7 +94,8 @@
       pill.addEventListener('click', function(){ matrix(false); });
       document.body.appendChild(pill);
     }
-    if (!rain) rain = startRain();
+    if (!rain) rain = startRain(entering);
+    if (!document.querySelector('.mx-scan')) { var sc = document.createElement('div'); sc.className = 'mx-scan'; sc.setAttribute('aria-hidden', 'true'); document.body.appendChild(sc); }
   }
   // The conversation's brain: what it says back to what you type. Scripted for now, and made to be
   // swapped for a model later (BOLD-LLM): set BoldEggs.brain = function(said, st){ … } returning a reply,
@@ -202,7 +203,7 @@
     }
     // What a reply's `then` does once its lines are typed.
     function reply(r){
-      var after = { game: play, matrix: function(){ close(); matrix(true); }, close: close,
+      var after = { game: play, matrix: function(){ close(); matrix(true, true); }, close: close,
         rabbit: function(){ location.href = '404.html#rabbit'; } }[r.then];   // the loss curve; served locally too
       say(r.lines || [], after || null);
     }
@@ -252,32 +253,69 @@
     // The film's beats: a blank screen first, each line left to sink in; after the knock, it's your turn.
     say([['Wake up, ' + who + '...', 3500], ['BOLD.OS has you...', 3500], ['Follow the white rabbit.', 3000], ['Knock, knock, ' + who + '.', 400]], knock, { lead: 1500 });
   }
-  function startRain(){
+  // The film's digital rain. Each column carries streams falling at their own speed: a bright, nearly
+  // white head glyph with a glow, and behind it a green trail that fades and whose glyphs keep changing.
+  // Mirrored half-width katakana, digits and a few Latin letters; some columns dimmer and smaller, for
+  // depth. Drawn over the page, screened (dark adds nothing), taking no clicks. `entering`: a full-screen
+  // downpour for a moment, then it settles behind the page (.mx-rain.is-full, bold.css).
+  function startRain(entering){
     var cv = document.createElement('canvas'), cx = cv.getContext('2d');
-    cv.className = 'mx-rain'; cv.setAttribute('aria-hidden', 'true');
-    document.body.insertBefore(cv, document.body.firstChild);
-    var GLYPHS = 'ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789BOLD∇∑∂λθ', S = 16, drops = [], frame = 0, last = 0;
+    cv.className = 'mx-rain' + (entering ? ' is-full' : ''); cv.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(cv);
+    var GLYPHS = 'ｦｱｳｴｵｶｷｹｺｻｼｽｾｿﾀﾂﾃﾅﾆﾇﾈﾊﾋﾎﾏﾐﾑﾒﾓﾔﾕﾗﾘﾜ012345789Z:.=*+-<>¦|';
+    var S = 18, cols = [], frame = 0, last = 0, W = 0, H = 0, rows = 0;
     var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    function glyph(){ return GLYPHS[Math.floor(Math.random() * GLYPHS.length)]; }
+    function stream(c, top){
+      return { y: top ? Math.random() * rows : -Math.random() * rows, speed: (0.25 + Math.random() * 0.55) * c.depth,
+        len: 8 + Math.floor(Math.random() * 22) };
+    }
     function size(){
       var d = window.devicePixelRatio || 1;
-      cv.width = innerWidth * d; cv.height = innerHeight * d; cx.setTransform(d, 0, 0, d, 0, 0);
-      drops = []; for (var c = 0; c < Math.ceil(innerWidth / S); c++) drops.push(Math.random() * -innerHeight / S);
-      cx.fillStyle = '#000'; cx.fillRect(0, 0, innerWidth, innerHeight);
+      W = innerWidth; H = innerHeight; cv.width = W * d; cv.height = H * d; cx.setTransform(d, 0, 0, d, 0, 0);
+      rows = Math.ceil(H / S) + 1; cols = [];
+      for (var x = 0; x < Math.ceil(W / S); x++){
+        var c = { depth: Math.random() < 0.3 ? 0.55 : 1, cells: [] };
+        for (var r = 0; r < rows; r++) c.cells.push(glyph());
+        c.streams = [stream(c, true)];
+        if (Math.random() < 0.35) c.streams.push(stream(c, false));
+        cols.push(c);
+      }
     }
     function draw(){
-      cx.fillStyle = 'rgba(0,0,0,0.08)'; cx.fillRect(0, 0, innerWidth, innerHeight);
-      cx.font = S + 'px ui-monospace, Menlo, monospace';
-      drops.forEach(function(y, c){
-        var ch = GLYPHS[Math.floor(Math.random() * GLYPHS.length)];
-        cx.fillStyle = Math.random() < 0.04 ? '#d8ffe4' : '#2bff6a';
-        cx.fillText(ch, c * S, y * S);
-        drops[c] = y * S > innerHeight && Math.random() > 0.975 ? 0 : y + 1;
+      cx.globalCompositeOperation = 'source-over';
+      cx.fillStyle = '#030a06'; cx.fillRect(0, 0, W, H);
+      cx.textBaseline = 'top'; cx.textAlign = 'center';
+      cols.forEach(function(c, x){
+        var fs = Math.round(S * (c.depth < 1 ? 0.8 : 1));
+        cx.font = '600 ' + fs + 'px "MS Gothic", "Hiragino Kaku Gothic Pro", "Noto Sans JP", ui-monospace, monospace';
+        // A few of the column's glyphs change every frame, as they do on the screen.
+        for (var m = 0; m < 2; m++) if (Math.random() < 0.5) c.cells[Math.floor(Math.random() * rows)] = glyph();
+        c.streams.forEach(function(s, si){
+          s.y += s.speed;
+          var head = Math.floor(s.y);
+          for (var k = 0; k < s.len; k++){
+            var r = head - k;
+            if (r < 0 || r >= rows) continue;
+            var fade = 1 - k / s.len, a = (k === 0 ? 1 : 0.15 + 0.75 * fade * fade) * (c.depth < 1 ? 0.45 : 1);
+            cx.save();
+            cx.translate(x * S + S / 2, r * S);
+            cx.scale(-1, 1);   // mirrored, as in the film
+            if (k === 0) { cx.shadowColor = '#bfffd0'; cx.shadowBlur = 12; cx.fillStyle = 'rgba(225,255,232,' + a + ')'; }
+            else if (k < 3) { cx.shadowBlur = 0; cx.fillStyle = 'rgba(150,255,170,' + a + ')'; }
+            else { cx.shadowBlur = 0; cx.fillStyle = 'rgba(40,215,90,' + a + ')'; }
+            cx.fillText(c.cells[r], 0, 0);
+            cx.restore();
+          }
+          if (head - s.len > rows) c.streams[si] = stream(c, false);
+        });
       });
     }
-    function loop(t){ frame = requestAnimationFrame(loop); if (t - last < 50) return; last = t; draw(); }
+    function loop(t){ frame = requestAnimationFrame(loop); if (t - last < 33) return; last = t; draw(); }
     size();
-    if (still) { for (var k = 0; k < 60; k++) draw(); } else frame = requestAnimationFrame(loop);
+    if (still) draw(); else frame = requestAnimationFrame(loop);
     addEventListener('resize', size);
+    if (entering) setTimeout(function(){ cv.classList.remove('is-full'); }, 2600);
     return { stop: function(){ cancelAnimationFrame(frame); removeEventListener('resize', size); cv.remove(); } };
   }
   document.addEventListener('keydown', function(e){

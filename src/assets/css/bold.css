@@ -1044,27 +1044,35 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .is-birthday .masthead{border-bottom:0; background-image:repeating-linear-gradient(90deg, var(--green) 0 14px, var(--amber) 14px 28px, var(--plum) 28px 42px, var(--teal) 42px 56px, var(--danger-text) 56px 70px);
   background-size:100% 3px; background-repeat:no-repeat; background-position:bottom;}
 @media (prefers-reduced-motion: reduce){ .egg-panic{animation:none;} }
-/* `redpill`: the Matrix. Every role green on black, every font monospace; html:root wins over any theme. */
+/* The Matrix (eggs.js): the site as the conversation's terminal. Dark green-black, pale phosphor green with
+   its glow, Courier (bold for headings and controls), scanlines and a vignette; html:root wins over any theme. */
 html:root.is-matrix{
-  --ink:#3cff7a; --ink-soft:#2ee068; --muted:#1fa850; --paper:#000; --surface:#020f06; --wash:#04210d;
-  --accent:#3cff7a; --accent-hover:#9dffbd; --accent-dim:#06301a; --link:#9dffbd; --on-fill:#000; --hover-mix:#fff; --shade:#000;
-  --green:#3cff7a; --brown:#7dd98f; --amber:#b6ff5c; --plum:#5cffb0; --teal:#2ee0a0;
-  --success-text:#3cff7a; --success-bg:#06301a; --success-line:#0e5a2c;
-  --warn-text:#b6ff5c; --warn-bg:#1d2a06; --warn-line:#41600e;
-  --danger-text:#ff5c5c; --danger-bg:#2a0606; --danger-line:#601010;
-  --neutral-text:#7dd98f; --neutral-bg:#04210d;
-  --highlight:rgba(60,255,122,.22); --highlight-strong:rgba(60,255,122,.4); --highlight-line:rgba(60,255,122,.6);
+  --ink:#b4f0bd; --ink-soft:#9fdcaa; --muted:#5f9e70; --paper:#08140e; --surface:#0c1d14; --wash:#10261a;
+  --accent:#b4f0bd; --accent-hover:#e2ffe8; --accent-dim:#123321; --link:#d8ffe0; --on-fill:#06100a; --hover-mix:#fff; --shade:#000;
+  --line:rgba(150,240,170,.18); --rule:rgba(150,240,170,.09); --underline:rgba(180,240,189,.4);
+  --green:#7dff9c; --brown:#a6d98f; --amber:#c8f07a; --plum:#8affc8; --teal:#6fe0b4;
+  --success-text:#7dff9c; --success-bg:#0f2a19; --success-line:#1d4d2e;
+  --warn-text:#c8f07a; --warn-bg:#1c2410; --warn-line:#3a4a18;
+  --danger-text:#ff7b6b; --danger-bg:#2a0d0a; --danger-line:#5a1c16;
+  --neutral-text:#9fdcaa; --neutral-bg:#10261a;
+  --highlight:rgba(180,240,189,.2); --highlight-strong:rgba(180,240,189,.38); --highlight-line:rgba(180,240,189,.6);
   --label-fade:1;
-  --serif:ui-monospace, 'SF Mono', Menlo, 'Courier New', monospace; --sans:ui-monospace, 'SF Mono', Menlo, 'Courier New', monospace;
-  background:#000; color-scheme:dark;
+  --serif:'Courier New', Courier, monospace; --sans:'Courier New', Courier, monospace;
+  background:radial-gradient(ellipse at 45% 35%, #0f2219 0%, #08140e 65%, #030805 100%) fixed #08140e; color-scheme:dark;
 }
-html:root.is-matrix body{background:transparent; text-shadow:0 0 5px color-mix(in srgb, #3cff7a 45%, transparent);}
-html:root.is-matrix img, html:root.is-matrix video{filter:grayscale(1) sepia(1) hue-rotate(75deg) saturate(4) brightness(.85);}
-/* Over the page, faint and screened (black adds nothing), so it shows through every panel and takes no clicks. */
-.mx-rain{position:fixed; inset:0; width:100vw; height:100vh; z-index:9997; opacity:.2; mix-blend-mode:screen; pointer-events:none;}
-.mx-pill{position:fixed; right:16px; bottom:16px; z-index:9999; font:600 12px ui-monospace, Menlo, monospace; letter-spacing:.04em;
-  color:#fff; background:#2557d6; border:0; border-radius:999px; padding:8px 14px; cursor:pointer; box-shadow:0 0 14px rgba(37,87,214,.7);}
-.mx-pill:hover{background:#3a6cf0;}
+html:root.is-matrix body{background:transparent; text-shadow:0 0 1px rgba(180,240,189,.8), 0 0 8px rgba(110,230,140,.35);}
+html:root.is-matrix h1, html:root.is-matrix h2, html:root.is-matrix h3, html:root.is-matrix strong, html:root.is-matrix b,
+html:root.is-matrix button, html:root.is-matrix .btn-text{font-weight:700;}
+html:root.is-matrix img, html:root.is-matrix video{filter:grayscale(1) sepia(1) hue-rotate(75deg) saturate(2.2) brightness(.8) contrast(1.1);}
+html:root.is-matrix ::selection{background:#b4f0bd; color:#06100a; text-shadow:none;}
+.mx-scan{position:fixed; inset:0; z-index:9996; pointer-events:none; background:repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 3px);}
+/* The rain: over the page, screened, taking no clicks; on the way in, a full-screen downpour first. */
+.mx-rain{position:fixed; inset:0; width:100vw; height:100vh; z-index:9997; opacity:.22; mix-blend-mode:screen; pointer-events:none; transition:opacity 1.6s ease;}
+.mx-rain.is-full{opacity:1; mix-blend-mode:normal; transition:none;}
+.mx-pill{position:fixed; right:16px; bottom:16px; z-index:9999; font:700 13px 'Courier New', Courier, monospace; letter-spacing:.03em;
+  color:#e6efff; background:#1b3fa8; border:1px solid #6f95ff; border-radius:999px; padding:8px 16px; cursor:pointer;
+  text-shadow:0 0 6px rgba(150,180,255,.8); box-shadow:0 0 16px rgba(60,110,255,.55);}
+.mx-pill:hover{background:#2552cf;}
 .mx-wake{position:fixed; inset:0; z-index:9998; background:#000; color:#3cff7a; display:flex; align-items:center; justify-content:center;
   font:clamp(22px, 4vw, 40px) ui-monospace, Menlo, monospace; text-shadow:0 0 8px #3cff7a; transition:opacity .8s; pointer-events:none;}
 .mx-wake::after{content:'▋'; animation:mx-blink 1s steps(1) infinite; margin-left:4px;}
