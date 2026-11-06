@@ -1028,13 +1028,14 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
   font-family:var(--serif); font-style:italic; font-size:14px; color:color-mix(in srgb, var(--egg-ink) 75%, transparent);}
 .cx-graph.is-engraving .cx-graph{background:none; border:0;}
 .cx-graph.is-engraving svg text, .cx-graph.is-engraving svg tspan{font-family:var(--serif); fill:var(--egg-ink);}
-.cx-graph.is-engraving .cx-label{font-style:italic; font-size:15px;}
-.cx-graph.is-engraving .cx-how, .cx-graph.is-engraving .cx-moves{font-style:normal; font-variant:small-caps; letter-spacing:.04em; fill:color-mix(in srgb, var(--egg-ink) 70%, transparent);}
+.cx-graph.is-engraving .cx-label{font-style:italic; font-size:15px; stroke:var(--egg-paper);}   /* its halo: the paper's, not the theme's */
+.cx-graph.is-engraving .cx-how, .cx-graph.is-engraving .cx-moves{font-family:var(--serif); font-style:normal; font-variant:small-caps; text-transform:none; font-size:13px; letter-spacing:.03em; fill:#6b5434;}
 .cx-graph.is-engraving .cx-edge{stroke:var(--egg-ink); stroke-width:1.3; stroke-dasharray:none; opacity:1;}
 .cx-graph.is-engraving .cx-node > :not(text):not(title){fill:var(--egg-paper) !important; stroke:var(--egg-ink) !important; stroke-width:1.4;}
 /* Inbox zero's cat. */
 .nt-zero{display:block; margin:22px 0 0; color:var(--muted);}
-.nt-zero-cap{font-family:var(--serif); font-style:italic; font-size:15px; color:var(--muted); margin:4px 0 8px;}
+.nt-zero-cap{font-family:var(--serif); font-style:italic; font-size:15px; color:var(--muted); margin:4px 0 4px;}
+.nt-zero-more{margin:0 0 8px;}
 /* \bold in KaTeX (card-model.js): the wordmark, as the masthead's. */
 .katex .bold-mark, .katex .bold-mark *{font-family:var(--sans) !important; font-style:normal; font-weight:500; letter-spacing:-0.01em;}
 .katex .bold-mark .textbf, .katex .bold-mark .textbf *{font-weight:700;}

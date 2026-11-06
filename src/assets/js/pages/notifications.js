@@ -18,6 +18,7 @@
     '<circle cx="140" cy="72" r="13"/><path d="M130 63l1-11 7 8M143 60l7-8 1 12"/>' +
     '<path d="M133 73q3 2 6 0M143 73q3 2 6 0M140 78v1"/>' +
     '<path d="M158 44h7l-7 8h7M168 30h5l-5 6h5M176 18h4l-4 5h4"/></svg><p class="nt-zero-cap">Inbox zero. The cat approves.</p>';
+  var showRead = false;   // at inbox zero, the read ones are folded away under the cat until asked for
   var KINDS = { join: 'Joining BOLD', group: 'Changing group', letter: 'Recommendation letter', introduction: 'Introduction', supervision: 'Supervision meetings',
     agent: 'Agent acting', invite: 'Invitation', review: 'Internal Review', event: 'Event', hackathon: 'Hackathon', venue: 'Venue', proposal: 'Proposed change' };
   var SOURCES = [['', 'All'], ['bold', 'BOLD.OS'], ['conversations', 'Conversations'], ['slack', 'Slack']];
@@ -165,7 +166,10 @@
         '<button type="button" class="btn-text nt-all"' + (unread ? '' : ' disabled title="Nothing unread"') + '>Mark all read</button></div>' +
         (noteError ? '<p class="proj-msg">Couldn’t load your inbox — try reloading the page.</p>'
           : !notes ? '<p class="proj-msg">Loading&hellip;</p>'
-          : (source || unread ? '' : CAT) + (list.length ? '<ul class="proj-list nt-list">' + list.map(noteHtml).join('') + '</ul>'
+          // Inbox zero (nothing unread, no filter): the cat, and the read ones folded away.
+          : !source && !unread && list.length && !showRead ? CAT + '<p class="nt-zero-more"><button type="button" class="btn-text nt-fold" data-show="1">Show ' + list.length + ' earlier notification' + (list.length === 1 ? '' : 's') + '</button></p>'
+          : (!source && !unread ? (list.length ? '<p class="nt-zero-more"><button type="button" class="btn-text nt-fold" data-show="0">Hide them</button></p>' : CAT) : '') +
+            (list.length ? '<ul class="proj-list nt-list">' + list.map(noteHtml).join('') + '</ul>'
           : '<p class="proj-msg">' + (source ? 'Nothing here yet.' : 'Nothing yet: what BOLD.OS tells you on Slack, and in Conversations, shows here from now on.') + '</p>')) +
       '</section>' +
       reqPanel('todo', forYou, true, 'Nothing waiting on you.') +
@@ -195,6 +199,8 @@
     if (rm) { pushOff(rm.getAttribute('data-id')); return; }
     var src = e.target.closest('.nt-src');
     if (src) { source = src.getAttribute('data-src'); draw(); return; }
+    var fold = e.target.closest('.nt-fold');
+    if (fold) { showRead = fold.getAttribute('data-show') === '1'; draw(); return; }
     var t = e.target.closest('.nt-toggle');
     if (t) { var x = (notes || []).filter(function(n){ return n.id === t.getAttribute('data-id'); })[0]; if (x) setRead([x.id], !x.read); return; }
     if (e.target.closest('.nt-all')) { setRead((notes || []).filter(function(n){ return !n.read; }).map(function(n){ return n.id; }), true); return; }
