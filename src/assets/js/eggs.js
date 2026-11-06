@@ -80,6 +80,7 @@
   // `bluepill`, or the pill at the bottom right, wakes you up. Kept across pages (boldMatrix).
   var typed = '', rain = null;
   function matrix(on, intro){
+    try { console.log(on ? '[BOLD] Wake up.' : '[BOLD] Blue pill.'); } catch (e){}
     root.classList.toggle('is-matrix', on);
     try { if (on) localStorage.setItem('boldMatrix', '1'); else localStorage.removeItem('boldMatrix'); } catch (e){}
     if (!on) {
@@ -136,12 +137,14 @@
   document.addEventListener('keydown', function(e){
     var t = e.target;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    if (e.key.length !== 1) return;
+    if (e.key.length !== 1 || e.metaKey || e.ctrlKey || e.altKey || e.key === ' ') return;   // "red pill" counts too
     typed = (typed + e.key.toLowerCase()).slice(-8);
     if (/redpill$/.test(typed) && !root.classList.contains('is-matrix')) { typed = ''; matrix(true, true); }
     else if (/bluepill$/.test(typed) && root.classList.contains('is-matrix')) { typed = ''; matrix(false); }
   });
   addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1', false); });
+  // For search (pages/search.js: `red pill`).
+  window.BoldEggs = { matrix: function(on){ if (on !== root.classList.contains('is-matrix')) matrix(on, on); } };
 
   function start(){ watch(); birthday(); if (root.classList.contains('is-matrix')) matrix(true, false); }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
