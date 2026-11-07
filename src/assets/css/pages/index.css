@@ -63,6 +63,18 @@ body.is-home-feed{font-family:var(--sans); font-size:16px; line-height:1.55;}
 .home-today{font-family:var(--sans); font-size:11px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:var(--muted);}
 /* The letter: reading text, as the site's; each way in a darker ink, underlined on hover. */
 .home-top{margin:0 0 56px;}
+/* A hand-drawn envelope beside the letter, sealed: it's written for them. In the margin, so the letter
+   keeps the page's left edge; floated beside the text where there's no margin. */
+.home-letter-wrap{position:relative;}
+.hl-mark{float:left; width:48px; height:auto; margin:6px 14px 4px 0; transform:rotate(-6deg); overflow:visible;}
+@container (min-width:1080px){ .hl-mark{float:none; position:absolute; left:-84px; top:0; width:64px; margin:0;} }
+.hl-mark-paper{fill:color-mix(in srgb, var(--brown) 7%, var(--surface)); stroke:none;}
+.hl-mark-ink{fill:none; stroke:var(--ink-soft); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round;}
+.hl-mark-ink.is-faint{stroke-width:.9; opacity:.55;}
+.hl-mark-ink.is-hatch{stroke-width:.8; opacity:.4;}
+.hl-mark-seal{fill:var(--brown); stroke:color-mix(in srgb, var(--brown) 70%, var(--ink)); stroke-width:.8;}
+.hl-mark-heart{fill:var(--paper); opacity:.9;}
+.hl-mark-rim{fill:none; stroke:var(--paper); stroke-width:.9; stroke-linecap:round; opacity:.45;}
 .home-letter{max-width:var(--article-max, 40em); font-family:var(--serif); font-size:17px; line-height:1.65; color:var(--ink-soft);}
 .home-letter p{margin:0 0 .7em;}
 .home-letter p:last-child{margin-bottom:0;}
