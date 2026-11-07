@@ -47,7 +47,11 @@
     var w = r.welcome || {};
     var status = open ? '' : '<p class="proj-meta">' + (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + who(r.decidedByName || r.decidedBy || '', r.decidedBy) + ', ' + when(r.decidedAt) +
       (r.status === 'approved' && staff ? ' · Welcome email: ' + (w.status === 'sent' ? 'sent ' + when(w.at) : 'not sent yet' + (w.error ? ' (' + esc(w.error) + ')' : '')) : '') + '</p>';
-    return '<li id="r-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
+    // Changes proposed (joinChanges): marked by the name, while waiting on them and once they've sent it again.
+    var ch = open && r.changes ? r.changes.status : '';
+    var mark = ch === 'asked' ? ' <span class="type-badge jr-mark is-asked" title="Waiting for them to accept or adjust the changes proposed">Changes proposed</span>'
+      : ch === 'made' ? ' <span class="type-badge jr-mark is-made" title="They sent it again after the changes proposed: it’s back with whoever decides it">Changed</span>' : '';
+    return '<li id="r-' + esc(r.id) + '"' + (ch ? ' class="jr-has-changes is-' + ch + '"' : '') + '>' + who(r.name, r.email, 'proj-title') + mark +
       '<span class="proj-meta">' + esc([r.email, r.role, r.institution].filter(Boolean).join(' · ')) + ' · asked ' + when(r.at) + '</span>' + status +
       (toConfirm(r) ? '<p class="proj-meta">They say you invited them.</p>' : '') +
       (open && inv && !mine ? '<p class="proj-meta">Invited by ' + who(inv.name, inv.email) + ', who decides it</p>' : '') +
