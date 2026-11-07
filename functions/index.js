@@ -7133,8 +7133,11 @@ exports.joinChanges = onCall(
         tx.update(ref, { changes: { status: 'asked', note, by: email, byName, at: Date.now(), keyHash: keyHash(key) } });
         return x;
       });
-      const mail = joinChangesEmail(q, note, SITE_URL + 'join.html?changes=' + d.id + '&key=' + key, byName);
+      const link = SITE_URL + 'join.html?changes=' + d.id + '&key=' + key;
+      const mail = joinChangesEmail(q, note, link, byName);
       const error = await gmailSend(q.email, mail.subject, mail.body, 'joinChanges ' + d.id);
+      // The test copy (scripts/test-site.sh) has no Gmail: the link is in the emulator's log, to try it.
+      if (process.env.FUNCTIONS_EMULATOR === 'true') logger.info('joinChanges: the applicant’s link (emulator only)', { link });
       await ref.update({ 'changes.emailed': !error, 'changes.error': error });
       return error ? { emailed: false, error } : { emailed: true };
     }
