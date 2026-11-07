@@ -29,6 +29,8 @@ const STAND_IN_WHO = [
   '', '#### PAN-BOLD', '- All members of the BOLD Slack', '- **Requirements**:', '  - Follow the Collaboration Etiquette',
 ].join('\n');
 const LEVEL = (v, e) => ({ view: v, edit: e });
+// Sam's link to the changes Pat proposed (joinChanges' key; hex, as join.html reads it).
+const DEMO_JOIN_KEY = 'dec0de0c0ffee';
 
 (async () => {
   const b = db.batch();
@@ -59,6 +61,17 @@ const LEVEL = (v, e) => ({ view: v, edit: e });
   set('groupRequests/seed-ines', { email: 'internal@example.com', name: 'Ines Internal', from: 'pan', to: 'associate', note: '', terms: 'Stand-in terms.', acceptedAt: t0, status: 'approved', at: t0, decidedBy: 'pi@example.com', decidedByName: 'Pat PI', decidedAt: t0 + day });
   set('groupMoves/seed-ines', { email: 'internal@example.com', from: 'associate', to: 'internal', by: 'pi@example.com', at: t0 + 10 * day, via: '' });
   set('groupRequests/seed-ari', { email: 'associate@example.com', name: 'Ari Associate', from: 'pan', to: 'associate', note: '', terms: 'Stand-in terms.', acceptedAt: t0, status: 'approved', at: t0, decidedBy: 'pi@example.com', decidedByName: 'Pat PI', decidedAt: t0 + 2 * day });
+  // Requests to join BOLD naming Pat as inviting them (Requests › Sign up, as Pat PI): Robin's to try
+  // Propose changes on (#261); Sam's with changes proposed already, its applicant's link printed below
+  // (a fixed demo key: the test copy has no Gmail to send it).
+  const joinPat = { id: 'UTESTPI', name: 'Pat PI', email: 'pi@example.com', status: 'pending' };
+  set('joinRequests/seed-robin', { name: 'Robin Rivers', email: 'robin@example.com', institution: 'Imperial', role: 'Visitor', contact: 'Pat PI', contactEmail: 'pi@example.com',
+    invitedBy: joinPat, interests: 'world models, robotics', basedIn: 'London', pronouns: 'they/them', links: 'https://example.com/robin', startDate: '2026-11-15', endDate: '2027-02-15',
+    pillars: ['Robust Adaptation and Learning incl. in Embodied Envs (RL, Open-Ended Learning, Robotics)'], listOnWebsite: false, feedback: 'balanced', status: 'open', at: Date.now() - 2 * day });
+  set('joinRequests/seed-sam', { name: 'Sam Second', email: 'sam@example.com', institution: 'UCL', role: 'Visitor', contact: 'Pat PI', contactEmail: 'pi@example.com',
+    invitedBy: joinPat, interests: 'multi-agent RL', basedIn: 'London', startDate: '2026-11-10', endDate: '', pillars: [], listOnWebsite: false, feedback: '', status: 'open', at: Date.now() - 3 * day,
+    changes: { status: 'asked', proposed: { role: 'PhD student', endDate: '2030-09-30' }, note: 'You’re starting your PhD with us, so let’s have you as a PhD student.', by: 'pi@example.com', byName: 'Pat PI',
+      at: Date.now() - day, keyHash: require('crypto').createHash('sha256').update(DEMO_JOIN_KEY).digest('hex'), emailed: true, error: '' } });
   // A test account (Linked accounts) of Pat's: on no graph (#227).
   set('people/UTESTTA', { name: 'Pat PI (test)', email: 'pat.test@example.com', slackId: 'UTESTTA' });
   set('members/pat.test@example.com', { name: 'Pat PI (test)', email: 'pat.test@example.com', test: true, testOf: 'pi@example.com', category: 'pan', categoryBy: 'pi@example.com', categoryAt: t0,
@@ -102,5 +115,6 @@ const LEVEL = (v, e) => ({ view: v, edit: e });
   set('projects/world-models', card('World models', 'pi@example.com', 'Pat PI'));
   set('projectWorkspaces/world-models', { members: ['pi@example.com'], joined: [], startedAt: Date.now() });
   await b.commit();
-  console.log('Seeded the demo project: 5 accounts, Who is BOLD (' + (process.env.BOLDIQUETTE_PARTS ? 'the real one, from your file' : 'a stand-in') + '), 5 series, 2 events, 2 projects.');
+  console.log('Seeded the demo project: 5 accounts, Who is BOLD (' + (process.env.BOLDIQUETTE_PARTS ? 'the real one, from your file' : 'a stand-in') + '), 5 series, 2 events, 2 projects, 2 requests to join (Pat decides them).');
+  console.log('Sam’s link to the changes Pat proposed: http://localhost:8150/join.html?changes=seed-sam&key=' + DEMO_JOIN_KEY);
 })().catch((e) => { console.error(e); process.exit(1); });
