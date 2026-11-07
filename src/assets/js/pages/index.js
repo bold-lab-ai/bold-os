@@ -458,10 +458,13 @@
       // to the box starts on the same frame, and the box takes focus without the browser's own jump to it.
       if (yes) {
         try { text.focus({ preventScroll: true }); } catch (e){ text.focus(); }
+        // Where the box's bottom will be once its form has unfolded (measured now, while it's still opening: the form's
+        // full height less what's shown so far), brought into view, never so far that its top goes off the screen.
         requestAnimationFrame(function(){
           var r = box.getBoundingClientRect(), vh = window.innerHeight || document.documentElement.clientHeight;
-          if (r.top >= 0 && r.top <= vh * 0.6) return;
-          window.scrollTo({ top: Math.max(0, window.pageYOffset + r.top - vh * 0.25), behavior: still ? 'auto' : 'smooth' });
+          var fold = box.querySelector('.ha-fold'), grow = fold ? Math.max(0, form.scrollHeight - fold.getBoundingClientRect().height) : 0;
+          var by = Math.min(r.bottom + grow + 24 - vh, r.top - 16);
+          if (by > 0) window.scrollTo({ top: window.pageYOffset + by, behavior: still ? 'auto' : 'smooth' });
         });
       }
     }
