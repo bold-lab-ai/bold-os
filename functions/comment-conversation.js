@@ -50,6 +50,11 @@ function discussionOf(list){
   const one = (m) => ({ text: String(m.body || ''), by: { email: String(m.authorEmail || '').toLowerCase(), name: String(m.author || '') }, at: Number(m.timestamp || m.at) || 0 });
   return [].concat.apply([], (list || []).map((m) => [one(m)].concat((m.replies || []).map(one)))).filter((x) => x.text);
 }
+// Pure: a card's description as its first message: its notes, then its images (as talk.js descriptionOf).
+function descriptionOf(c){
+  const imgs = (c.images || []).filter((i) => i && /^https:\/\//.test(String(i.url || '')));
+  return [String(c.notes || '').trim()].concat(imgs.map((i) => '![' + String(i.name || 'An image').replace(/[[\]]/g, '') + '](' + i.url + ')')).filter(Boolean).join('\n\n');
+}
 // Pure: a card's comments → { pid, card, id: the post's }, or null. on: 'card/<project>/<card>'.
 function cardOf(on){
   const m = /^card\/([A-Za-z0-9_-]{1,80})\/([A-Za-z0-9_-]{1,80})$/.exec(String(on || ''));
@@ -89,7 +94,9 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
       return { id: c.id, title: had.data().title, existed: true };
     }
     const comments = (await cardRef.collection('comments').get()).docs.map((d) => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0));
-    // Its first message, after what was said before.
+    // Its description first (its notes and any images: talk.js descriptionOf), by whoever made it; then what was said.
+    const desc = descriptionOf(card);
+    if (desc) comments.unshift({ text: desc, by: card.by || {}, at: card.at || 0 });
     if (text) comments.push({ text, by: { email, name: await nameOf(email) }, at: Date.now() });
     if (!comments.length) throw new HttpsError('invalid-argument', 'Write something first.');
     const first = comments[0], rest = comments.slice(1);
@@ -228,4 +235,5 @@ module.exports.pageOf = pageOf;
 module.exports.cardOf = cardOf;
 module.exports.changeOf = changeOf;
 module.exports.reviewOf = reviewOf;
+module.exports.descriptionOf = descriptionOf;
 module.exports.discussionOf = discussionOf;

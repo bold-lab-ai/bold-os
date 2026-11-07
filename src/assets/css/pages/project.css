@@ -220,12 +220,12 @@
 .wk-mc-0{--mc:var(--brown);} .wk-mc-1{--mc:var(--ink);} .wk-mc-2{--mc:var(--green);}
 .wk-late + .wk-milestone{margin-left:0;}
 /* Labels (several a card, e.g. Good first issue): small pills, on the board's cards and a card's page. */
-.wk-labels{display:flex; flex-wrap:wrap; gap:4px; margin-top:4px;}
+.wk-labels{display:inline-flex; flex-wrap:wrap; gap:4px; vertical-align:middle;}
 .wk-label{display:inline-flex; align-items:center; gap:2px; font-family:var(--sans); font-size:11px; line-height:1.6; padding:0 6px; border-radius:999px;
   color:var(--accent); border:1px solid color-mix(in srgb, var(--accent) 40%, transparent); background:color-mix(in srgb, var(--accent) 8%, transparent);}
 .wk-label-x{border:0; background:none; color:inherit; cursor:pointer; padding:0 0 0 2px; font-size:12px; line-height:1;}
-.wk-label-add{display:inline-block; margin-left:6px;}
-.wk-label-add input{font:inherit; font-size:13px; width:12em; padding:1px 6px;}
+.wk-label-add{display:inline-block; margin-left:6px; vertical-align:middle;}
+.detail-grid dd .wk-label-add input{font:inherit; font-family:var(--sans); font-size:13px; width:12em; padding:1px 6px; line-height:1.4;}
 /* A milestone's progress (Milestone filter), above the columns. */
 .wk-milestonebar-track{height:6px; border-radius:3px; background:var(--line); overflow:hidden;}
 .wk-milestonebar-track span{display:block; height:100%; background:var(--accent);}

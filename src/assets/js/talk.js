@@ -29,13 +29,14 @@ window.BoldTalk = (function(){
       '<p class="detail-muted wk-talk-off" hidden></p>';
     var forumEl = el.querySelector('.wk-talk-forum'), listEl = el.querySelector('.wk-talk-list'), form = el.querySelector('.wk-talk-form');
     var box = form.querySelector('textarea'), error = form.querySelector('.wk-talk-error'), offEl = el.querySelector('.wk-talk-off');
-    var exists = null, old = [], busy = false, forum = null, unsubOld = null, unsubPost = null;
+    var exists = null, old = [], queried = [], busy = false, forum = null, unsubOld = null, unsubPost = null;
     var marked = (/[#&]c=([^&]+)/.exec(location.hash) || [])[1] || '';
     marked = marked ? decodeURIComponent(marked) : '';
 
     function draw(){
       if (exists === null) return;
-      if (o.oldItems) old = (o.oldItems() || []).map(function(x, i){ return Object.assign({ id: 'old-' + i }, x); });
+      // What was said before: what the thing holds itself (oldItems: a card's description), then its old comments.
+      old = (o.oldItems ? o.oldItems() || [] : []).map(function(x, i){ return Object.assign({ id: 'old-' + i }, x); }).concat(queried);
       if (exists) {
         // The thread: Conversations' forum, that one conversation (the page shows what it's about: no title).
         if (!forum && window.BoldConversations) {
@@ -64,11 +65,11 @@ window.BoldTalk = (function(){
         function(err){ console.error('[BOLD Lab] loading a conversation failed', err); exists = false; draw(); });
     } catch (e){ exists = false; }
     if (o.old) unsubOld = o.old().onSnapshot(function(snap){
-      var first = !old.length && snap.size;
-      old = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return (a.at || 0) - (b.at || 0); });
+      var first = !queried.length && snap.size;
+      queried = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return (a.at || 0) - (b.at || 0); });
       draw();
       if (first && marked) setTimeout(function(){ var m = document.getElementById('c-' + marked); if (m) m.scrollIntoView({ block: 'center' }); }, 0);
-    }, function(){ old = []; draw(); });
+    }, function(){ queried = []; draw(); });
 
     function fail(msg){ error.textContent = msg; error.hidden = false; }
     form.addEventListener('submit', function(e){
@@ -97,14 +98,21 @@ window.BoldTalk = (function(){
       if (forum && forum.away) forum.away();
     } };
   }
-  return { create: create };
+  // Pure: a card's description as a message: its notes, then its images (Markdown).
+  function descriptionOf(c){
+    var imgs = (c.images || []).filter(function(i){ return i && /^https:\/\//.test(String(i.url || '')); });
+    return [String(c.notes || '').trim()].concat(imgs.map(function(i){ return '![' + String(i.name || 'An image').replace(/[\[\]]/g, '') + '](' + i.url + ')'; })).filter(Boolean).join('\n\n');
+  }
+  return { create: create, descriptionOf: descriptionOf };
 })();
 
 // A board card's (project-work.js): conversations/cm-card-<project>-<card>, about the card's project; its
 // maker and assignees count as in it (slack-thread.js peopleIn).
-window.BoldCardTalk = { create: function(ref){
+// Its description is its first message (2026-11-07): the card's notes, and any images it had, by whoever made it.
+window.BoldCardTalk = { create: function(ref, o){
   var pid = ref.parent.parent.id;
   return BoldTalk.create({ post: 'cm-card-' + pid + '-' + ref.id, on: 'card/' + pid + '/' + ref.id, project: { id: pid },
     old: function(){ return ref.collection('comments'); },
+    oldItems: function(){ var c = (o && o.card && o.card()) || {}, t = BoldTalk.descriptionOf(c); return t ? [{ text: t, by: c.by, at: c.at }] : []; },
     effects: ['Start it in Conversations, about this project', 'Tell the project’s people, on their Notifications page'] });
 } };

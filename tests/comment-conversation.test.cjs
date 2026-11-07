@@ -49,3 +49,10 @@ test('an Internal Review card’s Discussion: its board and card, and its old me
   assert.deepStrictEqual(d.map((m) => m.text + '/' + m.by.email + '/' + m.at), ['one/a@x/1', 'two/b@x/2', 'three/c@x/3']);
   assert.deepStrictEqual(discussionOf(undefined), []);
 });
+
+const { descriptionOf } = require('../functions/comment-conversation');
+test('a card’s description as its first message: its notes, then its images; only https images', () => {
+  assert.strictEqual(descriptionOf({ notes: ' Do X. ', images: [{ name: 'fig [1]', url: 'https://a/b.png' }, { url: 'javascript:alert(1)' }] }), 'Do X.\n\n![fig 1](https://a/b.png)');
+  assert.strictEqual(descriptionOf({}), '');
+  assert.strictEqual(descriptionOf({ images: [{ url: 'https://a/c.png' }] }), '![An image](https://a/c.png)');
+});

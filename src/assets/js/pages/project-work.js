@@ -45,11 +45,9 @@ var ProjectWork = (function(){
   var busy = false, msg = '';
   var slackIds = {};       // email → Slack id, for links to people's pages (the people roster)
   var view = null;         // a page: { card: id } or { item: ref }; null, the board
-  var describing = false;  // the page's description being edited
+  var labelAdding = false; // the card page's Add a label: its small box open
   var talk = null;         // the open card's conversation (BoldCardTalk), with its card's id
-  var IMAGE_TYPES = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp' };
-  var MAX_IMAGES = 20, MAX_IMAGE_MB = 10, MAX_NOTES = 20000;
-  var upload = { busy: false, msg: '' };
+  var MAX_NOTES = 20000;
 
   function el(sel){ return root.querySelector(sel); }
   function me(){ var m = ctx.me(); return m && m.email ? m.email.toLowerCase() : ''; }
@@ -158,7 +156,6 @@ var ProjectWork = (function(){
   function readView(){
     var c = /[#&]card=([^&]+)/.exec(location.hash), i = /[#&]item=([^&]+)/.exec(location.hash), ms = /[#&]milestones(&|$)/.test(location.hash);
     var v = c ? { card: decodeURIComponent(c[1]) } : i ? { item: decodeURIComponent(i[1]) } : ms ? { milestones: true } : null;
-    if (JSON.stringify(v) !== JSON.stringify(view)) describing = false;
     view = v;
   }
   function hrefOf(v){
@@ -168,7 +165,7 @@ var ProjectWork = (function(){
   }
   function go(v, replace){
     try { history[replace ? 'replaceState' : 'pushState'](null, '', location.pathname + location.search + hrefOf(v)); } catch (e){}
-    view = v; describing = false; editing = null; upload = { busy: false, msg: '' }; plan = { editing: null, form: null, adding: null, picked: {}, find: '', msg: '' };
+    view = v; editing = null; plan = { editing: null, form: null, adding: null, picked: {}, find: '', msg: '' };
     draw();
     if (!replace) window.scrollTo(0, 0);
   }
@@ -779,7 +776,6 @@ var ProjectWork = (function(){
     });
   }
   // Only images Storage holds for this board are shown (an address in the card can't load anything else).
-  function imageOk(i){ return i && /^https:\/\/firebasestorage\.googleapis\.com\//.test(String(i.url || '')) && String(i.path || '').indexOf('work/' + pid + '/') === 0; }
   function drawPage(){
     var all = allItems(), x = null, c = null;
     if (view.item) {
@@ -792,8 +788,7 @@ var ProjectWork = (function(){
       c = x && x.card;
     }
     // A description or an editor being written survives the page redrawing.
-    var keepDesc = root.querySelector('.wk-desc-form'), keepEditor = root.querySelector('.wk-editor');
-    if (keepDesc) keepDesc.remove();
+    var keepEditor = root.querySelector('.wk-editor');
     if (keepEditor) keepEditor.remove();
     var back = '<a class="detail-back wk-back" href="' + esc(hrefOf(null)) + '">&larr; Back to the board</a>';
     var loading = view.card ? !cardsLoaded || (remote.loading && !remote.loaded) : !remote.loaded;
@@ -828,11 +823,13 @@ var ProjectWork = (function(){
     // Its labels: each with × to take it off, and a box to add one (the board's offered), saved at once.
     if (c) {
       var mine = labelsOf(c);
-      rows += row('Labels', '<span class="wk-labels">' + mine.map(function(l){
+      // The chips, then (adding) a small box; Add a label is the row's action, on its right (project.css detail-act).
+      rows += row('Labels', (mine.length ? '<span class="wk-labels">' + mine.map(function(l){
           return '<span class="wk-label">' + esc(l) + (ok ? '<button type="button" class="wk-label-x" data-label="' + esc(l) + '" aria-label="Remove ' + esc(l) + '">×</button>' : '') + '</span>';
-        }).join('') + '</span>' +
-        (mine.length < MAX_LABELS ? '<form class="wk-label-add"><input type="text" class="wk-label-in" maxlength="' + MAX_LABEL + '" list="wkLabels" placeholder="Add a label"' + off + '>' +
-          '<datalist id="wkLabels">' + boardLabels().filter(function(l){ return mine.indexOf(l) < 0; }).map(function(l){ return '<option value="' + esc(l) + '">'; }).join('') + '</datalist></form>' : ''));
+        }).join('') + '</span>' : (labelAdding ? '' : '<span class="detail-muted">None</span>')) +
+        (labelAdding && ok && mine.length < MAX_LABELS ? '<form class="wk-label-add"><input type="text" class="wk-label-in" maxlength="' + MAX_LABEL + '" list="wkLabels" placeholder="A label, then Enter">' +
+          '<datalist id="wkLabels">' + boardLabels().filter(function(l){ return mine.indexOf(l) < 0; }).map(function(l){ return '<option value="' + esc(l) + '">'; }).join('') + '</datalist></form>'
+        : mine.length < MAX_LABELS ? '<span class="detail-act"><button type="button" class="btn-text detail-inline-edit wk-label-open"' + off + '>Add a label</button></span>' : ''));
     }
     if (x.by && (x.by.name || x.by.login || x.by.email)) rows += row('From', name(x.by));
     var roles = [], byRole = {};
@@ -848,42 +845,14 @@ var ProjectWork = (function(){
         '<div class="detail-badges">' + badges + '</div></div>' +
       (c ? '<div class="wk-page-edit"></div>' : '') +
       '<dl class="detail-grid">' + rows + '</dl>';
-    // The description: the card's (Markdown); a GitHub item has none until it's described.
-    html += '<div class="detail-abstract"><div class="detail-abstract-label">Description' +
-      (c && !describing ? '<button class="btn-text detail-inline-edit wk-describe" type="button"' + off + '>' + (c.notes ? 'Edit' : 'Add') + '</button>' : '') + '</div>';
-    if (c) html += describing ? '<div class="wk-desc-slot"></div>' : c.notes ? '<div class="wk-desc">' + BoldMarkdown.render(c.notes) + '</div>' : '<p class="detail-muted wk-none">No description yet.</p>';
-    else html += '<p class="detail-muted wk-none">No description yet. Describing it makes it a card on the board, linked to it.</p>' +
-      '<button class="btn-text wk-adopt" type="button"' + off + '>Add a description</button>';
-    html += '</div>';
-    if (c) {
-      var imgs = (c.images || []).filter(imageOk), full = imgs.length >= MAX_IMAGES;
-      html += '<div class="detail-abstract"><div class="detail-abstract-label">Images' +
-          '<button class="btn-text detail-inline-edit wk-addimg" type="button"' + (!ok ? off : full || upload.busy ? ' disabled' + (full ? ' title="' + MAX_IMAGES + ' images at most"' : '') : '') + '>Add</button></div>' +
-        (imgs.length ? '<div class="wk-images">' + imgs.map(function(i){
-          return '<figure class="wk-image"><a href="' + esc(i.url) + '" target="_blank" rel="noopener"><img src="' + esc(i.url) + '" alt="' + esc(i.name || 'An image') + '" loading="lazy"></a>' +
-            '<figcaption><span>' + esc(i.name || '') + '</span>' + (ok ? '<button class="btn-text wk-unimage" type="button" data-path="' + esc(i.path) + '" aria-label="Remove this image">Remove</button>' : '') + '</figcaption></figure>';
-        }).join('') + '</div>' : '<p class="detail-muted wk-none">No images yet.</p>') +
-        '<div class="detail-hint">PNG, JPEG, GIF or WebP, up to ' + MAX_IMAGE_MB + ' MB each' + (upload.msg ? ' · <span class="wk-upmsg">' + esc(upload.msg) + '</span>' : '') + '</div>' +
-        '<input type="file" class="wk-imgfile" accept="' + Object.keys(IMAGE_TYPES).join(',') + '" multiple hidden></div>' +
-        '<div class="wk-talk-slot"></div>';
-    }
+    // A card's description, and its images, are its conversation's first message (talk.js, 2026-11-07): no fields of
+    // their own; images go in its messages. A GitHub item has none until it's described (that makes it a card).
+    if (!c) html += '<div class="detail-abstract"><div class="detail-abstract-label">Description</div>' +
+      '<p class="detail-muted wk-none">No description yet. Describing it makes it a card on the board, linked to it.</p>' +
+      '<button class="btn-text wk-adopt" type="button"' + off + '>Add a description</button></div>';
+    if (c) html += '<div class="wk-talk-slot"></div>';
     root.innerHTML = html + (msg ? '<p class="wk-error">' + esc(msg) + '</p>' : '') + '</div>';
 
-    var descSlot = el('.wk-desc-slot');
-    if (descSlot) {
-      var f = keepDesc;
-      if (!f) {
-        var tmp = document.createElement('div');
-        tmp.innerHTML = '<form class="wk-editor wk-desc-form" novalidate><label>Description' +
-          '<textarea class="wk-d-text md-field" maxlength="' + MAX_NOTES + '" rows="12">' + esc(c.notes || '') + '</textarea></label>' +
-          '<div class="field-error wk-d-error" hidden></div>' +
-          '<div class="stage-fields-actions"><button class="btn" type="submit">Save</button><button class="btn" type="button" data-wk="dcancel">Cancel</button></div></form>';
-        f = tmp.firstChild;
-        wireDescription(f, c);
-      }
-      descSlot.replaceWith(f);
-      if (!keepDesc) f.querySelector('textarea').focus();
-    }
     var talkSlot = el('.wk-talk-slot');
     if (talkSlot) {
       if (!talk || talk.id !== c.id) {
@@ -908,7 +877,11 @@ var ProjectWork = (function(){
     wireOpen();
     var edit = el('.wk-edit');
     if (edit) edit.addEventListener('click', function(){ if (editing) return; editing = c.id; draftLinks = (c.links || []).slice(); draw(); });
+    var lo = el('.wk-label-open');
+    if (lo) lo.addEventListener('click', function(){ labelAdding = true; draw(); var i = el('.wk-label-in'); if (i) i.focus(); });
     var la = el('.wk-label-add');
+    if (la) la.querySelector('.wk-label-in').addEventListener('keydown', function(e){ if (e.key === 'Escape') { labelAdding = false; draw(); } });
+    if (la) la.querySelector('.wk-label-in').addEventListener('blur', function(){ setTimeout(function(){ if (labelAdding && !la.querySelector('.wk-label-in').value) { labelAdding = false; draw(); } }, 150); });
     if (la) la.addEventListener('submit', function(e){
       e.preventDefault();
       var v = la.querySelector('.wk-label-in').value.trim().slice(0, MAX_LABEL), have = labelsOf(c);
@@ -916,6 +889,7 @@ var ProjectWork = (function(){
       var same = boardLabels().filter(function(l){ return l.toLowerCase() === v.toLowerCase(); })[0];
       if (same) v = same;
       if (!v || have.some(function(l){ return l.toLowerCase() === v.toLowerCase(); })) return;
+      labelAdding = false;
       cardChange(c, { labels: have.concat([v]).slice(0, MAX_LABELS) }).catch(function(err){ console.error('[BOLD Lab] adding a label failed', err); msg = 'Couldn’t save — try again.'; draw(); });
     });
     Array.prototype.forEach.call(document.querySelectorAll('.wk-label-x'), function(b){
@@ -928,35 +902,12 @@ var ProjectWork = (function(){
     if (pm) pm.addEventListener('change', function(){
       cardChange(c, { milestone: pm.value }).catch(function(err){ console.error('[BOLD Lab] setting a card’s milestone failed', err); msg = 'Couldn’t save — try again.'; draw(); });
     });
-    var desc = el('.wk-describe');
-    if (desc) desc.addEventListener('click', function(){ describing = true; draw(); });
     var adopt = el('.wk-adopt');
     if (adopt) adopt.addEventListener('click', function(){ adoptItem(x, adopt); });
-    var add = el('.wk-addimg'), file = el('.wk-imgfile');
-    if (add) add.addEventListener('click', function(){ file.click(); });
-    if (file) file.addEventListener('change', function(){ addImages(c, Array.prototype.slice.call(file.files || [])); });
-    Array.prototype.forEach.call(root.querySelectorAll('.wk-unimage'), function(b){
-      b.addEventListener('click', function(){ removeImage(c, b.getAttribute('data-path')); });
-    });
   }
   function cardChange(c, data){
     var m = ctx.me();
     return cardsRef().doc(c.id).update(Object.assign(data, { updatedAt: Date.now(), updatedBy: m.email }));
-  }
-  function wireDescription(form, c){
-    var error = form.querySelector('.wk-d-error');
-    form.querySelector('[data-wk="dcancel"]').addEventListener('click', function(){ describing = false; form.remove(); draw(); });
-    form.addEventListener('submit', function(e){
-      e.preventDefault();
-      if (busy) return;
-      busy = true;
-      cardChange(c, { notes: form.querySelector('.wk-d-text').value.trim().slice(0, MAX_NOTES) }).then(function(){
-        busy = false; describing = false; form.remove(); draw();
-      }).catch(function(err){
-        console.error('[BOLD Lab] saving a description failed', err);
-        busy = false; error.textContent = 'Couldn’t save — try again.'; error.hidden = false;
-      });
-    });
   }
   // Describing a GitHub item: a card for it, linking it, in its column; its page then shows the card.
   function adoptItem(x, button){
@@ -972,49 +923,13 @@ var ProjectWork = (function(){
       });
     }).then(function(d){
       busy = false;
+      // Its description is its conversation's first message: the card opens on it.
       go({ card: d.id }, true);
-      describing = true; draw();
       setTimeout(function(){ fetchRemote(false); }, 2500);
     }).catch(function(err){
       if (err && err.cancelled) { busy = false; button.disabled = false; return; }
       console.error('[BOLD Lab] making a card failed', err);
       busy = false; msg = 'Couldn’t make a card for it — try again.'; draw();
-    });
-  }
-  // Images go to Storage (work/<project>/<card>/…), then their addresses onto the card.
-  function addImages(c, files){
-    if (upload.busy || !files.length) return;
-    var room = MAX_IMAGES - (c.images || []).length;
-    var bad = files.filter(function(f){ return !IMAGE_TYPES[f.type] || f.size > MAX_IMAGE_MB * 1048576; });
-    files = files.filter(function(f){ return bad.indexOf(f) < 0; }).slice(0, Math.max(0, room));
-    if (!files.length) { upload.msg = bad.length ? 'Only PNG, JPEG, GIF or WebP images, up to ' + MAX_IMAGE_MB + ' MB.' : MAX_IMAGES + ' images at most.'; draw(); return; }
-    upload = { busy: true, msg: 'Uploading ' + files.length + (files.length === 1 ? ' image' : ' images') + '…' };
-    draw();
-    var m = ctx.me();
-    Promise.all(files.map(function(f){
-      var path = 'work/' + pid + '/' + c.id + '/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + IMAGE_TYPES[f.type];
-      var ref = firebase.storage().ref(path);
-      return ref.put(f, { contentType: f.type }).then(function(){ return ref.getDownloadURL(); })
-        .then(function(url){ return { path: path, url: url, name: String(f.name || '').slice(0, 200), by: m.email, at: Date.now() }; });
-    })).then(function(added){
-      var fresh = cards.filter(function(k){ return k.id === c.id; })[0] || c;
-      return cardChange(c, { images: (fresh.images || []).concat(added).slice(0, MAX_IMAGES) });
-    }).then(function(){
-      upload = { busy: false, msg: bad.length ? 'Some weren’t PNG, JPEG, GIF or WebP up to ' + MAX_IMAGE_MB + ' MB, and were left out.' : '' };
-      draw();
-    }).catch(function(err){
-      console.error('[BOLD Lab] uploading images failed', err);
-      upload = { busy: false, msg: 'Couldn’t upload — try again.' };
-      draw();
-    });
-  }
-  function removeImage(c, path){
-    if (!window.confirm('Remove this image?')) return;
-    cardChange(c, { images: (c.images || []).filter(function(i){ return i.path !== path; }) }).then(function(){
-      return firebase.storage().ref(path).delete().catch(function(err){ console.error('[BOLD Lab] deleting an image failed', err); });
-    }).catch(function(err){
-      console.error('[BOLD Lab] removing an image failed', err);
-      upload.msg = 'Couldn’t remove it — try again.'; draw();
     });
   }
 
