@@ -101,9 +101,14 @@ window.BoldJoin = (function(){
       t('jn-based', 'Primarily based in (for events and socials)', v.basedIn, 'e.g. London', 120) +
       t('jn-links', 'Links (website, X, Google Scholar)', v.links, 'https://…', 500) + (window.BOLD && BOLD.linkNote ? BOLD.linkNote() : '')) +
     group('At BOLD',
-      '<label>Role at BOLD<select class="jn-role"><option value="">Choose…</option>' + opt.roles.map(function(r){
+      // Your position (#260): not your group of Who is BOLD, which some roles' names sound like (Staff, PI).
+      '<label>Role at BOLD: your position, such as PhD student or postdoc<select class="jn-role"><option value="">Choose…</option>' + opt.roles.map(function(r){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';
       }).join('') + (v.role && opt.roles.indexOf(v.role) === -1 ? '<option selected>' + esc(v.role) + '</option>' : '') + '</select></label>' +
+      // join.html is for people outside BOLD, who can't open the BOLDiquette yet: no links there.
+      '<p class="event-form-hint">Not your group in ' + (o.withIdentity ? 'Who is BOLD' : '<a href="boldiquette.html#who-is-bold">Who is BOLD</a>') +
+        ' (PAN-BOLD, BOLD-internal…), which decides what you can see and do: ' +
+        (o.withIdentity ? 'everyone joins as PAN-BOLD, and asks for another group once in.' : '<a href="group-request.html">ask for another group</a>.') + '</p>' +
       (o.withIdentity ? '' : contactHtml(v, o.people)) +
       // join.html only: their point of contact, who invited them, picked from the roster as they
       // type (join.js); they decide the request.
