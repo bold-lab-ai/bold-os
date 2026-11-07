@@ -806,7 +806,7 @@
         var on = mode === o[0];
         return '<li role="none"><button type="button" role="menuitemradio" aria-checked="' + on + '" class="mast-theme-opt" data-theme-mode="' + o[0] + '">' +
           '<span class="mt-tick" aria-hidden="true">' + (on ? '✓' : '') + '</span><span>' + esc(o[1]) +
-          (o[0] === 'auto' ? '<span class="mt-note">Light at dawn, dark at sunset</span>' : '') + '</span></button></li>';
+          (o[0] === 'auto' ? '<span class="mt-note">Light at dawn, dark at dusk</span>' : '') + '</span></button></li>';
       }).join('');
     };
     var open = function(yes){ if (yes) draw(); menu.hidden = !yes; btn.setAttribute('aria-expanded', String(yes)); };
