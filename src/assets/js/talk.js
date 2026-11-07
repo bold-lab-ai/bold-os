@@ -3,9 +3,11 @@
 // thing uses this: a board card's (project-work.js) and a proposed change's to the BOLDiquette or a guide
 // (pages/guide.js). Its first message starts it, on the server (commentConversation, functions/
 // comment-conversation.js), with whatever was said there before (its old comments) copied in first, each by
-// whoever wrote it; until then those old comments show, read only. Writing: Conversations' Edit.
+// whoever wrote it; until then those old comments show, read only. Writing: Conversations' Edit. Also an
+// Internal Review card's Discussion (audit-board/detail.js).
 // BoldTalk.create({ post: its conversation's id, on: commentConversation's `on`, old?: () => a query of the old
-//   comments ({ text, by, at }), project?: { id }, label?, effects: what starting it does (BOLD.confirmAction) })
+//   comments ({ text, by, at }), or oldItems?: () => them as a list (kept on the thing itself), project?: { id },
+//   label? (false: none), effects: what starting it does (BOLD.confirmAction) })
 // → { el, stop() }: el is kept between the page's redraws (what's being written stays).
 // BoldCardTalk.create(ref, o): a card's (ref: projectWorkspaces/<project>/work/<card>).
 // &c=<id> in the address (an old comment's link) scrolls to that comment while it's shown.
@@ -33,6 +35,7 @@ window.BoldTalk = (function(){
 
     function draw(){
       if (exists === null) return;
+      if (o.oldItems) old = (o.oldItems() || []).map(function(x, i){ return Object.assign({ id: 'old-' + i }, x); });
       if (exists) {
         // The thread: Conversations' forum, that one conversation (the page shows what it's about: no title).
         if (!forum && window.BoldConversations) {

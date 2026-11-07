@@ -343,6 +343,12 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
   async function peopleIn(pid, post){
     const out = new Set([String(post.createdBy || (post.broughtBy || {}).email || '').toLowerCase()]);
     // A card's conversation: whoever made the card and whoever's on it, as its comments were told.
+    // An Internal Review card's: its author and both reviewers, as its Discussion was told.
+    const review = /^review\/([^/]+)\/([^/]+)$/.exec(String((post.from || {}).on || ''));
+    if (review) {
+      const r = (await db.collection('boards').doc(review[1]).collection('cards').doc(review[2]).get()).data() || {};
+      [(r.submittedBy || {}).email, (r.reviewers || {}).junior, (r.reviewers || {}).senior].forEach((e) => out.add(String(e || '').toLowerCase()));
+    }
     const card = /^card\/([^/]+)\/([^/]+)$/.exec(String((post.from || {}).on || ''));
     if (card) {
       const c = (await db.collection('projectWorkspaces').doc(card[1]).collection('work').doc(card[2]).get()).data() || {};

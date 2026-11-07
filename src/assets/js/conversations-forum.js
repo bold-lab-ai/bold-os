@@ -119,7 +119,8 @@ window.BoldConversations = (function(){
       // Made from a comment thread on the BOLDiquette or a guide, or a card's comments: where, and a link back.
       if (m.source === 'comment' && m.from) {
         var f = m.from, card = f.kind === 'card';
-        if ((card || f.kind === 'change') && opts.thread) return '';   // on the card, or the proposed change, itself
+        if ((card || f.kind === 'change' || f.kind === 'review') && opts.thread) return '';   // on the card, proposed change or paper itself
+        if (f.kind === 'review') return '<p class="bs-origin">On the Internal Review of ' + esc(f.part || 'a paper') + (f.url ? ' · <a href="' + esc(f.url) + '">Open it</a>' : '') + '</p>';
         if (f.kind === 'change') return '<p class="bs-origin">On a proposed change to ' + esc(f.page || 'a page') + (f.part ? ' › ' + esc(f.part) : '') +
           (f.url ? ' · <a href="' + esc(f.url) + '">See it</a>' : '') + '</p>';
         return '<p class="bs-origin">' + (card ? 'On the card ' + esc(f.part || '') + ', in ' + esc(f.page || 'a project')

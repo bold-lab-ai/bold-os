@@ -37,6 +37,19 @@ function changeOf(on){
   if (!m || (m[1] === 'handbook' && m[2] !== 'boldiquette')) return null;
   return { collection: m[1], slug: m[2], proposal: m[3], id: 'cm-change-' + m[1] + '-' + m[2] + '-' + m[3] };
 }
+// An Internal Review card's Discussion (audit-board/detail.js; 2026-11-07): { on: 'review/<board>/<card>', text? } →
+// conversations/cm-review-<board>-<card>, about its project if it has one: its old Discussion (the card's
+// `discussion`, each message then its replies) copied in, then `text`. Its author and both reviewers count as in it.
+// Pure: an Internal Review card's → { board, card, id }, or null.
+function reviewOf(on){
+  const m = /^review\/([A-Za-z0-9_-]{1,80})\/([A-Za-z0-9_-]{1,80})$/.exec(String(on || ''));
+  return m ? { board: m[1], card: m[2], id: 'cm-review-' + m[1] + '-' + m[2] } : null;
+}
+// Pure: a card's `discussion` → its messages in order, each topic then its replies → [{ text, by, at }].
+function discussionOf(list){
+  const one = (m) => ({ text: String(m.body || ''), by: { email: String(m.authorEmail || '').toLowerCase(), name: String(m.author || '') }, at: Number(m.timestamp || m.at) || 0 });
+  return [].concat.apply([], (list || []).map((m) => [one(m)].concat((m.replies || []).map(one)))).filter((x) => x.text);
+}
 // Pure: a card's comments → { pid, card, id: the post's }, or null. on: 'card/<project>/<card>'.
 function cardOf(on){
   const m = /^card\/([A-Za-z0-9_-]{1,80})\/([A-Za-z0-9_-]{1,80})$/.exec(String(on || ''));
@@ -135,6 +148,33 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     return { id: c.id, title, existed: false };
   }
 
+  // An Internal Review card's Discussion, as a conversation.
+  async function fromReview(email, c, text){
+    text = String(text || '').trim().slice(0, 10000);
+    await access.requireAccess(email, 'conversations', 'edit');
+    await access.requireAccess(email, 'ml-cycle', 'view');
+    const convView = await access.levelOf('conversations', 'view'), pageView = await access.levelOf('ml-cycle', 'view');
+    if (pageView === 'none' || rank(convView) < rank(pageView)) throw new HttpsError('failed-precondition', 'More people see Conversations than Internal Review, so its discussion stays here.');
+    const ref = db.collection('conversations').doc(c.id), had = await ref.get();
+    if (had.exists) { if (text) await addTo(ref, email, text); return { id: c.id, title: had.data().title, existed: true }; }
+    const cardSnap = await db.collection('boards').doc(c.board).collection('cards').doc(c.card).get();
+    if (!cardSnap.exists) throw new HttpsError('not-found', 'That paper isn’t on the board any more.');
+    const card = cardSnap.data(), old = discussionOf(card.discussion);
+    if (text) old.push({ text, by: { email, name: await nameOf(email) }, at: Date.now() });
+    if (!old.length) throw new HttpsError('invalid-argument', 'Write something first.');
+    const title = ('Internal Review: ' + String(card.title || 'a paper')).slice(0, 200);
+    const from = { kind: 'review', on: 'review/' + c.board + '/' + c.card, page: 'Internal Review', part: String(card.title || '').slice(0, 200),
+      url: SITE_URL + 'audit-board.html#board=' + encodeURIComponent(c.board) + '&card=' + encodeURIComponent(c.card) };
+    const first = old[0], rest = old.slice(1), batch = db.batch();
+    batch.create(ref, Object.assign({ title, body: first.text, at: first.at || Date.now(), source: 'comment', from, private: false, readers: [], votes: {},
+      replies: rest.length, commentReplies: rest.length, broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
+      card.projectId ? { project: String(card.projectId), projectTitle: String(card.title || '').slice(0, 300) } : {}, by(first)));
+    rest.forEach((r, i) => batch.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: c.id, body: r.text, at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
+    try { await batch.commit(); }
+    catch (e) { const again = await ref.get(); if (again.exists) return { id: c.id, title: again.data().title, existed: true }; throw e; }
+    return { id: c.id, title, existed: false };
+  }
+
   const commentConversation = onCall(async (request) => {
     const email = signedInEmail(request).toLowerCase();
     const data = request.data || {};
@@ -142,6 +182,8 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     if (c) return fromCard(email, c, data.text);
     const ch = changeOf(data.on);
     if (ch) return fromChange(email, ch, data.text);
+    const rv = reviewOf(data.on);
+    if (rv) return fromReview(email, rv, data.text);
     const page = pageOf(data.on, guideArea), cid = String(data.id || '');
     if (!page || !/^[A-Za-z0-9_-]{1,64}$/.test(cid)) throw new HttpsError('invalid-argument', 'Which thread?');
     await access.requireAccess(email, 'conversations', 'edit');
@@ -185,3 +227,5 @@ module.exports.bodyOf = bodyOf;
 module.exports.pageOf = pageOf;
 module.exports.cardOf = cardOf;
 module.exports.changeOf = changeOf;
+module.exports.reviewOf = reviewOf;
+module.exports.discussionOf = discussionOf;

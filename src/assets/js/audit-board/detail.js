@@ -293,31 +293,25 @@
   // of replies (no reply-to-a-reply — see docs/AGENTS.md). Only one reply form is
   // ever open at a time (state.discussionReplyOpenId), so the reply inputs
   // can use fixed ids regardless of which thread they belong to.
+  // Its Discussion is a conversation (2026-11-07; talk.js, conversations/cm-review-<board>-<card>): put in its
+  // place after each redraw (mountReviewTalk). Its old Discussion shows until it's started, then is copied in.
+  var reviewTalks = {};
+  function mountReviewTalk(card){
+    var slot = els.boardRegion.querySelector('.ir-talk');
+    if (!slot || !window.BoldTalk) return;
+    var key = state.currentBoardId + '/' + card.id;
+    if (!reviewTalks[key]) reviewTalks[key] = BoldTalk.create({ post: 'cm-review-' + state.currentBoardId + '-' + card.id, on: 'review/' + state.currentBoardId + '/' + card.id,
+      label: false, project: card.projectId ? { id: card.projectId } : null,
+      oldItems: function(){
+        var now = state.cards.filter(function(c){ return c.id === card.id; })[0] || card, out = [];
+        (now.discussion || []).forEach(function(m){ [m].concat(m.replies || []).forEach(function(x){ out.push({ text: x.body, by: { name: x.author, email: x.authorEmail }, at: x.timestamp }); }); });
+        return out;
+      },
+      effects: ['Start its discussion in Conversations', 'Tell its author and reviewers of replies'] });
+    slot.appendChild(reviewTalks[key].el);
+  }
   function discussionTabHtml(card){
-    var thread = card.discussion || [];
-    var replyOpenId = state.discussionReplyOpenId;
-    var html = '<div class="discussion">';
-    if (thread.length === 0){
-      html += '<p class="disc-empty">No discussion yet. Start one below.</p>';
-    } else {
-      thread.forEach(function(msg){
-        html += '<div class="disc-thread">';
-        html += discussionMessageHtml(msg, false);
-        html += '<div class="disc-actions"><button class="btn-text" type="button" data-disc-reply-toggle="' + escapeHtml(msg.id) + '">' + (replyOpenId === msg.id ? 'Cancel' : 'Reply') + '</button></div>';
-        if ((msg.replies || []).length){
-          html += '<div class="disc-replies">';
-          msg.replies.forEach(function(r){ html += discussionMessageHtml(r, true); });
-          html += '</div>';
-        }
-        if (replyOpenId === msg.id){
-          html += discussionFormHtml('discReply', 'Reply&hellip;', 'Post reply');
-        }
-        html += '</div>';
-      });
-    }
-    html += '<div class="disc-new"><h3>Start a new topic</h3>' + discussionFormHtml('discNew', 'Share a comment, question, or concern&hellip;', 'Post') + '</div>';
-    html += '</div>';
-    return html;
+    return '<div class="ir-talk"></div>';
   }
 
   function onPostDiscussion(cardId){
@@ -670,7 +664,8 @@
     // reviewers talk; on Registered there's nothing to discuss yet.
     var stageNow = displayStatus(card, board);
     var noDiscussion = stageNow === 'paper' || stageNow === 'register';
-    var discCount = noDiscussion ? 0 : threadCount(card.discussion);
+    // Its Discussion is a conversation now (mountReviewTalk): no count of the old one.
+    var discCount = 0;
     var discussionHtml = noDiscussion ? '' : '<h3 class="detail-subhead">Discussion' +
       (discCount ? ' <span class="n">' + discCount + '</span>' : '') + '</h3>' + discussionTabHtml(card);
     reviewBody += discussionHtml;
@@ -701,6 +696,7 @@
 
     html += '</div>';
     els.boardRegion.innerHTML = html;
+    mountReviewTalk(card);
 
     document.getElementById('detailBack').addEventListener('click', function(e){ e.preventDefault(); backToBoard(); });
     Array.prototype.forEach.call(els.boardRegion.querySelectorAll('[data-detail-tab]'), function(btn){

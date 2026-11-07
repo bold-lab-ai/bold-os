@@ -40,3 +40,12 @@ test('a proposed change’s discussion: its page and proposal, and the one post 
   assert.strictEqual(changeOf('change/handbook/other/x'), null);
   assert.strictEqual(changeOf('change/guides/../x'), null);
 });
+
+const { reviewOf, discussionOf } = require('../functions/comment-conversation');
+test('an Internal Review card’s Discussion: its board and card, and its old messages in order', () => {
+  assert.deepStrictEqual(reviewOf('review/iclr-2027/card-1-ab'), { board: 'iclr-2027', card: 'card-1-ab', id: 'cm-review-iclr-2027-card-1-ab' });
+  assert.strictEqual(reviewOf('review/x'), null);
+  const d = discussionOf([{ author: 'A', authorEmail: 'A@x', timestamp: 1, body: 'one', replies: [{ author: 'B', authorEmail: 'b@x', timestamp: 2, body: 'two' }] }, { author: 'C', authorEmail: 'c@x', timestamp: 3, body: 'three' }]);
+  assert.deepStrictEqual(d.map((m) => m.text + '/' + m.by.email + '/' + m.at), ['one/a@x/1', 'two/b@x/2', 'three/c@x/3']);
+  assert.deepStrictEqual(discussionOf(undefined), []);
+});
