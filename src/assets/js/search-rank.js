@@ -5,9 +5,10 @@
 // accents and British/American spellings folded ("generalisation" = "generalization"),
 // with a few lab abbreviations ("rl" = "reinforcement learning"). Filler words ("a",
 // "the", "how") are left out unless that leaves nothing. Every word must match; if none
-// does, the items matching most of them come back marked `partial`. Ranking: where each
-// word matched (title over section over text, rarer words counting more), the whole
-// phrase in the title or text, and a title that is the query.
+// does, the items matching most of them come back marked `partial`. Ranking, the whole
+// before its words (#251): a title that is the query, then the phrase in the title, then
+// the phrase anywhere, then every word close together, then the words anywhere; within
+// each, where each word matched (title over section over text, rarer words counting more).
 (function(root){
   var STOP = ['a', 'an', 'the', 'of', 'to', 'in', 'on', 'for', 'and', 'or', 'is', 'are', 'be', 'how', 'do', 'does', 'i', 'my',
     'me', 'we', 'our', 'with', 'at', 'by', 'what', 'can', 'it', 'as', 'from', 'about', 'into', 'should', 'when', 'where', 'who'];
@@ -109,6 +110,28 @@
       return Math.log(1 + n / (1 + df));
     });
     var phrase = p.terms.length > 1 ? ' ' + p.phrase + ' ' : '';
+    var joinW = function(toks){ return ' ' + toks.map(function(t){ return t.w; }).join(' ') + ' '; };
+    // Each word within a few words of the others, in one field.
+    function near(toks){
+      var at = p.terms.map(function(term){
+        var out = [];
+        term.alts.forEach(function(run){ toks.forEach(function(t, i){ if (t.w === run[0] || (run[0].length >= 3 && t.w.indexOf(run[0]) === 0)) out.push(i); }); });
+        return out;
+      });
+      if (at.some(function(a){ return !a.length; })) return false;
+      var span = 2 + 2 * p.terms.length;
+      return at[0].some(function(i){ return at.every(function(a){ return a.some(function(j){ return Math.abs(j - i) <= span; }); }); });
+    }
+    // How whole the match is: 4 the title is the query, 3 the phrase in the title, 2 the phrase
+    // anywhere, 1 every word close together, 0 the words anywhere.
+    function tier(it){
+      var tk = prepped(it), title = joinW(tk.title);
+      if (title.trim() === p.phrase) return 4;
+      if (!phrase) return 0;
+      if (title.indexOf(phrase) !== -1) return 3;
+      if (joinW(tk.where).indexOf(phrase) !== -1 || joinW(tk.text).indexOf(phrase) !== -1) return 2;
+      return near(tk.title) || near(tk.where) || near(tk.text) ? 1 : 0;
+    }
     function score(it, hs){
       var tk = prepped(it), s = 0;
       hs.forEach(function(h, k){
@@ -122,14 +145,15 @@
       else if (phrase && (' ' + tk.text.map(function(t){ return t.w; }).join(' ') + ' ').indexOf(phrase) !== -1) s += 4;
       return s;
     }
+    var best = function(a, b){ return b.tier - a.tier || b.score - a.score; };
     var full = [];
-    hitsBy.forEach(function(hs, i){ if (hs.every(Boolean)) full.push({ item: items[i], score: score(items[i], hs), partial: false }); });
-    if (full.length || p.terms.length < 2) return full.sort(function(a, b){ return b.score - a.score; });
+    hitsBy.forEach(function(hs, i){ if (hs.every(Boolean)) full.push({ item: items[i], score: score(items[i], hs), tier: tier(items[i]), partial: false }); });
+    if (full.length || p.terms.length < 2) return full.sort(best);
     // Nothing has every word: those with the most of them (at least half).
     var most = Math.max.apply(null, hitsBy.map(function(hs){ return hs.filter(Boolean).length; }));
     if (most < Math.ceil(p.terms.length / 2)) return [];
-    return hitsBy.map(function(hs, i){ return hs.filter(Boolean).length === most ? { item: items[i], score: score(items[i], hs), partial: true } : null; })
-      .filter(Boolean).sort(function(a, b){ return b.score - a.score; });
+    return hitsBy.map(function(hs, i){ return hs.filter(Boolean).length === most ? { item: items[i], score: score(items[i], hs), tier: 0, partial: true } : null; })
+      .filter(Boolean).sort(best);
   }
 
   // The [at, end) spans of a text where a query term matches.

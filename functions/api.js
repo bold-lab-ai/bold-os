@@ -361,11 +361,11 @@ module.exports = function(deps){
   // The tools the lab adds, from the Tools pages (agentTools), run in mcpSandbox (functions/api-tools.js).
   const added = require('./api-tools')({ db, httpError, builtins: () => TOOLS, idTokenFor: (e) => actions.idTokenFor(e), fetchImpl: deps.fetchImpl, sandboxUrl: deps.sandboxUrl, SITE_URL });
   const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
-  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'comments'];
+  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'conversations', 'comments'];
   const TOOLS = [
     {
       name: 'search',
-      description: 'Search BOLD.OS as its site search does: the BOLDiquette (the lab handbook), how-to guides, skills, events with their sessions and talks, projects, people, papers on the Internal Review Board, and comments. Every word must match, as a whole word or a word’s start (abbreviations such as RL and LLM included), unless nothing does; title matches rank first.',
+      description: 'Search BOLD.OS as its site search does: the BOLDiquette (the lab handbook), how-to guides, skills, events with their sessions and talks, projects, people, papers on the Internal Review Board, the open conversations, and comments. Every word must match, as a whole word or a word’s start (abbreviations such as RL and LLM included), unless nothing does; the whole phrase ranks before its words scattered, and title matches first.',
       inputSchema: { type: 'object', properties: {
         query: { type: 'string', description: 'Words to look for.' },
         scope: { type: 'string', enum: SCOPES, description: 'Only this section (default: everywhere).' },
@@ -525,6 +525,12 @@ module.exports = function(deps){
     };
     const cardHref = (c) => 'audit-board.html#board=' + encodeURIComponent(c.boardId) + '&card=' + encodeURIComponent(c.id);
     if (want('board')) jobs.push(approved().then((cs) => cs.forEach((c) => item('board', c.data.title, c.boardLabel, c.data.abstractText || c.data.abstract, cardHref(c)))));
+    // The open conversations (Conversations), each thread as one result: its post and its replies.
+    if (want('conversations') && await access.can(who.email, 'conversations', 'view')) jobs.push(db.collection('conversations').where('private', '==', false).get().then((x) => Promise.all(x.docs.map((d) => {
+      const c = d.data();
+      return d.ref.collection('messages').get().then((m) => m.docs.map((y) => y.data().body), () => []).then((replies) =>
+        item('conversations', c.title, [c.name, c.projectTitle].filter(Boolean).join(' · ') || 'Conversations', [c.body].concat(replies).join(' '), 'conversations.html#post=' + encodeURIComponent(d.id)));
+    }))));
     if (want('comments')) jobs.push(Promise.all([lab.comments(), approved(), lab.guides(), lab.handbook()]).then(([cs, cards, gs, hs]) => {
       const titles = {};
       gs.concat(hs).forEach((d) => { titles[d._path] = d.title || d._id; });
