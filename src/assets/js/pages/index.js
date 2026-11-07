@@ -447,7 +447,15 @@
       line.setAttribute('aria-expanded', String(yes));
       list.hidden = !yes || !log.length;
       if (typeof drawSaved === 'function') drawSaved();
-      if (yes) setTimeout(function(){ text.focus(); }, still ? 0 : 260);
+      // The box takes focus without the browser's jump to it (the page is still moving); once it's settled, a smooth
+      // scroll brings the box into view, only as far as it needs.
+      if (yes) setTimeout(function(){
+        try { text.focus({ preventScroll: true }); } catch (e){ text.focus(); }
+        setTimeout(function(){
+          var r = box.getBoundingClientRect(), vh = window.innerHeight || document.documentElement.clientHeight;
+          if (r.top < 0 || r.bottom > vh) box.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'nearest' });
+        }, still ? 0 : 300);
+      }, still ? 0 : 260);
       // Opening on a conversation BOLD has answered in: Conversations folds away again; closing, it comes back.
       if (yes && !keepTalk && log.some(function(m){ return m.who === 'bold'; })) talking(true, true);
       if (!yes) talking(false);
