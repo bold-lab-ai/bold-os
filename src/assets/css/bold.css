@@ -1010,11 +1010,24 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 /* Ten clicks on the sun/moon: paper under a lamp. Light roles, warmed; not kept. */
 :root[data-theme="lamp"]{
   --ink:#3b2a14; --ink-soft:#4e3a20; --muted:#806c4e;
-  --paper:#efe2c4; --surface:#f7eed8; --wash:#e5d4ae;
+  --paper:#f2e4c4; --surface:#faf0d9; --wash:#e7d5ad;
   --accent:#7a4a12; --accent-hover:#5c370c; --accent-dim:#e8d7b2;
   --shade:#3b2a14;
 }
-:root[data-theme="lamp"] body{background-image:radial-gradient(ellipse at 50% 28%, transparent 45%, color-mix(in srgb, var(--shade) 20%, transparent) 100%); background-attachment:fixed;}
+/* The room: the lamp above the page, its light a warm pool where you read, the room dimming into warm dark
+   around it, the paper's grain. Two layers over the whole window (masthead, sidebar and popups too), under
+   the other eggs, never in the way of a click: shade and grain multiplied in, the bulb's glow screened on,
+   breathing a little as a filament does (still with reduced motion). */
+:root[data-theme="lamp"] body::before, :root[data-theme="lamp"] body::after{content:''; position:fixed; inset:0; pointer-events:none; z-index:9990;}
+:root[data-theme="lamp"] body::before{mix-blend-mode:multiply;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .42 0 0 0 0 .28 0 0 0 0 .12 0 0 0 .22 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse 70% 62% at 46% 22%, transparent 0 28%, rgba(120,76,30,.16) 52%, rgba(70,40,14,.46) 82%, rgba(38,20,6,.68) 100%);}
+:root[data-theme="lamp"] body::after{mix-blend-mode:screen;
+  background:radial-gradient(ellipse 46% 40% at 46% 16%, rgba(255,214,140,.30), rgba(255,190,110,.12) 45%, transparent 72%);
+  animation:lamp-glow 9s ease-in-out infinite;}
+@keyframes lamp-glow{0%,100%{opacity:1;} 37%{opacity:.86;} 41%{opacity:.97;} 70%{opacity:.9;}}
+@media (prefers-reduced-motion: reduce){ :root[data-theme="lamp"] body::after{animation:none;} }
 /* The Konami code: Reviewer 2's notes beside each heading. */
 .r2-note{display:inline-block; margin-left:14px; padding:1px 8px; font-family:var(--serif); font-style:italic; font-weight:400; font-size:15px; letter-spacing:0; text-transform:none;
   color:var(--danger-text); border:1px solid var(--danger-line); background:var(--danger-bg); transform:rotate(var(--tilt, -1deg)); vertical-align:middle;}
