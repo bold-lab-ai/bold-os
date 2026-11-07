@@ -387,8 +387,16 @@
       if (still || !el.animate || (!dx && !dy)) return;
       el.animate([{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }], { duration: 520, easing: 'cubic-bezier(.2,.8,.2,1)' });
     }
+    // Under the conversation: a way back to every conversation, while they're folded away. Choosing it keeps
+    // them open for the rest of the visit (BOLD's next answers don't fold them again).
+    var keepTalk = false, showTalk = document.createElement('p');
+    showTalk.className = 'ha-show-talk'; showTalk.hidden = true;
+    showTalk.innerHTML = '<button type="button" class="btn-text">Show all conversations</button>';
+    box.appendChild(showTalk);
+    showTalk.querySelector('button').addEventListener('click', function(){ keepTalk = true; talking(false); });
     function setTalking(on){
       feedEl.classList.toggle('is-talking', on);
+      showTalk.hidden = !on;
       // The side column's top level with the letter's first line (under the kicker).
       if (on && letterEl && topEl) feedEl.style.setProperty('--talk-top', Math.max(0, letterEl.getBoundingClientRect().top - topEl.getBoundingClientRect().top) + 'px');
     }
@@ -478,7 +486,7 @@
         var b = form.querySelector('button[type="submit"], button:not([type])');
         if (b) b.disabled = false;
         stream(a || 'Nothing to say to that.');
-        talking(true);
+        if (!keepTalk) talking(true);
       });
     });
     // Enter sends; Shift+Enter is a new line.
