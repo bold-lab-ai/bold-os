@@ -1,7 +1,7 @@
 // profile.html#agents: who writes their home page's letter (prefs/{uid}.homeLetter): BOLD LLM (Claude
 // until Sofya runs: functions/bold-llm.js) or the rule-based letter the page writes itself (the default).
 // BOLD LLM is greyed out, with why, while the lab's letters are rule-based (settings/homeLetter, Settings ›
-// Home letter, PIs and admins).
+// BOLD Agent, PIs and admins).
 (function(){
   var esc = BOLD.escapeHtml;
   var box = document.getElementById('letterSetting');
@@ -9,7 +9,7 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var uid = null, choice = null, lab = null, error = '', busy = false;
-  var OFF = 'The lab’s letters are rule-based for now: PIs and admins turn BOLD LLM on in Settings › Home letter.';
+  var OFF = 'The lab’s letters are rule-based for now: PIs and admins turn BOLD LLM on in Settings › BOLD Agent.';
   var OPTIONS = [
     ['bold', 'BOLD LLM', 'Written for you each morning from what you can see, and you can talk to it under the letter. Claude writes it until Sofya, BOLD’s own LLM, is ready; what it reads of your day is sent to Anthropic.'],
     ['rules', 'Rule-based', 'BOLD.OS puts it together as you open the page, from what’s waiting on you, your meetings and the lab.'],

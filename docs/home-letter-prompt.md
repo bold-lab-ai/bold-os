@@ -4,7 +4,7 @@ The opening of the signed-in home page (`index.html`): a letter to one person ab
 
 ## Running it
 
-- **Who writes it: two switches.** The lab's, in Settings › Home letter (`settings/homeLetter.writer`: `claude` or `rules`, PIs and admins), and each person's, on their profile's Agents tab (`prefs/{uid}.homeLetter`: `bold` or `rules`; BOLD LLM greyed out while the lab's is rule-based). BOLD LLM writes it only when both say so; otherwise the page's rule-based letter (`pages/index.js`).
+- **Who writes it: two switches.** The lab's, in Settings › BOLD Agent (`settings/homeLetter.writer`: `claude` or `rules`, PIs and admins), and each person's, on their profile's Agents tab (`prefs/{uid}.homeLetter`: `bold` or `rules`; BOLD LLM greyed out while the lab's is rule-based). BOLD LLM writes it only when both say so; otherwise the page's rule-based letter (`pages/index.js`).
 - **BOLD LLM is Claude until Sofya runs:** Claude Sonnet 5.5 at medium effort (`functions/bold-llm.js`, `MODEL`, `EFFORT`), with the refusal fallback on. Sofya replaces the model and nothing else.
 - **Once a day per person**, at 06:00 London (`writeHomeLetters`), as the person: their inputs are only what they may see (`letterInputs` in `functions/api.js`, through the agents' reading tools and checks). Both lengths at once (a JSON schema), kept in `homeLetters/{email}` (`{ short, long, at, by, model }`, written by the server, read by its person). Someone who hasn't been on BOLD.OS for 30 days isn't written to. Someone with no letter today (they've just chosen it) gets one written as they open the page (`homeLetter` `write`), the rule-based one meanwhile.
 - **The period it covers** is the 24 hours before it's written: a daily paper, not a diff of their visits.

@@ -1,6 +1,6 @@
 // BOLD LLM: the home letter and Talking to BOLD (docs/home-letter-prompt.md), written by Claude until
 // Sofya, BOLD's own LLM, runs (then only MODEL and the client change). Two switches decide who writes a
-// letter: the lab's (settings/homeLetter.writer: 'claude' or 'rules', Settings › Home letter, PIs and
+// letter: the lab's (settings/homeLetter.writer: 'claude' or 'rules', Settings › BOLD Agent, PIs and
 // admins), and each person's (prefs/{uid}.homeLetter: 'bold' or 'rules', profile › Agents). With both on
 // BOLD LLM, writeHomeLetters writes their letter at 06:00 (London) into homeLetters/{email}, from inputs
 // read as them (letterInputs in functions/api.js: only what they may see); the home page shows it, or the
@@ -116,7 +116,7 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
   const homeLetter = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
     const email = callerEmail(req);
     await access.requireAccess(email, 'profile', 'view');   // Who can see what
-    if ((await labWriter()) !== 'claude') throw new HttpsError('failed-precondition', 'The lab’s letters are rule-based for now (Settings › Home letter).');
+    if ((await labWriter()) !== 'claude') throw new HttpsError('failed-precondition', 'The lab’s letters are rule-based for now (Settings › BOLD Agent).');
     const d = req.data || {}, name = req.auth.token.name || '';
     if (d.action === 'write') {
       const cur = await db.collection('homeLetters').doc(email).get();

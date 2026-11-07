@@ -45,8 +45,8 @@
   // feature's switch and testers, the pilots; #pilots, its old name, opens it). The first two
   // are one form, saved from either.
   // Notifications (#notifications): the Web Push key desktop notifications use (settings/webPush).
-  // Home letter (#letter): who writes the lab's home letters (settings/homeLetter, functions/bold-llm.js), saved as it's chosen.
-  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['letter', 'Home letter'], ['features', 'Features']];
+  // BOLD Agent (#bold-agent): who writes the lab's home letters (settings/homeLetter, functions/bold-llm.js), saved as it's chosen.
+  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['bold-agent', 'BOLD Agent'], ['features', 'Features']];
   var letterLab = null, letterBusy = false, letterError = '';
   var WRITERS = [
     ['claude', 'BOLD LLM', 'Claude (Sonnet 5.5) writes each letter at 06:00, from what that person can see, and answers Talking to BOLD on the home page, until Sofya runs. Each person also chooses it on their profile. What it reads of their day is sent to Anthropic, and the lab pays for it.'],
@@ -64,7 +64,7 @@
       (letterLab.updatedBy ? '<p class="proj-meta">Set by ' + esc(letterLab.updatedBy) + ', ' + esc(new Date(letterLab.updatedAt || 0).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })) + '.</p>' : '') +
       '</fieldset></div>';
   }
-  function drawLetter(){ var x = document.getElementById('letter'); if (x) x.innerHTML = letterHtml(); }
+  function drawLetter(){ var x = document.getElementById('bold-agent'); if (x) x.innerHTML = letterHtml(); }
   function saveLetter(writer){
     var was = (letterLab || {}).writer || 'rules';
     BOLD.confirmAction({ always: true, title: writer === 'claude' ? 'Have BOLD LLM write the home letters?' : 'Go back to rule-based letters?', go: writer === 'claude' ? 'Turn it on' : 'Switch',
@@ -141,7 +141,7 @@
       '<p class="proj-meta">The public key of the project’s Web Push certificate (Firebase console › Project settings › Cloud Messaging › Web Push certificates). Public: browsers hand it to their push service. Empty: Notifications doesn’t offer desktop notifications.</p>' +
       '<label>Web Push key<input type="text" class="jr-push-key" maxlength="200" spellcheck="false" autocomplete="off" value="' + esc((webPush || {}).publicKey || '') + '" placeholder="B…"></label></fieldset>' +
       save + '</div></section></div>' +
-      '<section class="profile-panel" id="letter">' + letterHtml() + '</section>' +
+      '<section class="profile-panel" id="bold-agent">' + letterHtml() + '</section>' +
       '<section class="profile-panel" id="features">' + pilotHtml() + '</section>';
   }
   function showTab(){

@@ -191,7 +191,7 @@ service cloud.firestore {
     }
     // The join form's choices (join.html, read before signing in) and, for PIs and
     // admins only, the Slack invite link and the welcome email's text.
-    // Who writes the lab's home letters (Settings › Home letter, settings.html): BOLD LLM (Claude until
+    // Who writes the lab's home letters (Settings › BOLD Agent, settings.html): BOLD LLM (Claude until
     // Sofya runs) or the rule-based letter for everyone; the lab reads it, PIs and admins set it.
     match /settings/homeLetter {
       allow read: if isSignedIn();

@@ -215,7 +215,7 @@
         (open ? ', and nobody has answered ' + esc(first(open.name)) + '’s ' + door(esc(quote(open.title)), 'index.html#post=' + encodeURIComponent(open.id), [['Answer it', 'index.html#post=' + encodeURIComponent(open.id)]]) + ' yet' : '') + '.');
     }
 
-    // Written by BOLD LLM (their choice, profile › Agents, and the lab's, Settings › Home letter; homeLetters/{email})
+    // Written by BOLD LLM (their choice, profile › Agents, and the lab's, Settings › BOLD Agent; homeLetters/{email})
     // within the last day: that, under the greeting and any meeting on now, which a morning letter can't know.
     var al = llmLetter();
     if (al) { el.innerHTML = '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al; return; }
