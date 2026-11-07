@@ -8,9 +8,10 @@
 // went on, and takes no more replies there (firestore.rules). One thread is one post: asking again
 // gives the same post.
 // commentConversation { on: 'handbook/<slug>' | 'guides/<slug>', id: <the thread's first comment> } → { id, title, existed }.
-// A board card's comments (card-talk.js), all of them, the same way: { on: 'card/<project>/<card>' } → the post
-// cm-card-<project>-<card>, with `project` (its project's Conversations). A card has no field for it: the post
-// existing is what closes the card's comments (firestore.rules), and what card-talk.js links to.
+// A board card's conversation (card-talk.js; since 2026-11-07 its only chat): { on: 'card/<project>/<card>', text? } → the post
+// cm-card-<project>-<card>, with `project` (its project's Conversations). Started by its first message (`text`), with
+// any comments it had from before copied in first; asked again with `text`, that's added to it (agents' work tool).
+// A card has no field for it: the post existing is what closes the card's old comments (firestore.rules).
 // Who may: whoever may post in Conversations and see the page (the project). Only where everyone who sees
 // Conversations can see the page too, so nothing goes further than it was.
 
@@ -46,7 +47,8 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
   const by = (c) => ({ name: String((c.by && c.by.name) || (c.by && c.by.email) || 'Someone').slice(0, 200), createdBy: String((c.by && c.by.email) || '').toLowerCase() });
 
   // A board card's comments, all of them, as one conversation.
-  async function fromCard(email, c){
+  async function fromCard(email, c, text){
+    text = String(text || '').trim().slice(0, 10000);
     await access.requireAccess(email, 'conversations', 'edit');
     const wsRef = db.collection('projectWorkspaces').doc(c.pid), cardRef = wsRef.collection('work').doc(c.card);
     const [wsSnap, cardSnap] = await Promise.all([wsRef.get(), cardRef.get()]);
@@ -58,9 +60,19 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     const convView = await access.levelOf('conversations', 'view'), projView = await access.levelOf('projects', 'view');
     if (projView === 'none' || rank(convView) < rank(projView)) throw new HttpsError('failed-precondition', 'More people see Conversations than this project, so its comments stay here.');
     const ref = db.collection('conversations').doc(c.id), had = await ref.get();
-    if (had.exists) return { id: c.id, title: had.data().title, existed: true };
+    if (had.exists) {
+      // Added to it: an answer to its latest message (as Reply does), told to its people (onConversationMessage).
+      if (text) {
+        const last = (await ref.collection('messages').orderBy('at', 'desc').limit(1).get()).docs[0];
+        await ref.collection('messages').add({ parent: last ? last.id : c.id, body: text, name: await nameOf(email) || email, createdBy: email,
+          at: FieldValue.serverTimestamp(), source: 'site', viaAgent: false, votes: {} });
+      }
+      return { id: c.id, title: had.data().title, existed: true };
+    }
     const comments = (await cardRef.collection('comments').get()).docs.map((d) => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0));
-    if (!comments.length) throw new HttpsError('failed-precondition', 'The card has no comments yet.');
+    // Its first message, after what was said before.
+    if (text) comments.push({ text, by: { email, name: await nameOf(email) }, at: Date.now() });
+    if (!comments.length) throw new HttpsError('invalid-argument', 'Write something first.');
     const first = comments[0], rest = comments.slice(1);
     const cardTitle = String(card.title || 'A card').slice(0, 200);
     const title = cardTitle.length > MAX_TITLE ? cardTitle.slice(0, MAX_TITLE - 3).replace(/\s+\S*$/, '') + '…' : cardTitle;
@@ -80,7 +92,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     const email = signedInEmail(request).toLowerCase();
     const data = request.data || {};
     const c = cardOf(data.on);
-    if (c) return fromCard(email, c);
+    if (c) return fromCard(email, c, data.text);
     const page = pageOf(data.on, guideArea), cid = String(data.id || '');
     if (!page || !/^[A-Za-z0-9_-]{1,64}$/.test(cid)) throw new HttpsError('invalid-argument', 'Which thread?');
     await access.requireAccess(email, 'conversations', 'edit');

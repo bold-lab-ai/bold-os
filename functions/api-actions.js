@@ -372,20 +372,24 @@ module.exports = function(ctx){
     if (!cur.exists) throw httpError(404, 'No card with that id on this board.');
     if (a.action === 'remove') { await asUser(who, 'delete', col + '/' + id); return { ok: true }; }
     // Its conversation (card-talk.js): read it, or add to it (its people hear of it on Slack).
+    // Its conversation (card-talk.js, since 2026-11-07): conversations/cm-card-<project>-<card>; before it's
+    // started, what its comments said. Read it, or add to it (commentConversation starts it if need be).
     if (a.action === 'comments') {
+      const post = await db.collection('conversations').doc('cm-card-' + pid + '-' + id).get();
+      if (post.exists) {
+        const p = post.data(), ms = (await post.ref.collection('messages').get()).docs.map((d) => Object.assign({ id: d.id }, d.data()));
+        const t = (x) => (x && x.toMillis ? x.toMillis() : Number(x) || 0);
+        return { conversation: post.id, comments: [{ id: post.id, by: p.name || '', at: new Date(t(p.at)).toISOString(), text: p.body }]
+          .concat(ms.sort((x, y) => t(x.at) - t(y.at)).map((m) => ({ id: m.id, by: m.name || '', at: new Date(t(m.at)).toISOString(), text: m.body, answers: m.parent }))), url: url(pageOf(id)) };
+      }
       const cs = await ref.doc(id).collection('comments').orderBy('at').get();
       return { comments: cs.docs.map((d) => { const m = d.data(); return { id: d.id, by: (m.by && (m.by.name || m.by.email)) || '', at: new Date(m.at || 0).toISOString(), text: m.text, edited: !!m.editedAt }; }), url: url(pageOf(id)) };
     }
-    // Make it a conversation (commentConversation): the card's comments, copied to Conversations; it goes on there.
-    if (a.action === 'to_conversation') {
-      const r = await act(who, 'commentConversation', { on: 'card/' + pid + '/' + id });
-      return Object.assign({}, r, { url: url('conversations.html#post=' + encodeURIComponent(r.id)) });
-    }
-    if (a.action === 'comment') {
-      const t = need(a.text, 'the text');
-      if (t.length > 2000) throw httpError(400, 'At most 2000 characters.');
-      const cid = await asUser(who, 'create', col + '/' + id + '/comments', { text: t, by: { email: who.email, name: nameOfMe(who) }, at: now });
-      return { id: cid, url: url(pageOf(id) + '&c=' + encodeURIComponent(cid)) };
+    if (a.action === 'comment' || a.action === 'to_conversation') {
+      const t = a.action === 'comment' ? need(a.text, 'the text') : '';
+      if (t.length > 10000) throw httpError(400, 'At most 10000 characters.');
+      const r = await act(who, 'commentConversation', { on: 'card/' + pid + '/' + id, text: t });
+      return Object.assign({}, r, { url: url(pageOf(id)) });
     }
     const x = cur.data();
     const next = { title: x.title, notes: x.notes || '', kind: a.type !== undefined ? String(a.type) : x.kind || '', column: x.column, assignees: x.assignees || [], assigneeEmails: x.assigneeEmails || [], links: x.links || [],
@@ -755,7 +759,7 @@ module.exports = function(ctx){
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'work', run: work,
-      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card, or read (comments) and add to (comment) a card’s conversation, or make it a conversation in Conversations (to_conversation: its comments copied there, each by whoever wrote it, and the card takes no more comments; everyone who sees Conversations is told, so ask your person first). A card can be in one of the board’s milestones (set in Board settings), whose progress the board shows, and have labels, several (e.g. Good first issue: something someone new can take on by themselves). Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false. A comment sends whoever made the card, its assignees and whoever has commented a Slack message, and moving a card to done tells whoever raised it: tell your person first. Move the cards you work on as you go: doing when you start, review while it waits on someone, done once it’s live.',
+      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card, or read (comments) and add to (comment) a card’s conversation: a thread in Conversations, about the project (the first message starts it; whoever made the card, its assignees and whoever’s in it hear of a reply: tell your person first). A card can be in one of the board’s milestones (set in Board settings), whose progress the board shows, and have labels, several (e.g. Good first issue: something someone new can take on by themselves). Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false. A comment sends whoever made the card, its assignees and whoever has commented a Slack message, and moving a card to done tells whoever raised it: tell your person first. Move the cards you work on as you go: doing when you start, review while it waits on someone, done once it’s live.',
       inputSchema: S({ post_in_channel: { type: 'boolean', description: 'add: post it in the project’s Slack channel (default true)' }, action: ACTIONS(['list', 'add', 'update', 'move', 'remove', 'comments', 'comment', 'to_conversation']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove, comments, comment, to_conversation (list gives it).'), text: str('comment: what you say (Markdown).'),
         title: str('add, update'), description: str('add, update: what it is (Markdown), shown on the card’s page.'), type: ACTIONS(['code', 'content', 'request', 'other']), column: Object.assign(ACTIONS(['todo', 'doing', 'review', 'done']), { description: 'add, update, move: a card made on the board never waits for review: review puts it in done.' }), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
         milestone: str('add, update: the milestone it’s in, by name (list gives the board’s milestones; "" for none).'),

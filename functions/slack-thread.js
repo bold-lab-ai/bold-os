@@ -339,9 +339,15 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
 
   // A reply's post keeps count of its replies (clients can't change it: firestore.rules).
   // Who's in a conversation: whoever started it (or brought it in), and whoever replied on BOLD.OS, or in the
-  // comment thread it was made from (comment-conversation.js).
+  // comment thread it was made from (comment-conversation.js); a card's, its maker and assignees too.
   async function peopleIn(pid, post){
     const out = new Set([String(post.createdBy || (post.broughtBy || {}).email || '').toLowerCase()]);
+    // A card's conversation: whoever made the card and whoever's on it, as its comments were told.
+    const card = /^card\/([^/]+)\/([^/]+)$/.exec(String((post.from || {}).on || ''));
+    if (card) {
+      const c = (await db.collection('projectWorkspaces').doc(card[1]).collection('work').doc(card[2]).get()).data() || {};
+      [(c.by || {}).email].concat(c.assigneeEmails || []).forEach((e) => out.add(String(e || '').toLowerCase()));
+    }
     (await db.collection('conversations').doc(pid).collection('messages').where('source', 'in', ['site', 'comment']).get()).docs
       .forEach((m) => out.add(String(m.data().createdBy || '').toLowerCase()));
     out.delete('');
@@ -406,7 +412,8 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       const url = PAGE + '#post=' + encodeURIComponent(pid);
       const by = d.source === 'slack' || d.source === 'comment' ? (d.broughtBy || {}).name || 'Someone' : d.name || 'Someone';
       const whence = d.source === 'slack' ? 'brought in from ' + ((d.slack || {}).channelName || 'Slack') + ' by '
-        : d.source === 'comment' ? 'made from ' + ((d.from || {}).kind === 'card' ? 'a card’s comments in ' : 'a comment thread on ') + String((d.from || {}).page || 'a page').replace(/[<>|]/g, '') + ' by '
+        : d.source === 'comment' ? ((d.from || {}).kind === 'card' ? 'on a card in ' + String((d.from || {}).page || 'a project').replace(/[<>|]/g, '') + ', started by '
+          : 'made from a comment thread on ' + String((d.from || {}).page || 'a page').replace(/[<>|]/g, '') + ' by ')
         : d.project ? 'about ' + String(d.projectTitle || 'your project').replace(/[<>|]/g, '') + ', started by ' : 'started by ';
       const text = '🗨️ New conversation: “' + String(d.title || '').replace(/[<>|]/g, '') + '”, ' + whence + by + '.';
       await noteFor(to, { text, href: url, feature: 'conversation-new', source: 'conversations', about: 'conversation:' + pid, ping: false });

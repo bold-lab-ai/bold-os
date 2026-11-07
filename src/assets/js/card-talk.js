@@ -1,151 +1,98 @@
-// A board card's conversation, on its own page (project-work.js): its comments, oldest
-// first, and a box to add one. projectWorkspaces/{pid}/work/{id}/comments/{cid}
-// { text (Markdown, @ to tag), by: { email, name }, at, editedAt? } (firestore.rules):
-// whoever sees the board reads and comments; the author edits or deletes theirs, PIs and
-// admins delete any. onCardCommented (functions/index.js) tells whoever made the card, its
-// assignees and whoever has commented, one Slack message each a few minutes later; so
-// posting asks first. &c=<id> in the address (as Slack sends) scrolls to that comment.
-// Make it a conversation (2026-11-06; functions/comment-conversation.js): the card's comments, copied to
-// Conversations (conversations/cm-card-<project>-<card>), go on there; once that post exists, the card shows a
-// link to it in place of the box, and the rules take no more comments here.
+// A board card's conversation, on its own page (project-work.js; 2026-11-07): a thread in Conversations,
+// conversations/cm-card-<project>-<card>, shown with Conversations' own forum (conversations-forum.js), that
+// thread alone; it's about the card's project, so it's in the project's Conversations tab and on Conversations.
+// Its first message starts it (commentConversation { on: 'card/<project>/<card>', text }, functions/
+// comment-conversation.js), with whatever the card's comments said before copied in first, each by whoever
+// wrote it; until then those old comments show here, read only. Who's told of a reply: the conversation's
+// people, the card's maker and assignees among them (slack-thread.js peopleIn). Writing: Conversations' Edit.
+// &c=<id> in the address (an old comment's link) still scrolls to that comment while it's shown.
 // BoldCardTalk.create(ref, { me: () => user, fullWrite: () => bool, card: () => card })
-// → { el, stop() }; el is kept between the page's redraws, so a comment being written stays.
+// → { el, stop() }; el is kept between the page's redraws, so what's being written stays.
 window.BoldCardTalk = (function(){
-  var esc = BOLD.escapeHtml, MAX = 2000;
+  var esc = BOLD.escapeHtml, MAX = 10000;
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   var pad = function(n){ return (n < 10 ? '0' : '') + n; };
   function when(ms){ var d = new Date(ms); return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear() + ', ' + pad(d.getHours()) + ':' + pad(d.getMinutes()); }
 
   function create(ref, o){
+    var pid = ref.parent.parent.id, postId = 'cm-card-' + pid + '-' + ref.id;
     var el = document.createElement('div');
     el.className = 'detail-abstract wk-talk';
-    el.innerHTML = '<div class="detail-abstract-label">Conversation</div><ul class="wk-talk-list"></ul>' +
-      '<form class="wk-talk-form" novalidate>' +
-      '<textarea aria-label="Add a comment" class="wk-talk-text md-field" rows="3" maxlength="' + MAX + '" placeholder="Add a comment: Markdown, @ to tag someone"></textarea>' +
+    el.innerHTML = '<div class="detail-abstract-label">Conversation</div>' +
+      '<div class="wk-talk-forum"></div><ul class="wk-talk-list" hidden></ul>' +
+      '<form class="wk-talk-form" novalidate hidden>' +
+      '<textarea aria-label="Start the conversation" class="wk-talk-text md-field" data-md-breaks="true" rows="3" maxlength="' + MAX + '" placeholder="Start the conversation: Markdown"></textarea>' +
       '<div class="field-error wk-talk-error" hidden></div>' +
-      '<div class="stage-fields-actions"><button class="btn" type="submit">Comment</button>' +
-        '<button class="btn-text wk-talk-convo" type="button" hidden title="Copy these comments to Conversations, where they go on">Make it a conversation</button></div></form>' +
-      '<p class="wk-talk-moved" hidden></p>';
-    var listEl = el.querySelector('.wk-talk-list'), form = el.querySelector('.wk-talk-form'), box = form.querySelector('textarea'), error = form.querySelector('.wk-talk-error');
-    var convoBtn = form.querySelector('.wk-talk-convo'), movedEl = el.querySelector('.wk-talk-moved');
-    var pid = ref.parent.parent.id, postId = 'cm-card-' + pid + '-' + ref.id, moved = false, unsubPost = null;
-    var list = [], loaded = false, editing = null, busy = false, marked = (/[#&]c=([^&]+)/.exec(location.hash) || [])[1] || '';
+      '<div class="stage-fields-actions"><button class="btn" type="submit">Post</button></div></form>' +
+      '<p class="detail-muted wk-talk-off" hidden></p>';
+    var forumEl = el.querySelector('.wk-talk-forum'), listEl = el.querySelector('.wk-talk-list'), form = el.querySelector('.wk-talk-form');
+    var box = form.querySelector('textarea'), error = form.querySelector('.wk-talk-error'), offEl = el.querySelector('.wk-talk-off');
+    var exists = null, old = [], busy = false, forum = null, unsubOld = null, unsubPost = null;
+    var marked = (/[#&]c=([^&]+)/.exec(location.hash) || [])[1] || '';
     marked = marked ? decodeURIComponent(marked) : '';
 
-    function me(){ var m = o.me(); return m && m.email ? m.email.toLowerCase() : ''; }
-    // Who hears of a new comment, as the server works it out: whoever made the card, its
-    // assignees and whoever has commented, but not me. → [{ email, name }]
-    function hearers(){
-      var c = o.card() || {}, seen = {}, out = [];
-      var add = function(e, n){ e = String(e || '').toLowerCase(); if (!e || e === me() || seen[e]) return; seen[e] = 1; out.push({ email: e, name: n || e }); };
-      if (c.by) add(c.by.email, c.by.name);
-      (c.assignees || []).forEach(function(p){ add(p.email, p.name); });
-      list.forEach(function(x){ if (x.by) add(x.by.email, x.by.name); });
-      return out;
-    }
-    function names(ps){
-      var n = ps.map(function(p){ return p.name; });
-      return n.length > 3 ? n.slice(0, 3).join(', ') + ' and ' + (n.length - 3) + ' more' : n.length > 1 ? n.slice(0, -1).join(', ') + ' and ' + n[n.length - 1] : n[0];
-    }
-
-    function render(){
-      var draft = editing && listEl.querySelector('.wk-talk-edit textarea');
-      var kept = draft ? draft.value : null;
-      if (!loaded) { listEl.innerHTML = '<li class="detail-muted">Loading…</li>'; return; }
-      showMoved();
-      if (!list.length) { listEl.innerHTML = '<li class="detail-muted wk-none">No comments yet.</li>'; return; }
-      listEl.innerHTML = list.map(function(x){
-        var mine = x.by && String(x.by.email || '').toLowerCase() === me();
-        var head = '<div class="wk-talk-head"><strong>' + esc((x.by && (x.by.name || x.by.email)) || 'Someone') + '</strong> <span class="detail-muted">' + esc(when(x.at || 0)) + (x.editedAt ? ' · edited' : '') + '</span>' +
-          (mine && editing !== x.id ? ' <button class="btn-text wk-talk-act" type="button" data-act="edit">Edit</button>' : '') +
-          (mine || o.fullWrite() ? ' <button class="btn-text wk-talk-act" type="button" data-act="delete">Delete</button>' : '') + '</div>';
-        var body = editing === x.id
-          ? '<form class="wk-talk-edit" novalidate><textarea class="md-field" rows="3" maxlength="' + MAX + '">' + esc(kept !== null ? kept : x.text) + '</textarea>' +
-            '<div class="stage-fields-actions"><button class="btn" type="submit">Save</button><button class="btn" type="button" data-act="cancel">Cancel</button></div></form>'
-          : '<div class="wk-desc">' + BoldMarkdown.render(x.text) + '</div>';
-        return '<li class="wk-talk-item' + (x.id === marked ? ' is-marked' : '') + '" id="c-' + esc(x.id) + '" data-id="' + esc(x.id) + '">' + head + body + '</li>';
+    function draw(){
+      if (exists === null) return;
+      if (exists) {
+        // The thread: Conversations' forum, that one conversation.
+        if (!forum && window.BoldConversations) {
+          forum = BoldConversations.create({ note: false, title: false, thread: postId, project: { id: pid, title: function(){ return ''; } } });
+          forumEl.appendChild(forum.el);
+        }
+        listEl.hidden = true; form.hidden = true; offEl.hidden = true;
+        return;
+      }
+      // Not started: what the card's comments said before, then the first message.
+      listEl.hidden = !old.length;
+      listEl.innerHTML = old.map(function(x){
+        return '<li class="wk-talk-item' + (x.id === marked ? ' is-marked' : '') + '" id="c-' + esc(x.id) + '"><div class="wk-talk-head"><strong>' +
+          esc((x.by && (x.by.name || x.by.email)) || 'Someone') + '</strong> <span class="detail-muted">' + esc(when(x.at || 0)) + '</span></div>' +
+          '<div class="wk-desc">' + BoldMarkdown.render(x.text || '') + '</div></li>';
       }).join('');
+      var can = BOLD.can('conversations', 'edit');
+      form.hidden = !can; offEl.hidden = can;
+      if (!can) offEl.textContent = BOLD.cannotReason('conversations', 'edit');
+      box.placeholder = old.length ? 'Go on with it: Markdown' : 'Start the conversation: Markdown';
     }
 
-    var unsub = ref.collection('comments').orderBy('at').onSnapshot(function(snap){
-      list = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
-      var first = !loaded;
-      loaded = true; render();
-      // A link to a comment: scrolled to once it's on the page.
-      if (first && marked) setTimeout(function(){ var m = document.getElementById('c-' + marked); if (m) m.scrollIntoView({ block: 'center' }); }, 0);
-    }, function(err){
-      console.error('[BOLD Lab] loading the conversation failed', err);
-      loaded = true; list = []; listEl.innerHTML = '<li class="detail-muted">Couldn’t load the conversation.</li>';
-    });
-
-    // Where it goes on: the box, or a link to its conversation.
-    function showMoved(){
-      form.hidden = moved;
-      movedEl.hidden = !moved;
-      if (moved) movedEl.innerHTML = 'This conversation goes on in Conversations. <a href="conversations.html#post=' + encodeURIComponent(postId) + '">Open it</a>';
-      convoBtn.hidden = moved || !list.length || !BOLD.can('conversations', 'edit');
-    }
-    // Whoever can't see Conversations isn't told (the read is refused): they keep the box, which the rules close.
+    // Whether it's started (a conversation that isn't there yet can be asked about: firestore.rules).
     try {
-      unsubPost = firebase.firestore(BOLD.getApp()).collection('conversations').doc(postId).onSnapshot(function(d){ moved = d.exists; showMoved(); }, function(){});
-    } catch (e){}
-    convoBtn.addEventListener('click', function(){
-      if (busy) return;
-      BOLD.confirmAction({ title: 'Make these comments a conversation?', go: 'Make it a conversation', effects: [
-        'Copy the card’s ' + (list.length === 1 ? 'comment' : list.length + ' comments') + ' to Conversations, each by whoever wrote it',
-        'Tell everyone who sees Conversations, on their Notifications page',
-        'Close the card to comments: it goes on there'] }).then(function(go){
-        if (!go) return;
-        busy = true; convoBtn.disabled = true; error.hidden = true;
-        return firebase.app().functions('europe-west2').httpsCallable('commentConversation')({ on: 'card/' + pid + '/' + ref.id }).then(function(){ busy = false; convoBtn.disabled = false; });
-      }).catch(function(err){
-        console.error('[BOLD Lab] making a conversation failed', err);
-        busy = false; convoBtn.disabled = false;
-        fail((err && err.code && err.code !== 'functions/internal' && err.message) || 'Couldn’t make it a conversation — try again.');
-      });
-    });
+      unsubPost = firebase.firestore(BOLD.getApp()).collection('conversations').doc(postId).onSnapshot(function(d){ exists = d.exists; draw(); },
+        function(err){ console.error('[BOLD Lab] loading the card’s conversation failed', err); exists = false; draw(); });
+    } catch (e){ exists = false; }
+    unsubOld = ref.collection('comments').orderBy('at').onSnapshot(function(snap){
+      var first = !old.length && snap.size;
+      old = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      draw();
+      if (first && marked) setTimeout(function(){ var m = document.getElementById('c-' + marked); if (m) m.scrollIntoView({ block: 'center' }); }, 0);
+    }, function(){ old = []; draw(); });
+
     function fail(msg){ error.textContent = msg; error.hidden = false; }
     form.addEventListener('submit', function(e){
       e.preventDefault();
-      var text = box.value.trim(), m = o.me();
-      if (busy || !m) return;
+      var text = box.value.trim();
+      if (busy) return;
       if (!text) return fail('Write something first.');
       error.hidden = true;
-      var who = hearers();
-      (who.length ? BOLD.confirmAction({ title: 'Post it?', go: 'Post', effects: ['Send ' + names(who) + ' a Slack message about it, within a few minutes'] }) : Promise.resolve(true)).then(function(go){
+      BOLD.confirmAction({ title: 'Start the card’s conversation?', go: 'Post', effects: [
+        'Start it in Conversations, about this project' + (old.length ? ', with the card’s ' + (old.length === 1 ? 'comment' : old.length + ' comments') + ' before it, each by whoever wrote it' : ''),
+        'Tell the project’s people, on their Notifications page'] }).then(function(go){
         if (!go) return;
         busy = true;
-        return ref.collection('comments').add({ text: text.slice(0, MAX), by: { email: m.email, name: m.displayName || m.email }, at: Date.now() }).then(function(){
+        return firebase.app().functions('europe-west2').httpsCallable('commentConversation')({ on: 'card/' + pid + '/' + ref.id, text: text.slice(0, MAX) }).then(function(){
           busy = false; box.value = '';
         });
       }).catch(function(err){
-        console.error('[BOLD Lab] posting a comment failed', err);
-        busy = false; fail('Couldn’t post it — try again.');
+        console.error('[BOLD Lab] starting the card’s conversation failed', err);
+        busy = false; fail((err && err.code && err.code !== 'functions/internal' && err.message) || 'Couldn’t post it — try again.');
       });
     });
-    listEl.addEventListener('click', function(e){
-      var b = e.target.closest('[data-act]'), li = b && b.closest('.wk-talk-item');
-      if (!li) return;
-      var id = li.getAttribute('data-id'), act = b.getAttribute('data-act');
-      if (act === 'edit') { editing = id; render(); var t = li.ownerDocument.querySelector('#c-' + CSS.escape(id) + ' textarea'); if (t) t.focus(); }
-      else if (act === 'cancel') { editing = null; render(); }
-      else if (act === 'delete') {
-        if (!window.confirm('Delete this comment?')) return;
-        ref.collection('comments').doc(id).delete().catch(function(err){ console.error('[BOLD Lab] deleting a comment failed', err); fail('Couldn’t delete it — try again.'); });
-      }
-    });
-    listEl.addEventListener('submit', function(e){
-      var f = e.target.closest('.wk-talk-edit');
-      if (!f) return;
-      e.preventDefault();
-      var id = f.closest('.wk-talk-item').getAttribute('data-id'), text = f.querySelector('textarea').value.trim();
-      if (!text) return;
-      ref.collection('comments').doc(id).update({ text: text.slice(0, MAX), editedAt: Date.now() }).then(function(){ editing = null; render(); })
-        .catch(function(err){ console.error('[BOLD Lab] saving a comment failed', err); fail('Couldn’t save it — try again.'); });
-    });
+    BOLD.onAccess(function(){ draw(); });
 
-    render();
-    return { el: el, stop: function(){ if (unsub) unsub(); unsub = null; if (unsubPost) unsubPost(); unsubPost = null; } };
+    return { el: el, stop: function(){
+      if (unsubOld) unsubOld(); if (unsubPost) unsubPost(); unsubOld = unsubPost = null;
+      if (forum && forum.away) forum.away();
+    } };
   }
   return { create: create };
 })();

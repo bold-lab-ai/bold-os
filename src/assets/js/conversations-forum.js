@@ -13,11 +13,11 @@
 // conversations about it (`project`), new ones about it too, and its address is the project page's own
 // (#id=…&tab=conversations&post=<id>).
 // A page can show one conversation alone (thread: its id; no list, no All posts): a proposed project's.
-// BoldConversations.create({ project?: { id, title: () => its title }, thread?, note? }) → { el (kept: put it back after a redraw), away() }.
+// BoldConversations.create({ project?: { id, title: () => its title }, thread?, note? (false: none), title? (false: no thread title) }) → { el (kept: put it back after a redraw), away() }.
 window.BoldConversations = (function(){
   // The forum's markup (once Conversations' page's).
   function shell(note){
-    return '<p class="bs-note">' + BOLD.escapeHtml(note || 'Posts and replies are saved.') + '</p>' +
+    return (note === false ? '' : '<p class="bs-note">' + BOLD.escapeHtml(note || 'Posts and replies are saved.') + '</p>') +
       '<div class="bs-cols"><section class="bs-forum" aria-label="Forum">' +
         '<div class="bs-sort" role="group" aria-label="Sort">' +
           '<button type="button" class="bs-sortbtn" data-sort="top" aria-pressed="true">Top</button>' +
@@ -119,9 +119,10 @@ window.BoldConversations = (function(){
       // Made from a comment thread on the BOLDiquette or a guide, or a card's comments: where, and a link back.
       if (m.source === 'comment' && m.from) {
         var f = m.from, card = f.kind === 'card';
-        return '<p class="bs-origin">' + (card ? 'From the comments on the card ' + esc(f.part || '') + ', in ' + esc(f.page || 'a project')
+        if (card && opts.thread) return '';   // on the card itself
+        return '<p class="bs-origin">' + (card ? 'On the card ' + esc(f.part || '') + ', in ' + esc(f.page || 'a project')
             : 'From a comment thread on ' + esc(f.page || 'a page') + (f.part ? ' › ' + esc(f.part) : '')) +
-          (m.broughtBy && m.broughtBy.name ? ', made a conversation by ' + esc(m.broughtBy.name) : '') +
+          (m.broughtBy && m.broughtBy.name && !card ? ', made a conversation by ' + esc(m.broughtBy.name) : '') +
           (f.url ? ' · <a href="' + esc(f.url) + '">' + (card ? 'Open the card' : 'See the passage') + '</a>' : '') + '</p>';
       }
       if (m.source !== 'slack' || !m.slack) return '';
@@ -348,7 +349,8 @@ window.BoldConversations = (function(){
         var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
         var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
         threadEl.innerHTML = (opts.thread ? '' : '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a>') +
-          '<div class="bs-thread-head"><h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>' + foldAllHtml(p) + '</div>' + columnHtml(p, p.id, head);
+          // Its title, unless the page shows it already (a card's, title: false); the head stays for Expand all.
+        '<div class="bs-thread-head">' + (opts.title === false ? '' : '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>') + foldAllHtml(p) + '</div>' + columnHtml(p, p.id, head);
         clampLong();
         drawTree(p);
         if (linkedMsg) { setTimeout(function(){ showLinked(p.id); }, 0); }
