@@ -377,6 +377,41 @@
     var list = box.querySelector('.ha-log'), form = box.querySelector('.ha-form'), text = form.querySelector('textarea');
     var line = box.querySelector('.ha-line'), still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
     function md(t){ return window.BoldMarkdown ? BoldMarkdown.render(t, { breaks: true }) : '<p>' + esc(t) + '</p>'; }
+    // Talking: once BOLD answers, Conversations folds away (its height and opacity, eased) and then the side column
+    // comes up beside the letter, glided from where it was (measured before and after: FLIP); closing the box
+    // brings Conversations back the same way. At once with reduced motion (CSS: .is-talking, index.css).
+    var feedEl = document.getElementById('homeFeed'), talkEl = document.querySelector('.home-talk'), sideEl = document.querySelector('.home-side');
+    var topEl = document.querySelector('.home-top'), letterEl = document.getElementById('homeLetter'), busyMove = false;
+    function glide(el, before){
+      var after = el.getBoundingClientRect(), dx = before.left - after.left, dy = before.top - after.top;
+      if (still || !el.animate || (!dx && !dy)) return;
+      el.animate([{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }], { duration: 520, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    }
+    function setTalking(on){
+      feedEl.classList.toggle('is-talking', on);
+      // The side column's top level with the letter's first line (under the kicker).
+      if (on && letterEl && topEl) feedEl.style.setProperty('--talk-top', Math.max(0, letterEl.getBoundingClientRect().top - topEl.getBoundingClientRect().top) + 'px');
+    }
+    function talking(on){
+      if (!feedEl || !talkEl || !sideEl || busyMove || feedEl.classList.contains('is-talking') === on) return;
+      if (still || !talkEl.animate) { setTalking(on); return; }
+      busyMove = true;
+      if (on) {
+        var h = talkEl.offsetHeight;
+        talkEl.style.overflow = 'hidden';
+        talkEl.animate([{ height: h + 'px', opacity: 1 }, { height: '0px', opacity: 0 }], { duration: 340, easing: 'ease-in' }).onfinish = function(){
+          talkEl.style.overflow = '';
+          var before = sideEl.getBoundingClientRect();
+          setTalking(true); glide(sideEl, before); busyMove = false;
+        };
+      } else {
+        var was = sideEl.getBoundingClientRect();
+        setTalking(false); glide(sideEl, was);
+        var h2 = talkEl.offsetHeight;
+        talkEl.style.overflow = 'hidden';
+        talkEl.animate([{ height: '0px', opacity: 0 }, { height: h2 + 'px', opacity: 1 }], { duration: 420, easing: 'ease-out', delay: 120, fill: 'backwards' }).onfinish = function(){ talkEl.style.overflow = ''; busyMove = false; };
+      }
+    }
     function item(m, fresh){
       return '<li class="ha-msg ha-' + m.who + (fresh ? ' is-new' : '') + '"><p class="ha-who">' + (m.who === 'you' ? 'You' : 'BOLD') + '</p><div class="ha-text md-desc">' + md(m.text) + '</div></li>';
     }
@@ -389,7 +424,7 @@
       if (yes) setTimeout(function(){ text.focus(); }, still ? 0 : 260);
     }
     line.addEventListener('click', function(){ open(true); });
-    box.querySelector('.ha-close').addEventListener('click', function(){ open(false); line.focus(); });
+    box.querySelector('.ha-close').addEventListener('click', function(){ open(false); talking(false); line.focus(); });
     document.addEventListener('keydown', function(e){
       var t = e.target, tag = t && t.tagName;
       if (e.key === 'Escape' && box.contains(t) && !text.value.trim()) { open(false); line.focus(); return; }
@@ -443,12 +478,15 @@
         var b = form.querySelector('button[type="submit"], button:not([type])');
         if (b) b.disabled = false;
         stream(a || 'Nothing to say to that.');
+        talking(true);
       });
     });
     // Enter sends; Shift+Enter is a new line.
     text.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
     draw();
     if (log.length) open(true);
+    // Back on the page mid-conversation (this visit's log): already talking.
+    if (log.some(function(m){ return m.who === 'bold'; })) setTalking(true);
     }
   })();
 

@@ -140,6 +140,15 @@ body.is-home-feed{font-family:var(--sans); font-size:16px; line-height:1.55;}
 .home-side .home-steps .home-box-sub{font-size:11px;}
 
 /* Talking to BOLD (a preview, hidden): a line under the letter that opens into the box. */
+/* Talking to BOLD (index.js talking()): once BOLD answers, Conversations folds away and the side column (their
+   week, projects…) comes up beside the letter, its top level with the letter's (--talk-top, set from the page). */
+.home-feed.is-talking .home-talk{display:none;}
+@media (min-width:1101px){
+  .home-feed.is-talking{display:grid; grid-template-columns:minmax(0, 1fr) 230px; column-gap:48px; align-items:start;}
+  .home-feed.is-talking .home-cols{display:contents;}
+  .home-feed.is-talking .home-top{grid-column:1; grid-row:1; margin-bottom:0; min-width:0;}
+  .home-feed.is-talking .home-side{grid-column:2; grid-row:1; margin-top:var(--talk-top, 0);}
+}
 .home-ask{max-width:var(--article-max, 40em); margin:18px 0 0; font-family:var(--sans);}
 .home-ask[hidden]{display:none;}
 /* The line: quiet words and a blinking caret over a hairline, which draws out in the accent on hover. */
