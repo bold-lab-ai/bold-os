@@ -426,6 +426,8 @@ module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, Ht
       let to = [];
       // Started private on the site: its starter chose whether to tell (an invitation, onConversationInvite).
       if (d.private === true && d.source === 'site') return;
+      // A board card's, made by its page being opened: nothing's been said; its replies are told as they come.
+      if (d.opened === true) return;
       // About a project (its Conversations tab, or a card's comments): its people, not the whole lab.
       if (d.project && d.private !== true) {
         to = (((await db.collection('projectWorkspaces').doc(String(d.project)).get()).data() || {}).members || []).map((e) => String(e).toLowerCase());

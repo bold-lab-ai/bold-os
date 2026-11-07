@@ -255,9 +255,13 @@
    .detail-badges, .detail-grid, .detail-abstract above), from the tab panel's left edge,
    not the board's width (.wk.wk-paged). */
 .wk.wk-paged{width:auto; margin-left:0; margin-top:0;}
-.wk-page{max-width:var(--article-max); padding-top:26px; font-family:var(--serif); font-size:16px; line-height:1.55; color:var(--ink-soft);}
+/* As a conversation on Conversations' page (conversations.css): sans, its title as a thread's, as wide. */
+.wk-page{padding-top:26px; font-family:var(--sans); font-size:16px; line-height:1.55; color:var(--ink-soft);}
 .wk-page .detail-back{margin-bottom:14px;}
-.wk-page .detail-head h2.wk-page-title{font-size:clamp(24px, 3.6vw, 32px); line-height:1.2; font-weight:800; color:var(--ink); max-width:none;}
+.wk-page .detail-head h2.wk-page-title{font-family:var(--sans); font-size:20px; line-height:1.3; font-weight:600; color:var(--ink); max-width:none;}
+.wk-page .detail-head .wk-edit{font-size:13px; color:var(--muted);}
+.wk-page .detail-grid dd{font-size:14px;}
+.wk-page .wk-talk, .wk-page .detail-grid{max-width:none;}
 .wk-page .detail-badges{margin-top:6px;}
 .wk-page .wk-badge-code{color:var(--link);}
 .wk-page .wk-badge-content{color:var(--plum);}

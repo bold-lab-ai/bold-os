@@ -9,8 +9,8 @@
 // gives the same post.
 // commentConversation { on: 'handbook/<slug>' | 'guides/<slug>', id: <the thread's first comment> } → { id, title, existed }.
 // A board card's conversation (talk.js; since 2026-11-07 its only chat): { on: 'card/<project>/<card>', text? } → the post
-// cm-card-<project>-<card>, with `project` (its project's Conversations). Started by its first message (`text`), with
-// any comments it had from before copied in first; asked again with `text`, that's added to it (agents' work tool).
+// cm-card-<project>-<card>, with `project` (its project's Conversations): the card itself, made when its page is first
+// opened (no `text`), any comments it had from before copied in as replies; asked again with `text`, that's added to it (agents' work tool).
 // A card has no field for it: the post existing is what closes the card's old comments (firestore.rules).
 // Who may: whoever may post in Conversations and see the page (the project). Only where everyone who sees
 // Conversations can see the page too, so nothing goes further than it was.
@@ -94,23 +94,24 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
       return { id: c.id, title: had.data().title, existed: true };
     }
     const comments = (await cardRef.collection('comments').get()).docs.map((d) => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0));
-    // Its description first (its notes and any images: talk.js descriptionOf), by whoever made it; then what was said.
-    const desc = descriptionOf(card);
-    if (desc) comments.unshift({ text: desc, by: card.by || {}, at: card.at || 0 });
+    // The post is the card (2026-11-07): by whoever made it, its description (its notes and any images: talk.js
+    // descriptionOf) its text, empty if none; what was said before, then `text`, are its replies. Made the first time
+    // the card's page is opened (no `text`: `opened`, told to nobody, onConversationCreated), so a card's
+    // conversation is a conversation from the start; the lists leave it out until it has a reply (conversations-forum.js).
     if (text) comments.push({ text, by: { email, name: await nameOf(email) }, at: Date.now() });
-    if (!comments.length) throw new HttpsError('invalid-argument', 'Write something first.');
-    const first = comments[0], rest = comments.slice(1);
+    const first = { text: descriptionOf(card), by: card.by || {}, at: card.at || 0 }, rest = comments;
     const cardTitle = String(card.title || 'A card').slice(0, 200);
     const title = cardTitle.length > MAX_TITLE ? cardTitle.slice(0, MAX_TITLE - 3).replace(/\s+\S*$/, '') + '…' : cardTitle;
     const from = { kind: 'card', on: 'card/' + c.pid + '/' + c.card, page: String(ws.title || 'A project').slice(0, 200), part: cardTitle,
       url: projectPageUrl(ws.cardId || c.pid, ws.boardId) + '&tab=work&card=' + encodeURIComponent(c.card) };
     const batch = db.batch();
     batch.create(ref, Object.assign({ title, body: String(first.text || ''), at: first.at || Date.now(), source: 'comment', from, project: c.pid,
-      private: false, readers: [], votes: {}, replies: rest.length, commentReplies: rest.length,
+      private: false, readers: [], votes: {}, replies: rest.length, commentReplies: rest.length, opened: !text,
       broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() }, by(first)));
+    // In order, each answering the one before (a Slack thread's way: conversations-forum.js parentOf).
     rest.forEach((r, i) => batch.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: c.id, body: String(r.text || ''), at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
     try { await batch.commit(); }
-    catch (e) { const again = await ref.get(); if (again.exists) return { id: c.id, title: again.data().title, existed: true }; throw e; }
+    catch (e) { const again = await ref.get(); if (again.exists) { if (text) await addTo(ref, email, text); return { id: c.id, title: again.data().title, existed: true }; } throw e; }
     return { id: c.id, title, existed: false, replies: rest.length };
   }
 

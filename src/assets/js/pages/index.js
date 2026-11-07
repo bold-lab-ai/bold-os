@@ -127,6 +127,33 @@
   }
 
   // ---- The letter ----
+  // It's put together once what it says is in, a moment after the rest of the page, so it takes no room until then;
+  // when it comes, the page below slides down to make room as it fades in (put). It waits for the lab's part too (or
+  // 2.5 s after its first lines), so it comes once; after that a change of height glides as well (measured with no
+  // glide running, so it's the real one). Reduced motion: put in at once.
+  var calm = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var released = false, glide = null, holdTimer = 0, pending = '', lastHtml = '';
+  var labIn = function(){ return !!(state.all && state.venues && state.events && state.posts); };
+  function put(el, html){
+    pending = html;
+    if (!released) {
+      if (!labIn()) { if (!holdTimer) holdTimer = setTimeout(function(){ released = true; put(el, pending); }, 2500); return; }
+      released = true; clearTimeout(holdTimer);
+    }
+    if (html === lastHtml) return;
+    var first = !lastHtml;
+    if (glide) { glide.cancel(); glide = null; el.style.overflow = ''; }
+    var before = el.getBoundingClientRect().height;
+    el.innerHTML = lastHtml = html;
+    var after = el.getBoundingClientRect().height;
+    if (calm || !el.animate) return;
+    if (Math.abs(after - before) > 2) {
+      el.style.overflow = 'hidden';
+      glide = el.animate([{ height: before + 'px' }, { height: after + 'px' }], { duration: first ? 420 : 320, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      glide.onfinish = function(){ glide = null; el.style.overflow = ''; };
+    }
+    if (first) el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 420, delay: 120, easing: 'ease-out', fill: 'backwards' });
+  }
   function write(){
     var el = document.getElementById('homeLetter');
     if (!el || !state.forYou || !state.notes || !state.meetings) return;   // what decides the first lines isn't in yet
@@ -221,10 +248,10 @@
     // When it was written, beside the date: BOLD LLM's when it wrote it; the rule-based one when the page first put it together.
     letterAt = al ? state.llmLetter.at : (ruleAt = ruleAt || Date.now());
     drawToday();
-    if (al) { el.innerHTML = '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al; return; }
-    el.innerHTML = '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '') +
+    if (al) { put(el, '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al); return; }
+    put(el, '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '') +
       (state.letterChoice === 'bold' ? '<p class="hl-by">' + (state.letterWriting ? 'BOLD LLM is writing today’s letter; this is the rule-based one meanwhile.' : 'BOLD LLM couldn’t write today’s letter, so this is the rule-based one.') +
-        ' <a href="profile.html#agents">Who writes it</a></p>' : '');
+        ' <a href="profile.html#agents">Who writes it</a></p>' : ''));
   }
   // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
   var LEN_KEY = 'boldLetterLength';

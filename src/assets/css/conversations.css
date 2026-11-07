@@ -60,7 +60,7 @@ a.bs-author:hover, a.bs-author:focus-visible{text-decoration:underline; text-und
 .bs-text{margin:6px 0 4px; font-size:14px; color:var(--ink-soft); overflow-wrap:anywhere;}
 .bs-title a{color:inherit; text-decoration:none;}
 .bs-title a:hover{color:var(--link); text-decoration:underline;}
-.bs-by a{color:inherit;}
+.bs-by a, .bs-by .bs-author{color:inherit;}   /* a name the same, linked to a profile or not */
 /* On the list, a post's text is cut to about four lines, fading out. */
 .bs-clip{max-height:6.2em; overflow:hidden; -webkit-mask-image:linear-gradient(to bottom, #000 60%, transparent); mask-image:linear-gradient(to bottom, #000 60%, transparent);}
 .bs-text p{margin:0 0 .5em;} .bs-text ul, .bs-text ol{margin:.2em 0 .5em; padding-left:1.4em;} .bs-text pre{white-space:pre-wrap; font-size:13px;} .bs-text blockquote{margin:.3em 0; padding-left:10px; border-left:3px solid var(--line); color:var(--muted);}
@@ -183,16 +183,13 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .bs-forum .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:12px;}
 .bs-forum .back-link:hover{color:var(--link);}
 /* A thing's conversation where it is (talk.js: a card's, a proposed change's): its old comments, its first message, the forum. */
-.wk-talk-list{list-style:none; margin:0 0 14px; padding:0;}
-.wk-talk-item{padding:10px 0; border-top:1px solid var(--line);}
-.wk-talk-item:first-child{border-top:0; padding-top:0;}
-.wk-talk-item.is-marked{background:var(--wash); padding-left:10px; padding-right:10px;}
-.wk-talk-head{font-family:var(--sans); font-size:14px; margin-bottom:4px;}
-.wk-talk-form textarea{width:100%; box-sizing:border-box; font:inherit; font-size:15px;}
-.wk-talk .wk-talk-forum .bs-root{margin-top:6px;}
+.wk-talk-list{list-style:none; margin:0; padding:0;}
+.wk-talk-item.is-marked{background:var(--wash);}
+.wk-talk-ahead[hidden], .wk-talk-form[hidden]{display:none;}
+.wk-talk-list:not([hidden]) + .wk-talk-form{margin-top:10px;}
+.bs-readers-static{display:flex; align-items:center; gap:6px;}
+.wk-talk .wk-talk-forum .bs-root, .wk-talk .wk-talk-ahead{margin-top:6px;}
 .wk-talk .detail-abstract-label{font-family:var(--sans); font-size:13px; color:var(--muted); margin-bottom:6px;}
-.wk-talk .wk-desc{font-size:15px;}
-.wk-talk .stage-fields-actions{display:flex; gap:10px; margin-top:8px;}
 /* A proposed change's discussion (pages/guide.js), under its buttons. */
 .gd-talk .wk-talk{margin:18px 0 0;}
 /* A conversation that's a page's own section (talk.js heading: a card's): its heading, as the BOLDiquette's
@@ -252,3 +249,6 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .event-form .bs-new-who label{display:flex; margin:0; color:var(--ink); cursor:pointer;}
 .event-form .bs-new-who input[type=radio]{width:auto; margin:0; flex:none;}
 .event-form .bs-new-who .bs-who-add{width:100%; max-width:360px; margin:0;}
+/* Reply, under a conversation (conversations-forum.js drawAnswer): the home page's box (bold.css .ha-box); what it goes on from, on the left. */
+.bs-answer{margin:18px 0 0; font-family:var(--sans);}
+.bs-answer .bs-answer-to{margin-right:auto; font-size:13px; color:var(--muted);}

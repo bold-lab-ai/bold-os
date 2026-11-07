@@ -15,6 +15,55 @@
 // A page can show one conversation alone (thread: its id; no list, no All posts): a proposed project's.
 // BoldConversations.create({ project?: { id, title: () => its title }, thread?, note? (false: none), title? (false: no thread title), peek? (true: the home page's: no search box or filters, and a conversation opens on Conversations' page) }) → { el (kept: put it back after a redraw), away() }.
 window.BoldConversations = (function(){
+  var EYE = '<svg class="bs-readers-eye" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
+  // Reply: the home page's Reply to BOLD, a line that opens into a box (bold.css .ha-box), under every conversation
+  // (the forum's, and a thing's before it starts: talk.js). replyBox({ send: text → a promise (kept open if it
+  // fails), label? }) → { el, note(text): what it goes on from, beside the button, reset(), into(parent): put it (back)
+  // at the parent's end, keeping the focus }.
+  function replyBox(o){
+    var esc = BOLD.escapeHtml, label = o.label || 'Reply';
+    var el = document.createElement('section');
+    el.className = 'ha-box bs-answer';
+    el.innerHTML = '<button type="button" class="ha-line" aria-expanded="false"><span class="ha-line-text">' + esc(label) + '</span><span class="ha-caret" aria-hidden="true"></span></button>' +
+      '<div class="ha-fold"><form class="ha-form" novalidate><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="2" maxlength="10000" aria-label="' + esc(label) + '" placeholder="' + esc(label) + '…"></textarea>' +
+      '<div class="ha-actions"><span class="bs-answer-to"></span><button type="button" class="btn-text ha-close">Close</button><button type="submit" class="btn-box is-primary">' + esc(o.button || 'Reply') + '</button></div></form></div>';
+    var line = el.querySelector('.ha-line'), form = el.querySelector('form'), box = form.querySelector('textarea'), go = form.querySelector('button[type=submit]');
+    function open(yes){
+      el.classList.toggle('is-open', yes);
+      line.setAttribute('aria-expanded', String(yes));
+      if (yes) { try { box.focus({ preventScroll: true }); } catch (e){ box.focus(); } }
+    }
+    line.addEventListener('click', function(){ open(true); });
+    el.querySelector('.ha-close').addEventListener('click', function(){ open(false); line.focus(); });
+    el.addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && !box.value.trim()) { open(false); line.focus(); }
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.isComposing) { e.preventDefault(); e.stopPropagation(); form.requestSubmit(); }
+    });
+    // Clicked away from, empty: closed again (as on the home page).
+    document.addEventListener('click', function(e){ if (el.classList.contains('is-open') && !el.contains(e.target) && el.isConnected && !box.value.trim()) open(false); });
+    form.addEventListener('submit', function(e){
+      e.preventDefault(); e.stopPropagation();
+      var body = box.value.trim();
+      if (!body || go.disabled) return;
+      go.disabled = true;
+      Promise.resolve(o.send(body)).then(function(ok){
+        go.disabled = false;
+        if (ok === false) return;
+        box.value = ''; box.dispatchEvent(new Event('input', { bubbles: true })); open(false);
+      }, function(){ go.disabled = false; });
+    });
+    return {
+      el: el,
+      note: function(t){ el.querySelector('.bs-answer-to').textContent = t || ''; },
+      label: function(t){ line.querySelector('.ha-line-text').textContent = t; box.placeholder = t + '…'; box.setAttribute('aria-label', t); },
+      reset: function(){ box.value = ''; open(false); },
+      into: function(parent){
+        var had = document.activeElement && el.contains(document.activeElement) ? document.activeElement : null;
+        if (el.parentNode !== parent || parent.lastChild !== el) parent.appendChild(el);
+        if (had && document.activeElement !== had) { try { had.focus({ preventScroll: true }); } catch (e){ had.focus(); } }
+      }
+    };
+  }
   // The forum's markup (once Conversations' page's).
   function shell(note, peek){
     return (note === false ? '' : '<p class="bs-note">' + BOLD.escapeHtml(note || 'Posts and replies are saved.') + '</p>') +
@@ -139,7 +188,6 @@ window.BoldConversations = (function(){
         render(); drawPicks();
       }, function(){});
     }
-    var EYE = '<svg class="bs-readers-eye" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
     var readersOpen = {};   // { pid: true }: its Who can read it unfolded, kept across redraws
     var who = null;   // Change, open: { pid, private } (its people: picks.who)
     var starterOf = function(p){ return String(p.createdBy || (p.broughtBy || {}).email || '').toLowerCase(); };
@@ -546,6 +594,28 @@ window.BoldConversations = (function(){
       render();
       var el = document.getElementById('m-' + id); if (el) el.scrollIntoView({ block: 'center' });
     }
+    // ---------- Reply, under the thread (replyBox, below) ----------
+    // It goes on from the conversation's last leaf (the latest message nobody has answered yet). One element,
+    // kept across the redraws, so what's written in it stays; a message's own Reply or Branch out opens its own
+    // box, and what's written here stays here (it isn't moved there).
+    var answer = null, answerPid = '';
+    function lastLeaf(p){
+      return [p].concat(messages[p.id] || []).filter(function(m){ return !kids(m.id).length; })
+        .sort(function(a, b){ return ms(b.at) - ms(a.at); })[0] || p;
+    }
+    var ANSWER = false;   // hidden for now (2026-11-07): replies only through a message's own Reply
+    function drawAnswer(p){
+      if (!canPost || !ANSWER) return;
+      if (!answer) answer = replyBox({ send: function(body){
+        var q2 = postOf(answerPid); if (!q2) return Promise.reject(new Error('No such conversation'));
+        return newReply(q2.id, lastLeaf(q2).id, body, false, false).then(function(ref){ show(q2.id, ref.id); }, function(err){ oops('Replying')(err); throw err; });
+      } });
+      // Another conversation: an empty box, closed.
+      if (answerPid !== p.id) { answerPid = p.id; answer.reset(); }
+      var to = lastLeaf(p);
+      answer.note('Goes on from ' + (to.id === p.id ? 'the post' : (to.name || 'someone') + (to.viaAgent ? '’s agent' : '')));
+      answer.into(threadEl);
+    }
     function render(){
       var open = route().post;
       // A peek given a conversation (an old index.html#post=… link): it opens on Conversations' page.
@@ -563,6 +633,8 @@ window.BoldConversations = (function(){
         var keep = threadEl.querySelector('.bs-replyform');
         // The post is the tree's root: the first message of the conversation's column, under its title.
         var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
+        // A card's with no description: it says what its first message is.
+        if (!first.body && p.from && p.from.kind === 'card') first.body = '_Made the card._';
         var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
         threadEl.innerHTML = (opts.thread ? '' : '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a>') +
           // Its title, unless the page shows it already (a card's, title: false); the head stays for Expand all.
@@ -572,6 +644,7 @@ window.BoldConversations = (function(){
         clampLong();
         drawTree(p);
         if (linkedMsg) { setTimeout(function(){ showLinked(p.id); }, 0); }
+        drawAnswer(p);
         var fresh = threadEl.querySelector('.bs-replyform');
         if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id') && keep.getAttribute('data-branch') === fresh.getAttribute('data-branch')) fresh.replaceWith(keep);
         else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
@@ -579,7 +652,8 @@ window.BoldConversations = (function(){
       }
       drawTree(null);
       if (posts === null) { postsEl.innerHTML = '<li class="proj-msg">Loading&hellip;</li>'; return; }
-      var list = posts.slice().sort(sort === 'new' ? function(a, b){ return ms(b.at) - ms(a.at); } : function(a, b){ return score(b) - score(a) || ms(b.at) - ms(a.at); });
+      // A card's conversation made by opening the card (opened, functions/comment-conversation.js): left out until someone replies.
+      var list = posts.filter(function(x){ return !(x.opened && !(x.replies > 0)); }).sort(sort === 'new' ? function(a, b){ return ms(b.at) - ms(a.at); } : function(a, b){ return score(b) - score(a) || ms(b.at) - ms(a.at); });
       fillFilters();
       if (filtering()) {
         if (filt.with) fetchReplies();
@@ -612,7 +686,7 @@ window.BoldConversations = (function(){
       if (!id) return;
       stopMsgs = col().doc(id).collection('messages').onSnapshot(function(snap){
         messages[id] = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
-        if (!threadEl.querySelector('.bs-replyform textarea:focus')) render();   // typing: wait (the box is kept anyway)
+        if (!threadEl.querySelector('.bs-replyform textarea:focus, .bs-answer textarea:focus')) render();   // typing: wait (the box is kept anyway)
       }, function(err){ console.error('[BOLD Lab] loading replies failed', err); messages[id] = []; render(); });
     }
 
@@ -975,7 +1049,7 @@ window.BoldConversations = (function(){
       var merge = function(){
         var seen = {}; posts = [];
         parts.open.concat(parts.mine).forEach(function(p){ if (!seen[p.id]) { seen[p.id] = 1; posts.push(p); } });
-        if (!document.activeElement || !document.activeElement.closest('.bs-replyform')) render();
+        if (!document.activeElement || !document.activeElement.closest('.bs-replyform, .bs-answer')) render();
       };
       var watch = function(qy, key){
         unwatch.push(qy.onSnapshot(function(snap){ parts[key] = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); merge(); }, fail));
@@ -995,5 +1069,5 @@ window.BoldConversations = (function(){
     // away(): it's been taken off the page (a project's other tab): its tree goes with it.
     return { el: root, away: function(){ if (treeEl) treeEl.hidden = true; } };
   }
-  return { create: create };
+  return { create: create, replyBox: replyBox, eye: EYE };
 })();
