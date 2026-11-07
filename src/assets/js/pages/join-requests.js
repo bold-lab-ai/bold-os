@@ -24,8 +24,10 @@
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, unsubs = [], busy = {};
   var groupReqs = [], invited = [], invitedMembers = [], shown = {}, slackIds = {}, actReqs = [];
-  // Asking an applicant to change their request (joinChanges, #261): the note being written, by request id.
-  var asking = {};
+  // Proposing changes to an applicant's answers (joinChanges, #261): the request whose form is open, its
+  // answers as edited so far and the note (one at a time); and the join form's choices (BoldJoin.options).
+  var asking = null, formOpt = null;
+  BoldJoin.options(db, function(o){ formOpt = o; });
 
 
   // Someone's name, linked to their page once they're on the BOLD Slack (the people roster).
@@ -54,7 +56,7 @@
       (shown[r.id] ? BoldJoin.factsHtml(r, { other: true }) : '') +
       '<div class="event-controls">' + moreBtn(r.id) + (open ?
         '<button type="button" class="btn-text jr-approve" data-id="' + esc(r.id) + '"' + off + '>Approve</button>' +
-        '<button type="button" class="btn-text jr-changes" data-id="' + esc(r.id) + '"' + off + (asking[r.id] !== undefined ? ' hidden' : '') + '>Ask for changes</button>' +
+        '<button type="button" class="btn-text jr-changes" data-id="' + esc(r.id) + '"' + off + (asking && asking.id === r.id ? ' hidden' : '') + '>Propose changes</button>' +
         '<button type="button" class="btn-text danger jr-decline" data-id="' + esc(r.id) + '"' + off + '>Decline</button>' :
         (toConfirm(r) ? '<button type="button" class="btn-text jr-i-yes" data-iid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Yes, I invited them</button>' +
           '<button type="button" class="btn-text danger jr-i-no" data-iid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>I didn’t</button>' : '') +
@@ -62,18 +64,24 @@
       '</div></li>';
   }
 
-  // Changes asked for (joinChanges): what was asked and whether they've made them; and the
-  // note being written, with Send (the lab's account emails it to them) and Cancel.
+  // Changes proposed (joinChanges): what was proposed and whether they've sent it again; and, while
+  // proposing, their form filled with their answers (as edited so far), a note, Send and Cancel.
   function changesHtml(r){
     var c = r.changes || {}, by = c.by === (me && me.email) ? 'You' : esc(c.byName || 'Their point of contact');
-    var said = c.note ? ': <span class="lt-text">“' + esc(c.note) + '”</span>' : '';
-    var line = c.status === 'asked' ? '<p class="proj-meta">' + by + ' asked for changes on ' + when(c.at) + said + '. ' +
-        (c.emailed === false ? 'The email didn’t go' + (c.error ? ' (' + esc(c.error) + ')' : '') + ': ask again.' : 'Waiting for them to change it.') + '</p>'
-      : c.status === 'made' ? '<p class="proj-meta">They changed it on ' + when(c.madeAt) + ', as ' + (by === 'You' ? 'you' : by) + ' asked' + said + '.</p>' : '';
-    if (asking[r.id] === undefined) return line;
-    return line + '<div class="event-form jr-changes-form"><label>What should ' + esc(String(r.name || '').split(' ')[0] || 'they') + ' change?' +
-      '<textarea class="jr-changes-note no-tags" data-id="' + esc(r.id) + '" rows="3" maxlength="1000">' + esc(asking[r.id]) + '</textarea></label>' +
-      '<div class="event-form-actions"><button type="button" class="btn-box is-primary jr-changes-send" data-id="' + esc(r.id) + '"' + (busy[r.id] || !asking[r.id].trim() ? ' disabled' : '') + '>Send</button>' +
+    var what = (BoldJoinChanges.lines(r, c.proposed).map(esc).join('; ') || '') + (c.note ? (c.proposed && Object.keys(c.proposed).length ? '; ' : '') + '“' + esc(c.note) + '”' : '');
+    var said = what ? ': <span class="lt-text">' + what + '</span>' : '';
+    var line = c.status === 'asked' ? '<p class="proj-meta">' + by + ' proposed changes on ' + when(c.at) + said + '. ' +
+        (c.emailed === false ? 'The email didn’t go' + (c.error ? ' (' + esc(c.error) + ')' : '') + ': propose them again.' : 'Waiting for them to accept or adjust them.') + '</p>'
+      : c.status === 'made' ? '<p class="proj-meta">They sent it again on ' + when(c.madeAt) + ', after the changes ' + (by === 'You' ? 'you' : by) + ' proposed' + said + '.</p>' : '';
+    if (!asking || asking.id !== r.id) return line;
+    if (!formOpt) return line + '<p class="proj-msg">Loading the form&hellip;</p>';
+    var first = esc(String(r.name || '').split(' ')[0] || 'They');
+    return line + '<div class="event-form join-form jr-changes-form" data-id="' + esc(r.id) + '">' +
+      '<p class="event-form-hint">Change their answers where you’d like them different. ' + first + ' gets an email listing your changes, with a link to their form holding them, to accept, adjust and send.</p>' +
+      BoldJoin.fieldsHtml(Object.assign({}, r, asking.answers), formOpt, { withIdentity: true, noInviter: true }) +
+      '<label>A note for ' + first + ' (optional)<textarea class="jr-changes-note no-tags" rows="2" maxlength="1000">' + esc(asking.note) + '</textarea></label>' +
+      (asking.error ? '<p class="st-error">' + esc(asking.error) + '</p>' : '') +
+      '<div class="event-form-actions"><button type="button" class="btn-box is-primary jr-changes-send" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Send to ' + first + '</button>' +
       '<button type="button" class="btn-text jr-changes-cancel" data-id="' + esc(r.id) + '">Cancel</button></div></div>';
   }
 
@@ -201,13 +209,17 @@
     if (el && !render.jumped) { render.jumped = true; el.scrollIntoView({ block: 'start' }); }
   }
 
-  // The note asking for changes: kept as it's typed, Send on once there's something to send.
-  main.addEventListener('input', function(e){
-    if (!e.target.classList.contains('jr-changes-note')) return;
-    var id = e.target.getAttribute('data-id'), send = main.querySelector('.jr-changes-send[data-id="' + id + '"]');
-    asking[id] = e.target.value;
-    if (send) send.disabled = !!busy[id] || !e.target.value.trim();
-  });
+  // The form proposing changes: its answers and note kept as they're edited, so a redraw keeps them.
+  function keepAsking(e){
+    var form = e.target.closest && e.target.closest('.jr-changes-form');
+    if (!form || !asking) return;
+    var d = BoldJoin.read(form);
+    asking.answers = { name: d.name, email: d.email, links: d.links, institution: d.institution, role: d.role, interests: d.interests, basedIn: d.basedIn,
+      pronouns: d.pronouns, feedback: d.feedback, startDate: d.startDate, endDate: d.endDate, listOnWebsite: d.listOnWebsite, pillars: d.pillars };
+    asking.note = (form.querySelector('.jr-changes-note') || {}).value || '';
+  }
+  main.addEventListener('input', keepAsking);
+  main.addEventListener('change', keepAsking);
 
   main.addEventListener('click', function(e){
     var t = e.target.closest('button');
@@ -282,22 +294,25 @@
       BOLD.confirmAlways({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack', 'Put them in PAN-BOLD (' + (staff ? 'change it on People' : 'a higher group is theirs to ask for, and the PIs and admins decide') + ')'] })
         .then(function(ok){ if (ok) run(function(){ return fn('decideJoinRequest')({ id: id, accept: true }); }); });
     } else if (t.classList.contains('jr-changes')) {
-      asking[id] = ''; render();
-      var box = main.querySelector('.jr-changes-note[data-id="' + id + '"]');
-      if (box) box.focus();
+      asking = { id: id, answers: {}, note: '', error: '' }; render();
+      var form = main.querySelector('.jr-changes-form');
+      if (form) form.scrollIntoView({ block: 'nearest' });
     } else if (t.classList.contains('jr-changes-cancel')) {
-      delete asking[id]; render();
+      asking = null; render();
     } else if (t.classList.contains('jr-changes-send')) {
-      var note = String(asking[id] || '').trim();
-      if (!note) return;
-      BOLD.confirmAlways({ title: 'Ask ' + r.name + ' to change their request?', go: 'Send', effects: ['Email ' + r.name + ' (' + r.email + ') from the lab’s Google account what you wrote, with a link to change their request', 'Their request stays open: you can still approve or decline it'] })
+      var mine = asking, lines = BoldJoinChanges.lines(r, BoldJoinChanges.proposed(r, mine.answers)), note = String(mine.note || '').trim();
+      if (!lines.length && !note) { mine.error = 'Change an answer, or write a note.'; render(); return; }
+      BOLD.confirmAlways({ title: 'Propose these changes to ' + r.name + '?', go: 'Send',
+        effects: lines.concat(['Email ' + r.name + ' (' + r.email + ') from the lab’s Google account ' + (lines.length ? 'these changes' : 'your note') + ', with a link to their form to accept, adjust and send',
+          'Their request stays open: you can still approve or decline it as it is'] ) })
         .then(function(ok){
           if (!ok) return;
+          mine.error = '';
           run(function(){
-            return fn('joinChanges')({ action: 'ask', id: id, note: note }).then(function(res){
-              delete asking[id];
+            return fn('joinChanges')({ action: 'ask', id: id, answers: mine.answers, note: note }).then(function(res){
+              asking = null;
               if (res.data && res.data.emailed === false) window.alert('Saved, but the email didn’t go: ' + (res.data.error || 'try again') + '.');
-            });
+            }).catch(function(err){ mine.error = err && err.message && err.code !== 'functions/internal' ? err.message : 'Couldn’t send it — try again.'; });
           });
         });
     } else if (t.classList.contains('jr-decline')) {

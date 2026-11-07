@@ -7063,26 +7063,40 @@ exports.decideJoinRequest = onCall(
   }
 );
 
-// ---------- Asking for changes to a request to join (#261, 2026-11-07) ----------
-// Whoever decides a request (its inviter; PIs and admins one without an inviter) can ask the
-// applicant to change it instead of approving or declining it: the request stays open, with
-// `changes` { status: 'asked' | 'made', note, by, byName, at, keyHash, madeAt }. The applicant
-// isn't signed in (join.html is for people outside BOLD), so they get an email from the lab's
-// account with a one-time link, join.html?changes=<id>&key=<key> (only its sha256 is kept), to
-// their request, filled in; sending it again uses the key up and DMs whoever asked.
+// ---------- Proposing changes to a request to join (#261, 2026-11-07) ----------
+// Whoever decides a request (its inviter; PIs and admins one without an inviter) can propose
+// changes to the applicant's answers instead of approving or declining it: they edit the form
+// itself (and may add a note), and the request stays open, with `changes` { status: 'asked' |
+// 'made', proposed: { field: value } (only what differs), note, by, byName, at, keyHash, madeAt }.
+// The answers stay the applicant's: they aren't signed in (join.html is for people outside BOLD),
+// so they get an email from the lab's account listing the changes, with a one-time link,
+// join.html?changes=<id>&key=<key> (only its sha256 is kept), to their form holding the proposed
+// answers, to accept, adjust and send; sending uses the key up and DMs whoever proposed them.
 const JOIN_CHANGES_NOTE = 1000;
-// The fields the applicant may change (not who invited them: that's who decides).
+// The fields that can change (not who invited them: that's who decides), and their names.
 const JOIN_EDITABLE = ['name', 'email', 'links', 'institution', 'role', 'interests', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'listOnWebsite', 'pillars'];
+const JOIN_FIELD_NAMES = { name: 'Full name', email: 'Email address', links: 'Links', institution: 'Home institution', role: 'Role at BOLD', interests: 'Research interests',
+  basedIn: 'Based in', pronouns: 'Pronouns', feedback: 'How you like to receive feedback', startDate: 'Start date', endDate: 'End date', listOnWebsite: 'Listed on the BOLD website', pillars: 'Research pillars' };
 const keyHash = (k) => crypto.createHash('sha256').update(String(k || '')).digest('hex');
-// Pure: may `who` ({ email, full }) ask for changes to request q with `note`? → '' or why not.
-function joinChangesRefusal(q, who, note){
+// Pure: the answers in `next` (normalized, normalizeJoinRequest) that differ from request q's. → { field: value }
+function joinChangesProposed(q, next){
+  const out = {}, same = (a, b) => JSON.stringify(a === undefined ? '' : a) === JSON.stringify(b === undefined ? '' : b);
+  JOIN_EDITABLE.forEach((k) => {
+    if (next[k] === undefined) return;
+    const was = k === 'pillars' ? (q[k] || []) : k === 'listOnWebsite' ? q[k] === true : q[k];
+    if (!same(was, next[k])) out[k] = next[k];
+  });
+  return out;
+}
+// Pure: may `who` ({ email, full }) propose `proposed` and `note` for request q? → '' or why not.
+function joinChangesRefusal(q, who, note, proposed){
   if (!q) return 'No such request.';
   const inviter = !!(q.invitedBy && q.invitedBy.email), mine = inviter && q.invitedBy.email === who.email;
   if (!mine && !(who.full && !inviter)) return 'Only whoever invited them decides this.';
   if (q.status !== 'open') return 'It has already been ' + q.status + '.';
   const n = String(note || '').trim();
-  if (!n) return 'Say what they should change.';
-  if (n.length > JOIN_CHANGES_NOTE) return 'That’s too long: at most ' + JOIN_CHANGES_NOTE + ' characters.';
+  if (n.length > JOIN_CHANGES_NOTE) return 'The note is too long: at most ' + JOIN_CHANGES_NOTE + ' characters.';
+  if (!n && !Object.keys(proposed || {}).length) return 'Change an answer, or say what they should change.';
   return '';
 }
 // Pure: may the holder of `key` change request q? → '' or why not.
@@ -7093,26 +7107,33 @@ function joinChangesKeyRefusal(q, key){
   if (c.status !== 'asked') return 'You’ve already changed it: your point of contact has it.';
   return '';
 }
-// Pure: the email to the applicant. → { subject, body }
-function joinChangesEmail(q, note, link, byName){
-  const first = String(q.name || '').trim().split(/\s+/)[0] || 'there';
-  return { subject: 'Your request to join BOLD: ' + (byName || 'your point of contact') + ' asks for changes', body: [
-    'Hi ' + first + ',', '',
-    (byName || 'Your point of contact') + ' read your request to join BOLD and asks you to change it before they decide:', '',
-    String(note || '').trim().split('\n').map((l) => '  ' + l).join('\n'), '',
-    'Change it here (the link is yours alone, and works once):', link, '',
-    'The BOLD team',
-  ].join('\n') };
+// Pure: each proposed change, as "Role at BOLD: Visitor → Postdoc".
+function joinChangesLines(q, proposed){
+  const show = (k, v) => k === 'listOnWebsite' ? (v ? 'yes' : 'no') : Array.isArray(v) ? (v.length ? v.join('; ') : '—') : String(v == null || v === '' ? '—' : v);
+  return Object.keys(proposed || {}).filter((k) => JOIN_FIELD_NAMES[k]).map((k) => JOIN_FIELD_NAMES[k] + ': ' + show(k, q[k]) + ' → ' + show(k, proposed[k]));
 }
-// Pure: what the applicant may see of request q, to change it.
+// Pure: the email to the applicant. → { subject, body }
+function joinChangesEmail(q, note, link, byName, proposed){
+  const first = String(q.name || '').trim().split(/\s+/)[0] || 'there', who = byName || 'Your point of contact';
+  const lines = joinChangesLines(q, proposed), n = String(note || '').trim();
+  return { subject: 'Your request to join BOLD: ' + (byName || 'your point of contact') + ' proposes changes', body: [
+    'Hi ' + first + ',', '',
+    who + ' read your request to join BOLD and proposes some changes before they decide' + (lines.length ? ':' : '.'), '']
+    .concat(lines.length ? lines.map((l) => '  • ' + l).concat(['']) : [])
+    .concat(n ? [(lines.length ? 'They add:' : 'They say:'), n.split('\n').map((l) => '  ' + l).join('\n'), ''] : [])
+    .concat(['Your form, with their changes in it, to accept, adjust and send (the link is yours alone, and works once):', link, '', 'The BOLD team'])
+    .join('\n') };
+}
+// Pure: what the applicant may see of request q, to change it: their answers, and what's proposed.
 function joinChangesView(q){
   const out = {};
   JOIN_EDITABLE.forEach((k) => { if (q[k] !== undefined) out[k] = q[k]; });
   const c = q.changes || {};
-  return Object.assign(out, { note: c.note || '', byName: c.byName || '', inviter: q.invitedBy ? { id: q.invitedBy.id || '', name: q.invitedBy.name || '' } : null });
+  return Object.assign(out, { proposed: c.proposed || {}, lines: joinChangesLines(q, c.proposed), note: c.note || '', byName: c.byName || '',
+    inviter: q.invitedBy ? { id: q.invitedBy.id || '', name: q.invitedBy.name || '' } : null });
 }
 
-// data: { action: 'ask', id, note } (whoever decides it) → { emailed, error? };
+// data: { action: 'ask', id, answers?, note? } (whoever decides it; answers: the form as they edited it) → { emailed, error? };
 // { action: 'peek', id, key } (the applicant, signed in or not) → what they can change;
 // { action: 'save', id, key, ...the form } → { ok }.
 exports.joinChanges = onCall(
@@ -7125,21 +7146,30 @@ exports.joinChanges = onCall(
       const email = callerEmail(request);
       await access.requireAccess(email, 'requests', 'edit');   // Who can see what
       const who = { email, full: await isFullWrite(email) }, byName = request.auth.token.name || email;
-      const key = crypto.randomBytes(24).toString('hex'), note = String(d.note || '').trim();
+      const key = crypto.randomBytes(24).toString('hex'), note = String(d.note || '').trim(), set = await joinSettings();
+      let proposed = {};
       const q = await db.runTransaction(async (tx) => {
         const s = await tx.get(ref), x = s.exists ? s.data() : null;
-        const why = joinChangesRefusal(x, who, note);
+        // Their answers as edited (d.answers, the form): checked as the form is, and only what differs kept.
+        if (x && d.answers && typeof d.answers === 'object') {
+          const base = {};
+          JOIN_EDITABLE.forEach((k) => { if (x[k] !== undefined) base[k] = x[k]; });
+          const n = normalizeJoinRequest(Object.assign(base, d.answers, { contact: (x.invitedBy && x.invitedBy.name) || x.contact || 'them' }), set.roles, set.pillars);
+          if (n.error) throw new HttpsError('invalid-argument', n.error);
+          proposed = joinChangesProposed(x, n.request);
+        }
+        const why = joinChangesRefusal(x, who, note, proposed);
         if (why) throw new HttpsError(x ? 'failed-precondition' : 'not-found', why);
-        tx.update(ref, { changes: { status: 'asked', note, by: email, byName, at: Date.now(), keyHash: keyHash(key) } });
+        tx.update(ref, { changes: { status: 'asked', proposed, note, by: email, byName, at: Date.now(), keyHash: keyHash(key) } });
         return x;
       });
       const link = SITE_URL + 'join.html?changes=' + d.id + '&key=' + key;
-      const mail = joinChangesEmail(q, note, link, byName);
+      const mail = joinChangesEmail(q, note, link, byName, proposed);
       const error = await gmailSend(q.email, mail.subject, mail.body, 'joinChanges ' + d.id);
       // The test copy (scripts/test-site.sh) has no Gmail: the link is in the emulator's log, to try it.
       if (process.env.FUNCTIONS_EMULATOR === 'true') logger.info('joinChanges: the applicant’s link (emulator only)', { link });
       await ref.update({ 'changes.emailed': !error, 'changes.error': error });
-      return error ? { emailed: false, error } : { emailed: true };
+      return Object.assign({ proposed: joinChangesLines(q, proposed) }, error ? { emailed: false, error } : { emailed: true });
     }
     const q = (await ref.get()).data();
     const why = joinChangesKeyRefusal(q, String(d.key || ''));
@@ -7163,7 +7193,7 @@ exports.joinChanges = onCall(
     });
     // Whoever asked hears they've changed it (join.html asked them first).
     const num = await numberTag('joinRequests/' + d.id), c = q.changes || {};
-    const text = '✏️ ' + num + slackText(upd.name || q.name) + ' changed their request to join BOLD, as you asked. ' + linkedTitle('Approve or decline', joinPageUrl() + '#i=' + d.id) + '.';
+    const text = '✏️ ' + num + slackText(upd.name || q.name) + ' sent their request to join BOLD again, after the changes you proposed. ' + linkedTitle('Approve or decline', joinPageUrl() + '#i=' + d.id) + '.';
     if (q.invitedBy && q.invitedBy.id && q.invitedBy.email === c.by) await dmBySlackId(SLACK_BOT_TOKEN.value(), q.invitedBy.id, text, 'join-requests');
     else if (c.by) await dmByEmail(SLACK_BOT_TOKEN.value(), c.by, text, 'join-requests');
     return { ok: true };
@@ -8804,6 +8834,6 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
-  projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage, joinChangesRefusal, joinChangesKeyRefusal, joinChangesEmail, joinChangesView, keyHash,
+  projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage, joinChangesRefusal, joinChangesKeyRefusal, joinChangesEmail, joinChangesView, joinChangesProposed, joinChangesLines, keyHash,
   onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
 };
