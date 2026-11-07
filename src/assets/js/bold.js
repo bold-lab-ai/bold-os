@@ -519,6 +519,8 @@
           '<ul class="mast-menu" id="mastMenu" role="menu" hidden>' +
             '<li role="none" class="mast-menu-who">Signed in as <strong>' + who + '</strong></li>' +
             '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
+            // Your group, and changing it (#278): findable from every page.
+            '<li role="none"><a role="menuitem" href="group-request.html" id="mastGroupItem">' + groupItemText() + '</a></li>' +
             '<li role="none"><button role="menuitem" type="button" id="mastSignOutBtn">Sign out</button></li>' +
           '</ul>' +
         '</div>';
@@ -536,6 +538,15 @@
       region.querySelector('#mastSignInBtn').addEventListener('click', BOLD.signIn);
     }
   }
+
+  // The account menu's link to group-request.html, naming the group you're in once it's known.
+  function groupItemText(){
+    var g = BOLD.myGroup && BOLD.myGroup();
+    return 'Change your group' + (g && LEVEL_NAMES[g] ? ' <span class="mast-menu-note">(you’re ' + esc(LEVEL_NAMES[g]) + ')</span>' : '');
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    BOLD.onAccess(function(){ var a = document.getElementById('mastGroupItem'); if (a) a.innerHTML = groupItemText(); });
+  });
 
   // A page's action for the branch you're on, beside Back to main (pages/guide.js: Rebase on
   // main, on your own proposal when main has moved on): { label, go } or null.
@@ -623,6 +634,8 @@
     { label: 'Agent skill', href: 'skill.html?new', can: pi },
     { label: 'Agent tool', href: 'tool.html?new', can: may('tools', 'edit') },
     { head: 'Ask or offer' },
+    // #278: people moved to a lower group couldn't find how to ask for theirs back.
+    { label: 'Change your group', href: 'group-request.html', can: function(){ return BOLD.myGroup() === 'exec' ? 'You’re in BOLD-exec, the top group' : ''; } },
     { label: 'Ask for a letter', href: 'letters.html#ask', can: may('service-desk', 'edit') },
     { label: 'Offer an introduction', href: 'introductions.html#offer', can: may('service-desk', 'edit') },
     { label: 'A paper for internal review', href: 'audit-board.html', can: may('ml-cycle', 'edit') },
