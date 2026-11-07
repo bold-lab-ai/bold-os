@@ -447,18 +447,20 @@
       line.setAttribute('aria-expanded', String(yes));
       list.hidden = !yes || !log.length;
       if (typeof drawSaved === 'function') drawSaved();
-      // The box takes focus without the browser's jump to it (the page is still moving); once it's settled, a smooth
-      // scroll brings the box into view, only as far as it needs.
-      if (yes) setTimeout(function(){
-        try { text.focus({ preventScroll: true }); } catch (e){ text.focus(); }
-        setTimeout(function(){
-          var r = box.getBoundingClientRect(), vh = window.innerHeight || document.documentElement.clientHeight;
-          if (r.top < 0 || r.bottom > vh) box.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'nearest' });
-        }, still ? 0 : 300);
-      }, still ? 0 : 260);
+
       // Opening on a conversation BOLD has answered in: Conversations folds away again; closing, it comes back.
       if (yes && !keepTalk && log.some(function(m){ return m.who === 'bold'; })) talking(true, true);
       if (!yes) talking(false);
+      // With the motion, not after it: the page is laid out as it ends at once (only its look moves), so the scroll
+      // to the box starts on the same frame, and the box takes focus without the browser's own jump to it.
+      if (yes) {
+        try { text.focus({ preventScroll: true }); } catch (e){ text.focus(); }
+        requestAnimationFrame(function(){
+          var r = box.getBoundingClientRect(), vh = window.innerHeight || document.documentElement.clientHeight;
+          if (r.top >= 0 && r.top <= vh * 0.6) return;
+          window.scrollTo({ top: Math.max(0, window.pageYOffset + r.top - vh * 0.25), behavior: still ? 'auto' : 'smooth' });
+        });
+      }
     }
     line.addEventListener('click', function(){ open(true); });
     box.querySelector('.ha-close').addEventListener('click', function(){ open(false); line.focus(); });
