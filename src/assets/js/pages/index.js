@@ -382,10 +382,38 @@
     // brings Conversations back the same way. At once with reduced motion (CSS: .is-talking, index.css).
     var feedEl = document.getElementById('homeFeed'), talkEl = document.querySelector('.home-talk'), sideEl = document.querySelector('.home-side');
     var topEl = document.querySelector('.home-top'), letterEl = document.getElementById('homeLetter'), busyMove = false;
+    // The motion's timing, shared by the glide and the scroll so they end together.
+    var MOVE_MS = 520, MOVE_EASE = 'cubic-bezier(.2,.8,.2,1)';
     function glide(el, before){
       var after = el.getBoundingClientRect(), dx = before.left - after.left, dy = before.top - after.top;
       if (still || !el.animate || (!dx && !dy)) return;
-      el.animate([{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }], { duration: 520, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      el.animate([{ transform: 'translate(' + dx + 'px,' + dy + 'px)' }, { transform: 'none' }], { duration: MOVE_MS, easing: MOVE_EASE });
+    }
+    // cubic-bezier(.2,.8,.2,1) as a function of time (0–1), for the scroll to follow the glide's curve.
+    function ease(t){
+      var x1 = .2, y1 = .8, x2 = .2, y2 = 1, u = t;
+      var bx = function(u){ return 3 * x1 * u * (1 - u) * (1 - u) + 3 * x2 * u * u * (1 - u) + u * u * u; };
+      for (var i = 0; i < 8; i++) {
+        var dx = 3 * x1 * (1 - u) * (1 - u) + 6 * (x2 - x1) * u * (1 - u) + 3 * (1 - x2) * u * u;
+        if (Math.abs(dx) < 1e-6) break;
+        u = Math.min(1, Math.max(0, u - (bx(u) - t) / dx));
+      }
+      return 3 * y1 * u * (1 - u) * (1 - u) + 3 * y2 * u * u * (1 - u) + u * u * u;
+    }
+    // Scrolls by `by` pixels over the motion's time and curve; stops if they scroll themselves meanwhile.
+    function scrollWith(by){
+      if (still) { window.scrollBy(0, by); return; }
+      var y0 = window.pageYOffset, t0 = null, stop = false;
+      var quit = function(){ stop = true; };
+      ['wheel', 'touchstart', 'keydown'].forEach(function(e){ window.addEventListener(e, quit, { once: true, passive: true }); });
+      (function step(t){
+        if (stop) return;
+        if (t0 === null) t0 = t;
+        var p = Math.min(1, (t - t0) / MOVE_MS);
+        window.scrollTo(0, y0 + by * ease(p));
+        if (p < 1) requestAnimationFrame(step);
+        else ['wheel', 'touchstart', 'keydown'].forEach(function(e){ window.removeEventListener(e, quit); });
+      })(performance.now());
     }
     // Under the conversation: a way back to every conversation, while they're folded away. Choosing it keeps
     // them open for the rest of the visit (BOLD's next answers don't fold them again).
@@ -464,7 +492,7 @@
           var r = box.getBoundingClientRect(), vh = window.innerHeight || document.documentElement.clientHeight;
           var fold = box.querySelector('.ha-fold'), grow = fold ? Math.max(0, form.scrollHeight - fold.getBoundingClientRect().height) : 0;
           var by = Math.min(r.bottom + grow + 24 - vh, r.top - 16);
-          if (by > 0) window.scrollTo({ top: window.pageYOffset + by, behavior: still ? 'auto' : 'smooth' });
+          if (by > 0) scrollWith(by);
         });
       }
     }
