@@ -185,3 +185,5 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .wk-talk .stage-fields-actions{display:flex; gap:10px; margin-top:8px;}
 /* A proposed change's discussion (pages/guide.js), under its buttons. */
 .gd-talk .wk-talk{margin:18px 0 0;}
+/* A conversation that's a page's own section (talk.js heading: a card's): its heading, under a rule. */
+.wk-talk-title{font-size:20px; line-height:1.25; color:var(--ink); margin:0 0 10px; padding-top:22px; border-top:1px solid var(--line);}

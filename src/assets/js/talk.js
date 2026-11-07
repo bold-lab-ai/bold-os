@@ -7,7 +7,7 @@
 // Internal Review card's Discussion (audit-board/detail.js).
 // BoldTalk.create({ post: its conversation's id, on: commentConversation's `on`, old?: () => a query of the old
 //   comments ({ text, by, at }), or oldItems?: () => them as a list (kept on the thing itself), project?: { id },
-//   label? (false: none), effects: what starting it does (BOLD.confirmAction) })
+//   label? (false: none), heading? (a section's heading, not a small label), effects: what starting it does (BOLD.confirmAction) })
 // → { el, stop() }: el is kept between the page's redraws (what's being written stays).
 // BoldCardTalk.create(ref, o): a card's (ref: projectWorkspaces/<project>/work/<card>).
 // &c=<id> in the address (an old comment's link) scrolls to that comment while it's shown.
@@ -20,7 +20,8 @@ window.BoldTalk = (function(){
   function create(o){
     var el = document.createElement('div');
     el.className = 'detail-abstract wk-talk';
-    el.innerHTML = (o.label === false ? '' : '<div class="detail-abstract-label">' + esc(o.label || 'Conversation') + '</div>') +
+    // Its heading: a section's (heading: true, a card's page), or a small label (a proposed change's Discussion).
+    el.innerHTML = (o.label === false ? '' : o.heading ? '<h3 class="wk-talk-title">' + esc(o.label || 'Conversation') + '</h3>' : '<div class="detail-abstract-label">' + esc(o.label || 'Conversation') + '</div>') +
       '<div class="wk-talk-forum"></div><ul class="wk-talk-list" hidden></ul>' +
       '<form class="wk-talk-form" novalidate hidden>' +
       '<textarea aria-label="Start the conversation" class="wk-talk-text md-field" data-md-breaks="true" rows="3" maxlength="' + MAX + '"></textarea>' +
@@ -111,7 +112,7 @@ window.BoldTalk = (function(){
 // Its description is its first message (2026-11-07): the card's notes, and any images it had, by whoever made it.
 window.BoldCardTalk = { create: function(ref, o){
   var pid = ref.parent.parent.id;
-  return BoldTalk.create({ post: 'cm-card-' + pid + '-' + ref.id, on: 'card/' + pid + '/' + ref.id, project: { id: pid },
+  return BoldTalk.create({ post: 'cm-card-' + pid + '-' + ref.id, on: 'card/' + pid + '/' + ref.id, project: { id: pid }, heading: true,
     old: function(){ return ref.collection('comments'); },
     oldItems: function(){ var c = (o && o.card && o.card()) || {}, t = BoldTalk.descriptionOf(c); return t ? [{ text: t, by: c.by, at: c.at }] : []; },
     effects: ['Start it in Conversations, about this project', 'Tell the project’s people, on their Notifications page'] });

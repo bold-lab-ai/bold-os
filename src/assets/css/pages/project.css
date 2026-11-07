@@ -340,11 +340,12 @@
 .wk-page .wk-badge-col{color:var(--ink);}
 .wk-page .wk-badge-pick{display:inline-flex; align-items:center; padding:0 2px 0 7px; cursor:pointer;}
 .wk-page .wk-badge-pick select{font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit; background:transparent; border:0; padding:2px 2px; cursor:pointer; field-sizing:content; max-width:22em;}
-.wk-page .detail-badges .wk-label{font-size:11px;}
-.wk-page .detail-badges .wk-label-open{font-family:var(--sans); font-size:12px; color:var(--muted); margin-left:0;}
-.wk-page .detail-badges .wk-label-open:hover{color:var(--link);}
-.wk-page .detail-badges .wk-label-add{margin:0;}
-.wk-page .detail-badges .wk-label-add input{font-family:var(--sans); font-size:12px; width:11em; padding:1px 6px; line-height:1.4; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.wk-page .wk-labels-row .wk-label-add input{font-family:var(--sans); font-size:12px; width:11em; padding:1px 6px; line-height:1.4; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 .wk-page .wk-by{margin-left:auto; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .wk-page .wk-by a{color:var(--ink-soft);}
 .wk-page .detail-head + .wk-talk-slot, .wk-page .detail-head ~ .wk-talk{margin-top:28px;}
+/* Its labels, a row of their own under the badges; + is a label too (only that), to add one. */
+.wk-page .wk-labels-row{display:flex; flex:0 0 100%; order:4; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px;}
+.wk-page .wk-labels-row .wk-label-add{margin:0;}
+.wk-page .wk-label-open{cursor:pointer; font-weight:600; padding:0 8px;}
+.wk-page .wk-label-open:hover{background:color-mix(in srgb, var(--accent) 16%, transparent);}

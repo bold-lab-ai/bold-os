@@ -816,7 +816,7 @@ var ProjectWork = (function(){
     var rows = '';
     // In the badge row (2026-11-07): its column, its milestone (picked there, saved at once; none planned: a
     // link to plan them), its labels (× to take one off, + Label to add: a small box), and who made it.
-    var meta = '';
+    var meta = '', labelRow = '';
     if (c) {
       meta += milestones().length
         ? '<label class="badge wk-badge-pick" title="' + esc((function(m){ return m ? 'Milestone' + (milestoneDates(m) ? ': ' + milestoneDates(m) : '') : 'Its milestone'; })(milestones().filter(function(m){ return m.id === x.milestone; })[0])) + '">' + '<select class="wk-p-milestone" aria-label="Milestone"' + off + '><option value="">No milestone</option>' + milestones().map(function(s){
@@ -825,12 +825,13 @@ var ProjectWork = (function(){
           }).join('') + '</select></label>'
         : '';
       var mine = labelsOf(c);
-      meta += mine.map(function(l){
+      // Its labels: a row of their own, under the badges; + (a label with only that) adds one.
+      labelRow = mine.map(function(l){
           return '<span class="wk-label">' + esc(l) + (ok ? '<button type="button" class="wk-label-x" data-label="' + esc(l) + '" aria-label="Remove ' + esc(l) + '">×</button>' : '') + '</span>';
         }).join('') +
         (labelAdding && ok && mine.length < MAX_LABELS ? '<form class="wk-label-add"><input type="text" class="wk-label-in" maxlength="' + MAX_LABEL + '" list="wkLabels" placeholder="A label, then Enter">' +
           '<datalist id="wkLabels">' + boardLabels().filter(function(l){ return mine.indexOf(l) < 0; }).map(function(l){ return '<option value="' + esc(l) + '">'; }).join('') + '</datalist></form>'
-        : mine.length < MAX_LABELS && ok ? '<button type="button" class="btn-text wk-label-open">+ Label</button>' : '');
+        : mine.length < MAX_LABELS && ok ? '<button type="button" class="wk-label wk-label-open" title="Add a label" aria-label="Add a label">+</button>' : '');
     }
     if (x.by && (x.by.name || x.by.login || x.by.email)) meta += '<span class="wk-by">by ' + name(x.by) + '</span>';
     var roles = [], byRole = {};
@@ -845,7 +846,7 @@ var ProjectWork = (function(){
     var html = '<div class="wk-page">' + back +
       '<div class="detail-head"><h2 class="wk-page-title">' + esc(x.title) +
         (c ? '<button class="btn-text detail-inline-edit wk-edit" type="button"' + off + '>Edit</button>' : '') + '</h2>' +
-        '<div class="detail-badges">' + badges + '</div></div>' +
+        '<div class="detail-badges">' + badges + '</div>' + (labelRow ? '<div class="wk-labels-row">' + labelRow + '</div>' : '') + '</div>' +
       (c ? '<div class="wk-page-edit"></div>' : '') +
       (rows ? '<dl class="detail-grid">' + rows + '</dl>' : '');
     // A card's description, and its images, are its conversation's first message (talk.js, 2026-11-07): no fields of
