@@ -649,8 +649,9 @@
         var t = [todo ? todo + ' waiting on you' : '', unread ? (unread >= 100 ? '100+' : unread) + ' unread' : ''].filter(Boolean).join(', ');
         t = t ? 'Notifications: ' + t : 'Notifications';
         link.title = t; link.setAttribute('aria-label', t);
-        // For the masthead's cat (eggs.js): the count, and whether it's known yet (the inbox heard from).
-        BOLD.bell = { n: n, ready: heard };
+        // For the masthead's cat (eggs.js) and the home page's Notifications (pages/index.js): the count, whether it's
+        // known yet (the inbox heard from), and its two parts.
+        BOLD.bell = { n: n, ready: heard, todo: todo, unread: unread };
         try { document.dispatchEvent(new CustomEvent('bold:bell', { detail: BOLD.bell })); } catch (e){}
       };
       BOLD.setTodoCount = function(n){
@@ -1557,12 +1558,6 @@
       if (shell.classList.contains('is-nav-open')) { closeNav(); } else { openNav(); }
     });
     if (backdrop) backdrop.addEventListener('click', closeNav);
-    // Clicking the wordmark takes you home; land there with the menu
-    // retracted rather than however it happened to be left on this page.
-    var wordmark = document.querySelector('.wordmark');
-    if (wordmark) wordmark.addEventListener('click', function(){
-      try { localStorage.setItem('boldNavCollapsed', '1'); } catch (e){}
-    });
     if (sidebar){
       Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link, .nav-group-label')).forEach(function(a){
         a.addEventListener('click', closeNav);

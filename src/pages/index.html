@@ -1,19 +1,18 @@
 ---
 title: "BOLD Lab"
 css: "index"
+styles: ["pages/projects", "conversations"]
 public: true
 hiddenChrome: true
 noFooter: true
 sdk: ["functions"]
-scripts: ["join-common.js", "onboarding-common.js", "pages/index.js"]
+scripts: ["join-common.js", "onboarding-common.js", "markdown.js", "mentions.js", "md-field.js", "conversations-forum.js", "pages/index.js"]
 permalink: "index.html"
 ---
-<div class="home-hero">
-  <h1 id="homeHeroTitle"><strong>BOLD</strong><span class="home-dot">.</span>OS</h1>
-  <div class="home-search" data-search-box data-search-big hidden></div>
-  <script>if (BOLD.authHint()) document.currentScript.previousElementSibling.hidden = false;</script>
-  <section class="home-steps" id="next-steps" aria-label="Your first steps" hidden></section>
-  <div id="homeGuestNote" hidden>
+<script>/* The home: Conversations for whoever's signed in (index.js), from the first paint on the last sign-in's hint. */ if (BOLD.authHint()) document.body.classList.add('is-home-feed');</script>
+<div class="home-hero" id="homeGuest">
+  <h1><strong>BOLD</strong><span class="home-dot">.</span>OS</h1>
+  <div id="homeGuestNote">
     <p class="gate-alt">Not in BOLD?</p>
     <p class="home-guest-links">
       <button class="gate-signup-btn" type="button" id="homeSignInBtn">Log in</button>
@@ -22,4 +21,34 @@ permalink: "index.html"
     </p>
   </div>
 </div>
-
+<main class="ex-page bs-page is-top home-feed" id="homeFeed">
+  <div class="home-top">
+  <header class="home-kicker"><span class="home-mark"><strong>BOLD</strong><span class="home-dot">.</span>OS</span><span class="home-today" id="homeToday"></span></header>
+  <!-- The letter (index.js): what matters to them now, in a few sentences, each part a way in. -->
+  <article class="home-letter" id="homeLetter" aria-live="polite"><p class="hl-wait">&nbsp;</p></article>
+  <!-- Talking to BOLD (index.js): a preview, hidden until BOLD-LLM is ready; #ask turns it on in this browser. -->
+  <section class="home-ask" id="homeAskBox" aria-label="Talk to BOLD" hidden>
+    <ol class="ha-log" aria-live="polite"></ol>
+    <button type="button" class="ha-line" aria-expanded="false" aria-controls="homeAskForm"><span class="ha-line-text">Reply to BOLD</span><span class="ha-caret" aria-hidden="true"></span></button>
+    <div class="ha-fold"><form class="ha-form" id="homeAskForm" novalidate>
+      <textarea class="md-field" data-md-breaks="true" rows="2" maxlength="4000" aria-label="Reply to BOLD" placeholder="Reply to BOLD…"></textarea>
+      <div class="ha-actions"><button type="button" class="btn-text ha-close">Close</button><button type="submit" class="btn-box is-primary">Send</button></div>
+    </form></div>
+  </section>
+  </div>
+  <div class="home-cols">
+    <section class="home-talk" aria-labelledby="homeTalkTitle">
+      <h2 class="home-box-title home-section-title" id="homeTalkTitle"><a href="conversations.html">Conversations</a></h2>
+      <div id="bsMount"></div>
+    </section>
+    <aside class="home-side" aria-label="For you, and the lab">
+      <section class="home-box" id="homeWeek" hidden></section>
+      <section class="home-box" id="homeProjects" hidden></section>
+      <section class="home-box" id="homeInbox" hidden></section>
+      <section class="home-box home-steps" id="next-steps" aria-label="Your first steps" hidden></section>
+      <section class="home-box" id="homeSubmitting" hidden></section>
+      <section class="home-box" id="homeDone" hidden></section>
+      <section class="home-box" id="homeEvents" hidden></section>
+    </aside>
+  </div>
+</main>
