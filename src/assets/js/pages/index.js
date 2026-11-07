@@ -220,9 +220,12 @@
     var al = llmLetter();
     if (al) { el.innerHTML = '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al; return; }
     el.innerHTML = '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '') +
-      (state.letterChoice === 'bold' ? '<p class="hl-by">' + (state.letterWriting ? 'BOLD LLM is writing today’s letter; this is the rule-based one meanwhile.' : 'BOLD LLM couldn’t write today’s letter, so this is the rule-based one.') +
+      signOff(state.letterChoice === 'bold' ? '<p class="hl-by">' + (state.letterWriting ? 'BOLD LLM is writing today’s letter; this is the rule-based one meanwhile.' : 'BOLD LLM couldn’t write today’s letter, so this is the rule-based one.') +
         ' <a href="profile.html#agents">Who writes it</a></p>' : '');
   }
+  // The letter's seal: a hand-drawn envelope, closed with wax, under its last line (index.css .hl-sign).
+  var SEAL = '<svg class="hl-mark" viewBox="0 0 64 54" aria-hidden="true" focusable="false"> <defs><filter id="hlRough" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.14" numOctaves="2" seed="11"/><feDisplacementMap in="SourceGraphic" scale="1.5"/></filter></defs> <g filter="url(#hlRough)"> <path class="hl-mark-paper" d="M7 13 C20 11.5 40 12.6 57 11.8 C57.6 22 58.3 34 57.4 45.6 C42 46.4 22 45.4 6.6 46.2 C6.2 35 7.4 24 7 13 Z"/> <path class="hl-mark-ink" d="M4.4 13.6 C20 11.2 40 12.9 59.6 11.3 M57.1 9.4 C57.9 22 58.5 34 57.1 48.2 M59.2 45.3 C42 46.7 22 45.1 4.6 46.5 M7.3 10.6 C6.3 24 7.7 35 6.3 48.3"/> <path class="hl-mark-ink is-faint" d="M8.6 12.1 C24 12.9 41 11.1 55.8 12.8 M58.3 18 C57.5 30 58.6 37 58 43.6 M47 47.2 C33 46.1 19 47 8.4 45.6 M5.6 20 C6.4 28 5.8 36 6.2 42"/> <path class="hl-mark-ink" d="M6.8 13.2 C15 21 24 27.4 31.6 31 C40 27.2 48.4 20.2 57.8 11.6"/> <path class="hl-mark-ink is-faint" d="M8.4 14.6 C17 22.4 25 28 31 30.2"/> <path class="hl-mark-ink is-faint" d="M6.4 45.8 C14 39 20 35 25.6 30.2 M57.8 45.2 C50 39.4 44 35 38.4 30.4"/> <path class="hl-mark-ink is-hatch" d="M23.8 44.8 L27.8 41.2 M28.6 45.1 L32.6 41.4 M33.4 44.9 L37 41.7 M38.2 44.6 L40.6 42.4"/> <path class="hl-mark-seal" d="M32 24.4 C36.6 24 39.2 27.6 38.8 31.4 C38.5 35.4 35.2 37.9 31.6 37.7 C27.8 37.5 25 34.6 25.3 30.8 C25.6 27.2 28.4 24.6 32 24.4 Z"/> <path class="hl-mark-rim" d="M28 28.2 C29.4 26.6 31.6 26 33.6 26.6"/> <path class="hl-mark-heart" d="M32 35 C29.2 33.1 28.4 31.4 29.4 30 C30.4 28.9 31.6 29.5 32 30.6 C32.4 29.5 33.7 28.9 34.7 30 C35.7 31.4 34.8 33.1 32 35 Z"/> </g> </svg>';
+  function signOff(by){ return '<div class="hl-sign">' + SEAL + (by || '') + '</div>'; }
   // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
   var LEN_KEY = 'boldLetterLength';
   function letterLength(){ try { return localStorage.getItem(LEN_KEY) === 'long' ? 'long' : 'short'; } catch (e){ return 'short'; } }
@@ -231,9 +234,9 @@
     if (state.letterChoice !== 'bold' || !l || !l.at || Date.now() - l.at >= 24 * 3600000 || !window.BoldMarkdown) return '';
     var len = letterLength(), at = new Date(l.at);
     return '<div class="hl-agent-text">' + BoldMarkdown.render(String(l[len] || l.short || '')) + '</div>' +
-      '<p class="hl-by">Written by BOLD LLM at ' + esc(('0' + at.getHours()).slice(-2) + ':' + ('0' + at.getMinutes()).slice(-2)) + ' · ' +
+      signOff('<p class="hl-by">Written by BOLD LLM at ' + esc(('0' + at.getHours()).slice(-2) + ':' + ('0' + at.getMinutes()).slice(-2)) + ' · ' +
       '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button> · ' +
-      '<a href="profile.html#agents">Who writes it</a></p>';
+      '<a href="profile.html#agents">Who writes it</a></p>');
   }
   document.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('.hl-len');
