@@ -312,7 +312,7 @@ window.BoldConversations = (function(){
       });
     }
     function invite(pid, to){ return col().doc(pid).collection('invites').add({ to: to, by: me.email, byName: me.name, at: FV().serverTimestamp() }); }
-    var sort = 'top', opened = {}, replying = '', branching = false, said = [], draft = null, about = null;   // about: { pid, id }
+    var sort = 'top', opened = {}, replying = '', editing = '', branching = false, said = [], draft = null, about = null;   // about: { pid, id }
     var unwatch = [];   // the lists' listeners, replaced when access changes
     var db = function(){ return firebase.firestore(BOLD.getApp()); };
     var col = function(){ return db().collection('conversations'); };
@@ -360,8 +360,12 @@ window.BoldConversations = (function(){
     function by(m){
       var id = idByEmail[String(m.createdBy || '').toLowerCase()] || (!m.createdBy && m.source === 'slack' && idOf[m.name]) || '';
       var n = esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '');
-      return (id ? '<a class="bs-author" href="person.html?id=' + encodeURIComponent(id) + '">' + n + '</a>' : '<span class="bs-author">' + n + '</span>') + ' · ' + ago(m.at);
+      return (id ? '<a class="bs-author" href="person.html?id=' + encodeURIComponent(id) + '">' + n + '</a>' : '<span class="bs-author">' + n + '</span>') + ' · ' + ago(m.at) +
+        // Changed after it was written (Edit): said, with when on hover.
+        (m.editedAt ? ' <span class="bs-edited" title="Edited ' + esc(ago(m.editedAt)) + '">(edited)</span>' : '');
     }
+    // Edit: your own, written on the site (not one brought in from Slack or a comment thread).
+    var editable = function(m){ return mine(m) && m.source === 'site'; };
     // Why a private one is private: a talk with BOLD LLM, or a private Slack channel's thread.
     function PRIVATE_TIP(m){ return m.source === 'bold-llm' ? 'A talk with BOLD LLM: only you see it' : 'Brought in from a private Slack channel: only its members see it here'; }
     function origin(m){
@@ -404,10 +408,18 @@ window.BoldConversations = (function(){
         (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
         // Copy, Copy link and Remove: in its ⋯ menu (BOLD.moreMenuHtml).
         BOLD.moreMenuHtml([
+          editable(m) && { label: 'Edit', cls: 'bs-edit', attrs: ' data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"', off: why ? BOLD.cannotReason('conversations', 'edit') : '' },
           { label: 'Copy', cls: 'bs-copy', attrs: ' data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' },
           { label: 'Copy link', cls: 'bs-link', attrs: ' data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' },
           { label: 'Remove', cls: 'bs-remove', danger: true, attrs: ' data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"', off: mine(m) || full ? '' : 'Only whoever wrote it, PIs and admins remove it' },
         ], 'More') + '</p>';
+    }
+    // Editing a message: its text in the box where it was, Save and Cancel (a .bs-replyform, data-edit, so it's
+    // kept across redraws and Cmd+Enter saves it).
+    function editForm(m, pid){
+      var raw = pid === m.id ? (postOf(pid) || {}).body || '' : m.body || '';
+      return '<form class="bs-replyform bs-editform" data-edit="1" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" aria-label="Edit your message">' + esc(raw) + '</textarea>' +
+        '<div class="event-form-actions"><button type="submit" class="ev-save">Save</button><button type="button" class="bs-editcancel">Cancel</button></div></form>';
     }
     function replyForm(m, pid){
       return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '" data-branch="' + (branching ? '1' : '') + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
@@ -421,7 +433,7 @@ window.BoldConversations = (function(){
       return '<li class="bs-line' + (goesOn(m.id) ? '' : ' is-leaf') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
         // The author, and on the same line, on the right, its vote and buttons.
         '<div class="bs-line-head"><p class="bs-by">' + by(m) + '</p><div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div></div>' +
-        md(m.body) + replyForm(m, pid) + '</li>';
+        (editing === m.id ? editForm(m, pid) : md(m.body)) + replyForm(m, pid) + '</li>';
     }
     var lastAt = function(id){ return kids(id).reduce(function(t, x){ return Math.max(t, ms(x.at), lastAt(x.id)); }, 0); };
     // A column: a message, then its first reply (made while it was a leaf: the conversation going on), and
@@ -646,7 +658,7 @@ window.BoldConversations = (function(){
         if (linkedMsg) { setTimeout(function(){ showLinked(p.id); }, 0); }
         drawAnswer(p);
         var fresh = threadEl.querySelector('.bs-replyform');
-        if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id') && keep.getAttribute('data-branch') === fresh.getAttribute('data-branch')) fresh.replaceWith(keep);
+        if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id') && keep.getAttribute('data-branch') === fresh.getAttribute('data-branch') && keep.getAttribute('data-edit') === fresh.getAttribute('data-edit')) fresh.replaceWith(keep);
         else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
         return;
       }
@@ -906,7 +918,7 @@ window.BoldConversations = (function(){
       }
       if (b.classList.contains('bs-reply-btn')) {
         var br = b.getAttribute('data-branch') === '1';
-        if (replying === id && branching === br) replying = ''; else { replying = id; branching = br; }
+        if (replying === id && branching === br) replying = ''; else { replying = id; branching = br; editing = ''; }
         render();
         // Reply on a message further up: the box is at the column's end.
         var box = replying && threadEl.querySelector('.bs-replyform textarea');
@@ -914,6 +926,13 @@ window.BoldConversations = (function(){
         return;
       }
       if (b.classList.contains('bs-replycancel')) { replying = ''; render(); return; }
+      if (b.classList.contains('bs-edit')) {
+        editing = id; replying = ''; render();
+        var eb = threadEl.querySelector('.bs-editform textarea');
+        if (eb) { eb.focus(); eb.setSelectionRange(eb.value.length, eb.value.length); }
+        return;
+      }
+      if (b.classList.contains('bs-editcancel')) { editing = ''; render(); return; }
       if (b.classList.contains('bs-remove')) {
         var isP = id === pid, what = isP ? postOf(id) : msgOf(pid, id);
         // Always asked, even with Don't ask me again: it can't be undone.
@@ -950,6 +969,13 @@ window.BoldConversations = (function(){
       var body = f.querySelector('textarea').value.trim(), go = f.querySelector('button[type=submit]');
       if (!body) return;
       go.disabled = true;
+      if (f.getAttribute('data-edit')) {
+        var epid = f.getAttribute('data-pid'), eid = f.getAttribute('data-id'), was = msgOf(epid, eid);
+        if (was && body === String(was.body || '').trim()) { editing = ''; render(); return; }   // unchanged: not marked edited
+        var eref = epid === eid ? col().doc(epid) : col().doc(epid).collection('messages').doc(eid);
+        eref.update({ body: body, editedAt: FV().serverTimestamp() }).then(function(){ editing = ''; render(); }, function(err){ go.disabled = false; oops('Saving')(err); });
+        return;
+      }
       newReply(f.getAttribute('data-pid'), f.getAttribute('data-id'), body, false, f.getAttribute('data-branch') === '1')
         .then(function(ref){ replying = ''; show(f.getAttribute('data-pid'), ref.id); }, function(err){ go.disabled = false; oops('Replying')(err); });
     });

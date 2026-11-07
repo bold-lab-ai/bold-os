@@ -827,6 +827,13 @@ service cloud.firestore {
         && d.createdBy == email().lower() && d.at == request.time && d.source == 'site'
         && d.get('viaAgent', false) is bool && okVotes(d);
     }
+    // Edit (conversations-forum.js): your own message written on the site, its text only, said as edited (editedAt).
+    function editsMyText() {
+      return resource.data.get('createdBy', '') == email().lower() && resource.data.get('source', '') == 'site'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['body', 'editedAt'])
+        && request.resource.data.body is string && request.resource.data.body.size() > 0 && request.resource.data.body.size() <= 10000
+        && request.resource.data.editedAt == request.time;
+    }
     // A conversation brought in from a private Slack channel or group DM keeps that channel's
     // visibility: only its members (readers, Slack user ids, as the sign-in carries) read it and
     // its replies, PIs and admins included only if they're in it (slack-thread.js saveThread).
@@ -862,7 +869,7 @@ service cloud.firestore {
         && (!('project' in request.resource.data) || (request.resource.data.project is string && request.resource.data.project.size() <= 80
           && seesProject(request.resource.data.project) && request.resource.data.get('projectTitle', '') is string && request.resource.data.get('projectTitle', '').size() <= 300))
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
-      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && (onlyMyVote() || changesWhoReads());
+      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && (onlyMyVote() || changesWhoReads() || editsMyText());
       allow delete: if may('conversations', 'edit') && seesConversation(resource.data) && (resource.data.createdBy == email().lower() || hasFullWrite());
       // Invitations (conversations-forum.js Invite; slack-thread.js onConversationInvite tells them): by whoever reads
       // it, to people who can: an open one's anyone, a private one's readers.
@@ -884,7 +891,7 @@ service cloud.firestore {
           && request.resource.data.get('branch', false) is bool
           && exists(/databases/$(database)/documents/conversations/$(pid))
           && (request.resource.data.parent == pid || exists(/databases/$(database)/documents/conversations/$(pid)/messages/$(request.resource.data.parent)));
-        allow update: if may('conversations', 'edit') && seesConversationId(pid) && onlyMyVote();
+        allow update: if may('conversations', 'edit') && seesConversationId(pid) && (onlyMyVote() || editsMyText());
         allow delete: if may('conversations', 'edit') && seesConversationId(pid) && (resource.data.createdBy == email().lower() || hasFullWrite());
       }
     }
