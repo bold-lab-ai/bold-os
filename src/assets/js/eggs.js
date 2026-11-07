@@ -293,7 +293,11 @@
       });
     } catch (e){}
   }
-  function converse(){
+  // byItself (at 01:24, idle): left untouched for an hour, it goes without a word, so a tab left open
+  // overnight isn't still knocking in the morning; the first click or key after that hour closes it too
+  // (a sleeping laptop's timer may come late).
+  var STALE = 60 * 60e3;
+  function converse(byItself){
     if (document.querySelector('.mx-term')) return;
     var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
     var term = document.createElement('div');
@@ -304,10 +308,15 @@
     var log = term.querySelector('.mx-log'), form = term.querySelector('.mx-prompt'), input = form.querySelector('input'), queue = [], busy = false;
     var st = { stage: 'knock', name: firstName() }, game = null, thinking = false;
     // The next line waits for you: a click, a tap or a key, once its line has been held.
-    var waiting = null;
-    function stir(){ if (waiting) { var go = waiting; waiting = null; setTimeout(go, 300 + Math.random() * 300); } }   // a beat first, 0.3-0.6 s
+    var waiting = null, opened = Date.now(), touched = !byItself;
+    var stale = touched ? null : setTimeout(function(){ if (!touched) close(); }, STALE);
+    function stir(){
+      if (!touched) { touched = true; clearTimeout(stale); if (Date.now() - opened >= STALE) { close(); return; } }
+      if (waiting) { var go = waiting; waiting = null; setTimeout(go, 300 + Math.random() * 300); }   // a beat first, 0.3-0.6 s
+    }
     ['pointerdown', 'keydown'].forEach(function(t){ addEventListener(t, stir, { passive: true }); });
     function close(){
+      clearTimeout(stale);
       if (game && game.timer) clearTimeout(game.timer);
       waiting = null;
       ['pointerdown', 'keydown'].forEach(function(t){ removeEventListener(t, stir); });
@@ -623,7 +632,7 @@
     term.addEventListener('pointerup', function(){ if (!getSelection().toString()) input.focus(); });
   }
   // For search (pages/search.js: `red pill`).
-  // 01:24. Idle for 30 minutes or more, on any page, the conversation opens by itself; otherwise, on
+  // 01:24. Idle for 30 minutes or more, on any page, the conversation opens by itself (for an hour); otherwise, on
   // the homepage, hints (below), and searching with the hint in the box goes into the Matrix.
   // From 01:24 to 01:29 (a background tab's timers may run only once a minute), once a page.
   var IDLE = 30 * 60e3, lastActive = Date.now(), called = false;
@@ -693,7 +702,7 @@
     var d = new Date();
     if (d.getHours() !== 1 || d.getMinutes() < 24 || d.getMinutes() > 29) return;
     called = true;
-    if (Date.now() - lastActive >= IDLE) converse(); else if (isHome()) hints();
+    if (Date.now() - lastActive >= IDLE) converse(true); else if (isHome()) hints();
   }
   setInterval(wakeCheck, 5000);
   // To try it at another hour, in the console: BoldEggs.wake('hints') or BoldEggs.wake('idle').
