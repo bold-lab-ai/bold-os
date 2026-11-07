@@ -411,8 +411,11 @@
         ghost.removeAttribute('id');
         Array.prototype.forEach.call(ghost.querySelectorAll('[id]'), function(x){ x.removeAttribute('id'); });
         ghost.setAttribute('aria-hidden', 'true');
-        // In the feed, so its styles hold; shown, though .is-talking hides the real one.
-        ghost.style.cssText = 'display:block; position:fixed; margin:0; pointer-events:none; z-index:1; left:' + r.left + 'px; top:' + r.top + 'px; width:' + r.width + 'px;';
+        // In the feed, so its styles hold, and placed in it (not on the screen), so it scrolls with the page; shown,
+        // though .is-talking hides the real one.
+        if (getComputedStyle(feedEl).position === 'static') feedEl.style.position = 'relative';
+        var fr = feedEl.getBoundingClientRect();
+        ghost.style.cssText = 'display:block; position:absolute; margin:0; pointer-events:none; z-index:1; left:' + (r.left - fr.left) + 'px; top:' + (r.top - fr.top) + 'px; width:' + r.width + 'px;';
         feedEl.appendChild(ghost);
         setTalking(true); glide(sideEl, from);
         ghost.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px)' }], { duration: 360, easing: 'ease-out' }).onfinish = function(){ ghost.remove(); busyMove = false; };
