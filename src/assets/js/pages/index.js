@@ -400,10 +400,25 @@
       // The side column's top level with the letter's first line (under the kicker).
       if (on && letterEl && topEl) feedEl.style.setProperty('--talk-top', Math.max(0, letterEl.getBoundingClientRect().top - topEl.getBoundingClientRect().top) + 'px');
     }
-    function talking(on){
+    // together: one motion, for coming back to a talk (reopening the box): Conversations fades where it was (a copy
+    // of it, while the page's own goes at once), as the side column glides up and the talk fades in, all at the same time.
+    function talking(on, together){
       if (!feedEl || !talkEl || !sideEl || busyMove || feedEl.classList.contains('is-talking') === on) return;
       if (still || !talkEl.animate) { setTalking(on); return; }
       busyMove = true;
+      if (on && together) {
+        var r = talkEl.getBoundingClientRect(), from = sideEl.getBoundingClientRect(), ghost = talkEl.cloneNode(true);
+        ghost.removeAttribute('id');
+        Array.prototype.forEach.call(ghost.querySelectorAll('[id]'), function(x){ x.removeAttribute('id'); });
+        ghost.setAttribute('aria-hidden', 'true');
+        // In the feed, so its styles hold; shown, though .is-talking hides the real one.
+        ghost.style.cssText = 'display:block; position:fixed; margin:0; pointer-events:none; z-index:1; left:' + r.left + 'px; top:' + r.top + 'px; width:' + r.width + 'px;';
+        feedEl.appendChild(ghost);
+        setTalking(true); glide(sideEl, from);
+        ghost.animate([{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(10px)' }], { duration: 360, easing: 'ease-out' }).onfinish = function(){ ghost.remove(); busyMove = false; };
+        if (!list.hidden) list.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 420, easing: 'ease-out' });
+        return;
+      }
       if (on) {
         var h = talkEl.offsetHeight;
         talkEl.style.overflow = 'hidden';
@@ -434,7 +449,7 @@
       if (typeof drawSaved === 'function') drawSaved();
       if (yes) setTimeout(function(){ text.focus(); }, still ? 0 : 260);
       // Opening on a conversation BOLD has answered in: Conversations folds away again; closing, it comes back.
-      if (yes && !keepTalk && log.some(function(m){ return m.who === 'bold'; })) talking(true);
+      if (yes && !keepTalk && log.some(function(m){ return m.who === 'bold'; })) talking(true, true);
       if (!yes) talking(false);
     }
     line.addEventListener('click', function(){ open(true); });
