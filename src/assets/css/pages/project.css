@@ -335,3 +335,16 @@
 .proposal-hours{display:inline-flex; align-items:center; gap:6px; font-family:var(--sans); font-size:13px; color:var(--muted);}
 .proposal-hours input{width:90px; font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 .proposal-talk{margin-top:28px;}
+/* A card's badge row (project-work.js): type, number, column, milestone (a select dressed as a badge), its labels
+   and + Label, then who made it, on the right. */
+.wk-page .wk-badge-col{color:var(--ink);}
+.wk-page .wk-badge-pick{display:inline-flex; align-items:center; padding:0 2px 0 7px; cursor:pointer;}
+.wk-page .wk-badge-pick select{font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit; background:transparent; border:0; padding:2px 2px; cursor:pointer; field-sizing:content; max-width:22em;}
+.wk-page .detail-badges .wk-label{font-size:11px;}
+.wk-page .detail-badges .wk-label-open{font-family:var(--sans); font-size:12px; color:var(--muted); margin-left:0;}
+.wk-page .detail-badges .wk-label-open:hover{color:var(--link);}
+.wk-page .detail-badges .wk-label-add{margin:0;}
+.wk-page .detail-badges .wk-label-add input{font-family:var(--sans); font-size:12px; width:11em; padding:1px 6px; line-height:1.4; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.wk-page .wk-by{margin-left:auto; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.wk-page .wk-by a{color:var(--ink-soft);}
+.wk-page .detail-head + .wk-talk-slot, .wk-page .detail-head ~ .wk-talk{margin-top:28px;}

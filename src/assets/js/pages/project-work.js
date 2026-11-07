@@ -813,38 +813,41 @@ var ProjectWork = (function(){
     var why = !canAdd() ? BOLD.cannotReason('projects', 'edit') : NO_EDIT;
     var off = ok ? '' : ' disabled title="' + esc(why) + '"';
     var row = function(label, value){ return '<dt>' + esc(label) + '</dt><dd>' + value + '</dd>'; };
-    var rows = row('Column', esc(col ? col[1] : '') + (x.since && x.column !== 'done' ? ' <span class="detail-muted">· for ' + (n === 1 ? '1 day' : n + ' days') + '</span>' : ''));
-    // A card's milestone, picked here (saved at once); none yet: a link to plan them.
-    if (c) rows += row('Milestone', milestones().length
-      ? '<select class="wk-p-milestone" aria-label="Milestone"' + off + '><option value="">None</option>' + milestones().map(function(s){
-          return '<option value="' + esc(s.id) + '"' + (s.id === x.milestone ? ' selected' : '') + '>' + esc(s.name + (milestoneDates(s) ? ' (' + milestoneDates(s) + ')' : '')) + '</option>';
-        }).join('') + '</select>'
-      : '<span class="detail-muted">None yet: <a class="wk-open" href="' + esc(hrefOf({ milestones: true })) + '">add one in Milestones</a></span>');
-    // Its labels: each with × to take it off, and a box to add one (the board's offered), saved at once.
+    var rows = '';
+    // In the badge row (2026-11-07): its column, its milestone (picked there, saved at once; none planned: a
+    // link to plan them), its labels (× to take one off, + Label to add: a small box), and who made it.
+    var meta = '';
     if (c) {
+      meta += milestones().length
+        ? '<label class="badge wk-badge-pick" title="' + esc((function(m){ return m ? 'Milestone' + (milestoneDates(m) ? ': ' + milestoneDates(m) : '') : 'Its milestone'; })(milestones().filter(function(m){ return m.id === x.milestone; })[0])) + '">' + '<select class="wk-p-milestone" aria-label="Milestone"' + off + '><option value="">No milestone</option>' + milestones().map(function(s){
+            // Its name in the badge; its dates on hovering.
+            return '<option value="' + esc(s.id) + '"' + (s.id === x.milestone ? ' selected' : '') + (milestoneDates(s) ? ' title="' + esc(milestoneDates(s)) + '"' : '') + '>' + esc(s.name) + '</option>';
+          }).join('') + '</select></label>'
+        : '';
       var mine = labelsOf(c);
-      // The chips, then (adding) a small box; Add a label is the row's action, on its right (project.css detail-act).
-      rows += row('Labels', (mine.length ? '<span class="wk-labels">' + mine.map(function(l){
+      meta += mine.map(function(l){
           return '<span class="wk-label">' + esc(l) + (ok ? '<button type="button" class="wk-label-x" data-label="' + esc(l) + '" aria-label="Remove ' + esc(l) + '">×</button>' : '') + '</span>';
-        }).join('') + '</span>' : (labelAdding ? '' : '<span class="detail-muted">None</span>')) +
+        }).join('') +
         (labelAdding && ok && mine.length < MAX_LABELS ? '<form class="wk-label-add"><input type="text" class="wk-label-in" maxlength="' + MAX_LABEL + '" list="wkLabels" placeholder="A label, then Enter">' +
           '<datalist id="wkLabels">' + boardLabels().filter(function(l){ return mine.indexOf(l) < 0; }).map(function(l){ return '<option value="' + esc(l) + '">'; }).join('') + '</datalist></form>'
-        : mine.length < MAX_LABELS ? '<span class="detail-act"><button type="button" class="btn-text detail-inline-edit wk-label-open"' + off + '>Add a label</button></span>' : ''));
+        : mine.length < MAX_LABELS && ok ? '<button type="button" class="btn-text wk-label-open">+ Label</button>' : '');
     }
-    if (x.by && (x.by.name || x.by.login || x.by.email)) rows += row('From', name(x.by));
+    if (x.by && (x.by.name || x.by.login || x.by.email)) meta += '<span class="wk-by">by ' + name(x.by) + '</span>';
     var roles = [], byRole = {};
     (x.on || []).forEach(function(p){ var r = p.role || x.role || 'On it'; if (!byRole[r]) { byRole[r] = []; roles.push(r); } byRole[r].push(p); });
     roles.forEach(function(r){ rows += row(r, byRole[r].map(name).join(', ')); });
     if (!roles.length && x.waiting && x.column !== 'done') rows += row('Waiting for', x.waiting === 'a reviewer' ? 'Nobody yet' : esc(x.waiting.charAt(0).toUpperCase() + x.waiting.slice(1)));
     if (x.source === 'github' && x.url) rows += row('On GitHub', ext(x.url, esc(refLabel(x))));
     if (links.length) rows += row('Linked', '<ul class="wk-linked">' + links.join('') + '</ul>');
-    var badges = '<span class="badge wk-badge-' + t[0] + '">' + t[1] + '</span>' + (x.num ? '<span class="badge">#' + x.num + '</span>' : '');
+    // Its column, a badge too: how long it's been there in its title.
+    var colBadge = col ? '<span class="badge wk-badge-col"' + (x.since && x.column !== 'done' ? ' title="' + esc('In ' + col[1] + ' for ' + (n === 1 ? '1 day' : n + ' days')) + '"' : '') + '>' + esc(col[1]) + '</span>' : '';
+    var badges = '<span class="badge wk-badge-' + t[0] + '">' + t[1] + '</span>' + (x.num ? '<span class="badge">#' + x.num + '</span>' : '') + colBadge + meta;
     var html = '<div class="wk-page">' + back +
       '<div class="detail-head"><h2 class="wk-page-title">' + esc(x.title) +
         (c ? '<button class="btn-text detail-inline-edit wk-edit" type="button"' + off + '>Edit</button>' : '') + '</h2>' +
         '<div class="detail-badges">' + badges + '</div></div>' +
       (c ? '<div class="wk-page-edit"></div>' : '') +
-      '<dl class="detail-grid">' + rows + '</dl>';
+      (rows ? '<dl class="detail-grid">' + rows + '</dl>' : '');
     // A card's description, and its images, are its conversation's first message (talk.js, 2026-11-07): no fields of
     // their own; images go in its messages. A GitHub item has none until it's described (that makes it a card).
     if (!c) html += '<div class="detail-abstract"><div class="detail-abstract-label">Description</div>' +
