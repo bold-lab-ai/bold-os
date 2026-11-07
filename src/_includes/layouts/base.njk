@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script>/* Dark theme (bold.css, bold.js mountTheme): set before anything paints. */ try { var t = localStorage.getItem('boldTheme'); if (t === 'dark' || t === 'lamp') document.documentElement.setAttribute('data-theme', t); if (localStorage.getItem('boldMatrix') === '1') document.documentElement.classList.add('is-matrix'); } catch (e){}</script>
+<script>{% include "sun.js" %}</script>
+<script>/* The theme (bold.css, bold.js mountTheme): light, dark, auto (dark from sunset to sunrise, sun.js) or the lamp; set before anything paints. */ try { var t = localStorage.getItem('boldTheme'); if (t === 'auto') t = boldSunDark(Date.now()) ? 'dark' : 'light'; if (t === 'dark' || t === 'lamp') document.documentElement.setAttribute('data-theme', t); if (localStorage.getItem('boldMatrix') === '1') document.documentElement.classList.add('is-matrix'); } catch (e){}</script>
 <title>{{ title | safe }}</title>
 {% if description %}<meta name="description" content="{{ description | safe }}">
 <meta property="og:title" content="{{ title | safe }}">

@@ -9,12 +9,13 @@ eleventyExcludeFromCollections: true
    Otherwise (an easter egg): a ball descends a loss curve into a local minimum; a click
    drops it somewhere else. Standalone (served at any path), so its styles are its own. #}
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Not found | BOLD Lab</title>
+<script>{% include "sun.js" %}</script>
 <script>
 (function(){
   var p = location.pathname, base = p.slice(0, p.lastIndexOf('/') + 1), m;
   if ((m = /\/event-collaboration-week-session-([^/]+)\.html$/.exec(p))) location.replace(base + 'session.html?session=' + encodeURIComponent(m[1]) + location.hash);
   else if ((m = /\/event-collaboration-week-talk-([^/]+)\.html$/.exec(p))) location.replace(base + 'talk.html?talk=' + encodeURIComponent(m[1]) + location.hash);
-  try { if (localStorage.getItem('boldTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e){}  /* the lamp: light here */
+  try { var t = localStorage.getItem('boldTheme'); if (t === 'dark' || (t === 'auto' && boldSunDark(Date.now()))) document.documentElement.setAttribute('data-theme', 'dark'); } catch (e){}  /* the lamp: light here */
 })();
 </script>
 <link href="{{ site.fonts }}" rel="stylesheet">
