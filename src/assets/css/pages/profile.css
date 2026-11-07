@@ -133,7 +133,7 @@ fieldset.md-group:first-child{margin-top:0;}
 #people[data-view="grid"] .pp-head > .type-badge{position:absolute; top:14px; right:16px; margin:0;}
 #people[data-view="grid"] .proj-meta{display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:1; line-clamp:1; overflow:hidden;}
 #people[data-view="grid"] .proj-meta.pp-interests{-webkit-line-clamp:2; line-clamp:2;}
-#people[data-view="grid"] .pp-links, #people[data-view="grid"] .pp-onboarding{display:none;}
+#people[data-view="grid"] .pp-links{display:none;}
 .pp-filter input{width:100%; font-family:var(--sans); font-size:15px; padding:8px 10px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
 /* A person's group (Who is BOLD): the talks' type badges (bold.css .type-badge). For
    PIs and admins the badge is a button that shows the groups to choose from. */

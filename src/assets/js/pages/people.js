@@ -10,7 +10,7 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var members = null, unsub = null, staff = false, me = null, picking = '', slackIds = {};
-  // PIs and admins: each person's onboarding (Get started), { email: { done, count } }.
+  // PIs and admins: each person's onboarding (Get started) as a bar (BoldHealth.steps), { email: html }.
   var onboarding = {};
 
   function links(t){
@@ -39,15 +39,14 @@
       (meta ? '<span class="proj-meta pp-meta" title="' + esc([m.institution, m.basedIn, m.contact ? 'with ' + m.contact : ''].filter(Boolean).join(' · ')) + '">' + meta + '</span>' : '') +
       (m.interests ? '<span class="proj-meta pp-interests" title="' + esc(m.interests) + '">' + esc(m.interests) + '</span>' : '') +
       (l ? '<span class="proj-meta pp-links">' + l + '</span>' : '') +
-      (staff && onboarding[String(m.email || '').toLowerCase()] ? '<span class="proj-meta pp-onboarding">' + onboarding[String(m.email || '').toLowerCase()] + '</span>' : '') + '</div></div></li>';
+      (staff && onboarding[String(m.email || '').toLowerCase()] ? '<span class="proj-health pp-onboarding">' + onboarding[String(m.email || '').toLowerCase()] + '</span>' : '') + '</div></div></li>';
   }
 
   function loadOnboarding(){
     BoldOnboarding.call({ all: true }).then(function(r){
       onboarding = {};
       ((r.data && r.data.people) || []).forEach(function(p){
-        var left = p.steps.filter(function(x){ return !x.done; }).map(function(x){ return x.label; });
-        onboarding[p.email] = p.done ? 'Onboarding done' : 'Onboarding ' + BoldOnboarding.count(p) + ': still to ' + esc(left.map(function(l){ return l.charAt(0).toLowerCase() + l.slice(1); }).join('; '));
+        onboarding[p.email] = BoldHealth.steps(p);
       });
       render();
     }).catch(function(err){ console.error('[BOLD People] loading onboarding failed', err); });
