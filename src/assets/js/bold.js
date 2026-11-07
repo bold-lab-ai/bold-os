@@ -226,7 +226,8 @@
     if (!u) return Promise.reject(new Error('Sign in first.'));
     skipConfirm = !!on;
     try { localStorage.setItem(skipKey(), on ? '1' : '0'); } catch (e){}
-    return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).set({ skipConfirm: !!on, at: Date.now() });
+    // Merged: prefs also holds homeLetter (profile › Agents).
+    return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).set({ skipConfirm: !!on, at: Date.now() }, { merge: true });
   };
   // A proposed change (the BOLDiquette, a guide, a skill, a tool) tells every PI and admin on
   // Slack when it's proposed, edited, withdrawn or decided (functions/index.js onProposed,

@@ -180,7 +180,7 @@ module.exports = function(deps){
     if (!t) throw httpError(401, 'That token isn’t valid: it may have been revoked.');
     if (t.limited) throw httpError(429, 'At most ' + RATE_PER_MINUTE + ' requests a minute: wait a moment.');
     if (!(await personByEmail(t.email))) throw httpError(403, 'Only people in the BOLD Slack can use BOLD.OS.');
-    return { email: t.email, prefix: t.prefix, name: t.name || '', write: !!t.write };
+    return { email: t.email, prefix: t.prefix, name: t.name || '', label: t.label || '', write: !!t.write };
   }
   function httpError(status, message){ const e = new Error(message); e.status = status; return e; }
 
@@ -702,6 +702,38 @@ module.exports = function(deps){
     return out;
   }
 
+  // The home letter's inputs (functions/home-letter.js, docs/home-letter-prompt.md), read as the person by the
+  // same tools their agent would use, each part only if they may view its page. For BOLD LLM (functions/bold-llm.js).
+  async function letterInputs(who){
+    const HL = require('./home-letter');
+    const now = Date.now(), since = now - 24 * 3600000, weekAgo = now - 7 * 86400000;
+    const today = HL.londonNow(now).date, in7 = new Date(now + 7 * 86400000).toISOString().slice(0, 10), in30 = new Date(now + 30 * 86400000).toISOString().slice(0, 10);
+    const when = async (page, fn, empty) => ((await access.can(who.email, page, 'view')) ? fn() : empty);
+    const [mine, cal, evs, waiting, notes, convs, changes, full] = await Promise.all([
+      myItems(who),
+      when('calendar', () => calendar(who, { from: today, to: in7, kind: 'meetings' }), {}),
+      when('calendar', () => calendar(who, { from: today, to: in30, kind: 'events' }).then((c) => c.events || []), []),
+      act(who, 'myRequests', {}).then((r) => r.forYou || []).catch((err) => { logger.warn('letterInputs: what waits on them failed', { error: String((err && err.message) || err) }); return []; }),
+      db.collection('notifications').where('to', '==', who.email).where('read', '==', false).limit(100).get().then((x) => x.docs.map((d) => d.data())),
+      when('conversations', () => db.collection('conversations').where('private', '==', false).get().then((x) => x.docs.map((d) => Object.assign({ id: d.id }, d.data()))
+        .filter((c) => (c.lastAt || c.at || 0) > weekAgo).map((c) => Object.assign(c, { yours: String(c.createdBy || '').toLowerCase() === who.email, url: url('conversations.html#post=' + encodeURIComponent(c.id)) }))), []),
+      when('changelog', () => db.collection('changelog').where('at', '>', since).get().then((x) => x.docs.map((d) => d.data())), []),
+      isFullWrite(who.email),
+    ]);
+    return HL.inputsOf({ now, since, person: { first_name: String((mine.you || {}).name || who.name || '').split(' ')[0], group: (mine.you || {}).group || '', pi_or_admin: !!full },
+      waiting, calendar: cal, events: evs, mine, notes, conversations: convs, changes });
+  }
+  // The reading tools Talking to BOLD may use, as the person (each checks its page, as for their agent).
+  const CHAT_TOOLS = ['search', 'list_projects', 'get_project', 'find_people', 'get_person', 'calendar', 'my_items', 'read_page', 'list_skills', 'get_skill'];
+  function chatTools(){
+    return TOOLS.filter((t) => CHAT_TOOLS.indexOf(t.name) >= 0).map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema }));
+  }
+  async function runChatTool(who, name, args){
+    if (CHAT_TOOLS.indexOf(name) < 0) throw httpError(404, 'No such tool.');
+    const t = await toolNamed(who, name);
+    return t.run(who, args || {});
+  }
+
   async function myItems(who){
     const e = who.email;
     const q = (col, field) => db.collection(col).where(field, '==', e).get().then((s) => s.docs.map((d) => Object.assign({ id: d.id }, d.data())));
@@ -861,5 +893,5 @@ module.exports = function(deps){
     }
   });
 
-  return { apiTokens, boldApi, calendarFeed, checkTool: (name, def) => added.check(name, def), _internal: { meetingText, TOOLS, mcp, resolve, added } };
+  return { apiTokens, boldApi, calendarFeed, letterInputs, chatTools, runChatTool, checkTool: (name, def) => added.check(name, def), _internal: { meetingText, TOOLS, mcp, resolve, added } };
 };

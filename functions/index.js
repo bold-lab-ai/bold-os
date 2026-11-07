@@ -8710,7 +8710,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
-    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, joinChanges: exports.joinChanges, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
+    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, joinChanges: exports.joinChanges, myRequests: exports.myRequests, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
 // Subscribing to the Calendar: one private .ics link a person (calendar.html; served by boldApi).
@@ -8820,6 +8820,12 @@ exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
+// BOLD LLM, the home letter and Talking to BOLD (functions/bold-llm.js): Claude until Sofya runs, reading as
+// each person through the agents' API (letterInputs, its reading tools).
+const boldLlm = require('./bold-llm')({ db, admin, logger, onCall, onSchedule, HttpsError, callerEmail, access, ANTHROPIC_API_KEY,
+  letterInputs: agentApi.letterInputs, chatTools: agentApi.chatTools, runChatTool: agentApi.runChatTool });
+exports.writeHomeLetters = boldLlm.writeHomeLetters;
+exports.homeLetter = boldLlm.homeLetter;
 
 exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetingStartsSoon,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
@@ -8837,3 +8843,6 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
   projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage, joinChangesRefusal, joinChangesKeyRefusal, joinChangesEmail, joinChangesView, joinChangesProposed, joinChangesLines, keyHash,
   onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
 };
+
+// For tests and the test copy: the home letter's inputs as someone (functions/bold-llm.js).
+exports._internal.letterInputs = (who) => agentApi.letterInputs(who);

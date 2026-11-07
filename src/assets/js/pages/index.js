@@ -215,8 +215,32 @@
         (open ? ', and nobody has answered ' + esc(first(open.name)) + '’s ' + door(esc(quote(open.title)), 'index.html#post=' + encodeURIComponent(open.id), [['Answer it', 'index.html#post=' + encodeURIComponent(open.id)]]) + ' yet' : '') + '.');
     }
 
-    el.innerHTML = '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '');
+    // Written by BOLD LLM (their choice, profile › Agents, and the lab's, Settings › Home letter; homeLetters/{email})
+    // within the last day: that, under the greeting and any meeting on now, which a morning letter can't know.
+    var al = llmLetter();
+    if (al) { el.innerHTML = '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al; return; }
+    el.innerHTML = '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '') +
+      (state.letterChoice === 'bold' ? '<p class="hl-by">' + (state.letterWriting ? 'BOLD LLM is writing today’s letter; this is the rule-based one meanwhile.' : 'BOLD LLM couldn’t write today’s letter, so this is the rule-based one.') +
+        ' <a href="profile.html#agents">Who writes it</a></p>' : '');
   }
+  // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
+  var LEN_KEY = 'boldLetterLength';
+  function letterLength(){ try { return localStorage.getItem(LEN_KEY) === 'long' ? 'long' : 'short'; } catch (e){ return 'short'; } }
+  function llmLetter(){
+    var l = state.llmLetter;
+    if (state.letterChoice !== 'bold' || !l || !l.at || Date.now() - l.at >= 24 * 3600000 || !window.BoldMarkdown) return '';
+    var len = letterLength(), at = new Date(l.at);
+    return '<div class="hl-agent-text">' + BoldMarkdown.render(String(l[len] || l.short || '')) + '</div>' +
+      '<p class="hl-by">Written by BOLD LLM at ' + esc(('0' + at.getHours()).slice(-2) + ':' + ('0' + at.getMinutes()).slice(-2)) + ' · ' +
+      '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button> · ' +
+      '<a href="profile.html#agents">Who writes it</a></p>';
+  }
+  document.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('.hl-len');
+    if (!b) return;
+    try { localStorage.setItem(LEN_KEY, b.getAttribute('data-len')); } catch (err){}
+    write();
+  });
 
   // ---- Beside Conversations: the lab on the left, them on the right (each part only when it has something) ----
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], DAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -328,11 +352,13 @@
   }
   function drawSides(){ drawSubmitting(); drawDone(); drawEvents(); drawWeek(); drawProjects(); drawInbox(); drawSteps(); }
 
-  // ---- Talking to BOLD: a preview, not shipped (2026-11-07) ----
-  // Under the letter, a dialog with BOLD-LLM: they write (Markdown, md-field.js), it answers, as Markdown. Hidden
-  // until BOLD-LLM is ready: #ask in the address turns it on in this browser (localStorage boldHomeAsk), #ask-off
-  // turns it off. No model behind it yet: its answer says so and offers a search for what they asked. Kept for the
-  // visit only (sessionStorage).
+  // ---- Talking to BOLD ----
+  // Under the letter, a dialog with BOLD LLM: they write (Markdown, md-field.js), it answers, as Markdown. Open to
+  // whoever has BOLD LLM writing their letter (state.chatOn: their choice and the lab's), answered by homeLetter
+  // 'ask' (functions/bold-llm.js) with the conversation so far. Otherwise hidden; #ask in the address shows it
+  // in this browser as a preview (localStorage boldHomeAsk; #ask-off hides it), whose answer says BOLD LLM isn't
+  // on for them and offers a search. Kept for the visit only (sessionStorage).
+  var mountAsk = function(){};
   (function(){
     var box = document.getElementById('homeAskBox');
     if (!box) return;
@@ -343,7 +369,10 @@
       on = localStorage.getItem(KEY) === '1';
       log = JSON.parse(sessionStorage.getItem(LOG) || '[]') || [];
     } catch (e){}
-    if (!on) return;
+    var mounted = false;
+    mountAsk = function(){ if (!mounted) { mounted = true; mount(); } };
+    if (on) mountAsk();
+    function mount(){
     box.hidden = false;
     var list = box.querySelector('.ha-log'), form = box.querySelector('.ha-form'), text = form.querySelector('textarea');
     var line = box.querySelector('.ha-line'), still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -368,11 +397,19 @@
       e.preventDefault(); open(true);
     });
     document.addEventListener('click', function(e){ if (box.classList.contains('is-open') && !box.contains(e.target) && !text.value.trim() && !log.length) open(false); });
-    // What BOLD says until BOLD-LLM answers: that it isn't connected, and a way to what they asked meanwhile.
-    function answer(q){
+    // Without BOLD LLM on for them (the #ask preview): that it isn't, and a way to what they asked meanwhile.
+    function placeholder(q){
       var words = q.replace(/[#*_`>\[\]()?!.,;:]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 8).join(' ');
-      return 'BOLD-LLM isn’t connected yet: this is where it will answer you, from everything you can see on BOLD.OS.' +
+      return 'BOLD LLM isn’t on for you: choose it on your [profile](profile.html#agents) to talk to it here.' +
         (words ? '\n\nMeanwhile, [search BOLD.OS for “' + words + '”](search.html?q=' + encodeURIComponent(words) + ').' : '');
+    }
+    // BOLD LLM's answer to the conversation so far (homeLetter 'ask'), or what went wrong.
+    function answer(q){
+      if (!state.chatOn) return Promise.resolve(placeholder(q));
+      var messages = log.map(function(m){ return { role: m.who === 'you' ? 'user' : 'assistant', text: m.text }; });
+      return firebase.app().functions('europe-west2').httpsCallable('homeLetter')({ action: 'ask', messages: messages })
+        .then(function(r){ return String((r.data || {}).text || ''); })
+        .catch(function(err){ console.error('[BOLD Lab] BOLD LLM’s answer failed', err); return (err && err.message && err.code !== 'functions/internal') ? err.message : 'BOLD LLM couldn’t answer just now — try again.'; });
     }
     // BOLD's answer writes itself out, word by word, as a model streams.
     function stream(full){
@@ -397,12 +434,22 @@
       list.hidden = false;
       list.insertAdjacentHTML('beforeend', item({ who: 'you', text: q }, true));
       text.value = ''; text.dispatchEvent(new Event('input'));
-      setTimeout(function(){ stream(answer(q)); }, still ? 0 : 450);
+      // While it thinks: a quiet line, replaced by the answer as it writes itself out.
+      list.insertAdjacentHTML('beforeend', '<li class="ha-msg ha-bold ha-pending"><p class="ha-who">BOLD</p><div class="ha-text"><p>Thinking…</p></div></li>');
+      form.querySelector('button[type="submit"], button:not([type])') && (form.querySelector('button[type="submit"], button:not([type])').disabled = true);
+      answer(q).then(function(a){
+        var p = list.querySelector('.ha-pending');
+        if (p) p.remove();
+        var b = form.querySelector('button[type="submit"], button:not([type])');
+        if (b) b.disabled = false;
+        stream(a || 'Nothing to say to that.');
+      });
     });
     // Enter sends; Shift+Enter is a new line.
     text.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
     draw();
     if (log.length) open(true);
+    }
   })();
 
   // J and K: from one way in to the next, as in a list.
@@ -434,6 +481,23 @@
     var call = function(n, d){ return firebase.app().functions('europe-west2').httpsCallable(n)(d || {}); };
     var fail = function(what, then){ return function(err){ console.error('[BOLD Lab] loading ' + what + ' failed', err); if (then) then(); }; };
     var set = function(k){ return function(v){ if (asked !== mine) return; state[k] = v; write(); drawSides(); }; };
+    // Who writes their letter: BOLD LLM if they chose it (prefs/{uid}.homeLetter) and the lab has it on
+    // (settings/homeLetter); then today's, or one written now (homeLetter 'write'), the rule-based one meanwhile.
+    Promise.all([db.collection('prefs').doc(u.uid).get(), db.collection('settings').doc('homeLetter').get()]).then(function(r){
+      var c = (r[0].exists && r[0].data().homeLetter) === 'bold' && (r[1].exists && r[1].data().writer) === 'claude' ? 'bold' : 'rules';
+      state.chatOn = c === 'bold';
+      if (state.chatOn) mountAsk();
+      if (c !== 'bold') return set('letterChoice')(c);
+      return db.collection('homeLetters').doc(me).get().then(function(x){
+        state.llmLetter = x.exists ? x.data() : null;
+        var fresh = state.llmLetter && Date.now() - state.llmLetter.at < 24 * 3600000;
+        state.letterWriting = !fresh;
+        set('letterChoice')(c);
+        if (fresh) return;
+        return call('homeLetter', { action: 'write' }).then(function(w){ state.llmLetter = (w.data || {}).letter || null; })
+          .catch(fail('BOLD LLM’s letter')).then(function(){ state.letterWriting = false; set('letterChoice')(c); });
+      });
+    }).catch(fail('who writes your letter'));
     call('myRequests').then(function(r){
       set('forYou')((r.data || {}).forYou || []);
       if (BOLD.setTodoCount) BOLD.setTodoCount((state.forYou || []).length);

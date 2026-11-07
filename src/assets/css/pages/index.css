@@ -67,6 +67,9 @@ body.is-home-feed{font-family:var(--sans); font-size:16px; line-height:1.55;}
 .home-letter p{margin:0 0 .7em;}
 .home-letter p:last-child{margin-bottom:0;}
 .home-letter .hl-wait{min-height:3.3em;}
+/* Who wrote the letter (their own agent, profile › Agents), with Short | Long: a quiet line under it. */
+.home-letter .hl-by{margin-top:.6em; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.home-letter .hl-by .btn-text{font-size:13px;}
 .door{position:relative;}
 .door-link{color:var(--ink); text-decoration:underline; text-decoration-color:transparent; text-decoration-thickness:1px; text-underline-offset:3px; transition:color .15s ease, text-decoration-color .15s ease;}
 .door.is-strong .door-link{font-weight:600;}

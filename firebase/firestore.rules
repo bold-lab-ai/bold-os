@@ -191,6 +191,13 @@ service cloud.firestore {
     }
     // The join form's choices (join.html, read before signing in) and, for PIs and
     // admins only, the Slack invite link and the welcome email's text.
+    // Who writes the lab's home letters (Settings › Home letter, settings.html): BOLD LLM (Claude until
+    // Sofya runs) or the rule-based letter for everyone; the lab reads it, PIs and admins set it.
+    match /settings/homeLetter {
+      allow read: if isSignedIn();
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'updatedAt', 'updatedBy'])
+        && request.resource.data.writer in ['rules', 'claude'] && request.resource.data.updatedBy == email();
+    }
     match /settings/joinForm {
       allow read: if true;
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['roles', 'pillars', 'updatedAt', 'updatedBy'])
@@ -871,9 +878,19 @@ service cloud.firestore {
     // before actions that reach outside BOLD.OS. Theirs alone, keyed by their uid.
     match /prefs/{userId} {
       allow read: if isSignedIn() && request.auth.uid == userId;
+      // skipConfirm (bold.js confirmAction) and homeLetter: who writes their home letter (profile › Agents):
+      // BOLD LLM (functions/bold-llm.js) or the rule-based one the page writes.
       allow create, update: if isSignedIn() && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['skipConfirm', 'at'])
-        && request.resource.data.skipConfirm is bool && request.resource.data.at is number;
+        && request.resource.data.keys().hasOnly(['skipConfirm', 'homeLetter', 'at'])
+        && (!('skipConfirm' in request.resource.data) || request.resource.data.skipConfirm is bool)
+        && (!('homeLetter' in request.resource.data) || request.resource.data.homeLetter in ['bold', 'rules'])
+        && request.resource.data.at is number;
+    }
+    // Each person's home letter, written by BOLD LLM (functions/bold-llm.js) and shown on their home
+    // page: theirs alone to read; only the server writes it.
+    match /homeLetters/{owner} {
+      allow read: if isSignedIn() && email().lower() == owner;
+      allow write: if false;
     }
 
     // A person's read points (read-point.js): which version of a document they

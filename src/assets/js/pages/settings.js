@@ -45,7 +45,39 @@
   // feature's switch and testers, the pilots; #pilots, its old name, opens it). The first two
   // are one form, saved from either.
   // Notifications (#notifications): the Web Push key desktop notifications use (settings/webPush).
-  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['features', 'Features']];
+  // Home letter (#letter): who writes the lab's home letters (settings/homeLetter, functions/bold-llm.js), saved as it's chosen.
+  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['letter', 'Home letter'], ['features', 'Features']];
+  var letterLab = null, letterBusy = false, letterError = '';
+  var WRITERS = [
+    ['claude', 'BOLD LLM', 'Claude (Sonnet 5.5) writes each letter at 06:00, from what that person can see, and answers Talking to BOLD on the home page, until Sofya runs. Each person also chooses it on their profile. What it reads of their day is sent to Anthropic, and the lab pays for it.'],
+    ['rules', 'Rule-based', 'Each home page puts its letter together as it opens, from what’s waiting, the meetings and the lab. Nothing is sent anywhere; Talking to BOLD is off.'],
+  ];
+  function letterHtml(){
+    if (letterLab === null) return '<p class="proj-msg">Loading&hellip;</p>';
+    var cur = letterLab.writer || 'rules';
+    return '<div class="event-form join-form"><fieldset class="md-group"><legend>Who writes the home letters</legend>' +
+      '<p class="proj-meta">The letter that opens everyone’s home page. Someone who hasn’t chosen BOLD LLM on their profile gets the rule-based one either way.</p>' +
+      WRITERS.map(function(w){
+        return '<label class="jn-check"><input type="radio" name="st-letter" value="' + w[0] + '"' + (cur === w[0] ? ' checked' : '') + (letterBusy ? ' disabled' : '') + '> <span><strong>' + esc(w[1]) + '</strong>: ' + esc(w[2]) + '</span></label>';
+      }).join('') +
+      (letterError ? '<p class="st-error">' + esc(letterError) + '</p>' : '') +
+      (letterLab.updatedBy ? '<p class="proj-meta">Set by ' + esc(letterLab.updatedBy) + ', ' + esc(new Date(letterLab.updatedAt || 0).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })) + '.</p>' : '') +
+      '</fieldset></div>';
+  }
+  function drawLetter(){ var x = document.getElementById('letter'); if (x) x.innerHTML = letterHtml(); }
+  function saveLetter(writer){
+    var was = (letterLab || {}).writer || 'rules';
+    BOLD.confirmAction({ always: true, title: writer === 'claude' ? 'Have BOLD LLM write the home letters?' : 'Go back to rule-based letters?', go: writer === 'claude' ? 'Turn it on' : 'Switch',
+      effects: writer === 'claude' ? ['For everyone who chooses BOLD LLM on their profile: send what they can see of their day to Anthropic (Claude) each morning, and when they talk to BOLD', 'The lab pays for each letter and answer']
+        : ['Everyone’s home page shows the rule-based letter, and Talking to BOLD is off', 'Nothing more is sent to Anthropic'] })
+      .then(function(ok){
+        if (!ok) { drawLetter(); return; }
+        letterBusy = true; letterError = ''; drawLetter();
+        db.collection('settings').doc('homeLetter').set({ writer: writer, updatedAt: Date.now(), updatedBy: me.email })
+          .catch(function(err){ console.error('[BOLD Settings] saving the home letter writer failed', err); letterError = 'Couldn’t save it — try again.'; letterLab = Object.assign({}, letterLab, { writer: was }); })
+          .then(function(){ letterBusy = false; drawLetter(); });
+      });
+  }
   // A list typed in one at a time, as keywords are on the register form: type, Enter or +,
   // × to remove (project.css .kw-*). kind: 'chan' (Slack channels, shown with #), 'role',
   // 'pillar'; key: the group's or role's for channels.
@@ -109,6 +141,7 @@
       '<p class="proj-meta">The public key of the project’s Web Push certificate (Firebase console › Project settings › Cloud Messaging › Web Push certificates). Public: browsers hand it to their push service. Empty: Notifications doesn’t offer desktop notifications.</p>' +
       '<label>Web Push key<input type="text" class="jr-push-key" maxlength="200" spellcheck="false" autocomplete="off" value="' + esc((webPush || {}).publicKey || '') + '" placeholder="B…"></label></fieldset>' +
       save + '</div></section></div>' +
+      '<section class="profile-panel" id="letter">' + letterHtml() + '</section>' +
       '<section class="profile-panel" id="features">' + pilotHtml() + '</section>';
   }
   function showTab(){
@@ -396,6 +429,7 @@
     var t = e.target;
     if (t.classList.contains('jr-tester-add') && t.value) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).push(t.value); render(); return; }
     if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.checked; render(); }
+    if (t.name === 'st-letter') saveLetter(t.value);
   });
   main.addEventListener('input', function(e){ if (e.target.classList.contains('st-align-at')) align.at = e.target.value; });
   main.addEventListener('keydown', function(e){
@@ -436,6 +470,7 @@
       watch('groups', function(x){ groups = x; });
       watch('pilot', function(x){ var was = pilot && (pilot.live || {})['channel-alignment']; pilot = x; if (align.status && was !== (x.live || {})['channel-alignment']) loadAlign(); });
       watch('webPush', function(x){ webPush = x; });
+      watch('homeLetter', function(x){ letterLab = x; drawLetter(); });
       loadAlign();
     }).catch(function(err){ console.error('[BOLD Settings] checking access failed', err); staff = false; render(); });
   });
