@@ -38,6 +38,7 @@ function toolText(out){
 const textOf = (r) => r.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
 
 module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, callerEmail, access, ANTHROPIC_API_KEY, letterInputs, chatTools, runChatTool }){
+  const FieldValue = admin.firestore.FieldValue;
   const client = () => new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
   const asPerson = (email, name) => ({ email, name: name || '', prefix: 'bold-llm', label: '', write: false });
   // The lab's switch (Settings › BOLD Agent): who writes the letters, and how often.
@@ -91,6 +92,54 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
     logger.info('writeHomeLetters', { chose: uids.length, written: done, failed });
   });
 
+  // Talking to BOLD is kept as a conversation of theirs (Conversations, conversations/{pid}): private, its one
+  // reader them (their Slack id), source 'bold-llm' (the triggers tell nobody: onConversationCreated's readers but
+  // whoever started it, onConversationMessage skips it); their first message the post, the rest replies, each
+  // after the one before; BOLD LLM's answers by "BOLD LLM". The conversation so far is read from there.
+  const SOURCE = 'bold-llm', BOLD_NAME = 'BOLD LLM';
+  const conv = (pid) => db.collection('conversations').doc(pid);
+  async function slackIdOf(email){
+    const p = (await db.collection('people').where('email', '==', email).limit(1).get()).docs[0];
+    return p ? String(p.data().slackId || p.id) : '';
+  }
+  // Their conversation with BOLD LLM so far → { post, turns: [{ role, text }], last } (last: the id the next reply follows).
+  async function history(email, pid){
+    const s = await conv(pid).get(), post = s.exists ? s.data() : null;
+    if (!post || post.source !== SOURCE || String(post.createdBy || '').toLowerCase() !== email) throw new HttpsError('not-found', 'That conversation with BOLD LLM isn’t yours.');
+    const ms = (await conv(pid).collection('messages').orderBy('at').get()).docs;
+    return { post, last: ms.length ? ms[ms.length - 1].id : pid,
+      turns: [{ role: 'user', text: post.body || post.title }].concat(ms.map((d) => ({ role: d.data().createdBy === email ? 'user' : 'assistant', text: String(d.data().body || '') }))) };
+  }
+  async function reply(pid, parent, msg){
+    const ref = await conv(pid).collection('messages').add(Object.assign({ parent, source: SOURCE, viaAgent: false, votes: {}, at: FieldValue.serverTimestamp() }, msg));
+    await conv(pid).set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true });
+    return ref.id;
+  }
+  // Their message, kept, then BOLD LLM's answer, kept. → { conversation, text }
+  async function talk(email, name, pid, text){
+    text = String(text || '').trim();
+    if (!text) throw new HttpsError('invalid-argument', 'Say something first.');
+    let turns, last;
+    if (pid) {
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(String(pid))) throw new HttpsError('invalid-argument', 'No such conversation.');
+      const h = await history(email, pid);
+      turns = h.turns.concat([{ role: 'user', text }]);
+      if (chatMessages(turns).error) throw new HttpsError('invalid-argument', chatMessages(turns).error);
+      last = await reply(pid, h.last, { body: text, name, createdBy: email });
+    } else {
+      turns = [{ role: 'user', text }];
+      if (chatMessages(turns).error) throw new HttpsError('invalid-argument', chatMessages(turns).error);
+      const title = text.split('\n')[0].replace(/[#*_`>]/g, '').trim();
+      const ref = db.collection('conversations').doc();
+      await ref.create({ title: title.length > 100 ? title.slice(0, 99) + '…' : title, body: text, name, createdBy: email, at: FieldValue.serverTimestamp(),
+        source: SOURCE, viaAgent: false, votes: {}, private: true, readers: [await slackIdOf(email)].filter(Boolean), replies: 0 });
+      pid = ref.id; last = pid;
+    }
+    const said = await answer(email, name, turns);
+    await reply(pid, last, { body: said, name: BOLD_NAME, createdBy: '' });
+    return { conversation: pid, text: said };
+  }
+
   // An answer in Talking to BOLD: the prompt, today's letter and inputs, the conversation; the reading tools as them.
   async function answer(email, name, list){
     const m = chatMessages(list);
@@ -118,7 +167,8 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
     return 'That took too many steps: ask something narrower.';
   }
 
-  // data: { action: 'write' } → { letter } (today's, written now if there's none); { action: 'ask', messages: [{ role, text }] } → { text }.
+  // data: { action: 'write' } → { letter } (today's, written now if there's none); { action: 'ask', text, conversation? }
+  // → { conversation, text } (a new conversation without one).
   const homeLetter = onCall({ secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: '512MiB' }, async (req) => {
     const email = callerEmail(req);
     await access.requireAccess(email, 'profile', 'view');   // Who can see what
@@ -143,7 +193,7 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
       if (n >= CHAT_DAY) throw new HttpsError('resource-exhausted', 'That’s ' + CHAT_DAY + ' messages today: BOLD LLM talks again tomorrow.');
       tx.set(ref, { day: today, n: n + 1, at: Date.now() });
     });
-    try { return { text: await answer(email, name, d.messages) }; }
+    try { return await talk(email, name, d.conversation, d.text); }
     catch (err){
       if (err instanceof HttpsError) throw err;
       logger.error('homeLetter ask failed', { error: String((err && err.message) || err) });

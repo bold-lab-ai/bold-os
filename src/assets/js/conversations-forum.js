@@ -107,6 +107,8 @@ window.BoldConversations = (function(){
     function by(m){
       return '<span class="bs-author">' + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + '</span> · ' + ago(m.at);
     }
+    // Why a private one is private: a talk with BOLD LLM, or a private Slack channel's thread.
+    function PRIVATE_TIP(m){ return m.source === 'bold-llm' ? 'A talk with BOLD LLM: only you see it' : 'Brought in from a private Slack channel: only its members see it here'; }
     function origin(m){
       // A proposed project's conversation (functions/index.js proposalThread): the project, linked (not on its own page).
       if (m.source === 'proposal' && m.project && !opts.thread) {
@@ -128,6 +130,8 @@ window.BoldConversations = (function(){
           (m.broughtBy && m.broughtBy.name && !card ? ', made a conversation by ' + esc(m.broughtBy.name) : '') +
           (f.url ? ' · <a href="' + esc(f.url) + '">' + (card ? 'Open the card' : 'See the passage') + '</a>' : '') + '</p>';
       }
+      // A talk with BOLD LLM (functions/bold-llm.js, from the home page): theirs alone.
+      if (m.source === 'bold-llm') return '<p class="bs-origin"><span class="bs-private" title="' + esc(PRIVATE_TIP(m)) + '">Private</span> · A talk with BOLD LLM, only you see it</p>';
       if (m.source !== 'slack' || !m.slack) return '';
       var s = m.slack;
       return '<p class="bs-origin">' + (m.private ? '<span class="bs-private" title="Brought in from a private Slack channel: only its members see it here">Private: ' + (s.channelName ? esc(s.channelName) + '’s' : 'the channel’s') + ' members</span> · ' : '') + 'From ' + (s.channelName ? esc(s.channelName) : 'Slack') +
@@ -368,7 +372,7 @@ window.BoldConversations = (function(){
       postsEl.innerHTML = list.length ? list.map(function(q){
         var at = postHash(q.id);
         return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
-          '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="Brought in from a private Slack channel: only its members see it here">Private</span>' : '') + '</p>' +
+          '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="' + esc(PRIVATE_TIP(q)) + '">Private</span>' : '') + '</p>' +
             (q.body && q.body.trim() !== q.title ? md(q.body).replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip"') : '') +
             '<p class="bs-acts"><a href="' + at + '">' + count(q.replies || 0) + '</a></p></div></li>';
       }).join('') : '<li class="proj-msg">' + (project ? 'No conversations about this project yet: start one, or bring in a Slack thread.' : 'No posts yet: write one, start a chat with your agent, or bring in a Slack thread.') + '</li>';

@@ -143,6 +143,11 @@ body.is-home-feed{font-family:var(--sans); font-size:16px; line-height:1.55;}
 /* Talking to BOLD (index.js talking()): once BOLD answers, Conversations folds away and the side column (their
    week, projects…) comes up beside the letter, its top level with the letter's (--talk-top, set from the page). */
 .home-feed.is-talking .home-talk{display:none;}
+/* Under the conversation: where it's kept (a private conversation of theirs). */
+.home-ask .ha-saved{margin:12px 0 0; font-size:12px; color:var(--muted);}
+.home-ask .ha-saved[hidden]{display:none;}
+.home-ask .ha-saved a{color:var(--muted);}
+.home-ask .ha-saved a:hover{color:var(--link);}
 /* Under the conversation, while Conversations is folded away: the way back to them. */
 .home-ask .ha-show-talk{margin:14px 0 0; font-size:12px;}
 .home-ask .ha-show-talk[hidden]{display:none;}

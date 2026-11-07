@@ -424,15 +424,21 @@
       return '<li class="ha-msg ha-' + m.who + (fresh ? ' is-new' : '') + '"><p class="ha-who">' + (m.who === 'you' ? 'You' : 'BOLD') + '</p><div class="ha-text md-desc">' + md(m.text) + '</div></li>';
     }
     function save(){ try { sessionStorage.setItem(LOG, JSON.stringify(log.slice(-40))); } catch (e){} }
-    function draw(){ list.innerHTML = log.map(function(m){ return item(m); }).join(''); list.hidden = !log.length; }
+    // The conversation shows only while the box is open: closed (and on coming back to the page), the home page as it was.
+    function draw(){ list.innerHTML = log.map(function(m){ return item(m); }).join(''); list.hidden = !log.length || !box.classList.contains('is-open'); }
     // A line that opens into the box: drawn out, then unfolded (CSS); closed again when empty.
     function open(yes){
       box.classList.toggle('is-open', yes);
       line.setAttribute('aria-expanded', String(yes));
+      list.hidden = !yes || !log.length;
+      if (typeof drawSaved === 'function') drawSaved();
       if (yes) setTimeout(function(){ text.focus(); }, still ? 0 : 260);
+      // Opening on a conversation BOLD has answered in: Conversations folds away again; closing, it comes back.
+      if (yes && !keepTalk && log.some(function(m){ return m.who === 'bold'; })) talking(true);
+      if (!yes) talking(false);
     }
     line.addEventListener('click', function(){ open(true); });
-    box.querySelector('.ha-close').addEventListener('click', function(){ open(false); talking(false); line.focus(); });
+    box.querySelector('.ha-close').addEventListener('click', function(){ open(false); line.focus(); });
     document.addEventListener('keydown', function(e){
       var t = e.target, tag = t && t.tagName;
       if (e.key === 'Escape' && box.contains(t) && !text.value.trim()) { open(false); line.focus(); return; }
@@ -446,12 +452,25 @@
       return 'BOLD LLM isn’t on for you: choose it on your [profile](profile.html#agents) to talk to it here.' +
         (words ? '\n\nMeanwhile, [search BOLD.OS for “' + words + '”](search.html?q=' + encodeURIComponent(words) + ').' : '');
     }
-    // BOLD LLM's answer to the conversation so far (homeLetter 'ask'), or what went wrong.
+    // BOLD LLM's answer (homeLetter 'ask'), or what went wrong. The talk is kept as a private conversation of theirs
+    // (functions/bold-llm.js), its id for the visit (sessionStorage), so the next message goes on in it.
+    var CONV = 'boldHomeAskConv', conv = '';
+    try { conv = sessionStorage.getItem(CONV) || ''; } catch (e){}
+    var saved = document.createElement('p');
+    saved.className = 'ha-saved';
+    function drawSaved(){
+      saved.hidden = !conv || !box.classList.contains('is-open');
+      saved.innerHTML = conv ? '<a href="conversations.html#post=' + encodeURIComponent(conv) + '">In your Conversations</a>, only you see it' : '';
+    }
+    box.appendChild(saved); drawSaved();
     function answer(q){
       if (!state.chatOn) return Promise.resolve(placeholder(q));
-      var messages = log.map(function(m){ return { role: m.who === 'you' ? 'user' : 'assistant', text: m.text }; });
-      return firebase.app().functions('europe-west2').httpsCallable('homeLetter')({ action: 'ask', messages: messages })
-        .then(function(r){ return String((r.data || {}).text || ''); })
+      return firebase.app().functions('europe-west2').httpsCallable('homeLetter')({ action: 'ask', text: q, conversation: conv || null })
+        .then(function(r){
+          var d = r.data || {};
+          if (d.conversation && d.conversation !== conv) { conv = d.conversation; try { sessionStorage.setItem(CONV, conv); } catch (e){} drawSaved(); }
+          return String(d.text || '');
+        })
         .catch(function(err){ console.error('[BOLD Lab] BOLD LLM’s answer failed', err); return (err && err.message && err.code !== 'functions/internal') ? err.message : 'BOLD LLM couldn’t answer just now — try again.'; });
     }
     // BOLD's answer writes itself out, word by word, as a model streams.
@@ -492,9 +511,6 @@
     // Enter sends; Shift+Enter is a new line.
     text.addEventListener('keydown', function(e){ if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); form.requestSubmit(); } });
     draw();
-    if (log.length) open(true);
-    // Back on the page mid-conversation (this visit's log): already talking.
-    if (log.some(function(m){ return m.who === 'bold'; })) setTalking(true);
     }
   })();
 

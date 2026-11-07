@@ -363,8 +363,9 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
   // by a Slack DM (pilot conversation-replies).
   const onConversationMessage = onDocumentCreated({ document: 'conversations/{pid}/messages/{mid}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
     const d = event.data && event.data.data();
-    // A thread brought in is counted as it's saved; a proposal's decision is counted, and told, where it's made.
-    if (!d || d.source === 'slack' || d.source === 'comment' || d.source === 'proposal') return;
+    // A thread brought in is counted as it's saved; a proposal's decision is counted, and told, where it's made;
+    // a talk with BOLD LLM (functions/bold-llm.js) is counted there, and told to nobody.
+    if (!d || d.source === 'slack' || d.source === 'comment' || d.source === 'proposal' || d.source === 'bold-llm') return;
     const pid = event.params.pid, ref = db.collection('conversations').doc(pid);
     // lastAt: when its latest reply came.
     await ref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
