@@ -492,6 +492,8 @@ body:has(#viewAsBar){padding-bottom:72px;}
 .event-form{padding:14px 16px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); max-width:560px; font-family:var(--sans); font-size:13px;}
 .event-form-head{margin:0 0 10px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--ink);}
 .event-form-hint{margin:2px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
+/* A hint inside a field's label, between its name and its box (join-common.js: Role at BOLD). */
+label > span.event-form-hint{display:block; margin:2px 0 4px;}
 .btn-text:disabled, .btn-text.is-off{color:var(--muted); text-decoration:none; opacity:.6; cursor:default;}
 .event-form label{display:block; margin-bottom:10px; color:var(--muted);}
 .event-form input, .event-form textarea{
