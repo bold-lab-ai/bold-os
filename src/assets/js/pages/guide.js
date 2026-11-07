@@ -526,7 +526,8 @@
         // A restore, or a row of Who can see what, stays as it is: withdraw it and propose again instead.
         (mine && q.kind !== 'restore' && q.kind !== 'access' ? '<button type="button" class="btn-text gd-revise">' + (draftEditing === q.id ? 'Editing' : 'Edit') + '</button>' : '') +
         (mine ? '<button type="button" class="btn-text gd-withdraw">Withdraw</button>' : '') +
-      '</div>' + (comments ? comments.proposalThreadHtml(q.id) : '') + '</li>';
+      // Its conversation (talk.js), put in after each redraw (mountTalks).
+      '</div><div class="gd-talk" data-pid="' + esc(q.id) + '"></div></li>';
   }
 
   // The box under the title: what changed since you last read it (read-point.js),
@@ -622,6 +623,7 @@
     if (dn) dn.addEventListener('input', function(){ draftNote = dn.value; saveDraft(); });
     watchContents();
     if (comments && !form) comments.decorate();
+    mountTalks();
   }
 
   // The draft's bar: how many changes, each on request, and Propose all / Discard.
@@ -860,6 +862,20 @@
     return b ? '<div class="gd-fold-all">' + b + '</div>' : '';
   }
 
+  // A proposed change's conversation (talk.js, 2026-11-07; its discussion's comments before): kept, one per
+  // proposal, and put back in its place after each redraw.
+  var talks = {};
+  function mountTalks(){
+    if (!window.BoldTalk) return;
+    Array.prototype.forEach.call(body.querySelectorAll('.gd-talk[data-pid]'), function(slot){
+      var pid = slot.getAttribute('data-pid');
+      if (!talks[pid]) talks[pid] = BoldTalk.create({ post: 'cm-change-' + COLLECTION + '-' + slug + '-' + pid, on: 'change/' + COLLECTION + '/' + slug + '/' + pid, label: 'Discussion',
+        old: function(){ return ref.collection('comments').where('proposalId', '==', pid); },
+        effects: ['Start its discussion in Conversations', 'Tell whoever proposed it, and whoever joins in, of replies'] });
+      slot.appendChild(talks[pid].el);
+    });
+  }
+
   // The page as the proposal on show would make it: no controls, the changed part
   // marked, and a bar to go back.
   function renderViewing(){
@@ -872,6 +888,7 @@
         (d.description ? '<p class="hero-note">' + esc(d.description) + '</p>' : '') + '</div>' +
       '<main>' + (q.version ? '' : (notice ? '<p class="gd-notice">' + esc(notice) + '</p>' : '') + onShowHtml(q)) + tabsHtml() + '<div class="guide-layout"><div class="guide-main">' + shown().map(partHtml).join('') + '</div>' + contentsHtml() + '</div></main>';
     watchContents();
+    mountTalks();
   }
 
   // The parts a proposal changes.

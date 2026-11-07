@@ -2,8 +2,8 @@
 /* Its own type and buttons (as Conversations' page has them: projects.css main, .btn), so it looks the same wherever it's mounted. */
 .bs-root{font-family:var(--sans); font-size:16px; line-height:1.55;}
 .bs-root button{font-family:inherit;}
-.bs-root .btn{font-family:inherit; font-weight:600; font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:9px 16px; cursor:pointer; white-space:nowrap;}
-.bs-root .btn:hover{border-color:var(--accent); color:var(--link);}
+.bs-root .btn, .wk-talk .btn{font-family:inherit; font-weight:600; font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:9px 16px; cursor:pointer; white-space:nowrap;}
+.bs-root .btn:hover, .wk-talk .btn:hover{border-color:var(--accent); color:var(--link);}
 .bs-root .btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
 .bs-root .btn:disabled:hover{border-color:var(--line); color:var(--muted);}
 .bs-root .btn.btn-primary{background:var(--accent); color:var(--on-fill); border-color:var(--accent);}
@@ -172,3 +172,16 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 /* A back link outside Conversations' own page (a project's tab). */
 .bs-forum .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:12px;}
 .bs-forum .back-link:hover{color:var(--link);}
+/* A thing's conversation where it is (talk.js: a card's, a proposed change's): its old comments, its first message, the forum. */
+.wk-talk-list{list-style:none; margin:0 0 14px; padding:0;}
+.wk-talk-item{padding:10px 0; border-top:1px solid var(--line);}
+.wk-talk-item:first-child{border-top:0; padding-top:0;}
+.wk-talk-item.is-marked{background:var(--wash); padding-left:10px; padding-right:10px;}
+.wk-talk-head{font-family:var(--sans); font-size:14px; margin-bottom:4px;}
+.wk-talk-form textarea{width:100%; box-sizing:border-box; font:inherit; font-size:15px;}
+.wk-talk .wk-talk-forum .bs-root{margin-top:6px;}
+.wk-talk .detail-abstract-label{font-family:var(--sans); font-size:13px; color:var(--muted); margin-bottom:6px;}
+.wk-talk .wk-desc{font-size:15px;}
+.wk-talk .stage-fields-actions{display:flex; gap:10px; margin-top:8px;}
+/* A proposed change's discussion (pages/guide.js), under its buttons. */
+.gd-talk .wk-talk{margin:18px 0 0;}

@@ -2,7 +2,7 @@
 // Threads on a guide or the BOLDiquette (<collection>/{slug}/comments, comments.js)
 // and on a paper's card on the Internal Review Board (its discussion and its
 // checklist points' feedback, cards' `discussion` and `checklist[].comments`), and a
-// project board card's conversation (projectWorkspaces/{pid}/work/{id}/comments, card-talk.js;
+// project board card's conversation (projectWorkspaces/{pid}/work/{id}/comments, talk.js;
 // one thread per card, resolved once the card is Done).
 // Each links to the thread itself (#c= on a guide, &msg= on the board, &c= on a card).
 // Filters: open, involving me (I wrote in it or am tagged), resolved, all.

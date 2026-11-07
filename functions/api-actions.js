@@ -147,10 +147,11 @@ module.exports = function(ctx){
         const id = await asUser(who, 'create', col, { text: text(), by, at: now, parent: root, partId: c.partId || '' });
         return { id, url: url(pg.href + '#c=' + root) };
       }
+      // A proposed change's discussion is its conversation (2026-11-07): started, or added to.
       case 'on_proposal': {
         const pid = need(a.proposal_id, 'the proposal_id');
-        const id = await asUser(who, 'create', col, { partId: '', proposalId: pid, text: text(), by, at: now });
-        return { id };
+        const r = await act(who, 'commentConversation', { on: 'change/' + pg.col + '/' + pg.slug + '/' + pid, text: text() });
+        return Object.assign({}, r, { url: url(pg.href + '#proposal-' + encodeURIComponent(pid)) });
       }
       // Make it a conversation (commentConversation): the whole thread, copied to Conversations; it goes on there.
       case 'to_conversation': {
@@ -371,8 +372,7 @@ module.exports = function(ctx){
     const cur = await ref.doc(id).get();
     if (!cur.exists) throw httpError(404, 'No card with that id on this board.');
     if (a.action === 'remove') { await asUser(who, 'delete', col + '/' + id); return { ok: true }; }
-    // Its conversation (card-talk.js): read it, or add to it (its people hear of it on Slack).
-    // Its conversation (card-talk.js, since 2026-11-07): conversations/cm-card-<project>-<card>; before it's
+    // Its conversation (talk.js, since 2026-11-07): conversations/cm-card-<project>-<card>; before it's
     // started, what its comments said. Read it, or add to it (commentConversation starts it if need be).
     if (a.action === 'comments') {
       const post = await db.collection('conversations').doc('cm-card-' + pid + '-' + id).get();
@@ -734,7 +734,7 @@ module.exports = function(ctx){
   ];
   const WRITE = [
     { name: 'comments', run: comments,
-      description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
+      description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change: its conversation, started or added to), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
         quote: str('add: words from the part, exactly as written.'), text: str('The comment (Markdown, @Name to tag).'), comment_id: str('reply, edit, resolve, delete, to_conversation.'), proposal_id: str('on_proposal.') }, ['action', 'page']) },
     { name: 'proposals', run: proposals,

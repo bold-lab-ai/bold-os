@@ -8,7 +8,7 @@
 // went on, and takes no more replies there (firestore.rules). One thread is one post: asking again
 // gives the same post.
 // commentConversation { on: 'handbook/<slug>' | 'guides/<slug>', id: <the thread's first comment> } → { id, title, existed }.
-// A board card's conversation (card-talk.js; since 2026-11-07 its only chat): { on: 'card/<project>/<card>', text? } → the post
+// A board card's conversation (talk.js; since 2026-11-07 its only chat): { on: 'card/<project>/<card>', text? } → the post
 // cm-card-<project>-<card>, with `project` (its project's Conversations). Started by its first message (`text`), with
 // any comments it had from before copied in first; asked again with `text`, that's added to it (agents' work tool).
 // A card has no field for it: the post existing is what closes the card's old comments (firestore.rules).
@@ -26,6 +26,16 @@ function titleOf(text, quote){
 function bodyOf(quote, text){
   const t = String(quote || '').trim(), q = t ? t.split('\n').map((l) => '> ' + l).join('\n') : '';
   return (q ? q + '\n\n' : '') + String(text || '');
+}
+// A proposed change's conversation (talk.js, pages/guide.js; 2026-11-07): { on: 'change/<collection>/<slug>/<proposal>', text? }
+// → conversations/cm-change-<collection>-<slug>-<proposal>: its proposer's post (their note on it), its old discussion
+// (comments with its proposalId) copied in after, then `text`; again with `text`, that's added. Each decision
+// (accepted, declined, withdrawn) is written into it (index.js onProposalDecided).
+// Pure: a proposed change's → { collection, slug, proposal, id: the post's }, or null.
+function changeOf(on){
+  const m = /^change\/(handbook|guides)\/([a-z0-9_-]{1,80})\/([A-Za-z0-9_-]{1,64})$/.exec(String(on || ''));
+  if (!m || (m[1] === 'handbook' && m[2] !== 'boldiquette')) return null;
+  return { collection: m[1], slug: m[2], proposal: m[3], id: 'cm-change-' + m[1] + '-' + m[2] + '-' + m[3] };
 }
 // Pure: a card's comments → { pid, card, id: the post's }, or null. on: 'card/<project>/<card>'.
 function cardOf(on){
@@ -62,11 +72,7 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     const ref = db.collection('conversations').doc(c.id), had = await ref.get();
     if (had.exists) {
       // Added to it: an answer to its latest message (as Reply does), told to its people (onConversationMessage).
-      if (text) {
-        const last = (await ref.collection('messages').orderBy('at', 'desc').limit(1).get()).docs[0];
-        await ref.collection('messages').add({ parent: last ? last.id : c.id, body: text, name: await nameOf(email) || email, createdBy: email,
-          at: FieldValue.serverTimestamp(), source: 'site', viaAgent: false, votes: {} });
-      }
+      if (text) await addTo(ref, email, text);
       return { id: c.id, title: had.data().title, existed: true };
     }
     const comments = (await cardRef.collection('comments').get()).docs.map((d) => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0));
@@ -88,11 +94,54 @@ module.exports = function({ db, onCall, HttpsError, signedInEmail, access, Field
     return { id: c.id, title, existed: false, replies: rest.length };
   }
 
+  // Added to a conversation that's there: an answer to its latest message (as Reply does), told to its people.
+  async function addTo(ref, email, text){
+    const last = (await ref.collection('messages').orderBy('at', 'desc').limit(1).get()).docs[0];
+    await ref.collection('messages').add({ parent: last ? last.id : ref.id, body: text, name: await nameOf(email) || email, createdBy: email,
+      at: FieldValue.serverTimestamp(), source: 'site', viaAgent: false, votes: {} });
+  }
+
+  // A proposed change to the BOLDiquette or a guide: its discussion, as a conversation.
+  async function fromChange(email, c, text){
+    text = String(text || '').trim().slice(0, 10000);
+    const page = pageOf(c.collection + '/' + c.slug, guideArea);
+    await access.requireAccess(email, 'conversations', 'edit');
+    await access.requireAccess(email, page.area, 'view');
+    const convView = await access.levelOf('conversations', 'view'), pageView = await access.levelOf(page.area, 'view');
+    if (pageView === 'none' || rank(convView) < rank(pageView)) throw new HttpsError('failed-precondition', 'More people see Conversations than this page, so its discussion stays here.');
+    const docRef = db.collection(c.collection).doc(c.slug), ref = db.collection('conversations').doc(c.id);
+    const had = await ref.get();
+    if (had.exists) { if (text) await addTo(ref, email, text); return { id: c.id, title: had.data().title, existed: true }; }
+    const [docSnap, propSnap] = await Promise.all([docRef.get(), docRef.collection('proposals').doc(c.proposal).get()]);
+    if (!propSnap.exists) throw new HttpsError('not-found', 'That proposed change isn’t there any more.');
+    const q = propSnap.data(), doc = docSnap.exists ? docSnap.data() : {};
+    const part = (doc.parts || []).filter((x) => x.id === q.partId)[0];
+    const what = (q.after && q.after.title) || (part && part.title) || '';
+    const pageTitle = String(doc.title || (c.collection === 'handbook' ? 'BOLDiquette' : c.slug));
+    const title = ('Proposed change: ' + pageTitle + (what ? ' › ' + what : '')).slice(0, 200);
+    const old = (await docRef.collection('comments').where('proposalId', '==', c.proposal).get()).docs.map((d) => d.data()).sort((a, b) => (a.at || 0) - (b.at || 0));
+    if (text) old.push({ text, by: { email, name: await nameOf(email) }, at: Date.now() });
+    if (!old.length) throw new HttpsError('invalid-argument', 'Write something first.');
+    const from = { kind: 'change', on: 'change/' + c.collection + '/' + c.slug + '/' + c.proposal, page: pageTitle.slice(0, 200), part: String(what).slice(0, 200),
+      url: SITE_URL + page.href + '#proposal-' + encodeURIComponent(c.proposal) };
+    const batch = db.batch();
+    // The post: whoever proposed it, with their note on it; what was said is its replies, in order.
+    batch.create(ref, Object.assign({ title, body: String(q.note || 'Proposes a change' + (what ? ' to “' + what + '”' : '') + ' on ' + pageTitle + '.'), at: q.at || Date.now(), source: 'comment', from,
+      private: false, readers: [], votes: {}, replies: old.length, commentReplies: old.length, broughtBy: { email, name: await nameOf(email) }, broughtAt: FieldValue.serverTimestamp() },
+      by({ by: q.by || {} })));
+    old.forEach((r, i) => batch.set(ref.collection('messages').doc('cm-' + i), Object.assign({ parent: c.id, body: String(r.text || ''), at: r.at || Date.now(), source: 'comment', votes: {} }, by(r))));
+    try { await batch.commit(); }
+    catch (e) { const again = await ref.get(); if (again.exists) return { id: c.id, title: again.data().title, existed: true }; throw e; }
+    return { id: c.id, title, existed: false };
+  }
+
   const commentConversation = onCall(async (request) => {
     const email = signedInEmail(request).toLowerCase();
     const data = request.data || {};
     const c = cardOf(data.on);
     if (c) return fromCard(email, c, data.text);
+    const ch = changeOf(data.on);
+    if (ch) return fromChange(email, ch, data.text);
     const page = pageOf(data.on, guideArea), cid = String(data.id || '');
     if (!page || !/^[A-Za-z0-9_-]{1,64}$/.test(cid)) throw new HttpsError('invalid-argument', 'Which thread?');
     await access.requireAccess(email, 'conversations', 'edit');
@@ -135,3 +184,4 @@ module.exports.titleOf = titleOf;
 module.exports.bodyOf = bodyOf;
 module.exports.pageOf = pageOf;
 module.exports.cardOf = cardOf;
+module.exports.changeOf = changeOf;

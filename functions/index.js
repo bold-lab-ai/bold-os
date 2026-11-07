@@ -1707,6 +1707,17 @@ function onProposalDecided(collection, pageUrl){
       const kind = ((after || before) || {}).kind;
       if (!doc.exists && kind !== 'new' && kind !== 'delete') return;
       await resolveProposalComments(collection, event.params.slug, event.params.id, before, after);
+      // Its conversation (comment-conversation.js), if it has one: the decision written into it.
+      const closed = proposalClosed(before, after);
+      if (closed) {
+        const tref = db.collection('conversations').doc('cm-change-' + collection + '-' + event.params.slug + '-' + event.params.id);
+        if ((await tref.get()).exists) {
+          const last = (await tref.collection('messages').orderBy('at', 'desc').limit(1).get()).docs[0];
+          await tref.collection('messages').add({ parent: last ? last.id : tref.id, body: '**' + closed.resolvedWith.charAt(0).toUpperCase() + closed.resolvedWith.slice(1) + '**.',
+            name: closed.resolvedByName || closed.resolvedBy || 'Someone', createdBy: closed.resolvedBy, at: FieldValue.serverTimestamp(), source: 'proposal', votes: {} }).catch(() => {});
+          await tref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+        }
+      }
       const title = (doc.exists && doc.data().title) || ((before && before.after) || {}).title || event.params.slug;
       const out = proposalOutcome(before, after, title, pageUrl(event.params.slug));
       if (!out) return;
@@ -2020,7 +2031,7 @@ exports.flushCommentQueue = onSchedule(
   }
 );
 
-// ---------- A board card's conversation (card-talk.js), in Slack, batched ----------
+// ---------- A board card's conversation (talk.js), in Slack, batched ----------
 // A comment on a card (projectWorkspaces/{pid}/work/{id}/comments/{cid}) joins the card's
 // queue (commentQueue/work__{pid}__{id}), sent as the guides' are (flushCommentQueue): one
 // message per person, through pilotSlack ('card-comments'). Who hears: whoever made the card,

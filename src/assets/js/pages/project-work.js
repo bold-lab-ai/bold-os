@@ -11,7 +11,7 @@
 // its DOM is kept between renders, so an open editor survives the page redrawing.
 // Each card, and each GitHub issue or pull request, has its own page in the tab
 // (#…&tab=work&card=<id>, &item=<owner/repo#n>): a description (Markdown) and images
-// (Storage, work/<pid>/<card>/…; storage.rules), then its conversation (card-talk.js; a
+// (Storage, work/<pid>/<card>/…; storage.rules), then its conversation (talk.js; a
 // card's only, not a GitHub item's: those talk on GitHub). Describing a GitHub item makes it a card
 // linking it. Proposals and requests open their own pages elsewhere on BOLD.OS.
 // Milestones: the board's (work.milestones on the workspace, [{ id, name, start, end }]); a card

@@ -32,3 +32,11 @@ test('a card’s comments: its project and card, and the one post they become', 
   assert.strictEqual(cardOf('card/a/b/c'), null);
   assert.strictEqual(cardOf('card/../b'), null);
 });
+
+const { changeOf } = require('../functions/comment-conversation');
+test('a proposed change’s discussion: its page and proposal, and the one post it becomes', () => {
+  assert.deepStrictEqual(changeOf('change/handbook/boldiquette/AbC12'), { collection: 'handbook', slug: 'boldiquette', proposal: 'AbC12', id: 'cm-change-handbook-boldiquette-AbC12' });
+  assert.strictEqual(changeOf('change/guides/how-to-submit/x9').id, 'cm-change-guides-how-to-submit-x9');
+  assert.strictEqual(changeOf('change/handbook/other/x'), null);
+  assert.strictEqual(changeOf('change/guides/../x'), null);
+});
