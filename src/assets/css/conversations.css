@@ -15,7 +15,11 @@
 .bs-note{margin:0 0 14px; font-size:13px; color:var(--muted);}
 .bs-sortbtn{font:inherit; font-size:13px; font-weight:600; color:var(--muted); background:none; border:1px solid var(--line); border-radius:var(--radius); padding:5px 12px; cursor:pointer;}
 .bs-sortbtn[aria-pressed="true"]{color:var(--ink); border-color:var(--ink);}
-.bs-sort{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+.bs-sort{display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+/* Search conversations: as the board's search box (board.css), the width the row leaves. */
+.bs-find{flex:1 1 200px; min-width:160px; font-family:var(--sans); font-size:13.5px; color:var(--ink); background:var(--surface);
+  border:1px solid var(--line); border-radius:var(--radius); padding:6px 10px;}
+.bs-find:focus{outline:none; border-color:var(--ink);}
 .bs-import{margin-left:auto; padding:6px 14px; font-size:13px;}
 .bs-new{padding:6px 14px; font-size:13px;}
 .bs-write{padding:6px 14px; font-size:13px;}

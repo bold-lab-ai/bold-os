@@ -20,6 +20,7 @@ window.BoldConversations = (function(){
     return (note === false ? '' : '<p class="bs-note">' + BOLD.escapeHtml(note || 'Posts and replies are saved.') + '</p>') +
       '<div class="bs-cols"><section class="bs-forum" aria-label="Forum">' +
         '<div class="bs-sort" role="group" aria-label="Sort">' +
+          '<input type="search" class="bs-find" placeholder="Search conversations" aria-label="Search conversations" autocomplete="off" spellcheck="false">' +
           '<button type="button" class="bs-sortbtn" data-sort="top" aria-pressed="true">Top</button>' +
           '<button type="button" class="bs-sortbtn" data-sort="new" aria-pressed="false">New</button>' +
           '<button type="button" class="btn bs-import">Import from Slack</button>' +
@@ -60,6 +61,19 @@ window.BoldConversations = (function(){
     var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
     var me = { email: '', name: 'You', uid: '' }, canPost = false, canStart = false, full = false;
     var posts = null, messages = {}, openId = '', stopMsgs = null;
+    var find = '';   // the search box's text: the list shows only the posts it finds, best first (search-rank.js)
+    var replyText = {};   // each post's replies as one text, fetched the first time the box is used (searching)
+    // The replies of every listed post not fetched yet, then the list again; once each.
+    function fetchReplies(){
+      (posts || []).forEach(function(x){
+        if (replyText[x.id] !== undefined) return;
+        replyText[x.id] = '';
+        col().doc(x.id).collection('messages').get().then(function(m){
+          replyText[x.id] = m.docs.map(function(d){ return [d.data().name, d.data().body].join(' '); }).join(' ');
+          if (find.trim()) render();
+        }, function(){});
+      });
+    }
     var sort = 'top', opened = {}, replying = '', branching = false, said = [], draft = null, about = null;   // about: { pid, id }
     var unwatch = [];   // the lists' listeners, replaced when access changes
     var db = function(){ return firebase.firestore(BOLD.getApp()); };
@@ -369,6 +383,16 @@ window.BoldConversations = (function(){
       drawTree(null);
       if (posts === null) { postsEl.innerHTML = '<li class="proj-msg">Loading&hellip;</li>'; return; }
       var list = posts.slice().sort(sort === 'new' ? function(a, b){ return ms(b.at) - ms(a.at); } : function(a, b){ return score(b) - score(a) || ms(b.at) - ms(a.at); });
+      // Searching: the posts whose title, text, author, project or replies have every word, the whole phrase first,
+      // as the site's search ranks them; each post's place in Top or New breaks ties.
+      if (find.trim()) {
+        fetchReplies();
+        var R = window.BoldSearchRank;
+        list = R ? R.rank(list.map(function(x, i){ return { title: x.title, where: [x.name, x.projectTitle].filter(Boolean).join(' '), text: [x.body, replyText[x.id]].join(' '), x: x, i: i }; }), find)
+          .filter(function(h){ return !h.partial; }).map(function(h){ return h.item.x; })
+          : list.filter(function(x){ var hay = [x.title, x.body, x.name, x.projectTitle, replyText[x.id]].join(' ').toLowerCase(); return find.toLowerCase().split(/\s+/).filter(Boolean).every(function(w){ return hay.indexOf(w) !== -1; }); });
+        if (!list.length) { postsEl.innerHTML = '<li class="proj-msg">No conversation has “' + esc(find.trim()) + '”.</li>'; return; }
+      }
       postsEl.innerHTML = list.length ? list.map(function(q){
         var at = postHash(q.id);
         return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
@@ -624,6 +648,10 @@ window.BoldConversations = (function(){
         .then(function(ref){ replying = ''; show(f.getAttribute('data-pid'), ref.id); }, function(err){ go.disabled = false; oops('Replying')(err); });
     });
 
+    // The search box: the list redraws below it as you type (the box itself is left alone, spaces and all).
+    var findEl = q('.bs-find');
+    findEl.addEventListener('input', function(){ find = findEl.value; render(); });
+    findEl.addEventListener('keydown', function(e){ if (e.key === 'Escape' && findEl.value) { e.stopPropagation(); findEl.value = ''; find = ''; render(); } });
     function syncSort(){ Array.prototype.forEach.call(root.querySelectorAll('.bs-sortbtn'), function(x){ x.setAttribute('aria-pressed', String(x.getAttribute('data-sort') === sort)); }); }
     sortEl.addEventListener('click', function(e){
       var b = e.target.closest('.bs-sortbtn'); if (!b) return;
