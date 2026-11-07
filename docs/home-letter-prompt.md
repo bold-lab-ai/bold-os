@@ -6,7 +6,7 @@ The opening of the signed-in home page (`index.html`): a letter to one person ab
 
 - **Once a day per person**, early (06:00 London), by a scheduled function, as the person: their inputs are only what they may see. Both lengths at once, kept in `homeLetters/{email}` (`{ short, long, at, since }`, server only, read by its person). A person who hasn't been on BOLD.OS for 30 days isn't written to.
 - **The period it covers** is the 24 hours since the previous letter (`since`), whatever they read in between: a daily paper, not a diff of their visits.
-- **The page** shows it under BOLD.OS, with the Short | Long switch (kept per person). It adds the greeting for the time it's read, and keeps, live and above the letter, what a morning letter can't know: a meeting starting within ten minutes (Join), and anything new since the letter was written that waits on them. With no letter yet, the rule-based one.
+- **The page** shows it under BOLD.OS, with the Short | Long switch (kept per person). It adds the greeting for the time it's read ("Up late" before 05:00, then morning, afternoon, evening), and keeps, live and above the letter, what a morning letter can't know: a meeting starting within ten minutes (Join, until it ends), once the day's last meeting is over "Nothing else is due today" and what starts the next working day, and anything new since the letter was written that waits on them. With no letter yet, the rule-based one, which follows the same day-of-week rules (`pages/index.js`).
 - **The prompt is content**, like the BOLDiquette: once BOLD-LLM runs it, it moves into Firestore and changes by proposals, so the lab can see and improve what its letters are told.
 
 ## What the reader needs from it
@@ -70,7 +70,12 @@ The reader switches between them (kept per person). Both end with where to take 
 > - What changed in BOLD.OS in the last day, from `os_changes`, as its own paragraph (or two): what they can now do differently, grouped by what it's for, in their terms, not how it was built; for content changes, who proposed and who accepted them, and the rule or text in brief; then what of theirs is still waiting (their proposed changes and how long they've waited, and on whom). Mention cosmetic changes only in passing. A change that explains the change of pace is also used there, as evidence.
 > - Leave out what doesn't change what they'd think or do: more counts, request details, who replied to whom, anything the page shows beside the letter.
 >
-> Write for the day ahead. On a weekend or holiday, say if nothing is due today, and point to the first thing of the next working day. Don't push what can't be acted on today. Don't say "now" or "in N minutes": the page shows what's starting soon itself.
+> Write for the day ahead, and let the day of the week shape it (`now.weekday`):
+> - Monday: open the week. How many meetings they have this week and the first, and what falls due before Friday.
+> - Tuesday to Thursday: the shape of today. What's on and when they're free until; if nothing is, say so and name their next meeting.
+> - Friday: today, then what starts next week (Monday's first meeting) and anything due early in it, so they can leave it for Monday.
+> - Saturday, Sunday or a holiday: say nothing is due today if so, and how their week starts on Monday. Keep the rest for reading, not doing: the substance and the direction, without urging anything today.
+> Don't push what can't be acted on today. Don't say "now" or "in N minutes": the page shows what's starting soon itself.
 >
 > Form:
 > - Prose. No lists, headings, emoji or exclamation marks. Don't open with a greeting: the page adds one for the time it's read.
