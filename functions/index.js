@@ -5193,10 +5193,12 @@ async function requestWork(email, full, person){
   ]);
   joins.forEach(function(d){
     const r = d.data(), inv = r.invitedBy && r.invitedBy.email;
+    // Changes asked for (joinChanges): it waits on the applicant, not whoever decides it.
+    const asked = r.status === 'open' && r.changes && r.changes.status === 'asked';
     add({ kind: 'join', ref: d.ref.path, title: 'Join BOLD: ' + (r.name || 'someone') + (r.role ? ' (' + r.role + ')' : ''), url: SITE_URL + 'join-requests.html#r=' + d.id,
-      by: { name: r.name || '' }, on: r.status === 'open' && inv ? [person(inv, r.invitedBy.name)] : r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [],
-      waiting: r.status === 'open' && !inv ? PIS_ADMINS : '', state: r.status },
-    requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
+      by: { name: r.name || '' }, on: asked ? [] : r.status === 'open' && inv ? [person(inv, r.invitedBy.name)] : r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [],
+      waiting: r.status === 'open' && !inv && !asked ? PIS_ADMINS : '', state: asked ? 'changes asked' : r.status },
+    requestColumn(r.status === 'open', asked, r.decidedAt, r.at, now));
   });
   groups.forEach(function(d){
     const r = d.data();
@@ -6640,6 +6642,24 @@ async function joinSettings(){
   };
 }
 
+// Sends a plain-text email from the lab's Google account (GOOGLE_OAUTH, gmail.send). → '' or why it didn't go.
+async function gmailSend(to, subject, body, what){
+  try {
+    const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: mimeMessage(to, subject, body) }),
+    });
+    if (res.ok) return '';
+    const j = await res.json().catch(() => ({}));
+    logger.error('Gmail refused', { what, status: res.status, error: j.error && j.error.message });
+    return res.status === 403 ? 'The lab’s Google account can’t send email yet (gmail.send): reconnect it.' : 'Gmail refused it (' + res.status + ').';
+  } catch (e) {
+    if (!(e instanceof HttpsError)) logger.error('Sending email threw', { what, error: String(e) });
+    return e instanceof HttpsError ? e.message : 'Couldn’t reach Gmail.';
+  }
+}
+
 // Sends request id's welcome email, if it's due; records how it went on the request. → { status, error? }
 async function sendWelcome(id){
   const ref = db.collection('joinRequests').doc(id);
@@ -6649,24 +6669,7 @@ async function sendWelcome(id){
   if (r.status !== 'approved' || (r.welcome && r.welcome.status === 'sent')) return { status: (r.welcome && r.welcome.status) || r.status };
   const tries = ((r.welcome && r.welcome.tries) || 0) + 1;
   const mail = welcomeEmail(r, (await joinSettings()).invite);
-  let error = mail.error || '';
-  if (!error) {
-    try {
-      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw: mimeMessage(r.email, mail.subject, mail.body) }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        logger.error('sendWelcome: Gmail refused', { id, status: res.status, error: j.error && j.error.message });
-        error = res.status === 403 ? 'The lab’s Google account can’t send email yet (gmail.send): reconnect it.' : 'Gmail refused it (' + res.status + ').';
-      }
-    } catch (e) {
-      error = e instanceof HttpsError ? e.message : 'Couldn’t reach Gmail.';
-      if (!(e instanceof HttpsError)) logger.error('sendWelcome threw', { id, error: String(e) });
-    }
-  }
+  const error = mail.error || await gmailSend(r.email, mail.subject, mail.body, 'sendWelcome ' + id);
   const welcome = error ? { status: 'waiting', error, tries, at: Date.now() } : { status: 'sent', tries, at: Date.now() };
   await ref.update({ welcome });
   return welcome;
@@ -7057,6 +7060,110 @@ exports.decideJoinRequest = onCall(
       } catch (err){ logger.error('decideJoinRequest: joining the invited project failed', { invite: x.id, error: String(err) }); }
     }
     return { status: r.status, welcome: await sendWelcome(d.id) };
+  }
+);
+
+// ---------- Asking for changes to a request to join (#261, 2026-11-07) ----------
+// Whoever decides a request (its inviter; PIs and admins one without an inviter) can ask the
+// applicant to change it instead of approving or declining it: the request stays open, with
+// `changes` { status: 'asked' | 'made', note, by, byName, at, keyHash, madeAt }. The applicant
+// isn't signed in (join.html is for people outside BOLD), so they get an email from the lab's
+// account with a one-time link, join.html?changes=<id>&key=<key> (only its sha256 is kept), to
+// their request, filled in; sending it again uses the key up and DMs whoever asked.
+const JOIN_CHANGES_NOTE = 1000;
+// The fields the applicant may change (not who invited them: that's who decides).
+const JOIN_EDITABLE = ['name', 'email', 'links', 'institution', 'role', 'interests', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'listOnWebsite', 'pillars'];
+const keyHash = (k) => crypto.createHash('sha256').update(String(k || '')).digest('hex');
+// Pure: may `who` ({ email, full }) ask for changes to request q with `note`? → '' or why not.
+function joinChangesRefusal(q, who, note){
+  if (!q) return 'No such request.';
+  const inviter = !!(q.invitedBy && q.invitedBy.email), mine = inviter && q.invitedBy.email === who.email;
+  if (!mine && !(who.full && !inviter)) return 'Only whoever invited them decides this.';
+  if (q.status !== 'open') return 'It has already been ' + q.status + '.';
+  const n = String(note || '').trim();
+  if (!n) return 'Say what they should change.';
+  if (n.length > JOIN_CHANGES_NOTE) return 'That’s too long: at most ' + JOIN_CHANGES_NOTE + ' characters.';
+  return '';
+}
+// Pure: may the holder of `key` change request q? → '' or why not.
+function joinChangesKeyRefusal(q, key){
+  const c = (q && q.changes) || {};
+  if (!q || !key || !c.keyHash || c.keyHash !== keyHash(key)) return 'This link isn’t valid: ask your point of contact for a new one.';
+  if (q.status !== 'open') return 'Your request has already been ' + q.status + '.';
+  if (c.status !== 'asked') return 'You’ve already changed it: your point of contact has it.';
+  return '';
+}
+// Pure: the email to the applicant. → { subject, body }
+function joinChangesEmail(q, note, link, byName){
+  const first = String(q.name || '').trim().split(/\s+/)[0] || 'there';
+  return { subject: 'Your request to join BOLD: ' + (byName || 'your point of contact') + ' asks for changes', body: [
+    'Hi ' + first + ',', '',
+    (byName || 'Your point of contact') + ' read your request to join BOLD and asks you to change it before they decide:', '',
+    String(note || '').trim().split('\n').map((l) => '  ' + l).join('\n'), '',
+    'Change it here (the link is yours alone, and works once):', link, '',
+    'The BOLD team',
+  ].join('\n') };
+}
+// Pure: what the applicant may see of request q, to change it.
+function joinChangesView(q){
+  const out = {};
+  JOIN_EDITABLE.forEach((k) => { if (q[k] !== undefined) out[k] = q[k]; });
+  const c = q.changes || {};
+  return Object.assign(out, { note: c.note || '', byName: c.byName || '', inviter: q.invitedBy ? { id: q.invitedBy.id || '', name: q.invitedBy.name || '' } : null });
+}
+
+// data: { action: 'ask', id, note } (whoever decides it) → { emailed, error? };
+// { action: 'peek', id, key } (the applicant, signed in or not) → what they can change;
+// { action: 'save', id, key, ...the form } → { ok }.
+exports.joinChanges = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
+  async (request) => {
+    const d = request.data || {};
+    if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('joinRequests').doc(d.id);
+    if (d.action === 'ask') {
+      const email = callerEmail(request);
+      await access.requireAccess(email, 'requests', 'edit');   // Who can see what
+      const who = { email, full: await isFullWrite(email) }, byName = request.auth.token.name || email;
+      const key = crypto.randomBytes(24).toString('hex'), note = String(d.note || '').trim();
+      const q = await db.runTransaction(async (tx) => {
+        const s = await tx.get(ref), x = s.exists ? s.data() : null;
+        const why = joinChangesRefusal(x, who, note);
+        if (why) throw new HttpsError(x ? 'failed-precondition' : 'not-found', why);
+        tx.update(ref, { changes: { status: 'asked', note, by: email, byName, at: Date.now(), keyHash: keyHash(key) } });
+        return x;
+      });
+      const mail = joinChangesEmail(q, note, SITE_URL + 'join.html?changes=' + d.id + '&key=' + key, byName);
+      const error = await gmailSend(q.email, mail.subject, mail.body, 'joinChanges ' + d.id);
+      await ref.update({ 'changes.emailed': !error, 'changes.error': error });
+      return error ? { emailed: false, error } : { emailed: true };
+    }
+    const q = (await ref.get()).data();
+    const why = joinChangesKeyRefusal(q, String(d.key || ''));
+    if (why) throw new HttpsError('failed-precondition', why);
+    if (d.action === 'peek') return joinChangesView(q);
+    if (d.action !== 'save') throw new HttpsError('invalid-argument', 'Unknown action.');
+    if (d.website) return { ok: true };   // the bots' field (join.html)
+    const set = await joinSettings();
+    const n = normalizeJoinRequest(Object.assign({}, d, { contact: (q.invitedBy && q.invitedBy.name) || q.contact || '' }), set.roles, set.pillars);
+    if (n.error) throw new HttpsError('invalid-argument', n.error);
+    if (n.request.email !== q.email) {
+      const other = await db.collection('joinRequests').where('email', '==', n.request.email).where('status', '==', 'open').limit(1).get();
+      if (!other.empty) throw new HttpsError('already-exists', 'There’s already a request for that email address.');
+    }
+    const upd = {};
+    JOIN_EDITABLE.forEach((k) => { if (n.request[k] !== undefined) upd[k] = n.request[k]; });
+    await db.runTransaction(async (tx) => {
+      const again = joinChangesKeyRefusal((await tx.get(ref)).data(), String(d.key || ''));
+      if (again) throw new HttpsError('failed-precondition', again);
+      tx.update(ref, Object.assign(upd, { 'changes.status': 'made', 'changes.madeAt': Date.now(), 'changes.keyHash': '' }));
+    });
+    // Whoever asked hears they've changed it (join.html asked them first).
+    const num = await numberTag('joinRequests/' + d.id), c = q.changes || {};
+    const text = '✏️ ' + num + slackText(upd.name || q.name) + ' changed their request to join BOLD, as you asked. ' + linkedTitle('Approve or decline', joinPageUrl() + '#i=' + d.id) + '.';
+    if (q.invitedBy && q.invitedBy.id && q.invitedBy.email === c.by) await dmBySlackId(SLACK_BOT_TOKEN.value(), q.invitedBy.id, text, 'join-requests');
+    else if (c.by) await dmByEmail(SLACK_BOT_TOKEN.value(), c.by, text, 'join-requests');
+    return { ok: true };
   }
 );
 
@@ -8570,7 +8677,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
-    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
+    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, joinChanges: exports.joinChanges, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
 // Subscribing to the Calendar: one private .ics link a person (calendar.html; served by boldApi).
@@ -8694,6 +8801,6 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
-  projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
+  projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage, joinChangesRefusal, joinChangesKeyRefusal, joinChangesEmail, joinChangesView, keyHash,
   onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
 };

@@ -24,6 +24,8 @@
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, unsubs = [], busy = {};
   var groupReqs = [], invited = [], invitedMembers = [], shown = {}, slackIds = {}, actReqs = [];
+  // Asking an applicant to change their request (joinChanges, #261): the note being written, by request id.
+  var asking = {};
 
 
   // Someone's name, linked to their page once they're on the BOLD Slack (the people roster).
@@ -47,15 +49,32 @@
       '<span class="proj-meta">' + esc([r.email, r.role, r.institution].filter(Boolean).join(' · ')) + ' · asked ' + when(r.at) + '</span>' + status +
       (toConfirm(r) ? '<p class="proj-meta">They say you invited them.</p>' : '') +
       (open && inv && !mine ? '<p class="proj-meta">Invited by ' + who(inv.name, inv.email) + ', who decides it</p>' : '') +
+      (open ? changesHtml(r) : '') +
       // Their answers, collapsed: a request is long.
       (shown[r.id] ? BoldJoin.factsHtml(r, { other: true }) : '') +
       '<div class="event-controls">' + moreBtn(r.id) + (open ?
         '<button type="button" class="btn-text jr-approve" data-id="' + esc(r.id) + '"' + off + '>Approve</button>' +
+        '<button type="button" class="btn-text jr-changes" data-id="' + esc(r.id) + '"' + off + (asking[r.id] !== undefined ? ' hidden' : '') + '>Ask for changes</button>' +
         '<button type="button" class="btn-text danger jr-decline" data-id="' + esc(r.id) + '"' + off + '>Decline</button>' :
         (toConfirm(r) ? '<button type="button" class="btn-text jr-i-yes" data-iid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Yes, I invited them</button>' +
           '<button type="button" class="btn-text danger jr-i-no" data-iid="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>I didn’t</button>' : '') +
         (staff && r.status === 'approved' && w.status !== 'sent' ? '<button type="button" class="btn-text jr-resend" data-id="' + esc(r.id) + '"' + (busy[r.id] ? ' disabled' : '') + '>Send the welcome email</button>' : '')) +
       '</div></li>';
+  }
+
+  // Changes asked for (joinChanges): what was asked and whether they've made them; and the
+  // note being written, with Send (the lab's account emails it to them) and Cancel.
+  function changesHtml(r){
+    var c = r.changes || {}, by = c.by === (me && me.email) ? 'You' : esc(c.byName || 'Their point of contact');
+    var said = c.note ? ': <span class="lt-text">“' + esc(c.note) + '”</span>' : '';
+    var line = c.status === 'asked' ? '<p class="proj-meta">' + by + ' asked for changes on ' + when(c.at) + said + '. ' +
+        (c.emailed === false ? 'The email didn’t go' + (c.error ? ' (' + esc(c.error) + ')' : '') + ': ask again.' : 'Waiting for them to change it.') + '</p>'
+      : c.status === 'made' ? '<p class="proj-meta">They changed it on ' + when(c.madeAt) + ', as ' + (by === 'You' ? 'you' : by) + ' asked' + said + '.</p>' : '';
+    if (asking[r.id] === undefined) return line;
+    return line + '<div class="event-form jr-changes-form"><label>What should ' + esc(String(r.name || '').split(' ')[0] || 'they') + ' change?' +
+      '<textarea class="jr-changes-note no-tags" data-id="' + esc(r.id) + '" rows="3" maxlength="1000">' + esc(asking[r.id]) + '</textarea></label>' +
+      '<div class="event-form-actions"><button type="button" class="btn-box is-primary jr-changes-send" data-id="' + esc(r.id) + '"' + (busy[r.id] || !asking[r.id].trim() ? ' disabled' : '') + '>Send</button>' +
+      '<button type="button" class="btn-text jr-changes-cancel" data-id="' + esc(r.id) + '">Cancel</button></div></div>';
   }
 
   // A member asking to be in another group.
@@ -182,6 +201,13 @@
     if (el && !render.jumped) { render.jumped = true; el.scrollIntoView({ block: 'start' }); }
   }
 
+  // The note asking for changes: kept as it's typed, Send on once there's something to send.
+  main.addEventListener('input', function(e){
+    if (!e.target.classList.contains('jr-changes-note')) return;
+    var id = e.target.getAttribute('data-id'), send = main.querySelector('.jr-changes-send[data-id="' + id + '"]');
+    asking[id] = e.target.value;
+    if (send) send.disabled = !!busy[id] || !e.target.value.trim();
+  });
 
   main.addEventListener('click', function(e){
     var t = e.target.closest('button');
@@ -255,6 +281,25 @@
         : inv.status !== 'confirmed' ? inv.name + ' hasn’t confirmed inviting them yet.' : '';
       BOLD.confirmAlways({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack', 'Put them in PAN-BOLD (' + (staff ? 'change it on People' : 'a higher group is theirs to ask for, and the PIs and admins decide') + ')'] })
         .then(function(ok){ if (ok) run(function(){ return fn('decideJoinRequest')({ id: id, accept: true }); }); });
+    } else if (t.classList.contains('jr-changes')) {
+      asking[id] = ''; render();
+      var box = main.querySelector('.jr-changes-note[data-id="' + id + '"]');
+      if (box) box.focus();
+    } else if (t.classList.contains('jr-changes-cancel')) {
+      delete asking[id]; render();
+    } else if (t.classList.contains('jr-changes-send')) {
+      var note = String(asking[id] || '').trim();
+      if (!note) return;
+      BOLD.confirmAlways({ title: 'Ask ' + r.name + ' to change their request?', go: 'Send', effects: ['Email ' + r.name + ' (' + r.email + ') from the lab’s Google account what you wrote, with a link to change their request', 'Their request stays open: you can still approve or decline it'] })
+        .then(function(ok){
+          if (!ok) return;
+          run(function(){
+            return fn('joinChanges')({ action: 'ask', id: id, note: note }).then(function(res){
+              delete asking[id];
+              if (res.data && res.data.emailed === false) window.alert('Saved, but the email didn’t go: ' + (res.data.error || 'try again') + '.');
+            });
+          });
+        });
     } else if (t.classList.contains('jr-decline')) {
       if (window.confirm('Decline ' + r.name + '’s request? They aren’t told.')) run(function(){ return fn('decideJoinRequest')({ id: id, accept: false }); });
     } else if (t.classList.contains('jr-resend')) {

@@ -687,6 +687,8 @@ module.exports = function(ctx){
         };
       }
       case 'approve_join': case 'decline_join': return act(who, 'decideJoinRequest', { id: need(a.request_id, 'the request_id'), accept: a.action === 'approve_join' });
+      // Ask the applicant to change it (#261): the lab's account emails them a link to it.
+      case 'ask_join_changes': return act(who, 'joinChanges', { action: 'ask', id: need(a.request_id, 'the request_id'), note: need(a.note, 'the note: what they should change') });
       case 'approve_group': case 'decline_group': return act(who, 'groupRequest', { action: 'decide', id: need(a.request_id, 'the request_id'), accept: a.action === 'approve_group' });
       case 'set_group': {
         const email = resolve((await lab.members()).map((m) => ({ email: m.email || m._id, name: m.name || '' })), a.member, 'members');
@@ -798,8 +800,8 @@ module.exports = function(ctx){
       description: 'The lab’s events: add one (it starts hidden, until you release it), update, release, hide or delete one you added or whose series you organise (PIs and admins: any). Releasing one has Google Calendar invite its group: tell your person that, and who, before you do it.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str(''), visible: ACTIONS(['public', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
     { name: 'requests', run: requests,
-      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody; a change of group, any), or set someone’s group.',
-      inputSchema: S({ action: ACTIONS(['list', 'approve_join', 'decline_join', 'approve_group', 'decline_group', 'set_group']), request_id: str(''), member: str('set_group: their name'), group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']) }) },
+      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody; a change of group, any), ask whoever asked to join to change their request instead (ask_join_changes: the lab’s Google account emails them your note and a link to it; tell your person first), or set someone’s group.',
+      inputSchema: S({ action: ACTIONS(['list', 'approve_join', 'decline_join', 'ask_join_changes', 'approve_group', 'decline_group', 'set_group']), request_id: str(''), note: str('ask_join_changes: what they should change'), member: str('set_group: their name'), group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']) }) },
     { name: 'skills', run: skills,
       description: 'PIs and admins: add a new Claude skill, or delete one. Changing a skill is a proposal, by anyone (proposals, page "skill:<name>").',
       inputSchema: S({ action: ACTIONS(['add', 'delete']), name: str('The skill’s name.'), title: str(''), description: str(''), body: str('SKILL.md body'), change_note: str('What changed') }, ['action', 'name']) },
