@@ -4,6 +4,13 @@
 // Pure, for bold-llm.js, the agents' API (letterInputs) and tests.
 'use strict';
 
+// How often BOLD LLM writes the letters (settings/homeLetter.refresh, Settings › BOLD Agent): the hours (London) it writes at.
+const REFRESH = { daily: [6], twice: [6, 13], working: [6, 9, 12, 15, 18] };
+const refreshHours = (r) => REFRESH[r] || REFRESH.daily;
+// Pure: does BOLD LLM write the letters at this hour (0–23, London), with refresh r?
+function writesAt(r, hour){ return refreshHours(r).indexOf(Number(hour)) >= 0; }
+// Pure: what a letter written now covers: since the previous one, if it's from the last day, else the last 24 hours.
+function sinceFor(prev, now){ const day = now - 24 * 3600000; return prev && prev.at > day && prev.at < now ? prev.at : day; }
 const SHORT_MAX = 4000, LONG_MAX = 40000;
 
 // A letter as the model writes it → { letter } or { error }.
@@ -54,4 +61,4 @@ function inputsOf(p){
   };
 }
 
-module.exports = { SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };
+module.exports = { REFRESH, refreshHours, writesAt, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };

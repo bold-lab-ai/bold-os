@@ -57,3 +57,17 @@ test('a tool’s result is JSON, cut when long', () => {
   assert.strictEqual(toolText({ a: 1 }), '{"a":1}');
   assert.match(toolText('x'.repeat(40000)), /\[cut: ask for less\]$/);
 });
+
+test('how often: the hours BOLD LLM writes at, once a day by default', () => {
+  assert.ok(HL.writesAt('daily', 6) && !HL.writesAt('daily', 13));
+  assert.ok(HL.writesAt('twice', 13) && !HL.writesAt('twice', 9));
+  assert.deepStrictEqual(HL.REFRESH.working.filter((h) => HL.writesAt('working', h)), [6, 9, 12, 15, 18]);
+  assert.ok(HL.writesAt(undefined, 6) && !HL.writesAt('nonsense', 7));
+});
+
+test('a letter covers what changed since the previous one, at most a day', () => {
+  const now = Date.parse('2026-11-09T13:00:00Z');
+  assert.strictEqual(HL.sinceFor({ at: now - 7 * 3600000 }, now), now - 7 * 3600000);
+  assert.strictEqual(HL.sinceFor({ at: now - 30 * 3600000 }, now), now - 24 * 3600000);
+  assert.strictEqual(HL.sinceFor(null, now), now - 24 * 3600000);
+});

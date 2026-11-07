@@ -8845,4 +8845,4 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
 };
 
 // For tests and the test copy: the home letter's inputs as someone (functions/bold-llm.js).
-exports._internal.letterInputs = (who) => agentApi.letterInputs(who);
+exports._internal.letterInputs = (who, since) => agentApi.letterInputs(who, since);

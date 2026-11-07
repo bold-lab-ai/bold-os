@@ -195,8 +195,11 @@ service cloud.firestore {
     // Sofya runs) or the rule-based letter for everyone; the lab reads it, PIs and admins set it.
     match /settings/homeLetter {
       allow read: if isSignedIn();
-      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'updatedAt', 'updatedBy'])
-        && request.resource.data.writer in ['rules', 'claude'] && request.resource.data.updatedBy == email();
+      // refresh: how often BOLD LLM writes them (functions/home-letter.js REFRESH).
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'refresh', 'updatedAt', 'updatedBy'])
+        && (!('writer' in request.resource.data) || request.resource.data.writer in ['rules', 'claude'])
+        && (!('refresh' in request.resource.data) || request.resource.data.refresh in ['daily', 'twice', 'working'])
+        && request.resource.data.updatedBy == email();
     }
     match /settings/joinForm {
       allow read: if true;

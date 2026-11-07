@@ -2,7 +2,8 @@
 // Sofya, BOLD's own LLM, runs (then only MODEL and the client change). Two switches decide who writes a
 // letter: the lab's (settings/homeLetter.writer: 'claude' or 'rules', Settings › BOLD Agent, PIs and
 // admins), and each person's (prefs/{uid}.homeLetter: 'bold' or 'rules', profile › Agents). With both on
-// BOLD LLM, writeHomeLetters writes their letter at 06:00 (London) into homeLetters/{email}, from inputs
+// BOLD LLM, writeHomeLetters writes their letter at the lab's hours (settings/homeLetter.refresh; 06:00 London by
+// default) into homeLetters/{email}, from inputs
 // read as them (letterInputs in functions/api.js: only what they may see); the home page shows it, or the
 // rule-based one. The prompts are content, skills changed by proposals: home-letter and talking-to-bold.
 // homeLetter (callable): 'write', today's letter now if there's none yet; 'ask', an answer in Talking to
@@ -39,7 +40,9 @@ const textOf = (r) => r.content.filter((b) => b.type === 'text').map((b) => b.te
 module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, callerEmail, access, ANTHROPIC_API_KEY, letterInputs, chatTools, runChatTool }){
   const client = () => new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
   const asPerson = (email, name) => ({ email, name: name || '', prefix: 'bold-llm', label: '', write: false });
-  async function labWriter(){ const d = await db.collection('settings').doc('homeLetter').get(); return (d.exists && d.data().writer) || 'rules'; }
+  // The lab's switch (Settings › BOLD Agent): who writes the letters, and how often.
+  async function lab(){ const d = await db.collection('settings').doc('homeLetter').get(); const x = d.exists ? d.data() : {}; return { writer: x.writer || 'rules', refresh: x.refresh || 'daily' }; }
+  async function labWriter(){ return (await lab()).writer; }
   async function prompt(skill){
     const d = await db.collection('skills').doc(skill).get();
     const body = d.exists ? String(d.data().body || '').trim() : '';
@@ -50,9 +53,10 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
   const system = (text) => [{ type: 'text', text, cache_control: { type: 'ephemeral' } }];
   const request = (o) => Object.assign({ model: MODEL, max_tokens: 16000, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' }, o);
 
-  // Their letter, written now and kept. → { short, long }
+  // Their letter, written now and kept, covering what changed since their previous one. → { short, long }
   async function writeLetter(email, name){
-    const [p, inputs] = await Promise.all([prompt('home-letter'), letterInputs(asPerson(email, name))]);
+    const now = Date.now(), prev = await db.collection('homeLetters').doc(email).get();
+    const [p, inputs] = await Promise.all([prompt('home-letter'), letterInputs(asPerson(email, name), HL.sinceFor(prev.exists ? prev.data() : null, now))]);
     const r = await client().beta.messages.create(request({
       output_config: { effort: EFFORT, format: { type: 'json_schema', schema: LETTER_SCHEMA } },
       system: system(p),
@@ -67,9 +71,11 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
     return letter;
   }
 
-  // Everyone who chose BOLD LLM and has been on BOLD.OS in the last 30 days, at 06:00, a few at a time.
-  const writeHomeLetters = onSchedule({ schedule: '0 6 * * *', timeZone: 'Europe/London', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB' }, async () => {
-    if ((await labWriter()) !== 'claude') return;
+  // Everyone who chose BOLD LLM and has been on BOLD.OS in the last 30 days, a few at a time, at the hours the lab
+  // chose (HL.REFRESH: once a day at 06:00, twice, or through the working day): it wakes each hour and writes only then.
+  const writeHomeLetters = onSchedule({ schedule: '0 * * * *', timeZone: 'Europe/London', secrets: [ANTHROPIC_API_KEY], timeoutSeconds: 540, memory: '512MiB' }, async () => {
+    const l = await lab();
+    if (l.writer !== 'claude' || !HL.writesAt(l.refresh, Number(HL.londonNow().time.slice(0, 2)))) return;
     const uids = (await db.collection('prefs').where('homeLetter', '==', 'bold').get()).docs.map((d) => d.id);
     let done = 0, failed = 0;
     const one = async (uid) => {

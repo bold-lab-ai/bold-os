@@ -704,9 +704,11 @@ module.exports = function(deps){
 
   // The home letter's inputs (functions/home-letter.js, docs/home-letter-prompt.md), read as the person by the
   // same tools their agent would use, each part only if they may view its page. For BOLD LLM (functions/bold-llm.js).
-  async function letterInputs(who){
+  // since: what changed since (the previous letter; default the last 24 hours).
+  async function letterInputs(who, since){
     const HL = require('./home-letter');
-    const now = Date.now(), since = now - 24 * 3600000, weekAgo = now - 7 * 86400000;
+    const now = Date.now(), weekAgo = now - 7 * 86400000;
+    since = Number(since) > 0 && since < now ? Number(since) : now - 24 * 3600000;
     const today = HL.londonNow(now).date, in7 = new Date(now + 7 * 86400000).toISOString().slice(0, 10), in30 = new Date(now + 30 * 86400000).toISOString().slice(0, 10);
     const when = async (page, fn, empty) => ((await access.can(who.email, page, 'view')) ? fn() : empty);
     const [mine, cal, evs, waiting, notes, convs, changes, full] = await Promise.all([
