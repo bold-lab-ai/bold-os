@@ -783,12 +783,6 @@
     var box = btn.parentNode, menu = document.getElementById('themeMenu'), timer = null;
     var stored = function(){ try { return localStorage.getItem('boldTheme') || 'light'; } catch (e){ return 'light'; } };
     var mode = stored();
-    var hhmm = function(t){ var d = new Date(t); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); };
-    var autoNote = function(){
-      if (!window.boldSun) return 'Light by day, dark after sunset';
-      var s = window.boldSun(Date.now());
-      return 'Light from ' + hhmm(s.rise) + ', dark from ' + hhmm(s.set);
-    };
     var show = function(){
       var t = root.getAttribute('data-theme'), dark = t === 'dark';
       btn.title = t === 'lamp' ? 'Paper under a lamp. Choose a theme to go back.' :
@@ -812,7 +806,7 @@
         var on = mode === o[0];
         return '<li role="none"><button type="button" role="menuitemradio" aria-checked="' + on + '" class="mast-theme-opt" data-theme-mode="' + o[0] + '">' +
           '<span class="mt-tick" aria-hidden="true">' + (on ? '✓' : '') + '</span><span>' + esc(o[1]) +
-          (o[0] === 'auto' ? '<span class="mt-note">' + esc(autoNote()) + '</span>' : '') + '</span></button></li>';
+          (o[0] === 'auto' ? '<span class="mt-note">Light at dawn, dark at sunset</span>' : '') + '</span></button></li>';
       }).join('');
     };
     var open = function(yes){ if (yes) draw(); menu.hidden = !yes; btn.setAttribute('aria-expanded', String(yes)); };
