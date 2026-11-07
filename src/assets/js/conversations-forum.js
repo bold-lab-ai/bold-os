@@ -13,21 +13,36 @@
 // conversations about it (`project`), new ones about it too, and its address is the project page's own
 // (#id=…&tab=conversations&post=<id>).
 // A page can show one conversation alone (thread: its id; no list, no All posts): a proposed project's.
-// BoldConversations.create({ project?: { id, title: () => its title }, thread?, note? (false: none), title? (false: no thread title) }) → { el (kept: put it back after a redraw), away() }.
+// BoldConversations.create({ project?: { id, title: () => its title }, thread?, note? (false: none), title? (false: no thread title), peek? (true: the home page's: no search box or filters, and a conversation opens on Conversations' page) }) → { el (kept: put it back after a redraw), away() }.
 window.BoldConversations = (function(){
   // The forum's markup (once Conversations' page's).
-  function shell(note){
+  function shell(note, peek){
     return (note === false ? '' : '<p class="bs-note">' + BOLD.escapeHtml(note || 'Posts and replies are saved.') + '</p>') +
       '<div class="bs-cols"><section class="bs-forum" aria-label="Forum">' +
         '<div class="bs-sort" role="group" aria-label="Sort">' +
-          '<input type="search" class="bs-find" placeholder="Search conversations" aria-label="Search conversations" autocomplete="off" spellcheck="false">' +
+          (peek ? '' : '<input type="search" class="bs-find" placeholder="Search conversations" aria-label="Search conversations" autocomplete="off" spellcheck="false">' +
+            // Filters: its icon opens them (the number: how many are set).
+            '<button type="button" class="bs-filterbtn" aria-expanded="false" aria-label="Filters" title="Filters"><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M2 3h12l-4.6 5.4V13l-2.8 1.2V8.4z"/></svg><span class="bs-filter-n" hidden></span></button>') +
           '<button type="button" class="bs-sortbtn" data-sort="top" aria-pressed="true">Top</button>' +
           '<button type="button" class="bs-sortbtn" data-sort="new" aria-pressed="false">New</button>' +
           '<button type="button" class="btn bs-import">Import from Slack</button>' +
           '<button type="button" class="btn btn-primary bs-write">New chat</button></div>' +
+        // Filters (filtering()): who started it, who's in it, its project, open or private; with the search box.
+        (peek ? '' : '<div class="bs-filters" role="group" aria-label="Filter conversations" hidden>' +
+          '<select class="bs-filter" data-f="author" aria-label="Started by"></select>' +
+          '<select class="bs-filter" data-f="with" aria-label="With"></select>' +
+          '<select class="bs-filter" data-f="project" aria-label="Project"></select>' +
+          '<select class="bs-filter" data-f="vis" aria-label="Who can read it"></select>' +
+          '<button type="button" class="btn-text bs-filter-clear" hidden>Clear</button></div>') +
         '<form class="event-form bs-import-form bs-write-form" hidden>' +
           '<label>Title<input type="text" maxlength="200" required></label>' +
           '<label>Text (optional)<textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="6" maxlength="10000"></textarea></label>' +
+          // Who can read it (newWho): open, only you, or you and the people chosen (the picker, pickHtml).
+          '<fieldset class="bs-new-who"><legend>Who can read it</legend>' +
+            '<label><input type="radio" name="bs-new-who" value="open" checked> Open: whoever can view Conversations</label>' +
+            '<label><input type="radio" name="bs-new-who" value="me"> Only me</label>' +
+            '<label><input type="radio" name="bs-new-who" value="people"> Me and the people I choose</label>' +
+            '<div class="bs-pick" data-pick="new" hidden></div></fieldset>' +
           '<div class="event-form-actions"><button type="submit" class="ev-save">Post</button><button type="button" class="bs-write-cancel">Cancel</button>' +
             '<button type="button" class="btn-text bs-new">or reason it through with your agent first</button></div></form>' +
         '<form class="event-form bs-import-form bs-slack-form" hidden>' +
@@ -46,34 +61,209 @@ window.BoldConversations = (function(){
     opts = opts || {};
     var root = document.createElement('div');
     root.className = 'bs-root';
-    root.innerHTML = shell(opts.note);
+    root.innerHTML = shell(opts.note, opts.peek);
     var project = opts.project || null;
     var q = function(sel){ return root.querySelector(sel); };
-    var postsEl = q('.bs-posts'), threadEl = q('.bs-thread'), sortEl = q('.bs-sort');
+    var postsEl = q('.bs-posts'), threadEl = q('.bs-thread'), sortEl = q('.bs-sort'), filtersEl = q('.bs-filters');
     var log = q('.bs-log'), form = q('.bs-compose'), text = q('.bs-compose textarea'), aboutEl = q('.bs-about');
     var importEl = q('.bs-slack-form'), writeEl = q('.bs-write-form'), agentEl = q('.bs-agent'), forumEl = q('.bs-forum');
-    var esc = BOLD.escapeHtml, MIN = 60000;
+    var esc = BOLD.escapeHtml, MIN = 60000, uid = Math.random().toString(36).slice(2, 8);
     // Reasoning with your agent is off for now (2026-11-04): its button and New chat's link are left out;
     // the panel's code stays, to turn back on here.
     var AGENT = false;
     // A message's text: Markdown (Slack threads come in as it: functions/slack-thread.js), its single
     // line breaks kept, as in Slack.
     var md = function(t){ return '<div class="bs-text md-desc">' + BoldMarkdown.render(t, { breaks: true }) + '</div>'; };
-    var me = { email: '', name: 'You', uid: '' }, canPost = false, canStart = false, full = false;
+    var me = { email: '', name: 'You', uid: '', slackId: '' }, canPost = false, canStart = false, full = false;
     var posts = null, messages = {}, openId = '', stopMsgs = null;
     var find = '';   // the search box's text: the list shows only the posts it finds, best first (search-rank.js)
-    var replyText = {};   // each post's replies as one text, fetched the first time the box is used (searching)
+    var replyText = {};   // each post's replies as one text, fetched the first time the box or a filter is used
+    var replyNames = {};  // and who wrote them, { pid: [name] }
+    var filt = { author: '', with: '', project: '', vis: '' };
+    var showFilters = false;   // the filters' row, opened by its icon
+    function filtering(){ return !!(filt.author || filt.with || filt.project || filt.vis); }
     // The replies of every listed post not fetched yet, then the list again; once each.
     function fetchReplies(){
       (posts || []).forEach(function(x){
         if (replyText[x.id] !== undefined) return;
-        replyText[x.id] = '';
+        replyText[x.id] = ''; replyNames[x.id] = [];
         col().doc(x.id).collection('messages').get().then(function(m){
           replyText[x.id] = m.docs.map(function(d){ return [d.data().name, d.data().body].join(' '); }).join(' ');
-          if (find.trim()) render();
+          replyNames[x.id] = m.docs.map(function(d){ return d.data().name; }).filter(Boolean);
+          if (find.trim() || filt.with) render(); else fillFilters();
         }, function(){});
       });
     }
+    // Who's in a conversation: who started it and everyone who replied.
+    function people(x){ return [x.name].concat(replyNames[x.id] || []).filter(Boolean); }
+    // The filters' choices, from the posts there are (a select being used is left alone).
+    function fillFilters(){
+      if (!posts || !filtersEl) return;
+      var uniq = function(a){ var seen = {}; return a.filter(function(v){ if (!v || seen[v]) return false; seen[v] = 1; return true; }).sort(function(a, b){ return String(a).localeCompare(String(b)); }); };
+      var projects = {}; posts.forEach(function(x){ if (x.project) projects[x.project] = x.projectTitle || x.project; });
+      var choices = {
+        author: [['', 'Started by anyone']].concat(uniq(posts.map(function(x){ return x.name; })).map(function(n){ return [n, 'Started by ' + n]; })),
+        with: [['', 'With anyone']].concat(uniq([].concat.apply([], posts.map(people))).map(function(n){ return [n, 'With ' + n]; })),
+        project: [['', 'Any project'], ['-', 'No project']].concat(Object.keys(projects).sort(function(a, b){ return projects[a].localeCompare(projects[b]); }).map(function(k){ return [k, projects[k]]; })),
+        vis: [['', 'Open or private'], ['open', 'Open'], ['private', 'Private']]
+      };
+      Array.prototype.forEach.call(filtersEl.querySelectorAll('.bs-filter'), function(sel){
+        var f = sel.getAttribute('data-f');
+        if (f === 'project') sel.hidden = !!project;
+        if (document.activeElement === sel) return;
+        var c = choices[f];
+        if (filt[f] && !c.some(function(o){ return o[0] === filt[f]; })) c.push([filt[f], f === 'author' ? 'Started by ' + filt[f] : f === 'with' ? 'With ' + filt[f] : filt[f]]);
+        sel.innerHTML = c.map(function(o){ return '<option value="' + esc(o[0]) + '"' + (o[0] === filt[f] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('');
+        sel.classList.toggle('is-on', !!filt[f]);
+      });
+      filtersEl.querySelector('.bs-filter-clear').hidden = !filtering();
+      var n = ['author', 'with', 'project', 'vis'].filter(function(k){ return filt[k]; }).length, btn = q('.bs-filterbtn'), badge = q('.bs-filter-n');
+      if (btn) { btn.setAttribute('aria-expanded', String(showFilters)); btn.classList.toggle('is-on', !!n); btn.title = n ? 'Filters (' + n + ' set)' : 'Filters'; btn.setAttribute('aria-label', btn.title); }
+      if (badge) { badge.hidden = !n; badge.textContent = n; }
+    }
+    function passes(x){
+      return (!filt.author || x.name === filt.author) &&
+        (!filt.with || people(x).indexOf(filt.with) !== -1) &&
+        (!filt.project || (filt.project === '-' ? !x.project : x.project === filt.project)) &&
+        (!filt.vis || (filt.vis === 'private') === !!x.private);
+    }
+    // Who can read a conversation (firestore.rules seesConversation): an open one, whoever sees Conversations;
+    // a private one, only its readers (Slack user ids: a private Slack channel's members, whoever talked with
+    // BOLD LLM, or whoever it was shared with). Its starter, a PI or an admin can change it (changesWhoReads).
+    var names = null, idOf = {}, idByEmail = {};   // people: Slack id → name, name → Slack id, email → Slack id; loaded with the list
+    function loadNames(){
+      if (names !== null) return;
+      names = {};
+      db().collection('people').get().then(function(snap){
+        snap.docs.forEach(function(d){ var v = d.data(), id = v.slackId || d.id; if (v.name && /^U[A-Z0-9]+$/.test(id)) { names[id] = v.name; idOf[v.name] = id; if (v.email) idByEmail[String(v.email).toLowerCase()] = id; } });
+        render(); drawPicks();
+      }, function(){});
+    }
+    var EYE = '<svg class="bs-readers-eye" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg>';
+    var readersOpen = {};   // { pid: true }: its Who can read it unfolded, kept across redraws
+    var who = null;   // Change, open: { pid, private } (its people: picks.who)
+    var starterOf = function(p){ return String(p.createdBy || (p.broughtBy || {}).email || '').toLowerCase(); };
+    function canChangeWho(p){ return canPost && !!me.slackId && (starterOf(p) === me.email || full); }
+    var lvName = function(){ return BOLD.whoCan ? BOLD.whoCan('conversations', 'view') : 'whoever sees Conversations'; };
+    function namesOf(list){
+      var known = list.map(function(id){ return names && names[id]; }).filter(Boolean).sort(), rest = list.length - known.length;
+      return known.join(', ') + (rest ? (known.length ? ', and ' : '') + rest + ' not on BOLD.OS' : '');
+    }
+    // A Slack thread's channel members, as far as known (slackReaders; before it, its readers, while untouched).
+    var channelOf = function(p){ return p.slackReaders || (!p.accessBy && p.private ? p.readers || [] : null); };
+    function readersHtml(p){
+      var editing = who && who.pid === p.id;
+      // One line, folded: who, in short; unfolded: who exactly, and why, and Change.
+      var line = function(short, more){
+        var set = p.accessBy ? ' Set by ' + esc(p.accessByName || 'someone') + '.' : '';
+        return '<details class="bs-readers" data-pid="' + esc(p.id) + '"' + (readersOpen[p.id] || editing ? ' open' : '') + '><summary title="Who can read it" aria-label="Who can read it: ' + esc(short.replace(/<[^>]+>/g, '')) + '">' + EYE + short +
+          '<span class="bs-readers-caret" aria-hidden="true"></span>' +
+          // Invite, right after who (a click on it doesn't fold the line: the click handler stops it).
+          (canPost ? '<span class="bs-readers-sep" aria-hidden="true">·</span><button type="button" class="btn-text bs-invite-btn">Invite</button>' : '') + '</summary>' +
+          (editing ? whoForm(p) : '<p class="bs-readers-more">' + more + set + (canChangeWho(p) ? ' <button type="button" class="btn-text bs-who-change">Change</button>' : '') + '</p>') + '</details>';
+      };
+      if (!p.private) {
+        return line(esc(lvName()), 'Open: whoever can view Conversations, ' + esc(lvName()) + ' (BOLDiquette › Who can do what). PIs and admins see no more than that.');
+      }
+      var list = p.readers || [];
+      loadNames();
+      if (p.source === 'bold-llm' && list.length <= 1) return line('only you', 'A talk with BOLD LLM: nobody else, not even PIs or admins.');
+      var ch = p.slack && p.slack.channelName;
+      if (p.source === 'slack' && !p.accessBy) {
+        return line('only ' + (ch ? esc(ch) + '’s' : 'the Slack channel’s') + ' members' + (list.length ? ' (' + list.length + ')' : ''),
+          'Brought in from a private Slack channel, so only its members see it here, PIs and admins too only if they’re in it' + (list.length ? ': ' + esc(namesOf(list)) : '') + '.');
+      }
+      return line('only ' + list.length + ' ' + (list.length === 1 ? 'person' : 'people'), 'Private: only ' + esc(namesOf(list)) + ', PIs and admins too only if they’re among them.');
+    }
+    // The people picker (one for Change, a new chat and Invite): picks[key] = { ids: [Slack id], lock: an id that
+    // can't be removed (you), only: the ids it may offer (else everyone in people), typed }. It draws itself in
+    // each .bs-pick[data-pick=key], and redraws alone (drawPick), so typing in it survives.
+    var picks = {};
+    function pickInner(key){
+      var st = picks[key]; if (!st) return '';
+      var chips = st.ids.map(function(id){
+        var locked = id === st.lock;
+        return '<li class="bs-who-chip">' + esc((names && names[id]) || (id === me.slackId ? me.name : 'Someone not on BOLD.OS')) + (id === me.slackId ? ' (you)' : '') +
+          (locked ? '' : '<button type="button" class="bs-who-x" data-id="' + esc(id) + '" aria-label="Remove">&times;</button>') + '</li>';
+      }).join('');
+      var people = Object.keys(idOf).sort().filter(function(n){ var id = idOf[n]; return st.ids.indexOf(id) === -1 && id !== me.slackId && (!st.only || st.only.indexOf(id) !== -1); });
+      return (chips ? '<ul class="bs-who-chips">' + chips + '</ul>' : '') +
+        '<input type="text" class="bs-who-add" list="bs-pick-' + key + '-' + uid + '" placeholder="' + esc(st.placeholder || 'Add someone…') + '" aria-label="Add someone" autocomplete="off" value="' + esc(st.typed || '') + '">' +
+        '<datalist id="bs-pick-' + key + '-' + uid + '">' + people.map(function(n){ return '<option value="' + esc(n) + '">'; }).join('') + '</datalist>';
+    }
+    function pickHtml(key){ return '<div class="bs-pick" data-pick="' + key + '">' + pickInner(key) + '</div>'; }
+    function drawPick(key){
+      Array.prototype.forEach.call(root.querySelectorAll('.bs-pick[data-pick="' + key + '"]'), function(el){
+        var had = document.activeElement && el.contains(document.activeElement);
+        el.innerHTML = pickInner(key);
+        if (had) { var i = el.querySelector('.bs-who-add'); if (i) i.focus(); }
+      });
+    }
+    function drawPicks(){ Object.keys(picks).forEach(drawPick); }
+    // Change: open, or only the people chosen (always you among them).
+    function whoForm(p){
+      var lv = lvName();
+      return '<form class="bs-who" data-pid="' + esc(p.id) + '">' +
+        '<label><input type="radio" name="bs-who" value="open"' + (who.private ? '' : ' checked') + '> Open: whoever can view Conversations, ' + esc(lv) + '</label>' +
+        '<label><input type="radio" name="bs-who" value="private"' + (who.private ? ' checked' : '') + '> Private: only these people</label>' +
+        (who.private ? pickHtml('who') : '') +
+        '<div class="bs-who-actions"><button type="submit" class="btn-box is-primary">Save</button><button type="button" class="btn-box bs-who-cancel">Cancel</button></div></form>';
+    }
+    // A private Slack channel's text reaching people it wasn't said to: the warning, or ''.
+    function slackWarn(p, opening, added){
+      if (!(p.source === 'slack' && p.slack && p.private)) return '';
+      var ch = p.slack.channelName || '', chan = channelOf(p), lv = lvName();
+      var outside = added.filter(function(id){ return !chan || chan.indexOf(id) === -1; });
+      return opening ? 'This came from the private Slack channel ' + ch + '. Everyone who can view Conversations (' + lv + ') will read all of it, which its members may not expect: you may be leaking what was said there.'
+        : outside.length ? 'This came from the private Slack channel ' + ch + '. ' + namesOf(outside) + (outside.length === 1 ? ' isn’t' : ' aren’t') + ' in it and will read all of it: you may be leaking what was said there.' : '';
+    }
+    function saveWho(p){
+      var was = { private: !!p.private, readers: p.readers || [] };
+      var readers = who.private ? picks.who.ids.filter(function(id, i, a){ return a.indexOf(id) === i; }) : was.readers;
+      if (who.private && readers.indexOf(me.slackId) === -1) readers.push(me.slackId);
+      var added = who.private ? readers.filter(function(id){ return !was.private || was.readers.indexOf(id) === -1; }) : [];
+      var removed = who.private && was.private ? was.readers.filter(function(id){ return readers.indexOf(id) === -1; }) : [];
+      if (was.private === who.private && !added.length && !removed.length) { who = null; render(); return; }
+      var lv = lvName(), opening = was.private && !who.private, sharing = was.private && who.private && added.length;
+      // Wider than a private Slack channel: warned, as what was said there reaches people it wasn't said to.
+      var warn = slackWarn(p, opening, added);
+      var effects = [];
+      if (!who.private) effects.push('Open it to whoever can view Conversations (' + lv + ')');
+      else if (!was.private) effects.push('Make it private: only ' + namesOf(readers) + ' will read it; nobody else, PIs and admins included, unless among them');
+      else {
+        if (added.length) effects.push('Let ' + namesOf(added) + ' read all of it');
+        if (removed.length) effects.push('Stop ' + namesOf(removed) + ' reading it');
+      }
+      if (opening || sharing) effects.push({ key: 'tell', text: opening ? 'Tell everyone who can now read it, on their Notifications page' : 'Tell ' + namesOf(added) + ', on their Notifications page' });
+      BOLD.confirmAlways({ title: 'Change who can read “' + p.title + '”?', go: 'Change it', warn: warn, effects: effects }).then(function(r){
+        if (!r) return;
+        return col().doc(p.id).update({ private: who.private, readers: readers, accessBy: me.email, accessByName: me.name, accessAt: FV().serverTimestamp(),
+          accessTell: !!(opening || sharing) && !(r.skip && r.skip.tell) }).then(function(){ who = null; delete picks.who; render(); }, oops('Changing who can read it'));
+      });
+    }
+    // Invite: people told (Slack and their Notifications page, onConversationInvite) that they're invited, and from
+    // then on told of its replies as if they'd replied. An open one, anyone; a private one, its readers, or anyone
+    // if you can change who reads it (they're added, warned as for Change).
+    var inviting = '';   // the post whose Invite form is open
+    function inviteHtml(p){
+      if (inviting !== p.id) return '';
+      return '<form class="bs-invite" data-pid="' + esc(p.id) + '"><p class="bs-invite-k">Invite people to it</p>' + pickHtml('invite') +
+        '<div class="bs-who-actions"><button type="submit" class="btn-box is-primary">Invite</button><button type="button" class="btn-box bs-invite-cancel">Cancel</button></div></form>';
+    }
+    function sendInvite(p){
+      var to = picks.invite.ids.slice();
+      if (!to.length) return;
+      var readers = p.readers || [], add = p.private ? to.filter(function(id){ return readers.indexOf(id) === -1; }) : [];
+      var effects = [];
+      if (add.length) effects.push('Let ' + namesOf(add) + ' read all of it');
+      effects.push('Tell ' + namesOf(to) + ', on Slack and their Notifications page, that you invited them, and tell them of its replies from then on');
+      BOLD.confirmAlways({ title: 'Invite them to “' + p.title + '”?', go: 'Invite', warn: slackWarn(p, false, add), effects: effects }).then(function(r){
+        if (!r) return;
+        var widen = add.length ? col().doc(p.id).update({ private: true, readers: readers.concat(add), accessBy: me.email, accessByName: me.name, accessAt: FV().serverTimestamp(), accessTell: false }) : Promise.resolve();
+        return widen.then(function(){ return invite(p.id, to); }).then(function(){ inviting = ''; delete picks.invite; render(); }, oops('Inviting'));
+      });
+    }
+    function invite(pid, to){ return col().doc(pid).collection('invites').add({ to: to, by: me.email, byName: me.name, at: FV().serverTimestamp() }); }
     var sort = 'top', opened = {}, replying = '', branching = false, said = [], draft = null, about = null;   // about: { pid, id }
     var unwatch = [];   // the lists' listeners, replaced when access changes
     var db = function(){ return firebase.firestore(BOLD.getApp()); };
@@ -118,8 +308,11 @@ window.BoldConversations = (function(){
     // Who wrote it: someone (or their agent), or, brought in from Slack, its author there.
     // Who wrote it, first and clearly, then when. Where a thread came from (Slack) is said after, at the
     // foot of its post (origin), not here.
+    // The author: their profile (person.html), found by their email, or, for a Slack reply, by their name.
     function by(m){
-      return '<span class="bs-author">' + esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '') + '</span> · ' + ago(m.at);
+      var id = idByEmail[String(m.createdBy || '').toLowerCase()] || (!m.createdBy && m.source === 'slack' && idOf[m.name]) || '';
+      var n = esc(m.name || 'someone') + (m.viaAgent ? '’s agent' : '');
+      return (id ? '<a class="bs-author" href="person.html?id=' + encodeURIComponent(id) + '">' + n + '</a>' : '<span class="bs-author">' + n + '</span>') + ' · ' + ago(m.at);
     }
     // Why a private one is private: a talk with BOLD LLM, or a private Slack channel's thread.
     function PRIVATE_TIP(m){ return m.source === 'bold-llm' ? 'A talk with BOLD LLM: only you see it' : 'Brought in from a private Slack channel: only its members see it here'; }
@@ -355,9 +548,11 @@ window.BoldConversations = (function(){
     }
     function render(){
       var open = route().post;
+      // A peek given a conversation (an old index.html#post=… link): it opens on Conversations' page.
+      if (open && opts.peek) { location.replace('conversations.html' + location.hash); return; }
       if (open !== openId) watchThread(open);
       var p = open && postOf(open);
-      postsEl.hidden = !!open; sortEl.hidden = !!open; threadEl.hidden = !open;
+      postsEl.hidden = !!open; sortEl.hidden = !!open; if (filtersEl) filtersEl.hidden = !!open || !showFilters; threadEl.hidden = !open;
       if (open) {
         if (importEl) importEl.hidden = true;
         if (writeEl) writeEl.hidden = true;
@@ -371,7 +566,9 @@ window.BoldConversations = (function(){
         var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
         threadEl.innerHTML = (opts.thread ? '' : '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a>') +
           // Its title, unless the page shows it already (a card's, title: false); the head stays for Expand all.
-        '<div class="bs-thread-head">' + (opts.title === false ? '' : '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>') + foldAllHtml(p) + '</div>' + columnHtml(p, p.id, head);
+        '<div class="bs-thread-head">' + (opts.title === false ? '' : '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>') + foldAllHtml(p) + '</div>' +
+          // Who can read it, and Invite right after it, on one line (readersHtml).
+          '<div class="bs-meta">' + readersHtml(p) + '</div>' + inviteHtml(p) + columnHtml(p, p.id, head);
         clampLong();
         drawTree(p);
         if (linkedMsg) { setTimeout(function(){ showLinked(p.id); }, 0); }
@@ -383,6 +580,12 @@ window.BoldConversations = (function(){
       drawTree(null);
       if (posts === null) { postsEl.innerHTML = '<li class="proj-msg">Loading&hellip;</li>'; return; }
       var list = posts.slice().sort(sort === 'new' ? function(a, b){ return ms(b.at) - ms(a.at); } : function(a, b){ return score(b) - score(a) || ms(b.at) - ms(a.at); });
+      fillFilters();
+      if (filtering()) {
+        if (filt.with) fetchReplies();
+        list = list.filter(passes);
+        if (!list.length) { postsEl.innerHTML = '<li class="proj-msg">No conversation matches these filters.</li>'; return; }
+      }
       // Searching: the posts whose title, text, author, project or replies have every word, the whole phrase first,
       // as the site's search ranks them; each post's place in Top or New breaks ties.
       if (find.trim()) {
@@ -394,7 +597,8 @@ window.BoldConversations = (function(){
         if (!list.length) { postsEl.innerHTML = '<li class="proj-msg">No conversation has “' + esc(find.trim()) + '”.</li>'; return; }
       }
       postsEl.innerHTML = list.length ? list.map(function(q){
-        var at = postHash(q.id);
+        // A peek (the home page): each opens on Conversations' own page.
+        var at = opts.peek ? 'conversations.html#post=' + encodeURIComponent(q.id) : postHash(q.id);
         return '<li class="bs-post' + (mine(q) ? ' is-mine' : '') + '" id="m-' + esc(q.id) + '">' + vote(q) +
           '<div class="bs-post-main"><h3 class="bs-title"><a href="' + at + '">' + esc(q.title) + '</a></h3><p class="bs-by">' + by(q) + (q.private ? ' · <span class="bs-private" title="' + esc(PRIVATE_TIP(q)) + '">Private</span>' : '') + '</p>' +
             (q.body && q.body.trim() !== q.title ? md(q.body).replace('class="bs-text md-desc"', 'class="bs-text md-desc bs-clip"') : '') +
@@ -413,8 +617,10 @@ window.BoldConversations = (function(){
     }
 
     // ---------- writing ----------
-    function newPost(title, body, viaAgent){
-      var o = { title: title, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, private: false };
+    // readers: private to them (Slack ids, you among them), else open.
+    function newPost(title, body, viaAgent, readers){
+      var o = { title: title, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, private: !!readers };
+      if (readers) o.readers = readers;
       // In a project: about it (firestore.rules: one its poster sees).
       if (project) { o.project = project.id; o.projectTitle = String((project.title && project.title()) || '').slice(0, 300); }
       o.votes[me.uid] = 1;
@@ -519,6 +725,8 @@ window.BoldConversations = (function(){
       openAgent();
     });
     function show(pid, mid){
+      // A peek (the home page): a conversation, new or brought in, opens on Conversations' own page.
+      if (opts.peek) { location.href = 'conversations.html#post=' + encodeURIComponent(pid) + (mid && mid !== pid ? '&msg=' + encodeURIComponent(mid) : ''); return; }
       var h = postHash(pid);
       if (location.hash !== h) location.hash = h.slice(1); else render();
       // Its thread open, all the way up, so it's in sight.
@@ -534,15 +742,39 @@ window.BoldConversations = (function(){
     // ---------- writing a post yourself, and bringing in a Slack thread ----------
     sortEl.querySelector('.bs-write').addEventListener('click', function(){
       importEl.hidden = true; writeEl.hidden = !writeEl.hidden;
-      if (!writeEl.hidden) writeEl.querySelector('input').focus();
+      if (!writeEl.hidden) { syncNewWho(); writeEl.querySelector('input').focus(); }
     });
     writeEl.addEventListener('submit', function(e){
       e.preventDefault();
       var t = writeEl.querySelector('input').value.trim(), b = writeEl.querySelector('textarea').value.trim(), go = writeEl.querySelector('button[type=submit]');
       if (!t) return;
-      go.disabled = true;
-      newPost(t, b || t, false).then(function(ref){ writeEl.reset(); writeEl.hidden = true; show(ref.id); }, oops('Posting')).then(function(){ go.disabled = false; });
+      var mode = (writeEl.querySelector('input[name=bs-new-who]:checked') || {}).value || 'open';
+      var others = mode === 'people' && picks.new ? picks.new.ids.filter(function(id){ return id !== me.slackId; }) : [];
+      var readers = mode === 'open' ? null : [me.slackId].concat(others);
+      var post = function(tell){
+        go.disabled = true;
+        return newPost(t, b || t, false, readers).then(function(ref){
+          writeEl.reset(); writeEl.hidden = true; picks.new = { ids: [] }; syncNewWho(); show(ref.id);
+          if (tell && others.length) return invite(ref.id, others);
+        }, oops('Posting')).then(function(){ go.disabled = false; });
+      };
+      if (!others.length) { post(false); return; }
+      // With people: asked first, as it reaches them.
+      BOLD.confirmAlways({ title: 'Start a private conversation?', go: 'Start it', effects: [
+        'Only you and ' + namesOf(others) + ' will read it; nobody else, PIs and admins included',
+        { key: 'tell', text: 'Tell ' + namesOf(others) + ', on Slack and their Notifications page, that you invited them' }] }).then(function(r){
+        if (r) post(!(r.skip && r.skip.tell));
+      });
     });
+    // A new chat's Who can read it: the picker shows for "Me and the people I choose"; private needs a Slack sign-in.
+    picks.new = { ids: [] };
+    function syncNewWho(){
+      var mode = (writeEl.querySelector('input[name=bs-new-who]:checked') || {}).value, el = writeEl.querySelector('.bs-pick[data-pick=new]');
+      Array.prototype.forEach.call(writeEl.querySelectorAll('input[name=bs-new-who]'), function(r){ if (r.value !== 'open') { r.disabled = !me.slackId; r.parentNode.title = me.slackId ? '' : 'Needs a Slack sign-in'; } });
+      el.hidden = mode !== 'people';
+      if (!el.hidden) { loadNames(); drawPick('new'); }
+    }
+    writeEl.addEventListener('change', function(e){ if (e.target.name === 'bs-new-who') { syncNewWho(); var i = writeEl.querySelector('.bs-pick[data-pick=new] .bs-who-add'); if (i && !writeEl.querySelector('.bs-pick[data-pick=new]').hidden) i.focus(); } });
     writeEl.querySelector('.bs-write-cancel').addEventListener('click', function(){ writeEl.hidden = true; });
     sortEl.querySelector('.bs-import').addEventListener('click', function(){
       writeEl.hidden = true; importEl.hidden = !importEl.hidden;
@@ -650,8 +882,71 @@ window.BoldConversations = (function(){
 
     // The search box: the list redraws below it as you type (the box itself is left alone, spaces and all).
     var findEl = q('.bs-find');
-    findEl.addEventListener('input', function(){ find = findEl.value; render(); });
-    findEl.addEventListener('keydown', function(e){ if (e.key === 'Escape' && findEl.value) { e.stopPropagation(); findEl.value = ''; find = ''; render(); } });
+    if (findEl) findEl.addEventListener('input', function(){ find = findEl.value; render(); });
+    if (findEl) findEl.addEventListener('keydown', function(e){ if (e.key === 'Escape' && findEl.value) { e.stopPropagation(); findEl.value = ''; find = ''; render(); } });
+    // The filters: With needs who replied, fetched as soon as the row is reached for.
+    // Who can read it › Change, and Invite (their state: `who`, `inviting`, `picks`, so a redraw keeps them).
+    threadEl.addEventListener('click', function(e){
+      var t = e.target, p = openId && postOf(openId);
+      if (!p) return;
+      if (t.closest('.bs-who-change')) {
+        e.preventDefault(); who = { pid: p.id, private: !!p.private };
+        picks.who = { ids: (p.private ? (p.readers || []) : [me.slackId]).slice(), lock: me.slackId };
+        loadNames(); render(); return;
+      }
+      if (t.closest('.bs-who-cancel')) { who = null; delete picks.who; render(); return; }
+      if (t.closest('.bs-invite-btn')) {
+        e.preventDefault();   // in the summary: not a fold
+        if (inviting === p.id) { inviting = ''; delete picks.invite; render(); return; }
+        inviting = p.id; loadNames();
+        picks.invite = { ids: [], placeholder: 'Who? Start typing a name', only: p.private && !canChangeWho(p) ? (p.readers || []) : null };
+        render(); var i = threadEl.querySelector('.bs-invite .bs-who-add'); if (i) i.focus(); return;
+      }
+      if (t.closest('.bs-invite-cancel')) { inviting = ''; delete picks.invite; render(); }
+    });
+    threadEl.addEventListener('change', function(e){
+      var t = e.target;
+      if (t.name === 'bs-who' && who) { who.private = t.value === 'private'; render(); }
+    });
+    threadEl.addEventListener('submit', function(e){
+      var p = openId && postOf(openId);
+      if (e.target.classList.contains('bs-who')) { e.preventDefault(); if (p && who) saveWho(p); }
+      if (e.target.classList.contains('bs-invite')) { e.preventDefault(); if (p && picks.invite) sendInvite(p); }
+    });
+    // The pickers, wherever they are (Change, Invite, a new chat): adding by name, removing by ×.
+    var pickOf = function(el){ var k = el.closest('.bs-pick'); return k && picks[k.getAttribute('data-pick')] ? k.getAttribute('data-pick') : ''; };
+    var addPicked = function(input){
+      var key = pickOf(input), id = idOf[input.value.trim()], st = picks[key];
+      if (!st || !id || (st.only && st.only.indexOf(id) === -1)) return false;
+      if (st.ids.indexOf(id) === -1) st.ids.push(id);
+      st.typed = ''; drawPick(key); return true;
+    };
+    root.addEventListener('click', function(e){
+      var x = e.target.closest('.bs-who-x'), key = x && pickOf(x);
+      if (!key) return;
+      picks[key].ids = picks[key].ids.filter(function(id){ return id !== x.getAttribute('data-id'); }); drawPick(key);
+    });
+    root.addEventListener('input', function(e){
+      if (!e.target.classList.contains('bs-who-add')) return;
+      var key = pickOf(e.target); if (!key) return;
+      picks[key].typed = e.target.value;
+      if (idOf[e.target.value.trim()]) addPicked(e.target);
+    });
+    root.addEventListener('keydown', function(e){
+      if (e.target.classList && e.target.classList.contains('bs-who-add') && e.key === 'Enter') { e.preventDefault(); addPicked(e.target); }
+    });
+    // Who can read it, unfolded or folded: remembered for the redraws.
+    threadEl.addEventListener('toggle', function(e){ var d = e.target; if (d.classList && d.classList.contains('bs-readers')) readersOpen[d.getAttribute('data-pid')] = d.open; }, true);
+    if (filtersEl) {
+      q('.bs-filterbtn').addEventListener('click', function(){ showFilters = !showFilters; if (showFilters) fetchReplies(); render(); });
+      filtersEl.addEventListener('pointerenter', fetchReplies);
+      filtersEl.addEventListener('focusin', fetchReplies);
+      filtersEl.addEventListener('change', function(e){
+        var sel = e.target.closest('.bs-filter'); if (!sel) return;
+        filt[sel.getAttribute('data-f')] = sel.value; sel.blur(); render();
+      });
+      filtersEl.querySelector('.bs-filter-clear').addEventListener('click', function(){ filt = { author: '', with: '', project: '', vis: '' }; render(); });
+    }
     function syncSort(){ Array.prototype.forEach.call(root.querySelectorAll('.bs-sortbtn'), function(x){ x.setAttribute('aria-pressed', String(x.getAttribute('data-sort') === sort)); }); }
     sortEl.addEventListener('click', function(e){
       var b = e.target.closest('.bs-sortbtn'); if (!b) return;
@@ -674,6 +969,7 @@ window.BoldConversations = (function(){
       // ids; firestore.rules seesConversation): two queries, as the rules allow no list mixing them.
       var u = firebase.auth().currentUser, slackId = '';
       ((u && u.providerData) || []).forEach(function(p){ if (p.providerId === 'oidc.slack') slackId = p.uid; });
+      me.slackId = slackId; loadNames();   // names: the authors' profiles, the pickers
       var parts = { open: [], mine: [] };
       var fail = function(err){ console.error('[BOLD Lab] loading conversations failed', err); postsEl.innerHTML = '<li class="proj-msg">Couldn’t load the conversations.</li>'; };
       var merge = function(){
@@ -686,7 +982,12 @@ window.BoldConversations = (function(){
       };
       // In a project: the open ones about it (never private: started there, or from its cards).
       if (unwatch.length) { unwatch.forEach(function(f){ f(); }); unwatch = []; }
-      if (project) { watch(col().where('project', '==', project.id).where('private', '==', false), 'open'); return; }
+      // In a project: the open ones about it, and the private ones about it the viewer reads (Who can read it › Change).
+      if (project) {
+        watch(col().where('project', '==', project.id).where('private', '==', false), 'open');
+        if (slackId) watch(col().where('project', '==', project.id).where('readers', 'array-contains', slackId), 'mine');
+        return;
+      }
       watch(col().where('private', '==', false), 'open');
       if (slackId) watch(col().where('readers', 'array-contains', slackId), 'mine');
     });

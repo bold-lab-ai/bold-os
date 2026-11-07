@@ -2,7 +2,7 @@
 /* Its own type and buttons (as Conversations' page has them: projects.css main, .btn), so it looks the same wherever it's mounted. */
 .bs-root{font-family:var(--sans); font-size:16px; line-height:1.55;}
 .bs-root button{font-family:inherit;}
-.bs-root .btn, .wk-talk .btn{font-family:inherit; font-weight:600; font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); padding:9px 16px; cursor:pointer; white-space:nowrap;}
+.bs-root .btn, .wk-talk .btn{font-family:inherit; font-weight:600; font-size:14px; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:0; padding:9px 16px; cursor:pointer; white-space:nowrap;}
 .bs-root .btn:hover, .wk-talk .btn:hover{border-color:var(--accent); color:var(--link);}
 .bs-root .btn:disabled{color:var(--muted); opacity:.5; cursor:default;}
 .bs-root .btn:disabled:hover{border-color:var(--line); color:var(--muted);}
@@ -13,12 +13,15 @@
 /* In a project's tab: a little room under the tabs. */
 #projectPanel .bs-root{margin-top:18px;}
 .bs-note{margin:0 0 14px; font-size:13px; color:var(--muted);}
-.bs-sortbtn{font:inherit; font-size:13px; font-weight:600; color:var(--muted); background:none; border:1px solid var(--line); border-radius:var(--radius); padding:5px 12px; cursor:pointer;}
+.bs-sortbtn{font:inherit; font-size:13px; font-weight:600; color:var(--muted); background:none; border:1px solid var(--line); border-radius:0; padding:5px 12px; cursor:pointer;}
 .bs-sortbtn[aria-pressed="true"]{color:var(--ink); border-color:var(--ink);}
 .bs-sort{display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+/* Import from Slack and New chat, as tall as Top and New beside them. */
+.bs-sort .btn{font-size:13px; line-height:inherit; padding:5px 12px;}
+.bs-sort .bs-sortbtn{line-height:inherit;}
 /* Search conversations: as the board's search box (board.css), the width the row leaves. */
 .bs-find{flex:1 1 200px; min-width:160px; font-family:var(--sans); font-size:13.5px; color:var(--ink); background:var(--surface);
-  border:1px solid var(--line); border-radius:var(--radius); padding:6px 10px;}
+  border:1px solid var(--line); border-radius:0; padding:7px 10px;}
 .bs-find:focus{outline:none; border-color:var(--ink);}
 .bs-import{margin-left:auto; padding:6px 14px; font-size:13px;}
 .bs-new{padding:6px 14px; font-size:13px;}
@@ -31,7 +34,7 @@
 /* The Markdown field's preview, in the type the message is shown in. */
 .bs-replyform .mdf-preview, .bs-write-form .mdf-preview{font-family:var(--sans); font-size:14px;}
 .bs-posts{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
-.bs-post{display:flex; gap:12px; padding:12px 14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
+.bs-post{display:flex; gap:12px; padding:12px 14px; background:var(--surface); border:1px solid var(--line); border-radius:0;}
 .bs-post.is-mine{border-color:var(--ink);}
 .bs-vote{display:flex; flex-direction:column; align-items:center; gap:2px; min-width:28px; font-size:13px; font-weight:600; color:var(--ink-soft);}
 /* Votes: up in amber, down in plum, filled when it's yours; the score takes the colour of your vote. */
@@ -47,6 +50,9 @@
 .bs-title{margin:0; font-family:var(--sans); font-size:16px; font-weight:600; color:var(--ink);}
 .bs-by{margin:2px 0 0; font-size:12px; color:var(--muted);}
 .bs-author{font-size:13px; font-weight:600; color:var(--ink);}
+/* An author's name opens their profile: underlined only on hover, as in Slack. */
+a.bs-author{text-decoration:none;}
+a.bs-author:hover, a.bs-author:focus-visible{text-decoration:underline; text-underline-offset:2px;}
 .bs-origin{margin:8px 0 0; padding-top:6px; border-top:1px solid var(--rule); font-size:12px; color:var(--muted);}
 .bs-origin a{color:inherit;}
 .bs-private{font-family:var(--font-ui, inherit); font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); border:1px solid var(--line); border-radius:3px; padding:0 4px;}
@@ -115,7 +121,7 @@
 .bs-line > .bs-by{margin:0;}
 .bs-vote-inline{flex-direction:row; min-width:0; gap:1px; font-size:12px;}
 .bs-vote-inline .bs-up{padding:1px 3px; font-size:10px;}
-.bs-reply-card{display:flex; gap:8px; padding:6px 10px; background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);}
+.bs-reply-card{display:flex; gap:8px; padding:6px 10px; background:var(--surface); border:1px solid var(--line); border-radius:0;}
 .bs-reply.is-mine > .bs-reply-card, .bs-post.is-about, .bs-reply.is-about > .bs-reply-card{border-color:var(--ink);}
 .bs-reply .bs-text{margin:2px 0 0;}
 .bs-reply .bs-text > :last-child{margin-bottom:0;}
@@ -192,3 +198,57 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 /* A conversation that's a page's own section (talk.js heading: a card's): its heading, as the BOLDiquette's
    #### headings are (guide.css .guide-text h6): a small-caps label. */
 .wk-talk-title{font-family:var(--sans); font-size:12px; font-weight:600; letter-spacing:0.12em; text-transform:uppercase; color:var(--muted); line-height:1.25; margin:0 0 6px;}
+
+/* The list's filters (conversations-forum.js fillFilters), under the search box; a set one in ink. Square, as the posts (no native rounding: appearance none, a drawn caret). */
+.bs-filters{display:flex; flex-wrap:nowrap; align-items:center; gap:8px; margin:0 0 12px;}
+.bs-filters .bs-filter{flex:0 1 auto; min-width:0; text-overflow:ellipsis;}
+@media (max-width:640px){ .bs-filters{flex-wrap:wrap;} .bs-filters .bs-filter{flex:1 1 40%;} .bs-find{flex-basis:120px; min-width:120px;} }
+/* Its icon, beside the search box: in ink while open or while any filter is set, with how many. */
+.bs-filterbtn{position:relative; display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; padding:0; color:var(--muted); background:var(--surface); border:1px solid var(--line); border-radius:0; cursor:pointer;}
+.bs-filterbtn svg{width:15px; height:15px; fill:none; stroke:currentColor; stroke-width:1.4; stroke-linejoin:round;}
+.bs-filterbtn:hover, .bs-filterbtn[aria-expanded="true"], .bs-filterbtn.is-on{color:var(--ink); border-color:var(--ink);}
+.bs-filterbtn.is-on svg{fill:currentColor;}
+.bs-filter-n{position:absolute; top:-7px; right:-7px; min-width:15px; height:15px; padding:0 3px; box-sizing:border-box; font-family:var(--sans); font-size:10px; font-weight:600; line-height:15px; text-align:center; color:var(--surface); background:var(--ink);}
+.bs-filters[hidden]{display:none;}
+.bs-filter{font-family:var(--sans); font-size:13px; color:var(--muted); background:var(--surface); border:1px solid var(--line); border-radius:0; padding:5px 26px 5px 8px; -webkit-appearance:none; appearance:none;
+  background-image:linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:right 12px center, right 8px center; background-size:4px 4px; background-repeat:no-repeat; max-width:100%;}
+.bs-filter.is-on{color:var(--ink); border-color:var(--ink);}
+.bs-filter:focus{outline:none; border-color:var(--ink);}
+/* Who can read a conversation, under its title: one line, unfolded by its caret (conversations-forum.js readersHtml). */
+.bs-readers{font-family:var(--sans); font-size:13px; color:var(--muted); margin:0; flex:0 1 auto; min-width:0;}
+/* Who can read it (an eye) and Invite, one line under the title. */
+.bs-meta{display:flex; align-items:flex-start; gap:14px; margin:-4px 0 14px;}
+.bs-readers .bs-invite-btn{font-family:var(--sans); font-size:13px; color:var(--ink);}
+.bs-readers-sep{margin:0 2px;}
+.bs-readers-eye{width:15px; height:15px; flex:none; align-self:center; fill:none; stroke:currentColor; stroke-width:1.3;}
+.bs-readers summary{align-items:center;}
+.bs-readers summary{cursor:pointer; list-style:none; display:inline-flex; align-items:baseline; gap:6px;}
+.bs-readers summary::-webkit-details-marker{display:none;}
+.bs-readers summary:hover{color:var(--ink);}
+.bs-readers-caret{width:6px; height:6px; border-right:1.5px solid currentColor; border-bottom:1.5px solid currentColor; transform:rotate(45deg) translate(-2px,-2px); transition:transform .15s; margin-left:2px;}
+.bs-readers[open] .bs-readers-caret{transform:rotate(-135deg) translate(-1px,-1px);}
+.bs-readers-more{margin:6px 0 0; max-width:62ch;}
+/* Who can read it › Change (conversations-forum.js whoForm). */
+.bs-who{display:flex; flex-direction:column; gap:6px; margin:8px 0 4px; max-width:520px; color:var(--ink);}
+.bs-who label{display:flex; align-items:center; gap:8px;}
+.bs-who-chips{display:flex; flex-wrap:wrap; gap:6px; list-style:none; margin:2px 0 0 22px; padding:0;}
+.bs-who-chip{display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border:1px solid var(--line); background:var(--surface);}
+.bs-who-x{font:inherit; line-height:1; color:var(--muted); background:none; border:0; padding:0 0 0 2px; cursor:pointer;}
+.bs-who-x:hover{color:var(--ink);}
+.bs-who-add{margin-left:22px; font:inherit; color:var(--ink); background:var(--surface); border:1px solid var(--line); border-radius:0; padding:5px 8px;}
+.bs-who-actions{display:flex; gap:8px; margin-top:4px;}
+/* A new chat's Who can read it, and Invite (conversations-forum.js; the picker: pickHtml). */
+.bs-new-who{border:0; margin:4px 0 8px; padding:0; display:flex; flex-direction:column; gap:4px; font-family:var(--sans); font-size:14px;}
+.bs-new-who legend{padding:0; margin-bottom:4px; font-weight:600;}
+.bs-new-who label{display:flex; align-items:center; gap:8px; font-weight:400;}
+.bs-new-who .bs-pick, .bs-who .bs-pick{margin-left:22px;}
+.bs-pick{display:flex; flex-direction:column; gap:6px;}
+.bs-pick .bs-who-chips, .bs-pick .bs-who-add{margin-left:0;}
+.bs-pick .bs-who-add{max-width:360px;}
+.bs-invite{display:flex; flex-direction:column; gap:6px; margin:0 0 14px; max-width:520px; font-family:var(--sans); font-size:13px;}
+.bs-invite-k{margin:0; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; font-size:11px;}
+/* In the new chat's form (.event-form stretches its inputs): radios as a row each, the picker's box its own width. */
+.event-form .bs-new-who label{display:flex; margin:0; color:var(--ink); cursor:pointer;}
+.event-form .bs-new-who input[type=radio]{width:auto; margin:0; flex:none;}
+.event-form .bs-new-who .bs-who-add{width:100%; max-width:360px; margin:0;}

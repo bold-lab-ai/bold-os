@@ -9,6 +9,7 @@ const KINDS = [
   { section: 'Conversations', items: [
     { id: 'conv-mine', label: 'Replies to my messages', features: ['conversation-reply-mine'] },
     { id: 'conv-in', label: 'Other replies in conversations I’m in', features: ['conversation-replies'] },
+    { id: 'conv-invites', label: 'Invitations to conversations', features: ['conversation-invites'] },
   ] },
   { section: 'Projects', items: [
     { id: 'proj-people-mine', label: 'People joining or leaving my projects', features: ['project-joined-mine', 'project-left-mine'] },

@@ -904,6 +904,8 @@ textarea.md-field[hidden], .mdf-preview[hidden]{display:none;}
 .slack-msg-hint{margin:8px 0 0; font-size:13px; color:var(--muted);}
 .confirm-dialog p{margin:0 0 4px; font-size:14px;}
 .confirm-dialog ul{margin:0 0 14px; padding-left:20px; font-size:14px;}
+/* A risk to weigh first (confirmAction's warn). */
+.confirm-dialog .confirm-warn{margin:0 0 12px; padding:8px 10px; color:var(--warn-text); background:var(--warn-bg); border:1px solid var(--warn-line);}
 .confirm-dialog li{margin:3px 0;}
 .confirm-skip{display:flex; gap:6px; align-items:center; font-size:13px; color:var(--muted, inherit); margin:0 0 14px;}
 .confirm-actions{display:flex; gap:8px; justify-content:flex-end;}

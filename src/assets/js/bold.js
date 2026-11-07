@@ -283,7 +283,8 @@
       return new Promise(function(resolve){
         var d = document.createElement('dialog');
         d.className = 'confirm-dialog';
-        d.innerHTML = '<h2>' + esc(o.title || 'Go ahead?') + '</h2>' +
+        // o.warn: a risk to weigh before going ahead (e.g. a private Slack channel's text reaching more people).
+        d.innerHTML = '<h2>' + esc(o.title || 'Go ahead?') + '</h2>' + (o.warn ? '<p class="confirm-warn" role="alert">' + esc(o.warn) + '</p>' : '') +
           ((o.effects || []).length ? '<p>This will:</p><ul>' + o.effects.map(function(e){
             return e.key ? '<li class="confirm-opt"><label><input type="checkbox" checked data-key="' + esc(e.key) + '"> ' + esc(e.text) + '</label></li>' : '<li>' + esc(e.text || e) + '</li>';
           }).join('') + '</ul>' : '') +
@@ -940,6 +941,11 @@
   BOLD.cannotReason = function(area, what){
     var level = levelFor(area, what || 'view');
     return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can do what).';
+  };
+  // Who may view | edit `area`, in words: "BOLD-associate and above" (a conversation's Who can read it).
+  BOLD.whoCan = function(area, what){
+    var level = levelFor(area, what || 'view');
+    return level === 'none' ? 'nobody' : level === 'everyone' ? 'everyone signed in' : LEVEL_NAMES[level] + ' and above';
   };
   BOLD.myGroup = function(){ return access ? access.group : null; };
   // The event and series levels (`visibleTo`) the viewer sees: from 'public' (anyone, even signed out)

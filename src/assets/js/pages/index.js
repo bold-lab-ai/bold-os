@@ -32,7 +32,7 @@
     if (sidebar) sidebar.hidden = !on;
     if (navToggle) navToggle.hidden = !on;
     if (on && !forum && mount && window.BoldConversations) {
-      forum = BoldConversations.create({ note: false });
+      forum = BoldConversations.create({ note: false, peek: true });   // a peek: no search box or filters
       mount.appendChild(forum.el);
     }
   }
@@ -210,9 +210,9 @@
       var recent = state.posts.filter(function(p){ return (p.lastAt || p.at || 0) > weekAgo; });
       var top = recent.slice().sort(function(a, b){ return (b.replies || 0) - (a.replies || 0) || (b.lastAt || b.at || 0) - (a.lastAt || a.at || 0); })[0];
       var open = recent.filter(function(p){ return !(p.replies > 0) && p !== top && String(p.createdBy || '').toLowerCase() !== me && String((p.by || {}).email || '').toLowerCase() !== me; })[0];
-      if (top) lab.push('The lab is talking about ' + door(esc(quote(top.title)), 'index.html#post=' + encodeURIComponent(top.id), null) +
+      if (top) lab.push('The lab is talking about ' + door(esc(quote(top.title)), 'conversations.html#post=' + encodeURIComponent(top.id), null) +
         (top.replies ? ' (' + num(top.replies) + (top.replies === 1 ? ' reply' : ' replies') + ')' : '') +
-        (open ? ', and nobody has answered ' + esc(first(open.name)) + '’s ' + door(esc(quote(open.title)), 'index.html#post=' + encodeURIComponent(open.id), [['Answer it', 'index.html#post=' + encodeURIComponent(open.id)]]) + ' yet' : '') + '.');
+        (open ? ', and nobody has answered ' + esc(first(open.name)) + '’s ' + door(esc(quote(open.title)), 'conversations.html#post=' + encodeURIComponent(open.id), [['Answer it', 'conversations.html#post=' + encodeURIComponent(open.id)]]) + ' yet' : '') + '.');
     }
 
     // Written by BOLD LLM (their choice, profile › Agents, and the lab's, Settings › BOLD Agent; homeLetters/{email})

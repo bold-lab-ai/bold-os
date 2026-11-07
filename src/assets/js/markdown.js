@@ -8,6 +8,10 @@
 // Phases: a heading ending " · 8w", " · 10d" or " · after" (weeks or days before a deadline,
 // or after it) is a phase; with two or more, a timeline of them, each linking to its heading,
 // comes before the first (the BOLDiquette's ML Conference Cycle).
+// Maths (2026-11-07): $…$ inline and $$…$$ displayed (on its own lines, or a line of its own), as LaTeX;
+// set aside like code, shown as typed until KaTeX (loaded from jsDelivr the first time a page has some) typesets it.
+// \$ is a plain dollar, and "$5 and $10" stays money: the opening $ can't be followed by a space, nor the closing
+// one preceded by one or followed by a digit.
 // BoldMarkdown.render(text, { breaks: true }) → HTML, a single line break kept as one (as in Slack:
 // Conversations); without it a paragraph's lines join, as in Markdown. BoldMarkdown.plain(text) → plain text, escaped,
 // with its tags and web addresses as links (comments).
@@ -41,9 +45,18 @@ window.BoldMarkdown = (function(){
 
   // Inline formatting of one escaped line. Code spans are set aside first so
   // nothing inside them is formatted.
+  // A formula: the TeX as typed (escaped) until typeset() replaces it.
+  function mathHtml(tex, display){
+    return '<span class="md-math' + (display ? ' is-display' : '') + '" data-tex="' + esc(tex) + '">' + esc(display ? '$$' + tex + '$$' : '$' + tex + '$') + '</span>';
+  }
+  var MATH = /\$\$([^$]+?)\$\$|(^|[^\\$\w])\$([^\s$](?:[^$]*?[^\s$\\])?)\$(?![\d$])/g;
   function inline(text){
-    var codes = [];
-    var s = mentions(esc(text).replace(/`([^`]+)`/g, function(_, c){ codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000'; }));
+    var codes = [], maths = [];
+    var s = esc(text).replace(/`([^`]+)`/g, function(_, c){ codes.push(c); return '\u0000' + (codes.length - 1) + '\u0000'; });
+    s = mentions(s.replace(MATH, function(all, disp, pre, tex){
+      maths.push(disp != null ? mathHtml(unesc(disp), true) : mathHtml(unesc(tex), false));
+      return (disp != null ? '' : pre) + '\u0002' + (maths.length - 1) + '\u0002';
+    }).replace(/\\\$/g, '$'));
     // Images (BOLD.imageHtml), set aside like code so nothing formats their addresses.
     var imgs = [];
     s = s.replace(BOLD.IMAGE, function(all, alt, url){
@@ -67,6 +80,7 @@ window.BoldMarkdown = (function(){
       .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g, '$1<em>$2</em>')
       .replace(/~~([^~]+)~~/g, '<del>$1</del>');
     return s.replace(/\u0000(\d+)\u0000/g, function(_, i){ return '<code>' + codes[+i] + '</code>'; })
+      .replace(/\u0002(\d+)\u0002/g, function(_, i){ return maths[+i]; })
       .replace(/\u0001(\d+)\u0001/g, function(_, i){ return imgs[+i]; });
   }
   function unesc(s){ return s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&'); }
@@ -144,6 +158,16 @@ window.BoldMarkdown = (function(){
         out += '<pre><code>' + esc(code.join('\n')) + '</code></pre>';
         continue;
       }
+      // A displayed formula: $$ on its own lines around it, or $$…$$ a line of its own.
+      if (/^\s*\$\$/.test(line)) {
+        var one = /^\s*\$\$([\s\S]+?)\$\$\s*$/.exec(line);
+        if (one) { out += '<p class="md-math-block">' + mathHtml(one[1].trim(), true) + '</p>'; i++; continue; }
+        var tex = [line.replace(/^\s*\$\$/, '')];
+        for (i++; i < lines.length && !/\$\$\s*$/.test(lines[i]); i++) tex.push(lines[i]);
+        if (i < lines.length) { tex.push(lines[i].replace(/\$\$\s*$/, '')); i++; }
+        out += '<p class="md-math-block">' + mathHtml(tex.join('\n').trim(), true) + '</p>';
+        continue;
+      }
       if (/^\s*\|/.test(line) && i + 1 < lines.length && TABLE_RULE.test(lines[i + 1])) {
         var head = cells(line), rows = [];
         for (i += 2; i < lines.length && /^\s*\|/.test(lines[i]); i++) rows.push(cells(lines[i]));
@@ -181,11 +205,50 @@ window.BoldMarkdown = (function(){
       // Its first line always, so a line no block took (a "|" with no table rule
       // under it, say) can't stop the loop from moving on.
       var para = [line.trim()];
-      for (i++; i < lines.length && lines[i].trim() && !/^(```|#{1,4}\s|>|\s*\|)/.test(lines[i]) && !ITEM.test(lines[i]); i++) para.push(lines[i].trim());
+      for (i++; i < lines.length && lines[i].trim() && !/^(```|#{1,4}\s|>|\s*\||\s*\$\$)/.test(lines[i]) && !ITEM.test(lines[i]); i++) para.push(lines[i].trim());
       out += '<p>' + para.map(inline).join(breaks ? '<br>' : ' ') + '</p>';
     }
     return out;
   }
 
-  return { render: render, plain: plain };
+  // Typesetting: every .md-math on the page not done yet, whoever put it there (a preview, a redraw), with KaTeX,
+  // fetched once (pinned, with its hash). Bad TeX shows in red, as KaTeX does, not as an error.
+  var KATEX = 'https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/';
+  var loading = null, queued = false;
+  function load(){
+    if (window.katex) return Promise.resolve();
+    if (loading) return loading;
+    loading = new Promise(function(resolve, reject){
+      var css = document.createElement('link');
+      css.rel = 'stylesheet'; css.href = KATEX + 'katex.min.css'; css.crossOrigin = 'anonymous';
+      css.integrity = 'sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+';
+      document.head.appendChild(css);
+      var js = document.createElement('script');
+      js.src = KATEX + 'katex.min.js'; js.crossOrigin = 'anonymous';
+      js.integrity = 'sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg';
+      js.onload = function(){ resolve(); }; js.onerror = function(){ loading = null; reject(new Error('KaTeX didn’t load')); };
+      document.head.appendChild(js);
+    });
+    return loading;
+  }
+  function typeset(){
+    queued = false;
+    var todo = document.querySelectorAll('.md-math:not(.is-typeset)');
+    if (!todo.length) return;
+    load().then(function(){
+      Array.prototype.forEach.call(todo, function(el){
+        if (el.classList.contains('is-typeset') || !el.isConnected) return;
+        try { window.katex.render(el.getAttribute('data-tex') || '', el, { displayMode: el.classList.contains('is-display'), throwOnError: false, maxSize: 20, maxExpand: 500, trust: false }); }
+        catch (e){ return; }
+        el.classList.add('is-typeset');
+      });
+    }, function(err){ console.error('[BOLD Markdown] maths:', err); });
+  }
+  function soon(){ if (!queued) { queued = true; (window.requestAnimationFrame || setTimeout)(typeset); } }
+  if (window.MutationObserver) {
+    var watch = function(){ new MutationObserver(soon).observe(document.body, { childList: true, subtree: true }); soon(); };
+    if (document.body) watch(); else document.addEventListener('DOMContentLoaded', watch);
+  }
+
+  return { render: render, plain: plain, typeset: soon };
 })();

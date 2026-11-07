@@ -1398,6 +1398,7 @@ const PILOTS = {
   'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
   'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
   'conversation-replies': 'A reply in a conversation you’re in: a DM',
+  'conversation-invites': 'An invitation to a conversation: a DM',
   'notification-pings': 'Notifications: a ping on Slack that there are new ones, instead of each message',
   'channel-alignment': 'Slack channels follow BOLD.OS: removing whoever isn’t meant to be in one, and telling them',
 };
@@ -8800,13 +8801,15 @@ exports.meetingReminders = onSchedule({ schedule: '*/5 * * * *', timeZone: PROJE
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
-const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails });
+const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, onDocumentUpdated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails });
 exports.slackThread = conversationsSlack.slackThread;
 // A comment thread on the BOLDiquette or a guide, or a board card's comments, made a conversation (functions/comment-conversation.js).
 exports.commentConversation = require('./comment-conversation')({ db, onCall, HttpsError, signedInEmail, access, FieldValue, SITE_URL, rank: accessLib.rank, guideArea: accessLib.guideArea, projectPageUrl }).commentConversation;
 exports.onConversationImport = conversationsSlack.onConversationImport;
 exports.onConversationMessage = conversationsSlack.onConversationMessage;
 exports.onConversationCreated = conversationsSlack.onConversationCreated;
+exports.onConversationAccess = conversationsSlack.onConversationAccess;
+exports.onConversationInvite = conversationsSlack.onConversationInvite;
 // Desktop notifications (functions/push.js): each person's devices, and a push with each notification
 // (noteFor calls webPush.pushTo, once everything above is defined).
 const webPush = require('./push')({ db, admin, onCall, HttpsError, signedInEmail, logger, SITE_URL });
