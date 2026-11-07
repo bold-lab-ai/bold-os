@@ -55,6 +55,9 @@
       id.value = ''; clearTimeout(timer);
       var q = input.value.trim(), mine = ++seq;
       if (q.length < 2) { hide(); return; }
+      // At once, while the names load (it can take seconds): so it's clear they choose from a list.
+      list.innerHTML = '<li class="jn-none jn-loading" aria-live="polite">Looking for people named “' + esc(q) + '”…</li>';
+      list.hidden = false; input.setAttribute('aria-expanded', 'true'); active = -1;
       timer = setTimeout(function(){
         firebase.app().functions('europe-west2').httpsCallable('joinInviters')({ q: q }).then(function(r){
           if (mine !== seq) return;
@@ -63,7 +66,10 @@
             return '<li role="option" data-id="' + esc(p.id) + '" data-name="' + esc(p.name) + '">' + esc(p.name) + '</li>';
           }).join('') : '<li class="jn-none">No one by that name can invite you to BOLD</li>';
           list.hidden = false; input.setAttribute('aria-expanded', 'true'); active = -1;
-        }).catch(function(err){ console.error('[BOLD Join] finding people failed', err); });
+        }).catch(function(err){
+          console.error('[BOLD Join] finding people failed', err);
+          if (mine === seq) list.innerHTML = '<li class="jn-none">Couldn’t look them up: type again to retry</li>';
+        });
       }, 250);
     });
     list.addEventListener('mousedown', function(e){

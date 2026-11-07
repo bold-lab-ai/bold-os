@@ -115,7 +115,7 @@ window.BoldJoin = (function(){
       // join.html only: their point of contact, who invited them, picked from the roster as they
       // type (join.js); they decide the request.
       (o.withIdentity ? '<label>BOLD supervisor, mentor or point of contact (they invited you, and approve your request)' +
-        '<input type="text" class="jn-inviter" maxlength="120" placeholder="Start typing their name" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"></label>' +
+        '<input type="text" class="jn-inviter" maxlength="120" placeholder="Start typing their name, then choose them from the list" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"></label>' +
         '<input type="hidden" class="jn-inviter-id"><ul class="jn-inviter-list" role="listbox" hidden></ul>' : '') +
       '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
         t('jn-end', 'End date (not needed for PIs, adjuncts, alumni and collaborators)', v.endDate, '', 10, 'date') + '</div>' +
