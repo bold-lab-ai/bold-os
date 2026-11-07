@@ -97,9 +97,9 @@
   function send(){
     var form = box.querySelector('.join-form'), d = BoldJoin.read(form);
     d.website = form.querySelector('.jn-website').value;
-    var p = BoldJoin.problem(d);
-    showError(p);
-    if (p) return;
+    // Each missing or wrong answer under its own field; the message at the bottom is for the server's.
+    showError('');
+    if (BoldJoin.showProblems(form, d)) return;
     delete d.inviterTyped;
     if (invited) d.invite = invite;
     if (changes) {

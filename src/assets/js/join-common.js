@@ -156,19 +156,46 @@ window.BoldJoin = (function(){
     return out;
   }
 
-  // What's missing or wrong in d, as functions/index.js normalizeJoinRequest checks it, or ''.
-  function problem(d){
-    if (d.name !== undefined && !d.name) return 'Give your full name.';
-    if (d.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return 'Give a valid email address.';
-    if (!d.institution) return 'Give your home institution.';
-    if (!d.role) return 'Choose your role at BOLD.';
-    if (d.invitedBy !== undefined && !d.invitedBy) return 'Choose your point of contact from the list.';
-    if (!d.contact) return 'Say who your BOLD point of contact is.';
-    if (!d.interests) return 'Give your main research interests.';
-    if (!d.endDate && NO_END.indexOf(d.role) === -1) return 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).';
-    if (d.startDate && d.endDate && d.endDate < d.startDate) return 'The end date is before the start date.';
-    if (d.bookingUrl && !/^https:\/\/\S+$/.test(d.bookingUrl)) return 'The booking link starts with https://';
-    return '';
+  // Everything missing or wrong in d, as functions/index.js normalizeJoinRequest checks it, each with
+  // its field (a class in fieldsHtml): [{ field, msg }], at most one per field, in the form's order.
+  function problems(d){
+    var out = [], add = function(field, msg){ if (!out.some(function(x){ return x.field === field; })) out.push({ field: field, msg: msg }); };
+    var inviter = d.invitedBy !== undefined ? 'jn-inviter' : 'jn-contact-pick';
+    if (d.name !== undefined && !d.name) add('jn-name', 'Give your full name.');
+    if (d.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) add('jn-email', d.email ? 'Give a valid email address.' : 'Give your email address.');
+    if (!d.institution) add('jn-institution', 'Give your home institution.');
+    if (!d.role) add('jn-role', 'Choose your role at BOLD.');
+    if (d.invitedBy !== undefined && !d.invitedBy) add(inviter, d.inviterTyped ? 'Choose them from the list as you type.' : 'Choose your point of contact from the list.');
+    if (!d.contact) add(inviter, 'Say who your BOLD point of contact is.');
+    if (d.startDate && d.endDate && d.endDate < d.startDate) add('jn-end', 'The end date is before the start date.');
+    if (!d.endDate && NO_END.indexOf(d.role) === -1) add('jn-end', 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).');
+    if (!d.interests) add('jn-interests', 'Give your main research interests.');
+    if (d.bookingUrl && !/^https:\/\/\S+$/.test(d.bookingUrl)) add('jn-booking', 'The booking link starts with https://');
+    var order = ['jn-name', 'jn-email', 'jn-institution', 'jn-role', 'jn-inviter', 'jn-contact-pick', 'jn-end', 'jn-interests', 'jn-booking'];
+    return out.sort(function(x, y){ return order.indexOf(x.field) - order.indexOf(y.field); });
+  }
+  // The first of them, or ''.
+  function problem(d){ var p = problems(d)[0]; return p ? p.msg : ''; }
+  // Shows each of d's problems under its own field in the form el (a message inside its label, the
+  // field marked), clearing those shown before; each goes once its field is changed. Focuses the
+  // first. → how many there are.
+  function showProblems(el, d){
+    Array.prototype.forEach.call(el.querySelectorAll('.jn-field-error'), function(x){ x.remove(); });
+    Array.prototype.forEach.call(el.querySelectorAll('[aria-invalid]'), function(x){ x.removeAttribute('aria-invalid'); });
+    var list = problems(d), first = null;
+    list.forEach(function(p){
+      var f = el.querySelector('.' + p.field), label = f && f.closest('label');
+      if (!f || !label) return;
+      var m = document.createElement('span');
+      m.className = 'jn-field-error'; m.id = p.field + '-error'; m.textContent = p.msg;
+      label.appendChild(m);
+      f.setAttribute('aria-invalid', 'true'); f.setAttribute('aria-describedby', m.id);
+      var clear = function(){ m.remove(); f.removeAttribute('aria-invalid'); f.removeAttribute('aria-describedby'); f.removeEventListener('input', clear); f.removeEventListener('change', clear); };
+      f.addEventListener('input', clear); f.addEventListener('change', clear);
+      if (!first) first = f;
+    });
+    if (first) { first.scrollIntoView({ block: 'center' }); first.focus({ preventScroll: true }); }
+    return list.length;
   }
 
   // The details as lists of facts, for reading, in the form's groups. o: { name, email }
@@ -197,5 +224,5 @@ window.BoldJoin = (function(){
         row('Booking link', /^https:\/\/\S+$/.test(d.bookingUrl || '') ? '<a href="' + esc(d.bookingUrl) + '" target="_blank" rel="noopener">' + esc(d.bookingUrl.replace(/^https:\/\//, '')) + '</a>' : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, requirementsOf: requirementsOf, groupSectionOf: groupSectionOf, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, requirementsOf: requirementsOf, groupSectionOf: groupSectionOf, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, problems: problems, showProblems: showProblems, factsHtml: factsHtml };
 })();
