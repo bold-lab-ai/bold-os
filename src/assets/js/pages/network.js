@@ -82,7 +82,7 @@
 
   function drawLineage(){
     var html = C.lineageHtml(all, dir, me);
-    el('nwMsg').textContent = html ? 'Who brought whom into BOLD: whoever invited them, else their point of contact, else a supervisor, else who approved them.' : 'Nobody’s lineage is known yet.';
+    el('nwMsg').textContent = html ? 'Who brought whom into BOLD: whoever invited them, else their point of contact, else a supervisor, else who approved them. Then their moves between groups.' : 'Nobody’s lineage is known yet.';
     graph.hidden = !html;
     graph.innerHTML = html;
     el('nwLegend').innerHTML = '';
@@ -91,7 +91,7 @@
 
   document.addEventListener('click', function(e){
     var k = e.target.closest('[data-kind]'), gr = e.target.closest('[data-group]'), v = e.target.closest('[data-view]'), t = e.target.closest('[data-things]'), n = e.target.closest('.cx-node');
-    if (v) { view = v.getAttribute('data-view'); controls(); build(); }
+    if (v) { view = v.getAttribute('data-view'); graph.classList.toggle('is-engraving', !!e.shiftKey && view === 'lineage'); controls(); build(); }
     else if (t) { things = t.getAttribute('data-things') === '1'; controls(); build(); }
     else if (k) { kinds[k.getAttribute('data-kind')] = !kinds[k.getAttribute('data-kind')]; controls(); build(); }
     else if (gr) { groups[gr.getAttribute('data-group')] = !groups[gr.getAttribute('data-group')]; controls(); build(); }
@@ -144,7 +144,7 @@
   });
 
   function load(){
-    return Promise.all([C.loadAll(), dir ? dir : C.directory()]).then(function(r){ all = r[0]; dir = r[1]; build(); });
+    return Promise.all([C.loadAll(), dir ? dir : C.directory()]).then(function(r){ dir = r[1]; all = C.withoutTests(r[0], dir); build(); });
   }
 
   BOLD.onUser(function(user){

@@ -303,7 +303,7 @@
     discussionReplyOpenId: null,
     checklistCommentOpenId: null, // checklist item whose feedback thread is expanded
     checklistReplyOpenId: null,   // comment within it whose reply box is open
-    currentUser: null,            // { email, name, photoURL } | null — set by onAuthStateChanged
+    currentUser: null,            // { email, name } | null — set by onAuthStateChanged
     authResolved: false,          // true once the first onAuthStateChanged callback has fired
     people: [],                   // [{ slackId, name, email }] — the Slack roster, from Firestore
     canApproveVenues: false       // learned from whether the admin-only pending-venues query succeeds — see fetchVisibleBoards()

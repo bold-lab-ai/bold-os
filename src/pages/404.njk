@@ -5,13 +5,93 @@ eleventyExcludeFromCollections: true
 ---
 <!DOCTYPE html>
 {# GitHub Pages serves this for any missing page. Links from before 2026-10-10
-   to a session's or a talk's own page go to the one page for all of them. #}
-<html lang="en"><head><meta charset="UTF-8"><title>Not found | BOLD Lab</title>
+   to a session's or a talk's own page go to the one page for all of them.
+   Otherwise (an easter egg): a ball descends a loss curve into a local minimum; a click
+   drops it somewhere else. Standalone (served at any path), so its styles are its own. #}
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Not found | BOLD Lab</title>
 <script>
 (function(){
   var p = location.pathname, base = p.slice(0, p.lastIndexOf('/') + 1), m;
   if ((m = /\/event-collaboration-week-session-([^/]+)\.html$/.exec(p))) location.replace(base + 'session.html?session=' + encodeURIComponent(m[1]) + location.hash);
   else if ((m = /\/event-collaboration-week-talk-([^/]+)\.html$/.exec(p))) location.replace(base + 'talk.html?talk=' + encodeURIComponent(m[1]) + location.hash);
+  try { if (localStorage.getItem('boldTheme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e){}  /* the lamp: light here */
 })();
 </script>
-</head><body><p>Page not found. <a href="index.html">BOLD Lab</a></p></body></html>
+<link href="{{ site.fonts }}" rel="stylesheet">
+<style>
+:root{--ink:#1a2b4a; --muted:#7d8698; --paper:#f5f3ee; --line:color-mix(in srgb, var(--ink) 16%, transparent); --accent:#1a2b4a; --ball:#b42318;}
+:root[data-theme="dark"]{--ink:#fff; --muted:#a6b3c6; --paper:#1a2b4a; --accent:#a6c1f2; --ball:#f0a39b;}
+html,body{margin:0; background:var(--paper); color:var(--ink);}
+main{max-width:720px; margin:0 auto; padding:72px 16px 48px; font-family:'EB Garamond', Georgia, serif;}
+.kicker{font-family:'Cabin', system-ui, sans-serif; font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin:0;}
+h1{font-weight:500; font-size:clamp(30px, 6vw, 44px); margin:8px 0 12px; line-height:1.15;}
+p{font-size:19px; line-height:1.5; margin:0 0 10px;}
+canvas{display:block; width:100%; height:240px; margin:28px 0 8px; cursor:pointer; border-bottom:1px solid var(--line);}
+.hint{font-family:'Cabin', system-ui, sans-serif; font-size:13px; color:var(--muted);}
+a{color:var(--accent);}
+</style>
+</head><body><main>
+<p class="kicker" id="kicker">404 · Not found</p>
+<h1 id="title">You’ve converged to a page that doesn’t exist.</h1>
+<p>Try a higher learning rate, or start again from <a href="index.html" id="home">BOLD.OS</a>.</p>
+<canvas id="loss" aria-label="A ball rolling down a loss curve into a local minimum" role="img"></canvas>
+<p class="hint" id="hint">Click the curve to drop the ball somewhere else.</p>
+</main>
+<script>
+(function(){
+  // The home link: the site's root, wherever this was served (GitHub Pages: /bold-os/…).
+  var p = location.pathname, i = p.indexOf('/bold-os/');
+  document.getElementById('home').href = i >= 0 ? p.slice(0, i + 9) + 'index.html' : '/';
+
+  // Followed the white rabbit (the Matrix conversation, eggs.js): the same curve, its own words.
+  if (location.hash === '#rabbit') {
+    document.getElementById('kicker').textContent = 'Down the rabbit hole';
+    document.getElementById('title').textContent = 'You followed the rabbit. It went all the way down.';
+    document.title = 'Down the rabbit hole | BOLD Lab';
+  }
+  var cv = document.getElementById('loss'), cx = cv.getContext('2d'), hint = document.getElementById('hint');
+  var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // A loss with several minima on [0, 1] (local ones near 0.18, 0.68 and the right edge); GLOBAL is the lowest.
+  function L(x){ return 0.55 + 0.18 * Math.sin(9 * x) + 0.12 * Math.sin(23 * x + 1) + 0.9 * Math.pow(x - 0.75, 2) - 0.25 * Math.exp(-Math.pow((x - 0.78) / 0.04, 2)); }
+  function dL(x){ var h = 1e-4; return (L(x + h) - L(x - h)) / (2 * h); }
+  var GLOBAL = 0; (function(){ var best = Infinity; for (var k = 0; k <= 2000; k++){ var y = L(k / 2000); if (y < best) { best = y; GLOBAL = k / 2000; } } })();
+  var x, v, steps, W, H, lo, hi;
+  function size(){
+    var r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+    W = r.width; H = r.height; cv.width = W * d; cv.height = H * d; cx.setTransform(d, 0, 0, d, 0, 0);
+    lo = Infinity; hi = -Infinity;
+    for (var k = 0; k <= 400; k++){ var y = L(k / 400); lo = Math.min(lo, y); hi = Math.max(hi, y); }
+  }
+  function px(x){ return 12 + x * (W - 24); }
+  function py(y){ return 16 + (1 - (y - lo) / (hi - lo)) * (H - 40); }
+  function css(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function draw(){
+    cx.clearRect(0, 0, W, H);
+    cx.beginPath();
+    for (var k = 0; k <= 400; k++){ var t = k / 400; k ? cx.lineTo(px(t), py(L(t))) : cx.moveTo(px(t), py(L(t))); }
+    cx.strokeStyle = css('--ink'); cx.lineWidth = 1.5; cx.stroke();
+    cx.beginPath(); cx.arc(px(x), py(L(x)) - 7, 7, 0, 2 * Math.PI); cx.fillStyle = css('--ball'); cx.fill();
+  }
+  function step(){
+    var g = dL(x); v = 0.9 * v - 0.0006 * g; x = x + v; steps++;
+    // At an edge with the slope pushing outwards, it stops there.
+    if (x <= 0 || x >= 1) { x = Math.min(1, Math.max(0, x)); v = 0; if (x === 0 ? g > 0 : g < 0) return true; }
+    return Math.abs(v) < 1e-5 && Math.abs(g) < 0.05 || steps > 3000;
+  }
+  function settle(){
+    hint.textContent = (Math.abs(x - GLOBAL) < 0.03 ? 'Global minimum, in ' : 'Stuck in a local minimum after ') + steps + ' steps. Click the curve to try again.';
+  }
+  var frame = 0;
+  function run(at){
+    cancelAnimationFrame(frame);
+    x = at; v = 0; steps = 0;
+    if (still) { while (!step()); draw(); settle(); return; }
+    hint.textContent = 'Descending…';
+    (function tick(){ var done = step() || step(); draw(); if (done) settle(); else frame = requestAnimationFrame(tick); })();
+  }
+  cv.addEventListener('click', function(e){ var r = cv.getBoundingClientRect(); run(Math.min(1, Math.max(0, (e.clientX - r.left - 12) / (W - 24)))); });
+  addEventListener('resize', function(){ size(); draw(); });
+  size(); run(0.05 + Math.random() * 0.3);
+})();
+</script>
+</body></html>

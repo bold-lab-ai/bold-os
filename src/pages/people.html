@@ -4,7 +4,7 @@ title: "People | BOLD Lab"
 description: "Who is in BOLD."
 sdk: ["firestore", "functions"]
 css: "profile"
-scripts: ["join-common.js", "pages/people.js"]
+scripts: ["join-common.js", "onboarding-common.js", "pages/people.js"]
 permalink: "people.html"
 nav: "people.html"
 ---
@@ -14,6 +14,16 @@ nav: "people.html"
 </div>
 
 <main>
-  <div class="pp-filter"><input type="search" id="ppSearch" placeholder="Search by name, institution or interest" aria-label="Search people" autocomplete="off"></div>
+  <nav class="guide-tabs pp-tabs" id="ppTabs" aria-label="People">
+    <a class="guide-tab is-current" href="#by-role" aria-current="page">By role</a>
+    <a class="guide-tab" href="#by-group">By group</a>
+  </nav>
+  <div class="pp-bar">
+    <div class="pp-filter"><input type="search" id="ppSearch" placeholder="Search by name, institution or interest" aria-label="Search people" autocomplete="off"></div>
+    <div class="view-toggle" role="group" aria-label="View">
+      <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
+      <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
+    </div>
+  </div>
   <div id="people"><p class="proj-msg">Loading&hellip;</p></div>
 </main>

@@ -1,11 +1,11 @@
 ---
 area: "projects"
-areaWhat: "list"
+areaWhat: "titles"
 title: "Projects | BOLD Lab"
 description: "Every project registered in BOLD."
 sdk: ["functions", "firestore"]
 css: "projects"
-scripts: ["project-join.js", "pages/projects.js"]
+scripts: ["project-join.js", "project-health.js", "pages/projects.js"]
 permalink: "projects.html"
 ---
 <div class="hero">
@@ -19,7 +19,7 @@ permalink: "projects.html"
       <button type="button" class="view-btn" data-view="list" aria-pressed="true">List</button>
       <button type="button" class="view-btn" data-view="grid" aria-pressed="false">Grid</button>
     </div>
-    <a class="btn btn-primary" href="projects-register.html">+ Add new project</a>
+    <a class="btn btn-primary proj-add" href="projects-register.html">+ Propose a project</a>
   </div>
 
   <div class="filters" role="search">
@@ -30,7 +30,8 @@ permalink: "projects.html"
   </div>
 
   <div class="tabs" role="tablist" aria-label="Project status">
-    <button class="tab" type="button" id="tabPlanned" data-tab="planned" role="tab" aria-selected="false" tabindex="-1" aria-controls="projPlanned">Planned<span class="proj-count" id="cntPlanned"></span></button>
+    <button class="tab" type="button" id="tabProposed" data-tab="proposed" role="tab" aria-selected="false" tabindex="-1" aria-controls="projProposed">Proposed<span class="proj-count" id="cntProposed"></span></button>
+    <button class="tab" type="button" id="tabPlanned" data-tab="planned" role="tab" aria-selected="false" tabindex="-1" aria-controls="projPlanned">Approved<span class="proj-count" id="cntPlanned"></span></button>
     <button class="tab active" type="button" id="tabOngoing" data-tab="ongoing" role="tab" aria-selected="true" aria-controls="projOngoing">Ongoing<span class="proj-count" id="cntOngoing"></span></button>
     <button class="tab" type="button" id="tabSubmission" data-tab="submission" role="tab" aria-selected="false" tabindex="-1" aria-controls="projSubmission">In submission<span class="proj-count" id="cntSubmission"></span></button>
     <button class="tab" type="button" id="tabCompleted" data-tab="completed" role="tab" aria-selected="false" tabindex="-1" aria-controls="projCompleted">Completed<span class="proj-count" id="cntCompleted"></span></button>
@@ -41,6 +42,7 @@ permalink: "projects.html"
   <div id="projects" data-view="list" hidden>
     <ul class="proj-list tab-panel" role="tabpanel" id="projOngoing" aria-labelledby="tabOngoing"></ul>
     <ul class="proj-list tab-panel" role="tabpanel" id="projSubmission" aria-labelledby="tabSubmission" hidden></ul>
+    <ul class="proj-list tab-panel" role="tabpanel" id="projProposed" aria-labelledby="tabProposed" hidden></ul>
     <ul class="proj-list tab-panel" role="tabpanel" id="projPlanned" aria-labelledby="tabPlanned" hidden></ul>
     <ul class="proj-list tab-panel" role="tabpanel" id="projCompleted" aria-labelledby="tabCompleted" hidden></ul>
   </div>

@@ -1,0 +1,16 @@
+---
+area: "profile"
+title: "Notifications | BOLD Lab"
+description: "What needs you, what you're waiting on, and everything BOLD.OS told you."
+sdk: ["firestore", "functions"]
+css: "profile"
+scripts: ["pages/notifications.js"]
+permalink: "notifications.html"
+nav: "notifications.html"
+---
+<div class="hero">
+  <h1>Notifications</h1>
+  <p class="hero-note">What needs you, what you're waiting on, and everything BOLD.OS told you.</p>
+</div>
+<main id="notificationsBody"><p class="proj-msg">Loading&hellip;</p></main>
+<script type="application/json" id="notifyKinds">{{ notifyKinds | jsonScript | safe }}</script>

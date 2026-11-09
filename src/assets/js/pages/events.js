@@ -45,6 +45,8 @@
     return row(x.page || 'series.html?series=' + encodeURIComponent(x.id), x.title, esc(meta),
       (x.hidden ? badge('Hidden') : '') + (x.pausedAt ? badge('Paused') : ''));
   }
+  // Oldest added first; the same moment by title.
+  function byAdded(a, b){ return (a.createdAt || 0) - (b.createdAt || 0) || String(a.title || '').localeCompare(String(b.title || '')); }
   function group(label, rows){
     return rows.length ? '<div class="proj-group"><h3>' + esc(label) + '<span class="proj-count">' + rows.length + '</span></h3><ul class="proj-list">' + rows.join('') + '</ul></div>' : '';
   }
@@ -76,7 +78,7 @@
     var known = {};
     series.forEach(function(x){ known[x.id] = 1; });
     var evs = events.filter(function(x){ return !(x.series && known[x.series]); }).filter(hit), ss = series.filter(hit);
-    var once = evs.slice().sort(function(a, b){ return a.startDate < b.startDate ? 1 : -1; });
+    var once = evs.slice().sort(byAdded);
     var rota = !yours && (!q || ['group meetings', rotaSeasons.map(function(s){ return s.label; }).join(' ')].join(' ').toLowerCase().includes(q)) ? rotaRow() : '';
     var html = (ss.length || rota ? '<ul class="proj-list ev-series">' + rota + ss.map(seriesRow).join('') + '</ul>' : '') + group('Once', once.map(eventRow));
     root.innerHTML = html || '<p class="proj-msg">' + (q || yours ? 'Nothing matches.' : 'No events yet.') + '</p>';
@@ -119,11 +121,11 @@
       if (mine !== signIns) return;
       fullWrite = ok;
       var ev = db.collection('events'), se = db.collection('eventSeries');
-      unsubs.push(watchAll(ok ? [ev] : [ev.where('hidden', '==', false), ev.where('createdBy', '==', me.email)], 'slug', function(list){
+      unsubs.push(watchAll(ok ? [ev] : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), ev.where('createdBy', '==', me.email)], 'slug', function(list){
         events = (list || []).filter(function(x){ return x.startDate; }); render();
       }));
-      unsubs.push(watchAll(ok ? [se] : [se.where('hidden', '==', false), se.where('organisers', 'array-contains', me.email.toLowerCase())], 'id', function(list){
-        series = (list || []).sort(function(a, b){ return a.title.localeCompare(b.title); }); render();
+      unsubs.push(watchAll(ok ? [se] : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), se.where('organisers', 'array-contains', me.email.toLowerCase())], 'id', function(list){
+        series = (list || []).sort(byAdded); render();
       }));
       unsubs.push((ok ? db.collection('groupMeetingSeasons') : db.collection('groupMeetingSeasons').where('publicationState', '==', 'published')).onSnapshot(function(snap){
         rotaSeasons = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }); render();

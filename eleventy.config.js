@@ -1,11 +1,22 @@
 // Static build for BOLD OS. Templates, layouts and data live in src/; the site is
 // written to _site/ with the same flat URLs the site has always had
 // (events.html, audit-board.html, …) — Slack messages and bookmarks deep-link to them.
+import fs from 'node:fs';
+import path from 'node:path';
+
 export default function (eleventyConfig) {
   // Static files served as-is.
   eleventyConfig.addPassthroughCopy({ 'src/assets': 'assets' });
   // The three-way merge proposals use: one file for the server and the pages (#177).
   eleventyConfig.addPassthroughCopy({ 'functions/merge.js': 'assets/js/merge.js' });
+
+  // The theme tool (tools/theme, at /theme/): the ground truth for the site's colours, live but
+  // not in the sidebar. It reads the CSS and JS it finds uses of each colour in from this list.
+  eleventyConfig.addPassthroughCopy({ 'tools/theme': 'theme' });
+  const list = (dir) => fs.readdirSync(dir, { recursive: true })
+    .filter((f) => /\.(css|js)$/.test(f)).map((f) => path.posix.join(dir.replace(/^src\//, ''), f.split(path.sep).join('/')));
+  eleventyConfig.addTemplate('theme-files.html', JSON.stringify([...list('src/assets/css'), ...list('src/assets/js')]),
+    { permalink: 'theme/files.json' });
 
   // Page bodies are plain HTML; only layouts and partials use Nunjucks.
   eleventyConfig.addFilter('navState', (groups, current) =>

@@ -11,10 +11,27 @@
   if (!main || !BOLD.getAuth()) return;
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
-  var me = null, staff = null, invite = null, form = null, groups = {}, unsubs = [], editing = false;
+  var me = null, staff = null, invite = null, form = null, groups = {}, webPush = {}, unsubs = [], editing = false;
+  // What saving is doing, shown beside its button and kept across redraws: busy ('Checking…',
+  // 'Saving…') or when it last saved. One for the Slack, Join form and Notifications tabs, one for Features.
+  var saving = { settings: { busy: '', at: 0 }, pilot: { busy: '', at: 0 } };
+  function savedNote(k){
+    var x = saving[k];
+    if (x.busy) return '<span class="st-saving" role="status">' + esc(x.busy) + '</span>';
+    if (!x.at) return '<span class="st-saving" role="status"></span>';
+    return '<span class="st-saving is-saved" role="status">Saved at ' + new Date(x.at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) + '</span>';
+  }
+  // While saving, the button and its note say so (without redrawing the form, which would lose what's typed).
+  function busyNow(btn, k, text){
+    saving[k].busy = text; btn.disabled = true; btn.textContent = text;
+    var n = btn.parentNode.querySelector('.st-saving'); if (n) { n.textContent = ''; n.classList.remove('is-saved'); }
+  }
   // Pilots: a new Slack feature only messages its testers until it's switched live here.
   // pilotDraft: the form's testers and switches.
   var pilot = null, pilotDraft = null, pilotError = '', roster = [];
+  // #174: aligning the Slack channels with BOLD.OS (functions/index.js channelAlignment): the
+  // runs (status), the last preview, what's being done and why it failed. Drawn in #stAlign alone.
+  var align = { status: null, preview: null, busy: '', error: '', at: '' };
 
   var SUBJECT = 'Welcome to BOLD';
   var BODY = ['Hi {name},', '', 'Welcome to BOLD! Your request to join has been approved. Here are your next steps:', '',
@@ -27,7 +44,8 @@
   // Join form (#join: its choices and the welcome email) and Features (#features: each Slack
   // feature's switch and testers, the pilots; #pilots, its old name, opens it). The first two
   // are one form, saved from either.
-  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['features', 'Features']];
+  // Notifications (#notifications): the Web Push key desktop notifications use (settings/webPush).
+  var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['features', 'Features']];
   // A list typed in one at a time, as keywords are on the register form: type, Enter or +,
   // × to remove (project.css .kw-*). kind: 'chan' (Slack channels, shown with #), 'role',
   // 'pillar'; key: the group's or role's for channels.
@@ -66,7 +84,7 @@
   function settingsHtml(){
     var inv = invite || {}, f = form || {};
     var group = function(title){ return '<fieldset class="md-group"><legend>' + title + '</legend>'; };
-    var save = '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save">Save settings</button></div>';
+    var save = '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save jr-save"' + (saving.settings.busy ? ' disabled' : '') + '>' + (saving.settings.busy || 'Save settings') + '</button>' + savedNote('settings') + '</div>';
     var row = function(label, inner, err){ return '<div class="st-row"><span class="st-row-label">' + esc(label) + '</span>' + inner + (err ? '<p class="st-error">' + esc(err) + '</p>' : '') + '</div>'; };
     // Each tab its own box; the Slack and Join form tabs are one form (.jr-settings).
     return '<nav class="guide-tabs profile-tabs" id="stTabs" aria-label="Settings">' + TABS.map(function(t){ return '<a class="guide-tab" href="#' + t[0] + '">' + t[1] + '</a>'; }).join('') + '</nav>' +
@@ -75,17 +93,21 @@
       group('Slack invite') + '<label>Link (in Slack: Invite people → Copy invite link; replace it when it expires)<input type="url" class="jr-invite" maxlength="300" value="' + esc(inv.slackInviteUrl || '') + '" placeholder="https://join.slack.com/t/…"></label>' +
       '<label>Expires on (PIs and admins hear 3 days before)<input type="date" class="jr-expires" value="' + esc(inv.slackInviteExpires || '') + '"></label></fieldset>' +
       group('Slack channels') + '<p class="proj-meta">Everyone in a group, and in the groups above it, is added to its channels (<a href="boldiquette.html#who-is-bold">Who is BOLD</a>). None: nobody is added.</p>' +
-        BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== 'pan'; }).map(function(c){
+        BoldJoin.CATEGORIES.map(function(c){
           return row(c[1], chipsHtml('chan', c[0], chanList((groups.channels || {})[c[0]]), 'group'), (groups.channelErrors || {})[c[0]]);
         }).join('') + '</fieldset>' + group('Slack channels by role') + '<p class="proj-meta">Everyone with a role (on their details) is added to its channels. The roles are the join form’s (<a href="#join">Join form</a>).</p>' +
         (f.roles || BoldJoin.ROLES).map(function(r){
           return row(r, chipsHtml('chan', r, chanList((groups.roleChannels || {})[r]), 'role'), (groups.roleChannelErrors || {})[r]);
-        }).join('') + '</fieldset>' + save + '</div></section>' +
+        }).join('') + '</fieldset>' + save + '</div><div id="stAlign" class="event-form join-form st-align">' + alignHtml() + '</div></section>' +
       '<section class="profile-panel" id="join"><div class="event-form join-form">' + group('Join form') +
       row('Roles', chipsHtml('role', '', f.roles || BoldJoin.ROLES)) +
       row('Research pillars', chipsHtml('pillar', '', f.pillars || BoldJoin.PILLARS)) + '</fieldset>' +
       group('Welcome email') + '<label>Subject<input type="text" class="jr-subject" maxlength="200" value="' + esc(inv.subject || SUBJECT) + '"></label>' +
       '<label>Text ({name}: their first name, {slackInvite}: the invite link, on the Slack tab, {site}: BOLD.OS)<textarea class="jr-body no-tags" rows="14" maxlength="5000">' + esc(inv.body || BODY) + '</textarea></label></fieldset>' +
+      save + '</div></section>' +
+      '<section class="profile-panel" id="notifications"><div class="event-form join-form">' + group('Desktop notifications') +
+      '<p class="proj-meta">The public key of the project’s Web Push certificate (Firebase console › Project settings › Cloud Messaging › Web Push certificates). Public: browsers hand it to their push service. Empty: Notifications doesn’t offer desktop notifications.</p>' +
+      '<label>Web Push key<input type="text" class="jr-push-key" maxlength="200" spellcheck="false" autocomplete="off" value="' + esc((webPush || {}).publicKey || '') + '" placeholder="B…"></label></fieldset>' +
       save + '</div></section></div>' +
       '<section class="profile-panel" id="features">' + pilotHtml() + '</section>';
   }
@@ -106,7 +128,7 @@
   // The features (functions/index.js PILOTS and LIVE_FEATURES) by what they're about, in this
   // order; one in no group shows under Other.
   var GROUPS = [
-    ['Projects and boards', ['project-announce', 'card-added', 'card-comments', 'card-done', 'supervision-requests']],
+    ['Projects and boards', ['project-announce', 'card-added', 'card-comments', 'card-done', 'project-invites', 'supervision-requests']],
     ['Internal Review', ['irb-board', 'irb-reviews-out', 'irb-author-cap', 'venue-proposed', 'venue-calls']],
     ['Proposed changes and comments', ['proposals', 'proposal-decided', 'proposal-reviewer', 'guide-comments', 'tags']],
     ['Requests', ['join-requests', 'inviter-confirm', 'group-requests', 'invite-link-reminder', 'agent-requests']],
@@ -144,8 +166,8 @@
         return mine.length ? '<h3 class="jr-feature-group">' + esc(g[0]) + '</h3>' + mine.map(function(k){ return featureHtml(k, g[0]); }).join('') : '';
       }).join('') : '<p class="proj-meta">None yet: a feature appears here once it’s deployed.</p>') +
       '</fieldset>' + (pilotError ? '<p class="ev-error">' + esc(pilotError) + '</p>' : '') +
-      '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (pilotDraft ? '' : ' disabled title="Nothing changed"') + '>Save features</button>' +
-        (pilotDraft ? '<button type="button" class="jr-pilot-cancel">Cancel</button>' : '') + '</div></div>';
+      '<div class="event-form-actions"><button type="button" class="ev-save jr-pilot-save"' + (saving.pilot.busy ? ' disabled' : pilotDraft ? '' : ' disabled title="Nothing changed"') + '>' + (saving.pilot.busy || 'Save features') + '</button>' +
+        (pilotDraft && !saving.pilot.busy ? '<button type="button" class="jr-pilot-cancel">Cancel</button>' : '') + savedNote('pilot') + '</div></div>';
     function featureHtml(k, group){
         var label = known[k].indexOf(group + ': ') === 0 ? known[k].slice(group.length + 2) : known[k];
         label = label.charAt(0).toUpperCase() + label.slice(1);
@@ -160,10 +182,83 @@
     (goingLive.length ? BOLD.confirmAlways({ title: 'Make ' + (goingLive.length === 1 ? 'it' : 'them') + ' live?', go: 'Make live',
       effects: goingLive.map(function(k){ return 'Let ' + (known[k] || k) + ' message everyone it’s for on Slack, not just the testers'; }) }) : Promise.resolve(true)).then(function(ok){
       if (!ok) return;
-      btn.disabled = true; pilotError = '';
+      pilotError = ''; busyNow(btn, 'pilot', 'Saving…');
       db.collection('settings').doc('pilot').set({ testers: d.testers, pilotTesters: d.pilotTesters, live: d.live, updatedAt: Date.now(), updatedBy: me.email }, { merge: true }).then(function(){
-        pilotDraft = null; render();
-      }).catch(function(err){ console.error('[BOLD Settings] saving the pilots failed', err); pilotError = 'Couldn’t save — try again.'; render(); });
+        pilotDraft = null; saving.pilot = { busy: '', at: Date.now() }; render();
+      }).catch(function(err){ console.error('[BOLD Settings] saving the pilots failed', err); saving.pilot.busy = ''; pilotError = 'Couldn’t save — try again.'; render(); });
+    });
+  }
+
+  // ---------- Align channels with BOLD.OS ----------
+  function when(ms){ return new Date(ms).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); }
+  function tomorrowAt10(){
+    var d = new Date(Date.now() + 86400000), z = function(n){ return (n < 10 ? '0' : '') + n; };
+    return d.getFullYear() + '-' + z(d.getMonth() + 1) + '-' + z(d.getDate()) + 'T10:00';
+  }
+  var WHY = { group: function(c){ return 'for ' + c.for + '; they’re ' + c.group; }, 'no-record': function(){ return 'never joined BOLD.OS'; },
+    project: function(c){ return 'not on ' + c.title; }, outside: function(){ return 'an account from another workspace'; } };
+  function alignHtml(){
+    var st = align.status, pv = align.preview, live = st ? st.live : null;
+    var pending = st && st.runs.filter(function(r){ return !r.cancelledAt && !r.doneAt; })[0];
+    var h = '<fieldset class="md-group"><legend>Align channels with BOLD.OS</legend>' +
+      '<p class="proj-meta">Removes whoever isn’t meant to be in a group’s channel (above) or a project’s, and BOLD OS tells each of them where from, why and how to get back in. PIs, admins and bots stay. It’s worked out again when it runs.</p>';
+    if (live === false) h += '<p class="st-error">Make “Slack channels follow BOLD.OS” live on the <a href="#features">Features</a> tab first: until then, a run removes nobody.</p>';
+    h += '<div class="event-controls"><button type="button" class="btn-text st-align-preview"' + (align.busy ? ' disabled' : '') + '>' + (align.busy === 'preview' ? 'Working it out…' : pv ? 'Preview again' : 'Preview') + '</button></div>';
+    if (pv) {
+      var n = pv.plan.reduce(function(t, p){ return t + p.channels.length; }, 0);
+      h += '<p class="proj-meta">' + pv.plan.length + ' people would leave ' + n + ' channel memberships, across the ' + pv.channels + ' channels checked.' +
+        (pv.unseen.length ? ' Not checked (the bot isn’t in them): ' + pv.unseen.map(function(c){ return '#' + esc(c); }).join(', ') + '.' : '') + '</p>' +
+        '<ul class="st-align-list">' + pv.plan.map(function(p){
+          return '<li><details><summary><strong>' + esc(p.name || p.slackId) + '</strong>: ' + p.channels.map(function(c){ return '#' + esc(c.name) + ' <span class="proj-meta">(' + esc(WHY[c.why](c)) + ')</span>'; }).join(', ') + '</summary>' +
+            '<pre class="st-align-msg">' + esc(p.message) + '</pre></details></li>';
+        }).join('') + '</ul>';
+    }
+    if (pending && pending.startedAt) {
+      h += '<p class="st-align-when"><strong>Running since ' + esc(when(pending.startedAt)) + '</strong>: ' + (pending.planned ? pending.done + ' of ' + pending.planned + ' people done.' : 'working out who leaves.') +
+        ' <button type="button" class="btn-text st-align-refresh">Refresh</button></p>';
+    } else if (pending) {
+      h += '<p class="st-align-when"><strong>Scheduled for ' + esc(when(pending.scheduledFor)) + '</strong>, by ' + esc(pending.by) + '. ' +
+        '<button type="button" class="btn-text danger st-align-cancel" data-id="' + esc(pending.id) + '"' + (align.busy ? ' disabled' : '') + '>Cancel it</button></p>';
+    } else {
+      h += '<div class="st-align-schedule"><label>Run it at (your time)<input type="datetime-local" class="st-align-at" value="' + esc(align.at || tomorrowAt10()) + '"></label>' +
+        '<button type="button" class="ev-save st-align-go"' + (align.busy || !st ? ' disabled' : '') + (pv ? '' : ' title="Preview it first"') + '>' + (align.busy === 'schedule' ? 'Scheduling…' : 'Schedule') + '</button></div>';
+    }
+    var done = st ? st.runs.filter(function(r){ return r.doneAt || r.cancelledAt; }) : [];
+    if (done.length) h += '<p class="proj-meta">Before: ' + done.map(function(r){
+      return r.cancelledAt ? 'one for ' + esc(when(r.scheduledFor)) + ', cancelled' : esc(when(r.doneAt)) + ': ' + (r.error ? esc(r.error) : r.removed + ' removals, ' + r.people + ' people told' +
+        (r.failed ? ', ' + r.failed + ' with some not removed' : '') + (r.untold ? ', ' + r.untold + ' not told' : ''));
+    }).join('; ') + '.</p>';
+    return h + (align.error ? '<p class="ev-error">' + esc(align.error) + '</p>' : '') + '</fieldset>';
+  }
+  function drawAlign(){ var el = document.getElementById('stAlign'); if (el) el.innerHTML = alignHtml(); }
+  function callAlign(data){ return firebase.app().functions('europe-west2').httpsCallable('channelAlignment', { timeout: 300000 })(data).then(function(r){ return r.data; }); }
+  function loadAlign(){ callAlign({ action: 'status' }).then(function(d){ align.status = d; drawAlign(); }, function(err){ console.error('[BOLD Settings] channel alignment status failed', err); align.error = 'Couldn’t load the channel alignment — reload to try again.'; drawAlign(); }); }
+  function previewAlign(){
+    align.busy = 'preview'; align.error = ''; drawAlign();
+    callAlign({ action: 'preview' }).then(function(d){ align.preview = d; align.status = { live: d.live, runs: d.runs }; align.busy = ''; drawAlign(); },
+      function(err){ console.error('[BOLD Settings] previewing the alignment failed', err); align.busy = ''; align.error = 'Couldn’t work it out: ' + (err.message || 'try again') + '.'; drawAlign(); });
+  }
+  function scheduleAlign(){
+    var v = (document.querySelector('.st-align-at') || {}).value || '', at = new Date(v).getTime();
+    align.at = v;
+    if (!v || !(at > Date.now())) { align.error = 'Pick a time from now on.'; drawAlign(); return; }
+    var pv = align.preview, n = pv ? pv.plan.length : 0, live = align.status && align.status.live;
+    BOLD.confirmAlways({ title: 'Schedule it for ' + when(at) + '?', go: 'Schedule', effects: [
+      'At ' + when(at) + ', remove from Slack channels whoever isn’t meant to be in them' + (pv ? ' (' + n + ' people, as previewed, worked out again then)' : ''),
+      'Send each of them a message from BOLD OS: where from, why, and how to get back in',
+      live ? '' : 'Nothing happens unless “Slack channels follow BOLD.OS” is live on the Features tab by then',
+    ].filter(Boolean) }).then(function(ok){
+      if (!ok) return;
+      align.busy = 'schedule'; align.error = ''; drawAlign();
+      callAlign({ action: 'schedule', at: at }).then(function(){ align.busy = ''; loadAlign(); },
+        function(err){ align.busy = ''; align.error = err.message || 'Couldn’t schedule it — try again.'; drawAlign(); });
+    });
+  }
+  function cancelAlign(id){
+    BOLD.confirmAlways({ title: 'Cancel it?', go: 'Cancel it', effects: ['Nobody is removed from a channel, and nobody is messaged'] }).then(function(ok){
+      if (!ok) return;
+      align.busy = 'cancel'; drawAlign();
+      callAlign({ action: 'cancel', id: id }).then(function(){ align.busy = ''; loadAlign(); }, function(err){ align.busy = ''; align.error = err.message || 'Couldn’t cancel it.'; drawAlign(); });
     });
   }
 
@@ -203,7 +298,8 @@
     return {
       invite: { slackInviteUrl: url, slackInviteExpires: v('.jr-expires'), subject: v('.jr-subject').trim() || SUBJECT, body: v('.jr-body') || BODY },
       form: { roles: roles, pillars: pillars },
-      groups: { channels: channels, roleChannels: roleChannels }
+      groups: { channels: channels, roleChannels: roleChannels },
+      push: { publicKey: v('.jr-push-key').trim() }
     };
   }
   // What the form showed when it was drawn: saving writes only what was changed since.
@@ -219,7 +315,7 @@
     var added = [], newNames = [];
     Object.keys(channels).forEach(function(g){
       var before = String(had[g] || '').split(/[\s,]+/).map(function(n){ return n.replace(/^#/, '').toLowerCase(); });
-      channels[g].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) { added.push('Invite everyone in ' + BoldJoin.categoryLabel(g) + ' and the groups above it to #' + n + ' on Slack'); newNames.push(n); } });
+      channels[g].split(', ').forEach(function(n){ if (before.indexOf(n) < 0) { added.push(g === 'pan' ? 'Invite everyone on the BOLD Slack to #' + n + ', and whoever joins it later' : 'Invite everyone in ' + BoldJoin.categoryLabel(g) + ' and the groups above it to #' + n + ' on Slack'); newNames.push(n); } });
     });
     var hadRoles = (groups && groups.roleChannels) || {};
     Object.keys(roleChannels).forEach(function(r){
@@ -228,15 +324,15 @@
     });
     // A channel the bot can't see (a typo, or a private one it isn't in) isn't saved: nobody
     // would be added to it, and nobody would know (checkGroupChannels).
-    btn.disabled = true; err.hidden = true;
+    err.hidden = true; busyNow(btn, 'settings', newNames.length ? 'Checking the channels…' : 'Saving…');
+    var idle = function(){ saving.settings.busy = ''; btn.disabled = false; btn.textContent = 'Save settings'; };
     checkChannels(newNames).then(function(missing){
-      btn.disabled = false;
-      if (missing) { err.textContent = missing; err.hidden = false; return; }
+      if (missing) { idle(); err.textContent = missing; err.hidden = false; return; }
       (added.length ? BOLD.confirmAlways({ title: 'Save the settings?', go: 'Save', effects: added }) : Promise.resolve(true)).then(function(ok){
-        if (ok) writeSettings(btn, err, mine);
+        if (ok) writeSettings(btn, err, mine); else idle();
       });
     }).catch(function(e){
-      btn.disabled = false;
+      idle();
       console.error('[BOLD Settings] checking the channels failed', e);
       err.textContent = 'Couldn’t check the channels on Slack — try again.'; err.hidden = false;
     });
@@ -255,7 +351,7 @@
   // Each settings document is written only if something in it was changed, and then
   // only the fields (and, in a map, the entries) that were: the rest is kept as saved
   // now, so two people saving different settings at once both keep theirs.
-  var SETTINGS_DOCS = { invite: 'joinInvite', form: 'joinForm', groups: 'groups' };
+  var SETTINGS_DOCS = { invite: 'joinInvite', form: 'joinForm', groups: 'groups', push: 'webPush' };
   function writeSettings(btn, err, mine){
     var from = settingsFrom || mine;
     var same = function(a, b){ return JSON.stringify(a) === JSON.stringify(b); };
@@ -273,7 +369,7 @@
     // A channel that failed is tried again by saving (onGroupChannels), even with nothing changed.
     var failed = Object.keys(groups.channelErrors || {}).length || Object.keys(groups.roleChannelErrors || {}).length;
     if (failed && keys.indexOf('groups') < 0) keys.push('groups');
-    btn.disabled = true; err.hidden = true;
+    err.hidden = true; busyNow(btn, 'settings', 'Saving…');
     db.runTransaction(function(tx){
       var refs = keys.map(function(k){ return db.collection('settings').doc(SETTINGS_DOCS[k]); });
       return Promise.all(refs.map(function(r){ return tx.get(r); })).then(function(snaps){
@@ -287,11 +383,12 @@
         });
       });
     }).then(function(){
-      editing = false; btn.disabled = false; btn.textContent = 'Saved'; setTimeout(function(){ btn.textContent = 'Save settings'; }, 1500);
+      editing = false; saving.settings = { busy: '', at: Date.now() };
       render();
     }).catch(function(e){
       console.error('[BOLD Settings] saving the settings failed', e);
-      err.textContent = 'Couldn’t save — try again.'; err.hidden = false; btn.disabled = false;
+      saving.settings.busy = ''; btn.disabled = false; btn.textContent = 'Save settings';
+      err.textContent = 'Couldn’t save — try again.'; err.hidden = false;
     });
   }
 
@@ -300,6 +397,7 @@
     if (t.classList.contains('jr-tester-add') && t.value) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).push(t.value); render(); return; }
     if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.checked; render(); }
   });
+  main.addEventListener('input', function(e){ if (e.target.classList.contains('st-align-at')) align.at = e.target.value; });
   main.addEventListener('keydown', function(e){
     if (e.key === 'Enter' && e.target.classList.contains('st-chip-in')) { e.preventDefault(); addChip(e.target.closest('.st-chips')); }
   });
@@ -309,6 +407,10 @@
     if (t.classList.contains('st-chip-add')) { addChip(t.closest('.st-chips')); return; }
     if (t.classList.contains('st-chip-x')) { t.closest('.kw-chip').remove(); editing = true; return; }
     if (t.classList.contains('jr-save')) { saveSettings(t); return; }
+    if (t.classList.contains('st-align-preview')) { previewAlign(); return; }
+    if (t.classList.contains('st-align-refresh')) { loadAlign(); return; }
+    if (t.classList.contains('st-align-go')) { scheduleAlign(); return; }
+    if (t.classList.contains('st-align-cancel')) { cancelAlign(t.getAttribute('data-id')); return; }
     if (t.classList.contains('jr-pilot-save')) { savePilot(t); return; }
     if (t.classList.contains('jr-pilot-cancel')) { pilotDraft = null; pilotError = ''; render(); return; }
     if (t.classList.contains('jr-tester-remove')) { pilotDraft = pilotNow(); testersOf(pilotDraft, t.getAttribute('data-for')).splice(+t.getAttribute('data-i'), 1); render(); }
@@ -332,7 +434,9 @@
       watch('joinInvite', function(x){ invite = x; });
       watch('joinForm', function(x){ form = x; });
       watch('groups', function(x){ groups = x; });
-      watch('pilot', function(x){ pilot = x; });
+      watch('pilot', function(x){ var was = pilot && (pilot.live || {})['channel-alignment']; pilot = x; if (align.status && was !== (x.live || {})['channel-alignment']) loadAlign(); });
+      watch('webPush', function(x){ webPush = x; });
+      loadAlign();
     }).catch(function(err){ console.error('[BOLD Settings] checking access failed', err); staff = false; render(); });
   });
 })();

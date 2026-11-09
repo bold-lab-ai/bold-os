@@ -1,6 +1,11 @@
 // Preloaded only for the local Functions emulator integration test.
 process.env.PHOTO_SLACK_MOCK = 'on';
 const originalFetch = global.fetch;
+const { File } = require('../functions/node_modules/@google-cloud/storage');
+File.prototype.getSignedUrl = async function(options) {
+  if (options.version !== 'v4' || options.action !== 'read') throw new Error('Expected a V4 read URL');
+  return ['https://storage.googleapis.com/demo-test/' + this.name + '?signed=day'];
+};
 global.fetch = function(url, options) {
   const target = String(url);
   if (target.startsWith('https://slack.com/api/users.info?')) {

@@ -1,0 +1,37 @@
+---
+permalink: "firebase-messaging-sw.js"
+layout: false
+eleventyExcludeFromCollections: true
+---
+// Desktop notifications (Web Push, 2026-11-05): the service worker Firebase Cloud Messaging uses,
+// at the site's root so its scope is the whole site. A push from noteFor (functions/index.js) has a
+// notification (title, body, icon) and a link: the browser shows it, and a click opens the link.
+// A meeting about to start has a Join button: Firebase leaves action clicks to us, so it opens the meeting's link
+// (registered before Firebase's own listener, which opens the notification's link on a plain click).
+self.addEventListener('notificationclick', function(event){
+  if (event.action !== 'join') return;
+  var d = event.notification.data || {}, msg = d.FCM_MSG || {};
+  var url = (msg.data && msg.data.join) || (msg.fcmOptions && msg.fcmOptions.link) || '';
+  event.notification.close();
+  if (/^https:\/\//.test(url)) event.waitUntil(clients.openWindow(url));
+});
+// With a BOLD.OS tab visible, Firebase shows nothing (it hands the message to the page, which doesn't
+// draw it), so it's shown here then; with none, Firebase shows it, so it's never shown twice. Its data
+// is Firebase's own shape (FCM_MSG), so a click opens its link (Firebase's listener) or Join (above).
+self.addEventListener('push', function(event){
+  var payload;
+  try { payload = event.data && event.data.json(); } catch (e){ return; }
+  if (!payload || !payload.notification) return;
+  event.waitUntil(clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(list){
+    var visible = list.some(function(c){ return c.visibilityState === 'visible' && c.url !== 'about:blank'; });
+    if (!visible) return;
+    var n = payload.notification;
+    var opts = { body: n.body || '', icon: n.icon, badge: n.badge, data: { FCM_MSG: payload }, requireInteraction: !!n.requireInteraction };
+    if (Array.isArray(n.actions)) opts.actions = n.actions;
+    return self.registration.showNotification(n.title || 'BOLD.OS', opts);
+  }));
+});
+importScripts('https://www.gstatic.com/firebasejs/{{ site.firebaseSdkVersion }}/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/{{ site.firebaseSdkVersion }}/firebase-messaging-compat.js');
+firebase.initializeApp({{ site.firebase | dump | safe }});
+firebase.messaging();

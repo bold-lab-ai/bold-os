@@ -11,17 +11,22 @@
   var BOLD = window.BOLD = window.BOLD || {};
 
   BOLD.firebaseConfig = window.BOLD_CONFIG;
-  BOLD.useAuthEmulator = false;
+  // The local test copy (scripts/test-site.sh): Auth, Firestore and Functions in the emulators.
+  BOLD.useAuthEmulator = !!window.BOLD_TEST;
   // Local development (npm start) signs in the way it did before 2026-10-04:
   // popup via Firebase's own auth domain. The live site's setup (self-hosted
   // helper on bold-lab-ai.github.io + redirect, see BOLD.signIn) needs the page
   // to be on bold-lab-ai.github.io; from localhost that hand-off is cross-site,
   // and Firefox, Safari and private windows block it.
   var isLocalDev = /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-  if (isLocalDev && BOLD.firebaseConfig) {
+  if (isLocalDev && BOLD.firebaseConfig && !window.BOLD_TEST) {
     BOLD.firebaseConfig = Object.assign({}, BOLD.firebaseConfig, { authDomain: 'bold-d7ff2.firebaseapp.com' });
   }
 
+  // Under every field where someone adds a link to something outside BOLD.OS (BOLDiquette › Who can
+  // do what: everyone signed in sees everything, links too; what's behind one is whoever added it's to share).
+  BOLD.LINK_NOTE = 'Everyone signed in to BOLD.OS sees this link. Who can open what it points to is up to you.';
+  BOLD.linkNote = function(){ return '<p class="event-form-hint link-note">' + BOLD.LINK_NOTE + '</p>'; };
   BOLD.escapeHtml = function(s){
     return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
       return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
@@ -151,6 +156,32 @@
     // Instant: the page scrolls smoothly (bold.css), which would show a jump and a glide back.
     window.scrollTo({ top: Math.max(0, y), behavior: 'instant' });
   };
+  // A ⋯ menu (shared): a button opening a short list of actions, styled as the masthead's menus.
+  // items: [{ label, cls, attrs (an HTML attribute string), danger, off (the reason it's greyed out) }].
+  // The page handles the items' clicks by their class, as for any button; choosing one closes the menu.
+  BOLD.moreMenuHtml = function(items, label){
+    return '<span class="more-menu"><button type="button" class="more-menu-btn" aria-haspopup="true" aria-expanded="false" title="' + esc(label || 'More') + '" aria-label="' + esc(label || 'More') + '">\u22ef</button>' +
+      // Spans and buttons only, so it can sit anywhere, a paragraph included (a list there would end it).
+      '<span class="mast-menu more-menu-list" role="menu" hidden>' + items.filter(Boolean).map(function(i){
+        return '<button type="button" role="menuitem" class="' + esc(i.cls || '') + (i.danger ? ' is-danger' : '') + '"' + (i.attrs || '') +
+          (i.off ? ' disabled title="' + esc(i.off) + '"' : '') + '>' + esc(i.label) + '</button>';
+      }).join('') + '</span></span>';
+  };
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest && e.target.closest('.more-menu-btn');
+    Array.prototype.forEach.call(document.querySelectorAll('.more-menu-list:not([hidden])'), function(l){
+      if (btn && l.previousElementSibling === btn) return;
+      l.hidden = true; if (l.previousElementSibling) l.previousElementSibling.setAttribute('aria-expanded', 'false');
+    });
+    if (!btn) return;
+    var list = btn.nextElementSibling, open = !!list && list.hidden;
+    if (!list) return;
+    list.hidden = !open; btn.setAttribute('aria-expanded', String(open));
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'Escape') return;
+    Array.prototype.forEach.call(document.querySelectorAll('.more-menu-list:not([hidden])'), function(l){ l.hidden = true; l.previousElementSibling.setAttribute('aria-expanded', 'false'); l.previousElementSibling.focus(); });
+  });
   BOLD.copyBoxHtml = function(text){
     return '<div class="copy-box"><pre><code>' + esc(text) + '</code></pre>' +
       '<button type="button" class="copy-btn" aria-label="Copy" title="Copy">' + ICON_COPY + '</button></div>';
@@ -217,6 +248,33 @@
   // The same, asked every time ("Don't ask me again" doesn't skip it): for what reaches many
   // people or leaves BOLD.OS (Calendar, Slack or GitHub invitations, emails, a whole group).
   BOLD.confirmAlways = function(o){ return BOLD.confirmAction(Object.assign({}, o, { always: true })); };
+  // A Slack DM to someone, from a template they edit (2026-11-03: PAN-BOLD's "Talk to the lead").
+  // Slack can't prefill a DM from a link, so: the text, editable; Copy and open Slack copies it and opens
+  // their DM in the Slack app (slack://user, BOLD's workspace: site.js slackTeam), where they paste it and
+  // send it themselves. Nothing is sent from here. o: { title, to: { name, slackId }, text, note }.
+  BOLD.slackMessage = function(o){
+    var d = document.createElement('dialog'), team = window.BOLD_SLACK_TEAM || '', id = (o.to && o.to.slackId) || '';
+    var off = !id || !team ? ' disabled title="' + esc((o.to && o.to.name ? o.to.name : 'They') + ' isn’t on the BOLD Slack') + '"' : '';
+    d.className = 'confirm-dialog slack-msg';
+    d.innerHTML = '<h2>' + esc(o.title || 'Message on Slack') + '</h2>' +
+      (o.note ? '<p>' + esc(o.note) + '</p>' : '') +
+      '<label class="slack-msg-label">Your message to ' + esc((o.to && o.to.name) || 'them') + '<textarea class="slack-msg-text no-tags" rows="6">' + esc(o.text || '') + '</textarea></label>' +
+      '<p class="slack-msg-hint">It opens your direct message with them in Slack: paste it there, change it as you like, and send it.</p>' +
+      '<div class="confirm-actions"><button class="btn-box" type="button" data-no>Cancel</button>' +
+      '<button class="btn-box is-primary" type="button" data-yes' + off + '>Copy and open Slack</button></div>';
+    document.body.appendChild(d);
+    var close = function(){ d.close(); d.remove(); };
+    d.querySelector('[data-no]').addEventListener('click', close);
+    d.addEventListener('cancel', function(e){ e.preventDefault(); close(); });
+    d.querySelector('[data-yes]').addEventListener('click', function(){
+      var text = d.querySelector('.slack-msg-text').value;
+      var go = function(){ location.href = 'slack://user?team=' + encodeURIComponent(team) + '&id=' + encodeURIComponent(id); close(); };
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(go, go);
+    });
+    d.showModal();
+    d.querySelector('.slack-msg-text').focus();
+  };
+
   BOLD.confirmAction = function(o){
     // o.always: asked even with "Don't ask me again" (it reaches many people), and not offered.
     return (o.always ? Promise.resolve(false) : BOLD.getSkipConfirm()).then(function(skip){
@@ -302,11 +360,15 @@
     branch = b && BRANCH_REF.test(b.ref || '') ? { ref: b.ref, num: b.num || 0, title: b.title || '', url: b.url || '', pages: b.pages || null } : null;
     try { if (branch) sessionStorage.setItem('boldBranch', JSON.stringify(branch)); else sessionStorage.removeItem('boldBranch'); } catch (e){}
     // Quiet: no reload (a page showing its own proposal); its details from `branches`, unless they're from there.
+    if (!branch) try { sessionStorage.removeItem('boldBranches'); } catch (e){}
     if (o && o.quiet) { drawAccess(); previewBar(); if (branch && !o.known && access && access.e) loadBranches(); return; }
     dropCaches();
+    // A link to a proposal (#proposal-<id>) would open it again: left out. The same address with
+    // a #hash only scrolls, so the page is reloaded instead.
     var here = location.pathname + location.search.replace(/([?&])branch=[^&]*&?/, '$1').replace(/[?&]$/, '');
-    if (o && o.go && branch && branch.url) location.href = pageOf(branch.url);
-    else location.replace(here + location.hash);
+    var to = here + (/^#proposals?(-|$)/.test(location.hash) ? '' : location.hash);
+    if (o && o.go && branch && branch.url && pageOf(branch.url) !== location.pathname.split('/').pop() + location.search) { location.href = pageOf(branch.url); return; }
+    if (to === location.pathname + location.search + location.hash) location.reload(); else location.replace(to);
   };
   // A page of this site from its full address (as the server gives it), so it opens here
   // whether the site is served from GitHub Pages or a preview.
@@ -339,14 +401,30 @@
 
   /* ---------- Firebase + auth ---------- */
 
-  var app = null, auth = null, authReady = false, current = null, listeners = [];
+  var app = null, auth = null, authReady = false, current = null, listeners = [], photoUid = null;
 
   BOLD.getApp = function(){
     if (app) return app;
     try { app = firebase.apps.length ? firebase.app() : firebase.initializeApp(BOLD.firebaseConfig); } catch (e){ app = null; }
+    if (window.BOLD_TEST && app) testEmulators(app);
     viewAsCalls();
     return app;
   };
+
+  // The local test copy only (window.BOLD_TEST, set by a BOLD_TEST=1 build): Firestore and every
+  // region's Functions in the emulators, before anything reads or calls.
+  function testEmulators(a){
+    if (testEmulators.done) return;
+    testEmulators.done = true;
+    try { firebase.firestore(a).useEmulator('127.0.0.1', 8080); } catch (e){ console.warn('[BOLD Test] Firestore emulator', e); }
+    if (typeof a.functions !== 'function') return;
+    var plain = a.functions, seen = {};
+    a.functions = function(region){
+      var f = plain.apply(a, arguments), k = region || '';
+      if (!seen[k]) { seen[k] = true; try { f.useEmulator('127.0.0.1', 5001); } catch (e){} }
+      return f;
+    };
+  }
 
   BOLD.getAuth = function(){
     if (auth) return auth;
@@ -357,20 +435,10 @@
     } catch (e){ auth = null; return null; }
     auth.onAuthStateChanged(function(user){
       current = user; authReady = true; skipConfirm = null;
-      // Import once per signed-in session in the background. Failure remains
-      // retryable on a later page and never blocks the auth gate.
-      if (user && user.uid) {
-        try {
-          var photoKey = 'boldPhotoEnsured:' + user.uid;
-          if (!sessionStorage.getItem(photoKey)) {
-            firebase.app().functions('europe-west2').httpsCallable('profilePhoto')({ action: 'ensure' })
-              .then(function(){ sessionStorage.setItem(photoKey, '1'); window.dispatchEvent(new Event('bold-photo-updated')); })
-              .catch(function(err){ console.info('[BOLD Lab] Photo import will retry later:', err && err.message); });
-          }
-        } catch (e){}
-      }
+      var nextPhotoUid = user && user.uid || null;
+      if (photoUid !== nextPhotoUid) { photoUid = nextPhotoUid; if (BOLD.photo) BOLD.photo.reset(); }
       try {
-        if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '', p: user.photoURL || '' }));
+        if (user) localStorage.setItem('boldAuthHint', JSON.stringify({ n: user.displayName || '', e: user.email || '' }));
         else localStorage.removeItem('boldAuthHint');
       } catch (e){}
       listeners.slice().forEach(function(fn){ fn(user); });
@@ -394,7 +462,7 @@
     if (authReady) fn(current);
   };
 
-  // The last visit's { n: displayName, e: email, p: photoURL }, or null — for painting before auth resolves.
+  // The last visit's { n: displayName, e: email }, or null — for painting before auth resolves.
   BOLD.authHint = function(){ return hint; };
 
   // Sign-in redirects the page to Slack and back rather than using a popup:
@@ -411,6 +479,9 @@
     provider.addScope('openid');
     provider.addScope('profile');
     provider.addScope('email');
+    // BOLD's workspace (site.js slackTeam): Slack then signs a returning person straight in,
+    // without asking for consent every time (Slack's Sign in with Slack: `team`; 2026-11-03).
+    if (window.BOLD_SLACK_TEAM) provider.setCustomParameters({ team: window.BOLD_SLACK_TEAM });
     (isLocalDev ? a.signInWithPopup(provider) : a.signInWithRedirect(provider)).catch(function(err){
       console.error('[BOLD Lab] sign-in failed', err);
       if (typeof onError === 'function') onError(err);
@@ -433,23 +504,21 @@
 
   /* ---------- masthead ---------- */
 
-  // Signed in: your name opens a menu (Profile; Requests, yours (requests.html); Settings, for
-  // PIs and admins only, shown once that's known; Sign out). Signed out: Sign in with Slack.
+  // Signed in: your name opens a menu (Profile; Sign out). Your requests are under Mine, site
+  // settings have their own button (mountSettings). Signed out: Sign in with Slack.
   function renderAuthRegion(region, user){
     if (user) {
-      // Your Slack photo (initials without one), as GitHub's avatar; your name heads its menu
+      // The shared profile photo (initials without one); your name heads its menu
       // (your email is on your profile; without a name, the email).
       var name = user.displayName || user.email || 'Signed in', who = esc(name);
       var initials = esc(name.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(function(w){ return w[0].toUpperCase(); }).join(''));
-      var face = user.photoURL ? '<img class="mast-avatar" src="' + esc(user.photoURL) + '" alt="" referrerpolicy="no-referrer">' : '<span class="mast-avatar mast-initials">' + initials + '</span>';
+      var face = '<span class="mast-avatar mast-initials">' + initials + '</span>';
       region.innerHTML =
         '<div class="mast-auth mast-menu-wrap">' +
           '<button class="mast-menu-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="mastMenu" aria-label="' + who + '’s menu" title="' + who + '">' + face + '</button>' +
           '<ul class="mast-menu" id="mastMenu" role="menu" hidden>' +
             '<li role="none" class="mast-menu-who">Signed in as <strong>' + who + '</strong></li>' +
             '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
-            '<li role="none"><a role="menuitem" href="requests.html">Requests</a></li>' +
-            '<li role="none" class="mast-menu-settings"' + (BOLD.isFullWrite() ? '' : ' hidden') + '><a role="menuitem" href="settings.html">Settings</a></li>' +
             '<li role="none"><button role="menuitem" type="button" id="mastSignOutBtn">Sign out</button></li>' +
           '</ul>' +
         '</div>';
@@ -460,6 +529,8 @@
       document.addEventListener('focusin', function(e){ if (!region.contains(e.target)) open(false); });
       region.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
       region.querySelector('#mastSignOutBtn').addEventListener('click', BOLD.signOut);
+      // Painted at once from this browser's copy (also before sign-in resolves), else after one call.
+      if (BOLD.photo) BOLD.photo.mountOwn(region.querySelector('.mast-avatar'), name).catch(function(){});
     } else {
       region.innerHTML = '<button class="auth-signin" type="button" id="mastSignInBtn">Sign in with Slack</button>';
       region.querySelector('#mastSignInBtn').addEventListener('click', BOLD.signIn);
@@ -552,9 +623,9 @@
     { label: 'Agent skill', href: 'skill.html?new', can: pi },
     { label: 'Agent tool', href: 'tool.html?new', can: may('tools', 'edit') },
     { head: 'Ask or offer' },
-    { label: 'Ask for a letter', href: 'letters.html#ask', can: may('service-desk', 'view') },
-    { label: 'Offer an introduction', href: 'introductions.html#offer', can: may('service-desk', 'view') },
-    { label: 'A paper for internal review', href: 'audit-board.html', can: may('ml-cycle', 'view') },
+    { label: 'Ask for a letter', href: 'letters.html#ask', can: may('service-desk', 'edit') },
+    { label: 'Offer an introduction', href: 'introductions.html#offer', can: may('service-desk', 'edit') },
+    { label: 'A paper for internal review', href: 'audit-board.html', can: may('ml-cycle', 'edit') },
   ];
   var ICON_PLUS = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>';
   var ICON_DOWN = '<svg viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5"/></svg>';
@@ -564,9 +635,50 @@
     if (!box) return;
     box.innerHTML = '<button type="button" class="mast-btn mast-btn-wide" aria-haspopup="true" aria-expanded="false" aria-controls="createMenu" title="Create new…" aria-label="Create new…">' + ICON_PLUS + ICON_DOWN + '</button>' +
       '<ul class="mast-menu mast-create-menu" id="createMenu" role="menu" hidden></ul>';
-    // Notifications, as GitHub's inbox: a placeholder until they exist.
+    // Notifications (notifications.html), as GitHub's inbox: the number is what's waiting on you
+    // (myRequests' forYou, kept a few minutes in the tab, sessionStorage, so a page isn't a call)
+    // and what's unread in the Inbox (followed live, up to 100), together (2026-11-06; there was a dot for unread).
     var bell = document.getElementById('mastBell');
-    if (bell) bell.innerHTML = '<button type="button" class="mast-btn" disabled title="Notifications: coming soon" aria-label="Notifications: coming soon">' + ICON_BELL + '</button>';
+    if (bell) {
+      bell.innerHTML = '<a class="mast-btn mast-bell-btn" href="notifications.html" title="Notifications" aria-label="Notifications">' + ICON_BELL + '<span class="mast-count" hidden></span></a>';
+      var countEl = bell.querySelector('.mast-count'), link = bell.querySelector('a');
+      var todo = 0, unread = 0, unreadUnsub = null, heard = false;
+      var drawBell = function(){
+        var n = todo + unread;
+        countEl.hidden = !n; countEl.textContent = n > 99 ? '99+' : String(n);
+        var t = [todo ? todo + ' waiting on you' : '', unread ? (unread >= 100 ? '100+' : unread) + ' unread' : ''].filter(Boolean).join(', ');
+        t = t ? 'Notifications: ' + t : 'Notifications';
+        link.title = t; link.setAttribute('aria-label', t);
+        // For the masthead's cat (eggs.js): the count, and whether it's known yet (the inbox heard from).
+        BOLD.bell = { n: n, ready: heard };
+        try { document.dispatchEvent(new CustomEvent('bold:bell', { detail: BOLD.bell })); } catch (e){}
+      };
+      BOLD.setTodoCount = function(n){
+        n = Number(n) || 0;
+        try { sessionStorage.setItem('boldTodo', JSON.stringify({ n: n, t: Date.now() })); } catch (e){}
+        todo = n; drawBell();
+      };
+      var setUnread = function(n){ unread = Number(n) || 0; drawBell(); };
+      BOLD.onUser(function(user){
+        if (unreadUnsub) { unreadUnsub(); unreadUnsub = null; }
+        heard = false;
+        if (!user) { BOLD.setTodoCount(0); setUnread(0); return; }
+        if (firebase.firestore && user.email) {
+          try {
+            unreadUnsub = firebase.firestore(BOLD.getApp()).collection('notifications')
+              .where('to', '==', String(user.email).toLowerCase()).where('read', '==', false).limit(100)
+              .onSnapshot(function(s){ heard = true; setUnread(s.size); }, function(err){ console.warn('[BOLD Lab] checking for unread notifications failed', err); });
+          } catch (e){}
+        }
+        var c = null;
+        try { c = JSON.parse(sessionStorage.getItem('boldTodo') || 'null'); } catch (e){}
+        if (c) BOLD.setTodoCount(c.n);
+        if (c && Date.now() - c.t < 3 * 60 * 1000) return;
+        if (/notifications\.html$/.test(location.pathname) || !firebase.functions) return;   // the page asks, and sets it
+        firebase.app().functions('europe-west2').httpsCallable('myRequests')().then(function(r){ BOLD.setTodoCount(((r.data || {}).forYou || []).length); })
+          .catch(function(err){ console.warn('[BOLD Lab] counting what waits on you failed', err); });
+      });
+    }
     var btn = box.querySelector('.mast-btn'), menu = box.querySelector('.mast-create-menu');
     var draw = function(){
       menu.innerHTML = CREATE.map(function(c){
@@ -591,16 +703,17 @@
   // filtered to you (projects.html#mine, events.html#mine), and your own pages.
   var ICON_MINE = '<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 2 14 5 8 8 2 5z"/><path d="M2 8l6 3 6-3"/><path d="M2 11l6 3 6-3"/></svg>';
   var MINE = [
-    { label: 'Your projects', href: 'projects.html#mine', area: 'projects' },
-    { label: 'Your events', href: 'events.html#mine', area: 'events' },
+    { label: 'My projects', href: 'projects.html#mine', area: 'projects' },
+    { label: 'My events', href: 'events.html#mine', area: 'events' },
     { sep: true },
-    { label: 'Your letters', href: 'letters.html', area: 'service-desk' },
-    { label: 'Your introductions', href: 'introductions.html', area: 'service-desk' },
+    { label: 'My notifications', href: 'notifications.html', area: 'profile' },
+    { label: 'My letters', href: 'letters.html', area: 'service-desk' },
+    { label: 'My introductions', href: 'introductions.html', area: 'service-desk' },
   ];
   function mountMine(){
     var box = document.getElementById('mastMine');
     if (!box) return;
-    box.innerHTML = '<button type="button" class="mast-btn" aria-haspopup="true" aria-expanded="false" aria-controls="mineMenu" title="Yours" aria-label="Yours">' + ICON_MINE + '</button>' +
+    box.innerHTML = '<button type="button" class="mast-btn" aria-haspopup="true" aria-expanded="false" aria-controls="mineMenu" title="Mine" aria-label="Mine">' + ICON_MINE + '</button>' +
       '<ul class="mast-menu mast-mine-menu" id="mineMenu" role="menu" hidden></ul>';
     var btn = box.querySelector('.mast-btn'), menu = box.querySelector('.mast-mine-menu');
     var draw = function(){
@@ -626,17 +739,69 @@
     BOLD.onUser(function(user){ box.hidden = !user; if (!user) open(false); });
   }
 
+  // Site settings (settings.html, 2026-11-04): a gear between Mine and the notifications, for everyone
+  // signed in; PIs and admins open it, everyone else sees it greyed out with why.
+  var ICON_SETTINGS = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+  function mountSettings(){
+    var box = document.getElementById('mastSettings');
+    if (!box) return;
+    var draw = function(){
+      var full = BOLD.isFullWrite(), here = /(^|\/)settings\.html$/.test(location.pathname);
+      box.innerHTML = full
+        ? '<a class="mast-btn" href="settings.html" title="Site settings" aria-label="Site settings"' + (here ? ' aria-current="page"' : '') + '>' + ICON_SETTINGS + '</a>'
+        : '<button type="button" class="mast-btn" disabled title="Site settings are for PIs and admins" aria-label="Site settings, for PIs and admins">' + ICON_SETTINGS + '</button>';
+    };
+    draw();
+    box.hidden = !hint;
+    BOLD.onUser(function(user){ box.hidden = !user; });
+    BOLD.onAccess(draw);
+  }
+
+  // Light or dark (the dark block in bold.css): the masthead's sun/moon button, showing the theme
+  // in use. The choice is kept in localStorage (boldTheme) and applied before the page paints by
+  // the line at the top of base.njk; other open tabs follow it.
+  function mountTheme(){
+    var btn = document.getElementById('themeToggle'), root = document.documentElement;
+    if (!btn) return;
+    var show = function(){
+      var dark = root.getAttribute('data-theme') === 'dark', lamp = root.getAttribute('data-theme') === 'lamp';
+      btn.setAttribute('aria-pressed', String(dark));
+      btn.title = lamp ? 'Paper under a lamp. Click to go back.' : dark ? 'Switch to the light theme' : 'Switch to the dark theme';
+    };
+    var set = function(dark){
+      if (dark) root.setAttribute('data-theme', 'dark'); else root.removeAttribute('data-theme');
+      show();
+    };
+    show();
+    var clicks = [];
+    btn.addEventListener('click', function(e){
+      clicks = clicks.filter(function(t){ return e.timeStamp - t < 4000; }).concat(e.timeStamp);
+      if (clicks.length >= 10) {   // easter egg (eggs.js): paper under a lamp, kept until the next click
+        clicks = [];
+        root.setAttribute('data-theme', 'lamp');
+        show();
+        try { localStorage.setItem('boldTheme', 'lamp'); } catch (e){}
+        return;
+      }
+      // From the lamp, back to light.
+      var dark = root.getAttribute('data-theme') !== 'dark' && root.getAttribute('data-theme') !== 'lamp';
+      set(dark);
+      try { localStorage.setItem('boldTheme', dark ? 'dark' : 'light'); } catch (e){}
+    });
+    window.addEventListener('storage', function(e){ if (e.key !== 'boldTheme') return; if (e.newValue === 'lamp') { root.setAttribute('data-theme', 'lamp'); show(); } else set(e.newValue === 'dark'); });
+  }
+
   // Called right after the masthead markup.
   BOLD.mountMasthead = function(){
+    mountTheme();
     mountCreate();
     mountMine();
+    mountSettings();
     var region = document.getElementById('authRegion');
     // Paint the last visit's name at once; auth stays authoritative.
-    if (hint) renderAuthRegion(region, { displayName: hint.n, email: hint.e, photoURL: hint.p });
+    if (hint) renderAuthRegion(region, { displayName: hint.n, email: hint.e });
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
-    // Settings, in the menu, once the viewer is known to be a PI or admin.
     BOLD.onAccess(function(a){
-      var g = region.querySelector('.mast-menu-settings'); if (g) g.hidden = !a.fullWrite;
       previewBar();
       if (branch && !branchList) loadBranches();
     });
@@ -698,8 +863,12 @@
     var seen = JSON.parse(localStorage.getItem('boldAccess') || 'null');
     if (seen && hint && seen.e === hint.e && (seen.viewAs || null) === viewAs) access = seen;
   } catch (e){}
+  // Read this visit (the table and their group from the database), not the last visit's copy:
+  // what pages check before showing a copy they saved under other access (BOLD.accessSig).
+  var freshAccess = false, freshListeners = [];
   function setAccess(a){
     access = a;
+    if (!freshAccess) { freshAccess = true; var f = freshListeners; freshListeners = []; f.forEach(function(fn){ fn(a); }); }
     try { if (a.e) localStorage.setItem('boldAccess', JSON.stringify(a)); else localStorage.removeItem('boldAccess'); } catch (e){}
     accessListeners.slice().forEach(function(fn){ fn(a); });
   }
@@ -719,17 +888,50 @@
   BOLD.can = function(area, what){
     if (!access) return false;
     if (what === 'list') return BOLD.can(area, 'view') || BOLD.can(area, 'edit');
+    // Projects' titles: everyone signed in (getAllProjects; below View and Edit they ask to join).
+    if (what === 'titles') return area === 'projects' ? !!access.e : BOLD.can(area, 'list');
     var level = levelFor(area, what || 'view');
     return level !== 'none' && rankOf(access.group) >= rankOf(level);
   };
   // Why not, for a disabled control's tooltip.
   BOLD.cannotReason = function(area, what){
     var level = levelFor(area, what || 'view');
-    return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can see what).';
+    return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can do what).';
   };
   BOLD.myGroup = function(){ return access ? access.group : null; };
+  // The event and series levels (`visibleTo`) the viewer sees: from 'public' (anyone, even signed out)
+  // up to their group's (firestore.rules visibleLevels; functions/access.js). Lists query with them.
+  var VIS = ['public', 'everyone', 'associate', 'internal', 'staff', 'exec'];
+  BOLD.visibleLevels = function(){
+    var g = !access || !access.e ? 'out' : access.fullWrite ? 'exec' : access.group;
+    var r = { out: 0, everyone: 1, pan: 1, associate: 2, internal: 3, staff: 4, exec: 5 }[g] || 0;
+    // Events open to Everyone (the table headed Page | Edit): everyone signed in sees every event.
+    if (r > 0 && ((access.pages || {}).events || {}).view === 'everyone') r = 5;
+    return VIS.slice(0, r + 1);
+  };
   // fn(access) once known and on every change; replayed at once if known.
   BOLD.onAccess = function(fn){ accessListeners.push(fn); if (access) fn(access); };
+  // The masthead's word beside BOLD.OS: the viewer's group (Exec, Staff, Internal, Associate; PIs and
+  // admins Exec, or the group they view as), nothing for PAN-BOLD or signed out; in the group's colour.
+  var GROUP_WORD = { exec: 'Exec', staff: 'Staff', internal: 'Internal', associate: 'Associate' };
+  BOLD.onAccess(function(a){
+    var el = document.querySelector('.masthead-sub');
+    if (!el) return;
+    var g = !a || !a.e ? '' : a.viewAs ? a.viewAs : a.fullWrite ? 'exec' : a.group;
+    el.textContent = GROUP_WORD[g] || '';
+    el.hidden = !GROUP_WORD[g];
+    // In its group's colour, as on People (.pp-<group>, bold.css).
+    el.className = 'masthead-sub' + (GROUP_WORD[g] ? ' pp-' + g : '');
+  });
+  // fn(access) once, when this visit has read it (not the last visit's copy).
+  BOLD.onFreshAccess = function(fn){ if (freshAccess) fn(access); else freshListeners.push(fn); };
+  // What a page's saved copy depends on: who, their group, PI or admin, and `area`'s levels. A copy
+  // saved under another one isn't shown (a change of group, or of Who can see what, 2026-11-02).
+  BOLD.accessSig = function(area){
+    if (!access) return '';
+    var p = ((access.pages || {})[area]) || {};
+    return [access.e, access.group, access.fullWrite ? 1 : 0, p.view || '', p.edit || ''].join('|');
+  };
   function loadAccess(user){
     if (!firebase.firestore) return;
     var db = firebase.firestore(BOLD.getApp());
@@ -750,9 +952,25 @@
           // Asked to view as a group but not a PI or admin: the server ignored it, and so do we.
           if (viewAs && !d.viewAs) { viewAs = null; try { sessionStorage.removeItem('boldViewAs'); } catch (e){} }
           setAccess(Object.assign({ e: user.email || '', group: d.group || r[1], pages: d.pages || r[0], fullWrite: !!d.fullWrite }, d.viewAs ? { viewAs: d.viewAs } : {}));
+          if (!d.viewAs) groupChanged(user.email || '', d.group || r[1]);
         }).catch(function(){});
       });
     });
+  }
+  // In a new group (#152): once, they're sent to Get started, but only if that group's steps
+  // aren't all done (the onboarding callable): someone accepted through Ask for another group did
+  // them before asking; someone a PI or admin placed there may not have. The group last seen is
+  // remembered in this browser, per person; the first time there's none, so nothing happens (the
+  // home page shows the steps anyway). Only from the server's answer (getMyAccess), never while
+  // viewing as a group.
+  function groupChanged(email, group){
+    if (!email || !group) return;
+    var k = 'boldGroup:' + email, was = null;
+    try { was = localStorage.getItem(k); localStorage.setItem(k, group); } catch (e){ return; }
+    if (!was || was === group) return;
+    firebase.app().functions('europe-west2').httpsCallable('onboarding')({}).then(function(r){
+      if (r.data && Array.isArray(r.data.steps) && !r.data.done) location.href = 'onboarding.html';
+    }).catch(function(){});
   }
   // fn() once the Functions SDK is there: loaded (same pinned version) if the page hasn't it.
   function withFunctions(fn){
@@ -775,13 +993,20 @@
   // The pages, as the table names them (functions/access.js PAGES, kept in sync by hand).
   var AREA_NAMES = { boldiquette: 'BOLDiquette', projects: 'Projects', profile: 'Your profile', calendar: 'Calendar', 'ml-cycle': 'ML Conference Cycle',
     people: 'People', requests: 'Requests', events: 'Events', agents: 'Agents', tools: 'Tools', skills: 'Skills', guides: 'How to',
-    'service-desk': 'Service desk', 'get-started': 'Get started', search: 'Search', changelog: 'Changes' };
+    'service-desk': 'Service desk', 'get-started': 'Get started', search: 'Search', changelog: 'Changes',
+    experimental: 'Experimental', conversations: 'Conversations' };
   var WHAT = ['view', 'edit'];
+  // Everyone signed in sees everything (the table headed Page | Edit, 2026-11-04): only who acts is chosen.
+  function isOpen(){
+    var p = (branch && branch.pages) || (access && access.pages) || {}, keys = Object.keys(p);
+    return keys.length > 0 && keys.every(function(k){ return (p[k] || {}).view === 'everyone'; });
+  }
+  function rowsShown(){ return isOpen() ? ['edit'] : WHAT; }
   var WHAT_ROW = { view: 'View', edit: 'Edit' };
   var WHAT_VERB = { view: 'view', edit: 'edit' };
   var LADDER = ['everyone', 'associate', 'internal', 'staff', 'exec', 'none'];
   var LADDER_HEAD = { everyone: 'Everyone', pan: 'PAN-BOLD', associate: 'Associate', internal: 'Internal', staff: 'Staff', exec: 'Exec', none: 'Nobody' };
-  var ACCESS_INTRO = 'Who can view each page of BOLD.OS, and who can edit it (on the BOLDiquette, How to, Skills and Tools, by proposing). Everyone means everyone signed in; each group can do everything the groups below it can; — is nobody. Only PIs and admins change this table, and who is in which group.';
+  var ACCESS_INTRO = 'Who can view each page of BOLD.OS, and who can edit it (on the BOLDiquette, How to, Skills and Tools, by proposing). Everyone means everyone signed in; each group can do everything the groups below it can; — is nobody. Whoever can propose changes to the BOLDiquette proposes changes to this table; only PIs and admins change who is in which group.';
   var ICON_EYE = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8z"/><circle cx="8" cy="8" r="2"/></svg>';
   var panel = null;      // open: { lv: {view, edit, propose}, note, busy, error, done }
   var waiting = null;    // this page's row in an open proposal: { id, lv } | null
@@ -793,6 +1018,7 @@
   function who(l){ return l === 'everyone' ? 'Everyone' : l === 'none' ? 'Nobody' : l === 'exec' ? 'BOLD-exec' : LEVEL_NAMES[l] + ' and above'; }
   // One sentence for the ladder: "BOLD-internal and above can view and edit it."
   function sentence(lv){
+    if (isOpen()) return 'Everyone signed in sees it; ' + (lv.edit === 'everyone' ? 'everyone' : who(lv.edit)) + ' can act on it.';
     if (lv.view === lv.edit) return who(lv.view) + ' can view and edit it.';
     var low = function(l){ var s = who(l); return l === 'none' || l === 'everyone' ? s.charAt(0).toLowerCase() + s.slice(1) : s; };
     return who(lv.view) + ' can view it; ' + low(lv.edit) + ' can edit it.';
@@ -811,12 +1037,14 @@
       var cells = l.trim().replace(/^\||\|$/g, '').split('|');
       if (norm(cells[0]) !== norm(AREA_NAMES[area])) return;
       // View | Edit; a row as the table first was (View | Edit | Propose) reads as functions/access.js reads it.
-      var old = cells.length >= 4, lv = { view: levelOfCell(cells[1]), edit: levelOfCell(cells[old ? (REVIEWED.indexOf(area) >= 0 ? 3 : 2) : 2]) };
+      // Page | Edit (everyone sees everything): View is Everyone.
+      var old = cells.length >= 4, lv = cells.length === 2 ? { view: 'everyone', edit: levelOfCell(cells[1]) }
+        : { view: levelOfCell(cells[1]), edit: levelOfCell(cells[old ? (REVIEWED.indexOf(area) >= 0 ? 3 : 2) : 2]) };
       if (lv.view && lv.edit) out = lv;
     });
     return out;
   }
-  function accessRow(area, lv){ return '| ' + AREA_NAMES[area] + ' | ' + WHAT.map(function(w){ return lv[w] === 'none' ? '—' : groupName(lv[w]); }).join(' | ') + ' |'; }
+  function accessRow(area, lv){ return '| ' + AREA_NAMES[area] + ' | ' + rowsShown().map(function(w){ return lv[w] === 'none' ? '—' : groupName(lv[w]); }).join(' | ') + ' |'; }
   // The part's new body: this page's row replaced (or added), the rest as it is.
   function accessBody(body, area, lv){
     if (!body) {
@@ -865,7 +1093,7 @@
   }
   function ladderHtml(lv, ghost, editable){
     var head = '<div class="ac-row ac-head"><span></span>' + LADDER.map(function(l){ return '<span' + (l === 'everyone' ? ' title="Everyone signed in (PAN-BOLD and above)"' : '') + '>' + esc(LADDER_HEAD[l]) + '</span>'; }).join('') + '</div>';
-    return '<div class="ac-ladder" role="group" aria-label="Who can see this page">' + head + WHAT.map(function(w){
+    return '<div class="ac-ladder" role="group" aria-label="Who can see this page">' + head + rowsShown().map(function(w){
       var at = LADDER.indexOf(lv[w]), ghostAt = ghost ? LADDER.indexOf(ghost[w]) : -1;
       return '<div class="ac-row" role="radiogroup" aria-label="' + esc(WHAT_ROW[w]) + '"><span class="ac-what">' + esc(WHAT_ROW[w]) + '</span>' + LADDER.map(function(l, i){
         var on = lv[w] === 'none' ? l === 'none' : (l !== 'none' && i >= at);
@@ -877,6 +1105,16 @@
     }).join('') + '</div>';
   }
   var brOpen = false;   // the Version pill's list is open
+  // Opens the branch icon's list of open proposals (a page's "N proposed changes", #proposals).
+  // After the click that asked, which would otherwise close it again.
+  BOLD.openBranches = function(){
+    setTimeout(function(){
+      if (!document.querySelector('#pageAccess .br-chip')) return;
+      brOpen = true; panel = null; loadBranches(); drawAccess();
+      window.scrollTo({ top: 0 });
+      var bc = document.querySelector('#pageAccess .br-chip'); if (bc) bc.focus();
+    }, 0);
+  };
   var ICON_BRANCH = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="5.5" r="1.6"/><path d="M4.5 5.1v5.8M11.5 7.1c0 2.6-2.2 3.4-5.4 4.4"/></svg>';
   function drawAccess(){
     var el = document.getElementById('pageAccess'), area = pageArea();
@@ -887,11 +1125,14 @@
     var row = !!(area && AREA_NAMES[area]), cur = row ? currentLevels(area) : { view: 'everyone', edit: 'everyone' };
     // In the masthead, as GitHub's icon buttons: who can see this page (a dot while a change
     // to it waits), and the Version (branches): main, or the site as an open proposal would make it.
-    var seeTip = 'Who can see this page: ' + groupName(cur.view) + (waiting ? ' · 1 change waiting' : '');
+    var seeTip = (isOpen() ? 'Who can act on this page: ' + groupName(cur.edit) : 'Who can see this page: ' + groupName(cur.view)) + (waiting ? ' · 1 change waiting' : '');
     var brTip = branch ? 'Version: ' + branchLabel(branch) : 'Version: main. See the site as an open proposal would make it';
+    // The Version button, for everyone signed in: it's where the open proposals are seen (the
+    // BOLDiquette's and guides' "Proposed changes" are there, 2026-11-05).
+    var proposes = true;
     var html = '<button type="button" class="mast-btn ac-chip' + (waiting ? ' has-dot' : '') + '" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="' + esc(seeTip) + '" aria-label="' + esc(seeTip) + '">' + ICON_EYE + '</button>' +
-      '<button type="button" class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</button>';
-    if (brOpen) {
+      (proposes ? '<button type="button" class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</button>' : '');
+    if (brOpen && proposes) {
       html += '<div class="ac-panel br-panel" id="brPanel" role="dialog" aria-label="Versions of the site"><div class="ac-title">Version</div>' +
         '<p class="ac-note">See the whole site as an open proposal would make it, before anyone accepts it. Only you see it, in this tab.</p>' +
         '<ul class="br-list"><li><button type="button" class="br-item' + (branch ? '' : ' is-on') + '" data-ref=""><span class="br-t">Main</span></button></li>' +
@@ -907,8 +1148,8 @@
         '<p class="ac-sentence">Everyone signed in. It isn’t one of the pages in the BOLDiquette’s <a href="boldiquette.html#access">Who can see what</a>.</p>' +
         viewAsHtml() + '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div></div>';
     } else if (panel) {
-      var can = !!access.fullWrite, lv = panel.lv, changed = !sameLevels(lv, cur);
-      html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">Who can see ' + esc(AREA_NAMES[area]) + '</div>';
+      var can = !!access.fullWrite || BOLD.can('boldiquette', 'edit'), lv = panel.lv, changed = !sameLevels(lv, cur);
+      html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">' + (isOpen() ? 'Who can act on ' : 'Who can see ') + esc(AREA_NAMES[area]) + '</div>';
       if (panel.done) html += '<p class="ac-sentence">Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposal-' + esc(panel.done) + '">the BOLDiquette</a>.</p>' +
         '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
       else {
@@ -917,7 +1158,7 @@
           (REVIEWED.indexOf(area) >= 0 ? '<p class="ac-note">Edits here are proposals that a PI or admin reviews.</p>' : '') +
           (waiting && !changed ? '<p class="ac-note">Waiting: ' + esc(sentence(waiting.lv)) + ' <a href="boldiquette.html#proposal-' + esc(waiting.id) + '">See it on the BOLDiquette</a>.</p>' : '');
         html += viewAsHtml();
-        if (!can) html += (access.viewAs ? '' : '<p class="ac-note">Only PIs and admins change this.</p>') + '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
+        if (!can) html += (access.viewAs ? '' : '<p class="ac-note">' + esc(BOLD.cannotReason('boldiquette', 'edit')) + '</p>') + '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
         else html += (changed ? '<label class="ac-why">Why?<textarea class="ac-note-input" maxlength="1000" rows="2">' + esc(panel.note || '') + '</textarea></label>' : '') +
           '<p class="ev-error"' + (panel.error ? '' : ' hidden') + '>' + esc(panel.error || '') + '</p>' +
           '<div class="ac-actions"><button type="button" class="btn-text ac-close">' + (changed ? 'Cancel' : 'Close') + '</button>' +
@@ -1038,12 +1279,40 @@
     gate.innerHTML = '<div class="gate-box"><h1>Not open to your group</h1>' +
       '<p>This page is for ' + esc(LEVEL_NAMES[level]) + ' and above; you’re in ' + esc(LEVEL_NAMES[access.group] || 'PAN-BOLD') + '. ' +
       '<a href="boldiquette.html#access">Who can see what</a>.</p>' +
-      '<a class="gate-signup-btn" href="profile.html">Ask for another group on your profile</a></div>';
+      '<a class="gate-signup-btn" href="group-request.html">Ask for another group</a></div>';
     gate.setAttribute('data-level-gate', '');
     gate.hidden = false;
   }
 
   // Called right after the opening <div class="shell">.
+  // The way back to a checklist (onboarding's steps: Ask for another group, Get started, the home
+  // page). Following one of its links (a[data-checklist]) remembers the page, in this tab; every
+  // other page then shows "← Back to <it>" at the bottom right, with × to forget it. Back on the
+  // checklist it hides; sending the request forgets it (BOLD.checklistBack.clear()).
+  BOLD.checklistBack = (function(){
+    var KEY = 'boldChecklist';
+    var here = function(){ return location.pathname.split('/').pop() || 'index.html'; };
+    var read = function(){ try { return JSON.parse(sessionStorage.getItem(KEY) || 'null'); } catch (e){ return null; } };
+    function clear(){ try { sessionStorage.removeItem(KEY); } catch (e){} var b = document.getElementById('checklistBack'); if (b) b.remove(); }
+    document.addEventListener('click', function(e){
+      var a = e.target.closest && e.target.closest('a[data-checklist]');
+      if (!a) return;
+      try { sessionStorage.setItem(KEY, JSON.stringify({ page: here(), url: here() + location.search + location.hash, label: a.getAttribute('data-checklist') })); } catch (err){}
+    }, true);
+    function show(){
+      var c = read();
+      if (!c || !c.url || c.page === here() || document.getElementById('checklistBack')) return;
+      var bar = document.createElement('div');
+      bar.id = 'checklistBack'; bar.className = 'checklist-back'; bar.setAttribute('role', 'navigation'); bar.setAttribute('aria-label', 'Back to the checklist');
+      bar.innerHTML = '<a href="' + BOLD.escapeHtml(c.url) + '">← Back to ' + BOLD.escapeHtml(c.label || 'the checklist') + '</a>' +
+        '<button type="button" aria-label="Close" title="Close">×</button>';
+      bar.querySelector('button').addEventListener('click', clear);
+      document.body.appendChild(bar);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
+    return { clear: clear };
+  })();
+
   BOLD.mountShell = function(){
     var shell = document.getElementById('shell');
     // Saved sidebar state, applied before first paint so it doesn't animate in.
@@ -1067,21 +1336,37 @@
       });
       return;
     }
+    // Open to anyone signed out (front matter openSignedOut: the Festival's pages, which then show
+    // only what's public, public-db.js); signed in, gated as any other page.
+    var openSignedOut = shell.hasAttribute('data-open-signed-out');
+    // Signed out there: a visitor's view, without the greyed-out controls or "Internal" (bold.css
+    // .is-public-view), guessed from the last visit until auth says.
+    var publicView = function(on){ document.documentElement.classList.toggle('is-public-view', !!on); };
+    if (openSignedOut && !hint) publicView(true);
     BOLD.onUser(function(user){
+      if (openSignedOut) publicView(!user);
       var gate = document.getElementById('pageGate');
-      if (gate) gate.hidden = !!user;
-      if (!user) shell.hidden = true;
+      if (gate) gate.hidden = !!user || openSignedOut;
+      if (!user) shell.hidden = !openSignedOut;
     });
+    // A page whose own data says the viewer may see it lifts the gate (BOLD.allowPage): a
+    // project's page, once the rules let them read the project as one of its people (#148).
+    var allowed = false;
+    BOLD.allowPage = function(){
+      allowed = true; shell.hidden = false;
+      var g = document.getElementById('pageGate');
+      if (g && g.hasAttribute('data-level-gate')) g.hidden = true;
+    };
     BOLD.onAccess(function(a){
       if (!a.e) return;   // signed out: the sign-in gate above
-      var ok = BOLD.can(area, areaWhat);
+      var ok = allowed || BOLD.can(area, areaWhat);
       shell.hidden = !ok;
       // Allowed after all (the server's answer, a PI's say): the gate shown on the first guess goes.
       var shown = document.getElementById('pageGate');
       if (ok && shown && shown.hasAttribute('data-level-gate')) shown.hidden = true;
       if (!ok) {
         // Checked again when it's drawn: the server may have said yes by then.
-        var show = function(){ if (!BOLD.can(area, areaWhat)) showLevelGate(document.getElementById('pageGate'), area, areaWhat); };
+        var show = function(){ if (!allowed && !BOLD.can(area, areaWhat)) showLevelGate(document.getElementById('pageGate'), area, areaWhat); };
         if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', show); else show();
       }
     });
@@ -1127,12 +1412,14 @@
     if (!group) return;
     var page = location.pathname.split('/').pop() || 'index.html';
     function draw(list){
-      Array.prototype.forEach.call(group.querySelectorAll('.nav-sub'), function(a){ a.remove(); });
+      // Only what it filled in before: links written in at build (Experimental's code ones) stay.
+      Array.prototype.forEach.call(group.querySelectorAll('.nav-sub[data-loaded]'), function(a){ a.remove(); });
       var label = group.querySelector('.nav-group-label');
       var anyActive = false;
       list.forEach(function(e){
         var a = document.createElement('a');
         a.className = 'nav-link nav-sub';
+        a.setAttribute('data-loaded', '');
         a.href = e.href;
         a.textContent = e.title;
         a.title = e.title;
@@ -1169,8 +1456,8 @@
           .then(function(lists){ return [].concat.apply([], lists); });
       };
       return Promise.all([
-        get(all ? [se] : [se.where('hidden', '==', false)].concat(me ? [se.where('organisers', 'array-contains', me)] : [])),
-        get(all ? [ev] : [ev.where('hidden', '==', false)].concat(me ? [ev.where('createdBy', '==', me)] : [])),
+        get(all ? [se] : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels())].concat(me ? [se.where('organisers', 'array-contains', me)] : [])),
+        get(all ? [ev] : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels())].concat(me ? [ev.where('createdBy', '==', me)] : [])),
         db.collection('groupMeetingSeasons').where('publicationState', '==', 'published').limit(1).get().catch(function(){ return { empty: true }; }),
       ]).then(function(r){
         var seen = {}, once = function(k){ if (seen[k]) return false; seen[k] = true; return true; };
@@ -1207,6 +1494,17 @@
     });
   }
 
+  // The experiments (experiments/{id}, pages/experimental.js), by title, each to its page (experiment.html).
+  function experimentsNav(){
+    firestoreNav('experiments', 'boldNavExperiments', 'experimental', function(db){
+      return db.collection('experiments').get().then(function(snap){
+        return snap.docs.map(function(d){ return { id: d.id, title: d.data().title }; }).filter(function(x){ return x.title; })
+          .map(function(x){ return { title: x.title, href: 'experiment.html?id=' + encodeURIComponent(x.id) }; })
+          .sort(function(a, b){ return a.title.localeCompare(b.title); });
+      });
+    });
+  }
+
   // BOLDiquette's sections (handbook/boldiquette — see pages/guide.js), in
   // order, each linking to its heading on the page.
   function handbookNav(){
@@ -1230,7 +1528,7 @@
 
     var shell = document.getElementById('shell');
     if (!shell) return;
-    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); }
+    if (BOLD.getAuth()) { sidebarAccess(); handbookNav(); eventsNav(); skillsNav(); guidesNav(); experimentsNav(); }
     var toggle = document.getElementById('navToggle');
     var collapse = document.getElementById('sidebarCollapse');
     var backdrop = document.getElementById('sidebarBackdrop');

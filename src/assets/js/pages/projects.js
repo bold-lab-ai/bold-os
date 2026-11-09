@@ -13,8 +13,10 @@
   function cacheGet(key){
     try { return JSON.parse(localStorage.getItem(CACHE_PREFIX + key) || 'null'); } catch (e) { return null; }
   }
+  // Each copy keeps the access it was saved under (BOLD.accessSig): one saved under other access
+  // (a change of group, or of Who can see what) is never shown, so nobody glimpses more than they may.
   function cachePut(key, data){
-    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), d: data })); } catch (e){}
+    try { localStorage.setItem(CACHE_PREFIX + key, JSON.stringify({ t: Date.now(), d: data, s: BOLD.accessSig('projects') })); } catch (e){}
   }
   function cacheClear(){
     try {
@@ -27,6 +29,7 @@
   function loadCached(fn, email, render, onError, usable){
     var key = fn + ':' + email.toLowerCase();
     var hit = cacheGet(key);
+    if (hit && hit.s !== BOLD.accessSig('projects')) hit = null;
     var age = hit ? Math.round((Date.now() - hit.t) / 1000) : 0;
     if (hit) render(hit.d);
     if (hit && Date.now() - hit.t < CACHE_TTL_MS && (!usable || usable(hit.d))) { console.info('[BOLD Lab] ' + fn + ': cache hit (' + age + 's old), no call'); return; }
@@ -46,7 +49,7 @@
   }
 
   // Same row as the profile page's project list.
-  function renderProject(p){
+  function renderProject(p, group){
     var li = document.createElement('li');
     var main = document.createElement('div');
     main.className = 'proj-main';
@@ -57,6 +60,9 @@
     a.className = 'proj-title';
     if (!p.titleOnly) a.href = href;
     a.textContent = p.title;
+    // Its health (project-health.js), for whoever sees it in full.
+    var hw = null;
+    if (p.health && window.BoldHealth) { hw = document.createElement('span'); hw.className = 'proj-health'; hw.innerHTML = BoldHealth.html(p.health); }
     var meta = document.createElement('span');
     meta.className = 'proj-meta';
     // In: <venue> (linked to its board) · <Slack channel> (linked, when it can be) · <owner>
@@ -68,7 +74,7 @@
       return l;
     };
     if (p.titleOnly) {
-      parts.push(textNode('Join it to see it'));
+      parts.push(textNode(p.talk ? 'Its people see it: talk to the lead, who adds you if it fits' : p.ask ? 'Its people see it: ask to join, and its owner decides' : 'Join it to see it'));
     } else if (p.boardId) {
       var inVenue = document.createElement('span');
       inVenue.appendChild(textNode('In: '));
@@ -76,6 +82,9 @@
       // A project submitted to more than one venue shows its latest.
       if (p.earlier) inVenue.appendChild(textNode(' (+' + p.earlier + ' earlier)'));
       parts.push(inVenue);
+    } else if (p.proposal && p.proposal.status !== 'approved') {
+      // Proposed (#226): its budget, and whether it waits or was declined.
+      parts.push(textNode((p.proposal.status === 'declined' ? 'Declined' : 'Waiting for a PI or admin') + ' \u00b7 ' + (p.proposal.gpuHours || 0).toLocaleString('en-GB') + ' GPU hours'));
     } else {
       parts.push(textNode('No venue yet'));
     }
@@ -85,7 +94,7 @@
       if (i) meta.appendChild(textNode(' \u00b7 '));
       meta.appendChild(n);
     });
-    main.appendChild(a); main.appendChild(meta);
+    main.appendChild(a); if (hw) main.appendChild(hw); main.appendChild(meta);
     if (p.abstract) {
       var abs = document.createElement('p');
       abs.className = 'proj-abstract';
@@ -105,7 +114,8 @@
       });
       main.appendChild(kws);
     }
-    if (p.badges && p.badges.length) {
+    // Its Internal Review stage (Registered, Abstract, Paper…) only while it's in submission (2026-11-05).
+    if (group === 'submission' && p.badges && p.badges.length) {
       var row = document.createElement('div');
       row.className = 'proj-badges';
       p.badges.forEach(function(b){
@@ -131,6 +141,25 @@
     msg.className = 'join-msg';
     msg.setAttribute('role', 'status');
     join.addEventListener('click', function(){
+      // An invitation to answer: on its page. Below Projects' View and Edit: ask its lead.
+      if (st.invite) { location.href = 'project.html#id=' + encodeURIComponent(p.projectId || p.cardId) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '') + '&invite=' + encodeURIComponent(st.invite); return; }
+      if (st.talk) {
+        var me = BOLD.authHint() || {}, first = String(st.talk.name || '').split(' ')[0] || 'there';
+        BOLD.slackMessage({ title: 'Talk to ' + (st.talk.name || 'the lead'), to: st.talk,
+          note: 'Tell them who you are and how you’d like to help with “' + (p.title || 'this project') + '”. If it fits, they add you to it.',
+          text: 'Hi ' + first + '! I’m ' + (me.n || 'new to BOLD') + '. I saw “' + (p.title || 'your project') + '” on BOLD.OS and I’d love to hear more about it, and whether I could help with it. Would you have time for a quick chat?' });
+        return;
+      }
+      if (st.ask) {
+        BOLD.confirmAction({ title: 'Ask to join “' + (p.title || 'this project') + '”?', go: 'Ask', effects: ['Send its owner a Slack message asking to join; once they accept, you’re on it'] }).then(function(ok){
+          if (!ok) return;
+          join.disabled = true; join.textContent = 'Asking…'; msg.textContent = '';
+          firebase.app().functions('europe-west2').httpsCallable('projectInvite')({ action: 'ask', id: p.projectId || p.cardId, board: p.boardId || null })
+            .then(function(){ p.asked = true; join.textContent = 'Asked'; join.title = 'Its owner decides'; cacheClear(); })
+            .catch(function(err){ join.disabled = false; join.textContent = 'Ask to join'; msg.textContent = (err && err.message) || 'Couldn’t ask — try again.'; });
+        });
+        return;
+      }
       BOLD.confirmAlways({ title: 'Join \u201c' + (p.title || 'this project') + '\u201d?', go: 'Join', effects: [
         p.slackChannel ? { key: 'slack', text: 'Invite you to ' + p.slackChannel + ' on Slack' } : '',
         'Add you to its meeting on Google Calendar, if it has one (Google emails you the invitation)',
@@ -186,7 +215,7 @@
 
   // Older cached lists have no `authors`, no `submission` group or no `joined` (`v` 2); refetch those.
   function hasAuthors(d){
-    return d.v >= 2 && Array.isArray(d.submission) && ['ongoing', 'submission', 'completed', 'planned'].every(function(g){
+    return d.v >= 3 && Array.isArray(d.submission) && ['ongoing', 'submission', 'completed', 'planned'].every(function(g){
       // …and lists from before projects spanned venues (no `pid`): refetch those too.
       return (d[g] || []).every(function(p){ return (p.titleOnly || Array.isArray(p.authors)) && p.pid; });
     });
@@ -219,7 +248,7 @@
   // Options for the two selects, from every project (not only the visible ones).
   function fillOptions(){
     var authors = {}, keywords = {};
-    ['ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
+    ['proposed', 'ongoing', 'submission', 'completed', 'planned'].forEach(function(g){
       ((current && current[g]) || []).forEach(function(p){
         people(p).forEach(function(o){ authors[o.key] = o.name; });
         (p.keywords || []).forEach(function(k){ keywords[k] = (keywords[k] || 0) + 1; });
@@ -236,7 +265,7 @@
       opts.forEach(function(o){ add(o[0], o[1]); });
       sel.value = value;
     };
-    fill(el('projAuthor'), 'All authors', [['mine', 'Yours (an author, or joined)']].concat(authorKeys.map(function(k){ return [k, authors[k]]; })), filters.author);
+    fill(el('projAuthor'), 'All authors', [['mine', 'Mine (an author, or joined)']].concat(authorKeys.map(function(k){ return [k, authors[k]]; })), filters.author);
     fill(el('projKeyword'), 'All keywords', keywordNames.map(function(k){ return [k, k + ' (' + keywords[k] + ')']; }), filters.keyword);
   }
 
@@ -274,7 +303,7 @@
 
   function renderLists(){
     if (!current) return;
-    var groups = [['projOngoing', current.ongoing, 'cntOngoing', 'ongoing'], ['projSubmission', current.submission, 'cntSubmission', 'submission'], ['projCompleted', current.completed, 'cntCompleted', 'completed'], ['projPlanned', current.planned, 'cntPlanned', 'planned']];
+    var groups = [['projOngoing', current.ongoing, 'cntOngoing', 'ongoing'], ['projSubmission', current.submission, 'cntSubmission', 'submission'], ['projCompleted', current.completed, 'cntCompleted', 'completed'], ['projPlanned', current.planned, 'cntPlanned', 'planned'], ['projProposed', current.proposed || [], 'cntProposed', 'proposed']];
     var shown = {};
     groups.forEach(function(g){
       var ul = el(g[0]); ul.innerHTML = '';
@@ -287,14 +316,14 @@
         li.innerHTML = '<p class="proj-empty">' + (filtering() ? 'No projects match.' : 'None') + '</p>';
         ul.appendChild(li);
       }
-      items.forEach(function(p){ ul.appendChild(renderProject(p)); });
+      items.forEach(function(p){ ul.appendChild(renderProject(p, g[3])); });
     });
     el('projClear').hidden = !filtering();
     if (autoTab) {
       autoTab = false;
       var active = tabs.filter(function(t){ return t.classList.contains('active'); })[0];
       if (!active || !shown[active.getAttribute('data-tab')]) {
-        var first = ['ongoing', 'submission', 'planned', 'completed'].filter(function(n){ return shown[n]; })[0];
+        var first = ['ongoing', 'submission', 'planned', 'completed', 'proposed'].filter(function(n){ return shown[n]; })[0];
         if (first) { setTab(first); syncHash(); }
       }
     }
@@ -367,22 +396,24 @@
     if (!user) { cacheClear(); return; }
     if (!user.email) return;
     myKey = String(user.email).toLowerCase();
-    loadCached('getAllProjects', user.email, renderProjects, function(){
+    // Once this visit has read their access, so the saved copy is checked against it.
+    BOLD.onFreshAccess(function(){ loadCached('getAllProjects', user.email, renderProjects, function(){
       el('projMsg').textContent = 'Could not load projects.';
-    }, hasAuthors);
+    }, hasAuthors); });
   }
 
   // Last, once everything above is defined: onUser runs its callback at once if
   // auth has already resolved, and it reads the cache constants and helpers.
   BOLD.onUser(renderPage);
 
-  // First paint from the last visit's cache, before Firebase has loaded.
-  try {
-    var hint = BOLD.authHint();
-    if (hint && hint.e) {
-      myKey = hint.e.toLowerCase();
-      var hit = cacheGet('getAllProjects:' + hint.e.toLowerCase());
-      if (hit) renderProjects(hit.d);
-    }
-  } catch (e){}
+  // Registering one is for Projects' Edit level: greyed out, with the reason, below it (PAN-BOLD sees the titles).
+  var add = document.querySelector('.proj-add');
+  if (add) {
+    BOLD.onAccess(function(){
+      var can = BOLD.can('projects', 'edit'), why = can ? '' : BOLD.cannotReason('projects', 'edit');
+      add.classList.toggle('is-off', !can); add.setAttribute('aria-disabled', String(!can)); add.title = why;
+    });
+    add.addEventListener('click', function(e){ if (add.getAttribute('aria-disabled') === 'true') e.preventDefault(); });
+  }
+
 })();

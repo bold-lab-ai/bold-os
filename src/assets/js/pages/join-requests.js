@@ -1,13 +1,12 @@
 // join-requests.html (People → Requests): whoever an applicant names as inviting them approves
 // or declines their request to join BOLD (decideJoinRequest; #i=<id> from their DM);
 // PIs and admins see them all but decide only one without an inviter; members' requests to be in another group of Who is BOLD
-// (groupRequests, groupRequest), decided the same way: whoever invited them, or the PIs and admins when nobody did; PIs and admins also see whether each welcome email went (sendWelcomeEmail
+// (groupRequests, groupRequest, sent from group-request.html with the terms they accepted) are decided by the PIs and admins only (2026-11-02); PIs and admins also see whether each welcome email went (sendWelcomeEmail
 // sends one again); BOLD.OS's settings (the invite link, the email, the join form, the
 // groups' channels, the pilots) are on settings.html (pages/settings.js).
 // Only PIs and admins can read all of it (firestore.rules); everyone else sees, under Sign up,
 // the requests naming them and members who named them on their profile (setMyInviter), and
-// confirms or says they didn't invite them (confirmJoinInvite), and under Group change those
-// they decide. One list for everyone: each person's own are also on their Requests (requests.html).
+// confirms or says they didn't invite them (confirmJoinInvite). One list for everyone: each person's own are also on their Requests (requests.html).
 // PIs and admins also decide requests to let an agent act for someone (apiTokens
 // 'actRequests'/'decideAct' in functions/api.js; the Agents tab).
 // Tabs, by #hash: #signup, #groups, #agents (#r=, #g=, #i= open their request's tab; #invited,
@@ -24,7 +23,7 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var fn = function(name){ return firebase.app().functions('europe-west2').httpsCallable(name); };
   var me = null, staff = null, requests = null, invite = null, unsubs = [], busy = {};
-  var groupReqs = [], myGroupReqs = [], invited = [], invitedMembers = [], shown = {}, slackIds = {}, actReqs = [];
+  var groupReqs = [], invited = [], invitedMembers = [], shown = {}, slackIds = {}, actReqs = [];
 
 
   // Someone's name, linked to their page once they're on the BOLD Slack (the people roster).
@@ -62,16 +61,16 @@
   // A member asking to be in another group.
   function groupReqHtml(r){
     var open = r.status === 'open';
-    // Whoever invited them decides it (groupRequest); PIs and admins only one without an inviter.
-    var others = !!(r.inviterEmail && !(me && r.inviterEmail === me.email.toLowerCase()));
-    var off = busy[r.id] || others ? ' disabled' + (others ? ' title="' + esc((r.inviterName || 'Whoever invited them') + ' decides this: they invited them') + '"' : '') : '';
+    // Only PIs and admins decide it (groupRequest); only they can read these (firestore.rules).
+    var off = busy[r.id] || !staff ? ' disabled' + (!staff ? ' title="Only PIs and admins decide a change of group."' : '') : '';
     return '<li id="g-' + esc(r.id) + '">' + who(r.name, r.email, 'proj-title') +
       '<span class="proj-meta">' + esc(r.email) + ' · asked ' + when(r.at) + '</span>' +
       '<p class="jr-move">' + BoldJoin.groupBadge(r.from) + ' → ' + BoldJoin.groupBadge(r.to) + '</p>' +
       (r.note && shown['g:' + r.id] ? '<p class="lt-text">' + esc(r.note) + '</p>' : '') +
-      (open && others ? '<p class="proj-meta">Invited by ' + who(r.inviterName || r.inviterEmail, r.inviterEmail) + ', who decides it</p>' : '') +
+      // What they accepted (group-request.html): the group's section of Who is BOLD, as they read it.
+      (r.terms && shown['g:' + r.id] ? '<div class="jr-terms"><p class="proj-meta">Accepted ' + when(r.acceptedAt || r.at) + ':</p><div class="md-desc">' + BoldMarkdown.render(r.terms) + '</div></div>' : '') +
       (open ? '' : '<p class="proj-meta">' + (r.status === 'withdrawn' ? 'Withdrawn' : (r.status === 'approved' ? 'Approved' : 'Declined') + ' by ' + who(r.decidedByName || r.decidedBy || '', r.decidedBy)) + ', ' + when(r.decidedAt) + '</p>') +
-      '<div class="event-controls">' + (r.note ? moreBtn('g:' + r.id) : '') + (open ? '<button type="button" class="btn-text jr-g-approve" data-gid="' + esc(r.id) + '"' + off + '>Approve</button>' +
+      '<div class="event-controls">' + (r.note || r.terms ? moreBtn('g:' + r.id) : '') + (open ? '<button type="button" class="btn-text jr-g-approve" data-gid="' + esc(r.id) + '"' + off + '>Approve</button>' +
           '<button type="button" class="btn-text danger jr-g-decline" data-gid="' + esc(r.id) + '"' + off + '>Decline</button>' : '') + '</div></li>';
   }
 
@@ -119,7 +118,7 @@
     if (staff === null || (staff && requests === null)) { main.innerHTML = '<p class="proj-msg">Loading&hellip;</p>'; return; }
     // PIs and admins see every request; everyone else those naming them as inviting them, and
     // who named them on their profile. Theirs are also on their own Requests (requests.html).
-    var reqs = staff ? requests : invited, groupsAll = staff ? groupReqs : myGroupReqs;
+    var reqs = staff ? requests : invited, groupsAll = staff ? groupReqs : [];
     var waits = function(r){ return r.status === 'open' || toConfirm(r); };
     var open = reqs.filter(waits), done = reqs.filter(function(r){ return !waits(r); });
     var mOpen = invitedMembers.filter(function(m){ return (m.invitedBy || {}).status === 'pending'; });
@@ -208,7 +207,7 @@
     }
     var gid = t.getAttribute('data-gid');
     if (gid) {
-      var g = groupReqs.concat(myGroupReqs).filter(function(q){ return q.id === gid; })[0];
+      var g = groupReqs.filter(function(q){ return q.id === gid; })[0];
       if (!g) return;
       var accept = t.classList.contains('jr-g-approve');
       BOLD.confirmAction({ title: (accept ? 'Move ' + g.name + ' to ' : 'Decline ' + g.name + '’s request for ') + BoldJoin.categoryLabel(g.to) + '?', go: accept ? 'Move' : 'Decline',
@@ -252,10 +251,9 @@
     };
     if (t.classList.contains('jr-approve')) {
       var inv = r.invitedBy || {};
-      var group = BoldJoin.cappedGroup(BoldJoin.roleGroup(r.role), staff ? 'exec' : BOLD.myGroup());
       var unconfirmed = !inv.name || inv.email === me.email ? '' : inv.status === 'denied' ? inv.name + ' says they didn’t invite them.'
         : inv.status !== 'confirmed' ? inv.name + ' hasn’t confirmed inviting them yet.' : '';
-      BOLD.confirmAlways({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack', 'Put them in ' + BoldJoin.categoryLabel(group) + (staff ? ' (change it on People)' : ' (a PI or admin can change it)')] })
+      BOLD.confirmAlways({ title: 'Approve ' + r.name + '?' + (unconfirmed ? ' ' + unconfirmed : ''), go: 'Approve', effects: ['Email ' + r.name + ' the welcome, with how to join the BOLD Slack', 'Put them in PAN-BOLD (' + (staff ? 'change it on People' : 'a higher group is theirs to ask for, and the PIs and admins decide') + ')'] })
         .then(function(ok){ if (ok) run(function(){ return fn('decideJoinRequest')({ id: id, accept: true }); }); });
     } else if (t.classList.contains('jr-decline')) {
       if (window.confirm('Decline ' + r.name + '’s request? They aren’t told.')) run(function(){ return fn('decideJoinRequest')({ id: id, accept: false }); });
@@ -282,11 +280,6 @@
         .sort(function(a, b){ return b.at - a.at; });
       render();
     }, function(err){ console.error('[BOLD Join] loading your invitations failed', err); }));
-    // Requests to change group from people you invited (you decide them).
-    unsubs.push(db.collection('groupRequests').where('inviterEmail', '==', me.email.toLowerCase()).onSnapshot(function(snap){
-      myGroupReqs = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return b.at - a.at; });
-      render();
-    }, function(err){ console.error('[BOLD Join] loading group requests for you failed', err); }));
     // Members who named you on their profile (those from a request to join are listed above).
     unsubs.push(db.collection('members').where('invitedBy.email', '==', me.email).onSnapshot(function(snap){
       invitedMembers = snap.docs.map(function(d){ return Object.assign({ email: d.id }, d.data()); })

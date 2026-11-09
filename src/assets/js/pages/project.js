@@ -70,9 +70,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function cacheGet(id){
     try { return JSON.parse(localStorage.getItem(CACHE_PREFIX + id) || 'null'); } catch (e){ return null; }
   }
+  // The copy keeps the access it was saved under (BOLD.accessSig); one saved under other access isn't shown.
   function cachePut(){
     if (!card) return;
-    try { localStorage.setItem(CACHE_PREFIX + projectId, JSON.stringify({ card: card, slack: slack, venueLabel: venueLabel })); } catch (e){}
+    try { localStorage.setItem(CACHE_PREFIX + projectId, JSON.stringify({ card: card, slack: slack, venueLabel: venueLabel, s: BOLD.accessSig('projects') })); } catch (e){}
   }
   function cacheDrop(id){
     try { localStorage.removeItem(CACHE_PREFIX + id); } catch (e){}
@@ -240,14 +241,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         : (card.authors && card.authors.length
             ? card.authors.map(function(a){ return esc(a.name || a.email || '?'); }).join(', ')
             : missing()) + editButton('authors')) + '</dd>';
-      html += peopleRows();
+      html += peopleRows() + repoRow();
       html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
         '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
       html += row('Submitted by', card.submittedBy && card.submittedBy.name
         ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
         : missing());
       html += row('Registered', card.createdAt ? formatDate(card.createdAt) : missing());
-      html += row('Board', workBoardHtml());
       html += '</dl>';
       if (editing === 'abstract') {
         // Same editor as the registration form, with Save and Cancel.
@@ -270,19 +270,17 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     // The write-up and its submission.
     paper: function(){
       return '<dl class="detail-grid">' + row('Venues', venuesHtml()) +
-        repoRow() + simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') + '</dl>';
+        simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') + '</dl>';
     },
     // Its work board: the board keeps its own drawing (project-work.js), put back in here on each render.
     work: function(){ return '<div id="workMount"></div>'; }
   };
 
-  // Overview's Board row: the tab, or adding one (optional, for any project).
-  function workBoardHtml(){
-    if (hasBoard()) return '<a href="#" id="workTabLink">On the Board tab</a>';
-    if (!wsLoaded) return '<span class="detail-muted">Loading\u2026</span>';
-    return missing() + ' <button class="btn-text detail-inline-edit" type="button" id="workAdd"' +
-      (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Add one</button>' +
-      '<div class="detail-hint">One place for its to-dos, issues and pull requests, and who\u2019s on each.</div>';
+  // + Board, after the tabs: adds the project's work board (optional, for any project), then opens it.
+  function addBoardTabHtml(){
+    if (!wsLoaded || hasBoard()) return '';
+    var off = !canEdit() ? NOT_EDITOR : wsBusy ? 'Loading\u2026' : '';
+    return '<button class="tab-add" type="button" id="workAdd" title="' + esc(off || 'One place for its to-dos, issues and pull requests, and who\u2019s on each') + '"' + (off ? ' disabled' : '') + '>+ Board</button>';
   }
   function addWorkBoard(){
     if (wsBusy) return;
@@ -308,27 +306,46 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     if (OUTCOME_LABELS[card.outcome] && !(card.outcome === 'accepted' && card.status === 'conference')) {
       html += '<span class="badge">' + OUTCOME_LABELS[card.outcome] + '</span>';
     }
+    // Proposed (#226): nothing else until a PI or admin decides; the decision, or sending it again, below.
+    var pending = card.proposal && card.proposal.status !== 'approved';
+    if (pending) {
+      html += '<span class="badge">' + (card.proposal.status === 'declined' ? 'Declined' : 'Proposed') + '</span>';
+      html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
+      html += '</div></div>' + proposalHtml();
+      html += '<div class="tab-panel" id="projectPanel">' + PANELS.overview() + '</div>';
+      el('projectBody').innerHTML = html; el('projectBody').hidden = false; el('detailMsg').hidden = true;
+      document.title = card.title + ' | BOLD Lab';
+      wireAbstract(); wireProposal();
+      el('removeProject').addEventListener('click', removeProject);
+      return;
+    }
+    // Its health (project-health.js): its meeting, slides, notes and repository, BOLD.OS's counting twice.
+    if (ws && window.BoldHealth) html += BoldHealth.html(BoldHealth.of(ws));
     if (ws && ws.completedAt) html += '<span class="badge">Completed</span>';
-    else if (ws && ws.group === 'ongoing' && !ws.boardId) html += '<span class="badge">Ongoing</span>';
+    else if (ws && !ws.boardId && (ws.group === 'ongoing' || ws.startedAt || !projectSetupMissing(ws).length)) html += '<span class="badge">Ongoing</span>';
     // Marking it completed (or reopening it): its meeting is cancelled (or comes back).
     var done = !!(ws && ws.completedAt);
     // Join (or Leave, for whoever joined rather than registered or wrote it).
     html += joinButton();
     // Ongoing (being worked on) or back to planned, before it's on a venue's board (then it's in submission).
-    // A weekly meeting makes it ongoing anyway.
-    if (!done && !(ws && (ws.boardId || ws.meeting))) {
-      html += '<button class="btn-box detail-remove" type="button" id="startProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
-        (ws && ws.startedAt ? 'Back to planned' : 'Mark as ongoing') + '</button>';
+    // (2026-11-04) Ongoing once its meeting, slides and notes are all there, on its own; marking it
+    // ongoing first asks for whatever's missing (the "Set it up first" panel). Back to planned does nothing then.
+    if (!done && !(ws && ws.boardId)) {
+      var complete = !!(ws && !projectSetupMissing(ws).length), back = !!(ws && ws.startedAt) || complete;
+      var off = !canEdit() ? NOT_EDITOR : !wsLoaded || wsBusy ? 'Loading\u2026' : back && complete ? 'Ongoing while it has a meeting, slides and notes' : '';
+      html += '<button class="btn-box detail-remove" type="button" id="startProject"' + (off ? ' disabled title="' + esc(off) + '"' : '') + '>' +
+        (back ? 'Back to approved' : 'Mark as ongoing') + '</button>';
     }
     html += '<button class="btn-box detail-remove" type="button" id="completeProject"' + (canEdit() && wsLoaded && !wsBusy ? '' : ' disabled title="' + (canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"') + '>' +
       (done ? 'Reopen project' : 'Mark as completed') + '</button>';
     html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
     html += '</div></div>';
+    html += setupPanelHtml();
     html += '<div class="tabs" role="tablist" aria-label="Project">' + tabs().map(function(t){
       var on = t[0] === tab;
       return '<button class="tab' + (on ? ' active' : '') + '" type="button" role="tab" data-tab="' + t[0] + '" aria-selected="' + on + '"' +
         (on ? '' : ' tabindex="-1"') + ' aria-controls="projectPanel">' + t[1] + '</button>';
-    }).join('') + '</div>';
+    }).join('') + addBoardTabHtml() + '</div>';
     html += '<div class="tab-panel" id="projectPanel" role="tabpanel">' + PANELS[tab]() + '</div>';
 
     el('projectBody').innerHTML = html;
@@ -339,7 +356,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       ProjectWork.attach(el('workMount'));
     }
     if (el('workAdd')) el('workAdd').addEventListener('click', addWorkBoard);
-    if (el('workTabLink')) el('workTabLink').addEventListener('click', function(e){ e.preventDefault(); setTab('work'); });
     el('detailMsg').hidden = true;
     document.title = card.title + ' | BOLD Lab';
     linkSlackChannel();
@@ -358,6 +374,47 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     });
   }
 
+  // A proposed project's panel (#226): its budget and where it stands; Approve and Decline for a PI or admin
+  // other than whoever proposed it, greyed with the reason for everyone else; after a decline, its proposer
+  // sends it again (its budget changed if need be).
+  function proposalHtml(){
+    var p = card.proposal, hours = (Number(p.gpuHours) || 0).toLocaleString('en-GB');
+    var mine = !!me && String((card.submittedBy || {}).email || '').toLowerCase() === String(me.email || '').toLowerCase();
+    var who = esc((card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone');
+    if (p.status === 'declined') {
+      return '<div class="proposal-panel"><p><strong>Declined</strong> by ' + esc(p.decidedByName || p.decidedBy || 'a PI or admin') + (p.note ? ': \u201c' + esc(p.note) + '\u201d' : '.') + ' It asked for ' + hours + ' GPU hours.</p>' +
+        (mine ? '<div class="proposal-actions"><label>Compute budget (GPU hours) <input type="number" id="propHours" min="1" step="1" value="' + esc(String(p.gpuHours || '')) + '"></label>' +
+          '<button type="button" class="btn-box is-primary" id="propResubmit">Send it again</button></div>' : '') + '<p class="field-error" id="propError" hidden></p></div>';
+    }
+    var why = !fullWrite ? 'Only PIs and admins decide a proposed project' : mine ? 'Another PI or admin decides your own proposal' : '';
+    return '<div class="proposal-panel"><p><strong>Proposed</strong> by ' + who + ' \u00b7 <strong>' + hours + ' GPU hours</strong> \u00b7 waiting for a PI or admin to approve it. Once approved, its channel, meeting, slides, notes and repository are made.</p>' +
+      '<div class="proposal-actions"><input type="text" id="propNote" maxlength="1000" placeholder="A note to ' + who + ' (optional)"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' +
+      '<button type="button" class="btn-box is-primary" id="propApprove"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Approve</button>' +
+      '<button type="button" class="btn-box" id="propDecline"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Decline</button></div>' +
+      '<p class="field-error" id="propError" hidden></p></div>';
+  }
+  function wireProposal(){
+    var call = function(args, btn){
+      btn.disabled = true; btn.textContent = btn.id === 'propApprove' ? 'Approving\u2026' : btn.id === 'propDecline' ? 'Declining\u2026' : 'Sending\u2026';
+      firebase.app().functions('europe-west2').httpsCallable('projectProposal')(Object.assign({ id: projectId }, args)).then(function(){ location.reload(); }, function(err){
+        console.error('[BOLD Lab] deciding the proposal failed', err);
+        render();
+        var e = el('propError'); if (e) { e.textContent = (err && err.message) || 'Couldn\u2019t do that \u2014 try again.'; e.hidden = false; }
+      });
+    };
+    var note = function(){ return el('propNote') ? el('propNote').value.trim() : ''; };
+    if (el('propApprove')) el('propApprove').addEventListener('click', function(){
+      BOLD.confirmAlways({ title: 'Approve \u201c' + card.title + '\u201d?', go: 'Approve', effects: ['Approve its budget of ' + (Number(card.proposal.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours',
+        'Make its Slack channel, meeting, slides, notes and repository, as its proposer asked', 'Tell them, on BOLD.OS'] }).then(function(ok){ if (ok) call({ accept: true, note: note() }, el('propApprove')); });
+    });
+    if (el('propDecline')) el('propDecline').addEventListener('click', function(){
+      BOLD.confirmAlways({ title: 'Decline \u201c' + card.title + '\u201d?', go: 'Decline', effects: ['Tell its proposer, on BOLD.OS' + (note() ? ', with your note' : '')] }).then(function(ok){ if (ok) call({ accept: false, note: note() }, el('propDecline')); });
+    });
+    if (el('propResubmit')) el('propResubmit').addEventListener('click', function(){
+      BOLD.confirmAlways({ title: 'Send \u201c' + card.title + '\u201d again?', go: 'Send', effects: ['Send it to the PIs and admins to approve'] }).then(function(ok){ if (ok) call({ action: 'resubmit', gpuHours: el('propHours').value }, el('propResubmit')); });
+    });
+  }
+
   // Left out when it was registered (projectWorkspace's `skipped`), until it's done.
   function skipped(key){
     return ws && (ws.skipped || []).indexOf(key) >= 0 ? ' <span class="detail-muted">\u00b7 skipped when it was registered</span>' : '';
@@ -371,7 +428,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function linkEntryHtml(key){
     var k = LINKS[key], cur = ws && ws[k.own] || '';
     return '<input type="url" id="linkInput" value="' + esc(cur) + '" placeholder="https://\u2026 your own ' + k.what + ' (Google Slides, Overleaf, Notion…)">' +
-      '<p class="event-form-hint">' + (ws && ws[k.made] ? 'Leave it empty to use the ' + k.what + ' BOLD.OS made.' : ws && ws.noDocs ? 'Leave it empty for none.' : 'Leave it empty and BOLD.OS makes them, shared with the project\u2019s members.') + '</p>';
+      '<p class="event-form-hint">' + (ws && ws[k.made] ? 'Leave it empty to use the ' + k.what + ' BOLD.OS made.' : ws && ws.noDocs ? 'Leave it empty for none.' : 'Leave it empty and BOLD.OS makes them, shared with the project\u2019s members.') + '</p>' + BOLD.linkNote();
   }
   function saveLink(){
     var key = editing, k = LINKS[key], fail = failer(), v = el('linkInput').value.trim();
@@ -484,8 +541,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // Its GitHub repository: a link once there is one; until then editors choose its
   // template, as on the register form.
   function repoRow(){
-    var linked = ws && ws.repoUrl;
-    var value = linked ? '<a href="' + esc(ws.repoUrl) + '" target="_blank" rel="noopener">' + esc(ws.repoUrl.replace(/^https:\/\/github\.com\//, '')) + '</a>'
+    var linked = ws && (ws.repoUrl || ws.ownRepoUrl), url = linked ? (ws.repoUrl || ws.ownRepoUrl) : '';
+    var value = linked ? '<a href="' + esc(url) + '" target="_blank" rel="noopener">' + esc(url.replace(/^https:\/\/github\.com\//, '')) + '</a>' +
+        (ws.ownRepoUrl && !ws.repoUrl ? ' <span class="detail-muted">\u00b7 linked</span>' : '')
       : !wsLoaded ? '<span class="detail-muted">Loading\u2026</span>'
       : ws && ws.repoError ? '<span class="detail-muted">' + esc(ws.repoError) + '</span>'
       : ws && ws.repo && ws.syncing ? '<span class="detail-muted">Setting up\u2026</span>'
@@ -500,6 +558,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function saveRepo(){
     var fail = failer(), repo = readRepoEntry();
     if (repo.error) return fail(repo.error);
+    if (repo.mode === 'link') return sendRepo(repo, fail);   // only linked: nobody is told or given access
     BOLD.confirmAlways(repo.mode === 'existing'
       ? { title: 'Link the repository?', go: 'Link it', effects: [
         'Link bold-lab-ai/' + repo.name.replace(/^.*\//, '') + ' as the project\u2019s repository',
@@ -537,7 +596,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function membersHtml(){
     var list = memberEmails();
     var names = list.map(function(e){ var p = personByEmail(e); return esc(p && p.name || e); }).join(', ');
-    return (names || missing()) + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '');
+    return (names || missing()) + (wsMsg ? '<div class="detail-hint">' + wsMsg + '</div>' : '') +
+      (window.BoldProjectInvite ? BoldProjectInvite.html() : '');
   }
   function joinButton(){
     var mine = memberEmails().some(isMe), joined = ws && (ws.joined || []).some(isMe);
@@ -655,7 +715,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function loadOccasions(){
     loadVenues();
     if (events) return;
-    db.collection('events').where('hidden', '==', false).get().then(function(snap){
+    db.collection('events').where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()).get().then(function(snap){
       events = snap.docs.map(function(d){ return d.data(); }).filter(function(e){ return e.slug && e.title; })
         .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; });
       if (editing && editing.indexOf('talk:') === 0) { renderTalkOccasion(); fillSessions(); }
@@ -816,7 +876,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       row('Date', input('talkDate', 'date', t.date)) +
       row('Slides', input('talkSlides', 'url', t.slidesUrl, 'https://\u2026') +
         BoldPresentationUpload.html('detail-hint')) +
-      row('Recording', input('talkRecording', 'url', t.recordingUrl, 'https://\u2026 (optional)')) +
+      row('Recording', input('talkRecording', 'url', t.recordingUrl, 'https://\u2026 (optional)') + BOLD.linkNote()) +
       '</dl>' + saveCancelHtml('talkSave');
   }
 
@@ -956,6 +1016,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     Array.prototype.forEach.call(document.querySelectorAll('[data-ws]'), function(btn){
       btn.addEventListener('click', function(){ workspaceAction(btn.getAttribute('data-ws')); });
     });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-setup]'), function(btn){
+      btn.addEventListener('click', function(){ openSetup(btn.getAttribute('data-setup')); });
+    });
     Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function(btn){
       btn.addEventListener('click', function(){
         if (!canEdit()) return;
@@ -1065,8 +1128,39 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : { title: 'Mark \u201c' + card.title + '\u201d as completed?', go: 'Mark completed', effects: meeting ? ['Cancel its meeting on Google Calendar: Google tells everyone on it'] : [] })
       .then(function(ok){ if (ok) sendComplete(reopen); });
   }
+  // What a project needs to be ongoing (2026-11-04, projectSetupMissing in project-fields.js), each with the
+  // control that sets it up: shown once Mark as ongoing is pressed, and to an ongoing project missing some.
+  var setupWanted = false;
+  var SETUP = {
+    meeting: { label: 'A weekly meeting', tab: 'presentations', edit: 'meeting', go: 'Set it' },
+    slides: { label: 'Slides', tab: 'presentations', ws: 'setUp', go: 'Make them', own: 'deck' },
+    notes: { label: 'Meeting notes', tab: 'presentations', ws: 'setUp', go: 'Make them', own: 'notes' }
+  };
+  function setupPanelHtml(){
+    var miss = projectSetupMissing(ws);
+    if (!ws || ws.boardId || ws.completedAt || !(setupWanted || (ws.startedAt && miss.length))) return '';
+    var off = canEdit() && !wsBusy ? '' : ' disabled title="' + esc(canEdit() ? 'Loading\u2026' : NOT_EDITOR) + '"';
+    if (!miss.length) return '<div class="setup-panel is-done"><p class="setup-head">All set up: it\u2019s ongoing.</p></div>';
+    return '<div class="setup-panel"><p class="setup-head">' + (ws.startedAt ? 'Still to set up' : 'To be ongoing, it needs') + '</p><ul class="setup-list">' +
+      ['meeting', 'slides', 'notes'].map(function(k){
+        var it = SETUP[k], left = miss.indexOf(k) >= 0;
+        return '<li class="' + (left ? '' : 'is-done') + '"><span class="setup-mark" aria-hidden="true">' + (left ? '\u25cb' : '\u2713') + '</span>' + it.label +
+          (!left ? '' : it.ws ? ' <button class="btn-text" type="button" data-ws="' + it.ws + '"' + off + '>' + it.go + '</button> <button class="btn-text" type="button" data-setup="' + it.own + '"' + off + '>Use your own</button>'
+            : ' <button class="btn-text" type="button" data-setup="' + k + '"' + off + '>' + it.go + '</button>') + '</li>';
+      }).join('') + '</ul></div>';
+  }
+  // Opens what sets it up, on its tab.
+  function openSetup(key){
+    if (!canEdit()) return;
+    var t = { meeting: 'presentations', deck: 'presentations', notes: 'presentations', repo: 'overview' }[key];
+    tab = t; editing = key; render();
+    var f = document.querySelector('.detail-grid input, .detail-grid select');
+    if (f) f.focus();
+  }
   function startProject(){
     var back = !!(ws && ws.startedAt);
+    // Something missing: ask for it first; the server would refuse anyway.
+    if (!back && ws && projectSetupMissing(ws).length) { setupWanted = true; render(); return; }
     wsBusy = true; render();
     callWorkspace({ action: back ? 'plan' : 'start' }).then(function(){
       wsBusy = false;
@@ -1157,6 +1251,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var fail = failer(), n = normalizeProjectChannel(el('pfChannel').value), btn = el('slackSave');
     if (n.error) return fail(n.error);
     var effects = channelField.effects(n.name);
+    // A different channel: the server invites everyone on the project to it (functions/index.js inviteProjectToChannel).
+    if ('#' + n.name !== (card.slackChannel || '')) effects = effects.concat(['Invite everyone on the project to #' + n.name + ' on Slack']);
     (effects.length ? BOLD.confirmAlways({ title: 'Change the Slack channel?', go: 'Save', effects: effects }) : Promise.resolve(true)).then(function(ok){
       if (ok) sendSlack(n, btn, fail);
     });
@@ -1211,6 +1307,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         return show('This project isn\u2019t here \u2014 it may have been removed. Find it under Projects.');
       }
       var fresh = doc.data();
+      // Readable means they may see it (the rules: Projects' View, or one of its people), whatever
+      // the page's own level says (#148: someone invited to it).
+      if (BOLD.allowPage) BOLD.allowPage();
       var changed = !card || JSON.stringify(fresh) !== JSON.stringify(card);
       card = fresh;
       cachePut();
@@ -1223,17 +1322,19 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         cacheDrop(projectId); card = null;
         el('projectBody').hidden = true;
         show('Only its people see this project.');
-        el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">Join it from Projects</a>.');
+        if (/[#&]invite=/.test(location.hash)) { if (BOLD.allowPage) BOLD.allowPage(); }
+        else el('detailMsg').insertAdjacentHTML('beforeend', ' <a href="projects.html">' + (BOLD.can('projects', 'edit') && (BOLD.isFullWrite() || ['internal', 'staff', 'exec'].indexOf(BOLD.myGroup()) >= 0) ? 'Join it' : 'Ask to join it') + ' from Projects</a>.');
         return;
       }
       if (!card) show('Could not load the project.');
     });
   }
 
-  // First paint from the last visit's copy, before Firebase has loaded.
-  try {
+  // First paint from the last visit's copy, once this visit has read their access and only if the
+  // copy was saved under the same (a change of group, or of Who can see what, shows nothing early).
+  BOLD.onFreshAccess(function(){ try {
     var hint = BOLD.authHint(), hit = projectId && hint && hint.e ? cacheGet(projectId) : null;
-    if (hit && hit.card) {
+    if (hit && hit.card && hit.s === BOLD.accessSig('projects') && !card) {
       me = { email: hint.e };
       var access = cacheGet('access');
       fullWrite = !!(access && access.email === hint.e.toLowerCase() && access.fullWrite);
@@ -1242,7 +1343,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       venueLabel = hit.venueLabel || '';
       render();
     }
-  } catch (e){}
+  } catch (e){} });
+
+  // Inviting people to it (#148): its editors under People; the invited, a banner.
+  if (window.BoldProjectInvite && db) BoldProjectInvite.init({ db: db, root: el('projectBody'), id: projectId, board: boardId || null,
+    canEdit: function(){ return !!card && canEdit(); }, people: function(){ return state.people; }, notEditor: NOT_EDITOR,
+    redraw: function(){ if (card && !editing) render(); }, onAdmitted: function(){ watchWorkspace(); }, onJoined: function(){ el('detailMsg').textContent = 'Loading…'; load(); watchWorkspace(); } });
 
   // Firestore reads need the signed-in user; the gate has already checked.
   BOLD.onUser(function(user){
@@ -1257,5 +1363,6 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     load();
     loadAccess();
     watchWorkspace();
+    if (window.BoldProjectInvite) BoldProjectInvite.banner(el('projectInviteBanner'));
   });
 })();

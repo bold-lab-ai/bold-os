@@ -1,10 +1,10 @@
 /* A skill's page (skill.html?skill=<name>, pages/skill.js): its description, how to install it, its files. */
 .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 24px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
-.back-link:hover{color:var(--accent);}
+.back-link:hover{color:var(--link);}
 .eyebrow{
   display:inline-block; font-family:var(--sans); font-weight:400; font-size:11px;
-  text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:.7;
+  text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:var(--label-fade);
   margin-bottom:12px;
 }
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
@@ -16,7 +16,7 @@ main{max-width:var(--content-max); margin:0 auto; padding:8px var(--gutter) 24px
 section.block{max-width:var(--article-max); margin:48px 0 0;}
 section.block:first-of-type{margin-top:12px;}
 .block-head{margin-bottom:10px;}
-.block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:.7; font-weight:400;}
+.block h2{font-family:var(--sans); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted); opacity:var(--label-fade); font-weight:400;}
 
 
 /* ---------- files ---------- */
@@ -30,14 +30,14 @@ section.block:first-of-type{margin-top:12px;}
 }
 .skill-file-name::before{content:'▸'; display:inline-block; width:1.2em; color:var(--muted);}
 .skill-file.is-open .skill-file-name::before{content:'▾';}
-.skill-file-name:hover{color:var(--accent);}
+.skill-file-name:hover{color:var(--link);}
 .skill-file-size{font-family:var(--sans); font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; white-space:nowrap;}
 .skill-file-head .btn-text{font-size:13px;}
 .skill-file-body{margin:0 0 14px; max-height:70vh; overflow:auto; font-size:13px;}
 
 /* ---------- editing (PIs/admins) ---------- */
 .sk-import{display:flex; flex-wrap:wrap; align-items:baseline; gap:6px 18px; margin:0 0 14px; padding-bottom:12px; border-bottom:1px solid var(--line); color:var(--muted);}
-.sk-import label.btn-text{display:inline; margin:0; color:var(--accent); font-size:13px;}
+.sk-import label.btn-text{display:inline; margin:0; color:var(--link); font-size:13px;}
 .skill-form{max-width:var(--article-max);}
 .skill-form textarea.mono{font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace; font-size:13px;}
 .skill-form .event-form-hint{margin:-4px 0 12px; font-family:var(--sans); font-size:13px; color:var(--muted);}
@@ -47,7 +47,7 @@ section.block:first-of-type{margin-top:12px;}
 .sk-file-head input{flex:1 1 auto; margin-top:0; font-family:ui-monospace,'SFMono-Regular',Menlo,Consolas,'Liberation Mono',monospace; font-size:13px;}
 .sk-file .sk-content{margin-top:8px;}
 .sk-file-add{display:flex; gap:18px; margin:10px 0 6px;}
-.sk-file-add label.btn-text{display:inline; margin:0; color:var(--accent); font-size:12.5px;}
+.sk-file-add label.btn-text{display:inline; margin:0; color:var(--link); font-size:12.5px;}
 .btn-text.danger:hover{color:var(--danger-text);}
 
 @media (max-width:820px){

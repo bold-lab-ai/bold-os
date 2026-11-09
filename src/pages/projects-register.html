@@ -1,8 +1,8 @@
 ---
 area: "projects"
 areaWhat: "list"
-title: "Add a New Project | BOLD Lab"
-description: "Add a new project to BOLD."
+title: "Propose a New Project | BOLD Lab"
+description: "Propose a new project to BOLD: a PI or admin approves it."
 sdk: ["firestore", "functions"]
 headExtra: "<!-- KaTeX, for rendering LaTeX pasted into a card's Abstract field.\n     docs/AGENTS.md-approved CDN exception, 2026-09-18, per Eduardo. Bump the\n     pinned version deliberately, not silently. -->\n<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.css\">\n<script src=\"https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.18.7/katex.min.js\"></script>"
 css: "projects-register"
@@ -12,7 +12,8 @@ permalink: "projects-register.html"
 ---
 <div class="hero">
   <a class="back-link" href="projects.html">&larr; Projects</a>
-  <h1>Add a new project</h1>
+  <h1>Propose a new project</h1>
+  <p class="hero-note">A PI or admin approves it. Then its channel, meeting, slides, notes and repository are made.</p>
 </div>
 
 <main>
@@ -22,6 +23,11 @@ permalink: "projects-register.html"
       <input type="text" id="pfTitle" maxlength="200" autocomplete="off">
     </div>
     <div id="abstractField"></div>
+    <div class="field">
+      <label for="pfGpuHours">Compute budget (GPU hours)</label>
+      <input type="number" id="pfGpuHours" min="1" step="1" inputmode="numeric" placeholder="e.g. 2000">
+      <div class="field-hint">What it needs in all, roughly: PIs and admins see it when they decide.</div>
+    </div>
     <div class="field">
       <label for="pfKeyword">Keywords</label>
       <div id="keywordEntry"></div>
@@ -43,7 +49,7 @@ permalink: "projects-register.html"
     </div>
     <div class="field-error" id="projectError" hidden></div>
     <div class="form-actions">
-      <button class="btn btn-primary" type="submit" id="submitBtn">Submit</button>
+      <button class="btn btn-primary" type="submit" id="submitBtn">Propose</button>
     </div>
   </form>
 </main>

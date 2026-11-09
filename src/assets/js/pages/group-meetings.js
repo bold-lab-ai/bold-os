@@ -89,7 +89,7 @@
       (s.origin === 'site' && s.revision === 0 && !assigned && admin ? '<button type="button" class="btn-text" data-action="deleteSlot" data-id="' + esc(s.id) + '">Remove slot</button>' : '');
     var slotActions = (own ? declineHtml(s, can, why) : menuControls ? actionsHtml('rota-actions-' + s.id, 'Actions for ' + slotLabel(s), menuControls) : '') + (s.format === 'short' && !own && s.presenterSlackId ? swapHtml(s, swapReady, swapReason) : '');
     return '<article class="rota-slot" id="slot-' + esc(s.meetingId) + '-' + esc(s.slotNumber) + '"><div class="rota-slot-head"><h3>' + esc(slotLabel(s)) + '</h3>' + (outcome ? own && admin ? '<button type="button" class="rota-outcome rota-outcome-edit" data-action="outcome" data-id="' + esc(s.id) + '" title="Set outcome">' + esc(outcome) + '</button>' : '<span class="rota-outcome">' + esc(outcome) + '</span>' : '') + '</div>' +
-      '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '"' + (sharedPhoto ? ' data-photo-id="' + esc(s.presenterSlackId) + '" data-photo-name="' + esc(presenter) + '"' : '') + ' aria-hidden="true">' + (assigned ? esc(initials(presenter)) + (!sharedPhoto && photo ? '<img class="rota-avatar-photo" src="' + esc(photo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') : '+') + '</span><div class="rota-slot-details">' +
+      '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '"' + (sharedPhoto ? ' data-id="' + esc(s.presenterSlackId) + '" data-name="' + esc(presenter) + '" data-fallback-url="' + esc(photo) + '"' : '') + ' aria-hidden="true">' + (assigned ? esc(initials(presenter)) + (!sharedPhoto && photo ? '<img class="rota-avatar-photo" src="' + esc(photo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') : '+') + '</span><div class="rota-slot-details">' +
       '<div class="rota-person-row"><p class="rota-person">' + presenterHtml + (assigned && !hasProfile ? ' <span class="rota-muted">(unresolved account)</span>' : '') + '</p>' + slotActions + '</div>' +
       (assigned ? (topic ? '<p class="rota-topic">' + topic + '</p>' : '') + (slide || projectLink ? '<p class="rota-resources">' + slide + projectLink + '</p>' : '') : '<button type="button" class="btn-text rota-claim" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(claimant, alreadyPresenting ? 'You already present at this meeting' : access && access.reason || 'This slot is unavailable') + '>Claim slot</button>') + '</div></div></article>';
   }
@@ -184,9 +184,7 @@
       (pendingSwaps.length ? '<section class="rota-pending"><h2>Pending swaps</h2><ul>' + pendingSwaps.map(function(s){ return '<li>' + esc(s.slotId + ' ↔ ' + s.otherSlotId) + ' · Slack: ' + esc(s.notificationState || 'queued') + (s.requesterSlackId === access.slackId ? ' <button type="button" class="btn-text" data-action="cancelSwap" data-id="' + esc(s.id) + '">Cancel request</button>' + (s.notificationState === 'failed' ? ' <button type="button" class="btn-text" data-action="retrySwap" data-id="' + esc(s.id) + '">Retry message</button>' : '') : ' · Respond in Slack') + '</li>'; }).join('') + '</ul></section>' : '') +
       '<div id="rotaPanel"></div>' + (filtered.length ? visible.map(meetingHtml).join('') + more : '<p>' + (search ? 'No meetings match.' : archive ? 'No past meetings yet.' : 'No upcoming meetings.') + '</p>') + trackerHtml() + manageHtml() + changelogHtml();
     body.hidden = false; text('');
-    if (!window.ROTA_LOCAL_PREVIEW && BOLD.photo) body.querySelectorAll('.rota-avatar[data-photo-id]').forEach(function(node){
-      BOLD.photo.mount(node, node.dataset.photoId, node.dataset.photoName, photoUrls[node.dataset.photoId] || '');
-    });
+    if (!window.ROTA_LOCAL_PREVIEW && BOLD.photo) BOLD.photo.mountMany(body.querySelectorAll('.rota-avatar[data-id]'));
     if (panel) document.getElementById('rotaPanel').innerHTML = panel;
     if (pendingJump) {
       var target = selectedSlot && document.getElementById('slot-' + selectedDate + '-' + selectedSlot) || document.getElementById('date-' + selectedDate);
@@ -345,11 +343,5 @@
     var work = remove ? ref.delete().then(function(){ return doc.delete(); }) : ref.put(file, { contentType: file.type }).then(function(){ return doc.set({ path: path, updatedBy: user.email.toLowerCase(), updatedAt: Date.now() }); });
     work.then(function(){ busy = false; panel = null; refresh(); }).catch(function(e){ busy = false; text(e.message || 'Could not save the photo.'); });
   }
-  window.addEventListener('bold-photo-updated', function(){
-    if (!window.ROTA_LOCAL_PREVIEW && user && access && access.slackId && BOLD.photo) {
-      BOLD.photo.clear(access.slackId);
-      render();
-    }
-  });
   BOLD.onUser(function(u){ user = u; if (!u) { body.hidden = true; text('Sign in to view the rota.'); return; } refresh(); });
 })();

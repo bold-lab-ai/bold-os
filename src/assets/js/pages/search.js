@@ -70,7 +70,7 @@
     events: function(){
       var talk = function(x){ return [x.abstract, x.speaker, x.affiliation, x.description, x.summary].filter(Boolean).join(' '); };
       return Promise.all([
-        db.collection('events').where('hidden', '==', false).get(),
+        db.collection('events').where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()).get(),
         db.collection('collabWeekSessions').get(),
         db.collection('collabWeekTalks').get(),
       ]).then(function(r){
@@ -169,7 +169,9 @@
     all.sort(function(a, b){ return b.s - a.s; });
     var partial = all.length && all[0].partial;
     var broke = want.filter(function(k){ return failed[k]; }).map(function(k){ return BoldSearch.scope(k).label; });
-    list.innerHTML = (partial && !loading ? '<p class="proj-msg">Nothing has every word; these have most of them.</p>' : '') +
+    // Easter egg (eggs.js): sudo. Nothing is logged; the rules decide, as ever.
+    var sudo = /^sudo\b/i.test(q) ? '<p class="sr-sudo">You are not in the sudoers file. This incident will be reported.</p>' : '';
+    list.innerHTML = sudo + (partial && !loading ? '<p class="proj-msg">Nothing has every word; these have most of them.</p>' : '') +
       (all.length ? '<ul class="sr-list">' + all.slice(0, MAX).map(function(h){
         return '<li class="sr-item"><a class="sr-title" href="' + esc(h.it.href) + '">' + mark(h.it.title) + '</a>' +
           '<span class="sr-where">' + (show ? '' : esc(BoldSearch.scope(h.key).label) + ' · ') + mark(h.it.where) + '</span>' +

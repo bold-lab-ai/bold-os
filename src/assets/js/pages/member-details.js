@@ -11,58 +11,18 @@
   var db;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var me = null, rec = undefined, opt = null, editing = false, unsub = null;
-  // Their group (Who is BOLD) and a request for another (groupRequest in functions/index.js).
-  var groupReq = null, asking = false, gBusy = false, gError = '', unsubReq = null;
+  // Their group (Who is BOLD) and their open request for another (groupRequest in functions/index.js),
+  // made on group-request.html, where they accept what the group asks of them; PIs and admins decide.
+  var groupReq = null, gBusy = false, gError = '', unsubReq = null;
   function when(t){ return new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }); }
-  // Who decides a request to change group: whoever invited them (unless they said they
-  // didn't), else the PIs and admins (as groupRequest decides).
-  function decider(){
-    var inv = rec && rec.invitedBy;
-    return inv && inv.email && inv.status !== 'denied' ? (inv.name || inv.email) : '';
-  }
   function groupHtml(){
     var g = BoldJoin.groupOf(rec);
     var html = BoldJoin.groupBadge(g) + ' <a class="acct-handle" href="boldiquette.html#who-is-bold">What’s this?</a>';
-    if (groupReq) return html + '<span class="st-links">You asked for ' + BoldJoin.groupBadge(groupReq.to) + ' on ' + when(groupReq.at) + ': ' + (groupReq.inviterName ? esc(groupReq.inviterName) + ', who invited you,' : 'a PI or admin') + ' will decide. ' +
-      '<button type="button" class="btn-text md-g-withdraw"' + (gBusy ? ' disabled' : '') + '>Withdraw</button></span>';
-    if (!asking) return html + ' <button type="button" class="btn-text md-g-ask">Ask for another group</button>';
-    // Whoever invited them decides: without one, they choose one here, in the same request.
-    var pick = !decider() && !exec() ? (people ? '<label class="md-g-contact">Your point of contact, who invited you to BOLD: they confirm it and decide this' +
-        '<select class="md-g-inviter"><option value="">Choose a person…</option>' + people.filter(function(p){ return p.email !== String(me.email || '').toLowerCase(); }).map(function(p){
-          return '<option value="' + esc(p.email) + '"' + (p.email === gInviter ? ' selected' : '') + '>' + esc(p.name) + '</option>'; }).join('') + '</select></label>'
-      : '<p class="proj-msg">Loading&hellip;</p>') : '';
-    var to = decider() || (gInviter && nameOf(gInviter)) || (exec() ? 'the PIs' : 'your point of contact');
-    return html + '<div class="md-g-form">' + pick + BoldJoin.CATEGORIES.filter(function(c){ return c[0] !== g; }).map(function(c){
-        return '<label class="jn-check"><input type="radio" name="md-g-to" value="' + c[0] + '"' + (c[0] === gTo ? ' checked' : '') + '> ' + BoldJoin.groupBadge(c[0]) + '</label>';
-      }).join('') +
-      '<div class="md-g-expect">' + expectHtml(gTo) + '</div>' +
-      '<textarea class="md-g-note no-tags" rows="2" maxlength="1000" placeholder="Why (optional): who you work with, what you do in BOLD">' + esc(gNote) + '</textarea>' +
-      (gError ? '<p class="st-error">' + esc(gError) + '</p>' : '') +
-      '<div class="event-form-actions"><button type="button" class="ev-save md-g-send"' + (gBusy ? ' disabled' : '') + '>Send to ' + esc(to) + '</button><button type="button" class="md-g-cancel">Cancel</button></div></div>';
+    if (groupReq) return html + '<span class="st-links">You asked for ' + BoldJoin.groupBadge(groupReq.to) + ' on ' + when(groupReq.at) + ': the PIs and admins will decide. ' +
+      '<button type="button" class="btn-text md-g-withdraw"' + (gBusy ? ' disabled' : '') + '>Withdraw</button></span>' +
+      (gError ? '<p class="st-error">' + esc(gError) + '</p>' : '');
+    return html + ' <a class="btn-text" href="group-request.html">Ask for another group</a>';
   }
-  // What the chosen group asks of its members, from Who is BOLD (BoldJoin.requirementsOf),
-  // so nobody asks to move without knowing (#173). whoIs: that part's Markdown, once loaded.
-  var whoIs = null;
-  function loadWhoIs(){
-    if (whoIs !== null) return;
-    whoIs = '';
-    db.collection('handbook').doc('boldiquette').get().then(function(s){
-      var p = ((s.exists && s.data().parts) || []).filter(function(x){ return x.id === 'who-is-bold'; })[0];
-      whoIs = (p && p.body) || ''; showExpect();
-    }).catch(function(err){ console.error('[BOLD Profile] loading Who is BOLD failed', err); });
-  }
-  function requirements(g){ return BoldJoin.requirementsOf(whoIs, g).replace(/\]\(#/g, '](boldiquette.html#'); }
-  function expectHtml(g){
-    if (!g) return '';
-    var r = requirements(g), label = esc(BoldJoin.categoryLabel(g));
-    return '<p class="md-g-expect-head">' + (r ? 'In ' + label + ', you’re expected to:' : 'What ' + label + ' asks of you is in <a href="boldiquette.html#who-is-bold">Who is BOLD</a>.') + '</p>' +
-      (r ? '<div class="wk-desc">' + BoldMarkdown.render(r) + '</div>' : '');
-  }
-  function showExpect(){ var el = box.querySelector('.md-g-expect'); if (el) el.innerHTML = expectHtml(gTo); }
-  // PIs and admins (BOLD-exec) have nobody inviting them: theirs go to the PIs and admins.
-  function exec(){ return BOLD.myGroup() === 'exec'; }
-  function nameOf(e){ var p = (people || []).filter(function(x){ return x.email === e; })[0]; return p ? p.name : e; }
-  var gInviter = '', gTo = '', gNote = '';   // the form's point of contact, group and note, kept when it's redrawn
   function callGroup(data){ return firebase.app().functions('europe-west2').httpsCallable('groupRequest')(data); }
 
   // A Slack field (by its label) and the record's field that says the same.
@@ -107,38 +67,15 @@
       '<div class="event-controls"><button type="button" class="btn-text md-edit">Add your details</button></div>';
   }
 
-  // The chosen point of contact: kept, and named on the Send button (without redrawing the form).
-  box.addEventListener('change', function(e){
-    if (e.target.name === 'md-g-to') { gTo = e.target.value; showExpect(); return; }
-    if (!e.target.classList || !e.target.classList.contains('md-g-inviter')) return;
-    gInviter = e.target.value;
-    var b = box.querySelector('.md-g-send');
-    if (b) b.textContent = 'Send to ' + (gInviter ? nameOf(gInviter) : 'your point of contact');
-  });
   box.addEventListener('click', function(e){
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('md-edit')) { editing = true; loadPeople(); render(); return; }
-    if (t.classList.contains('md-g-ask')) { asking = true; gError = ''; gInviter = gTo = gNote = ''; loadWhoIs(); if (!decider()) loadPeople(); render(); return; }
-    if (t.classList.contains('md-g-cancel')) { asking = false; render(); return; }
-    if (t.classList.contains('md-g-send') || t.classList.contains('md-g-withdraw')) {
-      var send = t.classList.contains('md-g-send'), to = (box.querySelector('input[name="md-g-to"]:checked') || {}).value;
-      if (send) { gTo = to || ''; gNote = (box.querySelector('.md-g-note') || {}).value || ''; }
-      if (send && !to) { gError = 'Choose a group.'; render(); return; }
-      var named = send && !decider() && !exec() ? gInviter : '';
-      if (send && !decider() && !exec() && !named) { gError = 'Choose your point of contact: they decide this.'; render(); return; }
-      var note = send ? box.querySelector('.md-g-note').value : '';
-      var go = function(){
-        gBusy = true; gError = ''; render();
-        callGroup(send ? Object.assign({ action: 'request', to: to, note: note }, named ? { inviter: named } : {}) : { action: 'withdraw', id: groupReq.id }).then(function(){ asking = false; })
-          .catch(function(err){ console.error('[BOLD Profile] the group request failed', err); gError = (err && err.message) || 'Couldn’t send it — try again.'; })
-          .then(function(){ gBusy = false; render(); });
-      };
-      if (!send) { go(); return; }
-      BOLD.confirmAction({ title: 'Ask to move to ' + BoldJoin.categoryLabel(to) + '?', go: 'Send', effects: (requirements(to) ? ['Commit to what ' + BoldJoin.categoryLabel(to) + ' expects of you, listed on the form'] : []).concat(named
-          ? ['Make ' + nameOf(named) + ' your point of contact, who invited you', 'Send them one Slack message asking to confirm it and to approve the move']
-          : [decider() ? 'Send ' + decider() + ', who invited you, a Slack message asking to approve it' : 'Send the PIs and admins a Slack message asking to approve it']) })
-        .then(function(ok){ if (ok) go(); });
+    if (t.classList.contains('md-g-withdraw')) {
+      gBusy = true; gError = ''; render();
+      callGroup({ action: 'withdraw', id: groupReq.id })
+        .catch(function(err){ console.error('[BOLD Profile] withdrawing the group request failed', err); gError = (err && err.message) || 'Couldn’t withdraw it — try again.'; })
+        .then(function(){ gBusy = false; render(); });
       return;
     }
     if (t.classList.contains('md-cancel')) { editing = false; render(); return; }
@@ -173,7 +110,7 @@
   BOLD.onUser(function(user){
     if (unsub) { unsub(); unsub = null; }
     me = user && user.email ? { email: user.email.toLowerCase(), name: user.displayName || '' } : null;
-    rec = undefined; editing = false; groupReq = null; asking = false;
+    rec = undefined; editing = false; groupReq = null;
     if (unsubReq) { unsubReq(); unsubReq = null; }
     if (!me) return;
     unsubReq = db.collection('groupRequests').where('email', '==', me.email).where('status', '==', 'open').onSnapshot(function(s){

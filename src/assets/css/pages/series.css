@@ -1,20 +1,20 @@
 /* A recurring lab meeting (series.html; pages/series.js), laid out like an event's page. */
 .hero{max-width:var(--content-max); margin:0 auto; padding:56px var(--gutter) 48px;}
 .back-link{font-family:var(--sans); font-size:13px; color:var(--muted); text-decoration:none; display:inline-block; margin-bottom:18px;}
-.back-link:hover{color:var(--accent);}
-.eyebrow{display:inline-block; font-family:var(--sans); font-size:11px; text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:.7; margin-bottom:12px;}
+.back-link:hover{color:var(--link);}
+.eyebrow{display:inline-block; font-family:var(--sans); font-size:11px; text-transform:uppercase; letter-spacing:0.14em; color:var(--muted); opacity:var(--label-fade); margin-bottom:12px;}
 .hero h1{font-size:clamp(30px, 5vw, 44px); line-height:1.14; overflow-wrap:break-word; max-width:var(--article-max); text-wrap:balance;}
 .hero-when{margin-top:10px; font-family:var(--sans); font-size:15px; color:var(--muted); font-variant-numeric:tabular-nums;}
 .hero-note{margin:20px 0 0; font-size:16px; color:var(--ink-soft); max-width:var(--article-max);}
 .sr-facts{margin:28px 0 0; max-width:var(--article-max);}
-.sr-facts .fact{display:flex; gap:24px; padding:5px 0; border-bottom:1px solid rgba(26,43,74,0.08);}
+.sr-facts .fact{display:flex; gap:24px; padding:5px 0; border-bottom:1px solid var(--rule);}
 .sr-facts dt{flex:0 0 120px; font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--muted); padding-top:5px;}
 .sr-facts dd{margin:0; font-size:16px; color:var(--ink); overflow-wrap:anywhere;}
 .sr-join{display:flex; align-items:center; gap:12px; margin-top:24px; font-family:var(--sans); font-size:13px; color:var(--muted);}
-.join-btn{flex:none; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--accent); background:none; border:1px solid var(--accent); padding:6px 14px; cursor:pointer;}
-.join-btn:hover{background:var(--accent); color:#fff;}
+.join-btn{flex:none; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--link); background:none; border:1px solid var(--accent); padding:6px 14px; cursor:pointer;}
+.join-btn:hover{background:var(--accent); color:var(--on-fill);}
 .join-btn:disabled{opacity:.55; cursor:default;}
-.join-btn:disabled:hover{background:none; color:var(--accent);}
+.join-btn:disabled:hover{background:none; color:var(--link);}
 .sr-error{display:block; margin-top:4px; font-family:var(--sans); font-size:14px; color:var(--danger-text);}
 .sr-form{margin-top:8px;}
 .sr-form .meeting-entry{display:flex; flex-wrap:wrap; gap:8px; margin:4px 0 12px;}
@@ -22,15 +22,15 @@
 /* how often is chosen above, for both kinds */
 .sr-form #pmEvery{display:none;}
 .sr-orgs{list-style:none; margin:4px 0 8px; padding:0;}
-.sr-orgs li{display:flex; align-items:baseline; gap:12px; padding:4px 0; border-bottom:1px solid rgba(26,43,74,0.08); color:var(--ink);}
+.sr-orgs li{display:flex; align-items:baseline; gap:12px; padding:4px 0; border-bottom:1px solid var(--rule); color:var(--ink);}
 .sr-orgs li span{flex:1 1 auto;}
 .sr-form select.sr-pick{display:block; width:auto; margin-bottom:12px;}
 /* a recurring event: its editions, and scheduling the next */
 .sr-head{margin:36px 0 6px; font-family:var(--sans); font-size:11px; font-weight:400; letter-spacing:0.18em; text-transform:uppercase; color:var(--muted);}
 .sr-editions{list-style:none; margin:0 0 8px; padding:0; max-width:var(--article-max);}
-.sr-editions li{padding:8px 0; border-bottom:1px solid rgba(26,43,74,0.08); font-size:16px;}
+.sr-editions li{padding:8px 0; border-bottom:1px solid var(--rule); font-size:16px;}
 .sr-editions a{color:var(--ink); text-decoration:none; font-weight:600;}
-.sr-editions a:hover{color:var(--accent);}
+.sr-editions a:hover{color:var(--link);}
 .sr-muted{color:var(--muted); font-family:var(--sans); font-size:14px;}
 .sr-hidden{font-family:var(--sans); font-size:11px; letter-spacing:0.14em; text-transform:uppercase; color:var(--danger-text); margin-left:6px;}
 .sr-plan{margin-top:12px; max-width:560px;}

@@ -78,7 +78,7 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 }
 .gate-signup-btn{
   display:inline-block; font-family:var(--sans); font-weight:500; font-size:14px;
-  color:var(--ink-soft); text-decoration:underline; text-decoration-color:rgba(26,43,74,.32); text-underline-offset:3px;
+  color:var(--ink-soft); text-decoration:underline; text-decoration-color:var(--underline); text-underline-offset:3px;
   padding:0; margin-top:8px; border:none; background:none; cursor:pointer;
 }
 .home-guest-links{
@@ -96,7 +96,7 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
   line-height:1.05;
   text-wrap:balance;
 }
-.home-hero h1 strong{font-weight:700; color:var(--accent);}
+.home-hero h1 strong{font-weight:700; color:var(--link);}
 #homeGuestNote{margin-top:28px;}
 /* The search box under the title (search-box.js), larger than the masthead's. */
 .home-hero:has(.home-search:not([hidden])){width:100%; box-sizing:border-box;}
@@ -104,3 +104,13 @@ a:focus-visible, button:focus-visible{outline:2px solid var(--accent); outline-o
 .home-search .ms-input, .home-search .ms-input:focus{width:100%; box-sizing:border-box; font-size:16px; padding:10px 34px 10px 14px;}
 .home-search .ms-key{right:12px;}
 .home-search .ms-menu{left:0; right:0; width:auto;}
+/* Onboarding on the home page (index.js, #152): the first steps for the visitor's group, until done. */
+.home-steps{width:min(560px, 100%); margin:22px auto 0; text-align:left; font-family:var(--sans); font-size:14px; line-height:1.55; color:var(--ink-soft);}
+.home-steps-head{margin:0 0 8px; color:var(--ink);}
+.home-steps-head .type-badge{vertical-align:1px;}
+.home-steps-text{padding:10px 14px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); max-height:min(42vh, 380px); overflow:auto;}
+.home-steps-text > :first-child{margin-top:0;} .home-steps-text > :last-child{margin-bottom:0;}
+.home-steps-foot{display:flex; align-items:center; gap:10px; margin:10px 0 0; font-size:13px;}
+.home-steps-foot a{color:var(--link);}
+.home-steps-foot .home-steps-done{margin-left:auto;}
+.home-steps-foot .btn-box{text-decoration:none;}

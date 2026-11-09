@@ -71,6 +71,24 @@ service cloud.firestore {
       return a == null ? 'internal' : a.data.get('pages', {}).get(page, {}).get(what, 'internal');
     }
     function need(page, what) { return myRank() >= levelRank(level(page, what)); }
+    // Who sees an event series or an event (`visibleTo`, functions/access.js VISIBILITY; 2026-11-02):
+    // the levels the viewer has, from 'public' (anyone, even signed out) up. Pages query with
+    // where('visibleTo', 'in', BOLD.visibleLevels()), which these match.
+    // Once Events is open to Everyone (the table headed Page | Edit, 2026-11-04: everyone signed in
+    // sees everything), everyone signed in sees every event, whatever its visibleTo.
+    function visibleLevels() {
+      let r = isSignedIn() && level('events', 'view') == 'everyone' ? 5 : myRank();
+      return r >= 5 ? ['public', 'everyone', 'associate', 'internal', 'staff', 'exec']
+        : r >= 4 ? ['public', 'everyone', 'associate', 'internal', 'staff']
+        : r >= 3 ? ['public', 'everyone', 'associate', 'internal']
+        : r >= 2 ? ['public', 'everyone', 'associate']
+        : r >= 1 ? ['public', 'everyone'] : ['public'];
+    }
+    // A released one the viewer sees: its level is theirs, and, unless it's for anyone, Events is open to them.
+    function seesEvent(d) {
+      return d.hidden == false && d.get('visibleTo', 'internal') in visibleLevels()
+        && (d.get('visibleTo', 'internal') == 'public' || may('events', 'view'));
+    }
     // Signed in (with Slack) and allowed by the table.
     function may(page, what)   { return isSignedIn() && need(page, what); }
     // View or Edit (functions/access.js 'list'): on Projects, Edit without View sees the
@@ -180,9 +198,11 @@ service cloud.firestore {
       allow read: if isSignedIn() && (email().lower() == memberEmail || may('people', 'view') || may('projects', 'view'));
       allow create, update: if may('profile', 'edit') && email().lower() == memberEmail
         && request.resource.data.email == memberEmail
-        && request.resource.data.keys().hasOnly(['name', 'email', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'bookingUrl', 'startDate', 'endDate', 'updatedAt', 'requestId', 'approvedBy', 'approvedAt', 'category', 'categoryBy', 'categoryAt', 'invitedBy'])
+        && request.resource.data.keys().hasOnly(['name', 'email', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'bookingUrl', 'startDate', 'endDate', 'updatedAt', 'requestId', 'approvedBy', 'approvedAt', 'category', 'categoryBy', 'categoryAt', 'categoryVia', 'invitedBy', 'test', 'testOf'])
+        // categoryVia (an accepted group request), test and testOf (a test account) are the server's: kept, never set here.
         && (resource == null
           ? !('approvedBy' in request.resource.data) && !('requestId' in request.resource.data) && !('approvedAt' in request.resource.data) && !('category' in request.resource.data) && !('invitedBy' in request.resource.data)
+            && !('categoryVia' in request.resource.data) && !('test' in request.resource.data) && !('testOf' in request.resource.data)
           : request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'links', 'institution', 'role', 'contact', 'contactEmail', 'interests', 'pillars', 'listOnWebsite', 'basedIn', 'pronouns', 'feedback', 'bookingUrl', 'startDate', 'endDate', 'updatedAt']))
         && request.resource.data.name is string && request.resource.data.name.size() <= 120
         && request.resource.data.get('links', '').size() <= 500 && request.resource.data.get('interests', '').size() <= 300
@@ -241,7 +261,7 @@ service cloud.firestore {
     match /settings/groups {
       allow read: if may('people', 'view');
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['channels', 'roleChannels', 'updatedAt', 'updatedBy'])
-        && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'staff'])
+        && request.resource.data.channels is map && request.resource.data.channels.keys().hasOnly(['exec', 'internal', 'associate', 'staff', 'pan'])
         && request.resource.data.get('roleChannels', {}) is map && request.resource.data.get('roleChannels', {}).size() <= 30;
     }
     // Pilots (functions/index.js pilotSlack): a new Slack feature reaches only its testers
@@ -262,11 +282,45 @@ service cloud.firestore {
       allow read: if may('people', 'view');
       allow write: if false;
     }
+    // Notifications (notifications.html): each person's own, written by the server (functions/index.js
+    // noteFor); they read theirs and mark them read or unread, nothing else.
+    match /notifications/{id} {
+      allow read: if isSignedIn() && resource.data.to == email().lower();
+      allow update: if isSignedIn() && resource.data.to == email().lower()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt'])
+        && request.resource.data.read is bool;
+      allow create, delete: if false;
+    }
+    // The ones from letters, introductions, supervision requests and requests to join: private
+    // whoever's group (BOLDiquette › Who can do what), to the two people in each, PIs and admins.
+    match /privateInteractions/{id} {
+      allow read: if hasFullWrite() || (isSignedIn() && (resource.data.from == email().lower() || resource.data.to == email().lower()));
+      allow write: if false;
+    }
     // Requests to be in another group: theirs to read, and the PIs' and admins'; all writes
     // through groupRequest.
+    // Invitations to a project (projectInvite in functions/index.js): the person invited reads
+    // their own (the project page's Join / Decline); its editors list them through the callable.
+    match /projectInvites/{id} {
+      allow read: if isSignedIn() && resource.data.email == email().lower();
+      allow write: if false;
+    }
+
+    // PIs' and admins' test accounts (testAccount in functions/index.js): they read them; no client writes.
+    match /testAccounts/{who} {
+      allow read: if hasFullWrite();
+      allow write: if false;
+    }
+
+    // Onboarding marks (the BOLDiquette read, the tour taken): the onboarding callable writes them.
+    match /onboarding/{who} {
+      allow read: if hasFullWrite() || (isLabMember() && who == email().lower());
+      allow write: if false;
+    }
+
     match /groupRequests/{id} {
-      // PIs and admins; who asked; and whoever invited them, who decides it (groupRequest).
-      allow read: if hasFullWrite() || (isLabMember() && (resource.data.email == email().lower() || resource.data.get('inviterEmail', '') == email().lower()));
+      // PIs and admins, who decide it (groupRequest), and who asked.
+      allow read: if hasFullWrite() || (isLabMember() && resource.data.email == email().lower());
       allow write: if false;
     }
 
@@ -284,6 +338,13 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Desktop notifications' Web Push key (Settings › Notifications): public, read by everyone signed in
+    // (notifications.html), set by PIs and admins.
+    match /settings/webPush {
+      allow read: if isSignedIn();
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['publicKey', 'updatedAt', 'updatedBy'])
+        && request.resource.data.get('publicKey', '') is string && request.resource.data.get('publicKey', '').size() <= 200;
+    }
     match /settings/joinInvite {
       allow read: if hasFullWrite();
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['slackInviteUrl', 'slackInviteExpires', 'subject', 'body', 'updatedAt', 'updatedBy'])
@@ -376,13 +437,17 @@ service cloud.firestore {
     // submitter or a PI/admin.
     match /projects/{projectId} {
       allow read: if seesProject(resource.data.get('projectId', projectId));
+      // A new project is proposed (#226), with its compute budget in GPU hours; projectProposal decides it.
       allow create: if may('projects', 'edit') && request.resource.data.submittedBy.email == email() &&
-        request.resource.data.get('projectId', projectId) == projectId;
+        request.resource.data.get('projectId', projectId) == projectId &&
+        request.resource.data.proposal.status == 'proposed' &&
+        request.resource.data.proposal.gpuHours is number && request.resource.data.proposal.gpuHours > 0 && request.resource.data.proposal.gpuHours <= 10000000;
       allow update: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email ||
         email() in resource.data.get('authorEmails', []) ||
         hasFullWrite()
-      ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '');
+      ) && request.resource.data.get('projectId', '') == resource.data.get('projectId', '') &&
+        (hasFullWrite() || request.resource.data.get('proposal', null) == resource.data.get('proposal', null));
       allow delete: if may('projects', 'edit') && (
         email() == resource.data.submittedBy.email || hasFullWrite()
       );
@@ -476,7 +541,9 @@ service cloud.firestore {
         // announce: false when whoever added it chose not to post it in the project's channel;
         // doneQuiet: true when whoever moved it to Done chose not to tell whoever raised it.
         // milestone: the id of one of the board's milestones (work.milestones on the workspace), or ''.
-        return d.keys().hasOnly(['title', 'notes', 'kind', 'column', 'assignees', 'assigneeEmails', 'links', 'images', 'announce', 'doneQuiet', 'milestone', 'by', 'at', 'updatedAt', 'updatedBy', 'movedAt']) &&
+        // labels: names, several a card ("Good first issue", 2026-11-05), unlike its one milestone.
+        return d.keys().hasOnly(['title', 'notes', 'kind', 'column', 'assignees', 'assigneeEmails', 'links', 'images', 'announce', 'doneQuiet', 'milestone', 'labels', 'by', 'at', 'updatedAt', 'updatedBy', 'movedAt']) &&
+          d.get('labels', []) is list && d.get('labels', []).size() <= 10 &&
           d.get('announce', true) is bool && d.get('doneQuiet', false) is bool &&
           d.get('milestone', '') is string && d.get('milestone', '').size() <= 20 &&
           d.title is string && d.title.size() > 0 && d.title.size() <= 200 &&
@@ -493,11 +560,13 @@ service cloud.firestore {
       }
       match /work/{id} {
         allow read: if seesProject(cardId);
+        // Hand-made cards never wait for review (2026-11-04): none goes there, and one already there can stay.
         allow create: if may('projects', 'edit') && seesProject(cardId) && boardOn() &&
-          request.resource.data.by.email == email() && validWork(request.resource.data);
+          request.resource.data.by.email == email() && validWork(request.resource.data) && request.resource.data.column != 'review';
         allow update: if may('projects', 'edit') &&
           (isProjectMember() || hasFullWrite() || resource.data.by.email == email() || email() in resource.data.assigneeEmails) &&
-          request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at && validWork(request.resource.data);
+          request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at && validWork(request.resource.data) &&
+          (request.resource.data.column != 'review' || resource.data.column == 'review');
         allow delete: if may('projects', 'edit') && (isProjectMember() || hasFullWrite() || resource.data.by.email == email());
 
         // Its conversation (card-talk.js): whoever sees the board reads it and comments, as
@@ -531,8 +600,12 @@ service cloud.firestore {
     // Each is for one occurrence (eventSlug), proposed only while its call is open
     // (events/{slug}.proposalsOpen, opened and closed on its page by its organisers, PIs
     // and admins), and stays with it.
+    // Sessions, talks and proposals exist only for Collaboration Week (BOLD-associate and above)
+    // and the Festival (anyone): read directly from BOLD-associate up; a public event's are served,
+    // cut down, to everyone else by publicEvent (functions/public-event.js). (2026-11-03)
+    function eventContent() { return may('events', 'view') && (myRank() >= 2 || level('events', 'view') == 'everyone'); }
     match /collabWeekProposals/{proposalId} {
-      allow read: if may('events', 'view');
+      allow read: if eventContent();
       allow create: if may('events', 'edit') && request.resource.data.email == email()
         && request.resource.data.eventSlug is string
         && get(/databases/$(database)/documents/events/$(request.resource.data.eventSlug)).data.get('proposalsOpen', false) == true;
@@ -550,7 +623,7 @@ service cloud.firestore {
     // delete it; a lead can edit their session's fields but not who the
     // leads are, nor its event, type or venue.
     match /collabWeekSessions/{slug} {
-      allow read: if may('events', 'view');
+      allow read: if eventContent();
       allow create, delete: if hasFullWrite();
       allow update: if hasFullWrite() || (
         may('events', 'edit') && email().lower() in resource.data.leadEmails &&
@@ -563,7 +636,7 @@ service cloud.firestore {
     // (functions/index.js), which check the caller's email is a presenter's,
     // a session lead's or a PI/admin's.
     match /collabWeekTalks/{slug} {
-      allow read: if may('events', 'view');
+      allow read: if eventContent();
       allow write: if false;
     }
 
@@ -583,14 +656,17 @@ service cloud.firestore {
           && email().lower() in get(/databases/$(database)/documents/eventSeries/$(id)).data.get('organisers', []);
       }
       function mine(d) { return addedByMe(d) || organisesIt(d); }
-      allow read: if may('events', 'view') && (resource.data.hidden == false || hasFullWrite() || mine(resource.data));
+      allow read: if seesEvent(resource.data) || (isSignedIn() && (hasFullWrite() || mine(resource.data)));
       allow create: if hasFullWrite() || (may('events', 'edit') && request.resource.data.hidden == true && addedByMe(request.resource.data)
         && request.resource.data.get('series', '') == ''
+        && request.resource.data.get('visibleTo', 'internal') in ['public', 'everyone', 'associate', 'internal', 'staff', 'exec']
         && request.resource.data.get('inviteGroup', 'none') in ['none', 'everyone', 'associate', 'internal', 'staff', 'exec']);
       allow update: if hasFullWrite() || (may('events', 'edit') && mine(resource.data)
         && request.resource.data.get('createdBy', '') == resource.data.get('createdBy', '')
         && request.resource.data.get('series', '') == resource.data.get('series', '')
         && request.resource.data.hidden is bool
+        && request.resource.data.get('visibleTo', 'internal') in ['public', 'everyone', 'associate', 'internal', 'staff', 'exec']
+        && (request.resource.data.get('series', '') == '' || request.resource.data.get('visibleTo', 'internal') == resource.data.get('visibleTo', 'internal'))
         && request.resource.data.get('inviteGroup', 'none') in ['none', 'everyone', 'associate', 'internal', 'staff', 'exec']);
       allow delete: if hasFullWrite() || (may('events', 'edit') && mine(resource.data));
     }
@@ -605,7 +681,7 @@ service cloud.firestore {
       allow write: if false;
     }
     match /eventSeries/{id} {
-      allow read: if may('events', 'view') && (resource.data.hidden == false || hasFullWrite() || email().lower() in resource.data.get('organisers', []));
+      allow read: if seesEvent(resource.data) || (isSignedIn() && (hasFullWrite() || email().lower() in resource.data.get('organisers', [])));
       allow write: if false;
     }
 
@@ -685,7 +761,9 @@ service cloud.firestore {
     match /guides/{slug} {
       // Its page in Who can see what: Get started sits on the Service desk (bold.js BOLD.GUIDE_AREAS).
       function guideArea(slug){ return slug == 'get-started-at-bold' ? 'get-started' : 'guides'; }
-      allow read: if may(guideArea(slug), 'view');
+      allow get: if may(guideArea(slug), 'view');
+      // A list (the sidebar's, the Guides page's) can't depend on each guide's id: whoever sees both.
+      allow list: if may('guides', 'view') && may('get-started', 'view');
       // updatedBy is who the version history (functions/index.js) credits.
       allow create: if hasFullWrite() && request.resource.data.slug == slug
         && request.resource.data.updatedBy == email() && request.resource.data.parts.size() == 0;
@@ -751,9 +829,91 @@ service cloud.firestore {
 
     // The changelog's content changes (changelog.html), one per version of a
     // tracked document, written only by the server (recordVersions).
+    // Experimental features (experimental.html, 2026-11-04): whoever may view Experimental reads them;
+    // whoever may edit it adds one, as themselves; its author, PIs and admins change or remove it.
+    match /experiments/{id} {
+      function okExperiment(d) {
+        return d.keys().hasOnly(['title', 'summary', 'aboutUrl', 'tryUrl', 'createdBy', 'createdAt', 'updatedBy', 'updatedAt'])
+          && d.title is string && d.title.size() > 0 && d.title.size() <= 80
+          && d.get('summary', '') is string && d.get('summary', '').size() <= 600
+          && d.get('aboutUrl', '') is string && d.get('aboutUrl', '').size() <= 1000
+          && d.get('tryUrl', '') is string && d.get('tryUrl', '').size() <= 1000
+          && d.updatedBy == email().lower() && d.updatedAt == request.time;
+      }
+      allow read: if may('experimental', 'view');
+      allow create: if may('experimental', 'edit') && okExperiment(request.resource.data)
+        && request.resource.data.createdBy == email().lower() && request.resource.data.createdAt == request.time;
+      allow update: if may('experimental', 'edit') && okExperiment(request.resource.data)
+        && (resource.data.createdBy == email().lower() || hasFullWrite())
+        && request.resource.data.createdBy == resource.data.createdBy && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if may('experimental', 'edit') && (resource.data.createdBy == email().lower() || hasFullWrite());
+    }
+
+    // Conversations (conversations.html, 2026-11-04): a post, conversations/{pid}, and its
+    // replies, conversations/{pid}/messages/{mid}, each answering its post or another reply (`parent`).
+    // Whoever may view Conversations (Who can see what) reads them and votes (`votes`, by sign-in id: 1 up, -1 down, only
+    // their own); whoever may edit it posts and replies, as themselves; its author, PIs and admins
+    // remove one. Threads from Slack (source 'slack') and the reply counts are the server's
+    // (functions/slack-thread.js); so is conversationImports (Send to Conversations), which no client reads.
+    function okVotes(d) {
+      return d.votes is map && d.votes.keys().hasOnly([request.auth.uid])
+        && (!(request.auth.uid in d.votes) || d.votes[request.auth.uid] in [1, -1]);
+    }
+    function onlyMyVote() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes'])
+        && request.resource.data.votes is map
+        && request.resource.data.votes.diff(resource.data.get('votes', {})).affectedKeys().hasOnly([request.auth.uid])
+        && (!(request.auth.uid in request.resource.data.votes) || request.resource.data.votes[request.auth.uid] in [1, -1]);
+    }
+    function okMessage(d) {
+      return d.body is string && d.body.size() > 0 && d.body.size() <= 10000
+        && d.name is string && d.name.size() <= 200
+        && d.createdBy == email().lower() && d.at == request.time && d.source == 'site'
+        && d.get('viaAgent', false) is bool && okVotes(d);
+    }
+    // A conversation brought in from a private Slack channel or group DM keeps that channel's
+    // visibility: only its members (readers, Slack user ids, as the sign-in carries) read it and
+    // its replies, PIs and admins included only if they're in it (slack-thread.js saveThread).
+    function slackUid() { return request.auth.token.firebase.identities['oidc.slack'][0]; }
+    // `private` is on every conversation (no default: a list must filter on it, or on readers, to be allowed).
+    function seesConversation(d) { return may('conversations', 'view') && (d.private == false || slackUid() in d.readers); }
+    function seesConversationId(pid) { return seesConversation(get(/databases/$(database)/documents/conversations/$(pid)).data); }
+    match /conversations/{pid} {
+      allow read: if seesConversation(resource.data);
+      // Started on the site: always open to everyone who sees Conversations (private: false).
+      allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
+        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'private'])
+        && request.resource.data.private == false
+        && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
+      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && onlyMyVote();
+      allow delete: if may('conversations', 'edit') && seesConversation(resource.data) && (resource.data.createdBy == email().lower() || hasFullWrite());
+      match /messages/{mid} {
+        allow read: if seesConversationId(pid);
+        allow create: if may('conversations', 'edit') && seesConversationId(pid) && okMessage(request.resource.data)
+          && request.resource.data.keys().hasOnly(['parent', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'branch'])
+          && request.resource.data.get('branch', false) is bool
+          && exists(/databases/$(database)/documents/conversations/$(pid))
+          && (request.resource.data.parent == pid || exists(/databases/$(database)/documents/conversations/$(pid)/messages/$(request.resource.data.parent)));
+        allow update: if may('conversations', 'edit') && seesConversationId(pid) && onlyMyVote();
+        allow delete: if may('conversations', 'edit') && seesConversationId(pid) && (resource.data.createdBy == email().lower() || hasFullWrite());
+      }
+    }
+
     match /changelog/{id} {
       allow read: if may('changelog', 'view');
       allow write: if false;
+    }
+
+    // What a person hears of outside their Inbox (Notifications › Settings; functions/index.js slackWayFor):
+    // slack (how, on Slack) and off (the kinds unticked: functions/notify-kinds.js). Theirs alone, by email.
+    match /notifyPrefs/{who} {
+      allow read: if isSignedIn() && email().lower() == who;
+      allow create, update: if isSignedIn() && email().lower() == who
+        && request.resource.data.keys().hasOnly(['slack', 'off', 'at'])
+        && (!('slack' in request.resource.data) || request.resource.data.slack in ['all', 'pings', 'off'])
+        && (!('off' in request.resource.data) || (request.resource.data.off is list && request.resource.data.off.size() <= 50))
+        && request.resource.data.at is number;
+      allow delete: if false;
     }
 
     // A person's settings (bold.js): skipConfirm, whether to skip the confirmation
@@ -821,8 +981,8 @@ service cloud.firestore {
           || ('parent' in resource.data && resource.data.parent is string
             && get(/databases/$(database)/documents/handbook/$(slug)/comments/$(resource.data.parent)).data.by.email == email()));
       }
-      // Who can see what (partId 'access') only PIs and admins propose changes to; one inside
-      // a batch (which rules can't look into) is refused when accepted (decideProposal).
+      // Who can do what (partId 'access'): proposed like any part, by whoever has the BOLDiquette's Edit
+      // (2026-11-05; PIs and admins only before); accepted by another PI or admin, as every change.
       // kind 'access': one page's row, from its eye chip (bold.js): { area, before, after:
       // { view, edit } }, set in the table when accepted.
       function validAccessRow(d) {
@@ -833,7 +993,6 @@ service cloud.firestore {
       match /proposals/{id} {
         allow read: if may('boldiquette', 'view');
         allow create: if may('boldiquette', 'edit') && request.resource.data.by.email == email()
-          && (request.resource.data.get('partId', '') != 'access' || hasFullWrite())
           && request.resource.data.status == 'open'
           && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch', 'access']
           && request.resource.data.keys().hasOnly(['kind', 'partId', 'area', 'before', 'after', 'note', 'by', 'at', 'status', 'changes'])
@@ -845,7 +1004,6 @@ service cloud.firestore {
         // Edited by whoever proposed it, while it's open: its changes and note, as when
         // proposed; who, when and its status stay as they were.
         allow update: if may('boldiquette', 'edit') && resource.data.by.email == email() && resource.data.status == 'open'
-          && (request.resource.data.get('partId', '') != 'access' || hasFullWrite())
           && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
           && request.resource.data.editedAt is number
           && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'batch']

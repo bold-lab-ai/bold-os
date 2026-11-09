@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Site components</title>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Cabin:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../assets/css/bold.css">
+<link rel="stylesheet" href="../assets/css/board.css">
+<link rel="stylesheet" href="../assets/css/pages/projects.css">
+<link rel="stylesheet" href="gallery.css">
+<script src="gallery.js"></script>
+</head>
+<body>
+<!-- The shared components, with the classes the site gives them (bold.css, board.css, projects.css). -->
+<div class="masthead">
+  <div class="masthead-left"><div class="masthead-brand"><a class="wordmark" href="#"><strong>BOLD</strong><span>.</span>OS</a><div class="masthead-sub">Internal</div></div></div>
+  <div class="masthead-right">
+    <div class="mast-search"><form class="ms-form"><input class="ms-input" type="search" placeholder="Search BOLD.OS"><span class="ms-key">/</span></form></div>
+    <button class="mast-btn mast-btn-wide" type="button" title="Create"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3v10M3 8h10"/></svg></button>
+    <button class="mast-btn has-dot" type="button" title="Who can see this page"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="5.5"/></svg></button>
+    <button class="mast-btn mast-theme" type="button" aria-label="Dark theme"><svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg><svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13Z"/></svg></button>
+    <span class="mast-sep"></span>
+    <span class="mast-avatar mast-initials">AL</span>
+  </div>
+</div>
+<div class="shell">
+  <aside class="sidebar"><div class="sidebar-inner">
+    <div class="sidebar-head"><span class="sidebar-title">Menu</span><button class="sidebar-collapse" type="button">&laquo;</button></div>
+    <div class="nav-groups">
+      <div class="nav-group"><div class="nav-group-head"><a class="nav-group-label" href="#">Work with us</a><button class="nav-group-toggle" type="button"></button></div></div>
+      <div class="nav-group is-pinned"><div class="nav-group-head"><a class="nav-group-label" href="#">Projects</a><button class="nav-group-toggle" type="button"></button></div>
+        <a class="nav-link nav-sub active" href="#">Your projects</a><a class="nav-link nav-sub" href="#">Calendar</a><a class="nav-link nav-sub nav-hidden" href="#">Retreat</a></div>
+      <hr class="nav-sep">
+      <div class="nav-group"><div class="nav-group-head"><a class="nav-group-label" href="#">Events</a><button class="nav-group-toggle" type="button"></button></div></div>
+      <a class="nav-link is-soon" href="#">Reading group <span class="nav-soon">Soon</span></a>
+    </div>
+  </div></aside>
+
+  <main class="shell-main gl">
+    <section>
+      <p class="gl-label">Type</p>
+      <h1>A heading in ink</h1>
+      <p>Body text is ink-soft, with <a href="#">a link</a>, <code>inline code</code>, a mention <a class="md-mention" href="#">@Ada Lovelace</a> and <span class="gl-muted">muted text</span>.</p>
+      <pre><code>pre { background: var(--wash); }</code></pre>
+      <div class="copy-box"><pre>npm start</pre><button class="copy-btn" type="button"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="5" y="5" width="8" height="9"/><path d="M3 11V2h7"/></svg></button></div>
+    </section>
+
+    <section>
+      <p class="gl-label">Buttons and controls</p>
+      <div class="gl-row">
+        <button class="btn-text" type="button">Text button</button>
+        <button class="btn-text" type="button" disabled>Disabled</button>
+        <button class="btn btn-primary" type="button">Primary</button>
+        <button class="btn" type="button">Button</button>
+        <button class="btn-box is-primary" type="button">Save</button>
+        <button class="btn-box" type="button">Cancel</button>
+        <button class="join-btn" type="button">Join</button>
+        <button class="auth-signin" type="button">Sign in with Slack</button>
+      </div>
+      <div class="gl-row">
+        <div class="view-toggle"><button class="view-btn" type="button" aria-pressed="true">List</button><button class="view-btn" type="button">Grid</button></div>
+        <nav class="guide-tabs gl-flat"><a class="guide-tab is-current" href="#">Current tab</a><a class="guide-tab" href="#">Other tab</a></nav>
+        <div class="tabs gl-flat"><button class="tab active" type="button">Active</button><button class="tab" type="button">Tab</button></div>
+      </div>
+    </section>
+
+    <section>
+      <p class="gl-label">Badges and tags</p>
+      <div class="gl-row">
+        <span class="type-badge">Default</span><span class="type-badge type-oral">Oral</span><span class="type-badge type-pitch">Pitch</span><span class="type-badge type-keynote">Keynote</span>
+        <span class="proposal-type">Proposal</span>
+        <button class="kw-tag" type="button">keyword</button><button class="kw-tag active" type="button">selected</button>
+      </div>
+      <div class="gl-row">
+        <span class="badge badge-stage">Stage</span><span class="badge badge-review-approved">Approved</span><span class="badge badge-review-in_review">In review</span><span class="badge badge-outcome-rejected">Rejected</span><span class="badge badge-outcome-withdrawn">Withdrawn</span>
+      </div>
+    </section>
+
+    <section class="gl-cols">
+      <div>
+        <p class="gl-label">Menu</p>
+        <ul class="mast-menu gl-static">
+          <li class="mast-menu-who">Signed in as <strong>Ada Lovelace</strong></li>
+          <li><a href="#">Profile</a></li><li><a href="#" class="gl-hover">Requests (hovered)</a></li>
+          <li class="mast-menu-head">Create</li><li><span class="is-off">Not for you</span></li>
+        </ul>
+        <p class="gl-label">Search</p>
+        <ul class="ms-menu gl-static"><li class="ms-row is-active"><span class="ms-q">paper</span><span class="ms-where">in Projects</span></li><li class="ms-row"><span class="ms-q">paper</span><span class="ms-where">everywhere</span></li></ul>
+        <p class="gl-label">Tagging</p>
+        <ul class="mention-list gl-static"><li class="is-active">Ada Lovelace</li><li>Alan Turing</li></ul>
+      </div>
+      <div>
+        <p class="gl-label">Form</p>
+        <form class="event-form">
+          <p class="event-form-head">Add an event</p>
+          <label>Title <span class="ev-hint">(required)</span><input value="Lab retreat"></label>
+          <label>Notes<textarea>Two days by the sea.</textarea></label>
+          <label class="jn-check"><input type="checkbox" checked> Tell the lab</label>
+          <p class="ev-error">Choose a date.</p>
+          <div class="event-form-actions"><button class="ev-save" type="button">Save</button><button type="button">Cancel</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section>
+      <p class="gl-label">An event's schedule</p>
+      <div class="day-card">
+        <div class="day-head"><h3>Monday 9 November</h3><span class="sched-ctl"><button class="btn-text" type="button">Edit day</button></span></div>
+        <div class="slots">
+          <div class="slot"><div class="slot-time">09:30</div><div class="slot-sessions is-parallel">
+            <a class="session-card" href="#"><span class="session-title">Sparse attention, revisited</span><span class="session-who">Ada Lovelace</span><span class="session-where">Room 1</span><span class="type-badge type-oral">Oral</span><span class="card-edit">&#9998;</span><span class="card-x">&times;</span></a>
+            <a class="session-card" href="#"><span class="session-title">Ten-minute pitches</span><span class="session-who">Alan Turing</span><span class="session-where">Room 2</span><span class="type-badge type-pitch">Pitch</span></a>
+          </div></div>
+          <div class="slot-gap"><button class="gap-add" type="button">+</button></div>
+          <div class="slot slot-logistics"><div class="slot-time">11:00</div><div class="slot-sessions">Coffee</div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="gl-cols">
+      <div>
+        <p class="gl-label">Version history</p>
+        <pre class="hist-diff"><div class="hist-ctx"><span class="hist-op"> </span>Unchanged line</div><div class="hist-add"><span class="hist-op">+</span>An <span class="hist-word">added</span> line</div><div class="hist-del"><span class="hist-op">-</span>A <span class="hist-word">removed</span> line</div></pre>
+      </div>
+      <div>
+        <p class="gl-label">Phases</p>
+        <nav class="md-timeline" style="--n:4"><ol>
+          <li><a href="#"><span class="tl-dot"></span><span class="tl-name">Register</span><span class="tl-wk">8w</span></a></li>
+          <li><a href="#"><span class="tl-dot"></span><span class="tl-name">Abstract</span><span class="tl-wk">4w</span></a></li>
+          <li class="is-pivot"><a href="#"><span class="tl-dot"></span><span class="tl-name">Paper</span><span class="tl-wk">0</span></a></li>
+          <li class="is-after"><a href="#"><span class="tl-dot"></span><span class="tl-name">Rebuttal</span><span class="tl-wk">after</span></a></li>
+        </ol></nav>
+      </div>
+    </section>
+
+    <section>
+      <p class="gl-label">Projects</p>
+      <ul class="proj-list">
+        <li><div class="proj-main"><span class="proj-title">Efficient long-context models</span><span class="proj-meta">Ada Lovelace · NeurIPS 2027</span>
+          <div class="proj-keywords"><button class="kw-tag" type="button">attention</button><button class="kw-tag" type="button">memory</button></div></div>
+          <div class="join-wrap"><button class="join-btn" type="button">Join</button></div></li>
+      </ul>
+    </section>
+
+    <section>
+      <p class="gl-label">Calendar</p>
+      <div class="gl-row gl-week">
+        <div class="week-block">Meeting</div><div class="week-block is-mine">Yours</div>
+        <div class="week-block cal-study">Study</div><div class="week-block cal-study is-mine">Your study</div>
+        <div class="week-block cal-series">Series</div><div class="week-block cal-series is-mine">Your series</div>
+        <div class="week-block is-paused">Paused</div><a class="cal-chip" href="#">All-day</a>
+      </div>
+    </section>
+
+    <section>
+      <p class="gl-label">Board</p>
+      <div class="columns gl-columns">
+        <div class="column"><div class="column-head"><div class="ch-top"><span>To do</span><span class="count">2</span></div><div class="ch-hint">Not started</div></div>
+          <div class="column-body"><div class="board-card">Write the related work</div><div class="board-card">Ablations</div></div></div>
+        <div class="column is-drop-target"><div class="column-head"><div class="ch-top"><span>Doing</span><span class="count">1</span></div><div class="ch-hint">Dragging a card here</div></div>
+          <div class="column-body"><div class="board-card">Main experiments</div></div></div>
+        <div class="column"><div class="column-head"><div class="ch-top"><span>Done</span><span class="count">0</span></div></div><div class="column-body"><p class="column-empty">Nothing yet</p></div></div>
+      </div>
+    </section>
+
+    <section class="gl-cols">
+      <div>
+        <p class="gl-label">Who can see this page</p>
+        <div class="ac-panel gl-static">
+          <div class="ac-title">Who can see this page</div>
+          <div class="ac-ladder">
+            <div class="ac-row ac-head"><span></span><span>None</span><span>PAN</span><span>Assoc.</span><span>Internal</span><span>Staff</span><span>Exec</span></div>
+            <div class="ac-row"><span class="ac-what">View</span><button class="ac-cell" data-level="none" type="button"><span class="ac-dot"></span></button><button class="ac-cell is-on" type="button"><span class="ac-dot"></span></button><button class="ac-cell is-on" type="button"><span class="ac-dot"></span></button><button class="ac-cell is-on is-pick" type="button"><span class="ac-dot"></span></button><button class="ac-cell" type="button"><span class="ac-dot"></span></button><button class="ac-cell is-ghost" data-level="exec" type="button"><span class="ac-dot"></span></button></div>
+          </div>
+          <p class="ac-note">PIs and admins propose a change.</p>
+          <div class="ac-viewas"><span class="ac-what">View as</span><button class="ac-as is-on" type="button">PAN</button><button class="ac-as" type="button">Internal</button></div>
+        </div>
+      </div>
+      <div>
+        <p class="gl-label">Asking first</p>
+        <dialog class="confirm-dialog gl-static" open>
+          <h2>Send Slack messages?</h2><p>This will:</p><ul><li>Send every PI and admin a Slack message</li></ul>
+          <label class="confirm-skip"><input type="checkbox"> Don't ask me again</label>
+          <div class="confirm-actions"><button class="btn-box" type="button">Cancel</button><button class="btn-box is-primary" type="button">Send</button></div>
+        </dialog>
+      </div>
+      <div>
+        <p class="gl-label">A project's health</p>
+        <span class="health" title="Health 6 of 8"><span class="health-bar"><span class="health-seg is-os"></span><span class="health-seg is-os"></span><span class="health-seg is-own"></span><span class="health-seg is-none"></span></span><span class="health-n">5/8</span></span>
+      </div>
+      <div>
+        <p class="gl-label">A Slack message from a template</p>
+        <dialog class="confirm-dialog slack-msg gl-static" open>
+          <h2>Talk to Ann Lead</h2><p>Tell them who you are and how you’d like to help.</p>
+          <label class="slack-msg-label">Your message to Ann Lead<textarea class="slack-msg-text" rows="4">Hi Ann! I saw “World models” on BOLD.OS and I’d love to hear more about it.</textarea></label>
+          <p class="slack-msg-hint">It opens your direct message with them in Slack: paste it there, change it as you like, and send it.</p>
+          <div class="confirm-actions"><button class="btn-box" type="button">Cancel</button><button class="btn-box is-primary" type="button">Copy and open Slack</button></div>
+        </dialog>
+      </div>
+    </section>
+
+    <section>
+      <p class="gl-label">Viewing as a group</p>
+      <div class="viewas-bar gl-static"><span class="vb-part"><span class="vb-text">Viewing as BOLD-internal</span></span><span class="vb-part"><button type="button">Stop</button></span></div>
+    </section>
+
+    <section>
+      <p class="gl-label">Connections</p>
+      <div class="cx-graph"><svg class="cx-svg" viewBox="0 0 400 120">
+        <path class="cx-edge" d="M80 60 L200 40"/><path class="cx-edge cx-talking" d="M200 40 L320 70"/><path class="cx-edge cx-joining" d="M80 60 L320 70"/>
+        <g class="cx-node is-centre"><circle class="cx-mark" cx="80" cy="60" r="7"/><text class="cx-label" x="94" y="64">Ada</text></g>
+        <g class="cx-node" style="color:var(--green)"><circle class="cx-mark" cx="200" cy="40" r="6"/><text class="cx-label" x="212" y="44">Alan</text></g>
+        <g class="cx-node pp-pan"><circle class="cx-mark" cx="320" cy="70" r="6"/><text class="cx-label" x="332" y="74">Grace</text></g>
+      </svg></div>
+    </section>
+
+    <footer>BOLD Lab · this footer is the site's own.</footer>
+  </main>
+</div>
+</body>
+</html>

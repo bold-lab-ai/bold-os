@@ -29,7 +29,7 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
 
   var KIND_LABELS = { event: 'Event', project: 'Project', study: 'Supervision', series: 'Recurring' };
-  var GROUP_LABELS = { planned: 'Planned', ongoing: 'Ongoing', submission: 'In submission' };
+  var GROUP_LABELS = { planned: 'Approved', ongoing: 'Ongoing', submission: 'In submission' };
   function kindBadge(k){ return '<span class="type-badge cal-' + k + '">' + KIND_LABELS[k] + '</span>'; }
   // The Projects page's badge: Ongoing and In submission in the accent, Planned plain.
   function groupBadge(w){ return GROUP_LABELS[w.group] ? '<span class="badge' + (w.group !== 'planned' ? ' badge-stage' : '') + '">' + GROUP_LABELS[w.group] + '</span>' : ''; }
@@ -502,8 +502,8 @@
     E.access(function(all){
       if (signIn !== unsubs) return; // signed out or in again meanwhile
       var ev = db.collection('events'), se = db.collection('eventSeries'), fields = function(d){ return d.data(); };
-      watch('event', all ? ev : [ev.where('hidden', '==', false), ev.where('createdBy', '==', user.email || '')], fields, 'slug');
-      watch('series', all ? se : [se.where('hidden', '==', false), se.where('organisers', 'array-contains', mine)], fields, 'id');
+      watch('event', all ? ev : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), ev.where('createdBy', '==', user.email || '')], fields, 'slug');
+      watch('series', all ? se : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), se.where('organisers', 'array-contains', mine)], fields, 'id');
     });
     // Rota dates are their own published records. They appear here as links only;
     // no Calendar event or invitation is created from them.

@@ -8,10 +8,13 @@ if (!process.env.FIRESTORE_EMULATOR_HOST || !process.env.FIREBASE_STORAGE_EMULAT
 admin.initializeApp({ projectId: 'demo-test', storageBucket: 'demo-test.appspot.com' });
 const db = admin.firestore();
 const files = new Map();
+const metadata = new Map();
+let signOptions;
 const bucket = { file: path => ({
-  save: async bytes => { files.set(path, Buffer.from(bytes)); },
+  save: async (bytes, options) => { files.set(path, Buffer.from(bytes)); metadata.set(path, options.metadata); },
   download: async () => { if (!files.has(path)) throw new Error('Missing file'); return [files.get(path)]; },
   delete: async () => { files.delete(path); },
+  getSignedUrl: async options => { signOptions = options; return ['https://storage.googleapis.com/demo-test/' + path + '?signed=day']; },
 }) };
 const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xd9]);
 let mode = 'ok', calls = 0, releaseImage, imageStarted;
@@ -54,31 +57,48 @@ async function ruleRequest(path, method, auth, body) {
   await db.collection('roles').doc('admins').set({ emails: [] });
   await db.collection('settings').doc('access').set({ pages: { people: { view: 'everyone' } } });
   assert.equal(await service.owner('OWNER@example.test'), 'UOWNER');
-  assert.equal((await service.importSlack('UOWNER', false)).state, 'active');
-  assert.equal((await service.read('UOWNER')).image, jpeg.toString('base64'));
-  const firstCalls = calls;
-  assert.equal((await service.importSlack('UOWNER', false)).state, 'unchanged');
-  assert.equal(calls, firstCalls);
+  assert.equal((await service.importSlack('UOWNER')).state, 'active');
+  const firstPhoto = await service.read('UOWNER');
+  assert.match(firstPhoto.url, /^https:\/\/storage\.googleapis\.com\//);
+  assert.equal((await service.read('UOWNER')).url, firstPhoto.url);
+  assert.equal(signOptions.version, 'v4');
+  assert.equal(signOptions.accessibleAt.getUTCHours(), 0);
+  assert.equal(signOptions.expires - signOptions.accessibleAt, 7 * 24 * 60 * 60 * 1000);
+  assert.equal(firstPhoto.expiresAt, signOptions.expires.getTime());
+  assert.equal((await service.batch(['UOWNER', 'UOWNER'])).UOWNER.url, firstPhoto.url);
+  // An odd id is only without a photo; the others still come back.
+  const mixed = await service.batch(['invalid/id', 'UOWNER']);
+  assert.equal(mixed['invalid/id'].state, 'missing');
+  assert.equal(mixed.UOWNER.url, firstPhoto.url);
+  await assert.rejects(service.batch(new Array(501).fill('UOWNER')));
+  assert.equal(Array.from(metadata.values())[0].cacheControl, 'public, max-age=31536000, immutable');
   await service.remove('UOWNER');
   assert.equal((await service.read('UOWNER')).state, 'removed');
-  assert.equal((await service.importSlack('UOWNER', false)).state, 'unchanged');
+  // Choosing Slack's photo when Slack has only its default: nothing imported, and the opt-out stays.
   mode = 'default';
-  assert.equal((await service.importSlack('UOWNER', true)).state, 'missing');
-  assert.equal((await service.read('UOWNER')).state, 'missing');
+  assert.equal((await service.importSlack('UOWNER')).state, 'no-slack-photo');
+  assert.equal((await service.read('UOWNER')).state, 'removed');
+  // A failed import leaves it too.
+  mode = 'fail';
+  await assert.rejects(service.importSlack('UOWNER'));
+  assert.equal((await service.read('UOWNER')).state, 'removed');
   mode = 'ok';
-  assert.equal((await service.importSlack('UOWNER', true)).state, 'active');
+  assert.equal((await service.importSlack('UOWNER')).state, 'active');
   await service.replace('UOWNER', jpeg.toString('base64'));
   assert.equal((await service.read('UOWNER')).source, 'manual');
-  assert.equal((await service.importSlack('UOWNER', false)).state, 'unchanged');
+  mode = 'default';
+  assert.equal((await service.importSlack('UOWNER')).state, 'no-slack-photo');
+  assert.equal((await service.read('UOWNER')).source, 'manual');
 
   mode = 'fail';
-  await assert.rejects(service.importSlack('UOWNER', true));
+  await assert.rejects(service.importSlack('UOWNER'));
   assert.equal((await service.read('UOWNER')).source, 'manual');
-  mode = 'large'; await assert.rejects(service.importSlack('UOTHER', false));
-  mode = 'wrong'; await assert.rejects(service.importSlack('UOTHER', false));
-  mode = 'default'; assert.equal((await service.importSlack('UOTHER', false)).state, 'missing');
-  mode = 'ok'; assert.equal((await service.importSlack('UOTHER', false)).state, 'active');
-  await assert.rejects(service.replace('UOTHER', Buffer.alloc(257 * 1024).toString('base64')));
+  // What the member can act on carries a callable code (shown to them); the rest is internal.
+  mode = 'large'; await assert.rejects(service.importSlack('UOTHER'), err => err.photoCode === 'failed-precondition');
+  mode = 'wrong'; await assert.rejects(service.importSlack('UOTHER'), err => !!err.photoCode);
+  mode = 'default'; assert.equal((await service.importSlack('UOTHER')).state, 'no-slack-photo');
+  mode = 'ok'; assert.equal((await service.importSlack('UOTHER')).state, 'active');
+  await assert.rejects(service.replace('UOTHER', Buffer.alloc(257 * 1024).toString('base64')), err => err.photoCode === 'invalid-argument');
   await assert.rejects(slackImage(mockFetch, 'http://127.0.0.1/photo'));
   const gif = Buffer.from('GIF89a' + 'synthetic');
   const gravatar = await slackImage(() => Promise.resolve(new Response(gif, { headers: { 'content-type': 'image/gif' } })), 'https://secure.gravatar.com/avatar/synthetic');
@@ -86,18 +106,41 @@ async function ruleRequest(path, method, auth, body) {
   await assert.rejects(service.replace('UOTHER', gif.toString('base64')));
   await db.collection('profilePhotos').doc('UOTHER').delete();
   const beforeRace = files.size;
-  const race = await Promise.all([service.importSlack('UOTHER', false), service.importSlack('UOTHER', false)]);
+  const race = await Promise.all([service.importSlack('UOTHER'), service.importSlack('UOTHER')]);
   assert.equal(race.filter(x => x.state === 'active').length, 1);
   assert.equal(files.size, beforeRace + 1);
   await db.collection('profilePhotos').doc('UOTHER').delete();
   mode = 'paused';
   const started = new Promise(resolve => { imageStarted = resolve; });
-  const importing = service.importSlack('UOTHER', false);
+  const importing = service.importSlack('UOTHER');
   await started;
   await service.replace('UOTHER', jpeg.toString('base64'));
   releaseImage();
   assert.equal((await importing).state, 'unchanged');
   assert.equal((await service.read('UOTHER')).source, 'manual');
+  mode = 'ok';
+
+  // By default: a member who never chose gets their Slack picture the first time it's needed.
+  await db.collection('people').doc('UAUTO').set({ email: 'auto@example.test', name: 'Auto', slackId: 'UAUTO' });
+  await db.collection('people').doc('UDEF').set({ email: 'def@example.test', name: 'Def', slackId: 'UDEF' });
+  mode = 'ok';
+  const auto = await service.batch(['UAUTO', 'UNOTONROSTER']);
+  assert.equal(auto.UAUTO.state, 'active');
+  assert.equal((await db.collection('profilePhotos').doc('UAUTO').get()).data().source, 'slack');
+  assert.equal(auto.UNOTONROSTER.state, 'missing');
+  assert.equal((await db.collection('profilePhotos').doc('UNOTONROSTER').get()).exists, false);
+  // Removed: initials, never imported again by default.
+  await service.remove('UAUTO');
+  const afterRemove = calls;
+  assert.equal((await service.batch(['UAUTO'])).UAUTO.state, 'removed');
+  assert.equal(calls, afterRemove);
+  // Slack's default picture: initials, and not asked again for a day.
+  mode = 'default';
+  assert.equal((await service.batch(['UDEF'])).UDEF.state, 'missing');
+  assert.ok((await db.collection('profilePhotos').doc('UDEF').get()).data().checkedAt);
+  const afterDefault = calls;
+  await service.batch(['UDEF']); await service.read('UDEF');
+  assert.equal(calls, afterDefault);
   mode = 'ok';
 
   const owner = jwt('owner@example.test', true), other = jwt('other@example.test', true), google = jwt('owner@example.test', false);
