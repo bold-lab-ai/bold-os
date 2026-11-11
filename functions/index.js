@@ -4362,7 +4362,9 @@ async function syncWorkspace(id, changes){
           summary: ws.title,
           description: eventDescription(ws),
           attendees: attendees([]),
-          guestsCanModify: false
+          // Every guest can change it in their own calendar (2026-11-11): Google has no co-owner of an event
+          // besides the lab's account. BOLD.OS's own changes (its time, people, title) still win at its next sync.
+          guestsCanModify: true
         }, eventConference(ws.meeting, 'bold-' + id + '-' + Date.now()), eventTimes(ws.meeting)));
         patch.eventId = ev.id; patch.eventLink = ev.htmlLink; patch.meetUrl = ws.meeting.link || ev.hangoutLink || '';
         patch.eventMeeting = ws.meeting; patch.eventStart = seriesStart(ev);
@@ -4385,6 +4387,7 @@ async function syncWorkspace(id, changes){
         // A new time moves the series; a new end date or a pause only changes how long it runs.
         if (!sameMeetingTimes(ws.eventMeeting, ws.meeting)) Object.assign(change, eventTimes(ws.meeting, ws.pausedAt));
         else if ((ws.eventMeeting.until || '') !== (ws.meeting.until || '') || (ws.pausedAt || 0) !== (ws.eventPausedAt || 0)) change.recurrence = meetingRecurrence(ws.meeting, ws.pausedAt);
+        if (ev.guestsCanModify !== true) change.guestsCanModify = true;   // one made before 2026-11-11 (emails nobody)
         Object.assign(change, conferenceChange(ev, ws.meeting, 'bold-' + id + '-' + Date.now()));
         let now = ev;
         if (Object.keys(change).length){
@@ -6026,7 +6029,7 @@ async function syncStudyMeeting(email){
     const want = !!s.meeting && !(s.pausedAt && !s.eventId);
     if (want && !s.eventId){
       const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
-        summary, description, attendees: attendees([]), guestsCanModify: false
+        summary, description, attendees: attendees([]), guestsCanModify: true   // every guest can change it, as a project's
       }, eventConference(s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')), eventTimes(s.meeting)));
       Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: s.meeting.link || ev.hangoutLink || '', eventMeeting: s.meeting, eventStart: seriesStart(ev) });
     } else if (!want && s.eventId){
@@ -6041,6 +6044,7 @@ async function syncStudyMeeting(email){
       if (ev.description !== description) change.description = description;
       if (!sameMeetingTimes(s.eventMeeting, s.meeting)) Object.assign(change, eventTimes(s.meeting, s.pausedAt));
       else if ((s.eventMeeting.until || '') !== (s.meeting.until || '') || (s.pausedAt || 0) !== (s.eventPausedAt || 0)) change.recurrence = meetingRecurrence(s.meeting, s.pausedAt);
+      if (ev.guestsCanModify !== true) change.guestsCanModify = true;
       Object.assign(change, conferenceChange(ev, s.meeting, 'bold-study-' + crypto.randomBytes(6).toString('hex')));
       let now = ev;
       if (Object.keys(change).length){

@@ -153,7 +153,9 @@ module.exports = function series(deps){
       };
       if (want && !s.eventId) {
         const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', Object.assign({
-          summary, description, attendees: attendees([]), guestsCanModify: false, guestsCanSeeOtherGuests: s.invite.mode !== 'group',
+          // Every guest can change it (2026-11-11), as a project's meeting; not when a whole group is invited, whose
+          // guests don't see each other (changing it would show them).
+          summary, description, attendees: attendees([]), guestsCanModify: s.invite.mode !== 'group', guestsCanSeeOtherGuests: s.invite.mode !== 'group',
         }, eventConference(s.meeting, 'bold-series-' + crypto.randomBytes(6).toString('hex')), eventTimes(s.meeting, s.pausedAt)));
         Object.assign(patch, { eventId: ev.id, eventLink: ev.htmlLink, meetUrl: s.meeting.link || ev.hangoutLink || '', eventMeeting: s.meeting,
           eventPausedAt: s.pausedAt || FieldValue.delete(), eventStart: seriesStart(ev), guests });
@@ -169,6 +171,7 @@ module.exports = function series(deps){
         if (ev.description !== description) change.description = description;
         if (!sameMeetingTimes(s.eventMeeting, s.meeting)) Object.assign(change, eventTimes(s.meeting, s.pausedAt));
         else if ((s.eventMeeting.until || '') !== (s.meeting.until || '') || (s.pausedAt || 0) !== (s.eventPausedAt || 0)) change.recurrence = meetingRecurrence(s.meeting, s.pausedAt);
+        if (!!ev.guestsCanModify !== (s.invite.mode !== 'group')) change.guestsCanModify = s.invite.mode !== 'group';
         Object.assign(change, conferenceChange(ev, s.meeting, 'bold-series-' + crypto.randomBytes(6).toString('hex')));
         let now = ev;
         if (Object.keys(change).length) {
