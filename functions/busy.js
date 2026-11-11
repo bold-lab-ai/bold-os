@@ -249,6 +249,34 @@ function suggest(o){
   return best;
 }
 
+// Pure: one meeting, not a series (/meeting's Suggest a time): { people: [{ name, busy }], minutes, now, days = 14,
+// count = 5 } → [{ start (ms), free, of, busy: [names] }]: weekdays 09:00–18:00 London in 30-minute steps, from an
+// hour from now over the next `days` days; everyone free first, then the fewest busy, then inside 10:00–17:00,
+// then the soonest; no more than two on a day.
+function suggestOnce(o){
+  const minutes = +o.minutes || 60, people = o.people || [], days = o.days || 14, earliest = o.now + 3600000, out = [];
+  const today = new Date(o.now).toISOString().slice(0, 10), base = Date.parse(today + 'T00:00:00Z');
+  for (let i = 0; i <= days; i++) {
+    const date = new Date(base + i * DAY), iso = date.toISOString().slice(0, 10), dow = date.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    for (let t = 9 * 60; t + minutes <= 18 * 60; t += 30) {
+      const start = londonMs(iso, String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'));
+      if (start < earliest) continue;
+      const end = start + minutes * 60000;
+      const busy = people.filter(function(p){ return (p.busy || []).some(function(b){ return b[0] < end && b[1] > start; }); }).map(function(p){ return p.name; });
+      out.push({ start, day: iso, free: people.length - busy.length, of: people.length, busy, core: t >= 600 && t + minutes <= 1020 ? 0 : 1 });
+    }
+  }
+  out.sort(function(a, b){ return b.free - a.free || a.core - b.core || a.start - b.start; });
+  const perDay = {}, best = [];
+  out.forEach(function(x){
+    if (best.length >= (o.count || 5) || (perDay[x.day] || 0) >= 2) return;
+    perDay[x.day] = (perDay[x.day] || 0) + 1;
+    best.push({ start: x.start, free: x.free, of: x.of, busy: x.busy });
+  });
+  return best.sort(function(a, b){ return a.start - b.start; });
+}
+
 // ---------- the link ----------
 // Calendars it may read: Google's, Outlook's and iCloud's (the server fetches it: no other host).
 const HOSTS = [/^calendar\.google\.com$/, /^outlook\.office365\.com$/, /^outlook\.office\.com$/, /^outlook\.live\.com$/, /^p\d+-(caldav|calendars)\.icloud\.com$/];
@@ -277,6 +305,21 @@ function googleIcal(u){
   if (!/^[^\s@\/]+@[^\s@\/]+\.[^\s@\/]+$/.test(id)) return '';
   return 'https://calendar.google.com/calendar/ical/' + encodeURIComponent(id) + '/public/basic.ics';
 }
+// busyFeeds/{email} → its calendars, [{ id, url, at, checkedAt }]: `feeds`, or the one `url` from
+// before there could be several (2026-11-11).
+const MAX_FEEDS = 5;
+// Pure: a calendar's own name (X-WR-CALNAME), to tell them apart on the profile; '' for none, or one that's
+// an email address (Google names someone's main calendar after it).
+function calendarName(text){
+  const m = String(text || '').match(/^X-WR-CALNAME:(.*)$/m);
+  const n = m ? m[1].replace(/\\([,;\\])/g, '$1').trim().slice(0, 80) : '';
+  return /@/.test(n) ? '' : n;
+}
+function feedsOf(d){
+  if (!d) return [];
+  if (Array.isArray(d.feeds)) return d.feeds.filter(function(f){ return f && f.url; });
+  return d.url ? [{ id: 'a', url: d.url, at: d.at || 0, checkedAt: d.checkedAt || 0 }] : [];
+}
 const PUBLIC_HOW = 'In Google Calendar: Settings › the calendar › Access permissions, tick “Make available to public” with “See only free/busy”, then add it again.';
 // The calendar's text, or throws: only from those hosts (redirects too), at most 5 MB, 10 s.
 async function fetchIcs(url){
@@ -303,4 +346,4 @@ async function fetchIcs(url){
   throw new Error('The calendar link redirects too many times.');
 }
 
-module.exports = { googleIcal, parseIcs, busyFrom, occurrences, meetingBusy, suggest, okFeedUrl, fetchIcs, londonMs, wallToMs, merge, WEEKDAYS };
+module.exports = { suggestOnce, calendarName, feedsOf, MAX_FEEDS, googleIcal, parseIcs, busyFrom, occurrences, meetingBusy, suggest, okFeedUrl, fetchIcs, londonMs, wallToMs, merge, WEEKDAYS };

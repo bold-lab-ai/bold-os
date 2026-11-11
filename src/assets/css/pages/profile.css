@@ -255,8 +255,21 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .hl-choices .jn-check.is-off{color:var(--muted); cursor:not-allowed;}
 .hl-agent{margin-top:12px;}
 /* Free/busy calendar (profile-busy.js): its address, and where to find it. */
-.busy-add{display:block; margin:8px 0 4px;}
+.busy-add{display:block; flex:1 1 auto;}
 .busy-add .busy-url{width:100%; box-sizing:border-box; font-family:var(--sans); font-size:14px; padding:6px 8px; color:var(--ink); background:var(--surface); border:1px solid var(--line);}
+#busyBody .gh-line{width:100%;}
+.busy-feeds{list-style:none; margin:8px 0 4px; padding:0;}
+.busy-feed{display:flex; align-items:center; justify-content:space-between; gap:12px; padding:6px 0; border-top:1px solid var(--line); font-family:var(--sans); font-size:14px;}
+.busy-feed-text{display:flex; flex-direction:column; min-width:0; flex:1 1 auto;}
+.busy-link{font-size:12px; color:var(--ink-soft); overflow-wrap:anywhere; user-select:all;}
+.busy-feed .busy-remove{flex-shrink:0; white-space:nowrap;}
+.busy-when{color:var(--ink-soft);}
+.busy-new{display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 0 4px; border-top:1px solid var(--line);}
+.busy-new .busy-how{flex-basis:100%;}
+.busy-new-actions{display:flex; gap:8px; flex-shrink:0;}
+.busy-plus-row{padding:6px 0 0; border-top:1px solid var(--line);}
+.busy-plus{width:30px; height:30px; padding:0; font:400 20px/1 var(--sans); color:var(--ink); background:var(--surface); border:1px solid var(--line); cursor:pointer;}
+.busy-plus:hover:not([disabled]){border-color:var(--ink);}
 .busy-how{margin:4px 0 6px; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}
 .busy-how summary{cursor:pointer; color:var(--link);}
 .busy-how ul{margin:6px 0; padding-left:18px;}

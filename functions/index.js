@@ -1347,10 +1347,30 @@ async function handleMeetingCommand(token, body){
   // What was typed ("tomorrow at 1pm for 30min") fills the form in, read in their own time zone (Slack's).
   const u = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: body.user_id }), { headers: { Authorization: 'Bearer ' + token } })).json().catch(() => null);
   const typed = slackMeeting.parseText(body.text, Date.now(), (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ);
-  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: typed.title, start: typed.start, minutes: typed.minutes,
+  const tz = (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ;
+  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: typed.title, start: typed.start, minutes: typed.minutes, tz,
     channelId: body.channel_id, channelName: shown, names: who.names, others: who.others, now: Date.now() }));
   if (!opened.ok) { logger.warn('Opening the meeting form failed', { error: opened.error, details: opened.response_metadata }); return say('Couldn’t open the form — try again.'); }
   return {};
+}
+// The form's buttons. Suggest a time: says it's looking, then queues meetingSuggestions/{id} (reading everyone's
+// calendars takes longer than Slack waits) for onMeetingSuggest. A suggestion: When set to it.
+async function handleMeetingAction(token, payload){
+  const action = (payload.actions || [])[0] || {}, v = payload.view;
+  if (String(action.action_id || '').indexOf(slackMeeting.PICK) === 0) {
+    const r = await slackFetch(token, 'views.update', { view_id: v.id, hash: v.hash, view: slackMeeting.withWhen(slackMeeting.viewOf(v), Number(action.value)) });
+    if (!r.ok) logger.warn('Setting a suggested time failed', { error: r.error });
+    return null;
+  }
+  if (action.action_id !== slackMeeting.SUGGEST) return null;
+  const minutes = slackMeeting.minutesOf(v.state && v.state.values);
+  const waiting = slackMeeting.withSuggestions(slackMeeting.viewOf(v), { status: 'Looking for a time when everyone’s free for ' + minutes + ' minutes…' });
+  const r = await slackFetch(token, 'views.update', { view_id: v.id, hash: v.hash, view: waiting });
+  if (!r.ok) { logger.warn('Suggest a time: updating the form failed', { error: r.error }); return null; }
+  const meta = JSON.parse(v.private_metadata || '{}');
+  await db.collection('meetingSuggestions').add({ viewId: v.id, view: JSON.stringify(waiting), channel: String(meta.channel || ''), tz: String(meta.tz || slackMeeting.TZ),
+    minutes, by: String(payload.user && payload.user.id || ''), at: Date.now() });
+  return null;
 }
 // The form sent: checked (what to fix goes back to the form), then queued for onOneOffMeeting.
 async function handleMeetingSubmit(token, payload){
@@ -1369,6 +1389,7 @@ async function handleMeetingSubmit(token, payload){
 async function handleInteractivity(token, payload){
   if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'work_card') return addCardFromSlack(token, payload);
   if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === slackMeeting.CALLBACK) return handleMeetingSubmit(token, payload);
+  if (payload.type === 'block_actions' && payload.view && payload.view.callback_id === slackMeeting.CALLBACK) return handleMeetingAction(token, payload);
   // Take it to the BOLD OS, a message shortcut (functions/slack-thread.js).
   if (payload.type === 'message_action' && payload.callback_id === 'send_to_conversations') return conversationsSlack.handleShortcut(payload);
   if (payload.type !== 'block_actions') return;
@@ -3878,6 +3899,40 @@ exports.onOneOffMeeting = onDocumentCreated({ document: 'oneOffMeetings/{id}', s
   }
 });
 
+// Suggest a time on /meeting's form: everyone it invites (and whoever asked), their busy times (personBusy:
+// their free/busy calendars and BOLD.OS meetings), the best times over the next two weeks (busy.suggestOnce),
+// shown on the form. meetingSuggestions/{id} is server only.
+exports.onMeetingSuggest = onDocumentCreated({ document: 'meetingSuggestions/{id}', secrets: [SLACK_BOT_TOKEN], timeoutSeconds: 120 }, async (event) => {
+  const d = event.data && event.data.data();
+  if (!d || d.doneAt) return;
+  const token = SLACK_BOT_TOKEN.value(), view = JSON.parse(d.view);
+  let shown;
+  try {
+    const who = (await meetingInvitees(token, d.channel)) || { emails: [], names: [] };
+    const people = who.emails.map((e, i) => ({ email: e, name: who.names[i] }));
+    if (d.by && !people.length) {
+      const me = (await db.collection('people').doc(d.by).get()).data();
+      if (me && me.email) people.push({ email: String(me.email).toLowerCase(), name: me.name || me.email });
+    }
+    const now = Date.now(), to = now + 16 * 86400000;
+    const fromCalendar = [], none = [], failed = [];
+    const list = await Promise.all(people.slice(0, slackMeeting.MAX_GUESTS).map(async (p) => {
+      const b = await personBusy(p, now, to, null);
+      if (b.read) fromCalendar.push(p.name);
+      if (!b.feeds) none.push(p.name);
+      if (b.failed) failed.push(p.name);
+      return { name: p.name, busy: b.busy };
+    }));
+    const slots = busy.suggestOnce({ people: list, minutes: d.minutes, now });
+    shown = slackMeeting.withSuggestions(view, { slots, tz: d.tz, fromCalendar, none, failed });
+  } catch (err){
+    logger.warn('Suggest a time failed', { error: String(err && err.message || err) });
+    shown = slackMeeting.withSuggestions(view, { status: 'Couldn’t find a time — try again.' });
+  }
+  const r = await slackFetch(token, 'views.update', { view_id: d.viewId, view: shown });
+  await event.data.ref.set({ doneAt: Date.now(), shown: !!r.ok, error: r.ok ? '' : String(r.error || '') }, { merge: true });
+});
+
 // The Drive folder every project's files go in, made once (drive.file can only
 // reach files this app made). settings/projectDrive has no client access.
 async function projectFolderId(){
@@ -6006,25 +6061,37 @@ async function syncStudyMeeting(email){
 }
 
 // ---------- Free/busy calendars and suggested meeting times (#323, 2026-11-11) ----------
-// Each person may give a free/busy calendar link (profile › Linked accounts): busyFeeds/{email}
-// { url, at, checkedAt }, server only (Google's public address has their email in it). Only when
-// they're busy is read from it (functions/busy.js), never what, and nothing of it is kept.
-// busyFeed: { action: 'get' } → { url, at } | {}; 'set' { url } → { url, busy: how many busy times in
-// the next 4 weeks } (read once, so a link that doesn't work isn't saved); 'clear'.
+// Each person may give free/busy calendar links (profile › Linked accounts), several (Google and Outlook,
+// say; up to 5): busyFeeds/{email} { feeds: [{ id, url, name (the calendar's own), at, checkedAt }] } (busy.feedsOf also reads the one
+// { url } of before), server only (Google's public address has their email in it). Only when they're busy
+// is read from them (functions/busy.js), never what, and nothing of it is kept.
+// busyFeed: { action: 'get' } → { feeds: [{ id, url, at }] }; 'set' { url } adds one → { feeds, url, busy: how
+// many busy times in the next 4 weeks } (read once, so a link that doesn't work isn't saved); 'clear' { id }
+// removes one (no id: all).
 const busy = require('./busy');
 exports.busyFeed = onCall({ timeoutSeconds: 30 }, async (request) => {
   const email = callerEmail(request), data = request.data || {};
   const ref = db.collection('busyFeeds').doc(email);
-  if (data.action === 'get'){ const d = await ref.get(); return d.exists ? { url: d.data().url, at: d.data().at || 0 } : {}; }
-  if (data.action === 'clear'){ await ref.delete(); return {}; }
+  const shown = (fs) => fs.map((f) => ({ id: f.id, url: f.url, name: f.name || '', at: f.at || 0 }));
+  const feeds = busy.feedsOf((await ref.get()).data());
+  // url, at: the first, as the profile read it before there could be several (until that page is gone).
+  if (data.action === 'get') return Object.assign({ feeds: shown(feeds) }, feeds[0] ? { url: feeds[0].url, at: feeds[0].at || 0 } : {});
+  if (data.action === 'clear'){
+    const left = data.id ? feeds.filter((f) => f.id !== String(data.id)) : [];
+    if (left.length) await ref.set({ feeds: left }); else await ref.delete();
+    return { feeds: shown(left) };
+  }
   if (data.action !== 'set') throw new HttpsError('invalid-argument', 'Unknown action.');
   const url = busy.okFeedUrl(data.url);
   if (!url) throw new HttpsError('invalid-argument', 'Give a Google, Outlook or iCloud calendar (iCal) address, starting with https:// or webcal://.');
+  if (feeds.some((f) => f.url === url)) throw new HttpsError('already-exists', 'That calendar is added already.');
+  if (feeds.length >= busy.MAX_FEEDS) throw new HttpsError('resource-exhausted', 'Up to ' + busy.MAX_FEEDS + ' calendars: remove one first.');
   let text;
   try { text = await busy.fetchIcs(url); } catch (err){ throw new HttpsError('failed-precondition', err.message); }
   const now = Date.now(), n = busy.busyFrom(text, now, now + 28 * 86400000).length;
-  await ref.set({ url, at: now, checkedAt: now });
-  return { url, busy: n };
+  const all = feeds.concat({ id: Math.random().toString(36).slice(2, 10), url, name: busy.calendarName(text), at: now, checkedAt: now });
+  await ref.set({ feeds: all });
+  return { feeds: shown(all), url, busy: n };
 });
 
 // meetingTimes: { id, board?, minutes, every } → { slots: [{ day, time, free, of, clash: [{ name, times }] }],
@@ -6032,6 +6099,32 @@ exports.busyFeed = onCall({ timeoutSeconds: 30 }, async (request) => {
 // Counted: the project's Authors (its People get the invitation, and aren't counted), each from their
 // free/busy calendar if they gave one, and from the meetings BOLD.OS knows they have: their other
 // projects', their studies' and the series they joined. Over its next 4 dates, weekdays 09:00–18:00 London (busy.suggest).
+// One person's busy times, now → to: their free/busy calendars (busy in any is busy) and the meetings BOLD.OS
+// knows they have (their projects', but `skipPid`'s, their studies', the series they joined) →
+// { busy: merged [[start, end]], feeds: how many calendars, read: how many read, failed: how many not }.
+async function personBusy(a, now, to, skipPid){
+  const list = [];
+  const [feed, wsSnap, stSnap, seSnap] = await Promise.all([
+    db.collection('busyFeeds').doc(a.email).get(),
+    db.collection('projectWorkspaces').where('members', 'array-contains', a.email).get(),
+    db.collection('studies').where('everyone', 'array-contains', a.email).get(),
+    db.collection('eventSeries').where('joined', 'array-contains', a.email).get()
+  ]);
+  wsSnap.docs.concat(stSnap.docs, seSnap.docs).forEach(function(d){
+    const w = d.data();
+    if (d.ref.parent.id === 'projectWorkspaces' && d.id === skipPid) return;
+    if (!w.meeting || w.pausedAt || w.completedAt) return;
+    busy.meetingBusy(w.meeting, now, to, String(w.eventStart || '').slice(0, 10)).forEach(function(x){ list.push(x); });
+  });
+  const feeds = busy.feedsOf(feed.data());
+  let read = 0, failed = 0;
+  for (const f of feeds){
+    try { busy.busyFrom(await busy.fetchIcs(f.url), now, to).forEach(function(x){ list.push(x); }); read++; }
+    catch (err){ failed++; logger.warn('A free/busy calendar couldn’t be read', { error: String(err && err.message || err) }); }
+  }
+  return { busy: busy.merge(list), feeds: feeds.length, read, failed };
+}
+
 exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
   const email = callerEmail(request), data = request.data || {};
   const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
@@ -6052,31 +6145,11 @@ exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
   const now = Date.now(), to = now + (4 * every + 1) * 7 * 86400000;
   const fromCalendar = [], boldOnly = [], failed = [];
   const people = await Promise.all(authors.map(async function(a){
-    const list = [];
-    const [feed, wsSnap, stSnap, seSnap] = await Promise.all([
-      db.collection('busyFeeds').doc(a.email).get(),
-      db.collection('projectWorkspaces').where('members', 'array-contains', a.email).get(),
-      db.collection('studies').where('everyone', 'array-contains', a.email).get(),
-      db.collection('eventSeries').where('joined', 'array-contains', a.email).get()
-    ]);
-    // The meetings BOLD.OS knows of, but this project's own.
-    wsSnap.docs.concat(stSnap.docs, seSnap.docs).forEach(function(d){
-      const w = d.data();
-      if (d.ref.parent.id === 'projectWorkspaces' && d.id === pid) return;
-      if (!w.meeting || w.pausedAt || w.completedAt) return;
-      busy.meetingBusy(w.meeting, now, to, String(w.eventStart || '').slice(0, 10)).forEach(function(x){ list.push(x); });
-    });
-    if (feed.exists){
-      try {
-        busy.busyFrom(await busy.fetchIcs(feed.data().url), now, to).forEach(function(x){ list.push(x); });
-        fromCalendar.push(a.name);
-        feed.ref.update({ checkedAt: now }).catch(function(){});
-      } catch (err){
-        logger.warn('meetingTimes: a free/busy calendar couldn’t be read', { error: String(err && err.message || err) });
-        failed.push(a.name);
-      }
-    } else boldOnly.push(a.name);
-    return { name: a.name, busy: busy.merge(list) };
+    const p = await personBusy(a, now, to, pid);
+    if (p.read) fromCalendar.push(a.name);
+    if (!p.feeds) boldOnly.push(a.name);
+    if (p.failed) failed.push(a.name);
+    return { name: a.name, busy: p.busy };
   }));
   const slots = busy.suggest({ people, minutes, every, today: todayIsoLondon() })
     .map(function(s){ return Object.assign(s, { of: people.length }); });

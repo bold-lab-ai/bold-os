@@ -4,6 +4,7 @@ const assert = require('node:assert');
 const M = require('../functions/slack-meeting.js');
 
 const NOW = Date.UTC(2026, 10, 11, 14, 10);   // Wed 11 Nov 2026, 14:10 London (GMT)
+const blk = (v, id) => v.blocks.find((b) => b.block_id === id);
 const values = (o) => ({
   title: { v: { value: o.title } },
   when: { v: { selected_date_time: o.when } },
@@ -21,10 +22,10 @@ test('everyone in the channel with a BOLD.OS address, once each; bots and outsid
 test('the form names whom it invites and starts on the next whole hour', () => {
   const v = M.formView({ triggerId: 't', title: 'Reading group', channelId: 'C1', channelName: 'proj-x', names: ['Ben', 'Ana'], others: 1, now: NOW }).view;
   assert.strictEqual(v.callback_id, M.CALLBACK);
-  assert.deepStrictEqual(JSON.parse(v.private_metadata), { channel: 'C1', name: 'proj-x' });
-  assert.strictEqual(v.blocks[0].element.initial_value, 'Reading group');
-  assert.strictEqual(v.blocks[1].element.initial_date_time, Date.UTC(2026, 10, 11, 15) / 1000);
-  assert.strictEqual(v.blocks[2].element.initial_option.value, '60');
+  assert.deepStrictEqual(JSON.parse(v.private_metadata), { channel: 'C1', name: 'proj-x', tz: 'Europe/London' });
+  assert.strictEqual(blk(v, 'title').element.initial_value, 'Reading group');
+  assert.strictEqual(blk(v, 'when').element.initial_date_time, Date.UTC(2026, 10, 11, 15) / 1000);
+  assert.strictEqual(blk(v, 'minutes').element.initial_option.value, '60');
   const ctx = v.blocks[v.blocks.length - 1].elements[0].text;
   assert.match(ctx, /the 2 people in #proj-x/);
   assert.match(ctx, /Ana and Ben\./);
@@ -91,8 +92,32 @@ test('what’s typed after /meeting fills the form in', () => {
 test('the form starts from what was typed', () => {
   const r = M.parseText('tomorrow at 1pm for 20min', NOW);
   const v = M.formView({ triggerId: 't', title: r.title, start: r.start, minutes: r.minutes, channelId: 'C1', channelName: 'x', names: ['Ana'], others: 0, now: NOW }).view;
-  assert.strictEqual(v.blocks[0].element.initial_value, undefined);
-  assert.strictEqual(v.blocks[1].element.initial_date_time, Date.UTC(2026, 10, 12, 13) / 1000);
-  assert.strictEqual(v.blocks[2].element.initial_option.value, '20');
-  assert.ok(v.blocks[2].element.options.some((o) => o.value === '20'));
+  assert.strictEqual(blk(v, 'title').element.initial_value, undefined);
+  assert.strictEqual(blk(v, 'when').element.initial_date_time, Date.UTC(2026, 10, 12, 13) / 1000);
+  assert.strictEqual(blk(v, 'minutes').element.initial_option.value, '20');
+  assert.ok(blk(v, 'minutes').element.options.some((o) => o.value === '20'));
+});
+
+test('Suggest a time: the button, what it found, and picking one', () => {
+  const view = M.viewOf(Object.assign({ id: 'V1', hash: 'h', state: {} }, M.formView({ triggerId: 't', title: 'Sync', channelId: 'C1', channelName: 'x', names: ['Ana', 'Ben'], others: 0, now: NOW, tz: 'Europe/London' }).view));
+  assert.strictEqual(view.id, undefined);
+  assert.strictEqual(blk(view, 'sg_go').elements[0].action_id, M.SUGGEST);
+  const ids = (v) => v.blocks.map((b) => b.block_id);
+  const waiting = M.withSuggestions(view, { status: 'Looking…' });
+  assert.deepStrictEqual(ids(waiting).slice(1, 5), ['minutes', 'when', 'sg_go', 'sg_note']);
+  const a = Date.UTC(2026, 10, 12, 14), b = Date.UTC(2026, 10, 13, 10);
+  const found = M.withSuggestions(waiting, { slots: [{ start: a, free: 2, of: 2, busy: [] }, { start: b, free: 1, of: 2, busy: ['Ben'] }], tz: 'Europe/London', fromCalendar: ['Ana'], none: ['Ben'], failed: [] });
+  assert.strictEqual(ids(found).filter((x) => x === 'sg_note').length, 1);
+  assert.match(blk(found, 'sg_note').elements[0].text, /No time suits everyone.*From the calendars of Ana.*Ben hasn’t added/);
+  assert.deepStrictEqual(blk(found, 'sg_list').elements.map((e) => e.text.text), ['Thu 12 Nov, 14:00', 'Fri 13 Nov, 10:00 (1 of 2)']);
+  // In New York, the same times.
+  assert.strictEqual(M.slotText(a, 'America/New_York'), 'Thu 12 Nov, 09:00');
+  // Picking one: When takes it, under a new block id; the form still reads it.
+  const picked = M.withWhen(found, a);
+  assert.strictEqual(blk(picked, 'when-' + a).element.initial_date_time, a / 1000);
+  assert.ok(!blk(picked, 'when'));
+  const vals = { title: { v: { value: 'Sync' } }, minutes: { v: { selected_option: { value: '30' } } }, ['when-' + a]: { v: { selected_date_time: a / 1000 } } };
+  assert.strictEqual(M.meetingOf(vals, NOW).start, a);
+  assert.strictEqual(M.minutesOf(vals), 30);
+  assert.strictEqual(M.minutesOf({}), 60);
 });

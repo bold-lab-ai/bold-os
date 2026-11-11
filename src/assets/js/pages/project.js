@@ -733,7 +733,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         '<p class="detail-muted pm-counted">Over its next 4 dates, weekdays 09:00\u201318:00. ' +
         (d.fromCalendar && d.fromCalendar.length ? 'From the calendars of ' + names(d.fromCalendar) + ', and everyone\u2019s BOLD.OS meetings. ' : 'From the authors\u2019 BOLD.OS meetings. ') +
         (d.boldOnly && d.boldOnly.length ? names(d.boldOnly) + (d.boldOnly.length === 1 ? ' hasn\u2019t' : ' haven\u2019t') + ' added a free/busy calendar (<a href="profile.html#linked-accounts">on their profile</a>). ' : '') +
-        (d.failed && d.failed.length ? names(d.failed) + '\u2019s calendar couldn\u2019t be read. ' : '') + '</p>';
+        (d.failed && d.failed.length ? 'Couldn\u2019t read a calendar of ' + names(d.failed) + '. ' : '') + '</p>';
     }).catch(function(err){
       console.error('[BOLD Lab] suggesting meeting times failed', err);
       go.disabled = false;

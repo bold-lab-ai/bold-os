@@ -7,6 +7,7 @@ const TZ = 'Europe/London';
 const LENGTHS = [15, 30, 45, 60, 90, 120, 180];
 const MAX_GUESTS = 100;
 const CALLBACK = 'one_off_meeting';
+const SUGGEST = 'meeting_suggest', PICK = 'meeting_pick';
 const { wallToMs } = require('./busy');
 const okMinutes = (m) => m >= 5 && m <= 480 && m % 5 === 0;
 
@@ -128,14 +129,15 @@ function formView(o){
   return { trigger_id: o.triggerId, view: {
     type: 'modal', callback_id: CALLBACK, title: { type: 'plain_text', text: 'Set up a meeting' },
     submit: { type: 'plain_text', text: 'Send the invites' }, close: { type: 'plain_text', text: 'Cancel' },
-    private_metadata: JSON.stringify({ channel: o.channelId, name: o.channelName }),
+    private_metadata: JSON.stringify({ channel: o.channelId, name: o.channelName, tz: o.tz || TZ }),
     blocks: [
       { type: 'input', block_id: 'title', label: { type: 'plain_text', text: 'Title' },
         element: Object.assign({ type: 'plain_text_input', action_id: 'v', max_length: 200 }, o.title ? { initial_value: String(o.title).slice(0, 200) } : {}) },
-      { type: 'input', block_id: 'when', label: { type: 'plain_text', text: 'When' },
-        element: { type: 'datetimepicker', action_id: 'v', initial_date_time: o.start > o.now ? Math.floor(o.start / 1000) : nextSlot(o.now) } },
       { type: 'input', block_id: 'minutes', label: { type: 'plain_text', text: 'How long' },
         element: { type: 'static_select', action_id: 'v', options: lengths, initial_option: lengths.find(function(x){ return x.value === String(typed); }) } },
+      { type: 'input', block_id: 'when', label: { type: 'plain_text', text: 'When' },
+        element: { type: 'datetimepicker', action_id: 'v', initial_date_time: o.start > o.now ? Math.floor(o.start / 1000) : nextSlot(o.now) } },
+      { type: 'actions', block_id: 'sg_go', elements: [{ type: 'button', action_id: SUGGEST, text: { type: 'plain_text', text: 'Suggest a time' }, value: 'go' }] },
       { type: 'input', block_id: 'notes', optional: true, label: { type: 'plain_text', text: 'Description' },
         element: { type: 'plain_text_input', action_id: 'v', multiline: true, max_length: 3000, placeholder: { type: 'plain_text', text: 'What it’s about, an agenda' } } },
       { type: 'input', block_id: 'link', optional: true, label: { type: 'plain_text', text: 'Meeting link' },
@@ -149,19 +151,72 @@ function formView(o){
 function meetingOf(values, now){
   const v = values || {}, el = function(b){ return (v[b] && v[b].v) || {}; };
   const title = String(el('title').value || '').trim().slice(0, 200);
-  const start = Number(el('when').selected_date_time) * 1000;
+  // When: its block is 'when', or 'when-<ms>' once a suggestion was picked (a new block takes the new time).
+  const whenKey = Object.keys(v).filter(function(k){ return /^when(-\d+)?$/.test(k); }).pop() || 'when';
+  const start = Number(el(whenKey).selected_date_time) * 1000;
   const minutes = Number((el('minutes').selected_option || {}).value);
   const notes = String(el('notes').value || '').trim().slice(0, 3000);
   const link = String(el('link').value || '').trim();
   const errors = {};
   if (!title) errors.title = 'Give it a title.';
-  if (!(start > 0)) errors.when = 'Choose when.';
-  else if (start < now - 5 * 60000) errors.when = 'That’s in the past.';
-  else if (start > now + 366 * 86400000) errors.when = 'Choose a time within a year.';
+  if (!(start > 0)) errors[whenKey] = 'Choose when.';
+  else if (start < now - 5 * 60000) errors[whenKey] = 'That’s in the past.';
+  else if (start > now + 366 * 86400000) errors[whenKey] = 'Choose a time within a year.';
   if (!okMinutes(minutes)) errors.minutes = 'Choose how long.';
   if (link && !(link.length <= 500 && /^https:\/\/[^\s"<>]+$/.test(link))) errors.link = 'Give a link starting with https://';
   if (Object.keys(errors).length) return { errors };
   return { title, start, minutes, notes, link };
+}
+
+// ---------- Suggest a time (the form's button) ----------
+// Pure: the view Slack sends back (payload.view) → one views.update takes.
+function viewOf(v){
+  return { type: 'modal', callback_id: v.callback_id, title: v.title, submit: v.submit, close: v.close, private_metadata: v.private_metadata,
+    blocks: (v.blocks || []).map(function(b){ return JSON.parse(JSON.stringify(b)); }) };
+}
+// Pure: "Thu 12 Nov, 14:00" in `tz`.
+function slotText(start, tz){
+  const f = function(o){ return new Intl.DateTimeFormat('en-GB', Object.assign({ timeZone: tz || TZ }, o)).format(new Date(start)); };
+  return f({ weekday: 'short', day: 'numeric', month: 'short' }).replace(',', '') + ', ' + f({ hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+}
+const mrk = function(t){ return String(t).replace(/[&<>]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); };
+// Pure: the view with what Suggest a time found under its button, in place of what was there:
+// { status } (a line, while it looks), or { slots: suggestOnce's, tz, fromCalendar: [names], none: [names], failed: [names] }.
+function withSuggestions(view, o){
+  const blocks = view.blocks.filter(function(b){ return !/^sg_(list|note)/.test(b.block_id || ''); });
+  const at = blocks.findIndex(function(b){ return b.block_id === 'sg_go'; });
+  const add = [];
+  if (o.status) add.push({ type: 'context', block_id: 'sg_note', elements: [{ type: 'mrkdwn', text: mrk(o.status) }] });
+  else {
+    const slots = o.slots || [], all = slots.length && slots.every(function(x){ return x.free === x.of; });
+    const whose = (o.fromCalendar || []).length
+      ? 'From the calendars of ' + namesText(o.fromCalendar, 600) + ', and everyone’s BOLD.OS meetings.'
+      : 'From everyone’s BOLD.OS meetings: nobody here has added a free/busy calendar.';
+    const none = (o.fromCalendar || []).length && (o.none || []).length
+      ? ' ' + namesText(o.none, 600) + ((o.none.length === 1) ? ' hasn’t' : ' haven’t') + ' added a free/busy calendar (on their BOLD.OS profile).' : '';
+    const failed = (o.failed || []).length ? ' Couldn’t read a calendar of ' + namesText(o.failed, 300) + '.' : '';
+    const head = !slots.length ? 'No time found in the next two weeks.' : all ? 'Everyone’s free at these times (weekdays, 09:00–18:00 London, the next two weeks).'
+      : 'No time suits everyone: these suit the most people (weekdays, 09:00–18:00 London, the next two weeks).';
+    add.push({ type: 'context', block_id: 'sg_note', elements: [{ type: 'mrkdwn', text: mrk((head + ' ' + whose + none + failed).slice(0, 2900)) }] });
+    if (slots.length) add.push({ type: 'actions', block_id: 'sg_list', elements: slots.slice(0, 5).map(function(x){
+      return { type: 'button', action_id: PICK + '_' + x.start, value: String(x.start),
+        text: { type: 'plain_text', text: (slotText(x.start, o.tz) + (x.free < x.of ? ' (' + x.free + ' of ' + x.of + ')' : '')).slice(0, 75) } };
+    }) });
+  }
+  blocks.splice(at + 1, 0, ...add);
+  return Object.assign({}, view, { blocks });
+}
+// Pure: the view with When set to `start` (ms): a new block id, so Slack takes the new time rather than keeping what was there.
+function withWhen(view, start){
+  return Object.assign({}, view, { blocks: view.blocks.map(function(b){
+    if (!/^when(-\d+)?$/.test(b.block_id || '')) return b;
+    return Object.assign({}, b, { block_id: 'when-' + start, element: Object.assign({}, b.element, { initial_date_time: Math.floor(start / 1000) }) });
+  }) });
+}
+// Pure: the length chosen on the form (view.state.values), or 60.
+function minutesOf(values){
+  const m = Number((((values || {}).minutes || {}).v || {}).selected_option && values.minutes.v.selected_option.value);
+  return okMinutes(m) ? m : 60;
 }
 
 // Pure: the meeting and its guests → the Calendar event (POST …/events?conferenceDataVersion=1&sendUpdates=all).
@@ -187,4 +242,4 @@ function whenText(start, minutes){
     f(start, hm) + '–' + f(start + minutes * 60000, hm) + ' (London)';
 }
 
-module.exports = { TZ, LENGTHS, parseText, MAX_GUESTS, CALLBACK, inviteesOf, nextSlot, namesText, formView, meetingOf, eventOf, whenText };
+module.exports = { TZ, LENGTHS, SUGGEST, PICK, viewOf, slotText, withSuggestions, withWhen, minutesOf, parseText, MAX_GUESTS, CALLBACK, inviteesOf, nextSlot, namesText, formView, meetingOf, eventOf, whenText };
