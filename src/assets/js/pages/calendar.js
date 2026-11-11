@@ -181,7 +181,7 @@
     pop.edit = edit || (o && m.start ? { scope: 'once', date: o.date, time: o.time, minutes: o.minutes, day: weekdayOf(o.date) }
       : { scope: 'series', date: '', time: m.meeting.time, minutes: m.meeting.minutes, day: m.meeting.day });
     msgs[keyOf(m)] = '';
-    renderPop();
+    render();
   }
   // back: this occurrence back at its own time (or restored, if cancelled); cancel: this occurrence cancelled.
   function saveEdit(m, back, cancel){
@@ -216,7 +216,7 @@
     var box = el('calPop');
     if (!pop || box.hidden) return;
     var sel = '[data-key="' + pop.key.replace(/["\\]/g, '\\$&') + '"]';
-    var a = (pop.orig && el('meetings').querySelector(sel + '[data-orig="' + pop.orig + '"]')) || el('meetings').querySelector(sel);
+    var a = el('meetings').querySelector('.week-ghost.is-pending') || (pop.orig && el('meetings').querySelector(sel + '[data-orig="' + pop.orig + '"]')) || el('meetings').querySelector(sel);
     var r = a ? a.getBoundingClientRect() : pop.rect;
     pop.rect = r;
     var vw = document.documentElement.clientWidth, vh = window.innerHeight, w = box.offsetWidth, h = box.offsetHeight, gap = 6, pad = 12;
@@ -231,7 +231,7 @@
   }
   window.addEventListener('scroll', placePop, { passive: true });
   window.addEventListener('resize', placePop);
-  function closePop(){ pop = null; renderPop(); }
+  function closePop(){ var moving = pop && pop.edit; pop = null; if (moving) render(); else renderPop(); }
 
   function listHtml(ms, evs){
     var html = '';
@@ -327,6 +327,14 @@
     var start = monday(weekOffset), dates = [];
     for (var i = 0; i < 7; i++) { var d = new Date(start); d.setDate(start.getDate() + i); dates.push(d); }
     var onDay = function(i){ var t = iso(dates[i]); return evs.filter(function(x){ return x.startDate <= t && (x.endDate || x.startDate) >= t; }); };
+    // A move of one occurrence being decided in its card: { m, orig, from (its date now), date, time, minutes }.
+    var pend = null;
+    if (pop && pop.edit && pop.orig && pop.edit.scope === 'once') {
+      var pm = ms.filter(function(x){ return keyOf(x) === pop.key; })[0];
+      var po = pm && occIn(pm, addDays(pop.orig, -62), addDays(pop.orig, 62)).filter(function(x){ return x.orig === pop.orig; })[0];
+      if (po && (pop.edit.date !== po.date || pop.edit.time !== po.time || +pop.edit.minutes !== po.minutes))
+        pend = { m: pm, orig: pop.orig, from: po.date, date: pop.edit.date, time: pop.edit.time, minutes: +pop.edit.minutes || po.minutes };
+    }
     // Each meeting's dates this week, moved ones where they were moved to.
     var occs = [];
     ms.forEach(function(m){ occIn(m, iso(dates[0]), iso(dates[6])).forEach(function(o){ occs.push({ m: m, o: o }); }); });
@@ -388,11 +396,17 @@
         cur.lanes[lane] = b.e; b.lane = lane; cur.items.push(b); cur.end = Math.max(cur.end, b.e);
       });
       html += '<div class="week-day">' + squash + hours.map(function(h){ return '<span class="week-line" style="top:' + y(h * 60) + 'px"></span>'; }).join('');
+      // A move being decided in its card (dropped there, or typed in): where it would go, as the drag's preview.
+      if (pend && pend.date === iso(dates[i]) && /^\d\d:\d\d$/.test(pend.time)) {
+        var ps = minutes(pend.time), pm = pend.m;
+        html += '<span class="week-block cal-' + pm.kind + (pm.mine ? ' is-mine' : '') + ' week-ghost is-pending" aria-hidden="true" style="top:' + y(ps) + 'px;height:' + Math.max(18, y(ps + pend.minutes) - y(ps) - 2) + 'px">' +
+          '<span class="week-time">' + esc((pend.date !== pend.from ? dayText(pend.date) + ', ' : '') + pend.time + '–' + endOf(pend.time, pend.minutes)) + '</span> ' + esc(pm.title) + '</span>';
+      }
       groups.forEach(function(g){
         g.items.forEach(function(b){
           var m = b.m, o = b.o, n = g.lanes.length, tag = m.href ? 'a' : 'span';
           var drag = m.canEdit && !m.paused && !m.hidden && m.start && !o.cancelled;
-          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) || o.cancelled ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (o.cancelled ? ' is-cancelled' : '') + (drag ? ' is-draggable' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
+          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) || o.cancelled ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (o.cancelled ? ' is-cancelled' : '') + (drag ? ' is-draggable' : '') + (pend && pend.m === m && pend.orig === o.orig ? ' is-drag-source' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + y(b.s) + 'px;height:' + Math.max(18, y(b.e) - y(b.s) - 2) + 'px;' +
             'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
             '<span class="week-time">' + esc(o.time) + '</span> ' + esc(m.title) + (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span>' : '') + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
@@ -436,7 +450,6 @@
     var step = e.target.closest('.cal-step');
     if (step) { var s = +step.getAttribute('data-step'); weekOffset = s ? weekOffset + s : 0; render(); return; }
     // A meeting's block (a plain click: a new tab still opens its page) or Ask to join.
-    if (noClick && e.target.closest('.week-block')) { e.preventDefault(); return; }
     var opener = e.target.closest('.week-block, .cal-open');
     if (opener && !(e.metaKey || e.ctrlKey || e.shiftKey || e.button)) { e.preventDefault(); openPop(opener.getAttribute('data-key'), opener); return; }
     onJoin(e);
@@ -450,7 +463,7 @@
     var pz = e.target.closest('.cal-pause');
     if (m && pz && !pz.disabled) { pauseOrResume(m, pz.getAttribute('data-action')); return; }
     if (m && e.target.closest('.cal-change')) { startEdit(m); return; }
-    if (m && e.target.closest('.cal-e-cancel')) { pop.edit = null; renderPop(); return; }
+    if (m && e.target.closest('.cal-e-cancel')) { pop.edit = null; render(); return; }
     if (m && e.target.closest('.cal-e-save')) { saveEdit(m, false); return; }
     if (m && e.target.closest('.cal-e-back, .cal-restore')) { saveEdit(m, true); return; }
     if (m && e.target.closest('.cal-cancel-one')) {
@@ -462,13 +475,20 @@
     }
     onJoin(e);
   });
+  // A day, time or length changed in the card: the move drawn on the grid follows it.
+  el('calPop').addEventListener('change', function(e){
+    if (!pop || !pop.edit || !e.target.matches('.cal-e-date, .cal-e-time, .cal-e-min') || view !== 'week') return;
+    readEdit();
+    el('meetings').innerHTML = weekHtml(meetings(), events());
+    placePop();
+  });
   // Switching between this date and every date: the day field follows.
   el('calPop').addEventListener('change', function(e){
     if (!pop || !pop.edit || !e.target.matches('input[name=calScope]')) return;
     readEdit();
     if (pop.edit.scope === 'series' && pop.edit.date) pop.edit.day = weekdayOf(pop.edit.date);
     if (pop.edit.scope === 'once' && !pop.edit.date) pop.edit.date = pop.orig;
-    renderPop();
+    render();
   });
   document.addEventListener('click', function(e){
     // (a button the card redrew away is no longer in the page: not a click outside)
@@ -497,6 +517,10 @@
     if (d.redraw) render();
     return d;
   }
+  // The click a browser sends when the button comes up after a drag (on the block, or on the grid when let go
+  // in another day): swallowed before anything sees it, or it would follow the block's link or close its card.
+  function swallowClick(){ noClick = true; setTimeout(function(){ noClick = false; }, 400); }
+  window.addEventListener('click', function(e){ if (noClick) { noClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
   el('meetings').addEventListener('pointerdown', function(e){
     var b = e.target.closest('.week-block.is-draggable');
     if (!b || e.button !== 0 || e.pointerType === 'touch' || !geom) return;
@@ -532,14 +556,14 @@
     if (!drag) return;
     var d = endDrag();
     if (!d.on) return;
-    noClick = true; setTimeout(function(){ noClick = false; }, 0);
+    swallowClick();
     var t = d.to;
     if (!t || (t.date === d.o.date && t.time === d.o.time)) return;
     var a = el('meetings').querySelector('.week-block[data-key="' + d.key.replace(/["\\]/g, '\\$&') + '"][data-orig="' + d.o.orig + '"]') || d.b;
     pop = { key: d.key, orig: d.o.orig, rect: a.getBoundingClientRect() };
     startEdit(d.m, { scope: 'once', date: t.date, time: t.time, minutes: d.o.minutes, day: weekdayOf(t.date) });
   });
-  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && drag) { var d = endDrag(); if (d && d.on) { noClick = true; setTimeout(function(){ noClick = false; }, 0); } } });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && drag) { var d = endDrag(); if (d && d.on) { swallowClick(); } } });
 
   // Subscribe: your own link to the Calendar for a calendar app (calendarFeed in functions/api.js),
   // made the first time it's opened; New link replaces it, and the old one stops working.
