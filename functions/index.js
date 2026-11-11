@@ -1918,7 +1918,7 @@ function newTags(before, after){
 // Where a tag is: { title, url } for a document's path, or null where tags tell
 // nobody here: bookkeeping and private collections, and guides and the
 // BOLDiquette (their comments and proposed changes tell, above). Pure.
-const TAG_SILENT = ['roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
+const TAG_SILENT = ['forms', 'roles', 'people', 'meta', 'settings', 'readPoints', 'changelog', 'commentQueue', 'venueCalls', 'githubLinks', 'googleLinks',
   'letterRequests', 'introRequests', 'joinRequests', 'members', 'hackathonJoins', 'projectWorkspaces', 'guides', 'handbook', 'interactions', 'privateInteractions',
   // Conversations (Experimental, 2026-11-04): no Slack messages from it while it's an experiment.
   'conversations', 'conversationImports', 'cardImageImports', 'notifications'];
@@ -9292,8 +9292,11 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   tellPerson: (email, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails: [email], headline: text }),
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
-    letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, branchCommit: exports.branchCommit, branchMeta: exports.branchMeta, decideBranch: exports.decideBranch, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
+    forms: exports.forms, letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, branchCommit: exports.branchCommit, branchMeta: exports.branchMeta, decideBranch: exports.decideBranch, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
     confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, joinChanges: exports.joinChanges, myRequests: exports.myRequests, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
+const labForms = require('./forms')({ db, onCall, onSchedule, HttpsError, signedInEmail, access, deliver, SITE_URL });
+exports.forms = labForms.forms;
+exports.remindForms = labForms.remindForms;
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
 // Subscribing to the Calendar: one private .ics link a person (calendar.html; served by boldApi).

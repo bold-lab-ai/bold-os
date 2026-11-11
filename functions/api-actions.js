@@ -728,6 +728,9 @@ module.exports = function(ctx){
     { name: 'get_skill', description: 'One skill: its SKILL.md and files, to use or install it.', inputSchema: S({ name: str('The skill’s name.') }, ['name']), run: getSkill },
   ];
   const WRITE = [
+    { name: 'forms', description: 'Create/save a draft, publish it, send pending invitations or close it, through the same callable as the Forms page. Ask before granting owners access or notifying recipients. Responses and identity-reveal actions stay on the site to keep them out of agent activity logs.',
+      inputSchema: S({ action: ACTIONS(['create', 'save', 'publish', 'invite', 'close']), id: str('Form id.'), form: { type: 'object', description: 'title, description, questions [{id,label,type:text|choice|scale,required,options}], owners, targetEmails, targetGroups, reminders, notifyOwners.' }, revision: { type: 'integer' }, confirmOwners: { type: 'boolean' }, confirmPublish: { type: 'boolean' }, notify: { type: 'boolean' } }),
+      run: (who, a) => act(who, 'forms', { action: a.action, id: a.id, form: a.form, revision: a.revision, confirmOwners: a.confirmOwners === true, confirmPublish: a.confirmPublish === true, notify: a.notify === true }) },
     { name: 'comments', run: comments,
       description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change: its conversation, started or added to), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),

@@ -39,7 +39,7 @@ const DEMO_JOIN_KEY = 'dec0de0c0ffee';
   set('roles/admins', { emails: [] });
   // As on BOLD.OS since 2026-11-06 (the BOLDiquette's Who can do what): everyone signed in sees everything.
   set('settings/access', { pages: {
-    boldiquette: LEVEL('everyone', 'internal'), profile: LEVEL('everyone', 'everyone'), 'get-started': LEVEL('everyone', 'associate'),
+    forms: LEVEL('everyone', 'everyone'), boldiquette: LEVEL('everyone', 'internal'), profile: LEVEL('everyone', 'everyone'), 'get-started': LEVEL('everyone', 'associate'),
     projects: LEVEL('everyone', 'everyone'), events: LEVEL('everyone', 'internal'), calendar: LEVEL('everyone', 'associate'),
     people: LEVEL('everyone', 'internal'), requests: LEVEL('everyone', 'internal'), 'service-desk': LEVEL('everyone', 'associate'),
     guides: LEVEL('everyone', 'internal'), agents: LEVEL('everyone', 'internal'), tools: LEVEL('everyone', 'internal'), skills: LEVEL('everyone', 'internal'),

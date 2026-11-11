@@ -55,6 +55,11 @@
   }
   function cardHref(c){ return 'audit-board.html#board=' + encodeURIComponent(c.board) + '&card=' + encodeURIComponent(c.id); }
   var LOAD = {
+    forms: function(){
+      return BOLD.getApp().functions('europe-west2').httpsCallable('forms')({ action: 'list' }).then(function(r){
+        return r.data.forms.map(function(f){ return item(f.title, 'Form', f.status, 'forms.html?id=' + encodeURIComponent(f.id)); });
+      });
+    },
     boldiquette: function(){
       return parts('handbook', function(id){ return id === 'boldiquette' ? 'boldiquette.html' : 'index.html'; }, '', 'BOLDiquette');
     },

@@ -176,3 +176,7 @@ Every point where the site differs from BOLDiquette: the paper-submission toolin
 
 - **arXiv affiliation.** Guide now uses "BOLD, {University of Oxford / Imperial College / UCL}", matching BOLDiquette exactly (was Oxford-only). *Fixed 2026-09-10.*
 - **Roger Grosse attribution.** The guide credits "Roger Grosse" for the loose-ends practice; BOLDiquette has a typo, "Rober Grosse". Editorial only — worth fixing in BOLDiquette when the section is next edited.
+
+## Forms rollout
+
+Forms (#264): before rollout, propose a Forms access-table row that lets intended respondents view and submit forms, and document the anonymous-to-owners privacy contract. Questionnaires and their ownership are configured on the site; no production content is seeded from this public repository.
