@@ -1102,6 +1102,7 @@ async function mayAddBoard(email, board){
 // A board's milestones ([{ id, name, start, end }]).
 function slashMilestones(ws){ return ((ws && ws.work) || {}).milestones || []; }
 async function handleSlashCommand(token, body){
+  if (body.command === '/meeting') return handleMeetingCommand(token, body);
   const c = SLASH_CARDS[body.command];
   const say = (text) => ({ response_type: 'ephemeral', text });
   if (!c) return say('BOLD.OS doesn’t know ' + body.command + '.');
@@ -1314,8 +1315,60 @@ async function addCardFromSlack(token, payload){
   if (!sent.ok) await dmBySlackId(token, payload.user.id, text, '', { raw: true });
 }
 
+// ---------- /meeting (#325, 2026-11-11): a one-off meeting with everyone in the channel ----------
+// Typed in a channel BOLD OS is in, it opens a form (title, when, how long, a description, a link) naming
+// everyone it invites: the channel's members with a BOLD.OS address. Sending it is the go-ahead; closing
+// it sends nothing. oneOffMeetings/{id} (server only) then has onOneOffMeeting make the event from the
+// lab's Google account (functions/slack-meeting.js), Google emailing the invitations, and tell whoever
+// sent it, to them alone. For anyone signed in to BOLD.OS once.
+const slackMeeting = require('./slack-meeting');
+// A channel's members to invite → { emails, names, others }, or null when BOLD OS can't see them.
+async function meetingInvitees(token, channelId){
+  const ids = await groupChannelMemberIds(token, channelId);
+  if (!ids) return null;
+  const people = {};
+  for (let i = 0; i < ids.length; i += 100) {
+    const snaps = await db.getAll(...ids.slice(i, i + 100).map((id) => db.collection('people').doc(String(id))));
+    snaps.forEach((d) => { if (d.exists) people[d.id] = d.data(); });
+  }
+  return slackMeeting.inviteesOf(ids, people);
+}
+async function handleMeetingCommand(token, body){
+  const say = (text) => ({ response_type: 'ephemeral', text });
+  const email = await emailForSlackId(body.user_id);
+  if (!email) return say('Sign in to BOLD.OS once first, so it knows who you are: ' + SITE_URL);
+  const name = String(body.channel_name || '');
+  if (!body.channel_id || name === 'directmessage') return say('/meeting invites everyone in a channel: type it in one BOLD OS is in.');
+  const who = await meetingInvitees(token, body.channel_id);
+  if (!who) return say('BOLD OS can’t see who’s in this channel: add it (/invite @BOLD OS), then try again.');
+  if (!who.emails.length) return say('Nobody in this channel has a BOLD.OS account to invite.');
+  if (who.emails.length > slackMeeting.MAX_GUESTS) return say('/meeting invites up to ' + slackMeeting.MAX_GUESTS + ' people, and this channel has ' + who.emails.length + '.');
+  const shown = name === 'privategroup' ? 'this conversation' : name;
+  // What was typed ("tomorrow at 1pm for 30min") fills the form in, read in their own time zone (Slack's).
+  const u = await (await fetch('https://slack.com/api/users.info?' + new URLSearchParams({ user: body.user_id }), { headers: { Authorization: 'Bearer ' + token } })).json().catch(() => null);
+  const typed = slackMeeting.parseText(body.text, Date.now(), (u && u.ok && u.user && u.user.tz) || slackMeeting.TZ);
+  const opened = await slackFetch(token, 'views.open', slackMeeting.formView({ triggerId: body.trigger_id, title: typed.title, start: typed.start, minutes: typed.minutes,
+    channelId: body.channel_id, channelName: shown, names: who.names, others: who.others, now: Date.now() }));
+  if (!opened.ok) { logger.warn('Opening the meeting form failed', { error: opened.error, details: opened.response_metadata }); return say('Couldn’t open the form — try again.'); }
+  return {};
+}
+// The form sent: checked (what to fix goes back to the form), then queued for onOneOffMeeting.
+async function handleMeetingSubmit(token, payload){
+  const m = slackMeeting.meetingOf(payload.view.state && payload.view.state.values, Date.now());
+  if (m.errors) return { response_action: 'errors', errors: m.errors };
+  const slackId = payload.user && payload.user.id;
+  const email = await emailForSlackId(slackId);
+  if (!email) return { response_action: 'errors', errors: { title: 'Sign in to BOLD.OS once first, so it knows who you are.' } };
+  const meta = JSON.parse(payload.view.private_metadata || '{}');
+  const person = (await db.collection('people').doc(String(slackId)).get()).data() || {};
+  await db.collection('oneOffMeetings').add(Object.assign({}, m, {
+    by: { email, name: person.name || email.split('@')[0], slackId }, channel: String(meta.channel || ''), channelName: String(meta.name || ''), at: Date.now() }));
+  return null;
+}
+
 async function handleInteractivity(token, payload){
   if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'work_card') return addCardFromSlack(token, payload);
+  if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === slackMeeting.CALLBACK) return handleMeetingSubmit(token, payload);
   // Take it to the BOLD OS, a message shortcut (functions/slack-thread.js).
   if (payload.type === 'message_action' && payload.callback_id === 'send_to_conversations') return conversationsSlack.handleShortcut(payload);
   if (payload.type !== 'block_actions') return;
@@ -2837,12 +2890,14 @@ exports.slackEvents = onRequest(
       // one Firestore write + a views.publish call; there's no automatic
       // retry for interactivity payloads on timeout, so completing before
       // responding is the only way this reliably runs at all.
+      // A form's answer to Slack (/meeting's: what to fix, shown on the form) goes back as the reply.
+      let answer = null;
       try {
-        await handleInteractivity(token, payload);
+        answer = await handleInteractivity(token, payload);
       } catch (err){
         logger.error('handleInteractivity threw', { error: String(err) });
       }
-      res.status(200).send('');
+      if (answer && answer.response_action) res.status(200).json(answer); else res.status(200).send('');
       return;
     }
 
@@ -3795,6 +3850,33 @@ function isCalendarLimit(err){
 }
 const CALENDAR_LIMIT_MSG = 'Google\u2019s limit for the lab\u2019s calendar was reached: BOLD.OS tries again by itself every hour.';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
+
+// /meeting's invitations (handleMeetingCommand, handleMeetingSubmit): the event, from the lab's Google account.
+exports.onOneOffMeeting = onDocumentCreated({ document: 'oneOffMeetings/{id}', secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH], timeoutSeconds: 120 }, async (event) => {
+  const d = event.data && event.data.data();
+  if (!d || d.doneAt) return;
+  const token = SLACK_BOT_TOKEN.value();
+  const tell = async (text) => {
+    const sent = d.channel ? await slackFetch(token, 'chat.postEphemeral', { channel: d.channel, user: d.by.slackId, text }) : { ok: false };
+    if (!sent.ok) await dmBySlackId(token, d.by.slackId, text, '', { raw: true });
+  };
+  // Who's in the channel now, and whoever sent it.
+  const who = await meetingInvitees(token, d.channel);
+  const emails = ((who && who.emails) || []).concat(d.by.email).filter((e, i, a) => a.indexOf(e) === i).slice(0, slackMeeting.MAX_GUESTS + 1);
+  const footer = 'Set up by ' + d.by.name + ' for ' + (d.channelName === 'this conversation' ? 'a Slack conversation' : '#' + d.channelName) + ', with /meeting on BOLD.OS.';
+  try {
+    const ev = await googleFetch('POST', CAL + '?conferenceDataVersion=1&sendUpdates=all', slackMeeting.eventOf(d, emails, 'bold-meeting-' + event.params.id, footer));
+    const meet = d.link || ev.hangoutLink || '';
+    await event.data.ref.set({ doneAt: Date.now(), eventId: ev.id, eventLink: ev.htmlLink || '', meetUrl: meet, invited: emails.length }, { merge: true });
+    await tell('📅 Invited ' + (emails.length === 1 ? 'you' : emails.length + ' people') + ' to ' + (ev.htmlLink ? linkedTitle(slackText(d.title), ev.htmlLink) : '*' + slackText(d.title) + '*') +
+      ', ' + slackMeeting.whenText(d.start, d.minutes) + (meet ? ' · ' + linkedTitle('join', meet) : '') + '. The invitations come from the lab’s Google account.');
+  } catch (err){
+    logger.warn('A meeting from /meeting failed', { id: event.params.id, error: String(err && err.message || err) });
+    await event.data.ref.set({ doneAt: Date.now(), error: String(err && err.message || err).slice(0, 300) }, { merge: true });
+    await tell(isCalendarLimit(err) ? 'Couldn’t send the invites for ' + slackText(d.title) + ': Google’s limit for the lab’s calendar was reached. Try again in a few hours.'
+      : 'Couldn’t send the invites for ' + slackText(d.title) + ' — try again.');
+  }
+});
 
 // The Drive folder every project's files go in, made once (drive.file can only
 // reach files this app made). settings/projectDrive has no client access.
