@@ -93,3 +93,15 @@ test('only Google, Outlook and iCloud calendar links', () => {
   assert.strictEqual(B.okFeedUrl('https://calendar.google.com.evil.example/x.ics'), '');
   assert.strictEqual(B.okFeedUrl('https://calendar.google.com:8443/x.ics'), '');
 });
+
+test('Google Calendar’s share and embed links become the calendar’s public iCal address', () => {
+  const cid = Buffer.from('someone@example.org').toString('base64').replace(/=+$/, '');
+  const ical = 'https://calendar.google.com/calendar/ical/someone%40example.org/public/basic.ics';
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/u/0?cid=' + cid), ical);
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/embed?src=someone%40example.org&ctz=Europe%2FLondon'), ical);
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/r?cid=someone@example.org'), ical);
+  // An iCal address stays as it is; a link with no calendar in it too.
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/ical/x%40y.org/private-abc/basic.ics'), 'https://calendar.google.com/calendar/ical/x%40y.org/private-abc/basic.ics');
+  assert.strictEqual(B.okFeedUrl('https://calendar.google.com/calendar/u/0/r'), 'https://calendar.google.com/calendar/u/0/r');
+  assert.strictEqual(B.googleIcal('https://calendar.google.com/calendar/u/0?cid=bm90IGFuIGlk'), '');
+});

@@ -257,8 +257,27 @@ function okFeedUrl(u){
   if (u.length > 1000 || !/^https:\/\/[^\s"<>]+$/.test(u)) return '';
   let host;
   try { const x = new URL(u); if (x.port || x.username) return ''; host = x.hostname.toLowerCase(); } catch (e){ return ''; }
-  return HOSTS.some(function(h){ return h.test(host); }) ? u : '';
+  if (!HOSTS.some(function(h){ return h.test(host); })) return '';
+  return googleIcal(u) || u;
 }
+// Pure: Google Calendar's own links to a calendar (its "share" link, ?cid=, which is the calendar's id
+// in base64, or an embed's ?src=) → its public iCal address, which works once the calendar is public
+// (with "See only free/busy" or more); '' for any other link.
+function googleIcal(u){
+  let x;
+  try { x = new URL(u); } catch (e){ return ''; }
+  if (x.hostname.toLowerCase() !== 'calendar.google.com' || /^\/calendar\/ical\//.test(x.pathname)) return '';
+  let id = x.searchParams.get('src') || '';
+  const cid = x.searchParams.get('cid');
+  if (!id && cid) {
+    if (/@/.test(cid)) id = cid;
+    else { try { id = Buffer.from(cid.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'); } catch (e){ id = ''; } }
+  }
+  id = id.trim();
+  if (!/^[^\s@\/]+@[^\s@\/]+\.[^\s@\/]+$/.test(id)) return '';
+  return 'https://calendar.google.com/calendar/ical/' + encodeURIComponent(id) + '/public/basic.ics';
+}
+const PUBLIC_HOW = 'In Google Calendar: Settings › the calendar › Access permissions, tick “Make available to public” with “See only free/busy”, then add it again.';
 // The calendar's text, or throws: only from those hosts (redirects too), at most 5 MB, 10 s.
 async function fetchIcs(url){
   let u = okFeedUrl(url);
@@ -267,8 +286,14 @@ async function fetchIcs(url){
     const ctl = new AbortController(), timer = setTimeout(function(){ ctl.abort(); }, 10000);
     try {
       const res = await fetch(u, { redirect: 'manual', signal: ctl.signal, headers: { Accept: 'text/calendar' } });
-      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) { u = okFeedUrl(new URL(res.headers.get('location'), u).toString()); continue; }
-      if (!res.ok) throw new Error(res.status === 404 || res.status === 403 ? 'The calendar isn’t shared at that link.' : 'The calendar couldn’t be read (' + res.status + ').');
+      const google = /^https:\/\/calendar\.google\.com\//i.test(u);
+      if (res.status >= 300 && res.status < 400 && res.headers.get('location')) {
+        const next = new URL(res.headers.get('location'), u).toString();
+        // Google sending it to its sign-in: the calendar isn't public.
+        if (google && /^https:\/\/accounts\.google\.com\//i.test(next)) throw new Error('Google keeps that calendar private. ' + PUBLIC_HOW);
+        u = okFeedUrl(next); continue;
+      }
+      if (!res.ok) throw new Error(res.status === 404 || res.status === 403 ? (google ? 'Google keeps that calendar private. ' + PUBLIC_HOW : 'The calendar isn’t shared at that link.') : 'The calendar couldn’t be read (' + res.status + ').');
       const text = await res.text();
       if (text.length > 5e6) throw new Error('The calendar is too big to read.');
       if (!/BEGIN:VCALENDAR/.test(text)) throw new Error('That link isn’t a calendar (iCal) address.');
@@ -278,4 +303,4 @@ async function fetchIcs(url){
   throw new Error('The calendar link redirects too many times.');
 }
 
-module.exports = { parseIcs, busyFrom, occurrences, meetingBusy, suggest, okFeedUrl, fetchIcs, londonMs, wallToMs, merge, WEEKDAYS };
+module.exports = { googleIcal, parseIcs, busyFrom, occurrences, meetingBusy, suggest, okFeedUrl, fetchIcs, londonMs, wallToMs, merge, WEEKDAYS };

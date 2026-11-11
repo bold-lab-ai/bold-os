@@ -7,7 +7,7 @@
   var esc = BOLD.escapeHtml, feed = null, busy = false, error = '', done = '', adding = false;
   function call(d){ return firebase.app().functions('europe-west2').httpsCallable('busyFeed')(d).then(function(r){ return r.data || {}; }); }
   var HOW = '<details class="busy-how"><summary>Where to find it</summary><ul>' +
-    '<li><b>Google Calendar:</b> Settings › your calendar › Access permissions: tick “Make available to public” with “See only free/busy”; then, under Integrate calendar, copy the “Public address in iCal format”.</li>' +
+    '<li><b>Google Calendar:</b> Settings › your calendar › Access permissions: tick “Make available to public” with “See only free/busy”; then copy its link (Get shareable link) or, under Integrate calendar, the “Public address in iCal format”.</li>' +
     '<li><b>Outlook:</b> Settings › Calendar › Shared calendars › Publish a calendar, with “Can view when I’m busy”; copy the ICS link.</li>' +
     '<li><b>iCloud:</b> share the calendar as a public calendar and copy its link.</li></ul>' +
     '<p>A secret address works too: BOLD.OS reads only when you’re busy, never what, and keeps the link where only its server can read it.</p></details>';
