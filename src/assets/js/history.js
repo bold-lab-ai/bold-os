@@ -69,7 +69,7 @@ window.BoldHistory = (function(){
     return common ? [ha, hb] : null;
   }
 
-  // The changed lines with CONTEXT lines around them; long runs elided. Where
+  // As GitHub shows a diff: the changed lines with CONTEXT lines around them, in hunks, numbered before and after. Where
   // lines were removed and as many added in their place, the changed words are marked.
   function diffHtml(a, b){
     var d = lineDiff(a, b);
@@ -84,17 +84,29 @@ window.BoldHistory = (function(){
       }
       r += Math.max(1, dels + adds);
     }
+    // Line numbers, before and after, as GitHub shows them: every line counted, the elided ones too.
+    var oldN = 0, newN = 0;
+    d.forEach(function(x){ if (x.op !== '+') x.o = ++oldN; if (x.op !== '-') x.n = ++newN; });
     var keep = d.map(function(){ return false; });
     d.forEach(function(x, k){ if (x.op !== ' ') for (var c = Math.max(0, k - CONTEXT); c <= Math.min(d.length - 1, k + CONTEXT); c++) keep[c] = true; });
-    var html = '', shown = 0, gap = false;
-    for (var k = 0; k < d.length; k++) {
-      if (!keep[k]) { gap = true; continue; }
-      if (shown >= MAX_LINES) { html += '<div class="hist-gap">… and more</div>'; break; }
-      if (gap && html) html += '<div class="hist-gap">⋯</div>';
-      gap = false;
-      var cls = d[k].op === '+' ? 'hist-add' : d[k].op === '-' ? 'hist-del' : 'hist-ctx';
-      html += '<div class="' + cls + '"><span class="hist-op">' + (d[k].op === ' ' ? '' : d[k].op) + '</span>' + (d[k].html || esc(d[k].text) || ' ') + '</div>';
-      shown++;
+    // Hunks, as git and GitHub show them: each run of kept lines under its header, @@ -A,B +C,D @@ (B, D:
+    // its lines before and after; A, C: the first of each, or the line before when there are none; ",1" left out).
+    var range = function(start, n){ return start + (n === 1 ? '' : ',' + n); };
+    var html = '', shown = 0;
+    for (var k = 0; k < d.length;) {
+      if (!keep[k]) { k++; continue; }
+      var end = k; while (end < d.length && keep[end]) end++;
+      var run = d.slice(k, end), olds = run.filter(function(x){ return x.o; }), news = run.filter(function(x){ return x.n; });
+      var before = d.slice(0, k);
+      var oPrev = before.reduce(function(t, x){ return x.o || t; }, 0), nPrev = before.reduce(function(t, x){ return x.n || t; }, 0);
+      html += '<div class="hist-hunk">@@ -' + range(olds.length ? olds[0].o : oPrev, olds.length) + ' +' + range(news.length ? news[0].n : nPrev, news.length) + ' @@</div>';
+      for (; k < end; k++) {
+        if (shown >= MAX_LINES) { html += '<div class="hist-gap">… and more</div>'; k = d.length; break; }
+        var cls = d[k].op === '+' ? 'hist-add' : d[k].op === '-' ? 'hist-del' : 'hist-ctx';
+        html += '<div class="' + cls + '"><span class="hist-ln">' + (d[k].o || '') + '</span><span class="hist-ln">' + (d[k].n || '') + '</span>' +
+          '<span class="hist-op">' + (d[k].op === ' ' ? '' : d[k].op) + '</span><span class="hist-text">' + (d[k].html || esc(d[k].text) || ' ') + '</span></div>';
+        shown++;
+      }
     }
     return '<pre class="hist-diff">' + html + '</pre>';
   }
