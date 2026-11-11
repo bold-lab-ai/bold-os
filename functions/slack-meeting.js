@@ -124,7 +124,7 @@ function formView(o){
     return { text: { type: 'plain_text', text }, value: String(m) };
   });
   const who = 'Invites the ' + (o.names.length === 1 ? 'one person' : o.names.length + ' people') + ' in #' + o.channelName +
-    ' from the lab’s Google account, with a Google Meet unless you give a link: ' + namesText(o.names, 2200) + '.' +
+    ' from the lab’s Google account, with a Google Meet unless you give a link; every guest can change it: ' + namesText(o.names, 2200) + '.' +
     (o.others ? ' ' + o.others + (o.others === 1 ? ' member with no BOLD.OS account (a bot, or someone from outside BOLD) isn’t' : ' members with no BOLD.OS account (bots, or people from outside BOLD) aren’t') + ' invited.' : '');
   return { trigger_id: o.triggerId, view: {
     type: 'modal', callback_id: CALLBACK, title: { type: 'plain_text', text: 'Set up a meeting' },
@@ -227,7 +227,9 @@ function eventOf(m, emails, requestId, footer){
     start: { dateTime: new Date(m.start).toISOString(), timeZone: TZ },
     end: { dateTime: new Date(m.start + m.minutes * 60000).toISOString(), timeZone: TZ },
     attendees: emails.map(function(e){ return { email: e }; }),
-    guestsCanModify: false,
+    // Every guest can change it in their own calendar (whoever made it among them), as Google's
+    // "Modify event" (2026-11-11): Google has no co-owner of one event besides the lab's account.
+    guestsCanModify: true, guestsCanInviteOthers: true,
   };
   if (m.link) ev.location = m.link;
   else ev.conferenceData = { createRequest: { requestId, conferenceSolutionKey: { type: 'hangoutsMeet' } } };

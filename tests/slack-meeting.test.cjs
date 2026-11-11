@@ -51,7 +51,7 @@ test('the form read back, and what to fix', () => {
   assert.ok(M.meetingOf(values({ title: 'x', when: Date.UTC(2028, 0, 1) / 1000, minutes: 60 }), NOW).errors.when);
 });
 
-test('the event: a Google Meet, or the link given; guests can’t change it', () => {
+test('the event: a Google Meet, or the link given; every guest can change it', () => {
   const m = { title: 'Sync', start: Date.UTC(2026, 10, 12, 14), minutes: 90, notes: 'Agenda', link: '' };
   const ev = M.eventOf(m, ['a@x.org', 'b@x.org'], 'req-1', 'Set up by Ana.');
   assert.strictEqual(ev.start.dateTime, '2026-11-12T14:00:00.000Z');
@@ -59,7 +59,7 @@ test('the event: a Google Meet, or the link given; guests can’t change it', ()
   assert.deepStrictEqual(ev.attendees, [{ email: 'a@x.org' }, { email: 'b@x.org' }]);
   assert.strictEqual(ev.description, 'Agenda\n\nSet up by Ana.');
   assert.strictEqual(ev.conferenceData.createRequest.requestId, 'req-1');
-  assert.strictEqual(ev.guestsCanModify, false);
+  assert.strictEqual(ev.guestsCanModify, true);
   const own = M.eventOf(Object.assign({}, m, { link: 'https://zoom.us/j/1' }), [], 'r', '');
   assert.strictEqual(own.location, 'https://zoom.us/j/1');
   assert.strictEqual(own.conferenceData, undefined);
