@@ -305,7 +305,7 @@ module.exports = function(deps){
         url: url(e.page || 'event.html?event=' + encodeURIComponent(e._id)) }));
       // Lab meetings (eventSeries): the released ones they aren't invited to.
       (await lab.seriesFor(email)).filter((x) => x.hidden === false && x.meeting && (x.eventId || x.pausedAt) && (x.guests || []).indexOf(email) < 0).forEach((x) => {
-        meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, start: x.eventStart, pausedAt: x.pausedAt,
+        meetings.push({ id: 'series-' + x._id, title: x.title, meeting: x.meeting, moved: x.meetingMoved, start: x.eventStart, pausedAt: x.pausedAt,
           description: plain(x.description), url: url('series.html?series=' + encodeURIComponent(x._id)) });
       });
     }
@@ -314,13 +314,13 @@ module.exports = function(deps){
       // Ids without anyone's address in them.
       const hid = (s) => crypto.createHash('sha256').update(String(s)).digest('hex').slice(0, 20);
       workspaces.filter((w) => w.meeting && (w.eventId || w.pausedAt) && w.group !== 'completed' && !w.completedAt && !mine(w.members)).forEach((w) => {
-        meetings.push({ id: 'project-' + w._id, title: (w.title || 'Untitled') + ' · project meeting', meeting: w.meeting, start: w.eventStart, pausedAt: w.pausedAt,
+        meetings.push({ id: 'project-' + w._id, title: (w.title || 'Untitled') + ' · project meeting', meeting: w.meeting, moved: w.meetingMoved, start: w.eventStart, pausedAt: w.pausedAt,
           description: Array.from(new Set((w.members || []).map(name))).join(', '), url: url(projectHref(w.cardId || w._id, w.boardId)) });
       });
       studies.filter((s) => s.meeting && (s.eventId || s.pausedAt) &&
         !mine([s._id].concat(s.everyone || [], (s.people || []).map((p) => p.email)))).forEach((s) => {
         meetings.push({ id: 'study-' + hid(s._id), title: (s.name || name(s._id)) + ' · ' + (s.degree === 'Master student' ? 'Master' : 'PhD') + ' supervision',
-          meeting: s.meeting, start: s.eventStart, pausedAt: s.pausedAt, description: s.title || '', url: url('calendar.html') });
+          meeting: s.meeting, moved: s.meetingMoved, start: s.eventStart, pausedAt: s.pausedAt, description: s.title || '', url: url('calendar.html') });
       });
     }
     return require('./calendar-ics').buildCalendar({ name: 'BOLD Lab', events, meetings });

@@ -197,8 +197,10 @@ function busyFrom(text, from, to){
 
 // A weekly meeting BOLD.OS knows of ({ day, time, minutes, every }, `phase`: one of its dates,
 // YYYY-MM-DD, to tell which weeks it falls on when it's not every week) → busy in [from, to).
-function meetingBusy(m, from, to, phase){
+// `moved`: its dates moved one by one (meeting-moves.js: { <its date>: { date, time, minutes } }).
+function meetingBusy(m, from, to, phase, moved){
   const out = [], wd = WEEKDAYS.indexOf(m.day);
+  moved = moved || {};
   if (wd < 0 || !/^\d\d:\d\d$/.test(m.time || '')) return out;
   const every = Math.max(1, +m.every || 1), len = (+m.minutes || 60) * 60000;
   const first = new Date(from - 2 * DAY), base = phase ? Date.parse(phase + 'T00:00:00Z') : NaN;
@@ -209,9 +211,14 @@ function meetingBusy(m, from, to, phase){
     const s = londonMs(d.toISOString().slice(0, 10), m.time);
     if (s >= to) break;
     if (m.until && d.toISOString().slice(0, 10) > m.until) break;
+    if (moved[d.toISOString().slice(0, 10)]) continue;
     if (s + len > from) out.push([s, s + len]);
   }
-  return out;
+  Object.keys(moved).forEach(function(k){
+    const x = moved[k], s = londonMs(x.date, x.time), e = s + (+x.minutes || 60) * 60000;
+    if (s < to && e > from) out.push([s, e]);
+  });
+  return out.sort(function(a, b){ return a[0] - b[0]; });
 }
 
 // ---------- the best times ----------

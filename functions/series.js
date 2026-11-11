@@ -36,7 +36,7 @@
 
 module.exports = function series(deps){
   const { db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-    googleFetch, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
+    googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
     normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL,
     GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto, onSchedule, tellPeople } = deps;
   const { rank, VISIBILITY, VIS_RANK, VISIBILITY_NAMES } = require('./access');
@@ -164,7 +164,7 @@ module.exports = function series(deps){
         ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart', 'guests'].forEach((k) => { patch[k] = FieldValue.delete(); });
       } else if (s.eventId) {
         const ev = await googleFetch('GET', CAL + '/' + s.eventId);
-        const change = {};
+        const change = {}, timesChanged = !sameMeetingTimes(s.eventMeeting, s.meeting);
         const want2 = attendees(ev.attendees);
         if (JSON.stringify(want2.map((a) => a.email)) !== JSON.stringify((ev.attendees || []).map((a) => a.email))) change.attendees = want2;
         if (ev.summary !== summary) change.summary = summary;
@@ -181,6 +181,10 @@ module.exports = function series(deps){
         const url = s.meeting.link || now.hangoutLink || '';
         if (url !== (s.meetUrl || '')) patch.meetUrl = url;
         patch.guests = guests;
+        if (!s.pausedAt) {
+          const moves = await syncMoves(s.eventId, s.meeting, s.meetingMoved, timesChanged ? {} : s.eventMoved);
+          if (moves) patch.eventMoved = moves; else if (timesChanged && s.eventMoved) patch.eventMoved = FieldValue.delete();
+        }
       }
       patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
     } catch (err) {

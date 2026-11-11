@@ -2134,7 +2134,7 @@ const talkItem = (id, c, extra) => Object.assign({ id, text: String(c.text || ''
 function projectTitleDoc(id, ws){
   if (!ws || !ws.title) return null;
   const out = { title: ws.title, cardId: ws.cardId || id, boardId: ws.boardId || null, group: ws.group || '',
-    meeting: ws.meeting || null, hasEvent: !!ws.eventId, eventStart: ws.eventStart || '', pausedAt: ws.pausedAt || 0,
+    meeting: ws.meeting || null, meetingMoved: ws.meetingMoved || {}, hasEvent: !!ws.eventId, eventStart: ws.eventStart || '', pausedAt: ws.pausedAt || 0,
     completedAt: ws.completedAt || 0, slackChannel: ws.slackChannel || '', memberCount: (ws.members || []).length };
   return out;
 }
@@ -3871,6 +3871,30 @@ function isCalendarLimit(err){
 }
 const CALENDAR_LIMIT_MSG = 'Google\u2019s limit for the lab\u2019s calendar was reached: BOLD.OS tries again by itself every hour.';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
+// One date of a recurring meeting moved (functions/meeting-moves.js): its own instance in Google Calendar moved
+// (or put back), Google emailing its guests. → the moves now in Google (`eventMoved`), or null if none changed.
+// A date Google no longer has (the series changed since) is let go.
+const meetingMoves = require('./meeting-moves');
+async function syncMoves(eventId, meeting, moved, applied){
+  const todo = meetingMoves.movesToSync(meeting, moved, applied);
+  if (!todo.length) return null;
+  const out = Object.assign({}, applied || {});
+  const at = (date, time) => new Date(busy.londonMs(date, time)).toISOString();
+  for (const x of todo){
+    const id = meetingMoves.instanceId(eventId, busy.londonMs(x.orig, meeting.time));
+    const start = busy.londonMs(x.to.date, x.to.time);
+    try {
+      await googleFetch('PATCH', CAL + '/' + encodeURIComponent(id) + '?sendUpdates=all', {
+        start: { dateTime: at(x.to.date, x.to.time), timeZone: PROJECT_TZ },
+        end: { dateTime: new Date(start + x.to.minutes * 60000).toISOString(), timeZone: PROJECT_TZ } });
+    } catch (err){
+      if (err.status !== 404 && err.status !== 410) throw err;
+      logger.warn('A moved meeting date isn’t in Google Calendar any more', { orig: x.orig });
+    }
+    if ((moved || {})[x.orig]) out[x.orig] = moved[x.orig]; else delete out[x.orig];
+  }
+  return out;
+}
 
 // /meeting's invitations (handleMeetingCommand, handleMeetingSubmit): the event, from the lab's Google account.
 exports.onOneOffMeeting = onDocumentCreated({ document: 'oneOffMeetings/{id}', secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH], timeoutSeconds: 120 }, async (event) => {
@@ -4072,7 +4096,7 @@ function projectGroupForCards(cards, completed, started){
 // What a page reads: the workspace, as stored.
 function workspaceView(ws){
   const out = {};
-  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'startedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'eventLink', 'meetUrl',
+  ['cardId', 'boardId', 'venues', 'title', 'group', 'completedAt', 'startedAt', 'pausedAt', 'slackChannel', 'members', 'joined', 'meeting', 'meetingMoved', 'eventStart', 'eventLink', 'meetUrl',
     'deckUrl', 'notesUrl', 'ownDeckUrl', 'ownNotesUrl', 'noDocs', 'skipped', 'slackSkipped', 'error', 'repo', 'repoName', 'repoUrl', 'ownRepoUrl', 'repoError', 'work'].forEach(function(k){ if (ws[k] !== undefined) out[k] = ws[k]; });
   out.setupMissing = setupMissing(ws);
   return out;
@@ -4378,7 +4402,7 @@ async function syncWorkspace(id, changes){
         ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ delete ws[k]; });
       } else if (ws.eventId){
         const ev = await googleFetch('GET', CAL + '/' + ws.eventId);
-        const change = {};
+        const change = {}, timesChanged = !sameMeetingTimes(ws.eventMeeting, ws.meeting);
         const want = attendees(ev.attendees);
         if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
         if (ev.summary !== ws.title) change.summary = ws.title;
@@ -4396,6 +4420,12 @@ async function syncWorkspace(id, changes){
         } else if (!ws.eventStart && seriesStart(ev)){ patch.eventStart = seriesStart(ev); await save(); }
         const url = ws.meeting.link || now.hangoutLink || '';
         if (url !== (ws.meetUrl || '')){ patch.meetUrl = url; await save(); }
+        // Its dates moved one by one (a new time for all of them leaves none moved).
+        if (!ws.pausedAt){
+          const moves = await syncMoves(ws.eventId, ws.meeting, ws.meetingMoved, timesChanged ? {} : ws.eventMoved);
+          if (moves) { patch.eventMoved = moves; await save(); }
+          else if (timesChanged && ws.eventMoved) { patch.eventMoved = FieldValue.delete(); await save(); }
+        }
       }
       patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
     } catch (err){
@@ -6037,7 +6067,7 @@ async function syncStudyMeeting(email){
       ['eventId', 'eventLink', 'meetUrl', 'eventMeeting', 'eventPausedAt', 'eventStart'].forEach(function(k){ patch[k] = FieldValue.delete(); });
     } else if (s.eventId){
       const ev = await googleFetch('GET', CAL + '/' + s.eventId);
-      const change = {};
+      const change = {}, timesChanged = !sameMeetingTimes(s.eventMeeting, s.meeting);
       const want = attendees(ev.attendees);
       if (JSON.stringify(want.map(function(a){ return a.email; })) !== JSON.stringify((ev.attendees || []).map(function(a){ return a.email; }))) change.attendees = want;
       if (ev.summary !== summary) change.summary = summary;
@@ -6053,6 +6083,10 @@ async function syncStudyMeeting(email){
       } else if (!s.eventStart && seriesStart(ev)) patch.eventStart = seriesStart(ev);
       const url = s.meeting.link || now.hangoutLink || '';
       if (url !== (s.meetUrl || '')) patch.meetUrl = url;
+      if (!s.pausedAt){
+        const moves = await syncMoves(s.eventId, s.meeting, s.meetingMoved, timesChanged ? {} : s.eventMoved);
+        if (moves) patch.eventMoved = moves; else if (timesChanged && s.eventMoved) patch.eventMoved = FieldValue.delete();
+      }
     }
     patch.error = FieldValue.delete(); patch.calendarLimitAt = FieldValue.delete();
   } catch (err){
@@ -6118,7 +6152,7 @@ async function personBusy(a, now, to, skipPid){
     const w = d.data();
     if (d.ref.parent.id === 'projectWorkspaces' && d.id === skipPid) return;
     if (!w.meeting || w.pausedAt || w.completedAt) return;
-    busy.meetingBusy(w.meeting, now, to, String(w.eventStart || '').slice(0, 10)).forEach(function(x){ list.push(x); });
+    busy.meetingBusy(w.meeting, now, to, String(w.eventStart || '').slice(0, 10), w.meetingMoved).forEach(function(x){ list.push(x); });
   });
   const feeds = busy.feedsOf(feed.data());
   let read = 0, failed = 0;
@@ -6158,6 +6192,63 @@ exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
   const slots = busy.suggest({ people, minutes, every, today: todayIsoLondon() })
     .map(function(s){ return Object.assign(s, { of: people.length }); });
   return { slots, fromCalendar, boldOnly, failed };
+});
+
+// moveMeeting (the Calendar, 2026-11-11): a recurring meeting changed from the Calendar, dragged or edited, a
+// project's, a supervision or an event series'. { kind: 'project' | 'study' | 'series', id (the project's card,
+// the student's email, the series), board?, scope: 'series' (every date: { day, time, minutes }) or 'once' (one
+// date, `date`, moved to { date, time, minutes }: meeting-moves.js) } → { ok, error? (Google's, if it failed) }.
+// Who may: as on each one's own page: a project's submitter, authors, PIs and admins; the student and the people
+// in their studies; a series' organisers, PIs and admins. Not while paused. Google emails the guests the change.
+exports.moveMeeting = onCall({ timeoutSeconds: 120, secrets: [GOOGLE_OAUTH, GITHUB_APP, SLACK_BOT_TOKEN] }, async (request) => {
+  const email = callerEmail(request), data = request.data || {};
+  const kind = String(data.kind || ''), id = String(data.id || ''), scope = data.scope === 'once' ? 'once' : 'series';
+  let ref, doc, sync;
+  if (kind === 'project') {
+    const boardId = data.board ? String(data.board) : null;
+    if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
+    const cardSnap = await cardRefFor(id, boardId).get();
+    if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
+    const pid = projectIdOf(cardSnap.data(), id);
+    await requireSeesProject(email, pid);
+    if (!(await canEditCard(email, cardSnap.data()))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can change its meeting.');
+    ref = db.collection('projectWorkspaces').doc(pid);
+    sync = (meeting) => syncWorkspace(pid, meeting ? { meeting } : {});
+  } else if (kind === 'study') {
+    ref = db.collection('studies').doc(id.toLowerCase());
+    const s = (await ref.get()).data();
+    if (!s) throw new HttpsError('not-found', 'That meeting isn’t there any more.');
+    const involved = [ref.id].concat(s.everyone || [], (s.people || []).map((p) => p.email)).map((e) => String(e || '').toLowerCase());
+    if (involved.indexOf(email) < 0 && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only the student and the people in their studies can change their meeting.');
+    sync = () => syncStudyMeeting(ref.id);
+  } else if (kind === 'series') {
+    if (!validSlug(id)) throw new HttpsError('invalid-argument', 'No meeting given.');
+    ref = db.collection('eventSeries').doc(id);
+    const x = (await ref.get()).data();
+    if (!x) throw new HttpsError('not-found', 'That meeting isn’t there any more.');
+    if ((x.organisers || []).map((e) => String(e).toLowerCase()).indexOf(email) < 0 && !(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only its organisers, PIs and admins can change it.');
+    sync = () => labSeries.syncSeries(id);
+  } else throw new HttpsError('invalid-argument', 'Which meeting?');
+  doc = (await ref.get()).data() || {};
+  if (!doc.meeting) throw new HttpsError('failed-precondition', 'It has no meeting.');
+  if (doc.pausedAt) throw new HttpsError('failed-precondition', 'It’s paused: resume it first.');
+  const to = data.to || {};
+  let out;
+  if (scope === 'series') {
+    const meeting = normalizeMeeting(Object.assign({}, doc.meeting, { day: to.day || doc.meeting.day, time: to.time || doc.meeting.time, minutes: to.minutes || doc.meeting.minutes }));
+    if (meeting.error) throw new HttpsError('invalid-argument', meeting.error);
+    // Every date at the new time: none stays moved.
+    await ref.set({ meeting, meetingMoved: FieldValue.delete(), movedTo: FieldValue.delete() }, { merge: true });
+    out = await sync(meeting);
+  } else {
+    const today = todayIsoLondon();
+    const move = meetingMoves.normalizeMove(doc.meeting, doc.eventStart || '', String(data.date || ''), to, today);
+    if (move.error) throw new HttpsError('invalid-argument', move.error);
+    const moved = meetingMoves.withMove(doc.meetingMoved, doc.meeting, String(data.date), move, today);
+    await ref.set({ meetingMoved: moved, movedTo: meetingMoves.movedTo(moved) }, { merge: true });
+    out = await sync(null);
+  }
+  return { ok: true, error: (out && out.error) || '' };
 });
 
 // The profile's Studies tab, for the caller's own studies:
@@ -8955,7 +9046,7 @@ exports.boldApi = agentApi.boldApi;
 exports.calendarFeed = agentApi.calendarFeed;
 // Recurring lab meetings (series.html, Events): functions/series.js.
 const labSeries = require('./series')({ db, onCall, onDocumentWritten, HttpsError, logger, callerEmail, isFullWrite, access, rolesEmails,
-  googleFetch, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
+  googleFetch, syncMoves, CAL, calendarUpdates, isCalendarLimit, CALENDAR_LIMIT_MSG, eventConference, eventTimes, conferenceChange, meetingRecurrence, sameMeetingTimes, seriesStart,
   normalizeMeeting, googleAddressesFor, groupOf, tellStaff, slackText, linkedTitle, SITE_URL, GOOGLE_OAUTH, SLACK_BOT_TOKEN, FieldValue, crypto,
   onSchedule, tellPeople: (emails, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails, headline: text }) });
 exports.eventSeries = labSeries.eventSeries;
@@ -9010,23 +9101,29 @@ function meetingStartsSoon(m, start, todayIso, nowHm){
 exports.meetingReminders = onSchedule({ schedule: '*/5 * * * *', timeZone: PROJECT_TZ }, async function(){
   const today = todayIsoLondon(), now = nowHmLondon();
   const code = WEEKDAYS[(new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7];
-  const [wsSnap, seriesSnap, studySnap] = await Promise.all([
-    db.collection('projectWorkspaces').where('meeting.day', '==', code).get(),
-    db.collection('eventSeries').where('meeting.day', '==', code).get(),
-    db.collection('studies').where('meeting.day', '==', code).get(),
-  ]);
+  // On today's weekday, or with a date moved to today (meeting-moves.js), each once.
+  const both = async (col) => {
+    const [a, b] = await Promise.all([db.collection(col).where('meeting.day', '==', code).get(), db.collection(col).where('movedTo', 'array-contains', today).get()]);
+    const seen = new Set();
+    return { docs: a.docs.concat(b.docs).filter((d) => !seen.has(d.id) && seen.add(d.id)) };
+  };
+  const [wsSnap, seriesSnap, studySnap] = await Promise.all([both('projectWorkspaces'), both('eventSeries'), both('studies')]);
   const due = [];
   wsSnap.docs.forEach((d) => { const w = d.data();
-    if (w.eventId && !w.pausedAt && w.group !== 'completed') due.push({ key: 'project-' + d.id, m: w.meeting, start: w.eventStart, title: w.title || 'Your project', to: w.members || [], join: w.meetUrl || w.eventLink || '', href: projectPageUrl(w.cardId || d.id, w.boardId) });
+    if (w.eventId && !w.pausedAt && w.group !== 'completed') due.push({ key: 'project-' + d.id, m: w.meeting, moved: w.meetingMoved, start: w.eventStart, title: w.title || 'Your project', to: w.members || [], join: w.meetUrl || w.eventLink || '', href: projectPageUrl(w.cardId || d.id, w.boardId) });
   });
   seriesSnap.docs.forEach((d) => { const x = d.data();
-    if (x.eventId && !x.pausedAt && !x.hidden && x.kind !== 'editions') due.push({ key: 'series-' + d.id, m: x.meeting, start: x.eventStart, title: x.title || 'A meeting', to: x.guests || [], join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'series.html?series=' + encodeURIComponent(d.id) });
+    if (x.eventId && !x.pausedAt && !x.hidden && x.kind !== 'editions') due.push({ key: 'series-' + d.id, m: x.meeting, moved: x.meetingMoved, start: x.eventStart, title: x.title || 'A meeting', to: x.guests || [], join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'series.html?series=' + encodeURIComponent(d.id) });
   });
   studySnap.docs.forEach((d) => { const x = d.data();
-    if (x.eventId && !x.pausedAt) due.push({ key: 'study-' + d.id, m: x.meeting, start: x.eventStart, title: (x.name || d.id) + '\u2019s ' + (x.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting', to: [d.id].concat((x.people || []).map((p) => p.email)), join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'calendar.html' });
+    if (x.eventId && !x.pausedAt) due.push({ key: 'study-' + d.id, m: x.meeting, moved: x.meetingMoved, start: x.eventStart, title: (x.name || d.id) + '\u2019s ' + (x.degree === 'Master student' ? 'Master' : 'PhD') + ' meeting', to: [d.id].concat((x.people || []).map((p) => p.email)), join: x.meetUrl || x.eventLink || '', href: SITE_URL + 'calendar.html' });
   });
   for (const x of due){
-    const left = meetingStartsSoon(x.m, x.start, today, now);
+    // Today's date of it, moved or not: as a meeting of its own today.
+    const t = x.m && meetingMoves.occurrences(x.m, x.start, x.moved, today, today)[0];
+    if (!t) continue;
+    x.m = Object.assign({}, x.m, { day: code, time: t.time, minutes: t.minutes, every: 1 });
+    const left = meetingStartsSoon(x.m, '', today, now);
     if (!left || !x.to.length) continue;
     // Once per meeting and day, however many runs see it.
     try { await db.collection('meetingReminders').doc(x.key + '-' + today + '-' + x.m.time.replace(':', '')).create({ at: Date.now(), to: x.to.length }); }
