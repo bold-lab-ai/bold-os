@@ -52,7 +52,8 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
   async function prompt(skill){
     const d = await db.collection('skills').doc(skill).get();
     const body = d.exists ? String(d.data().body || '').trim() : '';
-    if (!body) throw new HttpsError('failed-precondition', 'BOLD LLM has no prompt yet: the ' + skill + ' skill is missing.');
+    // Logged: without it nothing is written, and the page only shows the rule-based letter.
+    if (!body) { logger.error('BOLD LLM has no prompt: the ' + skill + ' skill is missing (add it on Skills; docs/home-letter-prompt.md has it)'); throw new HttpsError('failed-precondition', 'BOLD LLM has no prompt yet: the ' + skill + ' skill is missing.'); }
     return body;
   }
   // The prompt first and cached: the same for everyone, all day.

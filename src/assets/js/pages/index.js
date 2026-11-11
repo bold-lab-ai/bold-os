@@ -251,7 +251,7 @@
     if (al) { put(el, '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al); return; }
     put(el, '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '') +
       (state.letterChoice === 'bold' ? '<p class="hl-by">' + (state.letterWriting ? 'BOLD LLM is writing today’s letter; this is the rule-based one meanwhile.' : 'BOLD LLM couldn’t write today’s letter, so this is the rule-based one.') +
-        ' <a href="profile.html#agents">Who writes it</a></p>' : ''));
+        whoLink(' ') + '</p>' : ''));
   }
   // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
   var LEN_KEY = 'boldLetterLength';
@@ -262,9 +262,11 @@
     var len = letterLength();
     return '<div class="hl-agent-text">' + BoldMarkdown.render(String(l[len] || l.short || '')) + '</div>' +
       '<p class="hl-by">Written by ' + ({ sofya: 'Sofya', claude: 'Claude' }[l.writer] || 'BOLD LLM') + ' · ' +
-      '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button> · ' +
-      '<a href="profile.html#agents">Who writes it</a></p>';
+      '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button>' +
+      whoLink(' · ') + '</p>';
   }
+  // Who writes the letters is the lab's choice (Settings › BOLD Agent): a link there for PIs and admins, who set it.
+  function whoLink(sep){ return BOLD.isFullWrite && BOLD.isFullWrite() ? sep + '<a href="settings.html#bold-agent">Who writes it</a>' : ''; }
   document.addEventListener('click', function(e){
     var b = e.target.closest && e.target.closest('.hl-len');
     if (!b) return;
@@ -538,7 +540,7 @@
     // Without BOLD LLM on for them (the #ask preview): that it isn't, and a way to what they asked meanwhile.
     function placeholder(q){
       var words = q.replace(/[#*_`>\[\]()?!.,;:]/g, ' ').replace(/\s+/g, ' ').trim().split(' ').slice(0, 8).join(' ');
-      return 'BOLD LLM isn’t on for you: choose it on your [profile](profile.html#agents) to talk to it here.' +
+      return 'BOLD LLM isn’t on: PIs and admins turn it on in Settings › BOLD Agent.' +
         (words ? '\n\nMeanwhile, [search BOLD.OS for “' + words + '”](search.html?q=' + encodeURIComponent(words) + ').' : '');
     }
     // BOLD LLM's answer (homeLetter 'ask'), or what went wrong. The talk is kept as a private conversation of theirs
