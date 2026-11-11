@@ -80,15 +80,14 @@ a.bs-author:hover, a.bs-author:focus-visible{text-decoration:underline; text-und
 /* The tree: each level indented, with a line down the side of the replies to one message. */
 .bs-replies{list-style:none; margin:6px 0 0; padding:0 0 0 12px; border-left:2px solid var(--rule); display:flex; flex-direction:column; gap:6px;}
 .bs-replies-top{margin-top:0;}
-/* Replies, Slack-like: a block per run, messages split by hairlines; a branch is a block indented under its message. */
+/* Replies, as on Reddit (conversations-forum.js subtreeHtml): the top level split by hairlines; a message's replies indented under it, each hooked to the line down their left. */
 .bs-blocks, .bs-run, .bs-branches > ol{list-style:none; margin:0; padding:0;}
 .bs-blocks, .bs-branches > ol{display:flex; flex-direction:column; gap:8px;}
 .bs-run{background:none; border:0;}
 .bs-line{padding:6px 12px 7px;}
 .bs-line + .bs-line, .bs-thread-toggle + .bs-line, .bs-branches + .bs-line{border-top:1px solid var(--rule);}
 .bs-branches > .bs-run + .bs-run{margin-top:6px; border-top:1px solid var(--rule);}
-/* A leaf (nobody has answered it yet): a thin accent bar; the one you're reasoning about with your agent: the ink one. */
-.bs-line.is-leaf{box-shadow:inset 2px 0 0 color-mix(in srgb, var(--accent) 70%, transparent);}
+/* The one you're reasoning about with your agent: an ink bar. */
 .bs-line.is-about{box-shadow:inset 3px 0 0 var(--ink);}
 .bs-line .bs-text{margin:2px 0 0; font-size:14px;}
 .bs-line .bs-text > :last-child{margin-bottom:0;}
@@ -249,6 +248,9 @@ body.bs-agent-open .bs-cols{padding-bottom:min(46vh, 420px);}
 .event-form .bs-new-who label{display:flex; margin:0; color:var(--ink); cursor:pointer;}
 .event-form .bs-new-who input[type=radio]{width:auto; margin:0; flex:none;}
 .event-form .bs-new-who .bs-who-add{width:100%; max-width:360px; margin:0;}
-/* Reply, under a conversation (conversations-forum.js drawAnswer): the home page's box (bold.css .ha-box); what it goes on from, on the left. */
+/* Join the conversation, under the post (conversations-forum.js drawAnswer): the home page's box (bold.css .ha-box). */
 .bs-answer{margin:18px 0 0; font-family:var(--sans);}
+.bs-join .bs-answer{margin:4px 12px 16px;}
+/* On a phone, replies step in less, so a deep one keeps room for its text. */
+@media (max-width:600px){ .bs-branches{padding-left:16px;} .bs-branches > .bs-run::before, .bs-branches > .bs-run:not(:last-child)::after{left:-10px;} .bs-branches > .bs-run::before{width:7px;} }
 .bs-answer .bs-answer-to{margin-right:auto; font-size:13px; color:var(--muted);}

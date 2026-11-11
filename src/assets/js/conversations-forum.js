@@ -312,7 +312,7 @@ window.BoldConversations = (function(){
       });
     }
     function invite(pid, to){ return col().doc(pid).collection('invites').add({ to: to, by: me.email, byName: me.name, at: FV().serverTimestamp() }); }
-    var sort = 'top', opened = {}, replying = '', editing = '', branching = false, said = [], draft = null, about = null;   // about: { pid, id }
+    var sort = 'top', opened = {}, replying = '', editing = '', said = [], draft = null, about = null;   // about: { pid, id }
     var unwatch = [];   // the lists' listeners, replaced when access changes
     var db = function(){ return firebase.firestore(BOLD.getApp()); };
     var col = function(){ return db().collection('conversations'); };
@@ -335,13 +335,23 @@ window.BoldConversations = (function(){
       return x.parent;
     };
     var kids = function(id){ return (messages[openId] || []).filter(function(x){ return parentOf(x) === id; }).sort(function(a, b){ return ms(a.at) - ms(b.at); }); };
-    // Where a message's column ends: its first reply, that one's first reply, … (each first reply continues the column).
-    // A message's reply that goes on with its column: its first, unless that one branched out
-    // (`branch`, Branch out); every other reply is a branch.
+    // Laid out as on Reddit (2026-11-11, #316): the post, Join the conversation under it, then its replies,
+    // each with its own replies indented under it, and so on. A reply written now answers the message it was
+    // written on (`branch: true`, nested under it). Before, a reply could instead go on with its message's
+    // column (no `branch`: the first such reply), and a Slack thread came in as such a run: a run is read as
+    // replies side by side at the same level, so old threads don't step in at every message.
     var goesOn = function(id){ return kids(id).filter(function(x){ return !x.branch; })[0] || null; };
-    var branchesOf = function(id){ var g = goesOn(id); return kids(id).filter(function(x){ return x !== g; }); };
-    var leafOf = function(id){ var g = goesOn(id); return g ? leafOf(g.id) : id; };
+    var runFrom = function(m){ var out = [], k = 0; while (m && k++ < 2000) { out.push(m); m = goesOn(m.id); } return out; };
+    var byTime = function(a, b){ return ms(a.at) - ms(b.at); };
+    // What shows under a message, indented: its replies (with their runs), in the order they were written.
+    // Under the post: the top level.
+    var under = function(id){
+      var g = id === openId ? null : goesOn(id);
+      return kids(id).filter(function(x){ return x !== g; }).reduce(function(a, x){ return a.concat(runFrom(x)); }, []).sort(byTime);
+    };
     var total = function(id){ return kids(id).reduce(function(s, x){ return s + 1 + total(x.id); }, 0); };
+    var below = function(id){ return under(id).reduce(function(s, x){ return s + 1 + below(x.id); }, 0); };
+    var isOpen = function(id){ return opened[id] !== false; };
     var count = function(k){ return k + (k === 1 ? ' reply' : ' replies'); };
     var postOf = function(id){ return (posts || []).filter(function(p){ return p.id === id; })[0]; };
     var msgOf = function(pid, id){ return pid === id ? postOf(pid) : (messages[pid] || []).filter(function(x){ return x.id === id; })[0]; };
@@ -399,12 +409,9 @@ window.BoldConversations = (function(){
     }
     function acts(m, pid){
       var why = canPost ? '' : ' disabled title="' + esc(BOLD.cannotReason('conversations', 'edit')) + '"';
-      // Reply goes on with the conversation, at the end of this message's column (its leaf); Branch
-      // out, on any message, leaves are included, starts a new branch from it.
-      var leaf = leafOf(m.id);
+      // Reply: answers this message, nested under it. The post has none: Join the conversation, under it, is its.
       return '<p class="bs-acts">' +
-        '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(leaf) + '"' + (why || (leaf === m.id ? '' : ' title="Reply at the end of this conversation"')) + '>Reply</button>' +
-        '<button type="button" class="btn-text bs-reply-btn" data-branch="1" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (why || ' title="Start a new branch from this message"') + '>Branch out</button>' +
+        (m.id === pid ? '' : '<button type="button" class="btn-text bs-reply-btn" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + why + '>Reply</button>') +
         (AGENT ? '<button type="button" class="btn-text bs-discuss" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"' + (about && about.id === m.id ? ' disabled title="You’re reasoning about it with your agent"' : why) + '>Reason with your agent</button>' : '') +
         // Copy, Copy link and Remove: in its ⋯ menu (BOLD.moreMenuHtml).
         BOLD.moreMenuHtml([
@@ -422,47 +429,36 @@ window.BoldConversations = (function(){
         '<div class="event-form-actions"><button type="submit" class="ev-save">Save</button><button type="button" class="bs-editcancel">Cancel</button></div></form>';
     }
     function replyForm(m, pid){
-      return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '" data-branch="' + (branching ? '1' : '') + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
-          '<div class="event-form-actions"><button type="submit" class="ev-save">' + (branching ? 'Branch out' : 'Reply') + '</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
+      return (replying === m.id ? '<form class="bs-replyform" data-pid="' + esc(pid) + '" data-id="' + esc(m.id) + '"><textarea class="md-field" data-md-breaks="true" data-preview-class="bs-text md-desc" rows="5" maxlength="10000" placeholder="Your reply" aria-label="Your reply"></textarea>' +
+          '<div class="event-form-actions"><button type="submit" class="ev-save">Reply</button><button type="button" class="bs-replycancel">Cancel</button></div></form>' : '');
     }
-    // Replies as in Slack: the post's replies are one block, in order, a hairline between them. A
-    // message's own replies are collapsed under it ("3 replies · last 2 h ago"); opened, they're a
-    // block of their own, indented, where a run (each answering the one before) reads on in the block.
+    // A message: who wrote it, its vote and buttons, its text, and its reply box when open.
     function msgHtml(m, pid){
-      // A leaf (nobody has answered it yet: where the conversation goes on) is marked.
-      return '<li class="bs-line' + (goesOn(m.id) ? '' : ' is-leaf') + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
+      return '<li class="bs-line' + (about && about.id === m.id ? ' is-about' : '') + '" id="m-' + esc(m.id) + '">' +
         // The author, and on the same line, on the right, its vote and buttons.
         '<div class="bs-line-head"><p class="bs-by">' + by(m) + '</p><div class="bs-right">' + vote(m, true) + acts(m, pid) + '</div></div>' +
         (editing === m.id ? editForm(m, pid) : md(m.body)) + replyForm(m, pid) + '</li>';
     }
-    var lastAt = function(id){ return kids(id).reduce(function(t, x){ return Math.max(t, ms(x.at), lastAt(x.id)); }, 0); };
-    // A column: a message, then its first reply (made while it was a leaf: the conversation going on), and
-    // so on. Every later reply to a message branches from it: a column of its own, indented under that
-    // message, folded behind a toggle ("2 branches · 5 messages · last 2 h ago").
-    function branchToggle(m, bs){
-      var k = bs.reduce(function(t, c){ return t + 1 + total(c.id); }, 0), on = !!opened[m.id];
-      var last = bs.reduce(function(t, c){ return Math.max(t, ms(c.at), lastAt(c.id)); }, 0);
-      var what = bs.length + (bs.length === 1 ? ' branch' : ' branches') + ' · ' + k + (k === 1 ? ' message' : ' messages');
+    var lastAt = function(id){ return under(id).reduce(function(t, x){ return Math.max(t, ms(x.at), lastAt(x.id)); }, 0); };
+    // A message's replies show under it, indented (each hooked to the line down its left), and fold behind a
+    // toggle: "Hide 3 replies", folded "3 replies · last 2 h ago".
+    function foldToggle(m){
+      var k = below(m.id), on = isOpen(m.id), what = count(k);
       return '<li class="bs-thread-toggle"><button type="button" class="btn-text bs-open" data-id="' + esc(m.id) + '" aria-expanded="' + on + '">' +
-        '<span class="bs-caret" aria-hidden="true">' + (on ? '\u25be' : '\u25b8') + '</span>' + (on ? 'Hide ' + what : what + '<span class="bs-last"> · last ' + ago(last) + '</span>') + '</button></li>';
+        '<span class="bs-caret" aria-hidden="true">' + (on ? '\u25be' : '\u25b8') + '</span>' + (on ? 'Hide ' + what : what + '<span class="bs-last"> · last ' + ago(lastAt(m.id)) + '</span>') + '</button></li>';
     }
-    function columnHtml(first, pid, head){
-      var out = '', m = first;
-      while (m) {
-        out += head && m === first ? head : msgHtml(m, pid);
-        var bs = branchesOf(m.id);
-        if (bs.length) out += branchToggle(m, bs) + (opened[m.id] ? '<li class="bs-branches">' + bs.map(function(c){ return columnHtml(c, pid); }).join('') + '</li>' : '');
-        m = goesOn(m.id);
-      }
-      return '<ol class="bs-run">' + out + '</ol>';
+    // A message and, under it, its replies, each with its own (depth: how far in, for the guard below).
+    function subtreeHtml(m, pid, depth){
+      var u = depth < 60 ? under(m.id) : [];
+      return msgHtml(m, pid) + (u.length ? foldToggle(m) + (isOpen(m.id) ? '<li class="bs-branches">' + u.map(function(c){ return '<ol class="bs-run">' + subtreeHtml(c, pid, depth + 1) + '</ol>'; }).join('') + '</li>' : '') : '');
     }
 
-    // Expand all / Collapse all: every message's branches (opened), over the thread; shown when it has any.
-    function branchingIds(p){ return [p].concat(messages[p.id] || []).filter(function(m){ return branchesOf(m.id).length; }).map(function(m){ return m.id; }); }
+    // Expand all / Collapse all: every message's replies, over the thread; shown when any has replies.
+    function branchingIds(p){ return (messages[p.id] || []).filter(function(m){ return under(m.id).length; }).map(function(m){ return m.id; }); }
     function foldAllHtml(p){
       var ids = branchingIds(p);
       if (!ids.length) return '';
-      var all = ids.every(function(id){ return opened[id]; });
+      var all = ids.every(isOpen);
       // The guides' look (guide.js foldAllButton): arrows, then the words, on the title's line.
       var icon = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
         (all ? '<path d="M4 7.5 8 3.5l4 4M4 12.5l4-4 4 4"/>' : '<path d="M4 3.5 8 7.5l4-4M4 8.5l4 4 4-4"/>') + '</svg>';
@@ -495,11 +491,10 @@ window.BoldConversations = (function(){
       var all = [p].concat((messages[p.id] || []).slice().sort(function(a, b){ return ms(a.at) - ms(b.at); }));
       var row = {}, lane = {}, next = 1;
       all.forEach(function(m, i){ row[m.id] = i; });
-      // Lanes: a message's first reply keeps its lane, later ones take new lanes.
+      // Lanes: how far in each message is shown (the post 0, its replies 1, theirs 2, …).
       (function walk(id, l){
-        lane[id] = l;
-        var g = goesOn(id);
-        kids(id).forEach(function(c){ walk(c.id, c === g ? l : next++); });
+        lane[id] = l; next = Math.max(next, l + 1);
+        if (l < 60) under(id).forEach(function(c){ walk(c.id, l + 1); });
       })(p.id, 0);
       var R = all.length > 60 ? 8 : 12, L = 12, X = function(id){ return 8 + (lane[id] || 0) * L; }, Y = function(id){ return 8 + row[id] * R; };
       var W = 16 + (next - 1) * L, H = 16 + (all.length - 1) * R;
@@ -510,7 +505,7 @@ window.BoldConversations = (function(){
           var x0 = X(par), y0 = Y(par), x1 = X(m.id), y1 = Y(m.id);
           paths += '<path data-to="' + esc(m.id) + '" d="M' + x0 + ' ' + y0 + (x0 === x1 ? 'V' + y1 : 'V' + (y1 - 4) + 'Q' + x0 + ' ' + y1 + ' ' + (x0 + 4) + ' ' + y1 + 'H' + x1) + '"/>';
         }
-        var leaf = !goesOn(m.id);
+        var leaf = !kids(m.id).length;
         dots += '<circle data-id="' + esc(m.id) + '" class="' + (leaf ? 'is-leaf' : '') + '" cx="' + X(m.id) + '" cy="' + Y(m.id) + '" r="3.5"><title>' + esc((m.name || 'someone') + ': ' + String(m.id === p.id ? p.title : m.body || '').replace(/\s+/g, ' ').slice(0, 80)) + '</title></circle>';
       });
       treeEl.innerHTML = '<p class="bs-tree-head">Tree · ' + all.length + (all.length === 1 ? ' message' : ' messages') + '</p><svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '"><g class="bs-tree-lines">' + paths + '</g>' + dots + '</svg>';
@@ -606,27 +601,20 @@ window.BoldConversations = (function(){
       render();
       var el = document.getElementById('m-' + id); if (el) el.scrollIntoView({ block: 'center' });
     }
-    // ---------- Reply, under the thread (replyBox, below) ----------
-    // It goes on from the conversation's last leaf (the latest message nobody has answered yet). One element,
-    // kept across the redraws, so what's written in it stays; a message's own Reply or Branch out opens its own
-    // box, and what's written here stays here (it isn't moved there).
+    // ---------- Join the conversation, under the post (replyBox) ----------
+    // A reply to the post itself: the top level. One element, kept across the redraws (moved into each new
+    // .bs-join), so what's written in it stays; a message's own Reply opens its own box.
     var answer = null, answerPid = '';
-    function lastLeaf(p){
-      return [p].concat(messages[p.id] || []).filter(function(m){ return !kids(m.id).length; })
-        .sort(function(a, b){ return ms(b.at) - ms(a.at); })[0] || p;
-    }
-    var ANSWER = false;   // hidden for now (2026-11-07): replies only through a message's own Reply
     function drawAnswer(p){
-      if (!canPost || !ANSWER) return;
-      if (!answer) answer = replyBox({ send: function(body){
+      var slot = threadEl.querySelector('.bs-join');
+      if (!canPost || !slot) return;
+      if (!answer) answer = replyBox({ label: 'Join the conversation', send: function(body){
         var q2 = postOf(answerPid); if (!q2) return Promise.reject(new Error('No such conversation'));
-        return newReply(q2.id, lastLeaf(q2).id, body, false, false).then(function(ref){ show(q2.id, ref.id); }, function(err){ oops('Replying')(err); throw err; });
+        return newReply(q2.id, q2.id, body, false).then(function(ref){ show(q2.id, ref.id); }, function(err){ oops('Replying')(err); throw err; });
       } });
       // Another conversation: an empty box, closed.
       if (answerPid !== p.id) { answerPid = p.id; answer.reset(); }
-      var to = lastLeaf(p);
-      answer.note('Goes on from ' + (to.id === p.id ? 'the post' : (to.name || 'someone') + (to.viaAgent ? '’s agent' : '')));
-      answer.into(threadEl);
+      answer.into(slot);
     }
     function render(){
       var open = route().post;
@@ -643,22 +631,23 @@ window.BoldConversations = (function(){
         // An open reply box is carried across the redraw (a reply or a vote arriving), with what's typed in it
         // and its Write | Preview tab.
         var keep = threadEl.querySelector('.bs-replyform');
-        // The post is the tree's root: the first message of the conversation's column, under its title.
+        // The post, under its title: its first message, with where it came from. With no text of its own (a card
+        // with no description), only where it came from: Join the conversation is right under the title.
         var first = Object.assign({}, p, { body: p.body && p.body.trim() !== p.title ? p.body : '' });
-        // A card's with no description: it says what its first message is.
-        if (!first.body && p.from && p.from.kind === 'card') first.body = '_Made the card._';
-        var head = (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id));
+        var head = first.body ? '<ol class="bs-run bs-post-run">' + (function(h){ var i = h.lastIndexOf('</li>'); return h.slice(0, i) + origin(p) + h.slice(i); })(msgHtml(first, p.id)) + '</ol>' : origin(p);
+        var top = under(p.id);
         threadEl.innerHTML = (opts.thread ? '' : '<a class="back-link" href="' + esc(listHref()) + '">&larr; All posts</a>') +
           // Its title, unless the page shows it already (a card's, title: false); the head stays for Expand all.
         '<div class="bs-thread-head">' + (opts.title === false ? '' : '<h2 class="bs-title bs-thread-title">' + esc(p.title) + '</h2>') + foldAllHtml(p) + '</div>' +
           // Who can read it, and Invite right after it, on one line (readersHtml).
-          '<div class="bs-meta">' + readersHtml(p) + '</div>' + inviteHtml(p) + columnHtml(p, p.id, head);
+          '<div class="bs-meta">' + readersHtml(p) + '</div>' + inviteHtml(p) + head + '<div class="bs-join"></div>' +
+          (top.length ? '<ol class="bs-run bs-top">' + top.map(function(m){ return subtreeHtml(m, p.id, 1); }).join('') + '</ol>' : '');
         clampLong();
         drawTree(p);
         if (linkedMsg) { setTimeout(function(){ showLinked(p.id); }, 0); }
         drawAnswer(p);
         var fresh = threadEl.querySelector('.bs-replyform');
-        if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id') && keep.getAttribute('data-branch') === fresh.getAttribute('data-branch') && keep.getAttribute('data-edit') === fresh.getAttribute('data-edit')) fresh.replaceWith(keep);
+        if (keep && fresh && keep.getAttribute('data-id') === fresh.getAttribute('data-id') && keep.getAttribute('data-edit') === fresh.getAttribute('data-edit')) fresh.replaceWith(keep);
         else { var f = fresh && fresh.querySelector('textarea'); if (f) f.focus(); }
         return;
       }
@@ -712,10 +701,9 @@ window.BoldConversations = (function(){
       o.votes[me.uid] = 1;
       return col().add(o);
     }
-    // branch: it starts a new branch from `parent` rather than going on with its column (Branch out).
-    function newReply(pid, parent, body, viaAgent, branch){
-      var o = { parent: parent, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {} };
-      if (branch) o.branch = true;
+    // A reply answers `parent`, shown nested under it (`branch: true`; see under(), above).
+    function newReply(pid, parent, body, viaAgent){
+      var o = { parent: parent, body: body, name: me.name, createdBy: me.email, at: FV().serverTimestamp(), source: 'site', viaAgent: !!viaAgent, votes: {}, branch: true };
       o.votes[me.uid] = 1;
       opened[parent] = true;
       return col().doc(pid).collection('messages').add(o);
@@ -910,17 +898,15 @@ window.BoldConversations = (function(){
         ref.update(patch).catch(oops('Voting'));
         return;
       }
-      if (b.classList.contains('bs-open')) { opened[id] = !opened[id]; render(); return; }
+      if (b.classList.contains('bs-open')) { opened[id] = !isOpen(id); render(); return; }
       if (b.classList.contains('bs-fold-all-btn')) {
         var on = b.getAttribute('data-open') === '1', fp = postOf(openId);
         if (fp) branchingIds(fp).forEach(function(x){ opened[x] = on; });
         render(); return;
       }
       if (b.classList.contains('bs-reply-btn')) {
-        var br = b.getAttribute('data-branch') === '1';
-        if (replying === id && branching === br) replying = ''; else { replying = id; branching = br; editing = ''; }
+        if (replying === id) replying = ''; else { replying = id; editing = ''; }
         render();
-        // Reply on a message further up: the box is at the column's end.
         var box = replying && threadEl.querySelector('.bs-replyform textarea');
         if (box) { box.scrollIntoView({ block: 'center' }); box.focus(); }
         return;
@@ -976,7 +962,7 @@ window.BoldConversations = (function(){
         eref.update({ body: body, editedAt: FV().serverTimestamp() }).then(function(){ editing = ''; render(); }, function(err){ go.disabled = false; oops('Saving')(err); });
         return;
       }
-      newReply(f.getAttribute('data-pid'), f.getAttribute('data-id'), body, false, f.getAttribute('data-branch') === '1')
+      newReply(f.getAttribute('data-pid'), f.getAttribute('data-id'), body, false)
         .then(function(ref){ replying = ''; show(f.getAttribute('data-pid'), ref.id); }, function(err){ go.disabled = false; oops('Replying')(err); });
     });
 
