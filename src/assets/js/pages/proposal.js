@@ -98,7 +98,7 @@
         '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save pr-save"' + (busy ? ' disabled' : '') + '>Save</button><button type="button" class="ev-cancel pr-cancel">Cancel</button></div></div>'
       : '<h1 class="pr-title">' + esc(b.title || 'A proposed change') + (num ? ' <span class="pr-num">#' + num + '</span>' : '') + '</h1>';
     var off = decideOff(), wd = canWithdraw();
-    return '<div class="hero pr-hero"><div><span class="eyebrow">Proposed change</span></div>' + title +
+    return '<div class="hero pr-hero"><a class="back-link" href="proposals.html">&larr; All proposed changes</a><div><span class="eyebrow">Proposed change</span></div>' + title +
       '<p class="pr-meta">' + chip + ' <span><strong>' + who(b.by) + '</strong> ' + (st === 'open' ? 'wants to change' : 'proposed changing') + ' ' +
         (b.pages || []).map(function(p){ return '<a href="#changes" data-tab="changes">' + esc(pageName(p)) + '</a>'; }).join(', ') +
         ' · ' + (people > 1 ? people + ' people committed' : '1 person committed') + ' · opened ' + esc(dayOf(b.at || 0)) +

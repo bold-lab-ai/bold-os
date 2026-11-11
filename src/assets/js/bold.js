@@ -1200,17 +1200,9 @@
       }).join('') + '</div>';
     }).join('') + '</div>';
   }
-  var brOpen = false;   // the Version pill's list is open
-  // Opens the branch icon's list of open proposals (a page's "N proposed changes", #proposals).
-  // After the click that asked, which would otherwise close it again.
-  BOLD.openBranches = function(){
-    setTimeout(function(){
-      if (!document.querySelector('#pageAccess .br-chip')) return;
-      brOpen = true; panel = null; loadBranches(); drawAccess();
-      window.scrollTo({ top: 0 });
-      var bc = document.querySelector('#pageAccess .br-chip'); if (bc) bc.focus();
-    }, 0);
-  };
+  var brOpen = false;   // (the branch button's list, before it became a page: proposals.html)
+  // The proposed changes, all of them (proposals.html, pages/proposals.js; a page's "N proposed changes", #proposals).
+  BOLD.openBranches = function(){ location.href = 'proposals.html'; };
   var ICON_BRANCH = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="5.5" r="1.6"/><path d="M4.5 5.1v5.8M11.5 7.1c0 2.6-2.2 3.4-5.4 4.4"/></svg>';
   function drawAccess(){
     var el = document.getElementById('pageAccess'), area = pageArea();
@@ -1222,24 +1214,14 @@
     // In the masthead, as GitHub's icon buttons: who can see this page (a dot while a change
     // to it waits), and the Version (branches): main, or the site as an open proposal would make it.
     var seeTip = (isOpen() ? 'Who can act on this page: ' + groupName(cur.edit) : 'Who can see this page: ' + groupName(cur.view)) + (waiting ? ' · 1 change waiting' : '');
-    var brTip = branch ? 'Version: ' + branchLabel(branch) : 'Version: main. See the site as an open proposal would make it';
+    var brTip = branch ? 'Proposed changes · you’re on ' + branchLabel(branch) : 'Proposed changes';
     // The Version button, for everyone signed in: it's where the open proposals are seen (the
     // BOLDiquette's and guides' "Proposed changes" are there, 2026-11-05).
     var proposes = true;
     var html = '<button type="button" class="mast-btn ac-chip' + (waiting ? ' has-dot' : '') + '" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="' + esc(seeTip) + '" aria-label="' + esc(seeTip) + '">' + ICON_EYE + '</button>' +
-      (proposes ? '<button type="button" class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</button>' : '');
-    if (brOpen && proposes) {
-      html += '<div class="ac-panel br-panel" id="brPanel" role="dialog" aria-label="Versions of the site"><div class="ac-title">Version</div>' +
-        '<p class="ac-note">See the whole site as an open proposal would make it, before anyone accepts it, in this tab. On one, what you change is added to it.</p>' +
-        '<ul class="br-list"><li><button type="button" class="br-item' + (branch ? '' : ' is-on') + '" data-ref=""><span class="br-t">Main</span></button></li>' +
-        (branchList || []).map(function(b){
-          return '<li><button type="button" class="br-item' + (branch && branch.ref === b.ref ? ' is-on' : '') + '" data-ref="' + esc(b.ref) + '">' +
-            '<span class="br-t">' + esc(branchLabel(b)) + '</span><span class="br-by">' + esc((b.by ? 'by ' + b.by : '') + (b.pages ? ' · changes who can see what' : '')) + '</span></button>' +
-            '<a class="br-open" href="' + esc(BOLD.branchPage(String(b.ref).slice(9))) + '">Its page</a></li>';
-        }).join('') + '</ul>' +
-        (branchError ? '<p class="ev-error">Couldn’t load the proposals — try again.</p>' : !branchList ? '<p class="ac-note">Loading…</p>' : !branchList.length ? '<p class="ac-note">No proposals are open.</p>' : '') +
-        '<div class="ac-actions"><button type="button" class="btn-text br-close">Close</button></div></div>';
-    }
+      // The branch button: the page of every proposed change (proposals.html, as GitHub's pull requests), lit while
+      // you're on one.
+      (proposes ? '<a class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" href="proposals.html" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</a>' : '');
     if (panel && !row) {
       html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">Who can see this page</div>' +
         '<p class="ac-sentence">Everyone signed in. It isn’t one of the pages in the BOLDiquette’s <a href="boldiquette.html#access">Who can see what</a>.</p>' +
