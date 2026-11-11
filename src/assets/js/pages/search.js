@@ -55,6 +55,11 @@
   }
   function cardHref(c){ return 'audit-board.html#board=' + encodeURIComponent(c.board) + '&card=' + encodeURIComponent(c.id); }
   var LOAD = {
+    'peer-support': function(){
+      return db.collection('peerAmbassadors').where('active', '==', true).get().then(function(s){
+        return s.docs.map(function(d){ var a = d.data(); return item(a.name, 'Peer support ambassador', a.bio, 'peer-support.html'); });
+      });
+    },
     boldiquette: function(){
       return parts('handbook', function(id){ return id === 'boldiquette' ? 'boldiquette.html' : 'index.html'; }, '', 'BOLDiquette');
     },

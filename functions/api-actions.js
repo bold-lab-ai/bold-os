@@ -728,6 +728,9 @@ module.exports = function(ctx){
     { name: 'get_skill', description: 'One skill: its SKILL.md and files, to use or install it.', inputSchema: S({ name: str('The skill’s name.') }, ['name']), run: getSkill },
   ];
   const WRITE = [
+    { name: 'peer_support', description: 'Request, accept or close your buddy request, or apply as an ambassador. Ask your person before notify=true sends inbox notifications to ambassadors. Private matching stays on the site.',
+      inputSchema: S({ action: ACTIONS(['request', 'accept', 'close', 'apply']), notify: { type: 'boolean' } }),
+      run: (who, a) => act(who, 'peerSupport', { action: a.action, notify: a.notify === true }) },
     { name: 'comments', run: comments,
       description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change: its conversation, started or added to), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
       inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),

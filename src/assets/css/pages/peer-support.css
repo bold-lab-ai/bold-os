@@ -1,0 +1,20 @@
+#peerSupport section { margin: 2rem 0; padding-top: 1rem; border-top: 1px solid var(--line); }
+.ps-directory { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.ps-person, .ps-request { padding: 1rem; border: 1px solid var(--line); background: var(--surface); }
+.ps-request { margin: .75rem 0; }
+#peerSupport label { display: block; margin: .6rem 0; }
+#peerSupport textarea, #peerSupport input[type=url], #peerSupport input[type=email] { width: 100%; box-sizing: border-box; }
+#peerSupport textarea { min-height: 7rem; }
+#peerSupport select { max-width: 100%; }
+#peerSupport button { margin: .3rem .7rem .3rem 0; }
+.ps-error { color: var(--ink); border-left: 3px solid var(--accent); padding-left: 1rem; }
+.hero { max-width: var(--content-max); margin: 0 auto; padding: 56px var(--gutter) 10px; }
+.hero h1 { font-size: clamp(30px, 5vw, 44px); line-height: 1.14; }
+.hero-note { margin-top: 20px; color: var(--ink-soft); font-size: 16px; }
+#peerSupport { max-width: var(--content-max); margin: 0 auto; padding: 8px var(--gutter) 40px; }
+#peerSupport h2 { font-size: 26px; margin: 0 0 1rem; }
+#peerSupport h3 { font-size: 20px; margin: 1rem 0 .5rem; }
+#peerSupport p { margin: .6rem 0 1rem; }
+#peerSupport input, #peerSupport textarea, #peerSupport select { font: 14px var(--sans); color: var(--ink); background: var(--paper); border: 1px solid var(--line); padding: .5rem; border-radius: var(--radius); }
+#peerSupport input[type=checkbox] { margin-right: .4rem; }
+#peerSupport label { font: 14px var(--sans); }
