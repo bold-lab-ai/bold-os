@@ -133,7 +133,7 @@
     ['Proposed changes and comments', ['proposals', 'proposal-decided', 'proposal-reviewer', 'guide-comments', 'tags']],
     ['Requests', ['join-requests', 'inviter-confirm', 'group-requests', 'invite-link-reminder', 'agent-requests']],
     ['Service desk', ['letters', 'introductions']],
-    ['Events', ['series-added', 'series-due']],
+    ['Events', ['series-added', 'series-due', 'rota-swaps', 'rota-offers', 'rota-reminders']],
   ];
   // testers: everyone's, for every pilot; pilotTesters: { feature: [emails] }, for that one too.
   function pilotNow(){

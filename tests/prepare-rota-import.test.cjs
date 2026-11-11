@@ -10,6 +10,7 @@ test('snapshot conversion preserves assigned, open and unresolved slots', () => 
   try {
     const sourcePath = path.join(dir, 'source.json');
     const mapPath = path.join(dir, 'map.json');
+    const seriesPath = path.join(dir, 'series.json');
     const outputPath = path.join(dir, 'prepared.json');
     fs.writeFileSync(sourcePath, JSON.stringify({
       scheduleId: 'synthetic-season', members: [
@@ -27,12 +28,15 @@ test('snapshot conversion preserves assigned, open and unresolved slots', () => 
       ]
     }));
     fs.writeFileSync(mapPath, JSON.stringify({ alpha: 'U123' }));
-    execFileSync(process.execPath, ['functions/tools/prepare-rota-import.mjs', sourcePath, mapPath, outputPath], { cwd: path.join(__dirname, '..') });
+    fs.writeFileSync(seriesPath, JSON.stringify({ id: 'group-meetings-test', kind: 'editions', page: 'group-meetings.html', title: 'Group meetings', inviteGroup: 'none', visibleTo: 'internal', hidden: true }));
+    execFileSync(process.execPath, ['functions/tools/prepare-rota-import.mjs', sourcePath, mapPath, seriesPath, outputPath], { cwd: path.join(__dirname, '..') });
     const output = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
     const docs = new Map(output.docs.map(doc => [doc.path, doc.data]));
     assert.equal(docs.size, 8); // season, two meetings, four slots and one mapped member
-    assert.equal(docs.get('groupMeetings/2099-01-12').status, 'skipped');
-    assert.equal(docs.get('groupMeetings/2099-01-12').skipReason, 'Break');
+    assert.equal(docs.get('events/group-meetings-test-2099-01-12').status, 'skipped');
+    assert.equal(docs.get('events/group-meetings-test-2099-01-12').skipReason, 'Break');
+    assert.equal(docs.get('events/group-meetings-test-2099-01-05').hidden, true);
+    assert.equal(docs.get('events/group-meetings-test-2099-01-05').inviteGroup, 'none');
     assert.deepEqual({ id: docs.get('groupRotaSlots/s1').presenterSlackId, name: docs.get('groupRotaSlots/s1').legacyName, topic: docs.get('groupRotaSlots/s1').topic, revision: docs.get('groupRotaSlots/s1').revision },
       { id: 'U123', name: 'Alpha Example', topic: 'Original topic', revision: 3 });
     assert.deepEqual({ id: docs.get('groupRotaSlots/s2').presenterSlackId, legacyId: docs.get('groupRotaSlots/s2').legacyMemberId, name: docs.get('groupRotaSlots/s2').legacyName },

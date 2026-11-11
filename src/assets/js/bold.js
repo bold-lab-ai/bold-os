@@ -1458,7 +1458,6 @@
       return Promise.all([
         get(all ? [se] : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels())].concat(me ? [se.where('organisers', 'array-contains', me)] : [])),
         get(all ? [ev] : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels())].concat(me ? [ev.where('createdBy', '==', me)] : [])),
-        db.collection('groupMeetingSeasons').where('publicationState', '==', 'published').limit(1).get().catch(function(){ return { empty: true }; }),
       ]).then(function(r){
         var seen = {}, once = function(k){ if (seen[k]) return false; seen[k] = true; return true; };
         var series = r[0].filter(function(x){ return x.id && x.title && once('s:' + x.id); })
@@ -1467,7 +1466,7 @@
         var single = r[1].filter(function(e){ return e.slug && e.title && !e.series && once('e:' + e.slug); })
           .sort(function(a, b){ return a.startDate < b.startDate ? 1 : a.startDate > b.startDate ? -1 : 0; })
           .map(function(e){ return { title: e.title, href: e.page || 'event.html?event=' + encodeURIComponent(e.slug), hidden: !!e.hidden }; });
-        return (r[2].empty ? [] : [{ title: 'Group meetings', href: 'group-meetings.html' }]).concat(series, single);
+        return series.concat(single);
       });
     });
   }

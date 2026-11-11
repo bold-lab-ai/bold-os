@@ -18,7 +18,7 @@ if (!source.scheduleId || !Array.isArray(source.meetings) || !Array.isArray(sour
   throw new Error('The saved rota export does not contain the expected meeting, member and change lists.');
 }
 docs = {
-  groupMeetings: [], groupRotaSlots: [], groupRotaMembers: [], people: [],
+  groupMeetings: [], events: [], groupRotaSlots: [], groupRotaMembers: [], people: [],
   groupMeetingSeasons: [], projectWorkspaces: [], changelog: [],
 };
 for (const meeting of source.meetings) {
@@ -58,6 +58,13 @@ for (const change of source.changes) {
   }]);
 }
 }
+// The preview keeps groupMeetings for its local action mock; the page reads
+// the same dates as event editions, matching the live rota's source.
+docs.events = docs.groupMeetings.map(([date, meeting]) => ['preview-group-meetings-' + date, {
+  ...meeting, slug: 'preview-group-meetings-' + date, series: 'preview-group-meetings',
+  startDate: date, endDate: date, title: 'Group meetings', page: 'group-meetings.html',
+  hidden: false, visibleTo: 'internal', inviteGroup: 'none',
+}]);
 
 const inlineJson = JSON.stringify(docs).replace(/</g, '\\u003c');
 const photoFiles = await readdir('src/assets/img/rota-profiles').catch(() => []);
@@ -85,7 +92,13 @@ const savePreviewSlot = (id, slot) => {
   try { localStorage.setItem(previewStorageKey, JSON.stringify(savedSlots)); } catch (_) {}
 };
 const previewCallable = (name, request = {}) => {
-  if (name === 'groupRotaAccess') return Promise.resolve({ data: { slackId: previewSlackId, registered: false, eligible: false, admin: false, preview: true, swaps: [], people: data.people.map(([id, p]) => ({ slackId: id, name: p.name })), reason: 'Other changes are unavailable in the local preview' } });
+  if (name === 'groupRotaAccess') return Promise.resolve({ data: { slackId: previewSlackId, seriesId: 'preview-group-meetings', registered: false, eligible: false, admin: false, preview: true, swaps: [], people: data.people.map(([id, p]) => ({ slackId: id, name: p.name })), reason: 'Other changes are unavailable in the local preview' } });
+  if (name === 'groupRotaSnapshot') return Promise.resolve({ data: {
+    meetings: data.events.map(([id, meeting]) => ({ id, ...meeting })),
+    slots: data.groupRotaSlots.map(([id, slot]) => ({ id, ...slot })),
+    members: data.groupRotaMembers.map(([id, member]) => ({ id, ...member })),
+    seasons: data.groupMeetingSeasons.map(([id, season]) => ({ id, ...season })),
+  } });
   const entry = data.groupRotaSlots.find(([id]) => id === request.slotId);
   if (!entry || !previewSlackId) return Promise.reject(new Error('This preview slot is unavailable.'));
   const [id, slot] = entry;
@@ -116,6 +129,15 @@ const previewCallable = (name, request = {}) => {
 };
 window.BOLD = {
   getAuth: () => true, getApp: () => ({}), authHint: () => null,
+  visibleLevels: () => ['internal'],
+  photo: { mountMany: nodes => nodes.forEach(node => {
+    const slug = String(node.dataset.name || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (!localPhotos.has(slug)) return;
+    const img = document.createElement('img');
+    img.className = 'is-loaded'; img.alt = ''; img.loading = 'lazy';
+    img.src = 'assets/img/rota-profiles/' + slug + '.webp';
+    node.classList.add('member-photo'); node.appendChild(img);
+  }) },
   escapeHtml: value => String(value == null ? '' : value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]),
   onUser: callback => setTimeout(() => callback(previewUser), 0),
   mountMasthead: () => { document.getElementById('authRegion').textContent = 'Sam · Local signed-in preview'; },
@@ -198,10 +220,6 @@ page = page.replace('</head>', `<link rel="stylesheet" href="assets/fonts/rota-p
 if (page.includes('firebasejs/') || page.includes('window.BOLD_CONFIG') || page.includes('fonts.googleapis.com') || page.includes('fonts.gstatic.com') || page.includes('profile-photo.js') || /<script\s+src="(?!assets\/js\/pages\/group-meetings-preview\.js)/.test(page)) throw new Error('Could not isolate the preview from external services.');
 let rotaScript = await readFile('src/assets/js/pages/group-meetings.js', 'utf8');
 rotaScript = rotaScript.replace('firebase.firestore(', 'previewFirebase.firestore(').replace('firebase.app()', 'previewFirebase.app()');
-rotaScript = rotaScript.replace(/function publicPhoto\(s, person\)\{[^}]+\}/, `function publicPhoto(s, person){
-    var slug = String(person || '').toLowerCase().normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    return localPhotos.has(slug) ? 'assets/img/rota-profiles/' + slug + '.webp' : '';
-  }`);
 rotaScript = rotaScript.replace('access && !access.eligible ? \'<p class="rota-alert">', 'access && !access.preview && !access.eligible ? \'<p class="rota-alert">');
 rotaScript = rotaScript.replace('Eligibility has not been confirmed', 'Changes are unavailable in the local preview');
 if (rotaScript.includes('firebase.firestore(') || rotaScript.includes('firebase.app()') || rotaScript.includes('var notice = access && !access.eligible')) throw new Error('Could not isolate the rota script from production data and access checks.');

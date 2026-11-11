@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 // Convert a frozen, already-merged export from the old rota into reviewable
 // Firestore documents. This script has no network or Firebase credentials.
-// Usage: node prepare-rota-import.mjs frozen-export.json identity-map.json output.json
+// Usage: node prepare-rota-import.mjs frozen-export.json identity-map.json series.json output.json
 import fs from 'node:fs';
 
-const [, , sourcePath, mapPath, outputPath] = process.argv;
-if (!sourcePath || !mapPath || !outputPath) {
-  console.error('Usage: node prepare-rota-import.mjs frozen-export.json identity-map.json output.json');
+const [, , sourcePath, mapPath, seriesPath, outputPath] = process.argv;
+if (!sourcePath || !mapPath || !seriesPath || !outputPath) {
+  console.error('Usage: node prepare-rota-import.mjs frozen-export.json identity-map.json series.json output.json');
   process.exit(2);
 }
 const read = path => JSON.parse(fs.readFileSync(path, 'utf8'));
-const source = read(sourcePath), identities = read(mapPath);
+const source = read(sourcePath), identities = read(mapPath), series = read(seriesPath);
+if (!series || !/^[a-z0-9-]{1,80}$/.test(series.id || '') || series.kind !== 'editions' || series.page !== 'group-meetings.html' || series.inviteGroup !== 'none' || series.hidden !== true || !['public', 'everyone', 'associate', 'internal', 'staff', 'exec'].includes(series.visibleTo)) throw Error('Expected a reviewed, hidden Group meetings event-series descriptor.');
 if (!Array.isArray(source.meetings) || !Array.isArray(source.members) || !source.meetings.length) throw Error('Expected a frozen merged export with meetings and members.');
 if (!identities || Array.isArray(identities) || typeof identities !== 'object') throw Error('Identity map must be an object keyed by legacy member ID.');
 const seasonId = String(source.scheduleId || source.meetings[0].scheduleId || '');
@@ -26,10 +27,15 @@ const season = {
 docs.push({ path: `groupMeetingSeasons/${seasonId}`, data: season });
 for (const m of source.meetings) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(m.date) || !['short', 'long'].includes(m.format) || !Array.isArray(m.slots)) throw Error(`Invalid meeting ${m.id}`);
-  docs.push({ path: `groupMeetings/${m.date}`, data: {
-    date: m.date, seasonId, format: m.format, timeZone: m.timeZone || 'Europe/London',
-    startTime: m.meetingTime, durationMinutes: m.durationMinutes, location: String(m.location || season.location),
-    status: m.skipped ? 'skipped' : 'scheduled', skipReason: m.skipped ? String(m.skipReason || '') : ''
+  const slug = `${series.id}-${m.date}`, location = String(m.location || season.location);
+  docs.push({ path: `events/${slug}`, data: {
+    slug, series: series.id, page: 'group-meetings.html', title: series.title || 'Group meetings',
+    startDate: m.date, endDate: m.date, date: m.date, seasonId, format: m.format,
+    timeZone: m.timeZone || 'Europe/London', startTime: m.meetingTime,
+    durationMinutes: m.durationMinutes, location, place: location,
+    visibleTo: series.visibleTo, hidden: true, inviteGroup: 'none',
+    status: m.skipped ? 'skipped' : 'scheduled', skipReason: m.skipped ? String(m.skipReason || '') : '',
+    origin: 'import', createdBy: 'migration', createdAt: Date.now(), updatedBy: 'migration', updatedAt: Date.now()
   } });
   for (let i = 0; i < m.slots.length; i++) {
     const s = m.slots[i];
@@ -40,7 +46,7 @@ for (const m of source.meetings) {
     if (slackId && !/^U[A-Z0-9]+$/.test(slackId)) throw Error(`Invalid Slack ID mapped to ${legacyId}`);
     if (legacyId && !slackId) unresolved.push({ slotId: s.id, legacyMemberId: legacyId, legacyName: member?.name || s.presenter || '' });
     const data = {
-      meetingId: m.date, date: m.date, slotNumber: i + 1, format: m.format,
+      seriesId: series.id, meetingId: m.date, date: m.date, slotNumber: i + 1, format: m.format,
       presenterSlackId: slackId, legacyMemberId: legacyId, legacyName: member?.name || s.presenter || '',
       topic: String(s.topic || ''), projectId: '', slidesUrl: '', outcome: 'unconfirmed',
       revision: Number.isInteger(s.version) ? s.version : 0,
@@ -55,6 +61,6 @@ for (const m of source.members) {
   if (!slackId) continue;
   docs.push({ path: `groupRotaMembers/${slackId}`, data: { active: m.active !== false, category: m.memberType || 'associate', legacyMemberId: m.id, updatedBy: 'migration', updatedAt: Date.now() } });
 }
-const output = { provenance: { source: sourcePath, seasonId, preparedAt: new Date().toISOString(), sourceMeetings: source.meetings.length, sourceSlots: seen.size, sourceChanges: Array.isArray(source.changes) ? source.changes.length : null }, docs, comparisons, unresolved, legacyChanges: Array.isArray(source.changes) ? source.changes : [] };
+const output = { provenance: { source: sourcePath, seasonId, seriesId: series.id, preparedAt: new Date().toISOString(), sourceMeetings: source.meetings.length, sourceSlots: seen.size, sourceChanges: Array.isArray(source.changes) ? source.changes.length : null }, docs, comparisons, unresolved, legacyChanges: Array.isArray(source.changes) ? source.changes : [] };
 fs.writeFileSync(outputPath, JSON.stringify(output, null, 2) + '\n', { flag: 'wx' });
 console.log(`Prepared ${source.meetings.length} meetings and ${seen.size} slots; ${unresolved.length} assigned slots remain unresolved. Review ${outputPath} before any import.`);

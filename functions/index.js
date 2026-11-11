@@ -1400,6 +1400,9 @@ const PILOTS = {
   'conversation-replies': 'A reply in a conversation you’re in: a DM',
   'notification-pings': 'Notifications: a ping on Slack that there are new ones, instead of each message',
   'channel-alignment': 'Slack channels follow BOLD.OS: removing whoever isn’t meant to be in one, and telling them',
+  'rota-swaps': 'Group meeting slot swap requests',
+  'rota-offers': 'Group meeting short-slot offers',
+  'rota-reminders': 'Group meeting rota reminders',
 };
 // Every Slack feature from before Pilots: listed too, and live unless switched off there
 // (listPilots sets each one live the first time; until then it counts as live). Each sends
@@ -1502,26 +1505,28 @@ async function pilotSlack(token, key, label, m){
   const st = pilotStateOf(Object.assign({}, d, { known: Object.assign({ [key]: label }, d.known || {}) }), key);
   const send = async (channel, text, blocks) => {
     const res = await slackFetch(token, 'chat.postMessage', Object.assign({ channel, text, unfurl_links: false }, blocks ? { blocks } : {}));
-    if (!res.ok) logger.warn('Slack message failed', { feature: key, error: res.error });
+    if (!res.ok) { logger.warn('Slack message failed', { feature: key, error: res.error }); if (m.requireDelivery) throw Error(res.error || 'Slack message failed'); }
   };
   const dm = async (email, text, blocks) => {
     const id = await slackIdForEmail(email);
-    if (!id) return;
+    if (!id) { if (m.requireDelivery) throw Error('Slack recipient not found'); return; }
     const open = await slackFetch(token, 'conversations.open', { users: id });
     if (open.ok) await send(open.channel.id, text, blocks);
+    else if (m.requireDelivery) throw Error(open.error || 'Cannot open Slack DM');
   };
   // Their Inbox first, in pilot too; whoever's on pings gets a ping instead of the message.
   const emails = [];
   for (const e of Array.from(new Set((m.emails || []).map((x) => String(x).toLowerCase())))) {
     await noteFor([e], { text: m.text, feature: key, source: 'slack' });
     const way = await slackWayFor(e, key);
-    if (way === 'pings') await queuePing(e); else if (way === 'all') emails.push(e);
+    if (m.actionsRequired || way === 'all') emails.push(e);
+    else if (way === 'pings') await queuePing(e);
   }
   m = Object.assign({}, m, { emails });
   if (!emails.length && !m.channel) return { pilot: !st.live, pinged: true };
   if (st.live) {
     for (const e of emails) await dm(e, m.text, m.blocks);
-    if (m.channel) { const id = await slackChannelId(token, String(m.channel).replace(/^#/, '')); if (id) await send(id, m.text, m.blocks); }
+    if (m.channel) { const channel = String(m.channel).replace(/^#/, ''); const id = /^[CG][A-Z0-9-]+$/.test(channel) ? channel : await slackChannelId(token, channel); if (id) await send(id, m.text, m.blocks); else if (m.requireDelivery) throw Error('Slack channel not found'); }
     return { pilot: false };
   }
   const forWhom = [m.channel ? '#' + String(m.channel).replace(/^#/, '') : ''].concat(await Promise.all((m.emails || []).map(nameForEmail))).filter(Boolean).join(', ');
@@ -6507,7 +6512,7 @@ TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice
 // the stable Slack User Group ID in groupRotaConfig/current.
 const groupRota = require('./group-rota')({
   db, admin, HttpsError, onCall, onSchedule, signedInEmail, rolesEmails,
-  requireAccess: access.requireAccess, slackFetch, botToken: SLACK_BOT_TOKEN, logger
+  requireAccess: access.requireAccess, seesEvent: access.seesIt, slackFetch, pilotSlack, botToken: SLACK_BOT_TOKEN, logger
 });
 Object.keys(groupRota).filter(k => k !== 'slackAction' && k !== 'slackCommand' && k !== '_internal').forEach(k => { exports[k] = groupRota[k]; });
 // ---------- Joining BOLD: requests, approval, the welcome email ----------

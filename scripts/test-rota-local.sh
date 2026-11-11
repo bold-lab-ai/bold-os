@@ -18,6 +18,6 @@ if ! command -v firebase >/dev/null 2>&1; then
 fi
 
 export FIREBASE_CLI_DISABLE_TELEMETRY=1
-node --test tests/group-rota.test.cjs tests/rota-preview.test.cjs tests/prepare-rota-import.test.cjs tests/profile-photo-rota.test.cjs
+node --test tests/group-rota.test.cjs tests/rota-preview.test.cjs tests/prepare-rota-import.test.cjs tests/profile-photo-rota.test.cjs tests/rota-series.test.cjs
 firebase emulators:exec --only firestore,storage --project demo-test \
   'node tests/group-rota-rules.cjs && node tests/group-rota-storage.cjs && node tests/group-rota-functions.cjs'

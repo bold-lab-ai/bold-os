@@ -213,7 +213,10 @@ module.exports = function(deps){
     sessions: () => cached('sessions', async () => docs(await db.collection('collabWeekSessions').get())),
     talks: () => cached('talks', async () => docs(await db.collection('collabWeekTalks').get())),
     rotaSeasons: () => cached('rotaSeasons', async () => docs(await db.collection('groupMeetingSeasons').get())),
-    rotaMeetings: () => cached('rotaMeetings', async () => docs(await db.collection('groupMeetings').get())),
+    rotaMeetings: () => cached('rotaMeetings', async () => {
+      const series = await db.collection('eventSeries').where('page', '==', 'group-meetings.html').limit(1).get();
+      return series.empty ? [] : docs(await db.collection('events').where('series', '==', series.docs[0].id).get());
+    }),
     rotaSlots: () => cached('rotaSlots', async () => docs(await db.collection('groupRotaSlots').get())),
     studies: () => cached('studies', async () => docs(await db.collection('studies').get())),
     series: () => cached('series', async () => docs(await db.collection('eventSeries').get())),
@@ -363,7 +366,7 @@ module.exports = function(deps){
   // ---------- the tools ----------
   // The tools the lab adds, from the Tools pages (agentTools), run in mcpSandbox (functions/api-tools.js).
   const added = require('./api-tools')({ db, httpError, builtins: () => TOOLS, idTokenFor: (e) => actions.idTokenFor(e), fetchImpl: deps.fetchImpl, sandboxUrl: deps.sandboxUrl, SITE_URL });
-  const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
+  const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, seesEvent: access.seesIt, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
   const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'rota', 'projects', 'people', 'board', 'comments'];
   const TOOLS = [
     {
@@ -511,15 +514,22 @@ module.exports = function(deps){
     if (want('skills')) jobs.push(lab.skills().then((l) => l.forEach((x) => item('skills', x.title || x.name || x._id, 'Skill', [x.name, x.description, x.body].join(' '), 'skill.html?skill=' + encodeURIComponent(x._id)))));
     if (want('events')) jobs.push(Promise.all([lab.eventsFor(who.email), lab.sessions(), lab.talks()]).then(([evs, ss, ts]) => {
       const talk = (x) => [x.abstract, x.speaker, x.affiliation, x.description, x.summary].filter(Boolean).join(' ');
-      evs.filter((x) => !isHidden(x, full)).forEach((x) => item('events', x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), x.page || 'event.html?event=' + encodeURIComponent(x._id)));
+      evs.filter((x) => x.page !== 'group-meetings.html' && !isHidden(x, full)).forEach((x) => item('events', x.title, 'Event' + (x.place ? ' · ' + x.place : ''), [x.description, x.place].join(' '), x.page || 'event.html?event=' + encodeURIComponent(x._id)));
       ss.forEach((x) => item('events', x.title, 'Session', talk(x), 'session.html?session=' + encodeURIComponent(x._id)));
       ts.forEach((x) => item('events', x.title, 'Talk' + (x.speaker ? ' · ' + x.speaker : ''), talk(x), 'talk.html?talk=' + encodeURIComponent(x._id)));
     }));
-    if (want('rota') && await access.can(who.email, 'events', 'view')) jobs.push(Promise.all([lab.rotaSeasons(), lab.rotaSlots(), lab.people()]).then(([seasons, slots, people]) => {
-      if (!seasons.some((s) => s.publicationState === 'published')) return;
+    if (want('rota') && await access.can(who.email, 'events', 'view')) jobs.push(Promise.all([lab.series(), lab.rotaSeasons(), lab.rotaMeetings(), lab.rotaSlots(), lab.people()]).then(async ([seriesList, seasons, meetings, slots, people]) => {
+      const series = seriesList.find((s) => s.page === 'group-meetings.html');
+      if (!series) return;
+      const manager = full || (series.organisers || []).includes(who.email);
+      if (!manager && (series.hidden || !(await access.seesIt(who.email, series)))) return;
+      const published = new Set(seasons.filter((s) => s.publicationState === 'published').map((s) => s._id));
+      const visible = [];
+      for (const m of meetings) if (published.has(m.seasonId) && (manager || !m.hidden && await access.seesIt(who.email, m))) visible.push(m);
+      const dates = new Set(visible.map((m) => m.date));
       const names = Object.fromEntries(people.map((p) => [p.slackId || p._id, p.name || '']));
-      item('rota', 'Group meetings', 'Rota', seasons.filter((s) => s.publicationState === 'published').map((s) => s.label).join(' '), 'group-meetings.html');
-      slots.forEach((s) => {
+      item('rota', series.title || 'Group meetings', 'Rota', seasons.filter((s) => published.has(s._id)).map((s) => s.label).join(' '), 'group-meetings.html');
+      slots.filter((s) => dates.has(s.meetingId)).forEach((s) => {
         const person = names[s.presenterSlackId] || s.legacyName || 'Open slot';
         item('rota', s.topic || person, 'Group meeting · ' + (s.date || s.meetingId) + ' · Slot ' + s.slotNumber,
           [person, s.topic, s.format].join(' '), 'group-meetings.html?date=' + encodeURIComponent(s.date || s.meetingId) + '&slot=' + encodeURIComponent(s.slotNumber));

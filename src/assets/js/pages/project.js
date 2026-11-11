@@ -999,11 +999,14 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       var target = presWanted && document.getElementById('pres-' + presWanted);
       if (target && !presScrolled) { presScrolled = true; target.scrollIntoView({ block: 'center' }); }
     }, function(err){ console.error('[BOLD Lab] loading the presentations failed', err); });
-    groupUnsub = db.collection('groupRotaSlots').where('projectId', '==', key).onSnapshot(function(snap){
-      groupTalks = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
+    var groupProject = key;
+    groupUnsub = function(){};
+    firebase.app().functions('europe-west2').httpsCallable('groupRotaSnapshot')({}).then(function(result){
+      if (key !== groupProject) return;
+      groupTalks = (result.data.slots || []).filter(function(slot){ return slot.projectId === groupProject; })
         .sort(function(a,b){ return (b.date || '').localeCompare(a.date || ''); });
       if (card && !editing) render();
-    }, function(err){ console.error('[BOLD Lab] loading group meeting talks failed', err); });
+    }).catch(function(err){ console.error('[BOLD Lab] loading group meeting talks failed', err); });
   }
 
   function wireAbstract(){

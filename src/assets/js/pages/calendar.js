@@ -23,7 +23,7 @@
   var E = window.BoldEvents;
   var db = null, me = null, busy = {}, msgs = {}, unsubs = [], slackIds = {}, seenProjects = false;
   var asked = {}, pop = null; // asked: student email → my open request's id; pop: the open card { key, x, y }
-  var data = { project: null, study: null, event: null, series: null, rota: [] };
+  var data = { project: null, study: null, event: null, series: null };
   var VIEW_KEY = 'boldCalendar:view', KIND_KEY = 'boldCalendar:kind', view = 'week', kind = 'all';
   var weekOffset = 0;
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){}
@@ -63,7 +63,7 @@
     });
     return out;
   }
-  function events(){ return shown('event') ? (data.event || []).concat(data.rota || []) : []; }
+  function events(){ return shown('event') ? (data.event || []) : []; }
   function eventUrl(x){ return x.page || 'event.html?event=' + encodeURIComponent(x.slug); }
 
   function projectUrl(w){
@@ -502,21 +502,13 @@
     E.access(function(all){
       if (signIn !== unsubs) return; // signed out or in again meanwhile
       var ev = db.collection('events'), se = db.collection('eventSeries'), fields = function(d){ return d.data(); };
-      watch('event', all ? ev : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), ev.where('createdBy', '==', user.email || '')], fields, 'slug');
+      watch('event', all ? ev : [ev.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), ev.where('createdBy', '==', user.email || '')], function(d){
+        var x = d.data();
+        if (x.page === 'group-meetings.html') return x.status === 'skipped' ? null : Object.assign({}, x, { page: 'group-meetings.html?date=' + encodeURIComponent(x.date || x.startDate) });
+        return x;
+      }, 'slug');
       watch('series', all ? se : [se.where('hidden', '==', false).where('visibleTo', 'in', BOLD.visibleLevels()), se.where('organisers', 'array-contains', mine)], fields, 'id');
     });
-    // Rota dates are their own published records. They appear here as links only;
-    // no Calendar event or invitation is created from them.
-    db.collection('groupMeetingSeasons').where('publicationState', '==', 'published').get().then(function(snap){
-      if (signIn !== unsubs) return;
-      var published = new Set(snap.docs.map(function(d){ return d.id; }));
-      if (!published.size) return;
-      watch('rota', db.collection('groupMeetings').where('status', '==', 'scheduled'), function(d){
-        var m = d.data();
-        return published.has(m.seasonId) ? { title: 'Group meeting', startDate: m.date, endDate: m.date,
-          place: m.location || '', page: 'group-meetings.html?date=' + encodeURIComponent(m.date) } : null;
-      });
-    }).catch(function(){ if (signIn === unsubs) { data.rota = []; render(); } });
     // My open requests to join a student's meeting.
     unsubs.push(db.collection('studyRequests').where('email', '==', String(user.email || '').toLowerCase()).where('status', '==', 'open').onSnapshot(function(snap){
       asked = {};

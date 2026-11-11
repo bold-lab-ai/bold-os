@@ -127,38 +127,22 @@ service cloud.firestore {
     // Published group meeting records are server-written. A callable checks
     // the actor, eligibility and revisions in the same transaction as edits.
     match /groupMeetingSeasons/{id} {
-      allow read: if hasFullWrite() || (may('events', 'view') && resource.data.get('publicationState', 'draft') == 'published');
-      allow write: if false;
-    }
-    match /groupMeetings/{date} {
-      allow read: if may('events', 'view');
+      allow read: if hasFullWrite();
       allow write: if false;
     }
     match /groupRotaSlots/{id} {
-      allow read: if may('events', 'view');
+      // The snapshot callable filters slots through their event edition's
+      // release and visibility. Direct collection queries cannot do that.
+      allow read: if hasFullWrite();
       allow write: if false;
       match /versions/{version} {
-        allow read: if may('events', 'view');
+        allow read: if hasFullWrite();
         allow write: if false;
       }
     }
     match /groupRotaMembers/{slackId} {
-      allow read: if may('events', 'view');
+      allow read: if hasFullWrite();
       allow write: if false;
-    }
-    // A portrait belongs to a verified Slack roster ID. The file lives at the
-    // corresponding Storage path; members can replace or remove their own.
-    match /groupRotaPhotos/{slackId} {
-      allow read: if may('events', 'view');
-      allow create, update: if isSignedIn()
-        && exists(/databases/$(database)/documents/people/$(slackId))
-        && get(/databases/$(database)/documents/people/$(slackId)).data.email.lower() == email().lower()
-        && request.resource.data.keys().hasOnly(['path', 'updatedBy', 'updatedAt'])
-        && request.resource.data.path == 'rota-profiles/' + slackId + '/portrait'
-        && request.resource.data.updatedBy == email().lower()
-        && request.resource.data.updatedAt is number;
-      allow delete: if isSignedIn()
-        && get(/databases/$(database)/documents/people/$(slackId)).data.email.lower() == email().lower();
     }
     match /groupRotaEligibility/{slackId} {
       allow read, write: if false;

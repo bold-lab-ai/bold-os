@@ -4,9 +4,9 @@
 // calculation writes to a slot. The caller supplies the Firebase auth context;
 // every mutation below checks the linked Slack identity again on the server.
 module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, signedInEmail,
-  rolesEmails, requireAccess, slackFetch, botToken, logger }) {
+  rolesEmails, requireAccess, seesEvent, slackFetch, pilotSlack, botToken, logger }) {
   const slots = db.collection('groupRotaSlots');
-  const meetings = db.collection('groupMeetings');
+  const meetings = db.collection('events');
   const swaps = db.collection('groupRotaSwaps');
   const offers = db.collection('groupRotaOffers');
   const notifications = db.collection('groupRotaNotifications');
@@ -20,24 +20,40 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date()).map(x => [x.type, x.value]));
     return p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute;
   };
-  const upcoming = m => m && m.status !== 'skipped' && iso(m.date) && (m.date + 'T' + (m.startTime || '00:00')) > londonNow();
+  const upcoming = m => m && !m.hidden && m.status !== 'skipped' && iso(m.date) && (m.date + 'T' + (m.startTime || '00:00')) > londonNow();
   const clean = value => String(value || '').trim();
   const slotRef = id => { if (!/^[A-Za-z0-9_-]{1,100}$/.test(String(id || ''))) error('invalid-argument', 'Invalid slot.'); return slots.doc(id); };
-  async function actor(request) {
+  async function rotaSeries() {
+    const found = await db.collection('eventSeries').where('page', '==', 'group-meetings.html').limit(2).get();
+    if (found.size !== 1) error('failed-precondition', 'The group meeting event series is not configured.');
+    const doc = found.docs[0], series = doc.data();
+    if (series.kind !== 'editions' || series.inviteGroup !== 'none') error('failed-precondition', 'The group meeting series must use editions without invitations.');
+    return { id: doc.id, ...series };
+  }
+  const meetingRef = (seriesId, date) => meetings.doc(seriesId + '-' + date);
+  async function recipientEmail(slackId) {
+    const person = await db.collection('people').doc(slackId).get();
+    const email = person.exists && clean(person.data().email).toLowerCase();
+    if (!email) error('failed-precondition', 'The recipient is not in the BOLD.OS roster.');
+    return email;
+  }
+  async function actor(request, requireIdentity = true) {
     const email = signedInEmail(request).toLowerCase();
     await requireAccess(email, 'events', 'view');
+    const series = await rotaSeries();
     const roster = await db.collection('people').get();
     const matches = roster.docs.filter(d => String(d.data().email || '').toLowerCase() === email);
-    if (matches.length !== 1 || !matches[0].data().slackId) error('failed-precondition', 'Your Slack account is not uniquely matched in the roster.');
-    const slackId = matches[0].data().slackId;
+    if (requireIdentity && (matches.length !== 1 || !matches[0].data().slackId)) error('failed-precondition', 'Your Slack account is not uniquely matched in the roster.');
+    const slackId = matches.length === 1 ? matches[0].data().slackId || '' : '';
     const [member, eligible, admins, pis] = await Promise.all([
-      db.collection('groupRotaMembers').doc(slackId).get(),
-      db.collection('groupRotaEligibility').doc(slackId).get(), rolesEmails('admins'), rolesEmails('pis')
+      slackId ? db.collection('groupRotaMembers').doc(slackId).get() : null,
+      slackId ? db.collection('groupRotaEligibility').doc(slackId).get() : null, rolesEmails('admins'), rolesEmails('pis')
     ]);
-    const adminRole = admins.map(x => String(x).toLowerCase()).includes(email);
-    return { email, slackId, registered: member.exists && member.data().active === true,
-      eligible: eligible.exists && eligible.data().eligible === true,
-      admin: adminRole, canSeeDrafts: adminRole || pis.map(x => String(x).toLowerCase()).includes(email),
+    const adminRole = admins.concat(pis).map(x => String(x).toLowerCase()).includes(email) || (series.organisers || []).includes(email);
+    if (!adminRole && (series.hidden || !(await seesEvent(email, series)))) error('permission-denied', 'The group meeting series is not visible to you.');
+    return { email, slackId, registered: !!member && member.exists && member.data().active === true,
+      eligible: !!eligible && eligible.exists && eligible.data().eligible === true, seriesId: series.id, series,
+      admin: adminRole, canSeeDrafts: adminRole,
       people: roster.docs.map(d => ({ slackId: d.id, name: d.data().name || '' })) };
   }
   const requirePresenter = a => { if (!a.registered || !a.eligible) error('permission-denied', 'An active eligible rota registration is required.'); };
@@ -58,7 +74,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     }
     await db.runTransaction(async tx => {
       const s = await tx.get(ref); if (!s.exists) error('not-found', 'Slot not found.');
-      const v = s.data(); if (v.presenterSlackId !== a.slackId && !a.admin) error('permission-denied', 'This is another presenter’s slot.');
+      const v = s.data(); if (v.seriesId !== a.seriesId) error('not-found', 'Slot not found.');
+      if (v.presenterSlackId !== a.slackId && !a.admin) error('permission-denied', 'This is another presenter’s slot.');
       const correction = a.admin && v.presenterSlackId !== a.slackId;
       const auditNote = clean(data.auditNote);
       if (correction && (!auditNote || auditNote.length > 300)) error('invalid-argument', 'An administrator correction needs an audit note (up to 300 characters).');
@@ -72,9 +89,9 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const ref = slotRef(request.data && request.data.slotId);
     await db.runTransaction(async tx => {
       const s = await tx.get(ref); if (!s.exists) error('not-found', 'Slot not found.');
-      const v = s.data(), m = await tx.get(meetings.doc(v.meetingId));
+      const v = s.data(), m = await tx.get(meetingRef(a.seriesId, v.meetingId));
       const peers = await tx.get(slots.where('meetingId', '==', v.meetingId));
-      if (!m.exists || !upcoming(m.data()) || !['short', 'long'].includes(v.format) || v.presenterSlackId || v.legacyMemberId || v.legacyName || pending(v)) error('failed-precondition', 'This slot is not open for claims.');
+      if (v.seriesId !== a.seriesId || !m.exists || !upcoming(m.data()) || !['short', 'long'].includes(v.format) || v.presenterSlackId || v.legacyMemberId || v.legacyName || pending(v)) error('failed-precondition', 'This slot is not open for claims.');
       if (peers.docs.some(d => d.data().presenterSlackId === a.slackId)) error('failed-precondition', 'You already present at this meeting.');
       tx.update(ref, { presenterSlackId: a.slackId, legacyMemberId: '', legacyName: '', topic: '', projectId: '', slidesUrl: '', outcome: 'unconfirmed', revision: v.revision + 1, ...stamp(a, 'Open slot claimed') });
     });
@@ -86,8 +103,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const ref = slotRef(d.slotId), declineRef = db.collection('groupRotaDeclines').doc();
     await db.runTransaction(async tx => {
       const s = await tx.get(ref); if (!s.exists) error('not-found', 'Slot not found.');
-      const v = s.data(), m = await tx.get(meetings.doc(v.meetingId));
-      if (v.presenterSlackId !== a.slackId) error('permission-denied', 'This is not your assigned slot.');
+      const v = s.data(), m = await tx.get(meetingRef(a.seriesId, v.meetingId));
+      if (v.seriesId !== a.seriesId || v.presenterSlackId !== a.slackId) error('permission-denied', 'This is not your assigned slot.');
       if (!m.exists || !upcoming(m.data()) || v.revision !== d.revision || pending(v)) error('aborted', 'This slot cannot be declined now. Reload it first.');
       tx.create(declineRef, { bySlackId: a.slackId, byEmail: a.email, slotId: ref.id, original: packageOf(v), reason, at: now(), resolution: 'open' });
       tx.update(ref, { presenterSlackId: '', legacyMemberId: '', legacyName: '', topic: '', projectId: '', slidesUrl: '', outcome: 'unconfirmed', revision: v.revision + 1, ...stamp(a, 'Slot opened') });
@@ -103,8 +120,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       const [left, right] = await Promise.all([tx.get(first), tx.get(second)]);
       if (!left.exists || !right.exists) error('not-found', 'Slot not found.');
       const x = left.data(), y = right.data();
-      const [mx, my, ey, ry] = await Promise.all([tx.get(meetings.doc(x.meetingId)), tx.get(meetings.doc(y.meetingId)), tx.get(db.collection('groupRotaEligibility').doc(y.presenterSlackId || '_')), tx.get(db.collection('groupRotaMembers').doc(y.presenterSlackId || '_'))]);
-      if (x.presenterSlackId !== a.slackId || !y.presenterSlackId || y.presenterSlackId === a.slackId || !ey.exists || ey.data().eligible !== true || !ry.exists || ry.data().active !== true || !sameFormat(x, y) || x.format !== 'short' || pending(x) || pending(y) || !mx.exists || !my.exists || !upcoming(mx.data()) || !upcoming(my.data())) error('failed-precondition', 'These short slots cannot be swapped.');
+      const [mx, my, ey, ry] = await Promise.all([tx.get(meetingRef(a.seriesId, x.meetingId)), tx.get(meetingRef(a.seriesId, y.meetingId)), tx.get(db.collection('groupRotaEligibility').doc(y.presenterSlackId || '_')), tx.get(db.collection('groupRotaMembers').doc(y.presenterSlackId || '_'))]);
+      if (x.seriesId !== a.seriesId || y.seriesId !== a.seriesId || x.presenterSlackId !== a.slackId || !y.presenterSlackId || y.presenterSlackId === a.slackId || !ey.exists || ey.data().eligible !== true || !ry.exists || ry.data().active !== true || !sameFormat(x, y) || x.format !== 'short' || pending(x) || pending(y) || !mx.exists || !my.exists || !upcoming(mx.data()) || !upcoming(my.data())) error('failed-precondition', 'These short slots cannot be swapped.');
       const deadline = Math.min(expiresAt, Date.parse(mx.data().date + 'T00:00:00Z'), Date.parse(my.data().date + 'T00:00:00Z'));
       tx.create(swapRef, { slotId: first.id, otherSlotId: second.id, slotRevision: x.revision, otherRevision: y.revision, requesterSlackId: a.slackId, recipientSlackId: y.presenterSlackId, createdAt: now(), expiresAt: deadline, status: 'pending', notificationState: 'queued' });
       tx.update(first, { pendingActionId: swapRef.id }); tx.update(second, { pendingActionId: swapRef.id });
@@ -112,6 +129,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     return { id: swapRef.id, notificationState: 'queued' };
   }
   async function finishSwap(id, decision, bySlackId) {
+    const series = await rotaSeries();
     const ref = swaps.doc(id); let result = 'unchanged';
     await db.runTransaction(async tx => {
       const snap = await tx.get(ref); if (!snap.exists) error('not-found', 'Swap not found.');
@@ -122,8 +140,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       const [left, right] = await Promise.all([tx.get(lref), tx.get(rref)]);
       const x = left.data(), y = right.data();
       if (!x || !y) error('failed-precondition', 'A slot is missing.');
-      const [mx, my, ex, ey] = await Promise.all([tx.get(meetings.doc(x.meetingId)), tx.get(meetings.doc(y.meetingId)), tx.get(db.collection('groupRotaEligibility').doc(s.requesterSlackId)), tx.get(db.collection('groupRotaEligibility').doc(s.recipientSlackId))]);
-      const valid = x.revision === s.slotRevision && y.revision === s.otherRevision && x.pendingActionId === id && y.pendingActionId === id && x.presenterSlackId === s.requesterSlackId && y.presenterSlackId === s.recipientSlackId && mx.exists && my.exists && upcoming(mx.data()) && upcoming(my.data()) && ex.exists && ey.exists && ex.data().eligible === true && ey.data().eligible === true && now() < s.expiresAt;
+      const [mx, my, ex, ey] = await Promise.all([tx.get(meetingRef(series.id, x.meetingId)), tx.get(meetingRef(series.id, y.meetingId)), tx.get(db.collection('groupRotaEligibility').doc(s.requesterSlackId)), tx.get(db.collection('groupRotaEligibility').doc(s.recipientSlackId))]);
+      const valid = x.seriesId === series.id && y.seriesId === series.id && x.revision === s.slotRevision && y.revision === s.otherRevision && x.pendingActionId === id && y.pendingActionId === id && x.presenterSlackId === s.requesterSlackId && y.presenterSlackId === s.recipientSlackId && mx.exists && my.exists && upcoming(mx.data()) && upcoming(my.data()) && ex.exists && ey.exists && ex.data().eligible === true && ey.data().eligible === true && now() < s.expiresAt;
       result = valid ? decision : now() >= s.expiresAt ? 'expired' : 'invalidated';
       if (result === 'confirmed') {
         tx.update(lref, { ...packageOf(y), revision: x.revision + 1, pendingActionId: '', updatedBy: 'slack:' + bySlackId, updatedAt: now(), changeNote: 'Swap confirmed' });
@@ -143,8 +161,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const ref = slotRef(d.slotId);
     await db.runTransaction(async tx => {
       const s = await tx.get(ref); if (!s.exists) error('not-found', 'Slot not found.');
-      const v = s.data(), m = await tx.get(meetings.doc(v.meetingId));
-      if (!m.exists || m.data().status === 'skipped' || upcoming(m.data()) || v.revision !== d.revision) error('failed-precondition', 'This meeting has not finished or the slot changed.');
+      const v = s.data(), m = await tx.get(meetingRef(a.seriesId, v.meetingId));
+      if (v.seriesId !== a.seriesId || !m.exists || m.data().status === 'skipped' || upcoming(m.data()) || v.revision !== d.revision) error('failed-precondition', 'This meeting has not finished or the slot changed.');
       tx.update(ref, { outcome: d.outcome, revision: v.revision + 1, ...stamp(a, 'Presentation outcome updated') });
     }); return { ok: true };
   }
@@ -155,8 +173,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     await db.runTransaction(async tx => {
       const [snap, eligible, member] = await Promise.all([tx.get(ref), tx.get(db.collection('groupRotaEligibility').doc(recipient)), tx.get(db.collection('groupRotaMembers').doc(recipient))]);
       if (!snap.exists) error('not-found', 'Slot not found.');
-      const s = snap.data(), [m, peers] = await Promise.all([tx.get(meetings.doc(s.meetingId)), tx.get(slots.where('meetingId', '==', s.meetingId))]);
-      if (!m.exists || !upcoming(m.data()) || s.format !== 'short' || s.presenterSlackId || pending(s) || !eligible.exists || eligible.data().eligible !== true || !member.exists || member.data().active !== true || peers.docs.some(x => x.data().presenterSlackId === recipient)) error('failed-precondition', 'This vacancy cannot be offered to that presenter.');
+      const s = snap.data(), [m, peers] = await Promise.all([tx.get(meetingRef(a.seriesId, s.meetingId)), tx.get(slots.where('meetingId', '==', s.meetingId))]);
+      if (s.seriesId !== a.seriesId || !m.exists || !upcoming(m.data()) || s.format !== 'short' || s.presenterSlackId || pending(s) || !eligible.exists || eligible.data().eligible !== true || !member.exists || member.data().active !== true || peers.docs.some(x => x.data().presenterSlackId === recipient)) error('failed-precondition', 'This vacancy cannot be offered to that presenter.');
       tx.create(offerRef, { slotId: ref.id, expectedRevision: s.revision, recipientSlackId: recipient, offeredBy: a.email, createdAt: now(), expiresAt: Math.min(now() + 7 * 86400000, Date.parse(s.date + 'T00:00:00Z')), status: 'pending', notificationState: 'queued' });
       tx.update(ref, { pendingActionId: offerRef.id });
     });
@@ -164,6 +182,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     return { id: offerRef.id };
   }
   async function finishOffer(id, decision, bySlackId) {
+    const series = await rotaSeries();
     const ref = offers.doc(id); let status = 'unchanged';
     await db.runTransaction(async tx => {
       const oSnap = await tx.get(ref); if (!oSnap.exists) error('not-found', 'Offer not found.');
@@ -171,8 +190,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       if (o.status !== 'pending') { status = o.status; return; }
       const sRef = slotRef(o.slotId), [sSnap, eligible, member] = await Promise.all([tx.get(sRef), tx.get(db.collection('groupRotaEligibility').doc(bySlackId)), tx.get(db.collection('groupRotaMembers').doc(bySlackId))]);
       const s = sSnap.data(); if (!s) error('failed-precondition', 'Slot missing.');
-      const [m, peers] = await Promise.all([tx.get(meetings.doc(s.meetingId)), tx.get(slots.where('meetingId', '==', s.meetingId))]);
-      const valid = s.revision === o.expectedRevision && s.pendingActionId === id && !s.presenterSlackId && s.format === 'short' && m.exists && upcoming(m.data()) && eligible.exists && eligible.data().eligible === true && member.exists && member.data().active === true && !peers.docs.some(x => x.data().presenterSlackId === bySlackId) && now() < o.expiresAt;
+      const [m, peers] = await Promise.all([tx.get(meetingRef(series.id, s.meetingId)), tx.get(slots.where('meetingId', '==', s.meetingId))]);
+      const valid = s.seriesId === series.id && s.revision === o.expectedRevision && s.pendingActionId === id && !s.presenterSlackId && s.format === 'short' && m.exists && upcoming(m.data()) && eligible.exists && eligible.data().eligible === true && member.exists && member.data().active === true && !peers.docs.some(x => x.data().presenterSlackId === bySlackId) && now() < o.expiresAt;
       status = valid ? decision : now() >= o.expiresAt ? 'expired' : 'invalidated';
       if (status === 'accepted') tx.update(sRef, { presenterSlackId: bySlackId, legacyMemberId: '', legacyName: '', revision: s.revision + 1, pendingActionId: '', updatedBy: 'slack:' + bySlackId, updatedAt: now(), changeNote: 'Open short slot accepted' });
       else if (s.pendingActionId === id) tx.update(sRef, { pendingActionId: '' });
@@ -187,32 +206,32 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     if (!reserved) return;
     try {
       const s = (await slots.doc(o.slotId).get()).data();
-      const opened = await slackFetch(token, 'conversations.open', { users: o.recipientSlackId }); if (!opened.ok) throw Error(opened.error || 'Cannot open DM');
-      const sent = await slackFetch(token, 'chat.postMessage', { channel: opened.channel.id, text: 'A group meeting short slot is available for you.', blocks: [
+      const sent = await pilotSlack(token, 'rota-offers', 'Group meeting short-slot offers', { emails: [await recipientEmail(o.recipientSlackId)], actionsRequired: true, requireDelivery: true,
+        text: 'A group meeting short slot is available for you.', blocks: [
         { type: 'section', text: { type: 'mrkdwn', text: 'A short group meeting slot on ' + s.date + ' is offered to you. <' + link(s) + '|Review the slot>.' } },
         { type: 'actions', elements: [
           { type: 'button', text: { type: 'plain_text', text: 'Accept' }, action_id: 'rota_offer_accept', value: id },
           { type: 'button', text: { type: 'plain_text', text: 'Decline' }, action_id: 'rota_offer_decline', value: id }
         ] }
       ] });
-      if (!sent.ok) throw Error(sent.error || 'Slack send failed');
-      await nref.update({ status: 'sent', channel: sent.channel, ts: sent.ts, at: now() }); await offers.doc(id).update({ notificationState: 'sent' });
+      const state = sent.pilot ? 'pilot' : 'sent';
+      await nref.update({ status: state, at: now() }); await offers.doc(id).update({ notificationState: state });
     } catch (e) { await nref.update({ status: 'uncertain', error: String(e).slice(0,300), at: now() }); await offers.doc(id).update({ notificationState: 'uncertain' }); logger.error('Rota offer delivery uncertain', { id, error: String(e) }); }
   }
   async function saveMeeting(request) {
     const a = await actor(request); requireAdmin(a); const d = request.data || {}, date = clean(d.date);
     if (!iso(date) || !['short', 'long'].includes(d.format) || !/^\d{2}:\d{2}$/.test(d.startTime || '') || !Number.isInteger(d.durationMinutes) || d.durationMinutes < 15 || d.durationMinutes > 480 || !clean(d.seasonId) || clean(d.location).length > 200) error('invalid-argument', 'Check the meeting details.');
-    const ref = meetings.doc(date), [old, season, assigned] = await Promise.all([ref.get(), db.collection('groupMeetingSeasons').doc(clean(d.seasonId)).get(), slots.where('meetingId', '==', date).limit(1).get()]);
+    const ref = meetingRef(a.seriesId, date), [old, season, assigned] = await Promise.all([ref.get(), db.collection('groupMeetingSeasons').doc(clean(d.seasonId)).get(), slots.where('meetingId', '==', date).limit(1).get()]);
     if (!season.exists || season.data().publicationState !== 'published') error('failed-precondition', 'Publish the season first.');
     if (!assigned.empty && old.exists && old.data().format !== d.format) error('failed-precondition', 'A meeting with published slots cannot change format.');
-    const meeting = { date, seasonId: clean(d.seasonId), format: d.format, timeZone: 'Europe/London', startTime: d.startTime, durationMinutes: d.durationMinutes, location: clean(d.location), status: old.exists ? old.data().status || 'scheduled' : 'scheduled', origin: old.exists ? old.data().origin || 'import' : 'site', ...stamp(a, 'Meeting details updated') };
+    const meeting = { date, startDate: date, endDate: date, seasonId: clean(d.seasonId), format: d.format, timeZone: 'Europe/London', startTime: d.startTime, durationMinutes: d.durationMinutes, location: clean(d.location), place: clean(d.location), status: old.exists ? old.data().status || 'scheduled' : 'scheduled', origin: old.exists ? old.data().origin || 'import' : 'site', ...stamp(a, 'Meeting details updated') };
     if (old.exists) await ref.set(meeting, { merge: true });
     else {
       const batch = db.batch();
-      batch.create(ref, meeting);
+      batch.create(ref, { ...meeting, slug: ref.id, series: a.seriesId, title: a.series.title || 'Group meetings', description: a.series.description || '', page: 'group-meetings.html', hidden: !!a.series.hidden, visibleTo: a.series.visibleTo || 'internal', inviteGroup: 'none', createdAt: now(), createdBy: a.email });
       const count = d.format === 'long' ? 1 : 3;
       for (let number = 1; number <= count; number++) {
-        batch.create(slots.doc(date + '-slot-' + number), { meetingId: date, date, slotNumber: number, format: d.format, presenterSlackId: '', legacyMemberId: '', legacyName: '', topic: '', projectId: '', slidesUrl: '', outcome: 'unconfirmed', revision: 0, origin: 'site', createdAt: now(), ...stamp(a, 'Open slot created') });
+        batch.create(slots.doc(date + '-slot-' + number), { seriesId: a.seriesId, meetingId: date, date, slotNumber: number, format: d.format, presenterSlackId: '', legacyMemberId: '', legacyName: '', topic: '', projectId: '', slidesUrl: '', outcome: 'unconfirmed', revision: 0, origin: 'site', createdAt: now(), ...stamp(a, 'Open slot created') });
       }
       await batch.commit();
     }
@@ -221,12 +240,12 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
   async function createSlot(request) {
     const a = await actor(request); requireAdmin(a); const d = request.data || {}, date = clean(d.date), number = Number(d.slotNumber);
     if (!iso(date) || !Number.isInteger(number) || number < 1 || number > 3) error('invalid-argument', 'Invalid meeting or slot number.');
-    const mRef = meetings.doc(date), id = date + '-slot-' + number, ref = slots.doc(id);
+    const mRef = meetingRef(a.seriesId, date), id = date + '-slot-' + number, ref = slots.doc(id);
     await db.runTransaction(async tx => {
       const [m, s] = await Promise.all([tx.get(mRef), tx.get(ref)]);
       if (!m.exists || !upcoming(m.data()) || m.data().status !== 'scheduled' || (m.data().format === 'long' && number !== 1)) error('failed-precondition', 'This meeting cannot take that slot.');
       if (s.exists) error('already-exists', 'That slot already exists.');
-      tx.create(ref, { meetingId: date, date, slotNumber: number, format: m.data().format, presenterSlackId: '', legacyMemberId: '', legacyName: '', topic: '', projectId: '', slidesUrl: '', outcome: 'unconfirmed', revision: 0, origin: 'site', createdAt: now(), ...stamp(a, 'Open slot created') });
+      tx.create(ref, { seriesId: a.seriesId, meetingId: date, date, slotNumber: number, format: m.data().format, presenterSlackId: '', legacyMemberId: '', legacyName: '', topic: '', projectId: '', slidesUrl: '', outcome: 'unconfirmed', revision: 0, origin: 'site', createdAt: now(), ...stamp(a, 'Open slot created') });
     });
     return { id };
   }
@@ -235,31 +254,41 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     await db.runTransaction(async tx => {
       const s = await tx.get(ref); if (!s.exists) error('not-found', 'Slot not found.');
       const v = s.data();
-      if (v.origin !== 'site' || v.revision !== 0 || v.presenterSlackId || v.legacyMemberId || pending(v)) error('failed-precondition', 'Only a newly created, untouched open slot can be removed.');
+      if (v.seriesId !== a.seriesId || v.origin !== 'site' || v.revision !== 0 || v.presenterSlackId || v.legacyMemberId || pending(v)) error('failed-precondition', 'Only a newly created, untouched open slot can be removed.');
       tx.delete(ref);
     }); return { ok: true };
   }
   async function deleteMeeting(request) {
     const a = await actor(request); requireAdmin(a); const date = clean(request.data && request.data.date);
     if (!iso(date)) error('invalid-argument', 'Invalid date.');
-    const ref = meetings.doc(date);
+    const ref = meetingRef(a.seriesId, date);
     await db.runTransaction(async tx => {
       const [m, existing] = await Promise.all([tx.get(ref), tx.get(slots.where('meetingId', '==', date).limit(1))]);
       if (!m.exists || m.data().origin !== 'site' || !existing.empty) error('failed-precondition', 'Only a new meeting without slots can be removed.');
       tx.delete(ref);
     }); return { ok: true };
   }
+  async function setMeetingVisibility(request) {
+    const a = await actor(request); requireAdmin(a);
+    const d = request.data || {}, date = clean(d.date);
+    if (!iso(date) || typeof d.hidden !== 'boolean') error('invalid-argument', 'Choose a meeting and visibility.');
+    if (!d.hidden && a.series.hidden) error('failed-precondition', 'Release the event series first.');
+    const ref = meetingRef(a.seriesId, date), snap = await ref.get();
+    if (!snap.exists) error('not-found', 'Meeting not found.');
+    await ref.update({ hidden: d.hidden, ...stamp(a, d.hidden ? 'Meeting hidden' : 'Meeting released') });
+    return { ok: true };
+  }
   async function saveSeason(request) {
     const a = await actor(request); requireAdmin(a); const d = request.data || {}, id = clean(d.id);
     const state = clean(d.publicationState) || 'draft';
     if (!/^[a-z0-9-]{1,64}$/.test(id) || !clean(d.label) || clean(d.label).length > 120 || clean(d.rotationDescription).length > 2000 || !['draft', 'published'].includes(state)) error('invalid-argument', 'Check the season details.');
-    if (state === 'draft' && !(await meetings.where('seasonId', '==', id).limit(1).get()).empty) error('failed-precondition', 'A season with published meetings cannot become a draft.');
+    if (state === 'draft' && (await meetings.where('series', '==', a.seriesId).get()).docs.some(doc => doc.data().seasonId === id)) error('failed-precondition', 'A season with published meetings cannot become a draft.');
     await db.collection('groupMeetingSeasons').doc(id).set({ label: clean(d.label), regularTime: clean(d.regularTime), location: clean(d.location), rotationDescription: clean(d.rotationDescription), publicationState: state, ...stamp(a, 'Season details updated') }, { merge: true });
     return { ok: true };
   }
   async function access(request) {
     let a;
-    try { a = await actor(request); }
+    try { a = await actor(request, false); }
     catch (e) {
       signedInEmail(request);
       return { slackId: '', registered: false, eligible: false, admin: false, reason: 'Your Slack account is not uniquely matched in the roster', swaps: [] };
@@ -268,10 +297,33 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const offeredSwaps = await swaps.where('recipientSlackId', '==', a.slackId).get();
     const [assigned, registered] = await Promise.all([slots.get(), db.collection('groupRotaMembers').get()]);
     const visibleIds = new Set(assigned.docs.map(d => d.data().presenterSlackId).concat(registered.docs.filter(d => d.data().active).map(d => d.id)));
-    return { slackId: a.slackId, registered: a.registered, eligible: a.eligible, admin: a.admin, canSeeDrafts: a.canSeeDrafts,
+    return { slackId: a.slackId, seriesId: a.seriesId, seriesHidden: !!a.series.hidden, registered: a.registered, eligible: a.eligible, admin: a.admin, canSeeDrafts: a.canSeeDrafts,
       people: a.people.filter(p => visibleIds.has(p.slackId)),
-      reason: !a.registered ? 'Join the rota to use this action' : !a.eligible ? 'Eligibility has not been confirmed' : '',
+      reason: !a.slackId ? 'Your Slack account is not uniquely matched in the roster' : !a.registered ? 'Join the rota to use this action' : !a.eligible ? 'Eligibility has not been confirmed' : '',
       swaps: [...ownSwaps.docs, ...offeredSwaps.docs].filter((s, i, arr) => arr.findIndex(x => x.id === s.id) === i).map(s => ({ id: s.id, ...s.data() })) };
+  }
+  async function snapshot(request) {
+    const a = await actor(request, false);
+    const pick = (id, data, keys) => Object.fromEntries([['id', id], ...keys.filter(key => data[key] !== undefined).map(key => [key, data[key]])]);
+    const [eventDocs, slotDocs, memberDocs, seasonDocs] = await Promise.all([
+      meetings.where('series', '==', a.seriesId).get(), slots.get(),
+      db.collection('groupRotaMembers').get(), db.collection('groupMeetingSeasons').get()
+    ]);
+    const published = new Set(seasonDocs.docs.filter(doc => a.admin || doc.data().publicationState === 'published').map(doc => doc.id));
+    const visible = [];
+    for (const doc of eventDocs.docs) {
+      const m = doc.data();
+      if (published.has(m.seasonId) && (a.admin || !m.hidden && await seesEvent(a.email, m))) visible.push(pick(doc.id, m,
+        ['date', 'seasonId', 'format', 'startTime', 'durationMinutes', 'timeZone', 'location', 'status', 'skipReason', 'origin', 'hidden']));
+    }
+    const dates = new Set(visible.map(m => m.date));
+    return {
+      meetings: visible,
+      slots: slotDocs.docs.filter(doc => doc.data().seriesId === a.seriesId && dates.has(doc.data().meetingId)).map(doc => pick(doc.id, doc.data(),
+        ['meetingId', 'date', 'slotNumber', 'format', 'presenterSlackId', 'legacyMemberId', 'legacyName', 'topic', 'slidesUrl', 'projectId', 'outcome', 'revision', 'pendingActionId', 'origin'])),
+      members: memberDocs.docs.map(doc => pick(doc.id, doc.data(), ['active', 'category', 'legacyMemberId'])),
+      seasons: seasonDocs.docs.filter(doc => published.has(doc.id)).map(doc => pick(doc.id, doc.data(), ['label', 'regularTime', 'location', 'rotationDescription', 'publicationState']))
+    };
   }
   async function register(request) {
     const a = await actor(request); if (!a.eligible) error('permission-denied', 'Eligibility has not been confirmed.');
@@ -306,18 +358,15 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const s = snap.data(); const nref = notifications.doc('swap-' + id);
     const reserved = await db.runTransaction(async tx => {
       const n = await tx.get(nref);
-      if (n.exists && ['sending', 'sent', 'uncertain'].includes(n.data().status)) return false;
+      if (n.exists && ['sending', 'sent', 'pilot', 'uncertain'].includes(n.data().status)) return false;
       tx.set(nref, { kind: 'swap', swapId: id, status: 'sending', at: now() }); return true;
     });
     if (!reserved) return;
-    let definiteFailure = false;
     try {
       const [left, right] = await Promise.all([slots.doc(s.slotId).get(), slots.doc(s.otherSlotId).get()]);
       if (!left.exists || !right.exists) throw Error('A slot is missing');
       const a = left.data(), b = right.data();
-      const opened = await slackFetch(token, 'conversations.open', { users: s.recipientSlackId });
-      if (!opened.ok) { definiteFailure = true; throw Error(opened.error || 'Cannot open DM'); }
-      const result = await slackFetch(token, 'chat.postMessage', { channel: opened.channel.id,
+      const result = await pilotSlack(token, 'rota-swaps', 'Group meeting slot swap requests', { emails: [await recipientEmail(s.recipientSlackId)], actionsRequired: true, requireDelivery: true,
         text: 'Group meeting swap: please confirm or decline.',
         blocks: [
           { type: 'section', text: { type: 'mrkdwn', text: '<@' + s.requesterSlackId + '> requests a group meeting swap: ' + a.date + ' (' + a.format + ') for ' + b.date + ' (' + b.format + '). Review the <' + baseUrl + '|rota> before deciding.' } },
@@ -326,13 +375,13 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
             { type: 'button', text: { type: 'plain_text', text: 'Decline' }, action_id: 'rota_swap_decline', value: id }
           ] }
         ] });
-      if (!result.ok) { definiteFailure = true; throw Error(result.error || 'Slack send failed'); }
-      await nref.set({ status: 'sent', channel: result.channel, ts: result.ts, at: now() }, { merge: true });
-      await ref.update({ notificationState: 'sent' });
+      const state = result.pilot ? 'pilot' : 'sent';
+      await nref.set({ status: state, at: now() }, { merge: true });
+      await ref.update({ notificationState: state });
     } catch (e) {
       // Slack may have accepted a request before its response was lost. Inspect
       // this record before a manual retry rather than blindly posting twice.
-      const state = definiteFailure ? 'failed' : 'uncertain';
+      const state = 'uncertain';
       await nref.set({ status: state, error: String(e).slice(0, 300), at: now() }, { merge: true });
       await ref.update({ notificationState: state }); logger.error('Rota swap delivery ' + state, { id, error: String(e) });
     }
@@ -358,13 +407,15 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     return true;
   }
   async function remind(token) {
+    const series = await rotaSeries();
+    if (series.hidden) return;
     const configSnap = await db.collection('groupRotaConfig').doc('current').get();
     const config = configSnap.exists ? configSnap.data() : {};
     if (!config.reminderChannelId || !config.remindersEnabled) return;
     const london = londonNow().slice(0, 10);
     const target = new Date(london + 'T12:00:00Z'); target.setUTCDate(target.getUTCDate() + 7);
-    const date = target.toISOString().slice(0, 10), m = await meetings.doc(date).get();
-    if (!m.exists || m.data().status !== 'scheduled') return;
+    const date = target.toISOString().slice(0, 10), m = await meetingRef(series.id, date).get();
+    if (!m.exists || m.data().hidden || m.data().status !== 'scheduled') return;
     const rows = await slots.where('meetingId', '==', date).get();
     const lines = rows.docs.map(d => d.data()).sort((a,b) => a.slotNumber - b.slotNumber).map(s => s.presenterSlackId
       ? '<@' + s.presenterSlackId + '> — ' + (s.topic || 'Topic to come') + (s.slidesUrl ? '' : ' · please add slides: ' + link(s))
@@ -376,9 +427,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     });
     if (!reserved) return;
     try {
-      const posted = await slackFetch(token, 'chat.postMessage', { channel: config.reminderChannelId, text: 'Next Monday’s group meeting (' + date + ')\n' + lines.join('\n') + '\n' + baseUrl });
-      if (!posted.ok) throw Error(posted.error || 'Slack send failed');
-      await ref.update({ status: 'sent', ts: posted.ts, at: now() });
+      const posted = await pilotSlack(token, 'rota-reminders', 'Group meeting rota reminders', { channel: config.reminderChannelId, requireDelivery: true, text: 'Next Monday’s group meeting (' + date + ')\n' + lines.join('\n') + '\n' + baseUrl });
+      await ref.update({ status: posted.pilot ? 'pilot' : 'sent', at: now() });
     } catch (e) { await ref.update({ status: 'uncertain', error: String(e).slice(0,300), at: now() }); logger.error('Rota reminder uncertain', { date, error: String(e) }); }
   }
   async function syncEligibility(token) {
@@ -398,13 +448,14 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     }
   }
   return {
-    groupRotaAccess: onCall(access), groupRotaRegister: onCall(register), groupRotaLeave: onCall(leave),
+    groupRotaAccess: onCall(access), groupRotaSnapshot: onCall(snapshot), groupRotaRegister: onCall(register), groupRotaLeave: onCall(leave),
     groupRotaEdit: onCall(details), groupRotaClaim: onCall(claim), groupRotaRecuse: onCall(recuse),
     groupRotaRequestSwap: onCall({ secrets: [botToken] }, async request => { const result = await requestSwap(request); await sendSwap(result.id, botToken.value()); return { id: result.id, notificationState: (await swaps.doc(result.id).get()).data().notificationState }; }),
     groupRotaRetrySwap: onCall({ secrets: [botToken] }, retrySwap),
     groupRotaCancelSwap: onCall(cancelSwap), groupRotaOutcome: onCall(outcome),
     groupRotaOfferShort: onCall({ secrets: [botToken] }, offerShort),
     groupRotaSaveMeeting: onCall(saveMeeting), groupRotaSaveSeason: onCall(saveSeason),
+    groupRotaSetMeetingVisibility: onCall(setMeetingVisibility),
     groupRotaCreateSlot: onCall(createSlot), groupRotaDeleteSlot: onCall(deleteSlot), groupRotaDeleteMeeting: onCall(deleteMeeting),
     groupRotaReminder: onSchedule({ schedule: '0 14 * * 1', timeZone: 'Europe/London', secrets: [botToken] }, async () => remind(botToken.value())),
     groupRotaEligibilitySync: onSchedule({ schedule: '0 7 * * *', timeZone: 'Europe/London', secrets: [botToken] }, async () => syncEligibility(botToken.value())),

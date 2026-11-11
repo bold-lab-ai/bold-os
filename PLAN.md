@@ -1,5 +1,11 @@
 # Group meeting rota integration plan
 
+## Event-series integration (local implementation, 11 November 2026)
+
+The rota now attaches to one weekly `eventSeries` record with `kind: 'editions'`, `page: 'group-meetings.html'` and `inviteGroup: 'none'`. Each dated meeting is an `events/{seriesId}-{date}` edition; `groupRotaSlots` continues to hold the specialised assignments, talk details, swaps, declines and outcomes. The generic Events list, Calendar and sidebar discover the series and its editions. The series' organisers, as well as PIs and admins, manage rota meetings. Hidden editions are excluded from ordinary member snapshots and can be released separately after the series is released.
+
+The older `groupMeetings/{date}` path described below is superseded by these event editions. The import preparation tool now requires a reviewed series descriptor and produces edition document shapes. Creating the actual series, importing the frozen current snapshot, matching identities, configuring eligibility/reminders, and deploying are separately authorised release work. Presenter photos use the shared profile-photo service; there is no rota-specific fallback or portrait migration. The offline preview and emulator tests use synthetic/local data only.
+
 ## Goal and agreed behavior
 
 Bring the existing group meeting rota from `../bold-rota` into BOLD.OS. The

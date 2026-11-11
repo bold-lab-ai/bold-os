@@ -59,19 +59,14 @@
   // browser's cache) rather than faded in over initials again.
   function show(node, version, photo, known){
     if (node.dataset.photoVersion !== version) return;
-    var fallback = node.dataset.fallbackUrl || '';
-    var shared = photo && photo.state === 'active' && photo.url;
-    var url = shared || (photo && photo.state === 'removed' ? '' : fallback);
+    var url = photo && photo.state === 'active' && photo.url;
     if (!url) return;
     var img = document.createElement('img');
     img.alt = '';
     img.loading = 'lazy';
     if (known) img.classList.add('is-loaded');
     img.onload = function(){ if (node.dataset.photoVersion === version) img.classList.add('is-loaded'); else img.remove(); };
-    img.onerror = function(){
-      img.remove();
-      if (shared && fallback && node.dataset.photoVersion === version) show(node, version, { state: 'missing' }, known);
-    };
+    img.onerror = function(){ img.remove(); };
     node.appendChild(img);
     img.src = url;
   }

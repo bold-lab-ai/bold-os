@@ -78,6 +78,7 @@
       return;
     }
     document.title = s.title + ' | BOLD Lab';
+    if (s.page === 'group-meetings.html' && !editMode) { location.replace(s.page); return; }
     if (isEditions(s)) {
       if (editMode) { if (!accessKnown) return; if (canChange()) { startEditing(); return; } }
       if (editions === null) return;
@@ -200,10 +201,12 @@
     return head +
         '<label class="sr-check"' + (weekly ? '' : ' title="A recurring invite needs a set day every 1–4 weeks"') + '>' +
           '<input type="checkbox" class="sr-has-invite"' + (invite ? ' checked' : '') + (weekly ? '' : ' disabled') + '> A recurring Google Calendar invite, at a set day and time</label>' +
+        (ed && e.often === 'w1' ? '<label class="sr-check"><input type="checkbox" class="sr-rota-page"' + (e.rotaPage ? ' checked' : '') + (s && s.page === 'group-meetings.html' ? ' disabled' : '') + '> Use the Group meetings rota page</label>' : '') +
         (ed ? '<p class="event-form-hint sr-check-hint">Without it, each occurrence is added by hand, with its own dates, place and programme.</p>' +
-            '<label class="sr-check"><input type="checkbox" class="sr-proposals"' + (e.proposals ? ' checked' : '') + '> It takes proposals (workshops, pitches, talks)</label>' +
-            E.inviteSelectHtml('sr-invite-group', e.inviteGroup) +
-            '<p class="event-form-hint">To each occurrence, once it’s released; each can choose its own.</p>'
+            (e.rotaPage && e.often === 'w1' ? '<p class="event-form-hint">Group meetings are scheduled on their rota page, without Calendar invitations.</p>' :
+              '<label class="sr-check"><input type="checkbox" class="sr-proposals"' + (e.proposals ? ' checked' : '') + '> It takes proposals (workshops, pitches, talks)</label>' +
+              E.inviteSelectHtml('sr-invite-group', e.inviteGroup) +
+              '<p class="event-form-hint">To each occurrence, once it’s released; each can choose its own.</p>')
           : '<label>When (London time)</label>' + meetingEntryHtml(e.meeting) +
             '<label>Who’s invited<select class="sr-invite">' +
               INVITE.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === e.invite ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select></label>' +
@@ -241,6 +244,7 @@
     if (q('.sr-often')) editing.often = q('.sr-often').value;
     if (q('.sr-has-invite') && !q('.sr-has-invite').disabled) editing.hasInvite = q('.sr-has-invite').checked;
     if (q('.sr-proposals')) editing.proposals = q('.sr-proposals').checked;
+    if (q('.sr-rota-page')) editing.rotaPage = q('.sr-rota-page').checked;
     if (q('.sr-invite-group')) editing.inviteGroup = q('.sr-invite-group').value;
     if (q('.sr-start1')) { editing.start = q('.sr-start1').value; editing.end = q('.sr-end1').value; editing.place = q('.sr-place').value; }
     if (document.getElementById('pmDay')) {
@@ -252,8 +256,8 @@
 
   function startEditing(){
     editing = s ? { often: isEditions(s) ? oftenKey(s.cadence) : 'w' + ((s.meeting || {}).every || 1), hasInvite: !isEditions(s), title: s.title, description: s.description || '',
-        meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, inviteGroup: s.inviteGroup || 'none', requiredFor: s.requiredFor || '', visibleTo: s.visibleTo || 'internal', organisers: (s.organisers || []).slice(), error: '' }
-      : { often: 'once', start: '', end: '', place: '', hasInvite: false, title: '', description: '', meeting: null, invite: 'join', proposals: false, inviteGroup: 'internal', visibleTo: 'internal', organisers: [me.email.toLowerCase()], error: '' };
+        meeting: s.meeting, invite: inviteKey(s.invite), proposals: !!s.proposals, rotaPage: s.page === 'group-meetings.html', inviteGroup: s.inviteGroup || 'none', requiredFor: s.requiredFor || '', visibleTo: s.visibleTo || 'internal', organisers: (s.organisers || []).slice(), error: '' }
+      : { often: 'once', start: '', end: '', place: '', hasInvite: false, title: '', description: '', meeting: null, invite: 'join', proposals: false, rotaPage: false, inviteGroup: 'internal', visibleTo: 'internal', organisers: [me.email.toLowerCase()], error: '' };
     loadRoster(); render();
   }
 
@@ -272,13 +276,14 @@
     var e = editing;
     if (e.often === 'once') { saveOnce(e); return; }
     var weekly = e.often.charAt(0) === 'w', ed = !(weekly && e.hasInvite), every = Number(e.often.slice(1));
+    var useRota = e.rotaPage && ed && weekly && every === 1;
     var meeting = ed ? null : readMeetingEntry();
     if (meeting && !meeting.error) meeting.every = every;
     if (!e.title.trim()) { e.error = 'Give it a title.'; render(); return; }
     if (meeting && meeting.error) { e.error = meeting.error; render(); return; }
     var inv = e.invite.indexOf('group:') === 0 ? { mode: 'group', group: e.invite.slice(6) } : { mode: 'join' };
     var payload = { action: 'save', id: s ? s.id : undefined, kind: ed ? 'editions' : 'meeting', title: e.title.trim(), description: e.description.trim(), organisers: e.organisers, visibleTo: e.visibleTo || 'internal' };
-    if (ed) { payload.cadence = { every: every, unit: weekly ? 'week' : 'month' }; payload.proposals = e.proposals; payload.inviteGroup = e.inviteGroup || 'none'; } else { payload.meeting = meeting; payload.invite = inv; payload.requiredFor = e.requiredFor || ''; }
+    if (ed) { payload.cadence = { every: every, unit: weekly ? 'week' : 'month' }; payload.proposals = useRota ? false : e.proposals; payload.inviteGroup = useRota ? 'none' : e.inviteGroup || 'none'; if (!s && useRota) payload.page = 'group-meetings.html'; } else { payload.meeting = meeting; payload.invite = inv; payload.requiredFor = e.requiredFor || ''; }
     var send = function(){
       busy = true; e.error = ''; render();
       call(payload).then(function(r){
@@ -354,7 +359,7 @@
   });
   body.addEventListener('change', function(ev){
     if (!editing) return;
-    if (ev.target.classList.contains('sr-often') || ev.target.classList.contains('sr-has-invite')) { keep(); render(); return; }
+    if (ev.target.classList.contains('sr-often') || ev.target.classList.contains('sr-has-invite') || ev.target.classList.contains('sr-rota-page')) { keep(); render(); return; }
     if (!ev.target.classList.contains('sr-pick') || !ev.target.value) return;
     keep(); editing.organisers.push(ev.target.value); render();
   });

@@ -4,9 +4,9 @@
   var db = firebase.firestore(BOLD.getApp());
   var call = function(name, data){ return firebase.app().functions('europe-west2').httpsCallable('groupRota' + name)(data || {}); };
   var esc = BOLD.escapeHtml, msg = document.getElementById('rotaMessage'), body = document.getElementById('rotaBody');
-  var user = null, access = null, meetings = [], slots = [], members = [], people = [], seasons = [], projects = [], photoUrls = {}, busy = false;
+  var user = null, access = null, meetings = [], slots = [], members = [], people = [], seasons = [], projects = [], busy = false;
   var manageOpen = false, changelogOpen = false, changes = [], changesLoaded = false, changesLoading = false, changesFailed = false, changesLast = null, changesMore = false;
-  var params = new URLSearchParams(location.search), selectedDate = params.get('date') || '', selectedSlot = params.get('slot') || '', archive = params.get('archive') === '1';
+  var params = new URLSearchParams(location.search), edition = params.get('edition') || '', selectedDate = params.get('date') || (/\d{4}-\d{2}-\d{2}$/.test(edition) ? edition.slice(-10) : ''), selectedSlot = params.get('slot') || '', archive = params.get('archive') === '1';
   var search = '', panel = null, visibleCount = 10, pendingJump = !!selectedDate, trackerOpen = false, trackerYear = new Date().getFullYear();
   var resourceHint = document.createElement('div');
   resourceHint.className = 'rota-resource-hint';
@@ -38,11 +38,10 @@
     var parts = String(person || '').trim().split(/\s+/);
     return ((parts[0] || '').charAt(0) + (parts.length > 1 ? parts[parts.length - 1].charAt(0) : '')).toUpperCase();
   }
-  function publicPhoto(s, person){ return photoUrls[s.presenterSlackId] || ''; }
   function fmt(date){ return new Date(date + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }); }
   function projectHref(p){ return 'project.html#id=' + encodeURIComponent(p.cardId || p.id) + (p.boardId ? '&board=' + encodeURIComponent(p.boardId) : '') + '&tab=presentations'; }
   function past(m){ return !!m && (m.date + 'T' + (m.startTime || '00:00')) <= new Date().toLocaleString('sv-SE', { timeZone: 'Europe/London', hour12: false }).replace(' ', 'T').slice(0, 16); }
-  function future(m){ return !!m && m.status !== 'skipped' && !past(m); }
+  function future(m){ return !!m && !m.hidden && m.status !== 'skipped' && !past(m); }
   function mine(s){ return !!access && !!access.slackId && !!s.presenterSlackId && s.presenterSlackId === access.slackId; }
   function able(s){ return !!access && mine(s) && future(meetings.filter(function(m){ return m.date === s.meetingId; })[0]) && !s.pendingActionId; }
   function ownShortSlots(){ return slots.filter(function(s){ return s.format === 'short' && mine(s) && !s.pendingActionId && future(meetings.filter(function(m){ return m.date === s.meetingId; })[0]); }); }
@@ -80,8 +79,7 @@
     var profileId = s.presenterSlackId || (s.legacyMemberId && (members.filter(function(x){ return x.legacyMemberId === s.legacyMemberId; })[0] || {}).id) || '';
     var hasProfile = !!profileId && people.some(function(p){ return p.slackId === profileId; });
     var presenterHtml = hasProfile ? '<a href="person.html?id=' + encodeURIComponent(profileId) + '">' + esc(presenter) + '</a>' : esc(presenter);
-    var photo = assigned ? publicPhoto(s, presenter) : '';
-    var sharedPhoto = assigned && !!s.presenterSlackId && !window.ROTA_LOCAL_PREVIEW && !!BOLD.photo;
+    var sharedPhoto = assigned && !!s.presenterSlackId && !!BOLD.photo;
     var outcome = assigned && !future(m) ? (s.outcome === 'presented' ? 'Presented' : s.outcome === 'did-not-present' ? 'Did not present' : 'Unconfirmed') : '';
     var menuControls = (!own && admin && assigned ? '<button type="button" class="btn-text" data-action="edit" data-id="' + esc(s.id) + '"' + disabled(adminEdit, why) + '>' + (s.slidesUrl ? 'Edit talk' : 'Add slides URL / edit talk') + '</button>' : '') +
       (!assigned && future(m) && s.format === 'short' && admin ? '<button type="button" class="btn-text" data-action="offer" data-id="' + esc(s.id) + '"' + disabled(!s.pendingActionId, 'An offer is already pending') + '>Offer short slot</button>' : '') +
@@ -89,15 +87,16 @@
       (s.origin === 'site' && s.revision === 0 && !assigned && admin ? '<button type="button" class="btn-text" data-action="deleteSlot" data-id="' + esc(s.id) + '">Remove slot</button>' : '');
     var slotActions = (own ? declineHtml(s, can, why) : menuControls ? actionsHtml('rota-actions-' + s.id, 'Actions for ' + slotLabel(s), menuControls) : '') + (s.format === 'short' && !own && s.presenterSlackId ? swapHtml(s, swapReady, swapReason) : '');
     return '<article class="rota-slot" id="slot-' + esc(s.meetingId) + '-' + esc(s.slotNumber) + '"><div class="rota-slot-head"><h3>' + esc(slotLabel(s)) + '</h3>' + (outcome ? own && admin ? '<button type="button" class="rota-outcome rota-outcome-edit" data-action="outcome" data-id="' + esc(s.id) + '" title="Set outcome">' + esc(outcome) + '</button>' : '<span class="rota-outcome">' + esc(outcome) + '</span>' : '') + '</div>' +
-      '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '"' + (sharedPhoto ? ' data-id="' + esc(s.presenterSlackId) + '" data-name="' + esc(presenter) + '" data-fallback-url="' + esc(photo) + '"' : '') + ' aria-hidden="true">' + (assigned ? esc(initials(presenter)) + (!sharedPhoto && photo ? '<img class="rota-avatar-photo" src="' + esc(photo) + '" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">' : '') : '+') + '</span><div class="rota-slot-details">' +
+      '<div class="rota-slot-content"><span class="rota-avatar' + (assigned ? '' : ' rota-avatar--open') + '"' + (sharedPhoto ? ' data-id="' + esc(s.presenterSlackId) + '" data-name="' + esc(presenter) + '"' : '') + ' aria-hidden="true">' + (assigned ? esc(initials(presenter)) : '+') + '</span><div class="rota-slot-details">' +
       '<div class="rota-person-row"><p class="rota-person">' + presenterHtml + (assigned && !hasProfile ? ' <span class="rota-muted">(unresolved account)</span>' : '') + '</p>' + slotActions + '</div>' +
       (assigned ? (topic ? '<p class="rota-topic">' + topic + '</p>' : '') + (slide || projectLink ? '<p class="rota-resources">' + slide + projectLink + '</p>' : '') : '<button type="button" class="btn-text rota-claim" data-action="claim" data-id="' + esc(s.id) + '"' + disabled(claimant, alreadyPresenting ? 'You already present at this meeting' : access && access.reason || 'This slot is unavailable') + '>Claim slot</button>') + '</div></div></article>';
   }
   function meetingHtml(m, index){
     var rows = slots.filter(function(s){ return s.meetingId === m.date; }).sort(function(a,b){ return a.slotNumber - b.slotNumber; });
     var remove = m.origin === 'site' && !rows.length ? '<button type="button" class="btn-text" data-action="deleteMeeting" data-date="' + esc(m.date) + '"' + disabled(access && access.admin, 'Only a rota administrator can remove a new empty meeting') + '>Remove meeting</button>' : '';
-    return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head' + (remove ? ' has-actions' : '') + '"><div>' + (index === 0 && !archive ? '<span class="rota-meeting-eyebrow">Next meeting</span>' : '') + '<h2>' + esc(fmt(m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + '</p>' +
-      (remove ? actionsHtml('rota-actions-meeting-' + m.date, 'Actions for meeting on ' + fmt(m.date), remove) : '') + '</div>' +
+    var visibility = '<button type="button" class="btn-text" data-action="meetingVisibility" data-date="' + esc(m.date) + '" data-hidden="' + (m.hidden ? 'false' : 'true') + '"' + disabled(access && access.admin && (!m.hidden || !access.seriesHidden), access && access.seriesHidden && m.hidden ? 'Release the event series first' : 'Only a series organiser, PI or admin can change visibility') + '>' + (m.hidden ? 'Release meeting' : 'Hide meeting') + '</button>';
+    return '<section class="rota-meeting' + (index === 0 && !archive ? ' is-next' : '') + '" id="date-' + esc(m.date) + '"><div class="rota-meeting-head has-actions"><div>' + (index === 0 && !archive ? '<span class="rota-meeting-eyebrow">Next meeting</span>' : '') + '<h2>' + esc(fmt(m.date)) + '</h2></div><p>' + esc(m.startTime || '') + ' · ' + esc(m.format || '') + (m.status === 'skipped' ? ' · Skipped' + (m.skipReason ? ': ' + esc(m.skipReason) : '') : '') + (m.hidden ? ' · Hidden' : '') + '</p>' +
+      actionsHtml('rota-actions-meeting-' + m.date, 'Actions for meeting on ' + fmt(m.date), visibility + remove) + '</div>' +
       (m.status === 'skipped' ? '' : '<div class="rota-slots rota-slots--' + Math.min(rows.length, 3) + '">' + rows.map(slotHtml).join('') + '</div>') + '</section>';
   }
   function changesHtml(){
@@ -130,9 +129,9 @@
     return '<details class="rota-manage" id="rotaManage"' + (manageOpen ? ' open' : '') + '><summary>Rota actions</summary><div class="rota-manage-controls">' +
       '<button type="button" class="btn-text" data-action="register"' + disabled(access && access.eligible, 'Eligibility has not been confirmed') + '>' + (access && access.registered ? 'Update registration' : 'Join the rota') + '</button>' +
       '<button type="button" class="btn-text" data-action="leave"' + disabled(access && access.registered, 'Join the rota before leaving future registration') + '>Leave future registration</button>' +
+      '<button type="button" class="btn-text" data-action="editSeries"' + disabled(access && access.admin && access.seriesId, 'Only a series organiser, PI or admin can edit the series') + '>Edit event series</button>' +
       '<button type="button" class="btn-text" data-action="season"' + disabled(access && access.admin, 'Only a rota administrator can edit a season') + '>Edit season</button>' +
-      '<button type="button" class="btn-text" data-action="meeting"' + disabled(access && access.admin, 'Only a rota administrator can edit a meeting') + '>Add or edit meeting</button>' +
-      '<button type="button" class="btn-text" data-action="photo"' + disabled(access && access.slackId, 'Your Slack account must match the roster') + '>Rota photo fallback</button></div></details>';
+      '<button type="button" class="btn-text" data-action="meeting"' + disabled(access && access.admin, 'Only a rota administrator can edit a meeting') + '>Add or edit meeting</button></div></details>';
   }
   function loadChangelog(more){
     if (changesLoading) return;
@@ -184,7 +183,7 @@
       (pendingSwaps.length ? '<section class="rota-pending"><h2>Pending swaps</h2><ul>' + pendingSwaps.map(function(s){ return '<li>' + esc(s.slotId + ' ↔ ' + s.otherSlotId) + ' · Slack: ' + esc(s.notificationState || 'queued') + (s.requesterSlackId === access.slackId ? ' <button type="button" class="btn-text" data-action="cancelSwap" data-id="' + esc(s.id) + '">Cancel request</button>' + (s.notificationState === 'failed' ? ' <button type="button" class="btn-text" data-action="retrySwap" data-id="' + esc(s.id) + '">Retry message</button>' : '') : ' · Respond in Slack') + '</li>'; }).join('') + '</ul></section>' : '') +
       '<div id="rotaPanel"></div>' + (filtered.length ? visible.map(meetingHtml).join('') + more : '<p>' + (search ? 'No meetings match.' : archive ? 'No past meetings yet.' : 'No upcoming meetings.') + '</p>') + trackerHtml() + manageHtml() + changelogHtml();
     body.hidden = false; text('');
-    if (!window.ROTA_LOCAL_PREVIEW && BOLD.photo) BOLD.photo.mountMany(body.querySelectorAll('.rota-avatar[data-id]'));
+    if (BOLD.photo) BOLD.photo.mountMany(body.querySelectorAll('.rota-avatar[data-id]'));
     if (panel) document.getElementById('rotaPanel').innerHTML = panel;
     if (pendingJump) {
       var target = selectedSlot && document.getElementById('slot-' + selectedDate + '-' + selectedSlot) || document.getElementById('date-' + selectedDate);
@@ -195,21 +194,17 @@
     if (!user || busy) return;
     text('Loading…');
     call('Access').then(function(a){ access = a.data; return Promise.all([
-      db.collection('groupMeetings').get(), db.collection('groupRotaSlots').get(), db.collection('groupRotaMembers').get(),
-      (access.canSeeDrafts ? db.collection('groupMeetingSeasons') : db.collection('groupMeetingSeasons').where('publicationState', '==', 'published')).get(),
-      db.collection('projectWorkspaces').get().catch(function(){ return { docs: [] }; }), db.collection('groupRotaPhotos').get()
+      call('Snapshot'), db.collection('projectWorkspaces').get().catch(function(){ return { docs: [] }; })
     ]); }).then(function(v){
-      meetings = v[0].docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      var snapshot = v[0].data;
+      meetings = snapshot.meetings || [];
       var linkedMeeting = selectedDate && meetings.filter(function(m){ return m.date === selectedDate; })[0];
       if (linkedMeeting) { archive = past(linkedMeeting); updateArchiveHeader(); }
-      slots = v[1].docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
-      members = v[2].docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
-      seasons = v[3].docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
-      projects = v[4].docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
-      people = access.people || []; photoUrls = {}; render();
-      if (v[5].docs.length && !window.ROTA_LOCAL_PREVIEW) Promise.all(v[5].docs.map(function(d){
-        return firebase.storage(BOLD.getApp()).ref(d.data().path).getDownloadURL().then(function(url){ photoUrls[d.id] = url; }).catch(function(){});
-      })).then(render);
+      slots = snapshot.slots || [];
+      members = snapshot.members || [];
+      seasons = snapshot.seasons || [];
+      projects = v[1].docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); });
+      people = access.people || []; render();
     }).catch(function(e){ console.error('[BOLD Lab] rota load failed', e); text('Could not load the rota. ' + (e.message || 'Try again.')); });
   }
   function showPanel(html){ panel = '<div class="rota-panel">' + html + '<button type="button" class="btn-text" data-action="close">Cancel</button></div>'; render(); document.getElementById('rotaPanel').scrollIntoView({ block: 'nearest' }); }
@@ -244,9 +239,6 @@
       if (menu !== except) { menu.classList.remove('is-open'); syncMenu(menu); }
     });
   }
-  body.addEventListener('error', function(e){
-    if (e.target.classList && e.target.classList.contains('rota-avatar-photo')) e.target.remove();
-  }, true);
   body.addEventListener('pointerover', function(e){
     syncMenu(e.target.closest('.rota-actions'));
     var target = e.target.closest('[data-rota-hint]');
@@ -301,10 +293,16 @@
     if (action === 'claim') { act('Claim', { slotId: s.id }); return; }
     if (action === 'deleteSlot') { act('DeleteSlot', { slotId: s.id }); return; }
     if (action === 'deleteMeeting') { act('DeleteMeeting', { date: button.dataset.date }); return; }
+    if (action === 'meetingVisibility') {
+      var hidden = button.dataset.hidden === 'true', date = button.dataset.date;
+      BOLD.confirmAction({ title: (hidden ? 'Hide' : 'Release') + ' the meeting on ' + fmt(date) + '?', go: hidden ? 'Hide meeting' : 'Release meeting',
+        effects: [hidden ? 'Hide this date from members’ Events, Calendar and rota' : 'Show this date on Events, Calendar and the rota'], always: true
+      }).then(function(ok){ if (ok) act('SetMeetingVisibility', { date: date, hidden: hidden }); });
+      return;
+    }
     if (action === 'leave') { act('Leave', {}); return; }
+    if (action === 'editSeries') { location.href = 'series.html?series=' + encodeURIComponent(access.seriesId) + '&edit=1&back=group-meetings.html'; return; }
     if (action === 'register') { showPanel('<h2>Join the rota</h2><form id="rotaForm" data-submit="Register"><label>Category <select name="category"><option value="phd">PhD</option><option value="masters">Master’s</option><option value="postdoc">Postdoc</option><option value="associate">Associate</option></select></label><button type="submit">Save registration</button></form>'); return; }
-    if (action === 'photo') { showPanel('<h2>Rota photo fallback</h2><p>This photo appears only when your shared profile photo is missing. To change the shared photo, use <a href="profile.html">your profile</a>. Choose a WebP, PNG or JPEG image up to 2 MB.</p><label>Photo <input type="file" id="rotaPhotoFile" accept="image/webp,image/png,image/jpeg"></label><button type="button" class="btn-text" data-action="uploadPhoto">Save photo</button> <button type="button" class="btn-text" data-action="removePhoto"' + disabled(!!photoUrls[access.slackId], 'No photo to remove') + '>Remove photo</button>'); return; }
-    if (action === 'uploadPhoto' || action === 'removePhoto') { savePhoto(action === 'removePhoto'); return; }
     if (action === 'season') {
       var season = seasons[0] || {};
       showPanel('<h2>Season details</h2><form id="rotaForm" data-submit="SaveSeason"><label>Season ID <input name="id" required pattern="[a-z0-9-]+" value="' + esc(season.id || '') + '"></label><label>Label <input name="label" required value="' + esc(season.label || '') + '"></label><label>Regular time <input name="regularTime" value="' + esc(season.regularTime || '') + '"></label><label>Location <input name="location" value="' + esc(season.location || '') + '"></label><label>Rotation description <textarea name="rotationDescription">' + esc(season.rotationDescription || '') + '</textarea></label><label>Visibility <select name="publicationState"><option value="draft"' + (season.publicationState === 'draft' ? ' selected' : '') + '>Hidden draft</option><option value="published"' + (season.publicationState === 'published' ? ' selected' : '') + '>Published</option></select></label><button type="submit">Save season</button></form>'); return;
@@ -326,6 +324,10 @@
       BOLD.confirmAction({ title: 'Request a swap with ' + name(s.presenterSlackId) + '?', go: 'Send request', effects: ['Send ' + name(s.presenterSlackId) + ' a Slack message asking them to confirm or decline the swap'] }).then(function(ok){ if (ok) act('RequestSwap', data); });
       return;
     }
+    if (f.dataset.submit === 'OfferShort') {
+      BOLD.confirmAction({ title: 'Offer this short slot to ' + name(data.recipientSlackId) + '?', go: 'Send offer', effects: ['Send ' + name(data.recipientSlackId) + ' a Slack message with Accept and Decline buttons'] }).then(function(ok){ if (ok) act('OfferShort', data); });
+      return;
+    }
     act(f.dataset.submit, data);
   });
   body.addEventListener('change', function(e){ if (e.target.id === 'rotaTrackerYear') { trackerYear = Number(e.target.value) || new Date().getFullYear(); render(); } });
@@ -333,15 +335,6 @@
   function act(name, data){
     busy = true; text('Saving…');
     call(name, data).then(function(){ busy = false; panel = null; refresh(); }).catch(function(e){ busy = false; text(e.message || 'Could not save. Reload and try again.'); });
-  }
-  function savePhoto(remove){
-    if (!access || !access.slackId) return;
-    var path = 'rota-profiles/' + access.slackId + '/portrait', ref = firebase.storage(BOLD.getApp()).ref(path), doc = db.collection('groupRotaPhotos').doc(access.slackId);
-    var file = !remove && document.getElementById('rotaPhotoFile').files[0];
-    if (!remove && (!file || !['image/webp', 'image/png', 'image/jpeg'].includes(file.type) || file.size > 2 * 1024 * 1024)) { text('Choose a WebP, PNG or JPEG image up to 2 MB.'); return; }
-    busy = true; text(remove ? 'Removing photo…' : 'Saving photo…');
-    var work = remove ? ref.delete().then(function(){ return doc.delete(); }) : ref.put(file, { contentType: file.type }).then(function(){ return doc.set({ path: path, updatedBy: user.email.toLowerCase(), updatedAt: Date.now() }); });
-    work.then(function(){ busy = false; panel = null; refresh(); }).catch(function(e){ busy = false; text(e.message || 'Could not save the photo.'); });
   }
   BOLD.onUser(function(u){ user = u; if (!u) { body.hidden = true; text('Sign in to view the rota.'); return; } refresh(); });
 })();
