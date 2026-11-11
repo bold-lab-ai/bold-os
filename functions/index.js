@@ -1515,10 +1515,11 @@ async function pilotSlack(token, key, label, m){
     if (open.ok) await send(open.channel.id, text, blocks);
     else if (m.requireDelivery) throw Error(open.error || 'Cannot open Slack DM');
   };
-  // Their Inbox first, in pilot too; whoever's on pings gets a ping instead of the message.
+  // Their Inbox first, except when a pilot's action must remain with testers
+  // until the feature is live. Whoever's on pings gets a ping instead.
   const emails = [];
   for (const e of Array.from(new Set((m.emails || []).map((x) => String(x).toLowerCase())))) {
-    await noteFor([e], { text: m.text, feature: key, source: 'slack' });
+    if (st.live || !m.suppressPilotInbox) await noteFor([e], { text: m.text, feature: key, source: 'slack' });
     const way = await slackWayFor(e, key);
     if (m.actionsRequired || way === 'all') emails.push(e);
     else if (way === 'pings') await queuePing(e);

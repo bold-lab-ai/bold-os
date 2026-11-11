@@ -206,7 +206,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     if (!reserved) return;
     try {
       const s = (await slots.doc(o.slotId).get()).data();
-      const sent = await pilotSlack(token, 'rota-offers', 'Group meeting short-slot offers', { emails: [await recipientEmail(o.recipientSlackId)], actionsRequired: true, requireDelivery: true,
+      const sent = await pilotSlack(token, 'rota-offers', 'Group meeting short-slot offers', { emails: [await recipientEmail(o.recipientSlackId)], actionsRequired: true, requireDelivery: true, suppressPilotInbox: true,
         text: 'A group meeting short slot is available for you.', blocks: [
         { type: 'section', text: { type: 'mrkdwn', text: 'A short group meeting slot on ' + s.date + ' is offered to you. <' + link(s) + '|Review the slot>.' } },
         { type: 'actions', elements: [
@@ -366,7 +366,7 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       const [left, right] = await Promise.all([slots.doc(s.slotId).get(), slots.doc(s.otherSlotId).get()]);
       if (!left.exists || !right.exists) throw Error('A slot is missing');
       const a = left.data(), b = right.data();
-      const result = await pilotSlack(token, 'rota-swaps', 'Group meeting slot swap requests', { emails: [await recipientEmail(s.recipientSlackId)], actionsRequired: true, requireDelivery: true,
+      const result = await pilotSlack(token, 'rota-swaps', 'Group meeting slot swap requests', { emails: [await recipientEmail(s.recipientSlackId)], actionsRequired: true, requireDelivery: true, suppressPilotInbox: true,
         text: 'Group meeting swap: please confirm or decline.',
         blocks: [
           { type: 'section', text: { type: 'mrkdwn', text: '<@' + s.requesterSlackId + '> requests a group meeting swap: ' + a.date + ' (' + a.format + ') for ' + b.date + ' (' + b.format + '). Review the <' + baseUrl + '|rota> before deciding.' } },
