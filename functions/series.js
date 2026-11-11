@@ -58,10 +58,9 @@ module.exports = function series(deps){
     // anyone, even signed out (2026-11-02). Its invite and who must join it can't reach further.
     const visibleTo = VISIBILITY.indexOf(d.visibleTo) >= 0 ? d.visibleTo : 'internal';
     const out = { kind, title, description, visibleTo };
-    if (d.page) {
-      if (d.page !== 'group-meetings.html' || kind !== 'editions') return { error: 'Choose an available custom event page.' };
-      out.page = d.page;
-    }
+    // Custom pages are attached during feature-specific migration, not through
+    // the general event-series creation or edit flow.
+    if (d.page) return { error: 'A custom event page cannot be set here.' };
     if (kind === 'editions') {
       const unit = d.cadence && d.cadence.unit === 'week' ? 'week' : 'month', every = Number(d.cadence && d.cadence.every);
       const max = unit === 'week' ? 4 : 24;
@@ -69,7 +68,6 @@ module.exports = function series(deps){
       const inviteGroup = d.inviteGroup === 'none' || INVITE_GROUPS.indexOf(d.inviteGroup) >= 0 ? d.inviteGroup : 'internal';
       if (inviteGroup !== 'none' && VIS_RANK[inviteGroup] < VIS_RANK[visibleTo]) return { error: 'It invites people who can’t see it: invite ' + VISIBILITY_NAMES[visibleTo] + ', or let more see it.' };
       Object.assign(out, { cadence: { every, unit }, proposals: d.proposals === true, inviteGroup });
-      if (out.page === 'group-meetings.html' && (unit !== 'week' || every !== 1 || inviteGroup !== 'none')) return { error: 'The group meeting rota needs a weekly series without invitations.' };
     } else {
       const meeting = normalizeMeeting(d.meeting);
       if (meeting.error) return { error: meeting.error };
@@ -221,7 +219,6 @@ module.exports = function series(deps){
     if (d.action === 'save' && !d.id) {
       const n = normalizeSeries(d, email);
       if (n.error) throw new HttpsError('invalid-argument', n.error);
-      if (n.page === 'group-meetings.html' && !(await db.collection('eventSeries').where('page', '==', n.page).limit(1).get()).empty) throw new HttpsError('already-exists', 'The group meeting rota already has an event series.');
       if (n.requiredFor && !full) throw new HttpsError('permission-denied', 'Only PIs and admins make one required.');
       const stem = n.title.toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50) || 'meeting';
       const id = stem + '-' + crypto.randomBytes(3).toString('hex');
@@ -251,7 +248,6 @@ module.exports = function series(deps){
         const n = normalizeSeries(d, null);
         if (n.error) throw new HttpsError('invalid-argument', n.error);
         if (s.page === 'group-meetings.html' && (n.kind !== 'editions' || n.cadence.unit !== 'week' || n.cadence.every !== 1 || n.inviteGroup !== 'none')) throw new HttpsError('invalid-argument', 'Keep the rota weekly and without invitations.');
-        if (n.page === 'group-meetings.html' && s.page !== n.page) throw new HttpsError('invalid-argument', 'The rota page is attached when its series is created.');
         if (!n.organisers.length) throw new HttpsError('invalid-argument', 'Keep at least one organiser.');
         if ((n.requiredFor || '') !== (s.requiredFor || '') && !full) throw new HttpsError('permission-denied', 'Only PIs and admins change who must join it.');
         // What the other kind had goes (the invite's Calendar series is cancelled by syncSeries).
