@@ -422,6 +422,13 @@ service cloud.firestore {
     match /{path=**}/proposals/{id} {
       allow read: if may('tools', 'view') && may('skills', 'view') && may('guides', 'view');
     }
+    // Branches of the site (functions/branches.js, 2026-11-11): every change to the BOLDiquette, a guide, a skill
+    // or a tool is a commit on one. Read as the proposals are; written only by the server (branchCommit,
+    // branchMeta, decideBranch), as are the pages' proposals now.
+    match /branches/{id} {
+      allow read: if may('tools', 'view') && may('skills', 'view') && may('guides', 'view') && may('boldiquette', 'view');
+      allow write: if false;
+    }
     // Every comment thread on one page (comments.html, collectionGroup): the guides'
     // and the BOLDiquette's comments and the board's cards.
     match /{path=**}/comments/{id} {
@@ -658,19 +665,8 @@ service cloud.firestore {
       }
       match /proposals/{id} {
         allow read: if may('skills', 'view');
-        // kind 'new': a new skill (this one doesn't exist yet), made when accepted.
-        allow create: if may('skills', 'edit') && request.resource.data.by.email == email()
-          && request.resource.data.status == 'open' && request.resource.data.kind in ['skill', 'new']
-          && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status'])
-          && request.resource.data.after is map && request.resource.data.after.keys().hasOnly(['title', 'description', 'body', 'files']);
-        // Edited by whoever proposed it, while it's open; who, when and its status stay.
-        allow update: if may('skills', 'edit') && resource.data.by.email == email() && resource.data.status == 'open'
-          && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
-          && request.resource.data.editedAt is number && request.resource.data.kind == resource.data.kind
-          && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status', 'editedAt'])
-          && request.resource.data.after is map && request.resource.data.after.keys().hasOnly(['title', 'description', 'body', 'files']);
-        // Withdrawn by whoever proposed it, while it's open.
-        allow delete: if may('skills', 'edit') && resource.data.by.email == email() && resource.data.status == 'open';
+        // Made, committed to and decided only by the server, on a branch (branches/{id}, functions/branches.js).
+        allow write: if false;
       }
     }
 
@@ -690,19 +686,8 @@ service cloud.firestore {
       }
       match /proposals/{id} {
         allow read: if may('tools', 'view');
-        allow create: if may('tools', 'edit') && request.resource.data.by.email == email()
-          && request.resource.data.status == 'open' && request.resource.data.kind in ['new', 'tool', 'delete']
-          && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status'])
-          && (request.resource.data.kind == 'delete' || (request.resource.data.after is map
-            && request.resource.data.after.keys().hasOnly(['title', 'description', 'acting', 'input', 'code'])));
-        allow update: if may('tools', 'edit') && resource.data.by.email == email() && resource.data.status == 'open'
-          && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
-          && request.resource.data.editedAt is number && request.resource.data.kind == resource.data.kind
-          && request.resource.data.get('review', null) == resource.data.get('review', null)
-          && request.resource.data.keys().hasOnly(['kind', 'before', 'after', 'note', 'by', 'at', 'status', 'editedAt', 'review'])
-          && (request.resource.data.kind == 'delete' || (request.resource.data.after is map
-            && request.resource.data.after.keys().hasOnly(['title', 'description', 'acting', 'input', 'code'])));
-        allow delete: if may('tools', 'edit') && resource.data.by.email == email() && resource.data.status == 'open';
+        // Made, committed to and decided only by the server, on a branch (branches/{id}, functions/branches.js).
+        allow write: if false;
       }
     }
 
@@ -760,26 +745,8 @@ service cloud.firestore {
       }
       match /proposals/{id} {
         allow read: if may(guideArea(slug), 'view');
-        allow create: if may(guideArea(slug), 'edit') && request.resource.data.by.email == email()
-          && request.resource.data.status == 'open'
-          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch']
-          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes'])
-          // Several changes proposed together (a draft): a list of them, as single proposals.
-          && (request.resource.data.kind == 'batch'
-            ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
-            : !('changes' in request.resource.data));
-        // Edited by whoever proposed it, while it's open: its changes and note, as when
-        // proposed; who, when and its status stay as they were.
-        allow update: if may(guideArea(slug), 'edit') && resource.data.by.email == email() && resource.data.status == 'open'
-          && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
-          && request.resource.data.editedAt is number
-          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'batch']
-          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes', 'editedAt'])
-          && (request.resource.data.kind == 'batch'
-            ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
-            : !('changes' in request.resource.data));
-        // Withdrawn by whoever proposed it while it's open, or with its guide.
-        allow delete: if hasFullWrite() || (may(guideArea(slug), 'edit') && resource.data.by.email == email() && resource.data.status == 'open');
+        // Made, committed to and decided only by the server, on a branch (branches/{id}, functions/branches.js).
+        allow write: if false;
       }
     }
 
@@ -990,38 +957,12 @@ service cloud.firestore {
           || ('parent' in resource.data && resource.data.parent is string
             && get(/databases/$(database)/documents/handbook/$(slug)/comments/$(resource.data.parent)).data.by.email == email()));
       }
-      // Who can do what (partId 'access'): proposed like any part, by whoever has the BOLDiquette's Edit
-      // (2026-11-05; PIs and admins only before); accepted by another PI or admin, as every change.
-      // kind 'access': one page's row, from its eye chip (bold.js): { area, before, after:
-      // { view, edit } }, set in the table when accepted.
-      function validAccessRow(d) {
-        return d.partId == 'access' && d.area is string && d.area.size() <= 40 &&
-          d.after is map && d.after.keys().hasOnly(['view', 'edit']) && d.after.view is string && d.after.edit is string &&
-          d.before is map && d.before.keys().hasOnly(['view', 'edit']);
-      }
+      // Who can do what (partId 'access'): proposed like any part, on a branch (functions/branches.js), by whoever has the
+      // BOLDiquette's Edit; or one page's row, from its eye chip (bold.js: kind 'access'). Accepted by another PI or admin.
       match /proposals/{id} {
         allow read: if may('boldiquette', 'view');
-        allow create: if may('boldiquette', 'edit') && request.resource.data.by.email == email()
-          && request.resource.data.status == 'open'
-          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'restore', 'batch', 'access']
-          && request.resource.data.keys().hasOnly(['kind', 'partId', 'area', 'before', 'after', 'note', 'by', 'at', 'status', 'changes'])
-          && (request.resource.data.kind == 'access' ? validAccessRow(request.resource.data) : !('area' in request.resource.data))
-          // Several changes proposed together (a draft): a list of them, as single proposals.
-          && (request.resource.data.kind == 'batch'
-            ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
-            : !('changes' in request.resource.data));
-        // Edited by whoever proposed it, while it's open: its changes and note, as when
-        // proposed; who, when and its status stay as they were.
-        allow update: if may('boldiquette', 'edit') && resource.data.by.email == email() && resource.data.status == 'open'
-          && request.resource.data.status == 'open' && request.resource.data.by == resource.data.by && request.resource.data.at == resource.data.at
-          && request.resource.data.editedAt is number
-          && request.resource.data.kind in ['about', 'edit', 'add', 'remove', 'move', 'batch']
-          && request.resource.data.keys().hasOnly(['kind', 'partId', 'before', 'after', 'note', 'by', 'at', 'status', 'changes', 'editedAt'])
-          && (request.resource.data.kind == 'batch'
-            ? request.resource.data.changes is list && request.resource.data.changes.size() > 0 && request.resource.data.changes.size() <= 50
-            : !('changes' in request.resource.data));
-        // Withdrawn by whoever proposed it, while it's open.
-        allow delete: if isSignedIn() && resource.data.by.email == email() && resource.data.status == 'open';
+        // Made, committed to and decided only by the server, on a branch (branches/{id}, functions/branches.js).
+        allow write: if false;
       }
     }
 

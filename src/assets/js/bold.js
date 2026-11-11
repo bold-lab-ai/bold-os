@@ -246,6 +246,32 @@
     }[what];
     return BOLD.confirmAction({ title: o[0], go: o[1], effects: (more || []).concat([o[2]]), always: true });
   };
+  // Every change to the BOLDiquette, a guide, a skill or a tool is a commit on a branch (#324, functions/branches.js):
+  // on the branch you're on, or, on main, on a new one opened with it, which you're then on. target:
+  // { collection, slug }; change: { kind, partId?, before, after, note, … } → Promise of { id, num, opened }, or a
+  // rejection { cancelled: true } if they don't go ahead. Asks first when it tells anyone: opening one tells every
+  // PI and admin; a first commit to someone else's tells whoever opened it.
+  BOLD.commit = function(target, change, o){
+    o = o || {};
+    var id = BOLD.branchId(), u = auth && auth.currentUser, me = String((u && u.email) || '').toLowerCase();
+    var ask = id ? firebase.firestore(BOLD.getApp()).collection('branches').doc(id).get().then(function(s){
+        var b = s.exists ? s.data() : null;
+        if (!b || (b.contributors || []).indexOf(me) >= 0) return true;
+        return BOLD.confirmAction({ title: 'Commit to “' + (b.title || 'this proposal') + '”?', go: 'Commit',
+          effects: ['Add your change to ' + ((b.by && b.by.name) || 'its author') + '’s proposed change', 'Tell ' + ((b.by && b.by.name) || 'them') + ' on Slack that you committed to it'], always: true });
+      }) : BOLD.confirmProposal(o.restore ? 'restore' : 'propose');
+    return ask.then(function(ok){
+      if (!ok) throw { cancelled: true };
+      var data = { target: target, change: change };
+      if (id) data.on = id;   // not `branch`: every call carries that (viewAsCalls), and the server takes it off
+      return firebase.app().functions('europe-west2').httpsCallable('branchCommit')(data);
+    }).then(function(r){
+      var d = (r && r.data) || {};
+      if (!id) BOLD.setBranch({ id: d.id, num: d.num || 0, title: change.note, targets: [target.collection + '/' + target.slug] }, { quiet: true });
+      else if (branch && (branch.targets || []).indexOf(target.collection + '/' + target.slug) < 0) { branch.targets = (branch.targets || []).concat([target.collection + '/' + target.slug]); try { sessionStorage.setItem('boldBranch', JSON.stringify(branch)); } catch (e){} }
+      return { id: d.id, num: d.num || 0, opened: !id };
+    });
+  };
   // The same, asked every time ("Don't ask me again" doesn't skip it): for what reaches many
   // people or leaves BOLD.OS (Calendar, Slack or GitHub invitations, emails, a whole group).
   BOLD.confirmAlways = function(o){ return BOLD.confirmAction(Object.assign({}, o, { always: true })); };
@@ -340,37 +366,57 @@
     location.reload();
   };
 
-  // Branches (#177): the site as an open proposal would make it, like checking out a git
-  // branch: one proposal anywhere (the BOLDiquette, a guide, a skill, a tool, who can see
-  // what), chosen on the Version pill under the eye chip, for this tab until you go back to
-  // main. Each page shows it where it applies (pages/guide.js, skill.js, tool.js);
-  // one that changes Who can see what applies its table here (levelFor) and, for PIs and
-  // admins, on the server too (every callable carries `branch`: functions/index.js onCall).
-  // branch: { ref (the proposal's path), num, title, url (its page), pages? } or null.
-  // ?branch=<path> in the address (a link to one) picks it; `branches` fills in the rest.
-  var BRANCH_REF = /^(handbook|guides|skills|agentTools)\/[a-z0-9_-]{1,64}\/proposals\/[A-Za-z0-9]{1,40}$/;
+  // Branches (#177; of the whole site since #324, 2026-11-11): the site as an open branch would make it, like
+  // checking out a git branch. Every change to the BOLDiquette, a guide, a skill or a tool is a commit on one
+  // (functions/branches.js), chosen on the Version pill under the eye chip, or opened by proposing a change, for this
+  // tab until you go back to main. Each page shows its part of it, and what you change there is committed to it
+  // (pages/guide.js, skill.js, tool.js); one that changes Who can see what applies its table here (levelFor) and, for
+  // PIs and admins, on the server too (every callable carries `branch`: functions/index.js onCall).
+  // branch: { ref ('branches/<id>'), id, num, title, url (its page, proposal.html?b=), by, targets (the pages it
+  // changes, 'collection/slug'), pages? (its table) } or null. ?branch=<id> in the address (a link to one) picks it;
+  // `branches` fills in the rest. A link from before (a proposal's path) is its branch: they share their id.
+  var BRANCH_REF = /^branches\/[A-Za-z0-9]{1,40}$/;
+  var OLD_REF = /^(handbook|guides|skills|agentTools)\/[a-z0-9_-]{1,64}\/proposals\/([A-Za-z0-9]{1,40})$/;
+  function branchRef(r){ r = String(r || ''); var m = OLD_REF.exec(r); return m ? 'branches/' + m[2] : /^[A-Za-z0-9]{1,40}$/.test(r) ? 'branches/' + r : r; }
   var branch = null;
   try { branch = JSON.parse(sessionStorage.getItem('boldBranch') || 'null'); } catch (e){}
+  if (branch) branch.ref = branchRef(branch.ref);
   (function(){
     var linked = '';
-    try { linked = new URLSearchParams(location.search).get('branch') || ''; } catch (e){}
-    if (BRANCH_REF.test(linked) && (!branch || branch.ref !== linked)) { branch = { ref: linked, title: '', url: '' }; try { sessionStorage.setItem('boldBranch', JSON.stringify(branch)); } catch (e){} }
+    try { linked = branchRef(new URLSearchParams(location.search).get('branch') || ''); } catch (e){}
+    if (BRANCH_REF.test(linked) && (!branch || branch.ref !== linked)) { branch = { ref: linked, id: linked.slice(9), title: '', url: '' }; try { sessionStorage.setItem('boldBranch', JSON.stringify(branch)); } catch (e){} }
   })();
   if (branch && !BRANCH_REF.test(branch.ref || '')) branch = null;
   BOLD.branch = function(){ return branch; };
-  // b: a branch from `branches`, or null for main. o.go: open its page (else reload this one).
+  // The id of the branch you're on, or ''.
+  BOLD.branchId = function(){ return branch ? branch.ref.slice(9) : ''; };
+  // A page a branch changes ('collection/slug') → its address here.
+  BOLD.targetPage = function(t){
+    var m = /^(handbook|guides|skills|agentTools)\/(.+)$/.exec(String(t || ''));
+    if (!m) return '';
+    if (m[1] === 'handbook') return 'boldiquette.html';
+    if (m[1] === 'guides') return BOLD.GUIDE_PAGES[m[2]] || 'guide.html?guide=' + encodeURIComponent(m[2]);
+    return (m[1] === 'skills' ? 'skill.html?skill=' : 'tool.html?tool=') + encodeURIComponent(m[2]);
+  };
+  // A branch's own page (pages/proposal.js).
+  BOLD.branchPage = function(id){ return 'proposal.html?b=' + encodeURIComponent(id); };
+  // b: a branch from `branches` (or { ref | id, num, title, by, targets }), or null for main. o.go: open the first
+  // page it changes (else reload this one); o.quiet: no reload (a page that has just opened or shows it).
   BOLD.setBranch = function(b, o){
-    branch = b && BRANCH_REF.test(b.ref || '') ? { ref: b.ref, num: b.num || 0, title: b.title || '', url: b.url || '', pages: b.pages || null } : null;
+    var r = b && branchRef(b.ref || b.id);
+    branch = r && BRANCH_REF.test(r) ? { ref: r, id: r.slice(9), num: b.num || 0, title: b.title || '', url: BOLD.branchPage(r.slice(9)), by: b.by || '', targets: b.targets || [], pages: b.pages || null } : null;
     try { if (branch) sessionStorage.setItem('boldBranch', JSON.stringify(branch)); else sessionStorage.removeItem('boldBranch'); } catch (e){}
-    // Quiet: no reload (a page showing its own proposal); its details from `branches`, unless they're from there.
-    if (!branch) try { sessionStorage.removeItem('boldBranches'); } catch (e){}
+    // Its details from `branches`, unless they're from there.
+    try { sessionStorage.removeItem('boldBranches'); } catch (e){}
+    branchList = null;
     if (o && o.quiet) { drawAccess(); previewBar(); if (branch && !o.known && access && access.e) loadBranches(); return; }
     dropCaches();
-    // A link to a proposal (#proposal-<id>) would open it again: left out. The same address with
-    // a #hash only scrolls, so the page is reloaded instead.
     var here = location.pathname + location.search.replace(/([?&])branch=[^&]*&?/, '$1').replace(/[?&]$/, '');
     var to = here + (/^#proposals?(-|$)/.test(location.hash) ? '' : location.hash);
-    if (o && o.go && branch && branch.url && pageOf(branch.url) !== location.pathname.split('/').pop() + location.search) { location.href = pageOf(branch.url); return; }
+    // Going to it: here, if this is one of its pages; else the first of them.
+    var page = location.pathname.split('/').pop() + location.search, ts = (branch && branch.targets) || [];
+    var first = branch && o && o.go && !ts.some(function(t){ return BOLD.targetPage(t) === page; }) && BOLD.targetPage(ts[0]);
+    if (first) { location.href = first; return; }
     if (to === location.pathname + location.search + location.hash) location.reload(); else location.replace(to);
   };
   // A page of this site from its full address (as the server gives it), so it opens here
@@ -569,7 +615,7 @@
       document.body.appendChild(bar);
     }
     bar.innerHTML = (branch ? '<span class="vb-part"><span class="vb-text">On ' + esc(branchLabel(branch)) + '</span>' +
-        (branch.url && pageOf(branch.url) !== (location.pathname.split('/').pop() || 'index.html') ? ' <a href="' + esc(pageOf(branch.url)) + '">Its page</a>' : '') +
+        (branch.url && pageOf(branch.url) !== (location.pathname.split('/').pop() || 'index.html') + location.search ? ' <a href="' + esc(pageOf(branch.url)) + '">Its page</a>' : '') +
         (branchAction ? ' <button type="button" data-vb="action">' + esc(branchAction.label) + '</button>' : '') +
         ' <button type="button" data-vb="branch">Back to main</button></span>' : '') +
       (g ? '<span class="vb-part">Viewing as ' + esc(LEVEL_NAMES[g] || g) + ' <button type="button" data-vb="as">Stop</button></span>' : '');
@@ -1184,11 +1230,12 @@
       (proposes ? '<button type="button" class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" aria-expanded="' + brOpen + '" aria-controls="brPanel" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</button>' : '');
     if (brOpen && proposes) {
       html += '<div class="ac-panel br-panel" id="brPanel" role="dialog" aria-label="Versions of the site"><div class="ac-title">Version</div>' +
-        '<p class="ac-note">See the whole site as an open proposal would make it, before anyone accepts it. Only you see it, in this tab.</p>' +
+        '<p class="ac-note">See the whole site as an open proposal would make it, before anyone accepts it, in this tab. On one, what you change is added to it.</p>' +
         '<ul class="br-list"><li><button type="button" class="br-item' + (branch ? '' : ' is-on') + '" data-ref=""><span class="br-t">Main</span></button></li>' +
         (branchList || []).map(function(b){
           return '<li><button type="button" class="br-item' + (branch && branch.ref === b.ref ? ' is-on' : '') + '" data-ref="' + esc(b.ref) + '">' +
-            '<span class="br-t">' + esc(branchLabel(b)) + '</span><span class="br-by">' + esc((b.by ? 'by ' + b.by : '') + (b.pages ? ' · changes who can see what' : '')) + '</span></button></li>';
+            '<span class="br-t">' + esc(branchLabel(b)) + '</span><span class="br-by">' + esc((b.by ? 'by ' + b.by : '') + (b.pages ? ' · changes who can see what' : '')) + '</span></button>' +
+            '<a class="br-open" href="' + esc(BOLD.branchPage(String(b.ref).slice(9))) + '">Its page</a></li>';
         }).join('') + '</ul>' +
         (branchError ? '<p class="ev-error">Couldn’t load the proposals — try again.</p>' : !branchList ? '<p class="ac-note">Loading…</p>' : !branchList.length ? '<p class="ac-note">No proposals are open.</p>' : '') +
         '<div class="ac-actions"><button type="button" class="btn-text br-close">Close</button></div></div>';
@@ -1200,7 +1247,7 @@
     } else if (panel) {
       var can = !!access.fullWrite || BOLD.can('boldiquette', 'edit'), lv = panel.lv, changed = !sameLevels(lv, cur);
       html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">' + (isOpen() ? 'Who can act on ' : 'Who can see ') + esc(AREA_NAMES[area]) + '</div>';
-      if (panel.done) html += '<p class="ac-sentence">Proposed. Another PI or admin accepts it on <a href="boldiquette.html#proposal-' + esc(panel.done) + '">the BOLDiquette</a>.</p>' +
+      if (panel.done) html += '<p class="ac-sentence">Proposed. Another PI or admin accepts it on <a href="' + esc(BOLD.branchPage(panel.done)) + '">its page</a>.</p>' +
         '<div class="ac-actions"><button type="button" class="btn-text ac-close">Close</button></div>';
       else {
         html += ladderHtml(lv, waiting && !changed ? waiting.lv : null, can) +
@@ -1250,13 +1297,8 @@
     panel.busy = true; panel.error = ''; drawAccess();
     // Just this page's row: accepting it sets that row in the table as it is then
     // (functions/index.js appliedProposal), whatever else changes in the part meanwhile.
-    var ref = firebase.firestore(BOLD.getApp()).collection('handbook').doc('boldiquette');
-    BOLD.confirmProposal('propose').then(function(ok){
-      if (!ok) throw { cancelled: true };
-      return ref.collection('proposals').add({
-        kind: 'access', partId: 'access', area: area, before: currentLevels(area), after: { view: lv.view, edit: lv.edit },
-        note: String(panel.note).trim(), by: { email: u.email || '', name: u.displayName || '' }, at: Date.now(), status: 'open',
-      });
+    BOLD.commit({ collection: 'handbook', slug: 'boldiquette' }, {
+      kind: 'access', partId: 'access', area: area, before: currentLevels(area), after: { view: lv.view, edit: lv.edit }, note: String(panel.note).trim(),
     }).then(function(d){ panel.busy = false; panel.done = d.id; drawAccess(); }, function(err){
       if (err && err.cancelled) { panel.busy = false; drawAccess(); return; }
       console.error('[BOLD Lab] proposing who can see what failed', err);

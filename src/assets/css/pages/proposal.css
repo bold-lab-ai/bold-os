@@ -1,0 +1,51 @@
+/* A proposed change's page (proposal.html, pages/proposal.js; #324), as a pull request: its title and state, who and
+   what, Browse the site, Accept and Decline, then Conversation, Commits and Changes. Colours from bold.css's tokens. */
+.hero{max-width:var(--content-max); margin:0 auto 0 var(--page-left); padding:56px var(--gutter) 8px;}
+.hero h1{font-size:clamp(28px, 5vw, 40px); line-height:1.15; overflow-wrap:break-word; text-wrap:balance;}
+main{max-width:var(--content-max); margin:0 auto 0 var(--page-left); padding:0 var(--gutter) 48px;}
+.pr-title{margin-bottom:10px;}
+.pr-num{color:var(--muted); font-weight:400;}
+.pr-meta{display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin:0 0 16px; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+.pr-meta a{color:var(--link);}
+.pr-state{display:inline-block; padding:2px 10px; border-radius:999px; font-family:var(--sans); font-size:12px; font-weight:600; line-height:20px;
+  background:var(--neutral-bg); color:var(--neutral-text);}
+.pr-state.pr-open{background:var(--success-bg); color:var(--success-text);}
+.pr-state.pr-accepted{background:var(--accent); color:var(--on-fill);}
+.pr-state.pr-declined, .pr-state.pr-withdrawn, .pr-state.pr-conflict, .pr-state.pr-gone{background:var(--danger-bg); color:var(--danger-text);}
+.pr-state.pr-behind{background:var(--warn-bg); color:var(--warn-text);}
+.pr-actions{display:flex; flex-wrap:wrap; align-items:center; gap:10px 14px;}
+.pr-notice{margin-top:14px;}
+.pr-edit{max-width:var(--article-max);}
+
+.pr-tabs{display:flex; gap:4px; margin:8px 0 24px; border-bottom:1px solid var(--line); overflow-x:auto; font-family:var(--sans);}
+.pr-tab{padding:10px 14px; border-bottom:2px solid transparent; margin-bottom:-1px; color:var(--ink-soft); text-decoration:none; font-size:14px; white-space:nowrap;}
+.pr-tab:hover{color:var(--ink);}
+.pr-tab.is-current{border-bottom-color:var(--accent); color:var(--ink); font-weight:600;}
+.pr-count{display:inline-block; min-width:20px; padding:0 6px; border-radius:999px; background:var(--wash); font-size:12px; text-align:center;}
+
+.pr-body{font-family:var(--sans);}
+.pr-muted{color:var(--muted);}
+.pr-desc{border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);}
+.pr-desc-head{margin:0; padding:8px 14px; border-bottom:1px solid var(--line); background:var(--wash); font-size:13px; color:var(--ink-soft);}
+.pr-desc-body{padding:4px 14px;}
+.pr-timeline{list-style:none; margin:0 0 24px 18px; padding:8px 0 0 18px; border-left:2px solid var(--line); font-size:14px; color:var(--ink-soft);}
+.pr-timeline li{position:relative; margin:12px 0;}
+.pr-timeline a{color:var(--link);}
+.pr-dot{position:absolute; left:-25px; top:5px; width:10px; height:10px; border-radius:50%; background:var(--paper); border:2px solid var(--muted);}
+.pr-end .pr-dot{background:var(--accent); border-color:var(--accent);}
+
+.pr-day{margin:20px 0 8px; font-family:var(--sans); font-size:13px; font-weight:600; color:var(--muted);}
+.pr-commits{list-style:none; margin:0; padding:0; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);}
+.pr-commit + .pr-commit{border-top:1px solid var(--rule);}
+.pr-commit-head{display:flex; flex-direction:column; gap:2px; width:100%; padding:10px 14px; border:0; background:none; text-align:left; cursor:pointer; font:inherit; color:var(--ink);}
+.pr-commit-head:hover{background:var(--wash);}
+.pr-commit-note{font-weight:600;}
+.pr-commit-meta{font-size:12px; color:var(--muted);}
+.pr-commit-diff{padding:4px 14px 12px;}
+
+.pr-page{margin:0 0 28px;}
+.pr-page-head{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 8px; padding:8px 12px; border:1px solid var(--line); border-radius:var(--radius); background:var(--wash); font-family:var(--sans); font-size:14px;}
+.pr-page-head a{color:var(--ink);}
+.pr-page-note{font-size:14px; color:var(--ink-soft);}
+.pr-diff{overflow-x:auto;}
+.pr-talk{margin-top:8px;}

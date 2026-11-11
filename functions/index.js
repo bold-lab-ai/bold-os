@@ -1703,7 +1703,8 @@ function onProposed(collection, pageUrl){
     { document: collection + '/{slug}/proposals/{id}', secrets: [SLACK_BOT_TOKEN] },
     async function(event){
       const q = event.data && event.data.data();
-      if (!q || q.status !== 'open') return;
+      // On a branch: its people hear of the branch once (onBranchWritten), not of each page.
+      if (!q || q.status !== 'open' || q.branch) return;
       const doc = await db.collection(collection).doc(event.params.slug).get();
       // A new skill or tool has no document yet: its proposal carries the title.
       const name = (doc.exists && doc.data().title) || (q.after && q.after.title) || event.params.slug;
@@ -1782,6 +1783,7 @@ function onProposalDecided(collection, pageUrl){
       const kind = ((after || before) || {}).kind;
       if (!doc.exists && kind !== 'new' && kind !== 'delete') return;
       await resolveProposalComments(collection, event.params.slug, event.params.id, before, after);
+      if ((after || before).branch) return;   // a branch's decision is told once (onBranchWritten)
       // Its conversation (comment-conversation.js), if it has one: the decision written into it.
       const closed = proposalClosed(before, after);
       if (closed) {
@@ -1825,6 +1827,47 @@ exports.onToolProposed = onProposed('agentTools', toolUrl);
 exports.onToolProposalDecided = onProposalDecided('agentTools', toolUrl);
 exports.onGuideProposalDecided = onProposalDecided('guides', guideUrl);
 exports.onHandbookProposalDecided = onProposalDecided('handbook', handbookUrl);
+
+// A branch (functions/branches.js): the PIs and admins hear when it's opened; its author when someone else commits
+// to it; everyone who committed to it, and the PIs and admins, when it's decided or withdrawn.
+const branchUrl = (id) => SITE_URL + 'proposal.html?b=' + encodeURIComponent(id);
+exports.onBranchWritten = onDocumentWritten({ document: 'branches/{id}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+  const before = event.data.before.exists ? event.data.before.data() : null, after = event.data.after.exists ? event.data.after.data() : null;
+  if (!after) return;
+  const id = event.params.id, token = SLACK_BOT_TOKEN.value();
+  const link = linkedTitle(slackText(after.title || 'a proposed change'), branchUrl(id)), tag = await numberTag('branches/' + id);
+  const author = String((after.by && after.by.email) || '').toLowerCase(), who = slackText((after.by && (after.by.name || after.by.email)) || 'Someone');
+  const staff = async () => (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase());
+  const pagesText = (n) => n === 1 ? '' : ' (' + n + ' pages)';
+  if (!before) {
+    // Made from a proposed change of before branches (the migration): its people heard of it then.
+    if (after.status !== 'open' || after.migrated) return;
+    await sendEvent(token, { key: 'proposals', emails: await staff(), excludeEmail: author,
+      headline: '🔔 ' + tag + who + ' proposed ' + link + pagesText((after.pages || []).length) + '. It needs a PI or admin to accept or decline it.' });
+    return;
+  }
+  if (before.status === 'open' && after.status !== 'open') {
+    const decider = String(after.decidedBy || '').toLowerCase(), by = slackText(after.decidedByName || after.decidedBy || 'A PI or admin');
+    const icon = after.status === 'accepted' ? '✅ ' : after.status === 'withdrawn' ? '↩️ ' : '✖️ ';
+    const people = (after.contributors || []).concat(await staff()).map((e) => String(e).toLowerCase())
+      .filter((e, i, a) => e && e !== decider && a.indexOf(e) === i);
+    // Its conversation, if it has one: the decision written into it.
+    const tref = db.collection('conversations').doc('cm-branch-' + id);
+    if ((await tref.get()).exists) {
+      const last = (await tref.collection('messages').orderBy('at', 'desc').limit(1).get()).docs[0];
+      await tref.collection('messages').add({ parent: last ? last.id : tref.id, body: '**' + after.status.charAt(0).toUpperCase() + after.status.slice(1) + '**.',
+        name: after.decidedByName || after.decidedBy || 'Someone', createdBy: decider, at: FieldValue.serverTimestamp(), source: 'proposal', votes: {} }).catch(() => {});
+      await tref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+    }
+    await sendEvent(token, { key: 'proposal-decided', emails: people, headline: icon + tag + by + ' ' + after.status + ' ' + link + '.' });
+    return;
+  }
+  // Someone new committed to it: its author hears.
+  const added = (after.contributors || []).filter((e) => (before.contributors || []).indexOf(e) < 0);
+  if (after.status === 'open' && added.length && author && added.indexOf(author) < 0) {
+    await sendEvent(token, { key: 'proposals', emails: [author], headline: '✏️ ' + tag + 'Someone else committed to your proposed change ' + link + '.' });
+  }
+});
 
 // ---------- Tagging people ----------
 // A tag is @[Name](SlackId) in any text (mentions.js). Whoever is newly tagged in
@@ -2224,7 +2267,7 @@ function appliedProposal(doc, q, ctx){
     let cur = Object.assign({}, doc);
     const out = {};
     changes.forEach((c) => {
-      if (!c || c.kind === 'batch' || c.kind === 'restore') throw new HttpsError('invalid-argument', 'Unknown kind of change.');
+      if (!c || c.kind === 'batch') throw new HttpsError('invalid-argument', 'Unknown kind of change.');
       const r = appliedProposal(cur, Object.assign({ by: q.by }, c), ctx);
       cur = Object.assign({}, cur, r);
       Object.assign(out, r);
@@ -2307,6 +2350,9 @@ function appliedProposal(doc, q, ctx){
 // it, else null: the proposal applied to the BOLDiquette as it is (appliedProposal), and
 // the table read from it, as accepting it would save it (access.checkTableChange).
 async function proposedTable(path){
+  // A branch (branches/<id>): its part on the BOLDiquette, if it has one.
+  const br = /^branches\/([A-Za-z0-9]{1,40})$/.exec(String(path || ''));
+  if (br) path = 'handbook/boldiquette/proposals/' + br[1];
   const m = /^handbook\/boldiquette\/proposals\/([A-Za-z0-9]{1,40})$/.exec(String(path || ''));
   if (!m) return null;
   const [qs, ds, as] = await Promise.all([db.doc(path).get(), db.doc('handbook/boldiquette').get(), db.doc('settings/access').get()]);
@@ -2320,6 +2366,35 @@ async function proposedTable(path){
   const pages = accessLib.parseAccessTable(part.body);
   // Compared as read from the text both ways, so a table written differently isn't a change.
   return was && JSON.stringify(accessLib.parseAccessTable(was.body)) === JSON.stringify(pages) ? null : pages;
+}
+
+// What accepting proposal q (on collection/slug, its document `snap`) writes, without writing it: [{ op: 'set' |
+// 'update' | 'delete', ref, data }]; throws if it can't be accepted. Shared by decideProposal and decideBranch (a
+// branch's pages, all in one transaction). ctx: { pages: the table in force (an 'access' row), email: who accepts,
+// by: who proposed it, note, now, creating: a new skill or tool }.
+async function acceptedOps(collection, slug, snap, q, ctx){
+  const ref = db.collection(collection).doc(slug), ops = [];
+  const stamp = { changeNote: String(ctx.note || '').slice(0, 300), updatedAt: ctx.now, updatedBy: ctx.email, proposedBy: ctx.by };
+  if (q.kind === 'delete') {
+    // Its history credits whoever accepted it, then it goes.
+    return [{ op: 'update', ref, data: stamp }, { op: 'delete', ref }];
+  }
+  let fields = appliedProposal(snap.exists ? snap.data() : {}, q, { pages: ctx.pages });
+  // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
+  if (collection === 'agentTools') {
+    try { fields = agentApi.checkTool(slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }
+    catch (err) { throw new HttpsError('failed-precondition', 'It can’t be accepted as it is: ' + err.message); }
+  }
+  // The BOLDiquette's Who can see what: only a table the site can read, proposed by whoever
+  // can propose on the BOLDiquette; the site then enforces it (settings/access).
+  if (collection === 'handbook' && slug === 'boldiquette') {
+    const before = snap.exists ? snap.data().parts : [];
+    const table = await access.checkTableChange(before, fields.parts || before, ctx.by);
+    if (table) ops.push({ op: 'set', ref: db.collection('settings').doc('access'), data: { pages: table, updatedAt: ctx.now, updatedBy: ctx.email, proposedBy: ctx.by } });
+  }
+  if (ctx.creating) ops.push({ op: 'set', ref, data: Object.assign(fields, { name: slug, createdAt: ctx.now, createdBy: ctx.by }, stamp) });
+  else ops.push({ op: 'update', ref, data: Object.assign(fields, stamp) });
+  return ops;
 }
 
 exports.decideProposal = onCall(
@@ -2350,30 +2425,10 @@ exports.decideProposal = onCall(
       const now = Date.now();
       if (data.accept) {
         const who = (q.by && (q.by.name || q.by.email)) || '';
-        const stamp = { changeNote: String(q.note || ('Proposed by ' + who)).slice(0, 300), updatedAt: now, updatedBy: email, proposedBy: by };
-        if (q.kind === 'delete') {
-          // Its history credits whoever accepted it, then it goes.
-          tx.update(ref, stamp);
-          tx.delete(ref);
-        } else {
-          // A row of Who can see what, without the part yet, starts from the table in force.
-          const pages = q.kind === 'access' ? ((await tx.get(db.collection('settings').doc('access'))).data() || {}).pages : null;
-          let fields = appliedProposal(snap.exists ? snap.data() : {}, q, { pages });
-          // A tool is checked as agents get it (name, inputs, code that compiles: functions/api-tools.js).
-          if (data.collection === 'agentTools') {
-            try { fields = agentApi.checkTool(data.slug, Object.assign({}, snap.exists ? snap.data() : {}, fields)); }
-            catch (err) { throw new HttpsError('failed-precondition', 'It can’t be accepted as it is: ' + err.message); }
-          }
-          // The BOLDiquette's Who can see what: only PIs' and admins' changes, and only a table
-          // the site can read; the site then enforces it (settings/access).
-          if (data.collection === 'handbook' && data.slug === 'boldiquette') {
-            const before = snap.exists ? snap.data().parts : [];
-            const pages = await access.checkTableChange(before, fields.parts || before, by);
-            if (pages) tx.set(db.collection('settings').doc('access'), { pages, updatedAt: now, updatedBy: email, proposedBy: by });
-          }
-          if (creating) tx.set(ref, Object.assign(fields, { name: data.slug, createdAt: now, createdBy: by }, stamp));
-          else tx.update(ref, Object.assign(fields, stamp));
-        }
+        // A row of Who can see what, without the part yet, starts from the table in force.
+        const pages = q.kind === 'access' ? ((await tx.get(db.collection('settings').doc('access'))).data() || {}).pages : null;
+        const ops = await acceptedOps(data.collection, data.slug, snap, q, { pages, email, by, note: String(q.note || ('Proposed by ' + who)), now, creating });
+        ops.forEach((o) => { if (o.op === 'delete') tx.delete(o.ref); else tx[o.op](o.ref, o.data); });
       }
       const status = data.accept ? 'accepted' : 'declined';
       tx.update(qRef, { status, decidedBy: email, decidedByName: name, decidedAt: now });
@@ -2381,6 +2436,143 @@ exports.decideProposal = onCall(
     }).then((r) => { access.forget(); return r; });
   }
 );
+
+// ---------- Branches of the site (functions/branches.js) ----------
+const branchLib = require('./branches');
+const branchErr = (err) => { if (err instanceof branchLib.BranchError) throw new HttpsError(err.code, err.message); throw err; };
+const branchProps = (b, id) => (b.pages || []).map((p) => db.doc(p + '/proposals/' + id));
+
+// branchCommit { on?, title?, description?, target: { collection, slug }, change } → { id, num }: a commit on a page,
+// on branch `on` (not `branch`: every call carries the one the page is on, onCall takes it off). Without it, it
+// opens one (its title: `title`, else the commit's note) with this commit.
+exports.branchCommit = onCall(async (request) => {
+  const email = signedInEmail(request).toLowerCase(), data = request.data || {};
+  const name = String(request.auth.token.name || '');
+  const page = branchLib.pageKey(data.target && data.target.collection, data.target && data.target.slug);
+  if (!page) throw new HttpsError('invalid-argument', 'That page can’t be changed on a branch.');
+  await access.requireAccess(email, branchLib.areaOf(page, accessLib.guideArea), 'edit');
+  let c;
+  try { c = branchLib.validChange(page, data.change); } catch (err) { branchErr(err); }
+  const docSnap = await db.doc(page).get();
+  if (c.kind === 'new' ? docSnap.exists : !docSnap.exists) throw new HttpsError(c.kind === 'new' ? 'already-exists' : 'not-found', c.kind === 'new' ? 'It exists already: change it instead.' : 'That page isn’t there.');
+  const id = String(data.on || '');
+  if (id && !branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
+  const bref = id ? db.collection('branches').doc(id) : db.collection('branches').doc();
+  const now = Date.now(), by = { email, name };
+  await db.runTransaction(async (tx) => {
+    const pref = db.doc(page + '/proposals/' + bref.id);
+    const [bs, ps] = await Promise.all([id ? tx.get(bref) : Promise.resolve(null), tx.get(pref)]);
+    if (id) {
+      const b = bs.exists ? bs.data() : null;
+      if (!b) throw new HttpsError('not-found', 'No such branch.');
+      if (b.status !== 'open') throw new HttpsError('failed-precondition', 'That branch has been ' + b.status + ': go back to main to propose a change.');
+      const pages = (b.pages || []).indexOf(page) >= 0 ? b.pages : (b.pages || []).concat([page]);
+      if (pages.length > branchLib.MAX_PAGES) throw new HttpsError('failed-precondition', 'A branch changes ' + branchLib.MAX_PAGES + ' pages at most.');
+      const contributors = (b.contributors || []).indexOf(email) >= 0 ? b.contributors : (b.contributors || []).concat([email]);
+      tx.update(bref, { pages, contributors, editedAt: now });
+    } else {
+      const title = branchLib.text(data.title || c.note, branchLib.MAX_TITLE);
+      tx.set(bref, { title, description: branchLib.text(data.description, branchLib.MAX_DESCRIPTION), status: 'open', by, at: now, contributors: [email], pages: [page], editedAt: now });
+    }
+    const prop = ps.exists ? ps.data() : null;
+    if (prop && prop.status !== 'open') throw new HttpsError('failed-precondition', 'That branch has been decided.');
+    let doc;
+    try { doc = branchLib.withCommit(prop, page, bref.id, c, by, now); } catch (err) { branchErr(err); }
+    tx.set(pref, doc);
+  });
+  // Its number (#12), as everything on BOLD.OS has one: kept on it too, for its page.
+  let num = 0;
+  if (!id) {
+    num = await numberFor('branches/' + bref.id).catch(() => 0);
+    if (num) await bref.update({ num }).catch(() => {});
+  } else num = (await bref.get()).data().num || 0;
+  return { id: bref.id, num };
+});
+
+// branchMeta { id, title?, description? } (whoever has committed to it, or a PI) or { id, withdraw: true } (its
+// author, or a PI): its title and description, or withdrawn, its pages' proposals with it.
+exports.branchMeta = onCall(async (request) => {
+  const email = signedInEmail(request).toLowerCase(), data = request.data || {}, id = String(data.id || '');
+  if (!branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
+  const full = await isFullWrite(email), bref = db.collection('branches').doc(id), now = Date.now();
+  return db.runTransaction(async (tx) => {
+    const bs = await tx.get(bref), b = bs.exists ? bs.data() : null;
+    if (!b) throw new HttpsError('not-found', 'No such branch.');
+    if (data.withdraw) {
+      if (!branchLib.canWithdraw(b, email, full)) throw new HttpsError('permission-denied', b.status !== 'open' ? 'It has already been decided.' : 'Only whoever opened it, or a PI or admin, can withdraw it.');
+      const props = await Promise.all(branchProps(b, id).map((r) => tx.get(r)));
+      const closed = { status: 'withdrawn', decidedBy: email, decidedByName: String(request.auth.token.name || ''), decidedAt: now };
+      props.forEach((p) => { if (p.exists && p.data().status === 'open') tx.update(p.ref, closed); });
+      tx.update(bref, closed);
+      return { status: 'withdrawn' };
+    }
+    if (b.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been decided.');
+    if (!full && (b.contributors || []).indexOf(email) < 0) throw new HttpsError('permission-denied', 'Only whoever has committed to it, or a PI or admin, can change this.');
+    const up = { editedAt: b.editedAt || b.at || now, metaAt: now };
+    if (typeof data.title === 'string') { up.title = branchLib.text(data.title, branchLib.MAX_TITLE); if (!up.title) throw new HttpsError('invalid-argument', 'Give it a title.'); }
+    if (typeof data.description === 'string') up.description = branchLib.text(data.description, branchLib.MAX_DESCRIPTION);
+    tx.update(bref, up);
+    return { status: 'open' };
+  });
+});
+
+// branchRebase { id, target, changes } (whoever has committed to it, or a PI): a page's part of a branch rebased on
+// main (pages/guide.js replays its commits on the page as it is now, the conflicts resolved).
+exports.branchRebase = onCall(async (request) => {
+  const email = signedInEmail(request).toLowerCase(), data = request.data || {}, id = String(data.id || '');
+  const page = branchLib.pageKey(data.target && data.target.collection, data.target && data.target.slug);
+  if (!branchLib.ID.test(id) || !page) throw new HttpsError('invalid-argument', 'No such branch.');
+  const full = await isFullWrite(email), bref = db.collection('branches').doc(id), pref = db.doc(page + '/proposals/' + id);
+  await db.runTransaction(async (tx) => {
+    const [bs, ps] = await Promise.all([tx.get(bref), tx.get(pref)]);
+    const b = bs.exists ? bs.data() : null;
+    if (!b || b.status !== 'open') throw new HttpsError('failed-precondition', 'It has been decided.');
+    if (!full && (b.contributors || []).indexOf(email) < 0) throw new HttpsError('permission-denied', 'Only whoever has committed to it, or a PI or admin, can rebase it.');
+    let doc;
+    try { doc = branchLib.rebased(ps.exists ? ps.data() : null, page, data.changes, Date.now()); } catch (err) { branchErr(err); }
+    tx.set(pref, doc);
+    tx.update(bref, { editedAt: doc.editedAt });
+  });
+  return { ok: true };
+});
+
+// decideBranch { id, accept, editedAt } (a PI or admin who hasn't committed to it): every page it changes, as
+// it proposes, in one go; if one can't be, none is.
+exports.decideBranch = onCall(async (request) => {
+  const email = signedInEmail(request).toLowerCase(), data = request.data || {}, id = String(data.id || '');
+  if (!branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
+  const full = await isFullWrite(email), name = String(request.auth.token.name || ''), bref = db.collection('branches').doc(id);
+  return db.runTransaction(async (tx) => {
+    const bs = await tx.get(bref), b = bs.exists ? bs.data() : null;
+    if (!b) throw new HttpsError('not-found', 'No such branch.');
+    const why = branchLib.cannotDecide(b, email, full);
+    if (why) throw new HttpsError(b.status !== 'open' ? 'failed-precondition' : 'permission-denied', why);
+    if (typeof data.editedAt === 'number' && (b.editedAt || b.at || 0) !== data.editedAt) throw new HttpsError('failed-precondition', 'It has just changed. Have a look at it again.');
+    const pages = b.pages || [];
+    const [props, docs, acc] = await Promise.all([Promise.all(branchProps(b, id).map((r) => tx.get(r))), Promise.all(pages.map((p) => tx.get(db.doc(p)))), tx.get(db.collection('settings').doc('access'))]);
+    const now = Date.now(), all = [];
+    if (data.accept) {
+      const by = String((b.by && b.by.email) || '').toLowerCase();
+      for (let i = 0; i < pages.length; i++){
+        const q = props[i].exists ? props[i].data() : null;
+        if (!q || q.status !== 'open') continue;
+        const [collection, slug] = pages[i].split('/'), creating = q.kind === 'new';
+        if (creating ? docs[i].exists : !docs[i].exists) throw new HttpsError('failed-precondition', creating ? '“' + slug + '” exists already: this branch can’t make it.' : '“' + slug + '” has been deleted since.');
+        try {
+          (await acceptedOps(collection, slug, docs[i], q, { pages: (acc.data() || {}).pages, email, by, note: b.title, now, creating })).forEach((o) => all.push(o));
+        } catch (err) {
+          const page = (docs[i].exists && docs[i].data().title) || slug;
+          throw new HttpsError(err.code || 'failed-precondition', page + ': ' + (err.message || 'it can’t be accepted.'));
+        }
+      }
+    }
+    all.forEach((o) => { if (o.op === 'delete') tx.delete(o.ref); else tx[o.op](o.ref, o.data); });
+    const status = data.accept ? 'accepted' : 'declined', closed = { status, decidedBy: email, decidedByName: name, decidedAt: now };
+    props.forEach((p) => { if (p.exists && p.data().status === 'open') tx.update(p.ref, closed); });
+    tx.update(bref, closed);
+    return { status };
+  }).then((r) => { access.forget(); return r; });
+});
 
 // ---------- 2, 3, 4: card events ----------
 
@@ -5282,7 +5474,8 @@ async function contentWork(email, person, level){
   // All of them, filtered here: a few hundred at most, and no collection-group index needed.
   const docs = (await db.collectionGroup('proposals').get()).docs.filter(function(d){
     const q = d.data();
-    return q.status === 'open' || (q.decidedAt || 0) >= after;
+    // A branch's pages are listed as the branch, below.
+    return !q.branch && (q.status === 'open' || (q.decidedAt || 0) >= after);
   });
   const titles = {}, mayView = {};
   const items = [];
@@ -5307,6 +5500,23 @@ async function contentWork(email, person, level){
       url: place.url + proposalAnchor(collection, d.id), by: person(q.by && q.by.email, q.by && q.by.name) };
     if (q.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: q.editedAt || q.at || 0, on: [], waiting: PIS_ADMINS });
     else Object.assign(item, { column: 'done', state: q.status, since: q.decidedAt || 0, on: q.decidedBy ? [person(q.decidedBy, q.decidedByName)] : [] });
+    items.push(item);
+  }
+  // Branches (functions/branches.js): one each, seen by whoever can see every page it changes.
+  const branches = (await db.collection('branches').get()).docs.filter((d) => { const b = d.data(); return b.status === 'open' || (b.decidedAt || 0) >= after; });
+  for (const d of branches){
+    const b = d.data(), pages = b.pages || [];
+    let sees = !!pages.length;
+    for (const p of pages){
+      const area = branchLib.areaOf(p, require('./access').guideArea);
+      if (!(area in mayView)) mayView[area] = await access.can(email, area, level === 'edit' ? 'edit' : 'view');
+      if (!mayView[area]) { sees = false; break; }
+    }
+    if (!sees) continue;
+    const item = { source: 'content', type: 'content', kind: 'proposal', ref: d.ref.path, title: String(b.title || 'A proposed change'),
+      url: branchUrl(d.id), by: person(b.by && b.by.email, b.by && b.by.name), targets: pages };
+    if (b.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: b.editedAt || b.at || 0, on: [], waiting: PIS_ADMINS });
+    else Object.assign(item, { column: 'done', state: b.status, since: b.decidedAt || 0, on: b.decidedBy ? [person(b.decidedBy, b.decidedByName)] : [] });
     items.push(item);
   }
   return items;
@@ -5562,11 +5772,12 @@ exports.branches = onCall(
   { timeoutSeconds: 60 },
   async (request) => {
     const email = callerEmail(request);
-    const open = (await contentWork(email, workPerson(await workNames()), 'view')).filter((x) => x.state === 'open');
+    // Branches of the site only (functions/branches.js): every proposal is one since 2026-11-11.
+    const open = (await contentWork(email, workPerson(await workNames()), 'view')).filter((x) => x.state === 'open' && /^branches\//.test(x.ref));
     const nums = await numbersOf(open.map((x) => x.ref));
     const out = [];
     for (const x of open){
-      const b = { ref: x.ref, num: nums[x.ref] || 0, title: x.title, url: String(x.url || '').replace(/#.*$/, ''), by: (x.by && x.by.name) || '', since: x.since || 0 };
+      const b = { ref: x.ref, num: nums[x.ref] || 0, title: x.title, url: String(x.url || '').replace(/#.*$/, ''), by: (x.by && x.by.name) || '', since: x.since || 0, targets: x.targets || [] };
       try { const pages = await proposedTable(x.ref); if (pages) b.pages = pages; }
       catch (err) { logger.warn('A branch’s table couldn’t be worked out', { ref: x.ref, error: String(err && err.message || err) }); }
       out.push(b);
@@ -9044,7 +9255,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   tellPerson: (email, text, key) => sendEvent(SLACK_BOT_TOKEN.value(), { key, emails: [email], headline: text }),
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
-    letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
+    letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, branchCommit: exports.branchCommit, branchMeta: exports.branchMeta, decideBranch: exports.decideBranch, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
     confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, joinChanges: exports.joinChanges, myRequests: exports.myRequests, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
