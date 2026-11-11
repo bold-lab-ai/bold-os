@@ -86,7 +86,8 @@ window.BoldJoin = (function(){
       '</select></label>';
   }
 
-  // The fields, filled from v. opts: { withIdentity: name and email too, people: the roster for the point of contact }.
+  // The fields, filled from v. opts: { withIdentity: name and email too, people: the roster for the point of contact,
+  // noInviter: without who invited them (an inviter proposing changes to a request, join-requests.js) }.
   function fieldsHtml(v, opt, o){
     v = v || {}; o = o || {};
     var t = function(cls, label, val, ph, max, type){
@@ -101,14 +102,21 @@ window.BoldJoin = (function(){
       t('jn-based', 'Primarily based in (for events and socials)', v.basedIn, 'e.g. London', 120) +
       t('jn-links', 'Links (website, X, Google Scholar)', v.links, 'https://…', 500) + (window.BOLD && BOLD.linkNote ? BOLD.linkNote() : '')) +
     group('At BOLD',
-      '<label>Role at BOLD<select class="jn-role"><option value="">Choose…</option>' + opt.roles.map(function(r){
+      // Your position (#260): not your group of Who is BOLD, which some roles' names sound like (Staff, PI).
+      // The hint between the label and the box (a span: a label can't hold a <p>). join.html is for
+      // people outside BOLD, who can't open the BOLDiquette yet: no links there.
+      '<label>Role at BOLD: your position, such as PhD student or postdoc' +
+      '<span class="event-form-hint">This is not your group in ' + (o.withIdentity ? 'Who is BOLD' : '<a href="boldiquette.html#who-is-bold">Who is BOLD</a>') +
+        ' (PAN-BOLD, BOLD-internal…), which decides what you can see and do: ' +
+        (o.withIdentity ? 'everyone joins as PAN-BOLD, and asks for another group once in.' : '<a href="group-request.html">ask for another group</a>.') + '</span>' +
+      '<select class="jn-role"><option value="">Choose…</option>' + opt.roles.map(function(r){
         return '<option' + (r === v.role ? ' selected' : '') + '>' + esc(r) + '</option>';
       }).join('') + (v.role && opt.roles.indexOf(v.role) === -1 ? '<option selected>' + esc(v.role) + '</option>' : '') + '</select></label>' +
       (o.withIdentity ? '' : contactHtml(v, o.people)) +
       // join.html only: their point of contact, who invited them, picked from the roster as they
       // type (join.js); they decide the request.
-      (o.withIdentity ? '<label>BOLD supervisor, mentor or point of contact (they invited you, and approve your request)' +
-        '<input type="text" class="jn-inviter" maxlength="120" placeholder="Start typing their name" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"></label>' +
+      (o.withIdentity && !o.noInviter ? '<label>BOLD supervisor, mentor or point of contact (they invited you, and approve your request)' +
+        '<input type="text" class="jn-inviter" maxlength="120" placeholder="Start typing their name, then choose them from the list" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list"></label>' +
         '<input type="hidden" class="jn-inviter-id"><ul class="jn-inviter-list" role="listbox" hidden></ul>' : '') +
       '<div class="jn-dates">' + t('jn-start', 'Start date', v.startDate, '', 10, 'date') +
         t('jn-end', 'End date (not needed for PIs, adjuncts, alumni and collaborators)', v.endDate, '', 10, 'date') + '</div>' +
@@ -148,19 +156,46 @@ window.BoldJoin = (function(){
     return out;
   }
 
-  // What's missing or wrong in d, as functions/index.js normalizeJoinRequest checks it, or ''.
-  function problem(d){
-    if (d.name !== undefined && !d.name) return 'Give your full name.';
-    if (d.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) return 'Give a valid email address.';
-    if (!d.institution) return 'Give your home institution.';
-    if (!d.role) return 'Choose your role at BOLD.';
-    if (d.invitedBy !== undefined && !d.invitedBy) return 'Choose your point of contact from the list.';
-    if (!d.contact) return 'Say who your BOLD point of contact is.';
-    if (!d.interests) return 'Give your main research interests.';
-    if (!d.endDate && NO_END.indexOf(d.role) === -1) return 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).';
-    if (d.startDate && d.endDate && d.endDate < d.startDate) return 'The end date is before the start date.';
-    if (d.bookingUrl && !/^https:\/\/\S+$/.test(d.bookingUrl)) return 'The booking link starts with https://';
-    return '';
+  // Everything missing or wrong in d, as functions/index.js normalizeJoinRequest checks it, each with
+  // its field (a class in fieldsHtml): [{ field, msg }], at most one per field, in the form's order.
+  function problems(d){
+    var out = [], add = function(field, msg){ if (!out.some(function(x){ return x.field === field; })) out.push({ field: field, msg: msg }); };
+    var inviter = d.invitedBy !== undefined ? 'jn-inviter' : 'jn-contact-pick';
+    if (d.name !== undefined && !d.name) add('jn-name', 'Give your full name.');
+    if (d.email !== undefined && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(d.email)) add('jn-email', d.email ? 'Give a valid email address.' : 'Give your email address.');
+    if (!d.institution) add('jn-institution', 'Give your home institution.');
+    if (!d.role) add('jn-role', 'Choose your role at BOLD.');
+    if (d.invitedBy !== undefined && !d.invitedBy) add(inviter, d.inviterTyped ? 'Choose them from the list as you type.' : 'Choose your point of contact from the list.');
+    if (!d.contact) add(inviter, 'Say who your BOLD point of contact is.');
+    if (d.startDate && d.endDate && d.endDate < d.startDate) add('jn-end', 'The end date is before the start date.');
+    if (!d.endDate && NO_END.indexOf(d.role) === -1) add('jn-end', 'Give your end date (not needed for PIs, adjuncts, alumni and collaborators).');
+    if (!d.interests) add('jn-interests', 'Give your main research interests.');
+    if (d.bookingUrl && !/^https:\/\/\S+$/.test(d.bookingUrl)) add('jn-booking', 'The booking link starts with https://');
+    var order = ['jn-name', 'jn-email', 'jn-institution', 'jn-role', 'jn-inviter', 'jn-contact-pick', 'jn-end', 'jn-interests', 'jn-booking'];
+    return out.sort(function(x, y){ return order.indexOf(x.field) - order.indexOf(y.field); });
+  }
+  // The first of them, or ''.
+  function problem(d){ var p = problems(d)[0]; return p ? p.msg : ''; }
+  // Shows each of d's problems under its own field in the form el (a message inside its label, the
+  // field marked), clearing those shown before; each goes once its field is changed. Focuses the
+  // first. → how many there are.
+  function showProblems(el, d){
+    Array.prototype.forEach.call(el.querySelectorAll('.jn-field-error'), function(x){ x.remove(); });
+    Array.prototype.forEach.call(el.querySelectorAll('[aria-invalid]'), function(x){ x.removeAttribute('aria-invalid'); });
+    var list = problems(d), first = null;
+    list.forEach(function(p){
+      var f = el.querySelector('.' + p.field), label = f && f.closest('label');
+      if (!f || !label) return;
+      var m = document.createElement('span');
+      m.className = 'jn-field-error'; m.id = p.field + '-error'; m.textContent = p.msg;
+      label.appendChild(m);
+      f.setAttribute('aria-invalid', 'true'); f.setAttribute('aria-describedby', m.id);
+      var clear = function(){ m.remove(); f.removeAttribute('aria-invalid'); f.removeAttribute('aria-describedby'); f.removeEventListener('input', clear); f.removeEventListener('change', clear); };
+      f.addEventListener('input', clear); f.addEventListener('change', clear);
+      if (!first) first = f;
+    });
+    if (first) { first.scrollIntoView({ block: 'center' }); first.focus({ preventScroll: true }); }
+    return list.length;
   }
 
   // The details as lists of facts, for reading, in the form's groups. o: { name, email }
@@ -189,5 +224,5 @@ window.BoldJoin = (function(){
         row('Booking link', /^https:\/\/\S+$/.test(d.bookingUrl || '') ? '<a href="' + esc(d.bookingUrl) + '" target="_blank" rel="noopener">' + esc(d.bookingUrl.replace(/^https:\/\//, '')) + '</a>' : ''));
   }
 
-  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, requirementsOf: requirementsOf, groupSectionOf: groupSectionOf, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, factsHtml: factsHtml };
+  return { ROLES: ROLES, PILLARS: PILLARS, NO_END: NO_END, CATEGORIES: CATEGORIES, categoryLabel: categoryLabel, groupOf: groupOf, groupBadge: groupBadge, requirementsOf: requirementsOf, groupSectionOf: groupSectionOf, FEEDBACK: FEEDBACK, options: options, fieldsHtml: fieldsHtml, read: read, problem: problem, problems: problems, showProblems: showProblems, factsHtml: factsHtml };
 })();

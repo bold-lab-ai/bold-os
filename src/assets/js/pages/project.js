@@ -35,6 +35,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // project id is the card's projectId (a card submitted to another venue from here),
   // or the card's own id.
   var ws = null, wsLoaded = false, wsUnsub = null, wsBusy = false, wsMsg = '', wsKey = '';
+  var forum = null;   // the Conversations tab's forum (conversations-forum.js), kept across redraws
   // Its presentations, projectWorkspaces/{id}/presentations, newest first.
   var talks = [], talksUnsub = null, groupTalks = [], groupUnsub = null;
   // Where each was given (`occasion`): one of the site's events, a venue on the board,
@@ -160,7 +161,15 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function keywordLink(k){ return '<a href="projects.html#keyword=' + encodeURIComponent(k) + '">' + esc(k) + '</a>'; }
 
   function missing(){ return '<span class="detail-muted">Not set</span>'; }
-  function row(label, valueHtml, ddAttrs){ return '<dt>' + label + '</dt><dd' + (ddAttrs || '') + '>' + valueHtml + '</dd>'; }
+  // A row; its actions (detail-act: Edit, Set up, Pause, Invite someone, …), wherever in the value they're made,
+  // go together, in order, on its right (project.css), as one choice: "Set up or Edit".
+  function act(html){ return '<span class="detail-act">' + html + '</span>'; }
+  function row(label, valueHtml, ddAttrs){
+    var acts = [];
+    var value = String(valueHtml).replace(/\s*<span class="detail-act">([\s\S]*?)<\/span>/g, function(m, inner){ acts.push(inner.trim()); return ''; });
+    // Several: one choice, "Set up or Edit".
+    return '<dt>' + label + '</dt><dd' + (ddAttrs || '') + '>' + value + (acts.length ? act(acts.join('<span class="detail-or">or</span>')) : '') + '</dd>';
+  }
 
   // The rows edited as a single field: label, the card field, how it shows, and its checks.
   var openLink = function(url){ return '<a href="' + esc(url) + '" target="_blank" rel="noopener">Open</a>'; };
@@ -193,14 +202,17 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
 
   function editButton(what){
     var off = !canEdit() ? NOT_EDITOR : what === 'authors' && authorsLocked() ? AUTHORS_LOCKED : '';
-    return ' <button class="btn-text detail-inline-edit" type="button" data-edit="' + what + '"' +
-      (off ? ' disabled title="' + off + '"' : '') + '>Edit</button>';
+    // A row's action (detail-act): on the right of its row (project.css).
+    return ' ' + act('<button class="btn-text detail-inline-edit" type="button" data-edit="' + what + '"' +
+      (off ? ' disabled title="' + off + '"' : '') + '>Edit</button>');
   }
 
   // The page's tabs, chosen by &tab= in the address (Overview when there's none).
   // The second tab is named for what it holds (the project's meeting, slides and notes, and
   // its talks); its hash stays #presentations, so links keep working.
-  var TABS = [['overview', 'Overview'], ['presentations', 'Meetings'], ['paper', 'Papers']];
+  // Conversations: Conversations' own forum (conversations-forum.js), only those about this project.
+  // (Papers, its venues, Overleaf and arXiv, is on Overview since 2026-11-06: &tab=paper opens Overview.)
+  var TABS = [['overview', 'Overview'], ['presentations', 'Meetings'], ['conversations', 'Conversations']];
   // A fourth, Board, on a project with a board (pages/project-work.js).
   function hasBoard(){ return !!(ws && ws.work && ws.work.on); }
   // Named Board; its hash stays #…&tab=work (links keep working), and &tab=board works too.
@@ -221,7 +233,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
 
   function setTab(name, focus){
     if (name === tab) return;
-    var hash = location.hash.replace(/&(tab|card|item)=[^&]*/g, '') + (name === 'overview' ? '' : '&tab=' + name);
+    var hash = location.hash.replace(/&(tab|card|item|post|msg)=[^&]*/g, '') + (name === 'overview' ? '' : '&tab=' + name);
     try { history.replaceState(null, '', location.pathname + location.search + hash); } catch (e){}
     BOLD.switchTab('.tabs', el('projectBody'), function(){ tab = name; editing = false; render(); });
     if (focus) document.querySelector('.tab.active').focus();
@@ -244,6 +256,9 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       html += peopleRows() + repoRow();
       html += editableRow('keywords', 'Keywords', card.keywords && card.keywords.length ? card.keywords.map(keywordLink).join(', ') : missing(),
         '', '<div id="keywordEntry">' + keywordEntryHtml() + '</div>', 'keywordsSave');
+      html += simpleRow('compute');
+      // The write-up and its submission (once the Papers tab); not while it's only proposed (#226).
+      if (!(card.proposal && card.proposal.status !== 'approved')) html += row('Venues', venuesHtml()) + simpleRow('overleaf') + simpleRow('arxiv');
       html += row('Submitted by', card.submittedBy && card.submittedBy.name
         ? esc(card.submittedBy.name) + (card.submittedBy.email ? ' <span class="detail-muted">(' + esc(card.submittedBy.email) + ')</span>' : '')
         : missing());
@@ -267,13 +282,10 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     presentations: function(){
       return '<dl class="detail-grid">' + workspaceRows() + simpleRow('pitch') + '</dl>' + presentationsHtml();
     },
-    // The write-up and its submission.
-    paper: function(){
-      return '<dl class="detail-grid">' + row('Venues', venuesHtml()) +
-        simpleRow('overleaf') + simpleRow('arxiv') + simpleRow('compute') + '</dl>';
-    },
     // Its work board: the board keeps its own drawing (project-work.js), put back in here on each render.
-    work: function(){ return '<div id="workMount"></div>'; }
+    work: function(){ return '<div id="workMount"></div>'; },
+    // Its conversations: the forum keeps its own drawing, put back in here on each render.
+    conversations: function(){ return wsKey ? '<div id="talkMount"></div>' : '<p class="detail-muted">Loading\u2026</p>'; }
   };
 
   // + Board, after the tabs: adds the project's work board (optional, for any project), then opens it.
@@ -310,12 +322,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     var pending = card.proposal && card.proposal.status !== 'approved';
     if (pending) {
       html += '<span class="badge">' + (card.proposal.status === 'declined' ? 'Declined' : 'Proposed') + '</span>';
+      html += proposalActionsHtml();
       html += '<button class="btn-box danger" type="button" id="removeProject"' + (canRemove() ? '' : ' disabled title="' + NOT_SUBMITTER + '"') + '>Remove project</button>';
-      html += '</div></div>' + proposalHtml();
-      html += '<div class="tab-panel" id="projectPanel">' + PANELS.overview() + '</div>';
+      html += '</div></div>' + proposalStatusHtml();
+      html += '<div class="tab-panel" id="projectPanel">' + PANELS.overview() + '<div class="proposal-talk" id="proposalTalk"></div></div>';
       el('projectBody').innerHTML = html; el('projectBody').hidden = false; el('detailMsg').hidden = true;
       document.title = card.title + ' | BOLD Lab';
-      wireAbstract(); wireProposal();
+      wireAbstract(); wireProposal(); mountProposalTalk();
       el('removeProject').addEventListener('click', removeProject);
       return;
     }
@@ -355,6 +368,11 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         canEdit: canEdit, members: memberEmails, callWorkspace: callWorkspace });
       ProjectWork.attach(el('workMount'));
     }
+    if (tab === 'conversations' && wsKey && window.BoldConversations) {
+      // One forum per project, kept across redraws (what's being typed in it stays).
+      if (!forum || forum.pid !== wsKey) forum = { pid: wsKey, f: BoldConversations.create({ note: 'Conversations about this project.', project: { id: wsKey, title: function(){ return card.title || ''; } } }) };
+      el('talkMount').appendChild(forum.f.el);
+    } else if (forum) forum.f.away();
     if (el('workAdd')) el('workAdd').addEventListener('click', addWorkBoard);
     el('detailMsg').hidden = true;
     document.title = card.title + ' | BOLD Lab';
@@ -377,21 +395,42 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   // A proposed project's panel (#226): its budget and where it stands; Approve and Decline for a PI or admin
   // other than whoever proposed it, greyed with the reason for everyone else; after a decline, its proposer
   // sends it again (its budget changed if need be).
-  function proposalHtml(){
+  // A proposed project (#226; its conversation since 2026-11-06): one line of where it is, the decision as
+  // buttons in the header (PIs and admins: Approve, Decline; its proposer, declined: Send it again), and below,
+  // its conversation (functions/index.js proposalThread), where it's discussed and each decision is written.
+  function proposalStatusHtml(){
     var p = card.proposal, hours = (Number(p.gpuHours) || 0).toLocaleString('en-GB');
-    var mine = !!me && String((card.submittedBy || {}).email || '').toLowerCase() === String(me.email || '').toLowerCase();
     var who = esc((card.submittedBy && (card.submittedBy.name || card.submittedBy.email)) || 'Someone');
+    return '<p class="proposal-status">' + (p.status === 'declined'
+      ? '<strong>Declined</strong> by ' + esc(p.decidedByName || p.decidedBy || 'a PI or admin') + '. It asked for ' + hours + ' GPU hours.'
+      : '<strong>Proposed</strong> by ' + who + ' \u00b7 <strong>' + hours + ' GPU hours</strong> \u00b7 waiting for a PI or admin. Once approved, its channel, meeting, slides, notes and repository are made.') +
+      '</p><p class="field-error" id="propError" hidden></p>';
+  }
+  function proposalActionsHtml(){
+    var p = card.proposal;
+    var mine = !!me && String((card.submittedBy || {}).email || '').toLowerCase() === String(me.email || '').toLowerCase();
     if (p.status === 'declined') {
-      return '<div class="proposal-panel"><p><strong>Declined</strong> by ' + esc(p.decidedByName || p.decidedBy || 'a PI or admin') + (p.note ? ': \u201c' + esc(p.note) + '\u201d' : '.') + ' It asked for ' + hours + ' GPU hours.</p>' +
-        (mine ? '<div class="proposal-actions"><label>Compute budget (GPU hours) <input type="number" id="propHours" min="1" step="1" value="' + esc(String(p.gpuHours || '')) + '"></label>' +
-          '<button type="button" class="btn-box is-primary" id="propResubmit">Send it again</button></div>' : '') + '<p class="field-error" id="propError" hidden></p></div>';
+      return mine ? '<label class="proposal-hours">GPU hours <input type="number" id="propHours" min="1" step="1" value="' + esc(String(p.gpuHours || '')) + '"></label>' +
+        '<button type="button" class="btn-box is-primary" id="propResubmit">Send it again</button>' : '';
     }
     var why = !fullWrite ? 'Only PIs and admins decide a proposed project' : mine ? 'Another PI or admin decides your own proposal' : '';
-    return '<div class="proposal-panel"><p><strong>Proposed</strong> by ' + who + ' \u00b7 <strong>' + hours + ' GPU hours</strong> \u00b7 waiting for a PI or admin to approve it. Once approved, its channel, meeting, slides, notes and repository are made.</p>' +
-      '<div class="proposal-actions"><input type="text" id="propNote" maxlength="1000" placeholder="A note to ' + who + ' (optional)"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>' +
-      '<button type="button" class="btn-box is-primary" id="propApprove"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Approve</button>' +
-      '<button type="button" class="btn-box" id="propDecline"' + (why ? ' disabled title="' + esc(why) + '"' : '') + '>Decline</button></div>' +
-      '<p class="field-error" id="propError" hidden></p></div>';
+    var off = why ? ' disabled title="' + esc(why) + '"' : '';
+    return '<button type="button" class="btn-box is-primary" id="propApprove"' + off + '>Approve</button>' +
+      '<button type="button" class="btn-box" id="propDecline"' + off + '>Decline</button>';
+  }
+  // Its conversation, the forum's own (conversations-forum.js), that one thread alone.
+  var proposalTalk = null;
+  function mountProposalTalk(){
+    var at = el('proposalTalk');
+    if (!at || !window.BoldConversations) return;
+    if (proposalTalk && proposalTalk.f) { at.appendChild(proposalTalk.f.el); return; }
+    if (proposalTalk) return;   // asked for already
+    proposalTalk = { f: null };
+    firebase.app().functions('europe-west2').httpsCallable('projectProposal')({ id: projectId, action: 'thread' }).then(function(r){
+      var pid = card.projectId || projectId;
+      proposalTalk.f = BoldConversations.create({ note: 'Its conversation: say what you think of it here.', thread: r.data.id, project: { id: pid, title: function(){ return card.title || ''; } } });
+      var at2 = el('proposalTalk'); if (at2) at2.appendChild(proposalTalk.f.el);
+    }, function(err){ console.error('[BOLD Lab] loading the proposal’s conversation failed', err); proposalTalk = null; });
   }
   function wireProposal(){
     var call = function(args, btn){
@@ -402,13 +441,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         var e = el('propError'); if (e) { e.textContent = (err && err.message) || 'Couldn\u2019t do that \u2014 try again.'; e.hidden = false; }
       });
     };
-    var note = function(){ return el('propNote') ? el('propNote').value.trim() : ''; };
+    var note = function(){ return ''; };   // a reason: in its conversation
     if (el('propApprove')) el('propApprove').addEventListener('click', function(){
       BOLD.confirmAlways({ title: 'Approve \u201c' + card.title + '\u201d?', go: 'Approve', effects: ['Approve its budget of ' + (Number(card.proposal.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours',
-        'Make its Slack channel, meeting, slides, notes and repository, as its proposer asked', 'Tell them, on BOLD.OS'] }).then(function(ok){ if (ok) call({ accept: true, note: note() }, el('propApprove')); });
+        'Make its Slack channel, meeting, slides, notes and repository, as its proposer asked', 'Tell them, on BOLD.OS, and write it in its conversation'] }).then(function(ok){ if (ok) call({ accept: true, note: note() }, el('propApprove')); });
     });
     if (el('propDecline')) el('propDecline').addEventListener('click', function(){
-      BOLD.confirmAlways({ title: 'Decline \u201c' + card.title + '\u201d?', go: 'Decline', effects: ['Tell its proposer, on BOLD.OS' + (note() ? ', with your note' : '')] }).then(function(ok){ if (ok) call({ accept: false, note: note() }, el('propDecline')); });
+      BOLD.confirmAlways({ title: 'Decline \u201c' + card.title + '\u201d?', go: 'Decline', effects: ['Tell its proposer, on BOLD.OS, and write it in its conversation'] }).then(function(ok){ if (ok) call({ accept: false, note: note() }, el('propDecline')); });
     });
     if (el('propResubmit')) el('propResubmit').addEventListener('click', function(){
       BOLD.confirmAlways({ title: 'Send \u201c' + card.title + '\u201d again?', go: 'Send', effects: ['Send it to the PIs and admins to approve'] }).then(function(ok){ if (ok) call({ action: 'resubmit', gpuHours: el('propHours').value }, el('propResubmit')); });
@@ -420,7 +459,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
     return ws && (ws.skipped || []).indexOf(key) >= 0 ? ' <span class="detail-muted">\u00b7 skipped when it was registered</span>' : '';
   }
   function wsButton(action, label){
-    return ' <button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (wsBusy || !wsLoaded ? ' disabled' : '') + '>' + label + '</button>';
+    return act('<button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (wsBusy || !wsLoaded ? ' disabled' : '') + '>' + label + '</button>');
   }
 
   // Editing the slides' or notes' link: yours, or (empty) the one BOLD.OS makes.
@@ -458,13 +497,13 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       : missing();
     var deck = ws && (ws.ownDeckUrl || ws.deckUrl), notes = ws && (ws.ownNotesUrl || ws.notesUrl);
     var retry = wsLoaded && !setting && (failed || !ws || !deck)
-      ? ' <button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (failed ? 'Try again' : 'Set up') + '</button>'
+      ? act('<button class="btn-text detail-inline-edit" type="button" data-ws="setUp"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (failed ? 'Try again' : 'Set up') + '</button>')
       : '';
     var m = ws && ws.meeting;
     // Chosen but not in Google Calendar yet (the lab's Google account isn't connected, say).
     // Pausing cancels it in Google Calendar and keeps the time; resuming sends a new invitation.
     var pauseBtn = function(action){
-      return ' <button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (action === 'pause' ? 'Pause' : 'Resume') + '</button>';
+      return act('<button class="btn-text detail-inline-edit" type="button" data-ws="' + action + '"' + (canEdit() && !wsBusy ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>' + (action === 'pause' ? 'Pause' : 'Resume') + '</button>');
     };
     var meeting = m && ws.pausedAt && ws.group !== 'completed' ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 paused</span>' + pauseBtn('resume')
       : m && !ws.eventId ? esc(meetingText(m)) + ' <span class="detail-muted">\u00b7 ' + (ws.group === 'completed' ? 'ended with the project' : 'not set up yet') + '</span>'
@@ -473,7 +512,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')
       : wsLoaded && !setting ? missing() + skipped('meeting') : state;
     var html = editableRow('meeting', 'Meeting', meeting, '',
-      meetingEntryHtml(m) + (m ? '<button class="btn-text danger" type="button" id="meetingRemove">Remove the meeting</button>' : ''), 'meetingSave');
+      meetingEntryHtml(m) + suggestHtml() + (m ? '<button class="btn-text danger" type="button" id="meetingRemove">Remove the meeting</button>' : ''), 'meetingSave');
     // Slides and notes: the ones BOLD.OS makes, or the project's own (#151), each with Edit.
     var own = ' <span class="detail-muted">\u00b7 your own</span>';
     html += editableRow('deck', 'Slides', deck ? openLink(deck) + (ws.ownDeckUrl ? own : '') : state + (ws && ws.noDocs ? skipped('docs') : '') + retry, '', linkEntryHtml('deck'), 'linkSave');
@@ -502,7 +541,8 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
           '<div class="detail-hint">A new card there, registered by you, with this project\u2019s title, abstract, authors and links; its meeting, repository and people stay as they are.</div>';
       html += saveCancelHtml('submitSave');
     } else {
-      html += '<button class="btn-text" type="button" data-edit="submit"' + (canEdit() ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Submit to a venue</button>';
+      // The Venues row's action, on its right with the others (detail-act).
+      html += '<span class="detail-act"><button class="btn-text detail-inline-edit" type="button" data-edit="submit"' + (canEdit() ? '' : ' disabled title="' + NOT_EDITOR + '"') + '>Submit to a venue</button></span>';
     }
     return html;
   }
@@ -665,6 +705,39 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       wsBusy = false;
       wsMsg = esc((err && err.message) || 'That didn\u2019t work \u2014 try again.');
       if (!editing) render();
+    });
+  }
+
+  // Suggest times (#323): the times that fit the project's Authors best, for the length and how often
+  // chosen above (meetingTimes in functions/index.js: their free/busy calendars, from their profiles,
+  // and the meetings BOLD.OS knows they have). Picking one fills in the day and time.
+  var DAYS_LONG = { MO: 'Mondays', TU: 'Tuesdays', WE: 'Wednesdays', TH: 'Thursdays', FR: 'Fridays' };
+  function suggestHtml(){
+    return '<div class="pm-suggest"><button class="btn-text" type="button" id="pmSuggest">Suggest times</button><div id="pmSuggestions" aria-live="polite"></div></div>';
+  }
+  function suggestTimes(){
+    var out = el('pmSuggestions'), go = el('pmSuggest');
+    go.disabled = true; out.innerHTML = '<p class="detail-muted">Looking at the authors\u2019 calendars\u2026</p>';
+    var names = function(a){ return a.map(esc).join(', '); };
+    firebase.app().functions('europe-west2').httpsCallable('meetingTimes')({ id: projectId, board: boardId || null, minutes: Number(el('pmMinutes').value), every: Number(el('pmEvery').value) }).then(function(r){
+      var d = r.data || {}, slots = d.slots || [];
+      go.disabled = false;
+      if (!el('pmSuggestions')) return;
+      var how = function(s){
+        if (!s.clash.length) return s.of === 1 ? 'free' : s.of === 2 ? 'both authors free' : 'all ' + s.of + ' authors free';
+        return s.free + ' of ' + s.of + ' free \u00b7 ' + s.clash.map(function(c){ return esc(c.name) + ' busy ' + c.times + ' of 4'; }).join(', ');
+      };
+      out.innerHTML = (slots.length ? '<ul class="pm-slots">' + slots.map(function(s){
+        return '<li><button type="button" class="pm-slot" data-day="' + esc(s.day) + '" data-time="' + esc(s.time) + '">' + esc(DAYS_LONG[s.day] || s.day) + ' ' + esc(s.time) + '</button> <span class="detail-muted">' + how(s) + '</span></li>';
+      }).join('') + '</ul>' : '<p class="detail-muted">No time found.</p>') +
+        '<p class="detail-muted pm-counted">Over its next 4 dates, weekdays 09:00\u201318:00. ' +
+        (d.fromCalendar && d.fromCalendar.length ? 'From the calendars of ' + names(d.fromCalendar) + ', and everyone\u2019s BOLD.OS meetings. ' : 'From the authors\u2019 BOLD.OS meetings. ') +
+        (d.boldOnly && d.boldOnly.length ? names(d.boldOnly) + (d.boldOnly.length === 1 ? ' hasn\u2019t' : ' haven\u2019t') + ' added a free/busy calendar (<a href="profile.html#linked-accounts">on their profile</a>). ' : '') +
+        (d.failed && d.failed.length ? names(d.failed) + '\u2019s calendar couldn\u2019t be read. ' : '') + '</p>';
+    }).catch(function(err){
+      console.error('[BOLD Lab] suggesting meeting times failed', err);
+      go.disabled = false;
+      if (el('pmSuggestions')) el('pmSuggestions').innerHTML = '<p class="field-error">' + esc((err && err.message) || 'Couldn\u2019t suggest times \u2014 try again.') + '</p>';
     });
   }
 
@@ -906,7 +979,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
   function presentationsHtml(){
     var off = canTalk() ? '' : ' disabled title="' + NOT_MEMBER + '"';
     var html = '<div class="detail-abstract-label">Presentations' +
-      (editing === 'talk:new' ? '' : ' <button class="btn-text detail-inline-edit" type="button" data-talk="new"' + off + '>+ Add presentation</button>') + '</div>';
+      (editing === 'talk:new' ? '' : act('<button class="btn-text detail-inline-edit" type="button" data-talk="new"' + off + '>+ Add presentation</button>')) + '</div>';
     if (editing === 'talk:new') html += talkFormHtml();
     if (!talks.length && editing !== 'talk:new') return html + (groupTalks.length ? groupTalksHtml() : missing());
     html += '<ul class="talk-list">' + talks.map(function(t){
@@ -1090,6 +1163,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       el('linkSave').addEventListener('click', saveLink);
     } else if (editing === 'meeting') {
       el('meetingSave').addEventListener('click', function(){ saveMeeting(false); });
+      el('pmSuggest').addEventListener('click', suggestTimes);
+      el('pmSuggestions').addEventListener('click', function(e){
+        var b = e.target.closest('.pm-slot'); if (!b) return;
+        el('pmDay').value = b.getAttribute('data-day'); el('pmTime').value = b.getAttribute('data-time');
+        Array.prototype.forEach.call(el('pmSuggestions').querySelectorAll('.pm-slot'), function(x){ x.classList.toggle('is-picked', x === b); });
+      });
       if (el('meetingRemove')) el('meetingRemove').addEventListener('click', function(){ saveMeeting(true); });
     } else if (editing === 'slack') {
       channelField = wireChannelField('save', card.slackChannel || '', { id: projectId, board: boardId || null });

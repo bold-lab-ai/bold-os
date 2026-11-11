@@ -23,7 +23,7 @@ window.BoldMdField = (function(){
   var TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/svg+xml'];
   var MAX_MB = 10;
   var HINT = {
-    markdown: 'Markdown: **bold**, *italic*, [links](https://…), - lists, @ to tag someone.',
+    markdown: 'Markdown: **bold**, *italic*, [links](https://…), - lists, $x^2$ for maths, @ to tag someone.',
     abstract: 'Plain text, with $inline$ or $$block$$ LaTeX.'
   };
   var RENDER = {

@@ -233,6 +233,16 @@ service cloud.firestore {
     }
     // The join form's choices (join.html, read before signing in) and, for PIs and
     // admins only, the Slack invite link and the welcome email's text.
+    // Who writes the lab's home letters (Settings › BOLD Agent, settings.html): BOLD LLM (Claude until
+    // Sofya runs) or the rule-based letter for everyone; the lab reads it, PIs and admins set it.
+    match /settings/homeLetter {
+      allow read: if isSignedIn();
+      // refresh: how often BOLD LLM writes them (functions/home-letter.js REFRESH).
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'refresh', 'updatedAt', 'updatedBy'])
+        && (!('writer' in request.resource.data) || request.resource.data.writer in ['rules', 'claude'])
+        && (!('refresh' in request.resource.data) || request.resource.data.refresh in ['daily', 'twice', 'working'])
+        && request.resource.data.updatedBy == email();
+    }
     match /settings/joinForm {
       allow read: if true;
       allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['roles', 'pillars', 'updatedAt', 'updatedBy'])
@@ -563,7 +573,9 @@ service cloud.firestore {
         }
         match /comments/{cid} {
           allow read: if seesProject(cardId);
+          // Made a conversation (functions/comment-conversation.js): it goes on there.
           allow create: if seesProject(cardId) && exists(/databases/$(database)/documents/projectWorkspaces/$(cardId)/work/$(id)) &&
+            !exists(/databases/$(database)/documents/conversations/$('cm-card-' + cardId + '-' + id)) &&
             request.resource.data.by.email == email() && !('editedAt' in request.resource.data) && validTalk(request.resource.data);
           allow update: if resource.data.by.email == email() && request.resource.data.by == resource.data.by &&
             request.resource.data.at == resource.data.at && request.resource.data.editedAt is number && validTalk(request.resource.data);
@@ -771,6 +783,8 @@ service cloud.firestore {
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
           && ('parent' in request.resource.data
             ? request.resource.data.parent is string && exists(/databases/$(database)/documents/guides/$(slug)/comments/$(request.resource.data.parent))
+              // A thread made a conversation goes on there (comment-conversation.js).
+              && !('conversation' in get(/databases/$(database)/documents/guides/$(slug)/comments/$(request.resource.data.parent)).data)
             // On a proposed change: its discussion.
             : 'proposalId' in request.resource.data
             ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/guides/$(slug)/proposals/$(request.resource.data.proposalId))
@@ -855,6 +869,13 @@ service cloud.firestore {
         && d.createdBy == email().lower() && d.at == request.time && d.source == 'site'
         && d.get('viaAgent', false) is bool && okVotes(d);
     }
+    // Edit (conversations-forum.js): your own message written on the site, its text only, said as edited (editedAt).
+    function editsMyText() {
+      return resource.data.get('createdBy', '') == email().lower() && resource.data.get('source', '') == 'site'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['body', 'editedAt'])
+        && request.resource.data.body is string && request.resource.data.body.size() > 0 && request.resource.data.body.size() <= 10000
+        && request.resource.data.editedAt == request.time;
+    }
     // A conversation brought in from a private Slack channel or group DM keeps that channel's
     // visibility: only its members (readers, Slack user ids, as the sign-in carries) read it and
     // its replies, PIs and admins included only if they're in it (slack-thread.js saveThread).
@@ -862,15 +883,49 @@ service cloud.firestore {
     // `private` is on every conversation (no default: a list must filter on it, or on readers, to be allowed).
     function seesConversation(d) { return may('conversations', 'view') && (d.private == false || slackUid() in d.readers); }
     function seesConversationId(pid) { return seesConversation(get(/databases/$(database)/documents/conversations/$(pid)).data); }
+    // Who can read a conversation (conversations-forum.js, Who can read it › Change): its starter (or whoever brought
+    // it in), a PI or an admin, among those who can read it now; open to whoever sees Conversations, or private to
+    // readers (Slack user ids), the one changing it among them. accessTell: whether to tell those it newly reaches
+    // (slack-thread.js onConversationAccess).
+    function starterOf(d) { return d.get('createdBy', '') != '' ? d.get('createdBy', '') : d.get('broughtBy', {}).get('email', ''); }
+    function changesWhoReads() {
+      return (starterOf(resource.data).lower() == email().lower() || hasFullWrite())
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['private', 'readers', 'accessBy', 'accessByName', 'accessAt', 'accessTell'])
+        && request.resource.data.private is bool && request.resource.data.readers is list && request.resource.data.readers.size() <= 500
+        && (request.resource.data.private == false || slackUid() in request.resource.data.readers)
+        && request.resource.data.accessBy == email().lower() && request.resource.data.accessAt == request.time
+        && request.resource.data.accessByName is string && request.resource.data.accessByName.size() <= 200
+        && request.resource.data.get('accessTell', false) is bool;
+    }
     match /conversations/{pid} {
       allow read: if seesConversation(resource.data);
-      // Started on the site: always open to everyone who sees Conversations (private: false).
+      // One that isn't there yet, to whoever sees Conversations: a card watches for its own (card-talk.js).
+      allow get: if resource == null && may('conversations', 'view');
+      // Started on the site: open to everyone who sees Conversations (private: false), or private to readers
+      // (Slack ids), its starter among them: only them, or them and the people they chose.
       allow create: if may('conversations', 'edit') && okMessage(request.resource.data)
-        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'private'])
-        && request.resource.data.private == false
+        && request.resource.data.keys().hasOnly(['title', 'body', 'name', 'createdBy', 'at', 'source', 'viaAgent', 'votes', 'private', 'readers', 'project', 'projectTitle'])
+        && (request.resource.data.private == false && request.resource.data.get('readers', []).size() == 0
+          || request.resource.data.private == true && request.resource.data.readers is list && request.resource.data.readers.size() <= 500 && slackUid() in request.resource.data.readers)
+        // About a project (its Conversations tab, project-talk.js): one its poster sees.
+        && (!('project' in request.resource.data) || (request.resource.data.project is string && request.resource.data.project.size() <= 80
+          && seesProject(request.resource.data.project) && request.resource.data.get('projectTitle', '') is string && request.resource.data.get('projectTitle', '').size() <= 300))
         && request.resource.data.title is string && request.resource.data.title.size() > 0 && request.resource.data.title.size() <= 200;
-      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && onlyMyVote();
+      allow update: if may('conversations', 'edit') && seesConversation(resource.data) && (onlyMyVote() || changesWhoReads() || editsMyText());
       allow delete: if may('conversations', 'edit') && seesConversation(resource.data) && (resource.data.createdBy == email().lower() || hasFullWrite());
+      // Invitations (conversations-forum.js Invite; slack-thread.js onConversationInvite tells them): by whoever reads
+      // it, to people who can: an open one's anyone, a private one's readers.
+      match /invites/{iid} {
+        allow read: if seesConversationId(pid);
+        allow create: if may('conversations', 'edit') && seesConversationId(pid)
+          && request.resource.data.keys().hasOnly(['to', 'by', 'byName', 'at'])
+          && request.resource.data.by == email().lower() && request.resource.data.at == request.time
+          && request.resource.data.byName is string && request.resource.data.byName.size() <= 200
+          && request.resource.data.to is list && request.resource.data.to.size() > 0 && request.resource.data.to.size() <= 50
+          && (get(/databases/$(database)/documents/conversations/$(pid)).data.private == false
+            || request.resource.data.to.toSet().difference(get(/databases/$(database)/documents/conversations/$(pid)).data.readers.toSet()).size() == 0);
+        allow update, delete: if false;
+      }
       match /messages/{mid} {
         allow read: if seesConversationId(pid);
         allow create: if may('conversations', 'edit') && seesConversationId(pid) && okMessage(request.resource.data)
@@ -878,7 +933,7 @@ service cloud.firestore {
           && request.resource.data.get('branch', false) is bool
           && exists(/databases/$(database)/documents/conversations/$(pid))
           && (request.resource.data.parent == pid || exists(/databases/$(database)/documents/conversations/$(pid)/messages/$(request.resource.data.parent)));
-        allow update: if may('conversations', 'edit') && seesConversationId(pid) && onlyMyVote();
+        allow update: if may('conversations', 'edit') && seesConversationId(pid) && (onlyMyVote() || editsMyText());
         allow delete: if may('conversations', 'edit') && seesConversationId(pid) && (resource.data.createdBy == email().lower() || hasFullWrite());
       }
     }
@@ -904,9 +959,19 @@ service cloud.firestore {
     // before actions that reach outside BOLD.OS. Theirs alone, keyed by their uid.
     match /prefs/{userId} {
       allow read: if isSignedIn() && request.auth.uid == userId;
+      // skipConfirm (bold.js confirmAction) and homeLetter: who writes their home letter (profile › Agents):
+      // BOLD LLM (functions/bold-llm.js) or the rule-based one the page writes.
       allow create, update: if isSignedIn() && request.auth.uid == userId
-        && request.resource.data.keys().hasOnly(['skipConfirm', 'at'])
-        && request.resource.data.skipConfirm is bool && request.resource.data.at is number;
+        && request.resource.data.keys().hasOnly(['skipConfirm', 'homeLetter', 'at'])
+        && (!('skipConfirm' in request.resource.data) || request.resource.data.skipConfirm is bool)
+        && (!('homeLetter' in request.resource.data) || request.resource.data.homeLetter in ['bold', 'rules'])
+        && request.resource.data.at is number;
+    }
+    // Each person's home letter, written by BOLD LLM (functions/bold-llm.js) and shown on their home
+    // page: theirs alone to read; only the server writes it.
+    match /homeLetters/{owner} {
+      allow read: if isSignedIn() && email().lower() == owner;
+      allow write: if false;
     }
 
     // A person's read points (read-point.js): which version of a document they
@@ -950,6 +1015,8 @@ service cloud.firestore {
           && request.resource.data.text is string && request.resource.data.text.size() > 0 && request.resource.data.text.size() <= 2000
           && ('parent' in request.resource.data
             ? request.resource.data.parent is string && exists(/databases/$(database)/documents/handbook/$(slug)/comments/$(request.resource.data.parent))
+              // A thread made a conversation goes on there (comment-conversation.js).
+              && !('conversation' in get(/databases/$(database)/documents/handbook/$(slug)/comments/$(request.resource.data.parent)).data)
             // On a proposed change: its discussion.
             : 'proposalId' in request.resource.data
             ? request.resource.data.proposalId is string && exists(/databases/$(database)/documents/handbook/$(slug)/proposals/$(request.resource.data.proposalId))

@@ -30,7 +30,10 @@ window.BoldProjectInvite = (function(){
     var people = o.people() || [];
     var pending = (invites || []).filter(function(i){ return i.status === 'open'; });
     var asks = (invites || []).filter(function(i){ return i.status === 'asked'; });
+    // Invite someone: the People row's action, on its right (project.css detail-act); what it lists, and its form, below.
     return '<div class="pj-inv">' +
+      (open && can ? '' : '<span class="detail-act"><button type="button" class="btn-text pj-inv-open"' + (can ? '' : ' disabled title="' + esc(o.notEditor || 'Only the project’s submitter, authors, PIs and admins invite people') + '"') + '>Invite someone</button></span>' +
+          (msg && !open ? '<span class="detail-hint">' + esc(msg) + '</span>' : '')) +
       (can && asks.length ? '<ul class="pj-inv-list">' + asks.map(function(i){
         return '<li>' + esc(i.name || i.email) + ' asks to join <span class="detail-muted">· ' + when(i.at) + '</span>' +
           ' <button type="button" class="btn-text pj-inv-ask-yes" data-invite="' + esc(i.id) + '" data-name="' + esc(i.name || i.email) + '"' + (busy ? ' disabled' : '') + '>Accept</button>' +
@@ -44,9 +47,7 @@ window.BoldProjectInvite = (function(){
       (open && can ? '<div class="pj-inv-form"><label>Their email<input type="email" class="pj-inv-email" list="pjInvPeople" autocomplete="off" placeholder="Name or email"></label>' +
           '<datalist id="pjInvPeople">' + people.map(function(p){ return '<option value="' + esc(p.email) + '">' + esc(p.name) + '</option>'; }).join('') + '</datalist>' +
           (msg ? '<p class="st-error">' + esc(msg) + '</p>' : '') +
-          '<div class="event-form-actions"><button type="button" class="btn-box is-primary pj-inv-send"' + (busy ? ' disabled' : '') + '>Invite</button><button type="button" class="btn-box pj-inv-cancel">Cancel</button></div></div>'
-        : '<button type="button" class="btn-text pj-inv-open"' + (can ? '' : ' disabled title="' + esc(o.notEditor || 'Only the project’s submitter, authors, PIs and admins invite people') + '"') + '>Invite someone</button>' +
-          (msg && !open ? '<span class="detail-hint">' + esc(msg) + '</span>' : '')) +
+          '<div class="event-form-actions"><button type="button" class="btn-box is-primary pj-inv-send"' + (busy ? ' disabled' : '') + '>Invite</button><button type="button" class="btn-box pj-inv-cancel">Cancel</button></div></div>' : '') +
       '</div>';
   }
   function send(){

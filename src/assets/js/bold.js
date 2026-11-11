@@ -226,7 +226,8 @@
     if (!u) return Promise.reject(new Error('Sign in first.'));
     skipConfirm = !!on;
     try { localStorage.setItem(skipKey(), on ? '1' : '0'); } catch (e){}
-    return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).set({ skipConfirm: !!on, at: Date.now() });
+    // Merged: prefs also holds homeLetter (profile › Agents).
+    return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).set({ skipConfirm: !!on, at: Date.now() }, { merge: true });
   };
   // A proposed change (the BOLDiquette, a guide, a skill, a tool) tells every PI and admin on
   // Slack when it's proposed, edited, withdrawn or decided (functions/index.js onProposed,
@@ -282,7 +283,8 @@
       return new Promise(function(resolve){
         var d = document.createElement('dialog');
         d.className = 'confirm-dialog';
-        d.innerHTML = '<h2>' + esc(o.title || 'Go ahead?') + '</h2>' +
+        // o.warn: a risk to weigh before going ahead (e.g. a private Slack channel's text reaching more people).
+        d.innerHTML = '<h2>' + esc(o.title || 'Go ahead?') + '</h2>' + (o.warn ? '<p class="confirm-warn" role="alert">' + esc(o.warn) + '</p>' : '') +
           ((o.effects || []).length ? '<p>This will:</p><ul>' + o.effects.map(function(e){
             return e.key ? '<li class="confirm-opt"><label><input type="checkbox" checked data-key="' + esc(e.key) + '"> ' + esc(e.text) + '</label></li>' : '<li>' + esc(e.text || e) + '</li>';
           }).join('') + '</ul>' : '') +
@@ -519,6 +521,8 @@
           '<ul class="mast-menu" id="mastMenu" role="menu" hidden>' +
             '<li role="none" class="mast-menu-who">Signed in as <strong>' + who + '</strong></li>' +
             '<li role="none"><a role="menuitem" href="profile.html">Profile</a></li>' +
+            // Your group, and changing it (#278): findable from every page.
+            '<li role="none"><a role="menuitem" href="group-request.html" id="mastGroupItem">' + groupItemText() + '</a></li>' +
             '<li role="none"><button role="menuitem" type="button" id="mastSignOutBtn">Sign out</button></li>' +
           '</ul>' +
         '</div>';
@@ -536,6 +540,15 @@
       region.querySelector('#mastSignInBtn').addEventListener('click', BOLD.signIn);
     }
   }
+
+  // The account menu's link to group-request.html, naming the group you're in once it's known.
+  function groupItemText(){
+    var g = BOLD.myGroup && BOLD.myGroup();
+    return 'Change your group' + (g && LEVEL_NAMES[g] ? ' <span class="mast-menu-note">(you’re ' + esc(LEVEL_NAMES[g]) + ')</span>' : '');
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    BOLD.onAccess(function(){ var a = document.getElementById('mastGroupItem'); if (a) a.innerHTML = groupItemText(); });
+  });
 
   // A page's action for the branch you're on, beside Back to main (pages/guide.js: Rebase on
   // main, on your own proposal when main has moved on): { label, go } or null.
@@ -623,6 +636,8 @@
     { label: 'Agent skill', href: 'skill.html?new', can: pi },
     { label: 'Agent tool', href: 'tool.html?new', can: may('tools', 'edit') },
     { head: 'Ask or offer' },
+    // #278: people moved to a lower group couldn't find how to ask for theirs back.
+    { label: 'Change your group', href: 'group-request.html', can: function(){ return BOLD.myGroup() === 'exec' ? 'You’re in BOLD-exec, the top group' : ''; } },
     { label: 'Ask for a letter', href: 'letters.html#ask', can: may('service-desk', 'edit') },
     { label: 'Offer an introduction', href: 'introductions.html#offer', can: may('service-desk', 'edit') },
     { label: 'A paper for internal review', href: 'audit-board.html', can: may('ml-cycle', 'edit') },
@@ -649,8 +664,9 @@
         var t = [todo ? todo + ' waiting on you' : '', unread ? (unread >= 100 ? '100+' : unread) + ' unread' : ''].filter(Boolean).join(', ');
         t = t ? 'Notifications: ' + t : 'Notifications';
         link.title = t; link.setAttribute('aria-label', t);
-        // For the masthead's cat (eggs.js): the count, and whether it's known yet (the inbox heard from).
-        BOLD.bell = { n: n, ready: heard };
+        // For the masthead's cat (eggs.js) and the home page's Notifications (pages/index.js): the count, whether it's
+        // known yet (the inbox heard from), and its two parts.
+        BOLD.bell = { n: n, ready: heard, todo: todo, unread: unread };
         try { document.dispatchEvent(new CustomEvent('bold:bell', { detail: BOLD.bell })); } catch (e){}
       };
       BOLD.setTodoCount = function(n){
@@ -757,38 +773,66 @@
     BOLD.onAccess(draw);
   }
 
-  // Light or dark (the dark block in bold.css): the masthead's sun/moon button, showing the theme
-  // in use. The choice is kept in localStorage (boldTheme) and applied before the page paints by
-  // the line at the top of base.njk; other open tabs follow it.
+  // The theme: the masthead's sun/moon button shows the one in use, and opens a menu choosing Light, Dark
+  // or Auto (light from sunrise to sunset in London, dark otherwise: sun.js, inlined in base.njk). The choice is
+  // kept in localStorage (boldTheme: light, dark, auto, or the lamp) and applied before the page paints by the
+  // line at the top of base.njk; Auto changes over at sunrise and sunset on an open page; other tabs follow.
+  var THEMES = [['light', 'Light'], ['dark', 'Dark'], ['auto', 'Auto']];
   function mountTheme(){
     var btn = document.getElementById('themeToggle'), root = document.documentElement;
     if (!btn) return;
+    var box = btn.parentNode, menu = document.getElementById('themeMenu'), timer = null;
+    var stored = function(){ try { return localStorage.getItem('boldTheme') || 'light'; } catch (e){ return 'light'; } };
+    var mode = stored();
     var show = function(){
-      var dark = root.getAttribute('data-theme') === 'dark', lamp = root.getAttribute('data-theme') === 'lamp';
-      btn.setAttribute('aria-pressed', String(dark));
-      btn.title = lamp ? 'Paper under a lamp. Click to go back.' : dark ? 'Switch to the light theme' : 'Switch to the dark theme';
+      var t = root.getAttribute('data-theme'), dark = t === 'dark';
+      btn.title = t === 'lamp' ? 'Paper under a lamp. Choose a theme to go back.' :
+        'Theme: ' + (mode === 'auto' ? 'Auto (' + (dark ? 'dark, the sun is down' : 'light, the sun is up') + ')' : dark ? 'Dark' : 'Light');
     };
-    var set = function(dark){
-      if (dark) root.setAttribute('data-theme', 'dark'); else root.removeAttribute('data-theme');
+    // Applies the choice (and, for Auto, sets a timer to the next sunrise or sunset).
+    var apply = function(){
+      clearTimeout(timer); timer = null;
+      var t = mode;
+      if (mode === 'auto') {
+        var now = Date.now();
+        t = window.boldSunDark && window.boldSunDark(now) ? 'dark' : 'light';
+        if (window.boldSunNext) timer = setTimeout(apply, Math.min(window.boldSunNext(now) - now + 1000, 864e5));
+      }
+      if (t === 'dark' || t === 'lamp') root.setAttribute('data-theme', t); else root.removeAttribute('data-theme');
       show();
     };
-    show();
+    var choose = function(m){ mode = m; try { localStorage.setItem('boldTheme', m); } catch (e){} apply(); };
+    var draw = function(){
+      menu.innerHTML = '<li role="none" class="mast-menu-head">Theme</li>' + THEMES.map(function(o){
+        var on = mode === o[0];
+        return '<li role="none"><button type="button" role="menuitemradio" aria-checked="' + on + '" class="mast-theme-opt" data-theme-mode="' + o[0] + '">' +
+          '<span class="mt-tick" aria-hidden="true">' + (on ? '✓' : '') + '</span><span>' + esc(o[1]) +
+          (o[0] === 'auto' ? '<span class="mt-note">Light at dawn, dark at dusk</span>' : '') + '</span></button></li>';
+      }).join('');
+    };
+    var open = function(yes){ if (yes) draw(); menu.hidden = !yes; btn.setAttribute('aria-expanded', String(yes)); };
+    apply();
     var clicks = [];
     btn.addEventListener('click', function(e){
+      e.stopPropagation();
       clicks = clicks.filter(function(t){ return e.timeStamp - t < 4000; }).concat(e.timeStamp);
-      if (clicks.length >= 10) {   // easter egg (eggs.js): paper under a lamp, kept until the next click
-        clicks = [];
-        root.setAttribute('data-theme', 'lamp');
-        show();
-        try { localStorage.setItem('boldTheme', 'lamp'); } catch (e){}
+      if (clicks.length >= 10) {   // easter egg (eggs.js): paper under a lamp, kept until a theme is chosen
+        clicks = []; open(false); choose('lamp');
         return;
       }
-      // From the lamp, back to light.
-      var dark = root.getAttribute('data-theme') !== 'dark' && root.getAttribute('data-theme') !== 'lamp';
-      set(dark);
-      try { localStorage.setItem('boldTheme', dark ? 'dark' : 'light'); } catch (e){}
+      open(menu.hidden);
     });
-    window.addEventListener('storage', function(e){ if (e.key !== 'boldTheme') return; if (e.newValue === 'lamp') { root.setAttribute('data-theme', 'lamp'); show(); } else set(e.newValue === 'dark'); });
+    menu.addEventListener('click', function(e){
+      var o = e.target.closest && e.target.closest('[data-theme-mode]');
+      if (!o) return;
+      choose(o.getAttribute('data-theme-mode')); open(false); btn.focus();
+    });
+    document.addEventListener('click', function(e){ if (!box.contains(e.target)) open(false); });
+    document.addEventListener('focusin', function(e){ if (!box.contains(e.target)) open(false); });
+    box.addEventListener('keydown', function(e){ if (e.key === 'Escape' && !menu.hidden) { open(false); btn.focus(); } });
+    // A laptop asleep past sunset: check again when the page is looked at.
+    document.addEventListener('visibilitychange', function(){ if (!document.hidden && mode === 'auto') apply(); });
+    window.addEventListener('storage', function(e){ if (e.key !== 'boldTheme') return; mode = e.newValue || 'light'; apply(); if (!menu.hidden) draw(); });
   }
 
   // Called right after the masthead markup.
@@ -897,6 +941,11 @@
   BOLD.cannotReason = function(area, what){
     var level = levelFor(area, what || 'view');
     return level === 'none' ? 'Nobody can do this here.' : 'For ' + LEVEL_NAMES[level] + ' and above (BOLDiquette › Who can do what).';
+  };
+  // Who may view | edit `area`, in words: "BOLD-associate and above" (a conversation's Who can read it).
+  BOLD.whoCan = function(area, what){
+    var level = levelFor(area, what || 'view');
+    return level === 'none' ? 'nobody' : level === 'everyone' ? 'everyone signed in' : LEVEL_NAMES[level] + ' and above';
   };
   BOLD.myGroup = function(){ return access ? access.group : null; };
   // The event and series levels (`visibleTo`) the viewer sees: from 'public' (anyone, even signed out)
@@ -1557,12 +1606,6 @@
       if (shell.classList.contains('is-nav-open')) { closeNav(); } else { openNav(); }
     });
     if (backdrop) backdrop.addEventListener('click', closeNav);
-    // Clicking the wordmark takes you home; land there with the menu
-    // retracted rather than however it happened to be left on this page.
-    var wordmark = document.querySelector('.wordmark');
-    if (wordmark) wordmark.addEventListener('click', function(){
-      try { localStorage.setItem('boldNavCollapsed', '1'); } catch (e){}
-    });
     if (sidebar){
       Array.prototype.slice.call(sidebar.querySelectorAll('.nav-link, .nav-group-label')).forEach(function(a){
         a.addEventListener('click', closeNav);

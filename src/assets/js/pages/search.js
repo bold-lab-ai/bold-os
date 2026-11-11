@@ -1,7 +1,7 @@
 // Search results (search.html?q=&in=), from the masthead's box (search-box.js).
 // Everything the signed-in person can read, loaded here and searched in the page:
 // the BOLDiquette's and the guides' parts, skills, events with their sessions and
-// talks, projects (getAllProjects), people (members), papers on the review board, and comments,
+// talks, projects (getAllProjects), people (members), papers on the review board, conversations and comments,
 // ranked by search-rank.js (BoldSearchRank: whole words, title first; shared with the agents'
 // search). The sections down the side (BoldSearch.SCOPES) show how many results each has and pick one.
 (function(){
@@ -116,6 +116,22 @@
         return cs.map(function(c){ return item(c.x.title, c.boardLabel, c.x.abstractText || c.x.abstract, cardHref(c)); });
       });
     },
+    // Conversations (conversations.html): each thread as one result, its post and replies together;
+    // the open ones and the private ones they're in (firestore.rules seesConversation).
+    conversations: function(){
+      var u = firebase.auth().currentUser, slackId = '', c = db.collection('conversations');
+      ((u && u.providerData) || []).forEach(function(p){ if (p.providerId === 'oidc.slack') slackId = p.uid; });
+      return Promise.all([c.where('private', '==', false).get(), slackId ? c.where('readers', 'array-contains', slackId).get() : Promise.resolve({ docs: [] })]).then(function(r){
+        var seen = {}, docs = r[0].docs.concat(r[1].docs).filter(function(d){ return !seen[d.id] && (seen[d.id] = true); });
+        return Promise.all(docs.map(function(d){
+          var x = d.data();
+          return d.ref.collection('messages').get().then(function(m){ return m.docs.map(function(y){ return y.data().body; }); }, function(){ return []; }).then(function(replies){
+            var where = [x.name, x.projectTitle, x.private ? 'private' : ''].filter(Boolean).join(' · ') || 'Conversations';
+            return item(x.title, where, [x.body].concat(replies).join(' '), 'conversations.html#post=' + encodeURIComponent(d.id));
+          });
+        }));
+      });
+    },
     comments: function(){
       return Promise.all([db.collectionGroup('comments').get(), allCards(), db.collection('guides').get(), db.collection('handbook').get()]).then(function(r){
         var titles = {};
@@ -164,9 +180,10 @@
     if (!q) { list.innerHTML = '<p class="proj-msg">Type in the search box at the top.</p>'; return; }
     var want = show ? [show] : keys, loading = want.some(function(k){ return !done[k]; });
     // Every word matching comes first; then, if nothing does anywhere, the closest.
-    var all = [].concat.apply([], want.map(function(k){ return hits(k).map(function(h){ return { it: h.item, s: h.score, partial: h.partial, key: k }; }); }));
+    var all = [].concat.apply([], want.map(function(k){ return hits(k).map(function(h){ return { it: h.item, s: h.score, t: h.tier || 0, partial: h.partial, key: k }; }); }));
     if (all.some(function(h){ return !h.partial; })) all = all.filter(function(h){ return !h.partial; });
-    all.sort(function(a, b){ return b.s - a.s; });
+    // The whole phrase before its words, in every section alike (search-rank.js tier).
+    all.sort(function(a, b){ return b.t - a.t || b.s - a.s; });
     var partial = all.length && all[0].partial;
     var broke = want.filter(function(k){ return failed[k]; }).map(function(k){ return BoldSearch.scope(k).label; });
     // Easter egg (eggs.js): sudo. Nothing is logged; the rules decide, as ever.

@@ -3,7 +3,7 @@
 // belong: the 404 page (404.njk), `sudo` in search (pages/search.js), the lamp theme
 // (mountTheme, bold.js), the deadline's shiver (markdown.js), the Lineage engraving
 // (pages/network.js) and \bold in KaTeX (card-model.js).
-// Here: the console, Reviewer 2, milestone numbers, the birthday, the Matrix (`redpill`), eXit (`exit`) and
+// Here: the console, Reviewer 2, milestone numbers, the birthday, the Matrix (at 01:24), eXit (`exit`) and
 // the masthead's cat at inbox zero.
 // Their styles are at the end of bold.css.
 (function(){
@@ -77,14 +77,19 @@
     if (mast) mast.title = 'Happy birthday, BOLD.';
   }
 
-  // Type `redpill` (not in a field): the whole site in green on black, glyphs raining behind it.
+  // The Matrix (from 01:24's knock or hints): the whole site in green on black, glyphs raining behind it.
   // `bluepill`, or the pill at the bottom right, wakes you up. Kept across pages (boldMatrix).
   var typed = '', rain = null;
-  function matrix(on, entering){
+  // night: entered from 01:24's knock or hints (boldMatrixNight): it goes after 30 minutes with nothing done (nightUp).
+  function matrix(on, entering, night){
     try { console.log(on ? '[BOLD] Wake up.' : '[BOLD] Blue pill.'); } catch (e){}
     root.classList.toggle('is-matrix', on);
     try { if (on) localStorage.setItem('boldMatrix', '1'); else localStorage.removeItem('boldMatrix'); } catch (e){}
+    try { if (on && night) localStorage.setItem('boldMatrixNight', '1'); else if (!on) localStorage.removeItem('boldMatrixNight'); } catch (e){}
+    var fromNight = false; try { fromNight = localStorage.getItem('boldMatrixNight') === '1'; } catch (e){}
+    if (on && fromNight) nightUp('matrix', function(){ matrix(false); });
     if (!on) {
+      nightDown('matrix');
       if (rain) { rain.stop(); rain = null; }
       document.querySelectorAll('.mx-pill, .mx-wake, .mx-scan').forEach(function(n){ n.remove(); });
       return;
@@ -293,7 +298,12 @@
       });
     } catch (e){}
   }
-  function converse(){
+  // byItself (at 01:24, after 30 idle minutes): up until 04:00. Touched before then (a click, a tap or a
+  // key), it stays; otherwise it goes at 04:00 without a word, so a tab left open overnight isn't still
+  // up in the morning. Never shown untouched after 04:00: checked every few seconds and the moment the page is
+  // seen again (a sleeping laptop's timers come late), so it's gone before anyone looks.
+  function fourAm(from){ var d = new Date(from); d.setHours(4, 0, 0, 0); if (d.getTime() <= from) d.setDate(d.getDate() + 1); return d.getTime(); }
+  function converse(byItself){
     if (document.querySelector('.mx-term')) return;
     var still = matchMedia('(prefers-reduced-motion: reduce)').matches;
     var term = document.createElement('div');
@@ -304,13 +314,23 @@
     var log = term.querySelector('.mx-log'), form = term.querySelector('.mx-prompt'), input = form.querySelector('input'), queue = [], busy = false;
     var st = { stage: 'knock', name: firstName() }, game = null, thinking = false;
     // The next line waits for you: a click, a tap or a key, once its line has been held.
-    var waiting = null;
-    function stir(){ if (waiting) { var go = waiting; waiting = null; setTimeout(go, 300 + Math.random() * 300); } }   // a beat first, 0.3-0.6 s
+    var waiting = null, touched = !byItself, until = byItself ? fourAm(Date.now()) : 0;
+    function late(){ if (!touched && Date.now() >= until) { close(true); return true; } return false; }
+    var stale = touched ? null : setInterval(late, 5e3);
+    var WAKE = ['visibilitychange', 'focus', 'pageshow'];
+    if (!touched) WAKE.forEach(function(t){ addEventListener(t, late); });
+    function stir(){
+      if (!touched) { if (late()) return; touched = true; clearInterval(stale); WAKE.forEach(function(t){ removeEventListener(t, late); }); }
+      if (waiting) { var go = waiting; waiting = null; setTimeout(go, 300 + Math.random() * 300); }   // a beat first, 0.3-0.6 s
+    }
     ['pointerdown', 'keydown'].forEach(function(t){ addEventListener(t, stir, { passive: true }); });
-    function close(){
+    // at once: no fade (it's late: gone before anyone looks).
+    function close(atOnce){
+      clearInterval(stale); WAKE.forEach(function(t){ removeEventListener(t, late); });
       if (game && game.timer) clearTimeout(game.timer);
       waiting = null;
       ['pointerdown', 'keydown'].forEach(function(t){ removeEventListener(t, stir); });
+      if (atOnce === true) { term.remove(); return; }
       term.classList.add('is-gone'); setTimeout(function(){ term.remove(); }, 600);
     }
     // As in the film: each line alone on the screen, typed at a person's uneven pace, the block cursor on
@@ -357,7 +377,7 @@
     }
     // What a reply's `then` does once its lines are typed.
     function reply(r){
-      var after = { game: play, matrix: function(){ close(); matrix(true, true); }, close: close,
+      var after = { game: play, matrix: function(){ close(); matrix(true, true, byItself); }, close: close,
         rabbit: function(){ location.href = '404.html#rabbit'; } }[r.then];   // the loss curve; served locally too
       say(r.lines || [], after || null);
     }
@@ -411,7 +431,7 @@
     }
     // Always a blank screen first, only the cursor blinking, until you click or press a key: then
     // "Wake up". That click or key also lets the browser play sound, so every blip and knock is heard.
-    // Armed a moment later, so the key that opened it (redpill's last letter, still on its way) isn't it.
+    // Armed a moment later, so the key that opened it (a key still on its way) isn't it.
     log.innerHTML = '<p></p>'; setTimeout(function(){ waiting = opening; }, 0);
   }
   // The film's digital rain. Glyphs sit in fixed cells; nothing slides. A stream is a head moving down a
@@ -504,10 +524,9 @@
   document.addEventListener('keydown', function(e){
     var t = e.target;
     if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
-    if (e.key.length !== 1 || e.metaKey || e.ctrlKey || e.altKey || e.key === ' ') return;   // "red pill" counts too
+    if (e.key.length !== 1 || e.metaKey || e.ctrlKey || e.altKey || e.key === ' ') return;   // "blue pill" counts too
     typed = (typed + e.key.toLowerCase()).slice(-8);
-    if (/redpill$/.test(typed) && !root.classList.contains('is-matrix')) { typed = ''; converse(); }
-    else if (/bluepill$/.test(typed) && root.classList.contains('is-matrix')) { typed = ''; matrix(false); }
+    if (/bluepill$/.test(typed) && root.classList.contains('is-matrix')) { typed = ''; matrix(false); }
     else if (/exit$/.test(typed) && !document.querySelector('.mx-term')) { typed = ''; e.preventDefault(); playExit(); }
   });
   addEventListener('storage', function(e){ if (e.key === 'boldMatrix') matrix(e.newValue === '1'); });
@@ -622,13 +641,21 @@
     term.addEventListener('keydown', function(e){ if (e.key === 'Escape') { e.stopPropagation(); close(); } });
     term.addEventListener('pointerup', function(){ if (!getSelection().toString()) input.focus(); });
   }
-  // For search (pages/search.js: `red pill`).
-  // 01:24. Idle for 30 minutes or more, on any page, the conversation opens by itself; otherwise, on
+  // 01:24. Idle for 30 minutes or more, on any page, the conversation opens by itself (until 04:00, or for good once touched); otherwise, on
   // the homepage, hints (below), and searching with the hint in the box goes into the Matrix.
   // From 01:24 to 01:29 (a background tab's timers may run only once a minute), once a page.
   var IDLE = 30 * 60e3, lastActive = Date.now(), called = false;
+  // The hints and the Matrix from 01:24 go after 30 minutes with nothing done (the knock has its own rule, converse):
+  // checked every half minute, and on the first action after them (a sleeping laptop's timers come late),
+  // which then only closes it.
+  // Counted from the last action or from when it came up, whichever is later (the knock comes after 30 idle minutes).
+  var night = {}, nightTimer = null, nightFrom = 0;
+  var nightIdle = function(){ return Date.now() - Math.max(lastActive, nightFrom) >= IDLE; };
+  function nightUp(k, close){ if (!Object.keys(night).length) nightFrom = Date.now(); night[k] = close; if (!nightTimer) nightTimer = setInterval(function(){ if (nightIdle()) nightGone(); }, 30e3); }
+  function nightDown(k){ delete night[k]; if (!Object.keys(night).length && nightTimer) { clearInterval(nightTimer); nightTimer = null; } }
+  function nightGone(){ Object.keys(night).forEach(function(k){ var f = night[k]; nightDown(k); f(); }); }
   ['pointermove', 'pointerdown', 'keydown', 'scroll', 'touchstart'].forEach(function(t){
-    addEventListener(t, function(){ lastActive = Date.now(); }, { passive: true, capture: true });
+    addEventListener(t, function(){ if (nightTimer && nightIdle()) nightGone(); lastActive = Date.now(); }, { passive: true, capture: true });
   });
   function isHome(){ var p = location.pathname; return /\/$/.test(p) || /\/index\.html$/.test(p); }
   // Hints, as the film gives them, on the homepage until you follow them: now and then the screen drops a
@@ -640,7 +667,9 @@
     if (hinting || root.classList.contains('is-matrix')) return;
     var still = matchMedia('(prefers-reduced-motion: reduce)').matches, timers = [], box = null, was = '', ready = false;
     var later = function(f, ms){ timers.push(setTimeout(f, ms)); };
+    nightUp('hints', function(){ if (hinting) hinting.stop(); });
     hinting = { stop: function(){
+      nightDown('hints');
       timers.forEach(clearTimeout);
       if (box) box.placeholder = was;
       document.removeEventListener('keydown', follow, true); document.removeEventListener('submit', follow, true);
@@ -654,7 +683,7 @@
       if (q && !/rabbit/i.test(q)) return;   // an ordinary search
       e.preventDefault(); e.stopImmediatePropagation();
       box.value = ''; box.blur();
-      hinting.stop(); matrix(true, true);
+      hinting.stop(); matrix(true, true, true);
     }
     document.addEventListener('keydown', follow, true);
     document.addEventListener('submit', follow, true);
@@ -693,7 +722,7 @@
     var d = new Date();
     if (d.getHours() !== 1 || d.getMinutes() < 24 || d.getMinutes() > 29) return;
     called = true;
-    if (Date.now() - lastActive >= IDLE) converse(); else if (isHome()) hints();
+    if (Date.now() - lastActive >= IDLE) converse(true); else if (isHome()) hints();
   }
   setInterval(wakeCheck, 5000);
   // To try it at another hour, in the console: BoldEggs.wake('hints') or BoldEggs.wake('idle').

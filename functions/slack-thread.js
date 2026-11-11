@@ -160,7 +160,7 @@ function threadReplyOf(e){
   return String(e.thread_ts);
 }
 
-module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails }){
+module.exports = function({ db, onCall, onDocumentCreated, onDocumentUpdated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails }){
   const PAGE = SITE_URL + 'conversations.html';
   // A thread newly in Conversations says so in the thread, for everyone in it (pilot conversation-sent;
   // until it's live its testers get it instead). Not when one is refreshed. Never fails the send.
@@ -227,20 +227,24 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     return out;
   }
   // Someone joined or left a private channel (Slack's member_joined_channel / member_left_channel):
-  // the conversations brought in from it follow its members (readers). → how many were updated.
+  // the conversations brought in from it follow its members (readers; slackReaders, the channel's members, kept
+  // for the warning when someone widens who reads it), unless someone set who reads it by hand (accessBy).
+  // → how many were updated.
   async function syncReaders(token, channel){
-    const posts = (await db.collection('conversations').where('slack.channel', '==', String(channel || '')).get()).docs.filter((d) => d.data().private === true);
+    const posts = (await db.collection('conversations').where('slack.channel', '==', String(channel || '')).get()).docs
+      .filter((d) => d.data().private === true || (d.data().slackReaders || []).length);
     if (!posts.length) return 0;
     const readers = await membersOf(token, channel);
     const batch = db.batch();
-    posts.forEach((d) => batch.update(d.ref, { readers }));
+    posts.forEach((d) => batch.update(d.ref, d.data().accessBy || d.data().private !== true ? { slackReaders: readers } : { readers, slackReaders: readers }));
     await batch.commit();
     return posts.length;
   }
 
   // Saves the thread as a post → { id, title, existed }. Sent again, it's refreshed: its text and its Slack
   // replies as they are now (new ones added), its votes and the replies written on BOLD.OS kept.
-  async function saveThread(token, link, team, sender){
+  // about: { project, projectTitle } when brought in from a project's Conversations tab (a new, open thread only).
+  async function saveThread(token, link, team, sender, about){
     const id = postIdOf(link.channel, link.thread), ref = db.collection('conversations').doc(id);
     const had = await ref.get();
     const { t, ch, members } = await readThread(token, link, sender.slackId);
@@ -256,15 +260,17 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     const reply = (r) => ({ parent: id, body: r.text, name: r.who, createdBy: '', at: r.at, source: 'slack' });
     if (had.exists) {
       const old = had.data(), mine = (await ref.collection('messages').where('source', '==', 'slack').get()).size;
-      batch.set(ref, { title, body: t.post.text, slack, private: vis.private, readers: vis.readers, slackReplies: t.replies.length,
-        replies: Math.max(0, (old.replies || 0) - (old.slackReplies != null ? old.slackReplies : mine)) + t.replies.length, refreshedAt: FieldValue.serverTimestamp() }, { merge: true });
+      // Who reads it follows the channel again, unless someone set it by hand (accessBy: Who can read it › Change).
+      batch.set(ref, Object.assign({ title, body: t.post.text, slack, slackReaders: vis.readers, slackReplies: t.replies.length,
+        replies: Math.max(0, (old.replies || 0) - (old.slackReplies != null ? old.slackReplies : mine)) + t.replies.length, refreshedAt: FieldValue.serverTimestamp() },
+        old.accessBy ? {} : { private: vis.private, readers: vis.readers }), { merge: true });
       // Each Slack reply keeps its id (its place in the thread), so its votes stay.
       t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), reply(r), { merge: true }));
       await batch.commit();
       return { id, title, existed: true };
     }
-    batch.create(ref, { title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, private: vis.private, readers: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
-      broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() });
+    batch.create(ref, Object.assign({ title, body: t.post.text, name: t.post.who, createdBy: '', at: t.post.at, source: 'slack', slack, private: vis.private, readers: vis.readers, slackReaders: vis.readers, votes: {}, replies: t.replies.length, slackReplies: t.replies.length,
+      broughtBy: { email: sender.email, name: sender.name || '' }, broughtAt: FieldValue.serverTimestamp() }, about && !vis.private ? about : {}));
     t.replies.forEach((r, i) => batch.set(ref.collection('messages').doc('slack-' + i), Object.assign(reply(r), { votes: {} })));
     try { await batch.commit(); }
     catch (e) { const again = await ref.get(); if (again.exists) return { id, title: again.data().title, existed: true }; throw e; }
@@ -285,8 +291,18 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     if (!(await startsChats(email))) throw new HttpsError('permission-denied', STARTS);
     const link = parseSlackLink((request.data || {}).url);
     if (!link) throw new HttpsError('invalid-argument', 'That isn’t a link to a Slack message: in Slack, a message’s ⋯ menu → Copy link.');
+    // From a project's Conversations tab: about that project, if they see it (its people, or Projects' View).
+    let about = null;
+    if (request.data.project) {
+      const pid = String(request.data.project);
+      if (!/^[A-Za-z0-9_-]{1,80}$/.test(pid)) throw new HttpsError('invalid-argument', 'Which project?');
+      const ws = await db.collection('projectWorkspaces').doc(pid).get();
+      const sees = ws.exists && ((ws.data().members || []).map((e) => String(e).toLowerCase()).indexOf(email) >= 0 || await access.can(email, 'projects', 'view'));
+      if (!sees) throw new HttpsError('permission-denied', 'You can’t see that project.');
+      about = { project: pid, projectTitle: String(ws.data().title || '').slice(0, 300) };
+    }
     const p = await personFor(email);
-    const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) });
+    const token = SLACK_BOT_TOKEN.value(), r = await saveThread(token, link, new URL(String(request.data.url)).origin, { email, name: p.name || '', slackId: p.slackId || await slackIdForEmail(email) }, about);
     await announce(token, link, r.channelName, r, p.name, p.slackId || '');
     return r;
   });
@@ -326,12 +342,37 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     await event.data.ref.set({ doneAt: Date.now(), postId: out.id || '', error: out.error || '' }, { merge: true });
   });
 
+  // Slack ids → their emails (people/{id}.slackId), those known.
+  async function emailsOfSlackIds(ids){
+    const out = [];
+    for (let i = 0; i < ids.length; i += 30) {
+      (await db.collection('people').where('slackId', 'in', ids.slice(i, i + 30)).get()).docs.forEach((p) => out.push(String(p.data().email || '').toLowerCase()));
+    }
+    return out.filter(Boolean);
+  }
   // A reply's post keeps count of its replies (clients can't change it: firestore.rules).
-  // Who's in a conversation: whoever started it (or brought it in from Slack), and whoever replied on BOLD.OS.
+  // Who's in a conversation: whoever started it (or brought it in), and whoever replied on BOLD.OS, or in the
+  // comment thread it was made from (comment-conversation.js); a card's, its maker and assignees too.
   async function peopleIn(pid, post){
     const out = new Set([String(post.createdBy || (post.broughtBy || {}).email || '').toLowerCase()]);
-    (await db.collection('conversations').doc(pid).collection('messages').where('source', '==', 'site').get()).docs
+    // A card's conversation: whoever made the card and whoever's on it, as its comments were told.
+    // An Internal Review card's: its author and both reviewers, as its Discussion was told.
+    const review = /^review\/([^/]+)\/([^/]+)$/.exec(String((post.from || {}).on || ''));
+    if (review) {
+      const r = (await db.collection('boards').doc(review[1]).collection('cards').doc(review[2]).get()).data() || {};
+      [(r.submittedBy || {}).email, (r.reviewers || {}).junior, (r.reviewers || {}).senior].forEach((e) => out.add(String(e || '').toLowerCase()));
+    }
+    const card = /^card\/([^/]+)\/([^/]+)$/.exec(String((post.from || {}).on || ''));
+    if (card) {
+      const c = (await db.collection('projectWorkspaces').doc(card[1]).collection('work').doc(card[2]).get()).data() || {};
+      [(c.by || {}).email].concat(c.assigneeEmails || []).forEach((e) => out.add(String(e || '').toLowerCase()));
+    }
+    (await db.collection('conversations').doc(pid).collection('messages').where('source', 'in', ['site', 'comment']).get()).docs
       .forEach((m) => out.add(String(m.data().createdBy || '').toLowerCase()));
+    // And whoever was invited to it (Invite; onConversationInvite).
+    const invited = [];
+    (await db.collection('conversations').doc(pid).collection('invites').get()).docs.forEach((d) => invited.push(...(d.data().to || [])));
+    (await emailsOfSlackIds(Array.from(new Set(invited)))).forEach((e) => out.add(e));
     out.delete('');
     return Array.from(out);
   }
@@ -339,14 +380,23 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
   // by a Slack DM (pilot conversation-replies).
   const onConversationMessage = onDocumentCreated({ document: 'conversations/{pid}/messages/{mid}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
     const d = event.data && event.data.data();
-    if (!d || d.source === 'slack') return;   // a thread brought in is counted as it's saved
+    // A thread brought in is counted as it's saved; a proposal's decision is counted, and told, where it's made;
+    // a talk with BOLD LLM (functions/bold-llm.js) is counted there, and told to nobody.
+    if (!d || d.source === 'slack' || d.source === 'comment' || d.source === 'proposal' || d.source === 'bold-llm') return;
     const pid = event.params.pid, ref = db.collection('conversations').doc(pid);
-    await ref.set({ replies: FieldValue.increment(1) }, { merge: true }).catch(() => {});
+    // lastAt: when its latest reply came.
+    await ref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
     if (!noteFor) return;
     try {
       const post = (await ref.get()).data() || {};
       const who = String(d.createdBy || '').toLowerCase();
-      const to = (await peopleIn(pid, post)).filter((e) => e !== who);
+      let to = (await peopleIn(pid, post)).filter((e) => e !== who);
+      // A private one: only those who can still read it (its readers; who reads it can change, Who can read it).
+      if (post.private === true) {
+        const readers = new Set(post.readers || []), ok = [];
+        for (const e of to) if (readers.has(await slackIdForEmail(e).catch(() => ''))) ok.push(e);
+        to = ok;
+      }
       if (!to.length) return;
       // Whose message it answers (the post's, or a reply's): they're told it's a reply to theirs, a kind of
       // its own (conversation-reply-mine, notify-kinds.js); everyone else, that someone replied.
@@ -365,7 +415,8 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
       await tell(to.filter((e) => e !== mine), '💬 ' + (d.name || 'Someone') + ' replied in “' + title + '”: <' + url + '|read it>.', 'conversation-replies');
     } catch (err){ logger.warn('Telling a conversation’s people of a reply failed', { pid, error: String(err && err.message || err) }); }
   });
-  // A new conversation: everyone who can see it is told on their Notifications page (not on Slack): all who see
+  // A new conversation: everyone who can see it is told on their Notifications page (not on Slack): one about a
+  // project, its people (its Conversations tab, a card's comments); otherwise all who see
   // Conversations, or a private channel's members alone; not whoever started it.
   const onConversationCreated = onDocumentCreated('conversations/{pid}', async (event) => {
     const d = event.data && event.data.data();
@@ -373,7 +424,14 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     try {
       const pid = event.params.pid, starter = String(d.createdBy || (d.broughtBy || {}).email || '').toLowerCase();
       let to = [];
-      if (d.private === true) {
+      // Started private on the site: its starter chose whether to tell (an invitation, onConversationInvite).
+      if (d.private === true && d.source === 'site') return;
+      // A board card's, made by its page being opened: nothing's been said; its replies are told as they come.
+      if (d.opened === true) return;
+      // About a project (its Conversations tab, or a card's comments): its people, not the whole lab.
+      if (d.project && d.private !== true) {
+        to = (((await db.collection('projectWorkspaces').doc(String(d.project)).get()).data() || {}).members || []).map((e) => String(e).toLowerCase());
+      } else if (d.private === true) {
         const ids = d.readers || [];
         for (let i = 0; i < ids.length; i += 30) {
           (await db.collection('people').where('slackId', 'in', ids.slice(i, i + 30)).get()).docs.forEach((p) => to.push(String(p.data().email || '').toLowerCase()));
@@ -383,10 +441,15 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
         ((await rolesEmails('pis')) || []).concat((await rolesEmails('admins')) || []).forEach((e) => all.add(String(e).toLowerCase()));
         for (const e of all) if (await access.can(e, 'conversations', 'view')) to.push(e);
       }
-      to = to.filter((e) => e && e !== starter);
+      const bringer = String((d.broughtBy || {}).email || '').toLowerCase();
+      to = to.filter((e) => e && e !== starter && e !== bringer);
       const url = PAGE + '#post=' + encodeURIComponent(pid);
-      const by = d.source === 'slack' ? (d.broughtBy || {}).name || 'Someone' : d.name || 'Someone';
-      const text = '🗨️ New conversation: “' + String(d.title || '').replace(/[<>|]/g, '') + '”, ' + (d.source === 'slack' ? 'brought in from ' + ((d.slack || {}).channelName || 'Slack') + ' by ' : 'started by ') + by + '.';
+      const by = d.source === 'slack' || d.source === 'comment' ? (d.broughtBy || {}).name || 'Someone' : d.name || 'Someone';
+      const whence = d.source === 'slack' ? 'brought in from ' + ((d.slack || {}).channelName || 'Slack') + ' by '
+        : d.source === 'comment' ? ((d.from || {}).kind === 'card' ? 'on a card in ' + String((d.from || {}).page || 'a project').replace(/[<>|]/g, '') + ', started by '
+          : 'made from a comment thread on ' + String((d.from || {}).page || 'a page').replace(/[<>|]/g, '') + ' by ')
+        : d.project ? 'about ' + String(d.projectTitle || 'your project').replace(/[<>|]/g, '') + ', started by ' : 'started by ';
+      const text = '🗨️ New conversation: “' + String(d.title || '').replace(/[<>|]/g, '') + '”, ' + whence + by + '.';
       await noteFor(to, { text, href: url, feature: 'conversation-new', source: 'conversations', about: 'conversation:' + pid, ping: false });
     } catch (err){ logger.warn('Telling people of a new conversation failed', { error: String(err && err.message || err) }); }
   });
@@ -406,7 +469,55 @@ module.exports = function({ db, onCall, onDocumentCreated, HttpsError, logger, S
     return true;
   }
 
-  return { slackThread, handleShortcut, onConversationImport, onConversationMessage, onConversationCreated, syncReaders, nudgeMoved };
+  // Who can read a conversation changed by hand (conversations-forum.js, Who can read it › Change; firestore.rules
+  // changesWhoReads), and its changer chose to tell (accessTell, asked in the confirmation): those it newly reaches
+  // are told on their Notifications page (not on Slack): opened, everyone who sees Conversations and couldn't before;
+  // private, the readers added. Not the changer.
+  const onConversationAccess = onDocumentUpdated('conversations/{pid}', async (event) => {
+    const b = event.data && event.data.before.data(), a = event.data && event.data.after.data();
+    if (!a || !b || !noteFor || !a.accessTell || a.accessAt === b.accessAt) return;
+    if (a.private === b.private && JSON.stringify(a.readers || []) === JSON.stringify(b.readers || [])) return;
+    try {
+      const pid = event.params.pid, changer = String(a.accessBy || '').toLowerCase();
+      const emailsOf = emailsOfSlackIds;
+      const before = new Set(b.private === true ? await emailsOf(b.readers || []) : []);
+      let to = [];
+      if (a.private === true) {
+        const had = new Set(b.private === true ? (b.readers || []) : []);
+        to = b.private === true ? await emailsOf((a.readers || []).filter((id) => !had.has(id))) : [];   // open → private reaches nobody new
+      } else if (b.private === true) {
+        const all = new Set((await db.collection('members').get()).docs.map((m) => m.id.toLowerCase()));
+        ((await rolesEmails('pis')) || []).concat((await rolesEmails('admins')) || []).forEach((e) => all.add(String(e).toLowerCase()));
+        for (const e of all) if (!before.has(e) && await access.can(e, 'conversations', 'view')) to.push(e);
+      }
+      to = to.filter((e) => e && e !== changer);
+      if (!to.length) return;
+      const title = String(a.title || 'a conversation').replace(/[<>|]/g, '');
+      const by = String(a.accessByName || 'Someone').replace(/[<>|]/g, '');
+      const text = a.private === true ? '🔓 ' + by + ' shared the conversation “' + title + '” with you.' : '🔓 ' + by + ' opened the conversation “' + title + '” to everyone who sees Conversations.';
+      await noteFor(to, { text, href: PAGE + '#post=' + encodeURIComponent(pid), feature: 'conversation-new', source: 'conversations', about: 'conversation:' + pid, ping: false });
+    } catch (err){ logger.warn('Telling people of a conversation shared with them failed', { error: String(err && err.message || err) }); }
+  });
+
+  // An invitation (conversations-forum.js Invite, or a private chat started with people): each invited, but its
+  // sender, told on Slack and their Notifications page (pilot conversation-invites); from then on they're in it
+  // (peopleIn), so told of its replies. Only those who can read it (firestore.rules checks a private one's readers).
+  const onConversationInvite = onDocumentCreated({ document: 'conversations/{pid}/invites/{iid}', secrets: [SLACK_BOT_TOKEN] }, async (event) => {
+    const d = event.data && event.data.data();
+    if (!d || !Array.isArray(d.to)) return;
+    try {
+      const pid = event.params.pid, post = (await db.collection('conversations').doc(pid).get()).data();
+      if (!post) return;
+      const by = String(d.by || '').toLowerCase();
+      const to = (await emailsOfSlackIds(d.to.slice(0, 50))).filter((e) => e !== by);
+      const url = PAGE + '#post=' + encodeURIComponent(pid);
+      const text = '📨 ' + String(d.byName || 'Someone').replace(/[<>|]/g, '') + ' invited you to the conversation “' + String(post.title || 'a conversation').replace(/[<>|]/g, '') + '”' +
+        (post.private === true ? ' (private)' : '') + ': <' + url + '|join in>.';
+      for (const e of to) await dmByEmail(SLACK_BOT_TOKEN.value(), e, text, 'conversation-invites');
+    } catch (err){ logger.warn('Telling people of an invitation to a conversation failed', { error: String(err && err.message || err) }); }
+  });
+
+  return { slackThread, handleShortcut, onConversationImport, onConversationMessage, onConversationCreated, onConversationAccess, onConversationInvite, syncReaders, nudgeMoved };
 };
 module.exports.parseSlackLink = parseSlackLink;
 module.exports.slackPlain = slackPlain;

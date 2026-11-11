@@ -1398,6 +1398,7 @@ const PILOTS = {
   'conversation-sent': 'A thread sent to Conversations: a reply in it saying so',
   'conversation-moved': 'A reply in Slack to a thread moved to Conversations: a note, to them alone, to reply there',
   'conversation-replies': 'A reply in a conversation you’re in: a DM',
+  'conversation-invites': 'An invitation to a conversation: a DM',
   'notification-pings': 'Notifications: a ping on Slack that there are new ones, instead of each message',
   'channel-alignment': 'Slack channels follow BOLD.OS: removing whoever isn’t meant to be in one, and telling them',
   'rota-swaps': 'Group meeting slot swap requests',
@@ -1713,6 +1714,17 @@ function onProposalDecided(collection, pageUrl){
       const kind = ((after || before) || {}).kind;
       if (!doc.exists && kind !== 'new' && kind !== 'delete') return;
       await resolveProposalComments(collection, event.params.slug, event.params.id, before, after);
+      // Its conversation (comment-conversation.js), if it has one: the decision written into it.
+      const closed = proposalClosed(before, after);
+      if (closed) {
+        const tref = db.collection('conversations').doc('cm-change-' + collection + '-' + event.params.slug + '-' + event.params.id);
+        if ((await tref.get()).exists) {
+          const last = (await tref.collection('messages').orderBy('at', 'desc').limit(1).get()).docs[0];
+          await tref.collection('messages').add({ parent: last ? last.id : tref.id, body: '**' + closed.resolvedWith.charAt(0).toUpperCase() + closed.resolvedWith.slice(1) + '**.',
+            name: closed.resolvedByName || closed.resolvedBy || 'Someone', createdBy: closed.resolvedBy, at: FieldValue.serverTimestamp(), source: 'proposal', votes: {} }).catch(() => {});
+          await tref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true }).catch(() => {});
+        }
+      }
       const title = (doc.exists && doc.data().title) || ((before && before.after) || {}).title || event.params.slug;
       const out = proposalOutcome(before, after, title, pageUrl(event.params.slug));
       if (!out) return;
@@ -2026,7 +2038,7 @@ exports.flushCommentQueue = onSchedule(
   }
 );
 
-// ---------- A board card's conversation (card-talk.js), in Slack, batched ----------
+// ---------- A board card's conversation (talk.js), in Slack, batched ----------
 // A comment on a card (projectWorkspaces/{pid}/work/{id}/comments/{cid}) joins the card's
 // queue (commentQueue/work__{pid}__{id}), sent as the guides' are (flushCommentQueue): one
 // message per person, through pilotSlack ('card-comments'). Who hears: whoever made the card,
@@ -4468,6 +4480,30 @@ function normalizeGpuHours(v){
 // (as every change on the site); { id, action: 'resubmit', gpuHours? } by whoever proposed it, after a
 // decline. Approving sets it up as its proposer asked (its channel, meeting, slides, notes, repository),
 // announces it if they asked, and tells them; declining tells them, with the note.
+// A proposed project's conversation (2026-11-06): conversations/cm-proposal-<card id>, about the project, started as
+// its proposer (its budget and abstract); where the proposer and the PIs and admins discuss it, and where each
+// decision (approved, declined, sent again) is written. Made when first needed, so older proposals have one too.
+// Its decisions are source 'proposal' (onConversationMessage leaves them: the proposer is told by deliver).
+async function proposalThread(id, card){
+  const pid = 'cm-proposal-' + id, ref = db.collection('conversations').doc(pid);
+  if ((await ref.get()).exists) return pid;
+  const prop = card.proposal || {}, by = card.submittedBy || {}, abstract = String(card.abstractText || '').trim();
+  const post = { title: ('Proposal: ' + String(card.title || 'a project')).slice(0, 200),
+    body: '**' + String(card.title || 'A project') + '**, with a compute budget of ' + (Number(prop.gpuHours) || 0).toLocaleString('en-GB') + ' GPU hours.' + (abstract ? '\n\n' + abstract : ''),
+    name: String(by.name || by.email || 'Someone').slice(0, 200), createdBy: String(by.email || '').toLowerCase(), at: prop.at || card.createdAt || Date.now(),
+    source: 'proposal', project: projectIdOf(card, id), projectTitle: String(card.title || '').slice(0, 300), private: false, readers: [], votes: {}, replies: 0 };
+  await ref.create(post).catch((e) => { if (e.code !== 6) throw e; });   // 6: made meanwhile
+  return pid;
+}
+async function proposalNote(id, card, text, email, name){
+  const pid = await proposalThread(id, card), ref = db.collection('conversations').doc(pid);
+  // It goes on with the conversation: an answer to its latest message (as Reply does), not a branch from the post.
+  const last = (await ref.collection('messages').orderBy('at', 'desc').limit(1).get()).docs[0];
+  // `at` a timestamp, as the site's replies' are (one order: Firestore sorts numbers before timestamps).
+  await ref.collection('messages').add({ parent: last ? last.id : pid, body: text, name: String(name || email), createdBy: email, at: FieldValue.serverTimestamp(), source: 'proposal', votes: {} });
+  await ref.set({ replies: FieldValue.increment(1), lastAt: FieldValue.serverTimestamp() }, { merge: true });
+}
+
 exports.projectProposal = onCall(
   { secrets: [SLACK_BOT_TOKEN, GOOGLE_OAUTH, GITHUB_APP], timeoutSeconds: 300 },
   async (request) => {
@@ -4478,6 +4514,8 @@ exports.projectProposal = onCall(
     const ref = db.collection('projects').doc(id), snap = await ref.get();
     if (!snap.exists || !snap.data().proposal) throw new HttpsError('not-found', 'That proposal isn\u2019t there.');
     const card = snap.data(), prop = card.proposal, mine = lowerEmail(card.submittedBy) === email;
+    // Its conversation (made if it isn't yet), for its page.
+    if (d.action === 'thread') return { id: await proposalThread(id, card) };
     if (d.action === 'resubmit'){
       if (!mine) throw new HttpsError('permission-denied', 'Only whoever proposed it can send it again.');
       if (prop.status !== 'declined') throw new HttpsError('failed-precondition', 'It isn\u2019t declined.');
@@ -4486,6 +4524,8 @@ exports.projectProposal = onCall(
       const next = { status: 'proposed', gpuHours: hours, at: Date.now(), by: email };
       await ref.update({ proposal: next, updatedAt: Date.now() });
       await tellProposal(Object.assign({}, card, { proposal: next }), id);
+      await proposalNote(id, card, 'Sent it again, with a budget of ' + (Number(hours) || 0).toLocaleString('en-GB') + ' GPU hours.', email, request.auth.token.name || email)
+        .catch((err) => logger.warn('Writing to a proposal’s conversation failed', { error: String(err.message) }));
       return { ok: true };
     }
     if (!(await isFullWrite(email))) throw new HttpsError('permission-denied', 'Only PIs and admins decide a proposed project.');
@@ -4494,6 +4534,8 @@ exports.projectProposal = onCall(
     const accept = !!d.accept, note = String(d.note || '').trim().slice(0, 1000), name = request.auth.token.name || email;
     const decided = Object.assign({}, prop, { status: accept ? 'approved' : 'declined', decidedBy: email, decidedByName: name, decidedAt: Date.now(), note });
     await ref.update({ proposal: decided, updatedAt: Date.now() });
+    await proposalNote(id, card, (accept ? '**Approved**' : '**Declined**') + (note ? ': ' + note : '.'), email, name)
+      .catch((err) => logger.warn('Writing to a proposal’s conversation failed', { error: String(err.message) }));
     const to = lowerEmail(card.submittedBy), title = card.title || 'Your project';
     if (!accept){
       await deliver([to], { text: name + ' declined your proposed project \u201c' + title + '\u201d' + (note ? ': \u201c' + note + '\u201d' : '.') + ' You can change it and send it again from its page.',
@@ -5162,10 +5204,12 @@ async function requestWork(email, full, person){
   ]);
   joins.forEach(function(d){
     const r = d.data(), inv = r.invitedBy && r.invitedBy.email;
+    // Changes asked for (joinChanges): it waits on the applicant, not whoever decides it.
+    const asked = r.status === 'open' && r.changes && r.changes.status === 'asked';
     add({ kind: 'join', ref: d.ref.path, title: 'Join BOLD: ' + (r.name || 'someone') + (r.role ? ' (' + r.role + ')' : ''), url: SITE_URL + 'join-requests.html#r=' + d.id,
-      by: { name: r.name || '' }, on: r.status === 'open' && inv ? [person(inv, r.invitedBy.name)] : r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [],
-      waiting: r.status === 'open' && !inv ? PIS_ADMINS : '', state: r.status },
-    requestColumn(r.status === 'open', false, r.decidedAt, r.at, now));
+      by: { name: r.name || '' }, on: asked ? [] : r.status === 'open' && inv ? [person(inv, r.invitedBy.name)] : r.decidedBy ? [person(r.decidedBy, r.decidedByName)] : [],
+      waiting: r.status === 'open' && !inv && !asked ? PIS_ADMINS : '', state: asked ? 'changes asked' : r.status },
+    requestColumn(r.status === 'open', asked, r.decidedAt, r.at, now));
   });
   groups.forEach(function(d){
     const r = d.data();
@@ -5888,6 +5932,84 @@ async function syncStudyMeeting(email){
   await ref.set(patch, { merge: true });
   return (await ref.get()).data();
 }
+
+// ---------- Free/busy calendars and suggested meeting times (#323, 2026-11-11) ----------
+// Each person may give a free/busy calendar link (profile › Linked accounts): busyFeeds/{email}
+// { url, at, checkedAt }, server only (Google's public address has their email in it). Only when
+// they're busy is read from it (functions/busy.js), never what, and nothing of it is kept.
+// busyFeed: { action: 'get' } → { url, at } | {}; 'set' { url } → { url, busy: how many busy times in
+// the next 4 weeks } (read once, so a link that doesn't work isn't saved); 'clear'.
+const busy = require('./busy');
+exports.busyFeed = onCall({ timeoutSeconds: 30 }, async (request) => {
+  const email = callerEmail(request), data = request.data || {};
+  const ref = db.collection('busyFeeds').doc(email);
+  if (data.action === 'get'){ const d = await ref.get(); return d.exists ? { url: d.data().url, at: d.data().at || 0 } : {}; }
+  if (data.action === 'clear'){ await ref.delete(); return {}; }
+  if (data.action !== 'set') throw new HttpsError('invalid-argument', 'Unknown action.');
+  const url = busy.okFeedUrl(data.url);
+  if (!url) throw new HttpsError('invalid-argument', 'Give a Google, Outlook or iCloud calendar (iCal) address, starting with https:// or webcal://.');
+  let text;
+  try { text = await busy.fetchIcs(url); } catch (err){ throw new HttpsError('failed-precondition', err.message); }
+  const now = Date.now(), n = busy.busyFrom(text, now, now + 28 * 86400000).length;
+  await ref.set({ url, at: now, checkedAt: now });
+  return { url, busy: n };
+});
+
+// meetingTimes: { id, board?, minutes, every } → { slots: [{ day, time, free, of, clash: [{ name, times }] }],
+// fromCalendar: [names], boldOnly: [names], failed: [names] }. Whoever may set the project's meeting.
+// Counted: the project's Authors (its People get the invitation, and aren't counted), each from their
+// free/busy calendar if they gave one, and from the meetings BOLD.OS knows they have: their other
+// projects', their studies' and the series they joined. Over its next 4 dates, weekdays 09:00–18:00 London (busy.suggest).
+exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
+  const email = callerEmail(request), data = request.data || {};
+  const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
+  if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
+  const cardSnap = await cardRefFor(id, boardId).get();
+  if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
+  const card = cardSnap.data(), pid = projectIdOf(card, id);
+  await requireSeesProject(email, pid);
+  if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can do this.');
+  const minutes = Number(data.minutes), every = Number(data.every);
+  if (!(minutes >= 15 && minutes <= 240) || [1, 2, 3, 4].indexOf(every) < 0) throw new HttpsError('invalid-argument', 'Choose how long it lasts and how often.');
+  // The Authors (or, with none, whoever registered it), once each.
+  const seen = {}, authors = (card.authors && card.authors.length ? card.authors : [card.submittedBy || {}])
+    .map(function(a){ return { email: String(a && a.email || '').trim().toLowerCase(), name: String(a && (a.name || a.email) || '') }; })
+    .filter(function(a){ if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email) || seen[a.email]) return false; seen[a.email] = 1; return true; })
+    .slice(0, 30);
+  if (!authors.length) throw new HttpsError('failed-precondition', 'Add the project’s authors first.');
+  const now = Date.now(), to = now + (4 * every + 1) * 7 * 86400000;
+  const fromCalendar = [], boldOnly = [], failed = [];
+  const people = await Promise.all(authors.map(async function(a){
+    const list = [];
+    const [feed, wsSnap, stSnap, seSnap] = await Promise.all([
+      db.collection('busyFeeds').doc(a.email).get(),
+      db.collection('projectWorkspaces').where('members', 'array-contains', a.email).get(),
+      db.collection('studies').where('everyone', 'array-contains', a.email).get(),
+      db.collection('eventSeries').where('joined', 'array-contains', a.email).get()
+    ]);
+    // The meetings BOLD.OS knows of, but this project's own.
+    wsSnap.docs.concat(stSnap.docs, seSnap.docs).forEach(function(d){
+      const w = d.data();
+      if (d.ref.parent.id === 'projectWorkspaces' && d.id === pid) return;
+      if (!w.meeting || w.pausedAt || w.completedAt) return;
+      busy.meetingBusy(w.meeting, now, to, String(w.eventStart || '').slice(0, 10)).forEach(function(x){ list.push(x); });
+    });
+    if (feed.exists){
+      try {
+        busy.busyFrom(await busy.fetchIcs(feed.data().url), now, to).forEach(function(x){ list.push(x); });
+        fromCalendar.push(a.name);
+        feed.ref.update({ checkedAt: now }).catch(function(){});
+      } catch (err){
+        logger.warn('meetingTimes: a free/busy calendar couldn’t be read', { error: String(err && err.message || err) });
+        failed.push(a.name);
+      }
+    } else boldOnly.push(a.name);
+    return { name: a.name, busy: busy.merge(list) };
+  }));
+  const slots = busy.suggest({ people, minutes, every, today: todayIsoLondon() })
+    .map(function(s){ return Object.assign(s, { of: people.length }); });
+  return { slots, fromCalendar, boldOnly, failed };
+});
 
 // The profile's Studies tab, for the caller's own studies:
 // - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } or null (none:
@@ -6624,6 +6746,24 @@ async function joinSettings(){
   };
 }
 
+// Sends a plain-text email from the lab's Google account (GOOGLE_OAUTH, gmail.send). → '' or why it didn't go.
+async function gmailSend(to, subject, body, what){
+  try {
+    const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw: mimeMessage(to, subject, body) }),
+    });
+    if (res.ok) return '';
+    const j = await res.json().catch(() => ({}));
+    logger.error('Gmail refused', { what, status: res.status, error: j.error && j.error.message });
+    return res.status === 403 ? 'The lab’s Google account can’t send email yet (gmail.send): reconnect it.' : 'Gmail refused it (' + res.status + ').';
+  } catch (e) {
+    if (!(e instanceof HttpsError)) logger.error('Sending email threw', { what, error: String(e) });
+    return e instanceof HttpsError ? e.message : 'Couldn’t reach Gmail.';
+  }
+}
+
 // Sends request id's welcome email, if it's due; records how it went on the request. → { status, error? }
 async function sendWelcome(id){
   const ref = db.collection('joinRequests').doc(id);
@@ -6633,24 +6773,7 @@ async function sendWelcome(id){
   if (r.status !== 'approved' || (r.welcome && r.welcome.status === 'sent')) return { status: (r.welcome && r.welcome.status) || r.status };
   const tries = ((r.welcome && r.welcome.tries) || 0) + 1;
   const mail = welcomeEmail(r, (await joinSettings()).invite);
-  let error = mail.error || '';
-  if (!error) {
-    try {
-      const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + await googleToken(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ raw: mimeMessage(r.email, mail.subject, mail.body) }),
-      });
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        logger.error('sendWelcome: Gmail refused', { id, status: res.status, error: j.error && j.error.message });
-        error = res.status === 403 ? 'The lab’s Google account can’t send email yet (gmail.send): reconnect it.' : 'Gmail refused it (' + res.status + ').';
-      }
-    } catch (e) {
-      error = e instanceof HttpsError ? e.message : 'Couldn’t reach Gmail.';
-      if (!(e instanceof HttpsError)) logger.error('sendWelcome threw', { id, error: String(e) });
-    }
-  }
+  const error = mail.error || await gmailSend(r.email, mail.subject, mail.body, 'sendWelcome ' + id);
   const welcome = error ? { status: 'waiting', error, tries, at: Date.now() } : { status: 'sent', tries, at: Date.now() };
   await ref.update({ welcome });
   return welcome;
@@ -7041,6 +7164,143 @@ exports.decideJoinRequest = onCall(
       } catch (err){ logger.error('decideJoinRequest: joining the invited project failed', { invite: x.id, error: String(err) }); }
     }
     return { status: r.status, welcome: await sendWelcome(d.id) };
+  }
+);
+
+// ---------- Proposing changes to a request to join (#261, 2026-11-07) ----------
+// Whoever decides a request (its inviter; PIs and admins one without an inviter) can propose
+// changes to the applicant's answers instead of approving or declining it: they edit the form
+// itself (and may add a note), and the request stays open, with `changes` { status: 'asked' |
+// 'made', proposed: { field: value } (only what differs), note, by, byName, at, keyHash, madeAt }.
+// The answers stay the applicant's: they aren't signed in (join.html is for people outside BOLD),
+// so they get an email from the lab's account listing the changes, with a one-time link,
+// join.html?changes=<id>&key=<key> (only its sha256 is kept), to their form holding the proposed
+// answers, to accept, adjust and send; sending uses the key up and DMs whoever proposed them.
+const JOIN_CHANGES_NOTE = 1000;
+// The fields that can change (not who invited them: that's who decides), and their names.
+const JOIN_EDITABLE = ['name', 'email', 'links', 'institution', 'role', 'interests', 'basedIn', 'pronouns', 'feedback', 'startDate', 'endDate', 'listOnWebsite', 'pillars'];
+const JOIN_FIELD_NAMES = { name: 'Full name', email: 'Email address', links: 'Links', institution: 'Home institution', role: 'Role at BOLD', interests: 'Research interests',
+  basedIn: 'Based in', pronouns: 'Pronouns', feedback: 'How you like to receive feedback', startDate: 'Start date', endDate: 'End date', listOnWebsite: 'Listed on the BOLD website', pillars: 'Research pillars' };
+const keyHash = (k) => crypto.createHash('sha256').update(String(k || '')).digest('hex');
+// Pure: the answers in `next` (normalized, normalizeJoinRequest) that differ from request q's. → { field: value }
+function joinChangesProposed(q, next){
+  const out = {}, same = (a, b) => JSON.stringify(a === undefined ? '' : a) === JSON.stringify(b === undefined ? '' : b);
+  JOIN_EDITABLE.forEach((k) => {
+    if (next[k] === undefined) return;
+    const was = k === 'pillars' ? (q[k] || []) : k === 'listOnWebsite' ? q[k] === true : q[k];
+    if (!same(was, next[k])) out[k] = next[k];
+  });
+  return out;
+}
+// Pure: may `who` ({ email, full }) propose `proposed` and `note` for request q? → '' or why not.
+function joinChangesRefusal(q, who, note, proposed){
+  if (!q) return 'No such request.';
+  const inviter = !!(q.invitedBy && q.invitedBy.email), mine = inviter && q.invitedBy.email === who.email;
+  if (!mine && !(who.full && !inviter)) return 'Only whoever invited them decides this.';
+  if (q.status !== 'open') return 'It has already been ' + q.status + '.';
+  const n = String(note || '').trim();
+  if (n.length > JOIN_CHANGES_NOTE) return 'The note is too long: at most ' + JOIN_CHANGES_NOTE + ' characters.';
+  if (!n && !Object.keys(proposed || {}).length) return 'Change an answer, or say what they should change.';
+  return '';
+}
+// Pure: may the holder of `key` change request q? → '' or why not.
+function joinChangesKeyRefusal(q, key){
+  const c = (q && q.changes) || {};
+  if (!q || !key || !c.keyHash || c.keyHash !== keyHash(key)) return 'This link isn’t valid: ask your point of contact for a new one.';
+  if (q.status !== 'open') return 'Your request has already been ' + q.status + '.';
+  if (c.status !== 'asked') return 'You’ve already changed it: your point of contact has it.';
+  return '';
+}
+// Pure: each proposed change, as "Role at BOLD: Visitor → Postdoc".
+function joinChangesLines(q, proposed){
+  const show = (k, v) => k === 'listOnWebsite' ? (v ? 'yes' : 'no') : Array.isArray(v) ? (v.length ? v.join('; ') : '—') : String(v == null || v === '' ? '—' : v);
+  return Object.keys(proposed || {}).filter((k) => JOIN_FIELD_NAMES[k]).map((k) => JOIN_FIELD_NAMES[k] + ': ' + show(k, q[k]) + ' → ' + show(k, proposed[k]));
+}
+// Pure: the email to the applicant. → { subject, body }
+function joinChangesEmail(q, note, link, byName, proposed){
+  const first = String(q.name || '').trim().split(/\s+/)[0] || 'there', who = byName || 'Your point of contact';
+  const lines = joinChangesLines(q, proposed), n = String(note || '').trim();
+  return { subject: 'Your request to join BOLD: ' + (byName || 'your point of contact') + ' proposes changes', body: [
+    'Hi ' + first + ',', '',
+    who + ' read your request to join BOLD and proposes some changes before they decide' + (lines.length ? ':' : '.'), '']
+    .concat(lines.length ? lines.map((l) => '  • ' + l).concat(['']) : [])
+    .concat(n ? [(lines.length ? 'They add:' : 'They say:'), n.split('\n').map((l) => '  ' + l).join('\n'), ''] : [])
+    .concat(['Your form, with their changes in it, to accept, adjust and send (the link is yours alone, and works once):', link, '', 'The BOLD team'])
+    .join('\n') };
+}
+// Pure: what the applicant may see of request q, to change it: their answers, and what's proposed.
+function joinChangesView(q){
+  const out = {};
+  JOIN_EDITABLE.forEach((k) => { if (q[k] !== undefined) out[k] = q[k]; });
+  const c = q.changes || {};
+  return Object.assign(out, { proposed: c.proposed || {}, lines: joinChangesLines(q, c.proposed), note: c.note || '', byName: c.byName || '',
+    inviter: q.invitedBy ? { id: q.invitedBy.id || '', name: q.invitedBy.name || '' } : null });
+}
+
+// data: { action: 'ask', id, answers?, note? } (whoever decides it; answers: the form as they edited it) → { emailed, error? };
+// { action: 'peek', id, key } (the applicant, signed in or not) → what they can change;
+// { action: 'save', id, key, ...the form } → { ok }.
+exports.joinChanges = onCall(
+  { secrets: [GOOGLE_OAUTH, SLACK_BOT_TOKEN] },
+  async (request) => {
+    const d = request.data || {};
+    if (!/^[A-Za-z0-9]{1,40}$/.test(String(d.id || ''))) throw new HttpsError('invalid-argument', 'No such request.');
+    const ref = db.collection('joinRequests').doc(d.id);
+    if (d.action === 'ask') {
+      const email = callerEmail(request);
+      await access.requireAccess(email, 'requests', 'edit');   // Who can see what
+      const who = { email, full: await isFullWrite(email) }, byName = request.auth.token.name || email;
+      const key = crypto.randomBytes(24).toString('hex'), note = String(d.note || '').trim(), set = await joinSettings();
+      let proposed = {};
+      const q = await db.runTransaction(async (tx) => {
+        const s = await tx.get(ref), x = s.exists ? s.data() : null;
+        // Their answers as edited (d.answers, the form): checked as the form is, and only what differs kept.
+        if (x && d.answers && typeof d.answers === 'object') {
+          const base = {};
+          JOIN_EDITABLE.forEach((k) => { if (x[k] !== undefined) base[k] = x[k]; });
+          const n = normalizeJoinRequest(Object.assign(base, d.answers, { contact: (x.invitedBy && x.invitedBy.name) || x.contact || 'them' }), set.roles, set.pillars);
+          if (n.error) throw new HttpsError('invalid-argument', n.error);
+          proposed = joinChangesProposed(x, n.request);
+        }
+        const why = joinChangesRefusal(x, who, note, proposed);
+        if (why) throw new HttpsError(x ? 'failed-precondition' : 'not-found', why);
+        tx.update(ref, { changes: { status: 'asked', proposed, note, by: email, byName, at: Date.now(), keyHash: keyHash(key) } });
+        return x;
+      });
+      const link = SITE_URL + 'join.html?changes=' + d.id + '&key=' + key;
+      const mail = joinChangesEmail(q, note, link, byName, proposed);
+      const error = await gmailSend(q.email, mail.subject, mail.body, 'joinChanges ' + d.id);
+      // The test copy (scripts/test-site.sh) has no Gmail: the link is in the emulator's log, to try it.
+      if (process.env.FUNCTIONS_EMULATOR === 'true') logger.info('joinChanges: the applicant’s link (emulator only)', { link });
+      await ref.update({ 'changes.emailed': !error, 'changes.error': error });
+      return Object.assign({ proposed: joinChangesLines(q, proposed) }, error ? { emailed: false, error } : { emailed: true });
+    }
+    const q = (await ref.get()).data();
+    const why = joinChangesKeyRefusal(q, String(d.key || ''));
+    if (why) throw new HttpsError('failed-precondition', why);
+    if (d.action === 'peek') return joinChangesView(q);
+    if (d.action !== 'save') throw new HttpsError('invalid-argument', 'Unknown action.');
+    if (d.website) return { ok: true };   // the bots' field (join.html)
+    const set = await joinSettings();
+    const n = normalizeJoinRequest(Object.assign({}, d, { contact: (q.invitedBy && q.invitedBy.name) || q.contact || '' }), set.roles, set.pillars);
+    if (n.error) throw new HttpsError('invalid-argument', n.error);
+    if (n.request.email !== q.email) {
+      const other = await db.collection('joinRequests').where('email', '==', n.request.email).where('status', '==', 'open').limit(1).get();
+      if (!other.empty) throw new HttpsError('already-exists', 'There’s already a request for that email address.');
+    }
+    const upd = {};
+    JOIN_EDITABLE.forEach((k) => { if (n.request[k] !== undefined) upd[k] = n.request[k]; });
+    await db.runTransaction(async (tx) => {
+      const again = joinChangesKeyRefusal((await tx.get(ref)).data(), String(d.key || ''));
+      if (again) throw new HttpsError('failed-precondition', again);
+      tx.update(ref, Object.assign(upd, { 'changes.status': 'made', 'changes.madeAt': Date.now(), 'changes.keyHash': '' }));
+    });
+    // Whoever asked hears they've changed it (join.html asked them first).
+    const num = await numberTag('joinRequests/' + d.id), c = q.changes || {};
+    const text = '✏️ ' + num + slackText(upd.name || q.name) + ' sent their request to join BOLD again, after the changes you proposed. ' + linkedTitle('Approve or decline', joinPageUrl() + '#i=' + d.id) + '.';
+    if (q.invitedBy && q.invitedBy.id && q.invitedBy.email === c.by) await dmBySlackId(SLACK_BOT_TOKEN.value(), q.invitedBy.id, text, 'join-requests');
+    else if (c.by) await dmByEmail(SLACK_BOT_TOKEN.value(), c.by, text, 'join-requests');
+    return { ok: true };
   }
 );
 
@@ -8554,7 +8814,7 @@ const agentApi = require('./api')({ access, db, admin, onRequest, onCall, HttpsE
   slackText, linkedTitle, joinPageUrl, skillMd, onSchedule,
   callables: () => ({ projectWorkspace: exports.projectWorkspace, projectWork: exports.projectWork, projectChannel: exports.projectChannel, introRequest: exports.introRequest, studyRequest: exports.studyRequest,
     letterRequest: exports.letterRequest, decideProposal: exports.decideProposal, groupRequest: exports.groupRequest, setMyInviter: exports.setMyInviter,
-    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto }) });
+    confirmJoinInvite: exports.confirmJoinInvite, decideJoinRequest: exports.decideJoinRequest, joinChanges: exports.joinChanges, myRequests: exports.myRequests, eventSeries: exports.eventSeries, profilePhoto: exports.profilePhoto, commentConversation: exports.commentConversation }) });
 exports.apiTokens = agentApi.apiTokens;
 exports.boldApi = agentApi.boldApi;
 // Subscribing to the Calendar: one private .ics link a person (calendar.html; served by boldApi).
@@ -8644,11 +8904,15 @@ exports.meetingReminders = onSchedule({ schedule: '*/5 * * * *', timeZone: PROJE
 // A public event's content, cut down for whoever can't read it directly (signed out, PAN-BOLD).
 exports.publicEvent = require('./public-event')({ db, onCall, HttpsError }).publicEvent;
 // Slack threads into Conversations (functions/slack-thread.js): Import from Slack on the page, Take it to the BOLD OS in Slack.
-const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails });
+const conversationsSlack = require('./slack-thread')({ db, onCall, onDocumentCreated, onDocumentUpdated, HttpsError, logger, SLACK_BOT_TOKEN, signedInEmail, access, slackIdForEmail, FieldValue, SITE_URL, postInChannel, slackText, nudgeInThread, noteFor, dmByEmail, emailForSlackId, rolesEmails });
 exports.slackThread = conversationsSlack.slackThread;
+// A comment thread on the BOLDiquette or a guide, or a board card's comments, made a conversation (functions/comment-conversation.js).
+exports.commentConversation = require('./comment-conversation')({ db, onCall, HttpsError, signedInEmail, access, FieldValue, SITE_URL, rank: accessLib.rank, guideArea: accessLib.guideArea, projectPageUrl }).commentConversation;
 exports.onConversationImport = conversationsSlack.onConversationImport;
 exports.onConversationMessage = conversationsSlack.onConversationMessage;
 exports.onConversationCreated = conversationsSlack.onConversationCreated;
+exports.onConversationAccess = conversationsSlack.onConversationAccess;
+exports.onConversationInvite = conversationsSlack.onConversationInvite;
 // Desktop notifications (functions/push.js): each person's devices, and a push with each notification
 // (noteFor calls webPush.pushTo, once everything above is defined).
 const webPush = require('./push')({ db, admin, onCall, HttpsError, signedInEmail, logger, SITE_URL });
@@ -8662,6 +8926,12 @@ exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
+// BOLD LLM, the home letter and Talking to BOLD (functions/bold-llm.js): Claude until Sofya runs, reading as
+// each person through the agents' API (letterInputs, its reading tools).
+const boldLlm = require('./bold-llm')({ db, admin, logger, onCall, onSchedule, HttpsError, callerEmail, access, ANTHROPIC_API_KEY,
+  letterInputs: agentApi.letterInputs, chatTools: agentApi.chatTools, runChatTool: agentApi.runChatTool });
+exports.writeHomeLetters = boldLlm.writeHomeLetters;
+exports.homeLetter = boldLlm.homeLetter;
 
 exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isCalendarLimit, meetingStartsSoon,
   slackImagesOf, slackToPlain, pingText, bugReportOf, bugNotes, bugTitle,
@@ -8676,6 +8946,9 @@ exports._internal = { replaceEmail, accountEmailsBySlackId, calendarUpdates, isC
   reviewerPickerBlock, sectionBlocks, buildHomeView, buildUnrecognizedView, profileFieldsFromSlack,
   projectsFromDashboard, badgesForCard, skillMd, skillZip, versionContent, stableJson,
   normalizeMeeting, firstMeetingTimes, meetingRecurrence, projectMembers, normalizeRepo, projectRepoName,
-  projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage,
+  projectIdOf, projectGroupForCards, workspaceStarted, normalizeJoinRequest, welcomeEmail, mimeMessage, joinChangesRefusal, joinChangesKeyRefusal, joinChangesEmail, joinChangesView, joinChangesProposed, joinChangesLines, keyHash,
   onboardingSteps, inviteRefusal, normalizeLetterRequest, letterRemindersDue, normalizeStudies, groupOf, channelGroupsFor, seriesStart, normalizeSupervisionChannel, supervisionChannelFor, inviteReminderStage, taggedIds, proposalNewTags, newTags, tagPlace, tagExcerpt, tagMessageId, venueCallsToCheck, venueCallMessage, interactionsFor, isInteractionSource, thingOf, slackExternal, groupMoveOf, currentGroupMove, groupMoveTitle, normalizeGpuHours, proposalPending, inviteChoices, validInviteTo, projectChannelChange, alignmentPlan, alignmentMessage, groupChannelsFor, allGroupChannels, alignmentNow, runAlignment
 };
+
+// For tests and the test copy: the home letter's inputs as someone (functions/bold-llm.js).
+exports._internal.letterInputs = (who, since) => agentApi.letterInputs(who, since);

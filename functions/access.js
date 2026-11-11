@@ -264,7 +264,7 @@ module.exports = function access({ db, groupOf, isFullWrite, viewingAs, viewingT
     return groupFor(email);
   }
   async function seesIt(email, x){ return seesEvent(await eventGroup(email), x); }
-  return { table, groupFor, can, requireAccess, checkTableChange, seesIt, eventGroup, forget(){ cache = null; } };
+  return { table, groupFor, can, levelOf, requireAccess, checkTableChange, seesIt, eventGroup, forget(){ cache = null; } };
 };
 // Who sees an event series or an event (eventSeries' and events' `visibleTo`, 2026-11-02): that
 // group and those above; 'public' is anyone, even signed out. Without one, BOLD-internal (what every

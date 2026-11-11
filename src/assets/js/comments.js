@@ -12,7 +12,9 @@
 // margin level with it; either opens the thread as a card. A thread whose text has
 // since changed shows at the top of its part, marked so. Resolved threads don't show.
 //
-// BoldComments.create({ ref, root, fullWrite: () => bool, onChange })
+// Commenting is the page's Edit (Who can do what: on the BOLDiquette and guides, editing is proposing and
+// commenting; firestore.rules): whoever hasn't it reads the threads, but gets no Comment button nor reply box.
+// BoldComments.create({ ref, root, area: the page's (BOLD.can), fullWrite: () => bool, onChange })
 // → { start(user), stop(), decorate(), click(event) → true if it handled it, ready(), show(id), openCount() }.
 // A link to a comment (#c=<id>, as Slack sends; pages/guide.js) opens its thread and marks it.
 window.BoldComments = (function(){
@@ -131,9 +133,11 @@ window.BoldComments = (function(){
       var text = el && el.closest && el.closest('.guide-part[data-pid] .guide-text');
       return text ? { text: text, partId: text.closest('.guide-part').getAttribute('data-pid') } : null;
     }
+    function canComment(){ return !opts.area || BOLD.can(opts.area, 'edit'); }
+    function cannotNote(){ return '<p class="cm-moved">' + esc(BOLD.cannotReason(opts.area, 'edit')) + '</p>'; }
     function onSelect(){
       var sel = window.getSelection();
-      if (!me || !sel || sel.isCollapsed || !sel.rangeCount) { hideButton(); return; }
+      if (!me || !canComment() || !sel || sel.isCollapsed || !sel.rangeCount) { hideButton(); return; }
       var r = sel.getRangeAt(0), a = partOf(r.startContainer), b = partOf(r.endContainer);
       if (!a || !b || a.text !== b.text || opts.root.querySelector('.guide-form, .gd-viewing')) { hideButton(); return; }
       var quote = sel.toString();
@@ -251,10 +255,15 @@ window.BoldComments = (function(){
         (row.lost ? '<p class="cm-lost">The text this was on has since changed.</p>' : moved[id] ? '<p class="cm-lost">The text has been edited since; the comment was on:</p>' : '') +
         '<blockquote class="cm-quote">' + esc(String(c.quote || '').length > 160 ? c.quote.slice(0, 160) + '…' : String(c.quote || '')) + '</blockquote>' +
         (id === 'new' ? '' : commentHtml(c) + replies(id).map(function(r){ return commentHtml(r); }).join('')) +
+        // Made a conversation: it goes on there (functions/comment-conversation.js), with no reply box here.
+        (c.conversation ? '<p class="cm-moved">This thread goes on in Conversations. <a href="conversations.html#post=' + encodeURIComponent(c.conversation) + '">Open the conversation</a></p>' +
+          (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') :
+        !canComment() ? cannotNote() + (id === 'new' ? '' : '<div class="cm-buttons">' + convoButton() + '</div>') + (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') :
         '<textarea rows="3" maxlength="' + MAX_TEXT + '" placeholder="' + (id === 'new' ? 'Your comment' : 'Reply') + '" data-key="' + esc(key) + '">' + esc(drafts[key] || '') + '</textarea>' +
         (error ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
         '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-send"' + (busy ? ' disabled' : '') + '>' + (id === 'new' ? 'Comment' : 'Reply') + '</button>' +
-          '<button type="button" class="btn-text cm-cancel">Cancel</button></div>' +
+          '<button type="button" class="btn-text cm-cancel">Cancel</button>' +
+          (id === 'new' ? '' : convoButton()) + '</div>') +
         (others.length ? '<p class="cm-more">' + others.length + ' more on this line: ' + others.map(function(o, i){
           return '<button type="button" class="btn-text cm-switch" data-id="' + esc(o) + '">' + (i + 1) + '</button>'; }).join(' ') + '</p>' : '');
       return el;
@@ -275,7 +284,7 @@ window.BoldComments = (function(){
           (error && open === key ? '<p class="ev-error">' + esc(error) + '</p>' : '') +
           '<div class="cm-buttons"><button type="button" class="btn-box is-primary cm-p-send" data-pid="' + esc(pid) + '"' + (busy ? ' disabled' : '') + '>Comment</button>' +
           '<button type="button" class="btn-text cm-p-cancel" data-pid="' + esc(pid) + '">Cancel</button></div>' :
-          '<button type="button" class="btn-text cm-p-open" data-pid="' + esc(pid) + '">' + (list.length ? 'Reply' : 'Comment') + '</button>') +
+          canComment() ? '<button type="button" class="btn-text cm-p-open" data-pid="' + esc(pid) + '">' + (list.length ? 'Reply' : 'Comment') + '</button>' : '') +
         '</div>';
     }
     // What's typed survives the page re-rendering.
@@ -351,6 +360,27 @@ window.BoldComments = (function(){
       else if (k === open) send();
     });
 
+    // Make it a conversation: the thread, copied to Conversations with its replies (each by whoever wrote it),
+    // goes on there. Asked first: everyone who sees Conversations hears of it.
+    function convoButton(){
+      if (!BOLD.can('conversations', 'edit')) return '';
+      return '<button type="button" class="btn-text cm-convo"' + (busy ? ' disabled' : '') + ' title="Copy this thread to Conversations, where it goes on">Make it a conversation</button>';
+    }
+    function toConversation(id){
+      var n = replies(id).length;
+      BOLD.confirmAction({ title: 'Make this thread a conversation?', go: 'Make it a conversation', effects: [
+        'Copy it to Conversations' + (n ? ', with its ' + (n === 1 ? 'reply' : n + ' replies') : '') + ', each by whoever wrote it',
+        'Tell everyone who sees Conversations, on their Notifications page',
+        'Close it to replies here: it goes on there'] }).then(function(go){
+        if (!go) return;
+        busy = true; error = ''; changed();
+        return firebase.app().functions('europe-west2').httpsCallable('commentConversation')({ on: opts.ref.parent.id + '/' + opts.ref.id, id: id })
+          .then(function(){ busy = false; changed(); });
+      }).catch(function(err){
+        console.error('[BOLD Comments] making a conversation failed', err);
+        busy = false; error = (err && err.code && err.code !== 'functions/internal' && err.message) || 'Couldn’t make it a conversation — try again.'; changed();
+      });
+    }
     function resolve(id){
       col.doc(id).update({ resolved: true, resolvedBy: me.email, resolvedByName: me.name, resolvedAt: Date.now() }).then(function(){ if (open === id) open = null; changed(); })
         .catch(function(err){ console.error('[BOLD Comments] resolving failed', err); error = 'Couldn’t resolve it — try again.'; changed(); });
@@ -366,7 +396,7 @@ window.BoldComments = (function(){
     }
 
     function click(e){
-      var t = e.target.closest('.cm-icon, .cm-mark, .cm-close, .cm-cancel, .cm-send, .cm-resolve, .cm-delete, .cm-switch, .cm-p-open, .cm-p-send, .cm-p-cancel, .cm-edit, .cm-e-save, .cm-e-cancel');
+      var t = e.target.closest('.cm-icon, .cm-mark, .cm-close, .cm-cancel, .cm-send, .cm-resolve, .cm-delete, .cm-switch, .cm-p-open, .cm-p-send, .cm-p-cancel, .cm-edit, .cm-e-save, .cm-e-cancel, .cm-convo');
       if (!t) return false;
       var pid = t.getAttribute('data-pid');
       if (t.classList.contains('cm-edit')) {
@@ -388,6 +418,7 @@ window.BoldComments = (function(){
       else if (t.classList.contains('cm-mark')) { open = t.getAttribute('data-thread'); error = ''; changed(); }
       else if (t.classList.contains('cm-close') || t.classList.contains('cm-cancel')) { if (open === 'new') pending = null; open = null; error = ''; changed(); }
       else if (t.classList.contains('cm-send')) send();
+      else if (t.classList.contains('cm-convo')) toConversation(open);
       else if (t.classList.contains('cm-resolve')) resolve(t.getAttribute('data-id'));
       else if (t.classList.contains('cm-delete')) remove(t.getAttribute('data-id'));
       else if (t.classList.contains('cm-switch')) { open = t.getAttribute('data-id'); changed(); }

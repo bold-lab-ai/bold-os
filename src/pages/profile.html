@@ -4,7 +4,7 @@ title: "Profile | BOLD Lab"
 description: "Your BOLD Lab profile."
 sdk: ["functions"]
 css: "profile"
-scripts: ["pages/profile.js", "join-common.js", "markdown.js", "pages/member-details.js", "project-fields.js", "pages/studies.js", "onboarding-common.js", "pages/profile-progress.js", "connections.js", "pages/profile-api.js", "pages/test-account.js"]
+scripts: ["pages/profile.js", "join-common.js", "markdown.js", "pages/member-details.js", "project-fields.js", "pages/studies.js", "onboarding-common.js", "pages/profile-progress.js", "connections.js", "pages/profile-api.js", "pages/profile-busy.js", "pages/profile-letter.js", "pages/test-account.js"]
 permalink: "profile.html"
 ---
 <div class="hero">
@@ -63,11 +63,13 @@ permalink: "profile.html"
       <div class="fact"><dt>Slack</dt><dd id="slackAccount">Signed in with Slack</dd></div>
       <div class="fact"><dt>GitHub</dt><dd class="acct-row" id="githubBody"><span class="proj-msg">Loading&hellip;</span></dd></div>
       <div class="fact"><dt>Google</dt><dd class="acct-row" id="googleBody"><span class="proj-msg">Loading&hellip;</span></dd></div>
+      <div class="fact"><dt>Free/busy calendar</dt><dd class="acct-row" id="busyBody"><span class="proj-msg">Loading&hellip;</span></dd></div>
       <div class="fact"><dt>Test account</dt><dd class="acct-row" id="testAccountBody"><span class="proj-msg">Loading&hellip;</span></dd></div>
     </dl>
   </section>
 
   <section class="profile-panel" id="agents" hidden>
+    <div id="letterSetting"></div>
     <div id="agentsBody"><span class="proj-msg">Loading&hellip;</span></div>
   </section>
 

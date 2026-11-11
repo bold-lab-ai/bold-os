@@ -235,7 +235,7 @@
     if (filters.keyword && (p.keywords || []).indexOf(filters.keyword) === -1) return false;
     if (filters.author === 'mine') { if (!p.joined && !people(p).some(function(o){ return o.key === myKey; })) return false; }
     else if (filters.author && !people(p).some(function(o){ return o.key === filters.author; })) return false;
-    if (filters.q) {
+    if (filters.q.trim()) {
       var hay = [p.title, p.abstract, (p.keywords || []).join(' '), p.slackChannel, p.owner, p.boardLabel,
         people(p).map(function(o){ return o.name; }).join(' ')].join(' ').toLowerCase();
       return filters.q.toLowerCase().split(/\s+/).filter(Boolean).every(function(t){ return hay.indexOf(t) !== -1; });
@@ -243,7 +243,7 @@
     return true;
   }
 
-  function filtering(){ return !!(filters.q || filters.author || filters.keyword); }
+  function filtering(){ return !!(filters.q.trim() || filters.author || filters.keyword); }
 
   // Options for the two selects, from every project (not only the visible ones).
   function fillOptions(){
@@ -274,7 +274,7 @@
     var tab = tabs.filter(function(t){ return t.classList.contains('active'); })[0];
     var parts = [];
     if (tab && tab.getAttribute('data-tab') !== 'ongoing') parts.push(tab.getAttribute('data-tab'));
-    ['q', 'author', 'keyword'].forEach(function(k){ if (filters[k]) parts.push(k === 'author' && filters.author === 'mine' ? 'mine' : k + '=' + encodeURIComponent(filters[k])); });
+    ['q', 'author', 'keyword'].forEach(function(k){ var v = String(filters[k]).trim(); if (v) parts.push(k === 'author' && v === 'mine' ? 'mine' : k + '=' + encodeURIComponent(v)); });
     try { history.replaceState(null, '', location.pathname + location.search + (parts.length ? '#' + parts.join('&') : '')); } catch (e){}
   }
 
@@ -329,7 +329,8 @@
     }
   }
 
-  el('projSearch').addEventListener('input', function(){ setFilter('q', el('projSearch').value.trim()); });
+  // As typed, spaces kept (#251): words are split when matching, and the box isn't written back to.
+  el('projSearch').addEventListener('input', function(){ filters.q = el('projSearch').value; renderLists(); syncHash(); });
   el('projAuthor').addEventListener('change', function(){ setFilter('author', el('projAuthor').value); });
   el('projKeyword').addEventListener('change', function(){ setFilter('keyword', el('projKeyword').value); });
   el('projClear').addEventListener('click', function(){

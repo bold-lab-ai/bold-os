@@ -67,7 +67,7 @@
 .talk-form{margin:10px 0 0;}
 /* grid */
 .detail-grid{
-  display:grid; grid-template-columns:150px 1fr; gap:10px 20px; margin:26px 0 32px; padding-top:18px;
+  display:grid; grid-template-columns:150px 1fr; gap:0; margin:26px 0 32px; padding-top:18px;
   border-top:1px solid var(--line); font-size:16px; line-height:1.55; max-width:var(--article-max);
 }
 .detail-grid dt{font-family:var(--sans); font-size:13px; color:var(--muted);}
@@ -220,12 +220,12 @@
 .wk-mc-0{--mc:var(--brown);} .wk-mc-1{--mc:var(--ink);} .wk-mc-2{--mc:var(--green);}
 .wk-late + .wk-milestone{margin-left:0;}
 /* Labels (several a card, e.g. Good first issue): small pills, on the board's cards and a card's page. */
-.wk-labels{display:flex; flex-wrap:wrap; gap:4px; margin-top:4px;}
+.wk-labels{display:inline-flex; flex-wrap:wrap; gap:4px; vertical-align:middle;}
 .wk-label{display:inline-flex; align-items:center; gap:2px; font-family:var(--sans); font-size:11px; line-height:1.6; padding:0 6px; border-radius:999px;
   color:var(--accent); border:1px solid color-mix(in srgb, var(--accent) 40%, transparent); background:color-mix(in srgb, var(--accent) 8%, transparent);}
 .wk-label-x{border:0; background:none; color:inherit; cursor:pointer; padding:0 0 0 2px; font-size:12px; line-height:1;}
-.wk-label-add{display:inline-block; margin-left:6px;}
-.wk-label-add input{font:inherit; font-size:13px; width:12em; padding:1px 6px;}
+.wk-label-add{display:inline-block; margin-left:6px; vertical-align:middle;}
+.detail-grid dd .wk-label-add input{font:inherit; font-family:var(--sans); font-size:13px; width:12em; padding:1px 6px; line-height:1.4;}
 /* A milestone's progress (Milestone filter), above the columns. */
 .wk-milestonebar-track{height:6px; border-radius:3px; background:var(--line); overflow:hidden;}
 .wk-milestonebar-track span{display:block; height:100%; background:var(--accent);}
@@ -255,9 +255,13 @@
    .detail-badges, .detail-grid, .detail-abstract above), from the tab panel's left edge,
    not the board's width (.wk.wk-paged). */
 .wk.wk-paged{width:auto; margin-left:0; margin-top:0;}
-.wk-page{max-width:var(--article-max); padding-top:26px; font-family:var(--serif); font-size:16px; line-height:1.55; color:var(--ink-soft);}
+/* As a conversation on Conversations' page (conversations.css): sans, its title as a thread's, as wide. */
+.wk-page{padding-top:26px; font-family:var(--sans); font-size:16px; line-height:1.55; color:var(--ink-soft);}
 .wk-page .detail-back{margin-bottom:14px;}
-.wk-page .detail-head h2.wk-page-title{font-size:clamp(24px, 3.6vw, 32px); line-height:1.2; font-weight:800; color:var(--ink); max-width:none;}
+.wk-page .detail-head h2.wk-page-title{font-family:var(--sans); font-size:20px; line-height:1.3; font-weight:600; color:var(--ink); max-width:none;}
+.wk-page .detail-head .wk-edit{font-size:13px; color:var(--muted);}
+.wk-page .detail-grid dd{font-size:14px;}
+.wk-page .wk-talk, .wk-page .detail-grid{max-width:none;}
 .wk-page .detail-badges{margin-top:6px;}
 .wk-page .wk-badge-code{color:var(--link);}
 .wk-page .wk-badge-content{color:var(--plum);}
@@ -286,14 +290,6 @@
 .wk-upmsg{color:var(--ink-soft);}
 .wk-linked{margin:0; padding:0; list-style:none;}
 .wk-linked li + li{margin-top:2px;}
-/* A card's conversation (card-talk.js). */
-.wk-talk-list{list-style:none; margin:0 0 14px; padding:0;}
-.wk-talk-item{padding:10px 0; border-top:1px solid var(--line);}
-.wk-talk-item:first-child{border-top:0; padding-top:0;}
-.wk-talk-item.is-marked{background:var(--wash); padding-left:10px; padding-right:10px;}
-.wk-talk-head{font-family:var(--sans); font-size:14px; margin-bottom:4px;}
-.wk-talk-form textarea, .wk-talk-edit textarea{width:100%; box-sizing:border-box; font:inherit; font-size:15px;}
-.wk-talk-edit{margin-top:4px;}
 /* Inviting someone to the project (project-invite.js, #148): under People, and the invited's banner. */
 .pj-inv{margin-top:6px;}
 .pj-inv-list{list-style:none; margin:4px 0; padding:0; font-family:var(--sans); font-size:14px;}
@@ -314,8 +310,46 @@
 .setup-mark{width:1em; color:var(--muted);}
 .setup-list li.is-done .setup-mark{color:var(--accent);}
 /* A proposed project (#226): its budget, and Approve / Decline or Send it again. */
-.proposal-panel{margin:4px 0 18px; padding:12px 14px; border:1px solid var(--line); border-left:3px solid var(--accent); background:var(--surface); font-family:var(--sans); font-size:14px;}
-.proposal-panel p{margin:0 0 8px;}
-.proposal-actions{display:flex; flex-wrap:wrap; align-items:center; gap:8px;}
-.proposal-actions input[type=text]{flex:1 1 260px; min-width:0; font:inherit; padding:5px 8px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}
-.proposal-actions input[type=number]{width:120px; font:inherit; padding:4px 6px; margin-left:6px; border:1px solid var(--line); background:var(--paper); color:var(--ink);}
+/* A row's action (Edit, Invite someone: detail-act): on the right of its row, level with its first line, so a
+   page's actions line up in one column; the value keeps clear of it. The abstract's, at the end of its label. */
+.detail-grid dd:has(.detail-act){position:relative; padding-right:120px;}
+.detail-grid dd .detail-act{position:absolute; top:0; right:0; line-height:24.8px; font-family:var(--sans); font-size:13px; white-space:nowrap;}
+.detail-grid dd .detail-act .detail-inline-edit{margin-left:0;}
+.detail-abstract-label:has(.detail-act){display:flex; align-items:baseline;}
+.detail-abstract-label .detail-act{margin-left:auto;}
+.detail-abstract-label .detail-act .detail-inline-edit{margin-left:0;}
+
+/* They end where the page does (the tabs' line, the buttons above), not at the reading width; the abstract's
+   text keeps that width. Quiet until wanted: muted, darker on their row's hover or their own. */
+.detail-grid:has(.detail-act), .detail-abstract:has(.detail-act){max-width:none;}
+.detail-abstract .abstract-render, .detail-abstract > .detail-muted{max-width:var(--article-max);}
+.detail-grid dd .detail-act .btn-text, .detail-abstract-label .detail-act .btn-text{color:var(--muted);}
+.detail-grid dd:hover .detail-act .btn-text:not(:disabled), .detail-abstract:hover .detail-abstract-label .detail-act .btn-text:not(:disabled),
+.detail-act .btn-text:focus-visible{color:var(--link); text-decoration-color:var(--underline);}
+.detail-abstract-label:hover .detail-act .btn-text:not(:disabled){color:var(--link); text-decoration-color:var(--underline);}
+.detail-act .btn-text:not(:disabled):hover{color:var(--link); text-decoration-color:currentColor;}
+/* Invite someone alone (nothing listed, no form): no room of its own under the names. */
+.detail-grid dd .pj-inv:not(:has(.pj-inv-list, .pj-inv-form, .detail-hint)){margin-top:0;}
+/* The venues, a row like the others (no room of their own around the list). */
+.detail-grid .venue-list{margin:0;}
+/* Between a row's actions: "Set up or Edit", the "or" plain. */
+.detail-or{margin:0 6px; color:var(--muted); font-family:var(--sans); font-size:13px;}
+/* A proposed project: where it is, one line; its conversation below its details (project.js). */
+.proposal-status{margin:4px 0 18px; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
+.proposal-hours{display:inline-flex; align-items:center; gap:6px; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.proposal-hours input{width:90px; font:inherit; padding:6px 8px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.proposal-talk{margin-top:28px;}
+/* A card's badge row (project-work.js): type, number, column, milestone (a select dressed as a badge), its labels
+   and + Label, then who made it, on the right. */
+.wk-page .wk-badge-col{color:var(--ink);}
+.wk-page .wk-badge-pick{display:inline-flex; align-items:center; padding:0 2px 0 7px; cursor:pointer;}
+.wk-page .wk-badge-pick select{font:inherit; letter-spacing:inherit; text-transform:inherit; color:inherit; background:transparent; border:0; padding:2px 2px; cursor:pointer; field-sizing:content; max-width:22em;}
+.wk-page .wk-labels-row .wk-label-add input{font-family:var(--sans); font-size:12px; width:11em; padding:1px 6px; line-height:1.4; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); color:var(--ink);}
+.wk-page .wk-by{margin-left:auto; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.wk-page .wk-by a{color:var(--ink-soft);}
+.wk-page .detail-head + .wk-talk-slot, .wk-page .detail-head ~ .wk-talk{margin-top:28px;}
+/* Its labels, a row of their own under the badges; + is a label too (only that), to add one. */
+.wk-page .wk-labels-row{display:flex; flex:0 0 100%; order:4; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px;}
+.wk-page .wk-labels-row .wk-label-add{margin:0;}
+.wk-page .wk-label-open{cursor:pointer; font-weight:600; padding:0 8px;}
+.wk-page .wk-label-open:hover{background:color-mix(in srgb, var(--accent) 16%, transparent);}

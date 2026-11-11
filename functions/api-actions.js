@@ -147,10 +147,17 @@ module.exports = function(ctx){
         const id = await asUser(who, 'create', col, { text: text(), by, at: now, parent: root, partId: c.partId || '' });
         return { id, url: url(pg.href + '#c=' + root) };
       }
+      // A proposed change's discussion is its conversation (2026-11-07): started, or added to.
       case 'on_proposal': {
         const pid = need(a.proposal_id, 'the proposal_id');
-        const id = await asUser(who, 'create', col, { partId: '', proposalId: pid, text: text(), by, at: now });
-        return { id };
+        const r = await act(who, 'commentConversation', { on: 'change/' + pg.col + '/' + pg.slug + '/' + pid, text: text() });
+        return Object.assign({}, r, { url: url(pg.href + '#proposal-' + encodeURIComponent(pid)) });
+      }
+      // Make it a conversation (commentConversation): the whole thread, copied to Conversations; it goes on there.
+      case 'to_conversation': {
+        const c = await existing();
+        const r = await act(who, 'commentConversation', { on: pg.col + '/' + pg.slug, id: c.parent || c.id });
+        return Object.assign({}, r, { url: url('conversations.html#post=' + encodeURIComponent(r.id)) });
       }
       case 'edit': { const c = await existing(); await asUser(who, 'update', col + '/' + c.id, { text: text(), editedAt: now }); return { ok: true }; }
       case 'resolve': { const c = await existing(); await asUser(who, 'update', col + '/' + c.id, { resolved: true, resolvedBy: who.email, resolvedByName: nameOfMe(who), resolvedAt: now }); return { ok: true }; }
@@ -365,16 +372,24 @@ module.exports = function(ctx){
     const cur = await ref.doc(id).get();
     if (!cur.exists) throw httpError(404, 'No card with that id on this board.');
     if (a.action === 'remove') { await asUser(who, 'delete', col + '/' + id); return { ok: true }; }
-    // Its conversation (card-talk.js): read it, or add to it (its people hear of it on Slack).
+    // Its conversation (talk.js, since 2026-11-07): conversations/cm-card-<project>-<card>; before it's
+    // started, what its comments said. Read it, or add to it (commentConversation starts it if need be).
     if (a.action === 'comments') {
+      const post = await db.collection('conversations').doc('cm-card-' + pid + '-' + id).get();
+      if (post.exists) {
+        const p = post.data(), ms = (await post.ref.collection('messages').get()).docs.map((d) => Object.assign({ id: d.id }, d.data()));
+        const t = (x) => (x && x.toMillis ? x.toMillis() : Number(x) || 0);
+        return { conversation: post.id, comments: [{ id: post.id, by: p.name || '', at: new Date(t(p.at)).toISOString(), text: p.body }]
+          .concat(ms.sort((x, y) => t(x.at) - t(y.at)).map((m) => ({ id: m.id, by: m.name || '', at: new Date(t(m.at)).toISOString(), text: m.body, answers: m.parent }))), url: url(pageOf(id)) };
+      }
       const cs = await ref.doc(id).collection('comments').orderBy('at').get();
       return { comments: cs.docs.map((d) => { const m = d.data(); return { id: d.id, by: (m.by && (m.by.name || m.by.email)) || '', at: new Date(m.at || 0).toISOString(), text: m.text, edited: !!m.editedAt }; }), url: url(pageOf(id)) };
     }
-    if (a.action === 'comment') {
-      const t = need(a.text, 'the text');
-      if (t.length > 2000) throw httpError(400, 'At most 2000 characters.');
-      const cid = await asUser(who, 'create', col + '/' + id + '/comments', { text: t, by: { email: who.email, name: nameOfMe(who) }, at: now });
-      return { id: cid, url: url(pageOf(id) + '&c=' + encodeURIComponent(cid)) };
+    if (a.action === 'comment' || a.action === 'to_conversation') {
+      const t = a.action === 'comment' ? need(a.text, 'the text') : '';
+      if (t.length > 10000) throw httpError(400, 'At most 10000 characters.');
+      const r = await act(who, 'commentConversation', { on: 'card/' + pid + '/' + id, text: t });
+      return Object.assign({}, r, { url: url(pageOf(id)) });
     }
     const x = cur.data();
     const next = { title: x.title, notes: x.notes || '', kind: a.type !== undefined ? String(a.type) : x.kind || '', column: x.column, assignees: x.assignees || [], assigneeEmails: x.assigneeEmails || [], links: x.links || [],
@@ -672,6 +687,8 @@ module.exports = function(ctx){
         };
       }
       case 'approve_join': case 'decline_join': return act(who, 'decideJoinRequest', { id: need(a.request_id, 'the request_id'), accept: a.action === 'approve_join' });
+      // Ask the applicant to change it (#261): the lab's account emails them a link to it.
+      case 'ask_join_changes': return act(who, 'joinChanges', { action: 'ask', id: need(a.request_id, 'the request_id'), note: need(a.note, 'the note: what they should change') });
       case 'approve_group': case 'decline_group': return act(who, 'groupRequest', { action: 'decide', id: need(a.request_id, 'the request_id'), accept: a.action === 'approve_group' });
       case 'set_group': {
         const email = resolve((await lab.members()).map((m) => ({ email: m.email || m._id, name: m.name || '' })), a.member, 'members');
@@ -775,9 +792,9 @@ module.exports = function(ctx){
         location: str('Meeting location.'), label: str('Season label.'), regularTime: str('Season regular time.'),
         rotationDescription: str('Season rotation description.'), publicationState: ACTIONS(['draft', 'published']) }) },
     { name: 'comments', run: comments,
-      description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change), edit or delete your own, resolve. People tagged or replied to get Slack messages.',
-      inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
-        quote: str('add: words from the part, exactly as written.'), text: str('The comment (Markdown, @Name to tag).'), comment_id: str('reply, edit, resolve, delete.'), proposal_id: str('on_proposal.') }, ['action', 'page']) },
+      description: 'Comment on the BOLDiquette or a guide, as on the page: add (on words quoted from a part), reply, on_proposal (discuss a proposed change: its conversation, started or added to), edit or delete your own, resolve, or to_conversation: make a thread a conversation (copied to Conversations with its replies, each by whoever wrote it; it goes on there and takes no more replies here: everyone who sees Conversations is told, so ask your person first). People tagged or replied to get Slack messages.',
+      inputSchema: S({ action: ACTIONS(['add', 'reply', 'on_proposal', 'edit', 'resolve', 'delete', 'to_conversation']), page: str('"boldiquette" or a guide’s slug.'), part_id: str('add: the part (read_page).'),
+        quote: str('add: words from the part, exactly as written.'), text: str('The comment (Markdown, @Name to tag).'), comment_id: str('reply, edit, resolve, delete, to_conversation.'), proposal_id: str('on_proposal.') }, ['action', 'page']) },
     { name: 'proposals', run: proposals,
       description: 'Propose a change to the BOLDiquette, a guide, a skill or a tool: this is how BOLD.OS, and the MCP with it, improves itself (every change is a proposal; a PI or admin other than you accepts it). Actions: propose (with a note on why), withdraw your own, or, for PIs and admins, accept or decline someone else’s. ' +
         'For the BOLDiquette or a guide: kind add, edit or remove a part (read_page). For a skill (page "skill:<name>", get_skill): its new title, description or body (SKILL.md’s instructions), and its files (set_files, remove_files, or all of them in files); a new name proposes a new skill. ' +
@@ -800,8 +817,8 @@ module.exports = function(ctx){
         meeting: { type: 'object', description: 'register, set_meeting: London time.', properties: { day: ACTIONS(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']), time: str('HH:MM'), minutes: { type: 'integer', enum: [30, 45, 60, 90, 120] }, every: { type: 'integer', enum: [1, 2, 3, 4] }, until: str('YYYY-MM-DD (optional)') } },
         venue: str('submit_to_venue: the venue’s name, e.g. "ICLR 2027".') }) },
     { name: 'work', run: work,
-      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card, or read (comments) and add to (comment) a card’s conversation. A card can be in one of the board’s milestones (set in Board settings), whose progress the board shows, and have labels, several (e.g. Good first issue: something someone new can take on by themselves). Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false. A comment sends whoever made the card, its assignees and whoever has commented a Slack message, and moving a card to done tells whoever raised it: tell your person first. Move the cards you work on as you go: doing when you start, review while it waits on someone, done once it’s live.',
-      inputSchema: S({ post_in_channel: { type: 'boolean', description: 'add: post it in the project’s Slack channel (default true)' }, action: ACTIONS(['list', 'add', 'update', 'move', 'remove', 'comments', 'comment']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove, comments, comment (list gives it).'), text: str('comment: what you say (Markdown).'),
+      description: 'A project’s board (its Board tab): list everything on it (its cards, its repositories’ issues and pull requests, and on BOLD OS’s everything on BOLD.OS waiting on someone that you can see: proposed changes and requests), each with its type (code, content, request), who it’s from and who’s on it, or add, update, move or remove a card, or read (comments) and add to (comment) a card’s conversation: a thread in Conversations, about the project (the first message starts it; whoever made the card, its assignees and whoever’s in it hear of a reply: tell your person first). A card can be in one of the board’s milestones (set in Board settings), whose progress the board shows, and have labels, several (e.g. Good first issue: something someone new can take on by themselves). Anyone who can edit projects adds a card; whoever made it and whom it’s assigned to change and move it, as do the project’s people, PIs and admins. Link the card to its pull request, issue or proposal so it moves along with it. Adding one posts it in the project’s Slack channel: tell your person that first, or pass post_in_channel: false. A comment sends whoever made the card, its assignees and whoever has commented a Slack message, and moving a card to done tells whoever raised it: tell your person first. Move the cards you work on as you go: doing when you start, review while it waits on someone, done once it’s live.',
+      inputSchema: S({ post_in_channel: { type: 'boolean', description: 'add: post it in the project’s Slack channel (default true)' }, action: ACTIONS(['list', 'add', 'update', 'move', 'remove', 'comments', 'comment', 'to_conversation']), project_id: str('The project id (list_projects).'), card_id: str('update, move, remove, comments, comment, to_conversation (list gives it).'), text: str('comment: what you say (Markdown).'),
         title: str('add, update'), description: str('add, update: what it is (Markdown), shown on the card’s page.'), type: ACTIONS(['code', 'content', 'request', 'other']), column: Object.assign(ACTIONS(['todo', 'doing', 'review', 'done']), { description: 'add, update, move: a card made on the board never waits for review: review puts it in done.' }), assign_to: str('add, update: a person’s name or email ("me" for you; "" for nobody).'),
         milestone: str('add, update: the milestone it’s in, by name (list gives the board’s milestones; "" for none).'),
         labels: { type: 'array', items: { type: 'string' }, description: 'add, update: its labels, the whole list (several a card, unlike its one milestone; e.g. "Good first issue"; [] for none).' },
@@ -839,8 +856,8 @@ module.exports = function(ctx){
       description: 'The lab’s events: add one (it starts hidden, until you release it), update, release, hide or delete one you added or whose series you organise (PIs and admins: any). Releasing one has Google Calendar invite its group: tell your person that, and who, before you do it.',
       inputSchema: S({ action: ACTIONS(['add', 'update', 'release', 'hide', 'delete']), event: str('Its name or slug (all but add).'), title: str(''), start: str('YYYY-MM-DD'), end: str('YYYY-MM-DD'), place: str(''), description: str(''), visible: ACTIONS(['public', 'everyone', 'associate', 'internal', 'staff', 'exec']) }) },
     { name: 'requests', run: requests,
-      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody; a change of group, any), or set someone’s group.',
-      inputSchema: S({ action: ACTIONS(['list', 'approve_join', 'decline_join', 'approve_group', 'decline_group', 'set_group']), request_id: str(''), member: str('set_group: their name'), group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']) }) },
+      description: 'PIs and admins: requests to join BOLD and to change group (the Requests page): list the open ones, approve or decline them (a request to join only if it names you as inviting them, or names nobody; a change of group, any), propose changes to a request to join instead (ask_join_changes, with a note saying what to change: the lab’s Google account emails it to them with a link to their form; tell your person first), or set someone’s group.',
+      inputSchema: S({ action: ACTIONS(['list', 'approve_join', 'decline_join', 'ask_join_changes', 'approve_group', 'decline_group', 'set_group']), request_id: str(''), note: str('ask_join_changes: what they should change'), member: str('set_group: their name'), group: ACTIONS(['exec', 'staff', 'internal', 'associate', 'pan']) }) },
     { name: 'skills', run: skills,
       description: 'PIs and admins: add a new Claude skill, or delete one. Changing a skill is a proposal, by anyone (proposals, page "skill:<name>").',
       inputSchema: S({ action: ACTIONS(['add', 'delete']), name: str('The skill’s name.'), title: str(''), description: str(''), body: str('SKILL.md body'), change_note: str('What changed') }, ['action', 'name']) },
