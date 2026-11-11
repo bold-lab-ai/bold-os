@@ -37,9 +37,10 @@ const DEMO_JOIN_KEY = 'dec0de0c0ffee';
   const set = (p, d) => b.set(db.doc(p), d);
   set('roles/pis', { emails: ['pi@example.com'] });
   set('roles/admins', { emails: [] });
+  set('peerAmbassadors/internal@example.com', { active: true, name: 'Ines Internal', bio: 'Demo ambassador', slackId: 'UTESTIN', notifyNewJoiners: false });
   // As on BOLD.OS since 2026-11-06 (the BOLDiquette's Who can do what): everyone signed in sees everything.
   set('settings/access', { pages: {
-    boldiquette: LEVEL('everyone', 'internal'), profile: LEVEL('everyone', 'everyone'), 'get-started': LEVEL('everyone', 'associate'),
+    'peer-support': LEVEL('everyone', 'everyone'), boldiquette: LEVEL('everyone', 'internal'), profile: LEVEL('everyone', 'everyone'), 'get-started': LEVEL('everyone', 'associate'),
     projects: LEVEL('everyone', 'everyone'), events: LEVEL('everyone', 'internal'), calendar: LEVEL('everyone', 'associate'),
     people: LEVEL('everyone', 'internal'), requests: LEVEL('everyone', 'internal'), 'service-desk': LEVEL('everyone', 'associate'),
     guides: LEVEL('everyone', 'internal'), agents: LEVEL('everyone', 'internal'), tools: LEVEL('everyone', 'internal'), skills: LEVEL('everyone', 'internal'),

@@ -361,7 +361,7 @@ module.exports = function(deps){
   // The tools the lab adds, from the Tools pages (agentTools), run in mcpSandbox (functions/api-tools.js).
   const added = require('./api-tools')({ db, httpError, builtins: () => TOOLS, idTokenFor: (e) => actions.idTokenFor(e), fetchImpl: deps.fetchImpl, sandboxUrl: deps.sandboxUrl, SITE_URL });
   const actions = require('./api-actions')({ db, admin, logger, httpError, act, resolve, cardOf, lab, words, fold, matches, url, isFullWrite, SITE_URL, fetchImpl: deps.fetchImpl, checkTool: (n, d) => added.check(n, d) });
-  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'conversations', 'comments'];
+  const SCOPES = ['boldiquette', 'guides', 'skills', 'events', 'projects', 'people', 'board', 'conversations', 'comments', 'peer-support'];
   const TOOLS = [
     {
       name: 'search',
@@ -497,6 +497,8 @@ module.exports = function(deps){
       (x.parts || []).forEach((p) => item(s, p.title, name + (p.section ? ' › ' + p.section : ''), p.body, href + '#' + prefix + p.id));
     });
     const jobs = [];
+    if (want('peer-support') && await access.can(who.email, 'peer-support', 'view')) jobs.push(db.collection('peerAmbassadors').where('active', '==', true).get().then(s =>
+      s.docs.forEach(d => item('peer-support', d.data().name, 'Peer support ambassador', d.data().bio, 'peer-support.html'))));
     if (want('boldiquette')) jobs.push(lab.handbook().then((l) => parts(l, 'boldiquette', (id) => id === 'boldiquette' ? 'boldiquette.html' : 'index.html', '', 'BOLDiquette')));
     // Get started has its own page in Who can see what (access.js GUIDE_AREAS), on the Service desk: labelled so, and only for who can see it.
     if (want('guides')) jobs.push(lab.guides().then(async (l) => {

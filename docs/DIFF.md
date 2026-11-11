@@ -176,3 +176,7 @@ Every point where the site differs from BOLDiquette: the paper-submission toolin
 
 - **arXiv affiliation.** Guide now uses "BOLD, {University of Oxford / Imperial College / UCL}", matching BOLDiquette exactly (was Oxford-only). *Fixed 2026-09-10.*
 - **Roger Grosse attribution.** The guide credits "Roger Grosse" for the loose-ends practice; BOLDiquette has a typo, "Rober Grosse". Editorial only — worth fixing in BOLDiquette when the section is next edited.
+
+## Peer support rollout
+
+Peer support (#265): the implementation adds private manual buddy offers, an ambassador console and applications. Before rollout, the peer support team should propose its BOLDiquette description and a Peer support access-table row (View and Edit: Everyone). These are editable site content and are not seeded into production by code.

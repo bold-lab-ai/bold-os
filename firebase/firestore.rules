@@ -24,6 +24,15 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Peer support is callable-only. Even site admins cannot read private matches
+    // through Firestore; the callable requires the ambassador role or the member.
+    match /peerBuddyRequests/{id} { allow read, write: if false; }
+    match /peerApplications/{id} { allow read, write: if false; }
+    match /peerAmbassadors/{id} {
+      allow read: if may('peer-support', 'view');
+      allow write: if false;
+    }
+    match /peerSupportContent/{id} { allow read, write: if false; }
 
     // Signed in to a Slack account: membership of the BOLD Slack is what makes
     // someone a lab member. Checked by the account's identities, not the

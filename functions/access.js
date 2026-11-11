@@ -12,6 +12,7 @@ const ACCESS_PART = 'access';
 
 // The pages, as the table names them. A page missing from the table is BOLD-internal.
 const PAGES = [
+  ['peer-support', 'Peer support'],
   ['boldiquette', 'BOLDiquette'],
   ['projects', 'Projects'],
   ['profile', 'Your profile'],
