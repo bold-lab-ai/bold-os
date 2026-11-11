@@ -6,7 +6,8 @@
 
 const BASE = 'https://llm.bold-lab.ai/v1';
 const MODEL = 'Qwen/Qwen3.8-27B-FP8';
-const TIMEOUT = 120000;
+// Long enough for a letter (2026-11-11: 2 minutes wasn't, with Qwen thinking first); the callers' own limits are 5 and 9.
+const TIMEOUT = 180000;
 
 // Pure: the agents' tools (Anthropic's shape: { name, description, input_schema }) in OpenAI's.
 function openAITools(tools){
@@ -35,7 +36,10 @@ module.exports = function({ key, post }){
     const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), TIMEOUT);
     try {
       const r = await post(BASE + '/chat/completions', { method: 'POST', signal: ctl.signal,
-        headers: { Authorization: 'Bearer ' + key(), 'Content-Type': 'application/json' }, body: JSON.stringify(Object.assign({ model: MODEL }, body)) });
+        headers: { Authorization: 'Bearer ' + key(), 'Content-Type': 'application/json' },
+        // Without Qwen's thinking (its chat template's switch): a letter or an answer needs no long reasoning first, and
+        // with it a letter took longer than TIMEOUT.
+        body: JSON.stringify(Object.assign({ model: MODEL, chat_template_kwargs: { enable_thinking: false } }, body)) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.choices || !j.choices[0]) throw new Error('Sofya answered ' + r.status + (j.error ? ': ' + String(j.error.message || j.error).slice(0, 200) : ''));
       return { message: j.choices[0].message || {}, model: j.model || MODEL, finish: j.choices[0].finish_reason || '' };
