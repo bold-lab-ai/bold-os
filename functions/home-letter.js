@@ -60,4 +60,18 @@ function inputsOf(p){
   };
 }
 
-module.exports = { REFRESH, refreshHours, writesAt, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };
+// Who writes the letters, as a ladder (settings/homeLetter.ladder, Settings › BOLD Agent): each tried in turn until one
+// writes it; 'rules', the page's own letter, always does, so whatever is below it is never reached. Without a ladder (set
+// before 2026-11-11), from writer and model. Pure. → e.g. ['sofya', 'claude', 'rules'].
+const WRITERS = ['sofya', 'claude', 'rules'];
+function ladderOf(x){
+  x = x || {};
+  let l = Array.isArray(x.ladder) ? x.ladder.filter((w, i, a) => WRITERS.indexOf(w) >= 0 && a.indexOf(w) === i) : null;
+  if (!l || !l.length) l = x.writer !== 'claude' ? ['rules'] : x.model === 'sofya' ? ['sofya', 'claude', 'rules'] : ['claude', 'rules'];
+  WRITERS.forEach((w) => { if (l.indexOf(w) < 0) l.push(w); });
+  return l;
+}
+// Pure: the models above 'rules', in order (none: the rule-based letter for everyone).
+function modelsOf(ladder){ return ladder.slice(0, ladder.indexOf('rules') < 0 ? ladder.length : ladder.indexOf('rules')); }
+
+module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };

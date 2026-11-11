@@ -269,3 +269,15 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .busy-how ul{margin:6px 0; padding-left:18px;}
 .busy-how li{margin:3px 0;}
 .busy-how p{margin:6px 0 0;}
+/* Settings › BOLD Agent: who writes the home letters, as a ladder (pages/settings.js). */
+.st-ladder{list-style:none; margin:8px 0 0; padding:0; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface);}
+.st-rung{display:flex; align-items:flex-start; gap:12px; padding:10px 12px; font-family:var(--sans); font-size:14px; line-height:1.5; color:var(--ink-soft);}
+.st-rung + .st-rung{border-top:1px solid var(--rule);}
+.st-rung strong{color:var(--ink);}
+.st-rung-n{flex:none; width:22px; height:22px; border-radius:50%; background:var(--wash); color:var(--ink); font-size:12px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; margin-top:1px;}
+.st-rung-text{flex:1; min-width:0;}
+.st-rung-text em{display:block; font-size:13px; color:var(--muted);}
+.st-rung-move{flex:none; display:inline-flex; gap:4px;}
+.st-rung.is-unused{color:var(--muted);}
+.st-rung.is-unused strong{color:var(--muted);}
+.st-rung.is-unused .st-rung-n{opacity:.5;}

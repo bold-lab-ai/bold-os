@@ -71,3 +71,16 @@ test('a letter covers what changed since the previous one, at most a day', () =>
   assert.strictEqual(HL.sinceFor({ at: now - 30 * 3600000 }, now), now - 24 * 3600000);
   assert.strictEqual(HL.sinceFor(null, now), now - 24 * 3600000);
 });
+
+test('who writes the letters: a ladder, tried in turn; nothing below rule-based', () => {
+  assert.deepStrictEqual(HL.ladderOf({ ladder: ['sofya', 'claude', 'rules'] }), ['sofya', 'claude', 'rules']);
+  assert.deepStrictEqual(HL.ladderOf({ ladder: ['claude', 'claude', 'nonsense'] }), ['claude', 'sofya', 'rules']);
+  // Set before ladders: from writer and model.
+  assert.deepStrictEqual(HL.ladderOf({ writer: 'rules' }), ['rules', 'sofya', 'claude']);
+  assert.deepStrictEqual(HL.ladderOf({ writer: 'claude' }), ['claude', 'rules', 'sofya']);
+  assert.deepStrictEqual(HL.ladderOf({ writer: 'claude', model: 'sofya' }), ['sofya', 'claude', 'rules']);
+  assert.deepStrictEqual(HL.ladderOf(null), ['rules', 'sofya', 'claude']);
+  assert.deepStrictEqual(HL.modelsOf(['sofya', 'rules', 'claude']), ['sofya']);
+  assert.deepStrictEqual(HL.modelsOf(['rules', 'claude', 'sofya']), []);
+  assert.deepStrictEqual(HL.modelsOf(['claude', 'sofya', 'rules']), ['claude', 'sofya']);
+});

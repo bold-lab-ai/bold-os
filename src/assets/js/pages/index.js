@@ -261,7 +261,7 @@
     if (state.letterChoice !== 'bold' || !l || !l.at || Date.now() - l.at >= 24 * 3600000 || !window.BoldMarkdown) return '';
     var len = letterLength();
     return '<div class="hl-agent-text">' + BoldMarkdown.render(String(l[len] || l.short || '')) + '</div>' +
-      '<p class="hl-by">Written by BOLD LLM · ' +
+      '<p class="hl-by">Written by ' + ({ sofya: 'Sofya', claude: 'Claude' }[l.writer] || 'BOLD LLM') + ' · ' +
       '<button type="button" class="btn-text hl-len" data-len="' + (len === 'short' ? 'long' : 'short') + '">' + (len === 'short' ? 'Long' : 'Short') + '</button> · ' +
       '<a href="profile.html#agents">Who writes it</a></p>';
   }
@@ -635,10 +635,13 @@
     var call = function(n, d){ return firebase.app().functions('europe-west2').httpsCallable(n)(d || {}); };
     var fail = function(what, then){ return function(err){ console.error('[BOLD Lab] loading ' + what + ' failed', err); if (then) then(); }; };
     var set = function(k){ return function(v){ if (asked !== mine) return; state[k] = v; write(); drawSides(); }; };
-    // Who writes their letter: BOLD LLM when the lab has it on (settings/homeLetter, Settings › BOLD Agent); then
-    // today's, or one written now (homeLetter 'write'), the rule-based one meanwhile.
+    // Who writes their letter: BOLD LLM when the lab's ladder puts a model above the rule-based letter
+    // (settings/homeLetter, Settings › BOLD Agent; functions/home-letter.js ladderOf, as here); then today's, or one
+    // written now (homeLetter 'write'), the rule-based one meanwhile, and if no model can.
     db.collection('settings').doc('homeLetter').get().then(function(lab){
-      var c = (lab.exists && lab.data().writer) === 'claude' ? 'bold' : 'rules';
+      var x = lab.exists ? lab.data() : {};
+      var first = Array.isArray(x.ladder) && x.ladder.length ? x.ladder[0] : x.writer === 'claude' ? (x.model === 'sofya' ? 'sofya' : 'claude') : 'rules';
+      var c = first === 'sofya' || first === 'claude' ? 'bold' : 'rules';
       state.chatOn = c === 'bold';
       if (state.chatOn) mountAsk();
       if (c !== 'bold') return set('letterChoice')(c);
