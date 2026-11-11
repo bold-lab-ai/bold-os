@@ -3,7 +3,7 @@
 // Its title and description (whoever has committed to it, or a PI or admin, edits them), who opened it and who has
 // committed to it, and three tabs: Conversation (its description, its commits and what became of it, then its
 // conversation: talk.js), Commits (each, by day, with what it changed) and Changes (each page as it would leave it,
-// against main, and where it stands: behind main, in conflict). Switch to it puts this tab on it (bold.js
+// against main, and where it stands: behind main, in conflict). View site puts this tab on it (bold.js
 // BOLD.setBranch), where every page shows it and what you change is committed to it. Accept and Decline: a PI or
 // admin who hasn't committed to it (decideBranch: all its pages together); Withdraw: whoever opened it, or a PI or admin.
 (function(){
@@ -80,39 +80,44 @@
   function timeOf(t){ return new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
   function who(p){ return esc((p && (p.name || p.email)) || 'Someone'); }
 
-  function canEdit(){ return !!(me && b && b.status === 'open' && (BOLD.isFullWrite() || (b.contributors || []).indexOf(me) >= 0)); }
+  var live = function(){ return !!b && (b.status === 'open' || b.status === 'draft'); };
+  function canEdit(){ return !!(me && live() && (BOLD.isFullWrite() || (b.contributors || []).indexOf(me) >= 0)); }
   function decideOff(){
+    if (b && b.status === 'draft') return 'It’s a draft: it’s marked ready for review first';
     if (!b || b.status !== 'open') return 'It has been decided';
     if (!BOLD.isFullWrite()) return 'Only PIs and admins accept or decline';
     if ((b.contributors || []).indexOf(me) >= 0) return 'You’ve committed to it: another PI or admin reviews it';
     var bad = (b.pages || []).filter(function(p){ return stateOf(p) === 'conflict' || stateOf(p) === 'gone'; });
     return bad.length ? pageName(bad[0]) + ' needs rebasing on main first' : '';
   }
-  function canWithdraw(){ return !!(me && b && b.status === 'open' && (BOLD.isFullWrite() || (b.by && String(b.by.email || '').toLowerCase() === me))); }
+  function canWithdraw(){ return !!(me && live() && (BOLD.isFullWrite() || (b.by && String(b.by.email || '').toLowerCase() === me))); }
 
   function headHtml(){
     var st = b.status, n = (b.pages || []).length, people = (b.contributors || []).length;
-    var chip = '<span class="pr-state pr-' + esc(st) + '">' + esc({ open: 'Open', accepted: 'Accepted', declined: 'Declined', withdrawn: 'Withdrawn' }[st] || st) + '</span>';
+    var chip = '<span class="pr-state pr-' + esc(st) + '">' + esc({ open: 'Open', draft: 'Draft', accepted: 'Accepted', declined: 'Declined', withdrawn: 'Withdrawn' }[st] || st) + '</span>';
     var title = editing ? '<div class="event-form pr-edit"><label>Title<input type="text" class="pr-title-in" maxlength="120" value="' + esc(b.title || '') + '"></label>' +
         '<label>Description<textarea class="pr-desc-in md-field" rows="6" data-preview-class="md-desc">' + esc(b.description || '') + '</textarea></label>' +
         '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save pr-save"' + (busy ? ' disabled' : '') + '>Save</button><button type="button" class="ev-cancel pr-cancel">Cancel</button></div></div>'
       : '<h1 class="pr-title">' + esc(b.title || 'A proposed change') + (num ? ' <span class="pr-num">#' + num + '</span>' : '') + '</h1>';
     var off = decideOff(), wd = canWithdraw();
     return '<div class="hero pr-hero"><a class="back-link" href="proposals.html">&larr; All proposed changes</a><div><span class="eyebrow">Proposed change</span></div>' + title +
-      '<p class="pr-meta">' + chip + ' <span><strong>' + who(b.by) + '</strong> ' + (st === 'open' ? 'wants to change' : 'proposed changing') + ' ' +
+      '<p class="pr-meta">' + chip + ' <span><strong>' + who(b.by) + '</strong> ' + (st === 'open' ? 'wants to change' : st === 'draft' ? 'is drafting changes to' : 'proposed changing') + ' ' +
         (b.pages || []).map(function(p){ return '<a href="#changes" data-tab="changes">' + esc(pageName(p)) + '</a>'; }).join(', ') +
         ' · ' + (people > 1 ? people + ' people committed' : '1 person committed') + ' · opened ' + esc(dayOf(b.at || 0)) +
         (b.decidedAt && st !== 'open' ? ' · ' + esc(st) + ' by ' + esc(b.decidedByName || b.decidedBy || '') + ' on ' + esc(dayOf(b.decidedAt)) : '') + '</span></p>' +
       (editing ? '' : '<div class="pr-actions">' +
         // On it, the site shows its changes and your edits are committed to it.
-        (st === 'open' ? (BOLD.branchId() === id ? '<button type="button" class="btn-box pr-main">Back to main</button>'
-          : '<button type="button" class="btn-box is-primary pr-browse" title="See the site with these changes; what you edit is added to it">Switch to it</button>') : '') +
+        (live() ? (BOLD.branchId() === id ? '<button type="button" class="btn-box pr-main">Back to main</button>'
+          : '<button type="button" class="btn-box is-primary pr-browse" title="See the site with these changes; what you edit is added to it">View site</button>') : '') +
+        // A draft: whoever has committed to it (or a PI or admin) asks for it to be reviewed.
+        (st === 'draft' && canEdit() ? '<button type="button" class="btn-box is-primary pr-ready"' + (busy ? ' disabled' : '') + '>Ready for review</button>' : '') +
         (st === 'open' ? '<button type="button" class="btn-box pr-accept"' + (off || busy ? ' disabled title="' + esc(off || '') + '"' : '') + '>Accept</button>' +
           '<button type="button" class="btn-box pr-decline"' + (decideOffSimple() || busy ? ' disabled title="' + esc(decideOffSimple()) + '"' : '') + '>Decline</button>' : '') +
         (wd ? '<button type="button" class="btn-text danger pr-withdraw"' + (busy ? ' disabled' : '') + '>Withdraw</button>' : '') +
         (canEdit() ? '<button type="button" class="btn-text pr-edit-btn">Edit</button>' : '') + '</div>') +
-      (st === 'open' && !editing ? '<p class="pr-hint">' + (BOLD.branchId() === id ? 'You’re on it: the site shows its changes, and what you edit is added to it.'
-        : 'Switch to it to see the site with these changes and add your own.') + '</p>' : '') +
+      (st === 'draft' && !editing ? '<p class="pr-hint">A draft: nobody has been asked to review it yet. Anyone can add to it.</p>' : '') +
+      (live() && !editing ? '<p class="pr-hint">' + (BOLD.branchId() === id ? 'You’re on it: the site shows its changes, and what you edit is added to it.'
+        : 'View site to see it with these changes and add your own.') + '</p>' : '') +
       (notice ? '<p class="gd-notice pr-notice">' + esc(notice) + '</p>' : '') + '</div>';
   }
   // Declining doesn't need it to apply cleanly.
@@ -142,7 +147,8 @@
       '<div class="pr-desc-body md-desc">' + (b.description ? md(b.description) : '<p class="pr-muted">No description.</p>') + '</div></article>');
     items.push('<ol class="pr-timeline">' + list.map(function(x){
       return '<li><span class="pr-dot" aria-hidden="true"></span><strong>' + who(x.by) + '</strong> committed <a href="#commits" data-tab="commits">' + esc(x.c.note || 'a change') + '</a> to ' + esc(pageName(x.page)) + ' · ' + esc(dayOf(x.at)) + '</li>';
-    }).join('') + (b.status !== 'open' ? '<li class="pr-end"><span class="pr-dot" aria-hidden="true"></span><strong>' + esc(b.decidedByName || b.decidedBy || 'Someone') + '</strong> ' + esc({ accepted: 'accepted', declined: 'declined', withdrawn: 'withdrew' }[b.status] || b.status) + ' it · ' + esc(dayOf(b.decidedAt || 0)) + '</li>' : '') + '</ol>');
+    }).join('') + (b.readyAt ? '<li><span class="pr-dot" aria-hidden="true"></span>Marked ready for review · ' + esc(dayOf(b.readyAt)) + '</li>' : '') +
+      (!live() ? '<li class="pr-end"><span class="pr-dot" aria-hidden="true"></span><strong>' + esc(b.decidedByName || b.decidedBy || 'Someone') + '</strong> ' + esc({ accepted: 'accepted', declined: 'declined', withdrawn: 'withdrew' }[b.status] || b.status) + ' it · ' + esc(dayOf(b.decidedAt || 0)) + '</li>' : '') + '</ol>');
     items.push('<div class="pr-talk"></div>');
     return items.join('');
   }
@@ -198,14 +204,18 @@
   function act(what){
     var name = b.by && b.by.name;
     busy = true; notice = ''; render();
-    var job = what === 'withdraw'
+    var job = what === 'ready'
+      ? BOLD.confirmAction({ title: 'Ready for review?', go: 'Ask for review', effects: ['Make it a proposed change, for a PI or admin who hasn’t committed to it to accept or decline', 'Send every PI and admin a Slack message asking them to review it'], always: true })
+          .then(function(ok){ if (!ok) throw { cancelled: true }; return call('branchMeta', { id: id, ready: true }); })
+      : what === 'withdraw'
       ? BOLD.confirmAction({ title: 'Withdraw it?', go: 'Withdraw it', effects: ['Tell everyone who committed to it, and the PIs and admins, on Slack that it’s withdrawn'], always: true })
           .then(function(ok){ if (!ok) throw { cancelled: true }; return call('branchMeta', { id: id, withdraw: true }); })
       : BOLD.confirmProposal(what, name, (b.pages || []).length > 1 ? [(what === 'accept' ? 'Change ' : 'Leave ') + (b.pages || []).map(pageName).join(', ') + (what === 'accept' ? ', all together' : ' as they are')] : [])
           .then(function(ok){ if (!ok) throw { cancelled: true }; return call('decideBranch', { id: id, accept: what === 'accept', editedAt: b.editedAt || b.at || 0 }); });
     job.then(function(){
-      busy = false; notice = what === 'accept' ? 'Accepted: the site has changed.' : what === 'decline' ? 'Declined.' : 'Withdrawn.';
-      if (BOLD.branchId() === id) BOLD.setBranch(null, { quiet: true });
+      busy = false; notice = what === 'ready' ? 'It’s ready for review: the PIs and admins have been asked.' : what === 'accept' ? 'Accepted: the site has changed.' : what === 'decline' ? 'Declined.' : 'Withdrawn.';
+      if (what === 'ready' && BOLD.branchId() === id) BOLD.setBranch(Object.assign({}, BOLD.branch(), { draft: false }), { quiet: true, known: true });
+      else if (what !== 'ready' && BOLD.branchId() === id) BOLD.setBranch(null, { quiet: true });
       render();
     }, function(err){
       busy = false;
@@ -229,13 +239,14 @@
     if (a) { e.preventDefault(); tab = a.getAttribute('data-tab'); try { history.replaceState(null, '', location.pathname + location.search + '#' + tab); } catch (err){} render(); return; }
     // A page it changes: opened with the site on it.
     var pl = e.target.closest('.pr-page-link');
-    if (pl && b && b.status === 'open') { e.preventDefault(); BOLD.setBranch({ id: id, num: num, title: b.title, targets: [pl.getAttribute('data-page')].concat(b.pages || []) }, { go: true }); return; }
+    if (pl && live()) { e.preventDefault(); BOLD.setBranch({ id: id, num: num, title: b.title, draft: b.status === 'draft', targets: [pl.getAttribute('data-page')].concat(b.pages || []) }, { go: true }); return; }
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('pr-commit-head')) { var k = t.getAttribute('data-key'); open[k] = !open[k]; render(); return; }
     if (t.classList.contains('pr-main')) { BOLD.setBranch(null); return; }
-    if (t.classList.contains('pr-browse')) { BOLD.setBranch({ id: id, num: num, title: b.title, targets: b.pages || [] }, { go: true }); return; }
+    if (t.classList.contains('pr-browse')) { BOLD.setBranch({ id: id, num: num, title: b.title, draft: b.status === 'draft', targets: b.pages || [] }, { go: true }); return; }
     if (t.classList.contains('pr-accept')) { act('accept'); return; }
+    if (t.classList.contains('pr-ready')) { act('ready'); return; }
     if (t.classList.contains('pr-decline')) { act('decline'); return; }
     if (t.classList.contains('pr-withdraw')) { act('withdraw'); return; }
     if (t.classList.contains('pr-edit-btn')) { editing = true; render(); var f = root.querySelector('.pr-title-in'); if (f) f.focus(); return; }

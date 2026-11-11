@@ -39,6 +39,7 @@ test('commits on a page of parts: a batch, each commit with who and when', () =>
   assert.strictEqual(q2.by, ana);           // its first author stays
   assert.strictEqual(q2.at, 100);
   assert.strictEqual(q2.editedAt, 200);
+  assert.strictEqual(B.withCommit(null, 'guides/setup', 'br2', c1, ana, 100, 'draft').status, 'draft');
   assert.deepStrictEqual(q2.changes.map((c) => [c.note, c.by.name, c.at]), [['One', 'Ana', 100], ['Two', 'Ben', 200]]);
   let q = q2;
   for (let i = 2; i < B.MAX_COMMITS; i++) q = B.withCommit(q, 'guides/setup', 'br1', c2, ana, 300 + i);
@@ -65,6 +66,9 @@ test('who decides, and who withdraws', () => {
   assert.match(B.cannotDecide(b, 'Ben@x.org', true), /committed to it/);
   assert.strictEqual(B.cannotDecide(b, 'cy@x.org', true), '');
   assert.match(B.cannotDecide(Object.assign({}, b, { status: 'accepted' }), 'cy@x.org', true), /already/);
+  // A draft: not until it's marked ready; withdrawn as an open one.
+  assert.match(B.cannotDecide(Object.assign({}, b, { status: 'draft' }), 'cy@x.org', true), /draft/);
+  assert.strictEqual(B.canWithdraw(Object.assign({}, b, { status: 'draft' }), 'ana@x.org', false), true);
   assert.strictEqual(B.canWithdraw(b, 'ana@x.org', false), true);
   assert.strictEqual(B.canWithdraw(b, 'ben@x.org', false), false);
   assert.strictEqual(B.canWithdraw(b, 'ben@x.org', true), true);

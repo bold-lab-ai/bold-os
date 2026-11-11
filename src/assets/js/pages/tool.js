@@ -57,11 +57,13 @@
         '<label>Code (the body of an async function (input, bold) returning JSON)<textarea class="tl-code mono no-tags" rows="18" spellcheck="false">' + esc(d.code || '') + '</textarea></label>' +
         '<p class="event-form-hint">It runs in a sandbox as whoever calls it, under the site’s rules: <code>bold.read(path)</code>, <code>bold.query(collection, { where, orderBy, limit, group })</code>, and for a tool that acts <code>bold.write(op, path, data)</code> and <code>bold.call(callable, data)</code>.</p>') +
       '<label>What you changed and why, for whoever reviews it<input type="text" class="tl-note" maxlength="300"></label>' +
-      '<p class="event-form-hint">' + (BOLD.branch() ? 'It’s added to the proposed change you’re on, which ' : 'It opens a proposed change, with its own page, which ') + (fullWrite ? 'another' : 'a') + ' PI or admin accepts before it shows; Claude reviews it meanwhile.</p>' +
-      '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save tl-save">' + (BOLD.branch() ? 'Commit to ' + esc(BOLD.branch().num ? '#' + BOLD.branch().num : 'it') : 'Propose') + '</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
+      '<p class="event-form-hint">' + (BOLD.branch() ? 'It’s added to the proposed change you’re on.' : 'Propose opens a proposed change for ' + (fullWrite ? 'another' : 'a') + ' PI or admin to accept; Claude reviews it meanwhile. Save draft opens it as a draft: nobody is asked yet.') + '</p>' +
+      '<p class="ev-error" hidden></p><div class="event-form-actions"><button type="button" class="ev-save tl-save">' + (BOLD.branch() ? 'Commit to ' + esc(BOLD.branch().num ? '#' + BOLD.branch().num : 'it') : 'Propose') + '</button>' +
+        (BOLD.branch() ? '' : '<button type="button" class="ev-save ev-stage tl-draft">Save draft</button>') + '<button type="button" class="ev-cancel">Cancel</button></div></div>';
   }
   function fail(msg){ var e = body.querySelector('.ev-error'); e.textContent = msg; e.hidden = false; var b = body.querySelector('.tl-save'); if (b) b.disabled = false; }
-  function save(){
+  function save(asDraft){
+    asDraft = asDraft === true;
     var v = function(c){ var el = body.querySelector(c); return el ? el.value : ''; };
     var note = v('.tl-note').trim(), target = isNew ? v('.tl-name').trim() : name;
     if (!NAME.test(target)) return fail('The name is lowercase letters, digits and _, 3 to 41 characters.');
@@ -85,9 +87,10 @@
     body.querySelector('.tl-save').disabled = true;
     var start = isNew ? db.collection('agentTools').doc(target).get().then(function(s){ if (s.exists) throw new Error('exists'); }) : Promise.resolve();
     start.then(function(){
-      return BOLD.commit({ collection: 'agentTools', slug: target }, { kind: kind, before: kind === 'new' ? null : shownContent(), after: after, note: note });
+      return BOLD.commit({ collection: 'agentTools', slug: target }, { kind: kind, before: kind === 'new' ? null : shownContent(), after: after, note: note }, { draft: asDraft });
     }).then(function(r){
-      notice = r.opened ? 'Proposed. You’re on it now: what you change is added to it, until you go back to main.' : 'Committed.';
+      notice = r.opened && asDraft ? 'Saved as a draft. You’re on it now: mark it ready for review on its page.'
+        : r.opened ? 'Proposed. You’re on it now: what you change is added to it, until you go back to main.' : 'Committed.';
       if (isNew) { location.replace('tool.html?tool=' + encodeURIComponent(target)); return; }
       form = null; render(); window.scrollTo(0, 0);
     }).catch(function(err){
@@ -100,9 +103,10 @@
   // ---------- proposals ----------
   // The open proposed changes, with Claude's review, each linking to its page.
   function proposalsHtml(){
-    if (!proposals.length) return '';
+    var openQs = proposals.filter(function(q){ return q.status === 'open'; });
+    if (!openQs.length) return '';
     return '<section class="block" id="proposals"><div class="block-head"><h2>Proposed changes</h2></div>' +
-      '<ul class="sk-proposals">' + proposals.map(function(q){
+      '<ul class="sk-proposals">' + openQs.map(function(q){
         var what = q.kind === 'new' ? 'A new tool' : q.kind === 'delete' ? 'Removing it' : 'A change';
         var r = q.review && q.review.of === (q.editedAt || q.at) ? q.review : null;
         return '<li class="sk-proposal" id="q-' + esc(q.id) + '"><p class="sk-p-head"><strong>' + what + '</strong> · ' + esc((q.by && q.by.name) || 'Someone') + ' · ' + BoldHistory.when(q.editedAt || q.at) +
@@ -164,7 +168,9 @@
     if (rm) rm.addEventListener('click', function(){ notice = ''; form = 'delete'; render(); });
   }
   function bind(){
-    body.querySelector('.tl-save').addEventListener('click', save);
+    body.querySelector('.tl-save').addEventListener('click', function(){ save(false); });
+    var td = body.querySelector('.tl-draft');
+    if (td) td.addEventListener('click', function(){ save(true); });
     body.querySelector('.ev-cancel').addEventListener('click', function(){ if (isNew) { location.href = 'tools.html'; return; } form = null; render(); });
     body.querySelector('.skill-form').addEventListener('input', function(){ var e = body.querySelector('.ev-error'); if (e) e.hidden = true; });
   }
@@ -178,7 +184,7 @@
     var editing = function(){ return form && body.querySelector('.skill-form'); };
     ref.onSnapshot(function(snap){ x = snap.exists ? snap.data() : null; loaded = true; if (!editing()) render(); },
       function(err){ console.error('[BOLD Tools] loading failed', err); loaded = true; render(); });
-    ref.collection('proposals').where('status', '==', 'open').onSnapshot(function(snap){
+    ref.collection('proposals').where('status', 'in', ['open', 'draft']).onSnapshot(function(snap){
       proposals = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return a.at - b.at; });
       if (!editing()) render();
     }, function(err){ console.error('[BOLD Tools] loading proposals failed', err); });

@@ -1839,8 +1839,10 @@ exports.onBranchWritten = onDocumentWritten({ document: 'branches/{id}', secrets
   const author = String((after.by && after.by.email) || '').toLowerCase(), who = slackText((after.by && (after.by.name || after.by.email)) || 'Someone');
   const staff = async () => (await rolesEmails('pis')).concat(await rolesEmails('admins')).map((e) => String(e).toLowerCase());
   const pagesText = (n) => n === 1 ? '' : ' (' + n + ' pages)';
-  if (!before) {
-    // Made from a proposed change of before branches (the migration): its people heard of it then.
+  // A draft (Save draft) marked ready for review: as if opened now.
+  const ready = before && before.status === 'draft' && after.status === 'open';
+  if (!before || ready) {
+    // Made from a proposed change of before branches (the migration): its people heard of it then. A draft: nobody yet.
     if (after.status !== 'open' || after.migrated) return;
     await sendEvent(token, { key: 'proposals', emails: await staff(), excludeEmail: author,
       headline: '🔔 ' + tag + who + ' proposed ' + link + pagesText((after.pages || []).length) + '. It needs a PI or admin to accept or decline it.' });
@@ -2444,41 +2446,60 @@ const branchProps = (b, id) => (b.pages || []).map((p) => db.doc(p + '/proposals
 
 // branchCommit { on?, title?, description?, target: { collection, slug }, change } → { id, num }: a commit on a page,
 // on branch `on` (not `branch`: every call carries the one the page is on, onCall takes it off). Without it, it
-// opens one (its title: `title`, else the commit's note) with this commit.
+// opens one (its title: `title`, else the commit's note) with this commit. Or { on?, title?, commits: [{ target,
+// change }] }: several at once, on one or more pages, all or none. `draft: true` opens it as a draft (Save draft):
+// nobody is told, and it isn't decided until it's marked ready (branchMeta { ready }).
 exports.branchCommit = onCall(async (request) => {
   const email = signedInEmail(request).toLowerCase(), data = request.data || {};
   const name = String(request.auth.token.name || '');
-  const page = branchLib.pageKey(data.target && data.target.collection, data.target && data.target.slug);
-  if (!page) throw new HttpsError('invalid-argument', 'That page can’t be changed on a branch.');
-  await access.requireAccess(email, branchLib.areaOf(page, accessLib.guideArea), 'edit');
-  let c;
-  try { c = branchLib.validChange(page, data.change); } catch (err) { branchErr(err); }
-  const docSnap = await db.doc(page).get();
-  if (c.kind === 'new' ? docSnap.exists : !docSnap.exists) throw new HttpsError(c.kind === 'new' ? 'already-exists' : 'not-found', c.kind === 'new' ? 'It exists already: change it instead.' : 'That page isn’t there.');
+  const asked = Array.isArray(data.commits) ? data.commits : [{ target: data.target, change: data.change }];
+  if (!asked.length || asked.length > branchLib.MAX_COMMITS) throw new HttpsError('invalid-argument', 'Between 1 and ' + branchLib.MAX_COMMITS + ' changes at once.');
+  const list = [];
+  for (const x of asked){
+    const page = branchLib.pageKey(x && x.target && x.target.collection, x && x.target && x.target.slug);
+    if (!page) throw new HttpsError('invalid-argument', 'That page can’t be changed on a branch.');
+    await access.requireAccess(email, branchLib.areaOf(page, accessLib.guideArea), 'edit');
+    let c;
+    try { c = branchLib.validChange(page, x.change); } catch (err) { branchErr(err); }
+    list.push({ page, c });
+  }
+  const pagesOf = list.map((x) => x.page).filter((p, i, all) => all.indexOf(p) === i);
+  const docs = await Promise.all(pagesOf.map((p) => db.doc(p).get()));
+  // Each page: there already, unless its first change here makes it (a new skill or tool).
+  pagesOf.forEach((p, k) => {
+    const isNew = list.filter((x) => x.page === p)[0].c.kind === 'new';
+    if (isNew ? docs[k].exists : !docs[k].exists) throw new HttpsError(isNew ? 'already-exists' : 'not-found', isNew ? 'It exists already: change it instead.' : 'That page isn’t there.');
+  });
   const id = String(data.on || '');
   if (id && !branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
   const bref = id ? db.collection('branches').doc(id) : db.collection('branches').doc();
   const now = Date.now(), by = { email, name };
+  let status = data.draft === true ? 'draft' : 'open';
   await db.runTransaction(async (tx) => {
-    const pref = db.doc(page + '/proposals/' + bref.id);
-    const [bs, ps] = await Promise.all([id ? tx.get(bref) : Promise.resolve(null), tx.get(pref)]);
+    const prefs = pagesOf.map((p) => db.doc(p + '/proposals/' + bref.id));
+    const [bs, ps] = await Promise.all([id ? tx.get(bref) : Promise.resolve(null), Promise.all(prefs.map((r) => tx.get(r)))]);
     if (id) {
       const b = bs.exists ? bs.data() : null;
       if (!b) throw new HttpsError('not-found', 'No such branch.');
-      if (b.status !== 'open') throw new HttpsError('failed-precondition', 'That branch has been ' + b.status + ': go back to main to propose a change.');
-      const pages = (b.pages || []).indexOf(page) >= 0 ? b.pages : (b.pages || []).concat([page]);
+      if (!branchLib.isOpen(b)) throw new HttpsError('failed-precondition', 'That branch has been ' + b.status + ': go back to main to propose a change.');
+      status = b.status;
+      const pages = (b.pages || []).concat(pagesOf.filter((p) => (b.pages || []).indexOf(p) < 0));
       if (pages.length > branchLib.MAX_PAGES) throw new HttpsError('failed-precondition', 'A branch changes ' + branchLib.MAX_PAGES + ' pages at most.');
       const contributors = (b.contributors || []).indexOf(email) >= 0 ? b.contributors : (b.contributors || []).concat([email]);
       tx.update(bref, { pages, contributors, editedAt: now });
     } else {
-      const title = branchLib.text(data.title || c.note, branchLib.MAX_TITLE);
-      tx.set(bref, { title, description: branchLib.text(data.description, branchLib.MAX_DESCRIPTION), status: 'open', by, at: now, contributors: [email], pages: [page], editedAt: now });
+      if (pagesOf.length > branchLib.MAX_PAGES) throw new HttpsError('failed-precondition', 'A branch changes ' + branchLib.MAX_PAGES + ' pages at most.');
+      const title = branchLib.text(data.title || list[0].c.note, branchLib.MAX_TITLE);
+      tx.set(bref, Object.assign({ title, description: branchLib.text(data.description, branchLib.MAX_DESCRIPTION), status, by, at: now, contributors: [email], pages: pagesOf, editedAt: now },
+        status === 'draft' ? { openedAsDraft: true } : {}));
     }
-    const prop = ps.exists ? ps.data() : null;
-    if (prop && prop.status !== 'open') throw new HttpsError('failed-precondition', 'That branch has been decided.');
-    let doc;
-    try { doc = branchLib.withCommit(prop, page, bref.id, c, by, now); } catch (err) { branchErr(err); }
-    tx.set(pref, doc);
+    const props = ps.map((p) => (p.exists ? p.data() : null));
+    props.forEach((p) => { if (p && p.status !== 'open' && p.status !== 'draft') throw new HttpsError('failed-precondition', 'That branch has been decided.'); });
+    list.forEach((x, i) => {
+      const k = pagesOf.indexOf(x.page);
+      try { props[k] = branchLib.withCommit(props[k], x.page, bref.id, x.c, by, now + i, status); } catch (err) { branchErr(err); }
+    });
+    props.forEach((p, k) => tx.set(prefs[k], p));
   });
   // Its number (#12), as everything on BOLD.OS has one: kept on it too, for its page.
   let num = 0;
@@ -2490,7 +2511,8 @@ exports.branchCommit = onCall(async (request) => {
 });
 
 // branchMeta { id, title?, description? } (whoever has committed to it, or a PI) or { id, withdraw: true } (its
-// author, or a PI): its title and description, or withdrawn, its pages' proposals with it.
+// author, or a PI): its title and description, or withdrawn, its pages' proposals with it. { id, ready: true }
+// (whoever has committed to it, or a PI): a draft made a proposal, for a PI or admin to decide (onBranchWritten tells them).
 exports.branchMeta = onCall(async (request) => {
   const email = signedInEmail(request).toLowerCase(), data = request.data || {}, id = String(data.id || '');
   if (!branchLib.ID.test(id)) throw new HttpsError('invalid-argument', 'No such branch.');
@@ -2502,12 +2524,19 @@ exports.branchMeta = onCall(async (request) => {
       if (!branchLib.canWithdraw(b, email, full)) throw new HttpsError('permission-denied', b.status !== 'open' ? 'It has already been decided.' : 'Only whoever opened it, or a PI or admin, can withdraw it.');
       const props = await Promise.all(branchProps(b, id).map((r) => tx.get(r)));
       const closed = { status: 'withdrawn', decidedBy: email, decidedByName: String(request.auth.token.name || ''), decidedAt: now };
-      props.forEach((p) => { if (p.exists && p.data().status === 'open') tx.update(p.ref, closed); });
+      props.forEach((p) => { if (p.exists && branchLib.isOpen(p.data())) tx.update(p.ref, closed); });
       tx.update(bref, closed);
       return { status: 'withdrawn' };
     }
-    if (b.status !== 'open') throw new HttpsError('failed-precondition', 'It has already been decided.');
+    if (!branchLib.isOpen(b)) throw new HttpsError('failed-precondition', 'It has already been decided.');
     if (!full && (b.contributors || []).indexOf(email) < 0) throw new HttpsError('permission-denied', 'Only whoever has committed to it, or a PI or admin, can change this.');
+    if (data.ready) {
+      if (b.status !== 'draft') return { status: b.status };
+      const props = await Promise.all(branchProps(b, id).map((r) => tx.get(r)));
+      props.forEach((p) => { if (p.exists && p.data().status === 'draft') tx.update(p.ref, { status: 'open' }); });
+      tx.update(bref, { status: 'open', readyAt: now, readyBy: email });
+      return { status: 'open' };
+    }
     const up = { editedAt: b.editedAt || b.at || now, metaAt: now };
     if (typeof data.title === 'string') { up.title = branchLib.text(data.title, branchLib.MAX_TITLE); if (!up.title) throw new HttpsError('invalid-argument', 'Give it a title.'); }
     if (typeof data.description === 'string') up.description = branchLib.text(data.description, branchLib.MAX_DESCRIPTION);
@@ -2526,7 +2555,7 @@ exports.branchRebase = onCall(async (request) => {
   await db.runTransaction(async (tx) => {
     const [bs, ps] = await Promise.all([tx.get(bref), tx.get(pref)]);
     const b = bs.exists ? bs.data() : null;
-    if (!b || b.status !== 'open') throw new HttpsError('failed-precondition', 'It has been decided.');
+    if (!branchLib.isOpen(b)) throw new HttpsError('failed-precondition', 'It has been decided.');
     if (!full && (b.contributors || []).indexOf(email) < 0) throw new HttpsError('permission-denied', 'Only whoever has committed to it, or a PI or admin, can rebase it.');
     let doc;
     try { doc = branchLib.rebased(ps.exists ? ps.data() : null, page, data.changes, Date.now()); } catch (err) { branchErr(err); }
@@ -5503,7 +5532,8 @@ async function contentWork(email, person, level){
     items.push(item);
   }
   // Branches (functions/branches.js): one each, seen by whoever can see every page it changes.
-  const branches = (await db.collection('branches').get()).docs.filter((d) => { const b = d.data(); return b.status === 'open' || (b.decidedAt || 0) >= after; });
+  // Not drafts (Save draft): nobody's asked to look at them yet, nor one withdrawn as a draft.
+  const branches = (await db.collection('branches').get()).docs.filter((d) => { const b = d.data(); return b.status !== 'draft' && !(b.openedAsDraft && !b.readyAt) && (b.status === 'open' || (b.decidedAt || 0) >= after); });
   for (const d of branches){
     const b = d.data(), pages = b.pages || [];
     let sees = !!pages.length;
@@ -5783,6 +5813,10 @@ exports.branches = onCall(
       catch (err) { logger.warn('A branch’s table couldn’t be worked out', { ref: x.ref, error: String(err && err.message || err) }); }
       out.push(b);
     }
+    // Your drafts too (Save draft), for the branch you're on: nobody else's.
+    const drafts = (await db.collection('branches').where('contributors', 'array-contains', email).get()).docs.filter((d) => d.data().status === 'draft');
+    const dnums = await numbersOf(drafts.map((d) => d.ref.path));
+    drafts.forEach((d) => { const b = d.data(); out.push({ ref: d.ref.path, num: b.num || dnums[d.ref.path] || 0, title: b.title || '', url: branchUrl(d.id), by: (b.by && b.by.name) || '', since: b.editedAt || b.at || 0, targets: b.pages || [], mine: true, draft: true }); });
     return { branches: out.sort((a, b) => b.since - a.since) };
   }
 );

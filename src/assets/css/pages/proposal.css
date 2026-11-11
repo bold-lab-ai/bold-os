@@ -72,3 +72,5 @@ main{max-width:var(--content-max); margin:0 auto 0 var(--page-left); padding:0 v
 .prl-act{flex:none; padding-top:2px; font-size:13px;}
 .prl-empty{padding:24px 0;}
 .pr-hint{margin:10px 0 0; font-family:var(--sans); font-size:13px; color:var(--muted);}
+.pr-state.pr-draft{background:var(--wash); color:var(--ink-soft); border:1px dashed var(--line);}
+.prl-icon.prl-draft{border-style:dashed; border-color:var(--muted);}

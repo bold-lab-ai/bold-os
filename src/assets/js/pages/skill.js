@@ -71,9 +71,10 @@
   }
   // The open proposed changes, each linking to its page.
   function proposalsHtml(){
-    if (!proposals.length) return '';
+    var openQs = proposals.filter(function(q){ return q.status === 'open'; });
+    if (!openQs.length) return '';
     return '<section class="block" id="proposals"><div class="block-head"><h2>' + (x ? 'Proposed changes' : 'Proposed') + '</h2></div>' +
-      '<ul class="sk-proposals">' + proposals.map(function(q){
+      '<ul class="sk-proposals">' + openQs.map(function(q){
         var fresh = !x && q.kind === 'new';
         return '<li class="sk-proposal" id="q-' + esc(q.id) + '"><p class="sk-p-head">' + (fresh ? '<strong>A new skill</strong> · ' + esc((q.by && q.by.name) || 'Someone') : '<strong>' + esc((q.by && q.by.name) || 'Someone') + '</strong>') +
             ' · ' + BoldHistory.when(q.editedAt || q.at) + (BOLD.branchId() === q.id ? ' · you’re on it' : '') + '</p>' +
@@ -130,9 +131,10 @@
       '<p class="event-form-hint">Text files only (Markdown, HTML, code, …), under about 900 KB in all. Adding a SKILL.md fills in the description and instructions above.</p>' +
       (isNew ? '<label>What changed (optional)<input type="text" class="sk-note" maxlength="300" placeholder="Added the skill"></label>'
         : '<label>What you changed and why, for whoever reviews it<input type="text" class="sk-note" maxlength="300" placeholder="e.g. Clearer figure rules"></label>' +
-          '<p class="event-form-hint">' + (BOLD.branch() ? 'It’s added to the proposed change you’re on, which ' : 'It opens a proposed change, with its own page, which ') + (fullWrite ? 'another' : 'a') + ' PI or admin accepts before it shows.</p>') +
+          '<p class="event-form-hint">' + (BOLD.branch() ? 'It’s added to the proposed change you’re on.' : 'Propose change opens a proposed change for ' + (fullWrite ? 'another' : 'a') + ' PI or admin to accept. Save draft opens it as a draft: nobody is asked yet.') + '</p>') +
       '<p class="ev-error" hidden></p>' +
-      '<div class="event-form-actions"><button type="button" class="ev-save">' + (isNew ? 'Add skill' : BOLD.branch() ? 'Commit to ' + esc(BOLD.branch().num ? '#' + BOLD.branch().num : 'it') : 'Propose change') + '</button><button type="button" class="ev-cancel">Cancel</button></div></div>';
+      '<div class="event-form-actions"><button type="button" class="ev-save">' + (isNew ? 'Add skill' : BOLD.branch() ? 'Commit to ' + esc(BOLD.branch().num ? '#' + BOLD.branch().num : 'it') : 'Propose change') + '</button>' +
+        (isNew || BOLD.branch() ? '' : '<button type="button" class="ev-save ev-stage sk-draft">Save draft</button>') + '<button type="button" class="ev-cancel">Cancel</button></div></div>';
     });
   }
 
@@ -236,7 +238,11 @@
     form.querySelector('.ev-cancel').addEventListener('click', function(){
       if (isNew) { location.href = 'skills.html'; return; }
       editing = false; history.replaceState(null, '', location.pathname + location.search); render(); });
+    var asDraft = false;
+    var dr = form.querySelector('.sk-draft');
+    if (dr) dr.addEventListener('click', function(){ asDraft = true; form.querySelector('.ev-save').click(); asDraft = false; });
     form.querySelector('.ev-save').addEventListener('click', function(){
+      var draftIt = asDraft;
       var r = S.readMeta(form, isNew);
       if (r.error) { S.showError(form, r.error); return; }
       var f = readFiles(form);
@@ -268,8 +274,9 @@
       var after = content(fields), now = withShown(function(){ return content(x); });
       if (JSON.stringify(after) === JSON.stringify(now)) { editing = false; render(); return; }
       var kind = branchQ() && branchQ().kind === 'new' ? 'new' : 'skill';
-      BOLD.commit({ collection: 'skills', slug: name }, { kind: kind, before: now, after: after, note: note }).then(function(r){
-        editing = false; notice = r.opened ? 'Proposed. You’re on it now: what you change is added to it, until you go back to main.' : 'Committed.';
+      BOLD.commit({ collection: 'skills', slug: name }, { kind: kind, before: now, after: after, note: note }, { draft: draftIt }).then(function(r){
+        editing = false; notice = r.opened && draftIt ? 'Saved as a draft. You’re on it now: mark it ready for review on its page.'
+          : r.opened ? 'Proposed. You’re on it now: what you change is added to it, until you go back to main.' : 'Committed.';
         history.replaceState(null, '', location.pathname + location.search); render();
         window.scrollTo(0, 0);
       }).catch(failed);
@@ -380,7 +387,7 @@
     fullWrite = false;
     if (!user) return;
     if (unsubQ) { unsubQ(); unsubQ = null; }
-    unsubQ = ref.collection('proposals').where('status', '==', 'open').onSnapshot(function(snap){
+    unsubQ = ref.collection('proposals').where('status', 'in', ['open', 'draft']).onSnapshot(function(snap){
       proposals = snap.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); }).sort(function(a, b){ return a.at - b.at; });
       if (!(editing && body.querySelector('.skill-form'))) render();
     }, function(err){ console.error('[BOLD Skills] loading proposed changes failed', err); });

@@ -82,9 +82,9 @@
   // The branch you're on (bold.js BOLD.branch): this page's part of it (proposals/<its id>, a batch of its
   // commits here), or null if it doesn't change this page (yet).
   var mine = null;
-  function branchQ(){ return mine && mine.status === 'open' ? mine : null; }
+  function branchQ(){ return mine && (mine.status === 'open' || mine.status === 'draft') ? mine : null; }
   // Changes on this page from before branches (a draft kept in this browser): offered once, to propose.
-  var legacy = [];
+  var legacy = [], TARGET = { collection: COLLECTION, slug: slug };
   function legacyKey(){ return me && ref ? 'bold-draft:' + COLLECTION + '/' + slug + ':' + me.email : null; }
   function loadLegacy(){
     legacy = [];
@@ -220,13 +220,14 @@
   function noteHtml(placeholder){
     return '<label>What you changed and why' +
       '<input type="text" class="gd-note" maxlength="300" placeholder="' + esc(placeholder) + '"></label>' +
-      '<p class="event-form-hint">' + (BOLD.branch() ? 'It’s added to ' + esc(branchName()) + ', which ' : 'It opens a proposed change, with its own page, which ') +
-        (fullWrite ? 'another PI or admin' : 'a PI or admin') + ' accepts before it shows.</p>';
+      '<p class="event-form-hint">' + (BOLD.branch() ? 'It’s added to ' + esc(branchName()) + (BOLD.branch().draft ? ', a draft until it’s marked ready on its page.' : ', which ' + (fullWrite ? 'another PI or admin' : 'a PI or admin') + ' accepts before it shows.')
+        : 'Propose change opens a proposed change for ' + (fullWrite ? 'another PI or admin' : 'a PI or admin') + ' to accept. Save draft opens it as a draft: nobody is asked yet, and you can keep adding to it.') + '</p>';
   }
-  // One button: a commit to the branch you're on, or a new branch with it.
+  // A commit to the branch you're on; or, on main, a new branch with it: proposed, or a draft (Save draft).
   function actionsHtml(extra){
     return '<p class="ev-error" hidden></p><div class="event-form-actions">' +
-      '<button type="button" class="ev-save">' + (BOLD.branch() ? 'Commit to ' + esc(BOLD.branch().num ? '#' + BOLD.branch().num : 'it') : 'Propose change') + '</button>' +
+      (BOLD.branch() ? '<button type="button" class="ev-save">Commit to ' + esc(BOLD.branch().num ? '#' + BOLD.branch().num : 'it') + '</button>'
+        : '<button type="button" class="ev-save">Propose change</button><button type="button" class="ev-save ev-stage" data-draft="1">Save draft</button>') +
       '<button type="button" class="ev-cancel">Cancel</button>' + (extra || '') + '</div>';
   }
 
@@ -409,14 +410,16 @@
     var b = BOLD.branch();
     if (!b) return '';
     var r = rebasing && rebasing.resolve ? resolveHtml() : rebasing && rebasing.saving ? '<p class="gd-proposal-behind">Saving the rebase…</p>' : '';
-    return '<aside class="gd-on-branch" aria-label="The proposed change you’re on"><p>You’re on <a href="' + esc(BOLD.branchPage(b.id)) + '">' + esc(branchName()) + '</a>' +
-      (branchQ() ? ': its changes here are marked, and what you change is added to it.' : ': it doesn’t change this page yet; what you change here is added to it.') + '</p>' + r + '</aside>';
+    return '<aside class="gd-on-branch" aria-label="The proposed change you’re on"><p>You’re on ' + (b.draft ? 'the draft ' : '') + '<a href="' + esc(BOLD.branchPage(b.id)) + '">' + esc(branchName()) + '</a>' +
+      (branchQ() ? ': its changes here are marked, and what you change is added to it.' : ': it doesn’t change this page yet; what you change here is added to it.') +
+      (b.draft ? ' When it’s ready, mark it ready for review on its page.' : '') + '</p>' + r + '</aside>';
   }
 
   // A change, committed (BOLD.commit: to the branch you're on, or a new one, which you're then on).
   function commit(change, o){
     return BOLD.commit({ collection: COLLECTION, slug: slug }, change, o).then(function(r){
-      notice = r.opened ? 'Proposed. You’re on it now: what you change is added to it, until you go back to main.' : 'Committed.';
+      notice = r.opened && o && o.draft ? 'Saved as a draft. You’re on it now: what you change is added to it. Mark it ready for review on its page.'
+        : r.opened ? 'Proposed. You’re on it now: what you change is added to it, until you go back to main.' : 'Committed.';
       if (r.opened) watchBranch();
       return r;
     });
@@ -482,21 +485,25 @@
     if (!legacy.length || !me) return '';
     return '<aside class="gd-draft" aria-label="Changes not proposed yet"><p class="gd-draft-head"><span><strong>' + legacy.length + (legacy.length === 1 ? ' change' : ' changes') +
       ' you made here before</strong> ' + (legacy.length === 1 ? 'hasn’t' : 'haven’t') + ' been proposed: ' + legacy.map(changeLabel).join(', ') + '.</span>' +
-      '<span class="gd-draft-actions"><button type="button" class="btn-text gd-legacy-go">' + (BOLD.branch() ? 'Commit to ' + esc(branchName()) : 'Propose ' + (legacy.length === 1 ? 'it' : 'them')) + '</button>' +
+      '<span class="gd-draft-actions"><button type="button" class="btn-text gd-legacy-go">' + (BOLD.branch() ? 'Commit to ' + esc(branchName()) : 'Save as a draft') + '</button>' +
       '<button type="button" class="btn-text danger gd-legacy-drop">Discard</button></span></p></aside>';
   }
+  // All of them at once: on the branch you're on, or a new draft (branchCommit { commits }).
   function proposeLegacy(){
-    var list = legacy.slice(), i = 0;
-    var next = function(){
-      if (i >= list.length) { dropLegacy(); render(); return; }
-      var c = list[i++], change = { kind: c.kind, partId: c.partId || '', before: c.before === undefined ? null : c.before, after: c.after === undefined ? null : c.after, note: c.note || changeLabel(c).replace(/<[^>]*>/g, '').replace(/&[a-z#0-9]+;/g, '') };
+    var commits = legacy.map(function(c){
+      var change = { kind: c.kind, partId: c.partId || '', before: c.before === undefined ? null : c.before, after: c.after === undefined ? null : c.after, note: c.note || changeLabel(c).replace(/<[^>]*>/g, '').replace(/&[a-z#0-9]+;/g, '') };
       if (c.area) change.area = c.area;
-      return commit(change).then(next);
-    };
-    Promise.resolve(next()).catch(function(err){
-      if (err && err.cancelled) return;
-      console.error('[BOLD Guides] proposing earlier changes failed', err);
-      notice = 'Couldn’t propose them all — try again.'; legacy = list.slice(i - 1); render();
+      return { target: TARGET, change: change };
+    });
+    var data = { commits: commits, title: 'Earlier changes to ' + (x.title || slug) };
+    if (BOLD.branch()) data.on = BOLD.branchId(); else data.draft = true;
+    firebase.app().functions('europe-west2').httpsCallable('branchCommit')(data).then(function(r){
+      var d = r.data || {};
+      if (!BOLD.branch()) BOLD.setBranch({ id: d.id, num: d.num || 0, title: data.title, draft: true, targets: [COLLECTION + '/' + slug] }, { quiet: true });
+      dropLegacy(); notice = BOLD.branch() && data.on ? 'Committed.' : 'Saved as a draft. You’re on it now: mark it ready for review on its page.'; watchBranch(); render();
+    }, function(err){
+      console.error('[BOLD Guides] saving earlier changes failed', err);
+      notice = 'Couldn’t save them — try again.'; render();
     });
   }
   // Moves the current tab left (-1) or right (1): all its parts as a block, committed.
@@ -525,10 +532,11 @@
     if (now.order.join() === after.order.join() && now.section === after.section) return null;
     return { kind: 'move', partId: p.id, before: now, after: after, note: 'Moved “' + p.title + '” ' + how };
   }
+  // On main, a move opens a draft (dragging asks nobody anything); on a branch, it's committed to it.
   function commitMove(change){
     if (!change) return;
     notice = '';
-    commit(change).then(render, function(err){
+    commit(change, { draft: !BOLD.branch() }).then(render, function(err){
       if (err && err.cancelled) { render(); return; }
       console.error('[BOLD Guides] moving failed', err);
       notice = 'Couldn’t move it — try again.'; render();
@@ -669,13 +677,17 @@
 
   function bindForm(el){
     el.querySelector('.ev-cancel').addEventListener('click', closeForm);
-    var save = el.querySelector('.ev-save');
+    // Each button (Propose change or Commit, Save draft) runs the form's save; asDraft says which.
+    var buttons = el.querySelectorAll('.ev-save'), asDraft = false;
+    var save = { addEventListener: function(type, fn){
+      Array.prototype.forEach.call(buttons, function(b){ b.addEventListener(type, function(e){ asDraft = !!b.getAttribute('data-draft'); fn(e); }); });
+    } };
     function setBusy(on){ Array.prototype.forEach.call(el.querySelectorAll('.ev-save, .gd-remove'), function(b){ b.disabled = on; }); }
     var v = function(c){ var f = el.querySelector(c); return f ? f.value : ''; };
     function run(change){
       if (new Blob([JSON.stringify(doc().parts || []) + JSON.stringify(change)]).size > MAX_SIZE) { showError(el, 'That’s too much text for one guide.'); return; }
       setBusy(true);
-      commit(change).then(closeForm).catch(function(err){
+      commit(change, { draft: asDraft }).then(closeForm).catch(function(err){
         if (err && err.cancelled) { setBusy(false); return; }
         console.error('[BOLD Guides] saving failed', err);
         showError(el, (err && err.message && /functions\/(failed-precondition|invalid-argument|permission-denied)/.test(err.code || '') ? err.message : 'Couldn’t save — try again.'));
@@ -731,6 +743,7 @@
     });
     var rm = el.querySelector('.gd-remove');
     if (rm) rm.addEventListener('click', function(){
+      asDraft = false;
       if (needNote()) return;
       run({ kind: 'remove', partId: p.id, before: partSide(p), after: null, note: note() });
     });

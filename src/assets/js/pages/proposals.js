@@ -10,7 +10,8 @@
   try { db = firebase.firestore(BOLD.getApp()); } catch (e){ return; }
   var list = null, guides = {}, error = '', me = '', tab = 'open', kind = '', mine = false;
   var KINDS = [['', 'All pages'], ['handbook', 'BOLDiquette'], ['guides', 'How to'], ['skills', 'Agent skills'], ['agentTools', 'Agent tools']];
-  var STATE = { open: 'Open', accepted: 'Accepted', declined: 'Declined', withdrawn: 'Withdrawn' };
+  var STATE = { open: 'Open', draft: 'Draft', accepted: 'Accepted', declined: 'Declined', withdrawn: 'Withdrawn' };
+  var live = function(b){ return b.status === 'open' || b.status === 'draft'; };
   try { var saved = JSON.parse(sessionStorage.getItem('boldProposalsView') || 'null'); if (saved) { tab = saved.tab || tab; kind = saved.kind || ''; mine = !!saved.mine; } } catch (e){}
   if (/^#(open|closed)$/.test(location.hash)) tab = location.hash.slice(1);
 
@@ -26,20 +27,20 @@
   function isMine(b){ return (b.by && String(b.by.email || '').toLowerCase() === me) || (b.contributors || []).indexOf(me) >= 0; }
   function shown(){
     return (list || []).filter(function(b){
-      return (tab === 'open' ? b.status === 'open' : b.status !== 'open') && (!kind || (b.pages || []).some(function(p){ return p.split('/')[0] === kind; })) && (!mine || isMine(b));
+      return (tab === 'open' ? live(b) : !live(b)) && (!kind || (b.pages || []).some(function(p){ return p.split('/')[0] === kind; })) && (!mine || isMine(b));
     });
   }
   function rowHtml(b){
     var on = BOLD.branchId() === b.id, n = (b.pages || []).length, people = (b.contributors || []).length;
-    var when = b.status === 'open' ? 'changed ' + ago(b.editedAt || b.at) : esc(STATE[b.status] || b.status).toLowerCase() + ' ' + ago(b.decidedAt);
+    var when = live(b) ? 'changed ' + ago(b.editedAt || b.at) : esc(STATE[b.status] || b.status).toLowerCase() + ' ' + ago(b.decidedAt);
     return '<li class="prl-row' + (on ? ' is-on' : '') + '"><span class="prl-icon prl-' + esc(b.status) + '" aria-hidden="true"></span><div class="prl-main">' +
       '<a class="prl-title" href="' + esc(BOLD.branchPage(b.id)) + '">' + esc(b.title || 'A proposed change') + '</a>' +
       (b.status !== 'open' ? ' <span class="pr-state pr-' + esc(b.status) + '">' + esc(STATE[b.status] || b.status) + '</span>' : '') +
       (on ? ' <span class="pr-state pr-open">You’re on it</span>' : '') +
       '<p class="prl-meta">' + (b.num ? '#' + b.num + ' · ' : '') + 'by ' + esc((b.by && (b.by.name || b.by.email)) || 'someone') + ' · ' + when + ' · ' +
         esc((b.pages || []).map(pageName).join(', ')) + (people > 1 ? ' · ' + people + ' people' : '') + '</p></div>' +
-      (b.status === 'open' ? '<div class="prl-act">' + (on ? '<button type="button" class="btn-text prl-main-btn">Back to main</button>'
-        : '<button type="button" class="btn-text prl-switch" data-id="' + esc(b.id) + '" title="See the site as it would make it; what you change is added to it">Switch to it</button>') + '</div>' : '') + '</li>';
+      (live(b) ? '<div class="prl-act">' + (on ? '<button type="button" class="btn-text prl-main-btn">Back to main</button>'
+        : '<button type="button" class="btn-text prl-switch" data-id="' + esc(b.id) + '" title="See the site as it would make it; what you change is added to it">View site</button>') + '</div>' : '') + '</li>';
   }
   function render(){
     var hero = '<div class="hero"><span class="eyebrow">BOLD.OS</span><h1>Proposed changes</h1>' +
@@ -47,7 +48,7 @@
       (BOLD.branch() ? ' You’re on <a href="' + esc(BOLD.branchPage(BOLD.branchId())) + '">' + esc((BOLD.branch().num ? '#' + BOLD.branch().num + ' ' : '') + (BOLD.branch().title || 'one')) + '</a>.' : ' You’re on main.') + '</p></div>';
     if (error) { root.innerHTML = hero + '<main><p class="ev-error">' + esc(error) + '</p></main>'; return; }
     if (!list) { root.innerHTML = hero + '<main><p class="pr-muted">Loading…</p></main>'; return; }
-    var open = list.filter(function(b){ return b.status === 'open'; }).length, rows = shown();
+    var open = list.filter(live).length, rows = shown();
     root.innerHTML = hero + '<main>' +
       '<div class="prl-bar"><nav class="pr-tabs prl-tabs" aria-label="Open or closed">' +
         '<a href="#open" class="pr-tab' + (tab === 'open' ? ' is-current' : '') + '" data-tab="open">Open <span class="pr-count">' + open + '</span></a>' +
@@ -66,7 +67,7 @@
     if (!t) return;
     if (t.classList.contains('prl-switch')) {
       var b = (list || []).filter(function(x){ return x.id === t.getAttribute('data-id'); })[0];
-      if (b) BOLD.setBranch({ id: b.id, num: b.num || 0, title: b.title, by: (b.by && b.by.name) || '', targets: b.pages || [] }, { go: true });
+      if (b) BOLD.setBranch({ id: b.id, num: b.num || 0, title: b.title, by: (b.by && b.by.name) || '', draft: b.status === 'draft', targets: b.pages || [] }, { go: true });
       return;
     }
     if (t.classList.contains('prl-main-btn')) BOLD.setBranch(null);
@@ -85,7 +86,7 @@
     db.collection('guides').get().then(function(s){ s.docs.forEach(function(d){ guides[d.id] = d.data().title || d.id; }); render(); }, function(){});
     unsub = db.collection('branches').onSnapshot(function(s){
       list = s.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
-        .sort(function(a, b){ return ((b.status === 'open' ? b.editedAt || b.at : b.decidedAt) || 0) - ((a.status === 'open' ? a.editedAt || a.at : a.decidedAt) || 0); });
+        .sort(function(a, b){ return ((live(b) ? b.editedAt || b.at : b.decidedAt) || 0) - ((live(a) ? a.editedAt || a.at : a.decidedAt) || 0); });
       error = ''; render();
       // Seen: the branch button's dot goes (bold.js).
       if (BOLD.markProposalsSeen) BOLD.markProposalsSeen();

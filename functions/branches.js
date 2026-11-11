@@ -1,7 +1,8 @@
 'use strict';
 // Branches of the site (#324, 2026-11-11): every change to the BOLDiquette, a guide, a skill or a tool is made
 // on a branch, as on GitHub. A branch (branches/{id}: { title, description, status open | accepted | declined |
-// withdrawn, by, at, contributors, pages, editedAt, decidedBy… }) is a proposal of the whole site: each page it
+// withdrawn | draft, by, at, contributors, pages, editedAt, decidedBy… }) is a proposal of the whole site (or, as a
+// draft, not yet: Save draft opens one; nobody is told and it can't be decided until it's marked ready): each page it
 // changes keeps its part of it where that page's proposals live, under the branch's own id
 // (<collection>/<slug>/proposals/<branch id>, `branch: <id>`): on the BOLDiquette and the guides a batch whose
 // changes are its commits, each with who made it and when; on a skill or tool the whole of it as proposed, its
@@ -67,8 +68,9 @@ function validChange(page, c){
 }
 
 // Pure: a page's part of a branch with commit c added (prop: what it was, or null) → the proposal doc to save.
-function withCommit(prop, page, branchId, c, by, at){
-  const head = { by: prop ? prop.by : by, at: prop ? prop.at : at, status: 'open', branch: branchId, editedAt: at, note: prop ? (prop.note || c.note) : c.note };
+// status: the branch's, open or draft.
+function withCommit(prop, page, branchId, c, by, at, status){
+  const head = { by: prop ? prop.by : by, at: prop ? prop.at : at, status: status || 'open', branch: branchId, editedAt: at, note: prop ? (prop.note || c.note) : c.note };
   const commit = Object.assign({}, c, { by, at });
   if (isWhole(page)) {
     const commits = ((prop && prop.commits) || []).concat([{ kind: c.kind, after: c.after, note: c.note, by, at }]);
@@ -85,11 +87,13 @@ function withCommit(prop, page, branchId, c, by, at){
 // Pure: why `email` can't accept or decline branch b ('' if they can).
 function cannotDecide(b, email, full){
   if (!full) return 'Only PIs and admins can do this.';
+  if (b && b.status === 'draft') return 'It’s a draft: it’s marked ready for review first.';
   if (!b || b.status !== 'open') return 'It has already been decided.';
   if ((b.contributors || []).indexOf(String(email || '').toLowerCase()) >= 0) return 'You’ve committed to it: another PI or admin reviews it.';
   return '';
 }
-const canWithdraw = (b, email, full) => !!b && b.status === 'open' && (full || (b.by && String(b.by.email || '').toLowerCase() === String(email || '').toLowerCase()));
+const isOpen = (b) => !!b && (b.status === 'open' || b.status === 'draft');
+const canWithdraw = (b, email, full) => isOpen(b) && (full || (b.by && String(b.by.email || '').toLowerCase() === String(email || '').toLowerCase()));
 
 // Pure: every commit on a branch, oldest first → [{ page, kind, partId, note, by, at, i }] (i: its place on its page).
 function commitsOf(props){
@@ -106,7 +110,7 @@ function commitsOf(props){
 // Pure: a page's part of a branch rebased on main (its commits replayed on the page as it is now, by whoever has
 // committed to it: pages/guide.js): the same commits, in order, each checked again, keeping who made it and when.
 function rebased(prop, page, changes, at){
-  if (!prop || prop.status !== 'open') throw new BranchError('failed-precondition', 'It has been decided.');
+  if (!prop || (prop.status !== 'open' && prop.status !== 'draft')) throw new BranchError('failed-precondition', 'It has been decided.');
   if (isWhole(page) || prop.kind !== 'batch') throw bad('Only the BOLDiquette’s and the guides’ changes are rebased.');
   const had = prop.changes || [];
   if (!Array.isArray(changes) || changes.length !== had.length) throw bad('The rebase doesn’t match its commits: look again.');
@@ -118,4 +122,4 @@ function rebased(prop, page, changes, at){
   return Object.assign({}, prop, { changes: out, editedAt: at });
 }
 
-module.exports = { rebased, MAX_COMMITS, MAX_PAGES, MAX_TITLE, MAX_DESCRIPTION, ID, BranchError, pageKey, areaOf, isWhole, validChange, withCommit, cannotDecide, canWithdraw, commitsOf, text };
+module.exports = { rebased, isOpen, MAX_COMMITS, MAX_PAGES, MAX_TITLE, MAX_DESCRIPTION, ID, BranchError, pageKey, areaOf, isWhole, validChange, withCommit, cannotDecide, canWithdraw, commitsOf, text };

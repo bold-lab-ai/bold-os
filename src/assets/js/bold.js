@@ -250,24 +250,26 @@
   // on the branch you're on, or, on main, on a new one opened with it, which you're then on. target:
   // { collection, slug }; change: { kind, partId?, before, after, note, … } → Promise of { id, num, opened }, or a
   // rejection { cancelled: true } if they don't go ahead. Asks first when it tells anyone: opening one tells every
-  // PI and admin; a first commit to someone else's tells whoever opened it.
+  // PI and admin; a first commit to someone else's tells whoever opened it. o.draft (Save draft), on main: opens it as a
+  // draft, telling nobody, until it's marked ready on its page.
   BOLD.commit = function(target, change, o){
     o = o || {};
     var id = BOLD.branchId(), u = auth && auth.currentUser, me = String((u && u.email) || '').toLowerCase();
     var ask = id ? firebase.firestore(BOLD.getApp()).collection('branches').doc(id).get().then(function(s){
         var b = s.exists ? s.data() : null;
-        if (!b || (b.contributors || []).indexOf(me) >= 0) return true;
+        if (!b || b.status === 'draft' || (b.contributors || []).indexOf(me) >= 0) return true;
         return BOLD.confirmAction({ title: 'Commit to “' + (b.title || 'this proposal') + '”?', go: 'Commit',
           effects: ['Add your change to ' + ((b.by && b.by.name) || 'its author') + '’s proposed change', 'Tell ' + ((b.by && b.by.name) || 'them') + ' on Slack that you committed to it'], always: true });
-      }) : BOLD.confirmProposal(o.restore ? 'restore' : 'propose');
+      }) : o.draft ? Promise.resolve(true) : BOLD.confirmProposal(o.restore ? 'restore' : 'propose');
     return ask.then(function(ok){
       if (!ok) throw { cancelled: true };
       var data = { target: target, change: change };
       if (id) data.on = id;   // not `branch`: every call carries that (viewAsCalls), and the server takes it off
+      else if (o.draft) data.draft = true;
       return firebase.app().functions('europe-west2').httpsCallable('branchCommit')(data);
     }).then(function(r){
       var d = (r && r.data) || {};
-      if (!id) BOLD.setBranch({ id: d.id, num: d.num || 0, title: change.note, targets: [target.collection + '/' + target.slug] }, { quiet: true });
+      if (!id) BOLD.setBranch({ id: d.id, num: d.num || 0, title: change.note || 'Draft', draft: !!o.draft, targets: [target.collection + '/' + target.slug] }, { quiet: true });
       else if (branch && (branch.targets || []).indexOf(target.collection + '/' + target.slug) < 0) { branch.targets = (branch.targets || []).concat([target.collection + '/' + target.slug]); try { sessionStorage.setItem('boldBranch', JSON.stringify(branch)); } catch (e){} }
       return { id: d.id, num: d.num || 0, opened: !id };
     });
@@ -404,7 +406,7 @@
   // page it changes (else reload this one); o.quiet: no reload (a page that has just opened or shows it).
   BOLD.setBranch = function(b, o){
     var r = b && branchRef(b.ref || b.id);
-    branch = r && BRANCH_REF.test(r) ? { ref: r, id: r.slice(9), num: b.num || 0, title: b.title || '', url: BOLD.branchPage(r.slice(9)), by: b.by || '', targets: b.targets || [], pages: b.pages || null } : null;
+    branch = r && BRANCH_REF.test(r) ? { ref: r, id: r.slice(9), num: b.num || 0, title: b.title || '', url: BOLD.branchPage(r.slice(9)), by: b.by || '', targets: b.targets || [], pages: b.pages || null, draft: !!b.draft } : null;
     try { if (branch) sessionStorage.setItem('boldBranch', JSON.stringify(branch)); else sessionStorage.removeItem('boldBranch'); } catch (e){}
     // Its details from `branches`, unless they're from there.
     if (!(o && o.known)) { try { sessionStorage.removeItem('boldBranches'); } catch (e){} branchList = null; }
@@ -604,7 +606,7 @@
     branchAction = a; previewBar();
   };
   // While on a branch or viewing as a group (access.viewAs): a bar saying so, to go back.
-  function branchLabel(b){ return b ? (b.num ? '#' + b.num + ' ' : '') + (b.title || 'a proposed change') : 'Main'; }
+  function branchLabel(b){ return b ? (b.draft ? 'draft ' : '') + (b.num ? '#' + b.num + ' ' : '') + (b.title || 'a proposed change') : 'Main'; }
   function previewBar(){
     var bar = document.getElementById('viewAsBar'), g = access && access.viewAs;
     if (!g && !branch) { if (bar) bar.remove(); return; }
