@@ -175,7 +175,9 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .cal-pop-act .join-msg{text-align:left;}
 .cal-pop-note{margin:12px 0 0; font-family:var(--sans); font-size:14px; color:var(--ink-soft);}
 .week-block.is-draggable{cursor:grab; user-select:none; -webkit-user-select:none;}
-.week-block.is-dragging{cursor:grabbing; z-index:5; opacity:.9; box-shadow:0 6px 18px rgba(0,0,0,.18); transition:none;}
+.week-block.is-drag-source{opacity:.35;}
+.week-ghost{left:2px !important; right:2px; width:auto !important; z-index:6; pointer-events:none; opacity:.95; box-shadow:0 6px 18px color-mix(in srgb, var(--shade, #000) 22%, transparent);}
+html.is-dragging-meeting, html.is-dragging-meeting *{cursor:grabbing !important; user-select:none; -webkit-user-select:none;}
 .week-block.is-moved{border-style:dashed; border-left-style:solid;}
 .week-block.is-cancelled{text-decoration:line-through; opacity:.55;}
 .week-block.is-cancelled .badge{text-decoration:none;}

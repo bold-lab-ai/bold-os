@@ -78,6 +78,8 @@
   }
 
   function render(){
+    // Not while a meeting is being dragged (live data would redraw the block from under the pointer): after.
+    if (drag && drag.on) { drag.redraw = true; return; }
     if (data.project === null && data.study === null && data.event === null) return;
     var ms = meetings(), evs = events();
     if (view === 'list' && !ms.length && !evs.filter(function(x){ return !E.isPast(x); }).length) {
@@ -340,7 +342,7 @@
     };
     // Back from a height to minutes of the day (dragging a meeting).
     var top = (CORE_FROM - from) * EDGE, core = (CORE_TO - CORE_FROM) * HOUR;
-    geom = { dates: cols.map(function(i){ return iso(dates[i]); }), yInv: function(px){
+    geom = { dates: cols.map(function(i){ return iso(dates[i]); }), y: y, yInv: function(px){
       var h = px < top ? from + px / EDGE : px < top + core ? CORE_FROM + (px - top) / HOUR : CORE_TO + (px - top - core) / EDGE;
       return Math.round(Math.min(Math.max(h, from), to) * 60);
     } };
@@ -474,42 +476,70 @@
   });
   document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && pop) closePop(); });
 
-  // Dragging a meeting's block (a mouse or pen; on a touch screen, its card's Change the time): to another day
-  // of the week or time, by 15 minutes; dropping it opens its card to save the move (this date or every date).
+  // Dragging a meeting's block (a mouse or pen; on a touch screen, its card's Edit occurrence), as in Google
+  // Calendar: the block stays, faded, and a preview follows the pointer, snapped to the day under it and to 15
+  // minutes, with its new time; letting go opens its card to save the move (this occurrence or all); Escape stops.
+  function dropAt(d, e){
+    var body = el('meetings').querySelector('.week-body'), days = el('meetings').querySelectorAll('.week-day'), col = -1;
+    if (!body || !geom) return null;
+    Array.prototype.forEach.call(days, function(c, i){ var r = c.getBoundingClientRect(); if (e.clientX >= r.left && e.clientX < r.right) col = i; });
+    if (col < 0) col = d.col;   // off the grid sideways: the day it was last over
+    var mins = Math.round(geom.yInv(e.clientY - d.grab - body.getBoundingClientRect().top) / 15) * 15;
+    mins = Math.max(0, Math.min(mins, 24 * 60 - d.o.minutes));
+    return { col: col, mins: mins, date: geom.dates[col], time: pad(Math.floor(mins / 60)) + ':' + pad(mins % 60), el: days[col] };
+  }
+  function endDrag(){
+    var d = drag; drag = null;
+    if (!d) return null;
+    if (d.ghost && d.ghost.parentNode) d.ghost.parentNode.removeChild(d.ghost);
+    d.b.classList.remove('is-drag-source');
+    document.documentElement.classList.remove('is-dragging-meeting');
+    if (d.redraw) render();
+    return d;
+  }
   el('meetings').addEventListener('pointerdown', function(e){
     var b = e.target.closest('.week-block.is-draggable');
     if (!b || e.button !== 0 || e.pointerType === 'touch' || !geom) return;
-    drag = { b: b, x: e.clientX, y: e.clientY, on: false };
+    var key = b.getAttribute('data-key'), orig = b.getAttribute('data-orig');
+    var m = meetings(true).filter(function(x){ return keyOf(x) === key; })[0];
+    var o = m && occIn(m, addDays(orig, -62), addDays(orig, 62)).filter(function(x){ return x.orig === orig; })[0];
+    if (!o) return;
+    drag = { b: b, m: m, o: o, key: key, x: e.clientX, y: e.clientY, grab: e.clientY - b.getBoundingClientRect().top, col: Math.max(0, geom.dates.indexOf(o.date)), on: false };
   });
   document.addEventListener('pointermove', function(e){
     if (!drag) return;
-    var dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-    if (!drag.on && Math.abs(dx) + Math.abs(dy) < 6) return;
-    if (!drag.on) { drag.on = true; drag.b.classList.add('is-dragging'); if (pop) closePop(); }
-    drag.b.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    if (!drag.on && Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y) < 6) return;
     e.preventDefault();
+    if (!drag.on) {
+      drag.on = true;
+      if (pop) closePop();
+      drag.b.classList.add('is-drag-source');
+      document.documentElement.classList.add('is-dragging-meeting');
+      drag.ghost = document.createElement('div');
+      drag.ghost.className = drag.b.className.replace(/\b(is-draggable|is-moved|is-paused|is-drag-source)\b/g, '') + ' week-ghost';
+      drag.ghost.setAttribute('aria-hidden', 'true');
+    }
+    var t = dropAt(drag, e);
+    if (!t) return;
+    drag.col = t.col; drag.to = t;
+    var end = endOf(t.time, drag.o.minutes);
+    drag.ghost.innerHTML = '<span class="week-time">' + (t.date !== drag.o.date ? esc(dayText(t.date)) + ', ' : '') + t.time + '–' + end + '</span> ' + esc(drag.m.title);
+    drag.ghost.style.top = geom.y(t.mins) + 'px';
+    drag.ghost.style.height = Math.max(18, geom.y(t.mins + drag.o.minutes) - geom.y(t.mins) - 2) + 'px';
+    if (drag.ghost.parentNode !== t.el) t.el.appendChild(drag.ghost);
   });
-  document.addEventListener('pointerup', function(e){
+  document.addEventListener('pointerup', function(){
     if (!drag) return;
-    var d = drag; drag = null;
+    var d = endDrag();
     if (!d.on) return;
     noClick = true; setTimeout(function(){ noClick = false; }, 0);
-    // Where the block was let go, as it's drawn against the grid (whatever the page scrolled meanwhile).
-    var at = d.b.getBoundingClientRect(), cx = at.left + Math.min(at.width / 2, 20);
-    d.b.style.transform = ''; d.b.classList.remove('is-dragging');
-    var key = d.b.getAttribute('data-key'), orig = d.b.getAttribute('data-orig');
-    var m = meetings(true).filter(function(x){ return keyOf(x) === key; })[0];
-    var o = m && occIn(m, addDays(orig, -62), addDays(orig, 62)).filter(function(x){ return x.orig === orig; })[0];
-    var days = el('meetings').querySelectorAll('.week-day'), body = el('meetings').querySelector('.week-body'), col = -1;
-    Array.prototype.forEach.call(days, function(c, i){ var r = c.getBoundingClientRect(); if (cx >= r.left && cx < r.right) col = i; });
-    if (!m || !o || col < 0 || !body) return;
-    var mins = Math.round(geom.yInv(at.top - body.getBoundingClientRect().top) / 15) * 15;
-    mins = Math.max(0, Math.min(mins, 24 * 60 - o.minutes));
-    var date = geom.dates[col], time = pad(Math.floor(mins / 60)) + ':' + pad(mins % 60);
-    if (date === o.date && time === o.time) return;
-    pop = { key: key, orig: orig, rect: d.b.getBoundingClientRect() };
-    startEdit(m, { scope: 'once', date: date, time: time, minutes: o.minutes, day: weekdayOf(date) });
+    var t = d.to;
+    if (!t || (t.date === d.o.date && t.time === d.o.time)) return;
+    var a = el('meetings').querySelector('.week-block[data-key="' + d.key.replace(/["\\]/g, '\\$&') + '"][data-orig="' + d.o.orig + '"]') || d.b;
+    pop = { key: d.key, orig: d.o.orig, rect: a.getBoundingClientRect() };
+    startEdit(d.m, { scope: 'once', date: t.date, time: t.time, minutes: d.o.minutes, day: weekdayOf(t.date) });
   });
+  document.addEventListener('keydown', function(e){ if (e.key === 'Escape' && drag) { var d = endDrag(); if (d && d.on) { noClick = true; setTimeout(function(){ noClick = false; }, 0); } } });
 
   // Subscribe: your own link to the Calendar for a calendar app (calendarFeed in functions/api.js),
   // made the first time it's opened; New link replaces it, and the old one stops working.
