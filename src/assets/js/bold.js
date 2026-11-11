@@ -226,7 +226,7 @@
     if (!u) return Promise.reject(new Error('Sign in first.'));
     skipConfirm = !!on;
     try { localStorage.setItem(skipKey(), on ? '1' : '0'); } catch (e){}
-    // Merged: prefs also holds homeLetter (profile › Agents).
+    // Merged: prefs may also hold homeLetter (each person's letter choice, before it was the lab's alone, 2026-11-11).
     return firebase.firestore(BOLD.getApp()).collection('prefs').doc(u.uid).set({ skipConfirm: !!on, at: Date.now() }, { merge: true });
   };
   // A proposed change (the BOLDiquette, a guide, a skill, a tool) tells every PI and admin on

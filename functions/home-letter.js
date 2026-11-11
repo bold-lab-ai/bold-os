@@ -1,6 +1,5 @@
-// The home letter (docs/home-letter-prompt.md): its inputs, and checking a letter. Who writes it is two
-// switches: the lab's (settings/homeLetter.writer: 'claude' or 'rules') and each person's
-// (prefs/{uid}.homeLetter: 'bold' or 'rules'); BOLD LLM writes it (functions/bold-llm.js) when both say so.
+// The home letter (docs/home-letter-prompt.md): its inputs, and checking a letter. Who writes it is the lab's
+// switch (settings/homeLetter.writer: 'claude', BOLD LLM, functions/bold-llm.js, or 'rules'), for everyone.
 // Pure, for bold-llm.js, the agents' API (letterInputs) and tests.
 'use strict';
 

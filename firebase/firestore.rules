@@ -191,13 +191,14 @@ service cloud.firestore {
     }
     // The join form's choices (join.html, read before signing in) and, for PIs and
     // admins only, the Slack invite link and the welcome email's text.
-    // Who writes the lab's home letters (Settings › BOLD Agent, settings.html): BOLD LLM (Claude until
-    // Sofya runs) or the rule-based letter for everyone; the lab reads it, PIs and admins set it.
+    // Who writes the lab's home letters (Settings › BOLD Agent, settings.html): BOLD LLM or the rule-based letter for
+    // everyone; the lab reads it, PIs and admins set it. model: which BOLD LLM is (functions/bold-llm.js): Claude or Sofya.
     match /settings/homeLetter {
       allow read: if isSignedIn();
       // refresh: how often BOLD LLM writes them (functions/home-letter.js REFRESH).
-      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'refresh', 'updatedAt', 'updatedBy'])
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'refresh', 'model', 'updatedAt', 'updatedBy'])
         && (!('writer' in request.resource.data) || request.resource.data.writer in ['rules', 'claude'])
+        && (!('model' in request.resource.data) || request.resource.data.model in ['claude', 'sofya'])
         && (!('refresh' in request.resource.data) || request.resource.data.refresh in ['daily', 'twice', 'working'])
         && request.resource.data.updatedBy == email();
     }

@@ -49,8 +49,14 @@
   var TABS = [['slack', 'Slack'], ['join', 'Join form'], ['notifications', 'Notifications'], ['bold-agent', 'BOLD Agent'], ['features', 'Features']];
   var letterLab = null, letterBusy = false, letterError = '';
   var WRITERS = [
-    ['claude', 'BOLD LLM', 'Claude (Sonnet 5.5) writes each letter at 06:00, from what that person can see, and answers Talking to BOLD on the home page, until Sofya runs. Each person also chooses it on their profile. What it reads of their day is sent to Anthropic, and the lab pays for it.'],
+    ['claude', 'BOLD LLM', 'The model below writes everyone’s letter, from what each person can see, and answers Talking to BOLD on the home page.'],
     ['rules', 'Rule-based', 'Each home page puts its letter together as it opens, from what’s waiting, the meetings and the lab. Nothing is sent anywhere; Talking to BOLD is off.'],
+  ];
+  // Which model BOLD LLM is (functions/bold-llm.js, sofya.js): Claude (the default), or Sofya, the lab's own, with
+  // Claude whenever Sofya fails. What it reads of each person's day goes to whichever it is.
+  var MODELS = [
+    ['claude', 'Claude', 'Anthropic’s Claude (Sonnet 5.5). What it reads of each person’s day is sent to Anthropic, and the lab pays for it.'],
+    ['sofya', 'Sofya', 'BOLD’s own LLM (llm.bold-lab.ai, Qwen). Every request to it is logged for training. Claude steps in when it’s down.'],
   ];
   // How often BOLD LLM writes them (functions/home-letter.js REFRESH); each letter covers what changed since the last.
   var REFRESHES = [
@@ -62,11 +68,16 @@
     if (letterLab === null) return '<p class="proj-msg">Loading&hellip;</p>';
     var cur = letterLab.writer || 'rules', every = letterLab.refresh || 'daily';
     return '<div class="event-form join-form"><fieldset class="md-group"><legend>Who writes the home letters</legend>' +
-      '<p class="proj-meta">The letter that opens everyone’s home page. Someone who hasn’t chosen BOLD LLM on their profile gets the rule-based one either way.</p>' +
+      '<p class="proj-meta">The letter that opens everyone’s home page.</p>' +
       WRITERS.map(function(w){
         return '<label class="jn-check"><input type="radio" name="st-letter" value="' + w[0] + '"' + (cur === w[0] ? ' checked' : '') + (letterBusy ? ' disabled' : '') + '> <span><strong>' + esc(w[1]) + '</strong>: ' + esc(w[2]) + '</span></label>';
       }).join('') +
       (letterError ? '<p class="st-error">' + esc(letterError) + '</p>' : '') +
+      '</fieldset><fieldset class="md-group"><legend>Which model</legend>' +
+      MODELS.map(function(m){
+        return '<label class="jn-check"><input type="radio" name="st-model" value="' + m[0] + '"' + ((letterLab.model || 'claude') === m[0] ? ' checked' : '') + (letterBusy || cur !== 'claude' ? ' disabled' : '') +
+          (cur !== 'claude' ? ' title="Only while BOLD LLM writes them"' : '') + '> <span><strong>' + esc(m[1]) + '</strong>: ' + esc(m[2]) + '</span></label>';
+      }).join('') +
       '</fieldset><fieldset class="md-group"><legend>How often BOLD LLM writes them</legend>' +
       '<p class="proj-meta">Each letter covers what changed since that person’s last one (London time). Someone opening their page with no letter from the last day gets one written then.</p>' +
       REFRESHES.map(function(r){
@@ -85,11 +96,25 @@
       .then(function(){ letterBusy = false; drawLetter(); });
   }
   function drawLetter(){ var x = document.getElementById('bold-agent'); if (x) x.innerHTML = letterHtml(); }
+  // Which model: asked first, as it changes where everyone's day is sent.
+  function saveModel(model){
+    var was = (letterLab || {}).model || 'claude';
+    BOLD.confirmAction({ always: true, title: model === 'sofya' ? 'Have Sofya write the letters?' : 'Go back to Claude?', go: 'Switch',
+      effects: model === 'sofya' ? ['Send what everyone can see of their day to Sofya (llm.bold-lab.ai), where every request is logged for training', 'Claude writes and answers whenever Sofya is down']
+        : ['Send what they can see of their day to Anthropic (Claude) instead', 'Nothing more is sent to Sofya'] })
+      .then(function(ok){
+        if (!ok) { drawLetter(); return; }
+        letterBusy = true; letterError = ''; drawLetter();
+        db.collection('settings').doc('homeLetter').set({ model: model, updatedAt: Date.now(), updatedBy: me.email }, { merge: true })
+          .catch(function(err){ console.error('[BOLD Settings] saving the model failed', err); letterError = 'Couldn’t save it — try again.'; letterLab = Object.assign({}, letterLab, { model: was }); })
+          .then(function(){ letterBusy = false; drawLetter(); });
+      });
+  }
   function saveLetter(writer){
     var was = (letterLab || {}).writer || 'rules';
     BOLD.confirmAction({ always: true, title: writer === 'claude' ? 'Have BOLD LLM write the home letters?' : 'Go back to rule-based letters?', go: writer === 'claude' ? 'Turn it on' : 'Switch',
-      effects: writer === 'claude' ? ['For everyone who chooses BOLD LLM on their profile: send what they can see of their day to Anthropic (Claude) each morning, and when they talk to BOLD', 'The lab pays for each letter and answer']
-        : ['Everyone’s home page shows the rule-based letter, and Talking to BOLD is off', 'Nothing more is sent to Anthropic'] })
+      effects: writer === 'claude' ? ['For everyone on BOLD.OS in the last 30 days: send what they can see of their day to ' + ((letterLab || {}).model === 'sofya' ? 'Sofya (logged for training)' : 'Anthropic (Claude)') + ' at the hours below, and when they talk to BOLD', 'The lab pays for each letter and answer']
+        : ['Everyone’s home page shows the rule-based letter, and Talking to BOLD is off', 'Nothing more is sent to Anthropic or Sofya'] })
       .then(function(ok){
         if (!ok) { drawLetter(); return; }
         letterBusy = true; letterError = ''; drawLetter();
@@ -451,6 +476,7 @@
     if (t.classList.contains('jr-live')) { pilotDraft = pilotNow(); pilotDraft.live[t.getAttribute('data-key')] = t.checked; render(); }
     if (t.name === 'st-letter') saveLetter(t.value);
     if (t.name === 'st-refresh') saveRefresh(t.value);
+    if (t.name === 'st-model') saveModel(t.value);
   });
   main.addEventListener('input', function(e){ if (e.target.classList.contains('st-align-at')) align.at = e.target.value; });
   main.addEventListener('keydown', function(e){

@@ -242,7 +242,7 @@
         (open ? ', and nobody has answered ' + esc(first(open.name)) + '’s ' + door(esc(quote(open.title)), 'conversations.html#post=' + encodeURIComponent(open.id), [['Answer it', 'conversations.html#post=' + encodeURIComponent(open.id)]]) + ' yet' : '') + '.');
     }
 
-    // Written by BOLD LLM (their choice, profile › Agents, and the lab's, Settings › BOLD Agent; homeLetters/{email})
+    // Written by BOLD LLM (the lab's choice, Settings › BOLD Agent; homeLetters/{email})
     // within the last day: that, under the greeting and any meeting on now, which a morning letter can't know.
     var al = llmLetter();
     // When it was written, beside the date: BOLD LLM's when it wrote it; the rule-based one when the page first put it together.
@@ -384,7 +384,7 @@
 
   // ---- Talking to BOLD ----
   // Under the letter, a dialog with BOLD LLM: they write (Markdown, md-field.js), it answers, as Markdown. Open to
-  // whoever has BOLD LLM writing their letter (state.chatOn: their choice and the lab's), answered by homeLetter
+  // everyone while BOLD LLM writes the letters (state.chatOn: the lab's choice), answered by homeLetter
   // 'ask' (functions/bold-llm.js) with the conversation so far. Otherwise hidden; #ask in the address shows it
   // in this browser as a preview (localStorage boldHomeAsk; #ask-off hides it), whose answer says BOLD LLM isn't
   // on for them and offers a search. Kept for the visit only (sessionStorage).
@@ -635,10 +635,10 @@
     var call = function(n, d){ return firebase.app().functions('europe-west2').httpsCallable(n)(d || {}); };
     var fail = function(what, then){ return function(err){ console.error('[BOLD Lab] loading ' + what + ' failed', err); if (then) then(); }; };
     var set = function(k){ return function(v){ if (asked !== mine) return; state[k] = v; write(); drawSides(); }; };
-    // Who writes their letter: BOLD LLM if they chose it (prefs/{uid}.homeLetter) and the lab has it on
-    // (settings/homeLetter); then today's, or one written now (homeLetter 'write'), the rule-based one meanwhile.
-    Promise.all([db.collection('prefs').doc(u.uid).get(), db.collection('settings').doc('homeLetter').get()]).then(function(r){
-      var c = (r[0].exists && r[0].data().homeLetter) === 'bold' && (r[1].exists && r[1].data().writer) === 'claude' ? 'bold' : 'rules';
+    // Who writes their letter: BOLD LLM when the lab has it on (settings/homeLetter, Settings › BOLD Agent); then
+    // today's, or one written now (homeLetter 'write'), the rule-based one meanwhile.
+    db.collection('settings').doc('homeLetter').get().then(function(lab){
+      var c = (lab.exists && lab.data().writer) === 'claude' ? 'bold' : 'rules';
       state.chatOn = c === 'bold';
       if (state.chatOn) mountAsk();
       if (c !== 'bold') return set('letterChoice')(c);

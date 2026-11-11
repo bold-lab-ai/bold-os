@@ -9409,11 +9409,13 @@ Object.keys(partNotes).forEach((k) => { exports[k] = partNotes[k]; });
 exports.mcpSandbox = require('./sandbox')({ onRequest, logger }).mcpSandbox;
 // Claude reviews each proposed tool for whoever decides (functions/reviewer.js); needs ANTHROPIC_API_KEY.
 const ANTHROPIC_API_KEY = defineSecret('ANTHROPIC_API_KEY');
+// Sofya, BOLD's own LLM (llm.bold-lab.ai, functions/sofya.js): its key, set with firebase functions:secrets:set.
+const BOLD_LLM_KEY = defineSecret('BOLD_LLM_KEY');
 exports.reviewMcpChange = require('./reviewer')({ db, onDocumentWritten, logger, ANTHROPIC_API_KEY, SLACK_BOT_TOKEN, slackText, linkedTitle, SITE_URL,
   tellStaff }).reviewMcpChange;
 // BOLD LLM, the home letter and Talking to BOLD (functions/bold-llm.js): Claude until Sofya runs, reading as
 // each person through the agents' API (letterInputs, its reading tools).
-const boldLlm = require('./bold-llm')({ db, admin, logger, onCall, onSchedule, HttpsError, callerEmail, access, ANTHROPIC_API_KEY,
+const boldLlm = require('./bold-llm')({ db, admin, logger, onCall, onSchedule, HttpsError, callerEmail, access, ANTHROPIC_API_KEY, BOLD_LLM_KEY,
   letterInputs: agentApi.letterInputs, chatTools: agentApi.chatTools, runChatTool: agentApi.runChatTool });
 exports.writeHomeLetters = boldLlm.writeHomeLetters;
 exports.homeLetter = boldLlm.homeLetter;
