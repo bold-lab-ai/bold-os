@@ -215,7 +215,9 @@ function meetingBusy(m, from, to, phase, moved){
     if (s + len > from) out.push([s, s + len]);
   }
   Object.keys(moved).forEach(function(k){
-    const x = moved[k], s = londonMs(x.date, x.time), e = s + (+x.minutes || 60) * 60000;
+    const x = moved[k];
+    if (x.cancelled) return;
+    const s = londonMs(x.date, x.time), e = s + (+x.minutes || 60) * 60000;
     if (s < to && e > from) out.push([s, e]);
   });
   return out.sort(function(a, b){ return a[0] - b[0]; });

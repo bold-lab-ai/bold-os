@@ -38,10 +38,10 @@ test('Google: the instance’s id, and what to change', () => {
   assert.strictEqual(M.instanceId('abc', B.londonMs('2026-11-17', '14:00')), 'abc_20261117T140000Z');
   assert.strictEqual(M.instanceId('abc', B.londonMs('2026-06-02', '14:00')), 'abc_20260602T130000Z');   // BST
   const moved = { '2026-11-17': { date: '2026-11-18', time: '15:30', minutes: 30 } };
-  assert.deepStrictEqual(M.movesToSync(tue, moved, {}), [{ orig: '2026-11-17', to: moved['2026-11-17'] }]);
+  assert.deepStrictEqual(M.movesToSync(tue, moved, {}), [{ orig: '2026-11-17', to: moved['2026-11-17'], restore: false }]);
   assert.deepStrictEqual(M.movesToSync(tue, moved, moved), []);
   // Moved back: its own time again.
-  assert.deepStrictEqual(M.movesToSync(tue, {}, moved), [{ orig: '2026-11-17', to: { date: '2026-11-17', time: '14:00', minutes: 60 } }]);
+  assert.deepStrictEqual(M.movesToSync(tue, {}, moved), [{ orig: '2026-11-17', to: { date: '2026-11-17', time: '14:00', minutes: 60 }, restore: false }]);
 });
 
 test('busy times and the calendar feed follow a moved date', () => {
@@ -51,5 +51,19 @@ test('busy times and the calendar feed follow a moved date', () => {
   const ics = buildCalendar({ meetings: [{ id: 'p1', title: 'Sync', meeting: tue, start: START, moved }], now: Date.UTC(2026, 10, 11) });
   assert.match(ics, /BEGIN:VEVENT\r\nUID:p1@bold-os[\s\S]*RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=TU/);
   assert.match(ics, /RECURRENCE-ID;TZID=Europe\/London:20261117T140000\r\nDTSTART;TZID=Europe\/London:20261118T153000\r\nDTEND;TZID=Europe\/London:20261118T160000/);
-  assert.doesNotMatch(ics, /EXDATE/);
+  assert.doesNotMatch(ics, /EXDATE/);   // moved, not cancelled
+});
+
+test('an occurrence cancelled: left out everywhere, and restored', () => {
+  const off = M.withMove({}, tue, '2026-11-17', { cancelled: true }, TODAY);
+  assert.deepStrictEqual(off, { '2026-11-17': { cancelled: true } });
+  assert.deepStrictEqual(M.movedTo(off), []);
+  assert.deepStrictEqual(M.occurrences(tue, START, off, '2026-11-16', '2026-12-06').map((x) => x.date), ['2026-12-01']);
+  assert.deepStrictEqual(M.movesToSync(tue, off, {}), [{ orig: '2026-11-17', to: { cancelled: true }, restore: false }]);
+  // Restored: its own time again, and Google told it's back.
+  assert.deepStrictEqual(M.movesToSync(tue, {}, off), [{ orig: '2026-11-17', to: { date: '2026-11-17', time: '14:00', minutes: 60 }, restore: true }]);
+  assert.deepStrictEqual(B.meetingBusy(tue, Date.UTC(2026, 10, 16), Date.UTC(2026, 10, 20), START, off), []);
+  const ics = buildCalendar({ meetings: [{ id: 'p1', title: 'Sync', meeting: tue, start: START, moved: off }], now: Date.UTC(2026, 10, 11) });
+  assert.match(ics, /EXDATE;TZID=Europe\/London:20261117T140000/);
+  assert.doesNotMatch(ics, /RECURRENCE-ID/);
 });

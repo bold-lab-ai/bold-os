@@ -107,11 +107,16 @@
       '<div class="proj-badges">' + kindBadge(m.kind) + (m.w ? groupBadge(m.w) : '') + pausedBadge(m) + ownBadge(m) + '</div>' +
       titleHtml(m, 'proj-title') + '<span class="proj-meta">' + meta.join(' \u00b7 ') + '</span>';
     // This date of it (a block of the week), moved or not; and changing it, for whoever may.
-    if (o) html += '<p class="cal-pop-when">' + esc(dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes)) +
-      (o.moved ? ' <span class="badge">Moved</span> <span class="cal-pop-from">from ' + esc(dayText(o.orig) + ', ' + m.meeting.time) + '</span>' : '') + '</p>';
-    if (m.canEdit && !m.paused && !(m.hidden && pop.orig)) html += pop.edit ? editHtml(m, o)
-      : '<p class="cal-pop-note"><button type="button" class="btn-text cal-change"' + (busy[keyOf(m)] ? ' disabled' : '') + '>Change the time</button>' +
-        (m.start ? '' : '') + '</p>';
+    if (o) html += '<p class="cal-pop-when">This occurrence: ' + esc(dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes)) +
+      (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span> <span class="cal-pop-from">from ' + esc(dayText(o.orig) + ', ' + m.meeting.time) + '</span>' : '') + '</p>';
+    if (m.canEdit && !m.paused && !(m.hidden && pop.orig)) {
+      var off = busy[keyOf(m)] ? ' disabled' : '', one = o && m.start;
+      html += pop.edit ? editHtml(m, o)
+        : one && o.cancelled ? '<div class="cal-e-act"><button type="button" class="btn-text cal-restore"' + off + '>Restore occurrence</button></div>'
+        : '<div class="cal-e-act">' + (one ? '<button type="button" class="btn-text cal-change"' + off + '>Edit occurrence</button>' +
+            '<button type="button" class="btn-text cal-cancel-one"' + off + '>Cancel occurrence</button>'
+          : '<button type="button" class="btn-text cal-change"' + off + '>Edit all occurrences</button>') + '</div>';
+    }
     if (m.mine) html += '<p class="cal-pop-note">' + (m.paused ? 'Paused: its upcoming dates are off Google Calendar until it’s resumed.' : '') +
       ' <button type="button" class="btn-text cal-pause" data-action="' + (m.paused ? 'resume' : 'pause') + '"' + (busy[keyOf(m)] ? ' disabled' : '') + '>' + (m.paused ? 'Resume' : 'Pause the meeting') + '</button></p>';
     if (m.kind === 'project') html += '<div class="cal-pop-act">' + joinHtml(m.w) + '</div>';
@@ -142,20 +147,20 @@
     for (var n = 15; n <= 240; n += 15) lens.push(n);
     if (lens.indexOf(+e.minutes) < 0) lens.push(+e.minutes);
     var once = e.scope === 'once' && o;
-    var scopes = o && m.start ? '<div class="cal-scope" role="radiogroup" aria-label="Which dates">' +
-      '<label><input type="radio" name="calScope" value="once"' + (once ? ' checked' : '') + off + '> Only ' + esc(dayText(o.orig)) + '</label>' +
-      '<label><input type="radio" name="calScope" value="series"' + (once ? '' : ' checked') + off + '> Every meeting</label></div>' : '';
+    var scopes = o && m.start ? '<div class="cal-scope" role="radiogroup" aria-label="Which occurrences">' +
+      '<label><input type="radio" name="calScope" value="once"' + (once ? ' checked' : '') + off + '> This occurrence (' + esc(dayText(o.orig)) + ')</label>' +
+      '<label><input type="radio" name="calScope" value="series"' + (once ? '' : ' checked') + off + '> All occurrences</label></div>' : '';
     var when = once ? '<input type="date" class="cal-e-date" value="' + esc(e.date) + '" aria-label="Day"' + off + '>'
       : '<select class="cal-e-day" aria-label="Day"' + off + '>' + MEETING_DAYS.map(function(d){ return '<option value="' + d[0] + '"' + (d[0] === e.day ? ' selected' : '') + '>' + d[1] + 's</option>'; }).join('') + '</select>';
     var moves = Object.keys(m.moved || {}).length;
     return '<div class="cal-edit">' + scopes + '<div class="cal-e-row">' + when +
       '<input type="time" class="cal-e-time" step="900" value="' + esc(e.time) + '" aria-label="Time"' + off + '>' +
       '<select class="cal-e-min" aria-label="How long"' + off + '>' + lens.map(function(n){ return '<option value="' + n + '"' + (n === +e.minutes ? ' selected' : '') + '>' + (n < 60 ? n + ' min' : n % 60 ? Math.floor(n / 60) + ' h ' + (n % 60) : n / 60 + (n === 60 ? ' hour' : ' hours')) + '</option>'; }).join('') + '</select></div>' +
-      '<p class="cal-pop-note">' + (once ? 'Only this date moves.' : 'Every date moves' + (moves ? ', and ' + (moves === 1 ? 'the one' : 'the ' + moves) + ' moved on ' + (moves === 1 ? 'its' : 'their') + ' own go' + (moves === 1 ? 'es' : '') + ' with them' : '') + '.') +
+      '<p class="cal-pop-note">' + (once ? 'Only this occurrence changes.' : 'All occurrences change' + (moves ? '; the ' + (moves === 1 ? 'one' : moves) + ' moved or cancelled on ' + (moves === 1 ? 'its' : 'their') + ' own ' + (moves === 1 ? 'goes' : 'go') + ' back to the new time' : '') + '.') +
       ' Google emails its ' + (m.people === 1 ? 'guest' : m.people + ' guests') + ' the new time.</p>' +
       '<div class="cal-e-act"><button type="button" class="join-btn cal-e-save"' + off + '>' + (busy[k] ? 'Saving…' : 'Save') + '</button>' +
       '<button type="button" class="btn-text cal-e-cancel"' + off + '>Cancel</button>' +
-      (once && o.moved ? '<button type="button" class="btn-text cal-e-back"' + off + '>Put it back</button>' : '') + '</div></div>';
+      (once && o.moved ? '<button type="button" class="btn-text cal-e-back"' + off + '>Move it back to ' + esc(dayText(o.orig) + ', ' + m.meeting.time) + '</button>' : '') + '</div></div>';
   }
   function readEdit(){
     var box = el('calPop');
@@ -176,12 +181,13 @@
     msgs[keyOf(m)] = '';
     renderPop();
   }
-  function saveEdit(m, back){
+  // back: this occurrence back at its own time (or restored, if cancelled); cancel: this occurrence cancelled.
+  function saveEdit(m, back, cancel){
     readEdit();
-    var e = pop.edit, k = keyOf(m), orig = pop.orig, once = e.scope === 'once' && orig;
-    if (!/^\d\d:\d\d$/.test(e.time || '') || (once && !/^\d{4}-\d{2}-\d{2}$/.test(e.date || ''))) { msgs[k] = 'Choose a day and a time.'; renderPop(); return; }
+    var e = pop.edit || { scope: 'once' }, k = keyOf(m), orig = pop.orig, once = (e.scope === 'once' || back || cancel) && orig;
+    if (!back && !cancel && (!/^\d\d:\d\d$/.test(e.time || '') || (once && !/^\d{4}-\d{2}-\d{2}$/.test(e.date || '')))) { msgs[k] = 'Choose a day and a time.'; renderPop(); return; }
     var payload = { kind: m.kind, id: m.id, board: m.w ? (m.w.boardId || null) : null, scope: once ? 'once' : 'series' };
-    if (once) { payload.date = orig; payload.to = back ? { date: orig, time: m.meeting.time, minutes: m.meeting.minutes } : { date: e.date, time: e.time, minutes: +e.minutes }; }
+    if (once) { payload.date = orig; payload.to = cancel ? { cancelled: true } : back ? { date: orig, time: m.meeting.time, minutes: m.meeting.minutes } : { date: e.date, time: e.time, minutes: +e.minutes }; }
     else payload.to = { day: e.day, time: e.time, minutes: +e.minutes };
     busy[k] = true; msgs[k] = ''; render();
     var call;
@@ -194,7 +200,8 @@
         // The date moved: its card follows it (same date of the series, another day of the week maybe).
         if (!once) pop.orig = null;
       }
-      msgs[k] = d.error ? 'Saved on BOLD.OS, but Google Calendar said: ' + esc(d.error) : back ? 'Put back: Google emails its guests.' : once ? 'Moved: Google emails its guests.' : 'Changed: Google emails its guests.';
+      msgs[k] = d.error ? 'Saved on BOLD.OS, but Google Calendar said: ' + esc(d.error)
+        : (cancel ? 'Occurrence cancelled' : back ? 'Occurrence restored' : once ? 'Occurrence moved' : 'All occurrences changed') + ': Google emails its guests.';
       render();
     }).catch(function(err){
       console.error('[BOLD Lab] changing the meeting failed', err);
@@ -248,9 +255,9 @@
         var when = meetingText(m.meeting).replace(/^[^,]*, /, '');
         var meta = [esc(when), m.people + (m.people === 1 ? ' person' : ' people')];
         // Its coming dates moved one by one.
-        Object.keys(m.moved || {}).sort().filter(function(k){ return k >= today || m.moved[k].date >= today; }).slice(0, 3).forEach(function(k){
+        Object.keys(m.moved || {}).sort().filter(function(k){ return k >= today || (!m.moved[k].cancelled && m.moved[k].date >= today); }).slice(0, 3).forEach(function(k){
           var x = m.moved[k];
-          meta.push(esc(dayText(k) + ' moved to ' + dayText(x.date) + ', ' + x.time));
+          meta.push(esc(x.cancelled ? dayText(k) + ' cancelled' : dayText(k) + ' moved to ' + dayText(x.date) + ', ' + x.time));
         });
         if (m.mine && m.meetUrl) meta.push('<a href="' + esc(m.meetUrl) + '" target="_blank" rel="noopener">' + meetLabel(m.meeting) + '</a>');
         html += '<li' + (greyed(m) ? ' class="is-paused"' : '') + '><div class="proj-main">' + titleHtml(m, 'proj-title') +
@@ -293,15 +300,16 @@
     d.setDate(d.getDate() - (d.getDay() + 6) % 7 + offset * 7);
     return d;
   }
-  // A meeting's dates from `from` to `to` (YYYY-MM-DD), its dates moved one by one applied (functions/meeting-moves.js,
-  // whose occurrences this follows) → [{ orig, date, time, minutes, moved }].
+  // A meeting's occurrences from `from` to `to` (YYYY-MM-DD), each moved or cancelled one applied (functions/meeting-moves.js,
+  // whose occurrences this follows; a cancelled one is kept, to show it) → [{ orig, date, time, minutes, moved, cancelled }].
   function addDays(isoDay, n){ var d = new Date(isoDay + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
   function occIn(m, from, to){
     var out = [], moved = m.moved || {}, mt = m.meeting;
     for (var d = addDays(from, -62); d <= addDays(to, 62); d = addDays(d, 1)) {
       if (MEETING_DAYS[(new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7][0] !== mt.day || !inWeek(m, d) || (mt.until && d > mt.until)) continue;
       var mv = moved[d];
-      var x = mv ? { orig: d, date: mv.date, time: mv.time, minutes: +mv.minutes || mt.minutes, moved: true } : { orig: d, date: d, time: mt.time, minutes: mt.minutes, moved: false };
+      var x = mv && mv.cancelled ? { orig: d, date: d, time: mt.time, minutes: mt.minutes, moved: false, cancelled: true }
+        : mv ? { orig: d, date: mv.date, time: mv.time, minutes: +mv.minutes || mt.minutes, moved: true } : { orig: d, date: d, time: mt.time, minutes: mt.minutes, moved: false };
       if (x.date >= from && x.date <= to) out.push(x);
     }
     return out;
@@ -381,11 +389,11 @@
       groups.forEach(function(g){
         g.items.forEach(function(b){
           var m = b.m, o = b.o, n = g.lanes.length, tag = m.href ? 'a' : 'span';
-          var drag = m.canEdit && !m.paused && !m.hidden && m.start;
-          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (drag ? ' is-draggable' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
+          var drag = m.canEdit && !m.paused && !m.hidden && m.start && !o.cancelled;
+          html += '<' + tag + ' class="week-block cal-' + m.kind + (m.mine ? ' is-mine' : '') + (greyed(m) || o.cancelled ? ' is-paused' : '') + (o.moved ? ' is-moved' : '') + (o.cancelled ? ' is-cancelled' : '') + (drag ? ' is-draggable' : '') + '" data-key="' + esc(keyOf(m)) + '" data-orig="' + o.orig + '" draggable="false"' + (m.href ? ' href="' + esc(m.href) + '"' : '') +
             ' style="top:' + y(b.s) + 'px;height:' + Math.max(18, y(b.e) - y(b.s) - 2) + 'px;' +
-            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move it' : '')) + '">' +
-            '<span class="week-time">' + esc(o.time) + '</span> ' + esc(m.title) + (o.moved ? ' <span class="badge">Moved</span>' : '') + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
+            'left:calc(' + (b.lane * 100 / n) + '% + 2px);width:calc(' + (100 / n) + '% - 4px)" title="' + esc(m.title + ' · ' + (o.cancelled ? 'This occurrence is cancelled · ' : '') + (o.moved ? dayText(o.date) + ', ' + o.time + '–' + endOf(o.time, o.minutes) + ', moved from ' + dayText(o.orig) + ' · ' : '') + meetingText(m.meeting) + ' · ' + KIND_LABELS[m.kind] + (m.hidden ? ' · Hidden' : m.paused ? ' · Paused' : '') + (m.meeting.link ? ' · Own link' : '') + (drag ? ' · Drag to move this occurrence' : '')) + '">' +
+            '<span class="week-time">' + esc(o.time) + '</span> ' + esc(m.title) + (o.cancelled ? ' <span class="badge">Cancelled</span>' : o.moved ? ' <span class="badge">Moved</span>' : '') + (m.w ? ' ' + groupBadge(m.w) : '') + (m.meeting.link ? ' ' + ownBadge(m) : '') + '</' + tag + '>';
         });
       });
       html += '</div>';
@@ -442,7 +450,14 @@
     if (m && e.target.closest('.cal-change')) { startEdit(m); return; }
     if (m && e.target.closest('.cal-e-cancel')) { pop.edit = null; renderPop(); return; }
     if (m && e.target.closest('.cal-e-save')) { saveEdit(m, false); return; }
-    if (m && e.target.closest('.cal-e-back')) { saveEdit(m, true); return; }
+    if (m && e.target.closest('.cal-e-back, .cal-restore')) { saveEdit(m, true); return; }
+    if (m && e.target.closest('.cal-cancel-one')) {
+      var day = dayText(pop.orig), keep = { key: pop.key, orig: pop.orig, rect: pop.rect };
+      BOLD.confirmAlways({ title: 'Cancel the ' + day + ' occurrence of “' + m.title + '”?', go: 'Cancel occurrence', no: 'Keep it', effects: ['Cancel it in everyone’s Google Calendar: Google emails its ' + (m.people === 1 ? 'guest' : m.people + ' guests'), 'The other occurrences stay as they are; you can restore it from its card'] })
+        // (clicking the question closes the card: it's opened again on the occurrence)
+        .then(function(ok){ if (ok) { pop = keep; saveEdit(m, false, true); } });
+      return;
+    }
     onJoin(e);
   });
   // Switching between this date and every date: the day field follows.

@@ -3882,11 +3882,15 @@ async function syncMoves(eventId, meeting, moved, applied){
   const at = (date, time) => new Date(busy.londonMs(date, time)).toISOString();
   for (const x of todo){
     const id = meetingMoves.instanceId(eventId, busy.londonMs(x.orig, meeting.time));
-    const start = busy.londonMs(x.to.date, x.to.time);
     try {
-      await googleFetch('PATCH', CAL + '/' + encodeURIComponent(id) + '?sendUpdates=all', {
-        start: { dateTime: at(x.to.date, x.to.time), timeZone: PROJECT_TZ },
-        end: { dateTime: new Date(start + x.to.minutes * 60000).toISOString(), timeZone: PROJECT_TZ } });
+      // Cancelled: that date is cancelled in Google (its guests told); restored or moved: back, at its time.
+      if (x.to.cancelled) await googleFetch('DELETE', CAL + '/' + encodeURIComponent(id) + '?sendUpdates=all');
+      else {
+        const start = busy.londonMs(x.to.date, x.to.time);
+        await googleFetch('PATCH', CAL + '/' + encodeURIComponent(id) + '?sendUpdates=all', Object.assign(x.restore ? { status: 'confirmed' } : {}, {
+          start: { dateTime: at(x.to.date, x.to.time), timeZone: PROJECT_TZ },
+          end: { dateTime: new Date(start + x.to.minutes * 60000).toISOString(), timeZone: PROJECT_TZ } }));
+      }
     } catch (err){
       if (err.status !== 404 && err.status !== 410) throw err;
       logger.warn('A moved meeting date isn’t in Google Calendar any more', { orig: x.orig });
@@ -6197,7 +6201,7 @@ exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
 // moveMeeting (the Calendar, 2026-11-11): a recurring meeting changed from the Calendar, dragged or edited, a
 // project's, a supervision or an event series'. { kind: 'project' | 'study' | 'series', id (the project's card,
 // the student's email, the series), board?, scope: 'series' (every date: { day, time, minutes }) or 'once' (one
-// date, `date`, moved to { date, time, minutes }: meeting-moves.js) } → { ok, error? (Google's, if it failed) }.
+// date, `date`, moved to { date, time, minutes }, or cancelled: { cancelled: true }: meeting-moves.js) } → { ok, error? }.
 // Who may: as on each one's own page: a project's submitter, authors, PIs and admins; the student and the people
 // in their studies; a series' organisers, PIs and admins. Not while paused. Google emails the guests the change.
 exports.moveMeeting = onCall({ timeoutSeconds: 120, secrets: [GOOGLE_OAUTH, GITHUB_APP, SLACK_BOT_TOKEN] }, async (request) => {
@@ -6242,7 +6246,9 @@ exports.moveMeeting = onCall({ timeoutSeconds: 120, secrets: [GOOGLE_OAUTH, GITH
     out = await sync(meeting);
   } else {
     const today = todayIsoLondon();
-    const move = meetingMoves.normalizeMove(doc.meeting, doc.eventStart || '', String(data.date || ''), to, today);
+    // Cancelled ({ cancelled: true }), or moved.
+    const move = to.cancelled ? (meetingMoves.isOccurrence(doc.meeting, doc.eventStart || '', String(data.date || '')) && String(data.date) >= today ? { cancelled: true } : { error: 'That isn’t one of its coming dates.' })
+      : meetingMoves.normalizeMove(doc.meeting, doc.eventStart || '', String(data.date || ''), to, today);
     if (move.error) throw new HttpsError('invalid-argument', move.error);
     const moved = meetingMoves.withMove(doc.meetingMoved, doc.meeting, String(data.date), move, today);
     await ref.set({ meetingMoved: moved, movedTo: meetingMoves.movedTo(moved) }, { merge: true });

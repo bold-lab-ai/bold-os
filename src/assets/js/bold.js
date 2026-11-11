@@ -289,7 +289,8 @@
             return e.key ? '<li class="confirm-opt"><label><input type="checkbox" checked data-key="' + esc(e.key) + '"> ' + esc(e.text) + '</label></li>' : '<li>' + esc(e.text || e) + '</li>';
           }).join('') + '</ul>' : '') +
           (auth && auth.currentUser && !o.always ? '<label class="confirm-skip"><input type="checkbox"> Don’t ask me again (you can turn it back on in your profile)</label>' : '') +
-          '<div class="confirm-actions"><button class="btn-box" type="button" data-no>Cancel</button>' +
+          // o.no: the button that doesn't go ahead, when "Cancel" would be read as the action (Cancel occurrence).
+          '<div class="confirm-actions"><button class="btn-box" type="button" data-no>' + esc(o.no || 'Cancel') + '</button>' +
           '<button class="btn-box is-primary" type="button" data-yes>' + esc(o.go || 'Go ahead') + '</button></div>';
         document.body.appendChild(d);
         var done = function(yes){

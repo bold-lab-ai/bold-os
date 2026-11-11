@@ -77,11 +77,13 @@ function meetingLines(x, stamp, today){
   // Its dates moved one by one (meeting-moves.js): each an event of its own, the same UID with the date it
   // replaces (RECURRENCE-ID), which takes that date's place, as Google Calendar sends them.
   const moved = x.moved || {}, keys = Object.keys(moved).filter((k) => isoDay.test(k) && moved[k] && isoDay.test(moved[k].date || '') && /^\d\d:\d\d$/.test(moved[k].time || '')).sort();
+  // Its dates cancelled one by one: left out (EXDATE).
+  const off = Object.keys(moved).filter((k) => isoDay.test(k) && moved[k] && moved[k].cancelled).sort();
   const desc = 'DESCRIPTION:' + text([x.description, x.url].filter(Boolean).join('\n\n'));
   const tail = (x.url ? ['URL:' + x.url] : []).concat(['TRANSP:TRANSPARENT', 'END:VEVENT']);
   return ['BEGIN:VEVENT', 'UID:' + x.id + '@bold-os', 'DTSTAMP:' + stamp,
     'DTSTART;TZID=' + TZ + ':' + local(first, m.time), 'DTEND;TZID=' + TZ + ':' + local(first, m.time, m.minutes || 60),
-    rule, 'SUMMARY:' + text(x.title), desc].concat(tail)
+    rule].concat(off.map((k) => 'EXDATE;TZID=' + TZ + ':' + local(k, m.time))).concat(['SUMMARY:' + text(x.title), desc]).concat(tail)
     .concat([].concat.apply([], keys.map((k) => ['BEGIN:VEVENT', 'UID:' + x.id + '@bold-os', 'DTSTAMP:' + stamp,
       'RECURRENCE-ID;TZID=' + TZ + ':' + local(k, m.time),
       'DTSTART;TZID=' + TZ + ':' + local(moved[k].date, moved[k].time), 'DTEND;TZID=' + TZ + ':' + local(moved[k].date, moved[k].time, Number(moved[k].minutes) || m.minutes || 60),

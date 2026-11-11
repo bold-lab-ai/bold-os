@@ -1,8 +1,8 @@
 // One date of a recurring meeting moved (2026-11-11): a project's, a supervision or an event series' meeting
 // is weekly (or every few weeks) at its day and time; one of its dates can be moved to another day, time or
 // length, the rest staying. Kept on the meeting's doc as `meetingMoved: { <its own date>: { date, time, minutes } }`
-// (YYYY-MM-DD, HH:MM London, minutes) and `movedTo` (the dates moved to, for the reminders' query); what's in
-// Google Calendar as `eventMoved` (the same shape). Pure.
+// (YYYY-MM-DD, HH:MM London, minutes), or `{ cancelled: true }` for one cancelled, and `movedTo` (the dates moved
+// to, for the reminders' query); what's in Google Calendar as `eventMoved` (the same shape). Pure.
 'use strict';
 
 const WEEKDAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
@@ -44,9 +44,9 @@ function normalizeMove(meeting, start, orig, to, today){
 // (both dates before `today`) dropped, the latest MAX kept.
 function withMove(moved, meeting, orig, move, today){
   const out = {};
-  Object.keys(moved || {}).forEach(function(k){ const x = moved[k]; if (x && (k >= today || x.date >= today)) out[k] = x; });
-  const back = !move || (move.date === orig && move.time === meeting.time && Number(move.minutes) === Number(meeting.minutes));
-  if (back) delete out[orig]; else out[orig] = { date: move.date, time: move.time, minutes: Number(move.minutes) };
+  Object.keys(moved || {}).forEach(function(k){ const x = moved[k]; if (x && (k >= today || (!x.cancelled && x.date >= today))) out[k] = x; });
+  const back = !move || (!move.cancelled && move.date === orig && move.time === meeting.time && Number(move.minutes) === Number(meeting.minutes));
+  if (back) delete out[orig]; else out[orig] = move.cancelled ? { cancelled: true } : { date: move.date, time: move.time, minutes: Number(move.minutes) };
   const keys = Object.keys(out).sort();
   keys.slice(0, Math.max(0, keys.length - MAX)).forEach(function(k){ delete out[k]; });
   return out;
@@ -54,7 +54,7 @@ function withMove(moved, meeting, orig, move, today){
 
 // Pure: the dates its moved dates went to, sorted, once each.
 function movedTo(moved){
-  return Object.keys(moved || {}).map(function(k){ return moved[k].date; }).filter(function(d, i, a){ return a.indexOf(d) === i; }).sort();
+  return Object.keys(moved || {}).filter(function(k){ return !moved[k].cancelled; }).map(function(k){ return moved[k].date; }).filter(function(d, i, a){ return a.indexOf(d) === i; }).sort();
 }
 
 // Pure: its dates from `from` to `to` (YYYY-MM-DD, inclusive), moves applied → [{ orig, date, time, minutes, moved }],
@@ -68,6 +68,7 @@ function occurrences(meeting, start, moved, from, to){
     const iso = new Date(t).toISOString().slice(0, 10);
     if (!isOccurrence(meeting, start, iso)) continue;
     const mv = moved[iso];
+    if (mv && mv.cancelled) continue;
     const x = mv ? { orig: iso, date: mv.date, time: mv.time, minutes: Number(mv.minutes), moved: true }
       : { orig: iso, date: iso, time: meeting.time, minutes: Number(meeting.minutes) || 60, moved: false };
     if (x.date >= from && x.date <= to) out.push(x);
@@ -81,14 +82,14 @@ function instanceId(eventId, startMs){
   return eventId + '_' + new Date(startMs).toISOString().replace(/[-:]/g, '').replace(/\.\d+/, '');
 }
 
-// Pure: what Google Calendar needs changing to match the moves: [{ orig, to: { date, time, minutes } }], `to`
-// being its own date and time again for one no longer moved.
+// Pure: what Google Calendar needs changing to match the moves: [{ orig, to: { date, time, minutes } or { cancelled },
+// restore: it was cancelled there }], `to` being its own date and time again for one no longer moved.
 function movesToSync(meeting, moved, applied){
   const out = [], keys = Object.keys(Object.assign({}, applied || {}, moved || {})).sort();
   keys.forEach(function(k){
     const want = (moved || {})[k] || null, had = (applied || {})[k] || null;
     if (JSON.stringify(want) === JSON.stringify(had)) return;
-    out.push({ orig: k, to: want || { date: k, time: meeting.time, minutes: Number(meeting.minutes) || 60 } });
+    out.push({ orig: k, to: want || { date: k, time: meeting.time, minutes: Number(meeting.minutes) || 60 }, restore: !!(had && had.cancelled) });
   });
   return out;
 }
