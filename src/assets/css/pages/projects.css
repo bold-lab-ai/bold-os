@@ -177,6 +177,10 @@ main .btn-text:hover{text-decoration-color:currentColor;}
 .week-block.is-draggable{cursor:grab; user-select:none; -webkit-user-select:none;}
 .week-block.is-drag-source{opacity:.35;}
 .week-ghost{left:2px !important; right:2px; width:auto !important; z-index:6; pointer-events:none; opacity:.95; box-shadow:0 6px 18px color-mix(in srgb, var(--shade, #000) 22%, transparent);}
+/* The moving block: light, tinted in its kind's colour, with a dashed border in it. */
+.week-ghost{--g:var(--accent); background:color-mix(in srgb, var(--g) 16%, var(--surface)) !important; color:var(--ink) !important; border:2px dashed var(--g) !important;}
+.week-ghost.cal-study{--g:var(--green);}
+.week-ghost.cal-series{--g:var(--brown);}
 html.is-dragging-meeting, html.is-dragging-meeting *{cursor:grabbing !important; user-select:none; -webkit-user-select:none;}
 .week-block.is-moved{border-style:dashed; border-left-style:solid;}
 .week-block.is-cancelled{text-decoration:line-through; opacity:.55;}
