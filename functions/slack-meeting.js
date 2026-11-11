@@ -191,9 +191,9 @@ function withSuggestions(view, o){
     const slots = o.slots || [], all = slots.length && slots.every(function(x){ return x.free === x.of; });
     const whose = (o.fromCalendar || []).length
       ? 'From the calendars of ' + namesText(o.fromCalendar, 600) + ', and everyone’s BOLD.OS meetings.'
-      : 'From everyone’s BOLD.OS meetings: nobody here has added a free/busy calendar.';
+      : 'From everyone’s BOLD.OS meetings: nobody here has added a calendar.';
     const none = (o.fromCalendar || []).length && (o.none || []).length
-      ? ' ' + namesText(o.none, 600) + ((o.none.length === 1) ? ' hasn’t' : ' haven’t') + ' added a free/busy calendar (on their BOLD.OS profile).' : '';
+      ? ' ' + namesText(o.none, 600) + ((o.none.length === 1) ? ' hasn’t' : ' haven’t') + ' added a calendar (on their BOLD.OS profile).' : '';
     const failed = (o.failed || []).length ? ' Couldn’t read a calendar of ' + namesText(o.failed, 300) + '.' : '';
     const head = !slots.length ? 'No time found in the next two weeks.' : all ? 'Everyone’s free at these times (weekdays, 09:00–18:00 London, the next two weeks).'
       : 'No time suits everyone: these suit the most people (weekdays, 09:00–18:00 London, the next two weeks).';

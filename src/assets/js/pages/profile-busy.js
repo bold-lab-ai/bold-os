@@ -28,7 +28,7 @@
         '<button type="button" class="btn-box busy-remove" data-id="' + esc(f.id) + '"' + off + '>Remove</button></li>';
     }).join('');
     var add = form
-      ? '<li class="busy-new"><span class="busy-add"><input type="url" class="busy-url" maxlength="1000" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" aria-label="Free/busy calendar address"' + off + '></span>' +
+      ? '<li class="busy-new"><span class="busy-add"><input type="url" class="busy-url" maxlength="1000" placeholder="https://calendar.google.com/calendar/ical/…/basic.ics" aria-label="Calendar address"' + off + '></span>' +
         '<span class="busy-new-actions"><button type="button" class="btn-box is-primary busy-save"' + off + '>' + (busy ? 'Checking…' : 'Add') + '</button>' +
         (list.length ? '<button type="button" class="btn-box busy-cancel"' + off + '>Cancel</button>' : '') + '</span></li>'
       : full ? '' : '<li class="busy-plus-row"><button type="button" class="busy-plus busy-change" aria-label="Add a calendar" title="Add a calendar"' + off + '>+</button></li>';
