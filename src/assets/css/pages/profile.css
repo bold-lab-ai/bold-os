@@ -252,7 +252,12 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .hl-setting{margin:0 0 28px; padding-bottom:20px; border-bottom:1px solid var(--line);}
 .hl-setting h3{margin:0 0 4px;}
 .hl-choices{border:0; padding:0; margin:12px 0 0;}
+.hl-choices .jn-check{display:flex; gap:8px; align-items:flex-start; margin:0 0 10px; font-family:var(--sans); font-size:14px; line-height:1.5; color:var(--ink-soft); cursor:pointer;}
+.hl-choices .jn-check input{flex:none; margin:3px 0 0;}
+.hl-choices .jn-check strong{color:var(--ink);}
+.hl-choices .jn-check em{display:block; margin-top:2px; font-size:13px;}
 .hl-choices .jn-check.is-off{color:var(--muted); cursor:not-allowed;}
+.hl-choices .jn-check.is-off strong{color:var(--muted);}
 .hl-agent{margin-top:12px;}
 /* Free/busy calendar (profile-busy.js): its address, and where to find it. */
 .busy-add{display:block; flex:1 1 auto;}
