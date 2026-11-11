@@ -2109,7 +2109,9 @@ function commentDigest(items, name, url){
   const at = (it, label) => '<' + url + '#c=' + encodeURIComponent(it.id) + '|' + label.replace(/\|/g, '¦') + '>';
   const line = (it) => '• ' + slackText(it.by.name || it.by.email) + (it.taggedYou ? ' tagged you' : '') + ' ' + at(it, it.proposalId ? 'on a proposed change' : it.parent ? 'replied' : 'on “' + slackText(it.quote.length > 60 ? it.quote.slice(0, 60) + '…' : it.quote) + '”') +
     ': ' + slackText(it.text.length > 140 ? it.text.slice(0, 140) + '…' : it.text);
-  return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), url) + '\n' +
+  // The page's name links to the first of them too: the Inbox and computers open a message's first link
+  // (noteFor, slackToPlain), and should land on the comment, not the top of the page.
+  return '💬 ' + (n === 1 ? 'A new comment' : n + ' new comments') + ' on ' + linkedTitle(slackText(name), n ? url + '#c=' + encodeURIComponent(items[0].id) : url) + '\n' +
     items.slice(0, 5).map(line).join('\n') + (n > 5 ? '\n…and ' + (n - 5) + ' more.' : '');
 }
 
