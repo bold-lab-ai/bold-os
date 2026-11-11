@@ -6,8 +6,9 @@
 
 const BASE = 'https://llm.bold-lab.ai/v1';
 const MODEL = 'Qwen/Qwen3.8-27B-FP8';
-// Long enough for a letter (2026-11-11: 2 minutes wasn't, with Qwen thinking first); the callers' own limits are 5 and 9.
-const TIMEOUT = 180000;
+// How long a call may take, with Qwen thinking first: a letter (written in the background, functions/bold-llm.js
+// onLetterJob, 9 minutes) and a step of an answer (Talking to BOLD, while they wait).
+const LETTER_TIMEOUT = 300000, CHAT_TIMEOUT = 120000;
 
 // Pure: the agents' tools (Anthropic's shape: { name, description, input_schema }) in OpenAI's.
 function openAITools(tools){
@@ -32,14 +33,13 @@ function argsOf(call){
 module.exports = function({ key, post }){
   post = post || ((url, init) => fetch(url, init));
   // One completion → { message, model, finish }. Throws on anything but an answer.
-  async function complete(body){
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), TIMEOUT);
+  async function complete(body, timeout){
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout || CHAT_TIMEOUT);
     try {
       const r = await post(BASE + '/chat/completions', { method: 'POST', signal: ctl.signal,
         headers: { Authorization: 'Bearer ' + key(), 'Content-Type': 'application/json' },
-        // Without Qwen's thinking (its chat template's switch): a letter or an answer needs no long reasoning first, and
-        // with it a letter took longer than TIMEOUT.
-        body: JSON.stringify(Object.assign({ model: MODEL, chat_template_kwargs: { enable_thinking: false } }, body)) });
+        // Qwen thinks first (its default); what it says is read without its thinking (said).
+        body: JSON.stringify(Object.assign({ model: MODEL }, body)) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.choices || !j.choices[0]) throw new Error('Sofya answered ' + r.status + (j.error ? ': ' + String(j.error.message || j.error).slice(0, 200) : ''));
       return { message: j.choices[0].message || {}, model: j.model || MODEL, finish: j.choices[0].finish_reason || '' };
@@ -48,7 +48,7 @@ module.exports = function({ key, post }){
   // A letter: the prompt, the inputs, and JSON back in `schema`'s shape (response_format, and said so too).
   async function letter(system, user, schema){
     const r = await complete({ max_tokens: 16000, response_format: { type: 'json_schema', json_schema: { name: 'letter', schema, strict: true } },
-      messages: [{ role: 'system', content: system + '\n\nAnswer with JSON only, as: ' + JSON.stringify(schema) }, { role: 'user', content: user }] });
+      messages: [{ role: 'system', content: system + '\n\nAnswer with JSON only, as: ' + JSON.stringify(schema) }, { role: 'user', content: user }] }, LETTER_TIMEOUT);
     if (r.finish === 'length') throw new Error('the letter was cut off');
     return { value: jsonOf(said(r.message)), model: r.model };
   }

@@ -32,7 +32,6 @@ test('a letter: the prompt as the system message, JSON asked for and read back',
   assert.strictEqual(srv.sent[0].url, S.BASE + '/chat/completions');
   assert.strictEqual(srv.sent[0].auth, 'Bearer k');
   assert.strictEqual(srv.sent[0].body.model, S.MODEL);
-  assert.deepStrictEqual(srv.sent[0].body.chat_template_kwargs, { enable_thinking: false });
   assert.strictEqual(srv.sent[0].body.messages[0].role, 'system');
   assert.strictEqual(srv.sent[0].body.response_format.type, 'json_schema');
 });

@@ -21,6 +21,8 @@ const LETTER_SCHEMA = { type: 'object', properties: { short: { type: 'string' },
 const CHAT_DAY = 60, CHAT_TURNS = 20, CHAT_CHARS = 4000, CHAT_ROUNDS = 8;
 const TOOL_CHARS = 30000;
 const DAY = 86400000;
+// A letter asked for and not finished after this long is asked for again (onLetterJob's limit is 9 minutes).
+const JOB_STALE = 10 * 60000;
 
 // Pure: the conversation the page sends ([{ role, text }]) → messages for the API, or { error }.
 function chatMessages(list){
@@ -39,7 +41,7 @@ function toolText(out){
 }
 const textOf = (r) => r.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
 
-module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, callerEmail, access, ANTHROPIC_API_KEY, BOLD_LLM_KEY, letterInputs, chatTools, runChatTool }){
+module.exports = function({ db, admin, logger, onCall, onSchedule, onDocumentWritten, HttpsError, callerEmail, access, ANTHROPIC_API_KEY, BOLD_LLM_KEY, letterInputs, chatTools, runChatTool }){
   const FieldValue = admin.firestore.FieldValue;
   const client = () => new Anthropic({ apiKey: ANTHROPIC_API_KEY.value() });
   const sofya = Sofya({ key: () => BOLD_LLM_KEY.value() });
@@ -96,9 +98,10 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
     throw new Error('no model could write it (' + failed.join('; ') + ')');
   }
 
-  // Everyone who has been on BOLD.OS in the last 30 days (signed in, Firebase Auth), a few at a time, at the hours the lab
-  // chose (HL.REFRESH: once a day at 06:00, twice, or through the working day): it wakes each hour and writes only then.
-  const writeHomeLetters = onSchedule({ schedule: '0 * * * *', timeZone: 'Europe/London', secrets: SECRETS, timeoutSeconds: 540, memory: '512MiB' }, async () => {
+  // Everyone who has been on BOLD.OS in the last 30 days (signed in, Firebase Auth), at the hours the lab chose
+  // (HL.REFRESH: once a day at 06:00, twice, or through the working day): it wakes each hour and, then, asks for each
+  // letter (letterJobs/{email}), each written by onLetterJob on its own, with its own time.
+  const writeHomeLetters = onSchedule({ schedule: '0 * * * *', timeZone: 'Europe/London', timeoutSeconds: 300 }, async () => {
     const l = await lab();
     if (!l.models.length || !HL.writesAt(l.refresh, Number(HL.londonNow().time.slice(0, 2)))) return;
     // Everyone signed in recently: the Auth list, a page at a time.
@@ -108,18 +111,16 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
       page = await admin.auth().listUsers(1000, page && page.pageToken);
       page.users.forEach((u) => { const seen = Date.parse(u.metadata.lastRefreshTime || u.metadata.lastSignInTime || '') || 0; if (u.email && Date.now() - seen <= 30 * DAY) uids.push(u.uid); });
     } while (page.pageToken);
-    let done = 0, failed = 0;
-    const one = async (uid) => {
+    let asked = 0;
+    for (const uid of uids) {
       try {
         const u = await admin.auth().getUser(uid), email = String(u.email || '').toLowerCase();
-        const seen = Date.parse(u.metadata.lastRefreshTime || u.metadata.lastSignInTime || '') || 0;
-        if (!email || Date.now() - seen > 30 * DAY) return;
-        await writeLetter(email, u.displayName || '', l.models);
-        done++;
-      } catch (err){ failed++; logger.error('writeHomeLetters: a letter failed', { uid, error: String((err && err.message) || err) }); }
-    };
-    for (let i = 0; i < uids.length; i += 4) await Promise.all(uids.slice(i, i + 4).map(one));
-    logger.info('writeHomeLetters', { active: uids.length, written: done, failed });
+        if (!email) continue;
+        await db.collection('letterJobs').doc(email).set({ state: 'queued', at: Date.now(), name: u.displayName || '' });
+        asked++;
+      } catch (err){ logger.error('writeHomeLetters: asking for a letter failed', { uid, error: why(err) }); }
+    }
+    logger.info('writeHomeLetters', { active: uids.length, asked });
   });
 
   // Talking to BOLD is kept as a conversation of theirs (Conversations, conversations/{pid}): private, its one
@@ -223,15 +224,19 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
     const l = await lab();
     if (!l.models.length) throw new HttpsError('failed-precondition', 'The lab’s letters are rule-based for now (Settings › BOLD Agent).');
     const d = req.data || {}, name = req.auth.token.name || '';
+    // Written in the background (onLetterJob), and read by the page from homeLetters/{email} when it's there: a model
+    // may take minutes, more than a call waits. Asked once; again only once the last ask has finished or is old.
     if (d.action === 'write') {
       const cur = await db.collection('homeLetters').doc(email).get();
       if (cur.exists && HL.isFresh(cur.data())) return { letter: cur.data() };
-      try { return { letter: await writeLetter(email, name, l.models) }; }
-      catch (err){
-        if (err instanceof HttpsError) throw err;
-        logger.error('homeLetter write failed', { error: String((err && err.message) || err) });
-        throw new HttpsError('unavailable', 'BOLD LLM couldn’t write your letter just now — try again later.');
-      }
+      const job = db.collection('letterJobs').doc(email);
+      const queued = await db.runTransaction(async (tx) => {
+        const j = (await tx.get(job)).data();
+        if (j && (j.state === 'queued' || j.state === 'writing') && Date.now() - (j.at || 0) < JOB_STALE) return false;
+        tx.set(job, { state: 'queued', at: Date.now(), name: String(name || '') });
+        return true;
+      });
+      return { queued: true, already: !queued };
     }
     if (d.action !== 'ask') throw new HttpsError('invalid-argument', 'Unknown action.');
     // At most CHAT_DAY messages a person a day.
@@ -250,7 +255,31 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, HttpsError, c
     }
   });
 
-  return { writeHomeLetters, homeLetter, _internal: { chatMessages, toolText } };
+  // A letter asked for (homeLetter 'write'): written now, in the background, and kept in homeLetters/{email}; the job
+  // says how it went (letterJobs/{email}: state queued → writing → done or failed, read by its person).
+  const onLetterJob = onDocumentWritten({ document: 'letterJobs/{email}', secrets: SECRETS, timeoutSeconds: 540, memory: '512MiB' }, async (event) => {
+    const after = event.data.after.exists ? event.data.after.data() : null;
+    if (!after || after.state !== 'queued') return;
+    const email = event.params.email, ref = event.data.after.ref;
+    const mine = await db.runTransaction(async (tx) => {
+      const j = (await tx.get(ref)).data();
+      if (!j || j.state !== 'queued' || j.at !== after.at) return false;
+      tx.update(ref, { state: 'writing', startedAt: Date.now() });
+      return true;
+    });
+    if (!mine) return;
+    try {
+      const l = await lab();
+      if (!l.models.length) { await ref.update({ state: 'failed', error: 'The lab’s letters are rule-based.', endedAt: Date.now() }); return; }
+      const letter = await writeLetter(email, after.name || '', l.models);
+      await ref.update({ state: 'done', writer: letter.writer, endedAt: Date.now() });
+    } catch (err){
+      logger.error('A letter couldn’t be written', { email, error: why(err) });
+      await ref.update({ state: 'failed', error: why(err).slice(0, 300), endedAt: Date.now() });
+    }
+  });
+
+  return { writeHomeLetters, homeLetter, onLetterJob, _internal: { chatMessages, toolText } };
 };
 module.exports.MODEL = MODEL;
 module.exports.chatMessages = chatMessages;

@@ -84,6 +84,7 @@ The reader switches between them (kept per person). Both end with where to take 
 > Form:
 > - Prose. No lists, headings, emoji or exclamation marks. Don't open with a greeting: the page adds one for the time it's read.
 > - Link the noun phrase that leads somewhere, in Markdown: [Anubha's letters](url). Up to six links in `short`; in `long`, a link wherever it helps; never a bare URL, never "click here".
+> - Bold what someone scanning needs, so the letter can be scanned rather than read: who or what is waiting on them and for how long, a deadline and its date, the next meeting and its time, the change of pace in a phrase, and the direction's key phrase. A phrase, never a whole sentence; at most one in a sentence, and only a few in a paragraph. Bold a link by wrapping it: **[Anubha's letters](url)**.
 > - Plain, warm, direct, British spelling. No flattery, no "I".
 > - Anything they can see may be mentioned. Say where a private item is (its channel) so they know it's private; never quote a private thread's words. About someone else, only what's needed to act (who asks to join, not why).
 >

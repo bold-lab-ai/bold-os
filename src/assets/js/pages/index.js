@@ -556,7 +556,8 @@
     box.appendChild(saved); drawSaved();
     function answer(q){
       if (!state.chatOn) return Promise.resolve(placeholder(q));
-      return firebase.app().functions('europe-west2').httpsCallable('homeLetter')({ action: 'ask', text: q, conversation: conv || null })
+      // Up to 5 minutes: the model thinks first, and may read several things.
+      return firebase.app().functions('europe-west2').httpsCallable('homeLetter', { timeout: 300000 })({ action: 'ask', text: q, conversation: conv || null })
         .then(function(r){
           var d = r.data || {};
           if (d.conversation && d.conversation !== conv) { conv = d.conversation; try { sessionStorage.setItem(CONV, conv); } catch (e){} drawSaved(); }
@@ -638,8 +639,9 @@
     var fail = function(what, then){ return function(err){ console.error('[BOLD Lab] loading ' + what + ' failed', err); if (then) then(); }; };
     var set = function(k){ return function(v){ if (asked !== mine) return; state[k] = v; write(); drawSides(); }; };
     // Who writes their letter: BOLD LLM when the lab's ladder puts a model above the rule-based letter
-    // (settings/homeLetter, Settings › BOLD Agent; functions/home-letter.js ladderOf, as here); then today's, or one
-    // written now (homeLetter 'write'), the rule-based one meanwhile, and if no model can.
+    // (settings/homeLetter, Settings › BOLD Agent; functions/home-letter.js ladderOf, as here). Its letter is followed
+    // (homeLetters/{email}); without one from the last day, one is asked for (homeLetter 'write'), written in the
+    // background (onLetterJob, letterJobs/{email}, followed too), the rule-based one meanwhile, and if no model can.
     db.collection('settings').doc('homeLetter').get().then(function(lab){
       var x = lab.exists ? lab.data() : {};
       var first = Array.isArray(x.ladder) && x.ladder.length ? x.ladder[0] : x.writer === 'claude' ? (x.model === 'sofya' ? 'sofya' : 'claude') : 'rules';
@@ -647,15 +649,29 @@
       state.chatOn = c === 'bold';
       if (state.chatOn) mountAsk();
       if (c !== 'bold') return set('letterChoice')(c);
-      return db.collection('homeLetters').doc(me).get().then(function(x){
+      var askedAt = 0, gotLetter = false;
+      var freshNow = function(){ return !!(state.llmLetter && Date.now() - state.llmLetter.at < 24 * 3600000); };
+      unsubs.push(db.collection('homeLetters').doc(me).onSnapshot(function(x){
+        if (asked !== mine) return;
         state.llmLetter = x.exists ? x.data() : null;
-        var fresh = state.llmLetter && Date.now() - state.llmLetter.at < 24 * 3600000;
-        state.letterWriting = !fresh;
+        if (freshNow()) state.letterWriting = false;
         set('letterChoice')(c);
-        if (fresh) return;
-        return call('homeLetter', { action: 'write' }).then(function(w){ state.llmLetter = (w.data || {}).letter || null; })
-          .catch(fail('BOLD LLM’s letter')).then(function(){ state.letterWriting = false; set('letterChoice')(c); });
-      });
+        if (gotLetter) return;
+        gotLetter = true;
+        if (freshNow()) return;
+        // None from the last day: asked for, and written meanwhile.
+        state.letterWriting = true; askedAt = Date.now(); set('letterChoice')(c);
+        call('homeLetter', { action: 'write' }).then(function(w){
+          var l = (w.data || {}).letter;
+          if (l) { state.llmLetter = l; state.letterWriting = false; set('letterChoice')(c); }
+        }, function(err){ fail('BOLD LLM’s letter')(err); state.letterWriting = false; set('letterChoice')(c); });
+      }, fail('BOLD LLM’s letter')));
+      // How the one asked for is going: failed, and the rule-based letter stays, saying so.
+      unsubs.push(db.collection('letterJobs').doc(me).onSnapshot(function(j){
+        var v = j.exists ? j.data() : null;
+        if (asked !== mine || !v || !askedAt) return;
+        if (v.state === 'failed' && (v.endedAt || 0) >= askedAt - 60000 && !freshNow()) { state.letterWriting = false; set('letterChoice')(c); }
+      }, function(){}));
     }).catch(fail('who writes your letter'));
     call('myRequests').then(function(r){
       set('forYou')((r.data || {}).forYou || []);

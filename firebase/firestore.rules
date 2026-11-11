@@ -902,6 +902,11 @@ service cloud.firestore {
       allow read: if isSignedIn() && email().lower() == owner;
       allow write: if false;
     }
+    // A letter asked for, written in the background (functions/bold-llm.js onLetterJob): how it's going, for its person.
+    match /letterJobs/{owner} {
+      allow read: if isSignedIn() && email().lower() == owner;
+      allow write: if false;
+    }
 
     // A person's read points (read-point.js): which version of a document they
     // last marked as read. Theirs alone, keyed by their Firebase Auth uid.
