@@ -3,7 +3,7 @@
 // Its title and description (whoever has committed to it, or a PI or admin, edits them), who opened it and who has
 // committed to it, and three tabs: Conversation (its description, its commits and what became of it, then its
 // conversation: talk.js), Commits (each, by day, with what it changed) and Changes (each page as it would leave it,
-// against main, and where it stands: behind main, in conflict). Browse the site puts this tab on it (bold.js
+// against main, and where it stands: behind main, in conflict). Switch to it puts this tab on it (bold.js
 // BOLD.setBranch), where every page shows it and what you change is committed to it. Accept and Decline: a PI or
 // admin who hasn't committed to it (decideBranch: all its pages together); Withdraw: whoever opened it, or a PI or admin.
 (function(){
@@ -104,11 +104,15 @@
         ' · ' + (people > 1 ? people + ' people committed' : '1 person committed') + ' · opened ' + esc(dayOf(b.at || 0)) +
         (b.decidedAt && st !== 'open' ? ' · ' + esc(st) + ' by ' + esc(b.decidedByName || b.decidedBy || '') + ' on ' + esc(dayOf(b.decidedAt)) : '') + '</span></p>' +
       (editing ? '' : '<div class="pr-actions">' +
-        (st === 'open' ? '<button type="button" class="btn-box is-primary pr-browse">' + (BOLD.branchId() === id ? 'You’re on it: browse the site' : 'Browse the site') + '</button>' : '') +
+        // On it, the site shows its changes and your edits are committed to it.
+        (st === 'open' ? (BOLD.branchId() === id ? '<button type="button" class="btn-box pr-main">Back to main</button>'
+          : '<button type="button" class="btn-box is-primary pr-browse" title="See the site with these changes; what you edit is added to it">Switch to it</button>') : '') +
         (st === 'open' ? '<button type="button" class="btn-box pr-accept"' + (off || busy ? ' disabled title="' + esc(off || '') + '"' : '') + '>Accept</button>' +
           '<button type="button" class="btn-box pr-decline"' + (decideOffSimple() || busy ? ' disabled title="' + esc(decideOffSimple()) + '"' : '') + '>Decline</button>' : '') +
         (wd ? '<button type="button" class="btn-text danger pr-withdraw"' + (busy ? ' disabled' : '') + '>Withdraw</button>' : '') +
         (canEdit() ? '<button type="button" class="btn-text pr-edit-btn">Edit</button>' : '') + '</div>') +
+      (st === 'open' && !editing ? '<p class="pr-hint">' + (BOLD.branchId() === id ? 'You’re on it: the site shows its changes, and what you edit is added to it.'
+        : 'Switch to it to see the site with these changes and add your own.') + '</p>' : '') +
       (notice ? '<p class="gd-notice pr-notice">' + esc(notice) + '</p>' : '') + '</div>';
   }
   // Declining doesn't need it to apply cleanly.
@@ -229,6 +233,7 @@
     var t = e.target.closest('button');
     if (!t || t.disabled) return;
     if (t.classList.contains('pr-commit-head')) { var k = t.getAttribute('data-key'); open[k] = !open[k]; render(); return; }
+    if (t.classList.contains('pr-main')) { BOLD.setBranch(null); return; }
     if (t.classList.contains('pr-browse')) { BOLD.setBranch({ id: id, num: num, title: b.title, targets: b.pages || [] }, { go: true }); return; }
     if (t.classList.contains('pr-accept')) { act('accept'); return; }
     if (t.classList.contains('pr-decline')) { act('decline'); return; }

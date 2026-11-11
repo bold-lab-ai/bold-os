@@ -87,6 +87,8 @@
       list = s.docs.map(function(d){ return Object.assign({ id: d.id }, d.data()); })
         .sort(function(a, b){ return ((b.status === 'open' ? b.editedAt || b.at : b.decidedAt) || 0) - ((a.status === 'open' ? a.editedAt || a.at : a.decidedAt) || 0); });
       error = ''; render();
+      // Seen: the branch button's dot goes (bold.js).
+      if (BOLD.markProposalsSeen) BOLD.markProposalsSeen();
     }, function(err){
       console.error('[BOLD Proposals] loading them failed', err);
       error = err && err.code === 'permission-denied' ? 'You can’t see the proposed changes.' : 'Couldn’t load them — reload to try again.'; render();

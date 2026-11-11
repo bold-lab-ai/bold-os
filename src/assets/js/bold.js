@@ -407,8 +407,7 @@
     branch = r && BRANCH_REF.test(r) ? { ref: r, id: r.slice(9), num: b.num || 0, title: b.title || '', url: BOLD.branchPage(r.slice(9)), by: b.by || '', targets: b.targets || [], pages: b.pages || null } : null;
     try { if (branch) sessionStorage.setItem('boldBranch', JSON.stringify(branch)); else sessionStorage.removeItem('boldBranch'); } catch (e){}
     // Its details from `branches`, unless they're from there.
-    try { sessionStorage.removeItem('boldBranches'); } catch (e){}
-    branchList = null;
+    if (!(o && o.known)) { try { sessionStorage.removeItem('boldBranches'); } catch (e){} branchList = null; }
     if (o && o.quiet) { drawAccess(); previewBar(); if (branch && !o.known && access && access.e) loadBranches(); return; }
     dropCaches();
     var here = location.pathname + location.search.replace(/([?&])branch=[^&]*&?/, '$1').replace(/[?&]$/, '');
@@ -894,7 +893,8 @@
     BOLD.onUser(function(user){ renderAuthRegion(region, user); });
     BOLD.onAccess(function(a){
       previewBar();
-      if (branch && !branchList) loadBranches();
+      // The open branches: for the one you're on, and the branch button's dot.
+      if (!branchList && a && a.e) loadBranches();
     });
     alignSearch();
   };
@@ -1201,6 +1201,15 @@
     }).join('') + '</div>';
   }
   var brOpen = false;   // (the branch button's list, before it became a page: proposals.html)
+  // Proposed changes you haven't seen: opened or changed by others since you last opened proposals.html (kept in this
+  // browser, per person). The branch button has a dot while there are some.
+  function seenKey(){ return 'boldProposalsSeen:' + ((access && access.e) || ''); }
+  function unseen(){
+    var seen = 0;
+    try { seen = Number(localStorage.getItem(seenKey())) || 0; } catch (e){}
+    return (branchList || []).some(function(b){ return !b.mine && (b.since || 0) > seen; });
+  }
+  BOLD.markProposalsSeen = function(){ try { localStorage.setItem(seenKey(), String(Date.now())); } catch (e){} drawAccess(); };
   // The proposed changes, all of them (proposals.html, pages/proposals.js; a page's "N proposed changes", #proposals).
   BOLD.openBranches = function(){ location.href = 'proposals.html'; };
   var ICON_BRANCH = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><circle cx="4.5" cy="3.5" r="1.6"/><circle cx="4.5" cy="12.5" r="1.6"/><circle cx="11.5" cy="5.5" r="1.6"/><path d="M4.5 5.1v5.8M11.5 7.1c0 2.6-2.2 3.4-5.4 4.4"/></svg>';
@@ -1221,7 +1230,7 @@
     var html = '<button type="button" class="mast-btn ac-chip' + (waiting ? ' has-dot' : '') + '" aria-expanded="' + !!panel + '" aria-controls="acPanel" title="' + esc(seeTip) + '" aria-label="' + esc(seeTip) + '">' + ICON_EYE + '</button>' +
       // The branch button: the page of every proposed change (proposals.html, as GitHub's pull requests), lit while
       // you're on one.
-      (proposes ? '<a class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + '" href="proposals.html" title="' + esc(brTip) + '" aria-label="' + esc(brTip) + '">' + ICON_BRANCH + '</a>' : '');
+      (proposes ? '<a class="mast-btn ac-chip br-chip' + (branch ? ' is-on' : '') + (unseen() ? ' has-dot' : '') + '" href="proposals.html" title="' + esc(brTip + (unseen() ? ' · new since you last looked' : '')) + '" aria-label="' + esc(brTip + (unseen() ? ' · new since you last looked' : '')) + '">' + ICON_BRANCH + '</a>' : '');
     if (panel && !row) {
       html += '<div class="ac-panel" id="acPanel" role="dialog" aria-label="Who can see this page"><div class="ac-title">Who can see this page</div>' +
         '<p class="ac-sentence">Everyone signed in. It isn’t one of the pages in the BOLDiquette’s <a href="boldiquette.html#access">Who can see what</a>.</p>' +

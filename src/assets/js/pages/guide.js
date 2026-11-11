@@ -396,11 +396,10 @@
       '<div class="event-form-actions"><button type="button" class="ev-save gd-r-go">Continue</button><button type="button" class="ev-cancel gd-r-stop">Stop rebasing</button></div></div>';
   }
 
-  // The box under the title: what changed since you last read it (read-point.js),
-  // the proposed changes open, and the open comment threads (on the Comments page).
+  // The box under the title: what changed since you last read it (read-point.js) and the open comment threads
+  // (on the Comments page). The proposed changes are on proposals.html (the branch button, with a dot for new ones).
   function statusHtml(){
-    var n = proposals.length, c = comments ? comments.openCount() : 0, bits = [];
-    if (n) bits.push('<button type="button" class="btn-text gd-proposals-open" title="Choose one on the branch icon, top right">' + n + ' proposed change' + (n === 1 ? '' : 's') + '</button>');
+    var c = comments ? comments.openCount() : 0, bits = [];
     if (c) bits.push('<a href="comments.html?on=' + encodeURIComponent(COLLECTION + '/' + slug) + '">' + c + ' open comment' + (c === 1 ? '' : 's') + '</a>');
     var inner = (readPoint ? readPoint.inner(x) : '') + (bits.length ? '<p class="rp-line rp-activity">' + bits.join(' · ') + '</p>' : '');
     return inner ? '<aside class="read-point" aria-label="What’s new">' + inner + '</aside>' : '';
@@ -771,7 +770,6 @@
     var t = e.target.closest('button');
     if (!t || t.disabled || !x) return;
     if (t.classList.contains('gd-view-exit')) { stopViewing(); return; }
-    if (t.classList.contains('gd-proposals-open')) { BOLD.openBranches(); return; }
     if (t.classList.contains('gd-r-go')) { continueRebase(); return; }
     if (t.classList.contains('gd-r-stop')) { rebasing = null; render(); return; }
     if (t.classList.contains('gd-fold') && !me) {

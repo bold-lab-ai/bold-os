@@ -5514,7 +5514,8 @@ async function contentWork(email, person, level){
     }
     if (!sees) continue;
     const item = { source: 'content', type: 'content', kind: 'proposal', ref: d.ref.path, title: String(b.title || 'A proposed change'),
-      url: branchUrl(d.id), by: person(b.by && b.by.email, b.by && b.by.name), targets: pages };
+      url: branchUrl(d.id), by: person(b.by && b.by.email, b.by && b.by.name), targets: pages,
+      mine: (b.contributors || []).indexOf(String(email || '').toLowerCase()) >= 0 };
     if (b.status === 'open') Object.assign(item, { column: 'review', state: 'open', since: b.editedAt || b.at || 0, on: [], waiting: PIS_ADMINS });
     else Object.assign(item, { column: 'done', state: b.status, since: b.decidedAt || 0, on: b.decidedBy ? [person(b.decidedBy, b.decidedByName)] : [] });
     items.push(item);
@@ -5777,7 +5778,7 @@ exports.branches = onCall(
     const nums = await numbersOf(open.map((x) => x.ref));
     const out = [];
     for (const x of open){
-      const b = { ref: x.ref, num: nums[x.ref] || 0, title: x.title, url: String(x.url || '').replace(/#.*$/, ''), by: (x.by && x.by.name) || '', since: x.since || 0, targets: x.targets || [] };
+      const b = { ref: x.ref, num: nums[x.ref] || 0, title: x.title, url: String(x.url || '').replace(/#.*$/, ''), by: (x.by && x.by.name) || '', since: x.since || 0, targets: x.targets || [], mine: !!x.mine };
       try { const pages = await proposedTable(x.ref); if (pages) b.pages = pages; }
       catch (err) { logger.warn('A branch’s table couldn’t be worked out', { ref: x.ref, error: String(err && err.message || err) }); }
       out.push(b);
