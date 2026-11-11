@@ -512,7 +512,7 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
         (ws.eventLink ? ' \u00b7 <a href="' + esc(ws.eventLink) + '" target="_blank" rel="noopener">Calendar</a>' : '')
       : wsLoaded && !setting ? missing() + skipped('meeting') : state;
     var html = editableRow('meeting', 'Meeting', meeting, '',
-      meetingEntryHtml(m) + (m ? '<button class="btn-text danger" type="button" id="meetingRemove">Remove the meeting</button>' : ''), 'meetingSave');
+      meetingEntryHtml(m) + suggestHtml() + (m ? '<button class="btn-text danger" type="button" id="meetingRemove">Remove the meeting</button>' : ''), 'meetingSave');
     // Slides and notes: the ones BOLD.OS makes, or the project's own (#151), each with Edit.
     var own = ' <span class="detail-muted">\u00b7 your own</span>';
     html += editableRow('deck', 'Slides', deck ? openLink(deck) + (ws.ownDeckUrl ? own : '') : state + (ws && ws.noDocs ? skipped('docs') : '') + retry, '', linkEntryHtml('deck'), 'linkSave');
@@ -705,6 +705,39 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       wsBusy = false;
       wsMsg = esc((err && err.message) || 'That didn\u2019t work \u2014 try again.');
       if (!editing) render();
+    });
+  }
+
+  // Suggest times (#323): the times that fit the project's Authors best, for the length and how often
+  // chosen above (meetingTimes in functions/index.js: their free/busy calendars, from their profiles,
+  // and the meetings BOLD.OS knows they have). Picking one fills in the day and time.
+  var DAYS_LONG = { MO: 'Mondays', TU: 'Tuesdays', WE: 'Wednesdays', TH: 'Thursdays', FR: 'Fridays' };
+  function suggestHtml(){
+    return '<div class="pm-suggest"><button class="btn-text" type="button" id="pmSuggest">Suggest times</button><div id="pmSuggestions" aria-live="polite"></div></div>';
+  }
+  function suggestTimes(){
+    var out = el('pmSuggestions'), go = el('pmSuggest');
+    go.disabled = true; out.innerHTML = '<p class="detail-muted">Looking at the authors\u2019 calendars\u2026</p>';
+    var names = function(a){ return a.map(esc).join(', '); };
+    firebase.app().functions('europe-west2').httpsCallable('meetingTimes')({ id: projectId, board: boardId || null, minutes: Number(el('pmMinutes').value), every: Number(el('pmEvery').value) }).then(function(r){
+      var d = r.data || {}, slots = d.slots || [];
+      go.disabled = false;
+      if (!el('pmSuggestions')) return;
+      var how = function(s){
+        if (!s.clash.length) return s.of === 1 ? 'free' : s.of === 2 ? 'both authors free' : 'all ' + s.of + ' authors free';
+        return s.free + ' of ' + s.of + ' free \u00b7 ' + s.clash.map(function(c){ return esc(c.name) + ' busy ' + c.times + ' of 4'; }).join(', ');
+      };
+      out.innerHTML = (slots.length ? '<ul class="pm-slots">' + slots.map(function(s){
+        return '<li><button type="button" class="pm-slot" data-day="' + esc(s.day) + '" data-time="' + esc(s.time) + '">' + esc(DAYS_LONG[s.day] || s.day) + ' ' + esc(s.time) + '</button> <span class="detail-muted">' + how(s) + '</span></li>';
+      }).join('') + '</ul>' : '<p class="detail-muted">No time found.</p>') +
+        '<p class="detail-muted pm-counted">Over its next 4 dates, weekdays 09:00\u201318:00. ' +
+        (d.fromCalendar && d.fromCalendar.length ? 'From the calendars of ' + names(d.fromCalendar) + ', and everyone\u2019s BOLD.OS meetings. ' : 'From the authors\u2019 BOLD.OS meetings. ') +
+        (d.boldOnly && d.boldOnly.length ? names(d.boldOnly) + (d.boldOnly.length === 1 ? ' hasn\u2019t' : ' haven\u2019t') + ' added a free/busy calendar (<a href="profile.html#linked-accounts">on their profile</a>). ' : '') +
+        (d.failed && d.failed.length ? names(d.failed) + '\u2019s calendar couldn\u2019t be read. ' : '') + '</p>';
+    }).catch(function(err){
+      console.error('[BOLD Lab] suggesting meeting times failed', err);
+      go.disabled = false;
+      if (el('pmSuggestions')) el('pmSuggestions').innerHTML = '<p class="field-error">' + esc((err && err.message) || 'Couldn\u2019t suggest times \u2014 try again.') + '</p>';
     });
   }
 
@@ -1111,6 +1144,12 @@ function escapeHtml(s){ return BOLD.escapeHtml(s); }
       el('linkSave').addEventListener('click', saveLink);
     } else if (editing === 'meeting') {
       el('meetingSave').addEventListener('click', function(){ saveMeeting(false); });
+      el('pmSuggest').addEventListener('click', suggestTimes);
+      el('pmSuggestions').addEventListener('click', function(e){
+        var b = e.target.closest('.pm-slot'); if (!b) return;
+        el('pmDay').value = b.getAttribute('data-day'); el('pmTime').value = b.getAttribute('data-time');
+        Array.prototype.forEach.call(el('pmSuggestions').querySelectorAll('.pm-slot'), function(x){ x.classList.toggle('is-picked', x === b); });
+      });
       if (el('meetingRemove')) el('meetingRemove').addEventListener('click', function(){ saveMeeting(true); });
     } else if (editing === 'slack') {
       channelField = wireChannelField('save', card.slackChannel || '', { id: projectId, board: boardId || null });

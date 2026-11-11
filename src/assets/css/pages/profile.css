@@ -254,3 +254,11 @@ a.btn-box{text-decoration:none; display:inline-block;}
 .hl-choices{border:0; padding:0; margin:12px 0 0;}
 .hl-choices .jn-check.is-off{color:var(--muted); cursor:not-allowed;}
 .hl-agent{margin-top:12px;}
+/* Free/busy calendar (profile-busy.js): its address, and where to find it. */
+.busy-add{display:block; margin:8px 0 4px;}
+.busy-add .busy-url{width:100%; box-sizing:border-box; font-family:var(--sans); font-size:14px; padding:6px 8px; color:var(--ink); background:var(--surface); border:1px solid var(--line);}
+.busy-how{margin:4px 0 6px; font-family:var(--sans); font-size:13px; color:var(--ink-soft);}
+.busy-how summary{cursor:pointer; color:var(--link);}
+.busy-how ul{margin:6px 0; padding-left:18px;}
+.busy-how li{margin:3px 0;}
+.busy-how p{margin:6px 0 0;}

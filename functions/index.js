@@ -5923,6 +5923,84 @@ async function syncStudyMeeting(email){
   return (await ref.get()).data();
 }
 
+// ---------- Free/busy calendars and suggested meeting times (#323, 2026-11-11) ----------
+// Each person may give a free/busy calendar link (profile › Linked accounts): busyFeeds/{email}
+// { url, at, checkedAt }, server only (Google's public address has their email in it). Only when
+// they're busy is read from it (functions/busy.js), never what, and nothing of it is kept.
+// busyFeed: { action: 'get' } → { url, at } | {}; 'set' { url } → { url, busy: how many busy times in
+// the next 4 weeks } (read once, so a link that doesn't work isn't saved); 'clear'.
+const busy = require('./busy');
+exports.busyFeed = onCall({ timeoutSeconds: 30 }, async (request) => {
+  const email = callerEmail(request), data = request.data || {};
+  const ref = db.collection('busyFeeds').doc(email);
+  if (data.action === 'get'){ const d = await ref.get(); return d.exists ? { url: d.data().url, at: d.data().at || 0 } : {}; }
+  if (data.action === 'clear'){ await ref.delete(); return {}; }
+  if (data.action !== 'set') throw new HttpsError('invalid-argument', 'Unknown action.');
+  const url = busy.okFeedUrl(data.url);
+  if (!url) throw new HttpsError('invalid-argument', 'Give a Google, Outlook or iCloud calendar (iCal) address, starting with https:// or webcal://.');
+  let text;
+  try { text = await busy.fetchIcs(url); } catch (err){ throw new HttpsError('failed-precondition', err.message); }
+  const now = Date.now(), n = busy.busyFrom(text, now, now + 28 * 86400000).length;
+  await ref.set({ url, at: now, checkedAt: now });
+  return { url, busy: n };
+});
+
+// meetingTimes: { id, board?, minutes, every } → { slots: [{ day, time, free, of, clash: [{ name, times }] }],
+// fromCalendar: [names], boldOnly: [names], failed: [names] }. Whoever may set the project's meeting.
+// Counted: the project's Authors (its People get the invitation, and aren't counted), each from their
+// free/busy calendar if they gave one, and from the meetings BOLD.OS knows they have: their other
+// projects', their studies' and the series they joined. Over its next 4 dates, weekdays 09:00–18:00 London (busy.suggest).
+exports.meetingTimes = onCall({ timeoutSeconds: 60 }, async (request) => {
+  const email = callerEmail(request), data = request.data || {};
+  const id = String(data.id || ''), boardId = data.board ? String(data.board) : null;
+  if (!validSlug(id) || (boardId && !validSlug(boardId))) throw new HttpsError('invalid-argument', 'No project given.');
+  const cardSnap = await cardRefFor(id, boardId).get();
+  if (!cardSnap.exists) throw new HttpsError('not-found', 'That project isn’t there any more.');
+  const card = cardSnap.data(), pid = projectIdOf(card, id);
+  await requireSeesProject(email, pid);
+  if (!(await canEditCard(email, card))) throw new HttpsError('permission-denied', 'Only the project’s submitter, authors, PIs and admins can do this.');
+  const minutes = Number(data.minutes), every = Number(data.every);
+  if (!(minutes >= 15 && minutes <= 240) || [1, 2, 3, 4].indexOf(every) < 0) throw new HttpsError('invalid-argument', 'Choose how long it lasts and how often.');
+  // The Authors (or, with none, whoever registered it), once each.
+  const seen = {}, authors = (card.authors && card.authors.length ? card.authors : [card.submittedBy || {}])
+    .map(function(a){ return { email: String(a && a.email || '').trim().toLowerCase(), name: String(a && (a.name || a.email) || '') }; })
+    .filter(function(a){ if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email) || seen[a.email]) return false; seen[a.email] = 1; return true; })
+    .slice(0, 30);
+  if (!authors.length) throw new HttpsError('failed-precondition', 'Add the project’s authors first.');
+  const now = Date.now(), to = now + (4 * every + 1) * 7 * 86400000;
+  const fromCalendar = [], boldOnly = [], failed = [];
+  const people = await Promise.all(authors.map(async function(a){
+    const list = [];
+    const [feed, wsSnap, stSnap, seSnap] = await Promise.all([
+      db.collection('busyFeeds').doc(a.email).get(),
+      db.collection('projectWorkspaces').where('members', 'array-contains', a.email).get(),
+      db.collection('studies').where('everyone', 'array-contains', a.email).get(),
+      db.collection('eventSeries').where('joined', 'array-contains', a.email).get()
+    ]);
+    // The meetings BOLD.OS knows of, but this project's own.
+    wsSnap.docs.concat(stSnap.docs, seSnap.docs).forEach(function(d){
+      const w = d.data();
+      if (d.ref.parent.id === 'projectWorkspaces' && d.id === pid) return;
+      if (!w.meeting || w.pausedAt || w.completedAt) return;
+      busy.meetingBusy(w.meeting, now, to, String(w.eventStart || '').slice(0, 10)).forEach(function(x){ list.push(x); });
+    });
+    if (feed.exists){
+      try {
+        busy.busyFrom(await busy.fetchIcs(feed.data().url), now, to).forEach(function(x){ list.push(x); });
+        fromCalendar.push(a.name);
+        feed.ref.update({ checkedAt: now }).catch(function(){});
+      } catch (err){
+        logger.warn('meetingTimes: a free/busy calendar couldn’t be read', { error: String(err && err.message || err) });
+        failed.push(a.name);
+      }
+    } else boldOnly.push(a.name);
+    return { name: a.name, busy: busy.merge(list) };
+  }));
+  const slots = busy.suggest({ people, minutes, every, today: todayIsoLondon() })
+    .map(function(s){ return Object.assign(s, { of: people.length }); });
+  return { slots, fromCalendar, boldOnly, failed };
+});
+
 // The profile's Studies tab, for the caller's own studies:
 // - 'save': { title, people: [{ name, email }], meeting: { day, time, minutes, every } or null (none:
 //   its event is cancelled), channel, noChannel (no Slack channel, until one is made: they
