@@ -55,6 +55,10 @@ test('a letter in steps: one call, no JSON enforced, read from the last ```json 
   assert.strictEqual(srv.sent.length, 1);
   assert.strictEqual(srv.sent[0].body.response_format, undefined);
   assert.match(srv.sent[0].body.messages[0].content, /First write the long letter/);
+  const srv2 = server([{ message: { content: '```json\n{"short":"S","long":"L"}\n```' } }]);
+  await S({ key: () => 'k', post: srv2.post }).letter('W', 'J', { type: 'object' }, 'json', 'medium');
+  assert.strictEqual(srv2.sent[0].body.reasoning_effort, 'medium');
+  assert.strictEqual(srv2.sent[0].body.chat_template_kwargs, undefined);
 });
 
 test('an answer: it calls a tool, reads the result, then answers', async () => {

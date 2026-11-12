@@ -96,9 +96,10 @@ module.exports = function({ key, post }){
   // being measured, 2026-11-12): 'schema', JSON in `schema`'s shape, enforced by the server (response_format); 'json',
   // JSON asked for in the prompt only; 'steps', in one answer: the long letter in Markdown, then the short one
   // summarising it, then both as JSON at the end (read from its last ```json block).
-  // `think`: with Qwen's thinking first (2026-11-12: with it a letter took over 300 s, without it ~9 s).
+  // `think`: with Qwen's thinking first (2026-11-12: with it a letter took over 300 s, without it ~9 s); 'low', 'medium'
+  // or 'high' asks for that much of it (reasoning_effort), true for the server's default.
   async function letter(system, user, schema, mode, think){
-    const steps = [], timed = async (body) => { const t0 = Date.now(), r = await stream(think ? body : Object.assign({ chat_template_kwargs: { enable_thinking: false } }, body), LETTER_TIMEOUT); steps.push({ ms: Date.now() - t0, firstMs: r.firstMs, answerMs: r.answerMs, thinkChars: r.message.reasoning_content.length, answerChars: r.message.content.length, usage: r.usage, finish: r.finish }); if (r.finish === 'length') throw new Error('the letter was cut off'); return r; };
+    const steps = [], timed = async (body) => { const t0 = Date.now(), r = await stream(!think ? Object.assign({ chat_template_kwargs: { enable_thinking: false } }, body) : typeof think === 'string' ? Object.assign({ reasoning_effort: think }, body) : body, LETTER_TIMEOUT); steps.push({ ms: Date.now() - t0, firstMs: r.firstMs, answerMs: r.answerMs, thinkChars: r.message.reasoning_content.length, answerChars: r.message.content.length, usage: r.usage, finish: r.finish }); if (r.finish === 'length') { const e = new Error('the letter was cut off'); e.steps = steps; e.tail = { think: r.message.reasoning_content.slice(-600), answer: r.message.content.slice(-600) }; throw e; } return r; };
     if (mode === 'steps') {
       const r = await timed({ max_tokens: 16000, messages: [{ role: 'system', content: system + '\n\n' + STEPS }, { role: 'user', content: user }] });
       return { value: lastJson(said(r.message)), model: r.model, steps };
