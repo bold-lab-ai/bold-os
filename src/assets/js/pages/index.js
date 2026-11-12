@@ -255,26 +255,31 @@
       // Who wrote it, always: the rules (the lab's choice, or BOLD LLM couldn't).
       '<p class="hl-by">Written by the rules' + (state.letterChoice === 'bold' ? '. BOLD LLM couldn’t write today’s.' : '.') + '</p>');
   }
-  // While BOLD LLM writes their letter: B, O, L, D turn bold in turn, beside what it's doing (a verb every few
-  // seconds, made up, the lab's) and how long it's taken, on a line of their own.
+  // While BOLD LLM writes their letter, one line: "Sofya is writing today's letter · " and what it's doing (made up, the
+  // lab's; another, at random, every 5 to 9 seconds), a wave of bold running along it, then the seconds so far.
   var VERBS = ['Reading what waits on you', 'Counting GPU hours', 'Checking your calendar', 'Consulting the BOLDiquette',
     'Skimming Conversations', 'Following the deadlines', 'Weighing what matters', 'Finding the bold bits',
     'Asking the reviewers nicely', 'Sharpening the argument', 'Licking the envelope'];
-  var writingSince = 0, writingTimer = null;
-  function writingText(){
-    var s = Math.max(0, Math.round((Date.now() - writingSince) / 1000));
-    return VERBS[Math.floor(s / 4) % VERBS.length] + '… <span class="hl-secs">' + s + 's</span>';
+  var writing = { since: 0, verb: '', next: 0, timer: null };
+  function waveHtml(text){
+    return Array.from(text).map(function(ch, i){ return '<span style="animation-delay:' + (i * 0.045).toFixed(3) + 's">' + (ch === ' ' ? '&nbsp;' : esc(ch)) + '</span>'; }).join('');
   }
+  function pickVerb(){
+    var others = VERBS.filter(function(v){ return v !== writing.verb; });
+    writing.verb = others[Math.floor(Math.random() * others.length)];
+    writing.next = Date.now() + 5000 + Math.random() * 4000;
+  }
+  function writingWords(){ return ({ sofya: 'Sofya', claude: 'Claude' }[state.letterFirst] || 'BOLD LLM') + ' is writing today’s letter · ' + writing.verb + '…'; }
   function writingHtml(){
-    if (!writingSince) writingSince = Date.now();
-    if (!writingTimer) writingTimer = setInterval(function(){
-      var v = document.querySelector('.hl-writing-what');
-      if (!state.letterWriting || !v) { clearInterval(writingTimer); writingTimer = null; writingSince = 0; return; }
-      v.innerHTML = writingText();
+    if (!writing.since) { writing.since = Date.now(); pickVerb(); }
+    if (!writing.timer) writing.timer = setInterval(function(){
+      var line = document.querySelector('.hl-writing');
+      if (!state.letterWriting || !line) { clearInterval(writing.timer); writing.timer = null; writing.since = 0; writing.verb = ''; return; }
+      if (Date.now() >= writing.next) { pickVerb(); line.querySelector('.hl-wave').innerHTML = waveHtml(writingWords()); line.querySelector('.hl-wave').setAttribute('aria-label', writingWords()); }
+      line.querySelector('.hl-secs').textContent = Math.round((Date.now() - writing.since) / 1000) + 's';
     }, 1000);
-    return '<p class="hl-by">' + ({ sofya: 'Sofya', claude: 'Claude' }[state.letterFirst] || 'BOLD LLM') + ' is writing today’s letter.</p>' +
-      '<p class="hl-by hl-writing"><span class="hl-bold" aria-hidden="true"><span>B</span><span>O</span><span>L</span><span>D</span></span> ' +
-      '<span class="hl-writing-what" role="status">' + writingText() + '</span></p>';
+    return '<p class="hl-by hl-writing" role="status"><span class="hl-wave" aria-label="' + esc(writingWords()) + '">' + waveHtml(writingWords()) + '</span> ' +
+      '<span class="hl-secs">' + Math.round((Date.now() - writing.since) / 1000) + 's</span></p>';
   }
   // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
   var LEN_KEY = 'boldLetterLength';
