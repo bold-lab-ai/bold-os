@@ -250,8 +250,9 @@
     drawToday();
     if (al) { put(el, '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al); return; }
     put(el, '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '') +
-      (state.letterChoice === 'bold' ? '<p class="hl-by">' + (state.letterWriting ? writingHtml() : 'BOLD LLM couldn’t write today’s letter, so this is the rule-based one.') +
-        whoLink(' ') + '</p>' : ''));
+      // Who wrote it, always: the rules (the lab's choice, or BOLD LLM couldn't, or meanwhile).
+      '<p class="hl-by">Written by the rules' + (state.letterChoice !== 'bold' ? '.' : state.letterWriting ? '. ' + writingHtml() : '. BOLD LLM couldn’t write today’s.') +
+        whoLink(' ') + '</p>');
   }
   // While BOLD LLM writes their letter: B, O, L, D turn bold in turn, beside what it's doing (a verb every few
   // seconds, made up, the lab's) and how long it's taken; the rule-based letter above meanwhile.
@@ -270,8 +271,9 @@
       if (!state.letterWriting || !v) { clearInterval(writingTimer); writingTimer = null; writingSince = 0; return; }
       v.innerHTML = writingText();
     }, 1000);
-    return '<span class="hl-writing"><span class="hl-bold" aria-hidden="true"><span>B</span><span>O</span><span>L</span><span>D</span></span> ' +
-      '<span class="hl-writing-what" role="status">' + writingText() + '</span></span> · this is the rule-based letter meanwhile.';
+    return ({ sofya: 'Sofya', claude: 'Claude' }[state.letterFirst] || 'BOLD LLM') + ' is writing today’s: ' +
+      '<span class="hl-writing"><span class="hl-bold" aria-hidden="true"><span>B</span><span>O</span><span>L</span><span>D</span></span> ' +
+      '<span class="hl-writing-what" role="status">' + writingText() + '</span></span>';
   }
   // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
   var LEN_KEY = 'boldLetterLength';
@@ -666,6 +668,7 @@
       var x = lab.exists ? lab.data() : {};
       var first = Array.isArray(x.ladder) && x.ladder.length ? x.ladder[0] : x.writer === 'claude' ? (x.model === 'sofya' ? 'sofya' : 'claude') : 'rules';
       var c = first === 'sofya' || first === 'claude' ? 'bold' : 'rules';
+      state.letterFirst = first;
       state.chatOn = c === 'bold';
       if (state.chatOn) mountAsk();
       if (c !== 'bold') return set('letterChoice')(c);
