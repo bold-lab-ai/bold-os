@@ -393,3 +393,7 @@ once an hour; a change on Profile or signing out forgets it.
 The deployed function's service account needs Storage object read access and
 `iam.serviceAccounts.signBlob` to create V4 URLs; the Firebase maintainer checks
 those permissions during the release smoke test.
+
+## Problem Bank and Benchmarks
+
+See [BENCHMARK_REGISTRY.md](BENCHMARK_REGISTRY.md) for the pages, authenticated registration API, Firestore collections, validation gates, and activation steps.

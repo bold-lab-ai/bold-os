@@ -164,3 +164,7 @@ Every push to `main` builds and deploys automatically via `.github/workflows/pag
 If the process moved relative to BOLDiquette, update `docs/DIFF.md` (and `docs/proposed-boldiquette-addition.md` if the drop-in prose is affected).
 
 `docs/changelog.md` stays as a historical record up to 2026-09-14, but is no longer kept up — per Eduardo, stop adding entries to it.
+
+## Problem Bank and Benchmarks
+
+See [BENCHMARK_REGISTRY.md](BENCHMARK_REGISTRY.md) for the pages, authenticated registration API, Firestore collections, validation gates, and activation steps.

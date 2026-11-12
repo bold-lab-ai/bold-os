@@ -39,7 +39,7 @@
         '<p class="registry-note">Change the scientific definition in AutoKaggle. A revised evaluator needs new tests and approval. Earlier commits remain available.</p>'+data.versions.map(release).join('')+
         '<details><summary>Record history</summary><ul>'+(data.history||[]).map(function(h){return '<li>'+esc(date(h.updatedAt)+' — '+h.changeNote)+(h.notes?'<p>'+esc(h.notes)+'</p>':'')+'</li>';}).join('')+'</ul></details>';
       box.querySelector('form').onsubmit=async function(event){event.preventDefault();if(!p.can_edit)return;var button=event.currentTarget.querySelector('button');button.disabled=true;el('registrySaveStatus').textContent='Saving…';
-        try{await call({action:'update',problem_id:id,notes:el('registryNotes').value,archived:el('registryArchive').checked});if(epoch!==generation)return;await detail(id);await load(false);}
+        try{await call({action:'update',problem_id:id,notes:el('registryNotes').value,archived:el('registryArchive').checked});if(epoch!==generation)return;await detail(id);await load(false);if(epoch===generation)el('registrySaveStatus').textContent='Saved.';}
         catch(e){if(epoch===generation){el('registrySaveStatus').textContent='Not saved. '+e.message;button.disabled=false;}}
       };
     }catch(e){if(epoch===generation){box.textContent='Could not load this problem. '+e.message;}}
