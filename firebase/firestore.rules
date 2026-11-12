@@ -197,7 +197,12 @@ service cloud.firestore {
       allow read: if isSignedIn();
       // refresh: how often BOLD LLM writes them (functions/home-letter.js REFRESH).
       // ladder: who writes them, in order (functions/home-letter.js ladderOf); writer and model kept with it for older pages.
-      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'refresh', 'model', 'ladder', 'updatedAt', 'updatedBy'])
+      // sofyaMode, sofyaThinking, sofyaEffort: how Sofya is asked for a letter and whether it thinks first (functions/
+      // bold-llm.js), set by hand for now; kept through Settings' saves (merge).
+      allow write: if hasFullWrite() && request.resource.data.keys().hasOnly(['writer', 'refresh', 'model', 'ladder', 'updatedAt', 'updatedBy', 'sofyaMode', 'sofyaThinking', 'sofyaEffort'])
+        && (!('sofyaMode' in request.resource.data) || request.resource.data.sofyaMode in ['schema', 'json', 'steps'])
+        && (!('sofyaThinking' in request.resource.data) || request.resource.data.sofyaThinking is bool)
+        && (!('sofyaEffort' in request.resource.data) || request.resource.data.sofyaEffort in ['low', 'medium', 'high'])
         && (!('ladder' in request.resource.data) || (request.resource.data.ladder is list && request.resource.data.ladder.size() <= 3
           && request.resource.data.ladder.hasOnly(['sofya', 'claude', 'rules'])))
         && (!('writer' in request.resource.data) || request.resource.data.writer in ['rules', 'claude'])

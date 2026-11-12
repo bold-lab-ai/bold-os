@@ -47,7 +47,7 @@ Assembled on the server as the person, so it holds only what they may see (Who c
 The reader switches between them (kept per person). Both end with where to take things next.
 
 - **Short** (the default): what needs them, what's next, and one direction. At most 200 words.
-- **Long**: the same first paragraph, kept as tight as the short one, then paragraphs spent on substance: where things are heading (a change of pace, and its evidence), the ideas the lab is arguing about, the threads that run through their work and others', and the direction those point to; then what changed in BOLD.OS in the last day, in detail. Around 3,500 characters; every sentence must change what they know or would do. The extra space is never spent on more status: no more counts, requests, who-replied-to-whom, or anything the page shows beside it (their projects, their week, unread).
+- **Long**: the same first paragraph, kept as tight as the short one, then paragraphs spent on substance: where things are heading (a change of pace, and its evidence), the ideas the lab is arguing about, the threads that run through their work and others', and the direction those point to; then what changed in BOLD.OS in the last day, in detail. Around 2,500 characters; every sentence must change what they know or would do. The extra space is never spent on more status: no more counts, requests, who-replied-to-whom, or anything the page shows beside it (their projects, their week, unread).
 
 ## The prompt
 
@@ -65,7 +65,7 @@ The reader switches between them (kept per person). Both end with where to take 
 >
 > `short`: one paragraph: 1, then 2, then one direction in one sentence; if there's a big change, the direction says it in a clause ("as compute comes online, …"). At most 200 words.
 >
-> `long`: short paragraphs, as many as there's substance for; around 3,500 characters, and nothing that wouldn't change what they know or would do.
+> `long`: short paragraphs, as many as there's substance for; around 2,500 characters, and nothing that wouldn't change what they know or would do.
 > - The first: 1 and 2, as tight as in `short`.
 > - The second: where things are heading, if there's a change of pace, with its evidence, and the direction it opens for them, developed.
 > - The third: what the lab is thinking that bears on them, from its conversations: the argument, who holds which view (briefly, in their words if sharp), and where they could add to it. Skip it when nothing does.
