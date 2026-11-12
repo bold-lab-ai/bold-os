@@ -8,8 +8,15 @@ function server(answers){
   const sent = [];
   const post = async (url, init) => {
     sent.push({ url, auth: init.headers.Authorization, body: JSON.parse(init.body) });
-    const a = answers.shift();
-    return { ok: a.status ? a.status < 300 : true, status: a.status || 200, json: async () => a.json || { model: S.MODEL, choices: [{ message: a.message, finish_reason: a.finish || 'stop' }] } };
+    const a = answers.shift(), body = JSON.parse(init.body);
+    // Streamed (a letter): the message as server-sent events, a piece at a time.
+    const events = body.stream && !a.status ? [{ model: S.MODEL, choices: [{ delta: { reasoning_content: 'hmm' } }] }]
+      .concat(String(a.message.content).match(/[\s\S]{1,7}/g).map((c) => ({ choices: [{ delta: { content: c } }] })))
+      .concat([{ choices: [{ delta: {}, finish_reason: a.finish || 'stop' }] }, { choices: [], usage: { completion_tokens: 9 } }]) : null;
+    const enc = new TextEncoder();
+    return { ok: a.status ? a.status < 300 : true, status: a.status || 200,
+      body: events && (async function*(){ for (const e of events) yield enc.encode('data: ' + JSON.stringify(e) + '\n\n'); yield enc.encode('data: [DONE]\n\n'); })(),
+      json: async () => a.json || { model: S.MODEL, choices: [{ message: a.message, finish_reason: a.finish || 'stop' }] } };
   };
   return { post, sent };
 }
@@ -21,6 +28,7 @@ test('the tools, in OpenAI’s shape; what it said without its thinking; JSON fr
   assert.strictEqual(S.said({ content: 'reasoning…</think>Hello.' }), 'Hello.');   // the opening tag left out
   assert.deepStrictEqual(S.jsonOf('```json\n{"short":"a","long":"b"}\n```'), { short: 'a', long: 'b' });
   assert.deepStrictEqual(S.jsonOf('Here: {"short":"a","long":"b"} done'), { short: 'a', long: 'b' });
+  assert.deepStrictEqual(S.lastJson('Long: {x}\n```json\n{"a":1}\n```\nShort.\n```json\n{"short":"s","long":"l {y}"}\n```'), { short: 's', long: 'l {y}' });
   assert.deepStrictEqual(S.argsOf({ function: { arguments: '{"q":"x"}' } }), { q: 'x' });
   assert.deepStrictEqual(S.argsOf({ function: { arguments: 'not json' } }), {});
 });
@@ -34,6 +42,19 @@ test('a letter: the prompt as the system message, JSON asked for and read back',
   assert.strictEqual(srv.sent[0].body.model, S.MODEL);
   assert.strictEqual(srv.sent[0].body.messages[0].role, 'system');
   assert.strictEqual(srv.sent[0].body.response_format.type, 'json_schema');
+  assert.strictEqual(srv.sent[0].body.stream, true);
+  assert.strictEqual(srv.sent[0].body.chat_template_kwargs.enable_thinking, false);   // thinking off unless asked for
+  assert.strictEqual(r.steps[0].usage.completion_tokens, 9);
+  assert.ok(r.steps[0].thinkChars === 3);
+});
+
+test('a letter in steps: one call, no JSON enforced, read from the last ```json block', async () => {
+  const srv = server([{ message: { content: 'Long letter…\n\nShort one.\n```json\n{"short":"S","long":"L"}\n```' } }]);
+  const r = await S({ key: () => 'k', post: srv.post }).letter('Write it.', 'The JSON: {}', { type: 'object' }, 'steps');
+  assert.deepStrictEqual(r.value, { short: 'S', long: 'L' });
+  assert.strictEqual(srv.sent.length, 1);
+  assert.strictEqual(srv.sent[0].body.response_format, undefined);
+  assert.match(srv.sent[0].body.messages[0].content, /First write the long letter/);
 });
 
 test('an answer: it calls a tool, reads the result, then answers', async () => {

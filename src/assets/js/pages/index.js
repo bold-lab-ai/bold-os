@@ -250,8 +250,28 @@
     drawToday();
     if (al) { put(el, '<p>' + hello + (live ? ' ' + you[0] : '') + '</p>' + al); return; }
     put(el, '<p>' + hello + ' ' + you.join(' ') + '</p>' + (lab.length ? '<p>' + lab.join(' ') + '</p>' : '') +
-      (state.letterChoice === 'bold' ? '<p class="hl-by">' + (state.letterWriting ? 'BOLD LLM is writing today’s letter; this is the rule-based one meanwhile.' : 'BOLD LLM couldn’t write today’s letter, so this is the rule-based one.') +
+      (state.letterChoice === 'bold' ? '<p class="hl-by">' + (state.letterWriting ? writingHtml() : 'BOLD LLM couldn’t write today’s letter, so this is the rule-based one.') +
         whoLink(' ') + '</p>' : ''));
+  }
+  // While BOLD LLM writes their letter: B, O, L, D turn bold in turn, beside what it's doing (a verb every few
+  // seconds, made up, the lab's) and how long it's taken; the rule-based letter above meanwhile.
+  var VERBS = ['Reading what waits on you', 'Counting GPU hours', 'Checking your calendar', 'Consulting the BOLDiquette',
+    'Skimming Conversations', 'Following the deadlines', 'Weighing what matters', 'Finding the bold bits',
+    'Asking the reviewers nicely', 'Sharpening the argument', 'Licking the envelope'];
+  var writingSince = 0, writingTimer = null;
+  function writingText(){
+    var s = Math.max(0, Math.round((Date.now() - writingSince) / 1000));
+    return VERBS[Math.floor(s / 4) % VERBS.length] + '… <span class="hl-secs">' + s + 's</span>';
+  }
+  function writingHtml(){
+    if (!writingSince) writingSince = Date.now();
+    if (!writingTimer) writingTimer = setInterval(function(){
+      var v = document.querySelector('.hl-writing-what');
+      if (!state.letterWriting || !v) { clearInterval(writingTimer); writingTimer = null; writingSince = 0; return; }
+      v.innerHTML = writingText();
+    }, 1000);
+    return '<span class="hl-writing"><span class="hl-bold" aria-hidden="true"><span>B</span><span>O</span><span>L</span><span>D</span></span> ' +
+      '<span class="hl-writing-what" role="status">' + writingText() + '</span></span> · this is the rule-based letter meanwhile.';
   }
   // BOLD LLM's letter, short or long (kept in this browser), as Markdown, with when it was written; or ''.
   var LEN_KEY = 'boldLetterLength';

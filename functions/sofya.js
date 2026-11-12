@@ -8,7 +8,9 @@ const BASE = 'https://llm.bold-lab.ai/v1';
 const MODEL = 'Qwen/Qwen3.8-27B-FP8';
 // How long a call may take, with Qwen thinking first: a letter (written in the background, functions/bold-llm.js
 // onLetterJob, 9 minutes) and a step of an answer (Talking to BOLD, while they wait).
-const LETTER_TIMEOUT = 300000, CHAT_TIMEOUT = 120000;
+const LETTER_TIMEOUT = 520000, CHAT_TIMEOUT = 120000;
+// The letter in steps, in one answer (letter 'steps'), in place of asking for JSON straight away.
+const STEPS = 'Work in this order, all in this one answer. First write the long letter, as Markdown. Then summarise it into the short letter, as Markdown. Last, put both into JSON, in a ```json block at the very end: { "short": "…", "long": "…" }.';
 
 // Pure: the agents' tools (Anthropic's shape: { name, description, input_schema }) in OpenAI's.
 function openAITools(tools){
@@ -23,6 +25,11 @@ function jsonOf(text){
   const t = String(text || '').trim(), fence = /```(?:json)?\s*([\s\S]*?)```/.exec(t);
   const body = fence ? fence[1] : t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1);
   return JSON.parse(body);
+}
+// Pure: the JSON object in the last ```json block of what it said (after the letters written out), else jsonOf.
+function lastJson(text){
+  const blocks = String(text || '').match(/```json\s*([\s\S]*?)```/g);
+  return blocks ? JSON.parse(blocks[blocks.length - 1].replace(/^```json\s*|```$/g, '')) : jsonOf(text);
 }
 // Pure: a tool call's arguments (a JSON string) → an object.
 function argsOf(call){
@@ -42,15 +49,63 @@ module.exports = function({ key, post }){
         body: JSON.stringify(Object.assign({ model: MODEL }, body)) });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.choices || !j.choices[0]) throw new Error('Sofya answered ' + r.status + (j.error ? ': ' + String(j.error.message || j.error).slice(0, 200) : ''));
-      return { message: j.choices[0].message || {}, model: j.model || MODEL, finish: j.choices[0].finish_reason || '' };
+      return { message: j.choices[0].message || {}, model: j.model || MODEL, finish: j.choices[0].finish_reason || '', usage: j.usage || null };
     } finally { clearTimeout(timer); }
   }
-  // A letter: the prompt, the inputs, and JSON back in `schema`'s shape (response_format, and said so too).
-  async function letter(system, user, schema){
-    const r = await complete({ max_tokens: 16000, response_format: { type: 'json_schema', json_schema: { name: 'letter', schema, strict: true } },
-      messages: [{ role: 'system', content: system + '\n\nAnswer with JSON only, as: ' + JSON.stringify(schema) }, { role: 'user', content: user }] }, LETTER_TIMEOUT);
-    if (r.finish === 'length') throw new Error('the letter was cut off');
-    return { value: jsonOf(said(r.message)), model: r.model };
+  // One completion, streamed (a letter: past the 300 s Node's fetch waits for a reply's headers, 2026-11-12), the
+  // pieces put together as complete() gives them → { message, model, finish, usage, firstMs, answerMs } (firstMs: the
+  // first token; answerMs: the first of the answer, after the thinking).
+  async function stream(body, timeout){
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), timeout || CHAT_TIMEOUT), t0 = Date.now();
+    try {
+      const r = await post(BASE + '/chat/completions', { method: 'POST', signal: ctl.signal,
+        headers: { Authorization: 'Bearer ' + key(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ model: MODEL, stream: true, stream_options: { include_usage: true } }, body)) });
+      if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error('Sofya answered ' + r.status + (j.error ? ': ' + String(j.error.message || j.error).slice(0, 200) : '')); }
+      let content = '', reasoning = '', model = MODEL, finish = '', usage = null, firstMs = 0, answerMs = 0, buf = '';
+      const dec = new TextDecoder();
+      for await (const chunk of r.body) {
+        buf += dec.decode(chunk, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+          if (!line.startsWith('data:')) continue;
+          const data = line.slice(5).trim();
+          if (data === '[DONE]') continue;
+          let j; try { j = JSON.parse(data); } catch (e){ continue; }
+          if (j.model) model = j.model;
+          if (j.usage) usage = j.usage;
+          const c = j.choices && j.choices[0];
+          if (!c) continue;
+          const d = c.delta || {};
+          const think = d.reasoning_content || d.reasoning || '';
+          if ((think || d.content) && !firstMs) firstMs = Date.now() - t0;
+          reasoning += think;
+          if (d.content) {
+            content += d.content;
+            const open = content.indexOf('<think>') >= 0 && content.indexOf('</think>') < 0;
+            if (!answerMs && !open && said({ content })) answerMs = Date.now() - t0;
+          }
+          if (c.finish_reason) finish = c.finish_reason;
+        }
+      }
+      return { message: { content, reasoning_content: reasoning }, model, finish, usage, firstMs, answerMs };
+    } finally { clearTimeout(timer); }
+  }
+  // A letter: the prompt, the inputs → { value: { short, long }, model, steps: [{ ms, usage }] }. How it's asked (`mode`,
+  // being measured, 2026-11-12): 'schema', JSON in `schema`'s shape, enforced by the server (response_format); 'json',
+  // JSON asked for in the prompt only; 'steps', in one answer: the long letter in Markdown, then the short one
+  // summarising it, then both as JSON at the end (read from its last ```json block).
+  // `think`: with Qwen's thinking first (2026-11-12: with it a letter took over 300 s, without it ~9 s).
+  async function letter(system, user, schema, mode, think){
+    const steps = [], timed = async (body) => { const t0 = Date.now(), r = await stream(think ? body : Object.assign({ chat_template_kwargs: { enable_thinking: false } }, body), LETTER_TIMEOUT); steps.push({ ms: Date.now() - t0, firstMs: r.firstMs, answerMs: r.answerMs, thinkChars: r.message.reasoning_content.length, answerChars: r.message.content.length, usage: r.usage, finish: r.finish }); if (r.finish === 'length') throw new Error('the letter was cut off'); return r; };
+    if (mode === 'steps') {
+      const r = await timed({ max_tokens: 16000, messages: [{ role: 'system', content: system + '\n\n' + STEPS }, { role: 'user', content: user }] });
+      return { value: lastJson(said(r.message)), model: r.model, steps };
+    }
+    const r = await timed(Object.assign({ max_tokens: 16000, messages: [{ role: 'system', content: system + '\n\nAnswer with JSON only, as: ' + JSON.stringify(schema) }, { role: 'user', content: user }] },
+      mode === 'json' ? {} : { response_format: { type: 'json_schema', json_schema: { name: 'letter', schema, strict: true } } }));
+    return { value: jsonOf(said(r.message)), model: r.model, steps };
   }
   // An answer: the prompt, the conversation ([{ role, content }]), the reading tools, run as them by `run(name, args)`,
   // at most `rounds` rounds. → its text.
@@ -73,4 +128,5 @@ module.exports.MODEL = MODEL;
 module.exports.openAITools = openAITools;
 module.exports.said = said;
 module.exports.jsonOf = jsonOf;
+module.exports.lastJson = lastJson;
 module.exports.argsOf = argsOf;
