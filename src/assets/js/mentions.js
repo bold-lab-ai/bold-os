@@ -58,21 +58,23 @@
   }
 
   // Where the caret is on screen (the bottom of its line): a hidden copy of the box,
-  // styled alike, holds the text up to it and a marker.
+  // styled alike, holds the text up to it and a marker. A one-line box (an <input>) keeps
+  // it on one line. Shared with emoji.js (window.BoldCaret).
   var PROPS = ['boxSizing', 'width', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
     'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'letterSpacing', 'lineHeight', 'textTransform', 'wordSpacing', 'tabSize'];
   function caret(ta){
     var cs = getComputedStyle(ta), m = document.createElement('div');
     PROPS.forEach(function(k){ m.style[k] = cs[k]; });
-    m.style.position = 'absolute'; m.style.visibility = 'hidden'; m.style.whiteSpace = 'pre-wrap'; m.style.wordWrap = 'break-word'; m.style.top = '0'; m.style.left = '-9999px';
+    m.style.position = 'absolute'; m.style.visibility = 'hidden'; m.style.whiteSpace = ta.tagName === 'INPUT' ? 'pre' : 'pre-wrap'; m.style.wordWrap = ta.tagName === 'INPUT' ? 'normal' : 'break-word'; m.style.top = '0'; m.style.left = '-9999px';
     m.textContent = ta.value.slice(0, ta.selectionStart);
     var mark = document.createElement('span'); mark.textContent = '\u200b'; m.appendChild(mark);
     document.body.appendChild(m);
     var r = ta.getBoundingClientRect(), line = parseFloat(cs.lineHeight) || parseFloat(cs.fontSize) * 1.4;
     var top = r.top + mark.offsetTop - ta.scrollTop + line, left = r.left + mark.offsetLeft - ta.scrollLeft;
     m.remove();
-    return { top: Math.min(top, r.bottom), left: left };
+    return { top: Math.min(top, r.bottom), left: Math.min(left, r.right) };
   }
+  window.BoldCaret = caret;
 
   function pick(i){
     var p = list[i], ta = field, from = start, to = ta && ta.selectionStart;

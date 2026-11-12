@@ -39,7 +39,7 @@
 <script src="assets/js/search-box.js?v={{ build.stamp }}"></script>
 <script src="assets/js/eggs.js?v={{ build.stamp }}"></script>
 {% for script in scripts %}<script src="assets/js/{{ script }}?v={{ build.stamp }}"></script>
-{% endfor %}{% if not public %}<script src="assets/js/mentions.js?v={{ build.stamp }}"></script>
+{% endfor %}{% if not public %}<script src="assets/js/mentions.js?v={{ build.stamp }}"></script><script src="assets/js/emoji.js?v={{ build.stamp }}"></script>
 {% if not ('markdown.js' in (scripts or [])) %}<script src="assets/js/markdown.js?v={{ build.stamp }}"></script>
 {% endif %}<script src="assets/js/md-field.js?v={{ build.stamp }}"></script>
 {% endif %}
