@@ -3,7 +3,7 @@
 // own LLM (functions/sofya.js), Claude, or the rule-based letter the home page writes itself. Each model above
 // 'rules' is tried in turn; when they all fail, the page shows the rule-based letter. While a model is above it,
 // writeHomeLetters writes the letter of everyone who has been on BOLD.OS in the last 30 days at the lab's hours
-// (settings/homeLetter.refresh; 05:00 London by
+// (settings/homeLetter.refresh; 04:00 London by
 // default) into homeLetters/{email}, from inputs
 // read as them (letterInputs in functions/api.js: only what they may see); the home page shows it, or the
 // rule-based one. The prompts are content, skills changed by proposals: home-letter and talking-to-bold.
@@ -106,7 +106,7 @@ module.exports = function({ db, admin, logger, onCall, onSchedule, onDocumentWri
     throw new Error('no model could write it (' + failed.join('; ') + ')');
   }
 
-  // At the hours the lab chose (HL.REFRESH: once a day at 05:00, twice, or through the working day) it wakes each hour
+  // At the hours the lab chose (HL.REFRESH: once a day at 04:00 (so they're written by 07:00), twice, or through the working day) it wakes each hour
   // and, then, lines up the letters of everyone on BOLD.OS in the past week, those who come most often first
   // (HL.letterOrder: the days they came in the last 14, from visits/{email}, kept by bold.js; then the latest visit), and
   // starts LANES of them; each written by onLetterJob, which starts the next in line as it finishes, so Sofya writes

@@ -16,22 +16,22 @@ test('a letter needs both lengths, within their limits', () => {
   assert.match(HL.checkLetter(null).error, /short/);
 });
 
-test('a letter is current once written since the letters were last due (05:00 London), not just in the last day', () => {
-  // 2026-11-12, 10:00 London (GMT): yesterday afternoon's isn't this morning's; one from 05:00 on is.
+test('a letter is current once written since the letters were last due (04:00 London), not just in the last day', () => {
+  // 2026-11-12, 10:00 London (GMT): yesterday afternoon's isn't this morning's; one from 04:00 on is.
   const now = Date.parse('2026-11-12T10:00:00Z');
-  assert.strictEqual(new Date(HL.lastDue('daily', now)).toISOString(), '2026-11-12T05:00:00.000Z');
+  assert.strictEqual(new Date(HL.lastDue('daily', now)).toISOString(), '2026-11-12T04:00:00.000Z');
   assert.ok(!HL.isFresh({ at: Date.parse('2026-11-11T15:00:00Z') }, 'daily', now));
-  assert.ok(HL.isFresh({ at: Date.parse('2026-11-12T05:03:00Z') }, 'daily', now));
+  assert.ok(HL.isFresh({ at: Date.parse('2026-11-12T04:03:00Z') }, 'daily', now));
   assert.ok(!HL.isFresh(null, 'daily', now));
-  // Before 05:00: yesterday's 05:00 one is still current.
-  const early = Date.parse('2026-11-12T04:30:00Z');
-  assert.strictEqual(new Date(HL.lastDue('daily', early)).toISOString(), '2026-11-11T05:00:00.000Z');
-  // Twice a day: after 13:00, the 13:00 one; through the working day before 05:00, yesterday's 18:00.
+  // Before 04:00: yesterday's 04:00 one is still current.
+  const early = Date.parse('2026-11-12T03:30:00Z');
+  assert.strictEqual(new Date(HL.lastDue('daily', early)).toISOString(), '2026-11-11T04:00:00.000Z');
+  // Twice a day: after 13:00, the 13:00 one; through the working day before 04:00, yesterday's 18:00.
   assert.strictEqual(new Date(HL.lastDue('twice', Date.parse('2026-11-12T14:10:20Z'))).toISOString(), '2026-11-12T13:00:00.000Z');
   assert.strictEqual(new Date(HL.lastDue('working', early)).toISOString(), '2026-11-11T18:00:00.000Z');
-  // Summer time (BST): 05:00 London is 04:00 UTC.
-  assert.strictEqual(new Date(HL.lastDue('daily', Date.parse('2026-07-01T09:00:00Z'))).toISOString(), '2026-07-01T04:00:00.000Z');
-  assert.ok(HL.writesAt('daily', 5) && !HL.writesAt('daily', 6));
+  // Summer time (BST): 04:00 London is 03:00 UTC.
+  assert.strictEqual(new Date(HL.lastDue('daily', Date.parse('2026-07-01T09:00:00Z'))).toISOString(), '2026-07-01T03:00:00.000Z');
+  assert.ok(HL.writesAt('daily', 4) && !HL.writesAt('daily', 5));
 });
 
 test('the inputs: their week is the meetings they’re in, not paused; dates as ISO; London time', () => {
@@ -70,10 +70,10 @@ test('a tool’s result is JSON, cut when long', () => {
 });
 
 test('how often: the hours BOLD LLM writes at, once a day by default', () => {
-  assert.ok(HL.writesAt('daily', 5) && !HL.writesAt('daily', 13));
+  assert.ok(HL.writesAt('daily', 4) && !HL.writesAt('daily', 13));
   assert.ok(HL.writesAt('twice', 13) && !HL.writesAt('twice', 9));
-  assert.deepStrictEqual(HL.REFRESH.working.filter((h) => HL.writesAt('working', h)), [5, 9, 12, 15, 18]);
-  assert.ok(HL.writesAt(undefined, 5) && !HL.writesAt('nonsense', 7));
+  assert.deepStrictEqual(HL.REFRESH.working.filter((h) => HL.writesAt('working', h)), [4, 9, 12, 15, 18]);
+  assert.ok(HL.writesAt(undefined, 4) && !HL.writesAt('nonsense', 7));
 });
 
 test('a letter covers what changed since the previous one, at most a day', () => {

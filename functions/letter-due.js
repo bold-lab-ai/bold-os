@@ -6,7 +6,7 @@
   else root.BoldLetterDue = make();
 })(typeof self !== 'undefined' ? self : this, function(){
   // How often (settings/homeLetter.refresh, Settings › BOLD Agent): the hours (London) the letters are written at.
-  var REFRESH = { daily: [5], twice: [5, 13], working: [5, 9, 12, 15, 18] };
+  var REFRESH = { daily: [4], twice: [4, 13], working: [4, 9, 12, 15, 18] };
   function refreshHours(r){ return REFRESH[r] || REFRESH.daily; }
   // When the letters were last due (ms): the latest of r's hours (London) at or before now, today's or else
   // yesterday's last.
