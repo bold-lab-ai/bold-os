@@ -64,11 +64,11 @@
   }
   // The models above the rule-based letter, in order.
   function modelsOf(l){ return l.slice(0, l.indexOf('rules')); }
-  // How often BOLD LLM writes them (functions/home-letter.js REFRESH); each letter covers what changed since the last.
+  // How often BOLD LLM writes them (functions/letter-due.js REFRESH); each letter covers what changed since the last.
   var REFRESHES = [
-    ['daily', 'Once a day', 'At 06:00.'],
-    ['twice', 'Twice a day', 'At 06:00 and 13:00.'],
-    ['working', 'Through the working day', 'At 06:00, 09:00, 12:00, 15:00 and 18:00. Five times the letters, and five times the cost.'],
+    ['daily', 'Once a day', 'At 05:00.'],
+    ['twice', 'Twice a day', 'At 05:00 and 13:00.'],
+    ['working', 'Through the working day', 'At 05:00, 09:00, 12:00, 15:00 and 18:00. Five times the letters, and five times the cost.'],
   ];
   function letterHtml(){
     if (letterLab === null) return '<p class="proj-msg">Loading&hellip;</p>';

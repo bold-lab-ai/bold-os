@@ -3,9 +3,8 @@
 // Pure, for bold-llm.js, the agents' API (letterInputs) and tests.
 'use strict';
 
-// How often BOLD LLM writes the letters (settings/homeLetter.refresh, Settings › BOLD Agent): the hours (London) it writes at.
-const REFRESH = { daily: [6], twice: [6, 13], working: [6, 9, 12, 15, 18] };
-const refreshHours = (r) => REFRESH[r] || REFRESH.daily;
+// How often BOLD LLM writes the letters, and which is current: letter-due.js (shared with the home page).
+const { REFRESH, refreshHours, lastDue, isFresh } = require('./letter-due');
 // Pure: does BOLD LLM write the letters at this hour (0–23, London), with refresh r?
 function writesAt(r, hour){ return refreshHours(r).indexOf(Number(hour)) >= 0; }
 // Pure: what a letter written now covers: since the previous one, if it's from the last day, else the last 24 hours.
@@ -23,8 +22,6 @@ function checkLetter(a){
   return { letter: { short, long } };
 }
 
-// Today's letter, written within the last 24 hours (what a morning letter covers).
-function isFresh(doc, now){ return !!(doc && doc.at && (now || Date.now()) - doc.at < 24 * 3600000); }
 
 // The date and time in London: { date, weekday, time, time_zone }.
 function londonNow(now){
@@ -74,4 +71,4 @@ function ladderOf(x){
 // Pure: the models above 'rules', in order (none: the rule-based letter for everyone).
 function modelsOf(ladder){ return ladder.slice(0, ladder.indexOf('rules') < 0 ? ladder.length : ladder.indexOf('rules')); }
 
-module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };
+module.exports = { WRITERS, ladderOf, modelsOf, REFRESH, refreshHours, writesAt, lastDue, sinceFor, SHORT_MAX, LONG_MAX, checkLetter, isFresh, londonNow, inputsOf };

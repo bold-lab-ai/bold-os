@@ -243,7 +243,7 @@
     }
 
     // Written by BOLD LLM (the lab's choice, Settings › BOLD Agent; homeLetters/{email})
-    // within the last day: that, under the greeting and any meeting on now, which a morning letter can't know.
+    // since the letters were last due (letter-due.js): that, under the greeting and any meeting on now, which a morning letter can't know.
     var al = llmLetter();
     // When it was written, beside the date: BOLD LLM's when it wrote it; the rule-based one when the page first put it together.
     letterAt = al ? state.llmLetter.at : (ruleAt = ruleAt || Date.now());
@@ -258,7 +258,7 @@
   function letterLength(){ try { return localStorage.getItem(LEN_KEY) === 'long' ? 'long' : 'short'; } catch (e){ return 'short'; } }
   function llmLetter(){
     var l = state.llmLetter;
-    if (state.letterChoice !== 'bold' || !l || !l.at || Date.now() - l.at >= 24 * 3600000 || !window.BoldMarkdown) return '';
+    if (state.letterChoice !== 'bold' || !BoldLetterDue.isFresh(l, state.letterRefresh) || !window.BoldMarkdown) return '';
     var len = letterLength();
     return '<div class="hl-agent-text">' + BoldMarkdown.render(String(l[len] || l.short || '')) + '</div>' +
       '<p class="hl-by">Written by ' + ({ sofya: 'Sofya', claude: 'Claude' }[l.writer] || 'BOLD LLM') + ' · ' +
@@ -640,7 +640,7 @@
     var set = function(k){ return function(v){ if (asked !== mine) return; state[k] = v; write(); drawSides(); }; };
     // Who writes their letter: BOLD LLM when the lab's ladder puts a model above the rule-based letter
     // (settings/homeLetter, Settings › BOLD Agent; functions/home-letter.js ladderOf, as here). Its letter is followed
-    // (homeLetters/{email}); without one from the last day, one is asked for (homeLetter 'write'), written in the
+    // (homeLetters/{email}); without one since they were last due, one is asked for (homeLetter 'write'), written in the
     // background (onLetterJob, letterJobs/{email}, followed too), the rule-based one meanwhile, and if no model can.
     db.collection('settings').doc('homeLetter').get().then(function(lab){
       var x = lab.exists ? lab.data() : {};
@@ -650,7 +650,9 @@
       if (state.chatOn) mountAsk();
       if (c !== 'bold') return set('letterChoice')(c);
       var askedAt = 0, gotLetter = false;
-      var freshNow = function(){ return !!(state.llmLetter && Date.now() - state.llmLetter.at < 24 * 3600000); };
+      // The current letter: written since the letters were last due (letter-due.js), not just in the last day.
+      state.letterRefresh = x.refresh;
+      var freshNow = function(){ return BoldLetterDue.isFresh(state.llmLetter, x.refresh); };
       unsubs.push(db.collection('homeLetters').doc(me).onSnapshot(function(x){
         if (asked !== mine) return;
         state.llmLetter = x.exists ? x.data() : null;
@@ -659,7 +661,7 @@
         if (gotLetter) return;
         gotLetter = true;
         if (freshNow()) return;
-        // None from the last day: asked for, and written meanwhile.
+        // None since they were last due: asked for, and written meanwhile.
         state.letterWriting = true; askedAt = Date.now(); set('letterChoice')(c);
         call('homeLetter', { action: 'write' }).then(function(w){
           var l = (w.data || {}).letter;
