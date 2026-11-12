@@ -1,3 +1,8 @@
+.hero{max-width:var(--content-max);margin:0 auto;padding:64px var(--gutter) 10px}
+.hero h1{font-size:clamp(30px,5vw,44px);line-height:1.14;overflow-wrap:break-word;text-wrap:balance}
+.hero p{max-width:70ch;color:var(--muted)}
+#registry{max-width:var(--content-max);margin:0 auto;padding:8px var(--gutter) 24px;font-family:var(--sans);font-size:16px;line-height:1.55}
+#registry button{font-family:inherit}
 .registry-nav{display:flex;flex-wrap:wrap;gap:1.4rem;padding:0 0 1rem;border-bottom:1px solid var(--line);font-family:var(--sans)}
 .registry-nav [aria-current]{font-weight:700;text-decoration-thickness:2px}
 .registry-note{max-width:74ch;color:var(--muted)}
