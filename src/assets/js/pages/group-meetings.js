@@ -73,7 +73,7 @@
     var editAllowed = can || admin && assigned && !s.pendingActionId;
     var editButton = function(field, label, missing){ return '<button type="button" class="rota-field-button' + (missing ? ' is-missing' : '') + '" data-action="edit" data-focus="' + field + '" data-id="' + esc(s.id) + '" aria-label="' + esc(missing ? label : 'Edit ' + (field === 'topic' ? 'title' : field === 'projectId' ? 'project' : 'slides')) + '"' + disabled(editAllowed, why) + '>' + esc(label) + '</button>'; };
     var slide = s.slidesUrl ? '<a data-rota-slides-link href="' + esc(s.slidesUrl) + '" target="_blank" rel="noopener">Slides <span class="rota-resource-arrow" aria-hidden="true">↗</span></a>' : own ? editButton('slidesUrl', 'Add slides', true) : '';
-    var projectLink = project ? '<a href="' + projectHref(project) + '" title="' + esc(project.title || 'Project') + '">Project <span class="rota-resource-arrow" aria-hidden="true">↗</span></a>' : own ? editButton('projectId', s.projectId ? 'Project unavailable' : 'Add project', true) : '';
+    var projectLink = s.projectId ? '<a href="' + (project ? projectHref(project) : 'project.html#id=' + encodeURIComponent(s.projectId) + '&tab=presentations') + '" title="' + esc(project && project.title || 'Project') + '">Project <span class="rota-resource-arrow" aria-hidden="true">↗</span></a>' : own ? editButton('projectId', 'Add project', true) : '';
     var topic = own ? editButton('topic', s.topic || 'Add title', !s.topic) : esc(s.topic || 'Topic to come');
     var presenter = name(s.presenterSlackId, s.legacyName);
     var profileId = s.presenterSlackId || (s.legacyMemberId && (members.filter(function(x){ return x.legacyMemberId === s.legacyMemberId; })[0] || {}).id) || '';
@@ -127,7 +127,7 @@
   }
   function manageHtml(){
     return '<details class="rota-manage" id="rotaManage"' + (manageOpen ? ' open' : '') + '><summary>Rota actions</summary><div class="rota-manage-controls">' +
-      '<button type="button" class="btn-text" data-action="register"' + disabled(access && access.eligible, 'Eligibility has not been confirmed') + '>' + (access && access.registered ? 'Update registration' : 'Join the rota') + '</button>' +
+      '<button type="button" class="btn-text" data-action="register"' + disabled(access && access.eligible && !access.registered, access && access.registered ? 'You are already in the presenter pool' : 'Only BOLD-internal members and above can present') + '>Resume rota participation</button>' +
       '<button type="button" class="btn-text" data-action="leave"' + disabled(access && access.registered, 'Join the rota before leaving future registration') + '>Leave future registration</button>' +
       '<button type="button" class="btn-text" data-action="editSeries"' + disabled(access && access.admin && access.seriesId, 'Only a series organiser, PI or admin can edit the series') + '>Edit event series</button>' +
       '<button type="button" class="btn-text" data-action="season"' + disabled(access && access.admin, 'Only a rota administrator can edit a season') + '>Edit season</button>' +
@@ -177,7 +177,7 @@
     var visible = filtered.slice(0, visibleCount);
     var remaining = filtered.length - visible.length;
     var more = remaining ? '<div class="rota-more"><span>Showing ' + visible.length + ' of ' + filtered.length + ' meetings</span><button type="button" class="btn-text" data-action="moreMeetings">Show ' + Math.min(10, remaining) + ' more</button></div>' : '';
-    var notice = access && !access.eligible ? '<p class="rota-alert">New assignments and swaps are unavailable until your Slack eligibility is confirmed. Published assignments remain visible.</p>' : '';
+    var notice = access && !access.eligible ? '<p class="rota-alert">BOLD-internal members and above can present. Everyone with Events access can view released meeting details.</p>' : '';
     var pendingSwaps = access ? (access.swaps || []).filter(function(s){ return s.status === 'pending'; }) : [];
     body.innerHTML = notice +
       (pendingSwaps.length ? '<section class="rota-pending"><h2>Pending swaps</h2><ul>' + pendingSwaps.map(function(s){ return '<li>' + esc(s.slotId + ' ↔ ' + s.otherSlotId) + ' · Slack: ' + esc(s.notificationState || 'queued') + (s.requesterSlackId === access.slackId ? ' <button type="button" class="btn-text" data-action="cancelSwap" data-id="' + esc(s.id) + '">Cancel request</button>' + (s.notificationState === 'failed' ? ' <button type="button" class="btn-text" data-action="retrySwap" data-id="' + esc(s.id) + '">Retry message</button>' : '') : ' · Respond in Slack') + '</li>'; }).join('') + '</ul></section>' : '') +
@@ -302,7 +302,7 @@
     }
     if (action === 'leave') { act('Leave', {}); return; }
     if (action === 'editSeries') { location.href = 'series.html?series=' + encodeURIComponent(access.seriesId) + '&edit=1&back=group-meetings.html'; return; }
-    if (action === 'register') { showPanel('<h2>Join the rota</h2><form id="rotaForm" data-submit="Register"><label>Category <select name="category"><option value="phd">PhD</option><option value="masters">Master’s</option><option value="postdoc">Postdoc</option><option value="associate">Associate</option></select></label><button type="submit">Save registration</button></form>'); return; }
+    if (action === 'register') { act('Register', {}); return; }
     if (action === 'season') {
       var season = seasons[0] || {};
       showPanel('<h2>Season details</h2><form id="rotaForm" data-submit="SaveSeason"><label>Season ID <input name="id" required pattern="[a-z0-9-]+" value="' + esc(season.id || '') + '"></label><label>Label <input name="label" required value="' + esc(season.label || '') + '"></label><label>Regular time <input name="regularTime" value="' + esc(season.regularTime || '') + '"></label><label>Location <input name="location" value="' + esc(season.location || '') + '"></label><label>Rotation description <textarea name="rotationDescription">' + esc(season.rotationDescription || '') + '</textarea></label><label>Visibility <select name="publicationState"><option value="draft"' + (season.publicationState === 'draft' ? ' selected' : '') + '>Hidden draft</option><option value="published"' + (season.publicationState === 'published' ? ' selected' : '') + '>Published</option></select></label><button type="submit">Save season</button></form>'); return;

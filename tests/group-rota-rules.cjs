@@ -17,12 +17,15 @@ const writePhoto = (id, token, path = `rota-profiles/${id}/portrait`) => fetch(r
 (async () => {
   await db.collection('roles').doc('admins').set({ emails: ['admin@example.org'] });
   await db.collection('roles').doc('pis').set({ emails: [] });
+  await db.collection('settings').doc('access').set({ pages: { events: { view: 'everyone', edit: 'internal' } } });
   for (const email of ['one@example.org', 'two@example.org', 'admin@example.org']) await db.collection('members').doc(email).set({ email, name: email, category: 'internal' });
+  await db.collection('members').doc('pan@example.org').set({ category: 'pan' });
+  await db.collection('members').doc('associate@example.org').set({ category: 'associate' });
   await db.collection('people').doc('U1').set({ email: 'one@example.org', slackId: 'U1' });
   await db.collection('people').doc('U2').set({ email: 'two@example.org', slackId: 'U2' });
   await db.collection('people').doc('UA').set({ email: 'admin@example.org', slackId: 'UA' });
-  await db.collection('eventSeries').doc('group-meetings-test').set({ id: 'group-meetings-test', kind: 'editions', page: 'group-meetings.html', hidden: false, visibleTo: 'internal', organisers: ['admin@example.org'] });
-  await db.collection('events').doc('group-meetings-test-2099-01-05').set({ slug: 'group-meetings-test-2099-01-05', series: 'group-meetings-test', page: 'group-meetings.html', date: '2099-01-05', startDate: '2099-01-05', hidden: false, visibleTo: 'internal' });
+  await db.collection('eventSeries').doc('group-meetings-test').set({ id: 'group-meetings-test', kind: 'editions', page: 'group-meetings.html', hidden: false, visibleTo: 'everyone', organisers: ['admin@example.org'] });
+  await db.collection('events').doc('group-meetings-test-2099-01-05').set({ slug: 'group-meetings-test-2099-01-05', series: 'group-meetings-test', page: 'group-meetings.html', date: '2099-01-05', startDate: '2099-01-05', hidden: false, visibleTo: 'everyone' });
   await db.collection('groupRotaSlots').doc('s1').set({ date: '2099-01-05', meetingId: '2099-01-05' });
   await db.collection('groupRotaSlots').doc('s1').collection('versions').doc('v1').set({ at: 1 });
   await db.collection('groupRotaSwaps').doc('swap').set({ requesterSlackId: 'U1', recipientSlackId: 'U2' });
@@ -33,6 +36,7 @@ const writePhoto = (id, token, path = `rota-profiles/${id}/portrait`) => fetch(r
   await db.collection('groupMeetingSeasons').doc('draft').set({ label: 'Draft', publicationState: 'draft' });
   await db.collection('groupRotaPhotos').doc('U1').set({ path: 'rota-profiles/U1/portrait', updatedBy: 'one@example.org', updatedAt: Date.now() });
   const one = jwt('one@example.org', 'U1'), two = jwt('two@example.org', 'U2'), adm = jwt('admin@example.org', 'UA');
+  const pan = jwt('pan@example.org', 'UP'), associate = jwt('associate@example.org', 'US');
   const cases = [
     ['signed out rota', await get('groupRotaSlots/s1'), 403],
     ['wrong provider rota', await get('groupRotaSlots/s1', jwt('one@example.org', 'U1', 'github.com')), 403],
@@ -44,6 +48,9 @@ const writePhoto = (id, token, path = `rota-profiles/${id}/portrait`) => fetch(r
     ['legacy portrait reference no longer writable', await writePhoto('U1', one), 403],
     ['another portrait reference update denied', await writePhoto('U1', two), 403],
     ['signed in meeting edition', await get('events/group-meetings-test-2099-01-05', one), 200],
+    ['PAN-BOLD meeting edition', await get('events/group-meetings-test-2099-01-05', pan), 200],
+    ['BOLD-associate meeting edition', await get('events/group-meetings-test-2099-01-05', associate), 200],
+    ['PAN-BOLD event series', await get('eventSeries/group-meetings-test', pan), 200],
     ['version restricted', await get('groupRotaSlots/s1/versions/v1', one), 403],
     ['direct slot write denied', await write('groupRotaSlots/s1', one), 403],
     ['requester swap', await get('groupRotaSwaps/swap', one), 200],

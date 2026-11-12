@@ -4,7 +4,7 @@
 // calculation writes to a slot. The caller supplies the Firebase auth context;
 // every mutation below checks the linked Slack identity again on the server.
 module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, signedInEmail,
-  rolesEmails, requireAccess, seesEvent, slackFetch, pilotSlack, botToken, logger }) {
+  rolesEmails, requireAccess, seesEvent, pilotSlack, botToken, logger }) {
   const slots = db.collection('groupRotaSlots');
   const meetings = db.collection('events');
   const swaps = db.collection('groupRotaSwaps');
@@ -37,6 +37,19 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     if (!email) error('failed-precondition', 'The recipient is not in the BOLD.OS roster.');
     return email;
   }
+  const internalCategory = category => ['internal', 'staff', 'exec'].includes(category);
+  const siteRole = (email, admins, pis) => admins.concat(pis).some(x => String(x).toLowerCase() === email);
+  const mayPresent = (email, membership, admins, pis) => siteRole(email, admins, pis) || !!membership && membership.exists && internalCategory(membership.data().category);
+  async function presenterStatus(slackId) {
+    const person = await db.collection('people').doc(String(slackId || '_')).get();
+    const email = person.exists ? clean(person.data().email).toLowerCase() : '';
+    if (!email) return { eligible: false, registered: false };
+    const [membership, registration, admins, pis] = await Promise.all([
+      db.collection('members').doc(email).get(), db.collection('groupRotaMembers').doc(slackId).get(), rolesEmails('admins'), rolesEmails('pis')
+    ]);
+    const eligible = mayPresent(email, membership, admins, pis);
+    return { eligible, registered: eligible && (!registration.exists || registration.data().active !== false) };
+  }
   async function actor(request, requireIdentity = true) {
     const email = signedInEmail(request).toLowerCase();
     await requireAccess(email, 'events', 'view');
@@ -45,16 +58,17 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const matches = roster.docs.filter(d => String(d.data().email || '').toLowerCase() === email);
     if (requireIdentity && (matches.length !== 1 || !matches[0].data().slackId)) error('failed-precondition', 'Your Slack account is not uniquely matched in the roster.');
     const slackId = matches.length === 1 ? matches[0].data().slackId || '' : '';
-    const [member, eligible, admins, pis] = await Promise.all([
+    const [member, membership, admins, pis] = await Promise.all([
       slackId ? db.collection('groupRotaMembers').doc(slackId).get() : null,
-      slackId ? db.collection('groupRotaEligibility').doc(slackId).get() : null, rolesEmails('admins'), rolesEmails('pis')
+      db.collection('members').doc(email).get(), rolesEmails('admins'), rolesEmails('pis')
     ]);
-    const adminRole = admins.concat(pis).map(x => String(x).toLowerCase()).includes(email) || (series.organisers || []).includes(email);
+    const adminRole = siteRole(email, admins, pis) || (series.organisers || []).includes(email);
     if (!adminRole && (series.hidden || !(await seesEvent(email, series)))) error('permission-denied', 'The group meeting series is not visible to you.');
-    return { email, slackId, registered: !!member && member.exists && member.data().active === true,
-      eligible: !!eligible && eligible.exists && eligible.data().eligible === true, seriesId: series.id, series,
+    const eligible = !!slackId && mayPresent(email, membership, admins, pis);
+    return { email, slackId, registered: eligible && (!member || !member.exists || member.data().active !== false),
+      eligible, seriesId: series.id, series,
       admin: adminRole, canSeeDrafts: adminRole,
-      people: roster.docs.map(d => ({ slackId: d.id, name: d.data().name || '' })) };
+      people: roster.docs.map(d => ({ slackId: d.id, name: d.data().name || '', email: clean(d.data().email).toLowerCase() })) };
   }
   const requirePresenter = a => { if (!a.registered || !a.eligible) error('permission-denied', 'An active eligible rota registration is required.'); };
   const requireAdmin = a => { if (!a.admin) error('permission-denied', 'Only a rota administrator can do this.'); };
@@ -115,13 +129,15 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const a = await actor(request); requirePresenter(a);
     const d = request.data || {}, first = slotRef(d.slotId), second = slotRef(d.otherSlotId);
     if (first.id === second.id) error('invalid-argument', 'Choose another slot.');
+    const target = await second.get();
+    const recipient = await presenterStatus(target.exists && target.data().presenterSlackId);
     const swapRef = swaps.doc(); const expiresAt = now() + 7 * 86400000;
     await db.runTransaction(async tx => {
       const [left, right] = await Promise.all([tx.get(first), tx.get(second)]);
       if (!left.exists || !right.exists) error('not-found', 'Slot not found.');
       const x = left.data(), y = right.data();
-      const [mx, my, ey, ry] = await Promise.all([tx.get(meetingRef(a.seriesId, x.meetingId)), tx.get(meetingRef(a.seriesId, y.meetingId)), tx.get(db.collection('groupRotaEligibility').doc(y.presenterSlackId || '_')), tx.get(db.collection('groupRotaMembers').doc(y.presenterSlackId || '_'))]);
-      if (x.seriesId !== a.seriesId || y.seriesId !== a.seriesId || x.presenterSlackId !== a.slackId || !y.presenterSlackId || y.presenterSlackId === a.slackId || !ey.exists || ey.data().eligible !== true || !ry.exists || ry.data().active !== true || !sameFormat(x, y) || x.format !== 'short' || pending(x) || pending(y) || !mx.exists || !my.exists || !upcoming(mx.data()) || !upcoming(my.data())) error('failed-precondition', 'These short slots cannot be swapped.');
+      const [mx, my] = await Promise.all([tx.get(meetingRef(a.seriesId, x.meetingId)), tx.get(meetingRef(a.seriesId, y.meetingId))]);
+      if (x.seriesId !== a.seriesId || y.seriesId !== a.seriesId || x.presenterSlackId !== a.slackId || !y.presenterSlackId || y.presenterSlackId !== target.data().presenterSlackId || y.presenterSlackId === a.slackId || !recipient.registered || !sameFormat(x, y) || x.format !== 'short' || pending(x) || pending(y) || !mx.exists || !my.exists || !upcoming(mx.data()) || !upcoming(my.data())) error('failed-precondition', 'These short slots cannot be swapped.');
       const deadline = Math.min(expiresAt, Date.parse(mx.data().date + 'T00:00:00Z'), Date.parse(my.data().date + 'T00:00:00Z'));
       tx.create(swapRef, { slotId: first.id, otherSlotId: second.id, slotRevision: x.revision, otherRevision: y.revision, requesterSlackId: a.slackId, recipientSlackId: y.presenterSlackId, createdAt: now(), expiresAt: deadline, status: 'pending', notificationState: 'queued' });
       tx.update(first, { pendingActionId: swapRef.id }); tx.update(second, { pendingActionId: swapRef.id });
@@ -131,6 +147,9 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
   async function finishSwap(id, decision, bySlackId) {
     const series = await rotaSeries();
     const ref = swaps.doc(id); let result = 'unchanged';
+    const pendingSwap = await ref.get();
+    const requester = await presenterStatus(pendingSwap.exists && pendingSwap.data().requesterSlackId);
+    const recipient = await presenterStatus(pendingSwap.exists && pendingSwap.data().recipientSlackId);
     await db.runTransaction(async tx => {
       const snap = await tx.get(ref); if (!snap.exists) error('not-found', 'Swap not found.');
       const s = snap.data();
@@ -140,8 +159,8 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       const [left, right] = await Promise.all([tx.get(lref), tx.get(rref)]);
       const x = left.data(), y = right.data();
       if (!x || !y) error('failed-precondition', 'A slot is missing.');
-      const [mx, my, ex, ey] = await Promise.all([tx.get(meetingRef(series.id, x.meetingId)), tx.get(meetingRef(series.id, y.meetingId)), tx.get(db.collection('groupRotaEligibility').doc(s.requesterSlackId)), tx.get(db.collection('groupRotaEligibility').doc(s.recipientSlackId))]);
-      const valid = x.seriesId === series.id && y.seriesId === series.id && x.revision === s.slotRevision && y.revision === s.otherRevision && x.pendingActionId === id && y.pendingActionId === id && x.presenterSlackId === s.requesterSlackId && y.presenterSlackId === s.recipientSlackId && mx.exists && my.exists && upcoming(mx.data()) && upcoming(my.data()) && ex.exists && ey.exists && ex.data().eligible === true && ey.data().eligible === true && now() < s.expiresAt;
+      const [mx, my] = await Promise.all([tx.get(meetingRef(series.id, x.meetingId)), tx.get(meetingRef(series.id, y.meetingId))]);
+      const valid = x.seriesId === series.id && y.seriesId === series.id && x.revision === s.slotRevision && y.revision === s.otherRevision && x.pendingActionId === id && y.pendingActionId === id && x.presenterSlackId === s.requesterSlackId && y.presenterSlackId === s.recipientSlackId && requester.registered && recipient.registered && mx.exists && my.exists && upcoming(mx.data()) && upcoming(my.data()) && now() < s.expiresAt;
       result = valid ? decision : now() >= s.expiresAt ? 'expired' : 'invalidated';
       if (result === 'confirmed') {
         tx.update(lref, { ...packageOf(y), revision: x.revision + 1, pendingActionId: '', updatedBy: 'slack:' + bySlackId, updatedAt: now(), changeNote: 'Swap confirmed' });
@@ -170,11 +189,12 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const a = await actor(request); requireAdmin(a);
     const d = request.data || {}, recipient = clean(d.recipientSlackId), ref = slotRef(d.slotId), offerRef = offers.doc();
     if (!/^U[A-Z0-9]+$/.test(recipient)) error('invalid-argument', 'Choose a presenter.');
+    const target = await presenterStatus(recipient);
     await db.runTransaction(async tx => {
-      const [snap, eligible, member] = await Promise.all([tx.get(ref), tx.get(db.collection('groupRotaEligibility').doc(recipient)), tx.get(db.collection('groupRotaMembers').doc(recipient))]);
+      const snap = await tx.get(ref);
       if (!snap.exists) error('not-found', 'Slot not found.');
       const s = snap.data(), [m, peers] = await Promise.all([tx.get(meetingRef(a.seriesId, s.meetingId)), tx.get(slots.where('meetingId', '==', s.meetingId))]);
-      if (s.seriesId !== a.seriesId || !m.exists || !upcoming(m.data()) || s.format !== 'short' || s.presenterSlackId || pending(s) || !eligible.exists || eligible.data().eligible !== true || !member.exists || member.data().active !== true || peers.docs.some(x => x.data().presenterSlackId === recipient)) error('failed-precondition', 'This vacancy cannot be offered to that presenter.');
+      if (s.seriesId !== a.seriesId || !m.exists || !upcoming(m.data()) || s.format !== 'short' || s.presenterSlackId || pending(s) || !target.registered || peers.docs.some(x => x.data().presenterSlackId === recipient)) error('failed-precondition', 'This vacancy cannot be offered to that presenter.');
       tx.create(offerRef, { slotId: ref.id, expectedRevision: s.revision, recipientSlackId: recipient, offeredBy: a.email, createdAt: now(), expiresAt: Math.min(now() + 7 * 86400000, Date.parse(s.date + 'T00:00:00Z')), status: 'pending', notificationState: 'queued' });
       tx.update(ref, { pendingActionId: offerRef.id });
     });
@@ -184,14 +204,15 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
   async function finishOffer(id, decision, bySlackId) {
     const series = await rotaSeries();
     const ref = offers.doc(id); let status = 'unchanged';
+    const target = await presenterStatus(bySlackId);
     await db.runTransaction(async tx => {
       const oSnap = await tx.get(ref); if (!oSnap.exists) error('not-found', 'Offer not found.');
       const o = oSnap.data(); if (o.recipientSlackId !== bySlackId) error('permission-denied', 'This offer is for someone else.');
       if (o.status !== 'pending') { status = o.status; return; }
-      const sRef = slotRef(o.slotId), [sSnap, eligible, member] = await Promise.all([tx.get(sRef), tx.get(db.collection('groupRotaEligibility').doc(bySlackId)), tx.get(db.collection('groupRotaMembers').doc(bySlackId))]);
+      const sRef = slotRef(o.slotId), sSnap = await tx.get(sRef);
       const s = sSnap.data(); if (!s) error('failed-precondition', 'Slot missing.');
       const [m, peers] = await Promise.all([tx.get(meetingRef(series.id, s.meetingId)), tx.get(slots.where('meetingId', '==', s.meetingId))]);
-      const valid = s.seriesId === series.id && s.revision === o.expectedRevision && s.pendingActionId === id && !s.presenterSlackId && s.format === 'short' && m.exists && upcoming(m.data()) && eligible.exists && eligible.data().eligible === true && member.exists && member.data().active === true && !peers.docs.some(x => x.data().presenterSlackId === bySlackId) && now() < o.expiresAt;
+      const valid = s.seriesId === series.id && s.revision === o.expectedRevision && s.pendingActionId === id && !s.presenterSlackId && s.format === 'short' && m.exists && upcoming(m.data()) && target.registered && !peers.docs.some(x => x.data().presenterSlackId === bySlackId) && now() < o.expiresAt;
       status = valid ? decision : now() >= o.expiresAt ? 'expired' : 'invalidated';
       if (status === 'accepted') tx.update(sRef, { presenterSlackId: bySlackId, legacyMemberId: '', legacyName: '', revision: s.revision + 1, pendingActionId: '', updatedBy: 'slack:' + bySlackId, updatedAt: now(), changeNote: 'Open short slot accepted' });
       else if (s.pendingActionId === id) tx.update(sRef, { pendingActionId: '' });
@@ -295,20 +316,28 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     }
     const ownSwaps = await swaps.where('requesterSlackId', '==', a.slackId).get();
     const offeredSwaps = await swaps.where('recipientSlackId', '==', a.slackId).get();
-    const [assigned, registered] = await Promise.all([slots.get(), db.collection('groupRotaMembers').get()]);
-    const visibleIds = new Set(assigned.docs.map(d => d.data().presenterSlackId).concat(registered.docs.filter(d => d.data().active).map(d => d.id)));
+    const [assigned, registered, memberships, admins, pis] = await Promise.all([
+      slots.get(), db.collection('groupRotaMembers').get(), db.collection('members').get(), rolesEmails('admins'), rolesEmails('pis')
+    ]);
+    const byEmail = new Map(memberships.docs.map(d => [d.id, d.data()]));
+    const bySlack = new Map(registered.docs.map(d => [d.id, d.data()]));
+    const eligiblePeople = a.people.filter(p => siteRole(p.email, admins, pis) || internalCategory((byEmail.get(p.email) || {}).category));
+    const activePeople = eligiblePeople.filter(p => !bySlack.has(p.slackId) || bySlack.get(p.slackId).active !== false);
+    const visibleIds = new Set(assigned.docs.map(d => d.data().presenterSlackId).concat(activePeople.map(p => p.slackId)));
     return { slackId: a.slackId, seriesId: a.seriesId, seriesHidden: !!a.series.hidden, registered: a.registered, eligible: a.eligible, admin: a.admin, canSeeDrafts: a.canSeeDrafts,
-      people: a.people.filter(p => visibleIds.has(p.slackId)),
-      reason: !a.slackId ? 'Your Slack account is not uniquely matched in the roster' : !a.registered ? 'Join the rota to use this action' : !a.eligible ? 'Eligibility has not been confirmed' : '',
+      people: a.people.filter(p => visibleIds.has(p.slackId)).map(p => ({ slackId: p.slackId, name: p.name, eligible: activePeople.some(x => x.slackId === p.slackId) })),
+      reason: !a.slackId ? 'Your Slack account is not uniquely matched in the roster' : !a.eligible ? 'Only BOLD-internal members and above can present' : !a.registered ? 'Resume rota participation to use this action' : '',
       swaps: [...ownSwaps.docs, ...offeredSwaps.docs].filter((s, i, arr) => arr.findIndex(x => x.id === s.id) === i).map(s => ({ id: s.id, ...s.data() })) };
   }
   async function snapshot(request) {
     const a = await actor(request, false);
     const pick = (id, data, keys) => Object.fromEntries([['id', id], ...keys.filter(key => data[key] !== undefined).map(key => [key, data[key]])]);
-    const [eventDocs, slotDocs, memberDocs, seasonDocs] = await Promise.all([
+    const [eventDocs, slotDocs, memberDocs, membershipDocs, seasonDocs, admins, pis] = await Promise.all([
       meetings.where('series', '==', a.seriesId).get(), slots.get(),
-      db.collection('groupRotaMembers').get(), db.collection('groupMeetingSeasons').get()
+      db.collection('groupRotaMembers').get(), db.collection('members').get(), db.collection('groupMeetingSeasons').get(), rolesEmails('admins'), rolesEmails('pis')
     ]);
+    const byEmail = new Map(membershipDocs.docs.map(d => [d.id, d.data()]));
+    const bySlack = new Map(memberDocs.docs.map(d => [d.id, d.data()]));
     const published = new Set(seasonDocs.docs.filter(doc => a.admin || doc.data().publicationState === 'published').map(doc => doc.id));
     const visible = [];
     for (const doc of eventDocs.docs) {
@@ -321,19 +350,19 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       meetings: visible,
       slots: slotDocs.docs.filter(doc => doc.data().seriesId === a.seriesId && dates.has(doc.data().meetingId)).map(doc => pick(doc.id, doc.data(),
         ['meetingId', 'date', 'slotNumber', 'format', 'presenterSlackId', 'legacyMemberId', 'legacyName', 'topic', 'slidesUrl', 'projectId', 'outcome', 'revision', 'pendingActionId', 'origin'])),
-      members: memberDocs.docs.map(doc => pick(doc.id, doc.data(), ['active', 'category', 'legacyMemberId'])),
+      members: a.people.filter(p => siteRole(p.email, admins, pis) || internalCategory((byEmail.get(p.email) || {}).category))
+        .map(p => ({ id: p.slackId, active: !bySlack.has(p.slackId) || bySlack.get(p.slackId).active !== false,
+          category: (bySlack.get(p.slackId) || {}).category || '' })),
       seasons: seasonDocs.docs.filter(doc => published.has(doc.id)).map(doc => pick(doc.id, doc.data(), ['label', 'regularTime', 'location', 'rotationDescription', 'publicationState']))
     };
   }
   async function register(request) {
-    const a = await actor(request); if (!a.eligible) error('permission-denied', 'Eligibility has not been confirmed.');
-    const category = clean(request.data && request.data.category);
-    if (!['phd', 'masters', 'postdoc', 'associate'].includes(category)) error('invalid-argument', 'Choose a category.');
-    await db.collection('groupRotaMembers').doc(a.slackId).set({ active: true, category, updatedAt: now(), updatedBy: a.email }, { merge: true });
+    const a = await actor(request); if (!a.eligible) error('permission-denied', 'Only BOLD-internal members and above can present.');
+    await db.collection('groupRotaMembers').doc(a.slackId).set({ active: true, updatedAt: now(), updatedBy: a.email }, { merge: true });
     return { ok: true };
   }
   async function leave(request) {
-    const a = await actor(request);
+    const a = await actor(request); if (!a.eligible) error('permission-denied', 'Only presenters can leave rota participation.');
     await db.collection('groupRotaMembers').doc(a.slackId).set({ active: false, updatedAt: now(), updatedBy: a.email }, { merge: true });
     return { ok: true };
   }
@@ -343,15 +372,15 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     const person = await db.collection('people').doc(body.user_id).get();
     if (!person.exists) return 'Your Slack account is not yet in the BOLD.OS roster.';
     const parts = clean(body.text).toLowerCase().split(/\s+/);
+    const status = await presenterStatus(body.user_id);
+    if (!status.eligible) return 'Only BOLD-internal members and above can present.';
     if (parts[0] === 'leave') {
       await db.collection('groupRotaMembers').doc(body.user_id).set({ active: false, updatedAt: now(), updatedBy: 'slack:' + body.user_id }, { merge: true });
       return 'You have left future rota registration. Published assignments are unchanged.';
     }
-    if (parts[0] !== 'join' || !['phd', 'masters', 'postdoc', 'associate'].includes(parts[1])) return 'Use `/rota join phd|masters|postdoc|associate` or `/rota leave`.';
-    const e = await db.collection('groupRotaEligibility').doc(body.user_id).get();
-    if (!e.exists || e.data().eligible !== true) return 'Your bold-associates eligibility is not confirmed. Ask a rota organiser.';
-    await db.collection('groupRotaMembers').doc(body.user_id).set({ active: true, category: parts[1], updatedAt: now(), updatedBy: 'slack:' + body.user_id }, { merge: true });
-    return 'You are registered. Existing assignments have not changed.';
+    if (parts[0] !== 'join') return 'You are automatically in the rota pool. Use `/rota leave` to opt out or `/rota join` to resume.';
+    await db.collection('groupRotaMembers').doc(body.user_id).set({ active: true, updatedAt: now(), updatedBy: 'slack:' + body.user_id }, { merge: true });
+    return 'You are in the rota pool. Existing assignments have not changed.';
   }
   async function sendSwap(id, token) {
     const ref = swaps.doc(id), snap = await ref.get(); if (!snap.exists || snap.data().status !== 'pending') return;
@@ -431,22 +460,6 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
       await ref.update({ status: posted.pilot ? 'pilot' : 'sent', at: now() });
     } catch (e) { await ref.update({ status: 'uncertain', error: String(e).slice(0,300), at: now() }); logger.error('Rota reminder uncertain', { date, error: String(e) }); }
   }
-  async function syncEligibility(token) {
-    const snap = await db.collection('groupRotaConfig').doc('current').get();
-    const id = snap.exists && snap.data().eligibilityUserGroupId;
-    if (!id) return; // The actual stable user-group ID must be configured first.
-    const result = await slackFetch(token, 'usergroups.users.list', { usergroup: id });
-    if (!result.ok || !Array.isArray(result.users)) { logger.error('Rota eligibility refresh failed', { error: result.error }); return; }
-    const [assigned, members, roster] = await Promise.all([slots.get(), db.collection('groupRotaMembers').get(), db.collection('people').get()]);
-    const ids = new Set([...assigned.docs.map(d => d.data().presenterSlackId), ...members.docs.map(d => d.id)].filter(Boolean));
-    const list = new Set(result.users), activeRoster = new Set(roster.docs.map(d => d.data().slackId));
-    const all = [...ids];
-    for (let i = 0; i < all.length; i += 400) {
-      const batch = db.batch();
-      all.slice(i, i + 400).forEach(slackId => batch.set(db.collection('groupRotaEligibility').doc(slackId), { eligible: list.has(slackId) && activeRoster.has(slackId), sourceGroupId: id, checkedAt: now() }));
-      await batch.commit();
-    }
-  }
   return {
     groupRotaAccess: onCall(access), groupRotaSnapshot: onCall(snapshot), groupRotaRegister: onCall(register), groupRotaLeave: onCall(leave),
     groupRotaEdit: onCall(details), groupRotaClaim: onCall(claim), groupRotaRecuse: onCall(recuse),
@@ -458,7 +471,6 @@ module.exports = function rota({ db, admin, HttpsError, onCall, onSchedule, sign
     groupRotaSetMeetingVisibility: onCall(setMeetingVisibility),
     groupRotaCreateSlot: onCall(createSlot), groupRotaDeleteSlot: onCall(deleteSlot), groupRotaDeleteMeeting: onCall(deleteMeeting),
     groupRotaReminder: onSchedule({ schedule: '0 14 * * 1', timeZone: 'Europe/London', secrets: [botToken] }, async () => remind(botToken.value())),
-    groupRotaEligibilitySync: onSchedule({ schedule: '0 7 * * *', timeZone: 'Europe/London', secrets: [botToken] }, async () => syncEligibility(botToken.value())),
     groupRotaExpireSwaps: onSchedule({ schedule: 'every 30 minutes', timeZone: 'Europe/London' }, async () => {
       const due = await swaps.where('status', '==', 'pending').where('expiresAt', '<=', now()).get();
       for (const s of due.docs) await finishSwap(s.id, 'expired', s.data().recipientSlackId);

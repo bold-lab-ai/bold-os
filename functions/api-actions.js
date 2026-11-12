@@ -719,7 +719,7 @@ module.exports = function(ctx){
   async function groupRota(who, a){
     const action = String(a.action || '');
     const table = {
-      register: ['Register', ['category']], leave: ['Leave', []],
+      register: ['Register', []], leave: ['Leave', []],
       edit: ['Edit', ['slotId', 'revision', 'topic', 'projectId', 'slidesUrl', 'auditNote']],
       claim: ['Claim', ['slotId']], recuse: ['Recuse', ['slotId', 'revision', 'reason']],
       request_swap: ['RequestSwap', ['slotId', 'otherSlotId']],
@@ -780,12 +780,12 @@ module.exports = function(ctx){
   ];
   const WRITE = [
     { name: 'group_rota', run: groupRota,
-      description: 'The group meeting rota: register or leave; edit your assigned talk, claim an open slot, decline a slot with a private reason, or request a confirmed short-slot swap. Series organisers, PIs and admins can set outcomes, offer short slots, and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
+      description: 'The group meeting rota: BOLD-internal members and above are included automatically; register resumes participation after leaving. Presenters can edit their assigned talk, claim an open short or long slot, decline a slot with a private reason, or request a confirmed short-slot swap. Series organisers, PIs and admins can set outcomes, offer short slots, and manage seasons and meetings. Swap and offer actions send a Slack message. All actions use the same callable and permissions as the rota page.',
       inputSchema: S({ action: ACTIONS(['register', 'leave', 'edit', 'claim', 'recuse', 'request_swap', 'cancel_swap', 'retry_swap', 'outcome', 'offer_short', 'save_season', 'save_meeting', 'set_meeting_visibility', 'create_slot', 'delete_slot', 'delete_meeting']),
         slotId: str('Stable slot id, from the rota.'), otherSlotId: str('Swap target slot id.'), id: str('Swap id or season id, depending on action.'),
         revision: { type: 'integer', description: 'The slot revision shown by the rota; stale edits fail.' },
         topic: str('Talk topic, up to 140 characters.'), projectId: str('Optional linked project id.'), slidesUrl: str('Optional HTTPS slides link.'), auditNote: str('Administrator correction note.'),
-        reason: str('Private recusal reason.'), category: ACTIONS(['phd', 'masters', 'postdoc', 'associate']),
+        reason: str('Private recusal reason.'),
         outcome: ACTIONS(['unconfirmed', 'presented', 'did-not-present']), recipientSlackId: str('Verified recipient Slack id.'),
         date: str('Meeting date, YYYY-MM-DD.'), hidden: { type: 'boolean', description: 'Hide or release a meeting edition.' }, slotNumber: { type: 'integer' }, seasonId: str('Season id.'),
         format: ACTIONS(['short', 'long']), startTime: str('HH:MM London time.'), durationMinutes: { type: 'integer' },

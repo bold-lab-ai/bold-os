@@ -6631,11 +6631,10 @@ function recordVersions(collection){
 }
 TRACKED.forEach((c) => { exports['history' + c.charAt(0).toUpperCase() + c.slice(1)] = recordVersions(c); });
 
-// Group meeting rota. Its eligibility sync is inert until a maintainer records
-// the stable Slack User Group ID in groupRotaConfig/current.
+// Group meeting rota. Presenter eligibility follows BOLD.OS membership category.
 const groupRota = require('./group-rota')({
   db, admin, HttpsError, onCall, onSchedule, signedInEmail, rolesEmails,
-  requireAccess: access.requireAccess, seesEvent: access.seesIt, slackFetch, pilotSlack, botToken: SLACK_BOT_TOKEN, logger
+  requireAccess: access.requireAccess, seesEvent: access.seesIt, pilotSlack, botToken: SLACK_BOT_TOKEN, logger
 });
 Object.keys(groupRota).filter(k => k !== 'slackAction' && k !== 'slackCommand' && k !== '_internal').forEach(k => { exports[k] = groupRota[k]; });
 // ---------- Joining BOLD: requests, approval, the welcome email ----------
