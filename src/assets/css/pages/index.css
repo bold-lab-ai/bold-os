@@ -75,6 +75,7 @@ body.is-home-feed{font-family:var(--sans); font-size:16px; line-height:1.55;}
 .home-letter{max-width:var(--article-max, 40em); font-family:var(--serif); font-size:17px; line-height:1.65; color:var(--ink-soft);}
 .home-letter p{margin:0 0 .7em;}
 .home-letter p:last-child{margin-bottom:0;}
+.home-letter .hl-agent-text{font-size:15px;}
 
 /* Who wrote the letter (their own agent, profile › Agents), with Short | Long: a quiet line under it. */
 .home-letter .hl-by{margin-top:.6em; font-family:var(--sans); font-size:13px; color:var(--muted);}
